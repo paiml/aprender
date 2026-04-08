@@ -1,0 +1,56 @@
+contract: apr-book-ch24
+version: 1
+status: enforced
+date: 2026-04-08
+page:
+  id: "ch24-switch-from-pytorch"
+  title: "Switch From PyTorch"
+  part: VII
+  category: chapter
+  path: "book/src/chapters/ch24-switch-from-pytorch.md"
+  example: "ch24_switch_pytorch"
+  arxiv: ["1912.01703"]
+api_calls:
+  - module: "aprender::autograd"
+    functions: ["Tensor::new", "Tensor::backward"]
+    min_calls: 2
+  - module: "aprender::nn"
+    functions: ["Linear::new", "Sequential::new", "MSELoss"]
+    min_calls: 3
+sections:
+  - heading: "API Equivalence Table"
+    has_code: true
+    has_assertion: false
+    citation: "1912.01703"
+  - heading: "Tensor Operations"
+    has_code: true
+    has_assertion: true
+    citation: null
+  - heading: "Neural Network Modules"
+    has_code: true
+    has_assertion: true
+    citation: null
+  - heading: "Training Loop"
+    has_code: true
+    has_assertion: true
+    citation: null
+  - heading: "Key Differences"
+    has_code: false
+    has_assertion: false
+    citation: null
+falsification:
+  - condition: "cargo run -p aprender-core --example ch24_switch_pytorch exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "No API equivalence table (PyTorch → aprender mapping)"
+    severity: P0
+    action: add_equivalence_table
+  - condition: "Example contains zero aprender::* API calls"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "Training loop does not demonstrate loss decrease"
+    severity: P0
+    action: fix_training_loop
+  - condition: "Legacy name in chapter text"
+    severity: P0
+    action: reject_chapter

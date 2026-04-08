@@ -1,0 +1,29 @@
+contract: apr-page-chapters-ch15-orchestrate
+version: 1
+status: enforced
+date: 2026-04-08
+page:
+  id: "chapters-ch15-orchestrate"
+  title: "Orchestration and Agents"
+  part: "IV"
+  category: "chapter"
+  path: "book/src/chapters/ch15-orchestrate.md"
+  example: "ch15_orchestrate"
+  arxiv: []
+sections: []
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

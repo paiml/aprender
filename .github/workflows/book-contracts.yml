@@ -1,0 +1,225 @@
+name: Book Contract Enforcement
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "book/**"
+      - "contracts/apr-book-*"
+      - "contracts/apr-page-*"
+      - "contracts/apr-book-schema-*"
+      - "crates/aprender-core/examples/ch*"
+      - "crates/aprender-core/tests/book_contracts.rs"
+      - "scripts/book-gate.sh"
+      - ".github/workflows/book-contracts.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "book/**"
+      - "contracts/apr-book-*"
+      - "contracts/apr-page-*"
+      - "crates/aprender-core/examples/ch*"
+      - "scripts/book-gate.sh"
+      - ".github/workflows/book-contracts.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # Job 1: All chapter examples compile
+  chapter-examples-compile:
+    name: Chapter Examples Compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+      - name: Build all 27 chapter examples
+        run: |
+          for ch in ch01_hello_apr ch02_tensors ch03_apr_format ch04_supervised \
+            ch05_unsupervised ch06_ensembles ch07_model_selection ch08_transformer \
+            ch09_inference ch10_training ch11_formats ch12_serving ch13_profiling \
+            ch14_contracts ch15_orchestrate ch16_timeseries ch17_bayesian \
+            ch18_graphs ch19_text ch20_rag ch21_vs_candle ch22_vs_llamacpp \
+            ch23_training_bench ch24_switch_pytorch ch25_switch_ollama \
+            ch26_switch_ndarray ch27_switch_unsloth; do
+            echo "::group::Build $ch"
+            cargo build -p aprender-core --example "$ch"
+            echo "::endgroup::"
+          done
+
+  # Job 2: All chapter examples run with exit 0
+  chapter-examples-run:
+    name: Chapter Examples Run
+    runs-on: ubuntu-latest
+    needs: chapter-examples-compile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+      - name: Run all 27 chapter examples
+        run: |
+          PASS=0; FAIL=0
+          for ch in ch01_hello_apr ch02_tensors ch03_apr_format ch04_supervised \
+            ch05_unsupervised ch06_ensembles ch07_model_selection ch08_transformer \
+            ch09_inference ch10_training ch11_formats ch12_serving ch13_profiling \
+            ch14_contracts ch15_orchestrate ch16_timeseries ch17_bayesian \
+            ch18_graphs ch19_text ch20_rag ch21_vs_candle ch22_vs_llamacpp \
+            ch23_training_bench ch24_switch_pytorch ch25_switch_ollama \
+            ch26_switch_ndarray ch27_switch_unsloth; do
+            echo "::group::Run $ch"
+            if cargo run -p aprender-core --example "$ch"; then
+              PASS=$((PASS+1))
+            else
+              FAIL=$((FAIL+1))
+              echo "::error::Example $ch failed"
+            fi
+            echo "::endgroup::"
+          done
+          echo "Results: $PASS pass, $FAIL fail"
+          [ "$FAIL" -eq 0 ] || exit 1
+
+  # Job 3: Integration tests
+  book-integration-tests:
+    name: Book Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+      - name: Run book_contracts tests
+        run: cargo test -p aprender-core --test book_contracts
+
+  # Job 4: Contract enforcement (no files without contracts)
+  contract-enforcement:
+    name: Contract Enforcement
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every chapter has a contract
+        run: |
+          FAIL=0
+          for n in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27; do
+            if [ ! -f "contracts/apr-book-ch${n}-v1.yaml" ]; then
+              echo "::error::Missing contract for chapter ${n}"
+              FAIL=1
+            fi
+          done
+          [ "$FAIL" -eq 0 ] || exit 1
+
+      - name: Every chapter page has PCU frontmatter
+        run: |
+          FAIL=0
+          for f in book/src/chapters/ch*.md; do
+            if ! head -1 "$f" | grep -q "PCU:"; then
+              echo "::error::No PCU frontmatter: $f"
+              FAIL=1
+            fi
+          done
+          [ "$FAIL" -eq 0 ] || exit 1
+
+      - name: Every PCU page has matching contract
+        run: |
+          FAIL=0
+          for md in $(find book/src -name "*.md" -not -name "SUMMARY.md"); do
+            ID=$(head -1 "$md" | grep -oP 'PCU: \K[^ |]+' || echo "")
+            if [ -n "$ID" ]; then
+              if [ ! -f "contracts/apr-page-${ID}-v1.yaml" ] && \
+                 [ ! -f "contracts/apr-book-${ID}-v1.yaml" ]; then
+                echo "::error::Page $md references PCU $ID but no contract found"
+                FAIL=1
+              fi
+            fi
+          done
+          [ "$FAIL" -eq 0 ] || exit 1
+
+      - name: Every contract has 5 falsification conditions
+        run: |
+          FAIL=0
+          for c in contracts/apr-book-ch*-v1.yaml; do
+            COUNT=$(grep -c "condition:" "$c")
+            if [ "$COUNT" -lt 5 ]; then
+              echo "::error::$(basename $c) has only $COUNT conditions (need 5)"
+              FAIL=1
+            fi
+          done
+          [ "$FAIL" -eq 0 ] || exit 1
+
+  # Job 5: Namespace discipline
+  namespace-discipline:
+    name: Namespace Discipline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No legacy imports in chapter examples
+        run: |
+          FAIL=0
+          for f in crates/aprender-core/examples/ch*.rs; do
+            if grep -qE 'use (trueno|realizar|entrenar|batuta|presentar|renacer)::' "$f"; then
+              echo "::error::Legacy import in $f"
+              FAIL=1
+            fi
+          done
+          [ "$FAIL" -eq 0 ] || exit 1
+
+      - name: No legacy imports in book pages
+        run: |
+          FAIL=0
+          for f in $(find book/src -name "*.md"); do
+            if grep -qE 'use (trueno|realizar|entrenar|batuta|presentar|renacer)::' "$f"; then
+              echo "::error::Legacy import in $f"
+              FAIL=1
+            fi
+          done
+          [ "$FAIL" -eq 0 ] || exit 1
+
+      - name: No placeholder text in book
+        run: |
+          FAIL=0
+          for f in $(find book/src -name "*.md" -not -name "SUMMARY.md"); do
+            if grep -qiE '\bTODO\b|\bTBD\b|\bWIP\b|\bcoming soon\b|\bunder construction\b' "$f"; then
+              echo "::error::Placeholder text in $f"
+              FAIL=1
+            fi
+          done
+          [ "$FAIL" -eq 0 ] || exit 1
+
+  # Job 6: SUMMARY.md integrity
+  summary-integrity:
+    name: SUMMARY.md Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No dead links in SUMMARY.md
+        run: |
+          FAIL=0
+          while IFS= read -r line; do
+            path=$(echo "$line" | grep -oP '\./[^)]+' || true)
+            if [ -n "$path" ]; then
+              full="book/src/${path#./}"
+              if [ ! -f "$full" ]; then
+                echo "::error::Dead link in SUMMARY.md: $path"
+                FAIL=1
+              fi
+            fi
+          done < book/src/SUMMARY.md
+          [ "$FAIL" -eq 0 ] || exit 1
+
+      - name: All 27 chapters listed
+        run: |
+          for n in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27; do
+            if ! grep -q "ch${n}-" book/src/SUMMARY.md; then
+              echo "::error::Chapter ${n} missing from SUMMARY.md"
+              exit 1
+            fi
+          done

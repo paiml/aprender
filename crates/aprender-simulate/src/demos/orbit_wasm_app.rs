@@ -43,10 +43,10 @@ impl OrbitAppState {
     fn new(canvas: web_sys::HtmlCanvasElement) -> Self {
         let ctx = canvas
             .get_context("2d")
-            .unwrap()
-            .unwrap()
+            .expect("canvas getContext('2d') call failed")
+            .expect("canvas 2d context must exist")
             .dyn_into::<web_sys::CanvasRenderingContext2d>()
-            .unwrap();
+            .expect("context must be a CanvasRenderingContext2d");
 
         Self {
             sim: OrbitSimulation::new(),
@@ -121,7 +121,7 @@ impl OrbitAppState {
                     0.0,
                     std::f64::consts::PI * 2.0,
                 )
-                .unwrap();
+                .expect("canvas arc() call failed for orbit path rendering");
             self.ctx.stroke();
         }
 
@@ -137,7 +137,7 @@ impl OrbitAppState {
         self.ctx.begin_path();
         self.ctx
             .arc(sun_x, sun_y, 15.0, 0.0, std::f64::consts::PI * 2.0)
-            .unwrap();
+            .expect("WASM canvas operation");
         self.ctx.fill();
 
         // Sun glow (simplified - no gradient for WASM compatibility)
@@ -146,7 +146,7 @@ impl OrbitAppState {
         self.ctx.begin_path();
         self.ctx
             .arc(sun_x, sun_y, 25.0, 0.0, std::f64::consts::PI * 2.0)
-            .unwrap();
+            .expect("WASM canvas operation");
         self.ctx.fill();
         self.ctx.set_global_alpha(1.0);
 
@@ -177,7 +177,7 @@ impl OrbitAppState {
         self.ctx.begin_path();
         self.ctx
             .arc(earth_x, earth_y, 8.0, 0.0, std::f64::consts::PI * 2.0)
-            .unwrap();
+            .expect("WASM canvas operation");
         self.ctx.fill();
 
         // Earth label
@@ -185,7 +185,7 @@ impl OrbitAppState {
         self.ctx.set_font("12px monospace");
         self.ctx
             .fill_text("Earth", earth_x + 12.0, earth_y + 4.0)
-            .unwrap();
+            .expect("WASM canvas operation");
     }
 
     fn update_stats(&self, document: &web_sys::Document) {
@@ -270,9 +270,9 @@ where
 
 fn request_animation_frame(f: &Closure<dyn FnMut()>) {
     web_sys::window()
-        .unwrap()
+        .expect("WASM canvas operation")
         .request_animation_frame(f.as_ref().unchecked_ref())
-        .unwrap();
+        .expect("WASM canvas operation");
 }
 
 /// Initialize the Orbit WASM app - call from JavaScript
@@ -397,8 +397,8 @@ fn start_animation_loop(document: web_sys::Document, state: &Rc<RefCell<OrbitApp
             s.render();
             s.update_stats(&document);
         }
-        request_animation_frame(f.borrow().as_ref().unwrap());
+        request_animation_frame(f.borrow().as_ref().expect("WASM canvas operation"));
     }));
 
-    request_animation_frame(g.borrow().as_ref().unwrap());
+    request_animation_frame(g.borrow().as_ref().expect("WASM canvas operation"));
 }

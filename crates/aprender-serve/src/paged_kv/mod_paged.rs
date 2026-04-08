@@ -483,7 +483,7 @@ impl PagedKvCache {
             });
         }
         let allocated: Vec<PageId> = (0..num_blocks)
-            .map(|_| self.free_pages.pop_front().unwrap())
+            .map(|_| self.free_pages.pop_front().expect("free_pages underflow: insufficient pages after capacity check"))
             .collect();
         self.stats.used_pages += allocated.len() as u64;
         contract_post_block_allocation!(&allocated);

@@ -1,0 +1,56 @@
+contract: apr-book-ch22
+version: 1
+status: enforced
+date: 2026-04-08
+page:
+  id: "ch22-vs-llamacpp"
+  title: "Benchmark: aprender-serve vs llama.cpp"
+  part: VI
+  category: chapter
+  path: "book/src/chapters/ch22-vs-llamacpp.md"
+  example: "ch22_vs_llamacpp"
+  arxiv: []
+api_calls:
+  - module: "aprender::bench_viz"
+    functions: []
+    min_calls: 1
+sections:
+  - heading: "Methodology"
+    has_code: false
+    has_assertion: true
+    citation: null
+  - heading: "Decode Throughput"
+    has_code: true
+    has_assertion: true
+    citation: null
+  - heading: "Bootstrap Statistical Comparison"
+    has_code: true
+    has_assertion: true
+    citation: null
+  - heading: "Reproduce"
+    has_code: true
+    has_assertion: false
+    citation: null
+poc_repo: "paiml/candle-vs-apr"
+benchmark_data:
+  model: "Qwen2.5-Coder-1.5B Q4_K_M"
+  hardware: "RTX 4090"
+  data_files:
+    - "results/bootstrap-llama-cpp-b7746-fair-20260405-180222.json"
+    - "results/bootstrap-realizr-0.8.6-20260406-080315.json"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch22_vs_llamacpp exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Benchmark numbers not backed by results/ JSON files"
+    severity: P0
+    action: update_from_data
+  - condition: "Example contains zero aprender::* API calls"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "No link to paiml/candle-vs-apr repo"
+    severity: P0
+    action: add_repo_link
+  - condition: "Legacy name in chapter text"
+    severity: P0
+    action: reject_chapter

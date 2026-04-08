@@ -43,10 +43,10 @@ impl TspAppState {
     fn new(canvas: web_sys::HtmlCanvasElement, _n: usize, seed: u32) -> Self {
         let ctx = canvas
             .get_context("2d")
-            .unwrap()
-            .unwrap()
+            .expect("canvas getContext('2d') call failed")
+            .expect("canvas 2d context must exist")
             .dyn_into::<web_sys::CanvasRenderingContext2d>()
-            .unwrap();
+            .expect("context must be a CanvasRenderingContext2d");
 
         // Load Bay Area TSP from embedded YAML - same as TUI
         let instance =
@@ -147,7 +147,7 @@ impl TspAppState {
             self.ctx.begin_path();
             self.ctx
                 .arc(x, y, 6.0, 0.0, std::f64::consts::PI * 2.0)
-                .unwrap();
+                .expect("canvas arc() call failed for TSP city node rendering");
             self.ctx.fill();
 
             // City index label
@@ -155,7 +155,7 @@ impl TspAppState {
             self.ctx.set_font("10px 'JetBrains Mono', monospace");
             self.ctx
                 .fill_text(&format!("{i}"), x + 8.0, y + 4.0)
-                .unwrap();
+                .expect("WASM canvas operation");
         }
 
         // Draw title
@@ -163,7 +163,7 @@ impl TspAppState {
         self.ctx.set_font("bold 14px 'JetBrains Mono', monospace");
         self.ctx
             .fill_text("Bay Area TSP - 20 Cities", 10.0, 20.0)
-            .unwrap();
+            .expect("WASM canvas operation");
     }
 
     fn update_stats(&self, document: &web_sys::Document) {
@@ -411,11 +411,11 @@ pub fn init_tsp_app() -> Result<(), JsValue> {
                 }
             }
             // Request next frame
-            request_animation_frame(f.borrow().as_ref().unwrap());
+            request_animation_frame(f.borrow().as_ref().expect("WASM canvas operation"));
         }));
 
         // Start the loop
-        request_animation_frame(g.borrow().as_ref().unwrap());
+        request_animation_frame(g.borrow().as_ref().expect("WASM canvas operation"));
     }
 
     // Tab switching
@@ -426,9 +426,9 @@ pub fn init_tsp_app() -> Result<(), JsValue> {
 
 fn request_animation_frame(f: &Closure<dyn FnMut()>) {
     web_sys::window()
-        .unwrap()
+        .expect("WASM canvas operation")
         .request_animation_frame(f.as_ref().unchecked_ref())
-        .unwrap();
+        .expect("WASM canvas operation");
 }
 
 fn setup_tabs(document: &web_sys::Document) -> Result<(), JsValue> {

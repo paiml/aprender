@@ -240,7 +240,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-049: hidden_buf1 missing".to_string())
             })?
             .as_ptr();
-        let hidden_buf1_len = self.workspace.hidden_buf1.as_ref().unwrap().len();
+        let hidden_buf1_len = self.workspace.hidden_buf1.as_ref().expect("hidden_buf1 must be allocated before prefill").len();
         let hidden_buf2_ptr = self
             .workspace
             .hidden_buf2
@@ -249,7 +249,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-049: hidden_buf2 missing".to_string())
             })?
             .as_ptr();
-        let hidden_buf2_len = self.workspace.hidden_buf2.as_ref().unwrap().len();
+        let hidden_buf2_len = self.workspace.hidden_buf2.as_ref().expect("workspace hidden_buf2 must be allocated before prefill").len();
         let input_staging_ptr = self
             .workspace
             .input_staging
@@ -258,28 +258,28 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-049: input_staging missing".to_string())
             })?
             .as_ptr();
-        let input_staging_len = self.workspace.input_staging.as_ref().unwrap().len();
+        let input_staging_len = self.workspace.input_staging.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let q_buf_ptr = self
             .workspace
             .q_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-049: q_buf missing".to_string()))?
             .as_ptr();
-        let q_buf_len = self.workspace.q_buf.as_ref().unwrap().len();
+        let q_buf_len = self.workspace.q_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let k_buf_ptr = self
             .workspace
             .k_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-049: k_buf missing".to_string()))?
             .as_ptr();
-        let k_buf_len = self.workspace.k_buf.as_ref().unwrap().len();
+        let k_buf_len = self.workspace.k_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let v_buf_ptr = self
             .workspace
             .v_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-049: v_buf missing".to_string()))?
             .as_ptr();
-        let v_buf_len = self.workspace.v_buf.as_ref().unwrap().len();
+        let v_buf_len = self.workspace.v_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let ffn_gate_ptr = self
             .workspace
             .ffn_gate_buf
@@ -288,7 +288,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-049: ffn_gate_buf missing".to_string())
             })?
             .as_ptr();
-        let ffn_gate_len = self.workspace.ffn_gate_buf.as_ref().unwrap().len();
+        let ffn_gate_len = self.workspace.ffn_gate_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let ffn_up_ptr = self
             .workspace
             .ffn_up_buf
@@ -297,7 +297,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-049: ffn_up_buf missing".to_string())
             })?
             .as_ptr();
-        let ffn_up_len = self.workspace.ffn_up_buf.as_ref().unwrap().len();
+        let ffn_up_len = self.workspace.ffn_up_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let ffn_act_ptr = self
             .workspace
             .ffn_act_buf
@@ -306,7 +306,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-049: ffn_act_buf missing".to_string())
             })?
             .as_ptr();
-        let ffn_act_len = self.workspace.ffn_act_buf.as_ref().unwrap().len();
+        let ffn_act_len = self.workspace.ffn_act_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let attn_out_ptr = self
             .workspace
             .attn_out_buf
@@ -315,7 +315,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-049: attn_out_buf missing".to_string())
             })?
             .as_ptr();
-        let attn_out_len = self.workspace.attn_out_buf.as_ref().unwrap().len();
+        let attn_out_len = self.workspace.attn_out_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
 
         // Create non-owning GpuBuffer wrappers ONCE (not 28× per layer)
         // SAFETY: All pointers valid from workspace allocation, lengths verified at init
@@ -541,70 +541,70 @@ impl CudaExecutor {
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: hidden_buf1 missing".into()))?
             .as_ptr();
-        let hidden_buf1_len = self.workspace.hidden_buf1.as_ref().unwrap().len();
+        let hidden_buf1_len = self.workspace.hidden_buf1.as_ref().expect("hidden_buf1 must be allocated before prefill").len();
         let hidden_buf2_ptr = self
             .workspace
             .hidden_buf2
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: hidden_buf2 missing".into()))?
             .as_ptr();
-        let hidden_buf2_len = self.workspace.hidden_buf2.as_ref().unwrap().len();
+        let hidden_buf2_len = self.workspace.hidden_buf2.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let input_staging_ptr = self
             .workspace
             .input_staging
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: input_staging missing".into()))?
             .as_ptr();
-        let input_staging_len = self.workspace.input_staging.as_ref().unwrap().len();
+        let input_staging_len = self.workspace.input_staging.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let q_buf_ptr = self
             .workspace
             .q_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: q_buf missing".into()))?
             .as_ptr();
-        let q_buf_len = self.workspace.q_buf.as_ref().unwrap().len();
+        let q_buf_len = self.workspace.q_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let k_buf_ptr = self
             .workspace
             .k_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: k_buf missing".into()))?
             .as_ptr();
-        let k_buf_len = self.workspace.k_buf.as_ref().unwrap().len();
+        let k_buf_len = self.workspace.k_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let v_buf_ptr = self
             .workspace
             .v_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: v_buf missing".into()))?
             .as_ptr();
-        let v_buf_len = self.workspace.v_buf.as_ref().unwrap().len();
+        let v_buf_len = self.workspace.v_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let ffn_gate_ptr = self
             .workspace
             .ffn_gate_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: ffn_gate_buf missing".into()))?
             .as_ptr();
-        let ffn_gate_len = self.workspace.ffn_gate_buf.as_ref().unwrap().len();
+        let ffn_gate_len = self.workspace.ffn_gate_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let ffn_up_ptr = self
             .workspace
             .ffn_up_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: ffn_up_buf missing".into()))?
             .as_ptr();
-        let ffn_up_len = self.workspace.ffn_up_buf.as_ref().unwrap().len();
+        let ffn_up_len = self.workspace.ffn_up_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let ffn_act_ptr = self
             .workspace
             .ffn_act_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: ffn_act_buf missing".into()))?
             .as_ptr();
-        let ffn_act_len = self.workspace.ffn_act_buf.as_ref().unwrap().len();
+        let ffn_act_len = self.workspace.ffn_act_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let attn_out_ptr = self
             .workspace
             .attn_out_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-051: attn_out_buf missing".into()))?
             .as_ptr();
-        let attn_out_len = self.workspace.attn_out_buf.as_ref().unwrap().len();
+        let attn_out_len = self.workspace.attn_out_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
 
         // SAFETY: All pointers valid from workspace allocation
         let hidden_buf1 =
@@ -1046,7 +1046,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-050: hidden_buf1 missing".to_string())
             })?
             .as_ptr();
-        let hidden_buf1_len = self.workspace.hidden_buf1.as_ref().unwrap().len();
+        let hidden_buf1_len = self.workspace.hidden_buf1.as_ref().expect("hidden_buf1 must be allocated before prefill").len();
         let hidden_buf2_ptr = self
             .workspace
             .hidden_buf2
@@ -1055,7 +1055,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-050: hidden_buf2 missing".to_string())
             })?
             .as_ptr();
-        let hidden_buf2_len = self.workspace.hidden_buf2.as_ref().unwrap().len();
+        let hidden_buf2_len = self.workspace.hidden_buf2.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let input_staging_ptr = self
             .workspace
             .input_staging
@@ -1064,28 +1064,28 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-050: input_staging missing".to_string())
             })?
             .as_ptr();
-        let input_staging_len = self.workspace.input_staging.as_ref().unwrap().len();
+        let input_staging_len = self.workspace.input_staging.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let q_buf_ptr = self
             .workspace
             .q_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-050: q_buf missing".to_string()))?
             .as_ptr();
-        let q_buf_len = self.workspace.q_buf.as_ref().unwrap().len();
+        let q_buf_len = self.workspace.q_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let k_buf_ptr = self
             .workspace
             .k_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-050: k_buf missing".to_string()))?
             .as_ptr();
-        let k_buf_len = self.workspace.k_buf.as_ref().unwrap().len();
+        let k_buf_len = self.workspace.k_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let v_buf_ptr = self
             .workspace
             .v_buf
             .as_ref()
             .ok_or_else(|| GpuError::InvalidLaunchConfig("PMAT-050: v_buf missing".to_string()))?
             .as_ptr();
-        let v_buf_len = self.workspace.v_buf.as_ref().unwrap().len();
+        let v_buf_len = self.workspace.v_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let ffn_gate_ptr = self
             .workspace
             .ffn_gate_buf
@@ -1094,7 +1094,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-050: ffn_gate_buf missing".to_string())
             })?
             .as_ptr();
-        let ffn_gate_len = self.workspace.ffn_gate_buf.as_ref().unwrap().len();
+        let ffn_gate_len = self.workspace.ffn_gate_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let ffn_up_ptr = self
             .workspace
             .ffn_up_buf
@@ -1103,7 +1103,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-050: ffn_up_buf missing".to_string())
             })?
             .as_ptr();
-        let ffn_up_len = self.workspace.ffn_up_buf.as_ref().unwrap().len();
+        let ffn_up_len = self.workspace.ffn_up_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let ffn_act_ptr = self
             .workspace
             .ffn_act_buf
@@ -1112,7 +1112,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-050: ffn_act_buf missing".to_string())
             })?
             .as_ptr();
-        let ffn_act_len = self.workspace.ffn_act_buf.as_ref().unwrap().len();
+        let ffn_act_len = self.workspace.ffn_act_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
         let attn_out_ptr = self
             .workspace
             .attn_out_buf
@@ -1121,7 +1121,7 @@ impl CudaExecutor {
                 GpuError::InvalidLaunchConfig("PMAT-050: attn_out_buf missing".to_string())
             })?
             .as_ptr();
-        let attn_out_len = self.workspace.attn_out_buf.as_ref().unwrap().len();
+        let attn_out_len = self.workspace.attn_out_buf.as_ref().expect("CUDA prefill buffer must be allocated").len();
 
         // SAFETY: All pointers valid from workspace allocation
         let hidden_buf1 =

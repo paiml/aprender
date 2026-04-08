@@ -15,6 +15,47 @@
 - [Error Handling](./best-practices/error-handling.md)
 - [Performance](./best-practices/performance.md)
 - [Type Safety](./best-practices/type-safety.md)
+# Part I: Foundations
+
+- [Why Rust for Machine Learning](./chapters/ch01-why-rust.md)
+- [Tensor Computation](./chapters/ch02-tensors.md)
+- [The APR Model Format](./chapters/ch03-apr-format.md)
+# Part II: Algorithms
+
+- [Supervised Learning](./chapters/ch04-supervised.md)
+- [Unsupervised Learning](./chapters/ch05-unsupervised.md)
+- [Ensemble Methods](./chapters/ch06-ensembles.md)
+- [Model Selection and Evaluation](./chapters/ch07-model-selection.md)
+# Part III: Deep Learning & Inference
+
+- [Transformer Architecture](./chapters/ch08-transformer.md)
+- [Inference with aprender-serve](./chapters/ch09-inference.md)
+- [Training with aprender-train](./chapters/ch10-training.md)
+- [Model Formats and Conversion](./chapters/ch11-formats.md)
+# Part IV: Production
+
+- [Serving and Deployment](./chapters/ch12-serving.md)
+- [Profiling and Optimization](./chapters/ch13-profiling.md)
+- [Provable Contracts](./chapters/ch14-contracts.md)
+- [Orchestration and Agents](./chapters/ch15-orchestrate.md)
+# Part V: Advanced Topics
+
+- [Time Series Analysis](./chapters/ch16-timeseries.md)
+- [Bayesian Methods](./chapters/ch17-bayesian.md)
+- [Graph Algorithms](./chapters/ch18-graphs.md)
+- [Text Processing and Tokenization](./chapters/ch19-text.md)
+- [RAG Pipelines](./chapters/ch20-rag.md)
+
+- [Benchmark: aprender-serve vs Candle](./chapters/ch21-vs-candle.md)
+- [Benchmark: aprender-serve vs llama.cpp](./chapters/ch22-vs-llamacpp.md)
+- [Benchmark: Training — PyTorch vs unsloth vs cuBLAS vs WGPU](./chapters/ch23-training-benchmarks.md)
+
+- [Switch From PyTorch](./chapters/ch24-switch-from-pytorch.md)
+- [Switch From Ollama](./chapters/ch25-switch-from-ollama.md)
+- [Switch From ndarray/nalgebra/linfa](./chapters/ch26-switch-from-ndarray.md)
+- [Switch From unsloth](./chapters/ch27-switch-from-unsloth.md)
+# Reference
+
 - [apr chat](./cli-reference/apr-chat.md)
 - [apr convert](./cli-reference/apr-convert.md)
 - [apr finetune](./cli-reference/apr-finetune.md)
@@ -43,7 +84,6 @@
 - [Case Study: Batch Optimization](./examples/batch-optimization.md)
 - [Case Study: Batuta - Automated Migration to Aprender](./examples/batuta-integration.md)
 - [Bayesian Blocks Histogram](./examples/bayesian-blocks-histogram.md)
-- [BPE Tokenizer Benchmark](./examples/bench-bpe.md)
 - [Benchmark Comparison](./examples/bench-comparison.md)
 - [Case Study: Beta-Binomial Bayesian Inference](./examples/beta-binomial-inference.md)
 - [Case Study: Bundle Trace Demo](./examples/bundle-trace-demo.md)
@@ -86,7 +126,6 @@
 - [Case Study: Gradient Boosting Iris](./examples/gbm-iris.md)
 - [Case Study: Gaussian Mixture Models (GMM) Implementation](./examples/gmm-clustering.md)
 - [Case Study: Graph Neural Networks for Node Classification](./examples/gnn-node-classification.md)
-- [GPU Serve CPU Fallback Dogfood](./examples/gpu-fallback-dogfood.md)
 - [Case Study: Comprehensive Graph Algorithms Demo](./examples/graph-algorithms-comprehensive.md)
 - [Case Study: Social Network Analysis](./examples/graph-social-network.md)
 - [Grid Search Hyperparameter Tuning](./examples/grid-search-tuning.md)
@@ -131,9 +170,6 @@
 - [QA: apr chat Falsification Suite](./examples/qa-chat.md)
 - [Case Study: QA Falsification Protocol (PMAT-098)](./examples/qa-falsification.md)
 - [QA Infrastructure Falsification Tests](./examples/qa-falsify.md)
-- [QA: apr run Falsification Suite](./examples/qa-run.md)
-- [QA: apr serve Falsification Suite](./examples/qa-serve.md)
-- [QA: Aprender Quality Gates](./examples/qa-verify.md)
 - [Qwen3.5 Hybrid Attention Architecture](./examples/qwen3.5-hybrid-attention.md)
 - [Qwen APR Native - Native APR Format Inference](./examples/qwen-apr-native.md)
 - [Qwen Chat - Interactive Chat Example](./examples/qwen-chat.md)

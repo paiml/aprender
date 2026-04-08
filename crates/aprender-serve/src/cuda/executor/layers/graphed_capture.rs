@@ -196,9 +196,9 @@ impl CudaExecutor {
                         lb.copy_to_host(&mut graph_logits)?;
                         let ld = max_diff(logits, &graph_logits);
                         let eager_argmax = logits.iter().enumerate()
-                            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).map(|(i,_)| i).unwrap_or(0);
+                            .max_by(|a, b| a.1.partial_cmp(b.1).expect("logits must not contain NaN")).map(|(i,_)| i).unwrap_or(0);
                         let graph_argmax = graph_logits.iter().enumerate()
-                            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).map(|(i,_)| i).unwrap_or(0);
+                            .max_by(|a, b| a.1.partial_cmp(b.1).expect("graph logits must not contain NaN")).map(|(i,_)| i).unwrap_or(0);
                         eprintln!(
                             "[realizr#198-AB] {:20} diff={:.6} eager_argmax={} graph_argmax={} match={}",
                             "logits", ld, eager_argmax, graph_argmax, eager_argmax == graph_argmax

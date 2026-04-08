@@ -1,0 +1,59 @@
+contract: apr-book-ch23
+version: 1
+status: enforced
+date: 2026-04-08
+page:
+  id: "ch23-training-benchmarks"
+  title: "Benchmark: Training — PyTorch vs unsloth vs cuBLAS vs WGPU"
+  part: VI
+  category: chapter
+  path: "book/src/chapters/ch23-training-benchmarks.md"
+  example: "ch23_training_bench"
+  arxiv: []
+api_calls:
+  - module: "aprender::bench_viz"
+    functions: []
+    min_calls: 1
+sections:
+  - heading: "Training Canary Methodology"
+    has_code: false
+    has_assertion: true
+    citation: null
+  - heading: "Results: tok/s by Backend"
+    has_code: true
+    has_assertion: true
+    citation: null
+  - heading: "VRAM Efficiency"
+    has_code: true
+    has_assertion: true
+    citation: null
+  - heading: "Reproduce"
+    has_code: true
+    has_assertion: false
+    citation: null
+poc_repo: "paiml/qwen-train-canary"
+benchmark_data:
+  model: "Qwen2.5-Coder-1.5B"
+  backends:
+    pytorch_compile: { tps: 3597.7, vram_mb: 34215 }
+    cublas: { tps: 4026.8, vram_mb: 49778 }
+    pytorch: { tps: 4055.4, vram_mb: 50580 }
+    unsloth_yoga: { tps: 6715.7, vram_mb: 3515 }
+    unsloth_gx10: { tps: 13659.7, vram_mb: 10219 }
+    wgpu_mac: { tps: 10378.6, vram_mb: null }
+falsification:
+  - condition: "cargo run -p aprender-core --example ch23_training_bench exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Benchmark numbers contradict qwen-train-canary/performance.md"
+    severity: P0
+    action: update_from_repo
+  - condition: "Example contains zero aprender::* API calls"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "No link to paiml/qwen-train-canary repo"
+    severity: P0
+    action: add_repo_link
+  - condition: "Legacy name in chapter text"
+    severity: P0
+    action: reject_chapter

@@ -71,14 +71,14 @@ impl CudaExecutor {
         }
         self.batched_decode_input_buf
             .as_mut()
-            .unwrap()
+            .expect("batched_decode_input_buf must be allocated before copy")
             .copy_from_host(inputs)
             .map_err(|e| GpuError::Transfer(format!(
                 "PMAT-088c batched_decode_input_buf: host={} device={}: {e}",
                 inputs.len(),
                 self.batched_decode_input_buf.as_ref().map_or(0, |b| b.len()),
             )))?;
-        let input_buf_ptr = self.batched_decode_input_buf.as_ref().unwrap().as_ptr();
+        let input_buf_ptr = self.batched_decode_input_buf.as_ref().expect("batched_decode_input_buf must be allocated before batched forward pass").as_ptr();
         let input_buf_len = expected_input_len;
 
         // Get workspace buffer pointers to avoid borrow conflicts
@@ -242,7 +242,7 @@ impl CudaExecutor {
         {
             self.workspace.logits_buf = Some(GpuBuffer::new(&self.context, logits_size)?);
         }
-        let logits_buf_ptr = self.workspace.logits_buf.as_ref().unwrap().as_ptr();
+        let logits_buf_ptr = self.workspace.logits_buf.as_ref().expect("CUDA buffer must be allocated").as_ptr();
         // SAFETY: logits_buf_ptr valid from workspace allocation, size verified above
         let logits_buf = unsafe { GpuBuffer::<f32>::from_raw_parts(logits_buf_ptr, logits_size) };
 

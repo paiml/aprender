@@ -189,7 +189,7 @@ impl CudaExecutor {
         if needs_new {
             self.graph_input_buf = Some(GpuBuffer::from_host(&self.context, input)?);
         } else {
-            self.graph_input_buf.as_mut().unwrap().copy_from_host(input)?;
+            self.graph_input_buf.as_mut().expect("graph_input_buf must be allocated before copy").copy_from_host(input)?;
         }
 
         // Pre-allocate workspace buffers

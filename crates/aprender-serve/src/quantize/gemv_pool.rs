@@ -40,7 +40,7 @@ impl GemvPool {
                         loop {
                             sb.wait();
                             let (f, out_dim) = {
-                                let guard = s.work.lock().unwrap();
+                                let guard = s.work.lock().expect("gemv worker mutex poisoned");
                                 match guard.as_ref() {
                                     Some((f, od)) => {
                                         // Can't clone Box<dyn Fn>, but we can get a ref
@@ -89,7 +89,7 @@ impl GemvPool {
         let boxed: WorkFn = Box::new(move |a, b| (*f_static)(a, b));
 
         {
-            let mut guard = self.shared.work.lock().unwrap();
+            let mut guard = self.shared.work.lock().expect("gemv_pool work mutex poisoned");
             *guard = Some((boxed, out_dim));
         }
 
@@ -98,7 +98,7 @@ impl GemvPool {
 
         // Clear work
         {
-            let mut guard = self.shared.work.lock().unwrap();
+            let mut guard = self.shared.work.lock().expect("gemv pool mutex");
             *guard = None;
         }
     }
@@ -107,7 +107,7 @@ impl GemvPool {
 impl Drop for GemvPool {
     fn drop(&mut self) {
         {
-            let mut guard = self.shared.work.lock().unwrap();
+            let mut guard = self.shared.work.lock().expect("gemv pool mutex");
             *guard = None;
         }
         self.start_barrier.wait();

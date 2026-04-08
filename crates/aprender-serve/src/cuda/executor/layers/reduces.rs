@@ -311,9 +311,9 @@ impl CudaExecutor {
             self.batched_argmax_results_cap = m;
         }
 
-        let block_max_vals_ptr = self.argmax_block_vals.as_ref().unwrap().as_ptr();
-        let block_max_idxs_ptr = self.argmax_block_idxs.as_ref().unwrap().as_ptr();
-        let batched_results_base = self.batched_argmax_results.as_ref().unwrap().as_ptr();
+        let block_max_vals_ptr = self.argmax_block_vals.as_ref().expect("argmax_block_vals must be allocated before batched reduce").as_ptr();
+        let block_max_idxs_ptr = self.argmax_block_idxs.as_ref().expect("argmax_block_idxs must be allocated before batched reduce").as_ptr();
+        let batched_results_base = self.batched_argmax_results.as_ref().expect("batched_argmax_results must be allocated before batched reduce").as_ptr();
 
         // Ensure kernels are compiled (cached after first use)
         let argmax_kernel_type = KernelType::ArgMax { length: vocab_size };
@@ -397,7 +397,7 @@ impl CudaExecutor {
         // PMAT-088c: Buffer may be over-sized from high-water-mark allocation
         // (e.g., allocated for M=4 but current batch M=2). Create exact-M view.
         let mut results = vec![0u32; m];
-        let results_ptr = self.batched_argmax_results.as_ref().unwrap().as_ptr();
+        let results_ptr = self.batched_argmax_results.as_ref().expect("batched_argmax_results buffer must be allocated before argmax reduction").as_ptr();
         let results_view = unsafe { GpuBuffer::<u32>::from_raw_parts(results_ptr, m) };
         results_view.copy_to_host(&mut results[..m])?;
         std::mem::forget(results_view);

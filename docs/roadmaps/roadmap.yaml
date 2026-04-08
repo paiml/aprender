@@ -5321,3 +5321,66 @@ roadmap:
   - contracts
   - zero-muda
   notes: null
+- id: PMAT-511
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-015: POC benchmark chapters — contract-first vs candle/llama.cpp/ollama/vllm'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T11:50:13Z
+  updated: 2026-04-08T11:50:18.376661182+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Part VI: Benchmarks. Ch21 vs Candle (candle-vs-apr repo data), Ch22 vs llama.cpp, Ch23 Training: pytorch/unsloth/cuBLAS (qwen-train-canary data). Contract YAML first, then examples, then book pages.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - benchmarks
+  - poc
+  - contracts
+  notes: null
+- id: PMAT-512
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-016: Switch-from chapters — PyTorch/Ollama/unsloth/ndarray migration guides'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T11:50:13Z
+  updated: 2026-04-08T11:50:13Z
+  spec: null
+  acceptance_criteria:
+  - 'Part VII: Switch From. Ch24 PyTorch, Ch25 Ollama, Ch26 ndarray/nalgebra/linfa, Ch27 unsloth. Each with contract, cargo run --example, API equivalence tables.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - migration
+  - switch-from
+  - contracts
+  notes: null
+- id: PMAT-513
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-017: Close proof chain leaks L2-L7, add CI enforcement'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T12:45:03Z
+  updated: 2026-04-08T12:45:08.841175592+00:00
+  spec: null
+  acceptance_criteria:
+  - 1) Upgrade book-gate.sh with G8-G12 for section cross-check, prose minimum, executable falsification, arXiv validation. 2) Create .github/workflows/book-contracts.yml CI. 3) Update spec with leak findings. 4) Falsify.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - leaks
+  - ci
+  - contracts
+  notes: null

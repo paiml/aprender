@@ -480,7 +480,7 @@ fn main() {
 
             // Collect Python files
             let py_files: Vec<_> = std::fs::read_dir(input_path)
-                .unwrap()
+                .expect("failed to read input directory for Python files")
                 .filter_map(Result::ok)
                 .filter(|e| e.path().extension().is_some_and(|ext| ext == "py"))
                 .collect();
@@ -489,7 +489,7 @@ fn main() {
             pb.set_style(
                 ProgressStyle::default_bar()
                     .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} ({eta})")
-                    .unwrap()
+                    .expect("indicatif progress bar template must be valid")
                     .progress_chars("#>-"),
             );
 
@@ -498,7 +498,7 @@ fn main() {
 
             for entry in py_files {
                 let path = entry.path();
-                let filename = path.file_name().unwrap().to_string_lossy();
+                let filename = path.file_name().expect("verificar operation").to_string_lossy();
 
                 let mut file_result = serde_json::json!({
                     "file": filename.to_string(),
@@ -530,7 +530,7 @@ fn main() {
             let results_path = format!("{output}/results.json");
             std::fs::write(
                 &results_path,
-                serde_json::to_string_pretty(&results).unwrap(),
+                serde_json::to_string_pretty(&results).expect("verificar operation"),
             )
             .ok();
             println!("\nResults written to {results_path}");
@@ -560,7 +560,7 @@ fn main() {
             pb.set_style(
                 ProgressStyle::default_bar()
                     .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}% Training...")
-                    .unwrap()
+                    .expect("verificar operation")
                     .progress_chars("#>-"),
             );
 
@@ -583,7 +583,7 @@ fn main() {
                 "status": "placeholder",
                 "note": "Full training requires aprender ml feature"
             });
-            std::fs::write(&output, serde_json::to_string_pretty(&model_info).unwrap()).ok();
+            std::fs::write(&output, serde_json::to_string_pretty(&model_info).expect("verificar operation")).ok();
 
             println!("\nModel saved to {output}");
             println!("Note: Full training requires `--features ml`");
@@ -625,26 +625,26 @@ fn main() {
             });
 
             if output.as_str() == "json" {
-                println!("{}", serde_json::to_string_pretty(&metrics).unwrap());
+                println!("{}", serde_json::to_string_pretty(&metrics).expect("verificar operation"));
             } else {
                 println!("Evaluation Metrics:");
                 println!(
                     "  Accuracy:  {:.1}%",
-                    metrics["accuracy"].as_f64().unwrap() * 100.0
+                    metrics["accuracy"].as_f64().expect("verificar operation") * 100.0
                 );
                 println!(
                     "  Precision: {:.1}%",
-                    metrics["precision"].as_f64().unwrap() * 100.0
+                    metrics["precision"].as_f64().expect("verificar operation") * 100.0
                 );
                 println!(
                     "  Recall:    {:.1}%",
-                    metrics["recall"].as_f64().unwrap() * 100.0
+                    metrics["recall"].as_f64().expect("verificar operation") * 100.0
                 );
                 println!(
                     "  F1 Score:  {:.1}%",
-                    metrics["f1_score"].as_f64().unwrap() * 100.0
+                    metrics["f1_score"].as_f64().expect("verificar operation") * 100.0
                 );
-                println!("  AUC-ROC:   {:.2}", metrics["auc_roc"].as_f64().unwrap());
+                println!("  AUC-ROC:   {:.2}", metrics["auc_roc"].as_f64().expect("verificar operation"));
                 println!();
                 println!("Confusion Matrix:");
                 println!(
@@ -698,7 +698,7 @@ fn main() {
             // Stage 1: Load teacher logits
             println!("Stage 1: Loading teacher logits...");
             let teacher_files: Vec<_> = std::fs::read_dir(input_path)
-                .unwrap()
+                .expect("verificar operation")
                 .filter_map(Result::ok)
                 .filter(|e| {
                     e.path()
@@ -726,7 +726,7 @@ fn main() {
             pb.set_style(
                 ProgressStyle::default_bar()
                     .template("{spinner:.green} [{bar:40.cyan/blue}] Epoch {msg}")
-                    .unwrap()
+                    .expect("verificar operation")
                     .progress_chars("#>-"),
             );
 
@@ -763,7 +763,7 @@ fn main() {
             let model_path = format!("{output}/distilled_model.json");
             std::fs::write(
                 &model_path,
-                serde_json::to_string_pretty(&model_info).unwrap(),
+                serde_json::to_string_pretty(&model_info).expect("verificar operation"),
             )
             .ok();
 
@@ -848,7 +848,7 @@ data:
                 pb.set_style(
                     ProgressStyle::default_bar()
                         .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len}")
-                        .unwrap()
+                        .expect("verificar operation")
                         .progress_chars("#>-"),
                 );
 
@@ -867,7 +867,7 @@ data:
 
                 // Save seeds
                 let seeds_path = format!("{output}/seeds.json");
-                std::fs::write(&seeds_path, serde_json::to_string_pretty(&seeds).unwrap()).ok();
+                std::fs::write(&seeds_path, serde_json::to_string_pretty(&seeds).expect("verificar operation")).ok();
                 println!("  Saved {} seeds to {seeds_path}", seeds.len());
 
                 seeds
@@ -880,7 +880,7 @@ data:
                 } else {
                     // Load .py files from directory
                     std::fs::read_dir(path)
-                        .unwrap()
+                        .expect("verificar operation")
                         .filter_map(Result::ok)
                         .filter(|e| e.path().extension().is_some_and(|ext| ext == "py"))
                         .filter_map(|e| std::fs::read_to_string(e.path()).ok())
@@ -901,7 +901,7 @@ data:
                 pb.set_style(
                     ProgressStyle::default_bar()
                         .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len}")
-                        .unwrap()
+                        .expect("verificar operation")
                         .progress_chars("#>-"),
                 );
 
@@ -924,7 +924,7 @@ data:
 
                 // Save augmented
                 let aug_path = format!("{output}/augmented.json");
-                std::fs::write(&aug_path, serde_json::to_string(&all_programs).unwrap()).ok();
+                std::fs::write(&aug_path, serde_json::to_string(&all_programs).expect("verificar operation")).ok();
                 println!("  Augmented: {} programs", all_programs.len());
 
                 all_programs
@@ -942,7 +942,7 @@ data:
                 pb.set_style(
                     ProgressStyle::default_bar()
                         .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}%")
-                        .unwrap()
+                        .expect("verificar operation")
                         .progress_chars("#>-"),
                 );
 
@@ -965,7 +965,7 @@ data:
                 let model_path = format!("{output}/model.json");
                 std::fs::write(
                     &model_path,
-                    serde_json::to_string_pretty(&model_info).unwrap(),
+                    serde_json::to_string_pretty(&model_info).expect("verificar operation"),
                 )
                 .ok();
                 println!("  Model saved to {model_path}");
@@ -982,7 +982,7 @@ data:
                 pb.set_style(
                     ProgressStyle::default_bar()
                         .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len}")
-                        .unwrap()
+                        .expect("verificar operation")
                         .progress_chars("#>-"),
                 );
 
@@ -1035,7 +1035,7 @@ data:
                     incorrect_count: corpus_manager.corpus().metadata.incorrect_count,
                     timestamp: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
+                        .expect("verificar operation")
                         .as_secs(),
                 };
                 corpus_manager.set_metadata(metadata);
@@ -1060,7 +1060,7 @@ data:
                 let training_path = Path::new(&output).join("training_data.json");
                 std::fs::write(
                     &training_path,
-                    serde_json::to_string(&training_data).unwrap(),
+                    serde_json::to_string(&training_data).expect("verificar operation"),
                 )
                 .ok();
 

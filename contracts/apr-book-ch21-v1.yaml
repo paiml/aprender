@@ -1,0 +1,61 @@
+contract: apr-book-ch21
+version: 1
+status: enforced
+date: 2026-04-08
+page:
+  id: "ch21-vs-candle"
+  title: "Benchmark: aprender-serve vs Candle"
+  part: VI
+  category: chapter
+  path: "book/src/chapters/ch21-vs-candle.md"
+  example: "ch21_vs_candle"
+  arxiv: []
+api_calls:
+  - module: "aprender::bench_viz"
+    functions: []
+    min_calls: 1
+sections:
+  - heading: "Methodology"
+    has_code: false
+    has_assertion: true
+    citation: null
+  - heading: "Single-Request Decode (c=1)"
+    has_code: true
+    has_assertion: true
+    citation: null
+  - heading: "Scaling Under Concurrency"
+    has_code: true
+    has_assertion: true
+    citation: null
+  - heading: "Memory Footprint"
+    has_code: false
+    has_assertion: true
+    citation: null
+  - heading: "Reproduce"
+    has_code: true
+    has_assertion: false
+    citation: null
+poc_repo: "paiml/candle-vs-apr"
+benchmark_data:
+  aprender_serve_tps: 273.8
+  candle_tps: 227.4
+  speedup: 1.20
+  model: "Qwen2.5-Coder-1.5B Q4_K_M"
+  hardware: "RTX 4090"
+  scaling_c32_tps: 1776.5
+falsification:
+  - condition: "cargo run -p aprender-core --example ch21_vs_candle exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Benchmark numbers contradict candle-vs-apr/performance.md"
+    severity: P0
+    action: update_from_repo
+  - condition: "Example contains zero aprender::* API calls"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "No link to paiml/candle-vs-apr repo"
+    severity: P0
+    action: add_repo_link
+  - condition: "Legacy name in chapter text"
+    severity: P0
+    action: reject_chapter

@@ -259,27 +259,27 @@ fn arrow_value_to_json(array: &dyn arrow::array::Array, index: usize) -> serde_j
 
     match array.data_type() {
         DataType::Int32 => {
-            let a = array.as_any().downcast_ref::<Int32Array>().unwrap();
+            let a = array.as_any().downcast_ref::<Int32Array>().expect("Arrow array downcast to Int32Array");
             serde_json::Value::Number(a.value(index).into())
         }
         DataType::Int64 => {
-            let a = array.as_any().downcast_ref::<Int64Array>().unwrap();
+            let a = array.as_any().downcast_ref::<Int64Array>().expect("Int64Array downcast failed for Int64 DataType column");
             serde_json::Value::Number(a.value(index).into())
         }
         DataType::Float32 => {
-            let a = array.as_any().downcast_ref::<Float32Array>().unwrap();
+            let a = array.as_any().downcast_ref::<Float32Array>().expect("Arrow array downcast");
             serde_json::json!(a.value(index))
         }
         DataType::Float64 => {
-            let a = array.as_any().downcast_ref::<Float64Array>().unwrap();
+            let a = array.as_any().downcast_ref::<Float64Array>().expect("Arrow array downcast");
             serde_json::json!(a.value(index))
         }
         DataType::Utf8 => {
-            let a = array.as_any().downcast_ref::<StringArray>().unwrap();
+            let a = array.as_any().downcast_ref::<StringArray>().expect("Arrow array downcast");
             serde_json::Value::String(a.value(index).to_string())
         }
         DataType::Boolean => {
-            let a = array.as_any().downcast_ref::<BooleanArray>().unwrap();
+            let a = array.as_any().downcast_ref::<BooleanArray>().expect("Arrow array downcast");
             serde_json::Value::Bool(a.value(index))
         }
         _ => serde_json::Value::String(format!("<unsupported: {:?}>", array.data_type())),

@@ -543,7 +543,7 @@ impl OwnedQuantizedModelCuda {
         state.pos_buf.resize(new_m, 0);
         state.max_tokens_max = state
             .max_tokens_max
-            .max(state.configs.last().unwrap().max_tokens);
+            .max(state.configs.last().expect("configs must not be empty when updating max_tokens").max_tokens);
 
         let prefill_ms = prefill_start.elapsed().as_secs_f64() * 1000.0;
         eprintln!(

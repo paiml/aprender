@@ -17,13 +17,13 @@ CURRENT_PART=""
 for contract in contracts/apr-page-*-v1.yaml; do
     [ -f "$contract" ] || continue
 
-    STATUS=$(grep "^  status:" "$contract" 2>/dev/null | head -1 | awk '{print $2}' || echo "")
+    STATUS=$(grep "^status:" "$contract" 2>/dev/null | head -1 | awk '{print $2}' || echo "")
     [ "$STATUS" = "enforced" ] || continue
 
-    TITLE=$(grep "^  title:" "$contract" 2>/dev/null | head -1 | sed 's/.*title: *"//' | tr -d '"')
-    PATH_VAL=$(grep "^  path:" "$contract" 2>/dev/null | head -1 | sed 's/.*path: *"//' | tr -d '"' | xargs)
-    PART=$(grep "^  part:" "$contract" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"')
-    CATEGORY=$(grep "^  category:" "$contract" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"')
+    TITLE=$(grep "title:" "$contract" 2>/dev/null | head -1 | sed 's/.*title: *"//' | tr -d '"')
+    PATH_VAL=$(grep "path:" "$contract" 2>/dev/null | head -1 | sed 's/.*path: *"//' | tr -d '"' | xargs)
+    PART=$(grep "part:" "$contract" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"')
+    CATEGORY=$(grep "category:" "$contract" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"')
 
     [ -z "$TITLE" ] && continue
     [ -z "$PATH_VAL" ] && continue
