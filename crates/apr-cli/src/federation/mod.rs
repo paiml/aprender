@@ -30,7 +30,7 @@ pub mod health;
 pub mod policy;
 pub mod routing;
 pub mod traits;
-// federation/tui removed — was ratatui-only, not actively used
+
 
 pub use catalog::{ModelCatalog, ModelEntry};
 pub use gateway::{FederationGateway, GatewayBuilder, GatewayConfig};

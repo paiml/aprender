@@ -71,9 +71,6 @@ pub mod unified_trace; // Sprint 40: Unified Trace Model (Specification Section 
 #[cfg(target_os = "linux")]
 pub mod validate; // Sprint 50: Golden trace validation (APR Runtime Support)
 pub mod validation_engine; // Sprint 40: ValidationEngine for Batuta Integration (Specification Section 5.1)
-#[cfg(target_os = "linux")]
-#[cfg(feature = "ratatui")]
-pub mod visualize; // Sprint 52-55: Real-time tracing visualization (ttop-identical TUI)
-                   // Sprint 56-57: Metrics, Alerting, Visualization (METRICS-001)
+// visualize module removed — was ratatui-only (Sprint 52-57)
 pub mod alerting; // Sprint 57: Alert engine (threshold, rate, anomaly-based)
 pub mod metrics; // Sprint 56: Counter, Gauge, Histogram with SIMD

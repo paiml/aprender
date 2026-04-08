@@ -88,8 +88,7 @@ pub mod serverless;
 pub mod task;
 #[cfg(feature = "tensor")]
 pub mod tensor;
-#[cfg(feature = "tui")]
-pub mod tui;
+// tui module removed — was ratatui-only
 
 use error::{RepartirError, Result};
 use executor::cpu::CpuExecutor;

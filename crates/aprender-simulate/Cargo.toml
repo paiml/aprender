@@ -159,16 +159,6 @@ path = "examples/tsp_grasp_demo.rs"
 name = "contract_pipeline_demo"
 path = "examples/contract_pipeline_demo.rs"
 
-[[bin]]
-name = "orbit-tui"
-path = "src/bin/orbit_tui.rs"
-required-features = ["tui"]
-
-[[bin]]
-name = "tsp-tui"
-path = "src/bin/tsp_tui.rs"
-required-features = ["tui"]
-
 [[bench]]
 name = "simulation_benchmarks"
 harness = false

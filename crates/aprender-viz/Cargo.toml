@@ -204,16 +204,6 @@ harness = false
 name = "encoder_benchmark"
 harness = false
 
-[[bin]]
-name = "trueno-monitor"
-path = "src/bin/trueno_monitor.rs"
-required-features = ["monitor"]
-
-[[bin]]
-name = "trueno-agent"
-path = "src/bin/trueno_agent.rs"
-required-features = ["monitor-remote"]
-
 [[example]]
 name = "aprender_integration"
 required-features = ["ml"]

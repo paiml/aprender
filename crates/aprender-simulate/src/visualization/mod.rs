@@ -25,12 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::engine::{SimState, SimTime};
 use crate::error::{SimError, SimResult};
 
-// Re-export TUI module if feature enabled
-#[cfg(feature = "tui")]
-pub mod tui;
-
-#[cfg(feature = "tui")]
-pub use tui::SimularTui;
+// tui module removed — was ratatui-only
 
 // Re-export Web module if feature enabled
 #[cfg(feature = "web")]

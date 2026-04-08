@@ -5,8 +5,6 @@ use crate::{
     filter, tracer, transpiler_map,
     validate::{self, ValidateConfig},
 };
-#[cfg(feature = "ratatui")]
-use crate::visualize::{self, VisualizeConfig};
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
@@ -288,13 +286,6 @@ pub enum Commands {
     /// 4=command error, 5=config error
     Validate(ValidateArgs),
 
-    /// Real-time TUI visualization of syscall traces (Sprint 52-55)
-    ///
-    /// Launches an interactive terminal UI showing syscall heatmaps, anomaly
-    /// timelines, ML clustering, and OTLP span waterfalls in real-time.
-    /// Uses ttop-identical architecture for 8ms frame times.
-    #[cfg(feature = "ratatui")]
-    Visualize(VisualizeArgs),
 }
 
 /// Arguments for the validate subcommand
@@ -353,84 +344,6 @@ pub enum ValidationOutputFormat {
     Json,
     /// `JUnit` XML format for CI systems
     Junit,
-}
-
-/// Arguments for the visualize subcommand (Sprint 52-55)
-#[cfg(feature = "ratatui")]
-#[derive(Args, Debug)]
-pub struct VisualizeArgs {
-    /// Tick rate in milliseconds (default: 50, matches ttop)
-    #[arg(long = "tick-rate", value_name = "MS", default_value = "50")]
-    pub tick_rate: u64,
-
-    /// Disable anomaly detection panel
-    #[arg(long = "no-anomaly")]
-    pub no_anomaly: bool,
-
-    /// Disable ML clustering panel
-    #[arg(long = "no-ml")]
-    pub no_ml: bool,
-
-    /// Enable ML clustering (disabled by default)
-    #[arg(long = "ml")]
-    pub enable_ml: bool,
-
-    /// Number of ML clusters (default: 3)
-    #[arg(long = "ml-clusters", value_name = "N", default_value = "3")]
-    pub ml_clusters: usize,
-
-    /// Anomaly Z-score threshold (default: 3.0)
-    #[arg(long = "anomaly-threshold", value_name = "SIGMA", default_value = "3.0")]
-    pub anomaly_threshold: f32,
-
-    /// History buffer size (default: 300, matches ttop)
-    #[arg(long = "history-size", value_name = "N", default_value = "300")]
-    pub history_size: usize,
-
-    /// Enable deterministic mode for testing
-    #[arg(long = "deterministic")]
-    pub deterministic: bool,
-
-    /// Show FPS overlay for performance monitoring
-    #[arg(long = "show-fps")]
-    pub show_fps: bool,
-
-    /// Attach to running process by PID (mutually exclusive with command)
-    #[arg(short = 'p', long = "pid", value_name = "PID")]
-    pub pid: Option<i32>,
-
-    /// Enable source code correlation using DWARF debug info
-    #[arg(short = 's', long = "source")]
-    pub source: bool,
-
-    /// Filter syscalls to trace (e.g., -e trace=open,read,write)
-    #[arg(short = 'e', long = "expr", value_name = "EXPR")]
-    pub filter: Option<String>,
-
-    /// OTLP endpoint for span export (enables trace waterfall panel)
-    #[arg(long = "otlp-endpoint", value_name = "URL")]
-    pub otlp_endpoint: Option<String>,
-
-    // Sprint 56: Metrics and Alerting Panel Options
-    /// Enable metrics collection panel (counters, gauges, histograms)
-    #[arg(long = "metrics")]
-    pub enable_metrics: bool,
-
-    /// Enable alerting panel (threshold/rate/absence alerts)
-    #[arg(long = "alerts")]
-    pub enable_alerts: bool,
-
-    /// Alert threshold for syscall latency anomaly (microseconds, default: 10000)
-    #[arg(long = "alert-latency-threshold", value_name = "US", default_value = "10000")]
-    pub alert_latency_threshold: u64,
-
-    /// Alert threshold for error rate percentage (default: 5.0)
-    #[arg(long = "alert-error-rate", value_name = "PERCENT", default_value = "5.0")]
-    pub alert_error_rate: f32,
-
-    /// Command to trace (everything after --)
-    #[arg(last = true)]
-    pub command: Option<Vec<String>>,
 }
 
 /// Initialize tracing subscriber for debug output
@@ -588,46 +501,6 @@ fn run_validate_subcommand(args: &ValidateArgs) -> i32 {
     exit_code.code()
 }
 
-/// Run the visualize subcommand (Sprint 52-55)
-#[cfg(feature = "ratatui")]
-fn run_visualize_subcommand(args: &VisualizeArgs) -> Result<i32> {
-    // Validate: must have either -p PID or -- COMMAND (same gate as root handler)
-    let has_command = args.command.as_ref().is_some_and(|c| !c.is_empty());
-    if args.pid.is_none() && !has_command {
-        anyhow::bail!(
-            "Must specify either -p PID or command for visualization. \
-             Usage: renacer visualize -p PID or renacer visualize -- COMMAND [ARGS...]"
-        );
-    }
-    if args.pid.is_some() && has_command {
-        anyhow::bail!("Cannot specify both -p PID and command. Choose one.");
-    }
-
-    // Build VisualizeConfig from CLI args
-    let config = VisualizeConfig {
-        tick_rate_ms: args.tick_rate,
-        enable_anomaly: !args.no_anomaly,
-        enable_ml: args.enable_ml && !args.no_ml,
-        ml_clusters: args.ml_clusters,
-        anomaly_threshold: args.anomaly_threshold,
-        history_size: args.history_size,
-        deterministic: args.deterministic,
-        show_fps: args.show_fps,
-        pid: args.pid,
-        enable_source: args.source,
-        filter: args.filter.clone(),
-        otlp_endpoint: args.otlp_endpoint.clone(),
-        // Sprint 56: Metrics and alerting
-        enable_metrics: args.enable_metrics,
-        enable_alerts: args.enable_alerts,
-        alert_latency_threshold_us: args.alert_latency_threshold,
-        alert_error_rate_percent: args.alert_error_rate,
-    };
-
-    // Run visualization
-    visualize::run_visualize(args.command.as_deref(), config)
-}
-
 /// Main entry point - parses CLI and runs the appropriate command.
 /// Returns the exit code.
 pub fn run() -> Result<i32> {
@@ -638,10 +511,6 @@ pub fn run() -> Result<i32> {
         match subcommand {
             Commands::Validate(validate_args) => {
                 return Ok(run_validate_subcommand(validate_args));
-            }
-            #[cfg(feature = "ratatui")]
-            Commands::Visualize(visualize_args) => {
-                return run_visualize_subcommand(visualize_args);
             }
         }
     }
@@ -1859,99 +1728,4 @@ mod tests {
         assert_ne!(ValidationOutputFormat::Json, ValidationOutputFormat::Junit);
     }
 
-    // Sprint 56: Metrics and Alerting CLI Tests (requires ratatui feature)
-
-    #[cfg(feature = "ratatui")]
-    /// Parse a visualize CLI invocation and extract VisualizeArgs
-    fn parse_visualize(args: &[&str]) -> VisualizeArgs {
-        let mut full: Vec<&str> = vec!["renacer", "visualize"];
-        full.extend_from_slice(args);
-        let cli = Cli::parse_from(full);
-        match cli.subcommand {
-            Some(Commands::Visualize(a)) => a,
-            _ => panic!("Expected Visualize subcommand"),
-        }
-    }
-
-    #[cfg(feature = "ratatui")]
-    #[test]
-    fn test_visualize_metrics_flag() {
-        assert!(parse_visualize(&["--metrics", "--", "echo", "test"]).enable_metrics);
-    }
-
-    #[cfg(feature = "ratatui")]
-    #[test]
-    fn test_visualize_defaults() {
-        let a = parse_visualize(&["--", "echo", "test"]);
-        assert!(!a.enable_metrics);
-        assert!(!a.enable_alerts);
-        assert_eq!(a.alert_latency_threshold, 10000);
-        assert!((a.alert_error_rate - 5.0).abs() < f32::EPSILON);
-    }
-
-    #[cfg(feature = "ratatui")]
-    #[test]
-    fn test_visualize_alerts_flag() {
-        assert!(parse_visualize(&["--alerts", "--", "echo", "test"]).enable_alerts);
-    }
-
-    #[cfg(feature = "ratatui")]
-    #[test]
-    fn test_visualize_alert_latency_threshold_custom() {
-        let a = parse_visualize(&["--alert-latency-threshold", "5000", "--", "echo", "test"]);
-        assert_eq!(a.alert_latency_threshold, 5000);
-    }
-
-    #[cfg(feature = "ratatui")]
-    #[test]
-    fn test_visualize_alert_error_rate_custom() {
-        let a = parse_visualize(&["--alert-error-rate", "2.5", "--", "echo", "test"]);
-        assert!((a.alert_error_rate - 2.5).abs() < f32::EPSILON);
-    }
-
-    #[cfg(feature = "ratatui")]
-    #[test]
-    fn test_visualize_metrics_and_alerts_combined() {
-        let a = parse_visualize(&[
-            "--metrics",
-            "--alerts",
-            "--alert-latency-threshold",
-            "8000",
-            "--alert-error-rate",
-            "3.0",
-            "--",
-            "echo",
-            "test",
-        ]);
-        assert!(a.enable_metrics);
-        assert!(a.enable_alerts);
-        assert_eq!(a.alert_latency_threshold, 8000);
-        assert!((a.alert_error_rate - 3.0).abs() < f32::EPSILON);
-    }
-
-    #[cfg(feature = "ratatui")]
-    #[test]
-    fn test_visualize_no_pid_no_command_errors() {
-        let args = parse_visualize(&[]);
-        let err = run_visualize_subcommand(&args).unwrap_err();
-        assert!(err.to_string().contains("Must specify either"));
-    }
-
-    #[cfg(feature = "ratatui")]
-    #[test]
-    fn test_visualize_both_pid_and_command_errors() {
-        let mut args = parse_visualize(&["--", "echo"]);
-        args.pid = Some(1234); // inject conflict: both pid AND command
-        let err = run_visualize_subcommand(&args).unwrap_err();
-        assert!(err.to_string().contains("Cannot specify both"));
-    }
-
-    #[cfg(feature = "ratatui")]
-    #[test]
-    fn test_visualize_empty_command_errors() {
-        let mut args = parse_visualize(&[]);
-        args.command = Some(vec![]); // empty vec treated same as None
-        let err = run_visualize_subcommand(&args).unwrap_err();
-        assert!(err.to_string().contains("Must specify either"));
-    }
 }

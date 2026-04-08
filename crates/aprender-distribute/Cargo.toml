@@ -132,10 +132,6 @@ harness = false
 name = "repartir-worker"
 required-features = ["remote"]
 
-[[bin]]
-name = "job-flow"
-required-features = ["tui", "remote"]
-
 [[example]]
 name = "test_mac_worker"
 required-features = ["remote"]
