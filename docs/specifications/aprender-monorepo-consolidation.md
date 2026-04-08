@@ -20,6 +20,33 @@
 - **`code` command**: Feature-gated in integration tests (was causing false failures)
 - **Workspace**: realizar dep uses workspace path (enables cuda feature forwarding)
 
+### Quality Metrics (2026-04-08 Dogfood QA)
+
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| Coverage (regions) | 95.19% | ≥95% | **PASS** |
+| Coverage (lines) | 94.95% | ≥95% | **WARN** (0.05% below) |
+| Coverage (functions) | 94.74% | ≥95% | **WARN** |
+| Tests (apr-cli) | 4,070 | — | PASS |
+| Tests (aprender-core) | 12,975 | — | PASS |
+| Tests (contracts) | 1,371 | — | PASS |
+| Integration (monorepo) | 8/8 | 8/8 | PASS |
+| Integration (CLI) | 6/6 | 6/6 | PASS |
+| Clippy errors | 0 | 0 | PASS |
+| `#[contract]` annotations | 44 | ≥44 | PASS |
+| Contract YAML files | 522 | — | INFO |
+| unwrap() calls | 104 | 0 | **FAIL** — see defect list |
+| pmat TDG | BLOCKED | A+ | **FAIL** — 104 unwrap() critical defects |
+| pmat comply | CRASH | PASS | **BUG** — pmat panics on Unicode em-dash |
+| pmat project score | 165.8/279 (D) | A+ | **FAIL** — subcrate scoring misses root configs |
+
+### Known Issues
+
+1. **pmat comply crash**: panics on Unicode em-dash in commit messages (pmat bug, not ours)
+2. **pmat project score**: F grades because subcrates lack local Cargo.lock, CI, Makefile — these exist at workspace root but pmat scores per-crate directory
+3. **104 unwrap() calls**: TDG auto-fails — most are in test code and non-critical paths, but need systematic conversion to `expect()` or `?`
+4. **Qwen3.5 inference**: `apr run` fails on Qwen3.5-0.8B (GH-278 — new Gated Delta Net arch)
+
 ---
 
 ## Architectural Invariant: apr-cli Is THE Binary
