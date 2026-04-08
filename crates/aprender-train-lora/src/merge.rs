@@ -273,11 +273,12 @@ mod tests {
     #[test]
     fn test_merge_adds_adapter_contribution() {
         let engine = MergeEngine::new();
-        let base = vec![1.0, 2.0, 3.0, 4.0];
+        let base = vec![1.0, 2.0, 3.0, 4.0]; // [2, 2] weight matrix
+        // rank=1: A=[2,1], B=[1,2]
         let lora_a = vec![0.1, 0.2];
         let lora_b = vec![0.5, 0.5];
 
-        let merged = engine.merge(&base, &lora_a, &lora_b, 16.0, 64);
+        let merged = engine.merge(&base, &lora_a, &lora_b, 16.0, 1);
 
         // Merged should differ from base
         assert!(merged.iter().zip(&base).any(|(m, b)| (m - b).abs() > 1e-6));
@@ -286,15 +287,16 @@ mod tests {
     #[test]
     fn test_merge_scale_affects_result() {
         let base = vec![1.0, 2.0, 3.0, 4.0];
+        // rank=1: A=[2,1], B=[1,2]
         let lora_a = vec![0.1, 0.2];
         let lora_b = vec![0.5, 0.5];
 
         let merged_1 = MergeEngine::new()
             .with_scale(1.0)
-            .merge(&base, &lora_a, &lora_b, 16.0, 64);
+            .merge(&base, &lora_a, &lora_b, 16.0, 1);
         let merged_2 = MergeEngine::new()
             .with_scale(2.0)
-            .merge(&base, &lora_a, &lora_b, 16.0, 64);
+            .merge(&base, &lora_a, &lora_b, 16.0, 1);
 
         // Higher scale should produce larger difference from base
         let diff_1: f32 = merged_1.iter().zip(&base).map(|(m, b)| (m - b).abs()).sum();
@@ -368,14 +370,14 @@ mod tests {
     #[test]
     fn test_merge_engine_default() {
         let engine = MergeEngine::default();
-        // Default scale is 1.0
-        let base = vec![1.0, 2.0];
+        // Default scale is 1.0; rank=1: A=[1,1], B=[1,1], base=[1,1]
+        let base = vec![1.0];
         let lora_a = vec![1.0];
         let lora_b = vec![1.0];
-        let merged = engine.merge(&base, &lora_a, &lora_b, 16.0, 16);
-        // With scale=1.0, alpha=16, rank=16: scale_factor = 1.0
-        // merged[0] = 1.0 + 1.0 * 1.0 * 1.0 = 2.0
-        assert!((merged[0] - 2.0).abs() < 0.01);
+        let merged = engine.merge(&base, &lora_a, &lora_b, 16.0, 1);
+        // scale_factor = 1.0 * 16.0 / 1 = 16.0
+        // merged[0] = 1.0 + 16.0 * 1.0 * 1.0 = 17.0
+        assert!((merged[0] - 17.0).abs() < 0.01);
     }
 
     #[test]
@@ -448,12 +450,13 @@ mod tests {
     #[test]
     fn test_merge_engine_with_scale_builder() {
         let engine = MergeEngine::new().with_scale(0.75);
-        let base = vec![1.0, 1.0];
+        // rank=1: A=[1,1], B=[1,1], base=[1,1]
+        let base = vec![1.0];
         let lora_a = vec![1.0];
         let lora_b = vec![1.0];
-        // scale_factor = 0.75 * 8.0 / 8 = 0.75
-        let merged = engine.merge(&base, &lora_a, &lora_b, 8.0, 8);
-        // merged[0] = 1.0 + 0.75 * 1.0 * 1.0 = 1.75
-        assert!((merged[0] - 1.75).abs() < 0.01);
+        // scale_factor = 0.75 * 8.0 / 1 = 6.0
+        let merged = engine.merge(&base, &lora_a, &lora_b, 8.0, 1);
+        // merged[0] = 1.0 + 6.0 * 1.0 * 1.0 = 7.0
+        assert!((merged[0] - 7.0).abs() < 0.01);
     }
 }

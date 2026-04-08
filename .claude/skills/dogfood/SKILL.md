@@ -239,21 +239,24 @@ Contract: `contracts/apr-qa-silent-fallback-v1.yaml`
 
 Bad inputs MUST fail LOUD (non-zero exit + stderr message), never silently degrade.
 
-### S1. Truncated file detection
+### S1. Truncated file detection (GH-707)
 ```bash
 M_GGUF=$(find ~/models -maxdepth 2 -name "*.gguf" -type f | head -1)
 if [ -n "$M_GGUF" ]; then
   SIZE=$(stat -c%s "$M_GGUF")
   head -c $((SIZE / 2)) "$M_GGUF" > /tmp/apr-qa-truncated.gguf
-  apr validate /tmp/apr-qa-truncated.gguf 2>&1; EC=$?
-  [ "$EC" -ne 0 ] && echo "S1 PASS: truncated file rejected (exit $EC)" || echo "S1 FAIL: truncated file accepted"
+  # IMPORTANT: capture exit code without piping (pipe loses $?)
+  OUTPUT=$(apr validate /tmp/apr-qa-truncated.gguf 2>&1); EC=$?
+  echo "$OUTPUT" | tail -3
+  [ "$EC" -ne 0 ] && echo "S1 PASS: truncated file rejected (exit $EC)" || echo "S1 FAIL: truncated file accepted (GH-707)"
 fi
 ```
 
-### S2. Zero throughput rejection
+### S2. Bad file rejection
 ```bash
-apr bench /dev/null --iterations 1 2>&1; EC=$?
-[ "$EC" -ne 0 ] && echo "S2 PASS: /dev/null rejected" || echo "S2 FAIL: /dev/null accepted"
+OUTPUT=$(apr bench /dev/null --iterations 1 2>&1); EC=$?
+echo "$OUTPUT" | tail -1
+[ "$EC" -ne 0 ] && echo "S2 PASS: /dev/null rejected (exit $EC)" || echo "S2 FAIL: /dev/null accepted"
 ```
 
 ### S3. Unknown architecture handling (GH-704 pattern)
@@ -261,7 +264,8 @@ apr bench /dev/null --iterations 1 2>&1; EC=$?
 # Check that Qwen3.5 SSM model gets a clear error, not silent llama fallback
 M_SSM=$(find ~/models -maxdepth 2 -name "*Qwen3.5*" -o -name "*qwen35*" 2>/dev/null | head -1)
 if [ -n "$M_SSM" ]; then
-  apr run "$M_SSM" "test" --max-tokens 1 2>&1 | grep -qi "not.*supported\|unsupported\|SSM" && \
+  OUTPUT=$(apr run "$M_SSM" "test" --max-tokens 1 2>&1); EC=$?
+  echo "$OUTPUT" | grep -qi "not.*supported\|unsupported\|SSM" && \
     echo "S3 PASS: unsupported arch gives clear error" || echo "S3 FAIL: no clear error for unsupported arch"
 else
   echo "S3 SKIP: no SSM model available"
@@ -273,15 +277,17 @@ fi
 if [ -n "$M_GGUF" ]; then
   cp "$M_GGUF" /tmp/apr-qa-corrupt.gguf
   dd if=/dev/zero of=/tmp/apr-qa-corrupt.gguf bs=1 count=64 seek=8 conv=notrunc 2>/dev/null
-  apr validate /tmp/apr-qa-corrupt.gguf 2>&1; EC=$?
-  [ "$EC" -ne 0 ] && echo "S4 PASS: corrupt metadata rejected" || echo "S4 FAIL: corrupt metadata accepted"
+  OUTPUT=$(apr validate /tmp/apr-qa-corrupt.gguf 2>&1); EC=$?
+  echo "$OUTPUT" | tail -1
+  [ "$EC" -ne 0 ] && echo "S4 PASS: corrupt metadata rejected (exit $EC)" || echo "S4 FAIL: corrupt metadata accepted"
 fi
 ```
 
 ### S5. Missing model graceful (FALSIFY-QA-002)
 ```bash
-apr inspect /nonexistent/model.gguf 2>&1; EC=$?
-[ "$EC" -ne 0 ] && echo "S5 PASS: missing model exits non-zero" || echo "S5 FAIL: exit 0 for missing model"
+OUTPUT=$(apr inspect /nonexistent/model.gguf 2>&1); EC=$?
+echo "$OUTPUT" | tail -1
+[ "$EC" -ne 0 ] && echo "S5 PASS: missing model exits non-zero (exit $EC)" || echo "S5 FAIL: exit 0 for missing model"
 ```
 
 PASS if all 5 checks reject bad input. FAIL if any bad input is silently accepted.
