@@ -335,7 +335,7 @@ fn execute_training(
         }
         _ => {
             // "auto": prefer WGPU for NF4 (fast Q4K load), CUDA for full FT
-            if instruct_config.quantize_nf4 && trueno::backends::gpu::GpuDevice::is_available() {
+            if instruct_config.quantize_nf4 && cfg!(feature = "wgpu") {
                 eprintln!("[gpu-backend] auto → WGPU (NF4 fast load path)");
                 true
             } else {
@@ -345,7 +345,8 @@ fn execute_training(
         }
     };
 
-    if use_wgpu && trueno::backends::gpu::GpuDevice::is_available() {
+    #[cfg(feature = "wgpu")]
+    if use_wgpu {
         return execute_training_wgpu(
             model_path,
             &model_config,
@@ -455,6 +456,7 @@ fn execute_training(
 /// Loads Q4K model directly to GPU (no Transformer, no 20-min CPU dequant).
 #[cfg(feature = "training")]
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "wgpu")]
 fn execute_training_wgpu(
     model_path: &Path,
     model_config: &entrenar::transformer::TransformerConfig,
