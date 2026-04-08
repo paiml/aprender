@@ -160,7 +160,7 @@ fn run_model_with_logits(
         .arg("text")
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
-        .env("REALIZE_DEBUG", "1")
+        .env("APR_TRACE_LOGITS", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
