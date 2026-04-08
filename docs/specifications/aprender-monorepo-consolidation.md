@@ -24,9 +24,10 @@
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
-| Coverage (regions) | 95.19% | ≥95% | **PASS** |
-| Coverage (lines) | 94.95% | ≥95% | **WARN** (0.05% below) |
-| Coverage (functions) | 94.74% | ≥95% | **WARN** |
+| Coverage (aggregate) | 95.19% regions | ≥95% | **PASS** (aprender-core + apr-cli combined) |
+| Coverage (aprender-core) | 94.78% regions / 94.47% lines | ≥95% | **WARN** (0.5% below) |
+| Coverage (apr-cli) | 56.11% regions / 56.70% lines | ≥95% | **FAIL** — CLI dispatch/rendering untested |
+| Coverage (other 72 crates) | NOT MEASURED | ≥95% | **UNKNOWN** |
 | Tests (apr-cli) | 4,070 | — | PASS |
 | Tests (aprender-core) | 12,975 | — | PASS |
 | Tests (contracts) | 1,371 | — | PASS |
@@ -55,7 +56,7 @@
 | **2 version outliers** | P2 | **NOT A GAP** — `aprender-present` and `aprender-test` are sub-workspaces with independent `[workspace.package] version`. By design. |
 | **120 workspace members** | P2 | Cosmetic — root Cargo.toml has 120 member path entries (includes sub-workspace paths). 74 top-level crate directories. |
 | **Stale "Previous State" section** | P3 | Historical context — kept for reference. |
-| **Line coverage 94.95%** | P3 | 0.05% below 95% target — needs ~35 more lines covered |
+| **apr-cli coverage 56%** | P1 | apr-cli at 56.7% line coverage (target ≥95%). aprender-core at 94.47%. 72 other crates unmeasured. Aggregate 95.19% is misleading — dominated by aprender-core's 12,975 tests. |
 
 ---
 
