@@ -220,22 +220,15 @@ pub(super) fn sample_token(logits: &[f32], temperature: f32, rng_state: &mut u64
     result
 }
 
-/// ALB-084: Run HumanEval with actual model inference + Python test execution.
+/// Load an `AprTransformer` from a model path (APR or SafeTensors).
 #[cfg(feature = "inference")]
-fn run_humaneval_inference(
+fn load_humaneval_model(
     model_path: &Path,
-    problems: &[HumanEvalProblem],
-    _k_values: &[usize],
-    json_output: bool,
-) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    use realizar::apr_transformer::{AprKVCache, AprTransformer};
+) -> std::result::Result<realizar::apr_transformer::AprTransformer, String> {
+    use realizar::apr_transformer::AprTransformer;
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-    // Load model -- try APR format first, fall back to SafeTensors
-    if !json_output {
-        println!("  {} Loading model for inference...", "→".dimmed());
-    }
-    let transformer: AprTransformer = if model_path.extension().is_some_and(|e| e == "apr")
+    if model_path.extension().is_some_and(|e| e == "apr")
         || model_path.join("model-best.apr").exists()
     {
         let apr_path = if model_path.is_dir() {
@@ -244,20 +237,27 @@ fn run_humaneval_inference(
             model_path.to_path_buf()
         };
         AprTransformer::from_apr_file(&apr_path)
-            .map_err(|e| format!("Cannot load APR model: {e}"))?
+            .map_err(|e| format!("Cannot load APR model: {e}"))
     } else {
         SafetensorsToAprConverter::convert(model_path)
-            .map_err(|e| format!("Cannot load model: {e}"))?
-            .into_inner()
-    };
+            .map_err(|e| format!("Cannot load model: {e}"))
+            .map(|c| c.into_inner())
+    }
+}
 
-    // ALB-130/ALB-131: Load tokenizer — try embedded first, then sibling file
+/// Load a BPE tokenizer for HumanEval: try embedded first, then sibling file.
+#[cfg(feature = "inference")]
+fn load_humaneval_tokenizer(
+    model_path: &Path,
+    json_output: bool,
+) -> std::result::Result<realizar::apr::BpeTokenizer, String> {
     let apr_file = if model_path.is_dir() {
         model_path.join("model-best.apr")
     } else {
         model_path.to_path_buf()
     };
-    let tokenizer = if apr_file.extension().is_some_and(|e| e == "apr") {
+
+    if apr_file.extension().is_some_and(|e| e == "apr") {
         if let Some(embedded) = realizar::apr::AprV2Model::load(&apr_file)
             .ok()
             .and_then(|m| m.load_embedded_bpe_tokenizer())
@@ -265,17 +265,30 @@ fn run_humaneval_inference(
             if !json_output {
                 println!("  {} Loaded embedded BPE tokenizer", "✓".green());
             }
-            embedded
-        } else {
-            realizar::apr::AprV2Model::load_tokenizer(model_path).ok_or_else(|| {
-                "No tokenizer found (no embedded tokenizer and no sibling tokenizer.json)"
-                    .to_string()
-            })?
+            return Ok(embedded);
         }
-    } else {
-        realizar::apr::AprV2Model::load_tokenizer(model_path)
-            .ok_or_else(|| "No tokenizer found".to_string())?
-    };
+    }
+
+    realizar::apr::AprV2Model::load_tokenizer(model_path).ok_or_else(|| {
+        "No tokenizer found (no embedded tokenizer and no sibling tokenizer.json)".to_string()
+    })
+}
+
+/// ALB-084: Run HumanEval with actual model inference + Python test execution.
+#[cfg(feature = "inference")]
+fn run_humaneval_inference(
+    model_path: &Path,
+    problems: &[HumanEvalProblem],
+    _k_values: &[usize],
+    json_output: bool,
+) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
+    use realizar::apr_transformer::AprKVCache;
+
+    if !json_output {
+        println!("  {} Loading model for inference...", "→".dimmed());
+    }
+    let transformer = load_humaneval_model(model_path)?;
+    let tokenizer = load_humaneval_tokenizer(model_path, json_output)?;
 
     if !json_output {
         println!(
@@ -288,8 +301,6 @@ fn run_humaneval_inference(
 
     let mut passed = 0usize;
     let mut results = Vec::new();
-    // Temperature: 0.0 for pass@1 (greedy), 0.8 for pass@k>1
-    // Currently using greedy; temperature sampling available via sample_token()
     let temperature = 0.0f32;
     let mut rng_state: u64 = 42;
 
@@ -300,7 +311,6 @@ fn run_humaneval_inference(
             .or_else(|| extract_function_name(&problem.prompt))
             .unwrap_or("unknown");
 
-        // Tokenize prompt
         let prompt_tokens = tokenizer.encode(&problem.prompt);
         if prompt_tokens.is_empty() {
             results.push((problem.task_id.clone(), entry.to_string(), false));
@@ -311,12 +321,10 @@ fn run_humaneval_inference(
         let mut cache = AprKVCache::new(&transformer.config);
         let mut tokens = prompt_tokens.clone();
 
-        // Feed prompt through cache
         for (pos, &tok) in prompt_tokens.iter().enumerate() {
             let _ = transformer.forward_with_cache(tok, &mut cache, pos);
         }
 
-        // Generate new tokens
         let max_new = 256;
         for step in 0..max_new {
             let pos = prompt_tokens.len() + step;
@@ -326,10 +334,8 @@ fn run_humaneval_inference(
                 .map_err(|e| format!("Generation failed: {e}"))?;
 
             let next = sample_token(&logits, temperature, &mut rng_state);
-
             tokens.push(next);
 
-            // Stop at EOS or double newline at indent 0 (function boundary)
             if next == 0 {
                 break;
             }
@@ -340,29 +346,22 @@ fn run_humaneval_inference(
             }
         }
 
-        // Decode completion (only new tokens)
         let completion_tokens = &tokens[prompt_tokens.len()..];
         let completion = tokenizer.decode(completion_tokens);
-
-        // Truncate at function boundary (next 'def ' or '\nclass ' at indent 0)
         let completion = truncate_at_function_boundary(&completion);
 
-        // Build full program: prompt + completion + test + check(entry_point)
         let full_program = format!(
             "{}{}\n\n{}\n\ncheck({})\n",
             problem.prompt, completion, problem.test, entry
         );
 
-        // Execute Python test
         let ok = execute_python_test(&full_program, 10);
-
         if ok {
             passed += 1;
         }
 
         results.push((problem.task_id.clone(), entry.to_string(), ok));
 
-        // Progress
         if !json_output && (i + 1) % 10 == 0 {
             println!(
                 "  {} {}/{} problems evaluated ({} passed)",

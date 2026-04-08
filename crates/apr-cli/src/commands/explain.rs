@@ -82,219 +82,16 @@ fn explain_kernel(
 ) -> Result<()> {
     use super::kernel_explain::*;
 
-    // Resolution chain: file → config.json → family string
-    let family = if let Some(path) = file {
-        // Validate file exists and is readable before attempting resolution
-        if !path.exists() {
-            eprintln!("Error: File not found: {}", path.display());
-            std::process::exit(1);
-        }
-        if path.is_dir() {
-            eprintln!(
-                "Error: '{}' is a directory, not a file. Provide a config.json or model file.",
-                path.display()
-            );
-            std::process::exit(1);
-        }
-        if path.extension().map_or(false, |e| e == "json") {
-            // Direct config.json — validate it's parseable
-            let result = resolve_from_config_json(path);
-            if result.is_none() {
-                // File exists but couldn't resolve — check why
-                match std::fs::read_to_string(path) {
-                    Ok(content) => {
-                        let trimmed = content.trim();
-                        if trimmed.is_empty() {
-                            emit_kernel_error(json, &format!("'{}' is empty", path.display()));
-                        } else if trimmed.starts_with('[') {
-                            emit_kernel_error(json, &format!(
-                                "'{}' is a JSON array, not a JSON object. config.json must be a JSON object.",
-                                path.display()
-                            ));
-                        } else if !content.contains('{') {
-                            emit_kernel_error(
-                                json,
-                                &format!("'{}' is not valid JSON", path.display()),
-                            );
-                        } else {
-                            // Check if model_type field exists but is unrecognized
-                            let model_type = extract_json_string(&content, "model_type");
-                            if let Some(mt) = model_type {
-                                emit_kernel_error(
-                                    json,
-                                    &format!(
-                                        "Unknown model_type '{}' in '{}'. \
-                                     Run `apr explain --kernel` for supported families.",
-                                        mt,
-                                        path.display()
-                                    ),
-                                );
-                            } else {
-                                // Check if architectures field exists as fallback hint
-                                let has_arch = content.contains("\"architectures\"");
-                                let msg = if has_arch {
-                                    format!(
-                                        "No \"model_type\" field in '{}'. \
-                                         Found \"architectures\" but could not resolve family from it.",
-                                        path.display()
-                                    )
-                                } else {
-                                    format!(
-                                        "No \"model_type\" field in '{}'. \
-                                         Ensure the file is a HuggingFace config.json.",
-                                        path.display()
-                                    )
-                                };
-                                emit_kernel_error(json, &msg);
-                            }
-                        }
-                        std::process::exit(1);
-                    }
-                    Err(e) => {
-                        emit_kernel_error(
-                            json,
-                            &format!("Could not read '{}': {e}", path.display()),
-                        );
-                        std::process::exit(1);
-                    }
-                }
-            }
-            result
-        } else {
-            // Model file — try to find config.json in same directory
-            // Also try resolving symlinks first for symlinked model files
-            let real_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-            let config_path = real_path.with_file_name("config.json");
-            if config_path.exists() {
-                resolve_from_config_json(&config_path)
-            } else {
-                emit_kernel_error(
-                    json,
-                    &format!(
-                        "No config.json found alongside '{}'. \
-                         Kernel analysis requires a HuggingFace config.json in the same directory.",
-                        path.display()
-                    ),
-                );
-                std::process::exit(1);
-            }
-        }
-    } else {
-        None
-    };
-
-    let family = family.or_else(|| {
-        code_or_family.and_then(|input| {
-            // Try as HF repo pattern (e.g., "hf://Qwen/Qwen2.5-Coder-1.5B")
-            let input = input.strip_prefix("hf://").unwrap_or(input).trim();
-            // Try as config.json path
-            let path = Path::new(input);
-            if path.exists() && path.extension().map_or(false, |e| e == "json") {
-                return resolve_from_config_json(path);
-            }
-            // Try as HF repo ID → look up cached config.json
-            if input.contains('/') {
-                // Reject path traversal (defense in depth)
-                if input.contains("..") {
-                    return None;
-                }
-                let cache_base = dirs::home_dir()
-                    .unwrap_or_default()
-                    .join(".apr/cache/hf")
-                    .join(input)
-                    .join("config.json");
-                if cache_base.exists() {
-                    return resolve_from_config_json(&cache_base);
-                }
-            }
-            // Try as family name or architecture
-            resolve_family(input)
-        })
-    });
+    // Resolution chain: file → code_or_family string → error
+    let family = resolve_family_from_file(file, json)
+        .or_else(|| resolve_family_from_string(code_or_family));
 
     let Some(family) = family else {
-        // Strip hf:// prefix for display, trim whitespace
-        let raw_input = code_or_family
-            .map(|s| s.strip_prefix("hf://").unwrap_or(s).trim())
-            .unwrap_or("(none)");
-        // Truncate long inputs to prevent terminal flooding
-        let input = if raw_input.len() > 80 {
-            &raw_input[..raw_input.floor_char_boundary(80)]
-        } else {
-            raw_input
-        };
-        let suffix = if raw_input.len() > 80 { "..." } else { "" };
-
-        if json {
-            let err = serde_json::json!({
-                "error": format!("Could not resolve kernel class for '{input}{suffix}'"),
-                "available_families": load_families().iter().map(|f| &f.family).collect::<Vec<_>>(),
-            });
-            println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
-        } else {
-            eprintln!("Error: Could not resolve kernel class for '{input}{suffix}'");
-            eprintln!();
-            eprintln!("Available families:");
-            let families = load_families();
-            for f in &families {
-                eprintln!(
-                    "  {:<12} {} (Class {})",
-                    f.family,
-                    f.display_name,
-                    f.kernel_class.letter()
-                );
-            }
-            // Show common aliases
-            let aliases = family_aliases();
-            if !aliases.is_empty() {
-                eprintln!();
-                eprintln!("Also accepted (aliases):");
-                let mut shown: Vec<String> = Vec::new();
-                for (alias, _target) in aliases {
-                    if !shown.contains(&alias.to_string()) {
-                        shown.push(alias.to_string());
-                    }
-                }
-                // Show in groups of 8 per line
-                for chunk in shown.chunks(8) {
-                    eprintln!("  {}", chunk.join(", "));
-                }
-            }
-        }
+        emit_unresolved_kernel_error(code_or_family, json);
         std::process::exit(1);
     };
 
-    // Extract config.json mapping if a file was provided or resolvable from HF cache
-    let config_mapping = file
-        .map(|p| {
-            let config_path = if p.extension().map_or(false, |e| e == "json") {
-                p.to_path_buf()
-            } else {
-                p.with_file_name("config.json")
-            };
-            extract_config_mapping(&config_path)
-        })
-        .or_else(|| {
-            code_or_family.and_then(|input| {
-                let input = input.strip_prefix("hf://").unwrap_or(input);
-                if input.contains('/') {
-                    let cache_path = dirs::home_dir()?
-                        .join(".apr/cache/hf")
-                        .join(input)
-                        .join("config.json");
-                    if cache_path.exists() {
-                        return Some(extract_config_mapping(&cache_path));
-                    }
-                }
-                // Also try if input is a direct path to config.json
-                let path = Path::new(input);
-                if path.exists() && path.extension().map_or(false, |e| e == "json") {
-                    return Some(extract_config_mapping(path));
-                }
-                None
-            })
-        })
-        .unwrap_or_default();
+    let config_mapping = resolve_config_mapping(file, code_or_family);
 
     if json {
         let output = build_json_output(&family, config_mapping, proof_status);
@@ -307,6 +104,255 @@ fn explain_kernel(
     }
 
     Ok(())
+}
+
+/// Resolve kernel family from a file path (config.json or model file).
+fn resolve_family_from_file(
+    file: Option<&Path>,
+    json: bool,
+) -> Option<super::kernel_explain::FamilyInfo> {
+    use super::kernel_explain::*;
+
+    let path = file?;
+
+    // Validate file exists and is readable
+    if !path.exists() {
+        eprintln!("Error: File not found: {}", path.display());
+        std::process::exit(1);
+    }
+    if path.is_dir() {
+        eprintln!(
+            "Error: '{}' is a directory, not a file. Provide a config.json or model file.",
+            path.display()
+        );
+        std::process::exit(1);
+    }
+
+    if path.extension().map_or(false, |e| e == "json") {
+        resolve_family_from_json_file(path, json)
+    } else {
+        resolve_family_from_model_file(path, json)
+    }
+}
+
+/// Resolve family from a direct config.json file, with detailed diagnostics on failure.
+fn resolve_family_from_json_file(
+    path: &Path,
+    json: bool,
+) -> Option<super::kernel_explain::FamilyInfo> {
+    use super::kernel_explain::*;
+
+    let result = resolve_from_config_json(path);
+    if result.is_none() {
+        diagnose_json_resolution_failure(path, json);
+    }
+    result
+}
+
+/// Diagnose why a config.json file failed to resolve a family, emit error, and exit.
+fn diagnose_json_resolution_failure(path: &Path, json: bool) {
+    use super::kernel_explain::extract_json_string;
+
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            let trimmed = content.trim();
+            if trimmed.is_empty() {
+                emit_kernel_error(json, &format!("'{}' is empty", path.display()));
+            } else if trimmed.starts_with('[') {
+                emit_kernel_error(json, &format!(
+                    "'{}' is a JSON array, not a JSON object. config.json must be a JSON object.",
+                    path.display()
+                ));
+            } else if !content.contains('{') {
+                emit_kernel_error(json, &format!("'{}' is not valid JSON", path.display()));
+            } else {
+                diagnose_missing_model_type(path, &content, json);
+            }
+            std::process::exit(1);
+        }
+        Err(e) => {
+            emit_kernel_error(json, &format!("Could not read '{}': {e}", path.display()));
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Diagnose a config.json that parses as JSON but has no resolvable model_type.
+fn diagnose_missing_model_type(path: &Path, content: &str, json: bool) {
+    use super::kernel_explain::extract_json_string;
+
+    let model_type = extract_json_string(content, "model_type");
+    if let Some(mt) = model_type {
+        emit_kernel_error(
+            json,
+            &format!(
+                "Unknown model_type '{}' in '{}'. \
+                 Run `apr explain --kernel` for supported families.",
+                mt,
+                path.display()
+            ),
+        );
+    } else {
+        let has_arch = content.contains("\"architectures\"");
+        let msg = if has_arch {
+            format!(
+                "No \"model_type\" field in '{}'. \
+                 Found \"architectures\" but could not resolve family from it.",
+                path.display()
+            )
+        } else {
+            format!(
+                "No \"model_type\" field in '{}'. \
+                 Ensure the file is a HuggingFace config.json.",
+                path.display()
+            )
+        };
+        emit_kernel_error(json, &msg);
+    }
+}
+
+/// Resolve family from a model file by finding config.json in the same directory.
+fn resolve_family_from_model_file(
+    path: &Path,
+    json: bool,
+) -> Option<super::kernel_explain::FamilyInfo> {
+    use super::kernel_explain::*;
+
+    let real_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let config_path = real_path.with_file_name("config.json");
+    if config_path.exists() {
+        resolve_from_config_json(&config_path)
+    } else {
+        emit_kernel_error(
+            json,
+            &format!(
+                "No config.json found alongside '{}'. \
+                 Kernel analysis requires a HuggingFace config.json in the same directory.",
+                path.display()
+            ),
+        );
+        std::process::exit(1);
+    }
+}
+
+/// Resolve kernel family from a string argument (family name, HF repo, or path).
+fn resolve_family_from_string(
+    code_or_family: Option<&str>,
+) -> Option<super::kernel_explain::FamilyInfo> {
+    use super::kernel_explain::*;
+
+    code_or_family.and_then(|input| {
+        let input = input.strip_prefix("hf://").unwrap_or(input).trim();
+        // Try as config.json path
+        let path = Path::new(input);
+        if path.exists() && path.extension().map_or(false, |e| e == "json") {
+            return resolve_from_config_json(path);
+        }
+        // Try as HF repo ID -> look up cached config.json
+        if input.contains('/') {
+            if input.contains("..") {
+                return None; // Reject path traversal
+            }
+            let cache_base = dirs::home_dir()
+                .unwrap_or_default()
+                .join(".apr/cache/hf")
+                .join(input)
+                .join("config.json");
+            if cache_base.exists() {
+                return resolve_from_config_json(&cache_base);
+            }
+        }
+        resolve_family(input)
+    })
+}
+
+/// Emit error when kernel family could not be resolved from any source.
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn emit_unresolved_kernel_error(code_or_family: Option<&str>, json: bool) {
+    use super::kernel_explain::*;
+
+    let raw_input = code_or_family
+        .map(|s| s.strip_prefix("hf://").unwrap_or(s).trim())
+        .unwrap_or("(none)");
+    let input = if raw_input.len() > 80 {
+        &raw_input[..raw_input.floor_char_boundary(80)]
+    } else {
+        raw_input
+    };
+    let suffix = if raw_input.len() > 80 { "..." } else { "" };
+
+    if json {
+        let err = serde_json::json!({
+            "error": format!("Could not resolve kernel class for '{input}{suffix}'"),
+            "available_families": load_families().iter().map(|f| &f.family).collect::<Vec<_>>(),
+        });
+        println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
+    } else {
+        eprintln!("Error: Could not resolve kernel class for '{input}{suffix}'");
+        eprintln!();
+        eprintln!("Available families:");
+        let families = load_families();
+        for f in &families {
+            eprintln!(
+                "  {:<12} {} (Class {})",
+                f.family,
+                f.display_name,
+                f.kernel_class.letter()
+            );
+        }
+        let aliases = family_aliases();
+        if !aliases.is_empty() {
+            eprintln!();
+            eprintln!("Also accepted (aliases):");
+            let mut shown: Vec<String> = Vec::new();
+            for (alias, _target) in aliases {
+                if !shown.contains(&alias.to_string()) {
+                    shown.push(alias.to_string());
+                }
+            }
+            for chunk in shown.chunks(8) {
+                eprintln!("  {}", chunk.join(", "));
+            }
+        }
+    }
+}
+
+/// Extract config.json mapping from a file path or HF cache.
+fn resolve_config_mapping(
+    file: Option<&Path>,
+    code_or_family: Option<&str>,
+) -> std::collections::BTreeMap<String, super::kernel_explain::ConfigField> {
+    use super::kernel_explain::*;
+
+    file.map(|p| {
+        let config_path = if p.extension().map_or(false, |e| e == "json") {
+            p.to_path_buf()
+        } else {
+            p.with_file_name("config.json")
+        };
+        extract_config_mapping(&config_path)
+    })
+    .or_else(|| {
+        code_or_family.and_then(|input| {
+            let input = input.strip_prefix("hf://").unwrap_or(input);
+            if input.contains('/') {
+                let cache_path = dirs::home_dir()?
+                    .join(".apr/cache/hf")
+                    .join(input)
+                    .join("config.json");
+                if cache_path.exists() {
+                    return Some(extract_config_mapping(&cache_path));
+                }
+            }
+            let path = Path::new(input);
+            if path.exists() && path.extension().map_or(false, |e| e == "json") {
+                return Some(extract_config_mapping(path));
+            }
+            None
+        })
+    })
+    .unwrap_or_default()
 }
 
 /// Check if an argument looks like a model file path (exists or has model extension)

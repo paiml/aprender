@@ -1202,6 +1202,16 @@ pub(crate) fn run_cluster_status(cluster_path: &std::path::Path, json: bool) -> 
     Ok(())
 }
 
+/// Tracked state for a single sweep config during halving.
+struct HalvingEntry {
+    path: std::path::PathBuf,
+    best_ppl: f64,
+    lr: f64,
+    weight_decay: f64,
+    warmup_steps: u64,
+    eliminated_round: Option<usize>,
+}
+
 /// Run `apr train halving` — successive halving HPO (C-HPO-001).
 ///
 /// Runs sweep configs, ranks by val_ppl, kills worst half each round.
@@ -1220,13 +1230,54 @@ pub(crate) fn run_halving(
     output_path: &std::path::Path,
     json_output: bool,
 ) -> Result<()> {
-    use std::process::Command;
-
     if !sweep_dir.exists() {
         return Err(CliError::FileNotFound(sweep_dir.to_path_buf()));
     }
 
-    // Discover sweep configs
+    let configs = discover_sweep_configs(sweep_dir)?;
+
+    if !json_output {
+        output::header("apr train halving — Successive Halving HPO (C-HPO-001)");
+        println!();
+        output::kv("  Configs", configs.len().to_string());
+        output::kv("  Rounds", rounds.to_string());
+        output::kv(
+            "  Steps/round",
+            format!("{steps_per_round} (doubles each round)"),
+        );
+        output::kv("  μTransfer", format!("{source_width} → {target_width}"));
+        println!();
+    }
+
+    let mut results = parse_sweep_config_params(&configs)?;
+    let mut survivors: Vec<usize> = (0..configs.len()).collect();
+    let apr_path = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("apr"));
+
+    for round_idx in 0..rounds {
+        survivors = run_halving_round(
+            &apr_path,
+            &mut results,
+            &survivors,
+            round_idx,
+            steps_per_round * (1 << round_idx),
+            json_output,
+        );
+    }
+
+    emit_halving_results(
+        &results,
+        &survivors,
+        source_width,
+        target_width,
+        rounds,
+        steps_per_round,
+        output_path,
+        json_output,
+    )
+}
+
+/// Discover sweep-*.yaml config files in a directory.
+fn discover_sweep_configs(sweep_dir: &std::path::Path) -> Result<Vec<std::path::PathBuf>> {
     let mut configs: Vec<std::path::PathBuf> = std::fs::read_dir(sweep_dir)
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read sweep dir: {e}")))?
         .filter_map(|e| e.ok())
@@ -1247,180 +1298,171 @@ pub(crate) fn run_halving(
             "No sweep-*.yaml files found in sweep directory".into(),
         ));
     }
+    Ok(configs)
+}
 
-    if !json_output {
-        output::header("apr train halving — Successive Halving HPO (C-HPO-001)");
-        println!();
-        output::kv("  Configs", configs.len().to_string());
-        output::kv("  Rounds", rounds.to_string());
-        output::kv(
-            "  Steps/round",
-            format!("{steps_per_round} (doubles each round)"),
-        );
-        output::kv("  μTransfer", format!("{source_width} → {target_width}"));
-        println!();
-    }
-
-    // Parse LR from each config
-    let mut config_lrs: Vec<(std::path::PathBuf, f64, f64, u64)> = Vec::new();
-    for c in &configs {
+/// Parse optimizer/training params from each sweep config into `HalvingEntry` structs.
+fn parse_sweep_config_params(configs: &[std::path::PathBuf]) -> Result<Vec<HalvingEntry>> {
+    let mut entries = Vec::new();
+    for c in configs {
         let content = std::fs::read_to_string(c)
             .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", c.display())))?;
         let yaml: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
             CliError::ValidationFailed(format!("Invalid YAML {}: {e}", c.display()))
         })?;
-        let lr = yaml["optimizer"]["lr"].as_f64().unwrap_or(0.0);
-        let wd = yaml["optimizer"]["weight_decay"].as_f64().unwrap_or(0.0);
-        let warmup = yaml["training"]["warmup_steps"].as_u64().unwrap_or(0);
-        config_lrs.push((c.clone(), lr, wd, warmup));
+        entries.push(HalvingEntry {
+            path: c.clone(),
+            best_ppl: f64::INFINITY,
+            lr: yaml["optimizer"]["lr"].as_f64().unwrap_or(0.0),
+            weight_decay: yaml["optimizer"]["weight_decay"].as_f64().unwrap_or(0.0),
+            warmup_steps: yaml["training"]["warmup_steps"].as_u64().unwrap_or(0),
+            eliminated_round: None,
+        });
     }
+    Ok(entries)
+}
 
-    // Parse val_ppl from "[eval] step=N val_loss=X val_ppl=Y" lines
-    fn parse_best_ppl(output: &str) -> f64 {
-        let mut best = f64::INFINITY;
-        for line in output.lines() {
-            if let Some(idx) = line.find("val_ppl=") {
-                let rest = &line[idx + 8..];
-                let end = rest
-                    .find(|c: char| !c.is_ascii_digit() && c != '.')
-                    .unwrap_or(rest.len());
-                if let Ok(ppl) = rest[..end].parse::<f64>() {
-                    if ppl < best {
-                        best = ppl;
-                    }
+/// Parse val_ppl from "[eval] step=N val_loss=X val_ppl=Y" lines.
+fn parse_best_ppl(output: &str) -> f64 {
+    let mut best = f64::INFINITY;
+    for line in output.lines() {
+        if let Some(idx) = line.find("val_ppl=") {
+            let rest = &line[idx + 8..];
+            let end = rest
+                .find(|c: char| !c.is_ascii_digit() && c != '.')
+                .unwrap_or(rest.len());
+            if let Ok(ppl) = rest[..end].parse::<f64>() {
+                if ppl < best {
+                    best = ppl;
                 }
             }
         }
-        best
+    }
+    best
+}
+
+/// Execute one halving round: update configs, run survivors, rank, eliminate worst half.
+/// Returns the surviving indices after elimination.
+fn run_halving_round(
+    apr_path: &std::path::Path,
+    results: &mut [HalvingEntry],
+    survivors: &[usize],
+    round_idx: usize,
+    steps: usize,
+    json_output: bool,
+) -> Vec<usize> {
+    use std::process::Command;
+
+    let n_survive = std::cmp::max(1, survivors.len() / 2);
+
+    if !json_output {
+        println!("═══ Round {round_idx} ═══");
+        println!(
+            "  Survivors: {}, steps: {steps}, keep: {n_survive}",
+            survivors.len()
+        );
+        println!();
     }
 
-    // Track results: config path → (best_ppl, lr, eliminated_round)
-    let mut results: Vec<(std::path::PathBuf, f64, f64, f64, u64, Option<usize>)> = config_lrs
-        .iter()
-        .map(|(p, lr, wd, warmup)| (p.clone(), f64::INFINITY, *lr, *wd, *warmup, None))
-        .collect();
+    // Update max_steps in each survivor config
+    for &idx in survivors {
+        let path = &results[idx].path;
+        let content = std::fs::read_to_string(path).unwrap_or_default();
+        if let Ok(mut yaml) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
+            set_yaml_u64(&mut yaml, &["training", "max_steps"], steps as u64);
+            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+            let out_dir = format!("./checkpoints/halving-{stem}");
+            yaml["training"]["output_dir"] = serde_yaml::Value::String(out_dir);
+            if let Ok(s) = serde_yaml::to_string(&yaml) {
+                let _ = std::fs::write(path, s);
+            }
+        }
+    }
 
-    let mut survivors: Vec<usize> = (0..configs.len()).collect();
-    let apr_path = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("apr"));
-
-    for round_idx in 0..rounds {
-        let steps = steps_per_round * (1 << round_idx);
-        let n_survive = std::cmp::max(1, survivors.len() / 2);
+    // Run each survivor and collect scores
+    let mut round_scores: Vec<(usize, f64)> = Vec::new();
+    for &idx in survivors {
+        let entry = &results[idx];
+        let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
 
         if !json_output {
-            println!("═══ Round {round_idx} ═══");
-            println!(
-                "  Survivors: {}, steps: {steps}, keep: {n_survive}",
-                survivors.len()
-            );
-            println!();
+            print!("  Running {name} (lr={:.2e})...", entry.lr);
+            use std::io::Write;
+            std::io::stdout().flush().ok();
         }
 
-        // Update max_steps in each survivor config
-        for &idx in &survivors {
-            let path = &results[idx].0;
-            let content = std::fs::read_to_string(path).unwrap_or_default();
-            if let Ok(mut yaml) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                set_yaml_u64(&mut yaml, &["training", "max_steps"], steps as u64);
-                // Ensure unique output_dir per config
-                let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-                let out_dir = format!("./checkpoints/halving-{stem}");
-                yaml["training"]["output_dir"] = serde_yaml::Value::String(out_dir);
-                if let Ok(s) = serde_yaml::to_string(&yaml) {
-                    let _ = std::fs::write(path, s);
-                }
-            }
+        let start = std::time::Instant::now();
+        let cmd_output = Command::new(apr_path)
+            .args(["train", "apply", "--task", "pretrain", "--config"])
+            .arg(&entry.path)
+            .output();
+
+        let elapsed = start.elapsed().as_secs();
+        let mut best_ppl = f64::INFINITY;
+        if let Ok(out) = cmd_output {
+            let combined = String::from_utf8_lossy(&out.stdout).to_string()
+                + &String::from_utf8_lossy(&out.stderr);
+            best_ppl = parse_best_ppl(&combined);
         }
 
-        // Run each survivor
-        let mut round_scores: Vec<(usize, f64)> = Vec::new();
-        for &idx in &survivors {
-            let path = &results[idx].0;
-            let lr = results[idx].2;
-            let name = path.file_name().unwrap_or_default().to_string_lossy();
-
-            if !json_output {
-                print!("  Running {name} (lr={lr:.2e})...");
-                use std::io::Write;
-                std::io::stdout().flush().ok();
-            }
-
-            let start = std::time::Instant::now();
-            let output = Command::new(&apr_path)
-                .args(["train", "apply", "--task", "pretrain", "--config"])
-                .arg(path)
-                .output();
-
-            let elapsed = start.elapsed().as_secs();
-
-            let mut best_ppl = f64::INFINITY;
-            if let Ok(out) = output {
-                let combined = String::from_utf8_lossy(&out.stdout).to_string()
-                    + &String::from_utf8_lossy(&out.stderr);
-                best_ppl = parse_best_ppl(&combined);
-            }
-
-            if best_ppl < results[idx].1 {
-                results[idx].1 = best_ppl;
-            }
-            round_scores.push((idx, best_ppl));
-
-            if !json_output {
-                if best_ppl.is_finite() {
-                    println!(" val_ppl={best_ppl:.2} ({elapsed}s)");
-                } else {
-                    println!(" no eval ({elapsed}s)");
-                }
-            }
+        if best_ppl < results[idx].best_ppl {
+            results[idx].best_ppl = best_ppl;
         }
-
-        // Rank by best_ppl (lower is better), inf sorts last
-        round_scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        let kept: Vec<usize> = round_scores
-            .iter()
-            .take(n_survive)
-            .map(|(i, _)| *i)
-            .collect();
-        let eliminated: Vec<usize> = round_scores
-            .iter()
-            .skip(n_survive)
-            .map(|(i, _)| *i)
-            .collect();
-
-        for &idx in &eliminated {
-            results[idx].5 = Some(round_idx);
-        }
+        round_scores.push((idx, best_ppl));
 
         if !json_output {
-            println!();
-            let kept_names: Vec<String> = kept
-                .iter()
-                .map(|i| {
-                    results[*i]
-                        .0
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .collect();
-            println!("  Kept: {kept_names:?}");
-            println!();
+            if best_ppl.is_finite() {
+                println!(" val_ppl={best_ppl:.2} ({elapsed}s)");
+            } else {
+                println!(" no eval ({elapsed}s)");
+            }
         }
-
-        survivors = kept;
     }
 
-    // Winner
-    let winner_idx = survivors[0];
-    let winner_ppl = results[winner_idx].1;
-    let winner_lr = results[winner_idx].2;
-    let winner_wd = results[winner_idx].3;
-    let winner_warmup = results[winner_idx].4;
-    let target_lr = winner_lr * (source_width as f64 / target_width as f64);
-    let winner_name = results[winner_idx]
-        .0
+    // Rank by best_ppl (lower is better), inf sorts last
+    round_scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let kept: Vec<usize> = round_scores.iter().take(n_survive).map(|(i, _)| *i).collect();
+    for &(idx, _) in round_scores.iter().skip(n_survive) {
+        results[idx].eliminated_round = Some(round_idx);
+    }
+
+    if !json_output {
+        println!();
+        let kept_names: Vec<String> = kept
+            .iter()
+            .map(|i| {
+                results[*i]
+                    .path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        println!("  Kept: {kept_names:?}");
+        println!();
+    }
+
+    kept
+}
+
+/// Emit halving results: print winner, build JSON, write to output file.
+#[allow(clippy::too_many_arguments)]
+fn emit_halving_results(
+    results: &[HalvingEntry],
+    survivors: &[usize],
+    source_width: usize,
+    target_width: usize,
+    rounds: usize,
+    steps_per_round: usize,
+    output_path: &std::path::Path,
+    json_output: bool,
+) -> Result<()> {
+    let winner = &results[survivors[0]];
+    let target_lr = winner.lr * (source_width as f64 / target_width as f64);
+    let winner_name = winner
+        .path
         .file_name()
         .unwrap_or_default()
         .to_string_lossy()
@@ -1429,49 +1471,30 @@ pub(crate) fn run_halving(
     if !json_output {
         println!("═══ WINNER ═══");
         println!("  Config: {winner_name}");
-        println!("  Proxy LR: {winner_lr:.4e}");
-        println!("  Best val_ppl: {winner_ppl:.2}");
-        println!("  Weight decay: {winner_wd:.4}");
-        println!("  Warmup steps: {winner_warmup}");
+        println!("  Proxy LR: {:.4e}", winner.lr);
+        println!("  Best val_ppl: {:.2}", winner.best_ppl);
+        println!("  Weight decay: {:.4}", winner.weight_decay);
+        println!("  Warmup steps: {}", winner.warmup_steps);
         println!();
         println!("  μTransfer LR ({source_width}→{target_width}):");
-        println!("    lr_target = {winner_lr:.4e} × ({source_width}/{target_width})");
+        println!(
+            "    lr_target = {:.4e} × ({source_width}/{target_width})",
+            winner.lr
+        );
         println!("    lr_target = {target_lr:.4e}");
         println!();
     }
 
-    // Save results JSON
-    let all_results: Vec<serde_json::Value> = results
-        .iter()
-        .map(|(p, ppl, lr, wd, warmup, elim)| {
-            serde_json::json!({
-                "config": p.file_name().unwrap_or_default().to_string_lossy(),
-                "lr": lr,
-                "best_ppl": if ppl.is_finite() { serde_json::json!(ppl) } else { serde_json::json!(null) },
-                "weight_decay": wd,
-                "warmup_steps": warmup,
-                "eliminated_round": elim,
-            })
-        })
-        .collect();
-
-    let output_json = serde_json::json!({
-        "winner": {
-            "config": winner_name,
-            "proxy_lr": winner_lr,
-            "target_lr": target_lr,
-            "best_ppl": if winner_ppl.is_finite() { serde_json::json!(winner_ppl) } else { serde_json::json!(null) },
-            "weight_decay": winner_wd,
-            "warmup_steps": winner_warmup,
-            "source_width": source_width,
-            "target_width": target_width,
-        },
-        "all_results": all_results,
-        "settings": {
-            "rounds": rounds,
-            "steps_per_round": steps_per_round,
-        },
-    });
+    let output_json = build_halving_json(
+        results,
+        &winner_name,
+        winner,
+        target_lr,
+        source_width,
+        target_width,
+        rounds,
+        steps_per_round,
+    );
 
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent).ok();
@@ -1492,6 +1515,52 @@ pub(crate) fn run_halving(
     }
 
     Ok(())
+}
+
+/// Build the JSON output structure for halving results.
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::too_many_arguments, clippy::disallowed_methods)]
+fn build_halving_json(
+    results: &[HalvingEntry],
+    winner_name: &str,
+    winner: &HalvingEntry,
+    target_lr: f64,
+    source_width: usize,
+    target_width: usize,
+    rounds: usize,
+    steps_per_round: usize,
+) -> serde_json::Value {
+    let all_results: Vec<serde_json::Value> = results
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "config": e.path.file_name().unwrap_or_default().to_string_lossy(),
+                "lr": e.lr,
+                "best_ppl": if e.best_ppl.is_finite() { serde_json::json!(e.best_ppl) } else { serde_json::json!(null) },
+                "weight_decay": e.weight_decay,
+                "warmup_steps": e.warmup_steps,
+                "eliminated_round": e.eliminated_round,
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "winner": {
+            "config": winner_name,
+            "proxy_lr": winner.lr,
+            "target_lr": target_lr,
+            "best_ppl": if winner.best_ppl.is_finite() { serde_json::json!(winner.best_ppl) } else { serde_json::json!(null) },
+            "weight_decay": winner.weight_decay,
+            "warmup_steps": winner.warmup_steps,
+            "source_width": source_width,
+            "target_width": target_width,
+        },
+        "all_results": all_results,
+        "settings": {
+            "rounds": rounds,
+            "steps_per_round": steps_per_round,
+        },
+    })
 }
 
 fn format_archive_size(bytes: u64) -> String {
