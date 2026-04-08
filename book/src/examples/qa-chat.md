@@ -1,3 +1,7 @@
+<!-- PCU: examples-qa-chat | contract: contracts/apr-page-examples-qa-chat-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example qa_chat -->
+<!-- Status: enforced -->
+
 # QA: apr chat Falsification Suite
 
 Popperian falsification tests for the `apr chat` command (PMAT-QA-RUST-001).

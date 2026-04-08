@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-lottery-ticket-hypothesis | contract: contracts/apr-page-ml-fundamentals-lottery-ticket-hypothesis-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Lottery Ticket Hypothesis
 
 The Lottery Ticket Hypothesis (LTH) reveals that dense neural networks contain sparse subnetworks ("winning tickets") that can train to full accuracy when reset to their initial weights.

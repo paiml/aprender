@@ -1,3 +1,7 @@
+<!-- PCU: examples-topic-sentiment-analysis | contract: contracts/apr-page-examples-topic-sentiment-analysis-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example topic_sentiment_analysis -->
+<!-- Status: enforced -->
+
 # Case Study: Topic Modeling & Sentiment Analysis
 
 Discover topics in documents and analyze sentiment.

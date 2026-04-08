@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-svm | contract: contracts/apr-page-ml-fundamentals-svm-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Support Vector Machines (SVM)
 
 Support Vector Machines are powerful supervised learning models for classification and regression. SVMs find the optimal hyperplane that maximizes the margin between classes, making them particularly effective for binary classification.

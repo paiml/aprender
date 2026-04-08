@@ -1,3 +1,7 @@
+<!-- PCU: examples-xor-neural-network | contract: contracts/apr-page-examples-xor-neural-network-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example xor_training -->
+<!-- Status: enforced -->
+
 # Case Study: XOR Neural Network
 
 The XOR problem is the "Hello World" of deep learning - a classic benchmark that proves a neural network can learn non-linear patterns through backpropagation.

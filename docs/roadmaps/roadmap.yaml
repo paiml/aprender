@@ -5259,3 +5259,65 @@ roadmap:
   - examples
   - provable-contracts
   notes: null
+- id: PMAT-508
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-012: Write Part I chapters (1-3) as markdown prose'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T10:58:08Z
+  updated: 2026-04-08T10:58:11.421672817+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Create docs/book/ch01.md, ch02.md, ch03.md. Each embeds example code, explains arXiv citations, shows cargo run output. Provable-contract-first: contract defines what prose MUST cover.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - chapters
+  - prose
+  notes: null
+- id: PMAT-509
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-013: Provable-contract-only book schema — eliminate all muda'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T11:01:19Z
+  updated: 2026-04-08T11:01:23.745921193+00:00
+  spec: null
+  acceptance_criteria:
+  - Redesign book so ZERO content exists without a contract. Every page = contract YAML + example + prose. Pages without contracts are deleted. SUMMARY.md only lists contracted pages. Update spec with new schema.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - schema
+  - contracts
+  - muda
+  notes: null
+- id: PMAT-510
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-014: PCU contracts for 229 remaining pages — iterative falsification'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T11:08:15Z
+  updated: 2026-04-08T11:08:18.946654284+00:00
+  spec: null
+  acceptance_criteria:
+  - 'For each page: 1) create contract YAML, 2) add PCU frontmatter, 3) run book-gate.sh, 4) update spec. Start with examples/ (highest value), then ml-fundamentals/, then reference sections.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - pcu
+  - contracts
+  - zero-muda
+  notes: null

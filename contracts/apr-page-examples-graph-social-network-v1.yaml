@@ -1,0 +1,84 @@
+contract: apr-page-examples-graph-social-network
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-graph-social-network"
+  title: "Case Study: Social Network Analysis"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/graph-social-network.md"
+  example: "graph_social_network"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Network Construction"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Analysis 1: Degree Centrality"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Analysis 2: PageRank"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Analysis 3: Betweenness Centrality"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparing All Three Metrics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Notes"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Applications"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles in Action"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Exercises"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

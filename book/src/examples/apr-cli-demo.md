@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-cli-demo | contract: contracts/apr-page-examples-apr-cli-demo-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: APR CLI Tool Demo
 
 This example demonstrates using the `apr` command-line tool to inspect, validate, debug, and compare APR model files.

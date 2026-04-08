@@ -1,0 +1,76 @@
+contract: apr-page-examples-cuda-backend
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-cuda-backend"
+  title: "Case Study: CUDA and GPU Backends"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/cuda-backend.md"
+  example: "cuda_backend"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cargo.toml Configuration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Backend Presets"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Backend Properties"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Custom Configurations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Backend Comparison Matrix"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way: Heijunka (Level Loading)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration with trueno"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example Output"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

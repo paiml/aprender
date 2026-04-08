@@ -2,7 +2,7 @@
 /// Handle POST /v1/completions for GPU inference.
 ///
 /// GH-284: Now async with `spawn_blocking` to avoid blocking the tokio runtime.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
 async fn handle_gpu_completion(
     cuda: Arc<std::sync::Mutex<realizar::apr::AprV2ModelCuda>>,
@@ -106,7 +106,7 @@ async fn handle_gpu_completion(
 }
 
 /// GH-261: Handle GPU failure with CPU fallback inference.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)]
 async fn gpu_cpu_fallback(
     gpu_err: String,
@@ -152,7 +152,7 @@ async fn gpu_cpu_fallback(
 }
 
 /// Build a chat completion response for a successful CPU fallback.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)]
 fn build_cpu_fallback_response(out: &AprInferenceOutput, start: Instant) -> axum::response::Response {
     use axum::{response::IntoResponse, Json};
@@ -183,7 +183,7 @@ fn build_cpu_fallback_response(out: &AprInferenceOutput, start: Instant) -> axum
 }
 
 /// Build an SSE stream from pre-generated GPU tokens.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
 fn build_gpu_sse_stream(
     tokens: Vec<u32>,
@@ -240,7 +240,7 @@ fn build_gpu_sse_stream(
 ///
 /// GH-284: True per-token SSE streaming. GPU generates all tokens in
 /// `spawn_blocking`, then streams them as individual SSE events.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
 async fn handle_gpu_chat_completion(
     cuda: Arc<std::sync::Mutex<realizar::apr::AprV2ModelCuda>>,

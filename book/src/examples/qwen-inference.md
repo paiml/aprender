@@ -1,3 +1,7 @@
+<!-- PCU: examples-qwen-inference | contract: contracts/apr-page-examples-qwen-inference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example qwen_chat -->
+<!-- Status: enforced -->
+
 # Qwen Inference — LLM Inference with realizar
 
 Aprender provides LLM inference through the `realizar` crate, accessible via the `apr` CLI

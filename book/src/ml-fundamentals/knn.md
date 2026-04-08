@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-knn | contract: contracts/apr-page-ml-fundamentals-knn-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # K-Nearest Neighbors (kNN)
 
 K-Nearest Neighbors (kNN) is a simple yet powerful instance-based learning algorithm for classification and regression. Unlike parametric models that learn explicit parameters during training, kNN is a "lazy learner" that simply stores the training data and makes predictions by finding similar examples at inference time. This chapter covers the theory, implementation, and practical considerations for using kNN in aprender.

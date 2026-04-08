@@ -1,3 +1,7 @@
+<!-- PCU: examples-dpo-preference | contract: contracts/apr-page-examples-dpo-preference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example dpo_preference -->
+<!-- Status: enforced -->
+
 # Case Study: Direct Preference Optimization (DPO)
 
 **Ticket**: GH-449 | **Contract**: `finetune.md §dpo`

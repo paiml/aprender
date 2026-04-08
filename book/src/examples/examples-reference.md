@@ -1,3 +1,7 @@
+<!-- PCU: examples-examples-reference | contract: contracts/apr-page-examples-examples-reference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example regularized_regression -->
+<!-- Status: enforced -->
+
 # Examples Reference
 
 This page provides a complete reference for all `cargo run --example` commands available in Aprender.

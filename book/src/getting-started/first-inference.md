@@ -1,3 +1,7 @@
+<!-- PCU: getting-started-first-inference | contract: contracts/apr-page-getting-started-first-inference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # First Inference
 
 Run a language model in 3 commands:

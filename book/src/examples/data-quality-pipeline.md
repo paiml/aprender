@@ -1,3 +1,7 @@
+<!-- PCU: examples-data-quality-pipeline | contract: contracts/apr-page-examples-data-quality-pipeline-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example data_quality_pipeline -->
+<!-- Status: enforced -->
+
 # Data Quality Pipeline
 
 Demonstrates the full data quality pipeline for fine-tuning (GH-453):

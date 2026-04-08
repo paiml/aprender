@@ -1,3 +1,7 @@
+<!-- PCU: examples-conv-layout-dogfood | contract: contracts/apr-page-examples-conv-layout-dogfood-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example conv_layout_dogfood -->
+<!-- Status: enforced -->
+
 # Conv Layout Optimization Dogfood
 
 Dogfood test for GH-159: Conv layout optimization with im2col+GEMM.

@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-hf-hub-publishing | contract: contracts/apr-page-examples-shell-hf-hub-publishing-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Publishing Shell Models to Hugging Face Hub
 
 Share your trained shell completion models with the community via Hugging Face Hub.

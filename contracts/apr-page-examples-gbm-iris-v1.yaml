@@ -1,0 +1,80 @@
+contract: apr-page-examples-gbm-iris
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-gbm-iris"
+  title: "Case Study: Gradient Boosting Iris"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/gbm-iris.md"
+  example: "gbm_iris"
+  arxiv: []
+
+sections:
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Results Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Hyperparameter Effects"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Probabilistic Predictions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Why Gradient Boosting"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Algorithm Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Hyperparameter Guidelines"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison: GBM vs Random Forest"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "When to Use GBM"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "TOP 10 Milestone"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

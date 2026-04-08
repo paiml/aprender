@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-with-metadata | contract: contracts/apr-page-examples-apr-with-metadata-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example apr_with_metadata -->
+<!-- Status: enforced -->
+
 # Case Study: APR with JSON Metadata
 
 This case study demonstrates embedding arbitrary JSON metadata (vocabulary, tokenizer config, model settings) alongside tensor data in a single `.apr` file for WASM-ready deployment.

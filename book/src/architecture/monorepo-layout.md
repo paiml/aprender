@@ -1,3 +1,7 @@
+<!-- PCU: architecture-monorepo-layout | contract: contracts/apr-page-architecture-monorepo-layout-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Monorepo Layout
 
 Aprender is a monorepo with 70 workspace crates in flat `crates/aprender-*` layout,

@@ -1,0 +1,68 @@
+contract: apr-page-methodology-what-is-extreme-tdd
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "methodology-what-is-extreme-tdd"
+  title: "What is EXTREME TDD?"
+  part: "reference"
+  category: "theory"
+  path: "book/src/methodology/what-is-extreme-tdd.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Prerequisites"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Core Definition"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Six Pillars"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "How EXTREME TDD Differs"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Benefits of EXTREME TDD"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Impact"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "When to Use EXTREME TDD"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Next Steps"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

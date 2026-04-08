@@ -1,0 +1,84 @@
+contract: apr-page-examples-descriptive-statistics
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-descriptive-statistics"
+  title: "Case Study: Descriptive Statistics"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/descriptive-statistics.md"
+  example: "descriptive_statistics"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Dataset"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Analysis 1: Quantiles and Percentiles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Analysis 2: Five-Number Summary (Outlier Detection)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Analysis 3: Histogram Binning Methods"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Analysis 4: Summary Statistics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Notes"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Applications"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles in Action"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Exercises"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: examples-graph-algorithms-comprehensive | contract: contracts/apr-page-examples-graph-algorithms-comprehensive-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example graph_algorithms_comprehensive -->
+<!-- Status: enforced -->
+
 # Case Study: Comprehensive Graph Algorithms Demo
 
 This case study demonstrates all 11 graph algorithms from v0.6.0, organized into three phases: Pathfinding, Components & Traversal, and Community & Link Analysis.

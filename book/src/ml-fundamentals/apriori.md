@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-apriori | contract: contracts/apr-page-ml-fundamentals-apriori-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Apriori Algorithm Theory
 
 The Apriori algorithm is a classic data mining technique for discovering frequent itemsets and association rules in transactional databases. It's widely used in market basket analysis, recommendation systems, and pattern discovery.

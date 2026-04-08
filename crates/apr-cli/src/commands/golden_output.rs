@@ -212,11 +212,16 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
     #[cfg(feature = "inference")]
     {
-        use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
         use realizar::gguf::{GGUFModel, MappedGGUFModel};
 
-        let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
+        #[cfg(feature = "cuda")]
+        let cuda_available = {
+            use realizar::cuda::CudaExecutor;
+            CudaExecutor::is_available() && CudaExecutor::num_devices() > 0
+        };
+        #[cfg(not(feature = "cuda"))]
+        let cuda_available = false;
         let model_bytes = std::fs::read(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
         let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
@@ -346,7 +351,7 @@ fn throughput_gguf(
     prompt: &str,
 ) -> Result<(f64, Duration)> {
     use realizar::gguf::{
-        GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+        GGUFModel, MappedGGUFModel, OwnedQuantizedModel,
         QuantizedGenerateConfig,
     };
 
@@ -368,7 +373,9 @@ fn throughput_gguf(
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
     // GH-284: Try CUDA, fall back to CPU on capability mismatch (e.g. missing QkNorm kernel)
+    #[cfg(feature = "cuda")]
     if cuda_available {
+        use realizar::gguf::OwnedQuantizedModelCuda;
         match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
             Ok(mut cuda_model) => {
                 return Ok(measure_generate_throughput(

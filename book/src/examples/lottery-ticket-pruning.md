@@ -1,3 +1,7 @@
+<!-- PCU: examples-lottery-ticket-pruning | contract: contracts/apr-page-examples-lottery-ticket-pruning-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Lottery Ticket Pruning
 
 This case study demonstrates finding winning tickets using the Lottery Ticket Hypothesis implementation in Aprender.

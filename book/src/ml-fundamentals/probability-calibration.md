@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-probability-calibration | contract: contracts/apr-page-ml-fundamentals-probability-calibration-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Probability Calibration Theory
 
 Calibration ensures that predicted probabilities reflect true likelihoods: when a model predicts 70% confidence, it should be correct 70% of the time.

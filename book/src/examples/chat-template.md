@@ -1,3 +1,7 @@
+<!-- PCU: examples-chat-template | contract: contracts/apr-page-examples-chat-template-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example chat_template -->
+<!-- Status: enforced -->
+
 # Case Study: Chat Templates for LLM Inference
 
 This case study demonstrates how to use chat templates to format conversations for large language model (LLM) inference. Chat templates handle the model-specific formatting required by different LLM architectures.

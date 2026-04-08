@@ -1,0 +1,84 @@
+contract: apr-page-examples-batuta-integration
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-batuta-integration"
+  title: "Case Study: Batuta - Automated Migration to Aprender"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/batuta-integration.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The 5-Phase Workflow"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "scikit-learn to Aprender Mapping"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Conversion Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "NumPy to Trueno Mapping"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mixture-of-Experts Backend Routing"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Comparison"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Oracle Mode"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Plugin Architecture"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration with CITL"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Troubleshooting"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

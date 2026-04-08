@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-online-learning | contract: contracts/apr-page-ml-fundamentals-online-learning-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Online Learning Theory
 
 Online learning is a machine learning paradigm where models update incrementally as new data arrives, rather than requiring full retraining on the entire dataset. This is essential for streaming applications, real-time systems, and scenarios where data distribution changes over time.

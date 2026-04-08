@@ -1,0 +1,120 @@
+contract: apr-page-examples-model-format
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-model-format"
+  title: "Case Study: Model Serialization (.apr Format)"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/model-format.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Quick Start"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "WASM Compatibility (Hard Requirement)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Format Structure"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Built-in Quality (Jidoka)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Metadata"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Inspection Without Loading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Types"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Encryption (Feature: `format-encryption`)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Digital Signatures (Feature: `format-signing`)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Compression (Feature: `format-compression`)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "WASM Loading Patterns"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Ecosystem Integration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Private Inference (HIPAA/GDPR)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Error Handling"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Feature Flags"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Single Binary Deployment"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Quantization"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Knowledge Distillation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Complete SLM Pipeline"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mixture of Experts (MoE)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Specification"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

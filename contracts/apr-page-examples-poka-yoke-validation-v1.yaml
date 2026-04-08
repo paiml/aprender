@@ -1,0 +1,76 @@
+contract: apr-page-examples-poka-yoke-validation
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-poka-yoke-validation"
+  title: "Case Study: Poka-Yoke Validation (APR-POKA-001)"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/poka-yoke-validation.md"
+  example: "poka_yoke_validation"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Core Concepts"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementing PokaYoke Trait"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration with SaveOptions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Jidoka: Stop the Line"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "APR Header Format"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "API Reference"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

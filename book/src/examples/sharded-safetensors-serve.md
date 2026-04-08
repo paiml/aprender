@@ -1,3 +1,7 @@
+<!-- PCU: examples-sharded-safetensors-serve | contract: contracts/apr-page-examples-sharded-safetensors-serve-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Sharded SafeTensors Serving (GH-213)
 
 ## The Bug

@@ -1,0 +1,88 @@
+contract: apr-page-ml-fundamentals-bayesian-inference
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-bayesian-inference"
+  title: "Bayesian Inference Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/bayesian-inference.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Core Principle: Bayes' Theorem"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cox's Theorems: Probability as Logic"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Conjugate Priors"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Posterior Statistics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Posterior Predictive Distribution"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Sequential Bayesian Updating"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Choosing Priors"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Conjugate Families (Summary)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Bayesian vs Frequentist"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Practical Guidelines"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Aprender Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

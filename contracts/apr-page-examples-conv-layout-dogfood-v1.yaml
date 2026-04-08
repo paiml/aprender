@@ -1,0 +1,40 @@
+contract: apr-page-examples-conv-layout-dogfood
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-conv-layout-dogfood"
+  title: "Conv Layout Optimization Dogfood"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/conv-layout-dogfood.md"
+  example: "conv_layout_dogfood"
+  arxiv: []
+
+sections:
+  - heading: "Run"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Source"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

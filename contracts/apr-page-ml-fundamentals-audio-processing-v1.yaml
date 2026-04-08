@@ -1,0 +1,80 @@
+contract: apr-page-ml-fundamentals-audio-processing
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-audio-processing"
+  title: "Audio Processing Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/audio-processing.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "The Audio Processing Pipeline"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mel Scale and Human Perception"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mel Filterbank"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mel Spectrogram Computation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Sample Rate Conversion"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Audio Validation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Stereo to Mono Conversion"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Streaming and Chunking"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Platform-Specific Audio Capture"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Configuration Presets"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mathematical Foundations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -267,6 +267,7 @@
     // F-PROFILE-007/008/009: Per-Kernel Profiling Tests
     // ========================================================================
 
+    #[cfg(feature = "cuda")]
     #[test]
     fn test_estimate_kernel_data_bytes_q_proj() {
         let bytes = estimate_kernel_data_bytes("q_proj", 4096, 151936);
@@ -277,6 +278,7 @@
         assert!(b < 20_000_000, "Q_proj should move <20MB: got {b}");
     }
 
+    #[cfg(feature = "cuda")]
     #[test]
     fn test_estimate_kernel_data_bytes_gate_proj() {
         let bytes = estimate_kernel_data_bytes("gate_proj", 4096, 151936);
@@ -286,6 +288,7 @@
         assert!(b > 30_000_000, "gate_proj should move >30MB: got {b}");
     }
 
+    #[cfg(feature = "cuda")]
     #[test]
     fn test_estimate_kernel_data_bytes_lm_head() {
         let bytes = estimate_kernel_data_bytes("lm_head", 4096, 151936);
@@ -295,6 +298,7 @@
         assert!(b > 300_000_000, "lm_head should move >300MB: got {b}");
     }
 
+    #[cfg(feature = "cuda")]
     #[test]
     fn test_estimate_kernel_data_bytes_rmsnorm() {
         let bytes = estimate_kernel_data_bytes("rmsnorm", 4096, 151936);
@@ -305,12 +309,14 @@
         assert!(b < 200_000, "rmsnorm should move <200KB: got {b}");
     }
 
+    #[cfg(feature = "cuda")]
     #[test]
     fn test_estimate_kernel_data_bytes_unknown() {
         let bytes = estimate_kernel_data_bytes("random_op_xyz", 4096, 151936);
         assert!(bytes.is_none(), "Unknown ops should return None");
     }
 
+    #[cfg(feature = "cuda")]
     #[test]
     fn test_compute_kernel_launch_overhead_basic() {
         let hotspots = vec![
@@ -355,6 +361,7 @@
         );
     }
 
+    #[cfg(feature = "cuda")]
     #[test]
     fn test_compute_kernel_launch_overhead_zero_decode() {
         let hotspots = vec![];

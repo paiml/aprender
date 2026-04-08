@@ -303,12 +303,12 @@ pub fn health_check(state: &ServerState) -> HealthResponse {
     };
 
     // Detect GPU availability
-    #[cfg(feature = "inference")]
+    #[cfg(feature = "cuda")]
     let gpu_available = {
         use realizar::cuda::CudaExecutor;
         CudaExecutor::is_available() && CudaExecutor::num_devices() > 0
     };
-    #[cfg(not(feature = "inference"))]
+    #[cfg(not(feature = "cuda"))]
     let gpu_available = false;
 
     HealthResponse {

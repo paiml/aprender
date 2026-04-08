@@ -1,3 +1,7 @@
+<!-- PCU: examples-content-recommender | contract: contracts/apr-page-examples-content-recommender-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example recommend_content -->
+<!-- Status: enforced -->
+
 # Case Study: Content-Based Recommendation System
 
 This chapter documents the complete EXTREME TDD implementation of aprender's content-based recommendation system. This is a real-world example showing every phase of the RED-GREEN-REFACTOR cycle from Issue #71.

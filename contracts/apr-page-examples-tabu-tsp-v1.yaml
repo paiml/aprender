@@ -1,0 +1,72 @@
+contract: apr-page-examples-tabu-tsp
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-tabu-tsp"
+  title: "Tabu Search for TSP"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/tabu-tsp.md"
+  example: "tabu_tsp"
+  arxiv: []
+
+sections:
+  - heading: "Problem Description"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tabu Search Algorithm"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Code Walkthrough"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Sample Output"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Swap Move Neighborhood"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison: Tabu Search vs ACO"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "When to Use Tabu Search"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Advanced Features"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

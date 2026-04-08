@@ -1,3 +1,7 @@
+<!-- PCU: methodology-red-green-refactor | contract: contracts/apr-page-methodology-red-green-refactor-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # The RED-GREEN-REFACTOR Cycle
 
 The **RED-GREEN-REFACTOR** cycle is the heartbeat of EXTREME TDD. Every feature, every function, every line of production code follows this exact three-phase cycle.

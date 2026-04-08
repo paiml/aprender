@@ -1,0 +1,84 @@
+contract: apr-page-examples-model-serialization
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-model-serialization"
+  title: "Case Study: Model Serialization with SafeTensors"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/model-serialization.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Prerequisites"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Challenge"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "SafeTensors Format Specification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Phase 1: RED - Write Failing Tests"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Phase 2: GREEN - Minimal Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Phase 3: REFACTOR - Quality Improvements"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Testing Strategy"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Design Decisions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Production Deployment"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Lessons Learned"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Metrics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Next Steps"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

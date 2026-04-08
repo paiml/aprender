@@ -1,0 +1,76 @@
+contract: apr-page-examples-code-analysis
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-code-analysis"
+  title: "Code Analysis with Code2Vec and MPNN"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/code-analysis.md"
+  example: "code_analysis"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Use Cases"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Quick Start"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "AST Representation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Code2Vec Path Extraction"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Code Embeddings"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Code Graph Neural Networks"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Complete Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

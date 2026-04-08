@@ -1,0 +1,76 @@
+contract: apr-page-advanced-testing-mutation-testing
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "advanced-testing-mutation-testing"
+  title: "Mutation Testing"
+  part: "reference"
+  category: "theory"
+  path: "book/src/advanced-testing/mutation-testing.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "The Problem with Coverage Metrics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "How Mutation Testing Works"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Using cargo-mutants in Aprender"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Interpreting Results"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Improving Your Mutation Score"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mutation Score Targets"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "CI Integration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real Example: Fixing a Surviving Mutant"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Relationship to Other Testing"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

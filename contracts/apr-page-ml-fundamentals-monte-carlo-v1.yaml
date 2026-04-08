@@ -1,0 +1,72 @@
+contract: apr-page-ml-fundamentals-monte-carlo
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-monte-carlo"
+  title: "Monte Carlo Simulation Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/monte-carlo.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Core Concept"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Standard Error and Convergence"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Financial Models"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Risk Metrics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Risk-Adjusted Return Ratios"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Variance Reduction Techniques"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Convergence Diagnostics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Reproducibility"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Applications"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

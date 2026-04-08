@@ -1,146 +1,226 @@
 # APR-BOOK: Provable Machine Learning with Aprender
 
-**Version**: 2.0
+**Version**: 3.0
 **Date**: 2026-04-08
-**Status**: IMPLEMENTED — 20 examples compile+run, 20 contracts enforced, 6 integration tests pass
+**Status**: ZERO-MUDA — every page contract-enforced, no stub content
 **Binary**: `apr` (installed via `cargo install aprender`)
 **Library**: `aprender` (70 workspace crates, `aprender-*` namespace)
-**Contracts**: `contracts/apr-book-v1.yaml` (per-chapter falsification)
-**Oracle**: `apr oracle --family <FAMILY> --explain` (consulted per chapter)
+**Schema**: Contract-first — no page exists without `contracts/apr-page-{id}-v1.yaml`
+**Oracle**: `apr oracle --family <FAMILY> --explain` (consulted per page)
 **Rule**: ZERO old names — only `apr` CLI and `aprender-*` crate namespace
 
 ---
 
-## Governing Contract
+## Zero-Muda Book Architecture
 
-Every chapter in this book is a **provable contract**. Each chapter:
+**Muda** (無駄) = waste. Any book page without a provable contract is muda.
 
-1. Has a YAML contract in `contracts/apr-book-ch{NN}-v1.yaml`
-2. Has a runnable example: `cargo run -p aprender-core --example ch{NN}_{topic}`
-3. Cites at least one arXiv paper per section
-4. Is falsified by `apr contracts check contracts/apr-book-ch{NN}-v1.yaml`
-5. Consults `apr oracle` for architecture-specific claims
-6. Uses ONLY `apr` (CLI) and `aprender-*` (library) names — no legacy names
+### The Iron Rule
 
-### Provable-Contract-FIRST Protocol
+> **No contract → no page. No example → no page. No falsification → no page.**
 
-**CONTRACT BEFORE CODE. No exceptions.**
+Every `.md` file in `book/src/` MUST have:
 
-The workflow for every chapter is:
+1. A **contract YAML** in `contracts/apr-page-{id}-v1.yaml`
+2. A **runnable example** via `cargo run -p aprender-core --example {id}` OR an `#include` of an existing example
+3. A **frontmatter block** linking contract, example, and citations
+4. **Falsification conditions** that can reject the page automatically
 
-1. **Write the contract YAML** — define what APIs the example MUST call,
-   what assertions MUST pass, what the falsification conditions are.
-2. **Write the example** — implement against the contract.
-3. **Falsify** — run the 4-step gate below. If it fails, fix the example, not the contract.
+Pages that violate any of these are **deleted**, not fixed. The SUMMARY.md is
+regenerated from the contract registry — if a contract doesn't exist, the page
+doesn't appear.
 
-This prevents "hollow" examples that `println!()` theory but never call `use aprender::*`.
+### Page Schema
 
-```bash
-# Step 1: Compile the chapter example
-cargo run -p aprender-core --example ch{NN}_{topic}
+Every book page is a **Page Contract Unit (PCU)**. A PCU is the atomic unit
+of the book. It cannot be partially complete — it either passes all gates
+or it does not exist.
 
-# Step 2: Validate the chapter contract
-apr contracts check contracts/apr-book-ch{NN}-v1.yaml
-
-# Step 3: Consult oracle for any architecture claims
-apr oracle --family {family} --explain --stats
-
-# Step 4: Full book gate
-cargo test --test book_contracts -- --nocapture
+```
+PCU = Contract YAML + Example .rs + Prose .md
 ```
 
-**Falsification condition**: If ANY step fails, the chapter is REJECTED.
+If any component is missing, the PCU is invalid and the page is removed
+from SUMMARY.md.
 
-### Hollow Example Rule
-
-An example is **hollow** if it has zero `aprender::*` API calls (only `println!`/`assert!`
-on hardcoded values). Hollow examples are acceptable ONLY for chapters where the APIs
-live outside `aprender-core` (e.g., `aprender-serve` for inference, CLI-only commands).
-
-For chapters with matching `aprender-core` APIs, the contract MUST include:
+#### Contract YAML (required)
 
 ```yaml
-api_calls:
+# contracts/apr-page-{id}-v1.yaml
+contract: apr-page-{id}
+version: 1
+status: enforced  # or "draft" (excluded from book build)
+
+page:
+  id: "{id}"                          # unique, kebab-case
+  title: "{Page Title}"
+  part: "{I|II|III|IV|V|reference}"
+  category: "{chapter|case-study|theory|tool|guide}"
+  path: "book/src/{section}/{file}.md"
+  example: "{example_name}"           # in crates/aprender-core/examples/
+  arxiv: ["{YYMM.NNNNN}", ...]       # empty [] allowed for tool/guide pages
+
+api_calls:                            # REQUIRED for category=chapter|case-study
   - module: "aprender::{module}"
     functions: ["{fn1}", "{fn2}"]
     min_calls: {N}
-```
 
-And the falsification list MUST include:
-
-```yaml
-  - condition: "Example contains zero aprender::* API calls (hollow)"
-    severity: P0
-    action: rewrite_with_real_apis
-```
-
-### Contract Schema (per chapter)
-
-```yaml
-# contracts/apr-book-ch{NN}-v1.yaml
-contract: apr-book-ch{NN}
-version: 1
-status: enforced
-
-chapter:
-  number: {NN}
-  title: "{Chapter Title}"
-  example: "ch{NN}_{topic}"
-  arxiv_citations: ["{YYMM.NNNNN}", ...]
+sections:                             # every H2/H3 heading must be listed
+  - heading: "{Section Title}"
+    has_code: true|false
+    has_assertion: true|false
+    citation: "{arXiv ID or null}"
 
 falsification:
-  - condition: "cargo run -p aprender-core --example ch{NN}_{topic} fails"
+  - condition: "Page .md file does not exist at declared path"
     severity: P0
-    action: reject_chapter
-  - condition: "arXiv citation missing for any section"
+    action: delete_from_summary
+  - condition: "Example does not compile: cargo build -p aprender-core --example {id}"
     severity: P0
-    action: reject_chapter
-  - condition: "Legacy name (trueno|realizar|entrenar|batuta|presentar|renacer) appears in text"
+    action: delete_from_summary
+  - condition: "Example exits non-zero: cargo run -p aprender-core --example {id}"
     severity: P0
-    action: reject_chapter
-  - condition: "Code block without cargo run --example equivalent"
-    severity: P1
-    action: flag_for_rewrite
+    action: delete_from_summary
+  - condition: "Page has zero aprender::* API calls and category requires them"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section listed in contract but missing from .md"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text (trueno|realizar|entrenar|batuta|presentar|renacer)"
+    severity: P0
+    action: delete_from_summary
 ```
 
-### Oracle Consultation Protocol
+#### Page Markdown (required)
 
-Every chapter that references a model architecture MUST include oracle output:
+Every `.md` file MUST begin with a **frontmatter fence** that links to its contract:
+
+```markdown
+<!-- PCU: apr-page-{id} | contract: contracts/apr-page-{id}-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example {id} -->
+<!-- Status: enforced -->
+
+# {Page Title}
+
+## {Section 1 — must match contract.sections[0].heading}
+
+{prose — every paragraph must support a contract assertion}
+
+## {Section 2 — must match contract.sections[1].heading}
+
+...
+```
+
+**Rules for prose:**
+- Every paragraph MUST relate to a section declared in the contract
+- Every code block MUST be `cargo run --example` reproducible
+- Every mathematical claim MUST cite an arXiv paper or be derivable from code
+- Every architecture claim MUST be verified by `apr oracle --family`
+- No "TODO", "TBD", "WIP", "coming soon", or placeholder text
+- No empty sections — if a section has no content, remove it from the contract
+
+#### Example .rs (required)
+
+```
+crates/aprender-core/examples/{id}.rs
+```
+
+Must:
+- Compile: `cargo build -p aprender-core --example {id}`
+- Run with exit 0: `cargo run -p aprender-core --example {id}`
+- Contain `use aprender::*` imports (unless category=guide|tool)
+- End with `println!("{title} contracts: PASSED");`
+- Have `#![allow(clippy::disallowed_methods)]` at line 1
+
+### SUMMARY.md Generation
+
+SUMMARY.md is **generated**, not hand-edited. The source of truth is the
+contract registry:
 
 ```bash
-# Before writing: query the oracle
+# Generate SUMMARY.md from enforced contracts only
+for contract in contracts/apr-page-*-v1.yaml; do
+  STATUS=$(grep "status:" "$contract" | head -1 | awk '{print $2}')
+  [ "$STATUS" != "enforced" ] && continue
+  PATH=$(grep "path:" "$contract" | head -1 | awk '{print $2}' | tr -d '"')
+  TITLE=$(grep "title:" "$contract" | head -1 | sed 's/.*title: *"//' | tr -d '"')
+  [ -f "$PATH" ] || continue
+  echo "- [${TITLE}](${PATH#book/src/})"
+done
+```
+
+Pages with `status: draft` are **excluded** from the build. This eliminates
+stub pages — a page is either fully contracted and enforced, or it doesn't exist.
+
+### Muda Elimination Gate
+
+```bash
+# CI gate: every .md in book/src/ must have a matching contract
+for md in $(find book/src -name "*.md" -not -name "SUMMARY.md"); do
+  ID=$(head -1 "$md" | grep -oP 'PCU: \K[^ |]+' || echo "")
+  if [ -z "$ID" ]; then
+    echo "MUDA: $md has no PCU frontmatter — DELETE"
+    FAIL=1
+  elif [ ! -f "contracts/apr-page-${ID}-v1.yaml" ]; then
+    echo "MUDA: $md references $ID but contract missing — DELETE"
+    FAIL=1
+  fi
+done
+[ -z "$FAIL" ] || exit 1
+```
+
+### Workflow: Adding a New Page
+
+```
+1. Write contract:  contracts/apr-page-{id}-v1.yaml  (sections, api_calls, falsification)
+2. Write example:   crates/aprender-core/examples/{id}.rs
+3. Compile example: cargo build -p aprender-core --example {id}
+4. Run example:     cargo run -p aprender-core --example {id}
+5. Write prose:     book/src/{section}/{file}.md  (frontmatter, sections match contract)
+6. Falsify:         scripts/book-gate.sh {id}
+7. Regenerate:      scripts/gen-summary.sh > book/src/SUMMARY.md
+```
+
+If step 6 fails, go back to step 2. Never ship a page that fails its gate.
+
+### Workflow: Removing a Page
+
+```
+1. Delete contract: rm contracts/apr-page-{id}-v1.yaml
+2. Regenerate:      scripts/gen-summary.sh > book/src/SUMMARY.md
+   (page automatically disappears from book)
+3. Optionally delete .md and example (or leave as dead code for later)
+```
+
+### Category Definitions
+
+| Category | api_calls required? | Example required? | arXiv required? |
+|----------|--------------------|--------------------|-----------------|
+| `chapter` | YES | YES — real API exercise | YES — at least 1 per section |
+| `case-study` | YES | YES — full working example | NO |
+| `theory` | NO | NO (but recommended) | YES — primary source |
+| `tool` | NO | YES — CLI demo | NO |
+| `guide` | NO | Optional | NO |
+
+### Oracle Protocol
+
+Pages with `category: chapter` that reference model architectures MUST:
+
+```bash
 apr oracle --family {family} --explain --stats
-
-# Embed oracle constraints directly into chapter text
-# Example: "GQA reduces KV cache by 80% (apr oracle --family qwen2, Ainslie et al., 2023)"
 ```
 
-The oracle's `--explain` output provides literature references (Ainslie, Shazeer, etc.)
-that MUST appear in the chapter's citation table with their arXiv IDs.
+And embed oracle output as assertions in the contract:
 
-### Namespace Discipline
-
-| Allowed | Example | Forbidden |
-|---------|---------|-----------|
-| `apr run` | `apr run model.gguf --prompt "hello"` | ~~`realizar run`~~ |
-| `apr train` | `apr train --config train.yaml` | ~~`entrenar train`~~ |
-| `apr serve` | `apr serve model.gguf --port 8080` | ~~`realizar serve`~~ |
-| `apr oracle` | `apr oracle --family llama --explain` | ~~`batuta oracle`~~ |
-| `apr orchestrate` | `apr orchestrate pipeline.yaml` | ~~`batuta run`~~ |
-| `apr profile` | `apr profile model.gguf` | ~~`renacer profile`~~ |
-| `apr present` | `apr present dashboard.yaml` | ~~`presentar show`~~ |
-| `apr contracts` | `apr contracts check *.yaml` | ~~`pv check`~~ |
-| `use aprender::*` | `use aprender::linear::LinearRegression;` | ~~`use trueno::*`~~ |
-| `aprender-compute` | `aprender-compute = "0.29"` | ~~`trueno = "0.18"`~~ |
-| `aprender-serve` | `aprender-serve = "0.29"` | ~~`realizar = "0.8"`~~ |
-| `aprender-train` | `aprender-train = "0.29"` | ~~`entrenar = "0.7"`~~ |
-
-**Grep gate** (CI enforcement):
-
-```bash
-# Must return 0 matches in book chapter files
-grep -cE '\b(trueno|realizar|entrenar|batuta|presentar|renacer|certeza)\b' \
-  docs/book/ch*.md | grep -v ':0$' && exit 1
+```yaml
+oracle_verified:
+  - family: qwen2
+    claim: "GQA ratio 0.14 reduces KV cache by 86%"
+    verified_by: "apr oracle --family qwen2 --size 0.5b --stats"
 ```
 
 ---

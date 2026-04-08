@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-classification-metrics | contract: contracts/apr-page-ml-fundamentals-classification-metrics-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Classification Metrics Theory
 
 <!-- DOC_STATUS_START -->

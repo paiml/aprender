@@ -1,3 +1,7 @@
+<!-- PCU: examples-distillation-advanced | contract: contracts/apr-page-examples-distillation-advanced-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example distillation_advanced -->
+<!-- Status: enforced -->
+
 # Case Study: Advanced Distillation Strategies
 
 **Ticket**: GH-451 | **Contract**: `distill.md §hidden-state, §quant-aware, §online`

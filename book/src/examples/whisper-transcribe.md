@@ -1,3 +1,7 @@
+<!-- PCU: examples-whisper-transcribe | contract: contracts/apr-page-examples-whisper-transcribe-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example whisper_transcribe -->
+<!-- Status: enforced -->
+
 # Whisper Transcribe - Audio Transcription Example
 
 This example demonstrates audio transcription using OpenAI Whisper models.

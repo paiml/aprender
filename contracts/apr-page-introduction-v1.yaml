@@ -1,0 +1,80 @@
+contract: apr-page-introduction
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "introduction"
+  title: "Introduction"
+  part: "reference"
+  category: "guide"
+  path: "book/src/introduction.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Quick Start"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "What is Aprender?"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "This Book"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "What You'll Learn"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Why EXTREME TDD?"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Philosophy"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Results"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "How This Book is Organized"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Who This Book is For"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Anti-Hallucination Guarantee"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Getting Started"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Contributing to This Book"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

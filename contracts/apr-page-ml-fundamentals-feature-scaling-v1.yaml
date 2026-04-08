@@ -1,0 +1,92 @@
+contract: apr-page-ml-fundamentals-feature-scaling
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-feature-scaling"
+  title: "Feature Scaling Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/feature-scaling.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Why Feature Scaling Matters"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Scaling Methods"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "StandardScaler: Z-Score Normalization"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "MinMaxScaler: Range Normalization"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Outlier Handling Comparison"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "When to Scale Features"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Critical Workflow Rules"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Feature-Specific Scaling Strategies"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Impact on Model Performance"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Decision Guide"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Common Mistakes"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "aprender Example: Complete Pipeline"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Chapters"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

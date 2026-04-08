@@ -1,0 +1,96 @@
+contract: apr-page-ml-fundamentals-automl
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-automl"
+  title: "AutoML: Automated Machine Learning"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/automl.md"
+  example: "automl_clustering"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Features"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Quick Start"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Type-Safe Parameter Enums"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Search Space Definition"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Search Strategies"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "AutoTuner with Callbacks"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "TuneResult Structure"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Trial Accessors"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Example: aprender-shell"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Synthetic Data Augmentation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Algorithm Comparison"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Topics"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

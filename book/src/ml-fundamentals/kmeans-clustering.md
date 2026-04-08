@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-kmeans-clustering | contract: contracts/apr-page-ml-fundamentals-kmeans-clustering-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # K-Means Clustering Theory
 
 <!-- DOC_STATUS_START -->

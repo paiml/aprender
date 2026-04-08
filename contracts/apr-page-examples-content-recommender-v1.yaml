@@ -1,0 +1,68 @@
+contract: apr-page-examples-content-recommender
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-content-recommender"
+  title: "Case Study: Content-Based Recommendation System"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/content-recommender.md"
+  example: "recommend_content"
+  arxiv: []
+
+sections:
+  - heading: "Background"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "CYCLE 1: HNSW Index"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "CYCLE 2: Incremental IDF Tracker"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "CYCLE 3: Content-Based Recommender"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "CYCLE 4: Performance Validation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Final Results"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Learnings"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Anti-Hallucination Verification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

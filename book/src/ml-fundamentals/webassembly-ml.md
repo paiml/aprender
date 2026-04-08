@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-webassembly-ml | contract: contracts/apr-page-ml-fundamentals-webassembly-ml-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # WebAssembly for Machine Learning
 
 WebAssembly (WASM) enables running ML models in browsers and edge devices with near-native performance.

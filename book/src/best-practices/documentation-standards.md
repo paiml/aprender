@@ -1,3 +1,7 @@
+<!-- PCU: best-practices-documentation-standards | contract: contracts/apr-page-best-practices-documentation-standards-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Documentation Standards
 
 Good documentation is essential for maintainable, discoverable, and usable code. Aprender follows Rust's documentation conventions with additional ML-specific guidance.

@@ -1,3 +1,7 @@
+<!-- PCU: examples-tensorlogic-reasoning | contract: contracts/apr-page-examples-tensorlogic-reasoning-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example logic_family_tree -->
+<!-- Status: enforced -->
+
 # Case Study: TensorLogic Neuro-Symbolic Reasoning
 
 This case study demonstrates TensorLogic, a neuro-symbolic reasoning system that combines neural network learning with logical inference using tensor operations.

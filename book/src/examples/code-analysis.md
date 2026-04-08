@@ -1,3 +1,7 @@
+<!-- PCU: examples-code-analysis | contract: contracts/apr-page-examples-code-analysis-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example code_analysis -->
+<!-- Status: enforced -->
+
 # Code Analysis with Code2Vec and MPNN
 
 This chapter demonstrates aprender's code analysis capabilities using Code2Vec embeddings and Message Passing Neural Networks (MPNN).

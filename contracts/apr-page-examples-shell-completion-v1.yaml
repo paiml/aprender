@@ -1,0 +1,116 @@
+contract: apr-page-examples-shell-completion
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-shell-completion"
+  title: "Case Study: AI Shell Completion"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/shell-completion.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Quick Start"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "How It Works"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Training"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Suggestions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Incremental Updates"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "ZSH Integration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Auto-Retrain"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Statistics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Memory Paging for Large Histories"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Sharing Models"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Privacy & Security"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Architecture"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance: Sub-10ms Verification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Why N-gram Beats Neural"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "CLI Reference"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Fish Shell Integration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Cards & Inspection"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Publishing to Hugging Face Hub"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Validation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Uninstalling"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Troubleshooting"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

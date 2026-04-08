@@ -1,0 +1,80 @@
+contract: apr-page-examples-sovereign-stack
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-sovereign-stack"
+  title: "Case Study: Sovereign AI Stack Integration"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/sovereign-stack.md"
+  example: "sovereign_stack"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Stack Components"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Design Principles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-Time Audit & Explainability"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Stack Components in Code"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Lifecycle (Pacha Registry)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Derivation (Lineage)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Inference Configuration (Realizar)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Health Monitoring"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Format Compatibility"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Source Code"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

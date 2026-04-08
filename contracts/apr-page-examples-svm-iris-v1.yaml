@@ -1,0 +1,84 @@
+contract: apr-page-examples-svm-iris
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-svm-iris"
+  title: "Case Study: Linear SVM Iris"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/svm-iris.md"
+  example: "svm_iris"
+  arxiv: []
+
+sections:
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Results Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Decision Function Values"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Regularization Effect (C Parameter)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Per-Class Performance"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Why SVM Excels Here"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Insights"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Algorithm Details"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Analysis"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison: SVM vs Naive Bayes vs kNN"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Exploration"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

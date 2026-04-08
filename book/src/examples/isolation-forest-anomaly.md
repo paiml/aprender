@@ -1,3 +1,7 @@
+<!-- PCU: examples-isolation-forest-anomaly | contract: contracts/apr-page-examples-isolation-forest-anomaly-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Isolation Forest Implementation
 
 This chapter documents the complete EXTREME TDD implementation of aprender's Isolation Forest algorithm for anomaly detection from Issue #17.

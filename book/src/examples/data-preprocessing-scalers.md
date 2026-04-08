@@ -1,3 +1,7 @@
+<!-- PCU: examples-data-preprocessing-scalers | contract: contracts/apr-page-examples-data-preprocessing-scalers-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example data_preprocessing_scalers -->
+<!-- Status: enforced -->
+
 # Data Preprocessing with Scalers
 
 This example demonstrates feature scaling with `StandardScaler` and `MinMaxScaler`, two fundamental data preprocessing techniques used before training machine learning models.

@@ -1,3 +1,7 @@
+<!-- PCU: examples-moe-construction | contract: contracts/apr-page-examples-moe-construction-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example moe_construction -->
+<!-- Status: enforced -->
+
 # Case Study: Mixture of Experts Construction
 
 **Ticket**: GH-445

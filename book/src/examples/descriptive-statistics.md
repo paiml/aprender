@@ -1,3 +1,7 @@
+<!-- PCU: examples-descriptive-statistics | contract: contracts/apr-page-examples-descriptive-statistics-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example descriptive_statistics -->
+<!-- Status: enforced -->
+
 # Case Study: Descriptive Statistics
 
 This case study demonstrates statistical analysis on test scores from a class of 30 students, using quantiles, five-number summaries, and histogram generation.

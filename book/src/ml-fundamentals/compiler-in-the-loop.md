@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-compiler-in-the-loop | contract: contracts/apr-page-ml-fundamentals-compiler-in-the-loop-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Compiler-in-the-Loop Learning
 
 A comprehensive guide to self-supervised learning paradigms that use compiler feedback as an automatic labeling oracle.

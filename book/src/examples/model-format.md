@@ -1,3 +1,7 @@
+<!-- PCU: examples-model-format | contract: contracts/apr-page-examples-model-format-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Model Serialization (.apr Format)
 
 Save and load ML models with built-in quality: checksums, signatures, encryption, WASM compatibility.

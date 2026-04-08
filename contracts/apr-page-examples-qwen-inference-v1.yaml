@@ -1,0 +1,56 @@
+contract: apr-page-examples-qwen-inference
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-qwen-inference"
+  title: "Qwen Inference — LLM Inference with realizar"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/qwen-inference.md"
+  example: "qwen_chat"
+  arxiv: []
+
+sections:
+  - heading: "Quick Start (CLI)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Supported Model Formats"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Qwen3.5 (Hybrid Attention)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Fine-Tuning"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

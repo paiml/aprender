@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-metaheuristics | contract: contracts/apr-page-ml-fundamentals-metaheuristics-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Metaheuristics Theory
 
 Metaheuristics are high-level problem-solving strategies for optimization problems where exact algorithms are impractical. Unlike gradient-based methods, they don't require derivatives and can escape local optima.

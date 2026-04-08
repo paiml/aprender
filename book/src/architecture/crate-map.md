@@ -1,3 +1,7 @@
+<!-- PCU: architecture-crate-map | contract: contracts/apr-page-architecture-crate-map-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Crate Map
 
 ## Dependency Graph

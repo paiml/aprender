@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-graph-algorithms | contract: contracts/apr-page-ml-fundamentals-graph-algorithms-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Graph Algorithms Theory
 
 Graph algorithms are fundamental tools for analyzing relationships and structures in networked data. This chapter covers the theory behind aprender's graph module, focusing on efficient representations and centrality measures.

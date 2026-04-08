@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-neural-network-pruning | contract: contracts/apr-page-ml-fundamentals-neural-network-pruning-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Neural Network Pruning Theory
 
 Neural network pruning is a model compression technique that removes redundant parameters to reduce model size and computational cost while maintaining accuracy.

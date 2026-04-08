@@ -1,0 +1,64 @@
+contract: apr-page-ml-fundamentals-active-learning
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-active-learning"
+  title: "Active Learning Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/active-learning.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "The Active Learning Loop"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Why Active Learning?"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Query Strategies"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Batch Active Learning"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cold Start Problem"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Stopping Criteria"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Pool-Based vs Stream-Based"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: best-practices-api-design | contract: contracts/apr-page-best-practices-api-design-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # API Design
 
 Aprender's API is designed for consistency, discoverability, and ease of use. It follows sklearn conventions while leveraging Rust's type safety and zero-cost abstractions.

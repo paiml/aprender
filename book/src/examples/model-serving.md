@@ -1,3 +1,7 @@
+<!-- PCU: examples-model-serving | contract: contracts/apr-page-examples-model-serving-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Model Serving
 
 This case study demonstrates serving ML models with APR's built-in HTTP server. The server supports multiple model formats with automatic format detection, Prometheus metrics, and graceful shutdown.

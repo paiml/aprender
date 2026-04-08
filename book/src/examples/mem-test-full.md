@@ -1,3 +1,7 @@
+<!-- PCU: examples-mem-test-full | contract: contracts/apr-page-examples-mem-test-full-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Memory Test Full - Comprehensive Memory Validation
 
 This example runs comprehensive memory validation tests including stress testing and leak detection.

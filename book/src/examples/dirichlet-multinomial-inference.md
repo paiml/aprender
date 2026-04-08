@@ -1,3 +1,7 @@
+<!-- PCU: examples-dirichlet-multinomial-inference | contract: contracts/apr-page-examples-dirichlet-multinomial-inference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example dirichlet_multinomial_inference -->
+<!-- Status: enforced -->
+
 # Case Study: Dirichlet-Multinomial Bayesian Inference
 
 This case study demonstrates Bayesian inference for categorical data using the Dirichlet-Multinomial conjugate family. We cover four practical scenarios: product preference analysis, survey response comparison, sequential learning, and prior comparison.

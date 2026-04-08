@@ -1,3 +1,7 @@
+<!-- PCU: examples-automl-clustering | contract: contracts/apr-page-examples-automl-clustering-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example automl_clustering -->
+<!-- Status: enforced -->
+
 # Case Study: AutoML Clustering (TPE)
 
 This example demonstrates using TPE (Tree-structured Parzen Estimator) to automatically find the optimal number of clusters for K-Means.

@@ -1,3 +1,7 @@
+<!-- PCU: best-practices-type-safety | contract: contracts/apr-page-best-practices-type-safety-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Type Safety
 
 Rust's type system provides **compile-time guarantees** that eliminate entire classes of runtime errors common in Python ML libraries. This chapter explores how aprender leverages Rust's type safety for robust, efficient machine learning.

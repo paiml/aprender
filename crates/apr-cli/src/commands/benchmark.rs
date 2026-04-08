@@ -99,7 +99,6 @@ fn print_results(result: &BenchResult) {
 /// Automatically uses CUDA GPU acceleration when available for GGUF.
 #[cfg(feature = "inference")]
 fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
-    use realizar::cuda::CudaExecutor;
     use realizar::format::{detect_format, ModelFormat};
 
     // Read first 8 bytes for format detection
@@ -115,8 +114,13 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     }
 
     // Check CUDA availability (only used for GGUF currently)
-    let cuda_available = CudaExecutor::is_available();
-    let cuda_devices = CudaExecutor::num_devices();
+    #[cfg(feature = "cuda")]
+    let (cuda_available, cuda_devices) = {
+        use realizar::cuda::CudaExecutor;
+        (CudaExecutor::is_available(), CudaExecutor::num_devices())
+    };
+    #[cfg(not(feature = "cuda"))]
+    let (cuda_available, cuda_devices) = (false, 0usize);
 
     if !config.quiet {
         if cuda_available && cuda_devices > 0 {
@@ -179,6 +183,7 @@ fn run_gguf_benchmark(
         ..Default::default()
     };
 
+    #[cfg(feature = "cuda")]
     if use_cuda {
         match run_cuda_benchmark(
             &gguf,
@@ -190,7 +195,7 @@ fn run_gguf_benchmark(
             path,
             tracer,
         ) {
-            Ok(result) => Ok(result),
+            Ok(result) => return Ok(result),
             Err(e) => {
                 // GH-284: Fall back to CPU on CUDA capability mismatch (e.g. missing QkNorm kernel)
                 if !config.quiet {
@@ -200,12 +205,11 @@ fn run_gguf_benchmark(
                     );
                 }
                 let cpu_start = Instant::now();
-                run_cpu_benchmark(&prompt_tokens, &gen_config, config, cpu_start, path, tracer)
+                return run_cpu_benchmark(&prompt_tokens, &gen_config, config, cpu_start, path, tracer);
             }
         }
-    } else {
-        run_cpu_benchmark(&prompt_tokens, &gen_config, config, start, path, tracer)
     }
+    run_cpu_benchmark(&prompt_tokens, &gen_config, config, start, path, tracer)
 }
 
 /// Resolve prompt tokens from APR model's tokenizer, with fallbacks.
@@ -255,7 +259,7 @@ fn handle_zero_generation_fallback(
 }
 
 /// Try CUDA benchmark, returning None if GPU produced 0 tokens (extracted to reduce complexity).
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn try_cuda_benchmark(
     path: &Path,
     config: &BenchConfig,
@@ -285,6 +289,7 @@ fn run_apr_benchmark(
 ) -> Result<BenchResult> {
     use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
+    #[cfg(feature = "cuda")]
     if use_cuda {
         if let Some(result) = try_cuda_benchmark(path, config, tracer)? {
             return Ok(result);
@@ -401,7 +406,7 @@ fn run_apr_measurement(
 /// F-KERNEL-DISPATCH-001: Uses OwnedQuantizedModelCuda (fused Q4K/Q6K GEMV,
 /// 190+ tok/s) instead of AprV2ModelCuda (generic transformer, 0.5 tok/s).
 /// Loading path: MappedAprModel → OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_apr_cuda_benchmark(
     path: &Path,
     config: &BenchConfig,

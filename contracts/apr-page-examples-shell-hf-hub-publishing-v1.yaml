@@ -1,0 +1,92 @@
+contract: apr-page-examples-shell-hf-hub-publishing
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-shell-hf-hub-publishing"
+  title: "Case Study: Publishing Shell Models to Hugging Face Hub"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/shell-hf-hub-publishing.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Official Base Model"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Quick Start"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Getting a Hugging Face Token"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Publish Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Generated Model Card"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Details"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Usage"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Without Token (Offline Mode)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Inspection"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Use Cases"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Architecture"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Troubleshooting"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

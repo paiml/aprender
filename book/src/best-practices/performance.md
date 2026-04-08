@@ -1,3 +1,7 @@
+<!-- PCU: best-practices-performance | contract: contracts/apr-page-best-practices-performance-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Performance
 
 Performance optimization in machine learning is about **systematic measurement** and **strategic improvements**—not premature optimization. This chapter covers profiling, benchmarking, and performance patterns used in aprender.

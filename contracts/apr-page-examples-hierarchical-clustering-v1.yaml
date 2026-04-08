@@ -1,0 +1,60 @@
+contract: apr-page-examples-hierarchical-clustering
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-hierarchical-clustering"
+  title: "Case Study: Hierarchical Clustering Implementation"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/hierarchical-clustering.md"
+  example: "hierarchical_clustering"
+  arxiv: []
+
+sections:
+  - heading: "Background"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "CYCLE 1: Core Agglomerative Algorithm"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Algorithm Details"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Final State"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Takeaways"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Topics"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

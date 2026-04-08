@@ -1,3 +1,7 @@
+<!-- PCU: examples-spectral-clustering | contract: contracts/apr-page-examples-spectral-clustering-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Spectral Clustering Implementation
 
 This chapter documents the complete EXTREME TDD implementation of aprender's Spectral Clustering algorithm for graph-based clustering from Issue #19.

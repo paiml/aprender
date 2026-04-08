@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-monte-carlo | contract: contracts/apr-page-ml-fundamentals-monte-carlo-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Monte Carlo Simulation Theory
 
 Monte Carlo methods use random sampling to solve computational problems that are difficult to solve deterministically. Named after the famous casino, these methods are essential for financial modeling, risk analysis, and uncertainty quantification.

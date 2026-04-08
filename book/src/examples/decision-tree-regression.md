@@ -1,3 +1,7 @@
+<!-- PCU: examples-decision-tree-regression | contract: contracts/apr-page-examples-decision-tree-regression-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example decision_tree_regression -->
+<!-- Status: enforced -->
+
 # Decision Tree Regression - Housing Price Prediction
 
 **Status**: ✅ Complete (Verified with 16+ tests)

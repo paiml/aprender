@@ -1,0 +1,124 @@
+contract: apr-page-examples-examples-reference
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-examples-reference"
+  title: "Examples Reference"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/examples-reference.md"
+  example: "regularized_regression"
+  arxiv: []
+
+sections:
+  - heading: "Quick Reference"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Supervised Learning"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Unsupervised Learning"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Deep Learning"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Time Series"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "NLP / Text Processing"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Graph Algorithms"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Optimization"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Operations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Data Processing"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Recommendations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Pattern Mining"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "AutoML / Model Selection"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "GPU / CUDA"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Zoo"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Sovereign AI Stack"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Pipeline & Validation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Online Learning"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Code Analysis"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Benchmarks"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "QA / Falsification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

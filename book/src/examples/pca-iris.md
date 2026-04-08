@@ -1,3 +1,7 @@
+<!-- PCU: examples-pca-iris | contract: contracts/apr-page-examples-pca-iris-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example pca_iris -->
+<!-- Status: enforced -->
+
 # Case Study: PCA Iris
 
 This case study demonstrates Principal Component Analysis (PCA) for dimensionality reduction on the famous Iris dataset, reducing 4D flower measurements to 2D while preserving 96% of variance.

@@ -1,0 +1,92 @@
+contract: apr-page-examples-code-feature-extractor
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-code-feature-extractor"
+  title: "Case Study: Code Feature Extraction for Defect Prediction"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/code-feature-extractor.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Quick Start"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The 8-Dimensional Feature Vector"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Defect Classification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Complexity Estimation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Time-Based Features"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Batch Processing"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Feature Normalization"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Derived Metrics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Custom Keywords"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration with aprender-shell"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "ML Pipeline Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Use Cases"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

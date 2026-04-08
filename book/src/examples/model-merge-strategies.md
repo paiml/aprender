@@ -1,3 +1,7 @@
+<!-- PCU: examples-model-merge-strategies | contract: contracts/apr-page-examples-model-merge-strategies-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example model_merge_strategies -->
+<!-- Status: enforced -->
+
 # Case Study: Model Merge Strategies (GH-245)
 
 Model merging combines multiple fine-tuned models into a single model without additional training. This is how many top-ranked open models on HuggingFace are created — merges, not trained from scratch.

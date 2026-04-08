@@ -1,3 +1,7 @@
+<!-- PCU: examples-bench-bpe | contract: contracts/apr-page-examples-bench-bpe-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example bench_bpe -->
+<!-- Status: enforced -->
+
 # BPE Tokenizer Benchmark
 
 Loads a HuggingFace `tokenizer.json` and measures encode throughput.

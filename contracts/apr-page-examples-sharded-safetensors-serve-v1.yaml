@@ -1,0 +1,52 @@
+contract: apr-page-examples-sharded-safetensors-serve
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-sharded-safetensors-serve"
+  title: "Case Study: Sharded SafeTensors Serving (GH-213)"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/sharded-safetensors-serve.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "The Bug"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Fix"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Verification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Lessons"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

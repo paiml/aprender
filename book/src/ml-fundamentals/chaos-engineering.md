@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-chaos-engineering | contract: contracts/apr-page-ml-fundamentals-chaos-engineering-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Chaos Engineering for ML Systems
 
 Chaos engineering tests ML system resilience by intentionally injecting failures, ensuring models degrade gracefully under adverse conditions.

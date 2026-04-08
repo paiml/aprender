@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-loading-modes | contract: contracts/apr-page-examples-apr-loading-modes-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example apr_loading_modes -->
+<!-- Status: enforced -->
+
 # Case Study: APR Loading Modes
 
 This example demonstrates the loading subsystem for `.apr` model files with different deployment targets following Toyota Way principles.

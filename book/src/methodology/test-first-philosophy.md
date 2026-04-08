@@ -1,3 +1,7 @@
+<!-- PCU: methodology-test-first-philosophy | contract: contracts/apr-page-methodology-test-first-philosophy-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Test-First Philosophy
 
 **Test-First** is not just a technique—it's a fundamental shift in how we think about software development. In EXTREME TDD, tests are not verification artifacts written after the fact. They are the **specification**, the **design tool**, and the **safety net** all in one.

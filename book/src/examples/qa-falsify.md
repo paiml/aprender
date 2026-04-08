@@ -1,3 +1,7 @@
+<!-- PCU: examples-qa-falsify | contract: contracts/apr-page-examples-qa-falsify-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example qa_falsify -->
+<!-- Status: enforced -->
+
 # QA Infrastructure Falsification Tests
 
 Attempts to falsify the claims made about the QA infrastructure (PMAT-098 Red Team):

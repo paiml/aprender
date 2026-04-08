@@ -1,3 +1,7 @@
+<!-- PCU: examples-evolutionary-merge | contract: contracts/apr-page-examples-evolutionary-merge-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example evolutionary_merge -->
+<!-- Status: enforced -->
+
 # Case Study: Evolutionary Merge Optimization
 
 **Ticket**: GH-444 | **Contract**: `merge.md §evolutionary`

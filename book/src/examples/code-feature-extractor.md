@@ -1,3 +1,7 @@
+<!-- PCU: examples-code-feature-extractor | contract: contracts/apr-page-examples-code-feature-extractor-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Code Feature Extraction for Defect Prediction
 
 Extract 8-dimensional feature vectors from code commits for defect prediction, based on D'Ambros et al. (2012) benchmark methodology.

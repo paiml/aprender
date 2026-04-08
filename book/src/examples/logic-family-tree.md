@@ -1,3 +1,7 @@
+<!-- PCU: examples-logic-family-tree | contract: contracts/apr-page-examples-logic-family-tree-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example logic_family_tree -->
+<!-- Status: enforced -->
+
 # Logic Family Tree - Logic Programming Example
 
 This example demonstrates logic programming with family tree relationships using Aprender's logic module.

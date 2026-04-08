@@ -1,3 +1,7 @@
+<!-- PCU: examples-per-layer-merge | contract: contracts/apr-page-examples-per-layer-merge-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example per_layer_merge -->
+<!-- Status: enforced -->
+
 # Case Study: Per-Layer Merge Granularity
 
 **Ticket**: GH-452

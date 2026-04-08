@@ -1,3 +1,7 @@
+<!-- PCU: examples-admm-optimization | contract: contracts/apr-page-examples-admm-optimization-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example admm_optimization -->
+<!-- Status: enforced -->
+
 # Case Study: ADMM Optimization
 
 This example demonstrates the **Alternating Direction Method of Multipliers (ADMM)** for distributed and constrained optimization problems.

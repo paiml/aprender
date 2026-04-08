@@ -1,3 +1,7 @@
+<!-- PCU: examples-gpu-fallback-dogfood | contract: contracts/apr-page-examples-gpu-fallback-dogfood-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example gpu_fallback_dogfood -->
+<!-- Status: enforced -->
+
 # GPU Serve CPU Fallback Dogfood
 
 Dogfood test for GH-261: CPU fallback when GPU serve fails per-request.

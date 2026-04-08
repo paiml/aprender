@@ -5,7 +5,7 @@
 /// Per spec: Qwen2.5-Coder Showcase Demo v3.0.0
 ///
 /// Toyota Way: Mieruka (visual control) - shows where time is spent.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 pub(super) fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult> {
     use realizar::brick::{ComputeBrick, FusedFfnBrick, TransformerLayerBrick};
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
@@ -347,6 +347,17 @@ pub(super) fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult>
         tokens_per_sec,
         assertions_passed,
     })
+}
+
+#[cfg(all(feature = "inference", not(feature = "cuda")))]
+pub(super) fn run_brick_demo(_config: &ShowcaseConfig) -> Result<BrickDemoResult> {
+    println!();
+    println!("{}", "═══ Step: ComputeBrick Demo ═══".cyan().bold());
+    println!();
+    println!("{} CUDA feature not enabled (FusedFfnBrick requires CUDA)", "⚠".yellow());
+    println!("Enable with: cargo build --features cuda");
+
+    Ok(BrickDemoResult::default())
 }
 
 #[cfg(not(feature = "inference"))]

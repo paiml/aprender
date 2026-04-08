@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-cli-commands | contract: contracts/apr-page-examples-apr-cli-commands-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example apr_cli_commands -->
+<!-- Status: enforced -->
+
 # Case Study: APR CLI Commands Demo
 
 This case study demonstrates creating test models and using all 27 apr-cli commands for model inspection, validation, transformation, testing, and inference.

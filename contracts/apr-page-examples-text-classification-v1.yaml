@@ -1,0 +1,76 @@
+contract: apr-page-examples-text-classification
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-text-classification"
+  title: "Text Classification with TF-IDF"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/text-classification.md"
+  example: "text_classification"
+  arxiv: []
+
+sections:
+  - heading: "Theory"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example 1: Sentiment Classification with Bag of Words"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example 2: Topic Classification with TF-IDF"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example 3: Full Preprocessing Pipeline"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Selection Guidelines"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Takeaways"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Applications"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Next Steps"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -10,6 +10,7 @@ fn run_safetensors_benchmark(
 ) -> Result<BenchResult> {
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
+    #[cfg(feature = "cuda")]
     if use_cuda {
         return run_safetensors_cuda_benchmark(path, config, tracer);
     }
@@ -124,7 +125,7 @@ fn bench_log_done(config: &BenchConfig) {
 ///
 /// Loading path: SafeTensors → apr_import(Q4K) → MappedAprModel →
 /// OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_safetensors_cuda_benchmark(
     path: &Path,
     config: &BenchConfig,
@@ -181,7 +182,7 @@ fn run_safetensors_cuda_benchmark(
 }
 
 /// Run warmup iterations for CUDA benchmark.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_cuda_warmup(
     cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
     prompt_tokens: &[u32],
@@ -211,7 +212,7 @@ fn run_cuda_warmup(
 }
 
 /// Run measurement iterations for CUDA benchmark.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_cuda_measurement(
     cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
     prompt_tokens: &[u32],
@@ -266,7 +267,7 @@ fn run_cuda_measurement(
 }
 
 /// CUDA GPU-accelerated benchmark path
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_cuda_benchmark(
     _gguf: &realizar::gguf::GGUFModel,
     _model_bytes: &[u8],

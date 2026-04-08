@@ -1,3 +1,7 @@
+<!-- PCU: examples-random-forest-regression | contract: contracts/apr-page-examples-random-forest-regression-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example random_forest_regression -->
+<!-- Status: enforced -->
+
 # Random Forest Regression - Housing Price Prediction
 
 **Status**: ✅ Complete (Verified with 16+ tests)

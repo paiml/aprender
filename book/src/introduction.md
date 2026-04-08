@@ -1,3 +1,7 @@
+<!-- PCU: introduction | contract: contracts/apr-page-introduction-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Introduction
 
 Welcome to **The Aprender Guide** — documentation for the Aprender ML framework.

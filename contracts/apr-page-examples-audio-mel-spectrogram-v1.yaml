@@ -1,0 +1,96 @@
+contract: apr-page-examples-audio-mel-spectrogram
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-audio-mel-spectrogram"
+  title: "Case Study: Audio Mel Spectrogram Processing"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/audio-mel-spectrogram.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Basic Mel Spectrogram"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Configuration Presets"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Sample Rate Conversion"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Audio Validation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Stereo to Mono Conversion"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Streaming Audio Processing"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-Time Chunk Configuration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Complete ASR Preprocessing Pipeline"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mel Scale Utilities"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Filterbank Inspection"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Audio Capture (Linux ALSA)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Feature Flags"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Test Coverage"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

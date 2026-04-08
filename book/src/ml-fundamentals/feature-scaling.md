@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-feature-scaling | contract: contracts/apr-page-ml-fundamentals-feature-scaling-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Feature Scaling Theory
 
 Feature scaling is a critical preprocessing step that transforms features to similar scales. Proper scaling dramatically improves convergence speed and model performance, especially for distance-based algorithms and gradient descent optimization.

@@ -1,0 +1,44 @@
+contract: apr-page-examples-publish-shell-safety
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-publish-shell-safety"
+  title: "Publish Shell Safety Classifier"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/publish-shell-safety.md"
+  example: "shell_safety_training"
+  arxiv: []
+
+sections:
+  - heading: "Prerequisites"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Run"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Source"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

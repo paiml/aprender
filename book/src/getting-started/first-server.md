@@ -1,3 +1,7 @@
+<!-- PCU: getting-started-first-server | contract: contracts/apr-page-getting-started-first-server-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # First Server
 
 Serve a model as an HTTP API:

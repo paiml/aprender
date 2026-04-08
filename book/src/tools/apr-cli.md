@@ -1,3 +1,7 @@
+<!-- PCU: tools-apr-cli | contract: contracts/apr-page-tools-apr-cli-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # apr - APR Model Operations CLI
 
 The `apr` command-line tool provides inspection, debugging, validation, and comparison capabilities for `.apr` model files. It follows Toyota Way principles for quality and visibility.

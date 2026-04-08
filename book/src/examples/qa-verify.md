@@ -1,3 +1,7 @@
+<!-- PCU: examples-qa-verify | contract: contracts/apr-page-examples-qa-verify-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example qa_verify -->
+<!-- Status: enforced -->
+
 # QA: Aprender Quality Gates
 
 Comprehensive codebase verification (PMAT-QA-RUST-001). Replaces `qa-verify.sh`,

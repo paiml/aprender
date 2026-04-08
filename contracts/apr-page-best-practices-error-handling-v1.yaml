@@ -1,0 +1,76 @@
+contract: apr-page-best-practices-error-handling
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "best-practices-error-handling"
+  title: "Error Handling"
+  part: "reference"
+  category: "guide"
+  path: "book/src/best-practices/error-handling.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Core Principles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "AprenderError Design"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Error Handling Patterns"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Examples from Aprender"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "User-Facing Error Handling"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Testing Error Conditions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Common Pitfalls"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Chapters"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

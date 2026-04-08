@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-fine-tuning | contract: contracts/apr-page-ml-fundamentals-fine-tuning-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # LoRA Fine-Tuning
 
 Low-Rank Adaptation (LoRA) is a parameter-efficient fine-tuning technique that freezes

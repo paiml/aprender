@@ -1,3 +1,7 @@
+<!-- PCU: examples-graph-social-network | contract: contracts/apr-page-examples-graph-social-network-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example graph_social_network -->
+<!-- Status: enforced -->
+
 # Case Study: Social Network Analysis
 
 This case study demonstrates graph algorithms on a social network, identifying influential users and bridges between communities.

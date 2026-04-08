@@ -1,3 +1,7 @@
+<!-- PCU: examples-state-machine-playbooks | contract: contracts/apr-page-examples-state-machine-playbooks-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: State Machine Playbooks
 
 State machine playbooks define the behavior of complex systems in a declarative YAML format. This enables Extreme TDD where the specification is written first, and tests derive directly from the playbook.

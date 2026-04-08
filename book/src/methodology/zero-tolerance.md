@@ -1,3 +1,7 @@
+<!-- PCU: methodology-zero-tolerance | contract: contracts/apr-page-methodology-zero-tolerance-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Zero Tolerance Quality
 
 **Zero Tolerance** means exactly that: **zero defects, zero warnings, zero compromises**. In EXTREME TDD, quality is not negotiable. It's not a goal. It's not aspirational. It's the **baseline requirement** for every commit.

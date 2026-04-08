@@ -1,3 +1,7 @@
+<!-- PCU: best-practices-error-handling | contract: contracts/apr-page-best-practices-error-handling-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Error Handling
 
 Error handling is fundamental to building robust machine learning applications. Aprender uses Rust's type-safe error handling with rich context to help users quickly identify and resolve issues.

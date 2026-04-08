@@ -1,3 +1,7 @@
+<!-- PCU: examples-advanced-merge | contract: contracts/apr-page-examples-advanced-merge-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example advanced_merge -->
+<!-- Status: enforced -->
+
 # Case Study: Advanced Merge Strategies
 
 **Ticket**: GH-442 | **Contract**: `merge.md §strategies`

@@ -1,0 +1,64 @@
+contract: apr-page-quality-gates-jidoka
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "quality-gates-jidoka"
+  title: "Jidoka (Autonomation)"
+  part: "reference"
+  category: "guide"
+  path: "book/src/quality-gates/jidoka.md"
+  example: "validated_tensors"
+  arxiv: []
+
+sections:
+  - heading: "Theoretical Foundation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Problem: Runtime Validation Can Be Bypassed"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Solution: Poka-Yoke via Newtypes"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Validation Gates"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real Bug: PMAT-234"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Popperian Falsification Tests"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Takeaways"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

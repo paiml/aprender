@@ -1,3 +1,7 @@
+<!-- PCU: examples-naive-bayes-iris | contract: contracts/apr-page-examples-naive-bayes-iris-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example naive_bayes_iris -->
+<!-- Status: enforced -->
+
 # Case Study: Naive Bayes Iris
 
 This case study demonstrates Gaussian Naive Bayes classification on the Iris dataset, achieving perfect 100% test accuracy and outperforming k-Nearest Neighbors.

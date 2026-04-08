@@ -1,3 +1,7 @@
+<!-- PCU: getting-started-installation | contract: contracts/apr-page-getting-started-installation-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Installation
 
 ## Install the CLI

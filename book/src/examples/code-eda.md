@@ -1,3 +1,7 @@
+<!-- PCU: examples-code-eda | contract: contracts/apr-page-examples-code-eda-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Code-Aware EDA (Easy Data Augmentation)
 
 Syntax-aware data augmentation for source code, preserving semantic validity while generating diverse training samples.

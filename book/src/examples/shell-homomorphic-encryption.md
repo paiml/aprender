@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-homomorphic-encryption | contract: contracts/apr-page-examples-shell-homomorphic-encryption-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Homomorphic Encryption for Shell Models
 
 This case study demonstrates privacy-preserving shell completion using homomorphic encryption (HE). With HE, shell completion models can run on untrusted servers while keeping user data encrypted.

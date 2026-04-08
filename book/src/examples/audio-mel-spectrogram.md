@@ -1,3 +1,7 @@
+<!-- PCU: examples-audio-mel-spectrogram | contract: contracts/apr-page-examples-audio-mel-spectrogram-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Audio Mel Spectrogram Processing
 
 This case study demonstrates Aprender's audio module for mel spectrogram computation, the foundation for speech recognition and voice processing.

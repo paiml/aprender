@@ -1,3 +1,7 @@
+<!-- PCU: cli-reference-apr-chat | contract: contracts/apr-page-cli-reference-apr-chat-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # apr chat
 
 ```

@@ -1,0 +1,64 @@
+contract: apr-page-methodology-red-green-refactor
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "methodology-red-green-refactor"
+  title: "The RED-GREEN-REFACTOR Cycle"
+  part: "reference"
+  category: "theory"
+  path: "book/src/methodology/red-green-refactor.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "The Three Phases"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Phase 1: RED - Write Failing Tests"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Phase 2: GREEN - Minimal Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Phase 3: REFACTOR - Improve with Confidence"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Complete Cycle Example: Random Forest"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cycle Discipline"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Benefits of the Cycle"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: examples-xor-training | contract: contracts/apr-page-examples-xor-training-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example xor_training -->
+<!-- Status: enforced -->
+
 # Case Study: XOR Neural Network Training
 
 The "Hello World" of deep learning - proving non-linear learning works.

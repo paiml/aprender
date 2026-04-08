@@ -1,3 +1,7 @@
+<!-- PCU: methodology-what-is-extreme-tdd | contract: contracts/apr-page-methodology-what-is-extreme-tdd-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # What is EXTREME TDD?
 
 ## Prerequisites

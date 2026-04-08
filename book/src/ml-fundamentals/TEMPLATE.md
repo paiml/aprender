@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-TEMPLATE | contract: contracts/apr-page-ml-fundamentals-TEMPLATE-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # [Topic] Theory - Template
 
 <!-- DOC_STATUS_START -->

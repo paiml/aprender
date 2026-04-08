@@ -1,3 +1,7 @@
+<!-- PCU: examples-sovereign-stack | contract: contracts/apr-page-examples-sovereign-stack-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example sovereign_stack -->
+<!-- Status: enforced -->
+
 # Case Study: Sovereign AI Stack Integration
 
 This example demonstrates the Pragmatic AI Labs Sovereign AI Stack integration, showing how aprender fits into the broader ecosystem.

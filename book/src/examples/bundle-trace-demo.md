@@ -1,3 +1,7 @@
+<!-- PCU: examples-bundle-trace-demo | contract: contracts/apr-page-examples-bundle-trace-demo-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Bundle Trace Demo
 
 This example demonstrates model bundling with renacer syscall tracing for performance analysis.

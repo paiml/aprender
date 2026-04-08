@@ -1,3 +1,7 @@
+<!-- PCU: examples-market-basket-apriori | contract: contracts/apr-page-examples-market-basket-apriori-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Apriori Implementation
 
 This chapter documents the complete EXTREME TDD implementation of aprender's Apriori algorithm for association rule mining from Issue #21.

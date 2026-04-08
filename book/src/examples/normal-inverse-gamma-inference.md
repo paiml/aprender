@@ -1,3 +1,7 @@
+<!-- PCU: examples-normal-inverse-gamma-inference | contract: contracts/apr-page-examples-normal-inverse-gamma-inference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example normal_inverse_gamma_inference -->
+<!-- Status: enforced -->
+
 # Case Study: Normal-InverseGamma Bayesian Inference
 
 This case study demonstrates Bayesian inference for continuous data with unknown mean and variance using the Normal-InverseGamma conjugate family. We cover four practical scenarios: manufacturing quality control, medical data analysis, sequential learning, and prior comparison.

@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-completion | contract: contracts/apr-page-examples-shell-completion-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: AI Shell Completion
 
 Train a personalized autocomplete on your shell history in 5 seconds. 100% local, private, fast.

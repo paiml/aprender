@@ -1,0 +1,64 @@
+contract: apr-page-examples-bayesian-blocks-histogram
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-bayesian-blocks-histogram"
+  title: "Bayesian Blocks Histogram"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/bayesian-blocks-histogram.md"
+  example: "bayesian_blocks_histogram"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Concepts"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example Output"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation Details"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Algorithm Reference"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Takeaways"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

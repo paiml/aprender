@@ -154,7 +154,7 @@ fn build_comparison(
 /// Step E: Benchmark Comparison with real measurements
 #[cfg(feature = "inference")]
 pub(super) fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparison> {
-    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
     println!();
     println!("{}", "═══ Step E: Performance Benchmark ═══".cyan().bold());
@@ -197,9 +197,11 @@ pub(super) fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparis
 
     // APR/GGUF benchmark - use GPU if requested
     println!();
+    #[cfg(feature = "cuda")]
     let apr_results = if config.gpu {
         println!("{}", "Running APR benchmark (GPU)...".yellow());
         // OwnedQuantizedModelCuda::new takes ownership, device 0 for first GPU
+        use realizar::gguf::OwnedQuantizedModelCuda;
         match OwnedQuantizedModelCuda::new(model, 0) {
             Ok(mut cuda_model) => {
                 println!("{} CUDA model created", "✓".green());
@@ -219,6 +221,15 @@ pub(super) fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparis
         }
     } else {
         println!("{}", "Running APR benchmark (CPU)...".yellow());
+        run_real_benchmark(&model, &mapped, config)?
+    };
+    #[cfg(not(feature = "cuda"))]
+    let apr_results = {
+        if config.gpu {
+            println!("{}", "CUDA feature not enabled, running CPU benchmark...".yellow());
+        } else {
+            println!("{}", "Running APR benchmark (CPU)...".yellow());
+        }
         run_real_benchmark(&model, &mapped, config)?
     };
 
@@ -356,7 +367,7 @@ pub(super) fn run_real_benchmark(
 }
 
 /// GPU benchmark using CUDA-accelerated inference with KV cache
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 pub(super) fn run_real_benchmark_cuda(
     model: &mut realizar::gguf::OwnedQuantizedModelCuda,
     mapped: &realizar::gguf::MappedGGUFModel,

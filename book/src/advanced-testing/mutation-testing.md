@@ -1,3 +1,7 @@
+<!-- PCU: advanced-testing-mutation-testing | contract: contracts/apr-page-advanced-testing-mutation-testing-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Mutation Testing
 
 Mutation testing is the most rigorous form of test quality assessment. While code coverage tells you *what* code your tests execute, mutation testing tells you *whether your tests actually verify the code's behavior*.

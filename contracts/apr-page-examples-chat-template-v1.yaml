@@ -1,0 +1,88 @@
+contract: apr-page-examples-chat-template
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-chat-template"
+  title: "Case Study: Chat Templates for LLM Inference"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/chat-template.md"
+  example: "chat_template"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Basic ChatML Usage"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "LLaMA2 Format with System Prompt"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mistral Format (No System Prompt)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Auto-Detection from Model Name"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Creating Templates from Format Enum"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Multi-Turn Conversations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Custom Jinja2 Templates"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Auto-Detect and Create in One Step"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Supported Formats Reference"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Security Considerations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration with Realizar"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Test Coverage"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: examples-bayesian-blocks-histogram | contract: contracts/apr-page-examples-bayesian-blocks-histogram-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example bayesian_blocks_histogram -->
+<!-- Status: enforced -->
+
 # Bayesian Blocks Histogram
 
 This example demonstrates the Bayesian Blocks optimal histogram binning algorithm, which uses dynamic programming to find optimal change points in data distributions.

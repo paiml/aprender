@@ -1,0 +1,60 @@
+contract: apr-page-examples-rosetta-stone
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-rosetta-stone"
+  title: "Case Study: Rosetta Stone — Universal Model Format Converter"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/rosetta-stone.md"
+  example: "rosetta_stone"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Concepts"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tokenizer Preservation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Usage"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "CLI Equivalent"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Alignment"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

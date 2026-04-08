@@ -1,3 +1,7 @@
+<!-- PCU: examples-showcase-benchmark | contract: contracts/apr-page-examples-showcase-benchmark-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Showcase Benchmark
 
 This example demonstrates the Qwen2.5-Coder showcase benchmark harness for measuring inference performance against baselines like Ollama and llama.cpp.

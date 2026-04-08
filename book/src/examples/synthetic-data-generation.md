@@ -1,3 +1,7 @@
+<!-- PCU: examples-synthetic-data-generation | contract: contracts/apr-page-examples-synthetic-data-generation-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example synthetic_data_generation -->
+<!-- Status: enforced -->
+
 # Case Study: Synthetic Data Generation for ML
 
 Synthetic data generation augments training datasets when labeled data is scarce. This example demonstrates aprender's synthetic data module for text augmentation, template-based generation, and weak supervision.

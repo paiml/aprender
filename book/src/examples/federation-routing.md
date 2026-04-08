@@ -1,3 +1,7 @@
+<!-- PCU: examples-federation-routing | contract: contracts/apr-page-examples-federation-routing-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Federation Routing Policies
 
 This case study demonstrates intelligent routing policies for distributed ML inference. Each policy evaluates candidates and contributes to a composite score that determines the optimal node for each request.

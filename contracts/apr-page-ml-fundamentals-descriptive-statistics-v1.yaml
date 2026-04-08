@@ -1,0 +1,72 @@
+contract: apr-page-ml-fundamentals-descriptive-statistics
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-descriptive-statistics"
+  title: "Descriptive Statistics Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/descriptive-statistics.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Quantiles and Percentiles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Five-Number Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Histogram Binning Methods"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Characteristics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Applications"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Common Pitfalls"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

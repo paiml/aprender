@@ -68,35 +68,49 @@ pub(crate) fn run(
     let start = Instant::now();
 
     #[cfg(feature = "inference")]
-    let mut results = if no_gpu {
-        profile_real_inference_cpu(path, 3, 10)?
-    } else {
-        // PMAT-203: Skip parity gate for profiling — known false positive on CUDA 13.1 driver.
-        // The parity gate compares GPU/CPU logits and fails spuriously, but profiling
-        // only needs generation throughput, not parity verification.
-        std::env::set_var("SKIP_PARITY_GATE", "1");
+    let mut results = {
+        #[allow(unused_mut)]
+        let mut use_cpu = no_gpu;
 
-        // GH-578: Spawn GPU profiling on a thread with 16MB stack.
-        // The deep call chain (profile_gpu_generation → generate_gpu_resident →
-        // forward_all_layers_gpu_to_logits → transformer_layer_workspace_inner)
-        // overflows the default 8MB stack on constrained hardware (RTX 4060 Yoga).
-        let path_owned = path.to_path_buf();
-        let gpu_result = std::thread::Builder::new()
-            .name("gpu-profile".into())
-            .stack_size(16 * 1024 * 1024)
-            .spawn(move || profile_gpu_generation(&path_owned, tokens, 3, 10))
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to spawn profiling thread: {e}")))?
-            .join()
-            .map_err(|_| CliError::ValidationFailed("GPU profiling thread panicked".into()))?;
+        #[cfg(feature = "cuda")]
+        let gpu_fallback_result: Option<RealProfileResults> = if !use_cpu {
+            // PMAT-203: Skip parity gate for profiling — known false positive on CUDA 13.1 driver.
+            // The parity gate compares GPU/CPU logits and fails spuriously, but profiling
+            // only needs generation throughput, not parity verification.
+            std::env::set_var("SKIP_PARITY_GATE", "1");
 
-        match gpu_result {
-            Ok(r) => r,
-            Err(e) => {
-                if matches!(format, OutputFormat::Human) {
-                    output::warn(&format!("GPU profiling failed: {e}, falling back to CPU per-op profiling"));
+            // GH-578: Spawn GPU profiling on a thread with 16MB stack.
+            // The deep call chain (profile_gpu_generation → generate_gpu_resident →
+            // forward_all_layers_gpu_to_logits → transformer_layer_workspace_inner)
+            // overflows the default 8MB stack on constrained hardware (RTX 4060 Yoga).
+            let path_owned = path.to_path_buf();
+            let gpu_result = std::thread::Builder::new()
+                .name("gpu-profile".into())
+                .stack_size(16 * 1024 * 1024)
+                .spawn(move || profile_gpu_generation(&path_owned, tokens, 3, 10))
+                .map_err(|e| CliError::ValidationFailed(format!("Failed to spawn profiling thread: {e}")))?
+                .join()
+                .map_err(|_| CliError::ValidationFailed("GPU profiling thread panicked".into()))?;
+
+            match gpu_result {
+                Ok(r) => Some(r),
+                Err(e) => {
+                    if matches!(format, OutputFormat::Human) {
+                        output::warn(&format!("GPU profiling failed: {e}, falling back to CPU per-op profiling"));
+                    }
+                    None
                 }
-                profile_real_inference_cpu(path, 3, 10)?
             }
+        } else {
+            None
+        };
+        #[cfg(not(feature = "cuda"))]
+        let gpu_fallback_result: Option<RealProfileResults> = None;
+
+        if let Some(r) = gpu_fallback_result {
+            r
+        } else {
+            profile_real_inference_cpu(path, 3, 10)?
         }
     };
 

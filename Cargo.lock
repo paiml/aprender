@@ -290,6 +290,7 @@ dependencies = [
  "aprender-core 0.29.3",
  "aprender-present-core",
  "aprender-present-terminal",
+ "aprender-serve",
  "assert_cmd",
  "async-stream",
  "axum 0.7.9",
@@ -316,7 +317,6 @@ dependencies = [
  "predicates",
  "proptest",
  "provable-contracts-macros 0.3.1",
- "realizar 0.9.1",
  "regex",
  "renacer 0.11.0",
  "rmp-serde",
@@ -1389,47 +1389,6 @@ dependencies = [
  "trueno-graph",
  "uuid",
  "zstd",
-]
-
-[[package]]
-name = "aprender-serve"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98a5b350b1cab7f056e5fe4dc047c5d829ef7148475e01b843bbf8cc81109fc5"
-dependencies = [
- "anyhow",
- "aprender-core 0.29.2",
- "arc-swap",
- "async-stream",
- "axum 0.7.9",
- "chrono",
- "clap",
- "futures",
- "half",
- "libc",
- "memmap2",
- "minijinja",
- "num-traits",
- "once_cell",
- "presentar-terminal",
- "provable-contracts-macros 0.2.2",
- "rand 0.8.5",
- "rayon",
- "renacer-core",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "smallvec",
- "thiserror 1.0.69",
- "tokio",
- "tokio-stream",
- "tower 0.4.13",
- "tower-http",
- "tracing",
- "trueno 0.17.5",
- "trueno-gpu",
- "trueno-quant",
- "uuid",
 ]
 
 [[package]]
@@ -11792,15 +11751,6 @@ dependencies = [
  "trueno-gpu",
  "trueno-quant",
  "uuid",
-]
-
-[[package]]
-name = "realizar"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eae92af94bcdb17af7db237ac77027c634fa474567d02007af6587e5b9d440a2"
-dependencies = [
- "aprender-serve 0.29.0",
 ]
 
 [[package]]

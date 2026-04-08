@@ -1,3 +1,7 @@
+<!-- PCU: examples-create-test-transformer-apr | contract: contracts/apr-page-examples-create-test-transformer-apr-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example create_test_transformer_apr -->
+<!-- Status: enforced -->
+
 # Create Test Transformer APR
 
 Generates a test APR v2 file with full transformer metadata for inference testing.

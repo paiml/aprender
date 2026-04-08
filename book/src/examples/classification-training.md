@@ -1,3 +1,7 @@
+<!-- PCU: examples-classification-training | contract: contracts/apr-page-examples-classification-training-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example classification_training -->
+<!-- Status: enforced -->
+
 # Case Study: Neural Network Classification
 
 Train a multi-class classifier using aprender's neural network module.

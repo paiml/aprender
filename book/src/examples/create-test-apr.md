@@ -1,3 +1,7 @@
+<!-- PCU: examples-create-test-apr | contract: contracts/apr-page-examples-create-test-apr-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example create_test_apr -->
+<!-- Status: enforced -->
+
 # Case Study: Create Test APR Files
 
 This utility example creates test APR model files for development and testing purposes.

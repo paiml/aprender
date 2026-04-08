@@ -1,3 +1,7 @@
+<!-- PCU: examples-recommend-content | contract: contracts/apr-page-examples-recommend-content-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example recommend_content -->
+<!-- Status: enforced -->
+
 # Case Study: Content-Based Recommendations
 
 Build a recommendation engine using text similarity and HNSW indexing.

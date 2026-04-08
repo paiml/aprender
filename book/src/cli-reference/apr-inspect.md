@@ -1,3 +1,7 @@
+<!-- PCU: cli-reference-apr-inspect | contract: contracts/apr-page-cli-reference-apr-inspect-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # apr inspect
 
 ```

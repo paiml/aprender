@@ -1,0 +1,72 @@
+contract: apr-page-examples-community-detection
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-community-detection"
+  title: "Case Study: Community Detection with Louvain"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/community-detection.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Background"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Algorithm Details"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example Highlights"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Takeaways"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Use Cases"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Testing Strategy"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Technical Challenges Solved"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Topics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

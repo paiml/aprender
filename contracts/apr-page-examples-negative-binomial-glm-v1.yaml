@@ -1,0 +1,96 @@
+contract: apr-page-examples-negative-binomial-glm
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-negative-binomial-glm"
+  title: "Negative Binomial GLM for Overdispersed Count Data"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/negative-binomial-glm.md"
+  example: "negative_binomial_glm"
+  arxiv: []
+
+sections:
+  - heading: "Current Limitations (v0.7.0)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Overdispersion Problem"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Solution: Negative Binomial Distribution"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example: Website Traffic Analysis"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Expected Output"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Observations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "When to Use Negative Binomial"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Statistical Rigor"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison with Poisson"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation Details"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Applications"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Problem-Solving"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

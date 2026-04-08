@@ -1,3 +1,7 @@
+<!-- PCU: examples-continual-pretraining | contract: contracts/apr-page-examples-continual-pretraining-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example continual_pretraining -->
+<!-- Status: enforced -->
+
 # Case Study: Continual Pre-Training (CPT)
 
 **Ticket**: GH-448 | **Contract**: `finetune.md §cpt`

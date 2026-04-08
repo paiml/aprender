@@ -1,3 +1,7 @@
+<!-- PCU: examples-gbm-iris | contract: contracts/apr-page-examples-gbm-iris-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example gbm_iris -->
+<!-- Status: enforced -->
+
 # Case Study: Gradient Boosting Iris
 
 This case study demonstrates Gradient Boosting Machine (GBM) on the Iris dataset for binary classification, comparing with other TOP 10 algorithms.

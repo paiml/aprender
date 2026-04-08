@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-automl | contract: contracts/apr-page-ml-fundamentals-automl-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example automl_clustering -->
+<!-- Status: enforced -->
+
 # AutoML: Automated Machine Learning
 
 Aprender's AutoML module provides type-safe hyperparameter optimization with multiple search strategies, including the state-of-the-art Tree-structured Parzen Estimator (TPE).

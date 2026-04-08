@@ -1,0 +1,40 @@
+contract: apr-page-getting-started-first-training
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "getting-started-first-training"
+  title: "First Training"
+  part: "reference"
+  category: "guide"
+  path: "book/src/getting-started/first-training.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Training Pipeline"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Knowledge Distillation"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

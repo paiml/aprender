@@ -1,3 +1,7 @@
+<!-- PCU: examples-logistic-regression | contract: contracts/apr-page-examples-logistic-regression-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Logistic Regression
 
 ## Prerequisites

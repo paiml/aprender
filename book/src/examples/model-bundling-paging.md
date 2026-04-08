@@ -1,3 +1,7 @@
+<!-- PCU: examples-model-bundling-paging | contract: contracts/apr-page-examples-model-bundling-paging-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Model Bundling and Memory Paging
 
 Deploy large ML models on resource-constrained devices using aprender's bundle module with LRU-based memory paging.

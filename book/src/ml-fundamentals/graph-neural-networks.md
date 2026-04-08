@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-graph-neural-networks | contract: contracts/apr-page-ml-fundamentals-graph-neural-networks-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Graph Neural Networks Theory
 
 Graph Neural Networks (GNNs) extend deep learning to graph-structured data, enabling learning on social networks, molecules, knowledge graphs, and more.

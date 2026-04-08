@@ -1,3 +1,7 @@
+<!-- PCU: examples-nlp-advanced | contract: contracts/apr-page-examples-nlp-advanced-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example nlp_advanced -->
+<!-- Status: enforced -->
+
 # Case Study: Advanced NLP Features
 
 Document similarity, entity extraction, and text summarization.

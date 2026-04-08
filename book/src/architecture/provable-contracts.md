@@ -1,3 +1,7 @@
+<!-- PCU: architecture-provable-contracts | contract: contracts/apr-page-architecture-provable-contracts-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Provable Contracts
 
 Aprender uses **provable contracts** — YAML files that define equations,

@@ -1,3 +1,7 @@
+<!-- PCU: examples-hex-forensics | contract: contracts/apr-page-examples-hex-forensics-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example hex_forensics -->
+<!-- Status: enforced -->
+
 # Case Study: Hex Forensics — Format-Aware Binary Inspection
 
 ## Why Binary Forensics?

@@ -1,0 +1,80 @@
+contract: apr-page-examples-tracing-memory-paging
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-tracing-memory-paging"
+  title: "Case Study: Tracing Memory Paging with Renacer"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/tracing-memory-paging.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Quick Start"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Why Trace Memory Paging?"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Bundle Trace Demo"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tracing with Renacer"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Analyzing Paging Behavior"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Optimization Patterns"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "JSON Output for Analysis"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration with aprender Stats"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Troubleshooting Guide"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Complete Workflow"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Takeaways"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

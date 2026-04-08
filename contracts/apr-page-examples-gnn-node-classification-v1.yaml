@@ -1,0 +1,80 @@
+contract: apr-page-examples-gnn-node-classification
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-gnn-node-classification"
+  title: "Case Study: Graph Neural Networks for Node Classification"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/gnn-node-classification.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Basic GCN Usage"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Multi-Layer GCN"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Node Classification Task"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Graph Attention Network"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Building Graph from Data"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Handling Self-Loops"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Graph Batching"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Graph-Level Prediction"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Feature Initialization"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

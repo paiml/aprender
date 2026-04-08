@@ -1,3 +1,7 @@
+<!-- PCU: examples-tabu-tsp | contract: contracts/apr-page-examples-tabu-tsp-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example tabu_tsp -->
+<!-- Status: enforced -->
+
 # Tabu Search for TSP
 
 This example demonstrates Tabu Search solving the Traveling Salesman Problem using memory-based local search with swap moves.

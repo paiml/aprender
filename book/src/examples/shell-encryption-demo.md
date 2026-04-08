@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-encryption-demo | contract: contracts/apr-page-examples-shell-encryption-demo-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example shell_encryption_demo -->
+<!-- Status: enforced -->
+
 # Shell Model Encryption Demo
 
 Demonstrates encrypted and unencrypted model formats in aprender-shell.

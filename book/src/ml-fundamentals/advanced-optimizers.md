@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-advanced-optimizers | contract: contracts/apr-page-ml-fundamentals-advanced-optimizers-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Advanced Optimizers Theory
 
 Modern optimizers go beyond vanilla gradient descent by adapting learning rates, incorporating momentum, and using gradient statistics to achieve faster and more stable convergence. This chapter covers state-of-the-art optimization algorithms used in deep learning and machine learning.

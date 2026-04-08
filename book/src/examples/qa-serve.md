@@ -1,3 +1,7 @@
+<!-- PCU: examples-qa-serve | contract: contracts/apr-page-examples-qa-serve-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example qa_serve -->
+<!-- Status: enforced -->
+
 # QA: apr serve Falsification Suite
 
 Popperian falsification tests for `apr serve` HTTP endpoints (PMAT-QA-RUST-001).

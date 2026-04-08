@@ -1,3 +1,7 @@
+<!-- PCU: getting-started-first-training | contract: contracts/apr-page-getting-started-first-training-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # First Training
 
 Fine-tune a model with LoRA:

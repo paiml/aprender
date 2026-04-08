@@ -1,3 +1,7 @@
+<!-- PCU: examples-qa-run | contract: contracts/apr-page-examples-qa-run-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example qa_run -->
+<!-- Status: enforced -->
+
 # QA: apr run Falsification Suite
 
 Popperian falsification tests for the `apr run` command with full matrix support

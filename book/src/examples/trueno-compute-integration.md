@@ -1,3 +1,7 @@
+<!-- PCU: examples-trueno-compute-integration | contract: contracts/apr-page-examples-trueno-compute-integration-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example trueno_compute_integration -->
+<!-- Status: enforced -->
+
 # Case Study: Trueno Compute Integration
 
 This chapter demonstrates the integration of trueno 0.8.8+ compute infrastructure with aprender's ML training pipeline.

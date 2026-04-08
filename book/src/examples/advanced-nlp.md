@@ -1,3 +1,7 @@
+<!-- PCU: examples-advanced-nlp | contract: contracts/apr-page-examples-advanced-nlp-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example nlp_advanced -->
+<!-- Status: enforced -->
+
 # Advanced NLP: Similarity, Entities, and Summarization
 
 This chapter demonstrates three powerful NLP capabilities in Aprender:

@@ -1,3 +1,7 @@
+<!-- PCU: examples-validated-tensors | contract: contracts/apr-page-examples-validated-tensors-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example validated_tensors -->
+<!-- Status: enforced -->
+
 # Case Study: Validated Tensors — Compile-Time Contract Enforcement
 
 ## Overview

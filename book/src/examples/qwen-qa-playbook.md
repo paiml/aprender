@@ -1,3 +1,7 @@
+<!-- PCU: examples-qwen-qa-playbook | contract: contracts/apr-page-examples-qwen-qa-playbook-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Qwen2.5-Coder QA Playbook Results (2026-01-30)
 
 This chapter documents the qualification testing of Qwen2.5-Coder-1.5B-Instruct using the **apr-model-qa-playbook** framework, which implements Popperian falsification methodology with Toyota Way quality principles.

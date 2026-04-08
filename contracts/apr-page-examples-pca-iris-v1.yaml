@@ -1,0 +1,88 @@
+contract: apr-page-examples-pca-iris
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-pca-iris"
+  title: "Case Study: PCA Iris"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/pca-iris.md"
+  example: "pca_iris"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Dataset"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Step 1: Standardizing Features"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Step 2: Applying PCA (4D → 2D)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Step 3: Explained Variance Analysis"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Step 4: Transformed Data"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Step 5: Reconstruction (2D → 4D)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Step 6: Principal Component Loadings"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Metrics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Takeaways"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Full Code"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Exploration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

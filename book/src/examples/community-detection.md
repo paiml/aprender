@@ -1,3 +1,7 @@
+<!-- PCU: examples-community-detection | contract: contracts/apr-page-examples-community-detection-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Community Detection with Louvain
 
 This chapter documents the EXTREME TDD implementation of community detection using the Louvain algorithm for modularity optimization (Issue #22).

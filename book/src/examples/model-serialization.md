@@ -1,3 +1,7 @@
+<!-- PCU: examples-model-serialization | contract: contracts/apr-page-examples-model-serialization-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Model Serialization with SafeTensors
 
 ## Prerequisites

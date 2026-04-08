@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-graph-components-traversal | contract: contracts/apr-page-ml-fundamentals-graph-components-traversal-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Graph Components and Traversal Algorithms
 
 Component analysis and graph traversal are fundamental techniques for understanding graph structure, detecting communities, validating properties, and exploring relationships. This chapter covers the theory and implementation of four essential algorithms in aprender's graph module.

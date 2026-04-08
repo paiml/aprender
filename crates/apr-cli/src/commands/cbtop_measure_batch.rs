@@ -1,6 +1,6 @@
 
 /// PAR-103: Concurrent batch mode for aggregate throughput measurement.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn measure_batch_throughput(
     config: &CbtopConfig,
     cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
@@ -47,7 +47,7 @@ fn measure_batch_throughput(
 }
 
 /// Standard single-token generation measurement (with optional speculative decoding).
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn measure_standard_throughput(
     config: &CbtopConfig,
     cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
@@ -98,7 +98,7 @@ fn measure_standard_throughput(
 }
 
 /// Print per-brick timing from the BrickProfiler.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn print_profiler_brick_stats(cuda_model: &realizar::gguf::OwnedQuantizedModelCuda) {
     let profiler = cuda_model.profiler();
     let mut all: Vec<_> = profiler.all_brick_stats().collect();
@@ -154,7 +154,7 @@ fn check_renacer_escalation(tokens_per_sec: f64, cv_percent: f64) {
 }
 
 /// Load optional draft model for speculative decoding.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn load_draft_model(
     config: &CbtopConfig,
 ) -> Result<Option<realizar::gguf::OwnedQuantizedModelCuda>> {
@@ -199,7 +199,7 @@ fn derived_brick_score(
 }
 
 /// Benchmark RmsNorm brick and return score.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn bench_rmsnorm_brick(
     hidden_dim: usize,
     bench_config: &realizar::brick::BenchmarkConfig,
@@ -230,7 +230,7 @@ fn bench_rmsnorm_brick(
 }
 
 /// Benchmark individual bricks and return scores.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::too_many_arguments)]
 fn benchmark_bricks(
     config: &CbtopConfig,
@@ -313,7 +313,7 @@ fn benchmark_bricks(
 }
 
 /// Build headless report and output it.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::too_many_arguments)]
 fn build_and_output_report(
     config: &CbtopConfig,

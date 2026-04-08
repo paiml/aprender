@@ -1,0 +1,64 @@
+contract: apr-page-examples-ptx-parity-validation
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-ptx-parity-validation"
+  title: "Case Study: PTX Parity Validation (GH-219)"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/ptx-parity-validation.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "The Problem: Batched Kernels Diverge Silently"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Solution: Structural PTX Analysis"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The 6 Kernel Pairs"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration: `apr qa` Gate 6"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles Applied"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Lessons Learned"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

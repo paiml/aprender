@@ -1,3 +1,7 @@
+<!-- PCU: examples-dbscan-clustering | contract: contracts/apr-page-examples-dbscan-clustering-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example dbscan_clustering -->
+<!-- Status: enforced -->
+
 # Case Study: DBSCAN Clustering Implementation
 
 This chapter documents the complete EXTREME TDD implementation of aprender's DBSCAN clustering algorithm. This is a real-world example showing every phase of the RED-GREEN-REFACTOR cycle from Issue #14.

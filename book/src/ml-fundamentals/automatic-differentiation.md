@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-automatic-differentiation | contract: contracts/apr-page-ml-fundamentals-automatic-differentiation-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Automatic Differentiation Theory
 
 Automatic differentiation (autodiff) is the foundation of modern deep learning, enabling efficient computation of gradients for neural network training.

@@ -1,3 +1,7 @@
+<!-- PCU: cli-reference-apr-validate | contract: contracts/apr-page-cli-reference-apr-validate-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # apr validate
 
 ```

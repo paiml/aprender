@@ -1,0 +1,100 @@
+contract: apr-page-tools-apr-spec
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "tools-apr-spec"
+  title: "APR Complete Specification"
+  part: "reference"
+  category: "tool"
+  path: "book/src/tools/apr-spec.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Table of Contents"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "1. Abstract"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "2. Design Principles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "3. APR Binary Format"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "4. CLI Operations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "5. Auxiliary Data Patterns"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "6. Format Comparison"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "7. Error Handling"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "8. Configuration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "9. Quality Gates"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "10. Multi-Format Conversion Specification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "11. Master Falsification QA Checklist (100 Points)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "12. Automated Validation Script"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "13. Import/Convert Pipeline"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "14. Implementation Roadmap"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "15. References"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "16. Appendices"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-naive-bayes | contract: contracts/apr-page-ml-fundamentals-naive-bayes-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Naive Bayes
 
 Naive Bayes is a family of probabilistic classifiers based on Bayes' theorem with the "naive" assumption of feature independence. Despite this strong assumption, Naive Bayes classifiers are remarkably effective in practice, especially for text classification.

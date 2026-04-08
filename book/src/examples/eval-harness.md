@@ -1,3 +1,7 @@
+<!-- PCU: examples-eval-harness | contract: contracts/apr-page-examples-eval-harness-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example eval_harness -->
+<!-- Status: enforced -->
+
 # Case Study: Evaluation Harness
 
 **Ticket**: GH-454 | **Contract**: `finetune.md §eval`

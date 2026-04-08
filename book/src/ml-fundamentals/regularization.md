@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-regularization | contract: contracts/apr-page-ml-fundamentals-regularization-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Regularization Theory
 
 <!-- DOC_STATUS_START -->

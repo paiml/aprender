@@ -412,18 +412,27 @@ fn run_headless(config: CbtopConfig) -> Result<()> {
         return run_headless_simulated(config);
     }
 
-    #[cfg(feature = "inference")]
+    #[cfg(all(feature = "inference", feature = "cuda"))]
     {
         if config.model_path.is_some() {
-            run_headless_real(config)
-        } else {
-            Err(CliError::ValidationFailed(
-                "Headless mode requires --model-path for real profiling.\n\
-                 For CI testing with simulated data, use: apr cbtop --headless --simulated\n\
-                 For real profiling, use: apr cbtop --model-path <FILE> --headless"
-                    .to_string(),
-            ))
+            return run_headless_real(config);
         }
+        return Err(CliError::ValidationFailed(
+            "Headless mode requires --model-path for real profiling.\n\
+             For CI testing with simulated data, use: apr cbtop --headless --simulated\n\
+             For real profiling, use: apr cbtop --model-path <FILE> --headless"
+                .to_string(),
+        ));
+    }
+
+    #[cfg(all(feature = "inference", not(feature = "cuda")))]
+    {
+        let _ = &config;
+        return Err(CliError::ValidationFailed(
+            "Headless real profiling requires 'cuda' feature.\n\
+             For CI testing with simulated data, use: apr cbtop --headless --simulated"
+                .to_string(),
+        ));
     }
 
     #[cfg(not(feature = "inference"))]

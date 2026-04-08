@@ -1,0 +1,76 @@
+contract: apr-page-examples-constrained-optimization
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-constrained-optimization"
+  title: "Case Study: Constrained Optimization"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/constrained-optimization.md"
+  example: "constrained_optimization"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mathematical Background"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Examples Covered"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Comparison"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Insights"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Constraint Handling Tips"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Convergence Analysis"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation Notes"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Code Location"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Topics"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-pca | contract: contracts/apr-page-ml-fundamentals-pca-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Principal Component Analysis (PCA)
 
 Principal Component Analysis (PCA) is a fundamental dimensionality reduction technique that transforms high-dimensional data into a lower-dimensional representation while preserving as much variance as possible. This chapter covers the theory, implementation, and practical considerations for using PCA in aprender.

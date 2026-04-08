@@ -1,3 +1,7 @@
+<!-- PCU: examples-lof-anomaly | contract: contracts/apr-page-examples-lof-anomaly-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Local Outlier Factor (LOF) Implementation
 
 This chapter documents the complete EXTREME TDD implementation of aprender's Local Outlier Factor algorithm for density-based anomaly detection from Issue #20.

@@ -1,0 +1,84 @@
+contract: apr-page-examples-model-bundling-paging
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-model-bundling-paging"
+  title: "Case Study: Model Bundling and Memory Paging"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/model-bundling-paging.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Quick Start"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Motivation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The .apbundle Format"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Memory Paging Strategies"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Pre-fetching"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Paging Statistics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Shell Completion Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Architecture"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "API Reference"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Characteristics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Troubleshooting"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation Details"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

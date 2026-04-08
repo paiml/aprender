@@ -1,0 +1,40 @@
+contract: apr-page-examples-qa-falsify
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-qa-falsify"
+  title: "QA Infrastructure Falsification Tests"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/qa-falsify.md"
+  example: "qa_falsify"
+  arxiv: []
+
+sections:
+  - heading: "Run"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Source"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-inspection | contract: contracts/apr-page-examples-apr-inspection-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example apr_inspection -->
+<!-- Status: enforced -->
+
 # Case Study: APR Model Inspection
 
 This example demonstrates the inspection tooling for `.apr` model files, following the Toyota Way principle of Genchi Genbutsu (go and see).

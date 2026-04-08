@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-linear-regression | contract: contracts/apr-page-ml-fundamentals-linear-regression-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Linear Regression Theory
 
 <!-- DOC_STATUS_START -->

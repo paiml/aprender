@@ -1,3 +1,7 @@
+<!-- PCU: examples-monte-carlo-simulation | contract: contracts/apr-page-examples-monte-carlo-simulation-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Monte Carlo Financial Simulation
 
 This case study demonstrates Aprender's Monte Carlo framework for financial modeling and risk analysis.

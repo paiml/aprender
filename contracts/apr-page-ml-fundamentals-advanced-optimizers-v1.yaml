@@ -1,0 +1,88 @@
+contract: apr-page-ml-fundamentals-advanced-optimizers
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-advanced-optimizers"
+  title: "Advanced Optimizers Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/advanced-optimizers.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Why Advanced Optimizers?"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Optimizer Comparison Table"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "AdaGrad: Adaptive Gradient Algorithm"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "RMSprop: Root Mean Square Propagation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Adam: Adaptive Moment Estimation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "AdamW: Adam with Decoupled Weight Decay"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Optimizer Selection Guide"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Learning Rate Schedules"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison: SGD vs Adam"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Debugging Optimizer Issues"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "aprender Optimizer Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Chapters"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

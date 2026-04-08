@@ -1,3 +1,7 @@
+<!-- PCU: examples-poka-yoke-validation | contract: contracts/apr-page-examples-poka-yoke-validation-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example poka_yoke_validation -->
+<!-- Status: enforced -->
+
 # Case Study: Poka-Yoke Validation (APR-POKA-001)
 
 Poka-yoke (ポカヨケ, "mistake-proofing") is a Toyota Way concept that builds quality in at the source, not at inspection. The APR-POKA-001 specification brings this principle to ML model serialization.

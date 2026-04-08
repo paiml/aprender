@@ -1,0 +1,76 @@
+contract: apr-page-examples-random-forest-regression
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-random-forest-regression"
+  title: "Random Forest Regression - Housing Price Prediction"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/random-forest-regression.md"
+  example: "random_forest_regression"
+  arxiv: []
+
+sections:
+  - heading: "Problem Statement"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Dataset"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Hyperparameter Tuning"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Variance Reduction Demonstration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Non-Linear Patterns"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Edge Cases and Validation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Practical Recommendations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Full Example Code"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

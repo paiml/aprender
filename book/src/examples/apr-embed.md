@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-embed | contract: contracts/apr-page-examples-apr-embed-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example apr_embed -->
+<!-- Status: enforced -->
+
 # Case Study: APR Data Embedding
 
 This example demonstrates the data embedding system for `.apr` model files, enabling bundled test data and tiny model representations.

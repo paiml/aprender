@@ -1,3 +1,7 @@
+<!-- PCU: examples-sovereign-offline | contract: contracts/apr-page-examples-sovereign-offline-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example sovereign_offline -->
+<!-- Status: enforced -->
+
 # Case Study: Sovereign AI Offline Mode
 
 This chapter covers APR's Sovereign AI capabilities, particularly the `--offline` mode that enables air-gapped deployments.

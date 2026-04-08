@@ -1,0 +1,64 @@
+contract: apr-page-examples-time-series-forecasting
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-time-series-forecasting"
+  title: "ARIMA Time Series Forecasting"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/time-series-forecasting.md"
+  example: "time_series_forecasting"
+  arxiv: []
+
+sections:
+  - heading: "Theory"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example 1: Sales Forecast with ARIMA(1,1,0)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example 2: Stationary Series with ARIMA(1,0,0)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example 3: Complex Pattern with ARIMA(2,1,1)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Selection Guidelines"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Takeaways"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

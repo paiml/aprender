@@ -1,3 +1,7 @@
+<!-- PCU: examples-neural-network-training | contract: contracts/apr-page-examples-neural-network-training-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example neural_network_training -->
+<!-- Status: enforced -->
+
 # Case Study: Neural Network Training Pipeline
 
 Complete deep learning workflow with aprender's nn module.

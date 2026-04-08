@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-weak-supervision | contract: contracts/apr-page-ml-fundamentals-weak-supervision-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Weak Supervision Theory
 
 Weak supervision uses noisy, limited, or imprecise labels to train models when perfect labels are unavailable or expensive.

@@ -1,3 +1,7 @@
+<!-- PCU: examples-grid-search-tuning | contract: contracts/apr-page-examples-grid-search-tuning-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example grid_search_tuning -->
+<!-- Status: enforced -->
+
 # Grid Search Hyperparameter Tuning
 
 This example demonstrates grid search for finding optimal regularization hyperparameters using cross-validation with Ridge, Lasso, and ElasticNet regression.

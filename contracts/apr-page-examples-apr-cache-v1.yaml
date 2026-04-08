@@ -1,0 +1,76 @@
+contract: apr-page-examples-apr-cache
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-apr-cache"
+  title: "Case Study: APR Model Cache"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/apr-cache.md"
+  example: "apr_cache"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Eviction Policies"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Memory Budget"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Access Statistics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cache Configuration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Registry"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cache Tiers"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cache Data Variants"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Source Code"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

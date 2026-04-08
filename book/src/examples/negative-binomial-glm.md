@@ -1,3 +1,7 @@
+<!-- PCU: examples-negative-binomial-glm | contract: contracts/apr-page-examples-negative-binomial-glm-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example negative_binomial_glm -->
+<!-- Status: enforced -->
+
 # Negative Binomial GLM for Overdispersed Count Data
 
 This example demonstrates the **Negative Binomial regression** family in aprender's GLM implementation.

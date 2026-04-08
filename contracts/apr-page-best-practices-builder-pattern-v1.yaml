@@ -1,0 +1,76 @@
+contract: apr-page-best-practices-builder-pattern
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "best-practices-builder-pattern"
+  title: "Builder Pattern"
+  part: "reference"
+  category: "guide"
+  path: "book/src/best-practices/builder-pattern.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Why Use the Builder Pattern?"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation Pattern"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Examples from aprender"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The `#[must_use]` Attribute"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "When to Use vs. Not Use"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Common Pitfalls"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Pattern Comparison"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Advanced: Typestate Pattern"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration with Default Trait"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Testing Builder Methods"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-history-developer-guide | contract: contracts/apr-page-examples-shell-history-developer-guide-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Developer's Guide to Shell History Models
 
 Build personalized ML models from your shell history using the `.apr` format. This guide follows **EXTREME TDD** methodology—every code example compiles and runs.

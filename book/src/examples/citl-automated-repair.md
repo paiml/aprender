@@ -1,3 +1,7 @@
+<!-- PCU: examples-citl-automated-repair | contract: contracts/apr-page-examples-citl-automated-repair-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: CITL Automated Program Repair
 
 Using the Compiler-in-the-Loop Learning module for automated Rust code repair.

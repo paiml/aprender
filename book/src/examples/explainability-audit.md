@@ -1,3 +1,7 @@
+<!-- PCU: examples-explainability-audit | contract: contracts/apr-page-examples-explainability-audit-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Model Explainability and Audit Trails
 
 <!-- DOC_STATUS_START -->

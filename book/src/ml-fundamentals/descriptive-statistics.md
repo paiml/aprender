@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-descriptive-statistics | contract: contracts/apr-page-ml-fundamentals-descriptive-statistics-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Descriptive Statistics Theory
 
 Descriptive statistics summarize and describe the main features of a dataset. This chapter covers aprender's statistics module, focusing on quantiles, five-number summaries, and histogram generation with adaptive binning.

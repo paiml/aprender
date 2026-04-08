@@ -1,0 +1,80 @@
+contract: apr-page-ml-fundamentals-webassembly-ml
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-webassembly-ml"
+  title: "WebAssembly for Machine Learning"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/webassembly-ml.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Why WASM for ML?"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "WASM Architecture"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Compiling Rust to WASM"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Memory Considerations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "SIMD in WASM"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Threading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Loading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Optimization"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "WebGPU Integration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Deployment Patterns"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Limitations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

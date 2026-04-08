@@ -1,3 +1,7 @@
+<!-- PCU: examples-probar-tui-testing | contract: contracts/apr-page-examples-probar-tui-testing-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Probar TUI Testing
 
 This case study demonstrates comprehensive TUI testing using the Probar testing framework. Probar provides Playwright-style assertions, snapshot testing, frame sequences, and UX coverage tracking for terminal user interfaces.

@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-encryption-tiers | contract: contracts/apr-page-examples-shell-encryption-tiers-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Model Encryption Tiers (Plain → Compressed → At-Rest → Homomorphic)
 
 Four protection levels for shell completion models, each with distinct security/performance tradeoffs.

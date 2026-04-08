@@ -1,3 +1,7 @@
+<!-- PCU: quality-gates-jidoka | contract: contracts/apr-page-quality-gates-jidoka-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example validated_tensors -->
+<!-- Status: enforced -->
+
 # Jidoka (Autonomation)
 
 Jidoka is a Toyota Production System principle meaning "automation with a human touch."

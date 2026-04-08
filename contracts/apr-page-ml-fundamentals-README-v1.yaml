@@ -1,0 +1,72 @@
+contract: apr-page-ml-fundamentals-README
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-README"
+  title: "Machine Learning Fundamentals - Author Guide"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/README.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "📋 Chapter Template"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "✅ Writing a New Chapter - Step-by-Step"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "📊 Doc Status Blocks"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "🔬 Property Test Requirements"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "🚫 Anti-Patterns to Avoid"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "📚 Required Sections"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "🔄 One-Piece Flow (Toyota Way)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "🎯 Quality Checklist"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "🏆 Example: Linear Regression Theory"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "📖 Toyota Way Principles Applied"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

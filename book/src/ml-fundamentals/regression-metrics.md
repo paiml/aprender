@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-regression-metrics | contract: contracts/apr-page-ml-fundamentals-regression-metrics-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Regression Metrics Theory
 
 <!-- DOC_STATUS_START -->

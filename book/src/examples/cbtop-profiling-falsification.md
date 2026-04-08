@@ -1,3 +1,7 @@
+<!-- PCU: examples-cbtop-profiling-falsification | contract: contracts/apr-page-examples-cbtop-profiling-falsification-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: cbtop Profiling Pipeline Falsification (GH-420)
 
 > **Jidoka**: When profiling data is wrong, STOP THE LINE.

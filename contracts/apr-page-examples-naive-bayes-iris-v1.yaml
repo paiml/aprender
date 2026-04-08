@@ -1,0 +1,68 @@
+contract: apr-page-examples-naive-bayes-iris
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-naive-bayes-iris"
+  title: "Case Study: Naive Bayes Iris"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/naive-bayes-iris.md"
+  example: "naive_bayes_iris"
+  arxiv: []
+
+sections:
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Results Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Probabilistic Predictions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Per-Class Performance"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Variance Smoothing Effect"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Why Naive Bayes Excels Here"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Insights"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: examples-cross-validation | contract: contracts/apr-page-examples-cross-validation-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example cross_validation -->
+<!-- Status: enforced -->
+
 # Case Study: Cross-Validation Implementation
 
 This chapter documents the complete EXTREME TDD implementation of aprender's cross-validation module. This is a real-world example showing every phase of the RED-GREEN-REFACTOR cycle from Issue #2.

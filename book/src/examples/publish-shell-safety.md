@@ -1,3 +1,7 @@
+<!-- PCU: examples-publish-shell-safety | contract: contracts/apr-page-examples-publish-shell-safety-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example shell_safety_training -->
+<!-- Status: enforced -->
+
 # Publish Shell Safety Classifier
 
 Uploads the trained shell safety model to HuggingFace as

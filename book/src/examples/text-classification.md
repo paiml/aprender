@@ -1,3 +1,7 @@
+<!-- PCU: examples-text-classification | contract: contracts/apr-page-examples-text-classification-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example text_classification -->
+<!-- Status: enforced -->
+
 # Text Classification with TF-IDF
 
 Text classification is the task of assigning predefined categories to text documents. Combined with TF-IDF vectorization, it enables practical applications like sentiment analysis, spam detection, and topic classification.

@@ -1,0 +1,52 @@
+contract: apr-page-examples-nlp-advanced
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-nlp-advanced"
+  title: "Case Study: Advanced NLP Features"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/nlp-advanced.md"
+  example: "nlp_advanced"
+  arxiv: []
+
+sections:
+  - heading: "Features"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Document Similarity"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Entity Extraction"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Text Summarization"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Run"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

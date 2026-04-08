@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-README | contract: contracts/apr-page-ml-fundamentals-README-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Machine Learning Fundamentals - Author Guide
 
 This directory contains ML theory chapters written with **Theory Through Verification** approach.

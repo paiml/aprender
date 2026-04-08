@@ -1,3 +1,7 @@
+<!-- PCU: examples-design-by-contract | contract: contracts/apr-page-examples-design-by-contract-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example design_by_contract -->
+<!-- Status: enforced -->
+
 # Design by Contract
 
 Demonstrates the three pillars of aprender's contract system:

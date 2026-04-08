@@ -1,0 +1,35 @@
+contract: apr-book-schema
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Zero-Muda Book Schema"
+  description: "Every book page is a Page Contract Unit (PCU). No page without contract."
+  spec: "docs/specifications/aprender-monorepo-consolidation.md"
+
+invariants:
+  - "Every .md in book/src/ (except SUMMARY.md) has PCU frontmatter"
+  - "Every PCU references a contracts/apr-page-{id}-v1.yaml that exists"
+  - "Every enforced contract has a .md file at its declared path"
+  - "Every chapter/case-study contract has api_calls with min_calls > 0"
+  - "SUMMARY.md is generated from enforced contracts only"
+  - "Zero legacy names in any book page"
+  - "Zero TODO/TBD/WIP/coming-soon in any book page"
+  - "Zero empty sections (heading with no content)"
+
+falsification:
+  - condition: "book/src/*.md file exists without PCU frontmatter"
+    severity: P0
+    action: delete_page
+  - condition: "PCU contract references .md that does not exist"
+    severity: P0
+    action: set_status_draft
+  - condition: "SUMMARY.md lists page without enforced contract"
+    severity: P0
+    action: regenerate_summary
+  - condition: "chapter category page has zero api_calls"
+    severity: P0
+    action: add_api_calls_or_recategorize
+  - condition: "Page contains TODO/TBD/WIP/placeholder text"
+    severity: P0
+    action: delete_page

@@ -1,0 +1,76 @@
+contract: apr-page-examples-trueno-compute-integration
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-trueno-compute-integration"
+  title: "Case Study: Trueno Compute Integration"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/trueno-compute-integration.md"
+  example: "trueno_compute_integration"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Features"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Backend Selection (Poka-Yoke)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Training Guards (Jidoka)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Divergence Checking"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Reproducible Experiments"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "API Reference"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration with Training Loops"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

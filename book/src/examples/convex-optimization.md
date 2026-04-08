@@ -1,3 +1,7 @@
+<!-- PCU: examples-convex-optimization | contract: contracts/apr-page-examples-convex-optimization-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example convex_optimization -->
+<!-- Status: enforced -->
+
 # Case Study: Convex Optimization
 
 This example demonstrates **Phase 2 convex optimization methods** designed for composite problems with non-smooth regularization.

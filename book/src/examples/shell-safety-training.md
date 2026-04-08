@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-safety-training | contract: contracts/apr-page-examples-shell-safety-training-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example shell_safety_training -->
+<!-- Status: enforced -->
+
 # Shell Safety Classifier Training
 
 Trains an MLP classifier to predict shell script safety using the

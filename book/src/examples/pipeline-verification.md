@@ -1,3 +1,7 @@
+<!-- PCU: examples-pipeline-verification | contract: contracts/apr-page-examples-pipeline-verification-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example pipeline_verification -->
+<!-- Status: enforced -->
+
 # Case Study: Pipeline Verification System
 
 This case study demonstrates aprender's pipeline verification system for ML model debugging, implementing Toyota Way's Jidoka principle: built-in quality with automatic stop on first defect.

@@ -1,0 +1,104 @@
+contract: apr-page-ml-fundamentals-graph-algorithms
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-graph-algorithms"
+  title: "Graph Algorithms Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/graph-algorithms.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Graph Representation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Degree Centrality"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "PageRank"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Betweenness Centrality"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Closeness Centrality"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Eigenvector Centrality"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Katz Centrality"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Harmonic Centrality"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Network Density"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Network Diameter"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Clustering Coefficient"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Degree Assortativity"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Characteristics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Applications"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles in Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

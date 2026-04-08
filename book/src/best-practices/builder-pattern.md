@@ -1,3 +1,7 @@
+<!-- PCU: best-practices-builder-pattern | contract: contracts/apr-page-best-practices-builder-pattern-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Builder Pattern
 
 The **Builder Pattern** is a creational design pattern that constructs complex objects with many optional parameters. In Rust ML libraries, it's the standard way to create estimators with sensible defaults while allowing customization.

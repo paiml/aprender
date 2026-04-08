@@ -1,3 +1,7 @@
+<!-- PCU: examples-gnn-node-classification | contract: contracts/apr-page-examples-gnn-node-classification-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Graph Neural Networks for Node Classification
 
 This case study demonstrates Aprender's GNN module for learning on graph-structured data.

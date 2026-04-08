@@ -1,0 +1,96 @@
+contract: apr-page-ml-fundamentals-compiler-in-the-loop
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-compiler-in-the-loop"
+  title: "Compiler-in-the-Loop Learning"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/compiler-in-the-loop.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Core Feedback Loop"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related ML/AI Paradigms"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tiered Diagnostic Capture"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Decision Traces"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Oracle Query Loop"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Golden Traces and Semantic Equivalence"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Practical Example: Depyler Oracle"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison with Other Learning Paradigms"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Advantages of Compiler-in-the-Loop"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Challenges and Limitations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Exporting Training Data for ML Pipelines"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation in Aprender"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Research Directions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Papers and Resources"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

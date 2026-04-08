@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-graph-link-prediction | contract: contracts/apr-page-ml-fundamentals-graph-link-prediction-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Graph Link Prediction and Community Detection
 
 Link prediction and community detection are essential graph analysis techniques with applications in social network analysis, recommendation systems, biological network analysis, and network security. This chapter covers the theory and implementation of link prediction metrics and community detection algorithms in aprender's graph module.

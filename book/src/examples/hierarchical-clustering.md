@@ -1,3 +1,7 @@
+<!-- PCU: examples-hierarchical-clustering | contract: contracts/apr-page-examples-hierarchical-clustering-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example hierarchical_clustering -->
+<!-- Status: enforced -->
+
 # Case Study: Hierarchical Clustering Implementation
 
 This chapter documents the complete EXTREME TDD implementation of aprender's Agglomerative Hierarchical Clustering algorithm. This is a real-world example showing every phase of the RED-GREEN-REFACTOR cycle from Issue #15.

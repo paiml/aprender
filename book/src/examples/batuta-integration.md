@@ -1,3 +1,7 @@
+<!-- PCU: examples-batuta-integration | contract: contracts/apr-page-examples-batuta-integration-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Batuta - Automated Migration to Aprender
 
 Using Batuta to automatically convert Python ML projects to Aprender/Rust.

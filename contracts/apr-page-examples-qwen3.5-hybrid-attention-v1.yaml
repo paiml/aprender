@@ -1,0 +1,56 @@
+contract: apr-page-examples-qwen3.5-hybrid-attention
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-qwen3.5-hybrid-attention"
+  title: "Qwen3.5 Hybrid Attention Architecture"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/qwen3.5-hybrid-attention.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Architecture Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Config Pipeline"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Weight Loading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "CLI Usage"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Falsification Tests"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Fine-Tuning Support"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

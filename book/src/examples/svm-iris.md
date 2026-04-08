@@ -1,3 +1,7 @@
+<!-- PCU: examples-svm-iris | contract: contracts/apr-page-examples-svm-iris-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example svm_iris -->
+<!-- Status: enforced -->
+
 # Case Study: Linear SVM Iris
 
 This case study demonstrates Linear Support Vector Machine (SVM) classification on the Iris dataset, achieving perfect 100% test accuracy for binary classification.

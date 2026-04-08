@@ -1,3 +1,7 @@
+<!-- PCU: tools-apr-spec | contract: contracts/apr-page-tools-apr-spec-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # APR Complete Specification
 
 **Version**: 2.0.0-draft

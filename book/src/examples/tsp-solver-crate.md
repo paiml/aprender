@@ -1,3 +1,7 @@
+<!-- PCU: examples-tsp-solver-crate | contract: contracts/apr-page-examples-tsp-solver-crate-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: aprender-tsp Sub-Crate for Scientific TSP Research
 
 This comprehensive case study demonstrates the `aprender-tsp` sub-crate, a scientifically reproducible TSP solver designed for academic research and peer-reviewed publications.

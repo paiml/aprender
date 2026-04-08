@@ -1,3 +1,7 @@
+<!-- PCU: examples-qwen-apr-native | contract: contracts/apr-page-examples-qwen-apr-native-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example qwen_apr_native -->
+<!-- Status: enforced -->
+
 # Qwen APR Native - Native APR Format Inference
 
 This example demonstrates Qwen model inference using the native APR format.

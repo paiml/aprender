@@ -1,3 +1,7 @@
+<!-- PCU: examples-bench-comparison | contract: contracts/apr-page-examples-bench-comparison-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example bench_comparison -->
+<!-- Status: enforced -->
+
 # Benchmark Comparison
 
 This example demonstrates how to compare performance across different implementations and configurations in the aprender ecosystem.

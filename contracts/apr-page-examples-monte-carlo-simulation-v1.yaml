@@ -1,0 +1,88 @@
+contract: apr-page-examples-monte-carlo-simulation
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-monte-carlo-simulation"
+  title: "Case Study: Monte Carlo Financial Simulation"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/monte-carlo-simulation.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Basic Simulation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Financial Models"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Risk Metrics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Risk-Adjusted Ratios"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comprehensive Risk Report"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Variance Reduction"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Convergence Monitoring"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Random Number Generation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Time Horizon Configuration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Portfolio Simulation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Feature Flags"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

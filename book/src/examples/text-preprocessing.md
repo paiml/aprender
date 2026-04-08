@@ -1,3 +1,7 @@
+<!-- PCU: examples-text-preprocessing | contract: contracts/apr-page-examples-text-preprocessing-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example text_preprocessing -->
+<!-- Status: enforced -->
+
 # Text Preprocessing for NLP
 
 Text preprocessing is the fundamental first step in Natural Language Processing (NLP) that transforms raw text into a structured format suitable for machine learning. This chapter demonstrates the core preprocessing techniques: tokenization, stop words filtering, and stemming.

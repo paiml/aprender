@@ -1,3 +1,7 @@
+<!-- PCU: examples-aco-tsp | contract: contracts/apr-page-examples-aco-tsp-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example aco_tsp -->
+<!-- Status: enforced -->
+
 # Ant Colony Optimization for TSP
 
 This example demonstrates Ant Colony Optimization (ACO) solving the Traveling Salesman Problem (TSP), a classic combinatorial optimization problem.

@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-cross-validation | contract: contracts/apr-page-ml-fundamentals-cross-validation-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Cross-Validation Theory
 
 <!-- DOC_STATUS_START -->

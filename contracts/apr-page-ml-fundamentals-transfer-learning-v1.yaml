@@ -1,0 +1,80 @@
+contract: apr-page-ml-fundamentals-transfer-learning
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-transfer-learning"
+  title: "Transfer Learning Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/transfer-learning.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "The Transfer Learning Paradigm"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Why Transfer Learning Works"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Transfer Strategies"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Domain Adaptation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Multi-Task Learning"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Low-Rank Adaptation (LoRA)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Adapter Layers"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Knowledge Distillation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Negative Transfer"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Applications"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

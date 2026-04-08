@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-audio-processing | contract: contracts/apr-page-ml-fundamentals-audio-processing-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Audio Processing Theory
 
 Audio processing is fundamental to speech recognition (ASR), text-to-speech (TTS), and voice applications. This chapter covers the signal processing theory behind Aprender's audio module.

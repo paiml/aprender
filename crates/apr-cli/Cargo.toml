@@ -71,7 +71,7 @@ code = ["dep:batuta"]
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
-cuda = ["inference"]
+cuda = ["inference", "realizar/cuda"]
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
 wgpu = ["inference"]
@@ -99,11 +99,9 @@ batuta-common = "0.1"
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
 batuta = { version = "0.7", optional = true, default-features = false, features = ["agents", "agents-inference", "rag"] }
 
-# Inference engine (crates.io version, with local path for dev)
-# Note: cuda/gpu features hardcoded here because apr-cli code has ungated CUDA imports.
-# TODO: Gate all CUDA code in apr-cli with #[cfg(feature = "cuda")] then remove from here.
-# GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
-realizar = { version = "0.9.1", optional = true }
+# Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
+# GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s
+realizar = { workspace = true, optional = true }
 
 # Whisper speech recognition (GH-516: apr run --input audio.wav)
 # Zero external deps — our own implementation in ../whisper.apr

@@ -1,3 +1,7 @@
+<!-- PCU: examples-cuda-backend | contract: contracts/apr-page-examples-cuda-backend-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example cuda_backend -->
+<!-- Status: enforced -->
+
 # Case Study: CUDA and GPU Backends
 
 This chapter demonstrates how to configure aprender for different compute backends, including CPU SIMD, GPU (wgpu/WebGPU), and NVIDIA CUDA acceleration.

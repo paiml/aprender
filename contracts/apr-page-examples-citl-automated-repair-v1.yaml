@@ -1,0 +1,96 @@
+contract: apr-page-examples-citl-automated-repair
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-citl-automated-repair"
+  title: "Case Study: CITL Automated Program Repair"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/citl-automated-repair.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Basic Usage"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Iterative Fix Loop"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cargo Mode for Dependencies"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Pattern Library"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Built-in Fix Templates"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Metrics Tracking"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Error Embedding"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration Test Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Architecture"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Neural Encoder (Multi-Language)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Types"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Characteristics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Build-Time Performance Assertions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Syscall Comparison"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,0 +1,80 @@
+contract: apr-page-best-practices-api-design
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "best-practices-api-design"
+  title: "API Design"
+  part: "reference"
+  category: "guide"
+  path: "book/src/best-practices/api-design.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Core Design Principles"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Estimator Pattern"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Unsupervised Learning API"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Transformer API"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Method Naming Conventions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Error Handling in APIs"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Generic Programming with Traits"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "API Design Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Example: Complete Workflow"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Common API Pitfalls"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "API Documentation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

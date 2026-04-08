@@ -1,0 +1,76 @@
+contract: apr-page-best-practices-documentation-standards
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "best-practices-documentation-standards"
+  title: "Documentation Standards"
+  part: "reference"
+  category: "guide"
+  path: "book/src/best-practices/documentation-standards.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Why Documentation Matters"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Rustdoc Basics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Module-Level Documentation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Function Documentation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Type Documentation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Doctests"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Documentation Patterns"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Common Documentation Pitfalls"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Documentation Checklist"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tools"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

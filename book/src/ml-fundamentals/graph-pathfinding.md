@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-graph-pathfinding | contract: contracts/apr-page-ml-fundamentals-graph-pathfinding-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Graph Pathfinding Algorithms
 
 Pathfinding algorithms find paths between nodes in a graph, with applications in routing, navigation, social network analysis, and dependency resolution. This chapter covers the theory and implementation of four fundamental pathfinding algorithms in aprender's graph module.

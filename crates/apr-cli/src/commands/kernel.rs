@@ -13,7 +13,7 @@
 /// References:
 /// - Williams et al. (2009) "Roofline: An Insightful Visual Performance Model"
 /// - Pope et al. (2023) "Efficiently Scaling Transformer Inference"
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn profile_gpu_generation(
     path: &Path,
     tokens_per_pass: usize,
@@ -241,7 +241,7 @@ fn profile_gpu_generation(
 }
 
 /// Computed statistics from GPU generation profiling passes.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 struct ProfileStats {
     p50: f64,
     p95: f64,
@@ -256,7 +256,7 @@ struct ProfileStats {
 }
 
 /// Compute percentile latencies and throughput from measurement passes.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn compute_profile_stats(
     decode_times: &[f64],
     prefill_times: &[f64],
@@ -333,7 +333,7 @@ fn compute_profile_stats(
 ///
 /// Disables CUDA graph to get individual kernel timing via stream sync.
 /// This adds overhead (~2x slower) but gives exact per-brick measurements.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_brick_profiler_pass(
     cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
     test_tokens: &[u32],
@@ -371,7 +371,7 @@ fn run_brick_profiler_pass(
 ///
 /// For memory-bandwidth-bound kernels (GEMV, RMSNorm), the data movement is dominated
 /// by reading the weight matrix. We estimate conservatively: read weights + read/write activations.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn estimate_kernel_data_bytes(name: &str, hidden_dim: usize, vocab_size: usize) -> Option<u64> {
     let name_lower = name.to_lowercase();
     let op = classify_kernel_op(&name_lower);
@@ -379,7 +379,7 @@ fn estimate_kernel_data_bytes(name: &str, hidden_dim: usize, vocab_size: usize) 
 }
 
 /// Kernel operation types for data movement estimation.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 #[derive(Clone, Copy)]
 enum KernelOp {
     QkvProj,
@@ -395,7 +395,7 @@ enum KernelOp {
 }
 
 /// Classify kernel operation by name substring matching.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn classify_kernel_op(name: &str) -> KernelOp {
     const RULES: &[(&[&str], KernelOp)] = &[
         (&["q_proj", "k_proj", "v_proj"], KernelOp::QkvProj),
@@ -419,7 +419,7 @@ fn classify_kernel_op(name: &str) -> KernelOp {
 }
 
 /// Compute estimated data bytes moved for a kernel operation.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn compute_kernel_bytes(op: KernelOp, hidden_dim: usize, vocab_size: usize) -> Option<u64> {
     let q4k_bpe: f64 = 144.0 / 256.0; // Q4K bytes/element
     let act_rw = (hidden_dim * 8) as u64; // activation read+write
@@ -450,7 +450,7 @@ fn compute_kernel_bytes(op: KernelOp, hidden_dim: usize, vocab_size: usize) -> O
 ///
 /// Converts trueno `BrickStats` into our `Hotspot` format with category
 /// classification, bottleneck analysis, bandwidth estimation, and time breakdown.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn extract_gpu_hotspots(
     cuda_model: &realizar::gguf::OwnedQuantizedModelCuda,
     _num_layers: usize,
@@ -517,7 +517,7 @@ fn extract_gpu_hotspots(
 ///
 /// Returns (total_launch_overhead_us, launch_overhead_percent_of_decode).
 /// Launch overhead is estimated as the gap between sum of kernel times and total wall time.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn compute_kernel_launch_overhead(hotspots: &[Hotspot], total_decode_us: f64) -> (f64, f64) {
     let sum_kernel_us: f64 = hotspots.iter().map(|h| h.time_us).sum();
     // Launch overhead = total decode time - sum of kernel compute time

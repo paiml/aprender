@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-ensemble-methods | contract: contracts/apr-page-ml-fundamentals-ensemble-methods-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Ensemble Methods Theory
 
 <!-- DOC_STATUS_START -->

@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-gradient-descent | contract: contracts/apr-page-ml-fundamentals-gradient-descent-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Gradient Descent Theory
 
 Gradient descent is the fundamental optimization algorithm used to train machine learning models. It iteratively adjusts model parameters to minimize a loss function by following the direction of steepest descent.

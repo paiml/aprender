@@ -1,3 +1,7 @@
+<!-- PCU: examples-qwen3.5-hybrid-attention | contract: contracts/apr-page-examples-qwen3.5-hybrid-attention-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Qwen3.5 Hybrid Attention Architecture
 
 Qwen3.5-9B-Instruct introduces a **hybrid attention** architecture that alternates

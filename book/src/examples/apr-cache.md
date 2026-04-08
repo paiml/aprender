@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-cache | contract: contracts/apr-page-examples-apr-cache-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example apr_cache -->
+<!-- Status: enforced -->
+
 # Case Study: APR Model Cache
 
 This example demonstrates the hierarchical caching system implementing Toyota Way Just-In-Time principles for model management.

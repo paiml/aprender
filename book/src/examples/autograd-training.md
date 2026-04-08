@@ -1,3 +1,7 @@
+<!-- PCU: examples-autograd-training | contract: contracts/apr-page-examples-autograd-training-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Automatic Differentiation for Neural Network Training
 
 This case study demonstrates Aprender's autograd engine for computing gradients and training neural networks.

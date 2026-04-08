@@ -1,0 +1,172 @@
+contract: apr-page-tools-apr-cli
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "tools-apr-cli"
+  title: "apr - APR Model Operations CLI"
+  part: "reference"
+  category: "tool"
+  path: "book/src/tools/apr-cli.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Installation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Commands Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Serve Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Chat Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Inspect Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Debug Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Validate Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Diff Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tensors Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Trace Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Probar Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Import Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Explain Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Pull Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "List Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Rm Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cbtop Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Compare-hf Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Hex Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tree Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Flow Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Bench Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Eval Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Profile Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "QA Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Qualify Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Showcase Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Check Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Publish Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Finetune Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tune Command"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Exit Codes"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Integration with CI/CD"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Toyota Way Principles in apr-cli"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "See Also"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

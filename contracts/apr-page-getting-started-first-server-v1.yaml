@@ -1,0 +1,36 @@
+contract: apr-page-getting-started-first-server
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "getting-started-first-server"
+  title: "First Server"
+  part: "reference"
+  category: "guide"
+  path: "book/src/getting-started/first-server.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "OpenAI-Compatible API"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

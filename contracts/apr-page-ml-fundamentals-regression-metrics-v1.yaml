@@ -1,0 +1,68 @@
+contract: apr-page-ml-fundamentals-regression-metrics
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-regression-metrics"
+  title: "Regression Metrics Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/regression-metrics.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mathematical Foundation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation in Aprender"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Choosing the Right Metric"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Practical Considerations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Verification Through Tests"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Real-World Application"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: examples-qwen-chat | contract: contracts/apr-page-examples-qwen-chat-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example qwen_chat -->
+<!-- Status: enforced -->
+
 # Qwen Chat - Interactive Chat Example
 
 This example demonstrates interactive chat with Qwen models using chat templates.

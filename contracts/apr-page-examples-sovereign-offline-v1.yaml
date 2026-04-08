@@ -1,0 +1,72 @@
+contract: apr-page-examples-sovereign-offline
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-sovereign-offline"
+  title: "Case Study: Sovereign AI Offline Mode"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/sovereign-offline.md"
+  example: "sovereign_offline"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Compliance Checklist"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Using Offline Mode"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Model Source Types"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Network Isolation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example Code"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cache Structure"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Production Deployment"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Popperian Falsification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

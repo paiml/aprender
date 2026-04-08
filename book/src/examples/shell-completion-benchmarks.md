@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-completion-benchmarks | contract: contracts/apr-page-examples-shell-completion-benchmarks-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Shell Completion Benchmarks
 
 Sub-millisecond recommendation latency verification using trueno-style criterion benchmarks.

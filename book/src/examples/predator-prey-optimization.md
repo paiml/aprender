@@ -1,3 +1,7 @@
+<!-- PCU: examples-predator-prey-optimization | contract: contracts/apr-page-examples-predator-prey-optimization-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example predator_prey_optimization -->
+<!-- Status: enforced -->
+
 # Predator-Prey Ecosystem Optimization
 
 This example demonstrates using Differential Evolution to optimize parameters of a Lotka-Volterra predator-prey model to match observed population data.

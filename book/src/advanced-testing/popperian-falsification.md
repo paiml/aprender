@@ -1,3 +1,7 @@
+<!-- PCU: advanced-testing-popperian-falsification | contract: contracts/apr-page-advanced-testing-popperian-falsification-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Popperian Falsification Testing
 
 Karl Popper's criterion of demarcation states that scientific claims must be **falsifiable**—there must exist possible observations that would prove them false. We apply this rigorous standard to software testing.

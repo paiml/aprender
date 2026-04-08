@@ -1,3 +1,7 @@
+<!-- PCU: examples-online-learning | contract: contracts/apr-page-examples-online-learning-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example online_learning -->
+<!-- Status: enforced -->
+
 # Case Study: Online Learning and Dynamic Retraining
 
 This case study demonstrates aprender's online learning infrastructure for streaming data, concept drift detection, and automatic model retraining.

@@ -1,0 +1,76 @@
+contract: apr-page-ml-fundamentals-tsne
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-tsne"
+  title: "t-SNE Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/tsne.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Core Idea"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Algorithm"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Parameters"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Time and Space Complexity"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Advantages"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Disadvantages"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison with PCA"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "When to Use"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Practices"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example Usage"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

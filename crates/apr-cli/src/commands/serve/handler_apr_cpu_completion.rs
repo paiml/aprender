@@ -355,7 +355,7 @@ fn eos_token_id(tok: Option<&SafeTensorsTokenizerInfo>, default: u32) -> u32 {
 }
 
 /// Run GPU generation with lock poisoning handling (PMAT-189).
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_gpu_generation(
     cuda: &std::sync::Mutex<realizar::apr::AprV2ModelCuda>,
     input_tokens: &[u32],

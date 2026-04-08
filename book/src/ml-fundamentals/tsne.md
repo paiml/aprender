@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-tsne | contract: contracts/apr-page-ml-fundamentals-tsne-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # t-SNE Theory
 
 t-Distributed Stochastic Neighbor Embedding (t-SNE) is a non-linear dimensionality reduction technique optimized for visualizing high-dimensional data in 2D or 3D space.

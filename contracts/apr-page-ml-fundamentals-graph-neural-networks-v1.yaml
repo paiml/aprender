@@ -1,0 +1,96 @@
+contract: apr-page-ml-fundamentals-graph-neural-networks
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-graph-neural-networks"
+  title: "Graph Neural Networks Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/graph-neural-networks.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Why Graphs?"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Message Passing Framework"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Graph Convolutional Network (GCN)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Graph Attention Network (GAT)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "GraphSAGE"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison of GNN Architectures"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Expressive Power"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Over-Smoothing Problem"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Node Classification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Graph Classification"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Link Prediction"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Heterogeneous Graphs"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Temporal Graphs"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Computational Considerations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation Notes"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-decision-trees | contract: contracts/apr-page-ml-fundamentals-decision-trees-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Decision Trees Theory
 
 <!-- DOC_STATUS_START -->

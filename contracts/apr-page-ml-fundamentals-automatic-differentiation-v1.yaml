@@ -1,0 +1,76 @@
+contract: apr-page-ml-fundamentals-automatic-differentiation
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-automatic-differentiation"
+  title: "Automatic Differentiation Theory"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/automatic-differentiation.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "The Differentiation Landscape"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Forward vs Reverse Mode"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Computational Graph"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Chain Rule Mechanics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Common Operation Gradients"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tape-Based Implementation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Gradient Accumulation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "No-Grad Context"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Numerical Stability"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Memory Optimization"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

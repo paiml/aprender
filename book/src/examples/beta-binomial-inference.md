@@ -1,3 +1,7 @@
+<!-- PCU: examples-beta-binomial-inference | contract: contracts/apr-page-examples-beta-binomial-inference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example beta_binomial_inference -->
+<!-- Status: enforced -->
+
 # Case Study: Beta-Binomial Bayesian Inference
 
 This case study demonstrates Bayesian inference for binary outcomes using conjugate priors. We cover four practical scenarios: coin flip inference, A/B testing, sequential learning, and prior comparison.

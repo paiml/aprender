@@ -1,0 +1,60 @@
+contract: apr-page-examples-qwen-qa-playbook
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-qwen-qa-playbook"
+  title: "Case Study: Qwen2.5-Coder QA Playbook Results (2026-01-30)"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/qwen-qa-playbook.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Test Summary"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tool Coverage Testing (F-TOOL-*)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Format Conversion Testing (F-CONV-*)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Upstream Issue Status"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Requalification History"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the QA Playbook"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

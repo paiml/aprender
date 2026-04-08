@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-neuro-symbolic | contract: contracts/apr-page-ml-fundamentals-neuro-symbolic-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Neuro-Symbolic Reasoning Theory
 
 Neuro-symbolic AI combines neural networks (learning from data) with symbolic AI (logical reasoning) to create systems that can both learn and reason.

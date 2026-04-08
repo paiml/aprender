@@ -1,3 +1,7 @@
+<!-- PCU: examples-differential-evolution | contract: contracts/apr-page-examples-differential-evolution-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Differential Evolution for Hyperparameter Optimization
 
 This example demonstrates using Differential Evolution (DE) to optimize hyperparameters without requiring gradient information.

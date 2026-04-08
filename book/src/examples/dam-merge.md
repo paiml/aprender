@@ -1,3 +1,7 @@
+<!-- PCU: examples-dam-merge | contract: contracts/apr-page-examples-dam-merge-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example dam_merge -->
+<!-- Status: enforced -->
+
 # Case Study: Differentiable Adaptive Merging (DAM)
 
 **Ticket**: GH-446

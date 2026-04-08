@@ -1,3 +1,7 @@
+<!-- PCU: examples-pii-filtering | contract: contracts/apr-page-examples-pii-filtering-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example pii_filtering -->
+<!-- Status: enforced -->
+
 # Data Quality Pipeline for Fine-Tuning (GH-453)
 
 Three-stage data quality pipeline for preparing fine-tuning datasets:

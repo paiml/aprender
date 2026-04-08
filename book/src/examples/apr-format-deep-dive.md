@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-format-deep-dive | contract: contracts/apr-page-examples-apr-format-deep-dive-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example apr_with_metadata -->
+<!-- Status: enforced -->
+
 # The .apr Format: A Five Whys Deep Dive
 
 Why does aprender use its own model format instead of GGUF, SafeTensors, or ONNX? This chapter applies Toyota's **Five Whys** methodology to explain every design decision and preemptively address skepticism.

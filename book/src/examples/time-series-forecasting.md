@@ -1,3 +1,7 @@
+<!-- PCU: examples-time-series-forecasting | contract: contracts/apr-page-examples-time-series-forecasting-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example time_series_forecasting -->
+<!-- Status: enforced -->
+
 # ARIMA Time Series Forecasting
 
 ARIMA (Auto-Regressive Integrated Moving Average) models are a class of statistical models for analyzing and forecasting time series data. They combine three components to capture different temporal patterns.

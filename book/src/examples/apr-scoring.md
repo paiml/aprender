@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-scoring | contract: contracts/apr-page-examples-apr-scoring-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example apr_scoring -->
+<!-- Status: enforced -->
+
 # Case Study: APR 100-Point Quality Scoring
 
 This example demonstrates the comprehensive model quality scoring system that evaluates models across six dimensions based on ML best practices and Toyota Way principles.

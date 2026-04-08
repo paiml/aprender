@@ -1,3 +1,7 @@
+<!-- PCU: examples-gamma-poisson-inference | contract: contracts/apr-page-examples-gamma-poisson-inference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example gamma_poisson_inference -->
+<!-- Status: enforced -->
+
 # Case Study: Gamma-Poisson Bayesian Inference
 
 This case study demonstrates Bayesian inference for count data using the Gamma-Poisson conjugate family. We cover four practical scenarios: call center analysis, quality control comparison, sequential learning, and prior comparison.

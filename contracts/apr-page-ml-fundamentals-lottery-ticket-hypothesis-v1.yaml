@@ -1,0 +1,76 @@
+contract: apr-page-ml-fundamentals-lottery-ticket-hypothesis
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-lottery-ticket-hypothesis"
+  title: "Lottery Ticket Hypothesis"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/lottery-ticket-hypothesis.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Algorithm: Iterative Magnitude Pruning (IMP)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Rewind Strategies"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation in Aprender"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Why Winning Tickets Work"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison with Standard Pruning"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Practical Considerations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Extensions and Variants"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Mathematical Properties"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Quality Metrics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "References"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

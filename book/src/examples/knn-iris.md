@@ -1,3 +1,7 @@
+<!-- PCU: examples-knn-iris | contract: contracts/apr-page-examples-knn-iris-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example knn_iris -->
+<!-- Status: enforced -->
+
 # Case Study: KNN Iris
 
 This case study demonstrates K-Nearest Neighbors (kNN) classification on the Iris dataset, exploring the effects of k values, distance metrics, and voting strategies to achieve 90% test accuracy.

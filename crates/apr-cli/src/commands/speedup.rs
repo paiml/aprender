@@ -12,11 +12,16 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
 
     #[cfg(feature = "inference")]
     {
-        use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
 
         let tracer = TracerImpl::new_local();
-        let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
+        #[cfg(feature = "cuda")]
+        let cuda_available = {
+            use realizar::cuda::CudaExecutor;
+            CudaExecutor::is_available() && CudaExecutor::num_devices() > 0
+        };
+        #[cfg(not(feature = "cuda"))]
+        let cuda_available = false;
 
         let model_bytes = std::fs::read(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
@@ -116,7 +121,7 @@ fn measure_our_gguf_tps(
     tracer: &TracerImpl,
 ) -> Result<f64> {
     use realizar::gguf::{
-        GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+        GGUFModel, MappedGGUFModel, OwnedQuantizedModel,
         QuantizedGenerateConfig,
     };
 
@@ -137,8 +142,13 @@ fn measure_our_gguf_tps(
     };
     let budget_us = parity_max_tokens as u64 * config.iterations as u64 * 100_000;
 
-    let cuda_available = realizar::cuda::CudaExecutor::is_available()
-        && realizar::cuda::CudaExecutor::num_devices() > 0;
+    #[cfg(feature = "cuda")]
+    let cuda_available = {
+        use realizar::cuda::CudaExecutor;
+        CudaExecutor::is_available() && CudaExecutor::num_devices() > 0
+    };
+    #[cfg(not(feature = "cuda"))]
+    let cuda_available = false;
 
     let mapped = MappedGGUFModel::from_path(path)
         .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
@@ -146,7 +156,9 @@ fn measure_our_gguf_tps(
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
     // GH-284: Try CUDA, fall back to CPU on capability mismatch (e.g. missing QkNorm kernel)
+    #[cfg(feature = "cuda")]
     if cuda_available {
+        use realizar::gguf::OwnedQuantizedModelCuda;
         match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
             Ok(mut cuda_model) => {
                 let (tps, _) = measure_generate_throughput(
@@ -276,7 +288,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 ///
 /// Toyota Way: Genchi Genbutsu - Go and see for yourself. Measure real performance.
 /// Measure GPU and CPU throughput for a GGUF model, returning (cpu_tps, gpu_tps).
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn measure_gpu_cpu_tps(
     path: &Path,
     config: &QaConfig,
@@ -359,7 +371,7 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         println!("{}", "Running GPU vs CPU speedup test...".yellow());
     }
 
-    #[cfg(feature = "inference")]
+    #[cfg(all(feature = "inference", feature = "cuda"))]
     {
         use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
@@ -424,12 +436,12 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         }
     }
 
-    #[cfg(not(feature = "inference"))]
+    #[cfg(not(all(feature = "inference", feature = "cuda")))]
     {
         let _ = (path, config);
         Ok(GateResult::skipped(
             "gpu_speedup",
-            "Requires 'inference' feature",
+            "Requires 'inference' and 'cuda' features",
         ))
     }
 }

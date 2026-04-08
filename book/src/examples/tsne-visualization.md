@@ -1,3 +1,7 @@
+<!-- PCU: examples-tsne-visualization | contract: contracts/apr-page-examples-tsne-visualization-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: t-SNE Implementation
 
 This chapter documents the complete EXTREME TDD implementation of aprender's t-SNE algorithm for dimensionality reduction and visualization from Issue #18.

@@ -1,0 +1,64 @@
+contract: apr-page-examples-apr-with-metadata
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-apr-with-metadata"
+  title: "Case Study: APR with JSON Metadata"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/apr-with-metadata.md"
+  example: "apr_with_metadata"
+  arxiv: []
+
+sections:
+  - heading: "The Problem"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "The Solution: Embedded Metadata"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Complete Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Features"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Use Cases"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Benefits"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Binary Data: Metadata vs Tensor"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Resources"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

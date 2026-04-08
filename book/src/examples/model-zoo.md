@@ -1,3 +1,7 @@
+<!-- PCU: examples-model-zoo | contract: contracts/apr-page-examples-model-zoo-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example model_zoo -->
+<!-- Status: enforced -->
+
 # Case Study: Model Zoo
 
 This example demonstrates the Model Zoo protocol for model sharing and discovery, providing standardized metadata and quality scoring.

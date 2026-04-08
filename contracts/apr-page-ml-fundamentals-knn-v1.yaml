@@ -1,0 +1,88 @@
+contract: apr-page-ml-fundamentals-knn
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "ml-fundamentals-knn"
+  title: "K-Nearest Neighbors (kNN)"
+  part: "reference"
+  category: "theory"
+  path: "book/src/ml-fundamentals/knn.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "What is K-Nearest Neighbors?"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "How kNN Works"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Choosing k"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Weighted vs Uniform Voting"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Implementation in Aprender"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Time and Space Complexity"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "When to Use kNN"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Advantages and Disadvantages"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Comparison with Other Classifiers"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Practical Considerations"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Algorithm Details"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Example: Iris Dataset"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Reading"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "API Reference"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

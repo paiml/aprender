@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-active-learning | contract: contracts/apr-page-ml-fundamentals-active-learning-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Active Learning Theory
 
 Active learning optimizes labeling budgets by selecting the most informative samples for human annotation.

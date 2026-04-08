@@ -1,3 +1,7 @@
+<!-- PCU: examples-batch-optimization | contract: contracts/apr-page-examples-batch-optimization-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example batch_optimization -->
+<!-- Status: enforced -->
+
 # Case Study: Batch Optimization
 
 This example demonstrates batch optimization algorithms for minimizing smooth, differentiable objective functions using gradient and Hessian information.

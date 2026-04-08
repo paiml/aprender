@@ -1,3 +1,7 @@
+<!-- PCU: examples-qa-falsification | contract: contracts/apr-page-examples-qa-falsification-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example qa_run -->
+<!-- Status: enforced -->
+
 # Case Study: QA Falsification Protocol (PMAT-098)
 
 This chapter documents the Popperian falsification methodology used in the aprender QA infrastructure. The key insight: **a test that cannot fail provides no information**.

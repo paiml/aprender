@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-speech-voice-processing | contract: contracts/apr-page-ml-fundamentals-speech-voice-processing-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Speech and Voice Processing Theory
 
 Speech and voice processing enables machines to understand, generate, and manipulate human speech. This chapter covers ASR, TTS, VAD, diarization, and voice cloning.

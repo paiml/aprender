@@ -1,3 +1,7 @@
+<!-- PCU: examples-phi-hf-import | contract: contracts/apr-page-examples-phi-hf-import-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example phi_hf_import -->
+<!-- Status: enforced -->
+
 # Phi HuggingFace Import - Model Import Example
 
 This example demonstrates importing Microsoft Phi models from HuggingFace format.

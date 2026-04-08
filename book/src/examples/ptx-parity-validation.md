@@ -1,3 +1,7 @@
+<!-- PCU: examples-ptx-parity-validation | contract: contracts/apr-page-examples-ptx-parity-validation-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: PTX Parity Validation (GH-219)
 
 This chapter documents the PTX parity validation system—a **compile-time Poka-Yoke** that catches GPU kernel generation bugs before they reach runtime. It validates that batched kernels maintain structural parity with their single-vector reference implementations.

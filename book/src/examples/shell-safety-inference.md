@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-safety-inference | contract: contracts/apr-page-examples-shell-safety-inference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example shell_safety_training -->
+<!-- Status: enforced -->
+
 # Shell Safety Classifier Inference
 
 Loads a trained shell safety model and classifies shell scripts

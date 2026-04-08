@@ -1,3 +1,7 @@
+<!-- PCU: examples-pruning-magnitude | contract: contracts/apr-page-examples-pruning-magnitude-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example pruning_magnitude -->
+<!-- Status: enforced -->
+
 # Case Study: Magnitude Pruning
 
 This example demonstrates neural network pruning using magnitude-based importance scoring with Aprender's pruning module.

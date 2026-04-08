@@ -1,3 +1,7 @@
+<!-- PCU: examples-mixture-of-experts | contract: contracts/apr-page-examples-mixture-of-experts-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Mixture of Experts (MoE)
 
 This case study demonstrates specialized ensemble learning using Mixture of Experts architecture. MoE enables multiple expert models with a learnable gating network that routes inputs to the most appropriate expert(s).

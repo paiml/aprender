@@ -1,3 +1,7 @@
+<!-- PCU: examples-gmm-clustering | contract: contracts/apr-page-examples-gmm-clustering-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Gaussian Mixture Models (GMM) Implementation
 
 This chapter documents the complete EXTREME TDD implementation of aprender's Gaussian Mixture Model clustering algorithm using the Expectation-Maximization (EM) algorithm from Issue #16.

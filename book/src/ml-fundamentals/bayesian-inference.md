@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-bayesian-inference | contract: contracts/apr-page-ml-fundamentals-bayesian-inference-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Bayesian Inference Theory
 
 ## Overview

@@ -1,3 +1,7 @@
+<!-- PCU: examples-metaheuristics-optimization | contract: contracts/apr-page-examples-metaheuristics-optimization-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example metaheuristics_optimization -->
+<!-- Status: enforced -->
+
 # Case Study: Metaheuristics Optimization
 
 This example demonstrates derivative-free global optimization using Aprender's metaheuristics module. We compare multiple algorithms on standard benchmark functions.

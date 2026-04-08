@@ -1,3 +1,7 @@
+<!-- PCU: examples-custom-error-classifier | contract: contracts/apr-page-examples-custom-error-classifier-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Building Custom Error Classifiers
 
 This chapter demonstrates how to build ML-powered error classification systems using aprender, based on the real-world `depyler-oracle` implementation.

@@ -1,3 +1,7 @@
+<!-- PCU: examples-rlvr | contract: contracts/apr-page-examples-rlvr-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example rlvr -->
+<!-- Status: enforced -->
+
 # Case Study: Reinforcement Learning on Verifiable Rewards (RLVR)
 
 **Ticket**: GH-450

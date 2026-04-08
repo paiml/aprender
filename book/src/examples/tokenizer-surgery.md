@@ -1,3 +1,7 @@
+<!-- PCU: examples-tokenizer-surgery | contract: contracts/apr-page-examples-tokenizer-surgery-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example tokenizer_surgery -->
+<!-- Status: enforced -->
+
 # Case Study: Tokenizer Surgery
 
 **Ticket**: GH-447

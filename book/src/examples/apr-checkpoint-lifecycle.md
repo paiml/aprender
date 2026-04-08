@@ -1,3 +1,7 @@
+<!-- PCU: examples-apr-checkpoint-lifecycle | contract: contracts/apr-page-examples-apr-checkpoint-lifecycle-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example apr_checkpoint_lifecycle -->
+<!-- Status: enforced -->
+
 # APR Checkpoint Lifecycle
 
 Demonstrates the full checkpoint save, load, filter, and validate cycle

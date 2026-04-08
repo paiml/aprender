@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-transfer-learning | contract: contracts/apr-page-ml-fundamentals-transfer-learning-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Transfer Learning Theory
 
 Transfer learning leverages knowledge from one task to improve performance on related tasks, dramatically reducing data requirements and training time.

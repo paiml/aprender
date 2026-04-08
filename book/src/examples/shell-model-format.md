@@ -1,3 +1,7 @@
+<!-- PCU: examples-shell-model-format | contract: contracts/apr-page-examples-shell-model-format-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example shell_model_format -->
+<!-- Status: enforced -->
+
 # Shell Model Format Verification
 
 Demonstrates and verifies the `.apr` model format for shell completion models.

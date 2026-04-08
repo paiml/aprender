@@ -1,3 +1,7 @@
+<!-- PCU: examples-federation-gateway | contract: contracts/apr-page-examples-federation-gateway-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Federation Gateway
 
 The Federation Gateway provides enterprise-grade model routing across distributed infrastructure. This case study demonstrates building a fault-tolerant, policy-based routing system using Extreme TDD principles.

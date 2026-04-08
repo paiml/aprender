@@ -1,3 +1,7 @@
+<!-- PCU: examples-tracing-memory-paging | contract: contracts/apr-page-examples-tracing-memory-paging-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Case Study: Tracing Memory Paging with Renacer
 
 Use renacer to understand and optimize memory paging behavior in ML model loading. This case study demonstrates syscall-level profiling of aprender's bundle module.

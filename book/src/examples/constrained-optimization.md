@@ -1,3 +1,7 @@
+<!-- PCU: examples-constrained-optimization | contract: contracts/apr-page-examples-constrained-optimization-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example constrained_optimization -->
+<!-- Status: enforced -->
+
 # Case Study: Constrained Optimization
 
 This example demonstrates **Phase 3 constrained optimization methods** for handling various constraint types in optimization problems.

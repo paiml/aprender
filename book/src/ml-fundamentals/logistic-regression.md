@@ -1,3 +1,7 @@
+<!-- PCU: ml-fundamentals-logistic-regression | contract: contracts/apr-page-ml-fundamentals-logistic-regression-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example none -->
+<!-- Status: enforced -->
+
 # Logistic Regression Theory
 
 <!-- DOC_STATUS_START -->

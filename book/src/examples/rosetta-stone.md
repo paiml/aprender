@@ -1,3 +1,7 @@
+<!-- PCU: examples-rosetta-stone | contract: contracts/apr-page-examples-rosetta-stone-v1.yaml -->
+<!-- Example: cargo run -p aprender-core --example rosetta_stone -->
+<!-- Status: enforced -->
+
 # Case Study: Rosetta Stone — Universal Model Format Converter
 
 ## Overview

@@ -1,0 +1,88 @@
+contract: apr-page-examples-knn-iris
+version: 1
+status: enforced
+date: 2026-04-08
+
+page:
+  id: "examples-knn-iris"
+  title: "Case Study: KNN Iris"
+  part: "reference"
+  category: "case-study"
+  path: "book/src/examples/knn-iris.md"
+  example: "knn_iris"
+  arxiv: []
+
+sections:
+  - heading: "Overview"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Running the Example"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Dataset"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Part 1: Basic kNN (k=3)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Part 2: Effect of k Parameter"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Part 3: Distance Metrics (k=5)"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Part 4: Weighted vs Uniform Voting"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Part 5: Probabilistic Predictions"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Best Configuration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Key Insights"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Performance Metrics"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Full Code"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Further Exploration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Related Examples"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example does not compile"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Example exits non-zero"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Legacy name in page text"
+    severity: P0
+    action: delete_from_summary

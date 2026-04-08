@@ -4,38 +4,18 @@
 
 # Part I: Foundation
 
-- [Why Rust for Machine Learning](./chapters/ch01-why-rust.md)
-- [Tensor Computation](./chapters/ch02-tensors.md)
-- [The APR Model Format](./chapters/ch03-apr-format.md)
 
 # Part II: Algorithms
 
-- [Supervised Learning](./chapters/ch04-supervised.md)
-- [Unsupervised Learning](./chapters/ch05-unsupervised.md)
-- [Ensemble Methods](./chapters/ch06-ensembles.md)
-- [Model Selection and Evaluation](./chapters/ch07-model-selection.md)
 
 # Part III: Deep Learning & Inference
 
-- [Transformer Architecture](./chapters/ch08-transformer.md)
-- [Inference with aprender-serve](./chapters/ch09-inference.md)
-- [Training with aprender-train](./chapters/ch10-training.md)
-- [Model Formats and Conversion](./chapters/ch11-formats.md)
 
 # Part IV: Production
 
-- [Serving and Deployment](./chapters/ch12-serving.md)
-- [Profiling and Optimization](./chapters/ch13-profiling.md)
-- [Provable Contracts](./chapters/ch14-contracts.md)
-- [Orchestration and Agents](./chapters/ch15-orchestrate.md)
 
 # Part V: Advanced Topics
 
-- [Time Series Analysis](./chapters/ch16-timeseries.md)
-- [Bayesian Methods](./chapters/ch17-bayesian.md)
-- [Graph Algorithms](./chapters/ch18-graphs.md)
-- [Text Processing and Tokenization](./chapters/ch19-text.md)
-- [RAG Pipelines](./chapters/ch20-rag.md)
 
 # Getting Started
 
@@ -46,7 +26,6 @@
 
 # CLI Reference
 
-- [Overview](./cli-reference/overview.md)
 - [apr run](./cli-reference/apr-run.md)
 - [apr serve](./cli-reference/apr-serve.md)
 - [apr chat](./cli-reference/apr-chat.md)
@@ -64,13 +43,6 @@
 
 # Quality Gates
 
-- [Pre-Commit Hooks](./quality-gates/pre-commit-hooks.md)
-- [Continuous Integration](./quality-gates/continuous-integration.md)
-- [Code Formatting (rustfmt)](./quality-gates/code-formatting.md)
-- [Linting (clippy)](./quality-gates/linting-clippy.md)
-- [Coverage Measurement](./quality-gates/coverage-measurement.md)
-- [Complexity Analysis](./quality-gates/complexity-analysis.md)
-- [Technical Debt Gradient (TDG)](./quality-gates/tdg-score.md)
 - [Jidoka (Built-in Quality)](./quality-gates/jidoka.md)
 - [What is EXTREME TDD?](./methodology/what-is-extreme-tdd.md)
 - [The RED-GREEN-REFACTOR Cycle](./methodology/red-green-refactor.md)
@@ -180,14 +152,6 @@
 
 # Tools and Setup
 
-- [Development Environment](./tools/development-environment.md)
-- [cargo test](./tools/cargo-test.md)
-- [cargo clippy](./tools/cargo-clippy.md)
-- [cargo fmt](./tools/cargo-fmt.md)
-- [cargo mutants](./tools/cargo-mutants.md)
-- [proptest](./tools/proptest.md)
-- [criterion](./tools/criterion.md)
-- [pmat (Toyota AI Toolkit)](./tools/pmat.md)
 - [apr (APR Model Operations CLI)](./tools/apr-cli.md)
 - [APR Format Specification](./tools/apr-spec.md)
 
@@ -203,15 +167,10 @@
 # Case Studies
 
 - [Examples Reference](./examples/examples-reference.md)
-- [Case Study: Linear Regression](./examples/linear-regression.md)
-- [Case Study: Boston Housing](./examples/boston-housing.md)
 - [Case Study: Cross-Validation](./examples/cross-validation.md)
 - [Case Study: Grid Search Hyperparameter Tuning](./examples/grid-search-tuning.md)
 - [Case Study: AutoML Clustering (TPE)](./examples/automl-clustering.md)
-- [Case Study: Random Forest](./examples/random-forest.md)
-- [Case Study: Random Forest Iris](./examples/random-forest-iris.md)
 - [Case Study: Random Forest Regression](./examples/random-forest-regression.md)
-- [Case Study: Decision Tree Iris](./examples/decision-tree-iris.md)
 - [Case Study: Decision Tree Regression](./examples/decision-tree-regression.md)
 - [Case Study: Model Serialization](./examples/model-serialization.md)
 - [Case Study: Model Format (.apr)](./examples/model-format.md)
@@ -223,11 +182,9 @@
 - [Case Study: Code-Aware EDA](./examples/code-eda.md)
 - [Case Study: Code Feature Extraction](./examples/code-feature-extractor.md)
 - [Case Study: Code Analysis with Code2Vec and MPNN](./examples/code-analysis.md)
-- [Case Study: KMeans Clustering](./examples/kmeans-clustering.md)
 - [Case Study: DBSCAN Clustering](./examples/dbscan-clustering.md)
 - [Case Study: Hierarchical Clustering](./examples/hierarchical-clustering.md)
 - [Case Study: GMM Clustering](./examples/gmm-clustering.md)
-- [Case Study: Iris Clustering](./examples/iris-clustering.md)
 - [Case Study: Logistic Regression](./examples/logistic-regression.md)
 - [Case Study: KNN Iris](./examples/knn-iris.md)
 - [Case Study: Naive Bayes Iris](./examples/naive-bayes-iris.md)
@@ -235,13 +192,9 @@
 - [Case Study: Gamma-Poisson Bayesian Inference](./examples/gamma-poisson-inference.md)
 - [Case Study: Normal-InverseGamma Bayesian Inference](./examples/normal-inverse-gamma-inference.md)
 - [Case Study: Dirichlet-Multinomial Bayesian Inference](./examples/dirichlet-multinomial-inference.md)
-- [Case Study: Bayesian Linear Regression](./examples/bayesian-linear-regression.md)
-- [Case Study: Bayesian Logistic Regression](./examples/bayesian-logistic-regression.md)
 - [Case Study: Negative Binomial GLM (Overdispersed Counts)](./examples/negative-binomial-glm.md)
 - [Case Study: SVM Iris](./examples/svm-iris.md)
 - [Case Study: Gradient Boosting Iris](./examples/gbm-iris.md)
-- [Case Study: Regularized Regression](./examples/regularized-regression.md)
-- [Case Study: Optimizer Demo](./examples/optimizer-demo.md)
 - [Case Study: Batch Optimization](./examples/batch-optimization.md)
 - [Case Study: Convex Optimization (FISTA + Coordinate Descent)](./examples/convex-optimization.md)
 - [Case Study: Constrained Optimization (Projected GD + Augmented Lagrangian + Interior Point)](./examples/constrained-optimization.md)
@@ -252,7 +205,6 @@
 - [Case Study: Tabu Search (TSP)](./examples/tabu-tsp.md)
 - [Case Study: aprender-tsp Sub-Crate](./examples/tsp-solver-crate.md)
 - [Case Study: Predator-Prey Optimization](./examples/predator-prey-optimization.md)
-- [Case Study: DataFrame Basics](./examples/dataframe-basics.md)
 - [Case Study: Data Preprocessing with Scalers](./examples/data-preprocessing-scalers.md)
 - [Case Study: PII Filtering for Fine-Tuning](./examples/pii-filtering.md)
 - [Case Study: Evolutionary Merge Optimization](./examples/evolutionary-merge.md)
