@@ -1,12 +1,19 @@
-contract: apr-book-ch07
-version: 2
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 7: Model Selection and Evaluation
+  contract: apr-book-ch07
+  status: enforced
   title: "Model Selection and Evaluation"
   part: II
   example: ch07_model_selection
   arxiv_citations: []
+
 api_calls:
   - module: "aprender::model_selection"
     functions: ["KFold::new", "KFold::split"]

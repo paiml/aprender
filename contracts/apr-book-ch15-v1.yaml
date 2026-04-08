@@ -1,12 +1,19 @@
-contract: apr-book-ch15
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 15: Orchestration and Agents
+  contract: apr-book-ch15
+  status: enforced
   title: "Orchestration and Agents"
   part: IV
   example: ch15_orchestrate
   arxiv_citations: ["2210.03629", "1905.01997"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch15_orchestrate succeeds"
   - "All arXiv IDs in citation table are valid"

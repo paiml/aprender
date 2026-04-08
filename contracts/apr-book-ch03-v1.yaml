@@ -1,12 +1,19 @@
-contract: apr-book-ch03
-version: 2
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 3: The APR Model Format
+  contract: apr-book-ch03
+  status: enforced
   title: "The APR Model Format"
   part: I
   example: ch03_apr_format
   arxiv_citations: []
+
 api_calls:
   - module: "aprender::format::validated_tensors"
     functions: ["TensorStats::compute"]

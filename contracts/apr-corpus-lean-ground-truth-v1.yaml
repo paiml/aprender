@@ -1,8 +1,14 @@
-contract: apr-corpus-lean-ground-truth
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-corpus-lean-ground-truth: Lean 4 theorem corpus
+  contract: apr-corpus-lean-ground-truth
+  status: enforced
   repo: "paiml/lean-ground-truth"
   purpose: "Lean 4 theorem corpus"
   language: "Lean"
@@ -10,6 +16,7 @@ metadata:
   category: ground-truth
   topic: paiml-ground-truth
   tags: [lean4,theorems,proofs]
+
 oracle_integration:
   rag_indexed: true
   freshness_days: 90

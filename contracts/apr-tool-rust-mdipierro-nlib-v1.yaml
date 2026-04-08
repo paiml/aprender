@@ -1,13 +1,20 @@
-contract: apr-tool-rust-mdipierro-nlib
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-tool-rust-mdipierro-nlib: Provable-contracts-first numerical algorithms
+  contract: apr-tool-rust-mdipierro-nlib
+  status: enforced
   repo: "paiml/rust-mdipierro-nlib"
   purpose: "Provable-contracts-first numerical algorithms"
   language: "Rust"
   category: active-tool
   topic: paiml-active-tool
+
 inputs:
   - "Numerical inputs"
 outputs:

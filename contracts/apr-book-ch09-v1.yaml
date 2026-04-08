@@ -1,12 +1,19 @@
-contract: apr-book-ch09
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 9: Inference with aprender-serve
+  contract: apr-book-ch09
+  status: enforced
   title: "Inference with aprender-serve"
   part: III
   example: ch09_inference
   arxiv_citations: ["2208.07339", "2307.08691", "2309.06180"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch09_inference succeeds"
   - "All arXiv IDs in citation table are valid"

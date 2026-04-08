@@ -1,8 +1,14 @@
-contract: apr-corpus-safe-lua-groundtruth
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-corpus-safe-lua-groundtruth: Safe Lua patterns
+  contract: apr-corpus-safe-lua-groundtruth
+  status: enforced
   repo: "paiml/safe-lua-groundtruth"
   purpose: "Safe Lua patterns"
   language: "Lua"
@@ -10,6 +16,7 @@ metadata:
   category: ground-truth
   topic: paiml-ground-truth
   tags: [lua,safety]
+
 oracle_integration:
   rag_indexed: true
   freshness_days: 90

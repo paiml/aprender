@@ -1,0 +1,1 @@
+{"content_hash":"5ddf64cc51b862cc","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-012: kani_harnesses.KH-PUB-CLI-001.bound not specified — Kani requires an unwind bound","file":"contracts/apr-cli-publish-v1.yaml","line":null,"contract_stem":"apr-cli-publish-v1","suppressed":false,"is_new":true}]}

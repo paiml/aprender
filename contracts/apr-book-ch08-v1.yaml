@@ -1,12 +1,19 @@
-contract: apr-book-ch08
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 8: Transformer Architecture
+  contract: apr-book-ch08
+  status: enforced
   title: "Transformer Architecture"
   part: III
   example: ch08_transformer
   arxiv_citations: ["1706.03762", "2305.13245", "2104.09864", "2002.05202", "1910.07467", "2211.05102"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch08_transformer succeeds"
   - "All arXiv IDs in citation table are valid"

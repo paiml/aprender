@@ -1,12 +1,19 @@
-contract: apr-book-ch01
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 1: Why Rust for Machine Learning
+  contract: apr-book-ch01
+  status: enforced
   title: "Why Rust for Machine Learning"
   part: I
   example: ch01_hello_apr
   arxiv_citations: ["1910.02054", "1903.00982", "2407.10671"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch01_hello_apr succeeds"
   - "All arXiv IDs in citation table are valid"

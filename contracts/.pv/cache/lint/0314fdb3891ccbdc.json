@@ -1,0 +1,1 @@
+{"content_hash":"0314fdb3891ccbdc","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-012: kani_harnesses.KH-README-001.bound not specified — Kani requires an unwind bound","file":"contracts/crate-readme-v1.yaml","line":null,"contract_stem":"crate-readme-v1","suppressed":false,"is_new":true}]}

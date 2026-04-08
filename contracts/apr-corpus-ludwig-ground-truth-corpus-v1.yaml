@@ -1,8 +1,14 @@
-contract: apr-corpus-ludwig-ground-truth-corpus
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-corpus-ludwig-ground-truth-corpus: Ludwig declarative DL falsification
+  contract: apr-corpus-ludwig-ground-truth-corpus
+  status: enforced
   repo: "paiml/ludwig-ground-truth-corpus"
   purpose: "Ludwig declarative DL falsification"
   language: "Python"
@@ -10,6 +16,7 @@ metadata:
   category: ground-truth
   topic: paiml-ground-truth
   tags: [ludwig,declarative-ml]
+
 oracle_integration:
   rag_indexed: true
   freshness_days: 90

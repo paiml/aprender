@@ -1,13 +1,20 @@
-contract: apr-tool-duende
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-tool-duende: Daemon tooling for Sovereign AI
+  contract: apr-tool-duende
+  status: enforced
   repo: "paiml/duende"
   purpose: "Daemon tooling for Sovereign AI"
   language: "Rust"
   category: active-tool
   topic: paiml-active-tool
+
 inputs:
   - "Service definitions"
 outputs:

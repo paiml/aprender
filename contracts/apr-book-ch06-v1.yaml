@@ -1,12 +1,19 @@
-contract: apr-book-ch06
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 6: Ensemble Methods
+  contract: apr-book-ch06
+  status: enforced
   title: "Ensemble Methods"
   part: II
   example: ch06_ensembles
   arxiv_citations: ["1603.02754"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch06_ensembles succeeds"
   - "All arXiv IDs in citation table are valid"

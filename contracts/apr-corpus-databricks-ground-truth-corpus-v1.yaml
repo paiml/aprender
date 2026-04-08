@@ -1,8 +1,14 @@
-contract: apr-corpus-databricks-ground-truth-corpus
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-corpus-databricks-ground-truth-corpus: Databricks OSS falsification
+  contract: apr-corpus-databricks-ground-truth-corpus
+  status: enforced
   repo: "paiml/databricks-ground-truth-corpus"
   purpose: "Databricks OSS falsification"
   language: "Python"
@@ -10,6 +16,7 @@ metadata:
   category: ground-truth
   topic: paiml-ground-truth
   tags: [databricks,spark]
+
 oracle_integration:
   rag_indexed: true
   freshness_days: 90

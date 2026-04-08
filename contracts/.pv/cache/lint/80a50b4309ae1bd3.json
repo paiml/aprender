@@ -1,0 +1,1 @@
+{"content_hash":"80a50b4309ae1bd3","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-012: kani_harnesses.KH-FS-001.bound not specified — Kani requires an unwind bound","file":"contracts/repo-filesystem-v1.yaml","line":null,"contract_stem":"repo-filesystem-v1","suppressed":false,"is_new":true}]}

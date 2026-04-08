@@ -1,8 +1,14 @@
-contract: apr-corpus-databricks-scala-ground-truth-corpus
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-corpus-databricks-scala-ground-truth-corpus: Databricks Scala patterns
+  contract: apr-corpus-databricks-scala-ground-truth-corpus
+  status: enforced
   repo: "paiml/databricks-scala-ground-truth-corpus"
   purpose: "Databricks Scala patterns"
   language: "Scala"
@@ -10,6 +16,7 @@ metadata:
   category: ground-truth
   topic: paiml-ground-truth
   tags: [databricks,scala,spark]
+
 oracle_integration:
   rag_indexed: true
   freshness_days: 90

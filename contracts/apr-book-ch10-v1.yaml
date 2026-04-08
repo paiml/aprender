@@ -1,12 +1,19 @@
-contract: apr-book-ch10
-version: 2
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 10: Training with aprender-train
+  contract: apr-book-ch10
+  status: enforced
   title: "Training with aprender-train"
   part: III
   example: ch10_training
   arxiv_citations: ["2106.09685", "2305.14314", "1711.05101", "1608.03983", "1710.03740", "1502.05767"]
+
 api_calls:
   - module: "aprender::autograd"
     functions: ["ComputationGraph::new", "ComputationGraph::record", "ComputationGraph::backward"]

@@ -1,8 +1,14 @@
-contract: apr-org-taxonomy
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-org-taxonomy: paiml GitHub Org Repository Classification
+  contract: apr-org-taxonomy
+  status: enforced
   title: "paiml GitHub Org Repository Classification"
   total_repos: 205
   categories: 15

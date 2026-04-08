@@ -1,12 +1,19 @@
-contract: apr-book-ch04
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 4: Supervised Learning
+  contract: apr-book-ch04
+  status: enforced
   title: "Supervised Learning"
   part: II
   example: ch04_supervised
   arxiv_citations: ["1609.04747", "1201.0490"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch04_supervised succeeds"
   - "All arXiv IDs in citation table are valid"

@@ -1,12 +1,19 @@
-contract: apr-book-ch20
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 20: RAG Pipelines
+  contract: apr-book-ch20
+  status: enforced
   title: "RAG Pipelines"
   part: V
   example: ch20_rag
   arxiv_citations: ["2005.11401", "1702.08734", "2004.04906"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch20_rag succeeds"
   - "All arXiv IDs in citation table are valid"

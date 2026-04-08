@@ -1,12 +1,19 @@
-contract: apr-book-ch16
-version: 2
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 16: Time Series Analysis
+  contract: apr-book-ch16
+  status: enforced
   title: "Time Series Analysis"
   part: V
   example: ch16_timeseries
   arxiv_citations: []
+
 api_calls:
   - module: "aprender::time_series"
     functions: ["ARIMA::new", "ARIMA::fit", "ARIMA::forecast", "ARIMA::ar_coefficients"]

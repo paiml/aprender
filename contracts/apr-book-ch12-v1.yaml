@@ -1,12 +1,19 @@
-contract: apr-book-ch12
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 12: Serving and Deployment
+  contract: apr-book-ch12
+  status: enforced
   title: "Serving and Deployment"
   part: IV
   example: ch12_serving
   arxiv_citations: ["2309.06180", "2211.17192"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch12_serving succeeds"
   - "All arXiv IDs in citation table are valid"

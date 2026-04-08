@@ -1,12 +1,19 @@
-contract: apr-book-ch13
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 13: Profiling and Optimization
+  contract: apr-book-ch13
+  status: enforced
   title: "Profiling and Optimization"
   part: IV
   example: ch13_profiling
   arxiv_citations: ["2007.00072"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch13_profiling succeeds"
   - "All arXiv IDs in citation table are valid"

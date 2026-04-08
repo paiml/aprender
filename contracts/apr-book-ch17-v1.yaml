@@ -1,12 +1,19 @@
-contract: apr-book-ch17
-version: 2
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 17: Bayesian Methods
+  contract: apr-book-ch17
+  status: enforced
   title: "Bayesian Methods"
   part: V
   example: ch17_bayesian
   arxiv_citations: ["math/0504499"]
+
 api_calls:
   - module: "aprender::bayesian"
     functions: ["BetaBinomial::new", "NormalInverseGamma::new", "NormalInverseGamma::update", "NormalInverseGamma::posterior_mean_mu"]

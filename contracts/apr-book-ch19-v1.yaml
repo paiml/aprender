@@ -1,12 +1,19 @@
-contract: apr-book-ch19
-version: 2
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 19: Text Processing and Tokenization
+  contract: apr-book-ch19
+  status: enforced
   title: "Text Processing and Tokenization"
   part: V
   example: ch19_text
   arxiv_citations: ["1508.07909", "1808.06226"]
+
 api_calls:
   - module: "aprender::text::similarity"
     functions: ["cosine_similarity", "jaccard_similarity", "edit_distance"]

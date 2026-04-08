@@ -1,13 +1,20 @@
-contract: apr-tool-rust-mcp-sdk
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-tool-rust-mcp-sdk: MCP SDK for building MCP servers and clients
+  contract: apr-tool-rust-mcp-sdk
+  status: enforced
   repo: "paiml/rust-mcp-sdk"
   purpose: "MCP SDK for building MCP servers and clients"
   language: "Rust"
   category: active-tool
   topic: paiml-active-tool
+
 inputs:
   - "MCP protocol spec"
 outputs:

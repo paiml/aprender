@@ -1,0 +1,1 @@
+{"content_hash":"c42ca9f6b8749716","findings":[{"rule_id":"PV-SCR-001","severity":"error","message":"Score 0.25 (Grade F) below threshold 0.99","file":"contracts/apr-tool-microgpt-v1.yaml","line":null,"contract_stem":"apr-tool-microgpt-v1","suppressed":false,"is_new":true,"evidence":"spec=0.10 falsify=0.00 kani=0.00 lean=0.50 bind=1.00"}]}

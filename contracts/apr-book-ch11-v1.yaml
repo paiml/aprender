@@ -1,12 +1,19 @@
-contract: apr-book-ch11
-version: 1
-status: enforced
-date: 2026-04-08
 metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    APR-BOOK Chapter 11: Model Formats and Conversion
+  contract: apr-book-ch11
+  status: enforced
   title: "Model Formats and Conversion"
   part: III
   example: ch11_formats
   arxiv_citations: ["2210.17323", "2306.00978"]
+
 preconditions:
   - "cargo build -p aprender-core --example ch11_formats succeeds"
   - "All arXiv IDs in citation table are valid"
