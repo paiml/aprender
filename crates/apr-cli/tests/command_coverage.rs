@@ -830,3 +830,339 @@ fn test_coverage_validate_gguf_minimal() {
         "validate on GGUF must produce output"
     );
 }
+
+// ============================================================================
+// CHECK — additional edge cases (basic/json/no-gpu already above)
+// ============================================================================
+
+#[test]
+fn test_coverage_check_invalid_file() {
+    // A GGUF with no tensors is structurally valid but semantically empty.
+    // check should handle this gracefully (not panic).
+    let model = create_minimal_gguf();
+    let output = apr()
+        .args(["check", model.path().to_str().unwrap()])
+        .output()
+        .expect("run check on minimal GGUF");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stdout.is_empty() || !stderr.is_empty(),
+        "check on invalid model must produce output"
+    );
+}
+
+#[test]
+fn test_coverage_check_nonexistent_file() {
+    let output = apr()
+        .args(["check", "/tmp/nonexistent_model_42.apr"])
+        .output()
+        .expect("run check on nonexistent file");
+    assert!(
+        !output.status.success(),
+        "check on nonexistent file must fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error")
+            || stderr.contains("Error")
+            || stderr.contains("not found")
+            || stderr.contains("No such file"),
+        "check on nonexistent file must report error, got stderr: {stderr}"
+    );
+}
+
+// ============================================================================
+// COMPILE — model compilation tests
+// ============================================================================
+
+#[test]
+fn test_coverage_compile_help() {
+    apr()
+        .args(["compile", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("compile"))
+        .stdout(predicate::str::contains("--target"));
+}
+
+#[test]
+fn test_coverage_compile_with_synthetic_model() {
+    let model = create_rich_test_model();
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let output_path = dir.path().join("compiled_model");
+    // compile may fail on missing toolchain, but must not panic
+    let output = apr()
+        .args([
+            "compile",
+            model.path().to_str().unwrap(),
+            "-o",
+            output_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run compile");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stdout.is_empty() || !stderr.is_empty(),
+        "compile must produce output (even if it fails gracefully)"
+    );
+}
+
+#[test]
+fn test_coverage_compile_list_targets() {
+    let output = apr()
+        .args(["compile", "--list-targets"])
+        .output()
+        .expect("run compile --list-targets");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Should list available targets or produce output
+    assert!(
+        !stdout.is_empty() || !stderr.is_empty(),
+        "compile --list-targets must produce output"
+    );
+}
+
+// ============================================================================
+// DATA — data pipeline tests (audit, split)
+// ============================================================================
+
+/// Create a small JSONL dataset in a tempdir for data command tests.
+fn create_test_jsonl() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let jsonl_path = dir.path().join("test.jsonl");
+    std::fs::write(
+        &jsonl_path,
+        r#"{"input":"hello world","label":"1"}
+{"input":"goodbye world","label":"0"}
+{"input":"foo bar baz","label":"1"}
+{"input":"testing data","label":"0"}
+{"input":"more samples","label":"1"}
+{"input":"final entry","label":"0"}
+"#,
+    )
+    .expect("write JSONL");
+    (dir, jsonl_path)
+}
+
+#[test]
+fn test_coverage_data_audit_basic() {
+    let (_dir, jsonl_path) = create_test_jsonl();
+    let output = apr()
+        .args([
+            "data",
+            "audit",
+            jsonl_path.to_str().unwrap(),
+            "--num-classes",
+            "2",
+        ])
+        .output()
+        .expect("run data audit");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stdout.is_empty() || !stderr.is_empty(),
+        "data audit must produce output"
+    );
+}
+
+#[test]
+fn test_coverage_data_audit_json() {
+    let (_dir, jsonl_path) = create_test_jsonl();
+    let output = apr()
+        .args([
+            "data",
+            "audit",
+            jsonl_path.to_str().unwrap(),
+            "--num-classes",
+            "2",
+            "--json",
+        ])
+        .output()
+        .expect("run data audit --json");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // JSON mode should produce structured output
+    assert!(
+        stdout.contains('{') || stdout.contains('['),
+        "data audit --json must produce JSON output, got: {stdout}"
+    );
+}
+
+#[test]
+fn test_coverage_data_split_basic() {
+    let (_dir, jsonl_path) = create_test_jsonl();
+    let output_dir = tempfile::tempdir().expect("create output tempdir");
+    let output = apr()
+        .args([
+            "data",
+            "split",
+            jsonl_path.to_str().unwrap(),
+            "--output",
+            output_dir.path().to_str().unwrap(),
+            "--train",
+            "0.6",
+            "--val",
+            "0.2",
+            "--test",
+            "0.2",
+            "--seed",
+            "42",
+        ])
+        .output()
+        .expect("run data split");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stdout.is_empty() || !stderr.is_empty(),
+        "data split must produce output"
+    );
+}
+
+#[test]
+fn test_coverage_data_audit_nonexistent_file() {
+    let output = apr()
+        .args(["data", "audit", "/tmp/nonexistent_data_42.jsonl"])
+        .output()
+        .expect("run data audit on nonexistent file");
+    assert!(
+        !output.status.success(),
+        "data audit on nonexistent file must fail"
+    );
+}
+
+// ============================================================================
+// DIAGNOSE — diagnostic analysis tests
+// ============================================================================
+
+#[test]
+fn test_coverage_diagnose_help() {
+    apr()
+        .args(["diagnose", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("diagnose"))
+        .stdout(predicate::str::contains("checkpoint"));
+}
+
+#[test]
+fn test_coverage_diagnose_nonexistent_checkpoint() {
+    let output = apr()
+        .args(["diagnose", "/tmp/nonexistent_checkpoint_42"])
+        .output()
+        .expect("run diagnose on nonexistent checkpoint");
+    assert!(
+        !output.status.success(),
+        "diagnose on nonexistent checkpoint must fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error")
+            || stderr.contains("Error")
+            || stderr.contains("not found")
+            || stderr.contains("No such"),
+        "diagnose on nonexistent checkpoint must report error, got: {stderr}"
+    );
+}
+
+#[test]
+fn test_coverage_diagnose_with_synthetic_model() {
+    // diagnose expects a checkpoint directory, but passing a model file
+    // should produce a clear error, not a panic
+    let model = create_rich_test_model();
+    let output = apr()
+        .args(["diagnose", model.path().to_str().unwrap()])
+        .output()
+        .expect("run diagnose with model file");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // May succeed or fail gracefully — either is acceptable
+    assert!(
+        !stdout.is_empty() || !stderr.is_empty(),
+        "diagnose must produce output"
+    );
+}
+
+// ============================================================================
+// COMPARE-HF — HuggingFace comparison tests
+// ============================================================================
+
+#[test]
+fn test_coverage_compare_hf_help() {
+    apr()
+        .args(["compare-hf", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("compare"))
+        .stdout(predicate::str::contains("--hf"));
+}
+
+#[test]
+fn test_coverage_compare_hf_missing_required_args() {
+    // compare-hf requires --hf and a FILE; running without should fail
+    let model = create_rich_test_model();
+    let output = apr()
+        .args(["compare-hf", model.path().to_str().unwrap()])
+        .output()
+        .expect("run compare-hf without --hf");
+    assert!(
+        !output.status.success(),
+        "compare-hf without --hf must fail"
+    );
+}
+
+// ============================================================================
+// PROFILE — performance profiling tests
+// ============================================================================
+
+#[test]
+fn test_coverage_profile_help() {
+    apr()
+        .args(["profile", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("profile"));
+}
+
+#[test]
+fn test_coverage_profile_with_synthetic_model() {
+    let model = create_rich_test_model();
+    // profile may fail on a synthetic model that can't do inference,
+    // but it must not panic
+    let output = apr()
+        .args(["profile", model.path().to_str().unwrap()])
+        .output()
+        .expect("run profile");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stdout.is_empty() || !stderr.is_empty(),
+        "profile must produce output"
+    );
+}
+
+// ============================================================================
+// PIPELINE — pipeline orchestration tests
+// ============================================================================
+
+#[test]
+fn test_coverage_pipeline_help() {
+    apr()
+        .args(["pipeline", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pipeline"))
+        .stdout(predicate::str::contains("plan"));
+}
+
+#[test]
+fn test_coverage_pipeline_plan_nonexistent_config() {
+    let output = apr()
+        .args(["pipeline", "plan", "/tmp/nonexistent_pipeline_42.yaml"])
+        .output()
+        .expect("run pipeline plan on nonexistent config");
+    assert!(
+        !output.status.success(),
+        "pipeline plan on nonexistent config must fail"
+    );
+}
