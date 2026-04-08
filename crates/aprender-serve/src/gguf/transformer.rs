@@ -108,6 +108,23 @@ impl<'a> QuantizedGGUFTransformer<'a> {
         // Phase 2: Validate config at construction boundary.
         let config = ValidatedModelConfig::from_gguf(model)?.into_inner();
 
+        // GH-704: Detect hybrid SSM architectures (Qwen3.5 Gated Delta Net) early.
+        // These require a dedicated SSM inference path not yet implemented.
+        let has_ssm = model
+            .tensors
+            .iter()
+            .any(|t| t.name.contains("ssm_") || t.name.contains("ssm."));
+        if has_ssm {
+            let arch = &config.architecture;
+            return Err(crate::RealizarError::FormatError {
+                reason: format!(
+                    "Architecture '{arch}' uses SSM/Gated Delta Net layers which are not yet \
+                     supported for inference. Use a standard transformer model (e.g., Qwen2.5, \
+                     LLaMA, Mistral) or wait for SSM support in a future release."
+                ),
+            });
+        }
+
         // Token embedding - keep as f32 for efficient lookup
         let token_embedding = model.get_tensor_f32("token_embd.weight", data)?;
         // GH-278: Position embedding — standard GGUF + legacy + aprender export fallback

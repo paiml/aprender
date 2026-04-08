@@ -193,6 +193,7 @@ pub fn infer_rope_type(arch: &str) -> u32 {
         "qwen3",
         "qwen3_5",
         "qwen3.5",
+        "qwen35",
         "stablelm",
         "phi2",
         "phi3",
@@ -309,7 +310,7 @@ fn default_bos_for_architecture(arch: &str) -> Option<u32> {
 pub(crate) fn default_eos_for_architecture(arch: &str) -> Option<u32> {
     match arch {
         "qwen2" | "qwen3" | "qwen3moe" => Some(151_645),
-        "qwen3_5" => Some(248_044),
+        "qwen3_5" | "qwen35" => Some(248_044),
         "llama" => Some(128_001),
         "mistral" => Some(2),
         "gemma" | "gemma2" => Some(1),

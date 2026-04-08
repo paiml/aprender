@@ -36,9 +36,19 @@ struct StageResult {
 pub(crate) fn run(path: &Path, no_gpu: bool, json: bool, verbose: bool) -> Result<(), CliError> {
     contract_pre_apr_model_validity!();
     contract_pre_model_integrity_check!();
+    // GH-705: Detect architecture for display in both text and JSON output
+    #[cfg(feature = "inference")]
+    let architecture = detect_architecture(path);
+    #[cfg(not(feature = "inference"))]
+    let architecture: Option<String> = None;
+
     if !json {
         output::section("Model Self-Test (PMAT-112: Real Validation)");
-        println!("Model: {}\n", path.display().to_string().cyan());
+        println!("Model: {}", path.display().to_string().cyan());
+        if let Some(ref arch) = architecture {
+            println!("Architecture: {}", arch.cyan());
+        }
+        println!();
         if verbose {
             println!("  [verbose] Running all stages with detailed output\n");
         }
@@ -67,7 +77,7 @@ pub(crate) fn run(path: &Path, no_gpu: bool, json: bool, verbose: bool) -> Resul
 
     // GH-253: JSON output for parity checker
     if json {
-        return print_json(&results, path, passed_count, total_count);
+        return print_json(&results, path, passed_count, total_count, architecture.as_deref());
     }
 
     print_results_table(&results);
@@ -109,6 +119,7 @@ fn print_json(
     path: &Path,
     passed_count: usize,
     total_count: usize,
+    architecture: Option<&str>,
 ) -> Result<(), CliError> {
     let stages_json: Vec<serde_json::Value> = results
         .iter()
@@ -123,6 +134,7 @@ fn print_json(
 
     let output = serde_json::json!({
         "model": path.display().to_string(),
+        "architecture": architecture.unwrap_or("unknown"),
         "stages": stages_json,
         "passed": passed_count,
         "total": total_count,
@@ -136,6 +148,16 @@ fn print_json(
     // GH-253: In JSON mode, always exit 0 so parity checker can parse the output.
     // The "all_passed" and individual stage statuses convey success/failure.
     Ok(())
+}
+
+/// Detect architecture from a model file (lightweight, metadata-only).
+#[cfg(feature = "inference")]
+fn detect_architecture(path: &Path) -> Option<String> {
+    use aprender::format::rosetta::RosettaStone;
+    RosettaStone::new()
+        .inspect(path)
+        .ok()
+        .and_then(|r| r.architecture)
 }
 
 /// Run REAL validation checks (PMAT-112)

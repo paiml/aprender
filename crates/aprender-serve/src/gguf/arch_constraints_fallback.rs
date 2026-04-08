@@ -172,7 +172,7 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             default_eps: 1e-5,
         },
         // qwen3_5.yaml
-        "qwen3_5" | "qwen3.5" => ArchConstraints {
+        "qwen3_5" | "qwen3.5" | "qwen35" => ArchConstraints {
             norm_type: NormType::RmsNorm,
             activation: Activation::Silu,
             positional_encoding: PositionalEncoding::Rope,

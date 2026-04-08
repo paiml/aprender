@@ -84,7 +84,7 @@
                 details: Some("Found".to_string()),
             },
         ];
-        let result = print_json(&results, Path::new("/test/model.gguf"), 2, 2);
+        let result = print_json(&results, Path::new("/test/model.gguf"), 2, 2, None);
         assert!(result.is_ok());
     }
 
@@ -104,14 +104,14 @@
                 details: Some("Missing".to_string()),
             },
         ];
-        let result = print_json(&results, Path::new("/test/model.apr"), 1, 2);
+        let result = print_json(&results, Path::new("/test/model.apr"), 1, 2, None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn print_json_empty_results() {
         let results: Vec<StageResult> = vec![];
-        let result = print_json(&results, Path::new("/test/model.gguf"), 0, 0);
+        let result = print_json(&results, Path::new("/test/model.gguf"), 0, 0, None);
         assert!(result.is_ok());
     }
 
@@ -124,7 +124,7 @@
             details: None,
         }];
         // When details is None, unwrap_or("") should produce ""
-        let result = print_json(&results, Path::new("test.apr"), 0, 1);
+        let result = print_json(&results, Path::new("test.apr"), 0, 1, None);
         assert!(result.is_ok());
     }
 
@@ -139,7 +139,7 @@
             })
             .collect();
         let passed = results.iter().filter(|r| r.passed).count();
-        let result = print_json(&results, Path::new("/model.gguf"), passed, 10);
+        let result = print_json(&results, Path::new("/model.gguf"), passed, 10, None);
         assert!(result.is_ok());
     }
 
@@ -151,7 +151,7 @@
             passed: true,
             details: None,
         }];
-        let result = print_json(&results, Path::new("/tmp/modele.gguf"), 1, 1);
+        let result = print_json(&results, Path::new("/tmp/modele.gguf"), 1, 1, None);
         assert!(result.is_ok());
     }
 
@@ -174,7 +174,7 @@
             },
         ];
         // Even with all failures, print_json returns Ok
-        let result = print_json(&results, Path::new("model.gguf"), 0, 2);
+        let result = print_json(&results, Path::new("model.gguf"), 0, 2, None);
         assert!(result.is_ok());
     }
 
