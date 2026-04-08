@@ -172,12 +172,166 @@ use ratatui::{
 use std::io;
 
 #[cfg(not(feature = "ratatui"))]
-fn run_tui_browser(_runs: &[RunEntry]) -> Result<()> {
-    Err(CliError::ValidationFailed(
-        "Experiment TUI browser requires the 'ratatui' feature (being migrated to presentar-terminal).\n\
-         Use --json for non-interactive output: apr experiment view --json"
-            .to_string(),
-    ))
+fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
+    use crossterm::{cursor, event::{self, Event, KeyCode, KeyEventKind}, execute, terminal::{self, ClearType}};
+    use presentar_core::{Canvas, Color, Point, Rect, TextStyle, FontWeight};
+    use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};
+    use presentar_terminal::ColorMode;
+    use std::io::Write;
+    use std::time::{Duration, Instant};
+
+    const CYAN: Color = Color { r: 0.4, g: 0.85, b: 1.0, a: 1.0 };
+    const WHITE: Color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+    const DIM: Color = Color { r: 0.5, g: 0.5, b: 0.5, a: 1.0 };
+    const YELLOW: Color = Color { r: 1.0, g: 0.85, b: 0.3, a: 1.0 };
+    const GREEN: Color = Color { r: 0.3, g: 1.0, b: 0.5, a: 1.0 };
+    const HEADER_BG: Color = Color { r: 0.1, g: 0.12, b: 0.18, a: 1.0 };
+    const SELECTED_BG: Color = Color { r: 0.15, g: 0.2, b: 0.3, a: 1.0 };
+
+    fn ts(color: Color) -> TextStyle { TextStyle { color, ..TextStyle::default() } }
+    fn bold(color: Color) -> TextStyle { TextStyle { color, weight: FontWeight::Bold, ..TextStyle::default() } }
+
+    if runs.is_empty() {
+        eprintln!("No experiments found.");
+        return Ok(());
+    }
+
+    // Build table data
+    struct Row { name: String, run_id: String, status: String, loss: f64, steps: usize, loss_values: Vec<f64> }
+    let rows: Vec<Row> = runs.iter().map(|r| {
+        let loss_vals: Vec<f64> = r.loss_metrics.iter().map(|m| m.value).collect();
+        let final_loss = loss_vals.last().copied().unwrap_or(0.0);
+        Row {
+            name: r.experiment_name.clone(),
+            run_id: r.run.id.clone(),
+            status: format!("{:?}", r.run.status),
+            loss: final_loss,
+            steps: loss_vals.len(),
+            loss_values: loss_vals,
+        }
+    }).collect();
+
+    let mut selected = 0_usize;
+    let mut stdout = std::io::stdout();
+
+    terminal::enable_raw_mode()
+        .map_err(|e| CliError::ValidationFailed(format!("Raw mode: {e}")))?;
+    execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide, terminal::Clear(ClearType::All))
+        .map_err(|e| CliError::ValidationFailed(format!("Terminal setup: {e}")))?;
+
+    let color_mode = ColorMode::detect();
+    let mut renderer = DiffRenderer::with_color_mode(color_mode);
+    let mut force_full = true;
+
+    loop {
+        if event::poll(Duration::from_millis(50))
+            .map_err(|e| CliError::ValidationFailed(format!("Poll: {e}")))? {
+            match event::read().map_err(|e| CliError::ValidationFailed(format!("Read: {e}")))? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        terminal::disable_raw_mode().ok();
+                        execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show).ok();
+                        return Ok(());
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if selected + 1 < rows.len() { selected += 1; }
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if selected > 0 { selected -= 1; }
+                    }
+                    KeyCode::Home => selected = 0,
+                    KeyCode::End => selected = rows.len().saturating_sub(1),
+                    _ => {}
+                },
+                Event::Resize(_, _) => force_full = true,
+                _ => {}
+            }
+        }
+
+        let (width, height) = terminal::size()
+            .map_err(|e| CliError::ValidationFailed(format!("Size: {e}")))?;
+        let mut buffer = CellBuffer::new(width, height);
+        let w = width as f32;
+        let h = height as f32;
+
+        if w >= 40.0 && h >= 10.0 {
+            let mut c = DirectTerminalCanvas::new(&mut buffer);
+
+            // Header
+            c.fill_rect(Rect::new(0.0, 0.0, w, 1.0), HEADER_BG);
+            c.draw_text(" Experiment Browser", Point::new(0.0, 0.0), &bold(WHITE));
+            c.draw_text(&format!("{} runs ", rows.len()), Point::new(w - 12.0, 0.0), &ts(DIM));
+
+            // Two-column: table (60%) + detail (40%)
+            let split = (w * 0.6).floor();
+
+            // Left: run table
+            let left = Rect::new(0.0, 1.0, split, h - 2.0);
+            c.stroke_rect(left, CYAN, 1.0);
+            c.draw_text(" Runs (j/k) ", Point::new(2.0, 1.0), &bold(WHITE));
+
+            // Table header
+            c.draw_text("Experiment", Point::new(2.0, 2.0), &bold(CYAN));
+            c.draw_text("Loss", Point::new(split * 0.5, 2.0), &bold(CYAN));
+            c.draw_text("Steps", Point::new(split * 0.7, 2.0), &bold(CYAN));
+
+            let visible = (left.height as usize).saturating_sub(4);
+            let scroll = if selected >= visible { selected - visible + 1 } else { 0 };
+            for (i, row) in rows.iter().skip(scroll).take(visible).enumerate() {
+                let y = 3.0 + i as f32;
+                let is_sel = scroll + i == selected;
+                if is_sel {
+                    c.fill_rect(Rect::new(1.0, y, split - 2.0, 1.0), SELECTED_BG);
+                }
+                let fg = if is_sel { WHITE } else { DIM };
+                c.draw_text(&truncate(&row.name, (split * 0.45) as usize), Point::new(2.0, y), &ts(fg));
+                c.draw_text(&format!("{:.4}", row.loss), Point::new(split * 0.5, y), &ts(fg));
+                c.draw_text(&format!("{}", row.steps), Point::new(split * 0.7, y), &ts(fg));
+            }
+
+            // Right: detail + sparkline
+            let right = Rect::new(split, 1.0, w - split, h - 2.0);
+            c.stroke_rect(right, CYAN, 1.0);
+            c.draw_text(" Detail ", Point::new(split + 2.0, 1.0), &bold(WHITE));
+
+            if let Some(row) = rows.get(selected) {
+                let dx = split + 2.0;
+                c.draw_text("Experiment:", Point::new(dx, 2.0), &ts(CYAN));
+                c.draw_text(&row.name, Point::new(dx + 14.0, 2.0), &ts(WHITE));
+                c.draw_text("Run ID:", Point::new(dx, 3.0), &ts(CYAN));
+                c.draw_text(&row.run_id, Point::new(dx + 14.0, 3.0), &ts(WHITE));
+                c.draw_text("Status:", Point::new(dx, 4.0), &ts(CYAN));
+                c.draw_text(&row.status, Point::new(dx + 14.0, 4.0), &ts(GREEN));
+                c.draw_text("Final Loss:", Point::new(dx, 5.0), &ts(CYAN));
+                c.draw_text(&format!("{:.6}", row.loss), Point::new(dx + 14.0, 5.0), &ts(WHITE));
+
+                // Loss sparkline
+                if !row.loss_values.is_empty() {
+                    c.draw_text("Loss Curve:", Point::new(dx, 7.0), &ts(CYAN));
+                    let spark_w = ((w - split) as usize).saturating_sub(6);
+                    let spark = render_braille(&row.loss_values, spark_w, 3);
+                    for (si, line) in spark.iter().enumerate() {
+                        c.draw_text(line, Point::new(dx + 1.0, 8.0 + si as f32), &ts(YELLOW));
+                    }
+                }
+            }
+
+            // Footer
+            c.fill_rect(Rect::new(0.0, h - 1.0, w, 1.0), HEADER_BG);
+            c.draw_text(" j/k:navigate  q:quit", Point::new(0.0, h - 1.0), &ts(DIM));
+        }
+
+        execute!(stdout, cursor::MoveTo(0, 0)).ok();
+        let mut output = Vec::with_capacity(32768);
+        if force_full {
+            renderer.render_full(&mut buffer, &mut output).ok();
+            force_full = false;
+        } else {
+            renderer.flush(&mut buffer, &mut output).ok();
+        }
+        stdout.write_all(&output).ok();
+        stdout.flush().ok();
+    }
 }
 
 /// Pre-computed row data for the browser table.
