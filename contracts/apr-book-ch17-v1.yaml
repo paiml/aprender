@@ -1,0 +1,36 @@
+contract: apr-book-ch17
+version: 2
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Bayesian Methods"
+  part: V
+  example: ch17_bayesian
+  arxiv_citations: ["math/0504499"]
+api_calls:
+  - module: "aprender::bayesian"
+    functions: ["BetaBinomial::new", "NormalInverseGamma::new", "NormalInverseGamma::update", "NormalInverseGamma::posterior_mean_mu"]
+    min_calls: 4
+preconditions:
+  - "cargo build -p aprender-core --example ch17_bayesian succeeds"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "NormalInverseGamma prior is constructed and updated with data"
+  - "Posterior mean shifts toward data mean after update"
+  - "Posterior precision increases after observing data"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch17_bayesian exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Example contains zero aprender::* API calls (hollow)"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "NormalInverseGamma::update not called with real data"
+    severity: P0
+    action: rewrite
+  - condition: "Posterior values not compared to prior (no learning demonstrated)"
+    severity: P0
+    action: add_posterior_comparison
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

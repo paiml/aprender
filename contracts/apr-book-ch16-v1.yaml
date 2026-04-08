@@ -1,0 +1,36 @@
+contract: apr-book-ch16
+version: 2
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Time Series Analysis"
+  part: V
+  example: ch16_timeseries
+  arxiv_citations: []
+api_calls:
+  - module: "aprender::time_series"
+    functions: ["ARIMA::new", "ARIMA::fit", "ARIMA::forecast", "ARIMA::ar_coefficients"]
+    min_calls: 4
+preconditions:
+  - "cargo build -p aprender-core --example ch16_timeseries succeeds"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "ARIMA model is fitted on real data"
+  - "Forecast produces n_periods values"
+  - "AR coefficients are accessible after fit"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch16_timeseries exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Example contains zero aprender::* API calls (hollow)"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "ARIMA::fit not called with real time series data"
+    severity: P0
+    action: rewrite
+  - condition: "ARIMA::forecast not called or result not validated"
+    severity: P0
+    action: add_forecast_validation
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

@@ -1,0 +1,32 @@
+contract: apr-book-ch14
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Provable Contracts"
+  part: IV
+  example: ch14_contracts
+  arxiv_citations: ["1907.09356"]
+preconditions:
+  - "cargo build -p aprender-core --example ch14_contracts succeeds"
+  - "All arXiv IDs in citation table are valid"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "Example produces correct output"
+  - "All assert!() in example pass"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch14_contracts exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Section without arXiv citation"
+    severity: P0
+    action: reject_chapter
+  - condition: "Legacy name appears in chapter text"
+    severity: P0
+    action: reject_chapter
+  - condition: "Oracle --explain output contradicts chapter claim"
+    severity: P0
+    action: reject_chapter
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

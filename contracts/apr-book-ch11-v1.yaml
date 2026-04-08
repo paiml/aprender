@@ -1,0 +1,32 @@
+contract: apr-book-ch11
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Model Formats and Conversion"
+  part: III
+  example: ch11_formats
+  arxiv_citations: ["2210.17323", "2306.00978"]
+preconditions:
+  - "cargo build -p aprender-core --example ch11_formats succeeds"
+  - "All arXiv IDs in citation table are valid"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "Example produces correct output"
+  - "All assert!() in example pass"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch11_formats exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Section without arXiv citation"
+    severity: P0
+    action: reject_chapter
+  - condition: "Legacy name appears in chapter text"
+    severity: P0
+    action: reject_chapter
+  - condition: "Oracle --explain output contradicts chapter claim"
+    severity: P0
+    action: reject_chapter
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

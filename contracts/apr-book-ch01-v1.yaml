@@ -1,0 +1,32 @@
+contract: apr-book-ch01
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Why Rust for Machine Learning"
+  part: I
+  example: ch01_hello_apr
+  arxiv_citations: ["1910.02054", "1903.00982", "2407.10671"]
+preconditions:
+  - "cargo build -p aprender-core --example ch01_hello_apr succeeds"
+  - "All arXiv IDs in citation table are valid"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "Example produces correct output"
+  - "All assert!() in example pass"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch01_hello_apr exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Section without arXiv citation"
+    severity: P0
+    action: reject_chapter
+  - condition: "Legacy name appears in chapter text"
+    severity: P0
+    action: reject_chapter
+  - condition: "Oracle --explain output contradicts chapter claim"
+    severity: P0
+    action: reject_chapter
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

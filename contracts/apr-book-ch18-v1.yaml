@@ -1,0 +1,36 @@
+contract: apr-book-ch18
+version: 2
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Graph Algorithms"
+  part: V
+  example: ch18_graphs
+  arxiv_citations: ["0803.0476", "1609.02907"]
+api_calls:
+  - module: "aprender::graph"
+    functions: ["Graph::from_weighted_edges", "Graph::dijkstra", "Graph::label_propagation", "Graph::clustering_coefficient", "Graph::density"]
+    min_calls: 5
+preconditions:
+  - "cargo build -p aprender-core --example ch18_graphs succeeds"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "Dijkstra finds optimal shortest path"
+  - "Label propagation assigns community labels"
+  - "Graph metrics (density, clustering coefficient) computed"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch18_graphs exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Example contains zero aprender::* API calls (hollow)"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "No community detection algorithm called"
+    severity: P0
+    action: add_community_detection
+  - condition: "No graph metric computed (density/clustering/diameter)"
+    severity: P0
+    action: add_graph_metrics
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

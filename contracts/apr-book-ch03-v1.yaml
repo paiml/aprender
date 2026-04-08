@@ -1,0 +1,36 @@
+contract: apr-book-ch03
+version: 2
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "The APR Model Format"
+  part: I
+  example: ch03_apr_format
+  arxiv_citations: []
+api_calls:
+  - module: "aprender::format::validated_tensors"
+    functions: ["TensorStats::compute"]
+    min_calls: 1
+preconditions:
+  - "cargo build -p aprender-core --example ch03_apr_format succeeds"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "TensorStats computed on real float data"
+  - "Layout contract (row-major) demonstrated with assertions"
+  - "Magic bytes and format version validated"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch03_apr_format exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Example contains zero aprender::* API calls (hollow)"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "No TensorStats::compute called on real data"
+    severity: P0
+    action: add_tensor_stats
+  - condition: "Layout contract not exercised with assertion"
+    severity: P0
+    action: add_layout_assertion
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

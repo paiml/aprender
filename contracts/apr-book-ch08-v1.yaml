@@ -1,0 +1,32 @@
+contract: apr-book-ch08
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Transformer Architecture"
+  part: III
+  example: ch08_transformer
+  arxiv_citations: ["1706.03762", "2305.13245", "2104.09864", "2002.05202", "1910.07467", "2211.05102"]
+preconditions:
+  - "cargo build -p aprender-core --example ch08_transformer succeeds"
+  - "All arXiv IDs in citation table are valid"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "Example produces correct output"
+  - "All assert!() in example pass"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch08_transformer exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Section without arXiv citation"
+    severity: P0
+    action: reject_chapter
+  - condition: "Legacy name appears in chapter text"
+    severity: P0
+    action: reject_chapter
+  - condition: "Oracle --explain output contradicts chapter claim"
+    severity: P0
+    action: reject_chapter
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

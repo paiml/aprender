@@ -5048,3 +5048,214 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-497
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-001: Scaffold 20 chapter examples'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T08:04:17Z
+  updated: 2026-04-08T08:04:25.947172963+00:00
+  spec: null
+  acceptance_criteria:
+  - Create examples/ch01_hello_apr.rs through examples/ch20_rag.rs. Each must compile, contain assert!(), use only aprender-* namespace.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - examples
+  notes: null
+- id: PMAT-498
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-002: Create 20 chapter contract YAMLs'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T08:04:19Z
+  updated: 2026-04-08T08:22:21.049932120+00:00
+  spec: null
+  acceptance_criteria:
+  - Create contracts/apr-book-ch01-v1.yaml through contracts/apr-book-ch20-v1.yaml. Each with 5 falsification conditions, P0 severity.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - contracts
+  notes: null
+- id: PMAT-499
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-003: Create book_contracts integration test'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T08:04:21Z
+  updated: 2026-04-08T08:04:21Z
+  spec: null
+  acceptance_criteria:
+  - 'Create tests/book_contracts.rs: verifies all 20 examples exist, all 20 contracts exist, namespace discipline (zero legacy names).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - tests
+  notes: null
+- id: PMAT-500
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-004: Falsify all chapters end-to-end'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T08:04:23Z
+  updated: 2026-04-08T08:24:24.512282961+00:00
+  spec: null
+  acceptance_criteria:
+  - Run cargo run --example for all 20 chapters, validate all contracts, run namespace grep gate, verify oracle consultation.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - falsification
+  notes: null
+- id: PMAT-501
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-005: Archive 6 SHOULD-MERGE repos with redirects'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T08:43:26Z
+  updated: 2026-04-08T08:43:36.972348454+00:00
+  spec: null
+  acceptance_criteria:
+  - Archive alimentar, batuta-common, trueno-viz, trueno-zram, renacer, pacha with MOVED redirect descriptions pointing to aprender monorepo crates.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - org-taxonomy
+  notes: null
+- id: PMAT-502
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-006: Archive 24 STALE repos'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-08T08:43:31Z
+  updated: 2026-04-08T08:43:31Z
+  spec: null
+  acceptance_criteria:
+  - Archive ds500-subscription-deleted, hello, hello-github, discord-bot, model-serving-survey, socialpower, software-language-popularity-2025, osx-perf-tune, ubuntu-config-scripts, cost-optimize-aws, eu-currency, dom-intelligence, labs-code, data, ropub, archived-emlop-book-material, Flask-Elastic-Beanstalk, awsbigdata, pbjbi, apr-leaderboard, engman, faro, rurl, minimal-pyqt.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - org-taxonomy
+  notes: null
+- id: PMAT-503
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-007: Tag all 205 repos with category topics'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-08T08:43:33Z
+  updated: 2026-04-08T08:45:03.468719767+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Add GitHub topics to all 205 paiml repos matching their category: monorepo, merged, active-tool, model-training, poc-benchmark, course-demo, legacy-book, legacy-library, ground-truth, transpiler, lang-ruchy, infra, platform, pmat, stale.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - org-taxonomy
+  notes: null
+- id: PMAT-504
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-008: Archive 18 LEGACY-LIBRARY repos'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-08T08:53:20Z
+  updated: 2026-04-08T08:53:28.767394138+00:00
+  spec: null
+  acceptance_criteria:
+  - Archive batuta-cookbook, batuta-ground-truth-mlops-corpus, forjar-cookbook, apr-cookbook, ald-cookbook, prs-cookbook, apr-model-qa-playbook, reaper, rustysquid, mp4convertor, rclean, universal-bot, discord-intelligence, ov, assetgen, assetsearch, pacha-run, wos.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - org-taxonomy
+  notes: null
+- id: PMAT-505
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-009: Provable contracts for 21 ACTIVE-TOOL repos'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T08:53:22Z
+  updated: 2026-04-08T08:54:18.361385901+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Create contracts/apr-tool-{name}-v1.yaml for each ACTIVE-TOOL repo. Each contract defines: purpose, inputs, outputs, 5 falsification conditions. Provable-contracts-first documentation.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - contracts
+  notes: null
+- id: PMAT-506
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-010: Provable contracts for 13 GROUND-TRUTH corpora'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-08T08:53:24Z
+  updated: 2026-04-08T08:54:59.641361344+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Create contracts/apr-corpus-{name}-v1.yaml for each ground-truth corpus. Defines: domain, language, file count, coverage target, freshness gate.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - contracts
+  - ground-truth
+  notes: null
+- id: PMAT-507
+  github_issue: null
+  item_type: task
+  title: 'APR-BOOK-011: Convert 7 hollow examples to real API exercises'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-08T09:04:18Z
+  updated: 2026-04-08T09:04:24.245970247+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Provable-contract FIRST: update contract YAML with API-level falsification, THEN rewrite example to use real aprender APIs. Order: ch16 (ARIMA), ch17 (Bayesian), ch18 (Graph), ch19 (Text), ch07 (ModelSelection), ch10 (Training/Autograd), ch03 (Format). Each example must call fit/predict/transform — not just println.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - book
+  - examples
+  - provable-contracts
+  notes: null

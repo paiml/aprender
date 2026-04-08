@@ -1,0 +1,32 @@
+contract: apr-book-ch13
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Profiling and Optimization"
+  part: IV
+  example: ch13_profiling
+  arxiv_citations: ["2007.00072"]
+preconditions:
+  - "cargo build -p aprender-core --example ch13_profiling succeeds"
+  - "All arXiv IDs in citation table are valid"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "Example produces correct output"
+  - "All assert!() in example pass"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch13_profiling exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Section without arXiv citation"
+    severity: P0
+    action: reject_chapter
+  - condition: "Legacy name appears in chapter text"
+    severity: P0
+    action: reject_chapter
+  - condition: "Oracle --explain output contradicts chapter claim"
+    severity: P0
+    action: reject_chapter
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

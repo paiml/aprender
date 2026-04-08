@@ -1,0 +1,32 @@
+contract: apr-book-ch02
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Tensor Computation"
+  part: I
+  example: ch02_tensors
+  arxiv_citations: ["2101.05615", "2210.17323", "1802.04799", "2205.14135"]
+preconditions:
+  - "cargo build -p aprender-core --example ch02_tensors succeeds"
+  - "All arXiv IDs in citation table are valid"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "Example produces correct output"
+  - "All assert!() in example pass"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch02_tensors exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Section without arXiv citation"
+    severity: P0
+    action: reject_chapter
+  - condition: "Legacy name appears in chapter text"
+    severity: P0
+    action: reject_chapter
+  - condition: "Oracle --explain output contradicts chapter claim"
+    severity: P0
+    action: reject_chapter
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

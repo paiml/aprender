@@ -1,0 +1,39 @@
+contract: apr-book-ch10
+version: 2
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Training with aprender-train"
+  part: III
+  example: ch10_training
+  arxiv_citations: ["2106.09685", "2305.14314", "1711.05101", "1608.03983", "1710.03740", "1502.05767"]
+api_calls:
+  - module: "aprender::autograd"
+    functions: ["ComputationGraph::new", "ComputationGraph::record", "ComputationGraph::backward"]
+    min_calls: 3
+  - module: "aprender::optim"
+    functions: ["Adam::new"]
+    min_calls: 1
+preconditions:
+  - "cargo build -p aprender-core --example ch10_training succeeds"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "ComputationGraph records forward ops"
+  - "Backward pass computes gradients"
+  - "Adam optimizer instantiated with learning rate"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch10_training exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Example contains zero aprender::* API calls (hollow)"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "ComputationGraph not used for forward/backward pass"
+    severity: P0
+    action: add_autograd
+  - condition: "No gradient computed or validated"
+    severity: P0
+    action: add_gradient_check
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

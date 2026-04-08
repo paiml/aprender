@@ -1,0 +1,40 @@
+contract: apr-corpus-mixed-rust-lean-ground-truth
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  repo: "paiml/mixed-rust-lean-ground-truth"
+  purpose: "Rust/Lean proof patterns"
+  language: "Rust"
+  domain: "Formal verification"
+  category: ground-truth
+  topic: paiml-ground-truth
+  tags: [rust,lean,proofs]
+oracle_integration:
+  rag_indexed: true
+  freshness_days: 90
+  description: "Corpus provides ground-truth patterns for apr oracle --rag queries in the Formal verification domain"
+preconditions:
+  - "Repository paiml/mixed-rust-lean-ground-truth exists and is not archived"
+  - "Contains at least 10 ground-truth files"
+  - "Files have consistent format (tests, examples, or recipes)"
+postconditions:
+  - "All ground-truth patterns are falsifiable"
+  - "Patterns have Rust equivalents or mappings documented"
+  - "Corpus indexed in oracle RAG pipeline"
+falsification:
+  - condition: "Repository contains zero test files"
+    severity: P0
+    action: add_tests
+  - condition: "No Rust equivalent mapping documented"
+    severity: P1
+    action: add_mapping
+  - condition: "Corpus not indexed in oracle RAG (apr oracle --rag fails to find domain patterns)"
+    severity: P1
+    action: reindex
+  - condition: "Last commit older than 180 days (staleness)"
+    severity: P1
+    action: refresh_or_archive
+  - condition: "Ground-truth pattern contradicts current aprender API"
+    severity: P0
+    action: update_pattern

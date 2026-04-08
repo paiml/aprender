@@ -1,0 +1,36 @@
+contract: apr-book-ch19
+version: 2
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Text Processing and Tokenization"
+  part: V
+  example: ch19_text
+  arxiv_citations: ["1508.07909", "1808.06226"]
+api_calls:
+  - module: "aprender::text::similarity"
+    functions: ["cosine_similarity", "jaccard_similarity", "edit_distance"]
+    min_calls: 3
+preconditions:
+  - "cargo build -p aprender-core --example ch19_text succeeds"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "Cosine similarity computed between real vectors"
+  - "Jaccard similarity computed between real token sets"
+  - "Edit distance computed between real strings"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch19_text exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Example contains zero aprender::* API calls (hollow)"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "No similarity function called with real text data"
+    severity: P0
+    action: rewrite
+  - condition: "Similarity results not validated (orthogonal=0, identical=1)"
+    severity: P0
+    action: add_similarity_assertions
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

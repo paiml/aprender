@@ -1,0 +1,37 @@
+contract: apr-tool-depyler
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  repo: "paiml/depyler"
+  purpose: "Python-to-Rust compiler"
+  language: "Rust"
+  category: active-tool
+  topic: paiml-active-tool
+inputs:
+  - "Python source code"
+outputs:
+  - "Compiled Rust binary"
+preconditions:
+  - "Repository paiml/depyler exists and is not archived"
+  - "README.md documents purpose and usage"
+  - "CI pipeline passes on main branch"
+postconditions:
+  - "Tool produces documented outputs from documented inputs"
+  - "No legacy names in source code imports"
+falsification:
+  - condition: "gh repo view paiml/depyler returns archived=true"
+    severity: P0
+    action: reclassify
+  - condition: "README.md missing or empty"
+    severity: P0
+    action: create_readme
+  - condition: "No CI workflow in .github/workflows/"
+    severity: P1
+    action: add_ci
+  - condition: "cargo build fails (Rust) or equivalent build fails"
+    severity: P0
+    action: fix_build
+  - condition: "Zero tests in repository"
+    severity: P1
+    action: add_tests

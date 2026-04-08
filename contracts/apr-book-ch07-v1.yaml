@@ -1,0 +1,39 @@
+contract: apr-book-ch07
+version: 2
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Model Selection and Evaluation"
+  part: II
+  example: ch07_model_selection
+  arxiv_citations: []
+api_calls:
+  - module: "aprender::model_selection"
+    functions: ["KFold::new", "KFold::split"]
+    min_calls: 2
+  - module: "aprender::metrics::classification"
+    functions: ["accuracy", "precision", "recall"]
+    min_calls: 3
+preconditions:
+  - "cargo build -p aprender-core --example ch07_model_selection succeeds"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "KFold splits data into train/test indices"
+  - "Model trained and evaluated on each fold"
+  - "Metrics computed on real predictions"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch07_model_selection exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Example contains zero aprender::* API calls (hollow)"
+    severity: P0
+    action: rewrite_with_real_apis
+  - condition: "KFold::split not called"
+    severity: P0
+    action: add_kfold
+  - condition: "No model trained and evaluated within fold loop"
+    severity: P0
+    action: add_cv_loop
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

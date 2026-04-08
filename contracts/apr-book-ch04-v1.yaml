@@ -1,0 +1,32 @@
+contract: apr-book-ch04
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "Supervised Learning"
+  part: II
+  example: ch04_supervised
+  arxiv_citations: ["1609.04747", "1201.0490"]
+preconditions:
+  - "cargo build -p aprender-core --example ch04_supervised succeeds"
+  - "All arXiv IDs in citation table are valid"
+  - "Zero legacy names in chapter text"
+postconditions:
+  - "Example produces correct output"
+  - "All assert!() in example pass"
+falsification:
+  - condition: "cargo run -p aprender-core --example ch04_supervised exits non-zero"
+    severity: P0
+    action: reject_chapter
+  - condition: "Section without arXiv citation"
+    severity: P0
+    action: reject_chapter
+  - condition: "Legacy name appears in chapter text"
+    severity: P0
+    action: reject_chapter
+  - condition: "Oracle --explain output contradicts chapter claim"
+    severity: P0
+    action: reject_chapter
+  - condition: "assert!() failure in example"
+    severity: P0
+    action: reject_chapter

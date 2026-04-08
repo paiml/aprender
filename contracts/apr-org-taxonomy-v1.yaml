@@ -1,0 +1,52 @@
+contract: apr-org-taxonomy
+version: 1
+status: enforced
+date: 2026-04-08
+metadata:
+  title: "paiml GitHub Org Repository Classification"
+  total_repos: 205
+  categories: 15
+  spec: "docs/specifications/aprender-monorepo-consolidation.md#appendix-e"
+
+categories:
+  monorepo: 1
+  merged: 14
+  should_merge: 6
+  active_tool: 21
+  model_training: 3
+  poc_benchmark: 8
+  course_demo: 34
+  legacy_book: 15
+  legacy_library: 18
+  ground_truth: 13
+  transpiler: 9
+  ruchy: 8
+  infra_platform: 25
+  pmat: 6
+  stale_archive: 24
+
+preconditions:
+  - "gh repo list paiml --limit 300 returns all repos"
+  - "Every repo appears in exactly one category"
+
+postconditions:
+  - "SHOULD-MERGE repos archived with redirect"
+  - "STALE repos archived"
+  - "All repos tagged with GitHub topics"
+
+falsification:
+  - condition: "gh repo list paiml returns repo not in any category"
+    severity: P0
+    action: classify_and_update
+  - condition: "SHOULD-MERGE repo not archived within 7 days"
+    severity: P1
+    action: escalate
+  - condition: "STALE repo not archived within 7 days"
+    severity: P1
+    action: escalate
+  - condition: "Repo uses legacy name in description without MOVED redirect"
+    severity: P0
+    action: update_description
+  - condition: "Category counts don't sum to total_repos"
+    severity: P0
+    action: recount
