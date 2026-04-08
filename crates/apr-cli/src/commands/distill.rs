@@ -1592,44 +1592,196 @@ fn wait_for_server_health(server: &mut std::process::Child, json_output: bool) -
     ))
 }
 
+/// Validate that teacher model and prompts files exist.
+fn validate_distill_paths(config: &TextDistillConfig) -> Result<()> {
+    let teacher_path = std::path::Path::new(&config.teacher.model);
+    if !teacher_path.exists() {
+        return Err(CliError::FileNotFound(teacher_path.to_path_buf()));
+    }
+    let prompts_path = std::path::Path::new(&config.synthetic_data.prompts);
+    if !prompts_path.exists() {
+        return Err(CliError::FileNotFound(prompts_path.to_path_buf()));
+    }
+    Ok(())
+}
+
+/// Print the text-generate header showing config summary.
+fn print_generate_header(config: &TextDistillConfig, config_path: &Path) {
+    output::header("apr distill apply — Stage: Generate Synthetic Data (GH-455)");
+    println!();
+    output::kv("  Config", config_path.display().to_string());
+    output::kv("  Teacher", &config.teacher.model);
+    output::kv("  Prompts", &config.synthetic_data.prompts);
+    output::kv("  Output", &config.synthetic_data.output);
+    output::kv(
+        "  Max tokens/completion",
+        config.teacher.max_tokens.to_string(),
+    );
+    output::kv(
+        "  Temperature",
+        format!("{:.2}", config.teacher.temperature),
+    );
+    output::kv(
+        "  Target tokens",
+        config.synthetic_data.target_tokens.to_string(),
+    );
+    println!();
+}
+
+/// Read prompts from a JSONL file, skipping blank lines.
+fn read_prompts_jsonl(path: &Path) -> Result<Vec<serde_json::Value>> {
+    use std::io::{BufRead, BufReader};
+    let file = std::fs::File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut prompts = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let parsed: serde_json::Value = serde_json::from_str(&line)
+            .map_err(|e| CliError::ValidationFailed(format!("Invalid prompt JSONL: {e}")))?;
+        prompts.push(parsed);
+    }
+    Ok(prompts)
+}
+
+/// State loaded from an existing output file for resume support.
+struct ResumeState {
+    existing_prompts: std::collections::HashSet<String>,
+    total_tokens: u64,
+    generated_count: u64,
+}
+
+/// Load resume state from an existing output JSONL, creating parent dirs as needed.
+fn load_resume_state(output_path: &Path) -> Result<ResumeState> {
+    use std::io::{BufRead, BufReader};
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut state = ResumeState {
+        existing_prompts: std::collections::HashSet::new(),
+        total_tokens: 0,
+        generated_count: 0,
+    };
+    if output_path.exists() {
+        let existing = std::fs::File::open(output_path)?;
+        for line in BufReader::new(existing).lines() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
+                if let Some(p) = parsed.get("prompt").and_then(|v| v.as_str()) {
+                    state.existing_prompts.insert(p.to_string());
+                }
+                state.total_tokens +=
+                    parsed.get("tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                state.generated_count += 1;
+            }
+        }
+    }
+    Ok(state)
+}
+
+/// POST to /generate with retry (up to 3 attempts). Returns None if all retries exhausted.
+fn send_generate_request(
+    url: &str,
+    request_body: &str,
+    prompt_index: usize,
+    json_output: bool,
+) -> (Option<ureq::Response>, bool) {
+    let mut skipped = false;
+    for retry in 0..3 {
+        match ureq::post(url)
+            .set("Content-Type", "application/json")
+            .send_string(request_body)
+        {
+            Ok(r) => return (Some(r), false),
+            Err(e) if retry < 2 => {
+                if !json_output {
+                    eprintln!(
+                        "  Retry {}/{} for prompt {}: {e}",
+                        retry + 1,
+                        3,
+                        prompt_index
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            Err(e) => {
+                if !json_output {
+                    eprintln!("  Skipping prompt {} after 3 retries: {e}", prompt_index);
+                }
+                skipped = true;
+            }
+        }
+    }
+    (None, skipped)
+}
+
+/// Format and print the final result of text generation.
+fn format_generate_result(
+    config: &TextDistillConfig,
+    prompts_total: usize,
+    generated_count: u64,
+    skipped_count: u64,
+    total_tokens: u64,
+    target: u64,
+    elapsed: std::time::Duration,
+    json_output: bool,
+) {
+    if json_output {
+        let result = serde_json::json!({
+            "stage": "generate",
+            "status": "completed",
+            "prompts_total": prompts_total,
+            "completions_generated": generated_count,
+            "completions_skipped": skipped_count,
+            "total_tokens": total_tokens,
+            "target_tokens": target,
+            "elapsed_seconds": elapsed.as_secs(),
+            "output": config.synthetic_data.output,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
+    } else {
+        output::pipeline_stage("Generating completions", output::StageStatus::Done);
+        println!();
+        output::kv("  Completions", generated_count.to_string());
+        output::kv("  Skipped", skipped_count.to_string());
+        output::kv("  Tokens", total_tokens.to_string());
+        output::kv("  Target", target.to_string());
+        output::kv("  Elapsed", format!("{:.0}s", elapsed.as_secs_f64()));
+        output::kv(
+            "  Throughput",
+            format!(
+                "{:.1} tok/s",
+                total_tokens as f64 / elapsed.as_secs_f64().max(0.001)
+            ),
+        );
+        output::kv("  Output", &config.synthetic_data.output);
+        println!();
+        println!(
+            "  {} Synthetic data generated. Tokenize and train next.",
+            "DONE".green().bold()
+        );
+    }
+}
+
 fn run_text_generate(
     config: &TextDistillConfig,
     config_path: &Path,
     json_output: bool,
 ) -> Result<()> {
-    use std::io::{BufRead, BufReader, BufWriter, Write};
-    use std::process::{Command, Stdio};
+    use std::io::{Write};
 
-    let teacher_path = std::path::Path::new(&config.teacher.model);
-    if !teacher_path.exists() {
-        return Err(CliError::FileNotFound(teacher_path.to_path_buf()));
-    }
-
-    let prompts_path = std::path::Path::new(&config.synthetic_data.prompts);
-    if !prompts_path.exists() {
-        return Err(CliError::FileNotFound(prompts_path.to_path_buf()));
-    }
+    validate_distill_paths(config)?;
 
     if !json_output {
-        output::header("apr distill apply — Stage: Generate Synthetic Data (GH-455)");
-        println!();
-        output::kv("  Config", config_path.display().to_string());
-        output::kv("  Teacher", &config.teacher.model);
-        output::kv("  Prompts", &config.synthetic_data.prompts);
-        output::kv("  Output", &config.synthetic_data.output);
-        output::kv(
-            "  Max tokens/completion",
-            config.teacher.max_tokens.to_string(),
-        );
-        output::kv(
-            "  Temperature",
-            format!("{:.2}", config.teacher.temperature),
-        );
-        output::kv(
-            "  Target tokens",
-            config.synthetic_data.target_tokens.to_string(),
-        );
-        println!();
+        print_generate_header(config, config_path);
     }
 
     let apr_bin = std::env::current_exe().map_err(|e| {
@@ -1644,71 +1796,38 @@ fn run_text_generate(
     let mut server = start_teacher_server(&apr_bin, &config.teacher.model)?;
     wait_for_server_health(&mut server, json_output)?;
 
-    let base_url = "http://127.0.0.1:8090";
-
-    // Read prompts from JSONL
-    let prompts_file = std::fs::File::open(prompts_path)?;
-    let reader = BufReader::new(prompts_file);
-    let mut prompts = Vec::new();
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let parsed: serde_json::Value = serde_json::from_str(&line)
-            .map_err(|e| CliError::ValidationFailed(format!("Invalid prompt JSONL: {e}")))?;
-        prompts.push(parsed);
-    }
+    let prompts_path = std::path::Path::new(&config.synthetic_data.prompts);
+    let prompts = read_prompts_jsonl(prompts_path)?;
 
     if !json_output {
         output::pipeline_stage("Generating completions", output::StageStatus::Running);
         output::kv("  Loaded prompts", prompts.len().to_string());
     }
 
-    // Resume support: load existing output to skip already-generated prompts
     let output_path = std::path::Path::new(&config.synthetic_data.output);
-    if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut existing_prompts = std::collections::HashSet::new();
-    let mut total_tokens = 0u64;
-    let mut generated_count = 0u64;
+    let mut resume = load_resume_state(output_path)?;
     let mut skipped_count = 0u64;
-    if output_path.exists() {
-        let existing = std::fs::File::open(output_path)?;
-        for line in BufReader::new(existing).lines() {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
-                if let Some(p) = parsed.get("prompt").and_then(|v| v.as_str()) {
-                    existing_prompts.insert(p.to_string());
-                }
-                total_tokens += parsed.get("tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                generated_count += 1;
-            }
-        }
-        if !existing_prompts.is_empty() && !json_output {
-            println!(
-                "  Resuming: {} existing records, {} tokens",
-                existing_prompts.len(),
-                total_tokens
-            );
-        }
+
+    if !resume.existing_prompts.is_empty() && !json_output {
+        println!(
+            "  Resuming: {} existing records, {} tokens",
+            resume.existing_prompts.len(),
+            resume.total_tokens
+        );
     }
+
     let output_file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(output_path)?;
-    let mut writer = BufWriter::new(output_file);
+    let mut writer = std::io::BufWriter::new(output_file);
 
-    let generate_url = format!("{base_url}/generate");
+    let generate_url = format!("http://127.0.0.1:8090/generate");
     let target = config.synthetic_data.target_tokens;
     let start_time = std::time::Instant::now();
 
     for (i, prompt_json) in prompts.iter().enumerate() {
-        if total_tokens >= target {
+        if resume.total_tokens >= target {
             break;
         }
 
@@ -1719,8 +1838,7 @@ fn run_text_generate(
                 CliError::ValidationFailed(format!("Prompt {} missing 'prompt' field", i))
             })?;
 
-        // Skip already-generated prompts (resume support)
-        if existing_prompts.contains(prompt_text) {
+        if resume.existing_prompts.contains(prompt_text) {
             continue;
         }
 
@@ -1738,8 +1856,6 @@ fn run_text_generate(
             continue;
         }
 
-        // POST to /generate endpoint (retry up to 3 times on server errors)
-        let mut resp = None;
         let request_body = serde_json::to_string(&serde_json::json!({
             "prompt": prompt_text,
             "max_tokens": config.teacher.max_tokens,
@@ -1748,29 +1864,11 @@ fn run_text_generate(
             "top_p": config.teacher.top_p,
         }))
         .expect("JSON serialization cannot fail");
-        for retry in 0..3 {
-            match ureq::post(&generate_url)
-                .set("Content-Type", "application/json")
-                .send_string(&request_body)
-            {
-                Ok(r) => {
-                    resp = Some(r);
-                    break;
-                }
-                Err(e) if retry < 2 => {
-                    if !json_output {
-                        eprintln!("  Retry {}/{} for prompt {}: {e}", retry + 1, 3, i);
-                    }
-                    std::thread::sleep(std::time::Duration::from_secs(2));
-                }
-                Err(e) => {
-                    if !json_output {
-                        eprintln!("  Skipping prompt {} after 3 retries: {e}", i);
-                    }
-                    skipped_count += 1;
-                    continue;
-                }
-            }
+
+        let (resp, was_skipped) =
+            send_generate_request(&generate_url, &request_body, i, json_output);
+        if was_skipped {
+            skipped_count += 1;
         }
         let Some(resp) = resp else {
             continue;
@@ -1813,16 +1911,16 @@ fn run_text_generate(
             serde_json::to_string(&record)
                 .map_err(|e| CliError::ValidationFailed(format!("JSON serialize error: {e}")))?
         )?;
-        writer.flush()?; // Flush after each record so output is visible immediately
+        writer.flush()?;
 
-        total_tokens += num_tokens;
-        generated_count += 1;
+        resume.total_tokens += num_tokens;
+        resume.generated_count += 1;
 
         // Progress every 10 prompts
         if (i + 1) % 10 == 0 && !json_output {
             let elapsed = start_time.elapsed().as_secs_f64();
             let tok_per_sec = if elapsed > 0.0 {
-                total_tokens as f64 / elapsed
+                resume.total_tokens as f64 / elapsed
             } else {
                 0.0
             };
@@ -1830,7 +1928,7 @@ fn run_text_generate(
                 "  [{}/{}] {} tokens generated ({:.0} tok/s), {} skipped",
                 i + 1,
                 prompts.len(),
-                total_tokens,
+                resume.total_tokens,
                 tok_per_sec,
                 skipped_count
             );
@@ -1843,46 +1941,16 @@ fn run_text_generate(
     let _ = server.kill();
     let _ = server.wait();
 
-    let elapsed = start_time.elapsed();
-
-    if json_output {
-        let result = serde_json::json!({
-            "stage": "generate",
-            "status": "completed",
-            "prompts_total": prompts.len(),
-            "completions_generated": generated_count,
-            "completions_skipped": skipped_count,
-            "total_tokens": total_tokens,
-            "target_tokens": target,
-            "elapsed_seconds": elapsed.as_secs(),
-            "output": config.synthetic_data.output,
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&result).unwrap_or_default()
-        );
-    } else {
-        output::pipeline_stage("Generating completions", output::StageStatus::Done);
-        println!();
-        output::kv("  Completions", generated_count.to_string());
-        output::kv("  Skipped", skipped_count.to_string());
-        output::kv("  Tokens", total_tokens.to_string());
-        output::kv("  Target", target.to_string());
-        output::kv("  Elapsed", format!("{:.0}s", elapsed.as_secs_f64()));
-        output::kv(
-            "  Throughput",
-            format!(
-                "{:.1} tok/s",
-                total_tokens as f64 / elapsed.as_secs_f64().max(0.001)
-            ),
-        );
-        output::kv("  Output", &config.synthetic_data.output);
-        println!();
-        println!(
-            "  {} Synthetic data generated. Tokenize and train next.",
-            "DONE".green().bold()
-        );
-    }
+    format_generate_result(
+        config,
+        prompts.len(),
+        resume.generated_count,
+        skipped_count,
+        resume.total_tokens,
+        target,
+        start_time.elapsed(),
+        json_output,
+    );
 
     Ok(())
 }
