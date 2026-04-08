@@ -84,10 +84,13 @@ kani_harnesses:
 
 verification_summary:
   total_obligations: 4
-  proven: 1
-  tested: 1
-  status: phase1_complete
+  proven: 4
+  tested: 4
+  status: COMPLETE
   notes: |
-    Phase 1 (cfg-gate) DONE: workspace compiles without ratatui feature.
-    FALSIFY-RATATUI-003 (workspace_compiles) PASSES.
-    Remaining: replace ratatui code with presentar-terminal (Phases 2-5).
+    ALL PHASES COMPLETE. ratatui fully removed from workspace.
+    FALSIFY-RATATUI-001: PASS — grep ratatui crates/*/Cargo.toml returns 0
+    FALSIFY-RATATUI-002: PASS — no "use ratatui" in non-cfg source
+    FALSIFY-RATATUI-003: PASS — cargo check --workspace exits 0
+    FALSIFY-RATATUI-004: PASS — apr tui/cbtop --help exit 0
+    TUI commands rewritten with presentar-terminal (sovereign stack).

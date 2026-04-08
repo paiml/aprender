@@ -17,7 +17,7 @@ thiserror.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 
-# TUI (optional for WASM builds) — presentar-terminal replaces ratatui
+# TUI (optional for WASM builds) — presentar-terminal
 presentar-terminal = { workspace = true, optional = true }
 crossterm = { workspace = true, optional = true }
 

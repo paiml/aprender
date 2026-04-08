@@ -20,7 +20,7 @@ remote = ["tokio", "bincode", "tracing-subscriber"]
 remote-tls = ["remote", "rustls", "tokio-rustls", "rustls-pemfile"]
 checkpoint = ["trueno-db", "tokio", "arrow", "parquet"]  # v2.0: Persistent checkpointing with Parquet
 tensor = ["trueno"]                  # v2.0: SIMD tensor operations
-tui = ["dep:ratatui", "crossterm", "tokio"]  # Job flow TUI visualization
+tui = ["crossterm", "tokio"]  # Job flow TUI visualization
 serverless = ["pepita", "tokio"]    # v2.0: Serverless functions with pepita
 microvm = ["pepita", "tokio"]       # v2.0: MicroVM isolation with pepita
 simd = ["pepita"]                   # v2.0: SIMD acceleration with pepita
@@ -60,7 +60,6 @@ thiserror = "1.0"
 tracing = "0.1"
 
 # TUI (job-flow visualization)
-ratatui = { version = "0.29", optional = true }
 crossterm = { version = "0.28", optional = true }
 
 # UUIDs for stable IDs (per Iron Lotus case study)

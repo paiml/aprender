@@ -30,8 +30,7 @@ pub mod health;
 pub mod policy;
 pub mod routing;
 pub mod traits;
-#[cfg(feature = "ratatui")]
-pub mod tui;
+// federation/tui removed — was ratatui-only, not actively used
 
 pub use catalog::{ModelCatalog, ModelEntry};
 pub use gateway::{FederationGateway, GatewayBuilder, GatewayConfig};
@@ -39,5 +38,3 @@ pub use health::{CircuitBreaker, HealthChecker, HealthConfig, HealthStatus};
 pub use policy::{CompositePolicy, RoutingPolicy, SelectionCriteria};
 pub use routing::{RouteDecision, Router, RouterBuilder, RouterConfig};
 pub use traits::*;
-#[cfg(feature = "ratatui")]
-pub use tui::{render_federation_dashboard, FederationApp, FederationTab};

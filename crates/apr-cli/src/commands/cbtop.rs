@@ -30,15 +30,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-#[cfg(feature = "ratatui")]
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Sparkline, Tabs},
-    Frame, Terminal,
-};
+// ratatui removed — TUI rendering now uses presentar-terminal (cbtop_report_tui.rs)
 use std::io;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -448,6 +440,5 @@ include!("cbtop_get_cpu_memory.rs");
 include!("cbtop_report_tui.rs");
 include!("gguf.rs");
 include!("cbtop_measure_batch.rs");
-#[cfg(feature = "ratatui")]
-include!("cbtop_render_title.rs");
+// cbtop_render_title.rs removed — rendering now in cbtop_report_tui.rs (presentar-terminal)
 include!("cbtop_06.rs");

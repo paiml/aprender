@@ -56,8 +56,7 @@ anyhow = "1.0"
 io-uring = "0.7"
 ctrlc = "3.4"
 
-# TUI
-ratatui = "0.29"
+# TUI (presentar-terminal)
 crossterm = "0.28"
 
 # Tracing

@@ -48,7 +48,7 @@ tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
 tracing-appender = { version = "0.2", optional = true }
 dirs = { version = "5.0", optional = true }  # Hardware capability path detection (PMAT-447)
-# TUI monitoring (TRUENO-SPEC-020) — presentar replaces ratatui
+# TUI monitoring (TRUENO-SPEC-020) — presentar-terminal
 crossterm = { version = "0.28", optional = true }
 presentar-core = { version = "0.3", optional = true }
 # Stress test reporting types compatible with renacer (TRUENO-SPEC-025)

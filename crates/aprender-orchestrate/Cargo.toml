@@ -92,7 +92,7 @@ indexmap = { version = "2.7", features = ["serde"], optional = true }
 # Syntax highlighting for code output (native-only)
 syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"], optional = true }
 
-# TUI dashboard (native-only) - uses presentar-terminal instead of ratatui
+# TUI dashboard (native-only) - uses presentar-terminal (sovereign stack)
 presentar-terminal = { version = "0.3", optional = true }
 crossterm = { version = "0.28", optional = true }
 

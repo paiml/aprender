@@ -82,7 +82,7 @@ presentar-terminal = { version = "0.3.2", optional = true }
 # Lambda runtime (lightweight HTTP client)
 ureq = { version = "2", features = ["json"], optional = true }
 
-# TUI monitoring (PARITY-107) — presentar-terminal replaces ratatui
+# TUI monitoring (PARITY-107) — presentar-terminal
 crossterm = { version = "0.28", optional = true }
 
 # HTTP client for real model server benchmarking (blocking for bench harness)
@@ -218,7 +218,7 @@ lambda = ["dep:ureq"]  # AWS Lambda handler (lightweight HTTP runtime)
 alimentar-data = ["dep:alimentar"]  # Data loading with alimentar
 visualization = ["dep:trueno-viz"]  # Terminal/PNG benchmark visualization
 registry = ["dep:pacha"]  # Model registry with Pacha (pull/push/cache)
-tui = ["dep:presentar-terminal", "dep:crossterm", "dep:ureq", "dep:clap"]  # PARITY-107: Real-time monitoring TUI (presentar-terminal replaces ratatui)
+tui = ["dep:presentar-terminal", "dep:crossterm", "dep:ureq", "dep:clap"]  # PARITY-107: Real-time monitoring TUI (presentar-terminal)
 bench-http = ["dep:reqwest"]  # Real HTTP benchmarking of external model servers
 
 # Testing features

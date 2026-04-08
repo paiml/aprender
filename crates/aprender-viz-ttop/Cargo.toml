@@ -19,7 +19,7 @@ name = "aprender-viz-ttop"
 path = "src/main.rs"
 
 [dependencies]
-# Sovereign Stack: presentar-terminal replaces ratatui (version + path for clean-room)
+# Sovereign Stack: presentar-terminal (version + path for clean-room)
 presentar-terminal = { version = "0.3.5", features = ["ptop"] }
 presentar-core = { version = "0.3.4" }
 

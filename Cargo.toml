@@ -227,7 +227,6 @@ wasm-bindgen-test = "0.3"
 gif = "0.13"
 png = "0.17"
 mp4 = "0.14"
-ratatui = "0.29"
 
 # HTTP middleware
 tower-http = { version = "0.6", features = ["fs", "cors", "compression-gzip", "set-header"] }
