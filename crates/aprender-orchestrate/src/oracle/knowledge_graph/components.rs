@@ -640,8 +640,8 @@ impl KnowledgeGraph {
                 .with_description("Toyota Way stop-on-error invariant checking"),
             Capability::new("poka_yoke", CapabilityCategory::Validation)
                 .with_description("Type-safe units via uom crate"),
-            Capability::new("tui_ratatui", CapabilityCategory::Compute)
-                .with_description("Terminal UI with ratatui"),
+            Capability::new("tui_presentar", CapabilityCategory::Compute)
+                .with_description("Terminal UI with presentar-terminal"),
             Capability::new("deterministic_replay", CapabilityCategory::Validation)
                 .with_description("Reproducible simulations with PCG seeds"),
         ]);

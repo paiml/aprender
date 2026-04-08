@@ -349,8 +349,9 @@ impl MemoryView {
                 ),
             });
         }
-        let ptr = memory.as_ptr().add(offset) as *const T;
-        Ok(core::ptr::read_unaligned(ptr))
+        // SAFETY: bounds check above guarantees offset + size_of::<T>() <= memory.len()
+        let ptr = unsafe { memory.as_ptr().add(offset) as *const T };
+        Ok(unsafe { core::ptr::read_unaligned(ptr) })
     }
 
     /// Read a slice from memory
