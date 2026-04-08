@@ -18,4 +18,5 @@ include!("rosetta_format_type_02.rs");
 include!("rosetta_compute_tensor_get.rs");
 include!("rosetta_print_fingerprint.rs");
 include!("rosetta_verification_report.rs");
+include!("rosetta_print_inference_tests.rs");
 }

@@ -8,7 +8,8 @@ use tempfile::NamedTempFile;
 /// Helper to create test model file
 fn create_test_model() -> NamedTempFile {
     let mut file = NamedTempFile::new().expect("value");
-    file.write_all(b"test model data").expect("write_all(b'test model da");
+    file.write_all(b"test model data")
+        .expect("write_all(b'test model da");
     file
 }
 
@@ -33,7 +34,8 @@ fn test_sl03_mmap_threshold_50mb() {
     let mut file = NamedTempFile::new().expect("value");
     // Small file: no mmap
     file.write_all(b"small").expect("write_all(b'small'");
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default())
+        .expect("to_path_buf(), ServerConf");
     assert!(!state.uses_mmap, "Files <50MB should not use mmap");
 }
 
@@ -68,7 +70,8 @@ fn test_sl09_server_info_semver() {
 #[test]
 fn test_sl10_ready_after_model_load() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default())
+        .expect("to_path_buf(), ServerConf");
 
     // Initially not ready
     assert!(
@@ -89,7 +92,8 @@ fn test_sl10_ready_after_model_load() {
 #[test]
 fn test_hr01_health_returns_healthy_when_ready() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default())
+        .expect("to_path_buf(), ServerConf");
     state.set_ready();
 
     let health = health_check(&state);
@@ -100,7 +104,8 @@ fn test_hr01_health_returns_healthy_when_ready() {
 #[test]
 fn test_hr02_health_unhealthy_during_load() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default())
+        .expect("to_path_buf(), ServerConf");
     // Don't call set_ready()
 
     let health = health_check(&state);
@@ -115,7 +120,8 @@ fn test_hr02_health_unhealthy_during_load() {
 #[test]
 fn test_hr03_health_includes_model_id() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default())
+        .expect("to_path_buf(), ServerConf");
     state.set_ready();
 
     let health = health_check(&state);
@@ -149,7 +155,8 @@ fn test_hr05_requests_total_accurate() {
 #[test]
 fn test_hr06_degraded_on_high_latency() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default())
+        .expect("to_path_buf(), ServerConf");
     state.set_ready();
 
     // Simulate high latency requests (>1000ms avg)
@@ -377,7 +384,8 @@ fn test_server_state_model_id_extraction() {
     let mut file = NamedTempFile::with_suffix(".apr").expect("apr'");
     file.write_all(b"test").expect("write_all(b'test'");
 
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default())
+        .expect("to_path_buf(), ServerConf");
     // Model ID should be the filename without extension
     assert!(!state.model_id.is_empty());
     assert!(!state.model_id.contains(".apr"));
@@ -389,7 +397,8 @@ fn test_server_state_model_size_recorded() {
     let data = vec![0u8; 1024];
     file.write_all(&data).expect("write_all(&data");
 
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default())
+        .expect("to_path_buf(), ServerConf");
     assert_eq!(state.model_size_bytes, 1024);
     assert_eq!(
         state.metrics.model_memory_bytes.load(Ordering::Relaxed),

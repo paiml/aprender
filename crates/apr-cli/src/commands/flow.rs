@@ -48,7 +48,10 @@ impl std::str::FromStr for FlowComponent {
 }
 
 /// Run the flow command
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(
     apr_path: &Path,
     layer_filter: Option<&str>,

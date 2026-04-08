@@ -40,6 +40,8 @@ pub(crate) mod merge;
 pub(crate) mod model_config;
 #[cfg(feature = "training")]
 pub(crate) mod monitor;
+#[cfg(feature = "dev")]
+pub mod mono;
 pub(crate) mod oracle;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
@@ -73,5 +75,3 @@ pub(crate) mod tui;
 #[cfg(feature = "training")]
 pub(crate) mod tune;
 pub(crate) mod validate;
-#[cfg(feature = "dev")]
-pub mod mono;

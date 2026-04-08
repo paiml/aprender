@@ -236,8 +236,7 @@ fn load_humaneval_model(
         } else {
             model_path.to_path_buf()
         };
-        AprTransformer::from_apr_file(&apr_path)
-            .map_err(|e| format!("Cannot load APR model: {e}"))
+        AprTransformer::from_apr_file(&apr_path).map_err(|e| format!("Cannot load APR model: {e}"))
     } else {
         SafetensorsToAprConverter::convert(model_path)
             .map_err(|e| format!("Cannot load model: {e}"))

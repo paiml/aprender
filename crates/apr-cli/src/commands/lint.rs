@@ -14,7 +14,10 @@ use std::path::Path;
 
 /// Run the lint command
 // GH-685: added quiet param — suppress WARN/INFO when quiet=true
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(file: &Path, json: bool, quiet: bool) -> Result<()> {
     contract_pre_apr_model_validity!();
     contract_pre_lint_model_conventions!();

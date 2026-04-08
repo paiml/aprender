@@ -32,7 +32,10 @@ struct StageResult {
 
 /// Run the 10-stage pipeline self-test with REAL validation
 // GH-685: added verbose param
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(path: &Path, no_gpu: bool, json: bool, verbose: bool) -> Result<(), CliError> {
     contract_pre_apr_model_validity!();
     contract_pre_model_integrity_check!();
@@ -77,7 +80,13 @@ pub(crate) fn run(path: &Path, no_gpu: bool, json: bool, verbose: bool) -> Resul
 
     // GH-253: JSON output for parity checker
     if json {
-        return print_json(&results, path, passed_count, total_count, architecture.as_deref());
+        return print_json(
+            &results,
+            path,
+            passed_count,
+            total_count,
+            architecture.as_deref(),
+        );
     }
 
     print_results_table(&results);

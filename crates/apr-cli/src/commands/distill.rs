@@ -11,9 +11,9 @@
 //! apr distill teacher.apr --plan --json
 //! ```
 
-use colored::Colorize;
 use crate::error::{CliError, Result};
 use crate::output;
+use colored::Colorize;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -435,7 +435,10 @@ fn print_distill_header(
 /// Run the distill command — dispatches between file-based and config-driven modes.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "mutating_output_contract"
+)]
 pub(crate) fn run(
     teacher_path: Option<&Path>,
     student_path: Option<&Path>,
@@ -1675,8 +1678,7 @@ fn load_resume_state(output_path: &Path) -> Result<ResumeState> {
                 if let Some(p) = parsed.get("prompt").and_then(|v| v.as_str()) {
                     state.existing_prompts.insert(p.to_string());
                 }
-                state.total_tokens +=
-                    parsed.get("tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                state.total_tokens += parsed.get("tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                 state.generated_count += 1;
             }
         }
@@ -1776,7 +1778,7 @@ fn run_text_generate(
     config_path: &Path,
     json_output: bool,
 ) -> Result<()> {
-    use std::io::{Write};
+    use std::io::Write;
 
     validate_distill_paths(config)?;
 

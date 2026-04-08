@@ -13,8 +13,8 @@ fn test_derive_output_path_hf_repo() {
 
 #[test]
 fn test_derive_output_path_hf_with_file() {
-    let result =
-        derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model-q4k.gguf").expect("gguf'");
+    let result = derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model-q4k.gguf")
+        .expect("gguf'");
     assert_eq!(result, PathBuf::from("model-q4k.apr"));
 }
 
@@ -38,7 +38,8 @@ fn test_derive_output_path_url() {
 
 #[test]
 fn test_derive_output_path_url_no_extension() {
-    let result = derive_output_path("https://example.com/models/mymodel").expect("com/models/mymodel'");
+    let result =
+        derive_output_path("https://example.com/models/mymodel").expect("com/models/mymodel'");
     assert_eq!(result, PathBuf::from("mymodel.apr"));
 }
 

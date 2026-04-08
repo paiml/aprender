@@ -1024,7 +1024,10 @@ fn dispatch_finetune_mode(
 /// Run the finetune command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "mutating_output_contract"
+)]
 pub(crate) fn run(
     model_path: Option<&Path>,
     method: &str,
@@ -1608,15 +1611,16 @@ fn display_train_result(
 
         // Contract: apr-finetune-metrics-v1.yaml — json_schema_complete equation
         // All fields below REQUIRED by contract. See also: throughput_positive equation.
-        let final_loss = result
-            .epoch_metrics
-            .last()
-            .map_or(0.0, |m| m.train_loss);
+        let final_loss = result.epoch_metrics.last().map_or(0.0, |m| m.train_loss);
         let wall_time_sec = result.total_time_ms as f64 / 1000.0;
         let avg_samples_per_sec = if result.epoch_metrics.is_empty() {
             0.0
         } else {
-            result.epoch_metrics.iter().map(|m| f64::from(m.samples_per_sec)).sum::<f64>()
+            result
+                .epoch_metrics
+                .iter()
+                .map(|m| f64::from(m.samples_per_sec))
+                .sum::<f64>()
                 / result.epoch_metrics.len() as f64
         };
         // Contract: throughput_positive — tokens/sec from actual timing, not estimated
@@ -2088,3 +2092,7 @@ mod tests;
 #[cfg(test)]
 #[path = "finetune_contract_tests.rs"]
 mod contract_tests;
+
+#[cfg(test)]
+#[path = "finetune_display_tests.rs"]
+mod display_tests;

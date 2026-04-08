@@ -229,10 +229,7 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
 // ── Re-exports for public API ─────────────────────────────────────────────
 
 // Re-export the public functions so callers use the same paths as before
-pub use config::{
-    extract_config_mapping,
-    extract_json_string,
-};
+pub use config::{extract_config_mapping, extract_json_string};
 pub use family::load_families;
 pub use output::{build_json_output, print_human_output};
 

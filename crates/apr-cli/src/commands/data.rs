@@ -431,7 +431,10 @@ fn count_out_of_range_labels(
 }
 
 /// Run data quality audit on a JSONL classification dataset.
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "mutating_output_contract"
+)]
 pub(crate) fn run_audit(
     path: &Path,
     num_classes: usize,
@@ -737,7 +740,6 @@ fn run_balance_sqrt_inverse(
     json_output: bool,
 ) -> Result<()> {
     use alimentar::imbalance::ImbalanceDetector;
-    
 
     let report = ImbalanceDetector::new(label_column)
         .analyze(dataset)
@@ -1053,7 +1055,9 @@ mod tests {
 
     // ── count_out_of_range_labels ────────────────────────────────────────────
 
-    fn make_imbalance_report(counts: HashMap<String, usize>) -> alimentar::imbalance::ImbalanceReport {
+    fn make_imbalance_report(
+        counts: HashMap<String, usize>,
+    ) -> alimentar::imbalance::ImbalanceReport {
         let distribution = alimentar::imbalance::ClassDistribution::from_counts(counts);
         alimentar::imbalance::ImbalanceReport::from_distribution("label", distribution)
     }
@@ -1093,7 +1097,7 @@ mod tests {
         let mut counts = HashMap::new();
         counts.insert("0".to_string(), 10);
         counts.insert("4".to_string(), 10); // exactly num_classes-1
-        counts.insert("5".to_string(), 5);  // exactly num_classes => OUT of range (0..5 excludes 5)
+        counts.insert("5".to_string(), 5); // exactly num_classes => OUT of range (0..5 excludes 5)
         let report = make_imbalance_report(counts);
         assert_eq!(count_out_of_range_labels(&report, 5), 5);
     }
@@ -1113,8 +1117,8 @@ mod tests {
 
         let stats = TextColumnStats::from_jsonl_path(&path, "text", None).expect("should parse");
         assert_eq!(stats.total, 3);
-        assert_eq!(stats.min_len, 2);  // "hi"
-        assert_eq!(stats.max_len, 6);  // "world!"
+        assert_eq!(stats.min_len, 2); // "hi"
+        assert_eq!(stats.max_len, 6); // "world!"
         assert_eq!(stats.empty_count, 0);
         assert_eq!(stats.preamble_count, 0);
     }
@@ -1150,12 +1154,9 @@ mod tests {
         let shebang_a = "{\"text\": \"#!/bin/bash echo hi\", \"label\": 0}";
         let normal = "{\"text\": \"normal text\", \"label\": 1}";
         let shebang_b = "{\"text\": \"#!/bin/bash rm -rf\", \"label\": 0}";
-        let path = write_temp_jsonl(
-            "stats_preamble.jsonl",
-            &[shebang_a, normal, shebang_b],
-        );
-        let stats =
-            TextColumnStats::from_jsonl_path(&path, "text", Some("#!/bin/bash")).expect("should parse");
+        let path = write_temp_jsonl("stats_preamble.jsonl", &[shebang_a, normal, shebang_b]);
+        let stats = TextColumnStats::from_jsonl_path(&path, "text", Some("#!/bin/bash"))
+            .expect("should parse");
         assert_eq!(stats.preamble_count, 2);
     }
 
@@ -1337,7 +1338,10 @@ mod tests {
         let result = validate_audit_schema(&dataset, "text", "label");
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("text"), "error should mention missing column 'text': {err_msg}");
+        assert!(
+            err_msg.contains("text"),
+            "error should mention missing column 'text': {err_msg}"
+        );
     }
 
     #[test]
@@ -1353,7 +1357,10 @@ mod tests {
         let result = validate_audit_schema(&dataset, "text", "label");
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("label"), "error should mention missing column 'label': {err_msg}");
+        assert!(
+            err_msg.contains("label"),
+            "error should mention missing column 'label': {err_msg}"
+        );
     }
 
     // ── run_audit integration ────────────────────────────────────────────────
@@ -1563,7 +1570,10 @@ mod tests {
         let path = write_temp_jsonl("balance_sqrt_text.jsonl", &line_refs);
 
         let result = run_balance(&path, "label", "sqrt-inverse", Some(2), 42, None, false);
-        assert!(result.is_ok(), "sqrt-inverse balance text failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "sqrt-inverse balance text failed: {result:?}"
+        );
     }
 
     #[test]
@@ -1705,7 +1715,10 @@ mod tests {
         );
 
         let result = run_decontaminate(&train_path, &[ref_path], 10, 0.5, false);
-        assert!(result.is_ok(), "clean decontam text should pass: {result:?}");
+        assert!(
+            result.is_ok(),
+            "clean decontam text should pass: {result:?}"
+        );
     }
 
     #[test]

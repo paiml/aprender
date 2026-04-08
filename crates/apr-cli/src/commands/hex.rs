@@ -119,7 +119,10 @@ fn format_display_name(fmt: FileFormat) -> &'static str {
 // ============================================================================
 
 /// Run the hex dump command
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(opts: &HexOptions) -> Result<(), CliError> {
     if !opts.file.exists() {
         return Err(CliError::FileNotFound(opts.file.clone()));

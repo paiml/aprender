@@ -226,7 +226,10 @@ pub(super) fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparis
     #[cfg(not(feature = "cuda"))]
     let apr_results = {
         if config.gpu {
-            println!("{}", "CUDA feature not enabled, running CPU benchmark...".yellow());
+            println!(
+                "{}",
+                "CUDA feature not enabled, running CPU benchmark...".yellow()
+            );
         } else {
             println!("{}", "Running APR benchmark (CPU)...".yellow());
         }

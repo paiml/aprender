@@ -91,7 +91,10 @@ impl From<&TensorListResult> for TensorsResultJson {
 ///
 /// This is a thin shim that delegates to the library's tensor listing functions.
 /// All actual logic is in `aprender::format::tensors`.
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(
     path: &Path,
     show_stats: bool,

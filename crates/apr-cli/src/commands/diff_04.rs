@@ -12,4 +12,5 @@ mod tests {
 include!("diff_validate_paths.rs");
 include!("diff_normalize_tensor_truncate.rs");
 include!("diff_print_tensor.rs");
+include!("diff_compute_stats_extended.rs");
 }

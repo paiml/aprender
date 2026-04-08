@@ -12,7 +12,10 @@ use crate::{error::CliError, output};
 type Result<T> = std::result::Result<T, CliError>;
 
 /// Run automated diagnosis on a training checkpoint.
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(
     checkpoint_dir: &Path,
     data_path: Option<&Path>,
@@ -417,11 +420,7 @@ mod tests {
 
     #[test]
     fn generate_recommendations_adds_lr_finder_on_loss_curve_error() {
-        let findings = vec![finding(
-            "Loss Curve",
-            Severity::Error,
-            "Loss DIVERGED",
-        )];
+        let findings = vec![finding("Loss Curve", Severity::Error, "Loss DIVERGED")];
         let mut recs = Vec::new();
         generate_recommendations(&findings, &mut recs);
         assert_eq!(recs.len(), 1);
@@ -438,7 +437,10 @@ mod tests {
         )];
         let mut recs = Vec::new();
         generate_recommendations(&findings, &mut recs);
-        assert!(recs.is_empty(), "Warning-level loss curve should not trigger LR finder rec");
+        assert!(
+            recs.is_empty(),
+            "Warning-level loss curve should not trigger LR finder rec"
+        );
     }
 
     #[test]
@@ -478,31 +480,29 @@ mod tests {
 
     #[test]
     fn analyze_loss_curve_detects_divergence() {
-        let metrics = vec![
-            epoch(0, 1.0, 1.1, 0.5),
-            epoch(1, 2.0, 2.2, 0.4),
-        ];
+        let metrics = vec![epoch(0, 1.0, 1.1, 0.5), epoch(1, 2.0, 2.2, 0.4)];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 5, &mut findings, &mut recs);
 
-        let divergence = findings
-            .iter()
-            .find(|f| f.message.contains("DIVERGED"));
-        assert!(divergence.is_some(), "Should detect divergence when loss doubles");
+        let divergence = findings.iter().find(|f| f.message.contains("DIVERGED"));
+        assert!(
+            divergence.is_some(),
+            "Should detect divergence when loss doubles"
+        );
         assert_eq!(divergence.expect("checked above").severity, Severity::Error);
 
         let rec = recs.iter().find(|r| r.action.contains("early stopping"));
-        assert!(rec.is_some(), "Should recommend early stopping on divergence");
+        assert!(
+            rec.is_some(),
+            "Should recommend early stopping on divergence"
+        );
     }
 
     #[test]
     fn analyze_loss_curve_no_divergence_within_threshold() {
         // 1.4x increase — under the 1.5x threshold
-        let metrics = vec![
-            epoch(0, 1.0, 1.0, 0.6),
-            epoch(1, 1.4, 1.3, 0.55),
-        ];
+        let metrics = vec![epoch(0, 1.0, 1.0, 0.6), epoch(1, 1.4, 1.3, 0.55)];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 5, &mut findings, &mut recs);
@@ -515,15 +515,14 @@ mod tests {
     fn analyze_loss_curve_detects_high_initial_loss() {
         // For 5 classes, random baseline = ln(5) ~= 1.609
         // 5x random baseline = ~8.05, so initial loss of 10.0 should trigger
-        let metrics = vec![
-            epoch(0, 10.0, 10.0, 0.2),
-            epoch(1, 9.0, 9.5, 0.22),
-        ];
+        let metrics = vec![epoch(0, 10.0, 10.0, 0.2), epoch(1, 9.0, 9.5, 0.22)];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 5, &mut findings, &mut recs);
 
-        let high_loss = findings.iter().any(|f| f.message.contains("random baseline"));
+        let high_loss = findings
+            .iter()
+            .any(|f| f.message.contains("random baseline"));
         assert!(high_loss, "Initial loss 10.0 >> 5*ln(5) should be flagged");
     }
 
@@ -531,15 +530,14 @@ mod tests {
     fn analyze_loss_curve_normal_initial_loss_no_warning() {
         // For 5 classes, random baseline = ln(5) ~= 1.609
         // 5x = ~8.05. Initial loss of 2.0 is well below.
-        let metrics = vec![
-            epoch(0, 2.0, 2.1, 0.4),
-            epoch(1, 1.5, 1.6, 0.55),
-        ];
+        let metrics = vec![epoch(0, 2.0, 2.1, 0.4), epoch(1, 1.5, 1.6, 0.55)];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 5, &mut findings, &mut recs);
 
-        let high_loss = findings.iter().any(|f| f.message.contains("random baseline"));
+        let high_loss = findings
+            .iter()
+            .any(|f| f.message.contains("random baseline"));
         assert!(!high_loss, "Normal initial loss should not trigger warning");
     }
 
@@ -547,18 +545,29 @@ mod tests {
     fn analyze_loss_curve_identifies_best_epoch_when_not_last() {
         let metrics = vec![
             epoch(0, 1.0, 0.8, 0.7),
-            epoch(1, 0.8, 0.6, 0.8),   // best val_loss
-            epoch(2, 0.9, 0.9, 0.65),  // got worse
+            epoch(1, 0.8, 0.6, 0.8),  // best val_loss
+            epoch(2, 0.9, 0.9, 0.65), // got worse
         ];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 5, &mut findings, &mut recs);
 
-        let best_epoch = findings.iter().find(|f| f.message.contains("Best checkpoint"));
-        assert!(best_epoch.is_some(), "Should identify best epoch when it's not the last");
+        let best_epoch = findings
+            .iter()
+            .find(|f| f.message.contains("Best checkpoint"));
+        assert!(
+            best_epoch.is_some(),
+            "Should identify best epoch when it's not the last"
+        );
         let msg = &best_epoch.expect("checked").message;
-        assert!(msg.contains("epoch 2"), "Best epoch is epoch index 1 = display epoch 2");
-        assert!(msg.contains("WORSE"), "Should note training made model worse after best");
+        assert!(
+            msg.contains("epoch 2"),
+            "Best epoch is epoch index 1 = display epoch 2"
+        );
+        assert!(
+            msg.contains("WORSE"),
+            "Should note training made model worse after best"
+        );
     }
 
     #[test]
@@ -566,13 +575,15 @@ mod tests {
         let metrics = vec![
             epoch(0, 1.0, 1.0, 0.5),
             epoch(1, 0.8, 0.8, 0.6),
-            epoch(2, 0.6, 0.6, 0.7),  // last and best
+            epoch(2, 0.6, 0.6, 0.7), // last and best
         ];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 5, &mut findings, &mut recs);
 
-        let best = findings.iter().any(|f| f.message.contains("Best checkpoint"));
+        let best = findings
+            .iter()
+            .any(|f| f.message.contains("Best checkpoint"));
         assert!(!best, "No best-epoch finding when last epoch is the best");
     }
 
@@ -580,16 +591,18 @@ mod tests {
     fn analyze_loss_curve_binary_classification_baseline() {
         // For 2 classes, random baseline = ln(2) ~= 0.693
         // 5x = ~3.465, so initial of 4.0 should trigger
-        let metrics = vec![
-            epoch(0, 4.0, 4.0, 0.5),
-            epoch(1, 3.5, 3.5, 0.52),
-        ];
+        let metrics = vec![epoch(0, 4.0, 4.0, 0.5), epoch(1, 3.5, 3.5, 0.52)];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 2, &mut findings, &mut recs);
 
-        let high_loss = findings.iter().any(|f| f.message.contains("random baseline"));
-        assert!(high_loss, "4.0 > 5 * ln(2) ~= 3.47 should flag initial loss");
+        let high_loss = findings
+            .iter()
+            .any(|f| f.message.contains("random baseline"));
+        assert!(
+            high_loss,
+            "4.0 > 5 * ln(2) ~= 3.47 should flag initial loss"
+        );
     }
 
     // ── check_checkpoint_integrity ──────────────────────────────────────────
@@ -600,7 +613,12 @@ mod tests {
         let base = dir.path();
 
         // Create all expected files
-        for name in &["metadata.json", "model.safetensors", "config.json", "adapter_config.json"] {
+        for name in &[
+            "metadata.json",
+            "model.safetensors",
+            "config.json",
+            "adapter_config.json",
+        ] {
             std::fs::File::create(base.join(name)).expect("create file");
         }
 
@@ -642,7 +660,9 @@ mod tests {
         let result = check_checkpoint_integrity(base, &mut findings, &mut recs);
         assert!(result.is_ok());
 
-        let missing = findings.iter().find(|f| f.message.contains("Missing files"));
+        let missing = findings
+            .iter()
+            .find(|f| f.message.contains("Missing files"));
         assert!(missing.is_some(), "Should detect missing files");
         let msg = &missing.expect("checked").message;
         assert!(msg.contains("model.safetensors"));
@@ -689,7 +709,9 @@ mod tests {
             .any(|f| f.message.contains("class_weights NOT saved"));
         assert!(no_cw, "Should warn about missing class_weights");
 
-        let p0_rec = recs.iter().any(|r| r.priority == "P0" && r.action.contains("class_weights"));
+        let p0_rec = recs
+            .iter()
+            .any(|r| r.priority == "P0" && r.action.contains("class_weights"));
         assert!(p0_rec, "Should have P0 recommendation for class_weights");
     }
 
@@ -709,7 +731,9 @@ mod tests {
         let mut recs = Vec::new();
         check_checkpoint_integrity(base, &mut findings, &mut recs).expect("ok");
 
-        let no_cw = findings.iter().any(|f| f.message.contains("class_weights NOT saved"));
+        let no_cw = findings
+            .iter()
+            .any(|f| f.message.contains("class_weights NOT saved"));
         assert!(no_cw, "Null class_weights should be treated as missing");
     }
 
@@ -879,7 +903,10 @@ mod tests {
         let mut recs = Vec::new();
         let metrics = check_loss_curve(&e0, 5, &mut findings, &mut recs);
         assert_eq!(metrics.len(), 1);
-        assert!(findings.is_empty(), "Single epoch should not trigger analysis");
+        assert!(
+            findings.is_empty(),
+            "Single epoch should not trigger analysis"
+        );
     }
 
     // ── check_data_quality ──────────────────────────────────────────────────
@@ -948,7 +975,10 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&serialized).expect("parse back");
 
         assert_eq!(parsed["findings"].as_array().expect("array").len(), 2);
-        assert_eq!(parsed["recommendations"].as_array().expect("array").len(), 1);
+        assert_eq!(
+            parsed["recommendations"].as_array().expect("array").len(),
+            1
+        );
         assert_eq!(parsed["epoch_metrics"].as_array().expect("array").len(), 1);
         assert_eq!(parsed["findings"][0]["severity"], "Info");
         assert_eq!(parsed["findings"][1]["severity"], "Error");
@@ -985,8 +1015,14 @@ mod tests {
         let serialized = serde_json::to_string_pretty(&report).expect("serialize");
         let parsed: serde_json::Value = serde_json::from_str(&serialized).expect("parse back");
         assert!(parsed["findings"].as_array().expect("array").is_empty());
-        assert!(parsed["recommendations"].as_array().expect("array").is_empty());
-        assert!(parsed["epoch_metrics"].as_array().expect("array").is_empty());
+        assert!(parsed["recommendations"]
+            .as_array()
+            .expect("array")
+            .is_empty());
+        assert!(parsed["epoch_metrics"]
+            .as_array()
+            .expect("array")
+            .is_empty());
     }
 
     // ── run() error paths ───────────────────────────────────────────────────
@@ -1002,7 +1038,10 @@ mod tests {
         );
         assert!(result.is_err());
         let err_msg = format!("{}", result.expect_err("should fail"));
-        assert!(err_msg.contains("not found"), "Error should mention not found: {err_msg}");
+        assert!(
+            err_msg.contains("not found"),
+            "Error should mention not found: {err_msg}"
+        );
     }
 
     #[test]
@@ -1020,24 +1059,21 @@ mod tests {
     #[test]
     fn analyze_loss_curve_exact_threshold_no_divergence() {
         // Exactly 1.5x should NOT trigger (> 1.5, not >=)
-        let metrics = vec![
-            epoch(0, 1.0, 1.0, 0.5),
-            epoch(1, 1.5, 1.5, 0.4),
-        ];
+        let metrics = vec![epoch(0, 1.0, 1.0, 0.5), epoch(1, 1.5, 1.5, 0.4)];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 5, &mut findings, &mut recs);
 
         let divergence = findings.iter().any(|f| f.message.contains("DIVERGED"));
-        assert!(!divergence, "Exactly 1.5x should not trigger divergence (> not >=)");
+        assert!(
+            !divergence,
+            "Exactly 1.5x should not trigger divergence (> not >=)"
+        );
     }
 
     #[test]
     fn analyze_loss_curve_just_over_threshold() {
-        let metrics = vec![
-            epoch(0, 1.0, 1.0, 0.5),
-            epoch(1, 1.51, 1.51, 0.4),
-        ];
+        let metrics = vec![epoch(0, 1.0, 1.0, 0.5), epoch(1, 1.51, 1.51, 0.4)];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 5, &mut findings, &mut recs);
@@ -1050,32 +1086,33 @@ mod tests {
     fn analyze_loss_curve_single_class_baseline() {
         // ln(1) = 0, so any positive loss is > 0 * 5
         // But 0 * 5 = 0, and any loss > 0 should trigger
-        let metrics = vec![
-            epoch(0, 0.1, 0.1, 0.9),
-            epoch(1, 0.05, 0.05, 0.95),
-        ];
+        let metrics = vec![epoch(0, 0.1, 0.1, 0.9), epoch(1, 0.05, 0.05, 0.95)];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 1, &mut findings, &mut recs);
 
         // ln(1) = 0.0, 5*0 = 0. initial_loss 0.1 > 0. Should trigger.
-        let high_loss = findings.iter().any(|f| f.message.contains("random baseline"));
-        assert!(high_loss, "Any positive loss > 5 * ln(1) = 0 for single class");
+        let high_loss = findings
+            .iter()
+            .any(|f| f.message.contains("random baseline"));
+        assert!(
+            high_loss,
+            "Any positive loss > 5 * ln(1) = 0 for single class"
+        );
     }
 
     #[test]
     fn analyze_loss_curve_multiple_findings_combined() {
         // Both divergence AND high initial loss
-        let metrics = vec![
-            epoch(0, 50.0, 50.0, 0.1),
-            epoch(1, 100.0, 100.0, 0.05),
-        ];
+        let metrics = vec![epoch(0, 50.0, 50.0, 0.1), epoch(1, 100.0, 100.0, 0.05)];
         let mut findings = Vec::new();
         let mut recs = Vec::new();
         analyze_loss_curve(&metrics, 5, &mut findings, &mut recs);
 
         let has_divergence = findings.iter().any(|f| f.message.contains("DIVERGED"));
-        let has_high_loss = findings.iter().any(|f| f.message.contains("random baseline"));
+        let has_high_loss = findings
+            .iter()
+            .any(|f| f.message.contains("random baseline"));
         assert!(has_divergence, "Should detect divergence");
         assert!(has_high_loss, "Should detect high initial loss");
     }

@@ -367,8 +367,7 @@ fn map_hf_name_llama_input_layernorm() {
 
 #[test]
 fn map_hf_name_llama_post_attention_layernorm() {
-    let apr_name =
-        map_hf_to_apr_name("model.layers.11.post_attention_layernorm.weight");
+    let apr_name = map_hf_to_apr_name("model.layers.11.post_attention_layernorm.weight");
     assert_eq!(apr_name, "layers.11.post_attention_layernorm.weight");
 }
 
@@ -386,8 +385,7 @@ fn map_hf_name_llama_embed_tokens() {
 
 #[test]
 fn map_hf_name_rotary_emb_inv_freq() {
-    let apr_name =
-        map_hf_to_apr_name("model.layers.0.self_attn.rotary_emb.inv_freq");
+    let apr_name = map_hf_to_apr_name("model.layers.0.self_attn.rotary_emb.inv_freq");
     assert_eq!(apr_name, "layers.0.self_attn.rotary_emb.inv_freq");
 }
 
@@ -459,7 +457,10 @@ fn run_nonexistent_returns_file_not_found_or_feature_disabled() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        matches!(err, CliError::FeatureDisabled(_) | CliError::FileNotFound(_)),
+        matches!(
+            err,
+            CliError::FeatureDisabled(_) | CliError::FileNotFound(_)
+        ),
         "Expected FeatureDisabled or FileNotFound, got: {err:?}"
     );
 }

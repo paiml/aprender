@@ -203,7 +203,7 @@ fn test_parse_header_valid_apr2_magic() {
 fn test_parse_header_flags() {
     let mut header = [0u8; HEADER_SIZE];
     header[0..4].copy_from_slice(b"APRN");
-    header[20] = 1;          // compression_byte: 1 = LZ4 (compressed)
+    header[20] = 1; // compression_byte: 1 = LZ4 (compressed)
     header[21] = 0b00000110; // flags: bit1 = signed, bit2 = encrypted
     let info = parse_header(&header);
     assert!(info.compressed);

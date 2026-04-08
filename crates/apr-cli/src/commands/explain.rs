@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 /// (exists on disk or has a model file extension), it's treated as `--file`.
 /// Otherwise it's treated as an error code or family name.
 #[allow(clippy::unnecessary_wraps, clippy::fn_params_excessive_bools)]
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(
     code_or_file: Option<String>,
     file: Option<PathBuf>,
@@ -83,8 +86,8 @@ fn explain_kernel(
     use super::kernel_explain::*;
 
     // Resolution chain: file → code_or_family string → error
-    let family = resolve_family_from_file(file, json)
-        .or_else(|| resolve_family_from_string(code_or_family));
+    let family =
+        resolve_family_from_file(file, json).or_else(|| resolve_family_from_string(code_or_family));
 
     let Some(family) = family else {
         emit_unresolved_kernel_error(code_or_family, json);
@@ -159,10 +162,13 @@ fn diagnose_json_resolution_failure(path: &Path, json: bool) {
             if trimmed.is_empty() {
                 emit_kernel_error(json, &format!("'{}' is empty", path.display()));
             } else if trimmed.starts_with('[') {
-                emit_kernel_error(json, &format!(
+                emit_kernel_error(
+                    json,
+                    &format!(
                     "'{}' is a JSON array, not a JSON object. config.json must be a JSON object.",
                     path.display()
-                ));
+                ),
+                );
             } else if !content.contains('{') {
                 emit_kernel_error(json, &format!("'{}' is not valid JSON", path.display()));
             } else {

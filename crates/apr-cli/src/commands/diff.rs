@@ -221,7 +221,10 @@ impl TensorDiffStatus {
 /// This is a thin shim that delegates to the library's diff functions.
 /// All actual logic is in `aprender::format::diff`.
 #[allow(clippy::too_many_arguments)]
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(
     path1: &Path,
     path2: &Path,

@@ -154,23 +154,74 @@ fn open_store(db: &Option<PathBuf>, global: bool) -> Result<SqliteBackend> {
 // =============================================================================
 
 fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
-    use crossterm::{cursor, event::{self, Event, KeyCode, KeyEventKind}, execute, terminal::{self, ClearType}};
-    use presentar_core::{Canvas, Color, Point, Rect, TextStyle, FontWeight};
+    use crossterm::{
+        cursor,
+        event::{self, Event, KeyCode, KeyEventKind},
+        execute,
+        terminal::{self, ClearType},
+    };
+    use presentar_core::{Canvas, Color, FontWeight, Point, Rect, TextStyle};
     use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas};
     use presentar_terminal::ColorMode;
     use std::io::Write;
     use std::time::Duration;
 
-    const CYAN: Color = Color { r: 0.4, g: 0.85, b: 1.0, a: 1.0 };
-    const WHITE: Color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-    const DIM: Color = Color { r: 0.5, g: 0.5, b: 0.5, a: 1.0 };
-    const YELLOW: Color = Color { r: 1.0, g: 0.85, b: 0.3, a: 1.0 };
-    const GREEN: Color = Color { r: 0.3, g: 1.0, b: 0.5, a: 1.0 };
-    const HEADER_BG: Color = Color { r: 0.1, g: 0.12, b: 0.18, a: 1.0 };
-    const SELECTED_BG: Color = Color { r: 0.15, g: 0.2, b: 0.3, a: 1.0 };
+    const CYAN: Color = Color {
+        r: 0.4,
+        g: 0.85,
+        b: 1.0,
+        a: 1.0,
+    };
+    const WHITE: Color = Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+    const DIM: Color = Color {
+        r: 0.5,
+        g: 0.5,
+        b: 0.5,
+        a: 1.0,
+    };
+    const YELLOW: Color = Color {
+        r: 1.0,
+        g: 0.85,
+        b: 0.3,
+        a: 1.0,
+    };
+    const GREEN: Color = Color {
+        r: 0.3,
+        g: 1.0,
+        b: 0.5,
+        a: 1.0,
+    };
+    const HEADER_BG: Color = Color {
+        r: 0.1,
+        g: 0.12,
+        b: 0.18,
+        a: 1.0,
+    };
+    const SELECTED_BG: Color = Color {
+        r: 0.15,
+        g: 0.2,
+        b: 0.3,
+        a: 1.0,
+    };
 
-    fn ts(color: Color) -> TextStyle { TextStyle { color, ..TextStyle::default() } }
-    fn bold(color: Color) -> TextStyle { TextStyle { color, weight: FontWeight::Bold, ..TextStyle::default() } }
+    fn ts(color: Color) -> TextStyle {
+        TextStyle {
+            color,
+            ..TextStyle::default()
+        }
+    }
+    fn bold(color: Color) -> TextStyle {
+        TextStyle {
+            color,
+            weight: FontWeight::Bold,
+            ..TextStyle::default()
+        }
+    }
 
     if runs.is_empty() {
         eprintln!("No experiments found.");
@@ -178,27 +229,42 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
     }
 
     // Build table data
-    struct Row { name: String, run_id: String, status: String, loss: f64, steps: usize, loss_values: Vec<f64> }
-    let rows: Vec<Row> = runs.iter().map(|r| {
-        let loss_vals: Vec<f64> = r.loss_metrics.iter().map(|m| m.value).collect();
-        let final_loss = loss_vals.last().copied().unwrap_or(0.0);
-        Row {
-            name: r.experiment_name.clone(),
-            run_id: r.run.id.clone(),
-            status: format!("{:?}", r.run.status),
-            loss: final_loss,
-            steps: loss_vals.len(),
-            loss_values: loss_vals,
-        }
-    }).collect();
+    struct Row {
+        name: String,
+        run_id: String,
+        status: String,
+        loss: f64,
+        steps: usize,
+        loss_values: Vec<f64>,
+    }
+    let rows: Vec<Row> = runs
+        .iter()
+        .map(|r| {
+            let loss_vals: Vec<f64> = r.loss_metrics.iter().map(|m| m.value).collect();
+            let final_loss = loss_vals.last().copied().unwrap_or(0.0);
+            Row {
+                name: r.experiment_name.clone(),
+                run_id: r.run.id.clone(),
+                status: format!("{:?}", r.run.status),
+                loss: final_loss,
+                steps: loss_vals.len(),
+                loss_values: loss_vals,
+            }
+        })
+        .collect();
 
     let mut selected = 0_usize;
     let mut stdout = std::io::stdout();
 
     terminal::enable_raw_mode()
         .map_err(|e| CliError::ValidationFailed(format!("Raw mode: {e}")))?;
-    execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide, terminal::Clear(ClearType::All))
-        .map_err(|e| CliError::ValidationFailed(format!("Terminal setup: {e}")))?;
+    execute!(
+        stdout,
+        terminal::EnterAlternateScreen,
+        cursor::Hide,
+        terminal::Clear(ClearType::All)
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("Terminal setup: {e}")))?;
 
     let color_mode = ColorMode::detect();
     let mut renderer = DiffRenderer::with_color_mode(color_mode);
@@ -206,7 +272,8 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
 
     loop {
         if event::poll(Duration::from_millis(50))
-            .map_err(|e| CliError::ValidationFailed(format!("Poll: {e}")))? {
+            .map_err(|e| CliError::ValidationFailed(format!("Poll: {e}")))?
+        {
             match event::read().map_err(|e| CliError::ValidationFailed(format!("Read: {e}")))? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => {
@@ -215,10 +282,14 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
                         return Ok(());
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        if selected + 1 < rows.len() { selected += 1; }
+                        if selected + 1 < rows.len() {
+                            selected += 1;
+                        }
                     }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        if selected > 0 { selected -= 1; }
+                        if selected > 0 {
+                            selected -= 1;
+                        }
                     }
                     KeyCode::Home => selected = 0,
                     KeyCode::End => selected = rows.len().saturating_sub(1),
@@ -229,8 +300,8 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
             }
         }
 
-        let (width, height) = terminal::size()
-            .map_err(|e| CliError::ValidationFailed(format!("Size: {e}")))?;
+        let (width, height) =
+            terminal::size().map_err(|e| CliError::ValidationFailed(format!("Size: {e}")))?;
         let mut buffer = CellBuffer::new(width, height);
         let w = width as f32;
         let h = height as f32;
@@ -241,7 +312,11 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
             // Header
             c.fill_rect(Rect::new(0.0, 0.0, w, 1.0), HEADER_BG);
             c.draw_text(" Experiment Browser", Point::new(0.0, 0.0), &bold(WHITE));
-            c.draw_text(&format!("{} runs ", rows.len()), Point::new(w - 12.0, 0.0), &ts(DIM));
+            c.draw_text(
+                &format!("{} runs ", rows.len()),
+                Point::new(w - 12.0, 0.0),
+                &ts(DIM),
+            );
 
             // Two-column: table (60%) + detail (40%)
             let split = (w * 0.6).floor();
@@ -257,7 +332,11 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
             c.draw_text("Steps", Point::new(split * 0.7, 2.0), &bold(CYAN));
 
             let visible = (left.height as usize).saturating_sub(4);
-            let scroll = if selected >= visible { selected - visible + 1 } else { 0 };
+            let scroll = if selected >= visible {
+                selected - visible + 1
+            } else {
+                0
+            };
             for (i, row) in rows.iter().skip(scroll).take(visible).enumerate() {
                 let y = 3.0 + i as f32;
                 let is_sel = scroll + i == selected;
@@ -265,9 +344,21 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
                     c.fill_rect(Rect::new(1.0, y, split - 2.0, 1.0), SELECTED_BG);
                 }
                 let fg = if is_sel { WHITE } else { DIM };
-                c.draw_text(&truncate(&row.name, (split * 0.45) as usize), Point::new(2.0, y), &ts(fg));
-                c.draw_text(&format!("{:.4}", row.loss), Point::new(split * 0.5, y), &ts(fg));
-                c.draw_text(&format!("{}", row.steps), Point::new(split * 0.7, y), &ts(fg));
+                c.draw_text(
+                    &truncate(&row.name, (split * 0.45) as usize),
+                    Point::new(2.0, y),
+                    &ts(fg),
+                );
+                c.draw_text(
+                    &format!("{:.4}", row.loss),
+                    Point::new(split * 0.5, y),
+                    &ts(fg),
+                );
+                c.draw_text(
+                    &format!("{}", row.steps),
+                    Point::new(split * 0.7, y),
+                    &ts(fg),
+                );
             }
 
             // Right: detail + sparkline
@@ -284,7 +375,11 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
                 c.draw_text("Status:", Point::new(dx, 4.0), &ts(CYAN));
                 c.draw_text(&row.status, Point::new(dx + 14.0, 4.0), &ts(GREEN));
                 c.draw_text("Final Loss:", Point::new(dx, 5.0), &ts(CYAN));
-                c.draw_text(&format!("{:.6}", row.loss), Point::new(dx + 14.0, 5.0), &ts(WHITE));
+                c.draw_text(
+                    &format!("{:.6}", row.loss),
+                    Point::new(dx + 14.0, 5.0),
+                    &ts(WHITE),
+                );
 
                 // Loss sparkline
                 if !row.loss_values.is_empty() {

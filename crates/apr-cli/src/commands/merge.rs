@@ -220,7 +220,10 @@ pub(crate) fn run_plan(
 
 /// Run the merge command
 #[allow(clippy::too_many_arguments, clippy::disallowed_methods)]
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "mutating_output_contract"
+)]
 pub(crate) fn run(
     files: &[PathBuf],
     strategy: &str,

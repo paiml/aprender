@@ -89,7 +89,10 @@ struct EvalResult {
 }
 
 /// Run the eval command
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run(
     path: &Path,
     dataset: &str,

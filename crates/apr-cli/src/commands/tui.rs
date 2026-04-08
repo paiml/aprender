@@ -37,17 +37,60 @@ use std::time::{Duration, Instant};
 
 // ── Theme (struct literal = const, per contract: no hardcoded ANSI) ──────
 
-const CYAN: Color = Color { r: 0.4, g: 0.85, b: 1.0, a: 1.0 };
-const WHITE: Color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-const DIM: Color = Color { r: 0.5, g: 0.5, b: 0.5, a: 1.0 };
-const YELLOW: Color = Color { r: 1.0, g: 0.85, b: 0.3, a: 1.0 };
-const GREEN: Color = Color { r: 0.3, g: 1.0, b: 0.5, a: 1.0 };
-const RED: Color = Color { r: 1.0, g: 0.3, b: 0.3, a: 1.0 };
-const SELECTED_BG: Color = Color { r: 0.15, g: 0.2, b: 0.3, a: 1.0 };
-const HEADER_BG: Color = Color { r: 0.1, g: 0.12, b: 0.18, a: 1.0 };
+const CYAN: Color = Color {
+    r: 0.4,
+    g: 0.85,
+    b: 1.0,
+    a: 1.0,
+};
+const WHITE: Color = Color {
+    r: 1.0,
+    g: 1.0,
+    b: 1.0,
+    a: 1.0,
+};
+const DIM: Color = Color {
+    r: 0.5,
+    g: 0.5,
+    b: 0.5,
+    a: 1.0,
+};
+const YELLOW: Color = Color {
+    r: 1.0,
+    g: 0.85,
+    b: 0.3,
+    a: 1.0,
+};
+const GREEN: Color = Color {
+    r: 0.3,
+    g: 1.0,
+    b: 0.5,
+    a: 1.0,
+};
+const RED: Color = Color {
+    r: 1.0,
+    g: 0.3,
+    b: 0.3,
+    a: 1.0,
+};
+const SELECTED_BG: Color = Color {
+    r: 0.15,
+    g: 0.2,
+    b: 0.3,
+    a: 1.0,
+};
+const HEADER_BG: Color = Color {
+    r: 0.1,
+    g: 0.12,
+    b: 0.18,
+    a: 1.0,
+};
 
 fn text_style(color: Color) -> TextStyle {
-    TextStyle { color, ..TextStyle::default() }
+    TextStyle {
+        color,
+        ..TextStyle::default()
+    }
 }
 
 fn bold_style(color: Color) -> TextStyle {
@@ -262,11 +305,7 @@ fn cleanup_terminal(stdout: &mut io::Stdout) {
     execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show).ok();
 }
 
-fn run_loop(
-    stdout: &mut io::Stdout,
-    app: &mut App,
-    renderer: &mut DiffRenderer,
-) -> Result<()> {
+fn run_loop(stdout: &mut io::Stdout, app: &mut App, renderer: &mut DiffRenderer) -> Result<()> {
     let render_interval = Duration::from_millis(16); // 60 FPS budget
     let mut last_render = Instant::now();
     let mut force_full = true;
@@ -368,11 +407,17 @@ fn draw_tabs(app: &App, canvas: &mut DirectTerminalCanvas<'_>, width: f32) {
         let is_active = tab == app.current_tab;
 
         if is_active {
-            canvas.fill_rect(
-                Rect::new(x, y, title.len() as f32, 1.0),
-                CYAN,
+            canvas.fill_rect(Rect::new(x, y, title.len() as f32, 1.0), CYAN);
+            canvas.draw_text(
+                title,
+                Point::new(x, y),
+                &bold_style(Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.1,
+                    a: 1.0,
+                }),
             );
-            canvas.draw_text(title, Point::new(x, y), &bold_style(Color { r: 0.0, g: 0.0, b: 0.1, a: 1.0 }));
         } else {
             canvas.draw_text(title, Point::new(x, y), &text_style(DIM));
         }
@@ -406,7 +451,11 @@ fn draw_footer(app: &App, canvas: &mut DirectTerminalCanvas<'_>, width: f32, y: 
 
 fn draw_overview(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
     if let Some(ref error) = app.error_message {
-        canvas.draw_text(error, Point::new(area.x + 2.0, area.y + 1.0), &text_style(RED));
+        canvas.draw_text(
+            error,
+            Point::new(area.x + 2.0, area.y + 1.0),
+            &text_style(RED),
+        );
         return;
     }
 
@@ -421,16 +470,38 @@ fn draw_overview(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
 
     // Border
     canvas.stroke_rect(area, CYAN, 1.0);
-    canvas.draw_text(" Overview ", Point::new(area.x + 2.0, area.y), &bold_style(WHITE));
+    canvas.draw_text(
+        " Overview ",
+        Point::new(area.x + 2.0, area.y),
+        &bold_style(WHITE),
+    );
 
     let lx = area.x + 2.0;
     let vx = area.x + 16.0;
     let mut y = area.y + 1.0;
 
     let fields: &[(&str, Option<String>)] = &[
-        ("Model Type:", reader.metadata.get("model_type").map(|v| v.to_string().trim_matches('"').to_string())),
-        ("Model Name:", reader.metadata.get("model_name").map(|v| v.to_string().trim_matches('"').to_string())),
-        ("Framework:", reader.metadata.get("framework").map(|v| v.to_string().trim_matches('"').to_string())),
+        (
+            "Model Type:",
+            reader
+                .metadata
+                .get("model_type")
+                .map(|v| v.to_string().trim_matches('"').to_string()),
+        ),
+        (
+            "Model Name:",
+            reader
+                .metadata
+                .get("model_name")
+                .map(|v| v.to_string().trim_matches('"').to_string()),
+        ),
+        (
+            "Framework:",
+            reader
+                .metadata
+                .get("framework")
+                .map(|v| v.to_string().trim_matches('"').to_string()),
+        ),
     ];
 
     for (label, value) in fields {
@@ -443,18 +514,36 @@ fn draw_overview(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
 
     y += 1.0;
     canvas.draw_text("Tensors:", Point::new(lx, y), &text_style(CYAN));
-    canvas.draw_text(&format!("{}", app.tensors.len()), Point::new(vx, y), &text_style(WHITE));
+    canvas.draw_text(
+        &format!("{}", app.tensors.len()),
+        Point::new(vx, y),
+        &text_style(WHITE),
+    );
     y += 1.0;
 
     let total_size: usize = app.tensors.iter().map(|t| t.size_bytes).sum();
     canvas.draw_text("Total Size:", Point::new(lx, y), &text_style(CYAN));
-    canvas.draw_text(&format_size(total_size, BINARY), Point::new(vx, y), &text_style(WHITE));
+    canvas.draw_text(
+        &format_size(total_size, BINARY),
+        Point::new(vx, y),
+        &text_style(WHITE),
+    );
     y += 1.0;
 
     if let Some(score) = app.validation_score {
-        let score_color = if score >= 90 { GREEN } else if score >= 70 { YELLOW } else { RED };
+        let score_color = if score >= 90 {
+            GREEN
+        } else if score >= 70 {
+            YELLOW
+        } else {
+            RED
+        };
         canvas.draw_text("QA Score:", Point::new(lx, y), &text_style(CYAN));
-        canvas.draw_text(&format!("{score}/100"), Point::new(vx, y), &text_style(score_color));
+        canvas.draw_text(
+            &format!("{score}/100"),
+            Point::new(vx, y),
+            &text_style(score_color),
+        );
         y += 1.0;
     }
 
@@ -467,7 +556,11 @@ fn draw_overview(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
                 if y >= area.y + area.height - 1.0 {
                     break;
                 }
-                canvas.draw_text(&format!("{k}: {v}"), Point::new(lx + 2.0, y), &text_style(DIM));
+                canvas.draw_text(
+                    &format!("{k}: {v}"),
+                    Point::new(lx + 2.0, y),
+                    &text_style(DIM),
+                );
                 y += 1.0;
             }
         }
@@ -476,13 +569,21 @@ fn draw_overview(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
 
 fn draw_tensors(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
     // Two-column layout: 60/40 split (per contract)
-    let split = if area.width >= 100.0 { area.width * 0.6 } else { area.width * 0.5 };
+    let split = if area.width >= 100.0 {
+        area.width * 0.6
+    } else {
+        area.width * 0.5
+    };
     let left = Rect::new(area.x, area.y, split, area.height);
     let right = Rect::new(area.x + split, area.y, area.width - split, area.height);
 
     // Left: tensor list
     canvas.stroke_rect(left, CYAN, 1.0);
-    canvas.draw_text(" Tensors (j/k) ", Point::new(left.x + 2.0, left.y), &bold_style(WHITE));
+    canvas.draw_text(
+        " Tensors (j/k) ",
+        Point::new(left.x + 2.0, left.y),
+        &bold_style(WHITE),
+    );
 
     let visible_rows = (left.height as usize).saturating_sub(2);
     let scroll = if app.selected >= visible_rows {
@@ -491,7 +592,13 @@ fn draw_tensors(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
         0
     };
 
-    for (i, tensor) in app.tensors.iter().skip(scroll).take(visible_rows).enumerate() {
+    for (i, tensor) in app
+        .tensors
+        .iter()
+        .skip(scroll)
+        .take(visible_rows)
+        .enumerate()
+    {
         let y = left.y + 1.0 + i as f32;
         let is_selected = scroll + i == app.selected;
         let shape_str = format!("{:?}", tensor.shape);
@@ -506,13 +613,21 @@ fn draw_tensors(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
             canvas.draw_text("▸ ", Point::new(left.x + 1.0, y), &text_style(CYAN));
             canvas.draw_text(&line, Point::new(left.x + 3.0, y), &bold_style(WHITE));
         } else {
-            canvas.draw_text(&format!("  {line}"), Point::new(left.x + 1.0, y), &text_style(DIM));
+            canvas.draw_text(
+                &format!("  {line}"),
+                Point::new(left.x + 1.0, y),
+                &text_style(DIM),
+            );
         }
     }
 
     // Right: tensor detail
     canvas.stroke_rect(right, CYAN, 1.0);
-    canvas.draw_text(" Details ", Point::new(right.x + 2.0, right.y), &bold_style(WHITE));
+    canvas.draw_text(
+        " Details ",
+        Point::new(right.x + 2.0, right.y),
+        &bold_style(WHITE),
+    );
 
     if let Some(tensor) = app.selected_tensor() {
         let dx = right.x + 2.0;
@@ -527,7 +642,9 @@ fn draw_tensors(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
         ];
 
         for (label, value) in details {
-            if y >= right.y + right.height - 1.0 { break; }
+            if y >= right.y + right.height - 1.0 {
+                break;
+            }
             canvas.draw_text(label, Point::new(dx, y), &text_style(CYAN));
             canvas.draw_text(value, Point::new(vx, y), &text_style(WHITE));
             y += 1.0;
@@ -551,7 +668,9 @@ fn draw_tensors(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
             ];
 
             for (label, value) in stat_lines {
-                if y >= right.y + right.height - 1.0 { break; }
+                if y >= right.y + right.height - 1.0 {
+                    break;
+                }
                 canvas.draw_text(label, Point::new(dx + 2.0, y), &text_style(DIM));
                 canvas.draw_text(value, Point::new(dx + 10.0, y), &text_style(WHITE));
                 y += 1.0;
@@ -568,22 +687,40 @@ fn draw_tensors(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
             }
         }
     } else {
-        canvas.draw_text("Select a tensor", Point::new(right.x + 2.0, right.y + 2.0), &text_style(DIM));
+        canvas.draw_text(
+            "Select a tensor",
+            Point::new(right.x + 2.0, right.y + 2.0),
+            &text_style(DIM),
+        );
     }
 }
 
 fn draw_stats(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
     canvas.stroke_rect(area, CYAN, 1.0);
-    canvas.draw_text(" Statistics ", Point::new(area.x + 2.0, area.y), &bold_style(WHITE));
+    canvas.draw_text(
+        " Statistics ",
+        Point::new(area.x + 2.0, area.y),
+        &bold_style(WHITE),
+    );
 
     if app.tensors.is_empty() {
-        canvas.draw_text("No tensor data available", Point::new(area.x + 2.0, area.y + 2.0), &text_style(YELLOW));
+        canvas.draw_text(
+            "No tensor data available",
+            Point::new(area.x + 2.0, area.y + 2.0),
+            &text_style(YELLOW),
+        );
         return;
     }
 
     // Column positions (proportional)
     let w = area.width;
-    let cx = [area.x + 2.0, area.x + w * 0.30, area.x + w * 0.55, area.x + w * 0.70, area.x + w * 0.85];
+    let cx = [
+        area.x + 2.0,
+        area.x + w * 0.30,
+        area.x + w * 0.55,
+        area.x + w * 0.70,
+        area.x + w * 0.85,
+    ];
 
     // Header
     let y = area.y + 1.0;
@@ -594,18 +731,36 @@ fn draw_stats(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
 
     // Separator
     let sep = "─".repeat((w as usize).saturating_sub(2));
-    canvas.draw_text(&sep, Point::new(area.x + 1.0, area.y + 2.0), &text_style(DIM));
+    canvas.draw_text(
+        &sep,
+        Point::new(area.x + 1.0, area.y + 2.0),
+        &text_style(DIM),
+    );
 
     // Rows
     let visible = (area.height as usize).saturating_sub(4);
     for (i, tensor) in app.tensors.iter().take(visible).enumerate() {
         let row_y = area.y + 3.0 + i as f32;
-        if row_y >= area.y + area.height - 1.0 { break; }
+        if row_y >= area.y + area.height - 1.0 {
+            break;
+        }
 
         let name_max = (w * 0.28) as usize;
-        canvas.draw_text(&truncate_name(&tensor.name, name_max), Point::new(cx[0], row_y), &text_style(WHITE));
-        canvas.draw_text(&format!("{:?}", tensor.shape), Point::new(cx[1], row_y), &text_style(DIM));
-        canvas.draw_text(&format_size(tensor.size_bytes, BINARY), Point::new(cx[2], row_y), &text_style(DIM));
+        canvas.draw_text(
+            &truncate_name(&tensor.name, name_max),
+            Point::new(cx[0], row_y),
+            &text_style(WHITE),
+        );
+        canvas.draw_text(
+            &format!("{:?}", tensor.shape),
+            Point::new(cx[1], row_y),
+            &text_style(DIM),
+        );
+        canvas.draw_text(
+            &format_size(tensor.size_bytes, BINARY),
+            Point::new(cx[2], row_y),
+            &text_style(DIM),
+        );
 
         let (mean, std) = match &tensor.stats {
             Some(s) => (format!("{:.4}", s.mean), format!("{:.4}", s.std)),
@@ -618,11 +773,19 @@ fn draw_stats(app: &App, canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
 
 fn draw_help(canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
     canvas.stroke_rect(area, CYAN, 1.0);
-    canvas.draw_text(" Help ", Point::new(area.x + 2.0, area.y), &bold_style(WHITE));
+    canvas.draw_text(
+        " Help ",
+        Point::new(area.x + 2.0, area.y),
+        &bold_style(WHITE),
+    );
 
     let mut y = area.y + 1.0;
 
-    canvas.draw_text("Keyboard Shortcuts", Point::new(area.x + 2.0, y), &bold_style(CYAN));
+    canvas.draw_text(
+        "Keyboard Shortcuts",
+        Point::new(area.x + 2.0, y),
+        &bold_style(CYAN),
+    );
     y += 2.0;
 
     let bindings: &[(&str, &str)] = &[
@@ -635,7 +798,9 @@ fn draw_help(canvas: &mut DirectTerminalCanvas<'_>, area: Rect) {
     ];
 
     for (key, desc) in bindings {
-        if y >= area.y + area.height - 1.0 { break; }
+        if y >= area.y + area.height - 1.0 {
+            break;
+        }
         canvas.draw_text(key, Point::new(area.x + 4.0, y), &text_style(YELLOW));
         canvas.draw_text(desc, Point::new(area.x + 22.0, y), &text_style(WHITE));
         y += 1.0;
@@ -680,7 +845,9 @@ fn truncate_name(name: &str, max_len: usize) -> String {
 }
 
 fn build_sparkline(stats: &TensorStats, width: usize) -> String {
-    if width == 0 { return String::new(); }
+    if width == 0 {
+        return String::new();
+    }
     const SPARK: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
     let mut result = String::with_capacity(width);
     for i in 0..width {

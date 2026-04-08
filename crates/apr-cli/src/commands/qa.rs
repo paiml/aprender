@@ -369,7 +369,10 @@ pub struct QaReport {
 
 /// Run the QA command
 #[allow(clippy::too_many_arguments)]
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub fn run(
     path: &Path,
     min_tps: Option<f64>,

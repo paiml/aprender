@@ -977,10 +977,7 @@ fn test_load_tensor_data_apr_multiple_tensors() {
         .iter()
         .flat_map(|f| f.to_le_bytes())
         .collect();
-    let data2: Vec<u8> = [5.0f32, 6.0]
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let data2: Vec<u8> = [5.0f32, 6.0].iter().flat_map(|f| f.to_le_bytes()).collect();
 
     writer.add_tensor("weight", TensorDType::F32, vec![2, 2], data1);
     writer.add_tensor("bias", TensorDType::F32, vec![2], data2);
@@ -1379,7 +1376,7 @@ fn test_check_canary_fail_drift() {
         TensorCanary {
             shape: vec![2, 2],
             count: 4,
-            mean: 100.0,  // actual mean ~2.5, huge drift
+            mean: 100.0, // actual mean ~2.5, huge drift
             std: 0.001,
             min: 99.0,
             max: 101.0,
@@ -1472,16 +1469,18 @@ fn test_create_then_check_canary_round_trip() {
     let canary_file = NamedTempFile::with_suffix(".json").expect("create canary output");
 
     // Step 1: create canary
-    let create_result = create_canary(
-        model_file.path(),
-        input_file.path(),
-        canary_file.path(),
+    let create_result = create_canary(model_file.path(), input_file.path(), canary_file.path());
+    assert!(
+        create_result.is_ok(),
+        "create should succeed: {create_result:?}"
     );
-    assert!(create_result.is_ok(), "create should succeed: {create_result:?}");
 
     // Step 2: check same model against its own canary (should pass)
     let check_result = check_canary(model_file.path(), canary_file.path());
-    assert!(check_result.is_ok(), "self-check should pass: {check_result:?}");
+    assert!(
+        check_result.is_ok(),
+        "self-check should pass: {check_result:?}"
+    );
 }
 
 // ========================================================================

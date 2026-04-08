@@ -12,7 +12,10 @@ use crate::{error::CliError, output};
 type Result<T> = std::result::Result<T, CliError>;
 
 /// Run `apr tokenize plan` — validate inputs and estimate training.
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run_plan(
     data: &Path,
     vocab_size: usize,
@@ -69,7 +72,10 @@ pub(crate) fn run_plan(
 }
 
 /// Run `apr tokenize apply` — train tokenizer and write output.
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 pub(crate) fn run_apply(
     data: &Path,
     vocab_size: usize,

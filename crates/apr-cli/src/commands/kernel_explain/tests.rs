@@ -590,7 +590,12 @@ fn load_families_count() {
 #[test]
 fn load_families_expected_classes() {
     let families = load_families();
-    let find = |name: &str| families.iter().find(|f| f.family == name).expect("family == name");
+    let find = |name: &str| {
+        families
+            .iter()
+            .find(|f| f.family == name)
+            .expect("family == name")
+    };
 
     assert_eq!(find("llama").kernel_class, KernelClass::A);
     assert_eq!(find("qwen2").kernel_class, KernelClass::A);
@@ -1848,7 +1853,8 @@ fn resolve_config_json_array_rejected() {
 fn resolve_config_json_unknown_model_type() {
     let dir = tempfile::tempdir().expect("tempfile::tempdir()");
     let path = dir.path().join("config.json");
-    std::fs::write(&path, r#"{"model_type": "totally_unknown_xyz"}"#).expect("'totally_unknown_xyz'}'#)");
+    std::fs::write(&path, r#"{"model_type": "totally_unknown_xyz"}"#)
+        .expect("'totally_unknown_xyz'}'#)");
     assert!(resolve_from_config_json(&path).is_none());
 }
 

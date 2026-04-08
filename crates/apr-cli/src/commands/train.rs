@@ -22,7 +22,10 @@ fn classify_not_available() -> CliError {
 
 /// Run `apr train plan` — generate and display a training plan.
 #[allow(clippy::too_many_arguments)]
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "mutating_output_contract"
+)]
 pub(crate) fn run_plan(
     _data: Option<&std::path::Path>,
     _model_size: &str,
@@ -1422,7 +1425,11 @@ fn run_halving_round(
     // Rank by best_ppl (lower is better), inf sorts last
     round_scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    let kept: Vec<usize> = round_scores.iter().take(n_survive).map(|(i, _)| *i).collect();
+    let kept: Vec<usize> = round_scores
+        .iter()
+        .take(n_survive)
+        .map(|(i, _)| *i)
+        .collect();
     for &(idx, _) in round_scores.iter().skip(n_survive) {
         results[idx].eliminated_round = Some(round_idx);
     }

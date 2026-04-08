@@ -306,7 +306,10 @@ fn test_generate_model_card_description_generated() {
     );
 
     assert!(card.description.is_some());
-    assert!(card.description.expect("description").contains("Whisper Tiny"));
+    assert!(card
+        .description
+        .expect("description")
+        .contains("Whisper Tiny"));
 }
 
 #[test]

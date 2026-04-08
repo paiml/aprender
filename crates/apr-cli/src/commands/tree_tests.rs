@@ -8,35 +8,66 @@ use tempfile::{tempdir, NamedTempFile};
 
 #[test]
 fn test_tree_format_from_str_ascii() {
-    assert_eq!("ascii".parse::<TreeFormat>().expect("parse::<TreeFormat>"), TreeFormat::Ascii);
-    assert_eq!("text".parse::<TreeFormat>().expect("parse::<TreeFormat>"), TreeFormat::Ascii);
+    assert_eq!(
+        "ascii".parse::<TreeFormat>().expect("parse::<TreeFormat>"),
+        TreeFormat::Ascii
+    );
+    assert_eq!(
+        "text".parse::<TreeFormat>().expect("parse::<TreeFormat>"),
+        TreeFormat::Ascii
+    );
 }
 
 #[test]
 fn test_tree_format_from_str_dot() {
-    assert_eq!("dot".parse::<TreeFormat>().expect("parse::<TreeFormat>"), TreeFormat::Dot);
-    assert_eq!("graphviz".parse::<TreeFormat>().expect("parse::<TreeFormat>"), TreeFormat::Dot);
+    assert_eq!(
+        "dot".parse::<TreeFormat>().expect("parse::<TreeFormat>"),
+        TreeFormat::Dot
+    );
+    assert_eq!(
+        "graphviz"
+            .parse::<TreeFormat>()
+            .expect("parse::<TreeFormat>"),
+        TreeFormat::Dot
+    );
 }
 
 #[test]
 fn test_tree_format_from_str_mermaid() {
     assert_eq!(
-        "mermaid".parse::<TreeFormat>().expect("parse::<TreeFormat>"),
+        "mermaid"
+            .parse::<TreeFormat>()
+            .expect("parse::<TreeFormat>"),
         TreeFormat::Mermaid
     );
-    assert_eq!("md".parse::<TreeFormat>().expect("parse::<TreeFormat>"), TreeFormat::Mermaid);
+    assert_eq!(
+        "md".parse::<TreeFormat>().expect("parse::<TreeFormat>"),
+        TreeFormat::Mermaid
+    );
 }
 
 #[test]
 fn test_tree_format_from_str_json() {
-    assert_eq!("json".parse::<TreeFormat>().expect("parse::<TreeFormat>"), TreeFormat::Json);
+    assert_eq!(
+        "json".parse::<TreeFormat>().expect("parse::<TreeFormat>"),
+        TreeFormat::Json
+    );
 }
 
 #[test]
 fn test_tree_format_from_str_case_insensitive() {
-    assert_eq!("ASCII".parse::<TreeFormat>().expect("parse::<TreeFormat>"), TreeFormat::Ascii);
-    assert_eq!("DOT".parse::<TreeFormat>().expect("parse::<TreeFormat>"), TreeFormat::Dot);
-    assert_eq!("JSON".parse::<TreeFormat>().expect("parse::<TreeFormat>"), TreeFormat::Json);
+    assert_eq!(
+        "ASCII".parse::<TreeFormat>().expect("parse::<TreeFormat>"),
+        TreeFormat::Ascii
+    );
+    assert_eq!(
+        "DOT".parse::<TreeFormat>().expect("parse::<TreeFormat>"),
+        TreeFormat::Dot
+    );
+    assert_eq!(
+        "JSON".parse::<TreeFormat>().expect("parse::<TreeFormat>"),
+        TreeFormat::Json
+    );
 }
 
 #[test]

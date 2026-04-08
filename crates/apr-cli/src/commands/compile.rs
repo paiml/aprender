@@ -41,7 +41,10 @@ struct ModelInfo {
 
 /// Run the compile command.
 #[allow(clippy::fn_params_excessive_bools)]
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "mutating_output_contract"
+)]
 pub(crate) fn run(
     file: Option<&Path>,
     output_path: Option<&Path>,
@@ -444,34 +447,22 @@ mod tests {
 
     #[test]
     fn derive_binary_name_spaces_replaced() {
-        assert_eq!(
-            derive_binary_name(Path::new("my model.apr")),
-            "my_model"
-        );
+        assert_eq!(derive_binary_name(Path::new("my model.apr")), "my_model");
     }
 
     #[test]
     fn derive_binary_name_uppercase_lowered() {
-        assert_eq!(
-            derive_binary_name(Path::new("MyModel.apr")),
-            "mymodel"
-        );
+        assert_eq!(derive_binary_name(Path::new("MyModel.apr")), "mymodel");
     }
 
     #[test]
     fn derive_binary_name_all_special_chars() {
-        assert_eq!(
-            derive_binary_name(Path::new("a-b.c d.apr")),
-            "a_b_c_d"
-        );
+        assert_eq!(derive_binary_name(Path::new("a-b.c d.apr")), "a_b_c_d");
     }
 
     #[test]
     fn derive_binary_name_hidden_file() {
-        assert_eq!(
-            derive_binary_name(Path::new(".hidden.apr")),
-            "_hidden"
-        );
+        assert_eq!(derive_binary_name(Path::new(".hidden.apr")), "_hidden");
     }
 
     // ========================================================================
@@ -558,7 +549,9 @@ mod tests {
     #[test]
     fn targets_includes_linux_x86_64() {
         assert!(
-            TARGETS.iter().any(|(t, _)| *t == "x86_64-unknown-linux-gnu"),
+            TARGETS
+                .iter()
+                .any(|(t, _)| *t == "x86_64-unknown-linux-gnu"),
             "Missing Linux x86_64 target"
         );
     }
@@ -573,18 +566,30 @@ mod tests {
 
     #[test]
     fn targets_includes_wasm() {
-        let wasm_count = TARGETS.iter().filter(|(t, _)| t.starts_with("wasm32")).count();
-        assert!(wasm_count >= 3, "Expected at least 3 WASM targets, found {wasm_count}");
+        let wasm_count = TARGETS
+            .iter()
+            .filter(|(t, _)| t.starts_with("wasm32"))
+            .count();
+        assert!(
+            wasm_count >= 3,
+            "Expected at least 3 WASM targets, found {wasm_count}"
+        );
     }
 
     #[test]
     fn targets_native_before_wasm() {
         // Verify layout: first 6 are native, remaining are WASM
         for (triple, _) in &TARGETS[..6] {
-            assert!(!triple.starts_with("wasm"), "First 6 should be native, found {triple}");
+            assert!(
+                !triple.starts_with("wasm"),
+                "First 6 should be native, found {triple}"
+            );
         }
         for (triple, _) in &TARGETS[6..] {
-            assert!(triple.starts_with("wasm"), "After 6 should be WASM, found {triple}");
+            assert!(
+                triple.starts_with("wasm"),
+                "After 6 should be WASM, found {triple}"
+            );
         }
     }
 
@@ -651,7 +656,10 @@ mod tests {
             false,
         );
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("apr quantize"), "Error should suggest apr quantize: {err}");
+        assert!(
+            err.contains("apr quantize"),
+            "Error should suggest apr quantize: {err}"
+        );
     }
 
     #[test]

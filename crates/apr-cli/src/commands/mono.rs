@@ -44,55 +44,115 @@ pub enum MonoCommands {
 
 /// Topological publish order — leaves first, root last.
 const PUBLISH_TIERS: &[(&str, &[&str])] = &[
-    ("Tier 0: Zero-dep crates", &[
-        "aprender-contracts-macros", "aprender-gemm-codegen", "aprender-quant",
-        "aprender-rand", "aprender-fft", "aprender-sparse", "aprender-solve",
-        "aprender-tensor", "aprender-image",
-    ]),
-    ("Tier 1: Core compute", &[
-        "aprender-gpu", "aprender-compute", "aprender-cuda-edge",
-        "aprender-ptx-debug", "aprender-cupti", "aprender-cbtop",
-        "aprender-cgp", "aprender-explain",
-    ]),
-    ("Tier 2: Contracts + shared", &[
-        "aprender-contracts", "aprender-contracts-cli",
-        "aprender-profile-core", "aprender-profile",
-    ]),
-    ("Tier 3: Data & Storage", &[
-        "aprender-db", "aprender-graph", "aprender-rag",
-        "aprender-data", "aprender-distribute",
-    ]),
-    ("Tier 4: Visualization", &[
-        "aprender-present-core", "aprender-present-terminal",
-        "aprender-present-widgets", "aprender-present-layout",
-        "aprender-present-yaml", "aprender-present-cli",
-        "aprender-present-lib", "aprender-present-test",
-        "aprender-present-test-macros", "aprender-viz",
-    ]),
-    ("Tier 5: Test framework", &[
-        "aprender-test-derive", "aprender-test-js-gen",
-        "aprender-test-lib", "aprender-test-cli", "aprender-test-showcase",
-    ]),
-    ("Tier 6: Compressed memory", &[
-        "aprender-zram-core", "aprender-zram-adaptive",
-        "aprender-zram", "aprender-zram-cli", "aprender-zram-generator",
-    ]),
-    ("Tier 7: ML library", &[
-        "aprender-core", "aprender-verify", "aprender-verify-ml",
-        "aprender-simulate", "aprender-registry",
-    ]),
-    ("Tier 8: Training", &[
-        "aprender-train-common", "aprender-train-lora",
-        "aprender-train-distill", "aprender-train-inspect",
-        "aprender-train-shell", "aprender-train-bench",
-        "aprender-train-wasm", "aprender-train",
-    ]),
-    ("Tier 9: Serving + Orchestration", &[
-        "aprender-serve", "aprender-orchestrate",
-    ]),
-    ("Tier 10: CLI + Root", &[
-        "apr-cli", "aprender",
-    ]),
+    (
+        "Tier 0: Zero-dep crates",
+        &[
+            "aprender-contracts-macros",
+            "aprender-gemm-codegen",
+            "aprender-quant",
+            "aprender-rand",
+            "aprender-fft",
+            "aprender-sparse",
+            "aprender-solve",
+            "aprender-tensor",
+            "aprender-image",
+        ],
+    ),
+    (
+        "Tier 1: Core compute",
+        &[
+            "aprender-gpu",
+            "aprender-compute",
+            "aprender-cuda-edge",
+            "aprender-ptx-debug",
+            "aprender-cupti",
+            "aprender-cbtop",
+            "aprender-cgp",
+            "aprender-explain",
+        ],
+    ),
+    (
+        "Tier 2: Contracts + shared",
+        &[
+            "aprender-contracts",
+            "aprender-contracts-cli",
+            "aprender-profile-core",
+            "aprender-profile",
+        ],
+    ),
+    (
+        "Tier 3: Data & Storage",
+        &[
+            "aprender-db",
+            "aprender-graph",
+            "aprender-rag",
+            "aprender-data",
+            "aprender-distribute",
+        ],
+    ),
+    (
+        "Tier 4: Visualization",
+        &[
+            "aprender-present-core",
+            "aprender-present-terminal",
+            "aprender-present-widgets",
+            "aprender-present-layout",
+            "aprender-present-yaml",
+            "aprender-present-cli",
+            "aprender-present-lib",
+            "aprender-present-test",
+            "aprender-present-test-macros",
+            "aprender-viz",
+        ],
+    ),
+    (
+        "Tier 5: Test framework",
+        &[
+            "aprender-test-derive",
+            "aprender-test-js-gen",
+            "aprender-test-lib",
+            "aprender-test-cli",
+            "aprender-test-showcase",
+        ],
+    ),
+    (
+        "Tier 6: Compressed memory",
+        &[
+            "aprender-zram-core",
+            "aprender-zram-adaptive",
+            "aprender-zram",
+            "aprender-zram-cli",
+            "aprender-zram-generator",
+        ],
+    ),
+    (
+        "Tier 7: ML library",
+        &[
+            "aprender-core",
+            "aprender-verify",
+            "aprender-verify-ml",
+            "aprender-simulate",
+            "aprender-registry",
+        ],
+    ),
+    (
+        "Tier 8: Training",
+        &[
+            "aprender-train-common",
+            "aprender-train-lora",
+            "aprender-train-distill",
+            "aprender-train-inspect",
+            "aprender-train-shell",
+            "aprender-train-bench",
+            "aprender-train-wasm",
+            "aprender-train",
+        ],
+    ),
+    (
+        "Tier 9: Serving + Orchestration",
+        &["aprender-serve", "aprender-orchestrate"],
+    ),
+    ("Tier 10: CLI + Root", &["apr-cli", "aprender"]),
 ];
 
 /// Old → New crate name mappings for shim generation.
@@ -101,38 +161,93 @@ const SHIM_MAP: &[(&str, &str, &str, &str)] = &[
     ("trueno", "aprender-compute", "trueno", "0.19.0"),
     ("trueno-gpu", "aprender-gpu", "trueno_gpu", "0.5.0"),
     ("trueno-quant", "aprender-quant", "trueno_quant", "0.2.0"),
-    ("trueno-explain", "aprender-explain", "trueno_explain", "0.3.0"),
+    (
+        "trueno-explain",
+        "aprender-explain",
+        "trueno_explain",
+        "0.3.0",
+    ),
     ("trueno-fft", "aprender-fft", "trueno_fft", "0.2.0"),
     ("trueno-sparse", "aprender-sparse", "trueno_sparse", "0.2.0"),
     ("trueno-solve", "aprender-solve", "trueno_solve", "0.2.0"),
     ("trueno-rand", "aprender-rand", "trueno_rand", "0.2.0"),
     ("trueno-image", "aprender-image", "trueno_image", "0.2.0"),
     ("trueno-tensor", "aprender-tensor", "trueno_tensor", "0.2.0"),
-    ("trueno-cuda-edge", "aprender-cuda-edge", "trueno_cuda_edge", "0.2.0"),
+    (
+        "trueno-cuda-edge",
+        "aprender-cuda-edge",
+        "trueno_cuda_edge",
+        "0.2.0",
+    ),
     ("trueno-db", "aprender-db", "trueno_db", "0.4.0"),
     ("trueno-graph", "aprender-graph", "trueno_graph", "0.2.0"),
     ("trueno-rag", "aprender-rag", "trueno_rag", "0.3.0"),
     ("trueno-viz", "aprender-viz", "trueno_viz", "0.3.0"),
-    ("trueno-zram-core", "aprender-zram-core", "trueno_zram_core", "0.4.0"),
-    ("trueno-zram-adaptive", "aprender-zram-adaptive", "trueno_zram_adaptive", "0.4.0"),
+    (
+        "trueno-zram-core",
+        "aprender-zram-core",
+        "trueno_zram_core",
+        "0.4.0",
+    ),
+    (
+        "trueno-zram-adaptive",
+        "aprender-zram-adaptive",
+        "trueno_zram_adaptive",
+        "0.4.0",
+    ),
     ("cbtop", "aprender-cbtop", "cbtop", "0.2.0"),
     ("entrenar", "aprender-train", "entrenar", "0.8.0"),
-    ("entrenar-common", "aprender-train-common", "entrenar_common", "0.2.0"),
-    ("entrenar-lora", "aprender-train-lora", "entrenar_lora", "0.4.0"),
+    (
+        "entrenar-common",
+        "aprender-train-common",
+        "entrenar_common",
+        "0.2.0",
+    ),
+    (
+        "entrenar-lora",
+        "aprender-train-lora",
+        "entrenar_lora",
+        "0.4.0",
+    ),
     ("realizar", "aprender-serve", "realizar", "0.9.0"),
     ("batuta", "aprender-orchestrate", "batuta", "0.8.0"),
     ("renacer", "aprender-profile", "renacer", "0.11.0"),
-    ("renacer-core", "aprender-profile-core", "renacer_core", "0.2.0"),
+    (
+        "renacer-core",
+        "aprender-profile-core",
+        "renacer_core",
+        "0.2.0",
+    ),
     ("certeza", "aprender-verify", "certeza", "0.2.0"),
     ("verificar", "aprender-verify-ml", "verificar", "0.6.0"),
     ("simular", "aprender-simulate", "simular", "0.4.0"),
     ("repartir", "aprender-distribute", "repartir", "2.1.0"),
     ("alimentar", "aprender-data", "alimentar", "0.3.0"),
     ("pacha", "aprender-registry", "pacha", "0.3.0"),
-    ("provable-contracts", "aprender-contracts", "provable_contracts", "0.4.0"),
-    ("provable-contracts-macros", "aprender-contracts-macros", "provable_contracts_macros", "0.4.0"),
-    ("presentar-core", "aprender-present-core", "presentar_core", "0.4.0"),
-    ("presentar-terminal", "aprender-present-terminal", "presentar_terminal", "0.4.0"),
+    (
+        "provable-contracts",
+        "aprender-contracts",
+        "provable_contracts",
+        "0.4.0",
+    ),
+    (
+        "provable-contracts-macros",
+        "aprender-contracts-macros",
+        "provable_contracts_macros",
+        "0.4.0",
+    ),
+    (
+        "presentar-core",
+        "aprender-present-core",
+        "presentar_core",
+        "0.4.0",
+    ),
+    (
+        "presentar-terminal",
+        "aprender-present-terminal",
+        "presentar_terminal",
+        "0.4.0",
+    ),
     ("jugar-probar", "aprender-test-lib", "jugar_probar", "1.1.0"),
 ];
 
@@ -275,41 +390,63 @@ fn run_audit() -> Result<(), CliError> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let member_count = stdout.matches("\"source\":null").count();
-    println!("[{}] Workspace members: {member_count} (min: 60)",
-        if member_count >= 60 { "PASS" } else { "FAIL" });
+    println!(
+        "[{}] Workspace members: {member_count} (min: 60)",
+        if member_count >= 60 { "PASS" } else { "FAIL" }
+    );
 
     // 2. Check for non-aprender names
     let has_old_names = stdout.contains("\"name\":\"trueno\"")
         || stdout.contains("\"name\":\"realizar\"")
         || stdout.contains("\"name\":\"entrenar\"")
         || stdout.contains("\"name\":\"batuta\"");
-    println!("[{}] No old package names",
-        if !has_old_names { "PASS" } else { "FAIL" });
+    println!(
+        "[{}] No old package names",
+        if !has_old_names { "PASS" } else { "FAIL" }
+    );
 
     // 3. Check no [patch.crates-io] in root Cargo.toml
     let root_toml = std::fs::read_to_string("Cargo.toml").unwrap_or_default();
     let has_patch = root_toml.contains("[patch.crates-io]");
-    println!("[{}] No [patch.crates-io] in root Cargo.toml",
-        if !has_patch { "PASS" } else { "FAIL" });
+    println!(
+        "[{}] No [patch.crates-io] in root Cargo.toml",
+        if !has_patch { "PASS" } else { "FAIL" }
+    );
 
     // 4. Run integration tests
     println!("\nRunning integration tests...");
     let test_status = Command::new("cargo")
-        .args(["test", "--test", "monorepo_invariants", "-p", "aprender-core"])
+        .args([
+            "test",
+            "--test",
+            "monorepo_invariants",
+            "-p",
+            "aprender-core",
+        ])
         .status()
         .map_err(|e| CliError::Aprender(format!("test failed: {e}")))?;
-    println!("[{}] monorepo_invariants tests",
-        if test_status.success() { "PASS" } else { "FAIL" });
+    println!(
+        "[{}] monorepo_invariants tests",
+        if test_status.success() {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    );
 
     let cli_test = Command::new("cargo")
         .args(["test", "--test", "cli_commands", "-p", "apr-cli"])
         .status()
         .map_err(|e| CliError::Aprender(format!("test failed: {e}")))?;
-    println!("[{}] cli_commands tests",
-        if cli_test.success() { "PASS" } else { "FAIL" });
+    println!(
+        "[{}] cli_commands tests",
+        if cli_test.success() { "PASS" } else { "FAIL" }
+    );
 
     if !test_status.success() || !cli_test.success() {
-        return Err(CliError::Aprender("Audit failed — see test output above".into()));
+        return Err(CliError::Aprender(
+            "Audit failed — see test output above".into(),
+        ));
     }
 
     println!("\nAll checks passed.");
@@ -328,7 +465,14 @@ fn run_archive(execute: bool) -> Result<(), CliError> {
         if execute {
             println!("Archiving: {repo} → {new_location}");
             let status = Command::new("gh")
-                .args(["api", "-X", "PATCH", &format!("repos/{repo}"), "-f", "archived=true"])
+                .args([
+                    "api",
+                    "-X",
+                    "PATCH",
+                    &format!("repos/{repo}"),
+                    "-f",
+                    "archived=true",
+                ])
                 .status()
                 .map_err(|e| CliError::Aprender(format!("gh api failed: {e}")))?;
             if !status.success() {
