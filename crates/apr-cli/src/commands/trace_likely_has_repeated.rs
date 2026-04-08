@@ -143,6 +143,7 @@ fn compute_trace_summary(layers: &[LayerTrace], total_params: usize) -> TraceSum
 /// Run the trace command
 #[allow(clippy::too_many_arguments)] // CLI command needs these distinct options
 #[allow(clippy::fn_params_excessive_bools)] // CLI flags are naturally boolean
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 pub(crate) fn run(
     path: &Path,
     layer_filter: Option<&str>,

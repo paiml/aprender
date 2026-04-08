@@ -6,6 +6,7 @@
 use crate::error::Result;
 use crate::CliError;
 
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 pub fn run(json: bool) -> Result<()> {
     contract_pre_json_output_consistency!();
     let uuid = entrenar::gpu::ledger::detect_gpu_uuid();

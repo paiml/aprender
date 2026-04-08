@@ -79,6 +79,7 @@ impl Default for ChatConfig {
 
 /// Run the chat command with optional inference tracing (APR-TRACE-001)
 #[allow(clippy::too_many_arguments)]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
 pub(crate) fn run(
     path: &Path,
     temperature: f32,

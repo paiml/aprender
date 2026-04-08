@@ -40,6 +40,7 @@ fn parse_compression(s: Option<&str>) -> Result<Option<Compression>> {
 
 /// Run the convert command
 #[allow(clippy::disallowed_methods)]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
 pub(crate) fn run(
     file: &Path,
     quantize: Option<&str>,

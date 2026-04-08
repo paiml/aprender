@@ -12,6 +12,7 @@ use crate::{error::CliError, output};
 type Result<T> = std::result::Result<T, CliError>;
 
 /// Run automated diagnosis on a training checkpoint.
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 pub(crate) fn run(
     checkpoint_dir: &Path,
     data_path: Option<&Path>,

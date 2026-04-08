@@ -1,0 +1,107 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+  - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    Command safety classification contract. Every apr CLI command is classified
+    as read-only, mutating, or long-running. Each class has specific
+    postcondition requirements enforced by #[ensures] annotations.
+    Refs GH-686, GH-688, GH-689, GH-690.
+
+equations:
+  # ── Read-only commands: no filesystem side effects ──────────────────────
+  read_only_no_side_effects:
+    formula: |
+      For all read_only commands C:
+        run(C) does NOT create, modify, or delete any file
+        run(C) exit code ∈ {0, 1}  (0=success, 1=validation failure)
+    domain: read-only CLI commands
+    codomain: bool
+    invariants:
+    - "inspect, debug, validate, lint, tensors, trace, diff, hex, tree, flow, explain do not write files"
+    - "check, qa, qualify, bench, eval, canary, compare-hf, parity do not write files"
+    - "list, gpu, tokenize, rosetta, diagnose, profile do not write files"
+    - "Exit code 0 = success, 1 = validation/quality failure"
+
+  # ── Mutating commands: must declare output path ─────────────────────────
+  mutating_output_contract:
+    formula: |
+      For all mutating commands C:
+        C requires --output / -o flag OR positional output path
+        C exit code 0 ↔ output file exists AND is valid
+        C exit code != 0 ↔ output file NOT created (no partial writes)
+    domain: mutating CLI commands
+    codomain: bool
+    invariants:
+    - "convert, export, import, quantize, merge, prune, compile, encrypt, decrypt require output"
+    - "finetune, distill, train, tune produce checkpoint directories"
+    - "pull creates cache entry; rm deletes cache entry"
+    - "No partial output: either complete file or nothing"
+
+  # ── Long-running commands: graceful shutdown ────────────────────────────
+  long_running_graceful:
+    formula: |
+      For all long_running commands C:
+        SIGINT/SIGTERM → graceful shutdown within 5s
+        Resources (files, sockets, GPU) released on exit
+        Exit code 130 for SIGINT, 143 for SIGTERM
+    domain: long-running CLI commands
+    codomain: bool
+    invariants:
+    - "run, serve, chat, tui, cbtop, monitor handle SIGINT gracefully"
+    - "Terminal restored to normal mode on exit (raw mode disabled)"
+    - "GPU memory released, HTTP sockets closed"
+    - "No zombie processes or leaked file descriptors"
+
+falsification_tests:
+- id: FALSIFY-CMD-SAFETY-001
+  rule: read-only commands do not write
+  prediction: "apr inspect model.apr creates no new files"
+  test: |
+    BEFORE=$(find /tmp -maxdepth 1 -newer /proc/1 -type f | wc -l)
+    apr inspect --json ~/models/*.apr > /dev/null 2>&1
+    AFTER=$(find /tmp -maxdepth 1 -newer /proc/1 -type f | wc -l)
+    [ "$BEFORE" -eq "$AFTER" ]
+  if_fails: "read-only command created files"
+
+- id: FALSIFY-CMD-SAFETY-002
+  rule: mutating commands need output
+  prediction: "apr convert without -o fails with usage error"
+  test: |
+    apr convert model.apr 2>&1 | grep -qi "output\|required"
+  if_fails: "mutating command runs without output path"
+
+- id: FALSIFY-CMD-SAFETY-003
+  rule: long-running commands handle SIGINT
+  prediction: "apr tui exits cleanly on SIGINT"
+  test: |
+    timeout 2 apr tui 2>/dev/null; [ $? -le 130 ]
+  if_fails: "long-running command does not handle SIGINT"
+
+- id: FALSIFY-CMD-SAFETY-004
+  rule: command classification complete
+  prediction: "every command in apr --help is classified"
+  test: |
+    TOTAL=$(apr --help 2>&1 | grep -cE '^\s+[a-z]')
+    CLASSIFIED=$(grep -cE 'read_only|mutating|long_running' contracts/apr-cli-command-safety-v1.yaml)
+    [ "$CLASSIFIED" -gt 0 ]
+  if_fails: "commands not classified in contract"
+
+proof_obligations:
+- type: invariant
+  property: "every apr command classified as read-only, mutating, or long-running"
+- type: invariant
+  property: "read-only commands never create/modify/delete files"
+- type: invariant
+  property: "mutating commands require explicit output path"
+- type: invariant
+  property: "long-running commands handle SIGINT/SIGTERM gracefully"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending

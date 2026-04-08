@@ -94,6 +94,7 @@ pub(crate) struct CanaryCheckResult {
 }
 
 /// Run the canary command
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 pub(crate) fn run(command: CanaryCommands) -> Result<()> {
     contract_pre_canary_regression_detection!();
     let result = match command {

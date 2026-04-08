@@ -22,6 +22,7 @@ fn classify_not_available() -> CliError {
 
 /// Run `apr train plan` — generate and display a training plan.
 #[allow(clippy::too_many_arguments)]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
 pub(crate) fn run_plan(
     _data: Option<&std::path::Path>,
     _model_size: &str,

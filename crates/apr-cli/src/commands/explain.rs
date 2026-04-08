@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 /// (exists on disk or has a model file extension), it's treated as `--file`.
 /// Otherwise it's treated as an error code or family name.
 #[allow(clippy::unnecessary_wraps, clippy::fn_params_excessive_bools)]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 pub(crate) fn run(
     code_or_file: Option<String>,
     file: Option<PathBuf>,

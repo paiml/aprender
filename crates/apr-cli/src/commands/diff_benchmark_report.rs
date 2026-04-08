@@ -12,6 +12,7 @@ fn detect_format(path: &Path) -> &'static str {
 
 /// Run profiling on the model with REAL inference
 #[allow(clippy::too_many_arguments)]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 pub(crate) fn run(
     path: &Path,
     granular: bool,

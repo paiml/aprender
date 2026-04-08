@@ -41,6 +41,7 @@ struct ModelInfo {
 
 /// Run the compile command.
 #[allow(clippy::fn_params_excessive_bools)]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
 pub(crate) fn run(
     file: Option<&Path>,
     output_path: Option<&Path>,

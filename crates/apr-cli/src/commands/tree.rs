@@ -124,6 +124,7 @@ fn insert_tensor(root: &mut TreeNode, name: &str, shape: &[usize], size: usize) 
 }
 
 /// Run the tree command
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 pub(crate) fn run(
     apr_path: &Path,
     filter: Option<&str>,

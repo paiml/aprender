@@ -230,6 +230,7 @@ impl App {
 
 // ── Entry point ───────────────────────────────────────────────────────────
 
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
 pub(crate) fn run(file: Option<PathBuf>) -> Result<()> {
     let mut stdout = io::stdout();
     setup_terminal(&mut stdout)?;

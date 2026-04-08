@@ -435,6 +435,7 @@ fn print_distill_header(
 /// Run the distill command — dispatches between file-based and config-driven modes.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
 pub(crate) fn run(
     teacher_path: Option<&Path>,
     student_path: Option<&Path>,

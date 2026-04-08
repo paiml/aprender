@@ -118,6 +118,7 @@ struct HeaderData {
 // ============================================================================
 
 /// Run the inspect command
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 pub(crate) fn run(
     path: &Path,
     show_vocab: bool,

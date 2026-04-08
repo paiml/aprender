@@ -44,6 +44,7 @@ pub struct FileChecksum {
 }
 
 /// Run the pull command
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
 pub fn run(model_ref: &str, force: bool) -> Result<()> {
     contract_pre_pull_cache_integrity!();
     println!("{}", "=== APR Pull ===".cyan().bold());

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 /// Run the import command
 #[provable_contracts_macros::contract("apr-cli-safety-v1", equation = "offline_guard")]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
 pub(crate) fn run(
     source: &str,
     output: Option<&Path>,

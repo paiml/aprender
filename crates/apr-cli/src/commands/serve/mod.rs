@@ -25,6 +25,7 @@ use colored::Colorize;
 use crate::error::{CliError, Result};
 
 /// Serve command entry point (blocking)
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
 pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     contract_pre_graceful_shutdown!();
     contract_pre_resource_cleanup!();

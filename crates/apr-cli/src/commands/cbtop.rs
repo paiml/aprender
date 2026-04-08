@@ -391,6 +391,7 @@ impl App {
 }
 
 /// Run the cbtop command
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "long_running_graceful")]
 pub fn run(config: CbtopConfig) -> Result<()> {
     if config.headless {
         run_headless(config)

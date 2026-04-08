@@ -77,6 +77,7 @@ fn estimate_memory(file_size: u64, scheme: QuantScheme) -> (u64, u64, f64) {
 /// Run the quantize command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "mutating_output_contract")]
 pub(crate) fn run(
     file: &Path,
     scheme: &str,

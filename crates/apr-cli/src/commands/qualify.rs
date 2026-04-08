@@ -385,6 +385,7 @@ fn print_gate_result(gate: &GateResult, json: bool) {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 pub fn run(
     file: &Path,
     tier: &str,
