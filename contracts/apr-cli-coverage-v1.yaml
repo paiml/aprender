@@ -7,20 +7,21 @@ metadata:
   - "docs/specifications/aprender-monorepo-consolidation.md"
   description: >
     apr-cli test coverage contract. Current: 56.7% line coverage.
-    Target: 80% line coverage (realistic given cfg-gated CUDA/training code).
-    Strategy: test dispatch paths, command handlers, and utility functions.
+    Target: 95% line coverage. cfg-gated CUDA code excluded via #[coverage(off)].
+    Strategy: tiny model fixtures, insta-cmd snapshots, property-based falsification.
 
 equations:
   coverage_target:
     formula: |
       cargo llvm-cov report -p apr-cli --summary-only | grep TOTAL
-      line_coverage >= 80%
-    domain: apr-cli lib tests
+      line_coverage >= 95%
+    domain: apr-cli lib + integration tests
     codomain: percentage
     invariants:
-    - "Line coverage >= 80% for code reachable without cuda/training features"
-    - "cfg-gated code (cuda, training, wgpu) excluded from target"
+    - "Line coverage >= 95% for all crates"
+    - "cfg-gated code (cuda, training-gpu, wgpu) annotated with #[coverage(off)]"
     - "Every public fn in dispatch.rs has at least one test path"
+    - "Every apr subcommand exercised by integration test with synthetic model"
 
   dispatch_coverage:
     formula: |
@@ -35,12 +36,12 @@ equations:
 
 falsification_tests:
 - id: FALSIFY-COV-001
-  rule: coverage above 80%
-  prediction: "cargo llvm-cov line coverage >= 80%"
+  rule: coverage above 95%
+  prediction: "cargo llvm-cov line coverage >= 95%"
   test: |
     COV=$(cargo llvm-cov report -p apr-cli --summary-only 2>&1 | grep TOTAL | awk '{print $10}')
-    python3 -c "assert float('$COV'.rstrip('%')) >= 80.0"
-  if_fails: "apr-cli coverage below 80%"
+    python3 -c "assert float('$COV'.rstrip('%')) >= 95.0"
+  if_fails: "apr-cli coverage below 95%"
 
 verification_summary:
   total_obligations: 1

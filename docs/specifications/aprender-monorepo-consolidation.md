@@ -24,10 +24,9 @@
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
-| Coverage (aggregate) | 95.19% regions | ≥95% | **PASS** (aprender-core + apr-cli combined) |
-| Coverage (aprender-core) | 94.78% regions / 94.47% lines | ≥95% | **WARN** (0.5% below) |
-| Coverage (apr-cli) | 57.62% regions / 58.06% lines | ≥80% | **FAIL** — 58% (target 80%). ~40% is cfg-gated CUDA/training code. |
-| Coverage (other 72 crates) | NOT MEASURED | ≥95% | **UNKNOWN** |
+| Coverage (aprender-core) | 94.78% regions / 94.47% lines | **≥95%** | **FAIL** (0.5% below) |
+| Coverage (apr-cli) | 57.62% regions / 58.06% lines | **≥95%** | **FAIL** — 58%. Strategy: tiny fixture + coverage(off) + insta-cmd |
+| Coverage (other 72 crates) | NOT MEASURED | **≥95%** | **UNKNOWN** |
 | Tests (apr-cli) | 4,272 (lib) + 47 (integration) | — | PASS |
 | Tests (aprender-core) | 12,975 | — | PASS |
 | Tests (contracts) | 1,371 | — | PASS |
@@ -56,7 +55,7 @@
 | **2 version outliers** | P2 | **NOT A GAP** — `aprender-present` and `aprender-test` are sub-workspaces with independent `[workspace.package] version`. By design. |
 | **120 workspace members** | P2 | Cosmetic — root Cargo.toml has 120 member path entries (includes sub-workspace paths). 74 top-level crate directories. |
 | **Stale "Previous State" section** | P3 | Historical context — kept for reference. |
-| **apr-cli coverage 58%** | P1 | apr-cli at 58% line (target ≥80%). Strategy: (1) tiny GGUF fixture unlocks 20+ cmd paths, (2) `#[coverage(off)]` on cfg-gated CUDA removes dead code from denominator, (3) insta-cmd snapshot tests for output formatting. Contract: `apr-cli-coverage-v1.yaml`. |
+| **apr-cli coverage 58%** | P0 | apr-cli at 58% line (target **≥95%**). Strategy: (1) tiny fixture unlocks 20+ cmd paths, (2) `#[coverage(off)]` on cfg-gated CUDA removes dead code from denominator, (3) insta-cmd snapshot tests for output formatting. Contract: `apr-cli-coverage-v1.yaml`. |
 
 ---
 
