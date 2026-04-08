@@ -69,19 +69,7 @@ pub(crate) mod trace;
 #[cfg(feature = "training")]
 pub(crate) mod train;
 pub(crate) mod tree;
-#[cfg(feature = "ratatui")]
 pub(crate) mod tui;
-#[cfg(not(feature = "ratatui"))]
-pub(crate) mod tui {
-    use crate::error::{CliError, Result};
-    use std::path::PathBuf;
-    pub(crate) fn run(_file: Option<PathBuf>) -> Result<()> {
-        Err(CliError::ValidationFailed(
-            "TUI mode requires the 'ratatui' feature (being migrated to presentar-terminal)."
-                .to_string(),
-        ))
-    }
-}
 #[cfg(feature = "training")]
 pub(crate) mod tune;
 pub(crate) mod validate;

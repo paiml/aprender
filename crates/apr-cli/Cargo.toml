@@ -163,6 +163,8 @@ blake3 = "1"
 # TUI
 ratatui = { version = "0.29", optional = true }
 crossterm = "0.28"
+presentar-terminal = { workspace = true }
+presentar-core = { workspace = true }
 
 # Visualization (syscall tracing and charts)
 renacer = { version = "0.11", optional = true }
