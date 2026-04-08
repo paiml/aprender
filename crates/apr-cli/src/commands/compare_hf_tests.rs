@@ -336,3 +336,205 @@ fn run_feature_disabled_ignores_all_args() {
         "Feature disabled should be returned regardless of args"
     );
 }
+
+// ========================================================================
+// map_hf_to_apr_name: LLaMA / Qwen / Mistral architecture names
+// ========================================================================
+
+#[test]
+fn map_hf_name_llama_mlp_gate() {
+    let apr_name = map_hf_to_apr_name("model.layers.0.mlp.gate_proj.weight");
+    assert_eq!(apr_name, "layers.0.mlp.gate_proj.weight");
+}
+
+#[test]
+fn map_hf_name_llama_mlp_up() {
+    let apr_name = map_hf_to_apr_name("model.layers.0.mlp.up_proj.weight");
+    assert_eq!(apr_name, "layers.0.mlp.up_proj.weight");
+}
+
+#[test]
+fn map_hf_name_llama_mlp_down() {
+    let apr_name = map_hf_to_apr_name("model.layers.0.mlp.down_proj.weight");
+    assert_eq!(apr_name, "layers.0.mlp.down_proj.weight");
+}
+
+#[test]
+fn map_hf_name_llama_input_layernorm() {
+    let apr_name = map_hf_to_apr_name("model.layers.5.input_layernorm.weight");
+    assert_eq!(apr_name, "layers.5.input_layernorm.weight");
+}
+
+#[test]
+fn map_hf_name_llama_post_attention_layernorm() {
+    let apr_name =
+        map_hf_to_apr_name("model.layers.11.post_attention_layernorm.weight");
+    assert_eq!(apr_name, "layers.11.post_attention_layernorm.weight");
+}
+
+#[test]
+fn map_hf_name_llama_norm_weight() {
+    let apr_name = map_hf_to_apr_name("model.norm.weight");
+    assert_eq!(apr_name, "norm.weight");
+}
+
+#[test]
+fn map_hf_name_llama_embed_tokens() {
+    let apr_name = map_hf_to_apr_name("model.embed_tokens.weight");
+    assert_eq!(apr_name, "embed_tokens.weight");
+}
+
+#[test]
+fn map_hf_name_rotary_emb_inv_freq() {
+    let apr_name =
+        map_hf_to_apr_name("model.layers.0.self_attn.rotary_emb.inv_freq");
+    assert_eq!(apr_name, "layers.0.self_attn.rotary_emb.inv_freq");
+}
+
+// ========================================================================
+// map_hf_to_apr_name: Whisper architecture names
+// ========================================================================
+
+#[test]
+fn map_hf_name_whisper_encoder_conv1() {
+    let apr_name = map_hf_to_apr_name("model.encoder.conv1.weight");
+    assert_eq!(apr_name, "encoder.conv1.weight");
+}
+
+#[test]
+fn map_hf_name_whisper_encoder_conv2() {
+    let apr_name = map_hf_to_apr_name("model.encoder.conv2.weight");
+    assert_eq!(apr_name, "encoder.conv2.weight");
+}
+
+#[test]
+fn map_hf_name_whisper_decoder_embed_tokens() {
+    let apr_name = map_hf_to_apr_name("model.decoder.embed_tokens.weight");
+    assert_eq!(apr_name, "decoder.embed_tokens.weight");
+}
+
+#[test]
+fn map_hf_name_whisper_decoder_layer_norm() {
+    let apr_name = map_hf_to_apr_name("model.decoder.layer_norm.weight");
+    assert_eq!(apr_name, "decoder.layer_norm.weight");
+}
+
+#[test]
+fn map_hf_name_whisper_proj_out() {
+    let apr_name = map_hf_to_apr_name("proj_out.weight");
+    assert_eq!(apr_name, "proj_out.weight");
+}
+
+// ========================================================================
+// map_hf_to_apr_name: idempotency and composition
+// ========================================================================
+
+#[test]
+fn map_hf_name_idempotent_on_apr_name() {
+    // Running map twice should give same result (only first "model." is stripped)
+    let apr_name = map_hf_to_apr_name("layers.0.self_attn.q_proj.weight");
+    let double = map_hf_to_apr_name(&apr_name);
+    assert_eq!(apr_name, double);
+}
+
+#[test]
+fn map_hf_name_preserves_numeric_suffix() {
+    let apr_name = map_hf_to_apr_name("model.layers.99.fc1.weight");
+    assert_eq!(apr_name, "layers.99.fc1.weight");
+}
+
+// ========================================================================
+// run() error variant validation
+// ========================================================================
+
+#[test]
+fn run_nonexistent_returns_file_not_found_or_feature_disabled() {
+    let result = run(
+        Path::new("/absolutely/nonexistent/path.apr"),
+        "test/repo",
+        None,
+        1e-5,
+        false,
+    );
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        matches!(err, CliError::FeatureDisabled(_) | CliError::FileNotFound(_)),
+        "Expected FeatureDisabled or FileNotFound, got: {err:?}"
+    );
+}
+
+#[test]
+fn run_gguf_file_extension() {
+    let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+    file.write_all(b"fake gguf data").expect("write");
+    let result = run(file.path(), "test/repo", None, 1e-5, false);
+    assert!(result.is_err());
+}
+
+#[test]
+fn run_safetensors_file_extension() {
+    let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+    file.write_all(b"fake safetensors data").expect("write");
+    let result = run(file.path(), "test/repo", None, 1e-5, false);
+    assert!(result.is_err());
+}
+
+#[test]
+fn run_threshold_f64_max() {
+    let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+    file.write_all(b"not valid").expect("write");
+    let result = run(file.path(), "test/repo", None, f64::MAX, false);
+    assert!(result.is_err());
+}
+
+#[test]
+fn run_threshold_infinity() {
+    let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+    file.write_all(b"not valid").expect("write");
+    let result = run(file.path(), "test/repo", None, f64::INFINITY, false);
+    assert!(result.is_err());
+}
+
+#[test]
+fn run_with_wildcard_tensor_filter() {
+    let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+    file.write_all(b"not valid").expect("write");
+    // Filter with a pattern that should match many tensors
+    let result = run(file.path(), "test/repo", Some(".weight"), 1e-5, false);
+    assert!(result.is_err());
+}
+
+#[test]
+fn run_with_empty_tensor_filter() {
+    let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+    file.write_all(b"not valid").expect("write");
+    // Empty string filter matches everything
+    let result = run(file.path(), "test/repo", Some(""), 1e-5, false);
+    assert!(result.is_err());
+}
+
+// ========================================================================
+// map_hf_to_apr_name: boundary and special cases
+// ========================================================================
+
+#[test]
+fn map_hf_name_with_trailing_dot() {
+    let apr_name = map_hf_to_apr_name("model.encoder.");
+    assert_eq!(apr_name, "encoder.");
+}
+
+#[test]
+fn map_hf_name_unicode_chars() {
+    // Should work with non-ASCII names (unlikely but defensive)
+    let apr_name = map_hf_to_apr_name("model.layer_\u{00E9}.weight");
+    assert_eq!(apr_name, "layer_\u{00E9}.weight");
+}
+
+#[test]
+fn map_hf_name_very_long_name() {
+    let long_suffix = "layer.".repeat(100) + "weight";
+    let hf_name = format!("model.{long_suffix}");
+    let apr_name = map_hf_to_apr_name(&hf_name);
+    assert_eq!(apr_name, long_suffix);
+}

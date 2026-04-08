@@ -412,6 +412,10 @@ fn format_param_count(count: u64) -> String {
 mod tests {
     use super::*;
 
+    // ========================================================================
+    // derive_binary_name Tests
+    // ========================================================================
+
     #[test]
     fn test_derive_binary_name() {
         assert_eq!(
@@ -426,6 +430,55 @@ mod tests {
     }
 
     #[test]
+    fn derive_binary_name_no_extension() {
+        assert_eq!(derive_binary_name(Path::new("modelfile")), "modelfile");
+    }
+
+    #[test]
+    fn derive_binary_name_multiple_dots() {
+        assert_eq!(
+            derive_binary_name(Path::new("my.model.v2.apr")),
+            "my_model_v2"
+        );
+    }
+
+    #[test]
+    fn derive_binary_name_spaces_replaced() {
+        assert_eq!(
+            derive_binary_name(Path::new("my model.apr")),
+            "my_model"
+        );
+    }
+
+    #[test]
+    fn derive_binary_name_uppercase_lowered() {
+        assert_eq!(
+            derive_binary_name(Path::new("MyModel.apr")),
+            "mymodel"
+        );
+    }
+
+    #[test]
+    fn derive_binary_name_all_special_chars() {
+        assert_eq!(
+            derive_binary_name(Path::new("a-b.c d.apr")),
+            "a_b_c_d"
+        );
+    }
+
+    #[test]
+    fn derive_binary_name_hidden_file() {
+        assert_eq!(
+            derive_binary_name(Path::new(".hidden.apr")),
+            "_hidden"
+        );
+    }
+
+    // ========================================================================
+    // format_param_count Tests
+    // ========================================================================
+
+    #[test]
     fn test_format_param_count() {
         assert_eq!(format_param_count(0), "unknown");
         assert_eq!(format_param_count(500), "500");
@@ -435,10 +488,109 @@ mod tests {
     }
 
     #[test]
+    fn format_param_count_boundary_999() {
+        assert_eq!(format_param_count(999), "999");
+    }
+
+    #[test]
+    fn format_param_count_boundary_1000() {
+        assert_eq!(format_param_count(1_000), "1.0K");
+    }
+
+    #[test]
+    fn format_param_count_boundary_999_999() {
+        assert_eq!(format_param_count(999_999), "1000.0K");
+    }
+
+    #[test]
+    fn format_param_count_boundary_1_million() {
+        assert_eq!(format_param_count(1_000_000), "1.0M");
+    }
+
+    #[test]
+    fn format_param_count_boundary_999_999_999() {
+        assert_eq!(format_param_count(999_999_999), "1000.0M");
+    }
+
+    #[test]
+    fn format_param_count_boundary_1_billion() {
+        assert_eq!(format_param_count(1_000_000_000), "1.0B");
+    }
+
+    #[test]
+    fn format_param_count_70b() {
+        assert_eq!(format_param_count(70_000_000_000), "70.0B");
+    }
+
+    #[test]
+    fn format_param_count_single() {
+        assert_eq!(format_param_count(1), "1");
+    }
+
+    // ========================================================================
+    // print_targets Tests
+    // ========================================================================
+
+    #[test]
     fn test_list_targets_json() {
-        // Just verify it doesn't panic
         assert!(print_targets(true).is_ok());
     }
+
+    #[test]
+    fn test_list_targets_text() {
+        assert!(print_targets(false).is_ok());
+    }
+
+    // ========================================================================
+    // TARGETS constant Tests
+    // ========================================================================
+
+    #[test]
+    fn targets_has_native_and_wasm() {
+        assert!(TARGETS.len() >= 10, "Expected at least 10 targets");
+        // Verify all targets have non-empty triple and description
+        for (triple, desc) in TARGETS {
+            assert!(!triple.is_empty(), "Target triple must not be empty");
+            assert!(!desc.is_empty(), "Target description must not be empty");
+        }
+    }
+
+    #[test]
+    fn targets_includes_linux_x86_64() {
+        assert!(
+            TARGETS.iter().any(|(t, _)| *t == "x86_64-unknown-linux-gnu"),
+            "Missing Linux x86_64 target"
+        );
+    }
+
+    #[test]
+    fn targets_includes_macos_arm64() {
+        assert!(
+            TARGETS.iter().any(|(t, _)| *t == "aarch64-apple-darwin"),
+            "Missing macOS ARM64 target"
+        );
+    }
+
+    #[test]
+    fn targets_includes_wasm() {
+        let wasm_count = TARGETS.iter().filter(|(t, _)| t.starts_with("wasm32")).count();
+        assert!(wasm_count >= 3, "Expected at least 3 WASM targets, found {wasm_count}");
+    }
+
+    #[test]
+    fn targets_native_before_wasm() {
+        // Verify layout: first 6 are native, remaining are WASM
+        for (triple, _) in &TARGETS[..6] {
+            assert!(!triple.starts_with("wasm"), "First 6 should be native, found {triple}");
+        }
+        for (triple, _) in &TARGETS[6..] {
+            assert!(triple.starts_with("wasm"), "After 6 should be WASM, found {triple}");
+        }
+    }
+
+    // ========================================================================
+    // run() Tests
+    // ========================================================================
 
     #[test]
     fn test_run_missing_file() {
@@ -454,11 +606,17 @@ mod tests {
             false,
         );
         assert!(result.is_err());
+        assert!(matches!(result, Err(CliError::FileNotFound(_))));
     }
 
     #[test]
     fn test_run_list_targets() {
         assert!(run(None, None, None, None, false, false, false, true, false).is_ok());
+    }
+
+    #[test]
+    fn test_run_list_targets_json() {
+        assert!(run(None, None, None, None, false, false, false, true, true).is_ok());
     }
 
     #[test]
@@ -477,5 +635,338 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("not yet implemented"));
+    }
+
+    #[test]
+    fn quantize_error_message_suggests_apr_quantize() {
+        let result = run(
+            Some(Path::new("test.apr")),
+            None,
+            None,
+            Some("q4"),
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("apr quantize"), "Error should suggest apr quantize: {err}");
+    }
+
+    #[test]
+    fn run_no_file_no_list_targets_errors() {
+        let result = run(None, None, None, None, false, false, false, false, false);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Input .apr file is required"));
+    }
+
+    // ========================================================================
+    // Codegen: generate_cargo_toml Tests
+    // ========================================================================
+
+    #[test]
+    fn generate_cargo_toml_contains_package_name() {
+        let toml = generate_cargo_toml("my_model");
+        assert!(toml.contains("name = \"my_model\""));
+    }
+
+    #[test]
+    fn generate_cargo_toml_has_realizar_dep() {
+        let toml = generate_cargo_toml("test_bin");
+        assert!(toml.contains("realizar"));
+    }
+
+    #[test]
+    fn generate_cargo_toml_has_clap_dep() {
+        let toml = generate_cargo_toml("test_bin");
+        assert!(toml.contains("clap"));
+    }
+
+    #[test]
+    fn generate_cargo_toml_has_tokio_dep() {
+        let toml = generate_cargo_toml("test_bin");
+        assert!(toml.contains("tokio"));
+    }
+
+    #[test]
+    fn generate_cargo_toml_has_axum_dep() {
+        let toml = generate_cargo_toml("test_bin");
+        assert!(toml.contains("axum"));
+    }
+
+    #[test]
+    fn generate_cargo_toml_has_release_profile() {
+        let toml = generate_cargo_toml("test_bin");
+        assert!(toml.contains("[profile.release]"));
+        assert!(toml.contains("opt-level"));
+    }
+
+    #[test]
+    fn generate_cargo_toml_valid_toml_syntax() {
+        let toml = generate_cargo_toml("valid_name");
+        // Basic structural checks
+        assert!(toml.contains("[package]"));
+        assert!(toml.contains("[dependencies]"));
+        assert!(toml.contains("edition = \"2021\""));
+    }
+
+    // ========================================================================
+    // Codegen: generate_header Tests
+    // ========================================================================
+
+    #[test]
+    fn generate_header_contains_imports() {
+        let header = generate_header("ML model", "7.0B");
+        assert!(header.contains("use clap::Parser"));
+        assert!(header.contains("use realizar"));
+    }
+
+    #[test]
+    fn generate_header_embeds_arch_desc() {
+        let header = generate_header("transformer model", "1.5B");
+        assert!(header.contains("transformer model"));
+    }
+
+    #[test]
+    fn generate_header_embeds_param_desc() {
+        let header = generate_header("ML model", "3.5B");
+        assert!(header.contains("3.5B"));
+    }
+
+    #[test]
+    fn generate_header_has_include_bytes() {
+        let header = generate_header("ML model", "unknown");
+        assert!(header.contains("include_bytes!"));
+        assert!(header.contains("MODEL_DATA"));
+    }
+
+    // ========================================================================
+    // Codegen: generate_cli_struct Tests
+    // ========================================================================
+
+    #[test]
+    fn generate_cli_struct_has_derive_parser() {
+        let cli = generate_cli_struct("my_bin", "GPT model", "7B");
+        assert!(cli.contains("#[derive(Parser)]"));
+    }
+
+    #[test]
+    fn generate_cli_struct_has_command_name() {
+        let cli = generate_cli_struct("whisper_tiny", "whisper model", "39M");
+        assert!(cli.contains("name = \"whisper_tiny\""));
+    }
+
+    #[test]
+    fn generate_cli_struct_has_prompt_field() {
+        let cli = generate_cli_struct("bin", "model", "1B");
+        assert!(cli.contains("prompt"));
+    }
+
+    #[test]
+    fn generate_cli_struct_has_serve_field() {
+        let cli = generate_cli_struct("bin", "model", "1B");
+        assert!(cli.contains("serve"));
+    }
+
+    #[test]
+    fn generate_cli_struct_has_max_tokens() {
+        let cli = generate_cli_struct("bin", "model", "1B");
+        assert!(cli.contains("max_tokens"));
+    }
+
+    #[test]
+    fn generate_cli_struct_has_no_gpu() {
+        let cli = generate_cli_struct("bin", "model", "1B");
+        assert!(cli.contains("no_gpu"));
+    }
+
+    #[test]
+    fn generate_cli_struct_has_port() {
+        let cli = generate_cli_struct("bin", "model", "1B");
+        assert!(cli.contains("port"));
+        assert!(cli.contains("8080"));
+    }
+
+    // ========================================================================
+    // Codegen: generate_main_fn Tests
+    // ========================================================================
+
+    #[test]
+    fn generate_main_fn_has_main_function() {
+        let main = generate_main_fn("bin", "test_model", "gpt", "7B");
+        assert!(main.contains("fn main()"));
+    }
+
+    #[test]
+    fn generate_main_fn_has_info_handler() {
+        let main = generate_main_fn("bin", "test_model", "gpt", "7B");
+        assert!(main.contains("print_info"));
+        assert!(main.contains("cli.info"));
+    }
+
+    #[test]
+    fn generate_main_fn_has_serve_handler() {
+        let main = generate_main_fn("bin", "test_model", "gpt", "7B");
+        assert!(main.contains("cli.serve"));
+        assert!(main.contains("start_server"));
+    }
+
+    #[test]
+    fn generate_main_fn_has_inference_call() {
+        let main = generate_main_fn("bin", "test_model", "gpt", "7B");
+        assert!(main.contains("run_inference"));
+    }
+
+    #[test]
+    fn generate_main_fn_embeds_model_name() {
+        let main = generate_main_fn("bin", "qwen2_coder", "transformer", "7.0B");
+        assert!(main.contains("qwen2_coder"));
+    }
+
+    #[test]
+    fn generate_main_fn_has_resolve_prompt() {
+        let main = generate_main_fn("bin", "model", "gpt", "1B");
+        assert!(main.contains("resolve_prompt"));
+    }
+
+    #[test]
+    fn generate_main_fn_has_cleanup() {
+        let main = generate_main_fn("bin", "model", "gpt", "1B");
+        assert!(main.contains("remove_file"));
+    }
+
+    // ========================================================================
+    // Codegen: generate_materialize_fn Tests
+    // ========================================================================
+
+    #[test]
+    fn generate_materialize_fn_uses_bin_name_in_dir() {
+        let mat = generate_materialize_fn("whisper_tiny");
+        assert!(mat.contains("whisper_tiny-model"));
+    }
+
+    #[test]
+    fn generate_materialize_fn_has_write_all() {
+        let mat = generate_materialize_fn("bin");
+        assert!(mat.contains("write_all(MODEL_DATA)"));
+    }
+
+    #[test]
+    fn generate_materialize_fn_checks_existing() {
+        let mat = generate_materialize_fn("bin");
+        // Should check if existing file has correct size
+        assert!(mat.contains("metadata"));
+        assert!(mat.contains("MODEL_DATA.len()"));
+    }
+
+    // ========================================================================
+    // Codegen: generate_server_fn Tests
+    // ========================================================================
+
+    #[test]
+    fn generate_server_fn_has_health_endpoint() {
+        let server = generate_server_fn("model", "7B");
+        assert!(server.contains("/health"));
+    }
+
+    #[test]
+    fn generate_server_fn_has_completions_endpoint() {
+        let server = generate_server_fn("model", "7B");
+        assert!(server.contains("/v1/chat/completions"));
+    }
+
+    #[test]
+    fn generate_server_fn_uses_axum() {
+        let server = generate_server_fn("model", "7B");
+        assert!(server.contains("axum"));
+        assert!(server.contains("Router"));
+    }
+
+    #[test]
+    fn generate_server_fn_embeds_model_info() {
+        let server = generate_server_fn("my_model", "3.5B");
+        assert!(server.contains("my_model"));
+        assert!(server.contains("3.5B"));
+    }
+
+    // ========================================================================
+    // Codegen: generate_main_rs (full integration) Tests
+    // ========================================================================
+
+    #[test]
+    fn generate_main_rs_unknown_model_type() {
+        let info = ModelInfo {
+            name: "model".to_string(),
+            model_type: "unknown".to_string(),
+            param_count: 0,
+            tensor_count: 10,
+            file_size: 1024,
+        };
+        let src = generate_main_rs("model", &info);
+        assert!(src.contains("ML model")); // fallback for unknown model_type
+    }
+
+    #[test]
+    fn generate_main_rs_empty_model_type() {
+        let info = ModelInfo {
+            name: "model".to_string(),
+            model_type: String::new(),
+            param_count: 100_000,
+            tensor_count: 5,
+            file_size: 2048,
+        };
+        let src = generate_main_rs("model", &info);
+        assert!(src.contains("ML model")); // fallback for empty model_type
+    }
+
+    #[test]
+    fn generate_main_rs_known_model_type() {
+        let info = ModelInfo {
+            name: "qwen".to_string(),
+            model_type: "transformer".to_string(),
+            param_count: 7_000_000_000,
+            tensor_count: 290,
+            file_size: 4_000_000_000,
+        };
+        let src = generate_main_rs("qwen", &info);
+        assert!(src.contains("transformer model"));
+        assert!(src.contains("7.0B"));
+    }
+
+    #[test]
+    fn generate_main_rs_has_all_sections() {
+        let info = ModelInfo {
+            name: "test".to_string(),
+            model_type: "linear".to_string(),
+            param_count: 1000,
+            tensor_count: 2,
+            file_size: 100,
+        };
+        let src = generate_main_rs("test", &info);
+        // Should contain: header, CLI struct, main fn, materialize fn, server fn
+        assert!(src.contains("MODEL_DATA"));
+        assert!(src.contains("#[derive(Parser)]"));
+        assert!(src.contains("fn main()"));
+        assert!(src.contains("fn materialize_model()"));
+        assert!(src.contains("fn start_server"));
+    }
+
+    // ========================================================================
+    // make_executable Tests
+    // ========================================================================
+
+    #[test]
+    fn make_executable_succeeds_on_temp_file() {
+        let file = tempfile::NamedTempFile::new().expect("create temp file");
+        let result = make_executable(file.path());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn make_executable_nonexistent_file_errors() {
+        let result = make_executable(Path::new("/nonexistent/file"));
+        assert!(result.is_err());
     }
 }

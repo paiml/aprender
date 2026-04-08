@@ -8,4 +8,5 @@ include!("check_qkv_ffn_detection.rs");
 include!("details.rs");
 include!("check_embedding_validity_tokenizer.rs");
 include!("check_full_model_has.rs");
+include!("check_tensor_stage_json.rs");
 }
