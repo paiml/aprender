@@ -112,25 +112,19 @@ better TUI experience. Every TUI command gets a provable layout contract
 - 8 falsification tests proving the layout contract
 - **No code written until this contract is reviewed and finalized**
 
-### Phase 4: Implement improved TUI with presentar-terminal
-- apr-cli `tui` command: model explorer with tabs (Overview/Tensors/Stats/Help)
+### Phase 4: Implement improved TUI with presentar-terminal — DONE ✓
+- apr-cli `tui` command: model explorer with tabs (Overview/Tensors/Stats/Help) ✓
   - Sortable tensor table, histogram in stats tab
   - presentar `DataFrame` + `LineChart` + `BrailleGraph` widgets
-- apr-cli `cbtop` command: pipeline monitor with tabs (Pipeline/Budget/Histogram/GPU/Memory)
-  - Live-updating metrics, budget bar charts, latency histogram
-  - presentar `Gauge` + `Sparkline` + `ProcessTable` widgets
-- apr-cli `experiment view`: experiment browser
-  - Sortable run table, loss sparkline, hyperparameter detail
-  - presentar `DataFrame` + `Sparkline` widgets
-- apr-cli `federation` TUI: gateway dashboard
-  - Node health, routing decisions, circuit breakers
-  - presentar `Table` + `Gauge` widgets
-- aprender-profile: renacer visualize (syscall tracer TUI)
-  - Heatmap, anomaly timeline, ML clustering
-  - presentar `Heatmap` + `LineChart` widgets
-- aprender-viz: monitor widgets
-  - Training monitor with loss curve
-  - presentar `LineChart` + `Gauge` widgets
+- apr-cli `cbtop` command: pipeline monitor with 5 views (Pipeline/Budget/Histogram/GPU/Memory) ✓
+  - Live-updating metrics, budget bar charts, gap factor indicators
+  - presentar `DirectTerminalCanvas` + `DiffRenderer`
+- apr-cli `experiment view`: experiment browser ✓
+  - Two-column layout: run table + detail/sparkline
+  - Loss curve via braille graph
+- apr-cli `federation` TUI: cfg-gated (not actively used)
+- aprender-profile: renacer visualize — cfg-gated (Phase 5 cleanup)
+- aprender-viz: monitor widgets — cfg-gated (Phase 5 cleanup)
 
 ### Phase 5: Delete ratatui
 - Remove ratatui from ALL 13 Cargo.toml files
