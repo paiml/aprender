@@ -167,15 +167,33 @@ Contract: `apr-qa-coverage-v1.yaml`
 
 ## Contract Registry
 
-| Contract | Equations | Falsification Tests | Status |
-|----------|-----------|---------------------|--------|
-| apr-cli-qa-v1 | 10 | 10 | tested |
-| apr-qa-metamorphic-v1 | 3 | 5 | proposed |
-| apr-qa-silent-fallback-v1 | 5 | 5 | proposed |
-| apr-qa-differential-v1 | 5 | 5 | proposed |
-| apr-qa-chaos-v1 | 5 | 5 | proposed |
-| apr-qa-coverage-v1 | 5 | 5 | proposed |
-| **Total** | **33** | **35** | |
+| Contract | Equations | Falsification Tests | Status | First Run |
+|----------|-----------|---------------------|--------|-----------|
+| apr-cli-qa-v1 | 10 | 10 | tested | 10/10 PASS |
+| apr-qa-silent-fallback-v1 | 5 | 5 | **enforced** | 4/5 PASS, S1 FAIL (GH-707) |
+| apr-qa-metamorphic-v1 | 3 | 5 | **enforced** | M2+M3 PASS |
+| apr-qa-coverage-v1 | 5 | 5 | **enforced** | V1+V3 PASS |
+| apr-qa-chaos-v1 | 5 | 5 | **enforced** | C2+C3 PASS |
+| apr-qa-differential-v1 | 5 | 5 | **enforced** | D1+D3 PASS, D2 SKIP |
+| **Total** | **33** | **35** | | |
+
+### First Falsification Run (2026-04-08)
+
+| Gate | Result | Finding |
+|------|--------|---------|
+| S1 | **FAIL** | Truncated GGUF passes validation exit 0 (GH-707) |
+| S2 | PASS | /dev/null rejected (exit 3) |
+| S3 | PASS | SSM architecture gives clear error |
+| S4 | PASS | Corrupt metadata rejected (exit 5) |
+| S5 | PASS | Missing model exits non-zero (exit 3) |
+| M2 | PASS | 5 architectures inspected (qwen35, qwen2) |
+| M3 | PASS | temp=0 deterministic |
+| V1 | PASS | 6/6 contracts valid YAML |
+| V3 | PASS | hex + profile exercised without panic |
+| C2 | PASS | /dev/null convert rejected |
+| C3 | PASS | SIGINT handled (exit 130) |
+| D1 | PASS | Both GGUF and APR report tensors |
+| D3 | PASS | 4/4 JSON outputs valid |
 
 ## Implementation Priority
 

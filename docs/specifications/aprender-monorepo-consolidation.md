@@ -25,7 +25,8 @@
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
 | Coverage (aprender-core) | 94.78% regions / 94.47% lines | **≥95%** | **FAIL** (0.5% below) |
-| Coverage (apr-cli) | 57.72% regions / 58.06% lines | **≥95%** | **FAIL** — 58%. 4,580 tests. Strategy: pmat query --coverage-gaps by impact |
+| Coverage (apr-cli, stable) | 58.06% lines (112K denominator) | **≥95%** | **FAIL** — includes 35K untestable CUDA lines |
+| Coverage (apr-cli, nightly) | **66.83%** lines (77K denominator) | **≥95%** | **FAIL** — honest metric with `#[coverage(off)]`. Need 21K more lines. |
 | Coverage (other 72 crates) | NOT MEASURED | **≥95%** | **UNKNOWN** |
 | Tests (apr-cli) | 4,515 (lib) + 65 (integration) = 4,580 | — | PASS |
 | Tests (aprender-core) | 12,975 | — | PASS |
