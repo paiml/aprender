@@ -1,6 +1,41 @@
-# The Aprender Guide
+# Aprender — Pure Rust ML Framework
 
 [Introduction](./introduction.md)
+
+# Part I: Foundation
+
+- [Why Rust for Machine Learning](./chapters/ch01-why-rust.md)
+- [Tensor Computation](./chapters/ch02-tensors.md)
+- [The APR Model Format](./chapters/ch03-apr-format.md)
+
+# Part II: Algorithms
+
+- [Supervised Learning](./chapters/ch04-supervised.md)
+- [Unsupervised Learning](./chapters/ch05-unsupervised.md)
+- [Ensemble Methods](./chapters/ch06-ensembles.md)
+- [Model Selection and Evaluation](./chapters/ch07-model-selection.md)
+
+# Part III: Deep Learning & Inference
+
+- [Transformer Architecture](./chapters/ch08-transformer.md)
+- [Inference with aprender-serve](./chapters/ch09-inference.md)
+- [Training with aprender-train](./chapters/ch10-training.md)
+- [Model Formats and Conversion](./chapters/ch11-formats.md)
+
+# Part IV: Production
+
+- [Serving and Deployment](./chapters/ch12-serving.md)
+- [Profiling and Optimization](./chapters/ch13-profiling.md)
+- [Provable Contracts](./chapters/ch14-contracts.md)
+- [Orchestration and Agents](./chapters/ch15-orchestrate.md)
+
+# Part V: Advanced Topics
+
+- [Time Series Analysis](./chapters/ch16-timeseries.md)
+- [Bayesian Methods](./chapters/ch17-bayesian.md)
+- [Graph Algorithms](./chapters/ch18-graphs.md)
+- [Text Processing and Tokenization](./chapters/ch19-text.md)
+- [RAG Pipelines](./chapters/ch20-rag.md)
 
 # Getting Started
 
@@ -27,57 +62,6 @@
 - [Crate Map](./architecture/crate-map.md)
 - [Provable Contracts](./architecture/provable-contracts.md)
 
-# Cookbook
-
-- [See apr-cookbook](./cookbook/index.md)
-
-# EXTREME TDD Methodology
-
-# Core Methodology
-
-- [What is EXTREME TDD?](./methodology/what-is-extreme-tdd.md)
-- [The RED-GREEN-REFACTOR Cycle](./methodology/red-green-refactor.md)
-- [Test-First Philosophy](./methodology/test-first-philosophy.md)
-- [Zero Tolerance Quality](./methodology/zero-tolerance.md)
-
-# The RED Phase
-
-- [Writing Failing Tests First](./red-phase/failing-tests-first.md)
-- [Test Categories](./red-phase/test-categories.md)
-  - [Unit Tests](./red-phase/unit-tests.md)
-  - [Integration Tests](./red-phase/integration-tests.md)
-  - [Property-Based Tests](./red-phase/property-based-tests.md)
-- [Verification Strategy](./red-phase/verification-strategy.md)
-
-# The GREEN Phase
-
-- [Minimal Implementation](./green-phase/minimal-implementation.md)
-- [Making Tests Pass](./green-phase/making-tests-pass.md)
-- [Avoiding Over-Engineering](./green-phase/avoiding-over-engineering.md)
-- [The Simplest Thing That Works](./green-phase/simplest-thing.md)
-
-# The REFACTOR Phase
-
-- [Refactoring with Confidence](./refactor-phase/refactoring-with-confidence.md)
-- [Code Quality Improvements](./refactor-phase/code-quality.md)
-- [Performance Optimization](./refactor-phase/performance-optimization.md)
-- [Documentation](./refactor-phase/documentation.md)
-
-# Advanced Testing
-
-- [Popperian Falsification](./advanced-testing/popperian-falsification.md)
-- [Property-Based Testing](./advanced-testing/property-based-testing.md)
-  - [Proptest Fundamentals](./advanced-testing/proptest-fundamentals.md)
-  - [Strategies and Generators](./advanced-testing/strategies-generators.md)
-  - [Testing Invariants](./advanced-testing/testing-invariants.md)
-- [Mutation Testing](./advanced-testing/mutation-testing.md)
-  - [What is Mutation Testing?](./advanced-testing/what-is-mutation-testing.md)
-  - [Using cargo-mutants](./advanced-testing/using-cargo-mutants.md)
-  - [Mutation Score Targets](./advanced-testing/mutation-score-targets.md)
-  - [Killing Mutants](./advanced-testing/killing-mutants.md)
-- [Fuzzing](./advanced-testing/fuzzing.md)
-- [Benchmark Testing](./advanced-testing/benchmark-testing.md)
-
 # Quality Gates
 
 - [Pre-Commit Hooks](./quality-gates/pre-commit-hooks.md)
@@ -87,17 +71,18 @@
 - [Coverage Measurement](./quality-gates/coverage-measurement.md)
 - [Complexity Analysis](./quality-gates/complexity-analysis.md)
 - [Technical Debt Gradient (TDG)](./quality-gates/tdg-score.md)
+- [Jidoka (Built-in Quality)](./quality-gates/jidoka.md)
+- [What is EXTREME TDD?](./methodology/what-is-extreme-tdd.md)
+- [The RED-GREEN-REFACTOR Cycle](./methodology/red-green-refactor.md)
+- [Test-First Philosophy](./methodology/test-first-philosophy.md)
+- [Zero Tolerance Quality](./methodology/zero-tolerance.md)
 
-# Toyota Way Principles
+# Advanced Testing
 
-- [Overview](./toyota-way/overview.md)
-- [Kaizen (Continuous Improvement)](./toyota-way/kaizen.md)
-- [Genchi Genbutsu (Go and See)](./toyota-way/genchi-genbutsu.md)
-- [Jidoka (Built-in Quality)](./toyota-way/jidoka.md)
-- [PDCA Cycle](./toyota-way/pdca-cycle.md)
-- [Respect for People](./toyota-way/respect-for-people.md)
+- [Popperian Falsification](./advanced-testing/popperian-falsification.md)
+- [Mutation Testing](./advanced-testing/mutation-testing.md)
 
-# Machine Learning Fundamentals
+# ML Fundamentals
 
 ## Supervised Learning
 
@@ -193,7 +178,29 @@
 
 - [Apriori Algorithm Theory](./ml-fundamentals/apriori.md)
 
-# Real-World Examples from Aprender
+# Tools and Setup
+
+- [Development Environment](./tools/development-environment.md)
+- [cargo test](./tools/cargo-test.md)
+- [cargo clippy](./tools/cargo-clippy.md)
+- [cargo fmt](./tools/cargo-fmt.md)
+- [cargo mutants](./tools/cargo-mutants.md)
+- [proptest](./tools/proptest.md)
+- [criterion](./tools/criterion.md)
+- [pmat (Toyota AI Toolkit)](./tools/pmat.md)
+- [apr (APR Model Operations CLI)](./tools/apr-cli.md)
+- [APR Format Specification](./tools/apr-spec.md)
+
+# Best Practices
+
+- [Error Handling](./best-practices/error-handling.md)
+- [API Design](./best-practices/api-design.md)
+- [Builder Pattern](./best-practices/builder-pattern.md)
+- [Type Safety](./best-practices/type-safety.md)
+- [Performance Considerations](./best-practices/performance.md)
+- [Documentation Standards](./best-practices/documentation-standards.md)
+
+# Case Studies
 
 - [Examples Reference](./examples/examples-reference.md)
 - [Case Study: Linear Regression](./examples/linear-regression.md)
@@ -360,65 +367,3 @@
 - [Case Study: Qwen APR Native](./examples/qwen-apr-native.md)
 - [Case Study: Qwen Chat](./examples/qwen-chat.md)
 - [Case Study: Whisper Transcribe](./examples/whisper-transcribe.md)
-
-# Sprint-Based Development
-
-- [Sprint Planning](./sprints/sprint-planning.md)
-- [Sprint Execution](./sprints/sprint-execution.md)
-- [Sprint Review](./sprints/sprint-review.md)
-- [Sprint Retrospective](./sprints/sprint-retrospective.md)
-- [Issue Management](./sprints/issue-management.md)
-
-# Anti-Hallucination Enforcement
-
-- [Test-Backed Examples](./anti-hallucination/test-backed-examples.md)
-- [Example Verification](./anti-hallucination/example-verification.md)
-- [CI Validation](./anti-hallucination/ci-validation.md)
-- [Documentation Testing](./anti-hallucination/documentation-testing.md)
-
-# Tools and Setup
-
-- [Development Environment](./tools/development-environment.md)
-- [cargo test](./tools/cargo-test.md)
-- [cargo clippy](./tools/cargo-clippy.md)
-- [cargo fmt](./tools/cargo-fmt.md)
-- [cargo mutants](./tools/cargo-mutants.md)
-- [proptest](./tools/proptest.md)
-- [criterion](./tools/criterion.md)
-- [pmat (Toyota AI Toolkit)](./tools/pmat.md)
-- [apr (APR Model Operations CLI)](./tools/apr-cli.md)
-- [APR Format Specification](./tools/apr-spec.md)
-
-# Best Practices
-
-- [Error Handling](./best-practices/error-handling.md)
-- [API Design](./best-practices/api-design.md)
-- [Builder Pattern](./best-practices/builder-pattern.md)
-- [Type Safety](./best-practices/type-safety.md)
-- [Performance Considerations](./best-practices/performance.md)
-- [Documentation Standards](./best-practices/documentation-standards.md)
-
-# Metrics and Measurement
-
-- [Test Coverage](./metrics/test-coverage.md)
-- [Mutation Score](./metrics/mutation-score.md)
-- [Cyclomatic Complexity](./metrics/cyclomatic-complexity.md)
-- [Code Churn](./metrics/code-churn.md)
-- [Build Times](./metrics/build-times.md)
-- [TDG Score Breakdown](./metrics/tdg-breakdown.md)
-
-# Common Pitfalls
-
-- [Skipping Tests](./pitfalls/skipping-tests.md)
-- [Insufficient Test Coverage](./pitfalls/insufficient-coverage.md)
-- [Ignoring Warnings](./pitfalls/ignoring-warnings.md)
-- [Over-Mocking](./pitfalls/over-mocking.md)
-- [Flaky Tests](./pitfalls/flaky-tests.md)
-- [Technical Debt Accumulation](./pitfalls/technical-debt.md)
-
-# Appendix
-
-- [Glossary](./appendix/glossary.md)
-- [References](./appendix/references.md)
-- [Further Reading](./appendix/further-reading.md)
-- [Contributing to This Book](./appendix/contributing.md)

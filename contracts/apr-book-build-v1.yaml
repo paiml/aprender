@@ -51,6 +51,10 @@ invariants:
     - "book.toml [book].title reflects repo scope (not TDD-only)"
     - "book.toml [output.html].git-repository-url points to paiml/aprender"
     - "No generic type parameters parsed as HTML tags (escape with backticks)"
+    - "SUMMARY.md spine is the 20 contracted chapters (apr-book-ch01 through ch20)"
+    - "No stub-only sections (every section has substantive content)"
+    - "No off-topic methodology sections (Sprint, Toyota Way, RED/GREEN/REFACTOR phases)"
+    - "Every chapter in SUMMARY.md must be on-topic for the aprender repo"
 
   ci:
     - "Workflow triggers on push to main for book/** changes"
@@ -85,6 +89,15 @@ falsification:
   - condition: "Unclosed HTML tag warning in build output"
     severity: P2
     action: escape_generics
+  - condition: "SUMMARY.md contains stub-only section (100% placeholder chapters)"
+    severity: P0
+    action: delete_section
+  - condition: "SUMMARY.md section is off-topic (no aprender-specific content)"
+    severity: P0
+    action: delete_section
+  - condition: "Contracted chapter (apr-book-ch01..ch20) missing from SUMMARY.md"
+    severity: P0
+    action: add_chapter
 
 verification:
   local: "mdbook build book 2>&1 | grep -c ERROR | grep -q '^0$'"
