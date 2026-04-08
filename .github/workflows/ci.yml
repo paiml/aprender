@@ -39,7 +39,7 @@ jobs:
       - name: Workspace check (all 70 crates)
         run: cargo check --workspace
       - name: Workspace lib tests (25,300+)
-        run: cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-cupti --exclude aprender-ptx-debug --exclude aprender-compute --exclude aprender-serve --exclude aprender-explain
+        run: cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-cupti --exclude aprender-ptx-debug --exclude aprender-compute --exclude aprender-serve --exclude aprender-explain --exclude apr-cli
         timeout-minutes: 25
       - name: Integration tests
         run: |

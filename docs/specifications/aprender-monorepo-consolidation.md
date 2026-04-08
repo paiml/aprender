@@ -159,11 +159,12 @@ Every successful large Rust project uses this pattern:
 | Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
 | Phase 5a: Publish pass 1 | DONE | 9/59 published (leaf crates) |
 | Phase 5b: Fix path deps | DONE | Added `version = "0.29.0"` to 56 path deps |
-| Phase 5c: Publish | **DONE** | **`cargo install aprender` WORKS** — v0.29.2 live + 14 shims |
+| Phase 5c: Publish | **DONE** | **`cargo install aprender` WORKS** — v0.29.3 inference+training default |
 | Phase 8a: Unified specs | DONE | 395 specs + TOC (463 lines) in root docs/specifications/ |
 | Phase 8b: Crate READMEs | DONE | 70/70 crates have README.md, contract-enforced |
 | Phase 8c: CLI QA skill | DONE | /dogfood skill: 7 gates, 12 protocols, 57 commands |
-| Phase 11a: Fix CI | DONE | Excluded 7 GPU/CUDA crates from workspace-test, lint passes |
+| Phase 11a: Fix CI | DONE | Excluded 8 crates from workspace-test (GPU + apr-cli shim deps) |
+| Phase 12: Repo filesystem | DONE | Contract-enforced, 33K lines cruft deleted |
 | Phase 11b: Publish manual | DONE | aprender v0.29.0 published to crates.io
 | Phase 9a: Sub-spec accuracy audit | DONE | 26 stale repo refs, 5 apr-cli→aprender fixed |
 | Phase 9b: Run /dogfood skill | DONE | WARN: 55/57 cmds OK, 12/12 protocols pass |
