@@ -898,3 +898,847 @@ pub(crate) fn run_decontaminate(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::io::Write;
+
+    // ── Helper: write a temp JSONL file ──────────────────────────────────────
+
+    fn write_temp_jsonl(name: &str, lines: &[&str]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join("apr-data-tests");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join(name);
+        let mut f = std::fs::File::create(&path).expect("create temp file");
+        for line in lines {
+            writeln!(f, "{line}").expect("write line");
+        }
+        path
+    }
+
+    // ── sqrt_inverse_weights ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_sqrt_inverse_weights_empty_counts() {
+        assert!(sqrt_inverse_weights(&[]).is_empty());
+    }
+
+    #[test]
+    fn test_sqrt_inverse_weights_all_zero() {
+        assert!(sqrt_inverse_weights(&[0, 0, 0]).is_empty());
+    }
+
+    #[test]
+    fn test_sqrt_inverse_weights_total_zero() {
+        // Total is sum of counts; if all zero the fn returns empty
+        let result = sqrt_inverse_weights(&[0, 0]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_sqrt_inverse_weights_uniform() {
+        // All classes equal => weights should all be equal
+        let w = sqrt_inverse_weights(&[100, 100, 100]);
+        assert_eq!(w.len(), 3);
+        // For uniform: weight_i = sqrt(total / (k * c)) = sqrt(300 / (3 * 100)) = sqrt(1) = 1.0
+        for wi in &w {
+            assert!((*wi - 1.0).abs() < 1e-5, "expected ~1.0, got {wi}");
+        }
+    }
+
+    #[test]
+    fn test_sqrt_inverse_weights_imbalanced() {
+        // class 0: 900, class 1: 100 => total = 1000, k = 2
+        // w0 = sqrt(1000 / (2 * 900)) = sqrt(0.5556) ~= 0.7454
+        // w1 = sqrt(1000 / (2 * 100)) = sqrt(5.0) ~= 2.2361
+        let w = sqrt_inverse_weights(&[900, 100]);
+        assert_eq!(w.len(), 2);
+        assert!((w[0] - (1000.0_f32 / 1800.0).sqrt()).abs() < 1e-4);
+        assert!((w[1] - (1000.0_f32 / 200.0).sqrt()).abs() < 1e-4);
+        // Minority class should have higher weight
+        assert!(w[1] > w[0]);
+    }
+
+    #[test]
+    fn test_sqrt_inverse_weights_with_zero_class() {
+        // class 0: 100, class 1: 0, class 2: 50
+        let w = sqrt_inverse_weights(&[100, 0, 50]);
+        assert_eq!(w.len(), 3);
+        assert!(w[0] > 0.0);
+        assert!((w[1] - 0.0).abs() < f32::EPSILON); // zero count => zero weight
+        assert!(w[2] > 0.0);
+    }
+
+    #[test]
+    fn test_sqrt_inverse_weights_single_class() {
+        let w = sqrt_inverse_weights(&[500]);
+        assert_eq!(w.len(), 1);
+        // sqrt(500 / (1 * 500)) = 1.0
+        assert!((w[0] - 1.0).abs() < 1e-5);
+    }
+
+    // ── select_resample_indices ──────────────────────────────────────────────
+
+    #[test]
+    fn test_select_resample_indices_undersample() {
+        let mut label_indices = HashMap::new();
+        label_indices.insert("0".to_string(), vec![0, 1, 2, 3, 4]);
+        label_indices.insert("1".to_string(), vec![5, 6]);
+
+        let target = 2; // undersample: pick 2 from each
+        let indices = select_resample_indices(&label_indices, target, 42);
+
+        // Each class contributes exactly target_count
+        assert_eq!(indices.len(), 4); // 2 classes * 2
+    }
+
+    #[test]
+    fn test_select_resample_indices_oversample() {
+        let mut label_indices = HashMap::new();
+        label_indices.insert("0".to_string(), vec![0, 1, 2, 3, 4]);
+        label_indices.insert("1".to_string(), vec![5, 6]);
+
+        let target = 5; // oversample: pick 5 from each
+        let indices = select_resample_indices(&label_indices, target, 42);
+
+        // Each class contributes exactly target_count
+        assert_eq!(indices.len(), 10); // 2 classes * 5
+    }
+
+    #[test]
+    fn test_select_resample_indices_deterministic() {
+        let mut label_indices = HashMap::new();
+        label_indices.insert("a".to_string(), vec![0, 1, 2]);
+        label_indices.insert("b".to_string(), vec![3, 4, 5]);
+
+        let r1 = select_resample_indices(&label_indices, 3, 99);
+        let r2 = select_resample_indices(&label_indices, 3, 99);
+        assert_eq!(r1, r2, "Same seed should produce same indices");
+    }
+
+    #[test]
+    fn test_select_resample_indices_different_seeds() {
+        let mut label_indices = HashMap::new();
+        label_indices.insert("a".to_string(), (0..20).collect());
+
+        let r1 = select_resample_indices(&label_indices, 10, 1);
+        let r2 = select_resample_indices(&label_indices, 10, 2);
+        // Different seeds should (almost certainly) produce different orderings
+        // Both should have the same count though
+        assert_eq!(r1.len(), r2.len());
+    }
+
+    #[test]
+    fn test_select_resample_indices_empty() {
+        let label_indices: HashMap<String, Vec<usize>> = HashMap::new();
+        let indices = select_resample_indices(&label_indices, 5, 42);
+        assert!(indices.is_empty());
+    }
+
+    #[test]
+    fn test_select_resample_indices_oversample_cycles() {
+        // Class has 2 items, target is 7 => should cycle
+        let mut label_indices = HashMap::new();
+        label_indices.insert("x".to_string(), vec![10, 20]);
+
+        let indices = select_resample_indices(&label_indices, 7, 0);
+        assert_eq!(indices.len(), 7);
+        // All indices should be from the original set
+        for &idx in &indices {
+            assert!(idx == 10 || idx == 20);
+        }
+    }
+
+    // ── count_out_of_range_labels ────────────────────────────────────────────
+
+    fn make_imbalance_report(counts: HashMap<String, usize>) -> alimentar::imbalance::ImbalanceReport {
+        let distribution = alimentar::imbalance::ClassDistribution::from_counts(counts);
+        alimentar::imbalance::ImbalanceReport::from_distribution("label", distribution)
+    }
+
+    #[test]
+    fn test_count_out_of_range_all_valid() {
+        let mut counts = HashMap::new();
+        counts.insert("0".to_string(), 50);
+        counts.insert("1".to_string(), 50);
+        let report = make_imbalance_report(counts);
+        assert_eq!(count_out_of_range_labels(&report, 2), 0);
+    }
+
+    #[test]
+    fn test_count_out_of_range_some_invalid() {
+        let mut counts = HashMap::new();
+        counts.insert("0".to_string(), 50);
+        counts.insert("1".to_string(), 30);
+        counts.insert("5".to_string(), 10); // out of range for num_classes=3
+        counts.insert("-1".to_string(), 5); // negative => out of range
+        let report = make_imbalance_report(counts);
+        assert_eq!(count_out_of_range_labels(&report, 3), 15); // 10 + 5
+    }
+
+    #[test]
+    fn test_count_out_of_range_non_numeric_labels() {
+        let mut counts = HashMap::new();
+        counts.insert("cat".to_string(), 50);
+        counts.insert("dog".to_string(), 50);
+        let report = make_imbalance_report(counts);
+        // Non-numeric labels are not parsed as i64 => not counted as out of range
+        assert_eq!(count_out_of_range_labels(&report, 2), 0);
+    }
+
+    #[test]
+    fn test_count_out_of_range_boundary() {
+        let mut counts = HashMap::new();
+        counts.insert("0".to_string(), 10);
+        counts.insert("4".to_string(), 10); // exactly num_classes-1
+        counts.insert("5".to_string(), 5);  // exactly num_classes => OUT of range (0..5 excludes 5)
+        let report = make_imbalance_report(counts);
+        assert_eq!(count_out_of_range_labels(&report, 5), 5);
+    }
+
+    // ── TextColumnStats::from_jsonl_path ─────────────────────────────────────
+
+    #[test]
+    fn test_text_column_stats_basic() {
+        let path = write_temp_jsonl(
+            "stats_basic.jsonl",
+            &[
+                r#"{"text": "hello", "label": 0}"#,
+                r#"{"text": "world!", "label": 1}"#,
+                r#"{"text": "hi", "label": 0}"#,
+            ],
+        );
+
+        let stats = TextColumnStats::from_jsonl_path(&path, "text", None).expect("should parse");
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.min_len, 2);  // "hi"
+        assert_eq!(stats.max_len, 6);  // "world!"
+        assert_eq!(stats.empty_count, 0);
+        assert_eq!(stats.preamble_count, 0);
+    }
+
+    #[test]
+    fn test_text_column_stats_empty_file() {
+        let path = write_temp_jsonl("stats_empty.jsonl", &[]);
+        let stats = TextColumnStats::from_jsonl_path(&path, "text", None).expect("should parse");
+        assert_eq!(stats.total, 0);
+        assert_eq!(stats.min_len, 0);
+        assert_eq!(stats.max_len, 0);
+        assert!((stats.mean_len - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_text_column_stats_empty_strings() {
+        let path = write_temp_jsonl(
+            "stats_empties.jsonl",
+            &[
+                r#"{"text": "", "label": 0}"#,
+                r#"{"text": "   ", "label": 1}"#,
+                r#"{"text": "ok", "label": 0}"#,
+            ],
+        );
+        let stats = TextColumnStats::from_jsonl_path(&path, "text", None).expect("should parse");
+        assert_eq!(stats.total, 3);
+        // "" and "   " are both empty after trim check
+        assert_eq!(stats.empty_count, 2);
+    }
+
+    #[test]
+    fn test_text_column_stats_preamble() {
+        let shebang_a = "{\"text\": \"#!/bin/bash echo hi\", \"label\": 0}";
+        let normal = "{\"text\": \"normal text\", \"label\": 1}";
+        let shebang_b = "{\"text\": \"#!/bin/bash rm -rf\", \"label\": 0}";
+        let path = write_temp_jsonl(
+            "stats_preamble.jsonl",
+            &[shebang_a, normal, shebang_b],
+        );
+        let stats =
+            TextColumnStats::from_jsonl_path(&path, "text", Some("#!/bin/bash")).expect("should parse");
+        assert_eq!(stats.preamble_count, 2);
+    }
+
+    #[test]
+    fn test_text_column_stats_missing_column() {
+        let path = write_temp_jsonl(
+            "stats_nocol.jsonl",
+            &[
+                r#"{"input": "hello", "label": 0}"#,
+                r#"{"input": "world", "label": 1}"#,
+            ],
+        );
+        // Requesting column "text" but data has "input" => entries are skipped
+        let stats = TextColumnStats::from_jsonl_path(&path, "text", None).expect("should parse");
+        assert_eq!(stats.total, 0);
+    }
+
+    #[test]
+    fn test_text_column_stats_skips_blank_lines() {
+        let path = write_temp_jsonl(
+            "stats_blanks.jsonl",
+            &[
+                r#"{"text": "aaa", "label": 0}"#,
+                "",
+                r#"{"text": "bbb", "label": 1}"#,
+                "   ",
+            ],
+        );
+        let stats = TextColumnStats::from_jsonl_path(&path, "text", None).expect("should parse");
+        assert_eq!(stats.total, 2);
+    }
+
+    #[test]
+    fn test_text_column_stats_invalid_json() {
+        let path = write_temp_jsonl(
+            "stats_badjson.jsonl",
+            &[r#"{"text": "ok", "label": 0}"#, "NOT VALID JSON"],
+        );
+        let result = TextColumnStats::from_jsonl_path(&path, "text", None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_text_column_stats_nonexistent_file() {
+        let path = std::path::PathBuf::from("/tmp/apr-data-tests/does_not_exist.jsonl");
+        let result = TextColumnStats::from_jsonl_path(&path, "text", None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_text_column_stats_percentiles() {
+        // 10 items: lengths 1..=10
+        let lines: Vec<String> = (1..=10)
+            .map(|i| format!(r#"{{"text": "{}", "label": 0}}"#, "x".repeat(i)))
+            .collect();
+        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        let path = write_temp_jsonl("stats_pct.jsonl", &line_refs);
+
+        let stats = TextColumnStats::from_jsonl_path(&path, "text", None).expect("should parse");
+        assert_eq!(stats.total, 10);
+        assert_eq!(stats.min_len, 1);
+        assert_eq!(stats.max_len, 10);
+        // mean = (1+2+...+10)/10 = 5.5
+        assert!((stats.mean_len - 5.5).abs() < 1e-10);
+        // p50 = lengths[5] = 6 (0-indexed: sorted[5])
+        assert_eq!(stats.p50_len, 6);
+    }
+
+    // ── print_audit_report (no panic) ────────────────────────────────────────
+
+    #[test]
+    fn test_print_audit_report_no_issues() {
+        let mut counts = HashMap::new();
+        counts.insert("0".to_string(), 50);
+        counts.insert("1".to_string(), 50);
+        let distribution = alimentar::imbalance::ClassDistribution::from_counts(counts);
+        let imbalance_report =
+            alimentar::imbalance::ImbalanceReport::from_distribution("label", distribution);
+
+        let r = AuditResult {
+            total: 100,
+            out_of_range: 0,
+            num_classes: 2,
+            duplicate_count: 0,
+            imbalance_report,
+            text_stats: TextColumnStats {
+                min_len: 5,
+                max_len: 100,
+                mean_len: 50.0,
+                p50_len: 45,
+                p95_len: 90,
+                p99_len: 98,
+                empty_count: 0,
+                preamble_count: 0,
+                total: 100,
+            },
+            path: "test.jsonl".to_string(),
+        };
+
+        // Should not panic
+        print_audit_report(&r);
+    }
+
+    #[test]
+    fn test_print_audit_report_with_issues() {
+        let mut counts = HashMap::new();
+        counts.insert("0".to_string(), 950);
+        counts.insert("1".to_string(), 50);
+        let distribution = alimentar::imbalance::ClassDistribution::from_counts(counts);
+        let imbalance_report =
+            alimentar::imbalance::ImbalanceReport::from_distribution("label", distribution);
+
+        let r = AuditResult {
+            total: 1000,
+            out_of_range: 5,
+            num_classes: 2,
+            duplicate_count: 10,
+            imbalance_report,
+            text_stats: TextColumnStats {
+                min_len: 0,
+                max_len: 500,
+                mean_len: 100.0,
+                p50_len: 80,
+                p95_len: 400,
+                p99_len: 490,
+                empty_count: 3,
+                preamble_count: 7,
+                total: 1000,
+            },
+            path: "imbalanced.jsonl".to_string(),
+        };
+
+        // Should not panic; exercises all issue branches
+        print_audit_report(&r);
+    }
+
+    // ── print_balance_result (no panic) ──────────────────────────────────────
+
+    #[test]
+    fn test_print_balance_result_text() {
+        let out = std::path::PathBuf::from("/tmp/balanced.jsonl");
+        // Should not panic
+        print_balance_result("oversample", 100, 200, &out, false);
+    }
+
+    #[test]
+    fn test_print_balance_result_json() {
+        let out = std::path::PathBuf::from("/tmp/balanced.jsonl");
+        // Should not panic
+        print_balance_result("undersample", 200, 100, &out, true);
+    }
+
+    // ── validate_audit_schema ────────────────────────────────────────────────
+
+    #[test]
+    fn test_validate_audit_schema_valid() {
+        let path = write_temp_jsonl(
+            "schema_valid.jsonl",
+            &[
+                r#"{"text": "hello", "label": 0}"#,
+                r#"{"text": "world", "label": 1}"#,
+            ],
+        );
+        let dataset = alimentar::ArrowDataset::from_json(&path).expect("load dataset");
+        let result = validate_audit_schema(&dataset, "text", "label");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_audit_schema_missing_input_column() {
+        let path = write_temp_jsonl(
+            "schema_noinput.jsonl",
+            &[
+                r#"{"other": "hello", "label": 0}"#,
+                r#"{"other": "world", "label": 1}"#,
+            ],
+        );
+        let dataset = alimentar::ArrowDataset::from_json(&path).expect("load dataset");
+        let result = validate_audit_schema(&dataset, "text", "label");
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("text"), "error should mention missing column 'text': {err_msg}");
+    }
+
+    #[test]
+    fn test_validate_audit_schema_missing_label_column() {
+        let path = write_temp_jsonl(
+            "schema_nolabel.jsonl",
+            &[
+                r#"{"text": "hello", "score": 0.5}"#,
+                r#"{"text": "world", "score": 0.8}"#,
+            ],
+        );
+        let dataset = alimentar::ArrowDataset::from_json(&path).expect("load dataset");
+        let result = validate_audit_schema(&dataset, "text", "label");
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("label"), "error should mention missing column 'label': {err_msg}");
+    }
+
+    // ── run_audit integration ────────────────────────────────────────────────
+
+    #[test]
+    fn test_run_audit_file_not_found() {
+        let result = run_audit(
+            Path::new("/tmp/apr-data-tests/nonexistent.jsonl"),
+            2,
+            "text",
+            "label",
+            None,
+            false,
+        );
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("not found") || err_msg.contains("nonexistent"));
+    }
+
+    #[test]
+    fn test_run_audit_empty_dataset() {
+        let path = write_temp_jsonl("audit_empty.jsonl", &[]);
+        let result = run_audit(&path, 2, "text", "label", None, false);
+        // Empty dataset or arrow parse error => should be an error
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_audit_valid_json_output() {
+        let path = write_temp_jsonl(
+            "audit_valid_json.jsonl",
+            &[
+                r#"{"text": "the cat sat on the mat", "label": 0}"#,
+                r#"{"text": "the dog barked loudly at the mailman", "label": 1}"#,
+                r#"{"text": "birds fly high in the sky", "label": 0}"#,
+                r#"{"text": "fish swim in the ocean deep below", "label": 1}"#,
+            ],
+        );
+        let result = run_audit(&path, 2, "text", "label", None, true);
+        assert!(result.is_ok(), "run_audit failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_audit_valid_text_output() {
+        let path = write_temp_jsonl(
+            "audit_valid_text.jsonl",
+            &[
+                r#"{"text": "sample one text content here", "label": 0}"#,
+                r#"{"text": "sample two text content here", "label": 1}"#,
+                r#"{"text": "sample three text", "label": 0}"#,
+                r#"{"text": "sample four text here as well", "label": 1}"#,
+            ],
+        );
+        let result = run_audit(&path, 2, "text", "label", None, false);
+        assert!(result.is_ok(), "run_audit failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_audit_missing_column() {
+        let path = write_temp_jsonl(
+            "audit_badcol.jsonl",
+            &[
+                r#"{"input": "hello", "label": 0}"#,
+                r#"{"input": "world", "label": 1}"#,
+            ],
+        );
+        let result = run_audit(&path, 2, "text", "label", None, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_audit_with_preamble() {
+        let shebang_line = "{\"text\": \"#!/usr/bin/env python3 print hello\", \"label\": 0}";
+        let path = write_temp_jsonl(
+            "audit_preamble.jsonl",
+            &[
+                shebang_line,
+                r##"{"text": "normal code sample here", "label": 1}"##,
+                r##"{"text": "another normal sample for testing", "label": 0}"##,
+            ],
+        );
+        let result = run_audit(&path, 2, "text", "label", Some("#!/"), true);
+        assert!(result.is_ok(), "run_audit with preamble failed: {result:?}");
+    }
+
+    // ── run_split integration ────────────────────────────────────────────────
+
+    #[test]
+    fn test_run_split_file_not_found() {
+        let out_dir = std::env::temp_dir().join("apr-data-tests").join("split_nf");
+        let result = run_split(
+            Path::new("/tmp/apr-data-tests/nonexistent.jsonl"),
+            "label",
+            0.7,
+            0.15,
+            0.15,
+            42,
+            &out_dir,
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_split_valid_json_output() {
+        // Need enough samples for stratified split (at least a few per class)
+        let mut lines = Vec::new();
+        for i in 0..20 {
+            let label = i % 2;
+            lines.push(format!(
+                r#"{{"text": "sample number {i} for split test", "label": {label}}}"#
+            ));
+        }
+        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        let path = write_temp_jsonl("split_valid.jsonl", &line_refs);
+        let out_dir = std::env::temp_dir()
+            .join("apr-data-tests")
+            .join("split_out_json");
+
+        let result = run_split(&path, "label", 0.7, 0.15, 0.15, 42, &out_dir, true);
+        assert!(result.is_ok(), "run_split failed: {result:?}");
+
+        // Verify output files were created
+        assert!(out_dir.join("train.jsonl").exists());
+        assert!(out_dir.join("test.jsonl").exists());
+    }
+
+    #[test]
+    fn test_run_split_valid_text_output() {
+        let mut lines = Vec::new();
+        for i in 0..20 {
+            let label = i % 2;
+            lines.push(format!(
+                r#"{{"text": "split text sample {i}", "label": {label}}}"#
+            ));
+        }
+        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        let path = write_temp_jsonl("split_valid_text.jsonl", &line_refs);
+        let out_dir = std::env::temp_dir()
+            .join("apr-data-tests")
+            .join("split_out_text");
+
+        let result = run_split(&path, "label", 0.7, 0.15, 0.15, 42, &out_dir, false);
+        assert!(result.is_ok(), "run_split failed: {result:?}");
+    }
+
+    // ── run_balance integration ──────────────────────────────────────────────
+
+    #[test]
+    fn test_run_balance_file_not_found() {
+        let result = run_balance(
+            Path::new("/tmp/apr-data-tests/nonexistent.jsonl"),
+            "label",
+            "oversample",
+            None,
+            42,
+            Some(Path::new("/tmp/apr-data-tests/balanced.jsonl")),
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_balance_unknown_strategy() {
+        let path = write_temp_jsonl(
+            "balance_unkn.jsonl",
+            &[
+                r#"{"text": "a", "label": 0}"#,
+                r#"{"text": "b", "label": 1}"#,
+            ],
+        );
+        let result = run_balance(&path, "label", "magic", None, 42, None, false);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("Unknown strategy"),
+            "expected 'Unknown strategy' in error: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_run_balance_sqrt_inverse_json() {
+        let mut lines = Vec::new();
+        for i in 0..30 {
+            let label = if i < 20 { 0 } else { 1 };
+            lines.push(format!(
+                r#"{{"text": "balance sample {i}", "label": {label}}}"#
+            ));
+        }
+        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        let path = write_temp_jsonl("balance_sqrt.jsonl", &line_refs);
+
+        let result = run_balance(&path, "label", "sqrt-inverse", Some(2), 42, None, true);
+        assert!(result.is_ok(), "sqrt-inverse balance failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_balance_sqrt_inverse_text() {
+        let mut lines = Vec::new();
+        for i in 0..30 {
+            let label = if i < 20 { 0 } else { 1 };
+            lines.push(format!(
+                r#"{{"text": "balance text sample {i}", "label": {label}}}"#
+            ));
+        }
+        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        let path = write_temp_jsonl("balance_sqrt_text.jsonl", &line_refs);
+
+        let result = run_balance(&path, "label", "sqrt-inverse", Some(2), 42, None, false);
+        assert!(result.is_ok(), "sqrt-inverse balance text failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_balance_oversample_no_output() {
+        let path = write_temp_jsonl(
+            "balance_noout.jsonl",
+            &[
+                r#"{"text": "hello world test", "label": 0}"#,
+                r#"{"text": "goodbye test", "label": 1}"#,
+            ],
+        );
+        let result = run_balance(&path, "label", "oversample", None, 42, None, false);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("--output"),
+            "expected '--output' in error: {err_msg}"
+        );
+    }
+
+    #[test]
+    #[ignore] // resample_jsonl uses hardcoded /tmp/apr-resample-tmp.jsonl — not safe for parallel tests
+    fn test_run_balance_oversample_valid() {
+        let mut lines = Vec::new();
+        for i in 0..20 {
+            let label = if i < 15 { 0 } else { 1 };
+            lines.push(format!(
+                r#"{{"text": "oversample sample text number {i}", "label": {label}}}"#
+            ));
+        }
+        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        let path = write_temp_jsonl("balance_over.jsonl", &line_refs);
+        let out_path = std::env::temp_dir()
+            .join("apr-data-tests")
+            .join("balanced_over.jsonl");
+
+        let result = run_balance(
+            &path,
+            "label",
+            "oversample",
+            None,
+            42,
+            Some(&out_path),
+            true,
+        );
+        assert!(result.is_ok(), "oversample balance failed: {result:?}");
+        assert!(out_path.exists(), "output file should exist");
+    }
+
+    #[test]
+    #[ignore] // resample_jsonl uses hardcoded /tmp/apr-resample-tmp.jsonl — not safe for parallel tests
+    fn test_run_balance_undersample_valid() {
+        let mut lines = Vec::new();
+        for i in 0..20 {
+            let label = if i < 15 { 0 } else { 1 };
+            lines.push(format!(
+                r#"{{"text": "undersample text number {i}", "label": {label}}}"#
+            ));
+        }
+        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        let path = write_temp_jsonl("balance_under.jsonl", &line_refs);
+        let out_path = std::env::temp_dir()
+            .join("apr-data-tests")
+            .join("balanced_under.jsonl");
+
+        let result = run_balance(
+            &path,
+            "label",
+            "undersample",
+            None,
+            42,
+            Some(&out_path),
+            false,
+        );
+        assert!(result.is_ok(), "undersample balance failed: {result:?}");
+    }
+
+    // ── run_decontaminate integration ────────────────────────────────────────
+
+    #[test]
+    fn test_run_decontaminate_file_not_found() {
+        let result = run_decontaminate(
+            Path::new("/tmp/apr-data-tests/nonexistent.jsonl"),
+            &[],
+            10,
+            0.5,
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_decontaminate_ref_not_found() {
+        let path = write_temp_jsonl(
+            "decontam_train.jsonl",
+            &["line one sample text for testing"],
+        );
+        let result = run_decontaminate(
+            &path,
+            &[std::path::PathBuf::from("/tmp/apr-data-tests/no_ref.jsonl")],
+            10,
+            0.5,
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_decontaminate_clean_json() {
+        let train_path = write_temp_jsonl(
+            "decontam_clean_train.txt",
+            &[
+                "def sort_list(lst): return sorted(lst)",
+                "def reverse_string(s): return s[::-1]",
+                "class MyClass: pass",
+            ],
+        );
+        let ref_path = write_temp_jsonl(
+            "decontam_clean_ref.txt",
+            &["def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)"],
+        );
+
+        let result = run_decontaminate(&train_path, &[ref_path], 10, 0.5, true);
+        assert!(result.is_ok(), "clean decontam should pass: {result:?}");
+    }
+
+    #[test]
+    fn test_run_decontaminate_clean_text() {
+        let train_path = write_temp_jsonl(
+            "decontam_clean_train2.txt",
+            &[
+                "completely unique training sample number one",
+                "another unique training sample two",
+            ],
+        );
+        let ref_path = write_temp_jsonl(
+            "decontam_clean_ref2.txt",
+            &["this is a reference benchmark sample that is totally different"],
+        );
+
+        let result = run_decontaminate(&train_path, &[ref_path], 10, 0.5, false);
+        assert!(result.is_ok(), "clean decontam text should pass: {result:?}");
+    }
+
+    #[test]
+    fn test_run_decontaminate_contaminated() {
+        let shared = "def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)";
+        let train_path = write_temp_jsonl(
+            "decontam_dirty_train.txt",
+            &[shared, "def other_func(): pass"],
+        );
+        let ref_path = write_temp_jsonl("decontam_dirty_ref.txt", &[shared]);
+
+        let result = run_decontaminate(&train_path, &[ref_path], 10, 0.5, true);
+        // 50% contamination rate (1 of 2) => should FAIL the gate
+        assert!(result.is_err(), "contaminated data should fail the gate");
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Contamination rate") || err_msg.contains("AC-016"));
+    }
+
+    // ── ResampleStrategy Debug ───────────────────────────────────────────────
+
+    #[test]
+    fn test_resample_strategy_debug() {
+        // Verify Debug derive works
+        let s = format!("{:?}", ResampleStrategy::Oversample);
+        assert_eq!(s, "Oversample");
+        let s = format!("{:?}", ResampleStrategy::Undersample);
+        assert_eq!(s, "Undersample");
+    }
+
+    #[test]
+    fn test_resample_strategy_clone() {
+        let s = ResampleStrategy::Oversample;
+        let s2 = s;
+        assert!(matches!(s2, ResampleStrategy::Oversample));
+    }
+}
