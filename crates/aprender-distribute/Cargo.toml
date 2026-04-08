@@ -20,7 +20,7 @@ remote = ["tokio", "bincode", "tracing-subscriber"]
 remote-tls = ["remote", "rustls", "tokio-rustls", "rustls-pemfile"]
 checkpoint = ["trueno-db", "tokio", "arrow", "parquet"]  # v2.0: Persistent checkpointing with Parquet
 tensor = ["trueno"]                  # v2.0: SIMD tensor operations
-tui = ["ratatui", "crossterm", "tokio"]  # Job flow TUI visualization
+tui = ["dep:ratatui", "crossterm", "tokio"]  # Job flow TUI visualization
 serverless = ["pepita", "tokio"]    # v2.0: Serverless functions with pepita
 microvm = ["pepita", "tokio"]       # v2.0: MicroVM isolation with pepita
 simd = ["pepita"]                   # v2.0: SIMD acceleration with pepita
@@ -96,7 +96,6 @@ futures = "0.3"
 
 # TUI testing via probador
 jugar-probar = { version = "0.4", default-features = false, features = ["tui"] }
-ratatui = { version = "0.29", optional = true }
 
 [lints]
 workspace = true
