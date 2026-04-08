@@ -1,0 +1,106 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-08'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'Polars/Burn/Nushell monorepo filesystem conventions'
+  description: >
+    Repo filesystem contract — defines the allowed root-level files and
+    directories. Everything else is cruft and must be removed.
+
+equations:
+  allowed_root_files:
+    formula: |
+      root_files = {
+        Cargo.toml, Cargo.lock, README.md, LICENSE, CLAUDE.md,
+        CHANGELOG.md, CONTRIBUTING.md, CITATION.cff, Makefile,
+        deny.toml, rustfmt.toml, rust-toolchain.toml, codecov.yml,
+        .clippy.toml, .bashrsignore, .cargo-mutants.toml, pmat.toml,
+        RELEASE.md, ROADMAP.md
+      }
+      forall file F at repo root: F in root_files OR F is dotfile
+    domain: repo root directory listing
+    codomain: bool
+    invariants:
+    - "No one-off reports at root (move to docs/archive/)"
+    - "No JSON artifacts at root"
+    - "No .rs files at root (source lives in crates/ or src/)"
+    - "No stale config for old tools (batuta.toml, renacer.toml)"
+
+  allowed_root_dirs:
+    formula: |
+      root_dirs = {
+        .cargo, .claude, .config, .git, .github, .githooks, .pv,
+        book, contracts, crates, docs, fuzz, scripts, src
+      }
+      forall dir D at repo root: D in root_dirs
+    domain: repo root directory listing
+    codomain: bool
+    invariants:
+    - "No old project dirs (aprender/, provable-contracts/, golden_traces/)"
+    - "No artifact dirs (qa_artifacts/, probar-export/, proofs/)"
+    - "No playbooks/ at root (move to crates/aprender-orchestrate/)"
+    - "src/ contains only bin/apr.rs and lib.rs (facade)"
+
+  src_minimal:
+    formula: |
+      ls src/ = {bin/, lib.rs}
+      ls src/bin/ = {apr.rs}
+    domain: src/ directory
+    codomain: bool
+    invariants:
+    - "Root src/ is the thin facade only"
+    - "All library code lives in crates/aprender-core/src/"
+
+falsification_tests:
+- id: FALSIFY-FS-001
+  rule: no stale reports at root
+  prediction: "zero .md files at root besides README/CLAUDE/CHANGELOG/CONTRIBUTING/LICENSE/RELEASE/ROADMAP/CITATION.cff"
+  test: "ls *.md | grep -vE '^(README|CLAUDE|CHANGELOG|CONTRIBUTING|RELEASE|ROADMAP)' | wc -l == 0"
+  if_fails: "cruft report at root — move to docs/archive/ or delete"
+
+- id: FALSIFY-FS-002
+  rule: no JSON artifacts at root
+  prediction: "zero .json files at root"
+  test: "ls *.json 2>/dev/null | wc -l == 0"
+  if_fails: "stale debug artifact — delete"
+
+- id: FALSIFY-FS-003
+  rule: no .rs files at root
+  prediction: "zero .rs files at root"
+  test: "ls *.rs 2>/dev/null | wc -l == 0"
+  if_fails: "stale reproduction script — delete or move to examples/"
+
+- id: FALSIFY-FS-004
+  rule: no old project directories
+  prediction: "zero of: aprender/ golden_traces/ probar-export/ proofs/ provable-contracts/ qa_artifacts/ playbooks/"
+  test: "ls -d aprender golden_traces probar-export proofs provable-contracts qa_artifacts playbooks 2>/dev/null | wc -l == 0"
+  if_fails: "old directory not cleaned up after monorepo merge"
+
+- id: FALSIFY-FS-005
+  rule: no stale tool configs
+  prediction: "zero of: batuta.toml renacer.toml justfile"
+  test: "ls batuta.toml renacer.toml justfile 2>/dev/null | wc -l == 0"
+  if_fails: "config for tool that's now a workspace crate — move to crate dir"
+
+- id: FALSIFY-FS-006
+  rule: src/ is minimal facade
+  prediction: "src/ contains only lib.rs and bin/apr.rs"
+  test: "find src -name '*.rs' | sort | diff - <(echo -e 'src/bin/apr.rs\nsrc/lib.rs')"
+  if_fails: "source code at root that should be in crates/aprender-core/"
+
+proof_obligations:
+- type: invariant
+  property: "repo root has zero cruft files"
+
+kani_harnesses:
+- id: KH-FS-001
+  obligation: allowed_root_files
+  property: no_cruft_at_root
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: pending
