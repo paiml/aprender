@@ -8,6 +8,7 @@
 //! - Hintze & Nelson (1998): Violin Plots: A Box Plot-Density Trace Synergism
 //! - Silverman (1986): Density Estimation for Statistics and Data Analysis
 
+#[cfg(feature = "ratatui")]
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

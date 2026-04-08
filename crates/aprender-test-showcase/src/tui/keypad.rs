@@ -7,6 +7,7 @@
 //! - Highlighted when corresponding key is pressed
 //! - Used for visual demonstration of calculator operation
 
+#[cfg(feature = "ratatui")]
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

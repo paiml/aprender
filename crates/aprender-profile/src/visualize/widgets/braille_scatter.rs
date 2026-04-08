@@ -21,6 +21,7 @@
 //! ```
 
 use crate::visualize::theme::graph;
+#[cfg(feature = "ratatui")]
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

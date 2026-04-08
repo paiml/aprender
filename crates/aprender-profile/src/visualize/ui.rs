@@ -5,6 +5,7 @@
 use super::app::VisualizeApp;
 use super::panels;
 use super::theme::borders;
+#[cfg(feature = "ratatui")]
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -299,7 +300,9 @@ mod tests {
     use super::*;
     use crate::visualize::app::VisualizeApp;
     use crate::visualize::VisualizeConfig;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     fn buffer_to_string(buffer: &ratatui::buffer::Buffer) -> String {

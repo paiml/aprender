@@ -3,6 +3,7 @@
 //! Provides predefined layouts that can be selected with keys 0-9.
 
 use crate::monitor::layout::{LayoutRow, Preset};
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Constraint;
 
 /// Creates the default layout preset (system overview).

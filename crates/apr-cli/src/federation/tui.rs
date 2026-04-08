@@ -10,6 +10,7 @@ use super::catalog::{DeploymentStatus, ModelCatalog};
 use super::gateway::FederationGateway;
 use super::health::{CircuitBreaker, HealthChecker};
 use super::traits::*;
+#[cfg(feature = "ratatui")]
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},

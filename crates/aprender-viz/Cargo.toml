@@ -89,7 +89,7 @@ tempfile = "3.10"
 approx = "0.5"
 
 # TUI testing (required for popperian_falsification_test.rs)
-ratatui = "0.30"
+ratatui = { version = "0.30", optional = true }
 
 [features]
 default = []

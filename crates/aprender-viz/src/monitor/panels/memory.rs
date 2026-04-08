@@ -1,7 +1,10 @@
 //! Memory panel component.
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 
 use crate::monitor::collectors::MemoryCollector;

@@ -3,9 +3,13 @@
 //! Uses 8-level Unicode block characters (▁▂▃▄▅▆▇█) to show trends
 //! in a compact format suitable for table cells.
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::style::{Color, Style};
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 
 /// A compact inline sparkline.
@@ -127,7 +131,9 @@ impl Widget for MonitorSparkline<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     #[test]

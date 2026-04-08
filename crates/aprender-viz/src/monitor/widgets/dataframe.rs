@@ -3,6 +3,7 @@
 //! Provides a tabular data widget with support for inline sparklines,
 //! progress bars, status indicators, and trend arrows.
 
+#[cfg(feature = "ratatui")]
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

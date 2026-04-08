@@ -2,6 +2,7 @@
 
 use crate::visualize::app::{SortColumn, VisualizeApp};
 use crate::visualize::theme::{borders, format_rate, percent_color, sparkline};
+#[cfg(feature = "ratatui")]
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
@@ -141,7 +142,9 @@ mod tests {
     use super::*;
     use crate::visualize::app::ProcessSyscallStats;
     use crate::visualize::VisualizeConfig;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     #[test]

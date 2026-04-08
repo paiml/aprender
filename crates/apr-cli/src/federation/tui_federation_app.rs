@@ -46,7 +46,9 @@
         use jugar_probar::tui::{
             expect_frame, FrameSequence, SnapshotManager, TuiFrame, TuiSnapshot,
         };
+#[cfg(feature = "ratatui")]
         use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
         use ratatui::Terminal;
 
         /// Helper to render federation app to a test backend

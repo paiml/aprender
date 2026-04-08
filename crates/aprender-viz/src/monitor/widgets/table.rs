@@ -2,9 +2,13 @@
 //!
 //! Supports 10,000+ rows with 60fps scrolling (Falsification criterion #11).
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::style::{Color, Modifier, Style};
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 
 /// Sort direction for table columns.

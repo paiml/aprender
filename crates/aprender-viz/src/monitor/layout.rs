@@ -1,5 +1,6 @@
 //! Layout system for the TUI monitor.
 
+#[cfg(feature = "ratatui")]
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 /// Layout preset configuration.

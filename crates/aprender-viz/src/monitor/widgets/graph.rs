@@ -11,9 +11,13 @@
 //! - Rendering is O(width × height) (Falsification criterion #2)
 //! - Double-buffered to prevent flicker
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::style::{Color, Style};
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 
 /// Rendering mode for the graph.
@@ -249,7 +253,9 @@ impl Widget for Graph<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     fn create_test_terminal() -> Terminal<TestBackend> {

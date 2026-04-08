@@ -2,6 +2,7 @@
 
 use crate::visualize::app::{SyscallCategory, VisualizeApp};
 use crate::visualize::theme::{borders, format_rate, graph, sparkline};
+#[cfg(feature = "ratatui")]
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -86,7 +87,9 @@ pub fn draw(f: &mut Frame, app: &VisualizeApp, area: Rect) {
 mod tests {
     use super::*;
     use crate::visualize::VisualizeConfig;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     #[test]

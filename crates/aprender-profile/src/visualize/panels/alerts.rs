@@ -13,6 +13,7 @@
 
 use crate::visualize::app::VisualizeApp;
 use crate::visualize::theme::{borders, severity_color};
+#[cfg(feature = "ratatui")]
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -249,7 +250,9 @@ pub fn draw(f: &mut Frame, app: &VisualizeApp, area: Rect) {
 mod tests {
     use super::*;
     use crate::visualize::VisualizeConfig;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     #[test]

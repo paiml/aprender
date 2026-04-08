@@ -25,9 +25,13 @@
 //!     .with_orientation(BoxOrientation::Horizontal);
 //! ```
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::style::Color;
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 
 /// Orientation for box plot rendering.

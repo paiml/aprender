@@ -14,7 +14,9 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use crossterm::ExecutableCommand;
+#[cfg(feature = "ratatui")]
 use ratatui::backend::CrosstermBackend;
+#[cfg(feature = "ratatui")]
 use ratatui::Terminal;
 use std::io::{self, stdout};
 use std::time::Duration;
@@ -148,8 +150,11 @@ impl App {
 
     /// Renders the application.
     fn render(&self, frame: &mut ratatui::Frame) {
+#[cfg(feature = "ratatui")]
         use ratatui::layout::{Constraint, Direction, Layout};
+#[cfg(feature = "ratatui")]
         use ratatui::style::{Color, Style};
+#[cfg(feature = "ratatui")]
         use ratatui::widgets::{Block, Borders, Paragraph};
 
         let area = frame.area();

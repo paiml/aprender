@@ -10,6 +10,7 @@
 //! - Recall: True positives / actual positives per class
 //! - F1 Score: Harmonic mean of precision and recall
 
+#[cfg(feature = "ratatui")]
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

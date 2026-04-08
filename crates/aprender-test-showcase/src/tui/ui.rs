@@ -2,6 +2,7 @@
 //!
 //! Probar: Visual feedback makes state visible
 
+#[cfg(feature = "ratatui")]
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -302,7 +303,9 @@ pub const PROBAR_BADGE: &str = "Probar - paiml.com/probar";
 #[cfg(test)]
 mod tests {
     use super::*;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     fn create_test_terminal() -> Terminal<TestBackend> {

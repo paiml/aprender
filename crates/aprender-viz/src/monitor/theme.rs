@@ -2,6 +2,7 @@
 //!
 //! Provides color gradients and styling with CIELAB perceptual uniformity.
 
+#[cfg(feature = "ratatui")]
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 

@@ -5,6 +5,7 @@
 //! - **Scott (1979)**: h = 3.49 * std / n^(1/3) - optimal for normal distributions
 //! - **Freedman-Diaconis (1981)**: h = 2 * IQR / n^(1/3) - robust to outliers
 
+#[cfg(feature = "ratatui")]
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

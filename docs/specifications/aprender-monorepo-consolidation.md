@@ -171,7 +171,7 @@ Every successful large Rust project uses this pattern:
 | Phase 9c: Babysit crates.io publish | DONE | aprender + apr-cli + 48 crates live
 | Phase 9d: Archive repo redirects | DONE | 20/20 repo descriptions updated with redirect |
 | Phase 10: Crate hygiene | DONE | Contract: `crate-hygiene-v1.yaml` (6 equations) |
-| Phase 10a: Banned deps | SPEC READY | Spec + contract written. 5-phase migration: 65 files, 125 imports, 13 crates |
+| Phase 10a: ratatui removal | Phase 1 DONE | Spec + contract written. 5-phase migration: 65 files, 125 imports, 13 crates |
 | Phase 10b: Workspace inheritance | DONE | 17 crates fixed to version.workspace = true |
 | Phase 10c: Dep budget | DONE | 8 crates over budget (orchestrate=60, train=51 — expected) |
 | Phase 10d: Namespace audit | DONE | 867 old `use` stmts compile via [lib] name aliases |

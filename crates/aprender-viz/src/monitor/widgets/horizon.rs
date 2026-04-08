@@ -24,9 +24,13 @@
 //!     .with_label("CPU0");
 //! ```
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::style::Color;
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 
 /// Color scheme for horizon bands.

@@ -96,7 +96,7 @@ futures = "0.3"
 
 # TUI testing via probador
 jugar-probar = { version = "0.4", default-features = false, features = ["tui"] }
-ratatui = "0.29"
+ratatui = { version = "0.29", optional = true }
 
 [lints]
 workspace = true

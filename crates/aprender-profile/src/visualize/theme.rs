@@ -15,6 +15,7 @@
 //! - Yellow: Warning threshold
 //! - Red: Critical/anomaly detected
 
+#[cfg(feature = "ratatui")]
 use ratatui::style::Color;
 
 /// btop-style color gradient for percentage values (0-100)
@@ -99,7 +100,9 @@ pub fn latency_color(duration_us: u64) -> Color {
 
 /// Panel border colors - btop-style vibrant distinct colors
 pub mod borders {
+#[cfg(feature = "ratatui")]
     use ratatui::style::Color;
+#[cfg(feature = "ratatui")]
     use ratatui::widgets::BorderType;
 
     // btop uses vibrant, saturated colors for borders
@@ -121,6 +124,7 @@ pub mod borders {
 
 /// Graph colors - high contrast for visibility
 pub mod graph {
+#[cfg(feature = "ratatui")]
     use ratatui::style::Color;
 
     // btop-style graph colors: bright and distinct
@@ -141,6 +145,7 @@ pub mod graph {
 
 /// Process state colors
 pub mod process_state {
+#[cfg(feature = "ratatui")]
     use ratatui::style::Color;
 
     pub const RUNNING: Color = Color::Rgb(100, 255, 100); // Bright green

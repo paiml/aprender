@@ -2,9 +2,13 @@
 //!
 //! Supports arc/circular display modes for compact metric visualization.
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::style::{Color, Style};
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 
 /// Display mode for the gauge.
@@ -327,7 +331,9 @@ impl Widget for Gauge<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     fn create_test_terminal() -> Terminal<TestBackend> {

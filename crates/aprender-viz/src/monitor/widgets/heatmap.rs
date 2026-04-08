@@ -2,9 +2,13 @@
 //!
 //! Displays a grid of values with color-coded cells.
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::style::{Color, Style};
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 
 /// A cell in the heatmap.
@@ -274,7 +278,9 @@ impl Widget for Heatmap {
 #[cfg(test)]
 mod tests {
     use super::*;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     fn create_test_terminal() -> Terminal<TestBackend> {

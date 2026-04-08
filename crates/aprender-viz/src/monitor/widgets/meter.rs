@@ -3,9 +3,13 @@
 //! Displays a horizontal bar showing a percentage value with optional
 //! gradient coloring based on the value.
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::style::{Color, Style};
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 
 /// A horizontal percentage meter.
@@ -97,7 +101,9 @@ impl Widget for Meter {
 #[cfg(test)]
 mod tests {
     use super::*;
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
 
     #[test]

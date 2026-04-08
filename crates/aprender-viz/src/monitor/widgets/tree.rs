@@ -2,9 +2,13 @@
 //!
 //! Provides a tree view with O(1) toggle operations (Falsification criterion #12).
 
+#[cfg(feature = "ratatui")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ratatui")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ratatui")]
 use ratatui::style::{Color, Modifier, Style};
+#[cfg(feature = "ratatui")]
 use ratatui::widgets::Widget;
 use std::collections::{HashMap, HashSet};
 

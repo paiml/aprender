@@ -50,6 +50,7 @@ mod tui {
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     };
+#[cfg(feature = "ratatui")]
     use ratatui::{
         backend::CrosstermBackend,
         layout::{Constraint, Direction, Layout, Rect},
@@ -636,6 +637,7 @@ mod tui {
     #[cfg(test)]
     mod tests {
         use super::*;
+#[cfg(feature = "ratatui")]
         use ratatui::backend::TestBackend;
 
         fn create_test_terminal() -> Terminal<TestBackend> {

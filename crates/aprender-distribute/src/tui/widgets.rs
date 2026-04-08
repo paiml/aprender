@@ -3,6 +3,7 @@
 //! Provides safe percentage calculations, color coding, and format helpers
 //! for the job flow TUI.
 
+#[cfg(feature = "ratatui")]
 use ratatui::style::Color;
 
 // =============================================================================

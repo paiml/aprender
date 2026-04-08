@@ -68,6 +68,7 @@ pub use types::{Collector, MetricValue, Metrics};
 // This ensures trait compatibility when using widgets
 // ============================================================================
 
+#[cfg(feature = "ratatui")]
 pub use ratatui;
 
 // ============================================================================

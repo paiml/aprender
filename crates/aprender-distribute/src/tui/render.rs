@@ -7,6 +7,7 @@ use super::widgets::{
     format_duration, latency_color, progress_bar, state_color, success_color, truncate,
     utilization_color,
 };
+#[cfg(feature = "ratatui")]
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -450,7 +451,9 @@ mod tests {
     use crate::task::TaskId;
     use crate::tui::model::{BackendStatus, BackendType, CompletionRecord, NodeStatus, TaskQueue};
     use jugar_probar::tui::{expect_frame, TuiFrame};
+#[cfg(feature = "ratatui")]
     use ratatui::backend::TestBackend;
+#[cfg(feature = "ratatui")]
     use ratatui::Terminal;
     use std::time::Duration;
 
