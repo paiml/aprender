@@ -17,7 +17,7 @@ use std::process;
 
 use provable_contracts::lint::sarif::{findings_to_sarif, sarif_to_json};
 use provable_contracts::lint::trend;
-use provable_contracts::lint::{GateDetail, LintConfig, LintReport, run_lint};
+use provable_contracts::lint::{run_lint, GateDetail, LintConfig, LintReport};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

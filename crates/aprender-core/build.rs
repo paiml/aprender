@@ -319,7 +319,11 @@ fn main() {
     emit_provable_contract_bindings();
 
     // ── Phase 2: Model family contracts → generated Rust code ──
-    let families_dir = if Path::new("contracts/model-families").exists() { Path::new("contracts/model-families").to_path_buf() } else { Path::new("../../contracts/model-families").to_path_buf() };
+    let families_dir = if Path::new("contracts/model-families").exists() {
+        Path::new("contracts/model-families").to_path_buf()
+    } else {
+        Path::new("../../contracts/model-families").to_path_buf()
+    };
 
     // Tell Cargo to re-run if any YAML changes
     println!("cargo:rerun-if-changed=../../contracts/model-families");

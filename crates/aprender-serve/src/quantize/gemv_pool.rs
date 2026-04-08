@@ -89,7 +89,11 @@ impl GemvPool {
         let boxed: WorkFn = Box::new(move |a, b| (*f_static)(a, b));
 
         {
-            let mut guard = self.shared.work.lock().expect("gemv_pool work mutex poisoned");
+            let mut guard = self
+                .shared
+                .work
+                .lock()
+                .expect("gemv_pool work mutex poisoned");
             *guard = Some((boxed, out_dim));
         }
 

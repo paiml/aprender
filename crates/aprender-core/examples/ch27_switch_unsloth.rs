@@ -49,7 +49,10 @@ fn main() {
     let pytorch_vram = 50580_f64;
     let vram_savings = 1.0 - (unsloth_vram / pytorch_vram);
     println!();
-    println!("VRAM savings: unsloth uses {:.0}% less VRAM than pytorch", vram_savings * 100.0);
+    println!(
+        "VRAM savings: unsloth uses {:.0}% less VRAM than pytorch",
+        vram_savings * 100.0
+    );
     assert!(vram_savings > 0.9, "unsloth must use >90% less VRAM");
 
     // Adam optimizer exists in aprender

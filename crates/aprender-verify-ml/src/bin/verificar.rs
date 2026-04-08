@@ -498,7 +498,10 @@ fn main() {
 
             for entry in py_files {
                 let path = entry.path();
-                let filename = path.file_name().expect("verificar operation").to_string_lossy();
+                let filename = path
+                    .file_name()
+                    .expect("verificar operation")
+                    .to_string_lossy();
 
                 let mut file_result = serde_json::json!({
                     "file": filename.to_string(),
@@ -583,7 +586,11 @@ fn main() {
                 "status": "placeholder",
                 "note": "Full training requires aprender ml feature"
             });
-            std::fs::write(&output, serde_json::to_string_pretty(&model_info).expect("verificar operation")).ok();
+            std::fs::write(
+                &output,
+                serde_json::to_string_pretty(&model_info).expect("verificar operation"),
+            )
+            .ok();
 
             println!("\nModel saved to {output}");
             println!("Note: Full training requires `--features ml`");
@@ -625,7 +632,10 @@ fn main() {
             });
 
             if output.as_str() == "json" {
-                println!("{}", serde_json::to_string_pretty(&metrics).expect("verificar operation"));
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&metrics).expect("verificar operation")
+                );
             } else {
                 println!("Evaluation Metrics:");
                 println!(
@@ -644,7 +654,10 @@ fn main() {
                     "  F1 Score:  {:.1}%",
                     metrics["f1_score"].as_f64().expect("verificar operation") * 100.0
                 );
-                println!("  AUC-ROC:   {:.2}", metrics["auc_roc"].as_f64().expect("verificar operation"));
+                println!(
+                    "  AUC-ROC:   {:.2}",
+                    metrics["auc_roc"].as_f64().expect("verificar operation")
+                );
                 println!();
                 println!("Confusion Matrix:");
                 println!(
@@ -867,7 +880,11 @@ data:
 
                 // Save seeds
                 let seeds_path = format!("{output}/seeds.json");
-                std::fs::write(&seeds_path, serde_json::to_string_pretty(&seeds).expect("verificar operation")).ok();
+                std::fs::write(
+                    &seeds_path,
+                    serde_json::to_string_pretty(&seeds).expect("verificar operation"),
+                )
+                .ok();
                 println!("  Saved {} seeds to {seeds_path}", seeds.len());
 
                 seeds
@@ -924,7 +941,11 @@ data:
 
                 // Save augmented
                 let aug_path = format!("{output}/augmented.json");
-                std::fs::write(&aug_path, serde_json::to_string(&all_programs).expect("verificar operation")).ok();
+                std::fs::write(
+                    &aug_path,
+                    serde_json::to_string(&all_programs).expect("verificar operation"),
+                )
+                .ok();
                 println!("  Augmented: {} programs", all_programs.len());
 
                 all_programs

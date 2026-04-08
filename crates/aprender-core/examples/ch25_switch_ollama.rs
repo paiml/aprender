@@ -33,7 +33,10 @@ fn main() {
     let gguf_shape = [4096_usize, 11008];
     let apr_shape = [gguf_shape[1], gguf_shape[0]]; // transpose at import
     println!("Layout contract (LAYOUT-001):");
-    println!("  GGUF col-major {:?} -> APR row-major {:?}", gguf_shape, apr_shape);
+    println!(
+        "  GGUF col-major {:?} -> APR row-major {:?}",
+        gguf_shape, apr_shape
+    );
     assert_eq!(apr_shape[0], 11008, "Row-major rows = ne1");
 
     // Performance comparison
@@ -50,8 +53,10 @@ fn main() {
     let comparison = vec![250.0_f32, 273.8, 285.0]; // ollama, apr, llama.cpp
     let stats = TensorStats::compute(&comparison);
     println!();
-    println!("Throughput comparison stats: mean={:.0}, range={:.0}-{:.0}",
-        stats.mean, stats.min, stats.max);
+    println!(
+        "Throughput comparison stats: mean={:.0}, range={:.0}-{:.0}",
+        stats.mean, stats.min, stats.max
+    );
     assert!(stats.mean > 200.0, "All frameworks exceed 200 tok/s");
 
     println!();

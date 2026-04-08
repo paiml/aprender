@@ -6,11 +6,7 @@
 //! Contract: contracts/apr-book-ch10-v1.yaml (v2 — api_calls enforced)
 
 use aprender::autograd::{clear_graph, Tensor};
-use aprender::nn::{
-    loss::MSELoss,
-    optim::SGD,
-    Linear, Module, Optimizer, Sequential,
-};
+use aprender::nn::{loss::MSELoss, optim::SGD, Linear, Module, Optimizer, Sequential};
 use aprender::prelude::Adam;
 
 fn main() {
@@ -61,7 +57,9 @@ fn main() {
         let mut p = model.parameters_mut();
         optimizer.step_with_params(&mut p);
 
-        if l < prev_loss { decreasing += 1; }
+        if l < prev_loss {
+            decreasing += 1;
+        }
         prev_loss = l;
 
         if epoch % 25 == 0 {
@@ -83,7 +81,10 @@ fn main() {
     let full_params = d * k;
     let lora_params = r * (d + k);
     let ratio = lora_params as f64 / full_params as f64;
-    println!("\nLoRA (rank={r}): {lora_params} vs {full_params} ({:.2}%)", ratio * 100.0);
+    println!(
+        "\nLoRA (rank={r}): {lora_params} vs {full_params} ({:.2}%)",
+        ratio * 100.0
+    );
     assert!(ratio < 0.01, "LoRA must use <1% of full params");
 
     // Adam optimizer exists

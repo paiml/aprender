@@ -11,7 +11,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use crate::reverse_coverage::{PubFn, ReverseCoverageReport, reverse_coverage};
+use crate::reverse_coverage::{reverse_coverage, PubFn, ReverseCoverageReport};
 use crate::schema::Contract;
 
 /// A suggested binding for an unbound function.

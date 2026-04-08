@@ -36,8 +36,15 @@ fn main() {
     // Forecast 5 periods ahead
     let n_forecast = 5;
     let forecast = model.forecast(n_forecast).expect("Forecast should succeed");
-    println!("  Forecast ({n_forecast} periods): {:?}", forecast.as_slice());
-    assert_eq!(forecast.len(), n_forecast, "Forecast length must match n_periods");
+    println!(
+        "  Forecast ({n_forecast} periods): {:?}",
+        forecast.as_slice()
+    );
+    assert_eq!(
+        forecast.len(),
+        n_forecast,
+        "Forecast length must match n_periods"
+    );
 
     // Forecasted values should continue the upward trend
     let last_observed = data_vec[data_vec.len() - 1];

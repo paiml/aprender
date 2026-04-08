@@ -18,7 +18,12 @@ pub struct ZramConfig {
 
 impl Default for ZramConfig {
     fn default() -> Self {
-        Self { device: 0, size: 0, algorithm: "lz4".to_string(), streams: 0 }
+        Self {
+            device: 0,
+            size: 0,
+            algorithm: "lz4".to_string(),
+            streams: 0,
+        }
     }
 }
 
@@ -121,7 +126,10 @@ impl ZramDevice {
         let path = format!("{}/{attr}", self.sys_path);
         let content = std::fs::read_to_string(&path)
             .map_err(|e| Error::IoError(format!("failed to read {path}: {e}")))?;
-        content.trim().parse().map_err(|_| Error::InvalidInput(format!("invalid value in {path}")))
+        content
+            .trim()
+            .parse()
+            .map_err(|_| Error::InvalidInput(format!("invalid value in {path}")))
     }
 
     /// Read a sysfs attribute as string.
@@ -146,7 +154,11 @@ impl ZramDevice {
             }
         }
         // Fallback: return first word if no brackets found
-        Ok(raw.split_whitespace().next().unwrap_or("unknown").to_string())
+        Ok(raw
+            .split_whitespace()
+            .next()
+            .unwrap_or("unknown")
+            .to_string())
     }
 
     /// Write a sysfs attribute.
@@ -159,7 +171,10 @@ impl ZramDevice {
     /// Get device status.
     pub fn status(&self) -> Result<ZramStatus> {
         if !self.exists() {
-            return Err(Error::InvalidInput(format!("zram{} does not exist", self.device)));
+            return Err(Error::InvalidInput(format!(
+                "zram{} does not exist",
+                self.device
+            )));
         }
 
         Ok(ZramStatus {
@@ -168,14 +183,19 @@ impl ZramDevice {
             orig_data_size: self.read_attr_u64("orig_data_size").unwrap_or(0),
             compr_data_size: self.read_attr_u64("compr_data_size").unwrap_or(0),
             mem_used_total: self.read_attr_u64("mem_used_total").unwrap_or(0),
-            algorithm: self.read_active_algorithm().unwrap_or_else(|_| "unknown".to_string()),
+            algorithm: self
+                .read_active_algorithm()
+                .unwrap_or_else(|_| "unknown".to_string()),
         })
     }
 
     /// Configure and activate the device.
     pub fn configure(&self, config: &ZramConfig) -> Result<()> {
         if !self.exists() {
-            return Err(Error::InvalidInput(format!("zram{} does not exist", self.device)));
+            return Err(Error::InvalidInput(format!(
+                "zram{} does not exist",
+                self.device
+            )));
         }
 
         // Set algorithm first (must be done before disksize)
@@ -213,8 +233,12 @@ mod tests {
 
     #[test]
     fn test_zram_config_clone() {
-        let config =
-            ZramConfig { device: 5, size: 1024, algorithm: "zstd".to_string(), streams: 4 };
+        let config = ZramConfig {
+            device: 5,
+            size: 1024,
+            algorithm: "zstd".to_string(),
+            streams: 4,
+        };
         let cloned = config.clone();
         assert_eq!(cloned.device, 5);
         assert_eq!(cloned.size, 1024);

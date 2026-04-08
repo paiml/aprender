@@ -166,7 +166,10 @@ mod tests {
     fn test_x86_detect_backend() {
         let backend = detect_backend();
         // On x86_64, we should get at least SSE4.2
-        assert!(matches!(backend, SimdBackend::Sse42 | SimdBackend::Avx2 | SimdBackend::Avx512));
+        assert!(matches!(
+            backend,
+            SimdBackend::Sse42 | SimdBackend::Avx2 | SimdBackend::Avx512
+        ));
     }
 
     #[test]
@@ -193,11 +196,19 @@ mod tests {
     #[test]
     fn test_has_avx512_partial() {
         // Test partial AVX512 support (only F, not BW)
-        let features = SimdFeatures { avx512f: true, avx512bw: false, ..Default::default() };
+        let features = SimdFeatures {
+            avx512f: true,
+            avx512bw: false,
+            ..Default::default()
+        };
         assert!(!features.has_avx512());
 
         // Test partial the other way
-        let features = SimdFeatures { avx512f: false, avx512bw: true, ..Default::default() };
+        let features = SimdFeatures {
+            avx512f: false,
+            avx512bw: true,
+            ..Default::default()
+        };
         assert!(!features.has_avx512());
     }
 }

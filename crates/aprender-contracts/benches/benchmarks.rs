@@ -6,7 +6,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use provable_contracts::schema::{parse_contract_str, validate_contract};
 
 const MINIMAL_CONTRACT: &str = r#"

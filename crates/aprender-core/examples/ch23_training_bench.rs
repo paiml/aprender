@@ -16,10 +16,10 @@ fn main() {
     let backends: Vec<(&str, &str, f64, u64)> = vec![
         ("pytorch-compile", "gx10 A100", 3597.7, 34215),
         ("cuBLAS (default)", "gx10 A100", 4009.5, 49777),
-        ("cuBLAS (forced)",  "gx10 A100", 4026.8, 49778),
-        ("pytorch",          "gx10 A100", 4055.4, 50580),
-        ("unsloth",          "yoga RTX",  6715.7, 3515),
-        ("unsloth",          "gx10 A100", 13659.7, 10219),
+        ("cuBLAS (forced)", "gx10 A100", 4026.8, 49778),
+        ("pytorch", "gx10 A100", 4055.4, 50580),
+        ("unsloth", "yoga RTX", 6715.7, 3515),
+        ("unsloth", "gx10 A100", 13659.7, 10219),
     ];
 
     println!("| Backend          | Host      | tok/s    | VRAM (MB) |");
@@ -34,13 +34,18 @@ fn main() {
     let unsloth_speedup = unsloth_gx10_tps / pytorch_compile_tps;
     println!();
     println!("unsloth vs pytorch-compile: {unsloth_speedup:.1}x faster");
-    assert!(unsloth_speedup > 3.0, "unsloth must be >3x faster than pytorch-compile");
+    assert!(
+        unsloth_speedup > 3.0,
+        "unsloth must be >3x faster than pytorch-compile"
+    );
 
     // VRAM efficiency: unsloth uses 10x less VRAM
     let unsloth_vram = 3515_u64;
     let pytorch_vram = 50580_u64;
     let vram_ratio = pytorch_vram as f64 / unsloth_vram as f64;
-    println!("VRAM: pytorch {pytorch_vram} MB vs unsloth {unsloth_vram} MB ({vram_ratio:.0}x less)");
+    println!(
+        "VRAM: pytorch {pytorch_vram} MB vs unsloth {unsloth_vram} MB ({vram_ratio:.0}x less)"
+    );
     assert!(vram_ratio > 10.0, "unsloth must use >10x less VRAM");
 
     // TensorStats on throughput data
@@ -48,7 +53,10 @@ fn main() {
     let stats = TensorStats::compute(&tps_data);
     println!();
     println!("Throughput distribution across backends:");
-    println!("  min: {:.0}, max: {:.0}, mean: {:.0}", stats.min, stats.max, stats.mean);
+    println!(
+        "  min: {:.0}, max: {:.0}, mean: {:.0}",
+        stats.min, stats.max, stats.mean
+    );
 
     println!();
     println!("Repo: https://github.com/paiml/qwen-train-canary");

@@ -15,8 +15,7 @@ fn main() {
 
     // --- NormalInverseGamma conjugate model ---
     // Prior: mu=0, kappa=1, alpha=3, beta=2
-    let mut nig = NormalInverseGamma::new(0.0, 1.0, 3.0, 2.0)
-        .expect("valid NIG prior parameters");
+    let mut nig = NormalInverseGamma::new(0.0, 1.0, 3.0, 2.0).expect("valid NIG prior parameters");
 
     let prior_mu = nig.posterior_mean_mu();
     let prior_var = nig.posterior_mean_variance();
@@ -27,7 +26,10 @@ fn main() {
     // Observe data centered around 5.0
     let data: Vec<f32> = vec![4.8, 5.1, 5.3, 4.9, 5.0, 5.2, 4.7, 5.1];
     let data_mean: f32 = data.iter().sum::<f32>() / data.len() as f32;
-    println!("\nObserved data: {} samples, mean={data_mean:.2}", data.len());
+    println!(
+        "\nObserved data: {} samples, mean={data_mean:.2}",
+        data.len()
+    );
 
     // Update posterior with data
     nig.update(&data);

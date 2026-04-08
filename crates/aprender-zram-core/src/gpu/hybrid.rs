@@ -134,7 +134,11 @@ impl HybridScheduler {
 
         let gpu = GpuBatchCompressor::new(gpu_config)?;
 
-        Ok(Self { gpu, config, stats: HybridStats::default() })
+        Ok(Self {
+            gpu,
+            config,
+            stats: HybridStats::default(),
+        })
     }
 
     /// Compress a batch of pages using CPU (production path).
@@ -358,9 +362,12 @@ impl HybridScheduler {
         let batch_size = compressed.len();
 
         // Parallel decompression into pre-allocated buffer
-        output[..batch_size].par_iter_mut().zip(compressed.par_iter()).for_each(|(page, data)| {
-            let _ = crate::lz4::decompress_simd(data, page);
-        });
+        output[..batch_size]
+            .par_iter_mut()
+            .zip(compressed.par_iter())
+            .for_each(|(page, data)| {
+                let _ = crate::lz4::decompress_simd(data, page);
+            });
 
         let total_time_ns = start.elapsed().as_nanos() as u64;
 
@@ -555,8 +562,11 @@ mod tests {
         let compress_result = scheduler.compress_batch(&pages).unwrap();
 
         // Extract compressed data
-        let compressed: Vec<Vec<u8>> =
-            compress_result.pages.iter().map(|p| p.data.clone()).collect();
+        let compressed: Vec<Vec<u8>> = compress_result
+            .pages
+            .iter()
+            .map(|p| p.data.clone())
+            .collect();
 
         // Decompress using GPU
         let decompress_result = scheduler.decompress_batch_gpu(&compressed);
@@ -589,6 +599,9 @@ mod tests {
 
         // At 40 GB/s, 2TB should take ~51 seconds
         let estimate = 2048.0 / throughput;
-        assert!(estimate < 60.0, "2TB restore should be <60s at {throughput} GB/s");
+        assert!(
+            estimate < 60.0,
+            "2TB restore should be <60s at {throughput} GB/s"
+        );
     }
 }

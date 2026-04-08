@@ -20,7 +20,10 @@ fn can_run_zram_tests() -> bool {
 
     // Check if we have write access to sysfs (need root)
     let test_path = "/sys/class/zram-control/hot_add";
-    if std::fs::metadata(test_path).map(|m| m.permissions().readonly()).unwrap_or(true) {
+    if std::fs::metadata(test_path)
+        .map(|m| m.permissions().readonly())
+        .unwrap_or(true)
+    {
         // Try alternate check - can we write to zram0 if it exists?
         let zram0_reset = "/sys/block/zram0/reset";
         if std::fs::metadata(zram0_reset).is_err() {
@@ -128,7 +131,9 @@ fn test_compression_on_zram() {
 
     for (name, page) in test_patterns {
         let compressed = compressor.compress(page).expect("Should compress");
-        let decompressed = compressor.decompress(&compressed).expect("Should decompress");
+        let decompressed = compressor
+            .decompress(&compressed)
+            .expect("Should decompress");
         assert_eq!(page, &decompressed, "Roundtrip failed for {name}");
 
         let ratio = if !compressed.data.is_empty() {
@@ -136,7 +141,12 @@ fn test_compression_on_zram() {
         } else {
             1.0
         };
-        println!("  {name}: {} -> {} bytes ({:.2}x)", PAGE_SIZE, compressed.data.len(), ratio);
+        println!(
+            "  {name}: {} -> {} bytes ({:.2}x)",
+            PAGE_SIZE,
+            compressed.data.len(),
+            ratio
+        );
     }
 
     // Cleanup
@@ -295,6 +305,9 @@ fn test_compression_throughput() {
     let throughput_mb = (total_bytes as f64 / 1024.0 / 1024.0) / elapsed.as_secs_f64();
     let pages_per_sec = total_pages as f64 / elapsed.as_secs_f64();
 
-    println!("Throughput: {:.2} MB/s ({:.0} pages/sec)", throughput_mb, pages_per_sec);
+    println!(
+        "Throughput: {:.2} MB/s ({:.0} pages/sec)",
+        throughput_mb, pages_per_sec
+    );
     println!("Stats: {:?}", compressor.stats());
 }

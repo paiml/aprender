@@ -290,8 +290,10 @@ impl GpuCompressor {
         {
             let devices = detect_cuda_devices()
                 .ok_or_else(|| Error::GpuNotAvailable("No CUDA devices found".into()))?;
-            let device =
-                devices.into_iter().find(|d| d.index == device_index).ok_or_else(|| {
+            let device = devices
+                .into_iter()
+                .find(|d| d.index == device_index)
+                .ok_or_else(|| {
                     Error::GpuNotAvailable(format!("Device {device_index} not found"))
                 })?;
 
@@ -303,7 +305,11 @@ impl GpuCompressor {
             }
 
             let batch_size = device.optimal_batch_size();
-            Ok(Self { device, algorithm, batch_size })
+            Ok(Self {
+                device,
+                algorithm,
+                batch_size,
+            })
         }
 
         #[cfg(not(feature = "cuda"))]
@@ -497,8 +503,14 @@ mod tests {
     #[test]
     fn test_select_backend_gpu_large_batch() {
         // F039: Large batch with GPU should use GPU
-        assert_eq!(select_backend(1000, true), BackendSelection::Gpu { batch_size: 1000 });
-        assert_eq!(select_backend(10000, true), BackendSelection::Gpu { batch_size: 10000 });
+        assert_eq!(
+            select_backend(1000, true),
+            BackendSelection::Gpu { batch_size: 1000 }
+        );
+        assert_eq!(
+            select_backend(10000, true),
+            BackendSelection::Gpu { batch_size: 10000 }
+        );
     }
 
     #[test]
@@ -576,7 +588,10 @@ mod tests {
         }
 
         let result = GpuCompressor::new(0, Algorithm::Lz4);
-        assert!(result.is_ok(), "Should create compressor with CUDA device 0");
+        assert!(
+            result.is_ok(),
+            "Should create compressor with CUDA device 0"
+        );
 
         let compressor = result.unwrap();
         println!("Created GPU compressor:");
@@ -607,14 +622,23 @@ mod tests {
             pages.push(page);
         }
 
-        let request = BatchCompressionRequest { pages, algorithm: Algorithm::Lz4 };
+        let request = BatchCompressionRequest {
+            pages,
+            algorithm: Algorithm::Lz4,
+        };
 
         let result = compressor.compress_batch(&request).unwrap();
 
         println!("Batch compression results:");
         println!("  Pages: {batch_size}");
-        println!("  Data size: {} MB", (batch_size * PAGE_SIZE) / (1024 * 1024));
-        println!("  Total time: {:.2} ms", result.total_time_ns as f64 / 1_000_000.0);
+        println!(
+            "  Data size: {} MB",
+            (batch_size * PAGE_SIZE) / (1024 * 1024)
+        );
+        println!(
+            "  Total time: {:.2} ms",
+            result.total_time_ns as f64 / 1_000_000.0
+        );
         println!(
             "  Throughput: {:.2} MB/s",
             (batch_size * PAGE_SIZE) as f64
@@ -653,7 +677,10 @@ mod tests {
     #[test]
     fn test_batch_compression_request_empty() {
         // F037: Empty batch should work
-        let request = BatchCompressionRequest { pages: vec![], algorithm: Algorithm::Lz4 };
+        let request = BatchCompressionRequest {
+            pages: vec![],
+            algorithm: Algorithm::Lz4,
+        };
         assert!(request.pages.is_empty());
     }
 
@@ -661,7 +688,10 @@ mod tests {
     fn test_batch_compression_request_single() {
         // F037: Single page batch
         let page = [0u8; PAGE_SIZE];
-        let request = BatchCompressionRequest { pages: vec![page], algorithm: Algorithm::Lz4 };
+        let request = BatchCompressionRequest {
+            pages: vec![page],
+            algorithm: Algorithm::Lz4,
+        };
         assert_eq!(request.pages.len(), 1);
     }
 
@@ -794,8 +824,14 @@ mod tests {
     #[test]
     fn test_select_backend_boundary_at_simd_threshold() {
         // Exactly at SIMD threshold
-        assert_eq!(select_backend(SIMD_MIN_BATCH_SIZE, false), BackendSelection::Simd);
-        assert_eq!(select_backend(SIMD_MIN_BATCH_SIZE - 1, false), BackendSelection::Scalar);
+        assert_eq!(
+            select_backend(SIMD_MIN_BATCH_SIZE, false),
+            BackendSelection::Simd
+        );
+        assert_eq!(
+            select_backend(SIMD_MIN_BATCH_SIZE - 1, false),
+            BackendSelection::Scalar
+        );
     }
 
     #[test]
@@ -803,9 +839,14 @@ mod tests {
         // Exactly at GPU threshold
         assert_eq!(
             select_backend(GPU_MIN_BATCH_SIZE, true),
-            BackendSelection::Gpu { batch_size: GPU_MIN_BATCH_SIZE }
+            BackendSelection::Gpu {
+                batch_size: GPU_MIN_BATCH_SIZE
+            }
         );
-        assert_eq!(select_backend(GPU_MIN_BATCH_SIZE - 1, true), BackendSelection::Simd);
+        assert_eq!(
+            select_backend(GPU_MIN_BATCH_SIZE - 1, true),
+            BackendSelection::Simd
+        );
     }
 
     #[test]
@@ -840,8 +881,10 @@ mod tests {
 
     #[test]
     fn test_batch_compression_request_debug() {
-        let request =
-            BatchCompressionRequest { pages: vec![[0u8; PAGE_SIZE]], algorithm: Algorithm::Lz4 };
+        let request = BatchCompressionRequest {
+            pages: vec![[0u8; PAGE_SIZE]],
+            algorithm: Algorithm::Lz4,
+        };
         let debug = format!("{request:?}");
         assert!(debug.contains("BatchCompressionRequest"));
     }
@@ -868,7 +911,10 @@ mod tests {
             })
             .collect();
 
-        let request = BatchCompressionRequest { pages, algorithm: Algorithm::Zstd { level: 1 } };
+        let request = BatchCompressionRequest {
+            pages,
+            algorithm: Algorithm::Zstd { level: 1 },
+        };
         assert_eq!(request.pages.len(), 10);
     }
 
@@ -881,7 +927,12 @@ mod tests {
 
     #[test]
     fn test_gpu_backend_debug() {
-        let backends = [GpuBackend::None, GpuBackend::Cuda, GpuBackend::Vulkan, GpuBackend::Metal];
+        let backends = [
+            GpuBackend::None,
+            GpuBackend::Cuda,
+            GpuBackend::Vulkan,
+            GpuBackend::Metal,
+        ];
         for backend in backends {
             let debug = format!("{backend:?}");
             assert!(!debug.is_empty());
@@ -953,7 +1004,9 @@ mod tests {
     #[test]
     fn test_select_backend_various_batch_sizes() {
         // Test many batch sizes
-        for batch_size in [0, 1, 2, 3, 4, 5, 10, 50, 100, 500, 999, 1000, 1001, 5000, 10000] {
+        for batch_size in [
+            0, 1, 2, 3, 4, 5, 10, 50, 100, 500, 999, 1000, 1001, 5000, 10000,
+        ] {
             let _ = select_backend(batch_size, false);
             let _ = select_backend(batch_size, true);
         }

@@ -5,16 +5,21 @@
 //! Citation: Kohavi, "Cross-Validation and Bootstrap," IJCAI 1995
 //! Contract: contracts/apr-book-ch07-v1.yaml (v2 — api_calls enforced)
 
-use aprender::prelude::*;
 use aprender::metrics::classification::{accuracy, precision, recall, Average};
 use aprender::model_selection::KFold;
+use aprender::prelude::*;
 
 fn main() {
     // Dataset: two linearly separable classes
-    let x = Matrix::from_vec(12, 2, vec![
-        1.0, 1.5, 2.0, 2.5, 1.5, 2.0, 2.5, 1.0, 3.0, 2.0, 2.0, 1.5,
-        7.0, 7.5, 8.0, 8.5, 7.5, 8.0, 8.5, 7.0, 9.0, 8.0, 7.0, 7.5,
-    ]).expect("valid 12x2 matrix");
+    let x = Matrix::from_vec(
+        12,
+        2,
+        vec![
+            1.0, 1.5, 2.0, 2.5, 1.5, 2.0, 2.5, 1.0, 3.0, 2.0, 2.0, 1.5, 7.0, 7.5, 8.0, 8.5, 7.5,
+            8.0, 8.5, 7.0, 9.0, 8.0, 7.0, 7.5,
+        ],
+    )
+    .expect("valid 12x2 matrix");
     let y: Vec<usize> = vec![0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1];
 
     // KFold cross-validation with 3 folds
@@ -30,13 +35,17 @@ fn main() {
         let mut x_train_data = Vec::new();
         let mut y_train = Vec::new();
         for &i in train_idx {
-            for col in 0..2 { x_train_data.push(x.get(i, col)); }
+            for col in 0..2 {
+                x_train_data.push(x.get(i, col));
+            }
             y_train.push(y[i]);
         }
         let mut x_test_data = Vec::new();
         let mut y_test = Vec::new();
         for &i in test_idx {
-            for col in 0..2 { x_test_data.push(x.get(i, col)); }
+            for col in 0..2 {
+                x_test_data.push(x.get(i, col));
+            }
             y_test.push(y[i]);
         }
 
@@ -50,8 +59,12 @@ fn main() {
 
         let acc = accuracy(&preds, &y_test);
         fold_accuracies.push(acc);
-        println!("  Fold {}: train={} test={} accuracy={acc:.2}",
-            fold_idx + 1, train_idx.len(), test_idx.len());
+        println!(
+            "  Fold {}: train={} test={} accuracy={acc:.2}",
+            fold_idx + 1,
+            train_idx.len(),
+            test_idx.len()
+        );
     }
 
     // Cross-validation mean accuracy

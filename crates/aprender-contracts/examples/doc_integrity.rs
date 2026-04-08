@@ -15,7 +15,10 @@ fn main() {
     let bad_md = "# Title\n### Skipped H2\n";
     let multi_h1 = "# First\n# Second\n";
 
-    assert!(validate_heading_hierarchy(good_md).is_empty(), "valid hierarchy");
+    assert!(
+        validate_heading_hierarchy(good_md).is_empty(),
+        "valid hierarchy"
+    );
     let v = validate_heading_hierarchy(bad_md);
     println!("H1→H3 skip: {} violation(s) — {}", v.len(), v[0].message);
     let v = validate_heading_hierarchy(multi_h1);
@@ -51,7 +54,13 @@ fn main() {
     let xss_svg = "<svg><script>alert(1)</script></svg>";
     assert!(validate_svg(safe_svg).is_empty());
     let v = validate_svg(xss_svg);
-    println!("SVG violations: {}", v.iter().map(|v| v.message.as_str()).collect::<Vec<_>>().join(", "));
+    println!(
+        "SVG violations: {}",
+        v.iter()
+            .map(|v| v.message.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 
     // --- README drift ---
     println!("\n=== README Drift ===");

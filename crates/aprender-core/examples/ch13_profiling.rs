@@ -33,8 +33,15 @@ fn main() {
     println!("\nFFN gate+up fusion:");
     println!("  Unfused: {dispatches_unfused} rayon dispatches");
     println!("  Fused:   {dispatches_fused} rayon dispatches");
-    println!("  Reduction: {:.0}%", (1.0 - dispatches_fused as f64 / dispatches_unfused as f64) * 100.0);
-    assert_eq!(dispatches_fused * 2, dispatches_unfused, "Fusion halves dispatches");
+    println!(
+        "  Reduction: {:.0}%",
+        (1.0 - dispatches_fused as f64 / dispatches_unfused as f64) * 100.0
+    );
+    assert_eq!(
+        dispatches_fused * 2,
+        dispatches_unfused,
+        "Fusion halves dispatches"
+    );
 
     // Batched prefill speedup
     let serial_ms = 2570.0_f64;

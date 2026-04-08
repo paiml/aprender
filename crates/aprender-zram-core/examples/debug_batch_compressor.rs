@@ -49,9 +49,15 @@ fn main() {
 
     // Compress using CPU (like benchmark does)
     println!("Step 3: Compressing with CPU...");
-    let compress_result = compressor.compress_batch(&pages).expect("Compression should work");
+    let compress_result = compressor
+        .compress_batch(&pages)
+        .expect("Compression should work");
 
-    let compressed: Vec<Vec<u8>> = compress_result.pages.iter().map(|p| p.data.clone()).collect();
+    let compressed: Vec<Vec<u8>> = compress_result
+        .pages
+        .iter()
+        .map(|p| p.data.clone())
+        .collect();
     let sizes: Vec<u32> = compressed.iter().map(|c| c.len() as u32).collect();
 
     let total_compressed: usize = compressed.iter().map(|c| c.len()).sum();
@@ -70,9 +76,17 @@ fn main() {
     // DEBUG: Print first 16 bytes of first few compressed pages
     println!("  First 3 compressed pages:");
     for i in 0..3.min(NUM_PAGES) {
-        let bytes: Vec<String> =
-            compressed[i].iter().take(16).map(|b| format!("{:02x}", b)).collect();
-        println!("    Page {}: [{}...] ({} bytes)", i, bytes.join(" "), compressed[i].len());
+        let bytes: Vec<String> = compressed[i]
+            .iter()
+            .take(16)
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        println!(
+            "    Page {}: [{}...] ({} bytes)",
+            i,
+            bytes.join(" "),
+            compressed[i].len()
+        );
     }
     println!();
 

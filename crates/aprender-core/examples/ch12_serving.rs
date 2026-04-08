@@ -37,7 +37,10 @@ fn main() {
     println!("  Draft tokens: {draft_tokens}");
     println!("  Acceptance rate: {acceptance_rate:.0}%");
     println!("  Theoretical speedup: {speedup:.1}x");
-    assert!(speedup > 1.0, "Speculative decoding must improve throughput");
+    assert!(
+        speedup > 1.0,
+        "Speculative decoding must improve throughput"
+    );
 
     // Architecture contract
     println!("\nContract: aprender-serve handles ALL inference/serving");

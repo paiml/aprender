@@ -285,7 +285,6 @@ pub enum Commands {
     /// Exit codes: 0=passed, 1=failed, 2=baseline not found, 3=invalid baseline,
     /// 4=command error, 5=config error
     Validate(ValidateArgs),
-
 }
 
 /// Arguments for the validate subcommand
@@ -1727,5 +1726,4 @@ mod tests {
         assert_ne!(ValidationOutputFormat::Text, ValidationOutputFormat::Json);
         assert_ne!(ValidationOutputFormat::Json, ValidationOutputFormat::Junit);
     }
-
 }

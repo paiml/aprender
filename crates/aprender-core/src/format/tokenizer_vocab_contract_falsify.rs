@@ -94,7 +94,9 @@ mod tokenizer_vocab_contract {
     // ========================================================================
 
     fn read_file(name: &str) -> String {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(name);
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(name);
         assert!(path.exists(), "{name} must exist at workspace root");
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {name}: {e}"))
     }
@@ -286,7 +288,8 @@ mod tokenizer_vocab_contract {
 
     /// Load all model-family YAML configs.
     fn load_model_family_configs() -> Vec<(String, ModelFamilyConfig)> {
-        let families_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/model-families");
+        let families_dir =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/model-families");
         let mut families = Vec::new();
         let entries = std::fs::read_dir(&families_dir).expect("read model-families dir");
 

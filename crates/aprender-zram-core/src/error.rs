@@ -65,7 +65,10 @@ mod tests {
 
     #[test]
     fn test_error_display_buffer_too_small() {
-        let err = Error::BufferTooSmall { needed: 4096, available: 1024 };
+        let err = Error::BufferTooSmall {
+            needed: 4096,
+            available: 1024,
+        };
         let msg = err.to_string();
         assert!(msg.contains("4096"));
         assert!(msg.contains("1024"));

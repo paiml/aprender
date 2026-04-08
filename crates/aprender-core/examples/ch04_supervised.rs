@@ -5,14 +5,16 @@
 //! Citation: Ruder, "Gradient Descent Optimization," arXiv:1609.04747
 //! Contract: contracts/apr-book-ch04-v1.yaml
 
-use aprender::prelude::*;
 use aprender::metrics::classification::accuracy;
+use aprender::prelude::*;
 
 fn main() {
     // Training data: two separable classes
-    let x = Matrix::from_vec(6, 2, vec![
-        1.0, 2.0, 2.0, 3.0, 3.0, 1.0, 6.0, 5.0, 7.0, 8.0, 8.0, 6.0,
-    ])
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![1.0, 2.0, 2.0, 3.0, 3.0, 1.0, 6.0, 5.0, 7.0, 8.0, 8.0, 6.0],
+    )
     .expect("valid 6x2 matrix");
     let y: Vec<usize> = vec![0, 0, 0, 1, 1, 1];
 

@@ -79,7 +79,9 @@ fn get_total_ram() -> Result<u64> {
             }
         }
     }
-    Err(Error::InvalidInput("could not determine total RAM".to_string()))
+    Err(Error::InvalidInput(
+        "could not determine total RAM".to_string(),
+    ))
 }
 
 /// Find all existing zram devices.

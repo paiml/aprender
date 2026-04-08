@@ -107,7 +107,10 @@ fn benchmark_zstd_compress(c: &mut Criterion) {
     });
 
     // Pre-compress for decompression benchmark
-    let compressed: Vec<_> = pages.iter().map(|p| zstd::compress(p, 3).unwrap()).collect();
+    let compressed: Vec<_> = pages
+        .iter()
+        .map(|p| zstd::compress(p, 3).unwrap())
+        .collect();
 
     group.bench_function("decompress", |b| {
         b.iter(|| {

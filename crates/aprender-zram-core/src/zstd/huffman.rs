@@ -37,8 +37,12 @@ impl HuffmanTable {
         let mut entries = vec![HuffmanEntry::default(); table_size];
 
         // Sort symbols by weight (descending)
-        let mut symbols: Vec<(usize, u8)> =
-            weights.iter().enumerate().filter(|(_, &w)| w > 0).map(|(i, &w)| (i, w)).collect();
+        let mut symbols: Vec<(usize, u8)> = weights
+            .iter()
+            .enumerate()
+            .filter(|(_, &w)| w > 0)
+            .map(|(i, &w)| (i, w))
+            .collect();
         symbols.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
 
         // Assign codes
@@ -56,14 +60,20 @@ impl HuffmanTable {
             for i in 0..num_entries {
                 let index = ((code as usize) << (max_bits - bits)) | i;
                 if index < table_size {
-                    entries[index] = HuffmanEntry { symbol: symbol as u8, bits };
+                    entries[index] = HuffmanEntry {
+                        symbol: symbol as u8,
+                        bits,
+                    };
                 }
             }
 
             code += 1;
         }
 
-        Ok(Self { entries, table_log: max_bits })
+        Ok(Self {
+            entries,
+            table_log: max_bits,
+        })
     }
 
     /// Decode one symbol.
@@ -87,20 +97,28 @@ pub fn read_weights(data: &[u8]) -> Result<(Vec<u8>, usize)> {
     if header < 128 {
         // Compressed weights using FSE
         // For simplicity, return error - would need full FSE decoder
-        Err(Error::Unsupported("FSE-compressed Huffman weights".to_string()))
+        Err(Error::Unsupported(
+            "FSE-compressed Huffman weights".to_string(),
+        ))
     } else {
         // Direct representation
         let num_symbols = (header - 127) as usize;
         let bytes_needed = num_symbols.div_ceil(2);
 
         if data.len() < 1 + bytes_needed {
-            return Err(Error::CorruptedData("truncated huffman weights".to_string()));
+            return Err(Error::CorruptedData(
+                "truncated huffman weights".to_string(),
+            ));
         }
 
         let mut weights = Vec::with_capacity(num_symbols);
         for i in 0..num_symbols {
             let byte_idx = 1 + i / 2;
-            let weight = if i % 2 == 0 { data[byte_idx] >> 4 } else { data[byte_idx] & 0x0F };
+            let weight = if i % 2 == 0 {
+                data[byte_idx] >> 4
+            } else {
+                data[byte_idx] & 0x0F
+            };
             weights.push(weight);
         }
 
