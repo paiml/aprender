@@ -20,5 +20,8 @@ cargo run --example shell_safety_inference -- /tmp/shell-safety-model/
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/shell_safety_inference.rs}}
+// Run this example:
+//   cargo run --example shell_safety_inference
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

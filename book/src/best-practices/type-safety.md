@@ -593,7 +593,7 @@ Rust's type system provides **compile-time guarantees** that eliminate entire cl
 7. **Typestate pattern** for compile-time state guarantees (when appropriate)
 
 **Real-world examples:**
-- `src/primitives/matrix.rs:16-174` - Generic Matrix<T> with trait bounds
+- `src/primitives/matrix.rs:16-174` - Generic `Matrix<T>` with trait bounds
 - `src/traits.rs:64-77` - Associated types in UnsupervisedEstimator
 - `src/optim/mod.rs:136-172` - Ownership patterns in optimizer
 

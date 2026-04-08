@@ -19,5 +19,8 @@ cargo run --example qa_run -- --gpu
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/qa_run.rs}}
+// Run this example:
+//   cargo run --example qa_run
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

@@ -24,5 +24,8 @@ cargo run --example apr_checkpoint_lifecycle
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/apr_checkpoint_lifecycle.rs}}
+// Run this example:
+//   cargo run --example apr_checkpoint_lifecycle
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

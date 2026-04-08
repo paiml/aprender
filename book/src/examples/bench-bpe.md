@@ -13,5 +13,8 @@ cargo run --release --example bench_bpe [-- /path/to/tokenizer.json]
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/bench_bpe.rs}}
+// Run this example:
+//   cargo run --example bench_bpe
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

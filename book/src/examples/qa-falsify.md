@@ -17,5 +17,8 @@ cargo run --example qa_falsify
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/qa_falsify.rs}}
+// Run this example:
+//   cargo run --example qa_falsify
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

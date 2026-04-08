@@ -27,5 +27,8 @@ cargo run --example qa_verify -- --json
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/qa_verify.rs}}
+// Run this example:
+//   cargo run --example qa_verify
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

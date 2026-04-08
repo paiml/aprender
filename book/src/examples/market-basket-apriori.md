@@ -46,8 +46,8 @@ Implemented complete Apriori algorithm (~400 lines):
    - `calculate_support()` - static method
 
 2. **AssociationRule**: Rule representation
-   - `antecedent`: Vec<usize> - items on left side
-   - `consequent`: Vec<usize> - items on right side
+   - `antecedent`: `Vec<usize>` - items on left side
+   - `consequent`: `Vec<usize>` - items on right side
    - `support`: f64 - P(antecedent ∪ consequent)
    - `confidence`: f64 - P(consequent | antecedent)
    - `lift`: f64 - confidence / P(consequent)

@@ -4,7 +4,7 @@ Error handling is fundamental to building robust machine learning applications. 
 
 ## Core Principles
 
-### 1. Use Result<T> for Fallible Operations
+### 1. Use `Result<T>` for Fallible Operations
 
 **Rule**: Any operation that can fail returns `Result<T>` instead of panicking.
 
@@ -689,7 +689,7 @@ return Err(AprenderError::DimensionMismatch {
 
 | Concept | Key Takeaway |
 |---------|--------------|
-| **Result<T>** | All fallible operations return Result, never panic |
+| `Result<T>` | All fallible operations return Result, never panic |
 | **Rich context** | Errors include actual values, expected values, constraints |
 | **Specific variants** | Use DimensionMismatch, InvalidHyperparameter, not generic Other |
 | **Early validation** | Check preconditions at function entry, fail fast |

@@ -286,8 +286,8 @@ scaler.fit(&x_all)?;  // Don't fit on test data!
 | `fit()` | Learn from data | Result<()> | Yes |
 | `predict()` | Make predictions | Vector/Matrix | No |
 | `score()` | Evaluate performance | f32 | No |
-| `transform()` | Apply transformation | Result<Matrix> | No |
-| `fit_transform()` | Fit and transform | Result<Matrix> | Yes |
+| `transform()` | Apply transformation | `Result<Matrix>` | No |
+| `fit_transform()` | Fit and transform | `Result<Matrix>` | Yes |
 
 ### Getter Methods
 

@@ -22,5 +22,8 @@ cargo run --example qa_chat -- --format-parity
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/qa_chat.rs}}
+// Run this example:
+//   cargo run --example qa_chat
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

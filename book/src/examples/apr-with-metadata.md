@@ -44,7 +44,10 @@ writer.write("model.apr")?;
 Run: `cargo run --example apr_with_metadata`
 
 ```rust,ignore
-{{#include ../../../examples/apr_with_metadata.rs}}
+// Run this example:
+//   cargo run --example apr_with_metadata
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```
 
 ## Key Features

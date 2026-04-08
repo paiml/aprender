@@ -15,5 +15,8 @@ cargo run --example design_by_contract
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/design_by_contract.rs}}
+// Run this example:
+//   cargo run --example design_by_contract
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

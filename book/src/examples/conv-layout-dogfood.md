@@ -14,5 +14,8 @@ cargo run --release --example conv_layout_dogfood
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/conv_layout_dogfood.rs}}
+// Run this example:
+//   cargo run --example conv_layout_dogfood
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

@@ -31,5 +31,8 @@ cargo run --example shell_safety_training -- /tmp/combined.jsonl
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/shell_safety_training.rs}}
+// Run this example:
+//   cargo run --example shell_safety_training
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

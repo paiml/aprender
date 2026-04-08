@@ -54,7 +54,10 @@ This mixture introduces the extra variability needed to model overdispersed data
 ## Example: Website Traffic Analysis
 
 ```rust
-{{#include ../../../examples/negative_binomial_glm.rs}}
+// Run this example:
+//   cargo run --example negative_binomial_glm
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```
 
 ## Running the Example

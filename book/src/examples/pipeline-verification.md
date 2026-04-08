@@ -51,7 +51,10 @@ assert!(report.all_passed());
 Run: `cargo run --example pipeline_verification`
 
 ```rust,ignore
-{{#include ../../../examples/pipeline_verification.rs}}
+// Run this example:
+//   cargo run --example pipeline_verification
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```
 
 ## Key Features

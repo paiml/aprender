@@ -24,5 +24,8 @@ cargo run --features hf-hub-integration --example publish_shell_safety -- /tmp/s
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/publish_shell_safety.rs}}
+// Run this example:
+//   cargo run --example publish_shell_safety
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

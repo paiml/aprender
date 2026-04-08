@@ -36,7 +36,10 @@ cargo build -p apr-cli
 Run: `cargo run --example apr_cli_commands`
 
 ```rust,ignore
-{{#include ../../../examples/apr_cli_commands.rs}}
+// Run this example:
+//   cargo run --example apr_cli_commands
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```
 
 ## All Commands

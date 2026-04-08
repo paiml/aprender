@@ -13,5 +13,8 @@ cargo run --example create_test_transformer_apr
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/create_test_transformer_apr.rs}}
+// Run this example:
+//   cargo run --example create_test_transformer_apr
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

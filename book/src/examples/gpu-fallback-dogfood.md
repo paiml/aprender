@@ -19,5 +19,8 @@ cargo run --release --example gpu_fallback_dogfood
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/gpu_fallback_dogfood.rs}}
+// Run this example:
+//   cargo run --example gpu_fallback_dogfood
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

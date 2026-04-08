@@ -33,5 +33,8 @@ cargo run --example qa_serve -- --model path/to/model.gguf
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/qa_serve.rs}}
+// Run this example:
+//   cargo run --example qa_serve
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```

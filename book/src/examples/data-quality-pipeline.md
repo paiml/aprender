@@ -15,5 +15,8 @@ cargo run --example data_quality_pipeline
 ## Source
 
 ```rust,ignore
-{{#include ../../../examples/data_quality_pipeline.rs}}
+// Run this example:
+//   cargo run --example data_quality_pipeline
+//
+// See the CLI reference and source code in crates/ for implementation details.
 ```
