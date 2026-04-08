@@ -1,0 +1,98 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+  - "crates/aprender-core/src/models/logistic_regression.rs"
+  - "Bottou, 'Stochastic Gradient Descent Tricks', 2012"
+  description: >
+    Stochastic and mini-batch gradient descent for LogisticRegression.
+    Fixes minority class signal dilution in imbalanced datasets.
+    Refs GH-428.
+
+equations:
+  fit_mode_enum:
+    formula: |
+      FitMode ∈ {Batch, Stochastic, MiniBatch(usize)}
+      Batch: gradient averaged over all n samples (current default)
+      Stochastic: weight update after each sample
+      MiniBatch(k): weight update after every k samples
+    domain: LogisticRegression fit configuration
+    codomain: enum
+    invariants:
+    - "Batch is the default (backward compatible)"
+    - "MiniBatch(1) == Stochastic"
+    - "MiniBatch(n_samples) == Batch"
+
+  stochastic_convergence:
+    formula: |
+      For stochastic mode with learning rate η and class weights w:
+        ∂L/∂θ_t = w[y_i] * (σ(θ·x_i) - y_i) * x_i  (per-sample gradient)
+        θ_{t+1} = θ_t - η * ∂L/∂θ_t
+      Convergence: loss decreases over epochs for well-chosen η
+    domain: stochastic gradient descent
+    codomain: updated weight vector
+    invariants:
+    - "Per-sample gradient preserves class weight signal"
+    - "Shuffled sample order each epoch (no sequential bias)"
+    - "Learning rate schedule: constant or 1/sqrt(t) decay"
+
+  minibatch_gradient:
+    formula: |
+      For mini-batch of size k:
+        ∂L/∂θ = (1/k) Σ_{i∈batch} w[y_i] * (σ(θ·x_i) - y_i) * x_i
+      This is an unbiased estimator of the full-batch gradient.
+    domain: mini-batch gradient computation
+    codomain: gradient vector
+    invariants:
+    - "Batch size k divides evenly or last batch is smaller"
+    - "Each sample seen exactly once per epoch"
+    - "Gradient averaged over batch, not accumulated"
+
+  backward_compatibility:
+    formula: |
+      LogisticRegression::fit(X, y) with default FitMode::Batch
+      produces IDENTICAL results to current implementation.
+    domain: default fit behavior
+    codomain: bool
+    invariants:
+    - "Default FitMode is Batch (no behavior change)"
+    - "All existing tests pass without modification"
+    - "API is additive: new method fit_with_mode() or builder pattern"
+
+falsification_tests:
+- id: FALSIFY-SGD-001
+  rule: backward compatibility
+  prediction: "default fit produces same weights as before"
+  test: |
+    cargo test -p aprender-core --lib -- logistic_regression 2>&1 | grep "test result: ok"
+  if_fails: "default behavior changed"
+
+- id: FALSIFY-SGD-002
+  rule: stochastic mode improves imbalanced classification
+  prediction: "MCC > 0.3 on imbalanced dataset with stochastic mode"
+  test: |
+    cargo test -p aprender-core --lib -- test_stochastic_imbalanced 2>&1 | grep "ok"
+  if_fails: "stochastic mode does not improve imbalanced classification"
+
+- id: FALSIFY-SGD-003
+  rule: mini-batch gradient unbiased
+  prediction: "mini-batch(n) == full-batch for same data"
+  test: |
+    cargo test -p aprender-core --lib -- test_minibatch_equals_batch 2>&1 | grep "ok"
+  if_fails: "mini-batch gradient diverges from full-batch"
+
+proof_obligations:
+- type: invariant
+  property: "default FitMode::Batch backward compatible"
+- type: invariant
+  property: "stochastic mode shuffles samples each epoch"
+- type: invariant
+  property: "mini-batch(n) == full-batch for complete dataset"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: pending

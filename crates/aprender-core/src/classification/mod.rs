@@ -78,6 +78,33 @@ impl Default for ClassWeight {
     }
 }
 
+/// Gradient descent mode for LogisticRegression.
+///
+/// Contract: `contracts/apr-stochastic-lr-v1.yaml` — `fit_mode_enum` equation.
+///
+/// Controls how gradients are computed and applied:
+/// - `Batch`: Full-batch gradient descent (default, backward compatible)
+/// - `Stochastic`: Online SGD with per-sample updates
+/// - `MiniBatch(k)`: Mini-batch SGD with updates every k samples
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum FitMode {
+    /// Full-batch gradient descent: average gradient over all samples.
+    /// Default, backward compatible.
+    Batch,
+    /// Stochastic (online) SGD: update after each sample.
+    /// Better for imbalanced data — preserves minority class signal.
+    Stochastic,
+    /// Mini-batch SGD: update after every k samples.
+    /// Compromise between Batch (stable) and Stochastic (fast convergence).
+    MiniBatch(usize),
+}
+
+impl Default for FitMode {
+    fn default() -> Self {
+        Self::Batch
+    }
+}
+
 /// Logistic Regression classifier for binary classification.
 ///
 /// Uses sigmoid activation and binary cross-entropy loss with
@@ -99,6 +126,8 @@ pub struct LogisticRegression {
     class_weight: ClassWeight,
     /// L2 regularization strength (weight decay). 0.0 = no regularization.
     l2_penalty: f32,
+    /// Gradient descent mode (GH-428: stochastic/mini-batch support).
+    fit_mode: FitMode,
 }
 
 impl LogisticRegression {
@@ -121,6 +150,7 @@ impl LogisticRegression {
             tol: 1e-4,
             class_weight: ClassWeight::Uniform,
             l2_penalty: 0.0,
+            fit_mode: FitMode::Batch,
         }
     }
 
@@ -185,6 +215,29 @@ impl LogisticRegression {
         self
     }
 
+    /// Sets the gradient descent mode (GH-428).
+    ///
+    /// Contract: `contracts/apr-stochastic-lr-v1.yaml`
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::classification::{LogisticRegression, FitMode};
+    ///
+    /// // Stochastic SGD for imbalanced datasets
+    /// let model = LogisticRegression::new()
+    ///     .with_fit_mode(FitMode::Stochastic);
+    ///
+    /// // Mini-batch with 32 samples per update
+    /// let model = LogisticRegression::new()
+    ///     .with_fit_mode(FitMode::MiniBatch(32));
+    /// ```
+    #[must_use]
+    pub fn with_fit_mode(mut self, mode: FitMode) -> Self {
+        self.fit_mode = mode;
+        self
+    }
+
     /// ONE PATH: Delegates to `nn::functional::sigmoid_scalar` (UCBD §4).
     fn sigmoid(z: f32) -> f32 {
         crate::nn::functional::sigmoid_scalar(z)
@@ -244,12 +297,28 @@ impl LogisticRegression {
         // Compute per-class sample weights
         let sample_weights = self.compute_sample_weights(y);
 
-        // Gradient descent optimization
-        for _ in 0..self.max_iter {
-            // Compute predictions (probabilities)
-            let probas = self.predict_proba(x);
+        // Contract: apr-stochastic-lr-v1.yaml — fit_mode_enum
+        match self.fit_mode {
+            FitMode::Batch => self.fit_batch(x, y, &sample_weights, n_samples, n_features),
+            FitMode::Stochastic => self.fit_stochastic(x, y, &sample_weights, n_samples, n_features),
+            FitMode::MiniBatch(batch_size) => {
+                let bs = batch_size.max(1).min(n_samples);
+                if bs == n_samples {
+                    self.fit_batch(x, y, &sample_weights, n_samples, n_features)
+                } else {
+                    self.fit_minibatch(x, y, &sample_weights, n_samples, n_features, bs)
+                }
+            }
+        }
+    }
 
-            // Compute gradients with class weighting
+    /// Full-batch gradient descent (default, backward compatible).
+    fn fit_batch(
+        &mut self, x: &Matrix<f32>, y: &[usize], sample_weights: &[f32],
+        n_samples: usize, n_features: usize,
+    ) -> Result<()> {
+        for _ in 0..self.max_iter {
+            let probas = self.predict_proba(x);
             let mut coef_grad = vec![0.0; n_features];
             let mut intercept_grad = 0.0;
 
@@ -261,14 +330,12 @@ impl LogisticRegression {
                 }
             }
 
-            // Average gradients
             let n = n_samples as f32;
             intercept_grad /= n;
             for grad in &mut coef_grad {
                 *grad /= n;
             }
 
-            // Update parameters with L2 regularization (weight decay)
             self.intercept -= self.learning_rate * intercept_grad;
             if let Some(ref mut coef) = self.coefficients {
                 for j in 0..n_features {
@@ -276,13 +343,122 @@ impl LogisticRegression {
                 }
             }
 
-            // Check convergence (simplified - could check gradient norm)
             if intercept_grad.abs() < self.tol && coef_grad.iter().all(|&g| g.abs() < self.tol) {
                 break;
             }
         }
-
         Ok(())
+    }
+
+    /// Stochastic (online) SGD: update after each sample.
+    /// Contract: apr-stochastic-lr-v1.yaml — stochastic_convergence
+    fn fit_stochastic(
+        &mut self, x: &Matrix<f32>, y: &[usize], sample_weights: &[f32],
+        n_samples: usize, n_features: usize,
+    ) -> Result<()> {
+        // Simple deterministic shuffle via index permutation
+        let mut indices: Vec<usize> = (0..n_samples).collect();
+
+        for epoch in 0..self.max_iter {
+            // Shuffle indices each epoch (deterministic via epoch seed)
+            // Contract: stochastic_convergence — "shuffled sample order each epoch"
+            let seed = epoch;
+            for i in (1..n_samples).rev() {
+                let j = (seed * 6364136223846793005 + i * 1442695040888963407) % (i + 1);
+                indices.swap(i, j);
+            }
+
+            let mut max_grad = 0.0_f32;
+
+            for &idx in &indices {
+                // Per-sample gradient
+                let prob = self.predict_proba_single(x, idx);
+                let error = sample_weights[idx] * (prob - y[idx] as f32);
+
+                // Update intercept
+                self.intercept -= self.learning_rate * error;
+
+                // Update coefficients
+                if let Some(ref mut coef) = self.coefficients {
+                    for j in 0..n_features {
+                        let grad = error * x.get(idx, j) + self.l2_penalty * coef[j];
+                        coef[j] -= self.learning_rate * grad;
+                        max_grad = max_grad.max(grad.abs());
+                    }
+                }
+            }
+
+            if max_grad < self.tol {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Mini-batch SGD: update after every batch_size samples.
+    /// Contract: apr-stochastic-lr-v1.yaml — minibatch_gradient
+    fn fit_minibatch(
+        &mut self, x: &Matrix<f32>, y: &[usize], sample_weights: &[f32],
+        n_samples: usize, n_features: usize, batch_size: usize,
+    ) -> Result<()> {
+        let mut indices: Vec<usize> = (0..n_samples).collect();
+
+        for epoch in 0..self.max_iter {
+            // Shuffle
+            let seed = epoch;
+            for i in (1..n_samples).rev() {
+                let j = (seed * 6364136223846793005 + i * 1442695040888963407) % (i + 1);
+                indices.swap(i, j);
+            }
+
+            let mut max_grad = 0.0_f32;
+
+            for batch in indices.chunks(batch_size) {
+                let bs = batch.len() as f32;
+                let mut coef_grad = vec![0.0; n_features];
+                let mut intercept_grad = 0.0;
+
+                for &idx in batch {
+                    let prob = self.predict_proba_single(x, idx);
+                    let error = sample_weights[idx] * (prob - y[idx] as f32);
+                    intercept_grad += error;
+                    for (j, grad) in coef_grad.iter_mut().enumerate() {
+                        *grad += error * x.get(idx, j);
+                    }
+                }
+
+                // Average over batch
+                intercept_grad /= bs;
+                for grad in &mut coef_grad {
+                    *grad /= bs;
+                }
+
+                self.intercept -= self.learning_rate * intercept_grad;
+                if let Some(ref mut coef) = self.coefficients {
+                    for j in 0..n_features {
+                        let grad = coef_grad[j] + self.l2_penalty * coef[j];
+                        coef[j] -= self.learning_rate * grad;
+                        max_grad = max_grad.max(grad.abs());
+                    }
+                }
+            }
+
+            if max_grad < self.tol {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Predict probability for a single sample (used by stochastic/mini-batch).
+    fn predict_proba_single(&self, x: &Matrix<f32>, row: usize) -> f32 {
+        let coef = self.coefficients.as_ref().expect("model must be initialized");
+        let n_features = coef.len();
+        let mut z = self.intercept;
+        for col in 0..n_features {
+            z += coef[col] * x.get(row, col);
+        }
+        Self::sigmoid(z)
     }
 
     /// Predicts class labels for samples.
@@ -475,6 +651,7 @@ impl LogisticRegression {
             tol: 1e-4,
             class_weight: ClassWeight::Uniform,
             l2_penalty: 0.0,
+            fit_mode: FitMode::Batch,
         })
     }
 }
