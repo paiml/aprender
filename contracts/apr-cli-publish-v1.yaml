@@ -1,0 +1,86 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-08'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'GH-703: cargo install aprender cyclic dep chain'
+  - 'crates.io publish requirements — all deps must have version + resolve'
+  description: >
+    Contract for apr-cli Cargo.toml that ensures cargo install aprender
+    works from crates.io. The golden path is: cargo install aprender → apr binary.
+
+equations:
+  default_features_minimal:
+    formula: |
+      apr-cli [features] default MUST NOT include any feature that
+      pulls realizar, batuta, entrenar, or trueno as dependencies.
+      Default = ["hf-hub", "safetensors-compare"] (aprender-core only).
+    domain: crates/apr-cli/Cargo.toml [features] default
+    codomain: bool
+    invariants:
+    - "cargo install aprender resolves without cyclic deps"
+    - "Default binary has: inspect, validate, lint, tensors, debug, explain, import, export, convert"
+    - "inference/training/gpu are opt-in features, not default"
+
+  no_cyclic_resolution:
+    formula: |
+      cargo install aprender --version latest exits 0
+      The dep chain: aprender → apr-cli → aprender-core (no cycle)
+      NOT: aprender → apr-cli → batuta → realizar → aprender (cycle!)
+    domain: crates.io dependency resolution
+    codomain: ExitCode
+
+  all_commands_compile:
+    formula: |
+      cargo check -p apr-cli (with default features) exits 0
+      All 57 commands have --help (even if some say "enable feature X")
+    domain: apr-cli compilation
+    codomain: bool
+
+  full_features_local:
+    formula: |
+      cargo check -p apr-cli --all-features exits 0
+      Local workspace build enables all features via path deps
+    domain: workspace compilation
+    codomain: bool
+
+falsification_tests:
+- id: FALSIFY-PUB-CLI-001
+  rule: default features don't pull old deps
+  prediction: "default features contain no inference/training/code/cuda"
+  test: "grep '^default = ' crates/apr-cli/Cargo.toml | grep -qvE 'inference|training|code|cuda'"
+  if_fails: "cargo install aprender will hit cyclic dep chain"
+
+- id: FALSIFY-PUB-CLI-002
+  rule: cargo install aprender works
+  prediction: "cargo install aprender exits 0 on clean machine"
+  test: "cargo install aprender --force"
+  if_fails: "golden path broken"
+
+- id: FALSIFY-PUB-CLI-003
+  rule: apr --help works with minimal features
+  prediction: "apr --help lists all 57 commands"
+  test: "apr --help | wc -l > 50"
+  if_fails: "commands missing from minimal build"
+
+- id: FALSIFY-PUB-CLI-004
+  rule: full features compile locally
+  prediction: "cargo check -p apr-cli --all-features exits 0"
+  test: "cargo check -p apr-cli --all-features"
+  if_fails: "workspace build broken"
+
+proof_obligations:
+- type: invariant
+  property: "default features produce no cyclic dep chain on crates.io"
+
+kani_harnesses:
+- id: KH-PUB-CLI-001
+  obligation: no_cyclic_resolution
+  property: acyclic_dep_graph
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending

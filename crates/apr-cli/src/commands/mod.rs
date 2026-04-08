@@ -46,6 +46,7 @@ pub(crate) mod pipeline;
 pub(crate) mod probar;
 pub(crate) mod profile;
 pub(crate) mod prune;
+#[cfg(feature = "full")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;
 pub(crate) mod publish;

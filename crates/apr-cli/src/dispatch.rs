@@ -93,6 +93,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             let effective_no_gpu = if *gpu { false } else { *no_gpu || backend_forces_cpu };
 
             // Batch JSONL mode: load model once, process all prompts
+            #[cfg(feature = "inference")]
             if let Some(ref batch_file) = batch_jsonl {
                 return Some(run::run_batch(
                     source,

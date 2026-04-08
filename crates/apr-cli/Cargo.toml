@@ -63,7 +63,9 @@ name = "apr"
 path = "src/main.rs"
 
 [features]
-default = ["hf-hub", "safetensors-compare", "inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code"]
+# crates.io install: minimal features (inspect, validate, lint, etc.)
+# Full features enabled locally via workspace Cargo.toml default-members
+default = ["hf-hub", "safetensors-compare"]
 hf-hub = ["aprender/hf-hub-integration"]
 code = ["dep:batuta"]
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
@@ -79,6 +81,7 @@ training = ["dep:entrenar", "dep:entrenar-lora"]
 training-gpu = ["training", "entrenar/cuda", "entrenar/gpu"]
 whisper = ["whisper-apr"]
 dhat-heap = ["dep:dhat"]
+full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -172,7 +175,7 @@ trueno-zram-core = { version = "0.3", optional = true }
 pacha = { version = "0.2.4", default-features = false, features = ["remote"] }
 
 # PTX analysis and bug detection (trueno-explain: PtxAnalyzer + PtxBugAnalyzer)
-trueno-explain = "0.2.2"
+trueno-explain = { version = "0.2.2", optional = true }
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
 entrenar-lora = { version = "0.3.0", optional = true }
@@ -218,3 +221,4 @@ regex = "1.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 axum-test = "16"
 tower = "0.5"
+

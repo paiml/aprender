@@ -41,7 +41,7 @@ pub mod federation;
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, compile, convert, data, debug,
     diagnose, diff, distill, eval, explain, export, flow, hex, import, inspect, lint, merge,
-    oracle, pipeline, probar, profile, prune, ptx_explain, publish, pull, qa, qualify, quantize,
+    oracle, pipeline, probar, profile, prune, publish, pull, qa, qualify, quantize,
     rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, tokenize, trace, tree, tui,
     validate,
 };

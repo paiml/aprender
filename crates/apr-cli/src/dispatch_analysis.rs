@@ -848,14 +848,19 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 .map(|f| crate::error::resolve_model_path(f))
                 .transpose()
             {
-                Ok(resolved) => ptx_explain::run(
-                    resolved.as_deref(),
-                    kernel.as_deref(),
-                    *strict,
-                    *bugs,
-                    *json || cli.json,
-                    *verbose || cli.verbose,
-                ),
+                Ok(resolved) => {
+                    #[cfg(feature = "full")]
+                    { commands::ptx_explain::run(
+                        resolved.as_deref(),
+                        kernel.as_deref(),
+                        *strict,
+                        *bugs,
+                        *json || cli.json,
+                        *verbose || cli.verbose,
+                    ) }
+                    #[cfg(not(feature = "full"))]
+                    { Err(CliError::Aprender("ptx command requires --features full".into())) }
+                }
                 Err(e) => Err(e),
             }
         }
