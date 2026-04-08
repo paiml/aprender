@@ -287,7 +287,7 @@ impl Matrix<f32> {
 
         crate::blis::gemv::gemv(k, n, &self.data, &other.data, &mut c);
 
-        Ok(Matrix::from_vec(1, n, c)?)
+        Matrix::from_vec(1, n, c)
     }
 
     /// Naive O(n³) matrix multiplication (baseline for small matrices < 64)

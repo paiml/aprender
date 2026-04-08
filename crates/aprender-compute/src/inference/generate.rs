@@ -43,7 +43,7 @@ pub fn sample_token(logits: &[f32], params: &SampleParams, rng: &mut Rng) -> u32
         return logits
             .iter()
             .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(i, _)| i as u32)
             .unwrap_or(0);
     }
@@ -56,7 +56,7 @@ pub fn sample_token(logits: &[f32], params: &SampleParams, rng: &mut Rng) -> u32
     // Top-k: keep only top-k highest logits
     let k = params.top_k.min(vocab_size);
     if k < vocab_size {
-        scaled.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scaled.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scaled.truncate(k);
     }
 
@@ -70,7 +70,7 @@ pub fn sample_token(logits: &[f32], params: &SampleParams, rng: &mut Rng) -> u32
     }
 
     // Top-p (nucleus): accumulate until cumulative prob >= top_p
-    probs.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    probs.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     let mut cumulative = 0.0f32;
     let mut cutoff = probs.len();
     for (i, &(_, prob)) in probs.iter().enumerate() {
