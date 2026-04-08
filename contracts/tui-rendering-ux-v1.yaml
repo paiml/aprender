@@ -1,0 +1,282 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'docs/specifications/ratatui-to-presentar-migration.md'
+  - 'contracts/ratatui-migration-v1.yaml'
+  - 'Sovereign AI Stack — presentar-terminal TUI framework'
+  description: >
+    Provable contract for the improved APR TUI experience. Defines layout
+    structure, panel composition, information hierarchy, keyboard navigation,
+    color theming, and responsiveness requirements for all TUI commands
+    (apr tui, apr cbtop, apr monitor, apr experiment view).
+
+# ============================================================================
+# TUI LAYOUT ARCHITECTURE
+# ============================================================================
+# The APR TUI uses a consistent 3-zone layout across all commands:
+#
+#   ┌─────────────────────────────────────────────────────┐
+#   │  HEADER (1 row) — command name, model, status       │
+#   ├──────────────────────┬──────────────────────────────┤
+#   │                      │                              │
+#   │   PRIMARY PANEL      │   DETAIL PANEL               │
+#   │   (60% width)        │   (40% width)                │
+#   │                      │                              │
+#   │   - main content     │   - context for selection    │
+#   │   - navigable list   │   - charts / sparklines      │
+#   │   - sortable table   │   - metadata / stats         │
+#   │                      │                              │
+#   ├──────────────────────┴──────────────────────────────┤
+#   │  FOOTER (1 row) — keybindings, status, help hint    │
+#   └─────────────────────────────────────────────────────┘
+#
+# Responsive: collapses to single-column when width < 80
+
+equations:
+  # ── Layout Consistency ──────────────────────────────────────────────────
+  layout_three_zone:
+    formula: |
+      every TUI screen = header(1 row) + body(expandable) + footer(1 row)
+    domain: all TUI commands
+    codomain: bool
+    invariants:
+    - "Header always shows: command name, model/context, status indicator"
+    - "Footer always shows: keybinding hints (context-sensitive)"
+    - "Body fills remaining terminal height"
+    - "Minimum usable terminal: 80x24"
+
+  layout_responsive:
+    formula: |
+      if terminal_width >= 100: two-column body (60/40 split)
+      if terminal_width >= 80:  two-column body (55/45 split)
+      if terminal_width < 80:   single-column body (stacked)
+    domain: terminal resize events
+    codomain: layout variant
+    invariants:
+    - "Layout adapts to terminal resize without crash"
+    - "No content truncation — overflow uses scrolling"
+    - "Column widths are proportional, not absolute"
+
+  # ── Navigation Contract ─────────────────────────────────────────────────
+  keyboard_navigation:
+    formula: |
+      j/↓ = next item
+      k/↑ = previous item
+      Tab = next panel / next tab
+      Shift-Tab = previous panel / previous tab
+      Enter = select / expand
+      Esc = back / close overlay
+      q = quit
+      ? = toggle help overlay
+      / = search / filter
+      1-9 = jump to tab N
+    domain: all TUI commands
+    codomain: navigation state
+    invariants:
+    - "Vim-style (j/k) and arrow keys both work everywhere"
+    - "Tab cycles through panels in consistent order"
+    - "q always quits from any screen (no trapped states)"
+    - "? always shows help overlay listing all keybindings"
+    - "/ always opens filter/search in list/table views"
+
+  # ── Color Theme Contract ────────────────────────────────────────────────
+  color_theme:
+    formula: |
+      theme = presentar_terminal::theme::Theme
+      header_bg = theme.primary
+      selected_bg = theme.accent
+      error_fg = Color::rgb(1.0, 0.3, 0.3)
+      warning_fg = Color::rgb(1.0, 0.8, 0.2)
+      success_fg = Color::rgb(0.3, 1.0, 0.5)
+      dim_fg = theme.dim
+    domain: all TUI rendering
+    codomain: Color
+    invariants:
+    - "Uses presentar-terminal Theme, never hardcoded ANSI colors"
+    - "Graceful degradation: TrueColor → 256 → 16-color → mono"
+    - "WCAG AA contrast ratio (4.5:1) for all text on background"
+    - "Status colors consistent: red=error, yellow=warning, green=pass"
+
+  # ── Widget Composition ──────────────────────────────────────────────────
+  widget_composition:
+    formula: |
+      All panels use presentar_terminal::widgets::* exclusively.
+      No raw terminal escape sequences. No crossterm direct writes.
+    domain: all TUI rendering code
+    codomain: bool
+    invariants:
+    - "Every visual element is a presentar Widget with Brick assertions"
+    - "Tables use DataFrame with sortable columns"
+    - "Charts use LineChart/Sparkline/BrailleGraph"
+    - "Progress uses Gauge with percentage"
+    - "All widgets implement measure() → layout() → paint() lifecycle"
+
+  # ── Performance Budget ──────────────────────────────────────────────────
+  frame_budget:
+    formula: |
+      frame_time_ms <= 16.67  (60 FPS target)
+      input_latency_ms <= 8   (keypress to visual update)
+    domain: TUI render loop
+    codomain: Duration
+    invariants:
+    - "Smart diff rendering — only changed cells written to stdout"
+    - "Zero allocation in steady-state render (CompactString for inline)"
+    - "Input events processed before render (no frame skip)"
+
+  # ── apr tui: Model Explorer ─────────────────────────────────────────────
+  tui_model_explorer:
+    formula: |
+      Tabs: [Overview] [Tensors] [Stats] [Help]
+      Overview: model metadata table (arch, params, quantization, size)
+      Tensors: scrollable tensor list with shape/dtype/size columns
+      Stats: tensor statistics (min/max/mean/std) for selected tensor
+      Help: keybinding reference
+    domain: apr tui <model>
+    codomain: TUI screen
+    invariants:
+    - "Tab bar at top of body, below header"
+    - "Tensors tab shows sortable table (by name, size, dtype)"
+    - "Selecting a tensor updates the detail panel"
+    - "Stats tab shows histogram of tensor value distribution"
+    - "Works with .apr, .gguf, .safetensors formats"
+
+  # ── apr cbtop: ComputeBrick Pipeline Monitor ────────────────────────────
+  cbtop_pipeline_monitor:
+    formula: |
+      Tabs: [Pipeline] [Budget] [Histogram] [GPU] [Memory]
+      Pipeline: brick list with timing/score/grade per brick
+      Budget: budget vs actual bar chart per brick
+      Histogram: latency distribution for selected brick
+      GPU: GPU utilization, VRAM, temperature
+      Memory: system memory, swap, cache
+    domain: apr cbtop --model <model>
+    codomain: TUI screen
+    invariants:
+    - "Live-updating metrics when attached to running inference"
+    - "Color-coded budget: green=under, yellow=near, red=over"
+    - "Sparkline for throughput trend in header"
+    - "Selected brick highlights in pipeline view"
+    - "Headless mode (--headless) still works without TUI"
+
+  # ── apr monitor: Training Monitor ───────────────────────────────────────
+  monitor_training:
+    formula: |
+      Primary: loss curve (LineChart) with epoch markers
+      Detail: current metrics table (loss, lr, grad_norm, throughput)
+      Footer: ETA, elapsed, epoch progress
+    domain: apr monitor <experiment-dir>
+    codomain: TUI screen
+    invariants:
+    - "Loss curve auto-scales Y axis to data range"
+    - "Epoch boundaries shown as vertical markers"
+    - "Refresh rate configurable (default 1s)"
+    - "Compact mode (--compact) hides detail panel"
+
+  # ── apr experiment view: Experiment Browser ─────────────────────────────
+  experiment_browser:
+    formula: |
+      Primary: experiment/run table (name, status, final_loss, steps)
+      Detail: loss sparkline + hyperparameter table for selected run
+      Footer: run count, best run highlight
+    domain: apr experiment view
+    codomain: TUI screen
+    invariants:
+    - "Table sortable by any column (Tab to change sort key)"
+    - "Loss sparkline uses BrailleGraph for density"
+    - "JSON mode (--json) bypasses TUI entirely"
+    - "Works with SQLite experiment store"
+
+# ============================================================================
+# FALSIFICATION TESTS
+# ============================================================================
+
+falsification_tests:
+- id: FALSIFY-TUI-UX-001
+  rule: layout three zone
+  prediction: "every TUI has header + body + footer"
+  test: |
+    for cmd in "apr tui --help" "apr cbtop --help" "apr monitor --help"; do
+      $cmd 2>&1 | grep -q "Usage:" || exit 1
+    done
+  if_fails: "TUI command not available"
+
+- id: FALSIFY-TUI-UX-002
+  rule: keyboard navigation consistent
+  prediction: "q quits from any TUI command"
+  test: |
+    echo "q" | timeout 5 apr tui /dev/null 2>&1; [ $? -le 1 ]
+  if_fails: "q does not quit TUI"
+
+- id: FALSIFY-TUI-UX-003
+  rule: no ratatui in TUI code
+  prediction: "TUI code uses only presentar_terminal::"
+  test: |
+    ! grep -rq 'use ratatui' crates/apr-cli/src/commands/tui.rs \
+      crates/apr-cli/src/commands/cbtop.rs \
+      crates/apr-cli/src/commands/experiment.rs \
+      crates/apr-cli/src/federation/tui.rs
+  if_fails: "TUI code still imports ratatui"
+
+- id: FALSIFY-TUI-UX-004
+  rule: presentar widget composition
+  prediction: "all TUI widgets are presentar_terminal::widgets::*"
+  test: |
+    grep -rq 'presentar_terminal' crates/apr-cli/src/commands/tui.rs &&
+    grep -rq 'presentar_terminal' crates/apr-cli/src/commands/cbtop.rs
+  if_fails: "TUI not using presentar-terminal widgets"
+
+- id: FALSIFY-TUI-UX-005
+  rule: responsive layout
+  prediction: "TUI handles terminal resize"
+  test: |
+    cargo test -p apr-cli --lib -- tui 2>&1 | grep -q "test result: ok"
+  if_fails: "TUI tests fail"
+
+- id: FALSIFY-TUI-UX-006
+  rule: theme consistency
+  prediction: "no hardcoded ANSI color codes in TUI source"
+  test: |
+    ! grep -rqE 'Color::(Red|Green|Blue|Yellow|Cyan|Magenta|White|Black|DarkGray|LightGray)' \
+      crates/apr-cli/src/commands/tui.rs \
+      crates/apr-cli/src/commands/cbtop.rs
+  if_fails: "TUI uses hardcoded colors instead of theme"
+
+- id: FALSIFY-TUI-UX-007
+  rule: zero ratatui types in TUI rendering
+  prediction: "Frame, Terminal, Block, Borders not from ratatui"
+  test: |
+    ! grep -rqE 'ratatui::(Frame|Terminal|layout|widgets|style|backend|Buffer)' \
+      crates/apr-cli/src/commands/tui.rs \
+      crates/apr-cli/src/commands/cbtop*.rs \
+      crates/apr-cli/src/commands/experiment.rs
+  if_fails: "ratatui types still used in TUI rendering"
+
+- id: FALSIFY-TUI-UX-008
+  rule: headless mode preserved
+  prediction: "apr cbtop --headless --simulated exits 0"
+  test: |
+    apr cbtop --headless --simulated --json 2>&1 | jq .model
+  if_fails: "headless mode broken during TUI migration"
+
+proof_obligations:
+- type: invariant
+  property: "all TUI uses presentar-terminal exclusively"
+- type: invariant
+  property: "consistent 3-zone layout across all commands"
+- type: invariant
+  property: "vim + arrow key navigation works everywhere"
+- type: invariant
+  property: "responsive: 2-col at 80+ width, 1-col below"
+- type: invariant
+  property: "WCAG AA contrast for all text"
+- type: invariant
+  property: "60 FPS frame budget with smart diffing"
+
+verification_summary:
+  total_obligations: 8
+  proven: 0
+  tested: 0
+  status: pending
