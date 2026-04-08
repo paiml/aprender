@@ -1,1694 +1,918 @@
-# APR-BOOK: Provable Machine Learning with Aprender
+# APR-MONO: Sovereign Stack Monorepo Consolidation
 
-**Version**: 3.0
+**Version**: 2.0
 **Date**: 2026-04-08
-**Status**: ZERO-MUDA — every page contract-enforced, no stub content
-**Binary**: `apr` (installed via `cargo install aprender`)
-**Library**: `aprender` (70 workspace crates, `aprender-*` namespace)
-**Schema**: Contract-first — no page exists without `contracts/apr-page-{id}-v1.yaml`
-**Oracle**: `apr oracle --family <FAMILY> --explain` (consulted per page)
-**Rule**: ZERO old names — only `apr` CLI and `aprender-*` crate namespace
+**Status**: COMPLETE — 74 crates, 0 compile failures, 14 integration tests pass
+**Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
+**Priority**: P0 — Unblocks daily apr-cli releases
+**Author**: PAIML Team + Claude
+**Contracts**: `cgp-monorepo-consolidation-v1.yaml`, `cgp-monorepo-build-v1.yaml`, `apr-cli-commands-v1.yaml`, `apr-cli-command-safety-v1.yaml`, `tui-rendering-ux-v1.yaml`, `ratatui-migration-v1.yaml`
+**Falsification**: 13 MONO + 7 BUILD + 7 CLI + 4 RATATUI + 4 CMD-SAFETY = 35 falsification conditions
+**Integration Tests**: `tests/monorepo_invariants.rs` (8 tests), `crates/apr-cli/tests/cli_commands.rs` (6 tests, 56 commands)
+**Tests**: 4,070 apr-cli + 12,975 core + 1,371 contracts = 18,416 passing
+**Contracts**: 522 YAML files, 44 `#[contract]` annotations on CLI commands
+
+### Changes since v1.7
+
+- **ratatui→presentar migration**: COMPLETE (5 phases, 45K lines dead code removed)
+- **CUDA feature gating**: ALL CUDA code behind `#[cfg(feature = "cuda")]` (14 files)
+- **Contract annotations**: 44 `#[contract]` on all CLI commands (GH-686)
+- **`code` command**: Feature-gated in integration tests (was causing false failures)
+- **Workspace**: realizar dep uses workspace path (enables cuda feature forwarding)
 
 ---
 
-## Zero-Muda Book Architecture
+## Architectural Invariant: apr-cli Is THE Binary
 
-**Muda** (無駄) = waste. Any book page without a provable contract is muda.
+**This is a HARD REQUIREMENT. No exceptions.**
 
-### The Iron Rule
+### Rule 1: One Binary, One Entry Point
 
-> **No contract → no page. No example → no page. No falsification → no page.**
+`apr-cli` (binary name: `apr`) is the **only** user-facing CLI binary in the
+monorepo. All functionality — inference, training, serving, profiling,
+orchestration, data management, model registry — is accessed via `apr`
+subcommands. No other crate in the workspace may produce a user-facing binary.
 
-Every `.md` file in `book/src/` MUST have:
-
-1. A **contract YAML** in `contracts/apr-page-{id}-v1.yaml`
-2. A **runnable example** via `cargo run -p aprender-core --example {id}` OR an `#include` of an existing example
-3. A **frontmatter block** linking contract, example, and citations
-4. **Falsification conditions** that can reject the page automatically
-
-Pages that violate any of these are **deleted**, not fixed. The SUMMARY.md is
-regenerated from the contract registry — if a contract doesn't exist, the page
-doesn't appear.
-
-### Page Schema
-
-Every book page is a **Page Contract Unit (PCU)**. A PCU is the atomic unit
-of the book. It cannot be partially complete — it either passes all gates
-or it does not exist.
-
+**Before (7+ binaries across repos):**
 ```
-PCU = Contract YAML + Example .rs + Prose .md
+cargo install batuta        # batuta binary
+cargo install entrenar      # entrenar binary
+cargo install realizar      # realizar binary
+cargo install cbtop         # cbtop binary
+cargo install renacer       # renacer binary
+cargo install presentar     # presentar binary
+cargo install trueno-rag    # trueno-rag binary
 ```
 
-If any component is missing, the PCU is invalid and the page is removed
-from SUMMARY.md.
-
-#### Contract YAML (required)
-
-```yaml
-# contracts/apr-page-{id}-v1.yaml
-contract: apr-page-{id}
-version: 1
-status: enforced  # or "draft" (excluded from book build)
-
-page:
-  id: "{id}"                          # unique, kebab-case
-  title: "{Page Title}"
-  part: "{I|II|III|IV|V|reference}"
-  category: "{chapter|case-study|theory|tool|guide}"
-  path: "book/src/{section}/{file}.md"
-  example: "{example_name}"           # in crates/aprender-core/examples/
-  arxiv: ["{YYMM.NNNNN}", ...]       # empty [] allowed for tool/guide pages
-
-api_calls:                            # REQUIRED for category=chapter|case-study
-  - module: "aprender::{module}"
-    functions: ["{fn1}", "{fn2}"]
-    min_calls: {N}
-
-sections:                             # every H2/H3 heading must be listed
-  - heading: "{Section Title}"
-    has_code: true|false
-    has_assertion: true|false
-    citation: "{arXiv ID or null}"
-
-falsification:
-  - condition: "Page .md file does not exist at declared path"
-    severity: P0
-    action: delete_from_summary
-  - condition: "Example does not compile: cargo build -p aprender-core --example {id}"
-    severity: P0
-    action: delete_from_summary
-  - condition: "Example exits non-zero: cargo run -p aprender-core --example {id}"
-    severity: P0
-    action: delete_from_summary
-  - condition: "Page has zero aprender::* API calls and category requires them"
-    severity: P0
-    action: delete_from_summary
-  - condition: "Section listed in contract but missing from .md"
-    severity: P0
-    action: delete_from_summary
-  - condition: "Section in .md not listed in contract"
-    severity: P0
-    action: delete_section
-  - condition: "Legacy name in page text (trueno|realizar|entrenar|batuta|presentar|renacer)"
-    severity: P0
-    action: delete_from_summary
+**After (1 binary):**
+```
+cargo install aprender      # apr binary — THE entry point (like `cargo install ollama`)
+apr run                     # inference (was: realizar)
+apr train                   # training (was: entrenar)
+apr serve                   # serving (was: realizar serve)
+apr orchestrate             # agents, playbooks (was: batuta)
+apr profile                 # profiling (was: renacer)
+apr monitor                 # GPU/system monitoring (was: cbtop)
+apr rag                     # RAG pipeline (was: trueno-rag)
+apr registry                # model registry (was: pacha)
+apr present                 # TUI dashboards (was: presentar)
+apr test                    # WASM/browser testing (was: probar)
+apr contracts               # provable contracts (was: pv)
 ```
 
-#### Page Markdown (required)
+### Rule 2: Libraries Are Libraries
 
-Every `.md` file MUST begin with a **frontmatter fence** that links to its contract:
+Every `aprender-*` crate is a **library**. They expose `pub fn` APIs consumed
+by `apr-cli` or by external Rust code via `use aprender_compute::*;`.
+They do NOT produce binaries, CLIs, or executables.
 
-```markdown
-<!-- PCU: apr-page-{id} | contract: contracts/apr-page-{id}-v1.yaml -->
-<!-- Example: cargo run -p aprender-core --example {id} -->
-<!-- Status: enforced -->
+Exception: `aprender-contracts-cli` may produce a `pv` binary for standalone
+contract validation (build tooling, not user-facing ML tooling).
 
-# {Page Title}
+### Rule 3: CLI Contract Coverage
 
-## {Section 1 — must match contract.sections[0].heading}
+Every `apr` subcommand MUST have:
 
-{prose — every paragraph must support a contract assertion}
+1. **A provable contract** in `contracts/` defining inputs, outputs, and
+   falsification conditions
+2. **A clap `#[derive(Parser)]`** with `#[command(about = "...")]` doc
+3. **An integration test** in `apr-cli/tests/` verifying the subcommand
+   runs without error
+4. **A cookbook entry** in `cookbook/` showing usage with real models
 
-## {Section 2 — must match contract.sections[1].heading}
-
-...
-```
-
-**Rules for prose:**
-- Every paragraph MUST relate to a section declared in the contract
-- Every code block MUST be `cargo run --example` reproducible
-- Every mathematical claim MUST cite an arXiv paper or be derivable from code
-- Every architecture claim MUST be verified by `apr oracle --family`
-- No "TODO", "TBD", "WIP", "coming soon", or placeholder text
-- No empty sections — if a section has no content, remove it from the contract
-
-#### Example .rs (required)
-
-```
-crates/aprender-core/examples/{id}.rs
-```
-
-Must:
-- Compile: `cargo build -p aprender-core --example {id}`
-- Run with exit 0: `cargo run -p aprender-core --example {id}`
-- Contain `use aprender::*` imports (unless category=guide|tool)
-- End with `println!("{title} contracts: PASSED");`
-- Have `#![allow(clippy::disallowed_methods)]` at line 1
-
-### SUMMARY.md Generation
-
-SUMMARY.md is **generated**, not hand-edited. The source of truth is the
-contract registry:
+**Enforcement**: CI checks that every `Commands` enum variant has a
+matching contract YAML:
 
 ```bash
-# Generate SUMMARY.md from enforced contracts only
-for contract in contracts/apr-page-*-v1.yaml; do
-  STATUS=$(grep "status:" "$contract" | head -1 | awk '{print $2}')
-  [ "$STATUS" != "enforced" ] && continue
-  PATH=$(grep "path:" "$contract" | head -1 | awk '{print $2}' | tr -d '"')
-  TITLE=$(grep "title:" "$contract" | head -1 | sed 's/.*title: *"//' | tr -d '"')
-  [ -f "$PATH" ] || continue
-  echo "- [${TITLE}](${PATH#book/src/})"
-done
-```
+# Extract subcommand names from clap derive
+grep -oP '^\s+(\w+)\s*[{,]' crates/apr-cli/src/commands_enum.rs \
+  | tr -d ' {,' | tr '[:upper:]' '[:lower:]' > /tmp/subcommands.txt
 
-Pages with `status: draft` are **excluded** from the build. This eliminates
-stub pages — a page is either fully contracted and enforced, or it doesn't exist.
-
-### Muda Elimination Gate
-
-```bash
-# CI gate: every .md in book/src/ must have a matching contract
-for md in $(find book/src -name "*.md" -not -name "SUMMARY.md"); do
-  ID=$(head -1 "$md" | grep -oP 'PCU: \K[^ |]+' || echo "")
-  if [ -z "$ID" ]; then
-    echo "MUDA: $md has no PCU frontmatter — DELETE"
-    FAIL=1
-  elif [ ! -f "contracts/apr-page-${ID}-v1.yaml" ]; then
-    echo "MUDA: $md references $ID but contract missing — DELETE"
+# Check each has a contract
+while read cmd; do
+  if ! ls contracts/apr-cli-${cmd}-*.yaml 2>/dev/null | head -1 > /dev/null; then
+    echo "MISSING CONTRACT: apr $cmd"
     FAIL=1
   fi
-done
+done < /tmp/subcommands.txt
 [ -z "$FAIL" ] || exit 1
 ```
 
-### Workflow: Adding a New Page
+### Rule 4: Namespace Discipline
+
+| Pattern | Allowed | Example |
+|---------|---------|---------|
+| `apr <subcommand>` | Yes — user-facing CLI | `apr run model.apr` |
+| `aprender-*` crate name | Yes — library crate | `aprender-compute = "0.29"` |
+| `aprender::*` Rust import | Yes — library API | `use aprender::format::AprFile;` |
+| Standalone binary from `aprender-*` crate | **NO** | ~~`aprender-serve` binary~~ |
+| Old binary names (`batuta`, `entrenar`, etc.) | **NO** (archived) | ~~`cargo install batuta`~~ |
+
+---
+
+### Citations
+
+| # | Reference | Relevance |
+|---|-----------|-----------|
+| [1] | Potvin & Levenberg, "Why Google Stores Billions of Lines of Code in a Single Repository," CACM 59(7), July 2016. DOI: 10.1145/2854146 | Monorepo enables atomic changes, unified tooling. Scale: 2B lines, 45K commits/day. |
+| [2] | Brousse, "The Issue of Monorepo and Polyrepo in Large Enterprises," ACM ICSE Companion 2019, pp. 150-159. DOI: 10.1109/ICSE-Companion.2019.00062 | Taxonomy: monorepo wins for tightly-coupled projects; polyrepo for independent products. |
+| [3] | Brito et al., "On the Use of Monorepos in Open Source Projects," MSR 2023 | Empirical: 377 monorepos, median 8 packages. Motivation: shared deps, atomic changes. |
+| [4] | Rastogi et al., "Dependency Smells in JavaScript Monorepo Projects," ICSME 2023 | Diamond dep elimination is the #1 measurable benefit. Version skew drops to zero. |
+| [5] | PAIML clean-room-spec.md | 9 whack-a-mole patterns, 19 broken publishes from `[patch.crates-io]`. |
+| [6] | PAIML release-system.md | Trusted Publishing, OIDC, tag-triggered releases. |
+| [7] | PAIML unified-ci-pipeline.md | sovereign-ci.yml reusable workflow, 20/20 repos GREEN. |
+
+---
+
+## Executive Summary
+
+Merge **19 repositories** (trueno, aprender, entrenar, realizar, batuta,
+presentar, renacer, certeza, provable-contracts, trueno-{db,graph,rag,viz,zram},
+alimentar, simular, repartir, verificar, probar) into
+a **single `paiml/aprender` monorepo** with ~48 workspace crates under the
+`aprender-*` namespace. This eliminates the cross-repo version sync problem
+that has caused **19 broken crates.io publishes** (paiml/aprender#701) and
+enables daily `apr-cli` releases from a single `cargo publish -p apr-cli`.
+
+### Precedent
+
+Every successful large Rust project uses this pattern:
+
+| Project | Crates | Repo | Pattern |
+|---------|--------|------|---------|
+| Polars | 28 | 1 (`pola-rs/polars`) | `polars-{core,lazy,io,...}` |
+| Burn (ML) | 33 | 1 (`tracel-ai/burn`) | `burn-{tensor,train,wgpu,...}` |
+| Nushell | 30+ | 1 (`nushell/nushell`) | `nu-{cli,command,engine,...}` |
+| DataFusion | 15 | 1 (`apache/datafusion`) | `datafusion-{common,expr,...}` |
+| TiKV | 20+ | 1 (`tikv/tikv`) | `tikv-{client,server,...}` |
+| **PAIML (current)** | **32+** | **5** | **4 namespaces, 19 broken publishes** |
+
+---
+
+## Migration Progress (2026-04-06)
+
+| Phase | Status | Details |
+|-------|--------|---------|
+| Phase 1: Prepare workspace | DONE | `[workspace.package] version = "0.29.0"`, 35+ shared deps |
+| Phase 2a: trueno | DONE | 17 crates flattened to `crates/aprender-*` |
+| Phase 2b: provable-contracts | DONE | 3 crates → `aprender-contracts-*` |
+| Phase 2c: realizar | DONE | 1 crate → `aprender-serve` |
+| Phase 2d: entrenar | DONE | 8 crates → `aprender-train-*` (+1 excluded) |
+| Phase 2e: batuta | DONE | 1 crate → `aprender-orchestrate` |
+| Phase 2f: 14 satellites | DONE | 49 active members, 23 sub-crates pending wiring |
+| Phase 3a: Wire zram deps | DONE | 5 zram crates enabled (54 members) |
+| Phase 3b: Wire presentar deps | DONE | 9 presentar crates enabled (63 members) |
+| Phase 3c: Wire test/probar deps | DONE | 5 test crates + 12 renamed satellites (68 members) |
+| Phase 4a: Compilation verification | DONE | **69/69 compile**, 0 failures |
+| Phase 4b: Integration tests | DONE | 8 invariant tests pass (naming, layout, deps, bins) |
+| Phase 4c: Build provable contract | DONE | `cgp-monorepo-build-v1.yaml` — 7 falsification conditions |
+| Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
+| Phase 5a: Publish pass 1 | DONE | 9/59 published (leaf crates) |
+| Phase 5b: Fix path deps | DONE | Added `version = "0.29.0"` to 56 path deps |
+| Phase 5c: Publish | **DONE** | **`cargo install aprender` WORKS** — v0.29.2 live + 14 shims |
+| Phase 8a: Unified specs | DONE | 395 specs + TOC (463 lines) in root docs/specifications/ |
+| Phase 8b: Crate READMEs | DONE | 70/70 crates have README.md, contract-enforced |
+| Phase 8c: CLI QA skill | DONE | /dogfood skill: 7 gates, 12 protocols, 57 commands |
+| Phase 11a: Fix CI | DONE | Excluded 7 GPU/CUDA crates from workspace-test, lint passes |
+| Phase 11b: Publish manual | DONE | aprender v0.29.0 published to crates.io
+| Phase 9a: Sub-spec accuracy audit | DONE | 26 stale repo refs, 5 apr-cli→aprender fixed |
+| Phase 9b: Run /dogfood skill | DONE | WARN: 55/57 cmds OK, 12/12 protocols pass |
+| Phase 9c: Babysit crates.io publish | DONE | aprender + apr-cli + 48 crates live
+| Phase 9d: Archive repo redirects | DONE | 20/20 repo descriptions updated with redirect |
+| Phase 10: Crate hygiene | DONE | Contract: `crate-hygiene-v1.yaml` (6 equations) |
+| Phase 10a: Banned deps | SCOPED | ratatui in 13 crates (158 stmts) — incremental migration to presentar |
+| Phase 10b: Workspace inheritance | DONE | 17 crates fixed to version.workspace = true |
+| Phase 10c: Dep budget | DONE | 8 crates over budget (orchestrate=60, train=51 — expected) |
+| Phase 10d: Namespace audit | DONE | 867 old `use` stmts compile via [lib] name aliases |
+| Phase 10e: Complexity | DONE | Top cyclomatic = 14 (under 15 budget) |
+| Phase 10f: Dedup deps | AUDITED | 139 multi-version deps; top: trueno 0.16→0.17, criterion 4 versions, arrow 54→57 |
+| Phase 6: Archive old repos | DONE | 20/20 repos archived via GitHub API |
+| Phase 7a: Fix apr-cli lib tests | DONE | 48→0 compile errors, 4,158 pass / 4 contract panics |
+| Phase 7b: Remove config patches | DONE | Zero `[patch.crates-io]`, batuta-common merged, 70 crates |
+| Phase 7c: Update CLAUDE.md | DONE | Updated for monorepo: 70 crates, cargo install aprender, paths |
+| Phase 7d: CI pipeline | DONE | Added workspace-test job (70 crates + integration tests) |
+
+**Current count**: 70 active workspace members, 0 compile failures, 0 `[patch.crates-io]`.
+**Tests**: **25,391 pass, 0 fail** (workspace-wide `cargo test --workspace --lib`).
+**Contracts**: 405 provable contracts merged from all 20 repos into root contracts/.
+**Integration tests**: 14 (8 monorepo invariant + 6 CLI command).
+**Dependencies**: arrow/parquet aligned to v57 across all crates.
+**Excluded**: 4 workspace root shells (viz-ttop, present, test, train-canary).
+
+---
+
+## Previous State (5 repos, 4752 .rs files, 32+ published crates)
+
+### Repository Inventory
+
+| Repo | Files | Version | Published Crates | Role |
+|------|-------|---------|-----------------|------|
+| trueno | 478 | 0.18.0 | 18 (`trueno-*`) | Compute: SIMD, GPU, WASM |
+| aprender | 1179 | 0.27.8 | 4 (`aprender-*`) | ML format, tokenizers, model ops |
+| entrenar | 1052 | 0.7.13 | 7 (`entrenar-*`) | Training loops |
+| realizar | 1499 | 0.8.6 | 1 | Inference server |
+| batuta | 544 | 0.7.3 | 2 | Orchestration, agents, RAG oracle |
+| **Total** | **4752** | — | **32** | — |
+
+### Satellite Crates (separate repos, stack-dependent)
+
+These crates live in their own repos but depend on the core stack:
+
+| Repo | Version | Files | Role | Disposition |
+|------|---------|-------|------|-------------|
+| presentar | 0.3.5 | 1 | TUI framework (workspace) | **MERGE** — core UI for cbtop, batuta |
+| renacer | 0.10.2 | 119 | Profiling/tracing | **MERGE** — used by all 5 core crates |
+| certeza | 0.1.1 | 9 | Quality validation | **MERGE** — tiny, used in CI |
+| trueno-db | 0.3.17 | 27 | Embedded analytics DB | **MERGE** — already trueno-namespaced |
+| trueno-graph | 0.1.18 | 23 | Graph database | **MERGE** — already trueno-namespaced |
+| trueno-rag | 0.2.5 | 42 | RAG pipeline | **MERGE** — already trueno-namespaced |
+| trueno-viz | 0.2.4 | 114 | Visualization | **MERGE** — already trueno-namespaced |
+| trueno-zram | 0.3.1 | 3 | Compressed RAM (workspace) | **MERGE** — already trueno-namespaced |
+| batuta-common | 0.1.0 | 6 | Shared batuta types | **MERGE** — folded into aprender-orchestrate |
+| repartir | 2.0.4 | 23 | Distributed computing | **MERGE** — used by batuta |
+| manzana | 0.1.0 | 10 | Apple hardware interfaces | KEEP SEPARATE — platform-specific |
+| whisper.apr | 0.2.8 | 197 | Whisper speech model | KEEP SEPARATE — application, not framework |
+| alimentar | 0.2.9 | 83 | Data loading/synthetic data | **MERGE** — core data pipeline |
+| simular | 0.3.2 | 93 | Simulation framework | **MERGE** — used by training |
+| verificar | 0.5.0 | 52 | Verification/testing | **MERGE** — used by CI/quality |
+| probar | 1.0.3 | 1 (workspace: 4 crates) | WASM/browser test framework | **MERGE** — depends on trueno+presentar |
+| provable-contracts | 0.2.2 | 1 (workspace: 3 crates) | Contract macros + YAML | **MERGE** — trueno build.rs reads its binding.yaml via path dep |
+| pacha | 0.2.6 | 35 | Model/data registry + lineage | **MERGE** — depends on aprender+trueno-graph |
+
+**Updated totals with satellites:**
+- **Merge into monorepo**: 5 core + 15 satellites = 20 repos
+- **Keep separate**: manzana, whisper.apr, forjar (+ pmat, which is its own product)
+- **Total .rs files**: ~5500+
+- **Total workspace crates**: ~48
+
+### Dependency Graph (Current)
 
 ```
-1. Write contract:  contracts/apr-page-{id}-v1.yaml  (sections, api_calls, falsification)
-2. Write example:   crates/aprender-core/examples/{id}.rs
-3. Compile example: cargo build -p aprender-core --example {id}
-4. Run example:     cargo run -p aprender-core --example {id}
-5. Write prose:     book/src/{section}/{file}.md  (frontmatter, sections match contract)
-6. Falsify:         scripts/book-gate.sh {id}
-7. Regenerate:      scripts/gen-summary.sh > book/src/SUMMARY.md
+apr-cli ──→ aprender ──→ trueno 0.17, trueno-quant
+       ──→ entrenar ──→ trueno 0.17, aprender 0.27, realizar(opt)
+       ──→ realizar ──→ trueno 0.17, trueno-gpu, aprender(opt)
+       ──→ batuta(?) ──→ trueno 0.16, aprender, entrenar, realizar
+       ──→ trueno 0.17, trueno-explain, trueno-viz
 ```
 
-If step 6 fails, go back to step 2. Never ship a page that fails its gate.
+**Problems:**
+1. **Version skew**: trueno is 0.18.0 but all consumers pin 0.17 → diamond deps
+2. **[patch.crates-io]** hacks required during development → leak to publishes
+3. **Publishing order matters**: trueno → aprender → entrenar → realizar → apr-cli (5 sequential publishes, any can break)
+4. **Circular deps**: aprender→trueno, but trueno's inference needs aprender's tokenizer
+5. **19 broken publishes** documented in paiml/aprender#701
 
-### Workflow: Removing a Page
+---
+
+## Architectural Decision: Flat `crates/` Layout
+
+**Decision**: All workspace crates live as direct children of `crates/` with
+`aprender-*` naming. No nesting of sub-crates inside other crates.
+
+**Rationale**: Every successful large Rust monorepo uses this pattern:
+
+| Project | Crates | Layout | Nesting? |
+|---------|--------|--------|----------|
+| Polars [1] | 28 | `crates/*` glob | None |
+| Burn [8] | 33 | `crates/*` glob | None |
+| Nushell [9] | 40+ | `crates/*` explicit | None |
+| DataFusion [10] | 38 | `datafusion/*` explicit | Minimal (proto/gen only) |
+| TiKV | 20+ | `components/*` glob | Some (outlier) |
+
+**Rule**: When importing a repo that itself has sub-crates (e.g., trueno has
+trueno-gpu, trueno-quant, etc.), those sub-crates are **moved to top-level
+`crates/aprender-*`**, not nested under the parent. The subtree merge brings
+the full repo into a staging directory, then sub-crates are moved out and
+renamed.
+
+**Why not nest?** Nested crates create path complexity in `[workspace] members`,
+confuse `cargo metadata`, and violate the expectation that `ls crates/` shows
+all workspace members. Flat layout means `members = ["crates/*"]` works as a
+single glob — no explicit member lists needed.
+
+### Additional Citations
+
+| # | Reference | Relevance |
+|---|-----------|-----------|
+| [8] | Burn ML framework, `tracel-ai/burn`, 33 crates at `crates/burn-*` | Flat layout for ML monorepo with similar scope |
+| [9] | Nushell, `nushell/nushell`, 40+ crates at `crates/nu-*` | Flat layout at scale with explicit member list |
+| [10] | Apache DataFusion, `apache/datafusion`, 38 crates at `datafusion/*` | Flat layout for query engine with minimal exceptions |
+
+---
+
+## Proposed Structure
 
 ```
-1. Delete contract: rm contracts/apr-page-{id}-v1.yaml
-2. Regenerate:      scripts/gen-summary.sh > book/src/SUMMARY.md
-   (page automatically disappears from book)
-3. Optionally delete .md and example (or leave as dead code for later)
+paiml/aprender/                          # THE monorepo
+├── Cargo.toml                           # workspace root
+│   [workspace]
+│   members = ["crates/*"]
+│   [workspace.package]
+│   version = "0.29.0"                   # ALL crates share one version
+│
+├── crates/
+│   │
+│   │ ── User-facing ──
+│   ├── apr-cli/                         # Binary: `apr` command (DAILY releases)
+│   │
+│   │ ── Core ML ──
+│   ├── aprender/                        # ML format (.apr), tokenizers, model ops
+│   ├── aprender-train/                  # Was: entrenar (training loops)
+│   ├── aprender-serve/                  # Was: realizar (inference server)
+│   ├── aprender-orchestrate/            # Was: batuta (agents, RAG oracle, playbooks)
+│   │
+│   │ ── Compute primitives ──
+│   ├── aprender-compute/                # Was: trueno (SIMD/GPU/WASM core)
+│   ├── aprender-gpu/                    # Was: trueno-gpu (CUDA PTX, no nvcc)
+│   ├── aprender-quant/                  # Was: trueno-quant
+│   ├── aprender-gemm-codegen/           # Was: trueno-gemm-codegen
+│   ├── aprender-inference/              # Was: trueno src/inference/ (GGUF, LlamaModel)
+│   │
+│   │ ── Data & Storage ──
+│   ├── aprender-db/                     # Was: trueno-db
+│   ├── aprender-rag/                    # Was: trueno-rag
+│   ├── aprender-graph/                  # Was: trueno-graph
+│   │
+│   │ ── Visualization & Tooling ──
+│   ├── aprender-viz/                    # Was: trueno-viz
+│   ├── aprender-explain/                # Was: trueno-explain
+│   ├── aprender-profile/               # Was: renacer (profiling/tracing)
+│   ├── aprender-present/               # Was: presentar (TUI framework)
+│   ├── aprender-shell/                  # REPL (already in aprender)
+│   ├── aprender-verify/                # Was: certeza (quality validation)
+│   │
+│   │ ── Training sub-crates ──
+│   ├── aprender-train-common/           # Was: entrenar-common
+│   ├── aprender-train-lora/             # Was: entrenar-lora
+│   │
+│   │ ── Data & Simulation ──
+│   ├── aprender-data/                   # Was: alimentar (data loading, synthetic data)
+│   ├── aprender-simulate/              # Was: simular (simulation framework)
+│   ├── aprender-distribute/            # Was: repartir (distributed computing)
+│   │
+│   │ ── Edge / Specialized ──
+│   ├── aprender-cuda-edge/              # Was: trueno-cuda-edge
+│   ├── aprender-zram/                   # Was: trueno-zram-core + trueno-zram-adaptive
+│   ├── aprender-fft/                    # Was: trueno-fft
+│   ├── aprender-sparse/                 # Was: trueno-sparse
+│   ├── aprender-solve/                  # Was: trueno-solve
+│   ├── aprender-rand/                   # Was: trueno-rand
+│   ├── aprender-image/                  # Was: trueno-image
+│   ├── aprender-tensor/                 # Was: trueno-tensor
+│   │
+│   │ ── Benchmarks & Testing ──
+│   ├── aprender-bench-tokenizer/        # Already in aprender
+│   ├── aprender-bench-compute/          # Already in aprender
+│   └── aprender-tsp/                    # Already in aprender
+│
+├── contracts/                           # ALL provable contracts (merged)
+├── book/                                # Unified mdbook documentation
+├── cookbook/                             # apr-cookbook (merged in)
+└── docs/specifications/                 # Specs (merged)
 ```
 
-### Category Definitions
+### Crate Count: ~42 workspace members
 
-| Category | api_calls required? | Example required? | arXiv required? |
-|----------|--------------------|--------------------|-----------------|
-| `chapter` | YES | YES — real API exercise | YES — at least 1 per section |
-| `case-study` | YES | YES — full working example | NO |
-| `theory` | NO | NO (but recommended) | YES — primary source |
-| `tool` | NO | YES — CLI demo | NO |
-| `guide` | NO | Optional | NO |
+Comparable to Polars (28), Burn (33), Nushell (30+). Slightly larger
+but includes infrastructure that Polars gets from external deps
+(we own the full stack: DB, graph, profiler, TUI, distributed compute).
 
-### Oracle Protocol
+---
 
-Pages with `category: chapter` that reference model architectures MUST:
+## Backward Compatibility
+
+### Re-export shim crates
+
+Old crate names continue to work via thin re-export crates:
+
+```rust
+// trueno/src/lib.rs (published as trueno 0.19.0)
+//! trueno is now aprender-compute. This crate re-exports for backward compatibility.
+pub use aprender_compute::*;
+```
+
+Same for `entrenar`, `realizar`, `batuta`, and all `trueno-*` sub-crates.
+These shim crates are ~5 lines each, maintained indefinitely, never change.
+
+### For existing users
+
+| Current dependency | Migration |
+|-------------------|-----------|
+| `trueno = "0.18"` | Works forever (shim re-exports aprender-compute) |
+| `aprender = "0.27"` | `aprender = "0.29"` (same crate, new version) |
+| `entrenar = "0.7"` | `aprender-train = "0.29"` or keep `entrenar = "0.8"` (shim) |
+| `realizar = "0.8"` | `aprender-serve = "0.29"` or keep `realizar = "0.9"` (shim) |
+| `batuta = "0.7"` | `aprender-orchestrate = "0.29"` or keep `batuta = "0.8"` (shim) |
+
+---
+
+## Migration Plan
+
+### Phase 1: Prepare (1 day)
+
+1. Create `paiml/aprender` branch `monorepo-consolidation`
+2. Add `crates/` directories for new workspace members
+3. Set up `[workspace.package] version = "0.29.0"`
+4. Set up `[workspace.dependencies]` for all shared deps (like Polars does)
+
+### Phase 2: Move source (2 days)
+
+For each repo (trueno, entrenar, realizar, batuta):
 
 ```bash
-apr oracle --family {family} --explain --stats
+# Preserve git history with subtree merge
+git subtree add --prefix=crates/aprender-compute \
+  git@github.com:paiml/trueno.git main
 ```
 
-And embed oracle output as assertions in the contract:
+Then:
+- Rename `[package] name` in each moved Cargo.toml
+- Update internal `use trueno::` → `use aprender_compute::`
+- Update internal path deps to workspace-relative
 
-```yaml
-oracle_verified:
-  - family: qwen2
-    claim: "GQA ratio 0.14 reduces KV cache by 86%"
-    verified_by: "apr oracle --family qwen2 --size 0.5b --stats"
+### Phase 3: Wire workspace deps (1 day)
+
+Replace all version-pinned cross-crate deps with workspace paths:
+
+```toml
+# Before (in entrenar/Cargo.toml):
+trueno = { version = "0.17", features = ["parallel"] }
+aprender = { version = "0.27" }
+
+# After (in crates/aprender-train/Cargo.toml):
+aprender-compute = { path = "../aprender-compute", features = ["parallel"] }
+aprender = { path = "../aprender" }
 ```
 
----
+### Phase 4: Publish & Shim (1 day)
 
-## Book Structure
+1. Publish all `aprender-*` crates from the monorepo in topological order
+2. Publish shim crates for old names (see Phase 4a below)
+3. Verify `cargo install aprender` works from crates.io
+4. Post-publish smoke test: `cargo install aprender --force` on clean machine
 
-### Part I: Foundations
+#### Phase 4a: Shim Crate Publishing
 
-#### Chapter 1 — Why Rust for Machine Learning
-
-**Example**: `cargo run -p aprender-core --example ch01_hello_apr`
-**Contract**: `contracts/apr-book-ch01-v1.yaml`
-**Oracle**: N/A (foundational, no architecture claims)
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 1.1 | The case for systems ML | Rajbhandari et al., "ZeRO: Memory Optimizations Toward Training Trillion Parameter Models," arXiv:1910.02054 |
-| 1.2 | Ownership, borrowing, and tensor safety | Jung et al., "RustBelt: Securing the Foundations of the Rust Programming Language," arXiv:1903.00982 |
-| 1.3 | Installing aprender: `cargo install aprender` | — |
-| 1.4 | First model: `apr run hf://Qwen/Qwen2.5-0.5B` | Qwen Team, "Qwen2 Technical Report," arXiv:2407.10671 |
-| 1.5 | The `apr` CLI: 57 commands, one binary | Potvin & Levenberg, "Why Google Stores Billions of Lines of Code in a Single Repository," CACM 2016 |
+Each old crate name gets a final version that re-exports the new name:
 
 ```rust
-// examples/ch01_hello_apr.rs
-use aprender::linear::LinearRegression;
-use aprender::traits::Estimator;
-
-fn main() {
-    let x = vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0]];
-    let y = vec![2.1, 3.9, 6.1, 8.0];
-    let model = LinearRegression::new().fit(&x, &y).unwrap();
-    let pred = model.predict(&[vec![5.0]]).unwrap();
-    println!("Prediction for x=5: {:.2}", pred[0]);
-    assert!((pred[0] - 10.0).abs() < 0.5, "Linear fit sanity check");
-}
+// trueno 0.19.0/src/lib.rs — published to crates.io
+//! `trueno` has moved to `aprender-compute`.
+//! This crate re-exports `aprender-compute` for backward compatibility.
+//! New code should depend on `aprender-compute` directly.
+pub use aprender_compute::*;
 ```
 
----
+```toml
+# trueno 0.19.0/Cargo.toml
+[package]
+name = "trueno"
+version = "0.19.0"
+description = "DEPRECATED: Use aprender-compute instead. This crate re-exports aprender-compute."
+repository = "https://github.com/paiml/aprender"
+keywords = ["deprecated", "moved"]
 
-#### Chapter 2 — Tensor Computation with aprender-compute
-
-**Example**: `cargo run -p aprender-core --example ch02_tensors`
-**Contract**: `contracts/apr-book-ch02-v1.yaml`
-**Oracle**: N/A (compute primitives)
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 2.1 | SIMD-accelerated vector operations | Khudia et al., "FBGEMM: Enabling High-Performance Low-Precision Deep Learning Inference," arXiv:2101.05615 |
-| 2.2 | Row-major layout contract (LAYOUT-001) | — (internal contract: `contracts/tensor-layout-v1.yaml`) |
-| 2.3 | Quantized formats: Q4K, Q5K, Q6K, Q8 | Dettmers et al., "GPTQ: Accurate Post-Training Quantization for Generative Pre-Trained Transformers," arXiv:2210.17323 |
-| 2.4 | Backend dispatch: CPU → GPU → WASM | Li et al., "TVM: An Automated End-to-End Optimizing Compiler for Deep Learning," arXiv:1802.04799 |
-| 2.5 | Fused kernel operations | Dao et al., "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness," arXiv:2205.14135 |
-
-```rust
-// examples/ch02_tensors.rs
-use aprender::primitives::{Vector, Matrix};
-
-fn main() {
-    let a = Vector::from(vec![1.0_f32, 2.0, 3.0, 4.0]);
-    let b = Vector::from(vec![5.0_f32, 6.0, 7.0, 8.0]);
-    let dot = a.dot(&b);
-    println!("dot(a, b) = {dot}");
-    assert!((dot - 70.0).abs() < 1e-6, "dot product contract");
-
-    let m = Matrix::from_rows(vec![
-        vec![1.0, 2.0],
-        vec![3.0, 4.0],
-    ]);
-    let v = Vector::from(vec![1.0, 1.0]);
-    let result = m.matvec(&v);
-    println!("M @ v = {:?}", result.as_slice());
-    assert!((result.as_slice()[0] - 3.0).abs() < 1e-6, "matvec contract");
-}
+[dependencies]
+aprender-compute = "0.29"
 ```
 
----
+Repeat for all 19+ old crate names (see Appendix A).
+Shim crates are ~10 lines each. Publish once, never update again.
 
-#### Chapter 3 — The APR Model Format
+### Phase 5: Archive Old Repositories (1 day)
 
-**Example**: `cargo run -p aprender-core --example ch03_apr_format`
-**Contract**: `contracts/apr-book-ch03-v1.yaml`
-**Oracle**: `apr oracle --family qwen2 --tensors`
+For each of the 19 merged repositories:
 
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 3.1 | APR binary format: magic bytes, header, tensors | Safronov et al., "SafeTensors: A Simple and Safe Way to Store and Distribute Tensors," HuggingFace 2023 |
-| 3.2 | GGUF interop: import, export, transpose | Gerganov, "GGML: Tensor Library for Machine Learning," 2023 |
-| 3.3 | SafeTensors loading and sharded index | Safronov et al. (ibid.) |
-| 3.4 | Layout contract enforcement | — (internal: `contracts/tensor-layout-v1.yaml`) |
-| 3.5 | `apr validate`, `apr lint`, `apr inspect` | — |
-| 3.6 | Format conversion: `apr convert`, `apr export`, `apr import` | — |
+#### 5a. Update README with redirect
 
-```rust
-// examples/ch03_apr_format.rs
-use aprender::format::{AprHeader, AprVersion};
+```markdown
+# ⚠️ This repository has moved
 
-fn main() {
-    let header = AprHeader {
-        magic: *b"APR\0",
-        version: AprVersion::V2,
-        ..Default::default()
-    };
-    println!("APR format version: {:?}", header.version);
-    assert_eq!(&header.magic, b"APR\0", "Magic bytes contract: APR\\0");
-    println!("Format contract: PASSED");
-}
+**This project is now part of the [aprender monorepo](https://github.com/paiml/aprender).**
+
+- New location: `paiml/aprender/crates/aprender-compute/` (was `paiml/trueno`)
+- New crate name: `aprender-compute` (old name `trueno` still works via re-export)
+- Issues: File at [paiml/aprender/issues](https://github.com/paiml/aprender/issues)
+
+## For existing users
+
+```toml
+# This still works (re-export shim):
+trueno = "0.19"
+
+# Preferred (direct dependency):
+aprender-compute = "0.29"
+```
 ```
 
----
-
-### Part II: Classical Machine Learning
-
-#### Chapter 4 — Supervised Learning
-
-**Example**: `cargo run -p aprender-core --example ch04_supervised`
-**Contract**: `contracts/apr-book-ch04-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 4.1 | Linear regression with closed-form solution | — (Gauss 1809, not arXiv) |
-| 4.2 | Logistic regression and gradient descent | Ruder, "An Overview of Gradient Descent Optimization Algorithms," arXiv:1609.04747 |
-| 4.3 | Support vector machines | Cortes & Vapnik, "Support-Vector Networks," 1995; Platt, "Fast Training of SVMs Using Sequential Minimal Optimization," 1998 |
-| 4.4 | K-nearest neighbors | Cover & Hart, "Nearest Neighbor Pattern Classification," 1967 |
-| 4.5 | Decision trees and information gain | Quinlan, "Induction of Decision Trees," 1986 |
-| 4.6 | Naive Bayes classifiers | Zhang, "The Optimality of Naive Bayes," FLAIRS 2004 |
-| 4.7 | The `Estimator` trait: `fit`, `predict`, `score` | Pedregosa et al., "Scikit-learn: ML in Python," arXiv:1201.0490 |
-
-```rust
-// examples/ch04_supervised.rs
-use aprender::linear::LogisticRegression;
-use aprender::tree::DecisionTreeClassifier;
-use aprender::neighbors::KNNClassifier;
-use aprender::traits::Estimator;
-use aprender::metrics::accuracy_score;
-
-fn main() {
-    // XOR-like dataset
-    let x = vec![
-        vec![0.0, 0.0], vec![0.0, 1.0],
-        vec![1.0, 0.0], vec![1.0, 1.0],
-    ];
-    let y = vec![0.0, 1.0, 1.0, 0.0];
-
-    // Decision tree can learn XOR
-    let tree = DecisionTreeClassifier::new(Some(2))
-        .fit(&x, &y).unwrap();
-    let preds = tree.predict(&x).unwrap();
-    let acc = accuracy_score(&y, &preds);
-    println!("DecisionTree accuracy on XOR: {acc:.0}%");
-    assert!(acc >= 1.0, "Decision tree must solve XOR perfectly");
-
-    // KNN with k=1 also solves XOR
-    let knn = KNNClassifier::new(1)
-        .fit(&x, &y).unwrap();
-    let preds = knn.predict(&x).unwrap();
-    println!("KNN(k=1) accuracy on XOR: {:.0}%", accuracy_score(&y, &preds));
-}
-```
-
----
-
-#### Chapter 5 — Unsupervised Learning
-
-**Example**: `cargo run -p aprender-core --example ch05_unsupervised`
-**Contract**: `contracts/apr-book-ch05-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 5.1 | K-means clustering | Arthur & Vassilvitskii, "k-means++: The Advantages of Careful Seeding," 2007 |
-| 5.2 | Principal component analysis (PCA) | Halko et al., "Finding Structure with Randomness: Probabilistic Algorithms for Constructing Approximate Matrix Decompositions," arXiv:0909.4061 |
-| 5.3 | Independent component analysis (ICA) | Hyvarinen & Oja, "Independent Component Analysis: Algorithms and Applications," 2000 |
-| 5.4 | The `UnsupervisedEstimator` and `Transformer` traits | Pedregosa et al. (ibid.) |
-
-```rust
-// examples/ch05_unsupervised.rs
-use aprender::cluster::KMeans;
-use aprender::decomposition::PCA;
-use aprender::traits::{UnsupervisedEstimator, Transformer};
-
-fn main() {
-    // Two obvious clusters
-    let data = vec![
-        vec![1.0, 1.0], vec![1.1, 0.9], vec![0.9, 1.1],
-        vec![5.0, 5.0], vec![5.1, 4.9], vec![4.9, 5.1],
-    ];
-
-    let kmeans = KMeans::new(2).fit(&data).unwrap();
-    let labels = kmeans.predict(&data).unwrap();
-    println!("KMeans labels: {labels:?}");
-    // Points 0-2 should share a label, 3-5 should share another
-    assert_eq!(labels[0], labels[1], "Cluster coherence contract");
-    assert_ne!(labels[0], labels[3], "Cluster separation contract");
-
-    // PCA: 2D → 1D
-    let pca = PCA::new(1).fit(&data).unwrap();
-    let reduced = pca.transform(&data).unwrap();
-    println!("PCA 2D→1D: {} samples, {} components", reduced.len(), reduced[0].len());
-    assert_eq!(reduced[0].len(), 1, "PCA dimensionality contract");
-}
-```
-
----
-
-#### Chapter 6 — Ensemble Methods
-
-**Example**: `cargo run -p aprender-core --example ch06_ensembles`
-**Contract**: `contracts/apr-book-ch06-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 6.1 | Random forests and bagging | Breiman, "Random Forests," Machine Learning 45(1), 2001 |
-| 6.2 | Gradient boosting machines | Friedman, "Greedy Function Approximation: A Gradient Boosting Machine," 2001; Chen & Guestrin, "XGBoost," arXiv:1603.02754 |
-| 6.3 | Bias-variance tradeoff in ensembles | Geman et al., "Neural Networks and the Bias/Variance Dilemma," 1992 |
-
-```rust
-// examples/ch06_ensembles.rs
-use aprender::ensemble::{RandomForestClassifier, GradientBoostedClassifier};
-use aprender::traits::Estimator;
-use aprender::metrics::accuracy_score;
-
-fn main() {
-    // Simple classification dataset
-    let x = vec![
-        vec![1.0, 2.0], vec![2.0, 3.0], vec![3.0, 1.0],
-        vec![6.0, 5.0], vec![7.0, 8.0], vec![8.0, 6.0],
-    ];
-    let y = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-
-    let rf = RandomForestClassifier::new(10, Some(42))
-        .fit(&x, &y).unwrap();
-    let preds = rf.predict(&x).unwrap();
-    let acc = accuracy_score(&y, &preds);
-    println!("RandomForest accuracy: {acc:.2}");
-    assert!(acc >= 0.8, "RF training accuracy contract");
-
-    let gbm = GradientBoostedClassifier::new(10, 0.1)
-        .fit(&x, &y).unwrap();
-    let preds = gbm.predict(&x).unwrap();
-    println!("GBM accuracy: {:.2}", accuracy_score(&y, &preds));
-}
-```
-
----
-
-#### Chapter 7 — Model Selection and Evaluation
-
-**Example**: `cargo run -p aprender-core --example ch07_model_selection`
-**Contract**: `contracts/apr-book-ch07-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 7.1 | Train/test splits and cross-validation | Kohavi, "A Study of Cross-Validation and Bootstrap," IJCAI 1995 |
-| 7.2 | Metrics: accuracy, precision, recall, F1, AUC | Davis & Goadrich, "The Relationship Between Precision-Recall and ROC Curves," arXiv:0606.0041 (ICML 2006) |
-| 7.3 | Confusion matrices and classification reports | — |
-| 7.4 | Hyperparameter tuning | Bergstra & Bengio, "Random Search for Hyper-Parameter Optimization," JMLR 2012 |
-| 7.5 | Statistical significance testing | Demsar, "Statistical Comparisons of Classifiers over Multiple Data Sets," JMLR 2006 |
-
-```rust
-// examples/ch07_model_selection.rs
-use aprender::model_selection::{train_test_split, cross_val_score};
-use aprender::metrics::{accuracy_score, confusion_matrix};
-use aprender::linear::LogisticRegression;
-
-fn main() {
-    let x = vec![
-        vec![1.0], vec![2.0], vec![3.0], vec![4.0],
-        vec![5.0], vec![6.0], vec![7.0], vec![8.0],
-    ];
-    let y = vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
-
-    let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.25, Some(42));
-    println!("Train: {} samples, Test: {} samples", x_train.len(), x_test.len());
-    assert_eq!(x_train.len() + x_test.len(), x.len(), "Split conservation contract");
-
-    let cm = confusion_matrix(&y, &y); // perfect self-comparison
-    println!("Confusion matrix (self): {:?}", cm);
-}
-```
-
----
-
-### Part III: Deep Learning and Large Language Models
-
-#### Chapter 8 — Transformer Architecture
-
-**Example**: `cargo run -p aprender-core --example ch08_transformer`
-**Contract**: `contracts/apr-book-ch08-v1.yaml`
-**Oracle**: `apr oracle --family qwen2 --explain --stats`
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 8.1 | Self-attention and multi-head attention | Vaswani et al., "Attention Is All You Need," arXiv:1706.03762 |
-| 8.2 | Grouped-query attention (GQA) | Ainslie et al., "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints," arXiv:2305.13245 |
-| 8.3 | Rotary position embeddings (RoPE) | Su et al., "RoFormer: Enhanced Transformer with Rotary Position Embedding," arXiv:2104.09864 |
-| 8.4 | SwiGLU feed-forward networks | Shazeer, "GLU Variants Improve Transformer," arXiv:2002.05202 |
-| 8.5 | RMSNorm vs LayerNorm | Zhang & Sennrich, "Root Mean Square Layer Normalization," arXiv:1910.07467 |
-| 8.6 | KV cache and memory budgets | Pope et al., "Efficiently Scaling Transformer Inference," arXiv:2211.05102 |
-| 8.7 | Oracle-verified architecture constraints | — (runtime: `apr oracle --family {family} --compliance`) |
-
-```rust
-// examples/ch08_transformer.rs
-// Demonstrates architecture parameters verified by apr oracle
-
-fn main() {
-    // Qwen2-7B architecture (from: apr oracle --family qwen2 --size 7b --stats)
-    struct TransformerConfig {
-        hidden_dim: usize,
-        num_layers: usize,
-        num_heads: usize,
-        num_kv_heads: usize,
-        intermediate_dim: usize,
-        head_dim: usize,
-        rope_theta: f64,
-    }
-
-    let qwen2_7b = TransformerConfig {
-        hidden_dim: 3584,
-        num_layers: 28,
-        num_heads: 28,
-        num_kv_heads: 4,
-        intermediate_dim: 18944,
-        head_dim: 128,
-        rope_theta: 1_000_000.0,
-    };
-
-    // GQA ratio contract (Ainslie et al., 2023)
-    let gqa_ratio = qwen2_7b.num_kv_heads as f64 / qwen2_7b.num_heads as f64;
-    let kv_reduction = 1.0 - gqa_ratio;
-    println!("GQA ratio: {gqa_ratio:.2} → {:.0}% KV cache reduction", kv_reduction * 100.0);
-    assert!(kv_reduction > 0.5, "GQA must reduce KV cache by >50%");
-
-    // SwiGLU expansion ratio (Shazeer, 2020)
-    let ffn_ratio = qwen2_7b.intermediate_dim as f64 / qwen2_7b.hidden_dim as f64;
-    println!("SwiGLU expansion: {ffn_ratio:.2}x (compensates for gating bottleneck)");
-    assert!(ffn_ratio > 2.0, "SwiGLU expansion must exceed 2x");
-
-    // Head dimension contract
-    assert_eq!(
-        qwen2_7b.hidden_dim,
-        qwen2_7b.num_heads * qwen2_7b.head_dim,
-        "hidden_dim = num_heads * head_dim"
-    );
-
-    // KV cache budget (Pope et al., 2022)
-    let ctx_len: usize = 4096;
-    let kv_bytes = 2 * qwen2_7b.num_layers * qwen2_7b.num_kv_heads
-        * qwen2_7b.head_dim * ctx_len * 2; // 2 bytes per f16
-    let kv_mb = kv_bytes as f64 / (1024.0 * 1024.0);
-    println!("KV cache at {ctx_len} context: {kv_mb:.0} MB");
-
-    println!("All transformer contracts: PASSED");
-}
-```
-
----
-
-#### Chapter 9 — Inference with aprender-serve
-
-**Example**: `cargo run -p aprender-core --example ch09_inference --features inference`
-**Contract**: `contracts/apr-book-ch09-v1.yaml`
-**Oracle**: `apr oracle --family llama --kernels`
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 9.1 | Quantization theory: Q4K, Q5K, Q6K, Q8 | Dettmers et al., "LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale," arXiv:2208.07339 |
-| 9.2 | Fused dequant+matmul kernels | Dao et al., "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning," arXiv:2307.08691 |
-| 9.3 | FFN gate+up kernel fusion | Shazeer, "Fast Transformer Decoding: One Write-Head is All You Need," arXiv:1911.02150 |
-| 9.4 | PagedAttention KV cache | Kwon et al., "Efficient Memory Management for Large Language Model Serving with PagedAttention," arXiv:2309.06180 |
-| 9.5 | Batched prefill vs autoregressive decode | Ainslie et al. (ibid.); Pope et al. (ibid.) |
-| 9.6 | `apr run`: end-to-end inference | — |
-| 9.7 | Performance targets: Ollama parity | — (internal: `contracts/apr-cli-qa-v1.yaml`) |
-
-```rust
-// examples/ch09_inference.rs
-// NOTE: requires --features inference and a downloaded model
-
-fn main() {
-    #[cfg(feature = "inference")]
-    {
-        println!("Inference example requires a model file.");
-        println!("Usage: apr run hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF --prompt 'What is 2+2?'");
-        println!();
-        println!("Performance targets (from apr oracle):");
-        println!("  1B Q4K: 100+ tok/s CPU, 500+ tok/s GPU");
-        println!("  7B Q4K:  30+ tok/s CPU, 150+ tok/s GPU");
-    }
-    #[cfg(not(feature = "inference"))]
-    {
-        println!("Compile with --features inference to enable this example.");
-        println!("The aprender-serve crate provides the inference engine.");
-    }
-    println!("Contract: inference uses aprender-serve, NEVER aprender-core");
-}
-```
-
----
-
-#### Chapter 10 — Training with aprender-train
-
-**Example**: `cargo run -p aprender-core --example ch10_training --features training`
-**Contract**: `contracts/apr-book-ch10-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 10.1 | Backpropagation and autograd | Baydin et al., "Automatic Differentiation in Machine Learning: A Survey," arXiv:1502.05767 |
-| 10.2 | AdamW optimizer | Loshchilov & Hutter, "Decoupled Weight Decay Regularization," arXiv:1711.05101 |
-| 10.3 | LoRA: Low-Rank Adaptation | Hu et al., "LoRA: Low-Rank Adaptation of Large Language Models," arXiv:2106.09685 |
-| 10.4 | QLoRA: Quantized fine-tuning | Dettmers et al., "QLoRA: Efficient Finetuning of Quantized Large Language Models," arXiv:2305.14314 |
-| 10.5 | Learning rate schedules: cosine, warmup | Loshchilov & Hutter, "SGDR: Stochastic Gradient Descent with Warm Restarts," arXiv:1608.03983 |
-| 10.6 | Mixed-precision training | Micikevicius et al., "Mixed Precision Training," arXiv:1710.03740 |
-| 10.7 | `apr train` and `apr finetune` CLI | — |
-
-```rust
-// examples/ch10_training.rs
-fn main() {
-    // Training architecture contract
-    println!("Training pipeline (aprender-train):");
-    println!("  1. Data loading   → aprender-data");
-    println!("  2. Forward pass   → aprender-core (autograd)");
-    println!("  3. Loss compute   → aprender-core (losses)");
-    println!("  4. Backward pass  → aprender-core (autograd)");
-    println!("  5. Optimizer step → aprender-train (AdamW)");
-    println!("  6. Checkpoint     → APR format (aprender-core)");
-    println!();
-    println!("LoRA (Hu et al., 2021): rank-r decomposition");
-    println!("  W' = W + BA where B ∈ R^(d×r), A ∈ R^(r×k), r << min(d,k)");
-    println!("  Trainable params: r*(d+k) vs d*k full fine-tune");
-
-    let d = 4096_usize;
-    let k = 4096_usize;
-    let r = 16_usize;
-    let full_params = d * k;
-    let lora_params = r * (d + k);
-    let ratio = lora_params as f64 / full_params as f64;
-    println!("  d={d}, k={k}, r={r}: {lora_params} vs {full_params} ({:.2}%)", ratio * 100.0);
-    assert!(ratio < 0.01, "LoRA must use <1% of full params at rank 16");
-}
-```
-
----
-
-#### Chapter 11 — Model Formats and Conversion
-
-**Example**: `cargo run -p aprender-core --example ch11_formats`
-**Contract**: `contracts/apr-book-ch11-v1.yaml`
-**Oracle**: `apr oracle --family qwen2 --tensors`
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 11.1 | GGUF format: block quantization | Frantar et al., "GPTQ: Accurate Post-Training Quantization," arXiv:2210.17323 |
-| 11.2 | SafeTensors: zero-copy, sharded | — (HuggingFace, 2023) |
-| 11.3 | APR native format: row-major contract | — (internal: `contracts/tensor-layout-v1.yaml`) |
-| 11.4 | `apr convert`: quantize, dequantize, transpose | Lin et al., "AWQ: Activation-aware Weight Quantization," arXiv:2306.00978 |
-| 11.5 | `apr import` vs `apr convert` architecture | — |
-| 11.6 | `apr export --format gguf` | — |
-| 11.7 | Sharded SafeTensors index resolution | — |
-
-```rust
-// examples/ch11_formats.rs
-fn main() {
-    // Format contract: APR is ALWAYS row-major
-    // GGUF col-major data is transposed at import boundary
-    println!("Tensor layout contract (LAYOUT-001):");
-    println!("  GGUF [ne0, ne1] col-major → transpose → APR [rows, cols] row-major");
-    println!("  SafeTensors native → APR [rows, cols] row-major");
-    println!();
-
-    // Shape reversal contract
-    let gguf_shape = [4096_usize, 11008]; // [ne0, ne1] in GGUF
-    let apr_shape = [gguf_shape[1], gguf_shape[0]]; // [rows, cols] in APR
-    println!("GGUF shape: {:?} → APR shape: {:?}", gguf_shape, apr_shape);
-    assert_eq!(apr_shape[0], 11008, "Rows = ne1");
-    assert_eq!(apr_shape[1], 4096, "Cols = ne0");
-
-    // APR magic bytes contract
-    let magic_v2 = b"APR\0";
-    let magic_v1 = b"APRN";
-    println!("Magic bytes: v2={:?}, v1={:?}", magic_v2, magic_v1);
-
-    // Import is passthrough, convert is transformation
-    println!();
-    println!("Architecture contract:");
-    println!("  apr import = PASSTHROUGH ONLY (F32, F16, Q4_K, Q6_K)");
-    println!("  apr convert = TRANSFORMATIONS (quantize, dequantize, layout change)");
-}
-```
-
----
-
-### Part IV: Production Systems
-
-#### Chapter 12 — Serving and Deployment
-
-**Example**: `cargo run -p aprender-core --example ch12_serving --features inference`
-**Contract**: `contracts/apr-book-ch12-v1.yaml`
-**Oracle**: `apr oracle --family llama --kernels`
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 12.1 | HTTP inference server: `apr serve` | — |
-| 12.2 | Continuous batching | Yu et al., "ORCA: A Distributed Serving System for Transformer-Based Generative Models," OSDI 2022 |
-| 12.3 | Speculative decoding | Leviathan et al., "Fast Inference from Transformers via Speculative Decoding," arXiv:2211.17192 |
-| 12.4 | Token streaming and SSE | — |
-| 12.5 | Model warm-up and caching | — |
-| 12.6 | GPU memory management | Kwon et al. (ibid.) |
-
-```rust
-// examples/ch12_serving.rs
-fn main() {
-    println!("Serving architecture (aprender-serve):");
-    println!("  apr serve model.gguf --port 8080");
-    println!();
-    println!("Endpoints:");
-    println!("  POST /v1/completions     — OpenAI-compatible");
-    println!("  POST /v1/chat/completions — Chat completions");
-    println!("  GET  /health              — Health check");
-    println!();
-    println!("Performance contract:");
-    println!("  - Model loaded ONCE at startup (cached)");
-    println!("  - KV cache reused across requests in session");
-    println!("  - GPU model creation is expensive → NEVER per-request");
-    println!();
-    println!("Contract: aprender-serve handles ALL inference/serving");
-    println!("Contract: aprender-core is for TRAINING ONLY");
-}
-```
-
----
-
-#### Chapter 13 — Profiling and Optimization
-
-**Example**: `cargo run -p aprender-core --example ch13_profiling`
-**Contract**: `contracts/apr-book-ch13-v1.yaml`
-**Oracle**: `apr oracle --family qwen2 --kernels`
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 13.1 | Roofline analysis | Williams et al., "Roofline: An Insightful Visual Performance Model," CACM 2009 |
-| 13.2 | `apr profile`: memory vs compute bound | — |
-| 13.3 | `apr trace`: layer-by-layer timing | — |
-| 13.4 | `apr bench`: throughput measurement | — |
-| 13.5 | FFN gate+up fusion: halving rayon dispatches | — (internal: PMAT-FFN-FUSION) |
-| 13.6 | Batched prefill: 8.2x speedup | — |
-| 13.7 | Memory bandwidth optimization | Ivanov et al., "Data Movement Is All You Need," arXiv:2007.00072 |
-
-```rust
-// examples/ch13_profiling.rs
-fn main() {
-    println!("Profiling tools (aprender-profile):");
-    println!("  apr profile model.gguf    — Roofline analysis");
-    println!("  apr trace model.gguf      — Layer-by-layer timing");
-    println!("  apr bench model.gguf      — Throughput benchmark");
-    println!();
-
-    // Roofline model: compute vs memory bound
-    // Operational intensity = FLOPs / Bytes
-    let flops_per_token = 2.0 * 7e9_f64; // 2 * params for matmul
-    let bytes_per_token_q4 = 7e9 / 2.0;  // Q4 ≈ 0.5 bytes/param
-    let oi = flops_per_token / bytes_per_token_q4;
-    println!("7B Q4K operational intensity: {oi:.1} FLOPs/byte");
-    println!("  < 10 → memory-bound (typical for decode)");
-    println!("  > 50 → compute-bound (typical for batched prefill)");
-    assert!(oi > 1.0, "OI must be positive");
-
-    // FFN fusion contract
-    let layers = 28_usize;
-    let dispatches_unfused = layers * 2; // gate + up separate
-    let dispatches_fused = layers;       // gate+up in one dispatch
-    println!();
-    println!("FFN gate+up fusion: {dispatches_unfused} → {dispatches_fused} rayon dispatches");
-    assert_eq!(dispatches_fused * 2, dispatches_unfused, "Fusion halves dispatches");
-}
-```
-
----
-
-#### Chapter 14 — Provable Contracts
-
-**Example**: `cargo run -p aprender-core --example ch14_contracts`
-**Contract**: `contracts/apr-book-ch14-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 14.1 | Contract-driven development | Meyer, "Design by Contract," IEEE Computer 1992 |
-| 14.2 | YAML contract schema | — |
-| 14.3 | Falsification conditions: P0, P1, P2 | Popper, "The Logic of Scientific Discovery," 1959 |
-| 14.4 | `apr contracts check`: runtime validation | — |
-| 14.5 | Compile-time Poka-Yoke with newtypes | — (internal: PMAT-235) |
-| 14.6 | 405 contracts across 70 crates | — |
-| 14.7 | Mutation testing as contract enforcement | Jia & Harman, "An Analysis and Survey of the Development of Mutation Testing," arXiv:0811.1tried; Papadakis et al., "Mutation Testing Advances," arXiv:1907.09356 |
-
-```rust
-// examples/ch14_contracts.rs
-fn main() {
-    println!("Provable contracts (aprender-contracts):");
-    println!("  405 contracts across 70 crates");
-    println!("  YAML schema with falsification conditions");
-    println!();
-
-    // Contract structure
-    println!("Contract anatomy:");
-    println!("  contract: <name>");
-    println!("  version: <N>");
-    println!("  status: enforced | draft | deprecated");
-    println!("  falsification:");
-    println!("    - condition: '<what would disprove this>'");
-    println!("      severity: P0 | P1 | P2");
-    println!("      action: reject | flag | warn");
-    println!();
-
-    // Falsification is the key insight (Popper, 1959)
-    // A contract that cannot be falsified is not a contract
-    println!("Popper's criterion: a claim is scientific IFF it is falsifiable.");
-    println!("Applied to software: a contract MUST specify its failure conditions.");
-    println!();
-
-    // Namespace contract
-    let old_names = ["trueno", "realizar", "entrenar", "batuta", "presentar", "renacer"];
-    let new_names = [
-        "aprender-compute", "aprender-serve", "aprender-train",
-        "aprender-orchestrate", "aprender-present", "aprender-profile",
-    ];
-    for (old, new) in old_names.iter().zip(new_names.iter()) {
-        println!("  {old:>12} → {new}");
-    }
-    println!();
-    println!("Contract: grep for old names in book chapters must return 0 matches");
-}
-```
-
----
-
-#### Chapter 15 — Orchestration and Agents
-
-**Example**: `cargo run -p aprender-core --example ch15_orchestrate`
-**Contract**: `contracts/apr-book-ch15-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 15.1 | ML pipelines and DAGs | Zaharia et al., "Accelerating the Machine Learning Lifecycle with MLflow," arXiv:1905.01997 (IEEE DSML 2018) |
-| 15.2 | Agent orchestration | Yao et al., "ReAct: Synergizing Reasoning and Acting in Language Models," arXiv:2210.03629 |
-| 15.3 | Playbooks and reproducibility | Sculley et al., "Hidden Technical Debt in Machine Learning Systems," NIPS 2015 |
-| 15.4 | `apr orchestrate`: pipeline execution | — |
-| 15.5 | Oracle-guided model selection | — |
-
-```rust
-// examples/ch15_orchestrate.rs
-fn main() {
-    println!("Orchestration (aprender-orchestrate):");
-    println!("  apr orchestrate pipeline.yaml");
-    println!();
-    println!("Pipeline stages:");
-    println!("  1. apr import hf://model → local .apr");
-    println!("  2. apr validate model.apr --quality");
-    println!("  3. apr oracle model.apr --compliance");
-    println!("  4. apr convert model.apr --quantize q4k -o model-q4k.apr");
-    println!("  5. apr qa model-q4k.apr --assert-tps 100");
-    println!("  6. apr serve model-q4k.apr --port 8080");
-    println!();
-    println!("Contract: every pipeline step has a provable contract");
-    println!("Contract: pipeline fails fast on first contract violation");
-}
-```
-
----
-
-### Part V: Advanced Topics
-
-#### Chapter 16 — Time Series Analysis
-
-**Example**: `cargo run -p aprender-core --example ch16_timeseries`
-**Contract**: `contracts/apr-book-ch16-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 16.1 | ARIMA: autoregressive integrated moving average | Box & Jenkins, "Time Series Analysis," 1970 |
-| 16.2 | Stationarity and differencing | — |
-| 16.3 | ACF/PACF for order selection | — |
-| 16.4 | Seasonal decomposition | Cleveland et al., "STL: A Seasonal-Trend Decomposition Procedure," 1990 |
-| 16.5 | Forecasting and confidence intervals | Hyndman & Athanasopoulos, "Forecasting: Principles and Practice," 2021 |
-
-```rust
-// examples/ch16_timeseries.rs
-use aprender::timeseries::ARIMA;
-use aprender::traits::Estimator;
-
-fn main() {
-    // Simple trend data
-    let data: Vec<f64> = (0..20).map(|i| 2.0 * i as f64 + 1.0).collect();
-    println!("Time series: {} observations", data.len());
-
-    let model = ARIMA::new(1, 1, 0); // ARIMA(1,1,0)
-    println!("ARIMA(p=1, d=1, q=0)");
-    println!("  p=1: one autoregressive term");
-    println!("  d=1: first-order differencing (removes linear trend)");
-    println!("  q=0: no moving average terms");
-    println!();
-    println!("Stationarity contract: d=1 differencing removes unit root");
-    println!("Parsimony contract: AIC/BIC should decrease with correct order");
-}
-```
-
----
-
-#### Chapter 17 — Bayesian Methods
-
-**Example**: `cargo run -p aprender-core --example ch17_bayesian`
-**Contract**: `contracts/apr-book-ch17-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 17.1 | Bayes' theorem and conjugate priors | Gelman et al., "Bayesian Data Analysis," 3rd ed., 2013 |
-| 17.2 | Bayesian linear regression | Murphy, "Machine Learning: A Probabilistic Perspective," 2012 |
-| 17.3 | Beta-Binomial and Normal-Normal conjugates | — |
-| 17.4 | Posterior predictive distributions | — |
-| 17.5 | Comparison with frequentist methods | Efron, "Bayesians, Frequentists, and Scientists," arXiv:math/0504499 |
-
-```rust
-// examples/ch17_bayesian.rs
-use aprender::bayesian::{BayesianLinearRegression, NormalPrior};
-
-fn main() {
-    // Bayesian linear regression with conjugate prior
-    let prior = NormalPrior::new(0.0, 1.0); // mean=0, precision=1
-    println!("Prior: N(μ=0, τ=1)");
-
-    let x = vec![vec![1.0], vec![2.0], vec![3.0]];
-    let y = vec![2.1, 4.0, 5.9];
-
-    let blr = BayesianLinearRegression::new(prior)
-        .fit(&x, &y).unwrap();
-
-    println!("Posterior mean: ~2.0 (slope)");
-    println!("Posterior variance: shrinks with more data");
-    println!();
-
-    // Conjugate prior contract:
-    // posterior = likelihood * prior / evidence
-    // Normal-Normal: posterior precision = prior precision + n * data precision
-    let prior_precision = 1.0_f64;
-    let data_precision = 1.0_f64;
-    let n = x.len() as f64;
-    let posterior_precision = prior_precision + n * data_precision;
-    println!("Posterior precision: {prior_precision} + {n}*{data_precision} = {posterior_precision}");
-    assert!(posterior_precision > prior_precision, "Data must increase precision");
-}
-```
-
----
-
-#### Chapter 18 — Graph Algorithms
-
-**Example**: `cargo run -p aprender-core --example ch18_graphs`
-**Contract**: `contracts/apr-book-ch18-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 18.1 | Graph representation: adjacency lists | Cormen et al., "Introduction to Algorithms," 4th ed., 2022 |
-| 18.2 | Shortest paths: Dijkstra, A* | Hart et al., "A Formal Basis for the Heuristic Determination of Minimum Cost Paths," 1968 |
-| 18.3 | PageRank | Page et al., "The PageRank Citation Ranking," Stanford 1998 |
-| 18.4 | Community detection: Louvain | Blondel et al., "Fast Unfolding of Communities in Large Networks," arXiv:0803.0476 |
-| 18.5 | Graph neural network foundations | Kipf & Welling, "Semi-Supervised Classification with Graph Convolutional Networks," arXiv:1609.02907 |
-
-```rust
-// examples/ch18_graphs.rs
-use aprender::graph::{Graph, dijkstra, pagerank};
-
-fn main() {
-    let mut g = Graph::new();
-    g.add_edge(0, 1, 4.0);
-    g.add_edge(0, 2, 1.0);
-    g.add_edge(2, 1, 2.0);
-    g.add_edge(1, 3, 1.0);
-    g.add_edge(2, 3, 5.0);
-
-    let distances = dijkstra(&g, 0);
-    println!("Shortest distances from node 0:");
-    for (node, dist) in &distances {
-        println!("  → node {node}: {dist:.1}");
-    }
-    // 0→2→1 = 3.0 is shorter than 0→1 = 4.0
-    assert!(distances[&1] <= 4.0, "Dijkstra optimality contract");
-
-    let pr = pagerank(&g, 0.85, 100);
-    println!("PageRank scores:");
-    for (node, score) in &pr {
-        println!("  node {node}: {score:.4}");
-    }
-    let total: f64 = pr.values().sum();
-    assert!((total - 1.0).abs() < 0.01, "PageRank scores must sum to 1.0");
-}
-```
-
----
-
-#### Chapter 19 — Text Processing and Tokenization
-
-**Example**: `cargo run -p aprender-core --example ch19_text`
-**Contract**: `contracts/apr-book-ch19-v1.yaml`
-**Oracle**: `apr oracle --family qwen2 --explain` (for chat template)
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 19.1 | Byte-pair encoding (BPE) | Sennrich et al., "Neural Machine Translation of Rare Words with Subword Units," arXiv:1508.07909 |
-| 19.2 | SentencePiece and Unigram | Kudo & Richardson, "SentencePiece: A Simple and Language Independent Subword Tokenizer," arXiv:1808.06226 |
-| 19.3 | Chat templates with minijinja | — |
-| 19.4 | Special tokens: BOS, EOS, PAD | — |
-| 19.5 | Stop words and stemming | — |
-| 19.6 | `apr oracle` chat template validation | — |
-
-```rust
-// examples/ch19_text.rs
-fn main() {
-    println!("Tokenization (aprender-core::text):");
-    println!("  BPE: Byte-Pair Encoding (Sennrich et al., 2016)");
-    println!("  Merges frequent byte pairs iteratively");
-    println!();
-
-    // BPE contract: vocabulary is finite, covers all byte sequences
-    let vocab_size = 151936_usize; // Qwen2 (from apr oracle)
-    println!("Qwen2 vocab size: {vocab_size}");
-    assert!(vocab_size > 256, "Vocab must include all single bytes");
-
-    // Chat template contract (from apr oracle --family qwen2)
-    println!();
-    println!("ChatML template (Qwen2):");
-    println!("  <|im_start|>system");
-    println!("  You are a helpful assistant.<|im_end|>");
-    println!("  <|im_start|>user");
-    println!("  Hello!<|im_end|>");
-    println!("  <|im_start|>assistant");
-    println!();
-    println!("Contract: special_tokens must include <|im_start|>, <|im_end|>");
-    println!("Contract: chat template must NOT silently skip (PMAT-237)");
-}
-```
-
----
-
-#### Chapter 20 — RAG Pipelines
-
-**Example**: `cargo run -p aprender-core --example ch20_rag`
-**Contract**: `contracts/apr-book-ch20-v1.yaml`
-**Oracle**: N/A
-
-| Section | Topic | arXiv Citation |
-|---------|-------|----------------|
-| 20.1 | Retrieval-augmented generation | Lewis et al., "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks," arXiv:2005.11401 |
-| 20.2 | Embedding models and vector search | Johnson et al., "Billion-Scale Similarity Search with GPUs," arXiv:1702.08734 |
-| 20.3 | Chunking strategies | — |
-| 20.4 | `apr rag`: pipeline from documents to answers | — |
-| 20.5 | Hybrid search: dense + sparse | Karpukhin et al., "Dense Passage Retrieval for Open-Domain Question Answering," arXiv:2004.04906 |
-
-```rust
-// examples/ch20_rag.rs
-fn main() {
-    println!("RAG pipeline (aprender-rag):");
-    println!("  1. Document loading and chunking");
-    println!("  2. Embedding generation");
-    println!("  3. Vector index construction");
-    println!("  4. Query embedding + similarity search");
-    println!("  5. Context injection into prompt");
-    println!("  6. LLM generation with retrieved context");
-    println!();
-    println!("Architecture (Lewis et al., 2020):");
-    println!("  p(y|x) = Σ_z p(z|x) * p(y|x,z)");
-    println!("  where z = retrieved documents, x = query, y = answer");
-    println!();
-    println!("Contract: retrieved docs are ranked by relevance score");
-    println!("Contract: context window budget is respected");
-
-    // Cosine similarity contract
-    let a = [1.0_f64, 0.0];
-    let b = [0.0, 1.0];
-    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let norm_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let cosine = dot / (norm_a * norm_b);
-    println!("Cosine similarity of orthogonal vectors: {cosine:.1}");
-    assert!((cosine - 0.0).abs() < 1e-10, "Orthogonal vectors have cosine 0");
-}
-```
-
----
-
-## Appendices
-
-### Appendix A — Crate Namespace Reference
-
-| Crate | Purpose | Old Name |
-|-------|---------|----------|
-| `aprender-core` | ML library (training, format, models) | `aprender` |
-| `aprender-compute` | SIMD, GPU, WASM tensor compute | — |
-| `aprender-serve` | Inference engine, HTTP server | — |
-| `aprender-train` | Training loops, LoRA, distillation | — |
-| `aprender-orchestrate` | Pipelines, agents, oracle | — |
-| `aprender-present` | TUI framework, dashboards | — |
-| `aprender-profile` | Profiling, tracing, roofline | — |
-| `aprender-contracts` | Provable contract macros, YAML | — |
-| `aprender-data` | Data loading, synthetic data | — |
-| `aprender-rag` | RAG pipeline, embeddings, search | — |
-| `aprender-graph` | Graph database, algorithms | — |
-| `aprender-db` | Embedded analytics database | — |
-| `aprender-viz` | Visualization | — |
-| `aprender-test` | WASM/browser testing | — |
-| `aprender-verify` | Verification, quality gates | — |
-| `aprender-simulate` | Simulation framework | — |
-| `aprender-distribute` | Distributed computing | — |
-| `aprender-registry` | Model/data registry, lineage | — |
-| `aprender-zram` | Compressed RAM storage | — |
-| `aprender-quant` | Quantization algorithms | — |
-| `aprender-sparse` | Sparse tensor operations | — |
-| `apr-cli` | CLI binary (`apr`), 57 commands | — |
-
-**Note**: The "Old Name" column is intentionally blank. This book uses ONLY the unified
-`aprender-*` namespace. Legacy names are not referenced.
-
-### Appendix B — Full arXiv Citation Index
-
-| # | arXiv ID | Authors | Title | Chapters |
-|---|----------|---------|-------|----------|
-| 1 | 1706.03762 | Vaswani et al. | Attention Is All You Need | 8 |
-| 2 | 2305.13245 | Ainslie et al. | GQA: Training Generalized Multi-Query Transformer Models | 8, 9 |
-| 3 | 2104.09864 | Su et al. | RoFormer: Enhanced Transformer with Rotary Position Embedding | 8 |
-| 4 | 2002.05202 | Shazeer | GLU Variants Improve Transformer | 8, 9 |
-| 5 | 1910.07467 | Zhang & Sennrich | Root Mean Square Layer Normalization | 8 |
-| 6 | 2211.05102 | Pope et al. | Efficiently Scaling Transformer Inference | 8, 9, 12 |
-| 7 | 2210.17323 | Dettmers et al. | GPTQ: Accurate Post-Training Quantization | 2, 9, 11 |
-| 8 | 2208.07339 | Dettmers et al. | LLM.int8(): 8-bit Matrix Multiplication | 9 |
-| 9 | 2307.08691 | Dao et al. | FlashAttention-2 | 2, 9 |
-| 10 | 2205.14135 | Dao et al. | FlashAttention: Fast and Memory-Efficient Exact Attention | 2 |
-| 11 | 2309.06180 | Kwon et al. | PagedAttention for LLM Serving | 9, 12 |
-| 12 | 2106.09685 | Hu et al. | LoRA: Low-Rank Adaptation of Large Language Models | 10 |
-| 13 | 2305.14314 | Dettmers et al. | QLoRA: Efficient Finetuning of Quantized LLMs | 10 |
-| 14 | 1711.05101 | Loshchilov & Hutter | Decoupled Weight Decay Regularization (AdamW) | 10 |
-| 15 | 1608.03983 | Loshchilov & Hutter | SGDR: Stochastic Gradient Descent with Warm Restarts | 10 |
-| 16 | 1710.03740 | Micikevicius et al. | Mixed Precision Training | 10 |
-| 17 | 1502.05767 | Baydin et al. | Automatic Differentiation in Machine Learning | 10 |
-| 18 | 2306.00978 | Lin et al. | AWQ: Activation-aware Weight Quantization | 11 |
-| 19 | 2211.17192 | Leviathan et al. | Fast Inference via Speculative Decoding | 12 |
-| 20 | 1910.02054 | Rajbhandari et al. | ZeRO: Memory Optimizations Toward Training Trillion Parameter Models | 1 |
-| 21 | 1903.00982 | Jung et al. | RustBelt: Securing the Foundations of Rust | 1 |
-| 22 | 2407.10671 | Qwen Team | Qwen2 Technical Report | 1, 8 |
-| 23 | 1609.04747 | Ruder | An Overview of Gradient Descent Optimization Algorithms | 4 |
-| 24 | 1201.0490 | Pedregosa et al. | Scikit-learn: Machine Learning in Python | 4, 5 |
-| 25 | 1603.02754 | Chen & Guestrin | XGBoost: A Scalable Tree Boosting System | 6 |
-| 26 | 0909.4061 | Halko et al. | Finding Structure with Randomness (Randomized SVD) | 5 |
-| 27 | 1802.04799 | Li et al. | TVM: End-to-End Optimizing Compiler for Deep Learning | 2 |
-| 28 | 2101.05615 | Khudia et al. | FBGEMM: High-Performance Low-Precision Inference | 2 |
-| 29 | 2005.11401 | Lewis et al. | Retrieval-Augmented Generation for NLP | 20 |
-| 30 | 1702.08734 | Johnson et al. | Billion-Scale Similarity Search with GPUs | 20 |
-| 31 | 2004.04906 | Karpukhin et al. | Dense Passage Retrieval for Open-Domain QA | 20 |
-| 32 | 1508.07909 | Sennrich et al. | Neural Machine Translation with Subword Units (BPE) | 19 |
-| 33 | 1808.06226 | Kudo & Richardson | SentencePiece: Language Independent Subword Tokenizer | 19 |
-| 34 | 2210.03629 | Yao et al. | ReAct: Synergizing Reasoning and Acting in LMs | 15 |
-| 35 | 1905.01997 | Zaharia et al. | Accelerating the ML Lifecycle with MLflow | 15 |
-| 36 | 0803.0476 | Blondel et al. | Fast Unfolding of Communities (Louvain) | 18 |
-| 37 | 1609.02907 | Kipf & Welling | Semi-Supervised Classification with GCN | 18 |
-| 38 | 1907.09356 | Papadakis et al. | Mutation Testing Advances | 14 |
-| 39 | 2007.00072 | Ivanov et al. | Data Movement Is All You Need | 13 |
-| 40 | 1911.02150 | Shazeer | Fast Transformer Decoding: One Write-Head | 9 |
-| 41 | math/0504499 | Efron | Bayesians, Frequentists, and Scientists | 17 |
-
-### Appendix C — Book Build and Verification
+#### 5b. Archive repository
 
 ```bash
-# Build all chapter examples
-for ch in crates/aprender-core/examples/ch*.rs; do
-    cargo run -p aprender-core --example "$(basename "$ch" .rs)" || exit 1
-done
-
-# Validate all chapter contracts
-for contract in contracts/apr-book-ch*-v1.yaml; do
-    apr contracts check "$contract" || exit 1
-done
-
-# Namespace discipline gate (zero old names)
-grep -rcE '\b(trueno|realizar|entrenar|batuta|presentar|renacer)\b' \
-    docs/book/ examples/ch*.rs | grep -v ':0$' && {
-    echo "FAIL: legacy names found in book content"
-    exit 1
-}
-
-# Oracle consultation log
-for family in qwen2 llama whisper bert; do
-    echo "=== Oracle: $family ==="
-    apr oracle --family "$family" --explain --stats
-done
-
-# Full test suite
-cargo test --workspace --lib
-cargo test --test book_contracts
+# Via GitHub API (or Settings → Danger Zone → Archive)
+gh api -X PATCH repos/paiml/trueno -f archived=true
+gh api -X PATCH repos/paiml/entrenar -f archived=true
+gh api -X PATCH repos/paiml/realizar -f archived=true
+gh api -X PATCH repos/paiml/Batuta -f archived=true
+gh api -X PATCH repos/paiml/presentar -f archived=true
+gh api -X PATCH repos/paiml/renacer -f archived=true
+gh api -X PATCH repos/paiml/certeza -f archived=true
+gh api -X PATCH repos/paiml/trueno-db -f archived=true
+gh api -X PATCH repos/paiml/trueno-graph -f archived=true
+gh api -X PATCH repos/paiml/trueno-rag -f archived=true
+gh api -X PATCH repos/paiml/trueno-viz -f archived=true
+gh api -X PATCH repos/paiml/trueno-zram -f archived=true
+gh api -X PATCH repos/paiml/batuta-common -f archived=true
+gh api -X PATCH repos/paiml/repartir -f archived=true
+gh api -X PATCH repos/paiml/alimentar -f archived=true
+gh api -X PATCH repos/paiml/simular -f archived=true
+gh api -X PATCH repos/paiml/verificar -f archived=true
+gh api -X PATCH repos/paiml/probar -f archived=true
+gh api -X PATCH repos/paiml/provable-contracts -f archived=true
+gh api -X PATCH repos/paiml/pacha -f archived=true
 ```
 
-### Appendix D — Contract YAML Template
+Archiving preserves: issues, PRs, stars, forks, git history, wiki.
+Disables: push, new issues, new PRs. Read-only forever.
 
-```yaml
-# contracts/apr-book-ch{NN}-v1.yaml
-contract: apr-book-ch{NN}
-version: 1
-status: enforced
-date: 2026-04-08
+#### 5c. crates.io namespace reservation
 
-metadata:
-  title: "{Chapter Title}"
-  part: {I|II|III|IV|V}
-  example: "ch{NN}_{topic}"
-  arxiv_count: {N}
+Old crate names on crates.io remain owned by PAIML. The shim versions
+(trueno 0.19, entrenar 0.8, etc.) ensure the names can't be squatted.
+`cargo install` continues to work via re-export.
 
-preconditions:
-  - "cargo build --example ch{NN}_{topic} succeeds"
-  - "All arXiv IDs in citation table are valid"
-  - "Zero legacy names in chapter text"
+**crates.io ownership audit** — verify all old crate names list the
+PAIML team as owner:
 
-postconditions:
-  - "Example produces correct output"
-  - "All assert!() in example pass"
-  - "Oracle claims match --explain output"
-
-falsification:
-  - condition: "cargo run -p aprender-core --example ch{NN}_{topic} exits non-zero"
-    severity: P0
-    action: reject_chapter
-  - condition: "Section without arXiv citation"
-    severity: P0
-    action: reject_chapter
-  - condition: "Legacy name appears in docs/book/ch{NN}*.md"
-    severity: P0
-    action: reject_chapter
-  - condition: "Oracle --explain output contradicts chapter claim"
-    severity: P0
-    action: reject_chapter
-  - condition: "assert!() failure in example"
-    severity: P0
-    action: reject_chapter
-
-equations:
-  - name: "citation_coverage"
-    formula: "citations_per_chapter >= 1"
-    description: "Every chapter cites at least one arXiv paper"
-  - name: "example_coverage"
-    formula: "runnable_examples == total_chapters"
-    description: "Every chapter has a cargo run --example"
-  - name: "namespace_purity"
-    formula: "legacy_name_count == 0"
-    description: "Zero references to old crate names"
+```bash
+for crate in trueno trueno-gpu trueno-quant trueno-db trueno-viz \
+             trueno-explain trueno-rag trueno-graph trueno-gemm-codegen \
+             trueno-zram-core trueno-zram-adaptive trueno-cuda-edge \
+             trueno-fft trueno-sparse trueno-solve trueno-rand \
+             trueno-image trueno-tensor entrenar entrenar-common \
+             entrenar-lora realizar batuta batuta-common repartir \
+             presentar renacer certeza verificar probar \
+             provable-contracts provable-contracts-macros; do
+  echo -n "$crate: "
+  cargo owner --list $crate 2>/dev/null | head -1
+done
 ```
 
----
+### Phase 6: Documentation Update (1 day)
 
-## Appendix E — paiml Org Repository Classification (205 repos)
+#### 6a. Unified book
 
-**Date**: 2026-04-08
-**Contract**: `contracts/apr-org-taxonomy-v1.yaml`
-**Falsification**: Any repo not in a category below is a VIOLATION.
+Merge book content from all repos into `aprender/book/`:
 
-### Category Definitions
+```
+book/src/
+├── introduction.md
+├── getting-started/
+│   └── installation.md          # cargo install aprender
+├── compute/                     # was trueno book
+│   ├── simd-backends.md
+│   ├── gpu-compute.md
+│   └── inference.md
+├── training/                    # was entrenar docs
+│   ├── training-loops.md
+│   └── lora.md
+├── serving/                     # was realizar docs
+│   ├── inference-server.md
+│   └── api-reference.md
+├── orchestration/               # was batuta docs
+│   ├── agents.md
+│   └── rag-oracle.md
+├── cli-reference/               # auto-generated from clap
+│   ├── apr-run.md
+│   ├── apr-serve.md
+│   └── ...
+└── appendix/
+    ├── changelog.md             # unified changelog
+    ├── migration-guide.md       # trueno → aprender-compute
+    └── crate-rename-table.md
+```
 
-| Category | Tag | Description | Action |
-|----------|-----|-------------|--------|
-| **MONOREPO** | `monorepo` | THE aprender monorepo (70 crates) | Active development |
-| **MERGED** | `merged/read-only` | Repos already merged into aprender monorepo | Archived, redirect to aprender |
-| **ACTIVE-TOOL** | `active-tool` | Standalone tools used alongside monorepo | Active development |
-| **MODEL-TRAINING** | `model-training` | LLM/model training experiments | Active research |
-| **POC-BENCHMARK** | `poc/benchmark` | Proof-of-concept, benchmarks, comparisons | Read-only reference |
-| **COURSE-DEMO** | `course/demo` | Coursera/LinkedIn/O'Reilly course material | Read-only, maintained for students |
-| **LEGACY-BOOK** | `legacy/book` | Published book repos (O'Reilly, Pearson, Leanpub) | Read-only, no updates |
-| **LEGACY-LIBRARY** | `legacy/library` | Superseded libraries, old stack components | Archive candidate |
-| **GROUND-TRUTH** | `ground-truth` | Falsification/test corpora for oracle RAG | Maintained for RAG index |
-| **INFRA** | `infra` | Infrastructure, CI/CD, deployment configs | Active |
-| **LANG-ECOSYSTEM** | `lang/ruchy` | Ruchy language ecosystem | Separate product line |
-| **TRANSPILER** | `transpiler` | Python/C/Haskell to Rust transpilers | Active tools |
-| **PLATFORM** | `platform` | PAIML platform (website, apps, marketing) | Active |
-| **STALE** | `stale/archive` | Inactive, no recent updates, no dependents | Archive immediately |
+#### 6b. Auto-generated CLI reference
 
-### 1. MONOREPO (1 repo)
+Add to CI/Makefile:
 
-| Repo | Description |
-|------|-------------|
-| `aprender` | THE monorepo — 70 crates, `apr` binary, ML library |
+```makefile
+docs-cli:
+	@for cmd in run serve inspect debug validate diff tensors trace \
+	            lint explain canary export import pull list rm convert \
+	            compile merge quantize tui check gpu code; do \
+	    echo "## apr $$cmd" > book/src/cli-reference/apr-$$cmd.md; \
+	    echo '```' >> book/src/cli-reference/apr-$$cmd.md; \
+	    cargo run -p apr-cli -- $$cmd --help >> book/src/cli-reference/apr-$$cmd.md 2>&1; \
+	    echo '```' >> book/src/cli-reference/apr-$$cmd.md; \
+	done
+```
 
-### 2. MERGED into aprender (14 repos — all archived)
+#### 6c. Update external references
 
-| Repo | Monorepo Crate | Status |
-|------|---------------|--------|
-| `trueno` | `aprender-compute` | Archived |
-| `realizar` | `aprender-serve` | Archived |
-| `entrenar` | `aprender-train` | Archived |
-| `batuta` | `aprender-orchestrate` | Archived |
-| `presentar` | `aprender-present-*` | Archived |
-| `repartir` | `aprender-distribute` | Archived |
-| `simular` | `aprender-simulate` | Archived |
-| `verificar` | `aprender-verify-ml` | Archived |
-| `certeza` | `aprender-verify` | Archived |
-| `provable-contracts` | `aprender-contracts` | Archived |
-| `probar` | `aprender-test-*` | Archived |
-| `trueno-db` | `aprender-db` | Archived |
-| `trueno-graph` | `aprender-graph` | Archived |
-| `trueno-rag` | `aprender-rag` | Archived |
+- crates.io descriptions: all `aprender-*` crates link to monorepo
+- docs.rs: ensure workspace docs build (`cargo doc --workspace`)
+- GitHub topics: add "monorepo" tag to paiml/aprender
+- README badges: update CI, coverage, crates.io links
 
-### 3. SHOULD-MERGE (not yet archived — merge into aprender)
+### Phase 7: Daily workflow (ongoing)
 
-| Repo | Target Crate | Rationale |
-|------|-------------|-----------|
-| `alimentar` | `aprender-data` | Data loading, already `aprender-data` exists |
-| `batuta-common` | `aprender-common` | Already mapped, not archived |
-| `trueno-viz` | `aprender-viz` | Already `aprender-viz` exists |
-| `trueno-zram` | `aprender-zram` | Already `aprender-zram` exists |
-| `renacer` | `aprender-profile` | Already `aprender-profile` exists |
-| `pacha` | `aprender-registry` | Model registry, already mapped |
+```bash
+# Daily apr-cli release (ONE command):
+cargo publish -p apr-cli
 
-**Action**: Archive these 6 repos with redirect descriptions, like the 14 above.
+# If a compute primitive changed too:
+cargo publish -p aprender-compute && cargo publish -p apr-cli
 
-### 4. ACTIVE-TOOL (standalone tools, NOT merging)
+# Workspace-wide test (catches ALL breakage):
+cargo test --workspace
 
-| Repo | Language | Purpose | Tag |
-|------|----------|---------|-----|
-| `paiml-mcp-agent-toolkit` | Rust | MCP server for deterministic agentic coding | `active-tool` |
-| `rust-mcp-sdk` | Rust | MCP SDK | `active-tool` |
-| `bashrs` | Rust | Shell transpiler | `active-tool` |
-| `forjar` | Rust | Infrastructure as Code | `active-tool` |
-| `depyler` | Rust | Python→Rust compiler | `active-tool/transpiler` |
-| `decy` | Rust | C→Rust transpiler | `active-tool/transpiler` |
-| `rascal` | Rust | Haskell→Rust transpiler | `active-tool/transpiler` |
-| `spydecy` | Rust | Python/C→Rust debugger | `active-tool/transpiler` |
-| `ccpo` | Rust | Claude Code proxy | `active-tool` |
-| `pcode` | Rust | Coding agent | `active-tool` |
-| `pdmt` | Rust | MCP templating | `active-tool` |
-| `organizational-intelligence-plugin` | Rust | PMAT plugin | `active-tool` |
-| `copia` | Rust | rsync delta-sync | `active-tool` |
-| `rmedia` | Rust | Course video renderer | `active-tool` |
-| `duende` | Rust | Daemon tooling | `active-tool` |
-| `cohete` | Rust | Jetson Nano | `active-tool` |
-| `manzana` | Rust | macOS hardware | `active-tool` |
-| `pepita` | Rust | Tiny Linux kernel | `active-tool` |
-| `pforge` | HTML | MCP server builder | `active-tool` |
-| `rust-mdipierro-nlib` | Rust | Provable numerical algorithms | `active-tool` |
-| `microgpt` | Rust | microGPT in aprender | `active-tool` |
-
-### 5. MODEL-TRAINING (active research)
-
-| Repo | Language | Purpose | Tag |
-|------|----------|---------|-----|
-| `albor` | Python | LLM from first principles, sovereign components | `model-training` |
-| `qwen-train-canary` | Python | Training perf canary (unsloth, pytorch, cuBLAS) | `model-training` |
-| `whisper.apr` | Rust | Whisper in APR format + WASM | `model-training` |
-
-### 6. POC / BENCHMARK (proof of concept, read-only)
-
-| Repo | Language | Comparing | Tag |
-|------|----------|-----------|-----|
-| `candle-vs-apr` | Shell | Candle vs aprender-serve on RTX 4090 | `poc/benchmark` |
-| `single-shot-eval` | Rust | Pareto frontier of SLMs | `poc/benchmark` |
-| `real-world-code-score` | Rust | Code quality scoring | `poc/benchmark` |
-| `compiled-rust-benchmarking` | Rust | Compile speed optimization | `poc/benchmark` |
-| `rosetta-ruchy` | HTML | Ruchy vs Rust parity benchmark | `poc/benchmark` |
-| `ruchy-lambda` | Rust | Ruchy vs all languages on Lambda | `poc/benchmark` |
-| `ruchy-docker` | Rust | Ruchy runtime benchmarking | `poc/benchmark` |
-| `qwen-coder-deploy` | Makefile | Qwen deployment POC | `poc/benchmark` |
-
-### 7. COURSE-DEMO (Coursera / LinkedIn / educational)
-
-| Repo | Platform | Topic | Tag |
-|------|----------|-------|-----|
-| `ai-tooling` | Coursera | 20-course AI specialization | `course/demo` |
-| `deterministic-llm-coding` | Course | Deterministic LLM coding | `course/demo` |
-| `deterministic-mcp-agents` | Course | MCP agents | `course/demo` |
-| `HF-Hub-Ecosystem` | Coursera | Hugging Face ecosystem | `course/demo` |
-| `HF-Production-ML` | Coursera | Production ML with HF | `course/demo` |
-| `HF-Advanced-Fine-Tuning` | Coursera | Advanced fine-tuning | `course/demo` |
-| `huggingface-fine-tuning` | Course | HF fine-tuning | `course/demo` |
-| `llms-with-huggingface` | Course | LLMs with HF | `course/demo` |
-| `advanced-prompting-with-github-copilot` | LinkedIn | GitHub Copilot | `course/demo` |
-| `ghcp-for-systems-level-development` | LinkedIn | GH Copilot systems | `course/demo` |
-| `GitHub-Copilot-Mastery-Capstone` | Course | Copilot capstone | `course/demo` |
-| `mastering-github` | Coursera | GitHub 9-course spec | `course/demo` |
-| `databricks-data-engineering` | Coursera | Databricks DE | `course/demo` |
-| `databricks-governance` | Coursera | Databricks governance | `course/demo` |
-| `DB-mlops-genai` | Coursera | Databricks MLOps | `course/demo` |
-| `data-pipelines-deno-typescript-course` | Course | Deno data pipelines | `course/demo` |
-| `rust-data-engineering` | Coursera | Rust DE | `course/demo` |
-| `responsible-ai-dev` | Course | Responsible AI | `course/demo` |
-| `agentic-ai` | Course | Agentic AI | `course/demo` |
-| `applied-ai-engineering` | Coursera | Applied AI engineering | `course/demo` |
-| `ds500-debug-with-ai` | DS500 | Debug with AI | `course/demo` |
-| `ds500-rust-bootcamp` | DS500 | Rust bootcamp | `course/demo` |
-| `multi-modal-programming-course` | Course | Multi-modal programming | `course/demo` |
-| `review-bot-course` | Course | Review bot | `course/demo` |
-| `build-a-saas-course` | Course | Build SaaS | `course/demo` |
-| `windsurf` | Course | Windsurf IDE | `course/demo` |
-| `wasm-labs` | Labs | WASM labs | `course/demo` |
-| `profesor` | Rust | Teaching environment | `course/demo` |
-| `discord-conversational-bot` | Course | Discord bot | `course/demo` |
-| `wine-api-saas` | Rust | SaaS demo | `course/demo` |
-
-### 8. LEGACY-BOOK (published, read-only)
-
-| Repo | Publisher | Title | Tag |
-|------|-----------|-------|-----|
-| `practical-mlops-book` | O'Reilly | Practical MLOps (2021) | `legacy/book` |
-| `python_devops_book` | O'Reilly | Python for DevOps (2020) | `legacy/book` |
-| `foundations-python-datascience-book` | Pearson | Foundations Python DS | `legacy/book` |
-| `minimal-python-BOOK` | Leanpub | Minimal Python | `legacy/book` |
-| `minimal-go-BOOK` | Leanpub | Minimal Go | `legacy/book` |
-| `minimal-shell` | Leanpub | Minimal Shell | `legacy/book` |
-| `minimal-machine-learning` | Leanpub | Minimal ML | `legacy/book` |
-| `minimal-datascience` | Leanpub | Minimal Data Science | `legacy/book` |
-| `more-python-cowbell` | Leanpub | More Python Cowbell | `legacy/book` |
-| `ml_engineering_book` | Book | ML Engineering | `legacy/book` |
-| `opscookbook` | Leanpub | Ops Cookbook | `legacy/book` |
-| `testing-in-python-book` | Book | Testing in Python | `legacy/book` |
-| `sovereign-ai-stack-book` | Book | Sovereign AI Stack | `legacy/book` |
-| `pmat-book` | Book | PMAT book | `legacy/book` |
-| `the-python-commandline-book` | Leanpub | Python Commandline | `legacy/book` |
-
-### 9. LEGACY-LIBRARY (superseded — ARCHIVED 2026-04-08)
-
-| Repo | Reason | Tag |
-|------|--------|-----|
-| `batuta-cookbook` | Uses old `batuta` name | `legacy/library` |
-| `batuta-ground-truth-mlops-corpus` | Uses old namespace | `legacy/library` |
-| `forjar-cookbook` | Cookbook, low activity | `legacy/library` |
-| `apr-cookbook` | Cookbook for .apr format | `legacy/library` |
-| `ald-cookbook` | Cookbook for .ald format | `legacy/library` |
-| `prs-cookbook` | Uses old `presentar` name | `legacy/library` |
-| `apr-model-qa-playbook` | QA playbook, may fold into apr qa | `legacy/library` |
-| `reaper` | Written in Ruchy, standalone monitor | `legacy/library` |
-| `rustysquid` | Minimal Squid port | `legacy/library` |
-| `mp4convertor` | Standalone utility | `legacy/library` |
-| `rclean` | File cleaner utility | `legacy/library` |
-| `universal-bot` | Old bot architecture | `legacy/library` |
-| `discord-intelligence` | Discord tooling | `legacy/library` |
-| `ov` | O'Reilly video CLI | `legacy/library` |
-| `assetgen` | Asset generator | `legacy/library` |
-| `assetsearch` | Asset search | `legacy/library` |
-| `pacha-run` | Runner for .apr files | `legacy/library` |
-| `wos` | WASM OS (teaching) | `legacy/library` |
-
-### 10. GROUND-TRUTH (falsification corpora for oracle RAG)
-
-| Repo | Language | Domain | Tag |
-|------|----------|--------|-----|
-| `tgi-ground-truth-corpus` | Rust | TGI inference patterns | `ground-truth` |
-| `tiny-model-ground-truth` | Python | Model format conversions | `ground-truth` |
-| `hugging-face-ground-truth-corpus` | Python | HF Python→Rust | `ground-truth` |
-| `databricks-ground-truth-corpus` | Python | Databricks patterns | `ground-truth` |
-| `databricks-scala-ground-truth-corpus` | Scala | Spark/ML/Delta Lake | `ground-truth` |
-| `jax-ground-truth-corpus` | Python | JAX recipes | `ground-truth` |
-| `ludwig-ground-truth-corpus` | Python | Ludwig declarative DL | `ground-truth` |
-| `vllm-ground-truth-corpus` | Python | vLLM inference | `ground-truth` |
-| `mixed-python-rust-ground-truth` | Python | Mixed Python/Rust | `ground-truth` |
-| `mixed-rust-lean-ground-truth` | Rust | Rust/Lean proofs | `ground-truth` |
-| `lean-ground-truth` | Lean | Lean 4 theorems | `ground-truth` |
-| `safe-lua-groundtruth` | Lua | Safe Lua patterns | `ground-truth` |
-| `algorithm-competition-corpus` | Python | Algorithm corpus | `ground-truth` |
-
-### 11. TRANSPILER ECOSYSTEM (Depyler, Decy, Rascal, Reprorusted)
-
-| Repo | Direction | Tag |
-|------|-----------|-----|
-| `depyler` | Python→Rust compiler | `transpiler` |
-| `decy` | C→Rust | `transpiler` |
-| `rascal` | Haskell→Rust | `transpiler` |
-| `spydecy` | Python/C debugger+compiler | `transpiler` |
-| `reprorusted-python-cli` | Python argparse→Rust | `transpiler/corpus` |
-| `reprorusted-c-cli` | C→Rust training corpus | `transpiler/corpus` |
-| `reprorusted-std-only` | Python stdlib→Rust | `transpiler/corpus` |
-| `fully-typed-reprorusted-python-cli` | Typed Python→Rust | `transpiler/corpus` |
-| `python-to-rust-conversion-examples` | Examples | `transpiler/corpus` |
-
-### 12. RUCHY LANGUAGE ECOSYSTEM
-
-| Repo | Purpose | Tag |
-|------|---------|-----|
-| `ruchy` | Language compiler | `lang/ruchy` |
-| `ruchy-book` | Official book | `lang/ruchy` |
-| `ruchy-cli-tools-book` | CLI tools book | `lang/ruchy` |
-| `ruchy-cookbook` | Cookbook | `lang/ruchy` |
-| `ruchy-repl-demos` | REPL demos | `lang/ruchy` |
-| `ruchy-syntax-tools` | Syntax highlighting | `lang/ruchy` |
-| `ruchyruchy` | Self-hosting compiler | `lang/ruchy` |
-| `tooling-with-ruchy` | Tooling book | `lang/ruchy` |
-
-### 13. INFRA / PLATFORM
-
-| Repo | Purpose | Tag |
-|------|---------|-----|
-| `.github` | Org-level GitHub config | `infra` |
-| `infra` | Infrastructure configs | `infra` |
-| `gunner` | AWS Spot runners | `infra` |
-| `lambda-lab-rust-development` | Lambda Labs setup | `infra` |
-| `sovereign-ai-cookbook` | Forjar deployment configs | `infra` |
-| `pzsh` | Shell environment | `infra` |
-| `interactive.paiml.com` | WASM interactive books | `platform` |
-| `paiml-blog` | Blog | `platform` |
-| `paiml-android-app` | Android app | `platform` |
-| `total-reach` | Reach analytics | `platform` |
-| `marketing` | Marketing templates | `platform` |
-| `ds500-master-paths` | DS500 paths | `platform` |
-| `ds500-social-preview` | Badge generator | `platform` |
-| `ds500-outline-maker` | Outline generator | `platform` |
-| `ds500-course-processing` | Course ingestion | `platform` |
-| `ds500-rust-project-template` | Project template | `platform` |
-| `platform` | PAIML platform | `platform` |
-| `publish` | Content publishing tools | `platform` |
-| `sales_intelligence` | Sales intelligence | `platform` |
-| `coursera-stats` | Coursera analytics | `platform` |
-| `linkedin-rev-stats` | LinkedIn stats | `platform` |
-| `course-gen` | Course asset generator | `platform` |
-| `course-studio` | Video production | `platform` |
-| `video-tools` | Video tools | `platform` |
-| `stickymind` | AI assistant | `platform` |
-
-### 14. PMAT (separate product)
-
-| Repo | Purpose | Tag |
-|------|---------|-----|
-| `pmat-action` | GitHub Action for PMAT | `pmat` |
-| `pmat-test-sonnet-4` | Sonnet 4 eval | `pmat/eval` |
-| `pmat-test-gpt4.1` | GPT-4.1 eval | `pmat/eval` |
-| `pmat-test-gpt5` | GPT-5 eval | `pmat/eval` |
-| `pmat-test-gpt5-mini` | GPT-5 mini eval | `pmat/eval` |
-| `pmat-test-gemini2.5-pro` | Gemini 2.5 Pro eval | `pmat/eval` |
-
-### 15. STALE / ARCHIVE IMMEDIATELY
-
-| Repo | Reason | Tag |
-|------|--------|-----|
-| `ds500-subscription-deleted` | Deleted subscription | `stale/archive` |
-| `hello` | Hello world demo | `stale/archive` |
-| `hello-github` | Hello world demo | `stale/archive` |
-| `discord-bot` | Empty/abandoned | `stale/archive` |
-| `model-serving-survey` | Empty survey | `stale/archive` |
-| `socialpower` | Abandoned | `stale/archive` |
-| `software-language-popularity-2025` | One-off analysis | `stale/archive` |
-| `osx-perf-tune` | macOS perf tuning (old) | `stale/archive` |
-| `ubuntu-config-scripts` | Config scripts (old) | `stale/archive` |
-| `cost-optimize-aws` | AWS cost scripts (old) | `stale/archive` |
-| `eu-currency` | Currency converter demo | `stale/archive` |
-| `dom-intelligence` | DOM intelligence (old) | `stale/archive` |
-| `labs-code` | Old labs code | `stale/archive` |
-| `data` | Public data files | `stale/archive` |
-| `ropub` | O'Reilly pub tools | `stale/archive` |
-| `archived-emlop-book-material` | Archived | `stale/archive` |
-| `Flask-Elastic-Beanstalk` | Old Python Flask | `stale/archive` |
-| `awsbigdata` | Old AWS cert | `stale/archive` |
-| `pbjbi` | MCP BI demo | `stale/archive` |
-| `apr-leaderboard` | Leaderboard scripts | `stale/archive` |
-| `engman` | AI eng manager demo | `stale/archive` |
-| `faro` | Spanish data mining | `stale/archive` |
-| `rurl` | URL rewriter | `stale/archive` |
-| `minimal-pyqt` | Minimal PyQt | `stale/archive` |
-
-### Remaining (already counted elsewhere)
-
-| Repo | Category |
-|------|----------|
-| `testing-in-python` | `course/demo` |
-| `python_for_datascience` | `course/demo` |
-| `python-command-line-tools` | `course/demo` |
-| `python-devops` | `course/demo` |
-| `minimal-python` | `legacy/book` |
-| `livestreams` | `platform` |
-| `wine-ratings` | `course/demo` |
-
----
-
-### Summary by Category
-
-| Category | Count | Action |
-|----------|-------|--------|
-| MONOREPO | 1 | Active — `aprender` |
-| MERGED (archived) | 14 | Done — redirects in place |
-| SHOULD-MERGE | 6 | Archive with redirect |
-| ACTIVE-TOOL | 21 | Maintain independently |
-| MODEL-TRAINING | 3 | Active research |
-| POC/BENCHMARK | 8 | Read-only reference |
-| COURSE-DEMO | ~34 | Read-only for students |
-| LEGACY-BOOK | 15 | Read-only, no updates |
-| LEGACY-LIBRARY | 18 | Archive candidates |
-| GROUND-TRUTH | 13 | Maintain for RAG oracle |
-| TRANSPILER | 9 | Active (depyler product line) |
-| RUCHY | 8 | Separate product line |
-| INFRA/PLATFORM | ~25 | Active operations |
-| PMAT | 6 | Separate product |
-| STALE/ARCHIVE | ~24 | Archive immediately |
-| **Total** | **205** | |
-
-### Implementation Priority
-
-**Phase 1 — Immediate**: DONE (2026-04-08)
-1. ~~Archive 6 SHOULD-MERGE repos with redirect descriptions~~ — 6/6 archived
-2. ~~Archive 24 STALE repos~~ — 24/24 archived
-3. ~~Tag all 205 repos with GitHub topics matching categories above~~ — 15 topics applied
-4. ~~Archive 18 LEGACY-LIBRARY repos~~ — 18/18 archived
-5. **Total archived: 62** (14 merged + 6 should-merge + 24 stale + 18 legacy-library)
-
-**Phase 2 — Provable-contracts-first documentation**: DONE (2026-04-08)
-1. ~~21 ACTIVE-TOOL repos get provable contracts~~ — `contracts/apr-tool-*-v1.yaml` (21 files)
-2. Each contract defines: purpose, inputs, outputs, 5 falsification conditions
-3. Book chapters reference tools by `apr` subcommand or `aprender-*` crate only
-
-**Phase 3 — Ground-truth corpus contracts**: DONE (2026-04-08)
-1. ~~13 ground-truth corpora get provable contracts~~ — `contracts/apr-corpus-*-v1.yaml` (13 files)
-2. Each corpus contract defines: domain, language, freshness gate, RAG indexing
-3. Oracle consultation protocol references corpus provenance
-
-**Contract inventory**:
-- 20 book chapter contracts (`apr-book-ch*-v1.yaml`)
-- 21 active-tool contracts (`apr-tool-*-v1.yaml`)
-- 13 ground-truth corpus contracts (`apr-corpus-*-v1.yaml`)
-- 1 org taxonomy contract (`apr-org-taxonomy-v1.yaml`)
-- **Total: 55 new contracts** from this spec
-
-### Falsification for this Appendix
-
-```yaml
-# contracts/apr-org-taxonomy-v1.yaml
-contract: apr-org-taxonomy
-version: 1
-status: enforced
-date: 2026-04-08
-falsification:
-  - condition: "gh repo list paiml returns repo not in any category"
-    severity: P0
-    action: classify_and_update
-  - condition: "SHOULD-MERGE repo not archived within 7 days"
-    severity: P1
-    action: escalate
-  - condition: "STALE repo not archived within 7 days"
-    severity: P1
-    action: escalate
-  - condition: "Repo uses legacy name in description without redirect"
-    severity: P0
-    action: update_description
+# Publish with topological ordering (when multiple crates changed):
+cargo workspaces publish --from-git
 ```
 
 ---
 
-## Summary
+## What This Fixes
 
-| Metric | Value |
-|--------|-------|
-| Chapters | 20 |
-| Parts | 5 (Foundations, Classical ML, Deep Learning, Production, Advanced) |
-| arXiv citations | 41 |
-| `cargo run -p aprender-core --example` entries | 20 |
-| Book chapter contracts | 20 (`apr-book-ch*-v1.yaml`) |
-| Active-tool contracts | 21 (`apr-tool-*-v1.yaml`) |
-| Ground-truth corpus contracts | 13 (`apr-corpus-*-v1.yaml`) |
-| Org taxonomy contract | 1 (`apr-org-taxonomy-v1.yaml`) |
-| **Total new contracts** | **55** |
-| Total falsification conditions | 5 x 20 + 5 x 21 + 5 x 13 + 5 x 1 = **275** |
-| Legacy names used | **0** |
-| Oracle families consulted | qwen2, llama, whisper, bert |
-| CLI binary | `apr` (via `cargo install aprender`) |
-| Library namespace | `aprender-*` (70 crates) |
-| paiml org repos classified | **205** across 15 categories |
-| Repos archived (total) | **62** (14 merged + 6 should-merge + 24 stale + 18 legacy-library) |
-| Repos active | **143** |
-| GitHub topics applied | 15 categories |
+| Problem | Before (5 repos) | After (1 repo) |
+|---------|------------------|----------------|
+| Version sync | Manual, 19 failures (#701) | Automatic (workspace) [4] |
+| Daily apr-cli | 5-repo coordination | `cargo publish -p apr-cli` |
+| Diamond deps | `trueno 0.17` vs `0.18` | Impossible (one version) [4] |
+| `[patch.crates-io]` | Required, leaks to publish | Eliminated [5] |
+| Circular deps | aprender↔trueno blocked | Workspace siblings [1] |
+| CI coverage | 19 separate pipelines | 1 pipeline, 1 report [7] |
+| New contributor setup | Clone 5+ repos | Clone 1 repo [1] |
+| Cross-crate refactoring | 5+ PRs, coordinated merge | 1 PR [1] |
+| Crate namespace | 4 prefixes (trueno/aprender/entrenar/realizar) | 1 prefix (aprender-*) |
+| crates.io names | 32+ names, version sync hell | ~48 names, workspace-locked |
+| Documentation | 5+ separate books | 1 unified book |
+| Old repos | Active, diverging | Archived read-only, redirect READMEs |
+
+---
+
+## Risks and Mitigations
+
+| Risk | Probability | Impact | Mitigation |
+|------|------------|--------|------------|
+| Large git repo (4752 files) | Certain | Low | Polars has 28 crates, Burn 33 — proven at scale |
+| Compile time increase | Medium | Medium | `default-members` limits what builds by default; `cargo test -p apr-cli` for focused work |
+| CI time increase | Medium | Medium | Use `cargo nextest` + `--partition` for parallel CI; cache `target/` |
+| Migration breaks existing users | Low | High | Shim crates provide indefinite backward compat |
+| Git history loss | Low | Medium | `git subtree` preserves full history; old repos archived read-only |
+| Merge conflicts during migration | Medium | Low | Do it over a weekend freeze; migrate one repo at a time |
+
+---
+
+## Decision Matrix
+
+| Option | Impact | Effort | Risk | Recommendation |
+|--------|--------|--------|------|---------------|
+| **A: Full monorepo** (this spec, 19 repos → 1) | **Critical** | **5-7 days** | **Low** | **RECOMMENDED — matches industry standard [1][2][3]** |
+| B: Keep trueno separate | Medium | 2 days | Medium | Partial fix, version sync remains |
+| C: Do nothing | — | 0 | **High** | 19 incidents → 30+ incidents |
+
+---
+
+## Success Criteria
+
+1. ~~`cargo test --workspace` passes~~ **DONE**: 25,391 pass / 0 fail
+2. ~~`cargo publish` without `[patch.crates-io]`~~ **DONE**: 0 patches, dry-run 63/63 OK
+3. `cargo install aprender` from clean machine — Phase 5 (publishing in progress)
+4. Old crate names resolve via shims — Phase 5 (36 shims generated, pending publish)
+5. Daily aprender releases < 5 min — verified: `cargo publish -p aprender` is single command
+6. Zero version mismatch for 90 days — starts after Phase 5 completes
+
+---
+
+## Falsification Conditions
+
+**Contract**: `contracts/cgp/cgp-monorepo-consolidation-v1.yaml`
+
+If ANY of these become true, the migration hypothesis is wrong:
+
+| ID | Condition | Threshold | Mitigation |
+|----|-----------|-----------|------------|
+| FALSIFY-MONO-001 | Incremental compile time regression | > 3× baseline (> 15s for 1-file change) | `default-members`, dep graph pruning |
+| FALSIFY-MONO-002 | CI gate time exceeds budget | > 10 min wall-clock for 1-file PR | `cargo nextest --partition`, sccache |
+| FALSIFY-MONO-003 | Merge conflict rate increases | > 2 conflicts/week (baseline ~0) | CODEOWNERS, directory ownership [2] |
+| FALSIFY-MONO-004 | Daily publish exceeds time budget | > 5 min for `make publish CRATE=apr-cli` | Topological publish ordering |
+| FALSIFY-MONO-005 | Broken publishes continue | > 2 incidents in 90 days (baseline 19/5mo) | Workspace eliminates version skew [4] |
+| FALSIFY-MONO-006 | Clone time exceeds threshold | > 30s for `git clone --depth 1` | .gitattributes LFS, shallow clone |
+| FALSIFY-MONO-007 | Git history lost during migration | `git log --follow` doesn't show pre-merge commits | Verify `git subtree` preservation |
+| FALSIFY-MONO-008 | Shim crates fail re-export | `trueno = "0.19"` produces type mismatches | Integration test shim crates in CI |
+| FALSIFY-MONO-009 | Workspace version bump breaks downstream | Patch bump causes API incompatibility | Polars pattern: shared version [1] |
+| FALSIFY-MONO-010 | Crate name not in Appendix A registry | Any `[package] name` not listed in spec | CI script validates against registry |
+| FALSIFY-MONO-011 | Non-apr-cli binary found in workspace | Any `[[bin]]` section outside apr-cli | CI grep for `[[bin]]` in Cargo.toml files |
+| FALSIFY-MONO-012 | Nested crate violates flat layout | Any crate deeper than `crates/<name>/` | CI checks manifest path depth |
+| FALSIFY-MONO-013 | apr subcommand missing contract | Any Commands enum variant without contract YAML | CI cross-checks enum vs contracts/ |
+
+---
+
+## Infrastructure Requirements (paiml/infra updates)
+
+The following infra specs must be updated BEFORE or DURING migration:
+
+### INFRA-CI-MONO: Workspace-aware CI pipeline
+
+`unified-ci-pipeline.md` currently assumes single-crate repos. Changes:
+- `cargo test --workspace` replaces `cargo test`
+- `cargo clippy --workspace` replaces `cargo clippy`
+- sccache warmup for ~48 crate build graph
+- CI time budget: 30-90s → 3-5 min for full workspace
+- `cargo nextest --partition` for parallel test execution
+
+### INFRA-PUBLISH-MONO: Topological publish ordering
+
+`release-system.md` must support workspace publish ordering:
+- Cannot `cargo publish -p apr-cli` until all deps are published
+- Need topological sort: provable-contracts → compute → aprender → train/serve → apr-cli
+- Tool: `cargo-workspaces publish` or custom `xtask publish`
+- Trusted Publishing OIDC must work for ~48 crate names
+
+### INFRA-CLEAN-ROOM-MONO: Workspace resource budget
+
+`clean-room-spec.md` container must handle full workspace:
+- Disk: 2-3× current for ~48 crate build graph
+- Memory: monitor for OOM on parallel compilation
+- `cargo install aprender` post-publish smoke test unchanged
+
+### INFRA-ARCHIVE: Old repo archival
+
+19 repos archived as read-only (GitHub Settings → Archive):
+- README updated: "This repo has moved to paiml/aprender/crates/..."
+- No deletion — preserve issues, PRs, stars
+- Branch protection removed (read-only)
+
+---
+
+## Appendix A: Definitive Crate Name Registry (ENFORCED BY CONTRACT)
+
+**This table is the single source of truth for all crate names in the monorepo.**
+Any crate not listed here MUST NOT be added without updating this spec.
+Contract: `cgp-monorepo-consolidation-v1.yaml` FALSIFY-MONO-010.
+
+### A.1 Core ML (unchanged names)
+
+| # | Crate Name | Workspace Path | Source Repo | Description |
+|---|-----------|---------------|-------------|-------------|
+| 1 | `aprender` | `crates/aprender/` | paiml/aprender | ML format (.apr), tokenizers, model ops |
+| 2 | `apr-cli` | `crates/apr-cli/` | paiml/aprender | `apr` binary — user-facing CLI |
+| 3 | `aprender-shell` | `crates/aprender-shell/` | paiml/aprender | Interactive REPL |
+| 4 | `aprender-tsp` | `crates/aprender-tsp/` | paiml/aprender | TSP solver examples |
+| 5 | `aprender-monte-carlo` | `crates/aprender-monte-carlo/` | paiml/aprender | Monte Carlo simulations |
+
+### A.2 Compute Primitives (was trueno)
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 6 | `aprender-compute` | `crates/aprender-compute/` | `trueno` | trueno 0.19 |
+| 7 | `aprender-gpu` | `crates/aprender-gpu/` | `trueno-gpu` | trueno-gpu 0.5 |
+| 8 | `aprender-quant` | `crates/aprender-quant/` | `trueno-quant` | trueno-quant 0.2 |
+| 9 | `aprender-gemm-codegen` | `crates/aprender-gemm-codegen/` | `trueno-gemm-codegen` | trueno-gemm-codegen 0.2 |
+| 10 | `aprender-fft` | `crates/aprender-fft/` | `trueno-fft` | trueno-fft 0.2 |
+| 11 | `aprender-sparse` | `crates/aprender-sparse/` | `trueno-sparse` | trueno-sparse 0.2 |
+| 12 | `aprender-solve` | `crates/aprender-solve/` | `trueno-solve` | trueno-solve 0.2 |
+| 13 | `aprender-rand` | `crates/aprender-rand/` | `trueno-rand` | trueno-rand 0.2 |
+| 14 | `aprender-image` | `crates/aprender-image/` | `trueno-image` | trueno-image 0.2 |
+| 15 | `aprender-tensor` | `crates/aprender-tensor/` | `trueno-tensor` | trueno-tensor 0.2 |
+| 16 | `aprender-cuda-edge` | `crates/aprender-cuda-edge/` | `trueno-cuda-edge` | trueno-cuda-edge 0.2 |
+| 17 | `aprender-ptx-debug` | `crates/aprender-ptx-debug/` | `trueno-ptx-debug` | No (internal only) |
+| 18 | `aprender-explain` | `crates/aprender-explain/` | `trueno-explain` | trueno-explain 0.3 |
+| 19 | `aprender-cbtop` | `crates/aprender-cbtop/` | `cbtop` | cbtop 0.2 |
+| 20 | `aprender-cgp` | `crates/aprender-cgp/` | `cgp` | No (internal only) |
+
+### A.3 Data & Storage
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 21 | `aprender-db` | `crates/aprender-db/` | `trueno-db` | trueno-db 0.4 |
+| 22 | `aprender-graph` | `crates/aprender-graph/` | `trueno-graph` | trueno-graph 0.2 |
+| 23 | `aprender-rag` | `crates/aprender-rag/` | `trueno-rag` | trueno-rag 0.3 |
+| 24 | `aprender-rag-cli` | `crates/aprender-rag-cli/` | `trueno-rag-cli` | trueno-rag-cli 0.2 |
+| 25 | `aprender-data` | `crates/aprender-data/` | `alimentar` | alimentar 0.3 |
+| 26 | `aprender-registry` | `crates/aprender-registry/` | `pacha` | pacha 0.3 |
+
+### A.4 Training (was entrenar)
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 27 | `aprender-train` | `crates/aprender-train/` | `entrenar` | entrenar 0.8 |
+| 28 | `aprender-train-common` | `crates/aprender-train-common/` | `entrenar-common` | entrenar-common 0.2 |
+| 29 | `aprender-train-lora` | `crates/aprender-train-lora/` | `entrenar-lora` | entrenar-lora 0.4 |
+| 30 | `aprender-train-distill` | `crates/aprender-train-distill/` | `entrenar-distill` | entrenar-distill 0.2 |
+| 31 | `aprender-train-inspect` | `crates/aprender-train-inspect/` | `entrenar-inspect` | entrenar-inspect 0.2 |
+| 32 | `aprender-train-shell` | `crates/aprender-train-shell/` | `entrenar-shell` | entrenar-shell 0.2 |
+
+### A.5 Serving (was realizar)
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 33 | `aprender-serve` | `crates/aprender-serve/` | `realizar` | realizar 0.9 |
+
+### A.6 Orchestration (was batuta)
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 34 | `aprender-orchestrate` | `crates/aprender-orchestrate/` | `batuta` | batuta 0.8 |
+
+### A.7 Visualization & TUI (was presentar + trueno-viz)
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 35 | `aprender-viz` | `crates/aprender-viz/` | `trueno-viz` | trueno-viz 0.3 |
+| 36 | `aprender-present-core` | `crates/aprender-present-core/` | `presentar-core` | presentar-core 0.4 |
+| 37 | `aprender-present-terminal` | `crates/aprender-present-terminal/` | `presentar-terminal` | presentar-terminal 0.4 |
+| 38 | `aprender-present-widgets` | `crates/aprender-present-widgets/` | `presentar-widgets` | presentar-widgets 0.4 |
+| 39 | `aprender-present-layout` | `crates/aprender-present-layout/` | `presentar-layout` | presentar-layout 0.4 |
+| 40 | `aprender-present-yaml` | `crates/aprender-present-yaml/` | `presentar-yaml` | presentar-yaml 0.4 |
+| 41 | `aprender-present-cli` | `crates/aprender-present-cli/` | `presentar-cli` | presentar-cli 0.4 |
+| 42 | `aprender-present` | `crates/aprender-present/` | `presentar` | presentar 0.4 |
+
+### A.8 Profiling & Quality
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 43 | `aprender-profile` | `crates/aprender-profile/` | `renacer` | renacer 0.11 |
+| 44 | `aprender-profile-core` | `crates/aprender-profile-core/` | `renacer-core` | renacer-core 0.2 |
+| 45 | `aprender-verify` | `crates/aprender-verify/` | `certeza` | certeza 0.2 |
+| 46 | `aprender-verify-ml` | `crates/aprender-verify-ml/` | `verificar` | verificar 0.6 |
+| 47 | `aprender-simulate` | `crates/aprender-simulate/` | `simular` | simular 0.4 |
+| 48 | `aprender-distribute` | `crates/aprender-distribute/` | `repartir` | repartir 2.1 |
+
+### A.9 Testing Framework (was probar)
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 49 | `aprender-test` | `crates/aprender-test/` | `probar` | probar 1.1 |
+| 50 | `aprender-test-derive` | `crates/aprender-test-derive/` | `probar-derive` | probar-derive 1.1 |
+| 51 | `aprender-test-cli` | `crates/aprender-test-cli/` | `probar-cli` | probar-cli 1.1 |
+| 52 | `aprender-test-js-gen` | `crates/aprender-test-js-gen/` | `probar-js-gen` | probar-js-gen 1.1 |
+
+### A.10 Contracts & Build Infrastructure (was provable-contracts)
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 53 | `aprender-contracts` | `crates/aprender-contracts/` | `provable-contracts` | provable-contracts 0.3 |
+| 54 | `aprender-contracts-macros` | `crates/aprender-contracts-macros/` | `provable-contracts-macros` | provable-contracts-macros 0.3 |
+| 55 | `aprender-contracts-cli` | `crates/aprender-contracts-cli/` | `provable-contracts-cli` | provable-contracts-cli 0.3 |
+
+### A.11 Compressed Memory (was trueno-zram)
+
+| # | Crate Name | Workspace Path | Old Name | Shim Version |
+|---|-----------|---------------|----------|-------------|
+| 56 | `aprender-zram` | `crates/aprender-zram/` | `trueno-zram-core` | trueno-zram-core 0.4 |
+| 57 | `aprender-zram-adaptive` | `crates/aprender-zram-adaptive/` | `trueno-zram-adaptive` | trueno-zram-adaptive 0.4 |
+| 58 | `aprender-zram-generator` | `crates/aprender-zram-generator/` | `trueno-zram-generator` | trueno-zram-generator 0.4 |
+| 59 | `aprender-zram-cli` | `crates/aprender-zram-cli/` | `trueno-zram-cli` | trueno-zram-cli 0.4 |
+| 60 | `aprender-ublk` | `crates/aprender-ublk/` | `trueno-ublk` | trueno-ublk 0.4 |
+
+### A.12 Benchmarks (internal, not published)
+
+| # | Crate Name | Workspace Path | Old Name | Published? |
+|---|-----------|---------------|----------|-----------|
+| 61 | `aprender-bench-tokenizer` | `crates/aprender-bench-tokenizer/` | (same) | No |
+| 62 | `aprender-bench-compute` | `crates/aprender-bench-compute/` | (same) | No |
+| 63 | `aprender-train-bench` | `crates/aprender-train-bench/` | `entrenar-bench` | No |
+
+**Total: 63 workspace crates (49 published + 14 internal)**
+
+### A.13 Shim Crate Count
+
+- **Published shim crates needed**: ~45 (one per renamed crate)
+- **Each shim**: ~10 lines (`pub use new_name::*;`)
+- **Published once, never updated again**
+- **Purpose**: backward compatibility + namespace reservation
+
+### Appendix B: Kept Separate (NOT merged)
+
+| Crate | Reason |
+|-------|--------|
+| pmat / paiml-mcp-agent-toolkit | Separate product, own release cycle, 3830 .rs files |
+| manzana | Platform-specific (Apple only) |
+| whisper.apr | Application built ON the stack, not part of it |
+| forjar | Standalone IaC tool, zero stack deps (1180 files) |
+| ruchy | Separate language/runtime project |
+| apr-cookbook | Becomes `aprender/cookbook/` (content, not a crate) |
+
+### Appendix C: Polars Reference Architecture
+
+```
+pola-rs/polars/Cargo.toml:
+  [workspace.package]
+  version = "0.53.0"           ← ALL 28 crates share this version
+  
+  [workspace.dependencies]     ← shared dep versions, DRY
+  arrow = "53"
+  serde = { version = "1", features = ["derive"] }
+  
+polars-core/Cargo.toml:
+  [package]
+  name = "polars-core"
+  version.workspace = true     ← inherits from workspace
+  
+  [dependencies]
+  polars-arrow = { workspace = true }   ← resolves to local path
+```
+
+This is the target state for `paiml/aprender`.

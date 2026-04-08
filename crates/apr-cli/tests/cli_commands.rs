@@ -12,20 +12,27 @@ use std::process::Command;
 
 /// All commands registered in contracts/apr-cli-commands-v1.yaml.
 /// This is the Rust-side mirror of the YAML contract.
-const REGISTERED_COMMANDS: &[&str] = &[
-    "run", "serve", "chat", "code",
-    "inspect", "debug", "validate", "lint", "explain", "tensors",
-    "trace", "diff", "hex", "tree", "flow",
-    "export", "import", "convert", "compile", "merge", "quantize", "rosetta",
-    "pull", "list", "rm", "publish",
-    "finetune", "prune", "distill", "train", "tokenize", "tune",
-    "bench", "eval", "check", "qa", "qualify", "canary", "compare-hf", "parity",
-    "gpu", "profile", "ptx", "ptx-map", "cbtop",
-    "data", "pipeline",
-    "tui", "monitor", "runs", "experiment",
-    "showcase", "probar", "diagnose",
-    "oracle", "encrypt", "decrypt",
-];
+/// Feature-gated commands are conditionally included.
+fn registered_commands() -> Vec<&'static str> {
+    let mut cmds = vec![
+        "run", "serve", "chat",
+        "inspect", "debug", "validate", "lint", "explain", "tensors",
+        "trace", "diff", "hex", "tree", "flow",
+        "export", "import", "convert", "compile", "merge", "quantize", "rosetta",
+        "pull", "list", "rm", "publish",
+        "finetune", "prune", "distill", "train", "tokenize", "tune",
+        "bench", "eval", "check", "qa", "qualify", "canary", "compare-hf", "parity",
+        "gpu", "profile", "ptx", "ptx-map", "cbtop",
+        "data", "pipeline",
+        "tui", "monitor", "runs", "experiment",
+        "showcase", "probar", "diagnose",
+        "oracle", "encrypt", "decrypt",
+    ];
+    // Feature-gated commands — only expected when feature is enabled
+    #[cfg(feature = "code")]
+    cmds.push("code");
+    cmds
+}
 
 fn apr_binary() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_apr"));
@@ -73,7 +80,7 @@ fn get_help_commands() -> Vec<String> {
 fn test_all_commands_respond_to_help() {
     let mut failures = Vec::new();
 
-    for cmd in REGISTERED_COMMANDS {
+    for cmd in registered_commands() {
         let output = apr_binary()
             .args([cmd, "--help"])
             .output()
@@ -101,9 +108,9 @@ fn test_all_contract_commands_exist() {
     let help_commands = get_help_commands();
     let mut missing = Vec::new();
 
-    for cmd in REGISTERED_COMMANDS {
+    for cmd in registered_commands() {
         if !help_commands.iter().any(|h| h == cmd) {
-            missing.push(*cmd);
+            missing.push(cmd);
         }
     }
 
@@ -118,7 +125,8 @@ fn test_all_contract_commands_exist() {
 #[test]
 fn test_no_unregistered_commands() {
     let help_commands = get_help_commands();
-    let registered: std::collections::HashSet<&str> = REGISTERED_COMMANDS.iter().copied().collect();
+    let cmds = registered_commands();
+    let registered: std::collections::HashSet<&str> = cmds.iter().copied().collect();
     let mut unregistered = Vec::new();
 
     for cmd in &help_commands {
@@ -133,7 +141,7 @@ fn test_no_unregistered_commands() {
     assert!(
         unregistered.is_empty(),
         "FALSIFY-CLI-002: Commands in `apr --help` but not in contract: {:?}\n\
-         Add them to contracts/apr-cli-commands-v1.yaml AND this test's REGISTERED_COMMANDS.",
+         Add them to contracts/apr-cli-commands-v1.yaml AND this test's registered_commands().",
         unregistered
     );
 }
@@ -144,7 +152,7 @@ fn test_command_count_matches() {
     let help_commands = get_help_commands();
     // Subtract "help" which clap adds automatically
     let help_count = help_commands.iter().filter(|c| c.as_str() != "help").count();
-    let contract_count = REGISTERED_COMMANDS.len();
+    let contract_count = registered_commands().len();
 
     assert_eq!(
         help_count, contract_count,
