@@ -47,6 +47,24 @@
 3. ~~**unwrap() calls**~~: RESOLVED — 0 unwrap() in production code, TDG 92.5/100 (A)
 4. **Qwen3.5 inference**: `apr run` fails on Qwen3.5-0.8B (GH-278 — new Gated Delta Net arch)
 
+### Gap Analysis (2026-04-08 Falsification)
+
+| Gap | Severity | Details |
+|-----|----------|---------|
+| **24 unauthorized binaries** | P1 | Spec Rule 1 says "apr-cli is THE binary" but 24 crates have `[[bin]]` entries (aprender-serve has 4, aprender-present-terminal has 4, etc.). These should be examples, integration tests, or folded into `apr` subcommands. |
+| **2 version outliers** | P2 | `aprender-present` (0.3.5) and `aprender-test` (1.0.3) don't use `version.workspace = true` |
+| **120 workspace members** | P2 | Spec says 70, `Cargo.toml` has 120 member entries. Many are sub-paths (bins, examples) not actual crates. Count is stale. |
+| **Stale "Previous State" section** | P3 | Spec still describes 5-repo state as "current" (lines 231-291). Should be marked as historical. |
+| **Line coverage 94.95%** | P3 | 0.05% below 95% target — needs ~35 more lines covered |
+
+### Action Items
+
+1. **P1: Audit 24 unauthorized binaries** — For each, decide: (a) delete if unused, (b) move to examples/, (c) make it an `apr` subcommand. Contract: Rule 1 says NO standalone binaries except apr-cli.
+2. **P2: Fix version outliers** — `aprender-present` and `aprender-test` must use `version.workspace = true`
+3. **P2: Update crate count** — Spec should say 74 crate directories, 120 workspace member entries (includes sub-paths)
+4. **P3: Mark historical sections** — Add "Historical (pre-consolidation)" header to Previous State section
+5. **P3: Coverage gap** — Add ~35 lines of test coverage to cross 95.00% line threshold
+
 ---
 
 ## Architectural Invariant: apr-cli Is THE Binary
