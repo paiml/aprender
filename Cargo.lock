@@ -291,6 +291,7 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-serve",
+ "aprender-train",
  "assert_cmd",
  "async-stream",
  "axum 0.7.9",
@@ -304,7 +305,6 @@ dependencies = [
  "crossterm 0.28.1",
  "dhat",
  "dirs 5.0.1",
- "entrenar 0.8.1",
  "entrenar-lora",
  "futures-util",
  "gag",
@@ -1658,47 +1658,6 @@ dependencies = [
 
 [[package]]
 name = "aprender-train"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72c4c4c0bb9e9801ddaf3c6889592ffa04f34fbd94d1d16d330a210527099b14"
-dependencies = [
- "aprender-core 0.29.2",
- "bytemuck",
- "chrono",
- "clap",
- "clap_complete",
- "ctrlc",
- "dirs 5.0.1",
- "ed25519-dalek",
- "fs4",
- "half",
- "hex",
- "hostname",
- "jsonschema 0.28.3",
- "ndarray 0.16.1",
- "presentar-core",
- "presentar-terminal",
- "provable-contracts-macros 0.2.2",
- "rand 0.9.2",
- "regex",
- "rusqlite",
- "safetensors 0.7.0",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "serde_yaml",
- "serde_yaml_ng",
- "sha2",
- "thiserror 2.0.18",
- "toml 0.8.23",
- "trueno 0.17.5",
- "trueno-viz 0.2.3",
- "validator",
- "zip 2.4.2",
-]
-
-[[package]]
-name = "aprender-train"
 version = "0.29.3"
 dependencies = [
  "alimentar",
@@ -1767,7 +1726,7 @@ dependencies = [
 name = "aprender-train-bench"
 version = "0.29.3"
 dependencies = [
- "aprender-train 0.29.3",
+ "aprender-train",
  "aprender-train-common",
  "assert_cmd",
  "clap",
@@ -1796,7 +1755,7 @@ dependencies = [
 name = "aprender-train-distill"
 version = "0.29.3"
 dependencies = [
- "aprender-train 0.29.3",
+ "aprender-train",
  "aprender-train-common",
  "assert_cmd",
  "bytemuck",
@@ -1817,7 +1776,7 @@ dependencies = [
 name = "aprender-train-inspect"
 version = "0.29.3"
 dependencies = [
- "aprender-train 0.29.3",
+ "aprender-train",
  "aprender-train-common",
  "assert_cmd",
  "clap",
@@ -1833,7 +1792,7 @@ dependencies = [
 name = "aprender-train-lora"
 version = "0.29.3"
 dependencies = [
- "aprender-train 0.29.3",
+ "aprender-train",
  "aprender-train-common",
  "assert_cmd",
  "clap",
@@ -1849,7 +1808,7 @@ dependencies = [
 name = "aprender-train-shell"
 version = "0.29.3"
 dependencies = [
- "aprender-train 0.29.3",
+ "aprender-train",
  "aprender-train-common",
  "clap",
  "dirs 5.0.1",
@@ -6147,15 +6106,6 @@ dependencies = [
  "trueno-viz 0.2.3",
  "validator",
  "zip 2.4.2",
-]
-
-[[package]]
-name = "entrenar"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88685565cc9e44e9c9a0171d82c97921c85e4eb2cd47d2e691ab70e681b0a942"
-dependencies = [
- "aprender-train 0.29.0",
 ]
 
 [[package]]

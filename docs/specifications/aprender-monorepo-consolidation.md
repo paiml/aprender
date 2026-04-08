@@ -28,7 +28,7 @@
 | Coverage (aprender-core) | 94.78% regions / 94.47% lines | ≥95% | **WARN** (0.5% below) |
 | Coverage (apr-cli) | 57.62% regions / 58.06% lines | ≥80% | **FAIL** — 58% (target 80%). ~40% is cfg-gated CUDA/training code. |
 | Coverage (other 72 crates) | NOT MEASURED | ≥95% | **UNKNOWN** |
-| Tests (apr-cli) | 4,225 | — | PASS |
+| Tests (apr-cli) | 4,272 (lib) + 47 (integration) | — | PASS |
 | Tests (aprender-core) | 12,975 | — | PASS |
 | Tests (contracts) | 1,371 | — | PASS |
 | Integration (monorepo) | 8/8 | 8/8 | PASS |

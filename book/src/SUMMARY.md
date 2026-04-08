@@ -215,7 +215,6 @@
 - [First Server](./getting-started/first-server.md)
 - [First Training](./getting-started/first-training.md)
 - [Installation](./getting-started/installation.md)
-- [Introduction](./introduction.md)
 - [The RED-GREEN-REFACTOR Cycle](./methodology/red-green-refactor.md)
 - [Test-First Philosophy](./methodology/test-first-philosophy.md)
 - [What is EXTREME TDD?](./methodology/what-is-extreme-tdd.md)
