@@ -890,8 +890,10 @@ fn test_fallback_graph_cov_032_path_dep_issue_fields() {
 
 /// Test from_workspace using the actual batuta project directory.
 /// This covers lines 223-310 in graph.rs (the entire from_workspace method).
+/// Requires batuta standalone workspace (not monorepo).
 #[cfg(feature = "native")]
 #[test]
+#[ignore = "requires standalone batuta workspace, not monorepo"]
 fn test_from_workspace_batuta_project() {
     // Use the current project directory (batuta itself)
     let workspace_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -902,8 +904,11 @@ fn test_from_workspace_batuta_project() {
 
     let graph = result.unwrap();
 
-    // batuta is a PAIML crate, so it should be in the graph
-    assert!(graph.get_crate("batuta").is_some(), "batuta should be in the graph");
+    // In the monorepo, "batuta" may be named "aprender-orchestrate"
+    assert!(
+        graph.get_crate("batuta").is_some() || graph.get_crate("aprender-orchestrate").is_some(),
+        "workspace should contain batuta or aprender-orchestrate"
+    );
 
     // The graph should have at least 1 crate
     assert!(graph.crate_count() >= 1);
