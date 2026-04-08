@@ -146,6 +146,54 @@ done < /tmp/subcommands.txt
 | Standalone binary from `aprender-*` crate | **NO** | ~~`aprender-serve` binary~~ |
 | Old binary names (`batuta`, `entrenar`, etc.) | **NO** (archived) | ~~`cargo install batuta`~~ |
 
+### Rule 5: Zero Feature-Gating for Users
+
+**Every `apr` subcommand MUST work after `cargo install aprender`. No exceptions.**
+
+Users NEVER pass `--features`. The default feature set MUST include everything
+needed for all 57 commands to function. This is the Ollama/PyTorch model:
+`pip install torch` gives you CPU+CUDA — you don't `pip install torch[cuda]`.
+
+| Principle | Requirement |
+|-----------|-------------|
+| `cargo install aprender` | ALL commands work out of the box |
+| Inference (`apr run`) | Works by default — `inference` in default features |
+| Training (`apr finetune`) | Works by default — `training` in default features |
+| GPU acceleration | Auto-detected at runtime (Rule 6), NOT a compile-time feature |
+| `--features cuda` | **Developer-only** — gates CUDA *compilation* for CI/testing, NOT user functionality |
+| `--features code` | **Exception**: `apr code` requires `batuta` which has external deps. Must document clearly. |
+
+**Enforcement**: If any `apr <cmd> --help` exits non-zero after `cargo install aprender`,
+that is a P0 bug. The CLI commands integration test (`cli_commands.rs`) verifies this.
+
+**Anti-pattern**: `apr run model.gguf` → "inference requires --features inference" is FORBIDDEN.
+The user should never see a feature-gate error.
+
+### Rule 6: GPU Auto-Detection at Runtime
+
+**GPU support is detected at runtime, not compile time.**
+
+```
+apr run model.gguf "prompt"
+  → Detect CUDA → if available, use GPU (273 tok/s)
+  → if not available, fallback to CPU SIMD (13 tok/s)
+  → NEVER error on missing GPU
+```
+
+| Scenario | Behavior |
+|----------|----------|
+| RTX 4090 present | Auto-detect, use CUDA Q4K kernels |
+| No GPU | Graceful fallback to CPU SIMD — no error, no warning |
+| CUDA driver mismatch | Fallback to CPU with `--verbose` warning |
+| `--no-gpu` flag | Force CPU even if GPU available |
+| `--gpu` flag | Require GPU, error if unavailable (explicit opt-in to failure) |
+
+**Implementation**: The `realizar` inference engine handles GPU detection.
+`apr run` passes `InferenceConfig { no_gpu: false }` by default.
+The CUDA executor tries to initialize; on failure, falls through to CPU.
+
+**Contract**: `contracts/apr-cli-command-safety-v1.yaml` — `long_running_graceful` equation.
+
 ---
 
 ### Citations

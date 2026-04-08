@@ -1,0 +1,128 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+  - "docs/specifications/aprender-monorepo-consolidation.md"
+  - "Rule 5: Zero Feature-Gating for Users"
+  - "Rule 6: GPU Auto-Detection at Runtime"
+  description: >
+    Every apr subcommand works after cargo install aprender with zero
+    feature flags. GPU auto-detected at runtime, graceful CPU fallback.
+    The Ollama/PyTorch model: install once, everything works.
+
+equations:
+  all_commands_work_by_default:
+    formula: |
+      For every subcommand C in apr --help:
+        apr C --help exits 0
+      after: cargo install aprender (default features only)
+    domain: installed apr binary
+    codomain: bool
+    invariants:
+    - "Every command responds to --help with exit 0"
+    - "No command prints 'feature not enabled' or 'requires --features'"
+    - "No command panics on invocation"
+    - "Default features include inference + training + visualization + zram"
+
+  gpu_auto_detection:
+    formula: |
+      apr run model.gguf "prompt":
+        if CUDA available: use GPU (transparent to user)
+        if CUDA unavailable: use CPU SIMD (transparent to user)
+        NEVER: error on missing GPU
+    domain: inference commands (run, serve, chat)
+    codomain: inference result
+    invariants:
+    - "GPU detection happens at runtime, not compile time"
+    - "Missing GPU produces CPU output, not an error"
+    - "--no-gpu flag forces CPU (opt-in to CPU-only)"
+    - "--gpu flag requires GPU (opt-in to failure on missing GPU)"
+    - "--verbose shows which backend was selected"
+
+  no_feature_gate_errors:
+    formula: |
+      For all output O of any apr command:
+        O does NOT contain "feature not enabled"
+        O does NOT contain "requires --features"
+        O does NOT contain "enable the .* feature"
+        O does NOT contain "compile with --features"
+    domain: all apr command output (stdout + stderr)
+    codomain: bool
+    invariants:
+    - "Users NEVER see feature-gate errors"
+    - "Developer-only features (code, dev) are documented as optional"
+    - "Missing functionality returns helpful error, not feature-gate message"
+
+  default_features_complete:
+    formula: |
+      apr-cli default features = [
+        "hf-hub",              -- HuggingFace model downloads
+        "safetensors-compare", -- format comparison
+        "inference",           -- apr run, serve, chat
+        "training",            -- apr finetune, train, distill
+        "visualization",       -- apr profile, trace
+        "zram"                 -- compression
+      ]
+      These MUST remain in default. Removing any is a P0 regression.
+    domain: crates/apr-cli/Cargo.toml [features] default
+    codomain: feature list
+    invariants:
+    - "inference in default (apr run works)"
+    - "training in default (apr finetune works)"
+    - "visualization in default (apr profile works)"
+    - "cuda NOT in default (compile-time gate for CI only)"
+    - "code NOT in default (requires batuta external dep)"
+
+falsification_tests:
+- id: FALSIFY-ZEROGATEV-001
+  rule: all commands respond to --help
+  prediction: "every subcommand in apr --help exits 0 on --help"
+  test: |
+    apr --help 2>&1 | awk '/^  [a-z]/{print $1}' | while read cmd; do
+      apr "$cmd" --help > /dev/null 2>&1 || echo "FAIL: $cmd"
+    done
+  if_fails: "command does not respond to --help"
+
+- id: FALSIFY-ZEROGATEV-002
+  rule: no feature-gate errors in output
+  prediction: "no command prints feature-gate messages"
+  test: |
+    for cmd in run serve chat finetune train distill profile; do
+      apr "$cmd" --help 2>&1 | grep -qi "feature.*not.*enabled\|requires.*features" && echo "FAIL: $cmd"
+    done
+  if_fails: "feature-gate error message found in command output"
+
+- id: FALSIFY-ZEROGATEV-003
+  rule: GPU fallback graceful
+  prediction: "apr run without GPU does not error"
+  test: |
+    apr run --no-gpu /dev/null "test" --max-tokens 1 2>&1
+    # Should fail on invalid model, NOT on missing GPU
+    ! apr run --no-gpu /dev/null "test" --max-tokens 1 2>&1 | grep -qi "cuda\|gpu.*not.*found"
+  if_fails: "GPU fallback produces GPU-related error"
+
+- id: FALSIFY-ZEROGATEV-004
+  rule: default features complete
+  prediction: "Cargo.toml default includes inference + training"
+  test: |
+    grep 'default.*=' crates/apr-cli/Cargo.toml | grep -q 'inference' &&
+    grep 'default.*=' crates/apr-cli/Cargo.toml | grep -q 'training'
+  if_fails: "default features missing inference or training"
+
+proof_obligations:
+- type: invariant
+  property: "all commands work after cargo install aprender"
+- type: invariant
+  property: "GPU auto-detected at runtime, graceful CPU fallback"
+- type: invariant
+  property: "no feature-gate errors in any command output"
+- type: invariant
+  property: "default features include inference + training"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending
