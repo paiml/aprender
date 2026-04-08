@@ -89,7 +89,7 @@ impl PeftAdapterBundle {
         // Write adapter_config.json
         let peft_config =
             PeftAdapterConfig::from_lora_config(&self.config, self.base_model.as_deref());
-        let config_json = peft_config.to_json().map_err(|e| AdapterError::Serialization(e))?;
+        let config_json = peft_config.to_json().map_err(AdapterError::Serialization)?;
         std::fs::write(output_dir.join("adapter_config.json"), config_json)?;
 
         // Build tensor data for safetensors

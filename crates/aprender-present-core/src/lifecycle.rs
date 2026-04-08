@@ -731,9 +731,10 @@ mod tests {
 
         let mut effect = Effect::new(move || {
             let cc = cc;
-            Some(Box::new(move || {
+            let b: Box<dyn FnOnce() + Send> = Box::new(move || {
                 cc.fetch_add(1, Ordering::SeqCst);
-            }) as Box<dyn FnOnce() + Send>)
+            });
+            Some(b)
         });
 
         effect.run(None);
@@ -797,9 +798,10 @@ mod tests {
             widget_id,
             Effect::new(move || {
                 let cc = cc;
-                Some(Box::new(move || {
+                let b: Box<dyn FnOnce() + Send> = Box::new(move || {
                     cc.fetch_add(1, Ordering::SeqCst);
-                }) as Box<dyn FnOnce() + Send>)
+                });
+                Some(b)
             }),
         );
 

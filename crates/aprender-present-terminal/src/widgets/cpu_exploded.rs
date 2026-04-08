@@ -398,7 +398,7 @@ impl Widget for CpuStateBreakdown {
             for (pct, color, ch) in segments {
                 let width = ((pct / total) * bar_width as f64).round() as usize;
                 if width > 0 {
-                    let bar: String = std::iter::repeat(ch).take(width).collect();
+                    let bar: String = std::iter::repeat_n(ch, width).collect();
                     canvas.draw_text(
                         &bar,
                         Point::new(x, y),

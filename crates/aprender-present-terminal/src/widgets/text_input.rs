@@ -514,7 +514,7 @@ impl TextInput {
     /// Get display text (masked if mask is set).
     fn display_text(&self) -> String {
         if let Some(mask) = self.mask {
-            std::iter::repeat(mask).take(self.len()).collect()
+            std::iter::repeat_n(mask, self.len()).collect()
         } else {
             self.text.clone()
         }

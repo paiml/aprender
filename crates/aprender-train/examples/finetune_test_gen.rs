@@ -148,6 +148,7 @@ impl QwenModel {
 
 // --- QLoRA Wrapper ---
 
+#[allow(clippy::struct_field_names)]
 struct LayerQLoRAAdapters {
     q_qlora: QLoRALayer,
     k_qlora: QLoRALayer,
@@ -221,6 +222,7 @@ impl QwenWithQLoRA {
 // --- Popperian QA ---
 
 /// 100-Point Popperian Falsification Checklist
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Default)]
 pub struct PopperianQA {
     // Reproducibility (20 points)

@@ -125,6 +125,7 @@ impl ItemLayout {
 }
 
 /// Virtualized list state
+#[derive(Debug)]
 pub struct VirtualList {
     config: VirtualListConfig,
     /// Total number of items
@@ -532,6 +533,7 @@ impl CellLayout {
 }
 
 /// Virtualized grid state
+#[derive(Debug)]
 pub struct VirtualGrid {
     config: VirtualGridConfig,
     /// Total number of items

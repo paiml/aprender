@@ -589,6 +589,18 @@ pub struct TuiApp<W: Widget> {
     color_mode: ColorMode,
 }
 
+impl<W: Widget> std::fmt::Debug for TuiApp<W> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TuiApp")
+            .field("config", &self.config)
+            .field("input_handler", &self.input_handler)
+            .field("metrics", &self.metrics)
+            .field("should_quit", &self.should_quit)
+            .field("color_mode", &self.color_mode)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Internal app runner that accepts a Terminal implementation.
 struct AppRunner<'a, W: Widget, T: Terminal> {
     app: &'a mut TuiApp<W>,

@@ -213,6 +213,24 @@ where
     stats: CacheStats,
 }
 
+impl<K, V> std::fmt::Debug for DataCache<K, V>
+where
+    K: Eq + Hash + Clone,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataCache")
+            .field("config", &self.config)
+            .field("entries_count", &self.entries.len())
+            .field("access_order_len", &self.access_order.len())
+            .field("current_memory", &self.current_memory)
+            .field("timestamp", &self.timestamp)
+            .field("last_cleanup", &self.last_cleanup)
+            .field("listeners_count", &self.listeners.len())
+            .field("stats", &self.stats)
+            .finish()
+    }
+}
+
 /// Cache statistics
 #[derive(Debug, Clone, Default)]
 pub struct CacheStats {
@@ -592,6 +610,15 @@ pub type StringCache<V> = DataCache<String, V>;
 pub struct CacheBuilder<V> {
     value: V,
     options: CacheOptions,
+}
+
+impl<V: std::fmt::Debug> std::fmt::Debug for CacheBuilder<V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CacheBuilder")
+            .field("value", &self.value)
+            .field("options", &self.options)
+            .finish()
+    }
 }
 
 impl<V> CacheBuilder<V> {

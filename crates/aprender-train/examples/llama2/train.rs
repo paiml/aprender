@@ -134,7 +134,7 @@ impl TextDataset {
 
         // Input: tokens[:-1], Target: tokens[1:]
         let inputs = &self.tokens[start..end];
-        let targets = &self.tokens[((start + 1)..=end)];
+        let targets = &self.tokens[(start + 1)..=end];
 
         (inputs, targets)
     }

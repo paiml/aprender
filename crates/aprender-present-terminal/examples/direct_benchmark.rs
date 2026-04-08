@@ -75,7 +75,7 @@ fn benchmark_size(width: u16, height: u16) {
                 buffer.update(
                     x,
                     y,
-                    if (x + y + i as u16) % 2 == 0 {
+                    if (x + y + i as u16).is_multiple_of(2) {
                         "█"
                     } else {
                         " "

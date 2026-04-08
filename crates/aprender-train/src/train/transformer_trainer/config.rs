@@ -53,6 +53,7 @@ pub struct DistributedTrainConfig {
 }
 
 /// Configuration for transformer training
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub struct TransformerTrainConfig {
     /// Base training configuration

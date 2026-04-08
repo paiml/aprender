@@ -206,6 +206,23 @@ pub struct ExecutorConfig<R, S> {
     pub storage: Arc<S>,
 }
 
+impl<R, S> std::fmt::Debug for ExecutorConfig<R, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecutorConfig")
+            .field("router", &std::any::type_name::<R>())
+            .field("storage", &std::any::type_name::<S>())
+            .finish()
+    }
+}
+
+impl<R, S> std::fmt::Debug for CommandExecutor<R, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CommandExecutor")
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
 impl<R: Router, S: Storage> ExecutorConfig<R, S> {
     /// Create a new executor config.
     pub fn new(router: R, storage: S) -> Self {

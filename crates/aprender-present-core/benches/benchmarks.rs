@@ -5,7 +5,8 @@
 
 #![allow(clippy::unwrap_used, clippy::disallowed_methods, clippy::cast_lossless)]
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use presentar_core::{Color, Constraints, Point, Rect, Size};
 
 fn bench_color_from_hex(c: &mut Criterion) {

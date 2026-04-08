@@ -83,12 +83,10 @@ impl LMBatch {
             // Second half: target_ids
             for seq in sequences {
                 for i in 0..seq_len {
-                    if i + 1 < seq.len() {
-                        tokens.push(seq[i + 1]);
-                    } else if i + 1 == seq.len() {
-                        tokens.push(eos_id);
-                    } else {
-                        tokens.push(pad_id);
+                    match (i + 1).cmp(&seq.len()) {
+                        std::cmp::Ordering::Less => tokens.push(seq[i + 1]),
+                        std::cmp::Ordering::Equal => tokens.push(eos_id),
+                        std::cmp::Ordering::Greater => tokens.push(pad_id),
                     }
                 }
             }

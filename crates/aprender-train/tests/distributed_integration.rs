@@ -643,7 +643,7 @@ fn test_accumulator_micro_batch_cycle() {
         }
         // LM head gradient
         for x in &mut accum.lm_head_grad {
-            *x += (mb as f32 + 1.0);
+            *x += mb as f32 + 1.0;
         }
         accum.accumulated_count += 1;
     }

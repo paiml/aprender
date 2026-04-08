@@ -365,7 +365,7 @@ pub struct NodeHealth {
 /// For local nodes, checks that `apr --version` is available.
 /// For SSH nodes, runs `ssh host 'apr --version'` with timeout.
 pub fn check_cluster_health(cluster: &ClusterConfig) -> Vec<NodeHealth> {
-    cluster.nodes.iter().map(|node| check_node_health(node)).collect()
+    cluster.nodes.iter().map(check_node_health).collect()
 }
 
 fn check_node_health(node: &NodeConfig) -> NodeHealth {

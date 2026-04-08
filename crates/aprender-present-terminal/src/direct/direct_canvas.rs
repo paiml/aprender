@@ -26,6 +26,16 @@ pub struct DirectTerminalCanvas<'a> {
     color_mode: ColorMode,
 }
 
+impl std::fmt::Debug for DirectTerminalCanvas<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DirectTerminalCanvas")
+            .field("clip_stack", &self.clip_stack.len())
+            .field("transform_stack", &self.transform_stack.len())
+            .field("color_mode", &self.color_mode)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Simple clip rectangle.
 #[derive(Clone, Copy, Debug)]
 struct ClipRect {

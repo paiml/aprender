@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn test_custom_symbols_from_chars_valid() {
-        let chars: String = std::iter::repeat('X').take(50).collect();
+        let chars: String = std::iter::repeat_n('X', 50).collect();
         let custom = CustomSymbols::from_chars(&chars);
         assert!(custom.is_some());
         let custom = custom.unwrap();
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn test_custom_symbols_from_chars_49_chars() {
-        let chars: String = std::iter::repeat('X').take(49).collect();
+        let chars: String = std::iter::repeat_n('X', 49).collect();
         let custom = CustomSymbols::from_chars(&chars);
         assert!(custom.is_none());
     }
