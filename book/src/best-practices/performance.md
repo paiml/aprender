@@ -225,7 +225,7 @@ for i in 0..n {
 }
 
 // ✅ Best: use trueno primitives (future)
-use trueno::prelude::*;
+use aprender::compute::prelude::*;
 let data_tensor = Tensor::from_slice(&data);
 let result = data_tensor.relu();  // SIMD-accelerated
 ```

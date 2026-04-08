@@ -36,7 +36,7 @@ Q(q) = data[h_floor] + (h - h_floor) * (data[h_ceil] - data[h_floor])
 
 ```rust,ignore
 use aprender::stats::DescriptiveStats;
-use trueno::Vector;
+use aprender::compute::Vector;
 
 let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
 let stats = DescriptiveStats::new(&data);
@@ -123,7 +123,7 @@ Extreme upper = Q3 + 3 * IQR
 
 ```rust,ignore
 use aprender::stats::DescriptiveStats;
-use trueno::Vector;
+use aprender::compute::Vector;
 
 let data = Vector::from_slice(&[1.0, 2.0, 3.0, 4.0, 5.0, 100.0]); // 100 is outlier
 let stats = DescriptiveStats::new(&data);
@@ -243,7 +243,7 @@ Currently falls back to Freedman-Diaconis.
 
 ```rust,ignore
 use aprender::stats::{BinMethod, DescriptiveStats};
-use trueno::Vector;
+use aprender::compute::Vector;
 
 let data = Vector::from_slice(&[/* your data */]);
 let stats = DescriptiveStats::new(&data);

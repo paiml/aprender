@@ -237,7 +237,7 @@ print(f"Mean R²: {scores.mean():.4f}")
 use aprender::linear_model::LinearRegression;
 use aprender::model_selection::cross_validate;
 use aprender::Estimator;
-use trueno::Matrix;
+use aprender::compute::Matrix;
 
 fn main() -> anyhow::Result<()> {
     let X = Matrix::from_slice(&[
@@ -284,7 +284,7 @@ print(f"Inertia: {kmeans.inertia_:.2f}")
 use aprender::cluster::KMeans;
 use aprender::metrics::silhouette_score;
 use aprender::UnsupervisedEstimator;
-use trueno::Matrix;
+use aprender::compute::Matrix;
 
 fn main() -> anyhow::Result<()> {
     // Generate random data (using trueno's random)
@@ -346,7 +346,7 @@ mean = np.mean(A)
 **Rust (via Batuta):**
 
 ```rust
-use trueno::{Matrix, Vector};
+use aprender::compute::{Matrix, Vector};
 
 fn main() {
     let A = Matrix::from_slice(&[
@@ -399,7 +399,7 @@ Based on the **5× PCIe dispatch rule** (Gregg & Hazelwood 2011): GPU dispatch i
 ### Using the Backend Selector
 
 ```rust
-use batuta::backend::{BackendSelector, OpComplexity};
+use aprender::orchestrate::backend::{BackendSelector, OpComplexity};
 
 fn main() {
     let selector = BackendSelector::new();
@@ -480,8 +480,8 @@ $ batuta oracle --show aprender
 Extend Batuta with custom transpilers:
 
 ```rust
-use batuta::plugin::{TranspilerPlugin, PluginMetadata, PluginRegistry};
-use batuta::types::Language;
+use aprender::orchestrate::plugin::{TranspilerPlugin, PluginMetadata, PluginRegistry};
+use aprender::orchestrate::types::Language;
 
 struct MyCustomConverter;
 
@@ -548,7 +548,7 @@ Batuta integrates with the Compiler-in-the-Loop (CITL) system for iterative refi
 When transpiled code fails to compile, Batuta queries the CITL oracle for fixes:
 
 ```rust
-use batuta::citl::CITLIntegration;
+use aprender::orchestrate::citl::CITLIntegration;
 
 let citl = CITLIntegration::new()
     .with_max_iterations(5)

@@ -526,7 +526,7 @@ export_onnx(&model, "model.onnx")?;
 **Answer:** trueno has **production-ready GPU support** via wgpu (Vulkan/Metal/DX12/WebGPU):
 
 ```rust,ignore
-use trueno::backends::gpu::GpuBackend;
+use aprender::compute::backends::gpu::GpuBackend;
 
 // GPU backend with cross-platform support
 let mut gpu = GpuBackend::new();

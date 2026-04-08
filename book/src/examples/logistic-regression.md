@@ -349,7 +349,7 @@ print(tensors["coefficients"])  # torch.Tensor([...])
 
 **realizar (Rust):**
 ```rust,ignore
-use realizar::SafetensorsModel;
+use aprender::serve::SafetensorsModel;
 
 let model = SafetensorsModel::from_file("model.safetensors")?;
 let coefficients = model.get_tensor("coefficients")?;

@@ -190,7 +190,7 @@ if state.uses_mmap {
 Models are automatically identified by magic bytes:
 
 ```rust
-use realizar::format::{detect_format, ModelFormat};
+use aprender::serve::format::{detect_format, ModelFormat};
 
 let data = std::fs::read(&model_path)?;
 let format = detect_format(&data[..8])?;

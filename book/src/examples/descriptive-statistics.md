@@ -48,7 +48,7 @@ let test_scores = vec![
 
 ```rust,ignore
 use aprender::stats::{BinMethod, DescriptiveStats};
-use trueno::Vector;
+use aprender::compute::Vector;
 
 let data = Vector::from_slice(&test_scores);
 let stats = DescriptiveStats::new(&data);
