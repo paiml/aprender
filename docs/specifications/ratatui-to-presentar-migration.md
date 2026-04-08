@@ -57,29 +57,34 @@ ratatui adds unnecessary binary bloat and violates the sovereign-deps principle.
 
 ## Implementation Plan
 
-### Phase 1: Contract + Remove ratatui dep (make optional)
-- Write provable contract
-- Make ratatui optional in ALL 13 Cargo.toml files
-- `#[cfg(feature = "ratatui")]` gate all 125 imports
-- Verify: `cargo check --workspace` passes without ratatui
+### Phase 1: Contract + Remove ratatui dep (make optional) — DONE ✓
+- Write provable contract ✓
+- Make ratatui optional in ALL 13 Cargo.toml files ✓
+- `#[cfg(feature = "ratatui")]` gate all 125 imports ✓
+- Gate TUI-dependent modules in apr-cli (cbtop TUI, tui, federation/tui, experiment browser) ✓
+- Gate visualize module in aprender-profile ✓
+- Gate monitor module in aprender-viz ✓
+- Stubs return helpful error messages for ungated paths ✓
+- Verify: `cargo check --workspace` passes without ratatui ✓
 
-### Phase 2: Replace small crates (effort: Small/Minimal)
-- aprender-orchestrate (3 imports)
-- aprender-serve (1 import)
-- aprender-simulate (9 imports)
-- aprender-distribute (6 imports)
-- aprender-test-lib (5 imports)
-- aprender-test-showcase (4 imports)
+### Phase 2: Replace small crates (effort: Small/Minimal) — DONE ✓
+- aprender-serve (1 import) → replaced with presentar-terminal ✓
+- aprender-test-lib (5 imports) → replaced with presentar-terminal ✓
+- aprender-test-showcase (4 imports) → replaced with presentar-terminal ✓
+- aprender-orchestrate — cfg-gated, no presentar replacement needed
+- aprender-simulate — cfg-gated, no presentar replacement needed
+- aprender-distribute — cfg-gated, no presentar replacement needed
 
 ### Phase 3: Replace medium crates
 - apr-cli (17 imports — cbtop, experiment, tui commands)
+- Replace ratatui TUI rendering with presentar-terminal widgets
 
 ### Phase 4: Replace large crates
 - aprender-profile (45 imports — full visualization rewrite)
 - aprender-viz (71 imports — full monitor widget rewrite)
 
 ### Phase 5: Delete ratatui
-- Remove ratatui from ALL Cargo.toml
+- Remove ratatui from ALL 13 Cargo.toml files
 - Remove `#[cfg(feature = "ratatui")]` gates (now dead code)
 - Verify: `grep -r "ratatui" crates/` returns 0
 

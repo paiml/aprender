@@ -84,6 +84,10 @@ kani_harnesses:
 
 verification_summary:
   total_obligations: 4
-  proven: 0
-  tested: 0
-  status: pending
+  proven: 1
+  tested: 1
+  status: phase1_complete
+  notes: |
+    Phase 1 (cfg-gate) DONE: workspace compiles without ratatui feature.
+    FALSIFY-RATATUI-003 (workspace_compiles) PASSES.
+    Remaining: replace ratatui code with presentar-terminal (Phases 2-5).
