@@ -159,7 +159,7 @@ Every successful large Rust project uses this pattern:
 | Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
 | Phase 5a: Publish pass 1 | DONE | 9/59 published (leaf crates) |
 | Phase 5b: Fix path deps | DONE | Added `version = "0.29.0"` to 56 path deps |
-| Phase 5c: Publish | DONE | **61/70 workspace + 14 shims live**, batuta shim published
+| Phase 5c: Publish | DONE | **66/67 publishable live** (1 rate-limited, 3 publish=false) + 14 shims
 | Phase 8a: Unified specs | DONE | 395 specs + TOC (463 lines) in root docs/specifications/ |
 | Phase 8b: Crate READMEs | DONE | 70/70 crates have README.md, contract-enforced |
 | Phase 8c: CLI QA skill | DONE | /dogfood skill: 7 gates, 12 protocols, 57 commands |
