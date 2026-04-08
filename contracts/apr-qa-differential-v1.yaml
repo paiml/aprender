@@ -1,0 +1,120 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-08'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'arXiv:2207.11976 — Differential Testing for ML'
+  - 'arXiv:2406.07944 — DLLens: Differential Testing with LLMs'
+  - 'llama.cpp perplexity — KLD and PPL regression tracking'
+  - 'ollama integration tests — per-architecture model_arch_test.go'
+  description: >
+    Differential testing contract. apr inference must be compared against
+    at least one reference implementation (ollama, llama.cpp, or HF
+    transformers) on identical prompts. Catches inference divergence,
+    tokenizer mismatches, and quantization-induced semantic drift.
+
+equations:
+  ollama_parity:
+    formula: |
+      forall model M supported by both apr and ollama:
+        top1_token(apr run M prompt) == top1_token(ollama run M prompt)
+        for temperature=0, max_tokens=1
+    domain: "GGUF models runnable by both tools"
+    codomain: bool
+    invariants:
+    - "Top-1 token agrees on 95% of test prompts"
+    - "Perplexity gap < 5% (measured on 100-token window)"
+
+  tokenizer_roundtrip:
+    formula: |
+      forall text T, forall model M:
+        decode(encode(T, tokenizer(M)), tokenizer(M)) == T
+    domain: "UTF-8 strings with special characters"
+    codomain: bool
+    invariants:
+    - "Encoding then decoding is identity for ASCII"
+    - "Special tokens round-trip correctly"
+    - "ChatML markers preserved"
+
+  serve_concurrent_parity:
+    formula: |
+      forall model M:
+        response(apr serve M, prompt, request_1) ==
+        response(apr serve M, prompt, request_N)
+        for N concurrent identical requests at temperature=0
+    domain: "concurrent inference requests"
+    codomain: bool
+    invariants:
+    - "Serial and parallel produce identical output at temp=0"
+    - "No state leakage between requests"
+    - "Queue depth > 1 does not corrupt output"
+
+  perplexity_budget:
+    formula: |
+      forall quant Q in {Q4_K, Q5_K, Q6_K, Q8_0}:
+        PPL(model_Q) / PPL(model_F16) < budget(Q)
+      where budget = {Q4_K: 1.10, Q5_K: 1.05, Q6_K: 1.02, Q8_0: 1.01}
+    domain: "quantized model perplexity ratio"
+    codomain: "f64 > 1.0"
+    invariants:
+    - "Q4_K: perplexity within 10% of F16"
+    - "Q8_0: perplexity within 1% of F16"
+
+  cross_format_tensor_integrity:
+    formula: |
+      forall tensor T in model:
+        L2(T_gguf) approx L2(T_apr) approx L2(T_safetensors)
+        within tolerance epsilon = 0.001
+    domain: "tensor L2 norms across formats"
+    codomain: bool
+    invariants:
+    - "Same tensor has same L2 norm regardless of container format"
+    - "No silent shape transposition between formats"
+
+falsification_tests:
+- id: F-DIFF-001
+  rule: ollama parity
+  prediction: "apr and ollama agree on top-1 token for temp=0"
+  test: |
+    APR_OUT=$(apr run model.gguf "Capital of France?" --max-tokens 1 --temperature 0 2>&1)
+    OLLAMA_OUT=$(ollama run model "Capital of France?" --max-tokens 1 2>&1)
+    # Both should start with "Paris" or equivalent
+  if_fails: "inference divergence between apr and ollama"
+
+- id: F-DIFF-002
+  rule: tokenizer roundtrip
+  prediction: "encode(decode(text)) == text for ASCII and ChatML"
+  test: "apr tokenize model --encode 'Hello <|im_start|>world' | apr tokenize model --decode"
+  if_fails: "tokenizer is lossy"
+
+- id: F-DIFF-003
+  rule: serve concurrent parity
+  prediction: "3 concurrent identical requests return identical output"
+  test: |
+    apr serve model --port 0 &
+    for i in 1 2 3; do curl -s localhost:PORT/v1/completions -d '{"prompt":"2+2=","max_tokens":4,"temperature":0}'; done |
+    jq -r '.choices[0].text' | sort -u | wc -l
+    # Should be 1 (all identical)
+  if_fails: "state leakage between concurrent requests"
+
+- id: F-DIFF-004
+  rule: perplexity budget
+  prediction: "Q4_K perplexity is within 10% of F16 reference"
+  test: "apr eval model_q4k.gguf --perplexity | grep PPL | awk '{print $2}'"
+  if_fails: "quantization quality below acceptable threshold"
+
+- id: F-DIFF-005
+  rule: cross-format tensor integrity
+  prediction: "same model in GGUF/APR/SafeTensors has matching L2 norms"
+  test: |
+    apr tensors model.gguf --json | jq '[.[] | .l2_norm]' > /tmp/gguf_l2.json
+    apr tensors model.apr --json | jq '[.[] | .l2_norm]' > /tmp/apr_l2.json
+    # Compare element-wise within 0.1%
+  if_fails: "format conversion corrupted tensor data"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: proposed

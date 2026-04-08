@@ -1,0 +1,105 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-08'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'arXiv:1807.10453 — METTLE: Metamorphic Testing for ML Systems'
+  - 'arXiv:2103.13630 — Survey of Quantization Methods for Efficient NN Inference'
+  - 'arXiv:2603.23611 — LLMORPH: Automated Metamorphic Testing of LLMs'
+  description: >
+    Metamorphic testing contract for apr CLI. Same model at different
+    quantization levels must produce semantically equivalent outputs.
+    No ground truth needed — only cross-quantization consistency.
+
+equations:
+  quantization_equivalence:
+    formula: |
+      forall model M, forall quant_pair (Q_high, Q_low) in {(Q6K, Q4K), (F16, Q6K), (Q8_0, Q4_0)}:
+        cosine_similarity(logits(M_Q_high, prompt), logits(M_Q_low, prompt)) > 0.95
+    domain: "quantized model pairs"
+    codomain: "f64 in [0.0, 1.0]"
+    invariants:
+    - "Higher quant produces strictly better perplexity than lower"
+    - "Top-5 token overlap >= 3 out of 5 for any prompt"
+    - "Cosine similarity of first-token logits > 0.95"
+    preconditions:
+    - "Both quantization levels are from the same base model"
+    postconditions:
+    - "Divergence is bounded, not arbitrary"
+
+  format_roundtrip_fidelity:
+    formula: |
+      forall model M:
+        apr convert M.gguf -o /tmp/rt.apr &&
+        apr convert /tmp/rt.apr -o /tmp/rt.gguf &&
+        apr diff M.gguf /tmp/rt.gguf --tolerance 0.01
+        exits 0
+    domain: "GGUF -> APR -> GGUF round-trip"
+    codomain: bool
+    invariants:
+    - "Tensor count preserved"
+    - "No NaN introduced by conversion"
+    - "L2 norm drift < 1% per tensor"
+
+  multi_architecture_smoke:
+    formula: |
+      forall arch in {qwen2, llama, phi, gemma, mistral}:
+        exists model M with architecture(M) == arch:
+          apr run M "2+2=" --max-tokens 4 exits 0 AND
+          output is not empty AND
+          output does not contain NaN
+    domain: "5 architecture families"
+    codomain: bool
+    invariants:
+    - "At least 3 architectures produce coherent output"
+    - "No architecture-specific panic"
+    - "No hardcoded Qwen2 constants leak"
+
+falsification_tests:
+- id: F-META-001
+  rule: quantization equivalence
+  prediction: "Q6K and Q4K of same model agree on top-5 tokens for simple prompt"
+  test: |
+    Q6K_TOP=$(apr run model_q6k.gguf "Capital of France?" --max-tokens 1 --json 2>/dev/null | jq -r '.tokens[0]')
+    Q4K_TOP=$(apr run model_q4k.gguf "Capital of France?" --max-tokens 1 --json 2>/dev/null | jq -r '.tokens[0]')
+    [ "$Q6K_TOP" = "$Q4K_TOP" ]
+  if_fails: "quantization broke semantic content"
+
+- id: F-META-002
+  rule: format roundtrip fidelity
+  prediction: "GGUF -> APR -> GGUF preserves tensor data within 1%"
+  test: |
+    apr convert model.gguf -o /tmp/rt.apr
+    apr convert /tmp/rt.apr -o /tmp/rt.gguf
+    apr diff model.gguf /tmp/rt.gguf --tolerance 0.01
+  if_fails: "conversion introduces corruption"
+
+- id: F-META-003
+  rule: multi-architecture smoke
+  prediction: "at least 3 architecture families produce non-empty output"
+  test: "run 1-token generation per architecture, count successes >= 3"
+  if_fails: "architecture-specific hardcoded constants"
+
+- id: F-META-004
+  rule: prompt invariance
+  prediction: "rephrased prompt produces semantically similar output"
+  test: |
+    OUT1=$(apr run model "What is 2+2?" --max-tokens 8 2>&1 | grep Output)
+    OUT2=$(apr run model "Calculate two plus two" --max-tokens 8 2>&1 | grep Output)
+    # Both should contain "4"
+  if_fails: "prompt sensitivity beyond expected bounds"
+
+- id: F-META-005
+  rule: temperature monotonicity
+  prediction: "temperature=0 produces deterministic output across 3 runs"
+  test: |
+    for i in 1 2 3; do apr run model "Hi" --max-tokens 4 --temperature 0.0; done | sort -u | wc -l
+    # Should be exactly 1 unique output
+  if_fails: "temperature=0 is non-deterministic"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: proposed

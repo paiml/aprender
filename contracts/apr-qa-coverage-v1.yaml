@@ -1,0 +1,119 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-08'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'arXiv:2102.05351 — Quality Assurance for AI-based Systems'
+  - 'arXiv:1906.10742 — ML Testing Survey, Landscapes and Horizons'
+  - 'PMAT coverage-gaps analysis — sliding_window_entropy.rs, speedup.rs at 0%'
+  - 'ollama integration tests — 24 test files, per-architecture coverage'
+  description: >
+    Coverage completeness contract for dogfood QA. Every command category
+    must be exercised with real model files, untested code paths must be
+    flagged, and complex functions (CC > 10) must have dedicated gates.
+
+equations:
+  command_category_coverage:
+    formula: |
+      forall category C in {inspection, inference, transform, training,
+                            registry, hardware, qa, ui, pipeline, misc}:
+        tested_commands(C) / total_commands(C) >= 0.80
+    domain: "10 command categories"
+    codomain: "f64 in [0.0, 1.0]"
+    invariants:
+    - "Every category has >= 80% command coverage"
+    - "Inference category has 100% coverage (critical path)"
+    - "Transform category has >= 90% coverage (data integrity)"
+
+  untested_surface_tracking:
+    formula: |
+      coverage_gaps = pmat query --coverage-gaps --limit 30 --exclude-tests
+      forall gap in coverage_gaps:
+        gap.impact_score < 0.8 OR gap has filed_issue
+    domain: "uncovered functions ranked by impact"
+    codomain: bool
+    invariants:
+    - "No function with impact_score > 0.8 is untested without a tracking issue"
+    - "Coverage gaps are triaged, not ignored"
+
+  complexity_gate:
+    formula: |
+      forall function F in apr-cli:
+        cyclomatic_complexity(F) <= 15 OR
+        F has dedicated_test AND F has refactoring_issue
+    domain: "functions with CC > 10"
+    codomain: bool
+    invariants:
+    - "No function with CC > 15 without a tracking issue"
+    - "Functions with CC > 10 have at least one dedicated test"
+
+  satd_zero:
+    formula: |
+      pmat analyze satd -p crates/apr-cli/ returns 0 High-severity items
+    domain: "Self-Admitted Technical Debt in apr-cli"
+    codomain: bool
+    invariants:
+    - "Zero High-severity SATD in production code"
+    - "Low-severity SATD tracked in issues"
+
+  dogfood_exercise_map:
+    formula: |
+      forall module M in {hex, profile, cbtop, train, chat, serve}:
+        /dogfood exercises at least one code path in M
+    domain: "CLI modules with real model interaction"
+    codomain: bool
+    invariants:
+    - "hex: apr hex model | head -20 runs without panic"
+    - "profile: apr profile model --iterations 1 completes"
+    - "serve: apr serve plan model produces valid plan"
+    - "train: apr train plan produces valid plan"
+
+falsification_tests:
+- id: F-COV-001
+  rule: command category coverage
+  prediction: "all 10 categories have >= 80% tested"
+  test: |
+    # Count commands tested per category from dogfood output
+    # Inspection: 10/11, Inference: 3/4, Transform: 9/9, etc.
+  if_fails: "category has < 80% command coverage"
+
+- id: F-COV-002
+  rule: untested surface tracking
+  prediction: "no high-impact uncovered function without issue"
+  test: |
+    pmat query --coverage-gaps --limit 10 --exclude-tests |
+    grep "impact.*0\.[89]" | wc -l
+    # Should be 0 or all have issues
+  if_fails: "high-impact function untested and untracked"
+
+- id: F-COV-003
+  rule: complexity gate
+  prediction: "no function with CC > 15 untested"
+  test: |
+    pmat analyze complexity -p crates/apr-cli/ |
+    awk '$NF > 15 {print}' | wc -l
+    # Cross-reference with test existence
+  if_fails: "complex function without dedicated test"
+
+- id: F-COV-004
+  rule: SATD zero
+  prediction: "zero High-severity SATD in apr-cli"
+  test: "pmat analyze satd -p crates/apr-cli/ | grep -c 'High'"
+  if_fails: "known defects left in production code"
+
+- id: F-COV-005
+  rule: dogfood exercise map
+  prediction: "all 6 critical modules exercised during /dogfood"
+  test: |
+    # During dogfood, verify these commands don't panic:
+    timeout 30 apr hex model.gguf 2>&1 | head -5
+    timeout 30 apr profile model.gguf --iterations 1 2>&1 | head -5
+    timeout 10 apr serve plan model.gguf 2>&1 | head -5
+  if_fails: "module panics on real model"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: proposed

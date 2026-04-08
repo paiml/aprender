@@ -1,0 +1,124 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-08'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'arXiv:2505.03096 — Chaos Engineering for LLM-based Multi-Agent Systems'
+  - 'GH-434 — OOM on 57 GB models during quantize'
+  - 'GH-352 — apr pull using 55 GB RAM'
+  - 'GH-471 — GPU hangs on large MoE models'
+  - 'GH-478 — per-layer dequantization OOM on 32B'
+  description: >
+    Chaos engineering contract for apr CLI. Inject resource constraints,
+    truncated files, and concurrent load to verify graceful degradation.
+    Based on Netflix chaos engineering principles applied to ML inference.
+
+equations:
+  memory_budget:
+    formula: |
+      forall cmd in {run, bench, quantize, convert, serve}:
+        RSS(apr cmd model) < budget(model_size)
+      where budget(size) = 3 * size + 512MB (overhead)
+    domain: "model file size → peak RSS"
+    codomain: "bytes"
+    invariants:
+    - "Peak RSS < 3x model file size + 512 MB baseline"
+    - "No unbounded allocation (OOM on small heap)"
+    - "`apr run 7B.gguf` uses < 15 GB RSS"
+
+  graceful_oom:
+    formula: |
+      ulimit -v limited_memory &&
+      apr run large_model "test" --max-tokens 1:
+        exits non-zero AND stderr contains "memory" or "OOM" or "allocation"
+    domain: "memory-constrained environments"
+    codomain: bool
+    invariants:
+    - "OOM produces error message, not SIGSEGV"
+    - "Partial results are not emitted as valid output"
+
+  disk_exhaustion:
+    formula: |
+      tmpdir on full filesystem:
+        apr convert model.gguf -o $tmpdir/out.apr:
+          exits non-zero AND stderr contains "disk" or "space" or "write"
+    domain: "full filesystem"
+    codomain: bool
+
+  signal_handling:
+    formula: |
+      apr run model "long prompt" --max-tokens 1000 &
+      kill -INT $! → exits 130 (SIGINT convention)
+      kill -TERM $! → exits cleanly, no corrupt cache
+    domain: "Unix signals during inference"
+    codomain: bool
+    invariants:
+    - "SIGINT exits promptly (< 2s)"
+    - "No partial/corrupt output written to cache"
+    - "Temporary files cleaned up"
+
+  batch_overwrite_protection:
+    formula: |
+      apr export model1.apr -o output.gguf
+      apr export model2.apr -o output.gguf:
+        either prompts for overwrite confirmation OR
+        exits non-zero with "already exists"
+    domain: "batch export with conflicting output paths"
+    codomain: bool
+    invariants:
+    - "Never silently overwrites existing files"
+    - "--force flag required for intentional overwrite"
+
+falsification_tests:
+- id: F-CHAOS-001
+  rule: memory budget
+  prediction: "apr run 0.5B.gguf uses < 3 GB RSS"
+  test: |
+    /usr/bin/time -v apr run small_model.gguf "test" --max-tokens 4 2>&1 |
+    grep "Maximum resident" | awk '{print $NF}'
+    # Should be < 3000000 (3 GB in KB)
+  if_fails: "unbounded memory allocation"
+
+- id: F-CHAOS-002
+  rule: graceful OOM
+  prediction: "memory-limited apr exits with error, not crash"
+  test: |
+    ulimit -v 1048576  # 1 GB virtual memory limit
+    apr run large_model.gguf "test" --max-tokens 1 2>&1
+    test $? -ne 139  # 139 = SIGSEGV
+  if_fails: "OOM causes segfault instead of graceful error"
+
+- id: F-CHAOS-003
+  rule: signal handling
+  prediction: "SIGINT during inference exits cleanly"
+  test: |
+    apr run model.gguf "tell me a story" --max-tokens 500 &
+    PID=$!; sleep 2; kill -INT $PID; wait $PID
+    test $? -eq 130  # SIGINT convention
+  if_fails: "SIGINT leaves zombie process or corrupt state"
+
+- id: F-CHAOS-004
+  rule: batch overwrite protection
+  prediction: "existing output file prevents silent overwrite"
+  test: |
+    touch /tmp/existing.apr
+    apr convert model.gguf -o /tmp/existing.apr 2>&1
+    test $? -ne 0  # Should fail without --force
+  if_fails: "silent overwrite of existing file"
+
+- id: F-CHAOS-005
+  rule: disk exhaustion
+  prediction: "full disk produces error, not partial corrupt file"
+  test: |
+    # Create a tiny tmpfs
+    mkdir -p /tmp/full_fs && mount -t tmpfs -o size=1K tmpfs /tmp/full_fs 2>/dev/null
+    apr convert model.gguf -o /tmp/full_fs/out.apr 2>&1
+    test $? -ne 0
+  if_fails: "partial file written on full disk"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: proposed

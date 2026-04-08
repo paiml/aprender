@@ -1,0 +1,117 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-08'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'GH-339 — chat template silently falls back to raw prompt'
+  - 'GH-336 — benchmark silently swallows errors reporting 0 tok/s'
+  - 'GH-337 — chat server degrades to byte-level decode'
+  - 'GH-338 — probar silently ignores corrupted metadata'
+  - 'GH-439 — silent _ => default match arms at format boundaries'
+  - 'arXiv:2505.03096 — Chaos Engineering for LLM-based Multi-Agent Systems'
+  description: >
+    Silent-fallback injection contract. The dogfood must feed bad inputs
+    (no tokenizer, corrupted metadata, unknown architecture, truncated
+    files) and verify the error is LOUD (non-zero exit, stderr message),
+    not silently swallowed into degraded output.
+
+equations:
+  loud_failure_on_bad_input:
+    formula: |
+      forall bad_input in BAD_INPUT_SET:
+        apr cmd bad_input -> (exit_code != 0 AND stderr.len() > 0)
+        OR
+        apr cmd bad_input -> (stdout contains "WARN" or "SKIP" or "unsupported")
+    domain: "corrupted, truncated, or deliberately broken inputs"
+    codomain: bool
+    invariants:
+    - "No silent degradation to garbage output"
+    - "No 0 tok/s reported as success"
+    - "No fallback to raw prompt without warning"
+
+  truncated_file_detection:
+    formula: |
+      forall format in {GGUF, APR, SafeTensors}:
+        truncate(model, 50%) -> apr validate model exits non-zero
+    domain: "truncated model files"
+    codomain: bool
+    invariants:
+    - "Truncated files never pass validation"
+    - "Error message mentions truncation or corruption"
+
+  missing_tokenizer_detection:
+    formula: |
+      model with no tokenizer.json:
+        apr run model "test" either:
+          - exits non-zero with "tokenizer" in stderr, OR
+          - uses embedded GGUF tokenizer (legitimate fallback)
+        NEVER: produces garbled byte-level output silently
+    domain: "models without external tokenizer"
+    codomain: bool
+
+  zero_throughput_rejection:
+    formula: |
+      apr bench model --iterations 1:
+        if tok/s == 0.0 then exit_code != 0
+    domain: "benchmark results"
+    codomain: bool
+    invariants:
+    - "0.0 tok/s is a failure, not a result"
+
+  unknown_architecture_handling:
+    formula: |
+      model with architecture "totally_unknown_arch_v99":
+        apr run model exits non-zero AND
+        stderr contains "unsupported" or "unknown"
+    domain: "models with unknown architecture identifiers"
+    codomain: bool
+    invariants:
+    - "Unknown architectures fail explicitly, not silently map to llama"
+
+falsification_tests:
+- id: F-SILENT-001
+  rule: truncated file detection
+  prediction: "50%-truncated GGUF fails apr validate"
+  test: |
+    head -c $(( $(stat -c%s model.gguf) / 2 )) model.gguf > /tmp/truncated.gguf
+    apr validate /tmp/truncated.gguf; test $? -ne 0
+  if_fails: "truncated file silently passes validation"
+
+- id: F-SILENT-002
+  rule: zero throughput rejection
+  prediction: "benchmark reporting 0 tok/s exits non-zero"
+  test: |
+    apr bench /dev/null --iterations 1 2>&1; test $? -ne 0
+  if_fails: "0 tok/s reported as success"
+
+- id: F-SILENT-003
+  rule: unknown architecture handling
+  prediction: "model with fake architecture fails with clear error"
+  test: "verify apr run on unknown arch doesn't silently fall through to llama"
+  if_fails: "unknown arch silently maps to llama default"
+
+- id: F-SILENT-004
+  rule: missing tokenizer detection
+  prediction: "model without tokenizer.json fails or warns, never garbles"
+  test: |
+    # Remove tokenizer.json from test model dir
+    apr run model_no_tokenizer.gguf "test" --max-tokens 4 2>&1 |
+    grep -qE 'tokenizer|embedded|GGUF' || exit 1
+  if_fails: "garbled byte-level output without warning"
+
+- id: F-SILENT-005
+  rule: loud failure on bad input
+  prediction: "corrupted metadata produces non-zero exit"
+  test: |
+    # Overwrite metadata region with zeros
+    cp model.gguf /tmp/corrupt.gguf
+    dd if=/dev/zero of=/tmp/corrupt.gguf bs=1 count=64 seek=8 conv=notrunc 2>/dev/null
+    apr validate /tmp/corrupt.gguf; test $? -ne 0
+  if_fails: "corrupted metadata silently accepted"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: proposed
