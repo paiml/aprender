@@ -226,7 +226,6 @@ fn test_is_complete_gradual() {
     // At end_step, not yet complete
     assert!(!callback.is_complete(), "CB-051 FALSIFIED: Should not be complete at end_step");
 
-    ctx.global_step = 101;
     callback.last_prune_step = Some(101);
     assert!(callback.is_complete(), "CB-051 FALSIFIED: Should be complete after end_step");
 }

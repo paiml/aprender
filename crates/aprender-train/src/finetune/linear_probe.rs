@@ -750,6 +750,7 @@ pub fn generalization_test(
 // =============================================================================
 
 /// Ship gate check result (SSC v11 Section 5.7).
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub struct ShipGateResult {
     /// MCC CI lower bound > 0.2

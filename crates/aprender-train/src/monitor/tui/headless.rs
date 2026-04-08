@@ -188,7 +188,7 @@ impl<W: Write> HeadlessWriter<W> {
 
     fn write_json(&mut self, snapshot: &TrainingSnapshot) -> io::Result<()> {
         let output = HeadlessOutput::from(snapshot);
-        let json = serde_json::to_string(&output).map_err(|e| io::Error::other(e))?;
+        let json = serde_json::to_string(&output).map_err(io::Error::other)?;
         writeln!(self.writer, "{json}")?;
         self.writer.flush()?;
         self.line_count += 1;

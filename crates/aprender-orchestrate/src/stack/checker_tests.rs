@@ -608,9 +608,11 @@ fn test_checker_get_crate_delegate() {
 // Coverage gap tests: StackChecker::from_workspace (native-only)
 // =========================================================================
 
-/// Test from_workspace on StackChecker using the batuta project.
+/// Test from_workspace on StackChecker using the current workspace.
+/// Requires batuta standalone workspace (not monorepo).
 #[cfg(feature = "native")]
 #[test]
+#[ignore = "requires standalone batuta workspace, not monorepo"]
 fn test_checker_from_workspace_batuta() {
     let workspace_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let result = StackChecker::from_workspace(workspace_path);
@@ -618,7 +620,11 @@ fn test_checker_from_workspace_batuta() {
 
     let checker = result.unwrap();
     assert!(checker.crate_count() >= 1);
-    assert!(checker.get_crate("batuta").is_some());
+    // In the monorepo, "batuta" may be named "aprender-orchestrate"
+    assert!(
+        checker.get_crate("batuta").is_some() || checker.get_crate("aprender-orchestrate").is_some(),
+        "workspace should contain batuta or aprender-orchestrate"
+    );
 }
 
 /// Test from_workspace on StackChecker with invalid Cargo.toml.

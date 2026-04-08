@@ -75,3 +75,4 @@ probar-export/
 .pmat/workspace.idx/
 .pmat/deps-cache.json
 src/generated_contracts.rs
+crates/apr-cli/trace-*.json

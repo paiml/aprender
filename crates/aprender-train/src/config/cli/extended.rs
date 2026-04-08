@@ -106,6 +106,7 @@ pub struct MonitorArgs {
 }
 
 /// Arguments for the publish command
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Parser, Debug, Clone, PartialEq)]
 pub struct PublishArgs {
     /// Path to trained model output directory

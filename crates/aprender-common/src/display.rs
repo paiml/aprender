@@ -331,7 +331,10 @@ mod tests {
 
     #[test]
     fn test_truncate_end() {
-        assert_eq!(truncate("hello world", 8, TruncateStrategy::End), "hello w\u{2026}");
+        assert_eq!(
+            truncate("hello world", 8, TruncateStrategy::End),
+            "hello w\u{2026}"
+        );
     }
 
     #[test]
@@ -402,7 +405,12 @@ mod tests {
     #[test]
     fn test_format_column_truncates() {
         assert_eq!(
-            format_column("very long text", 8, ColumnAlign::Left, TruncateStrategy::End),
+            format_column(
+                "very long text",
+                8,
+                ColumnAlign::Left,
+                TruncateStrategy::End
+            ),
             "very lo\u{2026}"
         );
     }

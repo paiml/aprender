@@ -1,4 +1,10 @@
 contract: apr-page-best-practices-error-handling
+metadata:
+  kind: schema
+  version: "1.0.0"
+  description: "Apr Page Best Practices Error Handling contract"
+  references:
+  - "docs/specifications/aprender-monorepo-consolidation.md"
 version: 1
 status: enforced
 date: 2026-04-08

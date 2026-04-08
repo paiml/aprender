@@ -4,8 +4,8 @@
 //! API equivalence: ndarray/linfa → aprender
 //! Contract: contracts/apr-book-ch26-v1.yaml
 
-use aprender::prelude::*;
 use aprender::metrics::classification::accuracy;
+use aprender::prelude::*;
 
 fn main() {
     println!("=== Switch From ndarray/nalgebra/linfa ===");
@@ -24,13 +24,13 @@ fn main() {
     println!();
 
     // Matrix operations — same patterns
-    let m = Matrix::from_vec(3, 2, vec![
-        1.0, 2.0, 3.0, 4.0, 5.0, 6.0,
-    ]).expect("valid 3x2 matrix");
+    let m = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("valid 3x2 matrix");
     let v = Vector::from_slice(&[1.0, 1.0]);
     let result = m.matvec(&v).expect("matvec");
-    println!("Matrix (3x2) @ Vector (2) = [{:.0}, {:.0}, {:.0}]",
-        result[0], result[1], result[2]);
+    println!(
+        "Matrix (3x2) @ Vector (2) = [{:.0}, {:.0}, {:.0}]",
+        result[0], result[1], result[2]
+    );
     assert!((result[0] - 3.0).abs() < 1e-4, "matvec contract");
 
     // LinearRegression — same API pattern as linfa
@@ -45,10 +45,12 @@ fn main() {
     assert!(r2 > 0.99, "Perfect linear fit");
 
     // KMeans — same pattern as linfa
-    let data = Matrix::from_vec(6, 2, vec![
-        1.0, 1.0, 1.1, 0.9, 0.9, 1.1,
-        5.0, 5.0, 5.1, 4.9, 4.9, 5.1,
-    ]).expect("valid");
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![1.0, 1.0, 1.1, 0.9, 0.9, 1.1, 5.0, 5.0, 5.1, 4.9, 4.9, 5.1],
+    )
+    .expect("valid");
     let mut km = KMeans::new(2).with_random_state(42);
     km.fit(&data).expect("fit");
     let labels = km.predict(&data);
@@ -57,10 +59,12 @@ fn main() {
     assert_ne!(labels[0], labels[3], "Cluster separation");
 
     // DecisionTree for classification
-    let x_cls = Matrix::from_vec(6, 2, vec![
-        1.0, 1.0, 2.0, 2.0, 3.0, 1.0,
-        6.0, 5.0, 7.0, 8.0, 8.0, 6.0,
-    ]).expect("valid");
+    let x_cls = Matrix::from_vec(
+        6,
+        2,
+        vec![1.0, 1.0, 2.0, 2.0, 3.0, 1.0, 6.0, 5.0, 7.0, 8.0, 8.0, 6.0],
+    )
+    .expect("valid");
     let y_cls: Vec<usize> = vec![0, 0, 0, 1, 1, 1];
     let mut tree = DecisionTreeClassifier::new().with_max_depth(3);
     tree.fit(&x_cls, &y_cls).expect("fit");

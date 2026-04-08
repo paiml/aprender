@@ -7,7 +7,11 @@ fn sqrt_positive(x: f64) -> f64 {
 
 #[ensures(ret > 0)]
 fn abs_val(x: i32) -> i32 {
-    if x < 0 { -x } else { x }
+    if x < 0 {
+        -x
+    } else {
+        x
+    }
 }
 
 #[requires(n > 0)]

@@ -381,7 +381,10 @@ impl ShowcaseDemo {
         let (max_idx, max_prob) = probs
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("probability values must be comparable (not NaN)"))
+            .max_by(|(_, a), (_, b)| {
+                a.partial_cmp(b)
+                    .expect("probability values must be comparable (not NaN)")
+            })
             .unwrap_or((1, &0.33));
 
         let label = labels.get(max_idx).unwrap_or(&"neutral");

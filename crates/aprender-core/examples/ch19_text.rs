@@ -37,10 +37,12 @@ fn main() {
     println!("\nJaccard similarity:");
     println!("  '{}' vs '{}'", tokens_a.join(" "), tokens_b.join(" "));
     println!("  Jaccard: {jaccard:.4}");
-    assert!(jaccard > 0.0 && jaccard < 1.0, "Jaccard in (0,1) for overlapping sets");
+    assert!(
+        jaccard > 0.0 && jaccard < 1.0,
+        "Jaccard in (0,1) for overlapping sets"
+    );
 
-    let jaccard_self =
-        jaccard_similarity(&tokens_a, &tokens_a).expect("jaccard self-similarity");
+    let jaccard_self = jaccard_similarity(&tokens_a, &tokens_a).expect("jaccard self-similarity");
     assert!(
         (jaccard_self - 1.0).abs() < 1e-6,
         "Self-similarity must be 1.0"

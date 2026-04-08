@@ -1,4 +1,10 @@
 contract: apr-page-examples-evolutionary-merge
+metadata:
+  kind: schema
+  version: "1.0.0"
+  description: "Apr Page Examples Evolutionary Merge contract"
+  references:
+  - "docs/specifications/aprender-monorepo-consolidation.md"
 version: 1
 status: enforced
 date: 2026-04-08

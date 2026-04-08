@@ -282,6 +282,7 @@ impl ColumnHighlight {
 // =============================================================================
 
 /// Universal cursor/pointer indicator
+#[derive(Debug)]
 pub struct Cursor;
 
 impl Cursor {

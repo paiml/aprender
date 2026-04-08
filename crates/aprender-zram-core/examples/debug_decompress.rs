@@ -81,9 +81,17 @@ fn main() {
     // DEBUG: Print first 3 compressed pages for comparison
     println!("  First 3 compressed pages:");
     for i in 0..3.min(NUM_PAGES) {
-        let bytes: Vec<String> =
-            compressed_pages[i].iter().take(16).map(|b| format!("{:02x}", b)).collect();
-        println!("    Page {}: [{}...] ({} bytes)", i, bytes.join(" "), compressed_pages[i].len());
+        let bytes: Vec<String> = compressed_pages[i]
+            .iter()
+            .take(16)
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        println!(
+            "    Page {}: [{}...] ({} bytes)",
+            i,
+            bytes.join(" "),
+            compressed_pages[i].len()
+        );
     }
 
     // Step 4: Allocate GPU buffers
@@ -120,7 +128,11 @@ fn main() {
 
     // Output buffer - 4096 bytes per page
     let output_dev: GpuBuffer<u8> = GpuBuffer::new(&ctx, batch_size * 4096).expect("Output buffer");
-    println!("  Output buffer: {} bytes ({} pages)", batch_size * 4096, batch_size);
+    println!(
+        "  Output buffer: {} bytes ({} pages)",
+        batch_size * 4096,
+        batch_size
+    );
 
     // Step 5: Launch kernel
     println!("\nStep 5: Launching kernel...");
@@ -135,8 +147,14 @@ fn main() {
         shared_mem: 0,
     };
 
-    println!("  Grid: ({}, {}, {})", config.grid.0, config.grid.1, config.grid.2);
-    println!("  Block: ({}, {}, {})", config.block.0, config.block.1, config.block.2);
+    println!(
+        "  Grid: ({}, {}, {})",
+        config.grid.0, config.grid.1, config.grid.2
+    );
+    println!(
+        "  Block: ({}, {}, {})",
+        config.block.0, config.block.1, config.block.2
+    );
     println!("  Batch size: {}", batch_size_u32);
 
     // Debug: print pointer values
@@ -199,7 +217,11 @@ fn main() {
         }
     }
 
-    println!("\n  Total matches: {} / {}", total_matches, NUM_PAGES * 4096);
+    println!(
+        "\n  Total matches: {} / {}",
+        total_matches,
+        NUM_PAGES * 4096
+    );
     println!("  Total mismatches: {}", total_mismatches);
     println!("  Failed pages: {} / {}", failed_pages.len(), NUM_PAGES);
 
@@ -216,7 +238,10 @@ fn main() {
     }
 
     if total_mismatches == 0 {
-        println!("\n✓ SUCCESS: All {} pages decompressed correctly!", NUM_PAGES);
+        println!(
+            "\n✓ SUCCESS: All {} pages decompressed correctly!",
+            NUM_PAGES
+        );
     } else {
         println!("\n✗ FAILED: {} pages with mismatches", failed_pages.len());
     }

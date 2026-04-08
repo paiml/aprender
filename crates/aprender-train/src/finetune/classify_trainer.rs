@@ -1289,18 +1289,18 @@ impl ClassifyTrainer {
             self.pipeline.config.num_classes * self.pipeline.model.config.hidden_size;
         reader
             .validate_tensor_shape("classifier.weight", expected_weight)
-            .map_err(|e| crate::Error::Serialization(e))?;
+            .map_err(crate::Error::Serialization)?;
         reader
             .validate_tensor_shape("classifier.bias", self.pipeline.config.num_classes)
-            .map_err(|e| crate::Error::Serialization(e))?;
+            .map_err(crate::Error::Serialization)?;
 
         // ── Restore classifier head (F-CKPT-013: NaN scan) ──────────────
         let weight_data = reader
             .read_tensor_f32_checked("classifier.weight")
-            .map_err(|e| crate::Error::Serialization(e))?;
+            .map_err(crate::Error::Serialization)?;
         let bias_data = reader
             .read_tensor_f32_checked("classifier.bias")
-            .map_err(|e| crate::Error::Serialization(e))?;
+            .map_err(crate::Error::Serialization)?;
 
         self.pipeline
             .classifier

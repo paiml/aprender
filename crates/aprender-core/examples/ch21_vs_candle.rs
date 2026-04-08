@@ -45,7 +45,10 @@ fn main() {
     let stats = TensorStats::compute(&tps_samples);
     println!();
     println!("Throughput stability (5 runs):");
-    println!("  mean: {:.1} tok/s, min: {:.1}, max: {:.1}", stats.mean, stats.min, stats.max);
+    println!(
+        "  mean: {:.1} tok/s, min: {:.1}, max: {:.1}",
+        stats.mean, stats.min, stats.max
+    );
     assert!(stats.mean > 270.0, "Mean throughput must exceed 270 tok/s");
 
     println!();

@@ -91,6 +91,25 @@ pub enum Command<M> {
     },
 }
 
+impl<M> std::fmt::Debug for Command<M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "Command::None"),
+            Self::Batch(cmds) => f.debug_tuple("Command::Batch").field(&cmds.len()).finish(),
+            Self::Task(_) => write!(f, "Command::Task(..)"),
+            Self::Navigate { route } => {
+                f.debug_struct("Command::Navigate").field("route", route).finish()
+            }
+            Self::SaveState { key } => {
+                f.debug_struct("Command::SaveState").field("key", key).finish()
+            }
+            Self::LoadState { key, .. } => {
+                f.debug_struct("Command::LoadState").field("key", key).finish_non_exhaustive()
+            }
+        }
+    }
+}
+
 impl<M> Command<M> {
     /// Create a task command from an async block.
     pub fn task<F>(future: F) -> Self
@@ -189,6 +208,18 @@ pub struct Store<S: State> {
     history_index: usize,
     max_history: usize,
     subscribers: Vec<Subscriber<S>>,
+}
+
+impl<S: State + std::fmt::Debug> std::fmt::Debug for Store<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Store")
+            .field("state", &self.state)
+            .field("history_len", &self.history.len())
+            .field("history_index", &self.history_index)
+            .field("max_history", &self.max_history)
+            .field("subscribers_count", &self.subscribers.len())
+            .finish()
+    }
 }
 
 impl<S: State> Store<S> {

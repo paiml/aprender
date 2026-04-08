@@ -166,12 +166,17 @@ pub fn run_benchmark(algorithm: Algorithm, pages: &[[u8; PAGE_SIZE]]) -> Result<
 /// Parse algorithm from string.
 pub fn parse_algorithm(s: &str) -> Option<Vec<Algorithm>> {
     match s.to_lowercase().as_str() {
-        "all" => {
-            Some(vec![Algorithm::Lz4, Algorithm::Zstd { level: 1 }, Algorithm::Zstd { level: 3 }])
-        }
+        "all" => Some(vec![
+            Algorithm::Lz4,
+            Algorithm::Zstd { level: 1 },
+            Algorithm::Zstd { level: 3 },
+        ]),
         "lz4" => Some(vec![Algorithm::Lz4]),
         s if s.starts_with("zstd") => {
-            let level = s.strip_prefix("zstd").and_then(|l| l.parse().ok()).unwrap_or(3);
+            let level = s
+                .strip_prefix("zstd")
+                .and_then(|l| l.parse().ok())
+                .unwrap_or(3);
             Some(vec![Algorithm::Zstd { level }])
         }
         _ => None,
@@ -348,7 +353,10 @@ mod tests {
     fn test_f055_latency_bounded() {
         // F055: P99 latency should be bounded
         let page = [0xABu8; PAGE_SIZE];
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         let mut latencies = Vec::with_capacity(1000);
         for _ in 0..1000 {
@@ -362,13 +370,19 @@ mod tests {
         let p99_us = p99 as f64 / 1000.0;
 
         // P99 should be under 1ms (1000us)
-        assert!(p99_us < 1000.0, "P99 latency {p99_us:.1}us exceeds 1000us target");
+        assert!(
+            p99_us < 1000.0,
+            "P99 latency {p99_us:.1}us exceeds 1000us target"
+        );
     }
 
     #[test]
     fn test_f057_adaptive_selection_works() {
         // F057: Adaptive selection should make reasonable choices
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Adaptive).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Adaptive)
+            .build()
+            .unwrap();
 
         // Zero page should compress well
         let zero_page = [0u8; PAGE_SIZE];
@@ -436,7 +450,10 @@ mod tests {
         // - Timer resolution on fast operations
         // - CI/VM environments with variable performance
         let ratio = throughput2 / throughput1;
-        assert!(ratio > 0.05 && ratio < 20.0, "Performance variance too high: ratio {ratio:.2}");
+        assert!(
+            ratio > 0.05 && ratio < 20.0,
+            "Performance variance too high: ratio {ratio:.2}"
+        );
     }
 
     #[test]

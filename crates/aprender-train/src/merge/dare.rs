@@ -74,10 +74,10 @@ pub fn dare_merge(
     let deltas = compute_deltas(models, base)?;
 
     // Step 2 & 3: Drop and rescale
-    let masked_deltas = if let Some(_seed) = config.seed {
+    let masked_deltas = if let Some(seed) = config.seed {
         // For deterministic merging (testing), use seeded RNG
         use rand::SeedableRng;
-        let mut rng = rand::rngs::StdRng::seed_from_u64(_seed);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         drop_and_rescale_deltas(&deltas, config.drop_prob, &mut rng)
     } else {
         // For normal use, use thread-local RNG

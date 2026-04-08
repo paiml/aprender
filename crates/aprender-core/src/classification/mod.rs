@@ -300,7 +300,9 @@ impl LogisticRegression {
         // Contract: apr-stochastic-lr-v1.yaml — fit_mode_enum
         match self.fit_mode {
             FitMode::Batch => self.fit_batch(x, y, &sample_weights, n_samples, n_features),
-            FitMode::Stochastic => self.fit_stochastic(x, y, &sample_weights, n_samples, n_features),
+            FitMode::Stochastic => {
+                self.fit_stochastic(x, y, &sample_weights, n_samples, n_features)
+            }
             FitMode::MiniBatch(batch_size) => {
                 let bs = batch_size.max(1).min(n_samples);
                 if bs == n_samples {
@@ -314,8 +316,12 @@ impl LogisticRegression {
 
     /// Full-batch gradient descent (default, backward compatible).
     fn fit_batch(
-        &mut self, x: &Matrix<f32>, y: &[usize], sample_weights: &[f32],
-        n_samples: usize, n_features: usize,
+        &mut self,
+        x: &Matrix<f32>,
+        y: &[usize],
+        sample_weights: &[f32],
+        n_samples: usize,
+        n_features: usize,
     ) -> Result<()> {
         for _ in 0..self.max_iter {
             let probas = self.predict_proba(x);
@@ -353,8 +359,12 @@ impl LogisticRegression {
     /// Stochastic (online) SGD: update after each sample.
     /// Contract: apr-stochastic-lr-v1.yaml — stochastic_convergence
     fn fit_stochastic(
-        &mut self, x: &Matrix<f32>, y: &[usize], sample_weights: &[f32],
-        n_samples: usize, n_features: usize,
+        &mut self,
+        x: &Matrix<f32>,
+        y: &[usize],
+        sample_weights: &[f32],
+        n_samples: usize,
+        n_features: usize,
     ) -> Result<()> {
         // Simple deterministic shuffle via index permutation
         let mut indices: Vec<usize> = (0..n_samples).collect();
@@ -398,8 +408,13 @@ impl LogisticRegression {
     /// Mini-batch SGD: update after every batch_size samples.
     /// Contract: apr-stochastic-lr-v1.yaml — minibatch_gradient
     fn fit_minibatch(
-        &mut self, x: &Matrix<f32>, y: &[usize], sample_weights: &[f32],
-        n_samples: usize, n_features: usize, batch_size: usize,
+        &mut self,
+        x: &Matrix<f32>,
+        y: &[usize],
+        sample_weights: &[f32],
+        n_samples: usize,
+        n_features: usize,
+        batch_size: usize,
     ) -> Result<()> {
         let mut indices: Vec<usize> = (0..n_samples).collect();
 
@@ -452,7 +467,10 @@ impl LogisticRegression {
 
     /// Predict probability for a single sample (used by stochastic/mini-batch).
     fn predict_proba_single(&self, x: &Matrix<f32>, row: usize) -> f32 {
-        let coef = self.coefficients.as_ref().expect("model must be initialized");
+        let coef = self
+            .coefficients
+            .as_ref()
+            .expect("model must be initialized");
         let n_features = coef.len();
         let mut z = self.intercept;
         for col in 0..n_features {

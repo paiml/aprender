@@ -51,12 +51,11 @@ impl<'a> CalculatorUI<'a> {
         let input_h = 3u16;
         let result_h = 3u16;
         let jidoka_h = 5u16;
-        let history_h = area.height.saturating_sub(margin * 2 + input_h + result_h + jidoka_h);
+        let history_h = area
+            .height
+            .saturating_sub(margin * 2 + input_h + result_h + jidoka_h);
 
-        self.render_input(
-            Rect::new(content_x, content_y, main_w, input_h),
-            buf,
-        );
+        self.render_input(Rect::new(content_x, content_y, main_w, input_h), buf);
         self.render_result(
             Rect::new(content_x, content_y + input_h, main_w, result_h),
             buf,
@@ -78,14 +77,24 @@ impl<'a> CalculatorUI<'a> {
         // Keypad
         let keypad_x = content_x + main_w;
         self.render_keypad(
-            Rect::new(keypad_x, content_y, keypad_w, area.height.saturating_sub(margin * 2)),
+            Rect::new(
+                keypad_x,
+                content_y,
+                keypad_w,
+                area.height.saturating_sub(margin * 2),
+            ),
             buf,
         );
 
         // Help sidebar
         let help_x = keypad_x + keypad_w;
         self.render_help_sidebar(
-            Rect::new(help_x, content_y, help_w, area.height.saturating_sub(margin * 2)),
+            Rect::new(
+                help_x,
+                content_y,
+                help_w,
+                area.height.saturating_sub(margin * 2),
+            ),
             buf,
         );
     }

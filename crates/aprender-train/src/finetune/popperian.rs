@@ -68,6 +68,7 @@ impl fmt::Display for QAGrade {
 /// Each field represents a falsifiable hypothesis. If the test passes,
 /// the hypothesis is corroborated (not proven). If it fails, the hypothesis
 /// is falsified.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Default)]
 pub struct PopperianQA {
     // === REPRODUCIBILITY (20 points) ===

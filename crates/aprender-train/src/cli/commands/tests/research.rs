@@ -610,7 +610,7 @@ fn test_research_deposit_all_providers() {
         let args = ResearchArgs {
             command: ResearchCommand::Deposit(DepositArgs {
                 artifact: artifact_path.clone(),
-                provider: provider,
+                provider,
                 token: None,
                 sandbox: false,
                 community: None,

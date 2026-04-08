@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_generate_sparkline_subsample() {
-        let values: Vec<f64> = (0..100).map(|i| f64::from(i)).collect();
+        let values: Vec<f64> = (0..100).map(f64::from).collect();
         let result = generate_sparkline(&values, 20);
         assert_eq!(result.chars().count(), 20);
     }

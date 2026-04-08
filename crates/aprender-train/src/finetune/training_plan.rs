@@ -926,7 +926,7 @@ pub fn execute_plan(
 
     // GH-377: Resolve model config — error on unknown instead of silent tiny()
     let model_config = TransformerConfig::from_size_str(&plan.model.size)
-        .map_err(|e| crate::Error::ConfigError(e))?;
+        .map_err(crate::Error::ConfigError)?;
 
     let total_start = std::time::Instant::now();
 

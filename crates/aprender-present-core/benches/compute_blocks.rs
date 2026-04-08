@@ -3,7 +3,8 @@
 //! Tests SIMD-friendly aggregation functions across different data sizes
 //! to verify auto-vectorization performance.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use presentar_core::simd::{
     batch_mean_f64, batch_min_max_f64, batch_scale_f64, batch_sum_f64, batch_variance_f64,
     histogram_f64, normalize_f64, weighted_sum_f64,

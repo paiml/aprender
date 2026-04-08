@@ -442,7 +442,7 @@ pub type StateCallback = Box<dyn Fn(ConnectionState) + Send + Sync>;
 /// Data stream manager.
 ///
 /// Manages subscriptions and handles incoming data.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct DataStream {
     /// Active subscriptions
     subscriptions: Arc<Mutex<HashMap<String, StreamSubscription>>>,

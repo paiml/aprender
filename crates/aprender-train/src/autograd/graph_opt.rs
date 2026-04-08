@@ -362,10 +362,10 @@ fn try_identity_fold(a: &TracedTensor, b: &TracedTensor, op_type: OpType) -> Opt
 
 /// Additive identity: x + 0 = x, 0 + x = x
 fn try_additive_identity(a: &TracedTensor, b: &TracedTensor) -> Option<TracedTensor> {
-    if b.value.as_constant().is_some_and(|c| is_zeros(c)) {
+    if b.value.as_constant().is_some_and(is_zeros) {
         return Some(a.clone());
     }
-    if a.value.as_constant().is_some_and(|c| is_zeros(c)) {
+    if a.value.as_constant().is_some_and(is_zeros) {
         return Some(b.clone());
     }
     None

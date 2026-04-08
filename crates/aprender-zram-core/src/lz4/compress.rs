@@ -21,7 +21,9 @@ struct HashTable {
 impl HashTable {
     #[inline]
     fn new() -> Self {
-        Self { table: [0; HASH_SIZE] }
+        Self {
+            table: [0; HASH_SIZE],
+        }
     }
 
     /// Fast hash using Knuth multiplicative method.
@@ -55,7 +57,10 @@ unsafe fn write_u16(ptr: *mut u8, val: u16) {
 #[inline(always)]
 unsafe fn copy_8(dst: *mut u8, src: *const u8) {
     unsafe {
-        std::ptr::write_unaligned(dst.cast::<u64>(), std::ptr::read_unaligned(src.cast::<u64>()));
+        std::ptr::write_unaligned(
+            dst.cast::<u64>(),
+            std::ptr::read_unaligned(src.cast::<u64>()),
+        );
     }
 }
 
@@ -633,14 +638,21 @@ mod tests {
         // Hash should always be within table bounds
         for val in [0u32, 1, 0xFFFFFFFF, 0x12345678, 0xDEADC0DE] {
             let hash = HashTable::hash(val);
-            assert!(hash < HASH_SIZE, "hash {} out of bounds for val {:x}", hash, val);
+            assert!(
+                hash < HASH_SIZE,
+                "hash {} out of bounds for val {:x}",
+                hash,
+                val
+            );
         }
     }
 
     #[test]
     fn test_compress_alternating_pattern() {
         // Alternating bytes - tests hash collision handling
-        let input: Vec<u8> = (0..512).map(|i| if i % 2 == 0 { 0xAA } else { 0x55 }).collect();
+        let input: Vec<u8> = (0..512)
+            .map(|i| if i % 2 == 0 { 0xAA } else { 0x55 })
+            .collect();
         let result = compress(&input).unwrap();
         assert!(!result.is_empty());
     }

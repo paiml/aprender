@@ -62,12 +62,10 @@ fn lint_severity_filter() {
     let mut config = LintConfig::new(&dir, None, 0.99);
     config.severity_filter = Some(RuleSeverity::Error);
     let report = run_lint(&config);
-    assert!(
-        report
-            .findings
-            .iter()
-            .all(|f| f.severity >= RuleSeverity::Error)
-    );
+    assert!(report
+        .findings
+        .iter()
+        .all(|f| f.severity >= RuleSeverity::Error));
 }
 
 #[test]

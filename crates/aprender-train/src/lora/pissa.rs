@@ -103,7 +103,7 @@ fn truncated_svd(
     for r in 0..rank {
         // Initialize random vector v
         let mut v: Vec<f32> =
-            (0..d_in).map(|i| ((i as f32 * 0.7 + r as f32 * 1.3).sin())).collect();
+            (0..d_in).map(|i| (i as f32 * 0.7 + r as f32 * 1.3).sin()).collect();
         normalize(&mut v);
 
         let mut u = vec![0.0f32; d_out];

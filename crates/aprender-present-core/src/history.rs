@@ -201,6 +201,26 @@ pub struct CommandHistory {
     recording: bool,
 }
 
+impl std::fmt::Debug for CommandHistory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CommandHistory")
+            .field("config", &self.config)
+            .field("next_command_id", &self.next_command_id)
+            .field("next_group_id", &self.next_group_id)
+            .field("next_checkpoint_id", &self.next_checkpoint_id)
+            .field("undo_stack_len", &self.undo_stack.len())
+            .field("redo_stack_len", &self.redo_stack.len())
+            .field("current_group", &self.current_group)
+            .field("checkpoints_count", &self.checkpoints.len())
+            .field("timestamp", &self.timestamp)
+            .field("last_command_time", &self.last_command_time)
+            .field("listeners_count", &self.listeners.len())
+            .field("current_memory", &self.current_memory)
+            .field("recording", &self.recording)
+            .finish()
+    }
+}
+
 impl Default for CommandHistory {
     fn default() -> Self {
         Self::new(HistoryConfig::default())
@@ -562,6 +582,16 @@ pub struct CompositeCommand {
     executed: Vec<bool>,
 }
 
+impl std::fmt::Debug for CompositeCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CompositeCommand")
+            .field("description", &self.description)
+            .field("commands_count", &self.commands.len())
+            .field("executed", &self.executed)
+            .finish()
+    }
+}
+
 impl CompositeCommand {
     pub fn new(description: impl Into<String>) -> Self {
         Self {
@@ -638,6 +668,16 @@ pub struct SetValueCommand<T: Clone + Send + Sync + 'static> {
     value: Arc<std::sync::RwLock<T>>,
     old_value: Option<T>,
     new_value: T,
+}
+
+impl<T: Clone + Send + Sync + 'static + std::fmt::Debug> std::fmt::Debug for SetValueCommand<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SetValueCommand")
+            .field("description", &self.description)
+            .field("old_value", &self.old_value)
+            .field("new_value", &self.new_value)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<T: Clone + Send + Sync + 'static> SetValueCommand<T> {

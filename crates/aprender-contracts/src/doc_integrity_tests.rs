@@ -23,11 +23,9 @@ fn falsify_doc_002_duplicate_h1() {
     let md = "# Title\n# Another Title\n";
     let violations = validate_heading_hierarchy(md);
     assert!(!violations.is_empty(), "duplicate H1 must be detected");
-    assert!(
-        violations
-            .iter()
-            .any(|v| v.message.contains("duplicate H1"))
-    );
+    assert!(violations
+        .iter()
+        .any(|v| v.message.contains("duplicate H1")));
 }
 
 // =========================================================================
@@ -134,11 +132,9 @@ fn heading_hierarchy_valid() {
 fn heading_hierarchy_first_not_h1() {
     let md = "## Not H1\n### Sub\n";
     let violations = validate_heading_hierarchy(md);
-    assert!(
-        violations
-            .iter()
-            .any(|v| v.message.contains("first heading must be H1"))
-    );
+    assert!(violations
+        .iter()
+        .any(|v| v.message.contains("first heading must be H1")));
 }
 
 #[test]
@@ -303,11 +299,9 @@ fn svg_no_svg_element() {
 fn svg_foreign_object() {
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><foreignObject>hi</foreignObject></svg>"#;
     let violations = validate_svg(svg);
-    assert!(
-        violations
-            .iter()
-            .any(|v| v.message.contains("foreignObject"))
-    );
+    assert!(violations
+        .iter()
+        .any(|v| v.message.contains("foreignObject")));
 }
 
 // =========================================================================

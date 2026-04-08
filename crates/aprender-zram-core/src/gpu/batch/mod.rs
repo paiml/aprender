@@ -99,7 +99,10 @@ impl std::fmt::Debug for GpuContext {
         f.debug_struct("GpuContext")
             .field("device_index", &self.device_index)
             .field("lz4_compress_loaded", &self.lz4_module.is_some())
-            .field("lz4_decompress_loaded", &self.lz4_decompress_module.is_some())
+            .field(
+                "lz4_decompress_loaded",
+                &self.lz4_decompress_module.is_some(),
+            )
             .finish()
     }
 }
@@ -200,7 +203,9 @@ impl GpuBatchCompressor {
     pub fn new(config: GpuBatchConfig) -> Result<Self> {
         // Create SIMD-accelerated compressor for parallel CPU path
         let simd_compressor = std::sync::Arc::new(
-            crate::CompressorBuilder::new().algorithm(config.algorithm).build()?,
+            crate::CompressorBuilder::new()
+                .algorithm(config.algorithm)
+                .build()?,
         );
 
         #[cfg(feature = "cuda")]
@@ -361,7 +366,11 @@ impl GpuBatchCompressor {
                         let compressed = crate::lz4::compress(page)?;
                         // Always use LZ4 data - GPU decompression needs valid LZ4 format
                         // For incompressible data, LZ4 will be slightly larger but valid
-                        Ok(CompressedPage { data: compressed, original_size: PAGE_SIZE, algorithm })
+                        Ok(CompressedPage {
+                            data: compressed,
+                            original_size: PAGE_SIZE,
+                            algorithm,
+                        })
                     })
                     .collect()
             })
@@ -378,7 +387,10 @@ impl GpuBatchCompressor {
         // Update statistics
         self.pages_compressed += pages.len() as u64;
         self.total_bytes_in += (pages.len() * PAGE_SIZE) as u64;
-        self.total_bytes_out += pages_result.iter().map(|p| p.data.len() as u64).sum::<u64>();
+        self.total_bytes_out += pages_result
+            .iter()
+            .map(|p| p.data.len() as u64)
+            .sum::<u64>();
         self.total_time_ns += total_time_ns;
 
         Ok(BatchResult {
@@ -411,7 +423,9 @@ impl GpuBatchCompressor {
 
         #[cfg(not(feature = "cuda"))]
         {
-            Err(Error::GpuNotAvailable("CUDA feature not enabled".to_string()))
+            Err(Error::GpuNotAvailable(
+                "CUDA feature not enabled".to_string(),
+            ))
         }
     }
 
@@ -443,7 +457,10 @@ impl GpuBatchCompressor {
         // Update statistics
         self.pages_compressed += pages.len() as u64;
         self.total_bytes_in += (pages.len() * PAGE_SIZE) as u64;
-        self.total_bytes_out += pages_result.iter().map(|p| p.data.len() as u64).sum::<u64>();
+        self.total_bytes_out += pages_result
+            .iter()
+            .map(|p| p.data.len() as u64)
+            .sum::<u64>();
         self.total_time_ns += total_time_ns;
 
         Ok(BatchResult {
@@ -634,7 +651,10 @@ impl GpuBatchCompressor {
 
         // [RENACER] Stage 8: Data Flow Analysis
         // GPU output can be up to output_stride bytes (4352), not just PAGE_SIZE
-        let gpu_count = sizes.iter().filter(|&&s| s > 0 && s <= output_stride as u32).count();
+        let gpu_count = sizes
+            .iter()
+            .filter(|&&s| s > 0 && s <= output_stride as u32)
+            .count();
         let cpu_fallback_count = batch_size - gpu_count;
         let gpu_output_bytes: usize = sizes
             .iter()
@@ -793,7 +813,9 @@ impl GpuBatchCompressor {
             .ok_or_else(|| Error::GpuNotAvailable("CUDA context not initialized".to_string()))?;
 
         let Some(module_cell) = context.lz4_decompress_module.as_ref() else {
-            return Err(Error::GpuNotAvailable("LZ4 decompress module not loaded".to_string()));
+            return Err(Error::GpuNotAvailable(
+                "LZ4 decompress module not loaded".to_string(),
+            ));
         };
 
         let batch_size = compressed.len();
@@ -852,7 +874,11 @@ impl GpuBatchCompressor {
         // Stage 4: Launch decompression kernel (overlapped with H2D tail)
         let batch_size_u32 = batch_size as u32;
         let num_blocks = batch_size_u32.div_ceil(256);
-        let config = LaunchConfig { grid: (num_blocks, 1, 1), block: (256, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (num_blocks, 1, 1),
+            block: (256, 1, 1),
+            shared_mem: 0,
+        };
 
         let kernel_start = Instant::now();
         let mut args: [*mut c_void; 4] = [

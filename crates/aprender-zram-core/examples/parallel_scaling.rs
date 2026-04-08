@@ -41,22 +41,32 @@ fn main() {
 
     for num_threads in [1, 2, 4, 8, 12, 16, 24, 32, 48] {
         // Configure rayon thread pool for this test
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(num_threads).build().unwrap();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .unwrap();
 
         pool.install(|| {
             // Pre-allocate output
             let mut outputs: Vec<[u8; PAGE_SIZE]> = vec![[0u8; PAGE_SIZE]; NUM_PAGES];
 
             // Warmup
-            outputs.par_iter_mut().zip(compressed.par_iter()).take(1000).for_each(|(out, data)| {
-                let _ = decompress_simd(data, out);
-            });
+            outputs
+                .par_iter_mut()
+                .zip(compressed.par_iter())
+                .take(1000)
+                .for_each(|(out, data)| {
+                    let _ = decompress_simd(data, out);
+                });
 
             // Time it
             let start = Instant::now();
-            outputs.par_iter_mut().zip(compressed.par_iter()).for_each(|(out, data)| {
-                decompress_simd(data, out).unwrap();
-            });
+            outputs
+                .par_iter_mut()
+                .zip(compressed.par_iter())
+                .for_each(|(out, data)| {
+                    decompress_simd(data, out).unwrap();
+                });
             let elapsed = start.elapsed();
 
             let bytes = NUM_PAGES * PAGE_SIZE;
@@ -80,9 +90,11 @@ fn main() {
     let mut dst: Vec<u8> = vec![0; NUM_PAGES * PAGE_SIZE];
 
     let start = Instant::now();
-    dst.par_chunks_mut(PAGE_SIZE).zip(src.par_chunks(PAGE_SIZE)).for_each(|(d, s)| {
-        d.copy_from_slice(s);
-    });
+    dst.par_chunks_mut(PAGE_SIZE)
+        .zip(src.par_chunks(PAGE_SIZE))
+        .for_each(|(d, s)| {
+            d.copy_from_slice(s);
+        });
     let elapsed = start.elapsed();
     let gbps = (NUM_PAGES * PAGE_SIZE) as f64 / elapsed.as_secs_f64() / 1e9;
     println!("Parallel memcpy: {gbps:.2} GB/s (this is ~memory bandwidth limit)");

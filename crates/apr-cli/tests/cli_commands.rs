@@ -15,18 +15,62 @@ use std::process::Command;
 /// Feature-gated commands are conditionally included.
 fn registered_commands() -> Vec<&'static str> {
     let mut cmds = vec![
-        "run", "serve", "chat",
-        "inspect", "debug", "validate", "lint", "explain", "tensors",
-        "trace", "diff", "hex", "tree", "flow",
-        "export", "import", "convert", "compile", "merge", "quantize", "rosetta",
-        "pull", "list", "rm", "publish",
-        "finetune", "prune", "distill", "train", "tokenize", "tune",
-        "bench", "eval", "check", "qa", "qualify", "canary", "compare-hf", "parity",
-        "gpu", "profile", "ptx", "ptx-map", "cbtop",
-        "data", "pipeline",
-        "tui", "monitor", "runs", "experiment",
-        "showcase", "probar", "diagnose",
-        "oracle", "encrypt", "decrypt",
+        "run",
+        "serve",
+        "chat",
+        "inspect",
+        "debug",
+        "validate",
+        "lint",
+        "explain",
+        "tensors",
+        "trace",
+        "diff",
+        "hex",
+        "tree",
+        "flow",
+        "export",
+        "import",
+        "convert",
+        "compile",
+        "merge",
+        "quantize",
+        "rosetta",
+        "pull",
+        "list",
+        "rm",
+        "publish",
+        "finetune",
+        "prune",
+        "distill",
+        "train",
+        "tokenize",
+        "tune",
+        "bench",
+        "eval",
+        "check",
+        "qa",
+        "qualify",
+        "canary",
+        "compare-hf",
+        "parity",
+        "gpu",
+        "profile",
+        "ptx",
+        "ptx-map",
+        "cbtop",
+        "data",
+        "pipeline",
+        "tui",
+        "monitor",
+        "runs",
+        "experiment",
+        "showcase",
+        "probar",
+        "diagnose",
+        "oracle",
+        "encrypt",
+        "decrypt",
     ];
     // Feature-gated commands — only expected when feature is enabled
     #[cfg(feature = "code")]
@@ -63,7 +107,10 @@ fn get_help_commands() -> Vec<String> {
             if let Some(cmd_name) = trimmed.split_whitespace().next() {
                 // Valid command names: lowercase, may contain hyphens, no parens/uppercase
                 if !cmd_name.is_empty()
-                    && cmd_name.chars().next().map_or(false, |c| c.is_ascii_lowercase())
+                    && cmd_name
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_ascii_lowercase())
                     && !cmd_name.contains('(')
                     && !cmd_name.contains(')')
                 {
@@ -151,7 +198,10 @@ fn test_no_unregistered_commands() {
 fn test_command_count_matches() {
     let help_commands = get_help_commands();
     // Subtract "help" which clap adds automatically
-    let help_count = help_commands.iter().filter(|c| c.as_str() != "help").count();
+    let help_count = help_commands
+        .iter()
+        .filter(|c| c.as_str() != "help")
+        .count();
     let contract_count = registered_commands().len();
 
     assert_eq!(

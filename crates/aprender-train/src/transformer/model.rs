@@ -2209,7 +2209,7 @@ mod tests {
             assert!(result.is_err());
             let err_msg = match result {
                 Err(e) => e.to_string(),
-                Ok(_) => panic!("expected error"),
+                Ok(()) => panic!("expected error"),
             };
             assert!(err_msg.contains("model.norm.weight"));
         }
@@ -2239,7 +2239,7 @@ mod tests {
             assert!(result.is_err());
             let err_msg = match result {
                 Err(e) => e.to_string(),
-                Ok(_) => panic!("expected error"),
+                Ok(()) => panic!("expected error"),
             };
             assert!(err_msg.contains("NaN"));
             assert!(err_msg.contains("poisoned"));
@@ -2254,7 +2254,7 @@ mod tests {
             assert!(result.is_err());
             let err_msg = match result {
                 Err(e) => e.to_string(),
-                Ok(_) => panic!("expected error"),
+                Ok(()) => panic!("expected error"),
             };
             assert!(err_msg.contains("Inf"));
         }

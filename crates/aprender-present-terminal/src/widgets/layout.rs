@@ -35,6 +35,15 @@ pub struct LayoutItem {
     size: SizeSpec,
 }
 
+impl std::fmt::Debug for LayoutItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LayoutItem")
+            .field("widget", &"..")
+            .field("size", &self.size)
+            .finish()
+    }
+}
+
 impl LayoutItem {
     /// Create a new layout item wrapping a widget.
     pub fn new(widget: impl Widget + 'static) -> Self {
@@ -108,6 +117,17 @@ pub struct Layout {
     bounds: Rect,
     /// Cached child bounds after layout.
     child_bounds: Vec<Rect>,
+}
+
+impl std::fmt::Debug for Layout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Layout")
+            .field("direction", &self.direction)
+            .field("children", &self.children.len())
+            .field("bounds", &self.bounds)
+            .field("child_bounds", &self.child_bounds)
+            .finish()
+    }
 }
 
 impl Layout {

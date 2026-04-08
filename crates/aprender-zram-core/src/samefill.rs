@@ -202,7 +202,10 @@ pub fn detect_same_fill(page: &[u8; PAGE_SIZE]) -> SameFillResult {
 /// special treatment in zram for maximum efficiency.
 #[must_use]
 pub fn is_zero_page(page: &[u8; PAGE_SIZE]) -> bool {
-    matches!(detect_same_fill(page), SameFillResult::SameFill { value: 0 })
+    matches!(
+        detect_same_fill(page),
+        SameFillResult::SameFill { value: 0 }
+    )
 }
 
 /// Expand a same-fill value back to a full page.
@@ -239,7 +242,10 @@ impl CompactSameFill {
     /// Create a compact representation for a same-fill page.
     #[must_use]
     pub fn new(value: u8) -> Self {
-        Self { flags: Self::FLAG_SAME_FILL, value }
+        Self {
+            flags: Self::FLAG_SAME_FILL,
+            value,
+        }
     }
 
     /// Check if this represents a same-fill page.
@@ -263,7 +269,10 @@ impl CompactSameFill {
     /// Deserialize from bytes.
     #[must_use]
     pub fn from_bytes(bytes: &[u8; 2]) -> Self {
-        Self { flags: bytes[0], value: bytes[1] }
+        Self {
+            flags: bytes[0],
+            value: bytes[1],
+        }
     }
 }
 

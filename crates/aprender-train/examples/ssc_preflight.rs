@@ -18,11 +18,11 @@ use std::path::PathBuf;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let _model_dir =
+    let model_dir =
         get_arg(&args, "--model-dir").map(PathBuf::from).expect("--model-dir required");
 
     println!("=== SSC Run 8 Preflight Gate (Step 8.4) ===");
-    println!("Model: {}", _model_dir.display());
+    println!("Model: {}", model_dir.display());
     println!();
 
     #[allow(unused_mut)]

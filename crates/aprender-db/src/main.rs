@@ -259,11 +259,17 @@ fn arrow_value_to_json(array: &dyn arrow::array::Array, index: usize) -> serde_j
 
     match array.data_type() {
         DataType::Int32 => {
-            let a = array.as_any().downcast_ref::<Int32Array>().expect("Arrow array downcast to Int32Array");
+            let a = array
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .expect("Arrow array downcast to Int32Array");
             serde_json::Value::Number(a.value(index).into())
         }
         DataType::Int64 => {
-            let a = array.as_any().downcast_ref::<Int64Array>().expect("Int64Array downcast failed for Int64 DataType column");
+            let a = array
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("Int64Array downcast failed for Int64 DataType column");
             serde_json::Value::Number(a.value(index).into())
         }
         DataType::Float32 => {

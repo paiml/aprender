@@ -116,7 +116,7 @@ fn main() {
     println!("Demo complete!");
 }
 
-fn draw_panel(canvas: &mut DirectTerminalCanvas, title: &str, bounds: Rect) {
+fn draw_panel(canvas: &mut DirectTerminalCanvas<'_>, title: &str, bounds: Rect) {
     let border_color = Color::new(0.4, 0.6, 0.8, 1.0);
     let title_color = Color::new(0.6, 0.8, 1.0, 1.0);
 

@@ -9,7 +9,10 @@ use std::path::Path;
 use std::process::Command;
 
 fn workspace_root() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap()
 }
 
 fn read_readme() -> String {
@@ -51,8 +54,12 @@ fn test_readme_no_apr_cli_install() {
 #[test]
 fn test_readme_no_stale_install_refs() {
     let readme = read_readme();
-    for old in &["cargo install trueno", "cargo install realizar",
-                  "cargo install entrenar", "cargo install batuta"] {
+    for old in &[
+        "cargo install trueno",
+        "cargo install realizar",
+        "cargo install entrenar",
+        "cargo install batuta",
+    ] {
         assert!(
             !readme.contains(old),
             "FALSIFY-README-004: README.md must not contain '{old}'"
@@ -73,8 +80,8 @@ fn test_readme_crate_count_matches_workspace() {
         .expect("cargo metadata failed");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let metadata: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("failed to parse cargo metadata");
+    let metadata: serde_json::Value =
+        serde_json::from_str(&stdout).expect("failed to parse cargo metadata");
 
     let ws_count = metadata["packages"]
         .as_array()
@@ -95,20 +102,44 @@ fn test_readme_crate_count_matches_workspace() {
 fn test_hero_svg_accessible() {
     let svg = std::fs::read_to_string(workspace_root().join("docs/hero.svg"))
         .expect("docs/hero.svg must exist");
-    assert!(svg.contains(r#"role="img""#), "FALSIFY-SVG-002: hero.svg missing role=img");
-    assert!(svg.contains("aria-label"), "FALSIFY-SVG-002: hero.svg missing aria-label");
-    assert!(svg.contains("<title>"), "FALSIFY-SVG-002: hero.svg missing <title>");
+    assert!(
+        svg.contains(r#"role="img""#),
+        "FALSIFY-SVG-002: hero.svg missing role=img"
+    );
+    assert!(
+        svg.contains("aria-label"),
+        "FALSIFY-SVG-002: hero.svg missing aria-label"
+    );
+    assert!(
+        svg.contains("<title>"),
+        "FALSIFY-SVG-002: hero.svg missing <title>"
+    );
 }
 
 /// FALSIFY-README-006: Framework comparison section exists with real data
 #[test]
 fn test_readme_has_framework_comparison() {
     let readme = read_readme();
-    assert!(readme.contains("## Framework Comparison"), "Missing Framework Comparison section");
-    assert!(readme.contains("candle-vs-apr"), "Missing candle-vs-apr citation");
-    assert!(readme.contains("ground-truth-apr-ludwig"), "Missing ludwig comparison citation");
-    assert!(readme.contains("369.9"), "Missing realizr benchmark number (369.9 tok/s)");
-    assert!(readme.contains("3,220"), "Missing batched throughput number (3,220 tok/s)");
+    assert!(
+        readme.contains("## Framework Comparison"),
+        "Missing Framework Comparison section"
+    );
+    assert!(
+        readme.contains("candle-vs-apr"),
+        "Missing candle-vs-apr citation"
+    );
+    assert!(
+        readme.contains("ground-truth-apr-ludwig"),
+        "Missing ludwig comparison citation"
+    );
+    assert!(
+        readme.contains("369.9"),
+        "Missing realizr benchmark number (369.9 tok/s)"
+    );
+    assert!(
+        readme.contains("3,220"),
+        "Missing batched throughput number (3,220 tok/s)"
+    );
 }
 
 /// FALSIFY-SVG-003: Hero SVG is valid XML
@@ -117,8 +148,14 @@ fn test_hero_svg_valid() {
     let svg_path = workspace_root().join("docs/hero.svg");
     let content = std::fs::read_to_string(&svg_path).expect("read hero.svg");
     // Basic XML validation — starts with <svg, ends with </svg>
-    assert!(content.trim().starts_with("<svg"), "FALSIFY-SVG-003: not valid SVG");
-    assert!(content.trim().ends_with("</svg>"), "FALSIFY-SVG-003: not valid SVG");
+    assert!(
+        content.trim().starts_with("<svg"),
+        "FALSIFY-SVG-003: not valid SVG"
+    );
+    assert!(
+        content.trim().ends_with("</svg>"),
+        "FALSIFY-SVG-003: not valid SVG"
+    );
 }
 
 /// FALSIFY-README-CRATE-001: Every crate has README.md

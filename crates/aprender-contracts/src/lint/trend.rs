@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::LintReport;
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
+use super::LintReport;
 
 /// A single point-in-time lint snapshot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,7 +100,11 @@ pub fn detect_drift(snapshots: &[TrendSnapshot], threshold: f64) -> Option<f64> 
     let current = snapshots.last()?.mean_score;
     let drop = avg - current;
 
-    if drop > threshold { Some(drop) } else { None }
+    if drop > threshold {
+        Some(drop)
+    } else {
+        None
+    }
 }
 
 /// Format trend display.

@@ -38,6 +38,7 @@ pub struct LLaMAWithQLoRA {
 }
 
 /// QLoRA adapters for a single transformer layer
+#[allow(clippy::struct_field_names)]
 struct LayerQLoRAAdapters {
     q_qlora: QLoRALayer,
     k_qlora: QLoRALayer,

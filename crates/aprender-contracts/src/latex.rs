@@ -88,7 +88,7 @@ pub fn math_to_latex(s: &str) -> String {
     // This arises when ⁺ (→ ^{+}) is followed by ^N in the source.
     while let Some(pos) = out.find("^{+}^") {
         let after = &out[pos + 5..]; // after "^{+}^"
-        // Collect the next superscript content: either {braced} or a single char
+                                     // Collect the next superscript content: either {braced} or a single char
         if after.starts_with('{') {
             if let Some(close) = after.find('}') {
                 let inner = &after[1..close];

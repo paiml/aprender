@@ -211,7 +211,9 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
         // Copy literals using NEON
         if literal_len > 0 {
             if ip.add(literal_len) > ip_end {
-                return Err(Error::CorruptedData("literal extends past input".to_string()));
+                return Err(Error::CorruptedData(
+                    "literal extends past input".to_string(),
+                ));
             }
             if op.add(literal_len) > op_end {
                 return Err(Error::BufferTooSmall {
@@ -237,7 +239,9 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
 
         // Read offset
         if ip.add(2) > ip_end {
-            return Err(Error::CorruptedData("unexpected end of input at offset".to_string()));
+            return Err(Error::CorruptedData(
+                "unexpected end of input at offset".to_string(),
+            ));
         }
         let offset = std::ptr::read_unaligned(ip as *const u16) as usize;
         ip = ip.add(2);

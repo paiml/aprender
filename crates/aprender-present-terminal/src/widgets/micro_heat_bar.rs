@@ -243,7 +243,7 @@ impl MicroHeatBar {
                 BarStyle::Segments => '█',
             };
 
-            let segment: String = std::iter::repeat(ch).take(char_count).collect();
+            let segment: String = std::iter::repeat_n(ch, char_count).collect();
             canvas.draw_text(
                 &segment,
                 Point::new(x, pos.y),
@@ -259,7 +259,7 @@ impl MicroHeatBar {
         // Fill remaining width with dim background
         let remaining = self.width.saturating_sub((x - pos.x) as usize);
         if remaining > 0 {
-            let bg: String = std::iter::repeat('░').take(remaining).collect();
+            let bg: String = std::iter::repeat_n('░', remaining).collect();
             canvas.draw_text(
                 &bg,
                 Point::new(x, pos.y),
@@ -274,6 +274,7 @@ impl MicroHeatBar {
 
 /// Compact breakdown showing label + micro bar + percentage
 /// Example: "U:54 S:19 I:4 ████▓▓░░"
+#[derive(Debug)]
 pub struct CompactBreakdown {
     /// Category values
     values: Vec<f64>,

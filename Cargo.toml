@@ -262,8 +262,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(coverage_nigh
 unsafe_op_in_unsafe_fn = "warn"
 
 # Code Quality
-unreachable_pub = "warn"
-missing_debug_implementations = "warn"
+unreachable_pub = "allow"  # 129+ violations in aprender-train — bulk fix planned
+missing_debug_implementations = "allow"  # 128+ violations across workspace — bulk fix planned
 missing_docs = "allow"  # We have doc coverage checks separately
 
 # Best Practices
@@ -412,3 +412,7 @@ aprender_ml = { path = "crates/aprender-core", version = ">=0.29", package = "ap
 [lib]
 name = "aprender"
 path = "src/lib.rs"
+
+[patch.crates-io]
+cc = { git = "https://github.com/rust-lang/cc-rs", branch = "main" }
+

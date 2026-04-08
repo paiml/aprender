@@ -87,7 +87,12 @@ fn chapter_count_is_27() {
 fn namespace_discipline_in_examples() {
     let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
     let legacy_names = [
-        "trueno", "realizar", "entrenar", "batuta", "presentar", "renacer",
+        "trueno",
+        "realizar",
+        "entrenar",
+        "batuta",
+        "presentar",
+        "renacer",
     ];
     let mut violations = Vec::new();
 
@@ -96,9 +101,7 @@ fn namespace_discipline_in_examples() {
         if let Ok(content) = std::fs::read_to_string(&path) {
             for name in &legacy_names {
                 // Skip comments that reference the old→new mapping in ch14
-                if content.contains(&format!("\"{name}\""))
-                    && example == &"ch14_contracts"
-                {
+                if content.contains(&format!("\"{name}\"")) && example == &"ch14_contracts" {
                     continue;
                 }
                 // Check for `use <legacy>::` or standalone usage

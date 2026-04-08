@@ -281,15 +281,27 @@ mod tests {
         }
 
         let counters: Vec<_> = (0..4)
-            .map(|_| Arc::new(CacheLinePadded { counter: AtomicU64::new(0), _padding: [0; 56] }))
+            .map(|_| {
+                Arc::new(CacheLinePadded {
+                    counter: AtomicU64::new(0),
+                    _padding: [0; 56],
+                })
+            })
             .collect();
 
         // Verify each counter is on separate cache line
         for i in 0..counters.len() - 1 {
             let addr1 = &counters[i].counter as *const _ as usize;
             let addr2 = &counters[i + 1].counter as *const _ as usize;
-            let diff = if addr2 > addr1 { addr2 - addr1 } else { addr1 - addr2 };
-            assert!(diff >= 64, "Counters should be >= 64 bytes apart, got {diff}");
+            let diff = if addr2 > addr1 {
+                addr2 - addr1
+            } else {
+                addr1 - addr2
+            };
+            assert!(
+                diff >= 64,
+                "Counters should be >= 64 bytes apart, got {diff}"
+            );
         }
     }
 
@@ -399,7 +411,11 @@ mod tests {
             let mut output = [0u8; PAGE_SIZE];
             let len = decompress_simd(&compressed, &mut output).unwrap();
             assert_eq!(len, PAGE_SIZE, "failed for pattern_len={pattern_len}");
-            assert_eq!(input[..], output[..], "failed for pattern_len={pattern_len}");
+            assert_eq!(
+                input[..],
+                output[..],
+                "failed for pattern_len={pattern_len}"
+            );
         }
     }
 
@@ -415,7 +431,11 @@ mod tests {
             let mut output = [0u8; PAGE_SIZE];
             let len = decompress_simd(&compressed, &mut output).unwrap();
             assert_eq!(len, PAGE_SIZE, "failed for pattern_len={pattern_len}");
-            assert_eq!(input[..], output[..], "failed for pattern_len={pattern_len}");
+            assert_eq!(
+                input[..],
+                output[..],
+                "failed for pattern_len={pattern_len}"
+            );
         }
     }
 
@@ -431,7 +451,11 @@ mod tests {
             let mut output = [0u8; PAGE_SIZE];
             let len = decompress_simd(&compressed, &mut output).unwrap();
             assert_eq!(len, PAGE_SIZE, "failed for pattern_len={pattern_len}");
-            assert_eq!(input[..], output[..], "failed for pattern_len={pattern_len}");
+            assert_eq!(
+                input[..],
+                output[..],
+                "failed for pattern_len={pattern_len}"
+            );
         }
     }
 

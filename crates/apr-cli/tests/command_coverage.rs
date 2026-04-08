@@ -66,7 +66,11 @@ fn create_rich_test_model() -> NamedTempFile {
     // Layer 0: FFN [hidden=32, intermediate=64] and [intermediate=64, hidden=32]
     let up_data: Vec<f32> = (0..64 * 32).map(|i| (i as f32) * 0.005).collect();
     let down_data: Vec<f32> = (0..32 * 64).map(|i| (i as f32) * 0.005).collect();
-    writer.add_f32_tensor("model.layers.0.mlp.gate_proj.weight", vec![64, 32], &up_data);
+    writer.add_f32_tensor(
+        "model.layers.0.mlp.gate_proj.weight",
+        vec![64, 32],
+        &up_data,
+    );
     writer.add_f32_tensor("model.layers.0.mlp.up_proj.weight", vec![64, 32], &up_data);
     writer.add_f32_tensor(
         "model.layers.0.mlp.down_proj.weight",
@@ -436,15 +440,11 @@ fn test_coverage_flow_self_attn_rich() {
 fn test_coverage_diff_self_rich() {
     let model = create_rich_test_model();
     let path = model.path().to_str().unwrap();
-    apr()
-        .args(["diff", path, path])
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("100%")
-                .or(predicate::str::contains("identical"))
-                .or(predicate::str::contains("IDENTICAL")),
-        );
+    apr().args(["diff", path, path]).assert().success().stdout(
+        predicate::str::contains("100%")
+            .or(predicate::str::contains("identical"))
+            .or(predicate::str::contains("IDENTICAL")),
+    );
 }
 
 #[test]

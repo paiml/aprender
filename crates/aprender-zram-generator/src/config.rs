@@ -62,8 +62,11 @@ impl Default for Config {
 
 /// Load configuration from standard locations.
 pub fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
-    let config_paths =
-        ["/etc/trueno-zram.conf", "/etc/trueno-zram.conf.d/", "/usr/lib/trueno-zram.conf.d/"];
+    let config_paths = [
+        "/etc/trueno-zram.conf",
+        "/etc/trueno-zram.conf.d/",
+        "/usr/lib/trueno-zram.conf.d/",
+    ];
 
     for path_str in &config_paths {
         let path = Path::new(path_str);

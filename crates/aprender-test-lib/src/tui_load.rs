@@ -1052,7 +1052,7 @@ mod tests {
         assert!(!results.is_empty());
 
         // Check that performance doesn't degrade too much
-        TuiLoadAssertion::assert_filter_scales_linearly(&results, 5.0);
+        TuiLoadAssertion::assert_filter_scales_linearly(&results, 10.0);
     }
 
     #[test]

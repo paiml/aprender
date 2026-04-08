@@ -49,6 +49,7 @@ pub fn is_tracing_enabled() -> bool {
 ///     // ... rendering code ...
 /// } // Automatically logs duration on drop
 /// ```
+#[derive(Debug)]
 pub struct TimingGuard {
     name: &'static str,
     start: Option<Instant>,

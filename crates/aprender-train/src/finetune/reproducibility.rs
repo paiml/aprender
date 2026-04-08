@@ -274,6 +274,7 @@ impl ExperimentLock {
 }
 
 /// Verification result
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone, Default)]
 pub struct VerificationResult {
     /// Git commit mismatch (expected, actual)

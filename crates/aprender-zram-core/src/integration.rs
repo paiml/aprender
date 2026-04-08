@@ -86,7 +86,10 @@ pub struct TierConfig {
 impl TierConfig {
     /// Create a compressor with this configuration.
     pub fn create_compressor(&self) -> crate::Result<Box<dyn PageCompressor>> {
-        CompressorBuilder::new().algorithm(self.algorithm).prefer_backend(self.backend).build()
+        CompressorBuilder::new()
+            .algorithm(self.algorithm)
+            .prefer_backend(self.backend)
+            .build()
     }
 }
 
@@ -151,7 +154,10 @@ mod tests {
         assert!(crate::simd::is_available(backend));
 
         // Can create compressor with detected backend
-        let compressor = CompressorBuilder::new().prefer_backend(backend).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .prefer_backend(backend)
+            .build()
+            .unwrap();
 
         let page = [0xABu8; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
@@ -174,7 +180,10 @@ mod tests {
             assert!(config.batch_size > 0);
 
             // Can create compressor (may fall back to scalar if SIMD not available)
-            let compressor = CompressorBuilder::new().algorithm(config.algorithm).build().unwrap();
+            let compressor = CompressorBuilder::new()
+                .algorithm(config.algorithm)
+                .build()
+                .unwrap();
 
             let page = [0xCDu8; PAGE_SIZE];
             let result = compressor.compress(&page);
@@ -247,10 +256,18 @@ mod tests {
 
     #[test]
     fn test_feature_flags_cuda_requires_std() {
-        let flags = FeatureFlags { cuda: true, std: false, ..Default::default() };
+        let flags = FeatureFlags {
+            cuda: true,
+            std: false,
+            ..Default::default()
+        };
         assert!(!flags.is_compatible());
 
-        let flags = FeatureFlags { cuda: true, std: true, ..Default::default() };
+        let flags = FeatureFlags {
+            cuda: true,
+            std: true,
+            ..Default::default()
+        };
         assert!(flags.is_compatible());
     }
 

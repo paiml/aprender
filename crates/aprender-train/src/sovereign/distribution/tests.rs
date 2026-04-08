@@ -165,7 +165,9 @@ fn test_sovereign_distribution_with_format() {
     let dist = SovereignDistribution::core().with_format(DistributionFormat::Iso);
 
     assert_eq!(dist.format, DistributionFormat::Iso);
-    assert!(dist.suggested_filename().ends_with(".iso"));
+    assert!(std::path::Path::new(&dist.suggested_filename())
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("iso")));
 }
 
 #[test]

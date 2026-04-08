@@ -53,7 +53,12 @@ fn main() {
     for size in test_sizes {
         let no_gpu = select_backend(size, false);
         let with_gpu = select_backend(size, true);
-        println!("   {:>8} {:>15} {:>15}", size, format!("{no_gpu:?}"), format!("{with_gpu:?}"));
+        println!(
+            "   {:>8} {:>15} {:>15}",
+            size,
+            format!("{no_gpu:?}"),
+            format!("{with_gpu:?}")
+        );
     }
 
     println!();
@@ -77,7 +82,11 @@ fn main() {
             "   {} ({} MB): {}",
             desc,
             data_mb,
-            if beneficial { "GPU beneficial" } else { "CPU preferred" }
+            if beneficial {
+                "GPU beneficial"
+            } else {
+                "CPU preferred"
+            }
         );
     }
 
@@ -116,8 +125,14 @@ fn main() {
 
     for dev in &devices {
         println!("\n   {}", dev.name);
-        println!("     SM: {}.{}", dev.compute_capability.0, dev.compute_capability.1);
-        println!("     Memory: {} GB", dev.total_memory / (1024 * 1024 * 1024));
+        println!(
+            "     SM: {}.{}",
+            dev.compute_capability.0, dev.compute_capability.1
+        );
+        println!(
+            "     Memory: {} GB",
+            dev.total_memory / (1024 * 1024 * 1024)
+        );
         println!("     L2 Cache: {} MB", dev.l2_cache_size / (1024 * 1024));
         println!("     Optimal batch: {} pages", dev.optimal_batch_size());
         println!("     Supported: {}", dev.is_supported());

@@ -31,7 +31,6 @@ pub mod policy;
 pub mod routing;
 pub mod traits;
 
-
 pub use catalog::{ModelCatalog, ModelEntry};
 pub use gateway::{FederationGateway, GatewayBuilder, GatewayConfig};
 pub use health::{CircuitBreaker, HealthChecker, HealthConfig, HealthStatus};

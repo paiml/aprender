@@ -14,7 +14,10 @@ fn main() {
     // Shape reversal contract
     let gguf_shape = [4096_usize, 11008]; // [ne0, ne1] in GGUF
     let apr_shape = [gguf_shape[1], gguf_shape[0]]; // [rows, cols] in APR
-    println!("\nGGUF shape: {:?} -> APR shape: {:?}", gguf_shape, apr_shape);
+    println!(
+        "\nGGUF shape: {:?} -> APR shape: {:?}",
+        gguf_shape, apr_shape
+    );
     assert_eq!(apr_shape[0], 11008, "Rows = ne1");
     assert_eq!(apr_shape[1], 4096, "Cols = ne0");
 

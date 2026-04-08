@@ -64,6 +64,22 @@ pub struct Border {
     child: Option<Box<dyn Widget>>,
 }
 
+impl std::fmt::Debug for Border {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Border")
+            .field("title", &self.title)
+            .field("style", &self.style)
+            .field("color", &self.color)
+            .field("title_color", &self.title_color)
+            .field("fill", &self.fill)
+            .field("background", &self.background)
+            .field("bounds", &self.bounds)
+            .field("title_left_aligned", &self.title_left_aligned)
+            .field("child", &self.child.as_ref().map(|_| ".."))
+            .finish()
+    }
+}
+
 impl Default for Border {
     fn default() -> Self {
         Self::new()

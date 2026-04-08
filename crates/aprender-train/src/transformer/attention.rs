@@ -801,7 +801,7 @@ impl LoRAProjection {
 
         // Initialize A with Kaiming uniform (standard LoRA paper)
         let lora_a = Tensor::from_vec(
-            (0..d_in * rank).map(|i| ((i as f32 * 0.123).sin() * 0.01)).collect(),
+            (0..d_in * rank).map(|i| (i as f32 * 0.123).sin() * 0.01).collect(),
             true, // requires_grad
         );
 

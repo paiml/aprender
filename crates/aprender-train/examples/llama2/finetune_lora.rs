@@ -38,6 +38,7 @@ pub struct LLaMAWithLoRA {
 }
 
 /// LoRA adapters for a single transformer layer
+#[allow(clippy::struct_field_names)]
 struct LayerLoRAAdapters {
     q_lora: LoRALayer,
     k_lora: LoRALayer,

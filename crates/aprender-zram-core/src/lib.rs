@@ -151,7 +151,10 @@ impl CompressorBuilder {
     /// Create a new compressor builder with default settings.
     #[must_use]
     pub fn new() -> Self {
-        Self { algorithm: Algorithm::default(), preferred_backend: None }
+        Self {
+            algorithm: Algorithm::default(),
+            preferred_backend: None,
+        }
     }
 
     /// Set the compression algorithm.
@@ -217,7 +220,11 @@ impl Default for CompressorStats {
 
 impl GenericCompressor {
     fn new(algorithm: Algorithm, backend: SimdBackend) -> Self {
-        Self { algorithm, backend, stats: CompressorStats::default() }
+        Self {
+            algorithm,
+            backend,
+            stats: CompressorStats::default(),
+        }
     }
 }
 
@@ -230,7 +237,9 @@ impl PageCompressor for GenericCompressor {
             Algorithm::Lz4 | Algorithm::Lz4Hc => {
                 let compressed = lz4::compress(page)?;
                 if compressed.len() >= PAGE_SIZE {
-                    self.stats.pages_incompressible.fetch_add(1, Ordering::Relaxed);
+                    self.stats
+                        .pages_incompressible
+                        .fetch_add(1, Ordering::Relaxed);
                     Ok(CompressedPage::uncompressed(*page))
                 } else {
                     CompressedPage::new(compressed, PAGE_SIZE, Algorithm::Lz4)
@@ -239,7 +248,9 @@ impl PageCompressor for GenericCompressor {
             Algorithm::Zstd { level } => {
                 let compressed = zstd::compress(page, level)?;
                 if compressed.len() >= PAGE_SIZE {
-                    self.stats.pages_incompressible.fetch_add(1, Ordering::Relaxed);
+                    self.stats
+                        .pages_incompressible
+                        .fetch_add(1, Ordering::Relaxed);
                     Ok(CompressedPage::uncompressed(*page))
                 } else {
                     CompressedPage::new(compressed, PAGE_SIZE, Algorithm::Zstd { level })
@@ -249,7 +260,9 @@ impl PageCompressor for GenericCompressor {
                 // Try LZ4 first as it's fastest
                 let compressed = lz4::compress(page)?;
                 if compressed.len() >= PAGE_SIZE {
-                    self.stats.pages_incompressible.fetch_add(1, Ordering::Relaxed);
+                    self.stats
+                        .pages_incompressible
+                        .fetch_add(1, Ordering::Relaxed);
                     Ok(CompressedPage::uncompressed(*page))
                 } else {
                     CompressedPage::new(compressed, PAGE_SIZE, Algorithm::Lz4)
@@ -258,12 +271,18 @@ impl PageCompressor for GenericCompressor {
         };
 
         let elapsed = start.elapsed().as_nanos() as u64;
-        self.stats.compress_time_ns.fetch_add(elapsed, Ordering::Relaxed);
+        self.stats
+            .compress_time_ns
+            .fetch_add(elapsed, Ordering::Relaxed);
         self.stats.pages_compressed.fetch_add(1, Ordering::Relaxed);
-        self.stats.bytes_in.fetch_add(PAGE_SIZE as u64, Ordering::Relaxed);
+        self.stats
+            .bytes_in
+            .fetch_add(PAGE_SIZE as u64, Ordering::Relaxed);
 
         if let Ok(ref page) = result {
-            self.stats.bytes_out.fetch_add(page.data.len() as u64, Ordering::Relaxed);
+            self.stats
+                .bytes_out
+                .fetch_add(page.data.len() as u64, Ordering::Relaxed);
         }
 
         result
@@ -306,12 +325,16 @@ impl PageCompressor for GenericCompressor {
             }
             Algorithm::Adaptive => {
                 // Should not happen - adaptive resolves to concrete algorithm
-                Err(Error::Internal("adaptive algorithm in compressed data".to_string()))
+                Err(Error::Internal(
+                    "adaptive algorithm in compressed data".to_string(),
+                ))
             }
         };
 
         let elapsed = start.elapsed().as_nanos() as u64;
-        self.stats.decompress_time_ns.fetch_add(elapsed, Ordering::Relaxed);
+        self.stats
+            .decompress_time_ns
+            .fetch_add(elapsed, Ordering::Relaxed);
 
         result
     }
@@ -360,7 +383,10 @@ mod tests {
 
     #[test]
     fn test_compressor_roundtrip_lz4() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         let page = [0xABu8; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
@@ -371,8 +397,10 @@ mod tests {
 
     #[test]
     fn test_compressor_roundtrip_zstd() {
-        let compressor =
-            CompressorBuilder::new().algorithm(Algorithm::Zstd { level: 3 }).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Zstd { level: 3 })
+            .build()
+            .unwrap();
 
         let page = [0xCDu8; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
@@ -383,7 +411,10 @@ mod tests {
 
     #[test]
     fn test_compressor_none() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::None).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::None)
+            .build()
+            .unwrap();
 
         let page = [0x12u8; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
@@ -397,7 +428,10 @@ mod tests {
 
     #[test]
     fn test_compressor_stats() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         let page = [0u8; PAGE_SIZE];
         compressor.compress(&page).unwrap();
@@ -434,7 +468,9 @@ mod tests {
     fn test_prefer_unavailable_backend() {
         // AVX-512 might not be available on all systems
         // This test just verifies the error handling works
-        let result = CompressorBuilder::new().prefer_backend(SimdBackend::Avx512).build();
+        let result = CompressorBuilder::new()
+            .prefer_backend(SimdBackend::Avx512)
+            .build();
 
         // Either succeeds (CPU has AVX-512) or returns appropriate error
         match result {
@@ -452,7 +488,10 @@ mod tests {
 
     #[test]
     fn test_compressor_adaptive() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Adaptive).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Adaptive)
+            .build()
+            .unwrap();
 
         let page = [0xABu8; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
@@ -462,7 +501,10 @@ mod tests {
 
     #[test]
     fn test_compressor_adaptive_incompressible() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Adaptive).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Adaptive)
+            .build()
+            .unwrap();
 
         // Random data is incompressible
         let mut page = [0u8; PAGE_SIZE];
@@ -479,8 +521,10 @@ mod tests {
 
     #[test]
     fn test_compressor_zstd_incompressible() {
-        let compressor =
-            CompressorBuilder::new().algorithm(Algorithm::Zstd { level: 1 }).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Zstd { level: 1 })
+            .build()
+            .unwrap();
 
         // Random data is incompressible
         let mut page = [0u8; PAGE_SIZE];
@@ -498,7 +542,10 @@ mod tests {
 
     #[test]
     fn test_decompress_wrong_size_uncompressed() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::None).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::None)
+            .build()
+            .unwrap();
 
         // Create a compressed page with wrong size
         let bad_page = CompressedPage {
@@ -515,7 +562,10 @@ mod tests {
 
     #[test]
     fn test_decompress_adaptive_error() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Create a compressed page with Adaptive algorithm (shouldn't happen)
         let bad_page = CompressedPage {
@@ -532,7 +582,10 @@ mod tests {
 
     #[test]
     fn test_decompress_lz4_size_mismatch() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Compress a small page, but claim it's PAGE_SIZE
         let small_page = [0xAAu8; 128];
@@ -551,8 +604,10 @@ mod tests {
 
     #[test]
     fn test_decompress_zstd_size_mismatch() {
-        let compressor =
-            CompressorBuilder::new().algorithm(Algorithm::Zstd { level: 1 }).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Zstd { level: 1 })
+            .build()
+            .unwrap();
 
         // Compress a small page, but claim it's PAGE_SIZE
         let small_page = [0xBBu8; 256];
@@ -572,7 +627,10 @@ mod tests {
     #[test]
     fn test_compressor_lz4hc_roundtrip() {
         // Test LZ4HC algorithm path
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4Hc).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4Hc)
+            .build()
+            .unwrap();
 
         let page = [0xCDu8; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
@@ -582,7 +640,10 @@ mod tests {
 
     #[test]
     fn test_stats_decompress_time_tracked() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         let page = [0xEFu8; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
@@ -599,7 +660,10 @@ mod tests {
     /// F076: No buffer overflows - test boundary conditions
     #[test]
     fn test_f076_no_buffer_overflows() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Test with various edge case patterns that might trigger buffer issues
         let edge_cases: [[u8; PAGE_SIZE]; 4] = [
@@ -638,7 +702,10 @@ mod tests {
     #[test]
     fn test_f077_no_integer_overflow_page_size() {
         // F077: Size calculations should be checked
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Compress many pages to stress size calculations
         for _ in 0..100 {
@@ -651,7 +718,10 @@ mod tests {
     #[test]
     fn test_f081_no_panics_on_valid_input() {
         // F081: Panic-free library code
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Various valid inputs should not panic
         let patterns = [
@@ -693,14 +763,20 @@ mod tests {
     #[test]
     fn test_f078_no_use_after_free() {
         // Test that data remains valid after multiple operations
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         let page = [0xAB; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
 
         // Drop and recreate compressor
         drop(compressor);
-        let compressor2 = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor2 = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // compressed should still be valid
         let decompressed = compressor2.decompress(&compressed).unwrap();
@@ -728,8 +804,12 @@ mod tests {
         use std::sync::{Arc, Barrier};
         use std::thread;
 
-        let compressor =
-            Arc::new(CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap());
+        let compressor = Arc::new(
+            CompressorBuilder::new()
+                .algorithm(Algorithm::Lz4)
+                .build()
+                .unwrap(),
+        );
 
         let num_threads = 8;
         let barrier = Arc::new(Barrier::new(num_threads));
@@ -763,7 +843,10 @@ mod tests {
     /// F080: No undefined behavior - edge cases handled safely
     #[test]
     fn test_f080_no_undefined_behavior() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Test extreme patterns that might trigger UB
         let test_cases: Vec<[u8; PAGE_SIZE]> = vec![
@@ -808,7 +891,10 @@ mod tests {
         // Rust's Drop trait ensures cleanup
         // Test that repeated alloc/dealloc doesn't leak
         for _ in 0..100 {
-            let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+            let compressor = CompressorBuilder::new()
+                .algorithm(Algorithm::Lz4)
+                .build()
+                .unwrap();
 
             let page = [0xCD; PAGE_SIZE];
             let compressed = compressor.compress(&page).unwrap();
@@ -821,7 +907,10 @@ mod tests {
     /// F084: Constant-time operations where security-relevant
     #[test]
     fn test_f084_timing_consistency() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Test that compression of similar-sized outputs takes similar time
         // (not a cryptographic guarantee, but basic sanity check)
@@ -848,7 +937,10 @@ mod tests {
 
         // Times should be in same order of magnitude (10x tolerance)
         let ratio = t1.as_nanos() as f64 / t2.as_nanos().max(1) as f64;
-        assert!(ratio > 0.1 && ratio < 10.0, "Timing variance too high: {ratio:.2}");
+        assert!(
+            ratio > 0.1 && ratio < 10.0,
+            "Timing variance too high: {ratio:.2}"
+        );
     }
 
     /// F085: Safe FFI boundaries - no unsafe FFI in this crate
@@ -856,7 +948,10 @@ mod tests {
     fn test_f085_no_external_ffi() {
         // This crate uses pure Rust implementations, no external FFI
         // Verify by checking that all operations work without external deps
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         let page = [0xEF; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
@@ -864,8 +959,10 @@ mod tests {
         assert_eq!(page, decompressed);
 
         // Also test Zstd path
-        let compressor_zstd =
-            CompressorBuilder::new().algorithm(Algorithm::Zstd { level: 3 }).build().unwrap();
+        let compressor_zstd = CompressorBuilder::new()
+            .algorithm(Algorithm::Zstd { level: 3 })
+            .build()
+            .unwrap();
 
         let compressed_zstd = compressor_zstd.compress(&page).unwrap();
         let decompressed_zstd = compressor_zstd.decompress(&compressed_zstd).unwrap();
@@ -875,7 +972,10 @@ mod tests {
     #[test]
     fn test_corrupted_data_returns_error() {
         // F009: Corrupted input detected (from spec)
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Create valid compressed data
         let page = [0xCDu8; PAGE_SIZE];
@@ -895,7 +995,10 @@ mod tests {
     #[test]
     fn test_truncated_data_returns_error() {
         // F010: Truncated input detected (from spec)
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Create valid compressed data
         let page = [0xABu8; PAGE_SIZE];
@@ -917,8 +1020,12 @@ mod tests {
         use std::sync::Arc;
         use std::thread;
 
-        let compressor =
-            Arc::new(CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap());
+        let compressor = Arc::new(
+            CompressorBuilder::new()
+                .algorithm(Algorithm::Lz4)
+                .build()
+                .unwrap(),
+        );
 
         let handles: Vec<_> = (0..4)
             .map(|i| {
@@ -943,7 +1050,10 @@ mod tests {
     fn test_f020_stack_usage_bounded() {
         // F020: Stack usage bounded - <64KB per compression call
         // This test verifies we don't use excessive stack space
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Recursive function to consume stack space, then compress
         fn compress_with_stack_pressure(
@@ -970,7 +1080,10 @@ mod tests {
     #[test]
     fn test_empty_page_compress() {
         // Edge case: ensure we handle page boundaries correctly
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Minimum non-trivial page
         let page = {
@@ -987,7 +1100,10 @@ mod tests {
     #[test]
     fn test_max_entropy_page() {
         // High entropy page (worst case for compression)
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         let mut page = [0u8; PAGE_SIZE];
         let mut rng = 98765u64;
@@ -1008,7 +1124,10 @@ mod tests {
     /// F003: Zero-page optimization works correctly
     #[test]
     fn test_f003_zero_page_optimization() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Pure zero page should compress very well
         let zero_page = [0u8; PAGE_SIZE];
@@ -1029,14 +1148,19 @@ mod tests {
     /// F004: Full entropy pages handled correctly
     #[test]
     fn test_f004_full_entropy_pages() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Generate cryptographically-random-like page
         let mut page = [0u8; PAGE_SIZE];
         let mut rng = 0xCAFEBABE_u64;
         for byte in &mut page {
             // PCG-style PRNG for maximum entropy
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             *byte = (rng >> 56) as u8;
         }
 
@@ -1051,7 +1175,10 @@ mod tests {
     /// F006: Repeated patterns compress well
     #[test]
     fn test_f006_repeated_patterns_compress_well() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Create page with repeated 16-byte pattern
         let pattern = [
@@ -1079,7 +1206,10 @@ mod tests {
     /// F007: Mixed zeros/data compresses correctly
     #[test]
     fn test_f007_mixed_zeros_data() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Page with alternating zero and data regions (sparse page pattern)
         let mut page = [0u8; PAGE_SIZE];
@@ -1099,7 +1229,10 @@ mod tests {
     /// F008: Mixed content compresses correctly
     #[test]
     fn test_f008_mixed_content() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Realistic page content: text-like region, binary region, zeros
         let mut page = [0u8; PAGE_SIZE];
@@ -1129,7 +1262,10 @@ mod tests {
     /// F011: Oversized output handled correctly (incompressible data)
     #[test]
     fn test_f011_oversized_output_handled() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Create truly random data that won't compress
         let mut page = [0u8; PAGE_SIZE];
@@ -1161,19 +1297,28 @@ mod tests {
         assert_eq!(PAGE_SIZE, 4096, "PAGE_SIZE must be 4096 bytes");
 
         // Verify compressed page tracks original size
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         let page = [0xAA; PAGE_SIZE];
         let compressed = compressor.compress(&page).unwrap();
 
-        assert_eq!(compressed.original_size, PAGE_SIZE, "Compressed page must track original size");
+        assert_eq!(
+            compressed.original_size, PAGE_SIZE,
+            "Compressed page must track original size"
+        );
     }
 
     /// F014: Output buffer bounds respected
     #[test]
     fn test_f014_output_buffer_bounds() {
         // Test that decompression respects output bounds
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Compress a page
         let page = [0xBB; PAGE_SIZE];
@@ -1191,13 +1336,17 @@ mod tests {
         let page = [0xCC; PAGE_SIZE];
 
         // Level 1 (fast)
-        let comp1 =
-            CompressorBuilder::new().algorithm(Algorithm::Zstd { level: 1 }).build().unwrap();
+        let comp1 = CompressorBuilder::new()
+            .algorithm(Algorithm::Zstd { level: 1 })
+            .build()
+            .unwrap();
         let compressed1 = comp1.compress(&page).unwrap();
 
         // Level 19 (high compression)
-        let comp19 =
-            CompressorBuilder::new().algorithm(Algorithm::Zstd { level: 19 }).build().unwrap();
+        let comp19 = CompressorBuilder::new()
+            .algorithm(Algorithm::Zstd { level: 19 })
+            .build()
+            .unwrap();
         let compressed19 = comp19.compress(&page).unwrap();
 
         // Both must roundtrip correctly
@@ -1217,7 +1366,10 @@ mod tests {
     /// F018: Compression ratio is acceptable
     #[test]
     fn test_f018_compression_ratio_acceptable() {
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         // Test various patterns and verify reasonable compression
         let test_cases = [
@@ -1242,7 +1394,10 @@ mod tests {
     fn test_f019_no_memory_leaks() {
         // Run many compression/decompression cycles
         // Rust's RAII ensures cleanup, but verify no panic/abort
-        let compressor = CompressorBuilder::new().algorithm(Algorithm::Lz4).build().unwrap();
+        let compressor = CompressorBuilder::new()
+            .algorithm(Algorithm::Lz4)
+            .build()
+            .unwrap();
 
         for i in 0..1000 {
             let page = [i as u8; PAGE_SIZE];
@@ -1252,8 +1407,10 @@ mod tests {
         }
 
         // Also test Zstd
-        let compressor_zstd =
-            CompressorBuilder::new().algorithm(Algorithm::Zstd { level: 3 }).build().unwrap();
+        let compressor_zstd = CompressorBuilder::new()
+            .algorithm(Algorithm::Zstd { level: 3 })
+            .build()
+            .unwrap();
 
         for i in 0..100 {
             let page = [i as u8; PAGE_SIZE];

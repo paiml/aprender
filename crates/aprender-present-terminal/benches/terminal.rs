@@ -17,7 +17,8 @@
 //! - 95% CI width < 5% of mean for typical variance
 //! - Sufficient for bootstrap CI estimation (10,000 resamples)
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, SamplingMode, Throughput};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode, Throughput};
 use presentar_core::{Color, Point, Rect, TextStyle};
 use presentar_terminal::direct::{CellBuffer, DiffRenderer, DirectTerminalCanvas, Modifiers};
 use presentar_terminal::{Canvas, ColorMode};

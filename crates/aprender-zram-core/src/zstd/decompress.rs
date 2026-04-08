@@ -103,7 +103,9 @@ pub fn decompress(input: &[u8], output: &mut [u8]) -> Result<usize> {
 
 fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
     if input.len() < 5 {
-        return Err(Error::CorruptedData("input too short for frame header".to_string()));
+        return Err(Error::CorruptedData(
+            "input too short for frame header".to_string(),
+        ));
     }
 
     // Check magic
@@ -129,7 +131,9 @@ fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
         0 // Will be determined by frame content size
     } else {
         if *pos >= input.len() {
-            return Err(Error::CorruptedData("missing window descriptor".to_string()));
+            return Err(Error::CorruptedData(
+                "missing window descriptor".to_string(),
+            ));
         }
         let wd = input[*pos];
         *pos += 1;
@@ -177,7 +181,9 @@ fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
     let frame_content_size = match fcs_flag {
         0 if single_segment => {
             if *pos >= input.len() {
-                return Err(Error::CorruptedData("missing frame content size".to_string()));
+                return Err(Error::CorruptedData(
+                    "missing frame content size".to_string(),
+                ));
             }
             let size = u64::from(input[*pos]);
             *pos += 1;
@@ -186,7 +192,9 @@ fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
         0 => None,
         1 => {
             if *pos + 2 > input.len() {
-                return Err(Error::CorruptedData("missing frame content size".to_string()));
+                return Err(Error::CorruptedData(
+                    "missing frame content size".to_string(),
+                ));
             }
             let size = u64::from(u16::from_le_bytes([input[*pos], input[*pos + 1]])) + 256;
             *pos += 2;
@@ -194,7 +202,9 @@ fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
         }
         2 => {
             if *pos + 4 > input.len() {
-                return Err(Error::CorruptedData("missing frame content size".to_string()));
+                return Err(Error::CorruptedData(
+                    "missing frame content size".to_string(),
+                ));
             }
             let size = u64::from(u32::from_le_bytes([
                 input[*pos],
@@ -207,7 +217,9 @@ fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
         }
         3 => {
             if *pos + 8 > input.len() {
-                return Err(Error::CorruptedData("missing frame content size".to_string()));
+                return Err(Error::CorruptedData(
+                    "missing frame content size".to_string(),
+                ));
             }
             let size = u64::from_le_bytes([
                 input[*pos],
@@ -225,7 +237,13 @@ fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
         _ => unreachable!(),
     };
 
-    Ok(FrameHeader { window_size, frame_content_size, dictionary_id, checksum, single_segment })
+    Ok(FrameHeader {
+        window_size,
+        frame_content_size,
+        dictionary_id,
+        checksum,
+        single_segment,
+    })
 }
 
 fn read_block_header(input: &[u8], pos: &mut usize) -> Result<BlockHeader> {
@@ -242,7 +260,11 @@ fn read_block_header(input: &[u8], pos: &mut usize) -> Result<BlockHeader> {
     let block_type = BlockType::from(((header >> 1) & 0x03) as u8);
     let block_size = header >> 3;
 
-    Ok(BlockHeader { block_type, last_block, block_size })
+    Ok(BlockHeader {
+        block_type,
+        last_block,
+        block_size,
+    })
 }
 
 fn decompress_block(input: &[u8], output: &mut [u8]) -> Result<usize> {
@@ -254,7 +276,9 @@ fn decompress_block(input: &[u8], output: &mut [u8]) -> Result<usize> {
     let (lit_type, lit_size, lit_header_size) = read_literals_header(input)?;
 
     if lit_header_size >= input.len() {
-        return Err(Error::CorruptedData("literals extend past block".to_string()));
+        return Err(Error::CorruptedData(
+            "literals extend past block".to_string(),
+        ));
     }
 
     let lit_start = lit_header_size;
@@ -266,7 +290,9 @@ fn decompress_block(input: &[u8], output: &mut [u8]) -> Result<usize> {
         };
 
     if lit_end > input.len() {
-        return Err(Error::CorruptedData("literals extend past input".to_string()));
+        return Err(Error::CorruptedData(
+            "literals extend past input".to_string(),
+        ));
     }
 
     // Handle literals
@@ -274,7 +300,10 @@ fn decompress_block(input: &[u8], output: &mut [u8]) -> Result<usize> {
         0 => {
             // Raw literals
             if lit_size > output.len() {
-                return Err(Error::BufferTooSmall { needed: lit_size, available: output.len() });
+                return Err(Error::BufferTooSmall {
+                    needed: lit_size,
+                    available: output.len(),
+                });
             }
             output[..lit_size].copy_from_slice(&input[lit_start..lit_end]);
         }
@@ -282,7 +311,10 @@ fn decompress_block(input: &[u8], output: &mut [u8]) -> Result<usize> {
             // RLE literals
             let byte = input[lit_start];
             if lit_size > output.len() {
-                return Err(Error::BufferTooSmall { needed: lit_size, available: output.len() });
+                return Err(Error::BufferTooSmall {
+                    needed: lit_size,
+                    available: output.len(),
+                });
             }
             for i in 0..lit_size {
                 output[i] = byte;
@@ -329,7 +361,9 @@ fn read_literals_header(input: &[u8]) -> Result<(u8, usize, usize)> {
         2 => {
             // 2 byte header
             if input.len() < 2 {
-                return Err(Error::CorruptedData("truncated literals header".to_string()));
+                return Err(Error::CorruptedData(
+                    "truncated literals header".to_string(),
+                ));
             }
             let size = ((header >> 4) as usize) | ((input[1] as usize) << 4);
             Ok((lit_type, size, 2))
@@ -337,7 +371,9 @@ fn read_literals_header(input: &[u8]) -> Result<(u8, usize, usize)> {
         3 => {
             // 3 byte header
             if input.len() < 3 {
-                return Err(Error::CorruptedData("truncated literals header".to_string()));
+                return Err(Error::CorruptedData(
+                    "truncated literals header".to_string(),
+                ));
             }
             let size =
                 ((header >> 4) as usize) | ((input[1] as usize) << 4) | ((input[2] as usize) << 12);
@@ -522,7 +558,9 @@ mod tests {
     #[test]
     fn test_decompress_block_buffer_too_small() {
         // Raw literals, size=10
-        let input = [0b01010000, b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H', b'I', b'J'];
+        let input = [
+            0b01010000, b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H', b'I', b'J',
+        ];
         let mut output = [0u8; 5]; // Too small
         let result = decompress_block(&input, &mut output);
         assert!(matches!(result, Err(Error::BufferTooSmall { .. })));

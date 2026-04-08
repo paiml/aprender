@@ -124,7 +124,7 @@ impl LearnedPositionEmbedding {
         Self {
             weight: Tensor::from_vec(
                 (0..max_positions * hidden_size)
-                    .map(|i| ((i as f32 * 0.0731).sin() * scale))
+                    .map(|i| (i as f32 * 0.0731).sin() * scale)
                     .collect(),
                 true,
             ),

@@ -76,7 +76,12 @@ fn main() {
         let elapsed = start.elapsed();
 
         let input_mb = (batch_size * 4096) as f64 / 1e6;
-        let output_mb: f64 = result.pages.iter().map(|p| p.data.len() as f64).sum::<f64>() / 1e6;
+        let output_mb: f64 = result
+            .pages
+            .iter()
+            .map(|p| p.data.len() as f64)
+            .sum::<f64>()
+            / 1e6;
         let throughput_gbps = input_mb / elapsed.as_secs_f64() / 1000.0;
         let ratio = input_mb / output_mb;
 
@@ -151,7 +156,10 @@ fn main() {
 
     println!();
     println!("  Measured GPU decompression: {:.2} GB/s", decompress_gbps);
-    println!("  Estimated 2TB restore time: {:.1} seconds", estimate_seconds);
+    println!(
+        "  Estimated 2TB restore time: {:.1} seconds",
+        estimate_seconds
+    );
     println!();
 
     if estimate_seconds < 60.0 {

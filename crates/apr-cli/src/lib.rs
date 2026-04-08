@@ -7,7 +7,13 @@
 // unwrap() eliminated (524 → expect()). Style lints from 20 merged crates
 // are suppressed at crate level. Will be incrementally addressed.
 #![allow(clippy::all, clippy::pedantic, clippy::disallowed_methods)]
-#![allow(unreachable_code, unused_variables, unused_imports, dead_code, unused_assignments)]
+#![allow(
+    unreachable_code,
+    unused_variables,
+    unused_imports,
+    dead_code,
+    unused_assignments
+)]
 
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -41,9 +47,8 @@ pub mod federation;
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, compile, convert, data, debug,
     diagnose, diff, distill, eval, explain, export, flow, hex, import, inspect, lint, merge,
-    oracle, pipeline, probar, profile, prune, publish, pull, qa, qualify, quantize,
-    rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, tokenize, trace, tree, tui,
-    validate,
+    oracle, pipeline, probar, profile, prune, publish, pull, qa, qualify, quantize, rosetta,
+    rosetta::RosettaCommands, run, serve, showcase, tensors, tokenize, trace, tree, tui, validate,
 };
 #[cfg(feature = "training")]
 use commands::{finetune, gpu, train, tune};

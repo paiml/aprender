@@ -46,7 +46,9 @@ fn main() {
         let pred = model.forward(&x_g); // PyTorch: pred = model(x)
         let loss = loss_fn.forward(&pred, &y); // PyTorch: loss = criterion(pred, y)
         let l = loss.item();
-        if epoch == 0 { initial_loss = l; }
+        if epoch == 0 {
+            initial_loss = l;
+        }
         loss.backward(); // PyTorch: loss.backward()
         let mut p = model.parameters_mut();
         optimizer.step_with_params(&mut p); // PyTorch: optimizer.step()

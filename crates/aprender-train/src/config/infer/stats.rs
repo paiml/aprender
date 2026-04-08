@@ -1,6 +1,7 @@
 //! Column statistics for type inference
 
 /// Statistics about a column used for type inference
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Default)]
 pub struct ColumnStats {
     /// Column name

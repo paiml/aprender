@@ -41,7 +41,10 @@ fn main() {
             "All crates must use aprender-* namespace"
         );
     }
-    println!("\nNamespace purity: {} crates verified", unified_crates.len());
+    println!(
+        "\nNamespace purity: {} crates verified",
+        unified_crates.len()
+    );
 
     // Book contract counts
     let chapters = 20_usize;

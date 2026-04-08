@@ -113,10 +113,9 @@ fn test_generate_contract_with_both_emits_combined() {
     // Combined macro should be emitted when both pre and post exist
     assert!(out.rust_assertions.contains("contract_eq_03"));
     assert!(out.rust_assertions.contains("contract_pre_eq_03!($input)"));
-    assert!(
-        out.rust_assertions
-            .contains("contract_post_eq_03!(_contract_result)")
-    );
+    assert!(out
+        .rust_assertions
+        .contains("contract_post_eq_03!(_contract_result)"));
 }
 
 #[test]
@@ -135,10 +134,9 @@ fn test_generate_contract_with_lean_theorem() {
     let out = generate_from_contract("lean-test", &contract);
     assert_eq!(out.lean_theorem_count, 1);
     assert!(out.lean_stubs.contains("Equation: EQ-LEAN"));
-    assert!(
-        out.lean_stubs
-            .contains("ProvableContracts.Theorems.Softmax")
-    );
+    assert!(out
+        .lean_stubs
+        .contains("ProvableContracts.Theorems.Softmax"));
     assert!(out.lean_stubs.contains("Formula: softmax(x)_i"));
 }
 

@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn test_ent_lora_008_double_quant_within_1pct_of_single() {
         // Realistic transformer weight distribution
-        let values: Vec<f32> = (0..4096).map(|i| ((i as f32 * 0.1).sin() * 2.0)).collect();
+        let values: Vec<f32> = (0..4096).map(|i| (i as f32 * 0.1).sin() * 2.0).collect();
 
         let single = quantize_4bit(&values);
         let single_deq = dequantize_4bit(&single);
@@ -305,7 +305,7 @@ mod tests {
             magnitude in 0.1f32..10.0,
         ) {
             let values: Vec<f32> = (0..n)
-                .map(|i| ((i as f32 * 0.1).sin() * magnitude))
+                .map(|i| (i as f32 * 0.1).sin() * magnitude)
                 .collect();
 
             let single_deq = dequantize_4bit(&quantize_4bit(&values));

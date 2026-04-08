@@ -4,6 +4,15 @@
 
 Aprender is a next-generation ML framework in pure Rust — **monorepo with 70 workspace crates**. Install: `cargo install aprender` → `apr` binary (57 subcommands). 25,300+ tests, 405 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec.
 
+## Git Workflow (Branch Protection)
+
+**`main` is protected.** Required status checks: `ci / gate` + `workspace-test`. Direct pushes blocked.
+
+1. Create feature branch: `git checkout -b <name>`
+2. Commit on branch, push: `git push -u origin <name>`
+3. Open PR: `gh pr create`
+4. CI must pass before merge — enforced by GitHub
+
 ## Build Commands
 
 ```bash

@@ -197,7 +197,7 @@ impl GgufFile {
             )));
         }
         let version = read_u32(&mut cursor)?;
-        if version < 2 || version > 3 {
+        if !(2..=3).contains(&version) {
             return Err(TruenoError::InvalidInput(format!(
                 "Unsupported GGUF version {version} (need 2 or 3)"
             )));

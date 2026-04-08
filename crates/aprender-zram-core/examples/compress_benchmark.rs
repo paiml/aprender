@@ -33,8 +33,11 @@ fn main() {
         for &count in &page_counts {
             let pages = generate_test_pages(count, *pattern);
 
-            for algo in [Algorithm::Lz4, Algorithm::Zstd { level: 1 }, Algorithm::Zstd { level: 3 }]
-            {
+            for algo in [
+                Algorithm::Lz4,
+                Algorithm::Zstd { level: 1 },
+                Algorithm::Zstd { level: 3 },
+            ] {
                 match run_benchmark(algo, &pages) {
                     Ok(result) => {
                         let compress_gbps = result.compress_throughput() / 1e9;

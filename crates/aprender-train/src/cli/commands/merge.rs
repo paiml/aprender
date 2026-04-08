@@ -1554,7 +1554,7 @@ mod tests {
         // Read back and verify
         let data = std::fs::read(&t).unwrap();
         let tensors = SafeTensors::deserialize(&data).unwrap();
-        let names: Vec<&str> = tensors.names().to_vec();
+        let names: Vec<&str> = tensors.names().clone();
         assert!(names.contains(&"layer1"));
         assert!(names.contains(&"layer2"));
         let _ = std::fs::remove_file(&t);

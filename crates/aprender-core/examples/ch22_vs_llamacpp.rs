@@ -26,7 +26,10 @@ fn main() {
     println!();
     println!("Analysis:");
     println!("  llama.cpp is a mature C++ project with years of optimization.");
-    println!("  aprender-serve achieves {:.0}% of llama.cpp throughput in pure Rust.", ratio * 100.0);
+    println!(
+        "  aprender-serve achieves {:.0}% of llama.cpp throughput in pure Rust.",
+        ratio * 100.0
+    );
     println!("  At c=32, aprender-serve scales to 1,776 tok/s (llama.cpp: CLI only).");
     assert!(ratio > 0.8, "Must achieve >80% of llama.cpp throughput");
 
@@ -37,7 +40,10 @@ fn main() {
     let stats = TensorStats::compute(&bootstrap_samples);
     println!();
     println!("Bootstrap statistics (10 samples):");
-    println!("  mean: {:.1}, min: {:.1}, max: {:.1}", stats.mean, stats.min, stats.max);
+    println!(
+        "  mean: {:.1}, min: {:.1}, max: {:.1}",
+        stats.mean, stats.min, stats.max
+    );
     let range = stats.max - stats.min;
     println!("  range: {range:.1} tok/s (narrow = stable)");
     assert!(range < 10.0, "Bootstrap range must be <10 tok/s (stable)");

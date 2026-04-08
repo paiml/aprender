@@ -1252,6 +1252,7 @@ pub struct DataAvailability {
 /// Context for evaluating display rules
 ///
 /// SPEC-024 Appendix F.2.3: Framework Trait
+#[derive(Debug)]
 pub struct DisplayContext<'a> {
     /// System capabilities (detected at startup)
     pub system: &'a SystemCapabilities,
@@ -1270,7 +1271,7 @@ pub trait DisplayRules {
     ///
     /// Called before rendering to determine if panel should be shown,
     /// hidden, or displayed in a modified state.
-    fn evaluate(&self, ctx: &DisplayContext) -> DisplayAction;
+    fn evaluate(&self, ctx: &DisplayContext<'_>) -> DisplayAction;
 
     /// Get panel identifier for YAML configuration
     fn panel_id(&self) -> &'static str;
@@ -1279,6 +1280,7 @@ pub trait DisplayRules {
 /// Default display rules for panels without custom logic
 ///
 /// Behavior: Always show unless data is explicitly unavailable
+#[derive(Debug)]
 pub struct DefaultDisplayRules {
     panel_id: &'static str,
 }
@@ -1290,7 +1292,7 @@ impl DefaultDisplayRules {
 }
 
 impl DisplayRules for DefaultDisplayRules {
-    fn evaluate(&self, _ctx: &DisplayContext) -> DisplayAction {
+    fn evaluate(&self, _ctx: &DisplayContext<'_>) -> DisplayAction {
         DisplayAction::Show
     }
 
@@ -1302,10 +1304,11 @@ impl DisplayRules for DefaultDisplayRules {
 /// PSI panel display rules
 ///
 /// Hide if PSI not available (non-Linux or disabled kernel config)
+#[derive(Debug)]
 pub struct PsiDisplayRules;
 
 impl DisplayRules for PsiDisplayRules {
-    fn evaluate(&self, ctx: &DisplayContext) -> DisplayAction {
+    fn evaluate(&self, ctx: &DisplayContext<'_>) -> DisplayAction {
         if !ctx.system.has_psi || !ctx.data.psi_available {
             DisplayAction::Hide
         } else {
@@ -1321,10 +1324,11 @@ impl DisplayRules for PsiDisplayRules {
 /// Sensors panel display rules
 ///
 /// Hide if no sensors, compact if few sensors
+#[derive(Debug)]
 pub struct SensorsDisplayRules;
 
 impl DisplayRules for SensorsDisplayRules {
-    fn evaluate(&self, ctx: &DisplayContext) -> DisplayAction {
+    fn evaluate(&self, ctx: &DisplayContext<'_>) -> DisplayAction {
         if !ctx.system.has_sensors || !ctx.data.sensors_available {
             DisplayAction::Hide
         } else if ctx.data.sensor_count < 3 {
@@ -1342,10 +1346,11 @@ impl DisplayRules for SensorsDisplayRules {
 /// GPU panel display rules
 ///
 /// Hide if no GPU detected
+#[derive(Debug)]
 pub struct GpuDisplayRules;
 
 impl DisplayRules for GpuDisplayRules {
-    fn evaluate(&self, ctx: &DisplayContext) -> DisplayAction {
+    fn evaluate(&self, ctx: &DisplayContext<'_>) -> DisplayAction {
         if ctx.data.gpu_available {
             DisplayAction::Show
         } else {
@@ -1361,10 +1366,11 @@ impl DisplayRules for GpuDisplayRules {
 /// Battery panel display rules
 ///
 /// Hide if no battery (desktop systems)
+#[derive(Debug)]
 pub struct BatteryDisplayRules;
 
 impl DisplayRules for BatteryDisplayRules {
-    fn evaluate(&self, ctx: &DisplayContext) -> DisplayAction {
+    fn evaluate(&self, ctx: &DisplayContext<'_>) -> DisplayAction {
         if !ctx.system.has_battery || !ctx.data.battery_available {
             DisplayAction::Hide
         } else {
@@ -1380,10 +1386,11 @@ impl DisplayRules for BatteryDisplayRules {
 /// Files panel display rules
 ///
 /// Show placeholder while scanning
+#[derive(Debug)]
 pub struct FilesDisplayRules;
 
 impl DisplayRules for FilesDisplayRules {
-    fn evaluate(&self, ctx: &DisplayContext) -> DisplayAction {
+    fn evaluate(&self, ctx: &DisplayContext<'_>) -> DisplayAction {
         if ctx.data.treemap_ready {
             DisplayAction::Show
         } else {

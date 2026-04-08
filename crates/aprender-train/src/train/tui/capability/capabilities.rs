@@ -3,6 +3,7 @@
 use super::TerminalMode;
 
 /// Detected terminal capabilities.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalCapabilities {
     /// Terminal width in columns
@@ -76,6 +77,7 @@ impl TerminalCapabilities {
             if stdout().is_terminal() {
                 // Use libc directly for TIOCGWINSZ
                 #[repr(C)]
+                #[allow(clippy::struct_field_names)]
                 struct WinSize {
                     ws_row: u16,
                     ws_col: u16,

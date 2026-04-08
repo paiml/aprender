@@ -21,8 +21,11 @@ fn main() {
     println!();
 
     // Initialize hybrid scheduler with large batch size
-    let config =
-        HybridConfig { batch_size: 100_000, gpu_decompress: true, target_throughput_gbps: 34.0 };
+    let config = HybridConfig {
+        batch_size: 100_000,
+        gpu_decompress: true,
+        target_throughput_gbps: 34.0,
+    };
 
     let mut scheduler = match HybridScheduler::new(config) {
         Ok(s) => s,
@@ -104,7 +107,9 @@ fn main() {
 
         // Timed run
         let start = Instant::now();
-        let _ = scheduler.decompress_parallel_into(compressed, &mut output_buffer).unwrap();
+        let _ = scheduler
+            .decompress_parallel_into(compressed, &mut output_buffer)
+            .unwrap();
         let elapsed = start.elapsed();
 
         let throughput_gbps = output_mb / elapsed.as_secs_f64() / 1000.0;
@@ -146,13 +151,20 @@ fn main() {
 
     let avg_time_ms =
         times.iter().map(|t| t.as_secs_f64() * 1000.0).sum::<f64>() / times.len() as f64;
-    let min_time_ms = times.iter().map(|t| t.as_secs_f64() * 1000.0).fold(f64::INFINITY, f64::min);
+    let min_time_ms = times
+        .iter()
+        .map(|t| t.as_secs_f64() * 1000.0)
+        .fold(f64::INFINITY, f64::min);
     let output_mb = (100_000 * 4096) as f64 / 1e6;
     let avg_throughput_gbps = output_mb / (avg_time_ms / 1000.0) / 1000.0;
     let peak_throughput_gbps = output_mb / (min_time_ms / 1000.0) / 1000.0;
     let estimate_2tb_s = 2048.0 / avg_throughput_gbps;
 
-    println!("  Average throughput: {:.2} GB/s (over {} runs)", avg_throughput_gbps, times.len());
+    println!(
+        "  Average throughput: {:.2} GB/s (over {} runs)",
+        avg_throughput_gbps,
+        times.len()
+    );
     println!("  Peak throughput:    {:.2} GB/s", peak_throughput_gbps);
     println!("  Estimated 2TB restore: {:.1} seconds", estimate_2tb_s);
     println!();
@@ -160,10 +172,16 @@ fn main() {
     if estimate_2tb_s < 60.0 {
         println!("  ✅ G.119 TARGET MET: 2TB restore in <60s");
     } else {
-        println!("  ❌ G.119 TARGET NOT MET: Need 34+ GB/s, have {:.2} GB/s", avg_throughput_gbps);
+        println!(
+            "  ❌ G.119 TARGET NOT MET: Need 34+ GB/s, have {:.2} GB/s",
+            avg_throughput_gbps
+        );
         println!();
         println!("  Analysis:");
-        println!("    - Current: {:.2} GB/s parallel CPU decompression", avg_throughput_gbps);
+        println!(
+            "    - Current: {:.2} GB/s parallel CPU decompression",
+            avg_throughput_gbps
+        );
         println!("    - Memory bandwidth limit: ~27 GB/s (from memcpy test)");
         println!("    - Target requires faster memory or multi-socket system");
     }

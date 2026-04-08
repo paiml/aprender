@@ -631,7 +631,7 @@ mod tests {
     fn test_ent_lora_008_double_quant_forward_close_to_single() {
         let d = 64;
         let base_weight =
-            Tensor::from_vec((0..d * d).map(|i| ((i as f32 * 0.1).sin() * 2.0)).collect(), false);
+            Tensor::from_vec((0..d * d).map(|i| (i as f32 * 0.1).sin() * 2.0).collect(), false);
         let lora = LoRALayer::new(base_weight, d, d, 4, 8.0);
 
         let single = QLoRALayer::from_lora(lora.clone());

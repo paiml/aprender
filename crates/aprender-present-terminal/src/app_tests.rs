@@ -96,7 +96,7 @@ fn test_tui_app_rejects_empty_assertions() {
     let widget = TestWidget::without_assertions();
     let app = TuiApp::new(widget);
     assert!(app.is_err());
-    let err = app.err().expect("expected error");
+    let err = app.expect_err("expected error");
     assert!(matches!(err, TuiError::InvalidBrick(_)));
 }
 

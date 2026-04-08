@@ -11,9 +11,17 @@ fn main() {
     // Build a social-network-like undirected graph with two communities
     let edges = vec![
         // Community 1: tightly connected (nodes 0-3)
-        (0, 1, 1.0), (0, 2, 1.0), (1, 2, 1.0), (1, 3, 1.0), (2, 3, 1.0),
+        (0, 1, 1.0),
+        (0, 2, 1.0),
+        (1, 2, 1.0),
+        (1, 3, 1.0),
+        (2, 3, 1.0),
         // Community 2: tightly connected (nodes 4-7)
-        (4, 5, 1.0), (4, 6, 1.0), (5, 6, 1.0), (5, 7, 1.0), (6, 7, 1.0),
+        (4, 5, 1.0),
+        (4, 6, 1.0),
+        (5, 6, 1.0),
+        (5, 7, 1.0),
+        (6, 7, 1.0),
         // Bridge: weak connection between communities
         (3, 4, 1.0),
     ];

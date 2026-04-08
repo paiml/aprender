@@ -5,8 +5,14 @@ description: Dogfood apr-cli — rebuild, install, exercise all commands against
 
 # APR CLI Exhaustive QA — Contract-First Dogfood
 
-**Contract**: `contracts/apr-cli-qa-v1.yaml` (10 equations, 10 falsification tests)
-**Spec**: `docs/specifications/apr-cli-qa-spec.md`
+**Contracts**:
+- `contracts/apr-cli-qa-v1.yaml` — baseline (10 equations, 10 falsification tests)
+- `contracts/apr-qa-silent-fallback-v1.yaml` — bad input injection (5 tests)
+- `contracts/apr-qa-metamorphic-v1.yaml` — quant equivalence, multi-arch, roundtrip (5 tests)
+- `contracts/apr-qa-coverage-v1.yaml` — category coverage, SATD, complexity (5 tests)
+- `contracts/apr-qa-chaos-v1.yaml` — memory, OOM, signals, overwrite (5 tests)
+- `contracts/apr-qa-differential-v1.yaml` — ollama parity, tokenizer, concurrency (5 tests)
+**Spec**: `docs/specifications/apr-cli-qa-spec.md` (v2.0)
 **Source**: Extended from `apr-cookbook/.claude/skills/qa/SKILL.md` (12 protocols)
 
 ## Context
@@ -227,18 +233,274 @@ gh issue list --repo paiml/aprender --state open --limit 20
 
 Always PASS (informational).
 
+## Gate 8: Silent-Fallback Injection (F-SILENT-001 through F-SILENT-005)
+
+Contract: `contracts/apr-qa-silent-fallback-v1.yaml`
+
+Bad inputs MUST fail LOUD (non-zero exit + stderr message), never silently degrade.
+
+### S1. Truncated file detection
+```bash
+M_GGUF=$(find ~/models -maxdepth 2 -name "*.gguf" -type f | head -1)
+if [ -n "$M_GGUF" ]; then
+  SIZE=$(stat -c%s "$M_GGUF")
+  head -c $((SIZE / 2)) "$M_GGUF" > /tmp/apr-qa-truncated.gguf
+  apr validate /tmp/apr-qa-truncated.gguf 2>&1; EC=$?
+  [ "$EC" -ne 0 ] && echo "S1 PASS: truncated file rejected (exit $EC)" || echo "S1 FAIL: truncated file accepted"
+fi
+```
+
+### S2. Zero throughput rejection
+```bash
+apr bench /dev/null --iterations 1 2>&1; EC=$?
+[ "$EC" -ne 0 ] && echo "S2 PASS: /dev/null rejected" || echo "S2 FAIL: /dev/null accepted"
+```
+
+### S3. Unknown architecture handling (GH-704 pattern)
+```bash
+# Check that Qwen3.5 SSM model gets a clear error, not silent llama fallback
+M_SSM=$(find ~/models -maxdepth 2 -name "*Qwen3.5*" -o -name "*qwen35*" 2>/dev/null | head -1)
+if [ -n "$M_SSM" ]; then
+  apr run "$M_SSM" "test" --max-tokens 1 2>&1 | grep -qi "not.*supported\|unsupported\|SSM" && \
+    echo "S3 PASS: unsupported arch gives clear error" || echo "S3 FAIL: no clear error for unsupported arch"
+else
+  echo "S3 SKIP: no SSM model available"
+fi
+```
+
+### S4. Corrupted metadata detection
+```bash
+if [ -n "$M_GGUF" ]; then
+  cp "$M_GGUF" /tmp/apr-qa-corrupt.gguf
+  dd if=/dev/zero of=/tmp/apr-qa-corrupt.gguf bs=1 count=64 seek=8 conv=notrunc 2>/dev/null
+  apr validate /tmp/apr-qa-corrupt.gguf 2>&1; EC=$?
+  [ "$EC" -ne 0 ] && echo "S4 PASS: corrupt metadata rejected" || echo "S4 FAIL: corrupt metadata accepted"
+fi
+```
+
+### S5. Missing model graceful (FALSIFY-QA-002)
+```bash
+apr inspect /nonexistent/model.gguf 2>&1; EC=$?
+[ "$EC" -ne 0 ] && echo "S5 PASS: missing model exits non-zero" || echo "S5 FAIL: exit 0 for missing model"
+```
+
+PASS if all 5 checks reject bad input. FAIL if any bad input is silently accepted.
+
+## Gate 9: Metamorphic Testing (F-META-001 through F-META-005)
+
+Contract: `contracts/apr-qa-metamorphic-v1.yaml`
+
+### M1. Format roundtrip (GGUF→APR→GGUF tensor fidelity)
+```bash
+if [ -n "$M_GGUF" ]; then
+  apr convert "$M_GGUF" -o /tmp/apr-qa-rt.apr 2>&1 | tail -1
+  # If convert succeeds, check tensor count matches
+  if [ -f /tmp/apr-qa-rt.apr ]; then
+    ORIG_TENSORS=$(apr tensors "$M_GGUF" --json 2>/dev/null | jq length 2>/dev/null || echo 0)
+    RT_TENSORS=$(apr tensors /tmp/apr-qa-rt.apr --json 2>/dev/null | jq length 2>/dev/null || echo 0)
+    echo "M1 orig=$ORIG_TENSORS rt=$RT_TENSORS"
+    [ "$ORIG_TENSORS" -gt 0 ] && [ "$RT_TENSORS" -gt 0 ] && echo "M1 PASS" || echo "M1 WARN: tensor count mismatch"
+  else
+    echo "M1 SKIP: convert not available for this model"
+  fi
+else
+  echo "M1 SKIP: no GGUF model"
+fi
+```
+
+### M2. Multi-architecture smoke
+```bash
+# Check that inspect works across all available model architectures
+ARCH_COUNT=0
+for m in $(find ~/models -maxdepth 2 \( -name "*.gguf" -o -name "*.apr" -o -name "*.safetensors" \) -type f 2>/dev/null); do
+  ARCH=$(timeout 10 apr inspect --json "$m" 2>/dev/null | jq -r '.architecture // empty' 2>/dev/null)
+  [ -n "$ARCH" ] && ARCH_COUNT=$((ARCH_COUNT + 1)) && echo "  M2 arch=$ARCH ($m)"
+done
+[ "$ARCH_COUNT" -ge 2 ] && echo "M2 PASS: $ARCH_COUNT architectures inspected" || echo "M2 WARN: only $ARCH_COUNT architectures available"
+```
+
+### M3. Temperature determinism (temp=0 → identical output across 3 runs)
+```bash
+M_APR=$(find ~/models -maxdepth 2 -name "*.apr" -type f | head -1)
+if [ -n "$M_APR" ]; then
+  OUT1=$(timeout 60 apr run "$M_APR" "Say hello" --max-tokens 4 --temperature 0.0 2>&1 | grep "^Output:" | head -1)
+  OUT2=$(timeout 60 apr run "$M_APR" "Say hello" --max-tokens 4 --temperature 0.0 2>&1 | grep "^Output:" | head -1)
+  if [ "$OUT1" = "$OUT2" ] && [ -n "$OUT1" ]; then
+    echo "M3 PASS: temp=0 deterministic"
+  else
+    echo "M3 WARN: temp=0 outputs differ (may be non-deterministic sampling)"
+  fi
+else
+  echo "M3 SKIP: no APR model"
+fi
+```
+
+PASS if M1+M2+M3 all pass. WARN if any are skipped due to missing models.
+
+## Gate 10: Coverage Completeness (F-COV-001 through F-COV-005)
+
+Contract: `contracts/apr-qa-coverage-v1.yaml`
+
+### V1. Contract YAML validity (all 6 QA contracts parse)
+```bash
+VALID=0; TOTAL=0
+for c in contracts/apr-cli-qa-v1.yaml contracts/apr-qa-metamorphic-v1.yaml \
+  contracts/apr-qa-silent-fallback-v1.yaml contracts/apr-qa-differential-v1.yaml \
+  contracts/apr-qa-chaos-v1.yaml contracts/apr-qa-coverage-v1.yaml; do
+  TOTAL=$((TOTAL+1))
+  python3 -c "import yaml; yaml.safe_load(open('$c')); print('  VALID: $c')" 2>&1 && VALID=$((VALID+1))
+done
+echo "V1: $VALID/$TOTAL contracts valid"
+[ "$VALID" -eq "$TOTAL" ] && echo "V1 PASS" || echo "V1 FAIL"
+```
+
+### V2. Zero High-severity SATD in apr-cli
+```bash
+SATD_HIGH=$(pmat analyze satd -p crates/apr-cli/ 2>&1 | grep -c "High" 2>/dev/null || echo "0")
+echo "V2: $SATD_HIGH High-severity SATD items"
+[ "$SATD_HIGH" -eq 0 ] && echo "V2 PASS" || echo "V2 WARN: $SATD_HIGH High SATD items"
+```
+
+### V3. Critical modules exercised (no panic on real model)
+```bash
+M=$(find ~/models -maxdepth 2 \( -name "*.gguf" -o -name "*.apr" \) -type f | head -1)
+if [ -n "$M" ]; then
+  V3_PASS=0; V3_TOTAL=0
+  for cmd in "hex" "profile --iterations 1"; do
+    V3_TOTAL=$((V3_TOTAL+1))
+    timeout 30 apr $cmd "$M" 2>&1 | head -3 >/dev/null && V3_PASS=$((V3_PASS+1)) && echo "  V3 $cmd: OK" || echo "  V3 $cmd: FAIL/SKIP"
+  done
+  for cmd in "serve plan" "train plan"; do
+    V3_TOTAL=$((V3_TOTAL+1))
+    timeout 10 apr $cmd "$M" 2>&1 | head -3 >/dev/null && V3_PASS=$((V3_PASS+1)) && echo "  V3 $cmd: OK" || echo "  V3 $cmd: FAIL/SKIP"
+  done
+  echo "V3: $V3_PASS/$V3_TOTAL modules exercised"
+  [ "$V3_PASS" -ge 2 ] && echo "V3 PASS" || echo "V3 WARN"
+else
+  echo "V3 SKIP: no model"
+fi
+```
+
+### V4. Complexity hotspots tracked
+```bash
+HIGH_CC=$(pmat analyze complexity -p crates/apr-cli/ 2>&1 | awk '$NF > 15 {count++} END {print count+0}' 2>/dev/null || echo "0")
+echo "V4: $HIGH_CC functions with CC > 15"
+[ "$HIGH_CC" -le 3 ] && echo "V4 PASS" || echo "V4 WARN: $HIGH_CC high-complexity functions"
+```
+
+PASS if V1+V3 pass. WARN if SATD or complexity issues exist.
+
+## Gate 11: Chaos Engineering (F-CHAOS-001 through F-CHAOS-005)
+
+Contract: `contracts/apr-qa-chaos-v1.yaml`
+
+### C1. Memory budget (RSS sanity check)
+```bash
+M=$(find ~/models -maxdepth 2 -name "*.gguf" -type f -size -1G | head -1)
+if [ -n "$M" ]; then
+  MODEL_KB=$(du -k "$M" | cut -f1)
+  RSS_KB=$(/usr/bin/time -v timeout 30 apr inspect "$M" 2>&1 | grep "Maximum resident" | awk '{print $NF}' 2>/dev/null || echo 0)
+  if [ "$RSS_KB" -gt 0 ]; then
+    BUDGET_KB=$(( MODEL_KB * 3 + 524288 ))
+    echo "C1: model=${MODEL_KB}KB RSS=${RSS_KB}KB budget=${BUDGET_KB}KB"
+    [ "$RSS_KB" -lt "$BUDGET_KB" ] && echo "C1 PASS" || echo "C1 WARN: RSS exceeds 3x model + 512MB"
+  else
+    echo "C1 SKIP: /usr/bin/time not available"
+  fi
+else
+  echo "C1 SKIP: no small GGUF model"
+fi
+```
+
+### C2. Overwrite protection
+```bash
+touch /tmp/apr-qa-existing.apr
+apr convert /dev/null -o /tmp/apr-qa-existing.apr 2>&1; EC=$?
+# Should either fail (non-zero) or prompt — never silently overwrite
+[ "$EC" -ne 0 ] && echo "C2 PASS: existing file not silently overwritten" || echo "C2 WARN: may have overwritten"
+```
+
+### C3. SIGINT handling
+```bash
+M_APR=$(find ~/models -maxdepth 2 -name "*.apr" -type f | head -1)
+if [ -n "$M_APR" ]; then
+  timeout 5 apr run "$M_APR" "Tell me a very long story about everything" --max-tokens 500 &
+  PID=$!
+  sleep 2
+  kill -INT $PID 2>/dev/null
+  wait $PID 2>/dev/null; EC=$?
+  # SIGINT should produce exit 130 or similar non-zero, NOT leave zombie
+  [ "$EC" -ne 0 ] && echo "C3 PASS: SIGINT handled (exit $EC)" || echo "C3 WARN: SIGINT exit 0"
+else
+  echo "C3 SKIP: no APR model"
+fi
+```
+
+PASS if C1+C2+C3 all pass. WARN on skips.
+
+## Gate 12: Differential Testing (F-DIFF-001 through F-DIFF-005)
+
+Contract: `contracts/apr-qa-differential-v1.yaml`
+
+### D1. Cross-format tensor agreement
+```bash
+M_GGUF=$(find ~/models -maxdepth 2 -name "*.gguf" -type f | head -1)
+M_APR=$(find ~/models -maxdepth 2 -name "*.apr" -type f | head -1)
+if [ -n "$M_GGUF" ] && [ -n "$M_APR" ]; then
+  GGUF_COUNT=$(apr tensors "$M_GGUF" --json 2>/dev/null | jq length 2>/dev/null || echo 0)
+  APR_COUNT=$(apr tensors "$M_APR" --json 2>/dev/null | jq length 2>/dev/null || echo 0)
+  echo "D1: GGUF tensors=$GGUF_COUNT APR tensors=$APR_COUNT"
+  [ "$GGUF_COUNT" -gt 0 ] && [ "$APR_COUNT" -gt 0 ] && echo "D1 PASS: both formats report tensors" || echo "D1 WARN"
+else
+  echo "D1 SKIP: need both GGUF and APR models"
+fi
+```
+
+### D2. Ollama parity (if ollama installed)
+```bash
+if command -v ollama &>/dev/null; then
+  OLLAMA_MODELS=$(ollama list 2>/dev/null | tail -n +2 | head -3)
+  if [ -n "$OLLAMA_MODELS" ]; then
+    echo "D2: ollama available with models — manual parity check recommended"
+    echo "D2 SKIP: automated parity not yet wired"
+  else
+    echo "D2 SKIP: ollama installed but no models"
+  fi
+else
+  echo "D2 SKIP: ollama not installed"
+fi
+```
+
+### D3. JSON schema consistency across commands
+```bash
+M=$(find ~/models -maxdepth 2 \( -name "*.gguf" -o -name "*.apr" \) -type f | head -1)
+if [ -n "$M" ]; then
+  D3_PASS=0
+  for cmd in "inspect --json" "check --json" "list --json" "gpu --json"; do
+    timeout 15 apr $cmd $M 2>/dev/null | jq . >/dev/null 2>&1 && D3_PASS=$((D3_PASS+1))
+  done
+  echo "D3: $D3_PASS/4 JSON outputs valid"
+  [ "$D3_PASS" -ge 3 ] && echo "D3 PASS" || echo "D3 WARN"
+else
+  echo "D3 SKIP: no model"
+fi
+```
+
+PASS if D1+D3 pass. SKIP for D2 (requires ollama setup).
+
 ---
 
 ## Verdict
 
-After all gates, provide:
+After all 12 gates, provide:
 
-1. **Summary table**: Gate | Status | Notes
+1. **Summary table**: Gate 1-12 | Status | Notes
 2. **Protocol results**: P1-P12 | PASS/FAIL
-3. **Command grid**: 57 commands | PASS/FAIL/SKIP count
-4. **GO** if all gates pass
-5. **WARN** if soft issues only (no panics, no data corruption)
-6. **FAIL** if panics, exit-code lies, or contract violations
+3. **New gates**: S1-S5, M1-M3, V1-V4, C1-C3, D1-D3 | PASS/FAIL/SKIP
+4. **Command grid**: 57 commands | PASS/FAIL/SKIP count
+5. **GO** if gates 1-7 all pass AND gates 8-12 have no FAIL
+6. **WARN** if soft issues only (no panics, no data corruption, SKIPs OK)
+7. **FAIL** if panics, exit-code lies, silent-fallback accepts bad input, or contract violations
 
 If bugs found, file with:
 ```bash

@@ -111,8 +111,10 @@ impl BatchClassifier {
     ) -> (Vec<Algorithm>, ComputeBackend) {
         let backend = self.select_backend(pages.len());
 
-        let algorithms: Vec<Algorithm> =
-            pages.iter().map(|page| self.page_classifier.classify(page)).collect();
+        let algorithms: Vec<Algorithm> = pages
+            .iter()
+            .map(|page| self.page_classifier.classify(page))
+            .collect();
 
         (algorithms, backend)
     }
@@ -180,7 +182,10 @@ mod tests {
         }
         let result = classifier.classify(&page);
         // High entropy uses Zstd level 1 (fast) or None
-        assert!(matches!(result, Algorithm::Zstd { level: 1 } | Algorithm::None));
+        assert!(matches!(
+            result,
+            Algorithm::Zstd { level: 1 } | Algorithm::None
+        ));
     }
 
     #[test]
@@ -190,7 +195,9 @@ mod tests {
         let mut page = [0u8; PAGE_SIZE];
         let mut state = 12345u64;
         for byte in &mut page {
-            state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
             *byte = (state >> 56) as u8; // Take top 8 bits
         }
         assert_eq!(classifier.classify(&page), Algorithm::None);
@@ -277,16 +284,28 @@ mod tests {
     fn test_select_backend_boundary_simd() {
         // F056: Boundary at SIMD threshold
         let classifier = BatchClassifier::new();
-        assert_eq!(classifier.select_backend(SIMD_BATCH_THRESHOLD - 1), ComputeBackend::Scalar);
-        assert_eq!(classifier.select_backend(SIMD_BATCH_THRESHOLD), ComputeBackend::Simd);
+        assert_eq!(
+            classifier.select_backend(SIMD_BATCH_THRESHOLD - 1),
+            ComputeBackend::Scalar
+        );
+        assert_eq!(
+            classifier.select_backend(SIMD_BATCH_THRESHOLD),
+            ComputeBackend::Simd
+        );
     }
 
     #[test]
     fn test_select_backend_boundary_gpu() {
         // F057: Boundary at GPU threshold
         let classifier = BatchClassifier::new().with_gpu(true);
-        assert_eq!(classifier.select_backend(GPU_BATCH_THRESHOLD - 1), ComputeBackend::Simd);
-        assert_eq!(classifier.select_backend(GPU_BATCH_THRESHOLD), ComputeBackend::Gpu);
+        assert_eq!(
+            classifier.select_backend(GPU_BATCH_THRESHOLD - 1),
+            ComputeBackend::Simd
+        );
+        assert_eq!(
+            classifier.select_backend(GPU_BATCH_THRESHOLD),
+            ComputeBackend::Gpu
+        );
     }
 
     #[test]

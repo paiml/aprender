@@ -155,28 +155,32 @@ fn elect_and_merge_parameter(values: &[&Array1<f32>]) -> Tensor {
 
         // Elect sign by majority vote (most non-zero contributors)
         // Merge by averaging same-sign values
-        merged_data[i] = if pos_count > neg_count {
-            // Positive wins: average positive values only
-            if pos_count > 0 {
-                pos_sum / pos_count as f32
-            } else {
-                0.0
+        merged_data[i] = match pos_count.cmp(&neg_count) {
+            std::cmp::Ordering::Greater => {
+                // Positive wins: average positive values only
+                if pos_count > 0 {
+                    pos_sum / pos_count as f32
+                } else {
+                    0.0
+                }
             }
-        } else if neg_count > pos_count {
-            // Negative wins: average negative values only
-            if neg_count > 0 {
-                neg_sum / neg_count as f32
-            } else {
-                0.0
+            std::cmp::Ordering::Less => {
+                // Negative wins: average negative values only
+                if neg_count > 0 {
+                    neg_sum / neg_count as f32
+                } else {
+                    0.0
+                }
             }
-        } else {
-            // Tie or all zero: take overall average
-            let total = pos_sum + neg_sum;
-            let total_count = pos_count + neg_count;
-            if total_count > 0 {
-                total / total_count as f32
-            } else {
-                0.0
+            std::cmp::Ordering::Equal => {
+                // Tie or all zero: take overall average
+                let total = pos_sum + neg_sum;
+                let total_count = pos_count + neg_count;
+                if total_count > 0 {
+                    total / total_count as f32
+                } else {
+                    0.0
+                }
             }
         };
     }

@@ -9,9 +9,11 @@ use aprender::prelude::*;
 
 fn main() {
     // Two obvious clusters
-    let data = Matrix::from_vec(6, 2, vec![
-        1.0, 1.0, 1.1, 0.9, 0.9, 1.1, 5.0, 5.0, 5.1, 4.9, 4.9, 5.1,
-    ])
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![1.0, 1.0, 1.1, 0.9, 0.9, 1.1, 5.0, 5.0, 5.1, 4.9, 4.9, 5.1],
+    )
     .expect("valid 6x2 matrix");
 
     // KMeans with k=2

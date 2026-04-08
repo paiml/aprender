@@ -20,7 +20,9 @@ fn find_workspace_root() -> PathBuf {
                 }
             }
         }
-        if !dir.pop() { break; }
+        if !dir.pop() {
+            break;
+        }
     }
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }

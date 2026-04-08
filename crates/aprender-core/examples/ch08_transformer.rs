@@ -19,11 +19,11 @@ fn main() {
     // GQA ratio contract (Ainslie et al., 2023, arXiv:2305.13245)
     let gqa_ratio = num_kv_heads as f64 / num_heads as f64;
     let kv_reduction = 1.0 - gqa_ratio;
-    println!("GQA ratio: {gqa_ratio:.2} -> {:.0}% KV cache reduction", kv_reduction * 100.0);
-    assert!(
-        kv_reduction > 0.5,
-        "GQA must reduce KV cache by >50%"
+    println!(
+        "GQA ratio: {gqa_ratio:.2} -> {:.0}% KV cache reduction",
+        kv_reduction * 100.0
     );
+    assert!(kv_reduction > 0.5, "GQA must reduce KV cache by >50%");
 
     // SwiGLU expansion ratio (Shazeer, 2020, arXiv:2002.05202)
     let ffn_ratio = intermediate_dim as f64 / hidden_dim as f64;
