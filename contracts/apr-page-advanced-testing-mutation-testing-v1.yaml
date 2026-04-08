@@ -1,4 +1,10 @@
 contract: apr-page-advanced-testing-mutation-testing
+metadata:
+  kind: schema
+  version: "1.0.0"
+  description: "Apr Page Advanced Testing Mutation Testing contract"
+  references:
+  - "docs/specifications/aprender-monorepo-consolidation.md"
 version: 1
 status: enforced
 date: 2026-04-08

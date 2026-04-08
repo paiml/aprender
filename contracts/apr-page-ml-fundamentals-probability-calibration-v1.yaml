@@ -1,4 +1,10 @@
 contract: apr-page-ml-fundamentals-probability-calibration
+metadata:
+  kind: schema
+  version: "1.0.0"
+  description: "Apr Page Ml Fundamentals Probability Calibration contract"
+  references:
+  - "docs/specifications/aprender-monorepo-consolidation.md"
 version: 1
 status: enforced
 date: 2026-04-08

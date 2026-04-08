@@ -3,6 +3,10 @@ version: 1
 status: enforced
 date: 2026-04-08
 metadata:
+  kind: schema
+  version: "1.0.0"
+  references:
+  - "docs/specifications/aprender-monorepo-consolidation.md"
   title: "Zero-Muda Book Schema"
   description: "Every book page is a Page Contract Unit (PCU). No page without contract."
   spec: "docs/specifications/aprender-monorepo-consolidation.md"

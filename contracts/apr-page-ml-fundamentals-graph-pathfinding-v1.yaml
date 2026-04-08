@@ -1,4 +1,10 @@
 contract: apr-page-ml-fundamentals-graph-pathfinding
+metadata:
+  kind: schema
+  version: "1.0.0"
+  description: "Apr Page Ml Fundamentals Graph Pathfinding contract"
+  references:
+  - "docs/specifications/aprender-monorepo-consolidation.md"
 version: 1
 status: enforced
 date: 2026-04-08
@@ -25,7 +31,7 @@ sections:
     has_code: true
     has_assertion: false
     citation: null
-  - heading: "A\* Search Algorithm"
+  - heading: "A* Search Algorithm"
     has_code: true
     has_assertion: false
     citation: null

@@ -1,4 +1,10 @@
 contract: apr-page-chapters-ch27-switch-from-unsloth
+metadata:
+  kind: schema
+  version: "1.0.0"
+  description: "Apr Page Chapters Ch27 Switch From Unsloth contract"
+  references:
+  - "docs/specifications/aprender-monorepo-consolidation.md"
 version: 1
 status: enforced
 date: 2026-04-08
