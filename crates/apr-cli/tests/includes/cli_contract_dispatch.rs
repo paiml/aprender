@@ -2,6 +2,7 @@
 
 /// FALSIFY-CLI-005: Code subcommand dispatches to batuta
 #[test]
+#[cfg(feature = "code")]
 fn falsify_cli_005_code_dispatch_wired() {
     Command::cargo_bin("apr")
         .expect("apr binary")
@@ -16,6 +17,7 @@ fn falsify_cli_005_code_dispatch_wired() {
 
 /// FALSIFY-CLI-005b: Code subcommand accepts -p flag
 #[test]
+#[cfg(feature = "code")]
 fn falsify_cli_005b_code_print_flag() {
     Command::cargo_bin("apr")
         .expect("apr binary")
@@ -28,6 +30,7 @@ fn falsify_cli_005b_code_print_flag() {
 
 /// FALSIFY-CLI-005c: Code subcommand accepts --max-turns
 #[test]
+#[cfg(feature = "code")]
 fn falsify_cli_005c_code_max_turns_flag() {
     Command::cargo_bin("apr")
         .expect("apr binary")

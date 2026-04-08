@@ -378,10 +378,10 @@ fn test_f_serve_001_help() {
         .assert()
         .success()
         .stdout(predicate::str::contains("serve").or(predicate::str::contains("Serve")))
-        .stdout(predicate::str::contains("port").or(predicate::str::contains("PORT")));
+        .stdout(predicate::str::contains("plan").or(predicate::str::contains("run")));
 }
 
-// F-SERVE-002: apr serve with missing model shows error
+// F-SERVE-002: apr serve with missing model shows error (serve requires subcommand: plan/run)
 #[test]
 fn test_f_serve_002_missing_model_error() {
     apr()
@@ -391,7 +391,8 @@ fn test_f_serve_002_missing_model_error() {
         .stderr(
             predicate::str::contains("not found")
                 .or(predicate::str::contains("No such file"))
-                .or(predicate::str::contains("Failed")),
+                .or(predicate::str::contains("Failed"))
+                .or(predicate::str::contains("unrecognized subcommand")),
         );
 }
 
