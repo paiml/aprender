@@ -1,0 +1,127 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+  - "crates/apr-cli/src/commands/finetune.rs"
+  - "crates/aprender-train/src/finetune.rs"
+  description: >
+    Structured training metrics JSON contract for apr finetune --json.
+    Defines the exact schema, required fields, value domains, and
+    falsification conditions for training output. Refs GH-566.
+
+equations:
+  json_schema_complete:
+    formula: |
+      apr finetune --json output MUST contain ALL of:
+        status: string ∈ {"training_complete", "training_failed"}
+        final_loss: f64 >= 0.0
+        best_val_loss: f64 >= 0.0
+        wall_time_sec: f64 > 0.0
+        total_epochs: u64 >= 1
+        tokens_per_sec: f64 >= 0.0
+        samples_per_sec: f64 >= 0.0
+        checkpoint_dir: string (valid path)
+        epoch_metrics: array of EpochMetric objects
+    domain: apr finetune --json output
+    codomain: JSON object
+    invariants:
+    - "Every field listed above MUST be present in JSON output"
+    - "final_loss = last epoch's train_loss (not val_loss)"
+    - "wall_time_sec = total_time_ms / 1000.0"
+    - "tokens_per_sec = samples_per_sec * avg_seq_len"
+    - "epoch_metrics array length == total_epochs"
+
+  epoch_metric_schema:
+    formula: |
+      Each EpochMetric object MUST contain:
+        epoch: u64 >= 0
+        train_loss: f64 >= 0.0
+        val_loss: f64 >= 0.0 (or null if no validation set)
+        train_accuracy: f64 ∈ [0.0, 1.0]
+        val_accuracy: f64 ∈ [0.0, 1.0] (or null)
+        learning_rate: f64 > 0.0
+        epoch_time_ms: u64 > 0
+        samples_per_sec: f64 >= 0.0
+    domain: epoch_metrics array elements
+    codomain: JSON object
+    invariants:
+    - "train_loss monotonically non-increasing across epochs (±5% noise)"
+    - "epoch_time_ms > 0 for every epoch"
+    - "learning_rate matches configured schedule"
+
+  loss_trajectory_monotonic:
+    formula: |
+      For well-configured training:
+        epoch_metrics[i].train_loss <= epoch_metrics[0].train_loss * 1.05
+        for all i > 0
+    domain: epoch_metrics array
+    codomain: bool
+    invariants:
+    - "Training loss should not increase by more than 5% from initial"
+    - "If loss increases >5%, status should include a warning"
+
+  throughput_positive:
+    formula: |
+      tokens_per_sec > 0.0 AND samples_per_sec > 0.0
+      when total_epochs >= 1
+    domain: training metrics
+    codomain: bool
+    invariants:
+    - "Throughput must be positive for completed training"
+    - "samples_per_sec derived from actual timing, not estimated"
+
+falsification_tests:
+- id: FALSIFY-FINETUNE-001
+  rule: JSON schema complete
+  prediction: "apr finetune --json output has all required fields"
+  test: |
+    apr finetune --json --data test.jsonl --epochs 1 2>&1 | \
+      jq '{status, final_loss, wall_time_sec, total_epochs, tokens_per_sec, epoch_metrics}' | \
+      jq 'to_entries | map(select(.value == null)) | length == 0'
+  if_fails: "JSON output missing required fields"
+
+- id: FALSIFY-FINETUNE-002
+  rule: wall_time_sec consistency
+  prediction: "wall_time_sec = total_time_ms / 1000"
+  test: |
+    OUT=$(apr finetune --json --data test.jsonl --epochs 1 2>&1)
+    MS=$(echo "$OUT" | jq '.total_time_ms')
+    SEC=$(echo "$OUT" | jq '.wall_time_sec')
+    python3 -c "assert abs($SEC - $MS/1000) < 0.01"
+  if_fails: "wall_time_sec inconsistent with total_time_ms"
+
+- id: FALSIFY-FINETUNE-003
+  rule: epoch_metrics length matches total_epochs
+  prediction: "len(epoch_metrics) == total_epochs"
+  test: |
+    OUT=$(apr finetune --json --data test.jsonl --epochs 3 2>&1)
+    EPOCHS=$(echo "$OUT" | jq '.total_epochs')
+    METRICS=$(echo "$OUT" | jq '.epoch_metrics | length')
+    [ "$EPOCHS" -eq "$METRICS" ]
+  if_fails: "epoch_metrics array length != total_epochs"
+
+- id: FALSIFY-FINETUNE-004
+  rule: throughput positive
+  prediction: "tokens_per_sec > 0 after training"
+  test: |
+    apr finetune --json --data test.jsonl --epochs 1 2>&1 | \
+      jq '.tokens_per_sec > 0'
+  if_fails: "tokens_per_sec is zero or negative"
+
+proof_obligations:
+- type: invariant
+  property: "JSON schema has all required fields"
+- type: invariant
+  property: "wall_time_sec = total_time_ms / 1000"
+- type: invariant
+  property: "epoch_metrics length == total_epochs"
+- type: invariant
+  property: "throughput positive for completed training"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending

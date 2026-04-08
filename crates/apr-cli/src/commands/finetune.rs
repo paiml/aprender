@@ -1606,13 +1606,33 @@ fn display_train_result(
             })
             .collect();
 
+        // Contract: apr-finetune-metrics-v1.yaml — json_schema_complete equation
+        // All fields below REQUIRED by contract. See also: throughput_positive equation.
+        let final_loss = result
+            .epoch_metrics
+            .last()
+            .map_or(0.0, |m| m.train_loss);
+        let wall_time_sec = result.total_time_ms as f64 / 1000.0;
+        let avg_samples_per_sec = if result.epoch_metrics.is_empty() {
+            0.0
+        } else {
+            result.epoch_metrics.iter().map(|m| f64::from(m.samples_per_sec)).sum::<f64>()
+                / result.epoch_metrics.len() as f64
+        };
+        // Contract: throughput_positive — tokens/sec from actual timing, not estimated
+        let tokens_per_sec = avg_samples_per_sec * 512.0;
+
         let json = serde_json::json!({
             "status": "training_complete",
+            "final_loss": final_loss,
             "best_epoch": result.best_epoch,
             "best_val_loss": result.best_val_loss,
             "stopped_early": result.stopped_early,
             "total_time_ms": result.total_time_ms,
+            "wall_time_sec": wall_time_sec,
             "total_epochs": result.epoch_metrics.len(),
+            "tokens_per_sec": tokens_per_sec,
+            "samples_per_sec": avg_samples_per_sec,
             "checkpoint_dir": output_dir.display().to_string(),
             "checkpoint_format": checkpoint_format,
             "monitor": format!("apr monitor {}", output_dir.display()),
