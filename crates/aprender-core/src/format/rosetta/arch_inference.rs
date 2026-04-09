@@ -460,6 +460,20 @@ impl RosettaStone {
         let mut total_inf = 0;
         let mut all_zero_tensors = Vec::new();
 
+        // GH-707: Check declared tensor count vs actually parsed tensors
+        // A truncated GGUF will have fewer tensors than the header declares
+        let declared_count = reader.tensor_count as usize;
+        let parsed_count = reader.tensors.len();
+        if parsed_count < declared_count {
+            return Err(crate::AprenderError::FormatError {
+                message: format!(
+                    "Truncated GGUF: header declares {} tensors but only {} were parsed \
+                     (file may be truncated or corrupted)",
+                    declared_count, parsed_count
+                ),
+            });
+        }
+
         // Get tensor names from metadata
         let tensor_names: Vec<String> = reader.tensors.iter().map(|t| t.name.clone()).collect();
 
