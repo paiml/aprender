@@ -48,7 +48,7 @@ fn test_random_forest_regressor_feature_importances_after_fit() {
 
 #[test]
 fn test_random_forest_regressor_feature_importances_before_fit() {
-    let rf = RandomForestRegressor::new(10);
+    let rf = RandomForestRegressor::new(10).with_random_state(42);
 
     let importances = rf.feature_importances();
     assert!(
@@ -268,7 +268,7 @@ fn test_decision_tree_regressor_fit_empty_error() {
 
 #[test]
 fn test_random_forest_regressor_new() {
-    let rf = RandomForestRegressor::new(10);
+    let rf = RandomForestRegressor::new(10).with_random_state(42);
     assert_eq!(rf.n_estimators, 10);
     assert!(rf.trees.is_empty());
 }
@@ -285,7 +285,7 @@ fn test_random_forest_regressor_fit_mismatch_error() {
         .expect("Matrix creation should succeed");
     let y = Vector::from_slice(&[2.0, 4.0]); // Mismatched length
 
-    let mut rf = RandomForestRegressor::new(5);
+    let mut rf = RandomForestRegressor::new(5).with_random_state(42);
     let result = rf.fit(&x, &y);
     assert!(result.is_err());
 }
@@ -295,14 +295,14 @@ fn test_random_forest_regressor_fit_empty_error() {
     let x = Matrix::from_vec(0, 1, vec![]).expect("Matrix creation should succeed");
     let y = Vector::from_slice(&[]);
 
-    let mut rf = RandomForestRegressor::new(5);
+    let mut rf = RandomForestRegressor::new(5).with_random_state(42);
     let result = rf.fit(&x, &y);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_random_forest_regressor_oob_methods() {
-    let rf = RandomForestRegressor::new(10);
+    let rf = RandomForestRegressor::new(10).with_random_state(42);
     assert!(rf.oob_prediction().is_none());
     assert!(rf.oob_score().is_none());
 }
@@ -432,7 +432,7 @@ fn test_gradient_boosting_classifier_predict_proba() {
 
 #[test]
 fn test_random_forest_classifier_oob_methods() {
-    let rf = RandomForestClassifier::new(10);
+    let rf = RandomForestClassifier::new(10).with_random_state(42);
     assert!(rf.oob_prediction().is_none());
     assert!(rf.oob_score().is_none());
     assert!(rf.feature_importances().is_none());

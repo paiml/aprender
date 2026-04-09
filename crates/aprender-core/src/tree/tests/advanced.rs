@@ -86,7 +86,7 @@ fn test_random_forest_classifier_oob_prediction_length() {
 
 #[test]
 fn test_random_forest_classifier_oob_before_fit() {
-    let rf = RandomForestClassifier::new(10);
+    let rf = RandomForestClassifier::new(10).with_random_state(42);
 
     assert!(
         rf.oob_score().is_none(),
@@ -233,7 +233,7 @@ fn test_random_forest_regressor_oob_prediction_length() {
 
 #[test]
 fn test_random_forest_regressor_oob_before_fit() {
-    let rf = RandomForestRegressor::new(10);
+    let rf = RandomForestRegressor::new(10).with_random_state(42);
 
     assert!(
         rf.oob_score().is_none(),
@@ -400,7 +400,7 @@ fn test_random_forest_classifier_feature_importances_after_fit() {
 
 #[test]
 fn test_random_forest_classifier_feature_importances_before_fit() {
-    let rf = RandomForestClassifier::new(10);
+    let rf = RandomForestClassifier::new(10).with_random_state(42);
 
     let importances = rf.feature_importances();
     assert!(
