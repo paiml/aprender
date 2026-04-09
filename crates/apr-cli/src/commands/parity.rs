@@ -309,6 +309,18 @@ fn auto_diagnose(metrics: &[SpcMetrics], hidden_dim: usize, num_heads: usize, kv
             kv_heads * head_dim,
         );
     }
+
+    // Contract: apr-gpu-parity-consistency-v1.yaml — cross_subcmd_no_contradiction
+    eprintln!();
+    eprintln!(
+        "  {} {}",
+        "Note:".yellow().bold(),
+        "apr ptx-map checks kernel DISPATCH (launch params), not output correctness.".dimmed()
+    );
+    eprintln!(
+        "        {}",
+        "Kernels may launch correctly but compute incorrect results.".dimmed()
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
