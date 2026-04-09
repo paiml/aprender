@@ -720,4 +720,313 @@ mod tests {
         assert_ne!(tokens[0], vocab.unk_token());
         assert_ne!(tokens[1], vocab.unk_token());
     }
+
+    // ====================================================================
+    // shell_split coverage: edge cases (55 uncovered lines)
+    // ====================================================================
+
+    #[test]
+    fn test_shell_split_empty_string() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("");
+        // CLS + EOS only (no shell tokens)
+        // tokenize wraps shell_split output with CLS prefix
+        // An empty script produces no shell tokens
+        assert!(tokens.len() <= 2, "empty string should produce minimal tokens");
+    }
+
+    #[test]
+    fn test_shell_split_single_word() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("ls");
+        // Should have at least CLS token + "ls" token
+        assert!(tokens.len() >= 1);
+    }
+
+    #[test]
+    fn test_shell_split_double_quoted_string() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo \"hello world\"");
+        // Should split: echo, ", hello, world, "
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"echo".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_single_quoted_string() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo 'hello world'");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"echo".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_escaped_chars_in_double_quotes() {
+        let vocab = ShellVocabulary::new();
+        // Escaped quote inside double quotes
+        let tokens = vocab.tokenize("echo \"hello\\\"world\"");
+        assert!(!tokens.is_empty());
+    }
+
+    #[test]
+    fn test_shell_split_pipe_operator() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("cat file.txt | grep pattern");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"|".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_redirect_operators() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo hello > output.txt");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&">".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_append_redirect() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo hello >> output.txt");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&">>".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_heredoc_redirect() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("cat << EOF");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"<<".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_stderr_redirect() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("cmd 2> /dev/null");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"2>".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_and_operator() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("cmd1 && cmd2");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"&&".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_or_operator() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("cmd1 || cmd2");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"||".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_dollar_variable() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo $HOME");
+        let decoded = vocab.decode(&tokens);
+        // $HOME should be recognized
+        assert!(decoded.iter().any(|t| t.starts_with('$')));
+    }
+
+    #[test]
+    fn test_shell_split_dollar_brace_variable() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo ${HOME}");
+        // ${HOME} is a single token that may map to UNK; just ensure we get tokens
+        assert!(tokens.len() >= 2, "should tokenize echo and ${{HOME}}");
+    }
+
+    #[test]
+    fn test_shell_split_dollar_command_substitution() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo $(date)");
+        let decoded = vocab.decode(&tokens);
+        // $( should be a token
+        assert!(decoded.iter().any(|t| t.contains("$(")));
+    }
+
+    #[test]
+    fn test_shell_split_dollar_arithmetic() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo $((1+2))");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.iter().any(|t| t.contains("$((")));
+    }
+
+    #[test]
+    fn test_shell_split_dollar_special_vars() {
+        let vocab = ShellVocabulary::new();
+        // $?, $#, $@, $*, $!, $$
+        for var in &["$?", "$#", "$@", "$*", "$!", "$$"] {
+            let script = format!("echo {}", var);
+            let tokens = vocab.tokenize(&script);
+            assert!(tokens.len() >= 2, "Should tokenize: {}", script);
+        }
+    }
+
+    #[test]
+    fn test_shell_split_backtick_command() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo `date`");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"`".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_backslash_escape() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo \\n");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"\\".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_semicolon() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("cmd1; cmd2");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&";".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_double_semicolon_case() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("case x in\nfoo) echo yes;;\nesac");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&";;".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_double_brackets() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("[[ -f file ]]");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"[[".to_string()));
+        assert!(decoded.contains(&"]]".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_equality_operators() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("[[ $x == y ]]");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"==".to_string()));
+
+        let tokens2 = vocab.tokenize("[[ $x != y ]]");
+        let decoded2 = vocab.decode(&tokens2);
+        assert!(decoded2.contains(&"!=".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_double_parens() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("(( x + 1 ))");
+        let decoded = vocab.decode(&tokens);
+        assert!(decoded.contains(&"((".to_string()));
+        assert!(decoded.contains(&"))".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_single_char_operators() {
+        let vocab = ShellVocabulary::new();
+        for op in &['&', '(', ')', '[', ']', '{', '}', '!', '=', '~', '<'] {
+            let script = format!("cmd {} arg", op);
+            let tokens = vocab.tokenize(&script);
+            let decoded = vocab.decode(&tokens);
+            assert!(
+                decoded.contains(&op.to_string()),
+                "Should find operator '{}' in decoded tokens: {:?}",
+                op,
+                decoded
+            );
+        }
+    }
+
+    #[test]
+    fn test_shell_split_whitespace_only() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("   \t\n  ");
+        // Whitespace-only should produce no shell tokens
+        assert!(tokens.len() <= 2, "whitespace-only should be minimal");
+    }
+
+    #[test]
+    fn test_shell_split_complex_script() {
+        let vocab = ShellVocabulary::new();
+        let script = r#"#!/bin/bash
+set -euo pipefail
+for f in *.txt; do
+    if [[ -f "$f" ]]; then
+        cat "$f" | grep -v "^#" >> output.log 2>&1
+    fi
+done
+echo "Done: $?"
+"#;
+        let tokens = vocab.tokenize(script);
+        assert!(tokens.len() >= 10, "Complex script should produce many tokens");
+        let decoded = vocab.decode(&tokens);
+        // Should contain key shell constructs
+        assert!(decoded.iter().any(|t| t.starts_with("#!")));
+        assert!(decoded.contains(&"for".to_string()) || decoded.contains(&"do".to_string()));
+    }
+
+    #[test]
+    fn test_shell_split_dollar_at_end() {
+        // Edge case: $ at end of input with no following character
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo $");
+        assert!(!tokens.is_empty());
+    }
+
+    #[test]
+    fn test_shell_split_unclosed_quote() {
+        // Edge case: unclosed quote
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo \"hello");
+        // Should not panic, just tokenize what it can
+        assert!(!tokens.is_empty());
+    }
+
+    #[test]
+    fn test_shell_split_unclosed_single_quote() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo 'hello");
+        assert!(!tokens.is_empty());
+    }
+
+    #[test]
+    fn test_shell_split_empty_quotes() {
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo \"\" ''");
+        // Empty quotes should produce quote tokens
+        assert!(!tokens.is_empty());
+    }
+
+    #[test]
+    fn test_shell_split_dollar_brace_unclosed() {
+        // Edge case: unclosed ${
+        let vocab = ShellVocabulary::new();
+        let tokens = vocab.tokenize("echo ${HOME");
+        assert!(!tokens.is_empty());
+    }
+
+    #[test]
+    fn test_decode_unknown_id() {
+        let vocab = ShellVocabulary::new();
+        let decoded = vocab.decode(&[999_999]);
+        assert!(decoded[0].starts_with("[ID:"));
+    }
+
+    #[test]
+    fn test_label_names() {
+        let vocab = ShellVocabulary::new();
+        let labels = vocab.label_names();
+        assert_eq!(labels.len(), 5);
+        assert_eq!(labels[0], "safe");
+    }
 }

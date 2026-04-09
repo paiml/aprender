@@ -374,7 +374,9 @@ impl LogisticRegression {
             // Contract: stochastic_convergence — "shuffled sample order each epoch"
             let seed = epoch;
             for i in (1..n_samples).rev() {
-                let j = (seed * 6364136223846793005 + i * 1442695040888963407) % (i + 1);
+                let j = (seed.wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(i.wrapping_mul(1_442_695_040_888_963_407)))
+                    % (i + 1);
                 indices.swap(i, j);
             }
 
@@ -422,7 +424,9 @@ impl LogisticRegression {
             // Shuffle
             let seed = epoch;
             for i in (1..n_samples).rev() {
-                let j = (seed * 6364136223846793005 + i * 1442695040888963407) % (i + 1);
+                let j = (seed.wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(i.wrapping_mul(1_442_695_040_888_963_407)))
+                    % (i + 1);
                 indices.swap(i, j);
             }
 

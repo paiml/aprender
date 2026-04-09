@@ -1,5 +1,6 @@
 // Advanced merge strategy tests (GH-442)
 
+use super::*;
 use std::collections::BTreeMap;
 
 fn make_tensor_map(
@@ -501,4 +502,295 @@ fn falsify_passthrough_001_data_preservation() {
             assert_eq!(rs, shape, "Non-layer tensor {} shape mismatch", name);
         }
     }
+}
+
+// ============================================================================
+// TIES merge tests (ties_merge.rs:12 — 37 uncovered lines)
+// ============================================================================
+
+#[test]
+fn test_ties_merge_basic() {
+    let base = make_tensor_map("w", vec![1.0, 2.0, 3.0, 4.0], vec![4]);
+    let model_a = make_tensor_map("w", vec![2.0, 3.0, 4.0, 5.0], vec![4]);
+    let model_b = make_tensor_map("w", vec![3.0, 4.0, 5.0, 6.0], vec![4]);
+    let result = super::ties_merge(&base, &[model_a, model_b], 0.0);
+    let (data, shape) = result.get("w").expect("tensor 'w' should exist");
+    assert_eq!(shape, &[4]);
+    // density=0 means all deltas pass trim (threshold=0)
+    // Deltas: model_a - base = [1,1,1,1], model_b - base = [2,2,2,2]
+    // All positive -> elected sign = positive
+    // Both agree -> average sum = (1+2)/2 = 1.5 per element
+    // Result: base + 1.5 = [2.5, 3.5, 4.5, 5.5]
+    for (i, &v) in data.iter().enumerate() {
+        assert!(
+            (v - (1.0 + i as f32 + 1.5)).abs() < 1e-5,
+            "element {i}: expected {}, got {v}",
+            1.0 + i as f32 + 1.5
+        );
+    }
+}
+
+#[test]
+fn test_ties_merge_high_density_trims_small_deltas() {
+    // density=1.0 means threshold = max(|delta|), so only max-magnitude elements survive
+    let base = make_tensor_map("w", vec![0.0, 0.0, 0.0, 0.0], vec![4]);
+    let model_a = make_tensor_map("w", vec![0.1, 0.0, 0.0, 10.0], vec![4]);
+    let result = super::ties_merge(&base, &[model_a], 1.0);
+    let (data, _) = result.get("w").expect("should have w");
+    // density=1.0, max_abs=10.0, threshold=10.0
+    // Only element at index 3 (delta=10.0) survives trim
+    // Elements 0,1,2 are trimmed to 0
+    assert!(data[0].abs() < 0.01, "small delta should be trimmed");
+    assert!(data[3].abs() > 1.0, "large delta should survive");
+}
+
+#[test]
+fn test_ties_merge_sign_election() {
+    // Two models with opposite signs -- majority should win
+    let base = make_tensor_map("w", vec![0.0, 0.0], vec![2]);
+    let m_pos = make_tensor_map("w", vec![5.0, -5.0], vec![2]);
+    let m_pos2 = make_tensor_map("w", vec![3.0, -3.0], vec![2]);
+    let m_neg = make_tensor_map("w", vec![-1.0, 1.0], vec![2]);
+    let result = super::ties_merge(&base, &[m_pos, m_pos2, m_neg], 0.0);
+    let (data, _) = result.get("w").expect("should have w");
+    // Element 0: 2 positive (5,3) vs 1 negative (-1) -> positive wins
+    // Element 1: 2 negative (-5,-3) vs 1 positive (1) -> negative wins
+    assert!(data[0] > 0.0, "element 0 should be positive: got {}", data[0]);
+    assert!(data[1] < 0.0, "element 1 should be negative: got {}", data[1]);
+}
+
+#[test]
+fn test_ties_merge_all_zero_deltas() {
+    let base = make_tensor_map("w", vec![1.0, 2.0, 3.0], vec![3]);
+    let model_same = make_tensor_map("w", vec![1.0, 2.0, 3.0], vec![3]);
+    let result = super::ties_merge(&base, &[model_same.clone(), model_same], 0.0);
+    let (data, _) = result.get("w").expect("should have w");
+    // All deltas are zero, so result should equal base
+    assert_eq!(data, &[1.0, 2.0, 3.0]);
+}
+
+#[test]
+fn test_ties_merge_multiple_tensors() {
+    let mut base = BTreeMap::new();
+    base.insert("a".to_string(), (vec![1.0, 2.0], vec![2]));
+    base.insert("b".to_string(), (vec![10.0, 20.0], vec![2]));
+
+    let mut model = BTreeMap::new();
+    model.insert("a".to_string(), (vec![3.0, 4.0], vec![2]));
+    model.insert("b".to_string(), (vec![15.0, 25.0], vec![2]));
+
+    let result = super::ties_merge(&base, &[model], 0.0);
+    assert!(result.contains_key("a"));
+    assert!(result.contains_key("b"));
+}
+
+// ============================================================================
+// DARE merge tests
+// ============================================================================
+
+#[test]
+fn test_dare_merge_basic() {
+    let base = make_tensor_map("w", vec![0.0, 0.0, 0.0, 0.0], vec![4]);
+    let model = make_tensor_map("w", vec![1.0, 1.0, 1.0, 1.0], vec![4]);
+    // drop_rate=0 means keep everything, rescale by 1/(1-0)=1
+    let result = super::dare_merge(&base, &[model], 0.0, 42, None);
+    let (data, _) = result.get("w").expect("should have w");
+    // With drop_rate=0, all kept, rescale=1, weight=1
+    // merged_delta = 1*1*(1-0) = 1 per element
+    // result = base + delta = [1,1,1,1]
+    for &v in data {
+        assert!((v - 1.0).abs() < 1e-5, "expected 1.0, got {v}");
+    }
+}
+
+#[test]
+fn test_dare_merge_high_drop_rate() {
+    let base = make_tensor_map("w", vec![0.0; 100], vec![100]);
+    let model = make_tensor_map("w", vec![1.0; 100], vec![100]);
+    // drop_rate=0.9 means ~10% kept, rescaled by 10
+    let result = super::dare_merge(&base, &[model], 0.9, 42, None);
+    let (data, _) = result.get("w").expect("should have w");
+    // Some elements should be 0 (dropped), some should be 10.0 (rescaled)
+    let nonzero_count = data.iter().filter(|&&v| v.abs() > 0.01).count();
+    assert!(
+        nonzero_count > 0 && nonzero_count < 100,
+        "DARE should drop some elements: {nonzero_count}/100 nonzero"
+    );
+}
+
+#[test]
+fn test_dare_merge_with_weights() {
+    let base = make_tensor_map("w", vec![0.0, 0.0], vec![2]);
+    let model_a = make_tensor_map("w", vec![1.0, 1.0], vec![2]);
+    let model_b = make_tensor_map("w", vec![2.0, 2.0], vec![2]);
+    let result = super::dare_merge(
+        &base,
+        &[model_a, model_b],
+        0.0,
+        42,
+        Some(&[0.3, 0.7]),
+    );
+    let (data, _) = result.get("w").expect("should have w");
+    // drop_rate=0, rescale=1
+    // merged = 0.3*1 + 0.7*2 = 0.3 + 1.4 = 1.7
+    for &v in data {
+        assert!(
+            (v - 1.7).abs() < 1e-5,
+            "expected 1.7, got {v}"
+        );
+    }
+}
+
+#[test]
+fn test_dare_merge_deterministic() {
+    let base = make_tensor_map("w", vec![0.0; 20], vec![20]);
+    let model = make_tensor_map("w", vec![1.0; 20], vec![20]);
+    let r1 = super::dare_merge(&base, &[model.clone()], 0.5, 42, None);
+    let r2 = super::dare_merge(&base, &[model], 0.5, 42, None);
+    let (d1, _) = r1.get("w").unwrap();
+    let (d2, _) = r2.get("w").unwrap();
+    assert_eq!(d1, d2, "Same seed should produce identical DARE results");
+}
+
+// ============================================================================
+// apr_merge integration tests (via file I/O)
+// ============================================================================
+
+#[test]
+fn test_apr_merge_average_via_files() {
+    let dir = tempdir().expect("tempdir");
+    let path_a = dir.path().join("a.safetensors");
+    let path_b = dir.path().join("b.safetensors");
+    let path_out = dir.path().join("merged.safetensors");
+
+    let mut tensors_a = BTreeMap::new();
+    tensors_a.insert("w".to_string(), (vec![1.0, 2.0, 3.0, 4.0], vec![2, 2]));
+    let mut tensors_b = BTreeMap::new();
+    tensors_b.insert("w".to_string(), (vec![5.0, 6.0, 7.0, 8.0], vec![2, 2]));
+
+    create_test_model(&path_a, &tensors_a).expect("create a");
+    create_test_model(&path_b, &tensors_b).expect("create b");
+
+    let options = super::MergeOptions {
+        strategy: super::MergeStrategy::Average,
+        ..Default::default()
+    };
+    let report = super::apr_merge(&[&path_a, &path_b], &path_out, options).expect("merge");
+    assert_eq!(report.model_count, 2);
+    assert_eq!(report.tensor_count, 1);
+    assert!(report.output_size > 0);
+}
+
+#[test]
+fn test_apr_merge_weighted_via_files() {
+    let dir = tempdir().expect("tempdir");
+    let path_a = dir.path().join("a.safetensors");
+    let path_b = dir.path().join("b.safetensors");
+    let path_out = dir.path().join("merged.safetensors");
+
+    let mut tensors_a = BTreeMap::new();
+    tensors_a.insert("w".to_string(), (vec![0.0, 0.0], vec![2]));
+    let mut tensors_b = BTreeMap::new();
+    tensors_b.insert("w".to_string(), (vec![10.0, 10.0], vec![2]));
+
+    create_test_model(&path_a, &tensors_a).expect("create a");
+    create_test_model(&path_b, &tensors_b).expect("create b");
+
+    let options = super::MergeOptions {
+        strategy: super::MergeStrategy::Weighted,
+        weights: Some(vec![0.3, 0.7]),
+        ..Default::default()
+    };
+    let report = super::apr_merge(&[&path_a, &path_b], &path_out, options).expect("merge");
+    assert_eq!(report.model_count, 2);
+    assert!(report.output_size > 0);
+}
+
+#[test]
+fn test_apr_merge_ties_via_files() {
+    let dir = tempdir().expect("tempdir");
+    let path_base = dir.path().join("base.safetensors");
+    let path_a = dir.path().join("a.safetensors");
+    let path_b = dir.path().join("b.safetensors");
+    let path_out = dir.path().join("merged.safetensors");
+
+    let mut base = BTreeMap::new();
+    base.insert("w".to_string(), (vec![0.0, 0.0, 0.0, 0.0], vec![4]));
+    let mut task_a = BTreeMap::new();
+    task_a.insert("w".to_string(), (vec![1.0, 2.0, 3.0, 4.0], vec![4]));
+    let mut task_b = BTreeMap::new();
+    task_b.insert("w".to_string(), (vec![2.0, 3.0, 4.0, 5.0], vec![4]));
+
+    create_test_model(&path_base, &base).expect("create base");
+    create_test_model(&path_a, &task_a).expect("create a");
+    create_test_model(&path_b, &task_b).expect("create b");
+
+    let options = super::MergeOptions {
+        strategy: super::MergeStrategy::Ties,
+        base_model: Some(path_base.clone()),
+        density: 0.1,
+        ..Default::default()
+    };
+    let report = super::apr_merge(&[&path_a, &path_b], &path_out, options).expect("merge");
+    assert_eq!(report.model_count, 2);
+    assert_eq!(report.tensor_count, 1);
+    assert_eq!(report.strategy, super::MergeStrategy::Ties);
+}
+
+#[test]
+fn test_apr_merge_dare_via_files() {
+    let dir = tempdir().expect("tempdir");
+    let path_base = dir.path().join("base.safetensors");
+    let path_a = dir.path().join("a.safetensors");
+    let path_out = dir.path().join("merged.safetensors");
+
+    let mut base = BTreeMap::new();
+    base.insert("w".to_string(), (vec![0.0; 8], vec![8]));
+    let mut task_a = BTreeMap::new();
+    task_a.insert("w".to_string(), (vec![1.0; 8], vec![8]));
+
+    create_test_model(&path_base, &base).expect("create base");
+    create_test_model(&path_a, &task_a).expect("create a");
+
+    // Need at least 2 task models for DARE
+    let path_b = dir.path().join("b.safetensors");
+    let mut task_b = BTreeMap::new();
+    task_b.insert("w".to_string(), (vec![2.0; 8], vec![8]));
+    create_test_model(&path_b, &task_b).expect("create b");
+
+    let options = super::MergeOptions {
+        strategy: super::MergeStrategy::Dare,
+        base_model: Some(path_base.clone()),
+        drop_rate: 0.5,
+        seed: 42,
+        ..Default::default()
+    };
+    let report = super::apr_merge(&[&path_a, &path_b], &path_out, options).expect("merge");
+    assert_eq!(report.model_count, 2);
+    assert_eq!(report.strategy, super::MergeStrategy::Dare);
+}
+
+#[test]
+fn test_apr_merge_slerp_via_files() {
+    let dir = tempdir().expect("tempdir");
+    let path_a = dir.path().join("a.safetensors");
+    let path_b = dir.path().join("b.safetensors");
+    let path_out = dir.path().join("merged.safetensors");
+
+    let mut tensors_a = BTreeMap::new();
+    tensors_a.insert("w".to_string(), (vec![1.0, 0.0, 0.0], vec![3]));
+    let mut tensors_b = BTreeMap::new();
+    tensors_b.insert("w".to_string(), (vec![0.0, 1.0, 0.0], vec![3]));
+
+    create_test_model(&path_a, &tensors_a).expect("create a");
+    create_test_model(&path_b, &tensors_b).expect("create b");
+
+    let options = super::MergeOptions {
+        strategy: super::MergeStrategy::Slerp,
+        weights: Some(vec![0.5]),
+        ..Default::default()
+    };
+    let report = super::apr_merge(&[&path_a, &path_b], &path_out, options).expect("merge");
+    assert_eq!(report.model_count, 2);
+    assert_eq!(report.strategy, super::MergeStrategy::Slerp);
 }

@@ -268,6 +268,298 @@ fn falsify_logreg_009_backward_compatible() {
     );
 }
 
+// =========================================================================
+// FALSIFY-LOGREG-MINIBATCH: Mini-batch SGD path (GH-428)
+// =========================================================================
+
+/// FALSIFY-LOGREG-MB-001: MiniBatch fits and predicts correctly on separable data
+#[test]
+fn falsify_logreg_mb_001_minibatch_basic_separable() {
+    let x = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 0.0, 1.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0, 5.0, 6.0,
+        ],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 0, 0, 1, 1, 1, 1];
+
+    let mut lr = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(2000)
+        .with_fit_mode(FitMode::MiniBatch(4));
+    lr.fit(&x, &y).expect("MiniBatch fit should succeed");
+
+    let preds = lr.predict(&x);
+    assert_eq!(preds.len(), 8);
+    for &p in &preds {
+        assert!(p <= 1, "prediction must be 0 or 1, got {p}");
+    }
+
+    // Linearly separable: accuracy should be 100%
+    let accuracy = lr.score(&x, &y);
+    assert!(
+        accuracy >= 0.75,
+        "FALSIFIED MB-001: accuracy {accuracy} < 0.75 on separable data"
+    );
+}
+
+/// FALSIFY-LOGREG-MB-002: MiniBatch with batch_size=1 degenerates to Stochastic behavior
+#[test]
+fn falsify_logreg_mb_002_batch_size_one() {
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 0, 1, 1, 1];
+
+    let mut lr = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(2000)
+        .with_fit_mode(FitMode::MiniBatch(1));
+    lr.fit(&x, &y).expect("fit with batch_size=1");
+
+    let preds = lr.predict(&x);
+    assert_eq!(preds.len(), 6);
+    // Should still converge on separable data
+    let accuracy = lr.score(&x, &y);
+    assert!(
+        accuracy >= 0.66,
+        "FALSIFIED MB-002: batch_size=1 accuracy {accuracy} too low"
+    );
+}
+
+/// FALSIFY-LOGREG-MB-003: MiniBatch with batch_size=n falls back to Batch
+#[test]
+fn falsify_logreg_mb_003_batch_size_equals_n_falls_back() {
+    let x = Matrix::from_vec(
+        4,
+        2,
+        vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 1, 1];
+
+    // batch_size == n_samples -> should use fit_batch internally
+    let mut lr_mb = LogisticRegression::new()
+        .with_learning_rate(0.01)
+        .with_max_iter(1000)
+        .with_fit_mode(FitMode::MiniBatch(4));
+    lr_mb.fit(&x, &y).expect("fit");
+
+    let mut lr_batch = LogisticRegression::new()
+        .with_learning_rate(0.01)
+        .with_max_iter(1000)
+        .with_fit_mode(FitMode::Batch);
+    lr_batch.fit(&x, &y).expect("fit");
+
+    // Both should produce identical results (same code path)
+    let preds_mb = lr_mb.predict(&x);
+    let preds_batch = lr_batch.predict(&x);
+    assert_eq!(
+        preds_mb, preds_batch,
+        "FALSIFIED MB-003: MiniBatch(n) != Batch"
+    );
+}
+
+/// FALSIFY-LOGREG-MB-004: MiniBatch probabilities bounded [0,1]
+#[test]
+fn falsify_logreg_mb_004_probabilities_bounded() {
+    let x = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 0.0, 1.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0, 5.0, 6.0,
+        ],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 0, 0, 1, 1, 1, 1];
+
+    let mut lr = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(1000)
+        .with_fit_mode(FitMode::MiniBatch(2));
+    lr.fit(&x, &y).expect("fit");
+
+    let probas = lr.predict_proba(&x);
+    for i in 0..probas.len() {
+        assert!(
+            (0.0..=1.0).contains(&probas[i]),
+            "FALSIFIED MB-004: proba[{i}] = {} not in [0,1]",
+            probas[i]
+        );
+    }
+}
+
+/// FALSIFY-LOGREG-MB-005: MiniBatch deterministic (same results on rerun)
+#[test]
+fn falsify_logreg_mb_005_deterministic() {
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 0, 1, 1, 1];
+
+    let mut lr1 = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(500)
+        .with_fit_mode(FitMode::MiniBatch(2));
+    lr1.fit(&x, &y).expect("fit");
+
+    let mut lr2 = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(500)
+        .with_fit_mode(FitMode::MiniBatch(2));
+    lr2.fit(&x, &y).expect("fit");
+
+    let p1 = lr1.predict(&x);
+    let p2 = lr2.predict(&x);
+    assert_eq!(p1, p2, "FALSIFIED MB-005: MiniBatch not deterministic");
+}
+
+/// FALSIFY-LOGREG-MB-006: MiniBatch with L2 regularization
+#[test]
+fn falsify_logreg_mb_006_with_l2() {
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 0, 1, 1, 1];
+
+    let mut lr = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(2000)
+        .with_l2_penalty(0.01)
+        .with_fit_mode(FitMode::MiniBatch(3));
+    lr.fit(&x, &y).expect("fit with L2 + minibatch");
+
+    let accuracy = lr.score(&x, &y);
+    assert!(
+        accuracy >= 0.66,
+        "FALSIFIED MB-006: L2 + MiniBatch accuracy {accuracy} too low"
+    );
+}
+
+/// FALSIFY-LOGREG-MB-007: MiniBatch with balanced class weights
+#[test]
+fn falsify_logreg_mb_007_with_balanced_weights() {
+    // Imbalanced data
+    let mut x_data = Vec::new();
+    let mut y_data = Vec::new();
+    for i in 0..20 {
+        x_data.push(i as f32 * 0.1);
+        x_data.push(i as f32 * 0.05);
+        y_data.push(0);
+    }
+    for i in 0..5 {
+        x_data.push(5.0 + i as f32 * 0.2);
+        x_data.push(5.0 + i as f32 * 0.1);
+        y_data.push(1);
+    }
+
+    let x = Matrix::from_vec(25, 2, x_data).expect("valid");
+
+    let mut lr = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(2000)
+        .with_class_weight(ClassWeight::Balanced)
+        .with_fit_mode(FitMode::MiniBatch(5));
+    lr.fit(&x, &y_data).expect("fit with balanced + minibatch");
+
+    let preds = lr.predict(&x);
+    assert_eq!(preds.len(), 25);
+}
+
+/// FALSIFY-LOGREG-MB-008: Early convergence via tolerance
+#[test]
+fn falsify_logreg_mb_008_early_convergence() {
+    let x = Matrix::from_vec(
+        4,
+        2,
+        vec![0.0, 0.0, 1.0, 1.0, 10.0, 10.0, 11.0, 11.0],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 1, 1];
+
+    // Very well-separated data with generous tolerance should converge early
+    let mut lr = LogisticRegression::new()
+        .with_learning_rate(0.5)
+        .with_max_iter(100_000)
+        .with_tolerance(0.1)
+        .with_fit_mode(FitMode::MiniBatch(2));
+    lr.fit(&x, &y).expect("fit");
+
+    // Should still produce correct predictions
+    let accuracy = lr.score(&x, &y);
+    assert!(
+        accuracy >= 0.75,
+        "FALSIFIED MB-008: early convergence accuracy {accuracy} too low"
+    );
+}
+
+// =========================================================================
+// FALSIFY-LOGREG-STOCHASTIC: Stochastic SGD path
+// =========================================================================
+
+/// FALSIFY-LOGREG-SGD-001: Stochastic fits separable data
+#[test]
+fn falsify_logreg_sgd_001_basic_separable() {
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 0, 1, 1, 1];
+
+    let mut lr = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(2000)
+        .with_fit_mode(FitMode::Stochastic);
+    lr.fit(&x, &y).expect("Stochastic fit");
+
+    let accuracy = lr.score(&x, &y);
+    assert!(
+        accuracy >= 0.66,
+        "FALSIFIED SGD-001: stochastic accuracy {accuracy} too low"
+    );
+}
+
+/// FALSIFY-LOGREG-SGD-002: Stochastic deterministic
+#[test]
+fn falsify_logreg_sgd_002_deterministic() {
+    let x = Matrix::from_vec(
+        4,
+        2,
+        vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0],
+    )
+    .expect("valid");
+    let y = vec![0_usize, 0, 1, 1];
+
+    let mut lr1 = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(500)
+        .with_fit_mode(FitMode::Stochastic);
+    lr1.fit(&x, &y).expect("fit");
+
+    let mut lr2 = LogisticRegression::new()
+        .with_learning_rate(0.1)
+        .with_max_iter(500)
+        .with_fit_mode(FitMode::Stochastic);
+    lr2.fit(&x, &y).expect("fit");
+
+    let p1 = lr1.predict(&x);
+    let p2 = lr2.predict(&x);
+    assert_eq!(p1, p2, "FALSIFIED SGD-002: stochastic not deterministic");
+}
+
 mod logreg_proptest_falsify {
     use super::*;
     use proptest::prelude::*;

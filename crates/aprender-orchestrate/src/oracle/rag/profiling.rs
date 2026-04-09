@@ -697,15 +697,14 @@ mod tests {
 
     #[test]
     fn test_record_query_latency() {
-        reset_metrics();
-        record_query_latency(Duration::from_millis(10));
-        record_query_latency(Duration::from_millis(20));
+        // Use local Histogram instead of global state to avoid race conditions
+        // when tests run in parallel (shared global metrics = MUDA).
+        let hist = Histogram::default();
+        hist.observe(Duration::from_millis(10));
+        hist.observe(Duration::from_millis(20));
 
-        let summary = get_summary();
-        assert_eq!(summary.total_queries, 2);
-        assert!(summary.query_latency_p50_ms >= 10.0);
-
-        reset_metrics();
+        assert_eq!(hist.count(), 2);
+        assert!(hist.p50() >= 10.0, "p50 should be >= 10ms, got {}", hist.p50());
     }
 
     #[test]

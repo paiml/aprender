@@ -343,3 +343,137 @@ fn falsify_f_contract_i2_001_validate_explicit_index_json() {
     assert_eq!(report.format, FormatType::SafeTensors);
     assert!(report.is_valid, "Sharded model tensors should be valid");
 }
+
+// ========================================================================
+// GH-471: validate_safetensors_metadata_only coverage
+// ========================================================================
+
+/// Metadata-only validation on valid SafeTensors file
+#[test]
+fn test_validate_metadata_only_safetensors_valid() {
+    use std::io::Write;
+    let path = unique_temp_path("meta_valid", "safetensors");
+    let mut file = std::fs::File::create(&path).expect("create");
+
+    let header = r#"{"test.weight":{"dtype":"F32","shape":[4],"data_offsets":[0,16]},"__metadata__":{"format":"test"}}"#;
+    file.write_all(&(header.len() as u64).to_le_bytes())
+        .expect("write header len");
+    file.write_all(header.as_bytes()).expect("write header");
+    let data: [f32; 4] = [0.01, -0.02, 0.03, -0.01];
+    for val in &data {
+        file.write_all(&val.to_le_bytes()).expect("write tensor");
+    }
+    drop(file);
+
+    let rosetta = RosettaStone::new();
+    let report = rosetta.validate_metadata_only(&path).expect("should succeed");
+    assert_eq!(report.format, FormatType::SafeTensors);
+    assert!(report.is_valid);
+    assert_eq!(report.tensor_count, 1); // 1 tensor (excludes __metadata__)
+}
+
+/// Metadata-only validation: header too small (< 2 bytes)
+#[test]
+fn test_validate_metadata_only_safetensors_tiny_header() {
+    use std::io::Write;
+    let path = unique_temp_path("meta_tiny", "safetensors");
+    let mut file = std::fs::File::create(&path).expect("create");
+    // Header size = 1 byte (below minimum of 2)
+    file.write_all(&1u64.to_le_bytes()).expect("write");
+    file.write_all(b"{").expect("write body");
+    drop(file);
+
+    let rosetta = RosettaStone::new();
+    let report = rosetta.validate_metadata_only(&path).expect("should succeed but invalid");
+    assert_eq!(report.format, FormatType::SafeTensors);
+    assert!(!report.is_valid);
+    assert_eq!(report.tensor_count, 0);
+}
+
+/// Metadata-only validation: header too large (> 100MB)
+#[test]
+fn test_validate_metadata_only_safetensors_huge_header() {
+    use std::io::Write;
+    let path = unique_temp_path("meta_huge", "safetensors");
+    let mut file = std::fs::File::create(&path).expect("create");
+    // Header size = 200_000_000 (above 100_000_000 limit)
+    file.write_all(&200_000_000u64.to_le_bytes()).expect("write");
+    // Don't actually write 200MB -- just the 8-byte size is enough
+    // for the function to detect the invalid size
+    drop(file);
+
+    let rosetta = RosettaStone::new();
+    let report = rosetta.validate_metadata_only(&path).expect("should succeed but invalid");
+    assert!(!report.is_valid);
+}
+
+/// Metadata-only validation: empty tensor map (only __metadata__)
+#[test]
+fn test_validate_metadata_only_safetensors_no_tensors() {
+    use std::io::Write;
+    let path = unique_temp_path("meta_notens", "safetensors");
+    let mut file = std::fs::File::create(&path).expect("create");
+
+    let header = r#"{"__metadata__":{"format":"empty"}}"#;
+    file.write_all(&(header.len() as u64).to_le_bytes())
+        .expect("write");
+    file.write_all(header.as_bytes()).expect("write");
+    drop(file);
+
+    let rosetta = RosettaStone::new();
+    let report = rosetta.validate_metadata_only(&path).expect("should succeed");
+    assert!(!report.is_valid); // No tensors -> invalid
+    assert_eq!(report.tensor_count, 0);
+}
+
+/// Metadata-only validation: multiple tensors
+#[test]
+fn test_validate_metadata_only_safetensors_multiple_tensors() {
+    use std::io::Write;
+    let path = unique_temp_path("meta_multi", "safetensors");
+    let mut file = std::fs::File::create(&path).expect("create");
+
+    let header = r#"{"layer.0.weight":{"dtype":"F32","shape":[2,2],"data_offsets":[0,16]},"layer.0.bias":{"dtype":"F32","shape":[2],"data_offsets":[16,24]},"layer.1.weight":{"dtype":"F32","shape":[2,2],"data_offsets":[24,40]}}"#;
+    file.write_all(&(header.len() as u64).to_le_bytes())
+        .expect("write");
+    file.write_all(header.as_bytes()).expect("write");
+    // Write enough data for all tensors
+    let data = vec![0u8; 40];
+    file.write_all(&data).expect("write");
+    drop(file);
+
+    let rosetta = RosettaStone::new();
+    let report = rosetta.validate_metadata_only(&path).expect("should succeed");
+    assert!(report.is_valid);
+    assert_eq!(report.tensor_count, 3);
+}
+
+/// Metadata-only validation: APR format
+#[test]
+fn test_validate_metadata_only_apr() {
+    let path = create_apr_fixture();
+    let rosetta = RosettaStone::new();
+    let report = rosetta.validate_metadata_only(&path).expect("should succeed");
+    assert_eq!(report.format, FormatType::Apr);
+    assert!(report.is_valid);
+    assert!(report.tensor_count > 0);
+}
+
+/// Metadata-only validation: invalid JSON header
+#[test]
+fn test_validate_metadata_only_safetensors_invalid_json() {
+    use std::io::Write;
+    let path = unique_temp_path("meta_badjson", "safetensors");
+    let mut file = std::fs::File::create(&path).expect("create");
+
+    let header = b"this is not json!!";
+    file.write_all(&(header.len() as u64).to_le_bytes())
+        .expect("write");
+    file.write_all(header).expect("write");
+    drop(file);
+
+    let rosetta = RosettaStone::new();
+    let result = rosetta.validate_metadata_only(&path);
+    // Should return FormatError for invalid JSON
+    assert!(result.is_err());
+}

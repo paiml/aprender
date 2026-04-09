@@ -67,6 +67,7 @@
 
 // GH-41: unwrap() banned in production code via .clippy.toml.
 // Tests use unwrap() freely — scoped allow for test builds only.
+#![warn(missing_docs)]
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 // Contract assertions from YAML (pv codegen)
