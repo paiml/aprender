@@ -133,7 +133,7 @@ jobs:
         run: New-Item -ItemType Junction -Path "$env:GITHUB_WORKSPACE\..\realizar" -Target "$env:GITHUB_WORKSPACE\realizar" -Force
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e18c1a97b10be2c  # stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
