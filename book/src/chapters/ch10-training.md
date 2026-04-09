@@ -1,4 +1,4 @@
-<!-- PCU: ch10-training | contract: contracts/apr-book-ch10-v1.yaml -->
+<!-- PCU: ch10 | contract: contracts/apr-book-ch10-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch10_training -->
 <!-- Status: enforced -->
 

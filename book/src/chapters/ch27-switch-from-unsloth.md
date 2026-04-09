@@ -1,4 +1,4 @@
-<!-- PCU: ch27-switch-from-unsloth | contract: contracts/apr-book-ch27-v1.yaml -->
+<!-- PCU: ch27 | contract: contracts/apr-book-ch27-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch27_switch_unsloth -->
 <!-- Status: enforced -->
 

@@ -1,4 +1,4 @@
-<!-- PCU: ch15-orchestrate | contract: contracts/apr-book-ch15-v1.yaml -->
+<!-- PCU: ch15 | contract: contracts/apr-book-ch15-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch15_orchestrate -->
 <!-- Status: enforced -->
 

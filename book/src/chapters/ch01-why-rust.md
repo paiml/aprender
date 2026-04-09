@@ -1,4 +1,4 @@
-<!-- PCU: ch01-why-rust | contract: contracts/apr-book-ch01-v1.yaml -->
+<!-- PCU: ch01 | contract: contracts/apr-book-ch01-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch01_hello_apr -->
 <!-- Status: enforced -->
 

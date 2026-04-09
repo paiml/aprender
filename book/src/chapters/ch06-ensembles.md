@@ -1,4 +1,4 @@
-<!-- PCU: ch06-ensembles | contract: contracts/apr-book-ch06-v1.yaml -->
+<!-- PCU: ch06 | contract: contracts/apr-book-ch06-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch06_ensembles -->
 <!-- Status: enforced -->
 

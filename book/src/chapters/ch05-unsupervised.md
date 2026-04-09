@@ -1,4 +1,4 @@
-<!-- PCU: ch05-unsupervised | contract: contracts/apr-book-ch05-v1.yaml -->
+<!-- PCU: ch05 | contract: contracts/apr-book-ch05-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch05_unsupervised -->
 <!-- Status: enforced -->
 

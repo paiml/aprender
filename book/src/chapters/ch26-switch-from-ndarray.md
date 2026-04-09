@@ -1,4 +1,4 @@
-<!-- PCU: ch26-switch-from-ndarray | contract: contracts/apr-book-ch26-v1.yaml -->
+<!-- PCU: ch26 | contract: contracts/apr-book-ch26-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch26_switch_ndarray -->
 <!-- Status: enforced -->
 

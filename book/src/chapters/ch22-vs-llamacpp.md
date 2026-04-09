@@ -1,4 +1,4 @@
-<!-- PCU: ch22-vs-llamacpp | contract: contracts/apr-book-ch22-v1.yaml -->
+<!-- PCU: ch22 | contract: contracts/apr-book-ch22-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch22_vs_llamacpp -->
 <!-- Status: enforced -->
 

@@ -1,4 +1,4 @@
-<!-- PCU: ch25-switch-from-ollama | contract: contracts/apr-book-ch25-v1.yaml -->
+<!-- PCU: ch25 | contract: contracts/apr-book-ch25-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch25_switch_ollama -->
 <!-- Status: enforced -->
 

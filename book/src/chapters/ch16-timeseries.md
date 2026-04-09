@@ -1,4 +1,4 @@
-<!-- PCU: ch16-timeseries | contract: contracts/apr-book-ch16-v1.yaml -->
+<!-- PCU: ch16 | contract: contracts/apr-book-ch16-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch16_timeseries -->
 <!-- Status: enforced -->
 

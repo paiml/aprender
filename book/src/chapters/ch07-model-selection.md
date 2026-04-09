@@ -1,4 +1,4 @@
-<!-- PCU: ch07-model-selection | contract: contracts/apr-book-ch07-v1.yaml -->
+<!-- PCU: ch07 | contract: contracts/apr-book-ch07-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch07_model_selection -->
 <!-- Status: enforced -->
 

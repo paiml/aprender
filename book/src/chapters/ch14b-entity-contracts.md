@@ -1,4 +1,4 @@
-<!-- PCU: ch14b-entity-contracts | contract: contracts/readme-entity-v1.yaml -->
+<!-- PCU: ch14b | contract: contracts/readme-entity-v1.yaml -->
 <!-- Example: none (documentation-only chapter) -->
 <!-- Status: enforced -->
 # Entity Contracts: Scoring Repository Artifacts 0-100

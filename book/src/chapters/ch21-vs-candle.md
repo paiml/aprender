@@ -1,4 +1,4 @@
-<!-- PCU: ch21-vs-candle | contract: contracts/apr-book-ch21-v1.yaml -->
+<!-- PCU: ch21 | contract: contracts/apr-book-ch21-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch21_vs_candle -->
 <!-- Status: enforced -->
 

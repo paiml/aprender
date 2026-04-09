@@ -1,4 +1,4 @@
-<!-- PCU: ch18-graphs | contract: contracts/apr-book-ch18-v1.yaml -->
+<!-- PCU: ch18 | contract: contracts/apr-book-ch18-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch18_graphs -->
 <!-- Status: enforced -->
 

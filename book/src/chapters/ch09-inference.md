@@ -1,4 +1,4 @@
-<!-- PCU: ch09-inference | contract: contracts/apr-book-ch09-v1.yaml -->
+<!-- PCU: ch09 | contract: contracts/apr-book-ch09-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch09_inference -->
 <!-- Status: enforced -->
 

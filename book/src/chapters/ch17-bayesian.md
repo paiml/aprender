@@ -1,4 +1,4 @@
-<!-- PCU: ch17-bayesian | contract: contracts/apr-book-ch17-v1.yaml -->
+<!-- PCU: ch17 | contract: contracts/apr-book-ch17-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch17_bayesian -->
 <!-- Status: enforced -->
 

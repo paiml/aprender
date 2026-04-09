@@ -1,4 +1,4 @@
-<!-- PCU: ch08-transformer | contract: contracts/apr-book-ch08-v1.yaml -->
+<!-- PCU: ch08 | contract: contracts/apr-book-ch08-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch08_transformer -->
 <!-- Status: enforced -->
 

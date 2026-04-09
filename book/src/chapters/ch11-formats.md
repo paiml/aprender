@@ -1,4 +1,4 @@
-<!-- PCU: ch11-formats | contract: contracts/apr-book-ch11-v1.yaml -->
+<!-- PCU: ch11 | contract: contracts/apr-book-ch11-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch11_formats -->
 <!-- Status: enforced -->
 

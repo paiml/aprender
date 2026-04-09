@@ -1,4 +1,4 @@
-<!-- PCU: ch20-rag | contract: contracts/apr-book-ch20-v1.yaml -->
+<!-- PCU: ch20 | contract: contracts/apr-book-ch20-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch20_rag -->
 <!-- Status: enforced -->
 

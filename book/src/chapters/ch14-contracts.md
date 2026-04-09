@@ -1,4 +1,4 @@
-<!-- PCU: ch14-contracts | contract: contracts/apr-book-ch14-v1.yaml -->
+<!-- PCU: ch14 | contract: contracts/apr-book-ch14-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch14_contracts -->
 <!-- Status: enforced -->
 

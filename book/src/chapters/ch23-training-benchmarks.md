@@ -1,4 +1,4 @@
-<!-- PCU: ch23-training-benchmarks | contract: contracts/apr-book-ch23-v1.yaml -->
+<!-- PCU: ch23 | contract: contracts/apr-book-ch23-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch23_training_bench -->
 <!-- Status: enforced -->
 

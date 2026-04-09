@@ -1,4 +1,4 @@
-<!-- PCU: ch13-profiling | contract: contracts/apr-book-ch13-v1.yaml -->
+<!-- PCU: ch13 | contract: contracts/apr-book-ch13-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch13_profiling -->
 <!-- Status: enforced -->
 

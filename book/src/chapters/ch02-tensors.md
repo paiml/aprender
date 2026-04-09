@@ -1,4 +1,4 @@
-<!-- PCU: ch02-tensors | contract: contracts/apr-book-ch02-v1.yaml -->
+<!-- PCU: ch02 | contract: contracts/apr-book-ch02-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch02_tensors -->
 <!-- Status: enforced -->
 

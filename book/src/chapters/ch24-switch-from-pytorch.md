@@ -1,4 +1,4 @@
-<!-- PCU: ch24-switch-from-pytorch | contract: contracts/apr-book-ch24-v1.yaml -->
+<!-- PCU: ch24 | contract: contracts/apr-book-ch24-v1.yaml -->
 <!-- Example: cargo run -p aprender-core --example ch24_switch_pytorch -->
 <!-- Status: enforced -->
 
