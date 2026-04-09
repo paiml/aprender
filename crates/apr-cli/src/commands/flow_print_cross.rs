@@ -1,6 +1,7 @@
 
 /// Print cross-attention flow (critical for debugging Posterior Collapse)
 #[allow(clippy::too_many_lines)] // Visual debugging output requires detailed formatting
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 fn print_cross_attention_flow(
     reader: Option<&AprReader>,
     tensor_names: &[String],
