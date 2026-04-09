@@ -438,6 +438,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 }
 
 /// Dispatch model management commands: merge, finetune, prune, distill, pull, list, rm, tui.
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_output_path_validation!();
     contract_pre_rm_confirmation_gate!();

@@ -1,0 +1,470 @@
+
+    // ════════════════════════════════════════════════════════════════════
+    // Coverage tests for dispatch_model_commands, dispatch_analysis_commands,
+    // dispatch_profiling_commands, dispatch_train_command (PMAT coverage gap)
+    // ════════════════════════════════════════════════════════════════════
+
+    // ── dispatch_model_commands ──────────────────────────────────────────
+
+    #[test]
+    fn test_dispatch_model_commands_returns_none_for_inspect() {
+        // Inspect is an inspection command, not a model management command
+        let cli = make_cli(Commands::Inspect {
+            file: PathBuf::from("model.apr"),
+            vocab: false,
+            filters: false,
+            weights: false,
+            json: false,
+        });
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_none(), "Inspect should not be handled by dispatch_model_commands");
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_returns_none_for_list_command() {
+        // List IS a model command — should return Some
+        let cli = make_cli(Commands::List);
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_some(), "List should be handled by dispatch_model_commands");
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_pull_nonexistent() {
+        let cli = make_cli(Commands::Pull {
+            model_ref: "nonexistent-model-that-does-not-exist-xyz123".to_string(),
+            force: false,
+        });
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_some(), "Pull should be handled by dispatch_model_commands");
+        // Pull may succeed (network) or fail (no network) — we just test routing
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_rm_nonexistent() {
+        let cli = make_cli(Commands::Rm {
+            model_ref: "nonexistent-model-xyz789".to_string(),
+        });
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_some(), "Rm should be handled by dispatch_model_commands");
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_tui_none_file() {
+        let cli = make_cli(Commands::Tui { file: None });
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_some(), "Tui should be handled by dispatch_model_commands");
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_tui_with_file() {
+        let cli = make_cli(Commands::Tui {
+            file: Some(PathBuf::from("/tmp/nonexistent_tui_model.apr")),
+        });
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_some(), "Tui with file should be handled by dispatch_model_commands");
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_merge_nonexistent() {
+        let cli = make_cli(Commands::Merge {
+            files: vec![
+                PathBuf::from("/tmp/nonexistent_merge_a.apr"),
+                PathBuf::from("/tmp/nonexistent_merge_b.apr"),
+            ],
+            strategy: "average".to_string(),
+            output: Some(PathBuf::from("/tmp/merged_out.apr")),
+            weights: None,
+            base_model: None,
+            drop_rate: 0.9,
+            density: 0.2,
+            seed: 42,
+            plan: false,
+        });
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_some(), "Merge should be handled by dispatch_model_commands");
+        // merge with nonexistent files should error
+        assert!(result.expect("should be some").is_err());
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_merge_plan_mode() {
+        let cli = make_cli(Commands::Merge {
+            files: vec![
+                PathBuf::from("/tmp/nonexistent_merge_plan_a.apr"),
+                PathBuf::from("/tmp/nonexistent_merge_plan_b.apr"),
+            ],
+            strategy: "slerp".to_string(),
+            output: None, // plan mode doesn't need output
+            weights: Some(vec![0.5, 0.5]),
+            base_model: None,
+            drop_rate: 0.9,
+            density: 0.2,
+            seed: 42,
+            plan: true,
+        });
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_some(), "Merge plan should be handled by dispatch_model_commands");
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_returns_none_for_validate() {
+        let cli = make_cli(Commands::Validate {
+            file: PathBuf::from("model.apr"),
+            quality: false,
+            strict: false,
+            min_score: None,
+        });
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_none(), "Validate should not be handled by dispatch_model_commands");
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_returns_none_for_debug() {
+        let cli = make_cli(Commands::Debug {
+            file: PathBuf::from("model.apr"),
+            drama: false,
+            hex: false,
+            strings: false,
+            limit: 256,
+        });
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_none(), "Debug should not be handled by dispatch_model_commands");
+    }
+
+    #[test]
+    fn test_dispatch_model_commands_prune_nonexistent() {
+        let cli = make_cli(Commands::ModelOps(ModelOpsCommands::Prune {
+            file: PathBuf::from("/tmp/nonexistent_prune_model.apr"),
+            method: "magnitude".to_string(),
+            target_ratio: 0.5,
+            sparsity: 0.0,
+            output: Some(PathBuf::from("/tmp/pruned_out.apr")),
+            remove_layers: None,
+            analyze: false,
+            plan: false,
+            calibration: None,
+        }));
+        let result = dispatch_model_commands(&cli);
+        assert!(result.is_some(), "Prune should be handled by dispatch_model_commands");
+        assert!(result.expect("should be some").is_err(), "Prune with nonexistent file should error");
+    }
+
+    // ── dispatch_analysis_commands ──────────────────────────────────────
+
+    #[test]
+    fn test_dispatch_analysis_returns_none_for_non_extended() {
+        let cli = make_cli(Commands::List);
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_none(), "Non-extended command should not match analysis dispatcher");
+    }
+
+    #[test]
+    fn test_dispatch_analysis_returns_none_for_chat() {
+        // Chat is Extended but not an analysis command
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Chat {
+            file: PathBuf::from("model.apr"),
+            temperature: 0.7,
+            top_p: 0.9,
+            max_tokens: 512,
+            system: None,
+            inspect: false,
+            no_gpu: true,
+            gpu: false,
+            trace: false,
+            trace_steps: None,
+            trace_verbose: false,
+            trace_output: None,
+            trace_level: "basic".to_string(),
+            profile: false,
+            backend: None,
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_none(), "Chat command should not be handled by analysis dispatcher");
+    }
+
+    #[test]
+    fn test_dispatch_analysis_tree_nonexistent_file() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Tree {
+            file: PathBuf::from("/tmp/nonexistent_tree_model.apr"),
+            filter: None,
+            format: "ascii".to_string(),
+            sizes: false,
+            depth: None,
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_some(), "Tree should be handled by analysis dispatcher");
+        assert!(result.expect("should be some").is_err(), "Tree with nonexistent file should error");
+    }
+
+    #[test]
+    fn test_dispatch_analysis_hex_nonexistent_file() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Hex {
+            file: PathBuf::from("/tmp/nonexistent_hex_model.apr"),
+            tensor: None,
+            limit: 64,
+            stats: false,
+            list: false,
+            json: false,
+            header: false,
+            blocks: false,
+            distribution: false,
+            contract: false,
+            entropy: false,
+            raw: false,
+            offset: "0".to_string(),
+            width: 16,
+            slice: None,
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_some(), "Hex should be handled by analysis dispatcher");
+        assert!(result.expect("should be some").is_err(), "Hex with nonexistent file should error");
+    }
+
+    #[test]
+    fn test_dispatch_analysis_flow_nonexistent_file() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Flow {
+            file: PathBuf::from("/tmp/nonexistent_flow_model.apr"),
+            layer: None,
+            component: "full".to_string(),
+            verbose: false,
+            json: false,
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_some(), "Flow should be handled by analysis dispatcher");
+        assert!(result.expect("should be some").is_err(), "Flow with nonexistent file should error");
+    }
+
+    #[test]
+    fn test_dispatch_analysis_qualify_nonexistent_file() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Qualify {
+            file: PathBuf::from("/tmp/nonexistent_qualify_model.apr"),
+            tier: "basic".to_string(),
+            timeout: 30,
+            json: false,
+            verbose: false,
+            skip: None,
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_some(), "Qualify should be handled by analysis dispatcher");
+        assert!(result.expect("should be some").is_err(), "Qualify with nonexistent file should error");
+    }
+
+    #[test]
+    fn test_dispatch_analysis_diagnose_nonexistent() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Diagnose {
+            checkpoint_dir: PathBuf::from("/tmp/nonexistent_diagnose_dir"),
+            data: None,
+            model_size: None,
+            num_classes: 5,
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_some(), "Diagnose should be handled by analysis dispatcher");
+    }
+
+    #[test]
+    fn test_dispatch_analysis_compare_hf_offline_rejected() {
+        let mut cli = make_cli(Commands::Extended(ExtendedCommands::CompareHf {
+            file: PathBuf::from("/tmp/nonexistent_compare_hf.apr"),
+            hf: "org/repo".to_string(),
+            tensor: None,
+            threshold: 0.01,
+            json: false,
+        }));
+        cli.offline = true;
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_some(), "CompareHf should be handled by analysis dispatcher");
+        let err = result.expect("should be some");
+        assert!(err.is_err(), "CompareHf in offline mode should be rejected");
+    }
+
+    // ── dispatch_profiling_commands ─────────────────────────────────────
+
+    #[test]
+    fn test_dispatch_profiling_returns_none_for_non_extended() {
+        let cli = make_cli(Commands::List);
+        let result = dispatch_profiling_commands(&cli);
+        assert!(result.is_none(), "Non-extended command should not match profiling dispatcher");
+    }
+
+    #[test]
+    fn test_dispatch_profiling_returns_none_for_chat() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Chat {
+            file: PathBuf::from("model.apr"),
+            temperature: 0.7,
+            top_p: 0.9,
+            max_tokens: 512,
+            system: None,
+            inspect: false,
+            no_gpu: true,
+            gpu: false,
+            trace: false,
+            trace_steps: None,
+            trace_verbose: false,
+            trace_output: None,
+            trace_level: "basic".to_string(),
+            profile: false,
+            backend: None,
+        }));
+        let result = dispatch_profiling_commands(&cli);
+        assert!(result.is_none(), "Chat should not be handled by profiling dispatcher");
+    }
+
+    #[test]
+    fn test_dispatch_profiling_bench_nonexistent() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Bench {
+            file: PathBuf::from("/tmp/nonexistent_bench_model.apr"),
+            warmup: 1,
+            iterations: 1,
+            max_tokens: 10,
+            prompt: None,
+            fast: true,
+            brick: None,
+        }));
+        let result = dispatch_profiling_commands(&cli);
+        assert!(result.is_some(), "Bench should be handled by profiling dispatcher");
+        assert!(result.expect("should be some").is_err(), "Bench with nonexistent file should error");
+    }
+
+    #[test]
+    fn test_dispatch_profiling_profile_nonexistent() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Profile {
+            file: PathBuf::from("/tmp/nonexistent_profile_model.apr"),
+            granular: false,
+            format: "text".to_string(),
+            focus: None,
+            detect_naive: false,
+            threshold: 0.01,
+            compare_hf: None,
+            energy: false,
+            perf_grade: false,
+            callgraph: false,
+            fail_on_naive: false,
+            output: None,
+            ci: false,
+            assert_throughput: None,
+            assert_p99: None,
+            assert_p50: None,
+            warmup: 3,
+            measure: 10,
+            tokens: 32,
+            ollama: false,
+            no_gpu: true,
+            compare: None,
+        }));
+        let result = dispatch_profiling_commands(&cli);
+        assert!(result.is_some(), "Profile should be handled by profiling dispatcher");
+        assert!(result.expect("should be some").is_err(), "Profile with nonexistent file should error");
+    }
+
+    #[test]
+    fn test_dispatch_profiling_eval_nonexistent() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Eval {
+            file: PathBuf::from("/tmp/nonexistent_eval_model.apr"),
+            dataset: "test".to_string(),
+            text: None,
+            max_tokens: 32,
+            threshold: 90.0,
+            task: None,
+            data: None,
+            model_size: None,
+            num_classes: 5,
+            generate_card: false,
+            device: "cpu".to_string(),
+            samples: 1,
+            temperature: 0.0,
+        }));
+        let result = dispatch_profiling_commands(&cli);
+        assert!(result.is_some(), "Eval should be handled by profiling dispatcher");
+        assert!(result.expect("should be some").is_err(), "Eval with nonexistent file should error");
+    }
+
+    #[test]
+    fn test_dispatch_profiling_qa_nonexistent() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Qa {
+            file: PathBuf::from("/tmp/nonexistent_qa_model.apr"),
+            assert_tps: None,
+            assert_speedup: None,
+            assert_gpu_speedup: None,
+            skip_golden: true,
+            skip_throughput: true,
+            skip_ollama: true,
+            skip_gpu_speedup: true,
+            skip_contract: true,
+            skip_format_parity: true,
+            skip_ptx_parity: true,
+            safetensors_path: None,
+            iterations: 1,
+            warmup: 0,
+            max_tokens: 10,
+            json: false,
+            verbose: false,
+            min_executed: Some(0),
+            previous_report: None,
+            regression_threshold: Some(0.0),
+            skip_gpu_state: true,
+            skip_metadata: true,
+            skip_capability: true,
+            assert_classifier_head: false,
+        }));
+        let result = dispatch_profiling_commands(&cli);
+        assert!(result.is_some(), "QA should be handled by profiling dispatcher");
+    }
+
+    // ── dispatch_train_command ──────────────────────────────────────────
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_dispatch_analysis_train_routing() {
+        // Train Plan with nonexistent data — tests train routing path
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Train {
+            command: TrainCommands::Plan {
+                data: Some(PathBuf::from("/tmp/nonexistent_train_data.jsonl")),
+                model_size: "tiny".to_string(),
+                model_path: None,
+                num_classes: 5,
+                task: "classify".to_string(),
+                config: None,
+                output: PathBuf::from("/tmp/train_plan_out"),
+                strategy: "auto".to_string(),
+                budget: 100,
+                scout: false,
+                max_epochs: 3,
+                learning_rate: Some(1e-4),
+                lora_rank: Some(8),
+                batch_size: Some(4),
+                val_data: None,
+                test_data: None,
+                format: "text".to_string(),
+            },
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_some(), "Train should be handled by analysis dispatcher (delegates to dispatch_train_command)");
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_dispatch_train_sweep() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Train {
+            command: TrainCommands::Sweep {
+                config: PathBuf::from("/tmp/nonexistent_sweep_config.toml"),
+                strategy: "grid".to_string(),
+                num_configs: 5,
+                output_dir: PathBuf::from("/tmp/sweep_out"),
+                seed: 42,
+            },
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_some(), "Train Sweep should be handled by analysis dispatcher");
+    }
+
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_dispatch_train_cluster_status() {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Train {
+            command: TrainCommands::ClusterStatus {
+                cluster: PathBuf::from("/tmp/nonexistent_cluster_config.yaml"),
+            },
+        }));
+        let result = dispatch_analysis_commands(&cli);
+        assert!(result.is_some(), "Train ClusterStatus should be handled by analysis dispatcher");
+    }

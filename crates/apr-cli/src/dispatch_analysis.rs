@@ -2,6 +2,7 @@
 ///
 /// Returns `None` if the command is not an analysis command, allowing the caller
 /// to try other sub-dispatchers.
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     let Commands::Extended(ref ext) = *cli.command.as_ref() else {
         return None;
@@ -327,6 +328,7 @@ fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Res
 
 #[cfg(feature = "training")]
 /// Dispatch `apr train` subcommands to entrenar-backed implementations.
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Result<(), CliError> {
     match command {
         TrainCommands::Plan {
@@ -603,6 +605,7 @@ fn dispatch_tune_command(
 ///
 /// Returns `None` if the command is not a profiling command, allowing the caller
 /// to try other sub-dispatchers.
+#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
 fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     let Commands::Extended(ref ext) = *cli.command.as_ref() else {
         return None;

@@ -562,4 +562,5 @@ fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
 }
 
 include!("flow_print_cross.rs");
+include!("flow_coverage_tests.rs");
 include!("flow_03.rs");
