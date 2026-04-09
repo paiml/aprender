@@ -37,6 +37,7 @@
 - [Serving and Deployment](./chapters/ch12-serving.md)
 - [Profiling and Optimization](./chapters/ch13-profiling.md)
 - [Provable Contracts](./chapters/ch14-contracts.md)
+- [Entity Contracts (0-100 Scoring)](./chapters/ch14b-entity-contracts.md)
 - [Orchestration and Agents](./chapters/ch15-orchestrate.md)
 # Part V: Advanced Topics
 

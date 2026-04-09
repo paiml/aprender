@@ -70,7 +70,7 @@ one `apr` binary, 57 commands covering the full ML lifecycle.
 
 - **70** workspace crates (was 20 separate repos)
 - **25,806** tests, all passing
-- **540** provable contracts (equation-based verification)
+- **547** provable contracts (equation-based verification)
 - **57** CLI commands with contract coverage
 - **0** `[patch.crates-io]` — clean workspace deps
 
@@ -176,7 +176,7 @@ paiml/aprender/
 │   ├── aprender-graph/           # Graph database
 │   ├── aprender-rag/             # RAG pipeline
 │   └── ... (70 crates total)
-├── contracts/                    # 540 provable YAML contracts
+├── contracts/                    # 547 provable YAML contracts
 └── book/                         # mdBook documentation
 ```
 
@@ -229,7 +229,7 @@ From [ground-truth-apr-ludwig](https://github.com/paiml/ground-truth-apr-ludwig)
 | LoRA fine-tuning | `apr finetune --lora` | Not native | apr: rank-64 in minutes |
 | Quantization (INT8/INT4) | `apr quantize` | Not supported | apr-native capability |
 | Model merging | `apr merge --strategy ties` | Not supported | TIES/DARE/SLERP |
-| Provable contracts | 540 YAML contracts | None | Equation-based verification |
+| Provable contracts | 547 YAML contracts | None | Equation-based verification |
 | Single binary | `cargo install aprender` | `pip install ludwig` | Rust vs Python |
 
 *All benchmarks reproducible from linked repos with `cargo test`.*
@@ -250,7 +250,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-540 contracts across inference, training, quantization, attention, FFN,
+547 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, and CLI safety.
 
 ## Documentation
@@ -258,7 +258,7 @@ tokenization, model formats, and CLI safety.
 - [API Reference (docs.rs)](https://docs.rs/aprender) — Full Rust API documentation
 - [Book (mdBook)](book/) — Tutorials, guides, and deep dives
 - [Specifications](docs/specifications/) — 394 spec files across 22 subsystems
-- [Contracts](contracts/) — 540 provable YAML contracts with equations and falsification tests
+- [Contracts](contracts/) — 547 provable YAML contracts with equations and falsification tests
 - [CLI Reference](https://docs.rs/aprender/latest/aprender/) — 57 commands documented
 
 ## Migration from Old Crates
