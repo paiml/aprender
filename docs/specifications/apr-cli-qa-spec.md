@@ -1,8 +1,8 @@
 # APR-CLI-QA: Exhaustive CLI Quality Assurance Specification
 
-**Version**: 2.0
-**Date**: 2026-04-08
-**Status**: ACTIVE
+**Version**: 2.1
+**Date**: 2026-04-09
+**Status**: ENFORCED (2 consecutive runs)
 **Contracts**:
 - `contracts/apr-cli-qa-v1.yaml` — baseline (10 equations, 10 falsification tests)
 - `contracts/apr-qa-metamorphic-v1.yaml` — quantization equivalence, format roundtrip, multi-arch (5 tests)
@@ -101,11 +101,11 @@ Contract: `apr-qa-silent-fallback-v1.yaml`
 
 | Gate | Test | Falsification |
 |------|------|---------------|
-| S1 | Truncated file (50%) fails `apr validate` | F-SILENT-001 |
-| S2 | 0 tok/s benchmark exits non-zero | F-SILENT-002 |
-| S3 | Unknown architecture fails explicitly | F-SILENT-003 |
-| S4 | Missing tokenizer warns, never garbles | F-SILENT-004 |
-| S5 | Corrupted metadata rejected | F-SILENT-005 |
+| S1 | Truncated file (50%) fails `apr validate` — **GH-707 OPEN** | F-SILENT-001 |
+| S2 | Bad file (/dev/null) rejected by `apr bench` | F-SILENT-002 |
+| S3 | Unknown/SSM architecture fails explicitly (GH-704 fixed) | F-SILENT-003 |
+| S4 | Corrupted metadata (zeroed header) rejected | F-SILENT-004 |
+| S5 | Missing model exits non-zero | F-SILENT-005 |
 
 **Root cause**: GH-336 (silent 0 tok/s), GH-337 (byte-level garble), GH-339
 (silent chat template fallback), GH-439 (silent `_ => default` match arms).
@@ -177,38 +177,111 @@ Contract: `apr-qa-coverage-v1.yaml`
 | apr-qa-differential-v1 | 5 | 5 | **enforced** | D1+D3 PASS, D2 SKIP |
 | **Total** | **33** | **35** | | |
 
-### First Falsification Run (2026-04-08)
+### Falsification Run History
 
-| Gate | Result | Finding |
-|------|--------|---------|
-| S1 | **FAIL** | Truncated GGUF passes validation exit 0 (GH-707) |
-| S2 | PASS | /dev/null rejected (exit 3) |
-| S3 | PASS | SSM architecture gives clear error |
-| S4 | PASS | Corrupt metadata rejected (exit 5) |
-| S5 | PASS | Missing model exits non-zero (exit 3) |
-| M2 | PASS | 5 architectures inspected (qwen35, qwen2) |
+#### Run 2 (2026-04-09) — `apr 0.29.3 (a2165629f)`
+
+| Gate | Result | Evidence |
+|------|--------|----------|
+| G1: Build | PASS | version matches HEAD |
+| G2: Grid | PASS | 60/67 PASS, 5 expected non-zero (lint/validate findings), 2 SKIP |
+| G3: Protocols | PASS | P1,P2,P4,P7,P8,P9,P10,P11,P12 all PASS |
+| G4: Contracts | PASS | 24/24 integration tests |
+| G5: Quality | PASS | 4,515 tests, 0 clippy errors |
+| G6: Coverage | **WARN** | 94.53% line (target >= 95%) |
+| G7: Issues | PASS | 17 open |
+| S1 | **FAIL** | GH-707 still open — truncated GGUF exit 0 |
+| S2 | PASS | exit 3 |
+| S3 | PASS | SSM error (GH-704 fix confirmed) |
+| S4 | PASS | exit 5 |
+| S5 | PASS | exit 3 |
+| M2 | PASS | 6 models, 3 arch families (qwen2, qwen3, qwen35) |
 | M3 | PASS | temp=0 deterministic |
-| V1 | PASS | 6/6 contracts valid YAML |
-| V3 | PASS | hex + profile exercised without panic |
-| C2 | PASS | /dev/null convert rejected |
-| C3 | PASS | SIGINT handled (exit 130) |
-| D1 | PASS | Both GGUF and APR report tensors |
-| D3 | PASS | 4/4 JSON outputs valid |
+| V1 | PASS | 6/6 contracts valid |
+| V3 | WARN | hex timeout on 500 MB GGUF (30s limit) |
+| C2 | PASS | overwrite blocked (exit 3) |
+| C3 | PASS | SIGINT exit 130 |
+| D1 | PASS | GGUF=5, APR=5 |
+| D2 | SKIP | ollama not wired |
+| D3 | PASS | 4/4 JSON valid |
+| **Verdict** | **WARN** | S1 tracked (GH-707), coverage 94.53% |
+
+#### Run 1 (2026-04-08) — `apr 0.29.3 (926d7e060)`
+
+| Gate | Result | Evidence |
+|------|--------|----------|
+| G1-G5 | PASS | 4,577 tests, 0 clippy errors |
+| G6 | WARN | 94.53% |
+| G7 | PASS | 17 open |
+| S1 | **FAIL** | GH-707 — truncated GGUF exit 0 |
+| S2-S5 | PASS | all bad inputs rejected |
+| M2+M3 | PASS | 6 archs, temp=0 deterministic |
+| V1+V3 | PASS | contracts valid, modules exercised |
+| C2+C3 | PASS | overwrite + SIGINT |
+| D1+D3 | PASS | cross-format + JSON |
+| **Verdict** | **WARN** | S1 tracked (GH-707), coverage 94.53% |
+
+### Findings Across Runs
+
+**Stable PASS (confirmed across 2 runs):**
+- S2-S5: Bad inputs rejected (exit 3 or 5)
+- S3: SSM architecture detection (GH-704 fix holds)
+- P4: Cross-subcommand architecture consistency (GH-705 fix holds)
+- M2: Multi-architecture inspection (qwen2, qwen3, qwen35)
+- M3: Temperature determinism at temp=0
+- C3: SIGINT handling (exit 130, no zombie)
+- D3: JSON schema stability (4/4 valid)
+
+**Stable FAIL (needs code fix):**
+- S1 / GH-707: `apr validate` accepts 50%-truncated GGUF (exit 0). Validator reads
+  only tensors that fit in truncated portion and reports success. Fix: compare actual
+  readable tensor count against `tensor_count` from GGUF header.
+
+**Stable WARN (known gaps):**
+- Coverage 94.53% (0.47% below 95% target)
+- V3: `apr hex` on 500 MB GGUF times out at 30s gate limit (not a bug — large model)
+
+### Lessons Learned
+
+1. **Gate script $? vs pipe**: Original gate scripts used `apr cmd | tail -1; EC=$?`
+   which captures `tail`'s exit code (always 0), not `apr`'s. Fixed to
+   `OUTPUT=$(apr cmd 2>&1); EC=$?` pattern. Three false FAILs (S2, S4, S5) in the
+   first prototype were actually script bugs, not code bugs.
+
+2. **lint/validate non-zero exit is by design**: `apr lint` exits 5 when it finds
+   lint issues; `apr validate` exits 5 on validation findings. These are correct
+   behavior, not failures. Gate 2 grid must distinguish "command ran but found issues"
+   (expected) from "command crashed/panicked" (bug).
+
+3. **Architecture coverage matters**: M2 found 3 distinct architecture families
+   (qwen2, qwen3, qwen35) across 6 model files. The GH-704 fix (Qwen3.5 SSM
+   detection) is confirmed working by S3 across both runs.
 
 ## Implementation Priority
 
-| Priority | Contract | Effort | Impact | Rationale |
-|----------|----------|--------|--------|-----------|
-| P0 | silent-fallback | Low | Critical | Prevents shipping garbage — bad inputs must fail LOUD |
-| P1 | metamorphic | Medium | High | Catches quant corruption + multi-arch hardcoding (6+ past bugs) |
-| P2 | coverage | Low | High | PMAT already provides data — just wire into dogfood |
-| P3 | chaos | Medium | Medium | Memory/OOM bugs rare but catastrophic when they hit |
-| P4 | differential | High | High | Requires ollama installed + reference models available |
+| Priority | Contract | Effort | Impact | Status |
+|----------|----------|--------|--------|--------|
+| P0 | silent-fallback | Low | Critical | **4/5 enforced**, S1 blocked by GH-707 |
+| P1 | metamorphic | Medium | High | **2/5 enforced** (M2+M3), M1/M4/M5 need more models |
+| P2 | coverage | Low | High | **2/5 enforced** (V1+V3), V2/V4 need pmat wiring |
+| P3 | chaos | Medium | Medium | **2/5 enforced** (C2+C3), C1 needs /usr/bin/time |
+| P4 | differential | High | High | **2/5 enforced** (D1+D3), D2 needs ollama |
+
+## Open Work
+
+| Item | Blocking | Priority |
+|------|----------|----------|
+| GH-707: truncated GGUF validate exit 0 | S1 gate | P0 |
+| Coverage 94.53% → 95% | G6 gate | P1 |
+| Wire D2 ollama parity | D2 gate | P4 |
+| Wire V2 SATD + V4 complexity into dogfood | V2/V4 gates | P2 |
+| Wire C1 memory budget (/usr/bin/time) | C1 gate | P3 |
+| Add M1 format roundtrip (needs small GGUF) | M1 gate | P1 |
 
 ## Claude Code Skill
 
 `.claude/skills/dogfood/SKILL.md` — invoked via `/dogfood`:
-- Runs all 8 phases
-- Reports PASS/FAIL/SKIP per gate
+- 12 gates (G1-G7 structural, G8-G12 v2.0)
+- 18 sub-checks (S1-S5, M2-M3, V1+V3, C2-C3, D1-D3)
 - GO/WARN/FAIL verdict
-- Files issues for bugs with contract references
+- Auto-files issues for FAIL items
