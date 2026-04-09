@@ -26,6 +26,8 @@ jobs:
     uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
     with:
       repo: ${{ github.event.repository.name }}
+      # APR-MONO: monorepo needs --workspace --lib (not --all-targets which fails on sibling conflicts)
+      clippy_args: "--workspace --lib"
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 70 crates)

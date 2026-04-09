@@ -32,14 +32,14 @@ Date: 2026-04-09
 | Coverage (apr-cli, stable) | 58.06% lines (112K denominator) | **≥95%** | **FAIL** — includes 35K untestable CUDA lines |
 | Coverage (apr-cli, nightly) | **66.83%** lines (77K denominator) | **≥95%** | **FAIL** — honest metric with `#[coverage(off)]`. Need 21K more lines. |
 | Coverage (other 72 crates) | NOT MEASURED | **≥95%** | **UNKNOWN** |
-| Tests (apr-cli) | 4,515 (lib) + 65 (integration) = 4,580 | — | PASS |
-| Tests (aprender-core) | 12,975 | — | PASS |
+| Tests (apr-cli) | 4,577 (lib) + ~195 (integration) | — | PASS |
+| Tests (aprender-core) | 13,079 | — | PASS |
 | Tests (contracts) | 1,371 | — | PASS |
 | Integration (monorepo) | 8/8 | 8/8 | PASS |
 | Integration (CLI) | 6/6 | 6/6 | PASS |
 | Clippy errors | 0 | 0 | PASS |
-| `#[contract]` annotations | 44 | ≥44 | PASS |
-| Contract YAML files | 522 | — | INFO |
+| `#[contract]` annotations | 50 | ≥50 | PASS |
+| Contract YAML files | 547 | — | INFO |
 | unwrap() calls | 0 | 0 | **PASS** |
 | pmat TDG | 92.5/100 (A) | A+ | **PASS** |
 | pmat comply | PASS (4 warnings) | PASS | **PASS** — 52 work contracts valid, 85 bindings verified, 0 ghosts |

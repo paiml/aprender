@@ -68,10 +68,10 @@ one `apr` binary, 57 commands covering the full ML lifecycle.
 
 ### Numbers
 
-- **70** workspace crates (was 20 separate repos)
-- **25,806** tests, all passing
+- **70** workspace crates (was 20 separate repos, 74 crate directories)
+- **19,027** lib tests, all passing (4,577 apr-cli + 13,079 core + 1,371 contracts)
 - **547** provable contracts (equation-based verification)
-- **57** CLI commands with contract coverage
+- **57** CLI commands with contract coverage + 50 `#[contract]` annotations
 - **0** `[patch.crates-io]` — clean workspace deps
 
 ## Supported Architectures

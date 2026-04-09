@@ -1,11 +1,7 @@
 # Ratatui → Presentar Migration (Improved TUI)
 
-Version: 1.0
-Status: proposed
-Date: 2026-04-09
-
 **Version**: 2.0
-**Date**: 2026-04-06
+**Date**: 2026-04-09
 **Status**: COMPLETE — all 5 phases done, 4/4 falsification tests pass
 **Contracts**:
 - `contracts/ratatui-migration-v1.yaml` — zero-ratatui dep contract
