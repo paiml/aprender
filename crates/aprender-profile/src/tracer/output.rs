@@ -310,7 +310,12 @@ pub(super) fn print_summaries(
             otlp_exporter.as_ref(),
         );
         #[cfg(not(feature = "otlp"))]
-        print_text_stats(stats_tracker.as_ref(), analysis.stats_extended, analysis.anomaly_threshold, None);
+        print_text_stats(
+            stats_tracker.as_ref(),
+            analysis.stats_extended,
+            analysis.anomaly_threshold,
+            None,
+        );
     }
 
     // Sprint 30: End root span and shutdown OTLP exporter

@@ -9,7 +9,10 @@ use crate::playbook::dag;
 use crate::playbook::eventlog;
 use crate::playbook::hasher;
 use crate::playbook::template;
-use crate::playbook::types::{Stage, Playbook, PipelineEvent, Dependency, DepLock, LockFile, StageLock, StageStatus, Output, OutLock, FailurePolicy};
+use crate::playbook::types::{
+    DepLock, Dependency, FailurePolicy, LockFile, OutLock, Output, PipelineEvent, Playbook, Stage,
+    StageLock, StageStatus,
+};
 use anyhow::{bail, Context, Result};
 use std::collections::HashSet;
 use std::path::Path;

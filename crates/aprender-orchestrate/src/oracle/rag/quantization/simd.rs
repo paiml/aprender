@@ -130,7 +130,11 @@ fn dot_i8_scalar_tail(a: &[i8], b: &[i8], start: usize) -> i32 {
 #[target_feature(enable = "avx2")]
 #[allow(unsafe_code, unsafe_op_in_unsafe_fn, clippy::cast_ptr_alignment)]
 unsafe fn dot_i8_avx2(a: &[i8], b: &[i8]) -> i32 {
-    use std::arch::x86_64::{_mm256_setzero_si256, _mm256_loadu_si256, __m256i, _mm256_cvtepi8_epi16, _mm256_extracti128_si256, _mm256_madd_epi16, _mm256_add_epi32, _mm_add_epi32, _mm_srli_si128, _mm_cvtsi128_si32};
+    use std::arch::x86_64::{
+        __m256i, _mm256_add_epi32, _mm256_cvtepi8_epi16, _mm256_extracti128_si256,
+        _mm256_loadu_si256, _mm256_madd_epi16, _mm256_setzero_si256, _mm_add_epi32,
+        _mm_cvtsi128_si32, _mm_srli_si128,
+    };
 
     let n = a.len();
     let mut sum = _mm256_setzero_si256();
@@ -174,7 +178,10 @@ unsafe fn dot_i8_avx2(a: &[i8], b: &[i8]) -> i32 {
 #[target_feature(enable = "avx512f", enable = "avx512bw")]
 #[allow(unsafe_code, unsafe_op_in_unsafe_fn, clippy::cast_ptr_alignment)]
 unsafe fn dot_i8_avx512(a: &[i8], b: &[i8]) -> i32 {
-    use std::arch::x86_64::{_mm512_setzero_si512, _mm512_loadu_si512, __m512i, _mm512_cvtepi8_epi16, _mm512_extracti64x4_epi64, _mm512_madd_epi16, _mm512_add_epi32, _mm512_reduce_add_epi32};
+    use std::arch::x86_64::{
+        __m512i, _mm512_add_epi32, _mm512_cvtepi8_epi16, _mm512_extracti64x4_epi64,
+        _mm512_loadu_si512, _mm512_madd_epi16, _mm512_reduce_add_epi32, _mm512_setzero_si512,
+    };
 
     let n = a.len();
     let mut sum = _mm512_setzero_si512();

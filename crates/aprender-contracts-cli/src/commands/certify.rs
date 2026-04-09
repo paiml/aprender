@@ -104,7 +104,7 @@ fn verify_composition_edges(
             if satisfied {
                 edges_satisfied += 1;
             }
-        edge_details.push(serde_json::json!({
+            edge_details.push(serde_json::json!({
                 "downstream": format!("{stem}.{eq_name}"),
                 "upstream": format!("{from_contract}.{from_eq}"),
                 "satisfied": satisfied,
@@ -276,8 +276,14 @@ pub fn analyze_config(cfg_path: &Path) -> Result<serde_json::Value, Box<dyn std:
         ("num_layers > 0", l > 0),
         ("num_heads > 0", nh > 0),
         ("vocab_size > 0", v > 0),
-        ("hidden_size % num_heads == 0", nh > 0 && h.is_multiple_of(nh)),
-        ("num_heads % num_kv_heads == 0", nkv > 0 && nh.is_multiple_of(nkv)),
+        (
+            "hidden_size % num_heads == 0",
+            nh > 0 && h.is_multiple_of(nh),
+        ),
+        (
+            "num_heads % num_kv_heads == 0",
+            nkv > 0 && nh.is_multiple_of(nkv),
+        ),
         ("head_dim % 2 == 0", head_dim % 2 == 0),
     ];
 

@@ -10,7 +10,7 @@
 //! - AI-05: Declarative Schema Validation
 
 use crate::falsification::helpers::{apply_check_outcome, CheckOutcome};
-use crate::falsification::types::{CheckItem, Severity, Evidence};
+use crate::falsification::types::{CheckItem, Evidence, Severity};
 use std::path::Path;
 use std::time::Instant;
 

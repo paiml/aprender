@@ -16,7 +16,7 @@ use super::cache;
 use super::dag;
 use super::eventlog;
 use super::parser;
-use super::types::{LockFile, Playbook, DepLock, PipelineEvent};
+use super::types::{DepLock, LockFile, PipelineEvent, Playbook};
 use anyhow::Result;
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};

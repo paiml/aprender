@@ -110,8 +110,8 @@ pub fn build_cta128_wmma_fp16_cpasync(m: u32, n: u32, k: u32) -> PtxKernel {
             // cp.async 0: smem_off = t*16, global_off = row*K + col
             // cp.async 1: smem_off = t*16 + 8, global_off = row*K + col + 4
             let _a_row_in_tile = ctx.shr_u32(tid, c_2); // t/4 (covers 0..63 for first half)
-                                                       // But we need rows 0..127 with 256 threads loading 8 elements each
-                                                       // Better: t*8/16 = t/2 for the row
+                                                        // But we need rows 0..127 with 256 threads loading 8 elements each
+                                                        // Better: t*8/16 = t/2 for the row
             let a_elem_start = ctx.mul_u32_reg(tid, c_8); // t * 8
             let a_row0 = ctx.shr_u32(a_elem_start, c_4); // (t*8) / 16
             let c_mask15 = ctx.mov_u32_imm(15);

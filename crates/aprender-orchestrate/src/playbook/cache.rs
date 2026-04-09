@@ -3,7 +3,7 @@
 //! Handles lock file persistence (atomic write via temp+rename) and cache
 //! hit/miss determination with detailed invalidation reasons.
 
-use super::types::{InvalidationReason, LockFile, StageStatus, StageLock};
+use super::types::{InvalidationReason, LockFile, StageLock, StageStatus};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 

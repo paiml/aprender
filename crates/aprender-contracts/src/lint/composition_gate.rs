@@ -91,7 +91,9 @@ pub(crate) fn run_composition_gate(
                 }
 
                 // Check assumed shape keys are a subset of guaranteed shape keys
-                let upstream_guarantees = upstream_eq.guarantees.as_ref()
+                let upstream_guarantees = upstream_eq
+                    .guarantees
+                    .as_ref()
                     .expect("upstream guarantees must exist after the None check above");
                 for assumed_key in assumes.shapes.keys() {
                     if !upstream_guarantees.shapes.contains_key(assumed_key) {

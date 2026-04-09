@@ -500,8 +500,7 @@ mod tests {
     async fn test_estimate_repo_scores_empty_dir() {
         let dir = setup_test_dir("test_qc_repo_empty");
         let checker = QualityChecker::new(dir.clone());
-        let (repo, readme) =
-            checker.estimate_repo_scores(&dir).expect("async operation failed");
+        let (repo, readme) = checker.estimate_repo_scores(&dir).expect("async operation failed");
         assert_eq!(repo.value, 40); // base only
         assert_eq!(readme.value, 0);
         cleanup_test_dir(&dir);
@@ -517,8 +516,7 @@ mod tests {
         )
         .expect("unexpected failure");
         let checker = QualityChecker::new(dir.clone());
-        let (repo, readme) =
-            checker.estimate_repo_scores(&dir).expect("async operation failed");
+        let (repo, readme) = checker.estimate_repo_scores(&dir).expect("async operation failed");
         assert!(repo.value > 40); // base + README
         assert_eq!(readme.value, 17);
         cleanup_test_dir(&dir);
@@ -781,8 +779,7 @@ mod tests {
         std::fs::write(dir.join(".pre-commit-config.yaml"), "repos: []\n")
             .expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let (repo, readme) =
-            checker.estimate_repo_scores(&dir).expect("async operation failed");
+        let (repo, readme) = checker.estimate_repo_scores(&dir).expect("async operation failed");
         // base(40) + readme(10) + makefile(15) + ci(15) + precommit(10) = 90
         assert_eq!(repo.value, 90);
         assert_eq!(readme.value, 20); // capped

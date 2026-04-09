@@ -206,7 +206,8 @@ impl GpuPixelTestSuite {
     /// Pixel test: shared memory uses 32-bit addressing
     fn pixel_shared_mem_addressing(&self, ptx: &str) -> GpuPixelResult {
         let start = Instant::now();
-        let regex = regex::Regex::new(r"[sl]t\.shared\.[^\[]+\[%rd\d+\]").expect("valid regex for shared mem addressing");
+        let regex = regex::Regex::new(r"[sl]t\.shared\.[^\[]+\[%rd\d+\]")
+            .expect("valid regex for shared mem addressing");
 
         if regex.is_match(ptx) {
             GpuPixelResult::fail_with_bug(
@@ -223,7 +224,8 @@ impl GpuPixelTestSuite {
     /// Pixel test: kernel entry point exists
     fn pixel_kernel_entry_exists(&self, ptx: &str) -> GpuPixelResult {
         let start = Instant::now();
-        let regex = regex::Regex::new(r"\.visible\s+\.entry\s+\w+").expect("valid regex for kernel entry");
+        let regex =
+            regex::Regex::new(r"\.visible\s+\.entry\s+\w+").expect("valid regex for kernel entry");
 
         if regex.is_match(ptx) {
             GpuPixelResult::pass("kernel_entry_exists", start.elapsed())
@@ -246,7 +248,8 @@ impl GpuPixelTestSuite {
         }
 
         // Check for unconditional branches to _end labels
-        let branch_regex = regex::Regex::new(r"^\s+bra\s+(\w*_end\w*);").expect("valid regex for branch pattern");
+        let branch_regex =
+            regex::Regex::new(r"^\s+bra\s+(\w*_end\w*);").expect("valid regex for branch pattern");
         for line in ptx.lines() {
             if branch_regex.is_match(line) && !line.trim().starts_with('@') {
                 return GpuPixelResult::fail_with_bug(

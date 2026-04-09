@@ -732,7 +732,10 @@ mod tests {
         // CLS + EOS only (no shell tokens)
         // tokenize wraps shell_split output with CLS prefix
         // An empty script produces no shell tokens
-        assert!(tokens.len() <= 2, "empty string should produce minimal tokens");
+        assert!(
+            tokens.len() <= 2,
+            "empty string should produce minimal tokens"
+        );
     }
 
     #[test]
@@ -968,7 +971,10 @@ done
 echo "Done: $?"
 "#;
         let tokens = vocab.tokenize(script);
-        assert!(tokens.len() >= 10, "Complex script should produce many tokens");
+        assert!(
+            tokens.len() >= 10,
+            "Complex script should produce many tokens"
+        );
         let decoded = vocab.decode(&tokens);
         // Should contain key shell constructs
         assert!(decoded.iter().any(|t| t.starts_with("#!")));

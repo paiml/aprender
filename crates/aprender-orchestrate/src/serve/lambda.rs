@@ -413,14 +413,11 @@ Outputs:
             self.config.timeout_secs,
             self.config.architecture.identifier(),
             self.config.model_uri,
-            self.config
-                .environment
-                .iter()
-                .fold(String::new(), |mut acc, (k, v)| {
-                    use std::fmt::Write;
-                    let _ = write!(acc, "\n          {k}: {v}");
-                    acc
-                }),
+            self.config.environment.iter().fold(String::new(), |mut acc, (k, v)| {
+                use std::fmt::Write;
+                let _ = write!(acc, "\n          {k}: {v}");
+                acc
+            }),
             vpc_config,
             self.config.ephemeral_storage_mb,
             self.config.function_name,

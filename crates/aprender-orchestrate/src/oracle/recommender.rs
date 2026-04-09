@@ -5,7 +5,11 @@
 
 use super::knowledge_graph::KnowledgeGraph;
 use super::query_engine::{ParsedQuery, PerformanceHint, QueryEngine};
-use super::types::{OpComplexity, DataSize, HardwareSpec, Backend, DistributionRecommendation, OracleResponse, QueryConstraints, OracleQuery, ComputeRecommendation, ComponentRecommendation, ProblemDomain, StackComponent, IntegrationPattern};
+use super::types::{
+    Backend, ComponentRecommendation, ComputeRecommendation, DataSize, DistributionRecommendation,
+    HardwareSpec, IntegrationPattern, OpComplexity, OracleQuery, OracleResponse, ProblemDomain,
+    QueryConstraints, StackComponent,
+};
 
 // =============================================================================
 // Backend Selector (from spec section 4.2)

@@ -1,6 +1,8 @@
 //! BH-04/05: Unsafe fuzzing and deep hunt modes.
 
-use super::types::{HuntResult, Finding, FindingSeverity, DefectCategory, HuntMode, FindingEvidence, HuntConfig};
+use super::types::{
+    DefectCategory, Finding, FindingEvidence, FindingSeverity, HuntConfig, HuntMode, HuntResult,
+};
 use std::path::Path;
 
 /// Check if a source file contains #![forbid(unsafe_code)] in its first 50 lines.

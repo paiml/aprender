@@ -596,7 +596,14 @@ fn test_validate_merge_config_zero_weight_ok() {
 /// Validate: all valid strategies accepted
 #[test]
 fn test_validate_merge_config_all_valid_strategies() {
-    for strategy in &["average", "weighted_average", "slerp", "ties", "dare", "passthrough"] {
+    for strategy in &[
+        "average",
+        "weighted_average",
+        "slerp",
+        "ties",
+        "dare",
+        "passthrough",
+    ] {
         let config = MergeYamlConfig {
             models: vec![
                 ModelSource {

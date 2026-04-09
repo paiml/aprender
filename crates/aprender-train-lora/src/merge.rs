@@ -274,7 +274,7 @@ mod tests {
     fn test_merge_adds_adapter_contribution() {
         let engine = MergeEngine::new();
         let base = vec![1.0, 2.0, 3.0, 4.0]; // [2, 2] weight matrix
-        // rank=1: A=[2,1], B=[1,2]
+                                             // rank=1: A=[2,1], B=[1,2]
         let lora_a = vec![0.1, 0.2];
         let lora_b = vec![0.5, 0.5];
 

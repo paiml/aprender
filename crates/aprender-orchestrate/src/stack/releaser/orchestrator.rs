@@ -5,7 +5,7 @@
 //! ensuring all quality gates pass before publishing.
 
 use crate::stack::checker::StackChecker;
-use crate::stack::types::{PreflightResult, ReleasePlan, PlannedRelease, PreflightCheck};
+use crate::stack::types::{PlannedRelease, PreflightCheck, PreflightResult, ReleasePlan};
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::Path;

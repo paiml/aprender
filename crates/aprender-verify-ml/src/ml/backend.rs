@@ -73,7 +73,6 @@ pub enum OpComplexity {
     High,
 }
 
-
 /// Cost model for backend selection
 ///
 /// Based on Gregg & Hazelwood (2011) 5× PCIe rule for GPU dispatch decisions.

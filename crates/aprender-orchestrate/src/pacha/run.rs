@@ -400,7 +400,13 @@ pub fn cmd_run(
     let (effective_system, effective_temp, effective_max_tokens) =
         load_chat_config(system, modelfile, temperature, max_tokens)?;
 
-    print_chat_header(model, effective_system.as_ref(), effective_temp, context, effective_max_tokens);
+    print_chat_header(
+        model,
+        effective_system.as_ref(),
+        effective_temp,
+        context,
+        effective_max_tokens,
+    );
 
     if verbose {
         println!("{}", "Loading model...".dimmed());

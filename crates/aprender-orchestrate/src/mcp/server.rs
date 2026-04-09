@@ -2,7 +2,9 @@
 //!
 //! Handles JSON-RPC 2.0 messages over stdio for the HuggingFace MCP tools.
 
-use super::types::{JsonRpcRequest, JsonRpcResponse, ToolCallResult, ToolDefinition, InputSchema, PropertySchema};
+use super::types::{
+    InputSchema, JsonRpcRequest, JsonRpcResponse, PropertySchema, ToolCallResult, ToolDefinition,
+};
 use crate::hf::hub_client::{HubAssetType, HubClient, SearchFilters};
 use std::collections::HashMap;
 

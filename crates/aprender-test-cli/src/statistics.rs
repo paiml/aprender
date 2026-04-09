@@ -319,7 +319,8 @@ impl KneeDetector {
         }
 
         // Sort by load
-        self.points.sort_by(|a, b| a.0.partial_cmp(&b.0).expect("load values must not be NaN"));
+        self.points
+            .sort_by(|a, b| a.0.partial_cmp(&b.0).expect("load values must not be NaN"));
 
         // Calculate second derivative (approximation)
         let mut max_curvature = 0.0;

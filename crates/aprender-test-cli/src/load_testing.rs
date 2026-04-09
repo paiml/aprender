@@ -736,7 +736,10 @@ impl LatencyHistogram {
             self.buckets[bucket] += 1;
         } else {
             // Overflow bucket (last)
-            *self.buckets.last_mut().expect("histogram has at least one bucket") += 1;
+            *self
+                .buckets
+                .last_mut()
+                .expect("histogram has at least one bucket") += 1;
         }
         self.count += 1;
         self.sum += latency_ms;

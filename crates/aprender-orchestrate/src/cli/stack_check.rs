@@ -75,8 +75,7 @@ pub(super) fn release_quality_gate() -> anyhow::Result<()> {
             let comp_path = workspace_path.join(comp_name);
             if comp_path.join("Cargo.toml").exists() {
                 let checker = QualityChecker::new(comp_path);
-                if let Ok(quality) = checker.check_component(comp_name)
-                {
+                if let Ok(quality) = checker.check_component(comp_name) {
                     components.push(quality);
                 }
             }

@@ -335,12 +335,7 @@ fn falsify_logreg_mb_002_batch_size_one() {
 /// FALSIFY-LOGREG-MB-003: MiniBatch with batch_size=n falls back to Batch
 #[test]
 fn falsify_logreg_mb_003_batch_size_equals_n_falls_back() {
-    let x = Matrix::from_vec(
-        4,
-        2,
-        vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0],
-    )
-    .expect("valid");
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0]).expect("valid");
     let y = vec![0_usize, 0, 1, 1];
 
     // batch_size == n_samples -> should use fit_batch internally
@@ -480,12 +475,8 @@ fn falsify_logreg_mb_007_with_balanced_weights() {
 /// FALSIFY-LOGREG-MB-008: Early convergence via tolerance
 #[test]
 fn falsify_logreg_mb_008_early_convergence() {
-    let x = Matrix::from_vec(
-        4,
-        2,
-        vec![0.0, 0.0, 1.0, 1.0, 10.0, 10.0, 11.0, 11.0],
-    )
-    .expect("valid");
+    let x =
+        Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 10.0, 10.0, 11.0, 11.0]).expect("valid");
     let y = vec![0_usize, 0, 1, 1];
 
     // Very well-separated data with generous tolerance should converge early
@@ -535,12 +526,7 @@ fn falsify_logreg_sgd_001_basic_separable() {
 /// FALSIFY-LOGREG-SGD-002: Stochastic deterministic
 #[test]
 fn falsify_logreg_sgd_002_deterministic() {
-    let x = Matrix::from_vec(
-        4,
-        2,
-        vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0],
-    )
-    .expect("valid");
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0]).expect("valid");
     let y = vec![0_usize, 0, 1, 1];
 
     let mut lr1 = LogisticRegression::new()

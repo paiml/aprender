@@ -40,7 +40,13 @@ impl PmatTicket {
     /// Parse a ticket from file path or ID.
     pub fn parse(ticket_ref: &str, project_path: &Path) -> Result<Self, String> {
         // Check if it's a file path
-        let ticket_path = if std::path::Path::new(ticket_ref).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("md")) || std::path::Path::new(ticket_ref).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("yaml")) {
+        let ticket_path = if std::path::Path::new(ticket_ref)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+            || std::path::Path::new(ticket_ref)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml"))
+        {
             PathBuf::from(ticket_ref)
         } else {
             // Try to find ticket by ID in .pmat/tickets/

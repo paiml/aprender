@@ -1,6 +1,8 @@
 //! BH-01: Mutation-based invariant falsification (FDV pattern).
 
-use super::types::{HuntConfig, HuntResult, Finding, FindingSeverity, DefectCategory, HuntMode, FindingEvidence};
+use super::types::{
+    DefectCategory, Finding, FindingEvidence, FindingSeverity, HuntConfig, HuntMode, HuntResult,
+};
 use std::path::Path;
 
 /// BH-01: Mutation-based invariant falsification (FDV pattern)
