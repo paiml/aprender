@@ -115,7 +115,7 @@ fn test_bootstrap_sample_reproducible() {
 
 #[test]
 fn test_random_forest_creation() {
-    let rf = RandomForestClassifier::new(10);
+    let rf = RandomForestClassifier::new(10).with_random_state(42);
     assert_eq!(rf.n_estimators, 10);
 }
 

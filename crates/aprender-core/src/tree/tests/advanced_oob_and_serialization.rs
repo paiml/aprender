@@ -60,7 +60,7 @@ fn test_random_forest_classifier_oob_score() {
 
 #[test]
 fn test_random_forest_classifier_oob_unfitted() {
-    let rf = RandomForestClassifier::new(5);
+    let rf = RandomForestClassifier::new(5).with_random_state(42);
     assert!(rf.oob_prediction().is_none());
     assert!(rf.oob_score().is_none());
 }
@@ -94,7 +94,7 @@ fn test_random_forest_classifier_feature_importances() {
 
 #[test]
 fn test_random_forest_classifier_feature_importances_unfitted() {
-    let rf = RandomForestClassifier::new(5);
+    let rf = RandomForestClassifier::new(5).with_random_state(42);
     assert!(rf.feature_importances().is_none());
 }
 
@@ -118,7 +118,7 @@ fn test_random_forest_regressor_oob_score() {
 
 #[test]
 fn test_random_forest_regressor_oob_unfitted() {
-    let rf = RandomForestRegressor::new(5);
+    let rf = RandomForestRegressor::new(5).with_random_state(42);
     assert!(rf.oob_prediction().is_none());
     assert!(rf.oob_score().is_none());
 }
@@ -149,7 +149,7 @@ fn test_random_forest_regressor_feature_importances() {
 
 #[test]
 fn test_random_forest_regressor_feature_importances_unfitted() {
-    let rf = RandomForestRegressor::new(5);
+    let rf = RandomForestRegressor::new(5).with_random_state(42);
     assert!(rf.feature_importances().is_none());
 }
 
@@ -214,7 +214,7 @@ fn test_dtr_fit_sample_mismatch() {
 fn test_rfc_fit_empty_coverage() {
     let x = Matrix::from_vec(0, 2, vec![]).expect("Matrix creation should succeed");
     let y: Vec<usize> = vec![];
-    let mut rf = RandomForestClassifier::new(5);
+    let mut rf = RandomForestClassifier::new(5).with_random_state(42);
     // RF doesn't check empty data explicitly and will panic in bootstrap_sample
     let _ = rf.fit(&x, &y);
 }
@@ -223,7 +223,7 @@ fn test_rfc_fit_empty_coverage() {
 fn test_rfr_fit_empty_coverage() {
     let x = Matrix::from_vec(0, 2, vec![]).expect("Matrix creation should succeed");
     let y = Vector::from_slice(&[]);
-    let mut rf = RandomForestRegressor::new(5);
+    let mut rf = RandomForestRegressor::new(5).with_random_state(42);
     let result = rf.fit(&x, &y);
     assert!(result.is_err());
 }
@@ -232,7 +232,7 @@ fn test_rfr_fit_empty_coverage() {
 fn test_rfr_fit_sample_mismatch() {
     let x = Matrix::from_vec(4, 2, vec![0.0; 8]).expect("Matrix creation should succeed");
     let y = Vector::from_slice(&[1.0, 2.0]);
-    let mut rf = RandomForestRegressor::new(5);
+    let mut rf = RandomForestRegressor::new(5).with_random_state(42);
     let result = rf.fit(&x, &y);
     assert!(result.is_err());
 }
@@ -420,7 +420,7 @@ fn test_random_forest_save_load_safetensors() {
 
 #[test]
 fn test_random_forest_save_safetensors_unfitted() {
-    let rf = RandomForestClassifier::new(5);
+    let rf = RandomForestClassifier::new(5).with_random_state(42);
     let result = rf.save_safetensors("/tmp/unfitted_rf.safetensors");
     assert!(result.is_err());
 }

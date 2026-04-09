@@ -395,7 +395,7 @@ fn test_regression_tree_comparison_with_linear_regression() {
 
 #[test]
 fn test_random_forest_regressor_creation() {
-    let rf = RandomForestRegressor::new(10);
+    let rf = RandomForestRegressor::new(10).with_random_state(42);
     assert_eq!(rf.n_estimators, 10);
     assert!(rf.trees.is_empty());
     assert!(rf.max_depth.is_none());
@@ -403,7 +403,7 @@ fn test_random_forest_regressor_creation() {
 
 #[test]
 fn test_random_forest_regressor_with_max_depth() {
-    let rf = RandomForestRegressor::new(5).with_max_depth(3);
+    let rf = RandomForestRegressor::new(5).with_random_state(42).with_max_depth(3);
     assert_eq!(rf.max_depth, Some(3));
 }
 
@@ -418,7 +418,7 @@ fn test_random_forest_regressor_fit_simple_linear() {
     .expect("Matrix creation should succeed in tests");
     let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0]);
 
-    let mut rf = RandomForestRegressor::new(10).with_max_depth(5);
+    let mut rf = RandomForestRegressor::new(10).with_random_state(42).with_max_depth(5);
     rf.fit(&x, &y).expect("fit should succeed");
 
     // Should have trained 10 trees
