@@ -256,7 +256,11 @@ fn compute_hash(data: &[u8]) -> [u8; 32] {
 
 /// Encode hash as hex string
 fn hex_encode(hash: &[u8; 32]) -> String {
-    hash.iter().map(|b| format!("{:02x}", b)).collect()
+    hash.iter().fold(String::with_capacity(64), |mut acc, b| {
+        use std::fmt::Write;
+        let _ = write!(acc, "{b:02x}");
+        acc
+    })
 }
 
 #[cfg(test)]

@@ -17,6 +17,7 @@ use crate::pytorch_converter::{PyTorchConverter, PyTorchOperation};
 use crate::sklearn_converter::{SklearnAlgorithm, SklearnConverter};
 
 /// Analyzer for ML library usage in Python code
+#[allow(clippy::struct_field_names)]
 pub struct LibraryAnalyzer {
     numpy_converter: NumPyConverter,
     sklearn_converter: SklearnConverter,

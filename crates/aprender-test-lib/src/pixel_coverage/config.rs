@@ -86,6 +86,7 @@ impl Default for VerificationConfig {
 /// Output configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct OutputConfig {
     /// Generate PNG heatmap
     pub heatmap: bool,

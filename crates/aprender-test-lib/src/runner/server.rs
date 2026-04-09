@@ -8,6 +8,7 @@ use std::time::Duration;
 
 /// Debug output configuration
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct DebugOutput {
     /// Show console.log from WASM
     pub console: bool,

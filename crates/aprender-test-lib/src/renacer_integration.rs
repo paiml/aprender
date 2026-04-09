@@ -33,6 +33,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Tracing configuration for renacer integration
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct TracingConfig {
     /// Enable tracing (default: true)
     pub enabled: bool,
@@ -521,6 +522,7 @@ impl TraceCollector {
         }
 
         // Add metadata
+        #[allow(clippy::disallowed_methods)]
         let metadata = serde_json::json!({
             "service_name": self.service_name,
             "trace_id": self.root_context.as_ref().map(|c| &c.trace_id),

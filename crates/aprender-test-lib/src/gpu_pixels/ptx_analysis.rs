@@ -113,11 +113,11 @@ impl PtxAnalyzer {
         let lines: Vec<&str> = ptx.lines().collect();
 
         // Regex patterns for bug detection
-        let shared_mem_u64 = Regex::new(r"[sl]t\.shared\.[^\[]+\[%rd\d+\]").unwrap();
-        let entry_point = Regex::new(r"\.visible\s+\.entry\s+(\w+)").unwrap();
-        let loop_label = Regex::new(r"^(\w+_loop\w*):").unwrap();
-        let branch_instr = Regex::new(r"bra\s+(\w+);").unwrap();
-        let bar_sync = Regex::new(r"bar\.sync").unwrap();
+        let shared_mem_u64 = Regex::new(r"[sl]t\.shared\.[^\[]+\[%rd\d+\]").expect("valid regex for shared mem");
+        let entry_point = Regex::new(r"\.visible\s+\.entry\s+(\w+)").expect("valid regex for entry point");
+        let loop_label = Regex::new(r"^(\w+_loop\w*):").expect("valid regex for loop label");
+        let branch_instr = Regex::new(r"bra\s+(\w+);").expect("valid regex for branch");
+        let bar_sync = Regex::new(r"bar\.sync").expect("valid regex for bar sync");
 
         // Track loop labels
         let mut loop_start_labels: HashSet<String> = HashSet::new();
@@ -127,7 +127,7 @@ impl PtxAnalyzer {
         for line in &lines {
             let trimmed = line.trim();
             if let Some(caps) = loop_label.captures(trimmed) {
-                let label = caps.get(1).unwrap().as_str();
+                let label = caps.get(1).expect("capture group 1 in loop_label regex").as_str();
                 if label.contains("_start")
                     || label.ends_with("_loop")
                     || label.starts_with("loop_")
@@ -156,13 +156,13 @@ impl PtxAnalyzer {
 
             // Collect kernel names
             if let Some(caps) = entry_point.captures(trimmed) {
-                kernel_names.push(caps.get(1).unwrap().as_str().to_string());
+                kernel_names.push(caps.get(1).expect("capture group 1 in entry_point regex").as_str().to_string());
             }
 
             // Detect branch to loop end from inside loop body
             // (this is a heuristic - may have false positives)
             if let Some(caps) = branch_instr.captures(trimmed) {
-                let target = caps.get(1).unwrap().as_str();
+                let target = caps.get(1).expect("capture group 1 in branch_instr regex").as_str();
                 // If branching to a _end label that has a corresponding _start,
                 // and we're not at a conditional branch after loop check,
                 // it might be a bug

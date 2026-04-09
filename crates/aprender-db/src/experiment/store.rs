@@ -52,7 +52,7 @@ impl ExperimentStore {
 
     /// Get the number of metrics in the store.
     #[must_use]
-    pub fn metric_count(&self) -> usize {
+    pub const fn metric_count(&self) -> usize {
         self.metrics.len()
     }
 

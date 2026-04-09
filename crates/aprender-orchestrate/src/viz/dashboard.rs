@@ -45,6 +45,7 @@ pub struct DataSourceConfig {
 
 /// Dashboard panel
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[allow(clippy::struct_field_names)]
 pub struct Panel {
     /// Panel ID
     pub id: String,

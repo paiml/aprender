@@ -60,6 +60,7 @@ impl Ord for RetrievalResult {
 
 /// Score breakdown for transparency
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(clippy::struct_field_names)]
 pub struct ScoreBreakdown {
     /// BM25 sparse retrieval score
     pub bm25_score: f64,

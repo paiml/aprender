@@ -128,7 +128,7 @@ impl MakefileRule {
                     RuleViolation::new("MK-003", msg)
                         .with_severity(ViolationLevel::Critical)
                         .with_location("Makefile".to_string())
-                        .with_diff(diff_left, prohibited.to_string()),
+                        .with_diff(diff_left, prohibited.clone()),
                 );
             }
         }

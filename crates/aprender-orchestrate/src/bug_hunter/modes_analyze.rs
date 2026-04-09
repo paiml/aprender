@@ -3,7 +3,7 @@
 use super::config;
 use super::defect_patterns;
 use super::pmat_quality;
-use super::types::*;
+use super::types::{HuntConfig, HuntResult, Finding, FindingSeverity, HuntMode, FindingEvidence, DefectCategory};
 use std::path::Path;
 
 /// BH-03: LLM-augmented static analysis (LLIFT pattern)

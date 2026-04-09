@@ -68,15 +68,14 @@ pub(super) fn release_quality_gate() -> anyhow::Result<()> {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
 
-    let rt = tokio::runtime::Runtime::new()?;
     let mut components = Vec::new();
 
-    for (_layer_name, layer_components) in LAYER_DEFINITIONS.iter() {
+    for (_layer_name, layer_components) in LAYER_DEFINITIONS {
         for comp_name in *layer_components {
             let comp_path = workspace_path.join(comp_name);
             if comp_path.join("Cargo.toml").exists() {
                 let checker = QualityChecker::new(comp_path);
-                if let Ok(quality) = rt.block_on(async { checker.check_component(comp_name).await })
+                if let Ok(quality) = checker.check_component(comp_name)
                 {
                     components.push(quality);
                 }
@@ -112,6 +111,7 @@ pub(super) fn release_quality_gate() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(clippy::fn_params_excessive_bools)]
 pub(super) fn cmd_stack_release(
     crate_name: Option<String>,
     all: bool,

@@ -6,7 +6,7 @@
 
 use crate::stack::crates_io::{CratesIoClient, MockCratesIoClient};
 use crate::stack::graph::DependencyGraph;
-use crate::stack::types::*;
+use crate::stack::types::{StackHealthReport, CrateInfo, CrateIssue, IssueSeverity, IssueType, CrateStatus, VersionConflict};
 use anyhow::Result;
 use std::path::Path;
 

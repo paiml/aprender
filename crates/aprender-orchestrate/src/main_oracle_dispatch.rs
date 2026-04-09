@@ -9,8 +9,9 @@ use crate::cli;
 use crate::main_oracle_args::OracleArgs;
 
 /// RAG-specific args extracted from `OracleArgs` for dispatch.
+#[allow(clippy::struct_excessive_bools)]
 struct RagDispatchArgs<'a> {
-    query: &'a Option<String>,
+    query: Option<&'a String>,
     rag: bool,
     rag_index: bool,
     rag_index_force: bool,
@@ -38,14 +39,14 @@ fn try_oracle_rag(args: &RagDispatchArgs<'_>) -> Option<anyhow::Result<()>> {
     }
     if args.answer {
         return Some(cli::oracle::cmd_oracle_rag_answer(
-            args.query.clone(),
+            args.query.cloned(),
             args.answer_model,
             args.format,
         ));
     }
     if args.rag {
         return Some(cli::oracle::cmd_oracle_rag_with_profile(
-            args.query.clone(),
+            args.query.cloned(),
             args.format,
             args.rag_profile,
             args.rag_trace,
@@ -56,9 +57,9 @@ fn try_oracle_rag(args: &RagDispatchArgs<'_>) -> Option<anyhow::Result<()>> {
 
 /// Try dispatching a specialized Oracle subcommand (local/RAG/pmat-query/cookbook).
 /// Returns `Some(result)` if a subcommand matched, `None` for default classic oracle.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 fn try_oracle_subcommand(
-    query: &Option<String>,
+    query: Option<&String>,
     local: bool,
     dirty: bool,
     publish_order: bool,
@@ -72,17 +73,17 @@ fn try_oracle_subcommand(
     answer_model: &str,
     #[cfg(feature = "native")] rag_dashboard: bool,
     pmat_query: bool,
-    pmat_project_path: &Option<String>,
+    pmat_project_path: Option<&String>,
     pmat_limit: usize,
-    pmat_min_grade: &Option<String>,
+    pmat_min_grade: Option<&String>,
     pmat_max_complexity: Option<u32>,
     pmat_include_source: bool,
     pmat_all_local: bool,
     cookbook: bool,
-    recipe: &Option<String>,
-    recipes_by_tag: &Option<String>,
-    recipes_by_component: &Option<String>,
-    search_recipes: &Option<String>,
+    recipe: Option<&String>,
+    recipes_by_tag: Option<&String>,
+    recipes_by_component: Option<&String>,
+    search_recipes: Option<&String>,
     format: cli::oracle::OracleOutputFormat,
 ) -> Option<anyhow::Result<()>> {
     if local || dirty || publish_order {
@@ -109,10 +110,10 @@ fn try_oracle_subcommand(
 
     if pmat_query {
         return Some(cli::oracle::cmd_oracle_pmat_query(
-            query.clone(),
-            pmat_project_path.clone(),
+            query.cloned(),
+            pmat_project_path.cloned(),
             pmat_limit,
-            pmat_min_grade.clone(),
+            pmat_min_grade.cloned(),
             pmat_max_complexity,
             pmat_include_source,
             rag,
@@ -129,10 +130,10 @@ fn try_oracle_subcommand(
     {
         return Some(cli::oracle::cmd_oracle_cookbook(
             cookbook,
-            recipe.clone(),
-            recipes_by_tag.clone(),
-            recipes_by_component.clone(),
-            search_recipes.clone(),
+            recipe.cloned(),
+            recipes_by_tag.cloned(),
+            recipes_by_component.cloned(),
+            search_recipes.cloned(),
             format,
         ));
     }
@@ -204,7 +205,7 @@ pub(crate) fn dispatch_oracle(args: OracleArgs) -> anyhow::Result<()> {
     }
 
     if let Some(result) = try_oracle_subcommand(
-        &query,
+        query.as_ref(),
         local,
         dirty,
         publish_order,
@@ -219,17 +220,17 @@ pub(crate) fn dispatch_oracle(args: OracleArgs) -> anyhow::Result<()> {
         #[cfg(feature = "native")]
         rag_dashboard,
         pmat_query,
-        &pmat_project_path,
+        pmat_project_path.as_ref(),
         pmat_limit,
-        &pmat_min_grade,
+        pmat_min_grade.as_ref(),
         pmat_max_complexity,
         pmat_include_source,
         pmat_all_local,
         cookbook,
-        &recipe,
-        &recipes_by_tag,
-        &recipes_by_component,
-        &search_recipes,
+        recipe.as_ref(),
+        recipes_by_tag.as_ref(),
+        recipes_by_component.as_ref(),
+        search_recipes.as_ref(),
         format,
     ) {
         return result;

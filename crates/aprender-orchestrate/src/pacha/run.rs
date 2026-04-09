@@ -114,14 +114,14 @@ pub fn parse_simple_modelfile(content: &str) -> anyhow::Result<SimpleModelfile> 
 /// Print chat session header with model info.
 fn print_chat_header(
     model: &str,
-    system: &Option<String>,
+    system: Option<&String>,
     temp: f32,
     context: usize,
     max_tokens: Option<usize>,
 ) {
     print_command_header("Interactive Chat");
     println!("Model:       {}", model.cyan());
-    if let Some(ref sys) = system {
+    if let Some(sys) = system {
         println!("System:      {}", truncate_str(sys, 50).dimmed());
     }
     println!("Temperature: {}", format!("{:.1}", temp).yellow());
@@ -147,10 +147,10 @@ fn print_chat_header(
 /// Handle /clear command: reset messages, re-add system prompt if set.
 fn chat_cmd_clear(
     messages: &mut Vec<ChatMessage>,
-    current_system: &Option<String>,
+    current_system: Option<&String>,
 ) -> ChatCommandResult {
     messages.clear();
-    if let Some(ref sys) = current_system {
+    if let Some(sys) = current_system {
         messages.push(ChatMessage::system(sys.clone()));
     }
     println!("{} Context cleared", "ok".bright_green());
@@ -218,7 +218,7 @@ fn handle_chat_command(
 
     match cmd.as_str() {
         "/bye" | "/exit" | "/quit" => ChatCommandResult::Exit,
-        "/clear" => chat_cmd_clear(messages, current_system),
+        "/clear" => chat_cmd_clear(messages, current_system.as_ref()),
         "/system" => chat_cmd_system(arg, messages, current_system),
         "/temp" => chat_cmd_temp(arg, current_temp),
         "/save" => chat_cmd_save(arg, messages),
@@ -400,7 +400,7 @@ pub fn cmd_run(
     let (effective_system, effective_temp, effective_max_tokens) =
         load_chat_config(system, modelfile, temperature, max_tokens)?;
 
-    print_chat_header(model, &effective_system, effective_temp, context, effective_max_tokens);
+    print_chat_header(model, effective_system.as_ref(), effective_temp, context, effective_max_tokens);
 
     if verbose {
         println!("{}", "Loading model...".dimmed());

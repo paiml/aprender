@@ -122,19 +122,18 @@ fn info_command(path: &PathBuf, cli: &entrenar_common::Cli) -> entrenar_common::
     let info = inspect(path)?;
 
     if cli.format == entrenar_common::OutputFormat::Json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "path": info.path.display().to_string(),
-                "size_bytes": info.size_bytes,
-                "format": format!("{:?}", info.format),
-                "architecture": info.architecture.architecture.name(),
-                "hidden_dim": info.architecture.hidden_dim,
-                "num_layers": info.architecture.num_layers,
-                "vocab_size": info.architecture.vocab_size,
-                "total_params": info.total_params,
-            })
-        );
+        #[allow(clippy::disallowed_methods)]
+        let json = serde_json::json!({
+            "path": info.path.display().to_string(),
+            "size_bytes": info.size_bytes,
+            "format": format!("{:?}", info.format),
+            "architecture": info.architecture.architecture.name(),
+            "hidden_dim": info.architecture.hidden_dim,
+            "num_layers": info.architecture.num_layers,
+            "vocab_size": info.architecture.vocab_size,
+            "total_params": info.total_params,
+        });
+        println!("{json}");
     } else {
         if !cli.is_quiet() {
             println!("{}", styles::header(&format!("Model: {}", path.display())));
@@ -219,15 +218,14 @@ fn memory_command(
     let total_bytes = model_bytes + activation_bytes + optimizer_bytes;
 
     if cli.format == entrenar_common::OutputFormat::Json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "model_bytes": model_bytes,
-                "activation_bytes": activation_bytes,
-                "optimizer_bytes": optimizer_bytes,
-                "total_bytes": total_bytes,
-            })
-        );
+        #[allow(clippy::disallowed_methods)]
+        let json = serde_json::json!({
+            "model_bytes": model_bytes,
+            "activation_bytes": activation_bytes,
+            "optimizer_bytes": optimizer_bytes,
+            "total_bytes": total_bytes,
+        });
+        println!("{json}");
     } else {
         if !cli.is_quiet() {
             println!(
@@ -266,15 +264,14 @@ fn validate_command(
     let result = checker.validate(path)?;
 
     if cli.format == entrenar_common::OutputFormat::Json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "valid": result.valid,
-                "issues": result.issues.len(),
-                "warnings": result.warnings.len(),
-                "checks": result.checks.len(),
-            })
-        );
+        #[allow(clippy::disallowed_methods)]
+        let json = serde_json::json!({
+            "valid": result.valid,
+            "issues": result.issues.len(),
+            "warnings": result.warnings.len(),
+            "checks": result.checks.len(),
+        });
+        println!("{json}");
     } else {
         println!("{}", result.to_report());
     }

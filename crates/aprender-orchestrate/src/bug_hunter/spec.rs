@@ -20,7 +20,7 @@ pub struct SpecClaim {
     pub title: String,
     /// Line number in spec file
     pub line: usize,
-    /// Section hierarchy (e.g., ["Section 11", "BH-01"])
+    /// Section hierarchy (e.g., `["Section 11", "BH-01"]`)
     pub section_path: Vec<String>,
     /// Implementation locations found
     pub implementations: Vec<CodeLocation>,

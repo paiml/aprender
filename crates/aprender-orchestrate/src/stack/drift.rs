@@ -97,7 +97,6 @@ impl DriftChecker {
                 }
                 Err(_) => {
                     // Crate not published yet, skip
-                    continue;
                 }
             }
         }

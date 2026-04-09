@@ -268,6 +268,7 @@ pub fn explain_contract_markdown(
 }
 
 /// Generate a JSON explanation of the contract.
+#[allow(clippy::disallowed_methods)] // serde_json::json! macro internally uses unwrap()
 pub fn explain_contract_json(
     contract: &Contract,
     stem: &str,

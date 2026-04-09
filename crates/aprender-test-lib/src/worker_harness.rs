@@ -65,6 +65,7 @@ impl fmt::Display for WorkerLifecycleState {
 
 /// Worker test configuration
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct WorkerTestConfig {
     /// Timeout for worker initialization
     pub init_timeout: Duration,
@@ -138,6 +139,7 @@ impl WorkerTestConfig {
 
 /// Worker test result
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct WorkerTestResult {
     /// All tests passed
     pub passed: bool,
@@ -377,6 +379,7 @@ impl Default for SharedMemoryTestConfig {
 
 /// SharedArrayBuffer test results
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct SharedMemoryTestResult {
     /// All tests passed
     pub passed: bool,

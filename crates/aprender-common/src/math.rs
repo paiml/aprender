@@ -40,6 +40,7 @@ pub fn erf(x: f64) -> f64 {
 ///
 /// Convenience wrapper for f32 callers; internally delegates to the f64 version.
 #[must_use]
+#[allow(clippy::cast_possible_truncation)]
 pub fn erf_f32(x: f32) -> f32 {
     erf(f64::from(x)) as f32
 }
@@ -61,6 +62,7 @@ pub fn erf_f32(x: f32) -> f32 {
 /// assert_eq!(std_dev(&[]), 0.0);
 /// ```
 #[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn std_dev(samples: &[f64]) -> f64 {
     if samples.len() < 2 {
         return 0.0;
@@ -75,6 +77,7 @@ pub fn std_dev(samples: &[f64]) -> f64 {
 ///
 /// Returns 0.0 if fewer than 2 elements.
 #[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn std_dev_f32(samples: &[f32]) -> f32 {
     if samples.len() < 2 {
         return 0.0;
@@ -89,6 +92,7 @@ pub fn std_dev_f32(samples: &[f32]) -> f32 {
 ///
 /// Useful when the mean has already been calculated separately.
 #[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn std_dev_with_mean(samples: &[f64], mean: f64) -> f64 {
     if samples.len() < 2 {
         return 0.0;
@@ -100,6 +104,7 @@ pub fn std_dev_with_mean(samples: &[f64], mean: f64) -> f64 {
 
 /// Compute sample standard deviation for f32 data given a pre-computed mean.
 #[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn std_dev_f32_with_mean(samples: &[f32], mean: f32) -> f32 {
     if samples.len() < 2 {
         return 0.0;
@@ -170,6 +175,7 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
 /// assert!((usage_percent(1024, 4096) - 25.0).abs() < 1e-10);
 /// ```
 #[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub fn usage_percent(used: u64, total: u64) -> f64 {
     if total == 0 {
         return 0.0;

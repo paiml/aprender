@@ -8,6 +8,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use tracing::warn;
 
+#[allow(clippy::fn_params_excessive_bools)]
 pub fn cmd_transpile(
     incremental: bool,
     cache: bool,
@@ -49,7 +50,7 @@ pub fn cmd_transpile(
     };
 
     // Display settings and create directories
-    display_transpilation_settings(&config, incremental, cache, ruchy, &modules);
+    display_transpilation_settings(&config, incremental, cache, ruchy, modules.as_ref());
     std::fs::create_dir_all(&config.transpilation.output_dir)?;
     std::fs::create_dir_all(config.transpilation.output_dir.join("src"))?;
 
@@ -58,7 +59,7 @@ pub fn cmd_transpile(
 
     // Build and display command
     let owned_args =
-        crate::cli::build_transpiler_args(&config, incremental, cache, ruchy, &modules);
+        crate::cli::build_transpiler_args(&config, incremental, cache, ruchy, modules.as_ref());
     let args: Vec<&str> = owned_args.iter().map(|s| s.as_str()).collect();
 
     println!("{}", "Executing:".dimmed());
@@ -153,7 +154,7 @@ fn display_transpilation_settings(
     incremental: bool,
     cache: bool,
     ruchy: bool,
-    modules: &Option<Vec<String>>,
+    modules: Option<&Vec<String>>,
 ) {
     println!("{}", "Transpilation Settings:".bright_yellow().bold());
     println!("  {} Source: {:?}", "•".bright_blue(), config.source.path);

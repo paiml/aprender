@@ -70,6 +70,7 @@ macro_rules! require_found {
 /// Options for the oracle command.
 ///
 /// Groups all oracle command parameters to avoid too-many-arguments warnings.
+#[allow(clippy::struct_excessive_bools)]
 pub struct OracleOptions {
     pub query: Option<String>,
     pub recommend: bool,

@@ -89,6 +89,8 @@ pub fn run(
     Ok(())
 }
 
+/// Print a pass/fail line for a structure check (reserved for future use).
+#[allow(dead_code)]
 fn check(label: &str, ok: bool) {
     let icon = if ok { "✓" } else { "✗" };
     println!("  {icon} {label}");

@@ -88,7 +88,7 @@ impl Calculator {
         // Anomaly: Validate result
         self.validator
             .validate(raw_result)
-            .map_err(|v| CalcError::AnomalyViolation(v))
+            .map_err(CalcError::AnomalyViolation)
     }
 
     /// Addition: a + b

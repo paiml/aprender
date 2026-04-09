@@ -283,7 +283,7 @@ impl EntryAccum {
 
 /// Extract PDF href from a `<link>` element's attributes, if present.
 #[cfg(feature = "native")]
-fn extract_pdf_href(attrs: quick_xml::events::attributes::Attributes) -> Option<String> {
+fn extract_pdf_href(attrs: quick_xml::events::attributes::Attributes<'_>) -> Option<String> {
     let mut href = String::new();
     let mut is_pdf = false;
     for attr in attrs.flatten() {

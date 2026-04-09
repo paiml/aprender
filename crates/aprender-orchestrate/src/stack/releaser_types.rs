@@ -3,7 +3,7 @@
 //! Core types for release orchestration extracted from releaser.rs.
 //! Includes BumpType, ReleaseConfig, ReleaseResult, ReleasedCrate.
 
-use crate::stack::types::*;
+use crate::stack::types::ReleasePlan;
 
 /// Bump type for version updates
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +31,7 @@ impl BumpType {
 
 /// Configuration for release orchestration
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ReleaseConfig {
     /// Version bump type
     pub bump_type: Option<BumpType>,

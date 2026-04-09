@@ -92,7 +92,8 @@ fn run_single(
 #[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
-    clippy::cast_precision_loss
+    clippy::cast_precision_loss,
+    clippy::disallowed_methods
 )]
 fn run_directory(
     dir: &Path,
@@ -216,7 +217,7 @@ fn run_directory(
     Ok(())
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::disallowed_methods)]
 fn print_directory_scores(
     scores: &[ContractScore],
     mean: f64,
@@ -269,7 +270,7 @@ fn print_directory_scores(
     Ok(())
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::disallowed_methods)]
 fn print_summary_only(
     scores: &[ContractScore],
     mean: f64,

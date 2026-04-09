@@ -163,6 +163,7 @@ impl Default for DecyConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct DepylerConfig {
     /// Enable type inference
     pub type_inference: bool,
@@ -260,6 +261,7 @@ impl Default for TruenoConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ValidationConfig {
     /// Enable syscall tracing
     pub trace_syscalls: bool,

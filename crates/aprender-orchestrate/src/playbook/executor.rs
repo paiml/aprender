@@ -16,7 +16,7 @@ use super::cache;
 use super::dag;
 use super::eventlog;
 use super::parser;
-use super::types::*;
+use super::types::{LockFile, Playbook, DepLock, PipelineEvent};
 use anyhow::Result;
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
@@ -95,7 +95,7 @@ pub async fn run_playbook(config: &RunConfig) -> Result<RunResult> {
     let total_start = Instant::now();
 
     let mut ctx = prepare_execution(config)?;
-    let stages_to_run = select_stages(&ctx.dag_result, &config.stage_filter);
+    let stages_to_run = select_stages(&ctx.dag_result, config.stage_filter.as_ref());
 
     for stage_name in &stages_to_run {
         execute_single_stage(&mut ctx, stage_name, config).await?;
@@ -142,7 +142,7 @@ async fn execute_single_stage(
         stage_name,
         stage,
         &hashes,
-        &ctx.existing_lock,
+        ctx.existing_lock.as_ref(),
         &ctx.dag_result,
         &ctx.rerun_stages,
         config,
@@ -250,8 +250,8 @@ fn prepare_execution(config: &RunConfig) -> Result<ExecutionContext> {
 }
 
 /// Filter and order stages according to DAG topology and optional stage filter.
-fn select_stages(dag_result: &dag::PlaybookDag, stage_filter: &Option<Vec<String>>) -> Vec<String> {
-    if let Some(ref filter) = stage_filter {
+fn select_stages(dag_result: &dag::PlaybookDag, stage_filter: Option<&Vec<String>>) -> Vec<String> {
+    if let Some(filter) = stage_filter {
         dag_result.topo_order.iter().filter(|s| filter.contains(s)).cloned().collect()
     } else {
         dag_result.topo_order.clone()

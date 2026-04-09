@@ -200,9 +200,9 @@ fn generate_bloom_questions(themes: &[String], text: &str) -> Vec<ReflectionQues
     questions
 }
 
-fn select_theme_for_level(themes: &[String], _text: &str, _level: &BloomLevel) -> String {
+fn select_theme_for_level(themes: &[String], _text: &str, level: &BloomLevel) -> String {
     // Use the most prominent theme for most levels, rotate for variety
-    let idx = match _level {
+    let idx = match level {
         BloomLevel::Analysis => 0,
         BloomLevel::Synthesis => themes.len().min(1),
         BloomLevel::Evaluation => themes.len().min(2) % themes.len(),

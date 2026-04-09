@@ -9,8 +9,8 @@ pub type NGramMap = HashMap<NGram, usize>;
 /// Extracts N-gram sequences from a syscall trace
 ///
 /// For example, with N=3 (trigrams):
-/// - Input trace: ["mmap", "read", "write", "close"]
-/// - Output N-grams: [["mmap", "read", "write"], ["read", "write", "close"]]
+/// - Input trace: `["mmap", "read", "write", "close"]`
+/// - Output N-grams: `[["mmap", "read", "write"], ["read", "write", "close"]]`
 ///
 /// # Arguments
 /// * `syscalls` - Ordered sequence of syscall names from trace

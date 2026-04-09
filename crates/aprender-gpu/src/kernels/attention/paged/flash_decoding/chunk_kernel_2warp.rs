@@ -20,16 +20,24 @@ use super::FLASH_DECODE_CHUNK_SIZE;
 /// Block = (32, 2, 1). Shared memory = 8 bytes (2 floats for partial Q·K sums).
 #[derive(Debug, Clone)]
 pub struct FlashDecodingChunkKernel2Warp {
+    /// Maximum sequence length supported by the KV cache.
     pub max_seq_len: u32,
+    /// Head dimension (must be 128 for 2-warp variant).
     pub head_dim: u32,
+    /// Number of query attention heads.
     pub num_heads: u32,
+    /// Number of key/value attention heads (GQA support).
     pub num_kv_heads: u32,
+    /// Batch size (number of sequences).
     pub batch_size: u32,
+    /// Chunk size for flash decoding partitioning.
     pub chunk_size: u32,
+    /// Softmax scaling factor (1/sqrt(head_dim)).
     pub scale: f32,
 }
 
 impl FlashDecodingChunkKernel2Warp {
+    /// Creates a new 2-warp flash decoding chunk kernel.
     #[must_use]
     pub fn new(
         max_seq_len: u32,
@@ -50,11 +58,13 @@ impl FlashDecodingChunkKernel2Warp {
         }
     }
 
+    /// Returns the number of chunks needed for the given sequence length.
     #[must_use]
     pub fn num_chunks(&self, seq_len: u32) -> u32 {
         (seq_len + self.chunk_size - 1) / self.chunk_size
     }
 
+    /// Returns the partial buffer size per head (head_dim + 2 per chunk for value + max/sum).
     #[must_use]
     pub fn partials_size_per_head(&self, max_chunks: u32) -> u32 {
         max_chunks * (self.head_dim + 2)

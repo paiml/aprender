@@ -469,6 +469,7 @@ impl BrickDataTracker {
 
 /// Backend selector for choosing optimal execution backend
 #[derive(Debug)]
+#[allow(clippy::struct_field_names)]
 pub struct BackendSelector {
     /// Minimum element count for GPU execution
     gpu_threshold: usize,

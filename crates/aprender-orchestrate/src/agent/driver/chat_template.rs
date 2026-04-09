@@ -48,7 +48,7 @@ impl ChatTemplate {
 /// tools natively; local models need this explicit injection.
 pub fn format_prompt_with_template(request: &CompletionRequest, template: ChatTemplate) -> String {
     // Build enriched system prompt with tool definitions
-    let enriched_system = build_enriched_system(&request.system, &request.tools);
+    let enriched_system = build_enriched_system(request.system.as_ref(), &request.tools);
     let enriched_request = CompletionRequest {
         system: Some(enriched_system),
         model: request.model.clone(),
@@ -71,8 +71,8 @@ pub fn format_prompt_with_template(request: &CompletionRequest, template: ChatTe
 /// API models (Anthropic/OpenAI) which accept tools as structured params.
 /// The format teaches the model to emit `<tool_call>` blocks that
 /// `parse_tool_calls()` in realizar.rs can extract.
-fn build_enriched_system(base_system: &Option<String>, tools: &[ToolDefinition]) -> String {
-    let mut system = base_system.clone().unwrap_or_default();
+fn build_enriched_system(base_system: Option<&String>, tools: &[ToolDefinition]) -> String {
+    let mut system = base_system.cloned().unwrap_or_default();
 
     if tools.is_empty() {
         return system;

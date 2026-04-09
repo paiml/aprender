@@ -11,6 +11,7 @@ use std::path::PathBuf;
 /// Entry point for `batuta code` (binary-side thin wrapper).
 ///
 /// Delegates entirely to the library-level `agent::code::cmd_code`.
+#[allow(clippy::option_option)]
 pub fn cmd_code(
     model: Option<PathBuf>,
     project: PathBuf,

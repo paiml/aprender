@@ -123,6 +123,7 @@ pub fn hash_dep(path: &Path) -> Result<DirHashResult> {
 ///
 /// Uses the union of declared param keys and template-extracted refs.
 /// Sorted by key for determinism.
+#[allow(clippy::implicit_hasher)]
 pub fn hash_params(
     global_params: &HashMap<String, serde_yaml_ng::Value>,
     referenced_keys: &[String],
@@ -181,7 +182,7 @@ pub fn extract_param_refs(cmd: &str) -> Vec<String> {
 ///
 /// Union of explicitly declared `stage.params` keys and template-extracted refs.
 /// This implements spec §2.3 granular param invalidation.
-pub fn effective_param_keys(declared: &Option<Vec<String>>, cmd: &str) -> Vec<String> {
+pub fn effective_param_keys(declared: Option<&Vec<String>>, cmd: &str) -> Vec<String> {
     let mut keys = extract_param_refs(cmd);
     if let Some(declared_keys) = declared {
         for k in declared_keys {
@@ -342,12 +343,12 @@ mod tests {
     #[test]
     fn test_PB003_effective_param_keys() {
         // Template refs only
-        let keys = effective_param_keys(&None, "echo {{params.model}}");
+        let keys = effective_param_keys(None, "echo {{params.model}}");
         assert_eq!(keys, vec!["model"]);
 
         // Declared + template: union
         let declared = Some(vec!["chunk_size".to_string()]);
-        let keys = effective_param_keys(&declared, "echo {{params.model}}");
+        let keys = effective_param_keys(declared.as_ref(), "echo {{params.model}}");
         assert_eq!(keys, vec!["model", "chunk_size"]);
     }
 

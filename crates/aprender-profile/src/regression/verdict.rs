@@ -129,6 +129,7 @@ impl RegressionAssessment {
 /// // Should show no regression (distributions similar)
 /// assert_eq!(assessment.verdict, renacer::regression::RegressionVerdict::NoRegression);
 /// ```
+#[allow(clippy::implicit_hasher)]
 pub fn assess_regression(
     baseline: &HashMap<String, Vec<f32>>,
     current: &HashMap<String, Vec<f32>>,

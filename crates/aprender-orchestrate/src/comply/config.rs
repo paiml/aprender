@@ -254,6 +254,7 @@ pub struct FeatureRequirement {
 
 /// CI workflow parity configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_field_names)]
 pub struct CiWorkflowConfig {
     /// Required workflow files
     #[serde(default)]

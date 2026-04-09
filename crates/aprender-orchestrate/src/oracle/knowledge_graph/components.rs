@@ -1,6 +1,6 @@
 //! Component registration for the Sovereign AI Stack.
 
-use super::super::types::*;
+use super::super::types::{StackComponent, StackLayer, Capability, CapabilityCategory};
 use super::types::KnowledgeGraph;
 
 impl KnowledgeGraph {

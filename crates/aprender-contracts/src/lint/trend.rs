@@ -127,7 +127,7 @@ pub fn format_trend(snapshots: &[TrendSnapshot], limit: usize) -> String {
 
     if snapshots.len() >= 2 {
         let first = &snapshots[0];
-        let last = snapshots.last().unwrap();
+        let last = snapshots.last().expect("snapshots has >= 2 elements");
         let delta = last.mean_score - first.mean_score;
         let direction = if delta > 0.01 {
             "improving"

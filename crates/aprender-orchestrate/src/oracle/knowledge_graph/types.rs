@@ -1,6 +1,6 @@
 //! Core types and methods for the knowledge graph.
 
-use super::super::types::*;
+use super::super::types::{StackComponent, ProblemDomain, IntegrationPattern, StackLayer};
 use std::collections::HashMap;
 
 /// Knowledge graph containing all stack components and their relationships

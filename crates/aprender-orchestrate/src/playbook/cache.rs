@@ -3,7 +3,7 @@
 //! Handles lock file persistence (atomic write via temp+rename) and cache
 //! hit/miss determination with detailed invalidation reasons.
 
-use super::types::*;
+use super::types::{InvalidationReason, LockFile, StageStatus, StageLock};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -61,7 +61,7 @@ pub fn check_cache(
     current_cmd_hash: &str,
     current_deps_hashes: &[(String, String)], // (path, hash)
     current_params_hash: &str,
-    lock: &Option<LockFile>,
+    lock: Option<&LockFile>,
     forced: bool,
     upstream_rerun: &[String],
 ) -> CacheDecision {

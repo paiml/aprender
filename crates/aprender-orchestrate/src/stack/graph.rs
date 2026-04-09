@@ -7,7 +7,7 @@
 //! implementation is provided using only the standard library.
 
 use crate::stack::is_paiml_crate;
-use crate::stack::types::*;
+use crate::stack::types::{CrateInfo, DependencyKind, DependencyInfo, VersionConflict, ConflictUsage};
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::Path;

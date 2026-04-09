@@ -66,7 +66,7 @@ impl SemanticChunker {
                 let end_line = start_line + chunk_text.matches('\n').count();
 
                 chunks.push(Chunk {
-                    content: chunk_text.to_string(),
+                    content: chunk_text.clone(),
                     start_offset: current_pos,
                     end_offset: end_pos,
                     start_line,

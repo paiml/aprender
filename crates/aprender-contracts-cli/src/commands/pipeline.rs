@@ -97,6 +97,7 @@ fn print_text(
     }
 }
 
+#[allow(clippy::disallowed_methods)]
 fn print_json(pipeline: &pipeline::PipelineContract, issues: &[pipeline::PipelineIssue]) {
     let error_count = issues
         .iter()

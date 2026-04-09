@@ -238,6 +238,7 @@ pub fn has_wasm_support(project_path: &Path) -> WasmSupport {
 
 /// WASM support detection result.
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct WasmSupport {
     pub has_wasm_feature: bool,
     pub has_wasm_bindgen: bool,
@@ -313,6 +314,7 @@ pub fn has_serde_config(project_path: &Path) -> SerdeConfigSupport {
 
 /// Serde config support detection result.
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct SerdeConfigSupport {
     pub has_serde: bool,
     pub has_serde_yaml: bool,

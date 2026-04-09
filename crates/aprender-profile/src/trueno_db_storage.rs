@@ -259,7 +259,7 @@ impl TruenoDbStorage {
         //     .with_predicate_pushdown(config.predicate_pushdown)
         //     .context("Failed to open trueno-db database")?;
 
-        let _db = Arc::new(Mutex::new(PlaceholderDb {}));
+        let db = Arc::new(Mutex::new(PlaceholderDb {}));
 
         eprintln!("INFO: TruenoDbStorage initialized at {path:?}");
         eprintln!("  - Row group size: {}", config.row_group_size);
@@ -271,7 +271,7 @@ impl TruenoDbStorage {
         eprintln!("  - Predicate pushdown: {}", config.predicate_pushdown);
         eprintln!("TODO Sprint 43: Apply configuration to trueno-db");
 
-        Ok(Self { path, config, _db })
+        Ok(Self { path, config, _db: db })
     }
 
     /// Insert a batch of spans into the database

@@ -170,6 +170,7 @@ pub fn compare_syscalls(
 /// Compare timing with tolerance
 ///
 /// Returns list of timing regressions that exceed tolerance
+#[allow(clippy::implicit_hasher)]
 pub fn compare_timing(
     baseline_stats: &std::collections::HashMap<String, SyscallTimingStats>,
     actual_stats: &std::collections::HashMap<String, SyscallTimingStats>,
@@ -220,6 +221,7 @@ pub fn is_timing_regression(
 }
 
 /// Perform full validation comparison
+#[allow(clippy::implicit_hasher)]
 pub fn validate_against_baseline(
     baseline: &GoldenBaseline,
     actual_syscalls: &[TraceSyscallEntry],

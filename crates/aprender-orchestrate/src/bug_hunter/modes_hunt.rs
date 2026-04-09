@@ -1,6 +1,6 @@
 //! BH-02: SBFL without failing tests (SBEST pattern).
 
-use super::types::*;
+use super::types::{HuntConfig, HuntResult, Finding, FindingSeverity, DefectCategory, HuntMode, FindingEvidence};
 use std::path::Path;
 
 /// BH-02: SBFL without failing tests (SBEST pattern)
@@ -197,7 +197,7 @@ pub(super) fn analyze_stack_trace(
             if let Some(colon_pos) = location.rfind(':') {
                 let file = &location[..colon_pos];
                 if let Ok(line_num) = location[colon_pos + 1..].trim().parse::<usize>() {
-                    if file.ends_with(".rs") && !file.contains("/.cargo/") {
+                    if std::path::Path::new(file).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("rs")) && !file.contains("/.cargo/") {
                         finding_id += 1;
                         result.add_finding(
                             Finding::new(

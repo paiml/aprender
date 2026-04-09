@@ -9,10 +9,11 @@ use std::collections::HashMap;
 /// Resolve all template variables in a command string
 ///
 /// Uses UTF-8-safe string scanning (no byte-level char casting).
+#[allow(clippy::implicit_hasher)]
 pub fn resolve_template(
     cmd: &str,
     global_params: &HashMap<String, serde_yaml_ng::Value>,
-    _stage_param_keys: &Option<Vec<String>>,
+    _stage_param_keys: Option<&Vec<String>>,
     deps: &[Dependency],
     outs: &[Output],
 ) -> Result<String> {
@@ -101,7 +102,7 @@ mod tests {
     #[test]
     fn test_PB001_param_substitution() {
         let global = make_params(&[("model", "whisper-base")]);
-        let result = resolve_template("run --model {{params.model}}", &global, &None, &[], &[])
+        let result = resolve_template("run --model {{params.model}}", &global, None, &[], &[])
             .expect("unexpected failure");
         assert_eq!(result, "run --model whisper-base");
     }
@@ -114,7 +115,7 @@ mod tests {
             serde_yaml_ng::Value::Number(serde_yaml_ng::Number::from(512)),
         );
         let result =
-            resolve_template("split --size {{params.chunk_size}}", &global, &None, &[], &[])
+            resolve_template("split --size {{params.chunk_size}}", &global, None, &[], &[])
                 .expect("unexpected failure");
         assert_eq!(result, "split --size 512");
     }
@@ -137,7 +138,7 @@ mod tests {
     fn test_PB001_outs_path_ref() {
         let outs = make_outs(&["/tmp/output.txt"]);
         let result =
-            resolve_template("echo hello > {{outs[0].path}}", &HashMap::new(), &None, &[], &outs)
+            resolve_template("echo hello > {{outs[0].path}}", &HashMap::new(), None, &[], &outs)
                 .expect("unexpected failure");
         assert_eq!(result, "echo hello > /tmp/output.txt");
     }
@@ -156,14 +157,14 @@ mod tests {
 
     #[test]
     fn test_PB001_no_templates() {
-        let result = resolve_template("echo hello world", &HashMap::new(), &None, &[], &[])
+        let result = resolve_template("echo hello world", &HashMap::new(), None, &[], &[])
             .expect("unexpected failure");
         assert_eq!(result, "echo hello world");
     }
 
     #[test]
     fn test_PB001_missing_param_error() {
-        let err = resolve_template("echo {{params.missing}}", &HashMap::new(), &None, &[], &[])
+        let err = resolve_template("echo {{params.missing}}", &HashMap::new(), None, &[], &[])
             .unwrap_err();
         assert!(err.to_string().contains("undefined param"));
     }
@@ -171,28 +172,28 @@ mod tests {
     #[test]
     fn test_PB001_deps_out_of_range() {
         let err =
-            resolve_template("cat {{deps[5].path}}", &HashMap::new(), &None, &[], &[]).unwrap_err();
+            resolve_template("cat {{deps[5].path}}", &HashMap::new(), None, &[], &[]).unwrap_err();
         assert!(err.to_string().contains("out of range"));
     }
 
     #[test]
     fn test_PB001_outs_out_of_range() {
         let err =
-            resolve_template("cat {{outs[0].path}}", &HashMap::new(), &None, &[], &[]).unwrap_err();
+            resolve_template("cat {{outs[0].path}}", &HashMap::new(), None, &[], &[]).unwrap_err();
         assert!(err.to_string().contains("out of range"));
     }
 
     #[test]
     fn test_PB001_unclosed_template() {
         let err =
-            resolve_template("echo {{params.model", &HashMap::new(), &None, &[], &[]).unwrap_err();
+            resolve_template("echo {{params.model", &HashMap::new(), None, &[], &[]).unwrap_err();
         assert!(err.to_string().contains("unclosed"));
     }
 
     #[test]
     fn test_PB001_whitespace_in_template() {
         let global = make_params(&[("name", "world")]);
-        let result = resolve_template("echo {{ params.name }}", &global, &None, &[], &[])
+        let result = resolve_template("echo {{ params.name }}", &global, None, &[], &[])
             .expect("unexpected failure");
         assert_eq!(result, "echo world");
     }
@@ -200,7 +201,7 @@ mod tests {
     #[test]
     fn test_PB001_unicode_safe() {
         let global = make_params(&[("name", "héllo")]);
-        let result = resolve_template("echo {{params.name}} — résumé", &global, &None, &[], &[])
+        let result = resolve_template("echo {{params.name}} — résumé", &global, None, &[], &[])
             .expect("unexpected failure");
         assert_eq!(result, "echo héllo — résumé");
     }

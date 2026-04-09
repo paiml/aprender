@@ -108,7 +108,7 @@ impl GpuRegressionSuite {
         };
 
         self.results.push(result);
-        self.results.last().unwrap()
+        self.results.last().expect("results non-empty after push")
     }
 
     /// Compare PTX for regression

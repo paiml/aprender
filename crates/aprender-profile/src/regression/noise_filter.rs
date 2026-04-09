@@ -100,6 +100,7 @@ impl SyscallDistribution {
 /// assert!(!stable.contains_key("socket")); // Noisy syscall filtered
 /// assert!(noisy.contains(&"socket".to_string()));
 /// ```
+#[allow(clippy::implicit_hasher)]
 pub fn filter_noisy_syscalls(
     distributions: &HashMap<String, Vec<f32>>,
     noise_threshold: f64,

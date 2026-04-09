@@ -168,14 +168,14 @@ pub fn validate_code_fences(md: &str) -> Vec<DocViolation> {
 
     for (idx, line) in md.lines().enumerate() {
         let trimmed = line.trim();
-        if trimmed.starts_with("```") {
+        if let Some(after_fence) = trimmed.strip_prefix("```") {
             if in_fence {
                 // Closing fence — no language tag expected.
                 in_fence = false;
             } else {
                 // Opening fence — check for language tag.
                 in_fence = true;
-                if trimmed[3..].trim().is_empty() {
+                if after_fence.trim().is_empty() {
                     violations.push(DocViolation {
                         line: idx + 1,
                         rule: "code-fence-language",

@@ -363,7 +363,7 @@ impl std::fmt::Display for LayoutError {
 
 /// Auto-layout algorithms
 pub mod auto_layout {
-    use super::*;
+    use super::{Size, Point, Rect, Viewport};
 
     /// Arrange elements in a horizontal row
     pub fn row(elements: &[(&str, Size)], start: Point, spacing: f32) -> Vec<(String, Rect)> {

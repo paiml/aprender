@@ -9,6 +9,7 @@ use crate::types::{WorkflowPhase, WorkflowState};
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
+#[allow(clippy::fn_params_excessive_bools)]
 pub fn cmd_validate(
     trace_syscalls: bool,
     diff_output: bool,
@@ -331,6 +332,7 @@ fn time_binary_avg(binary: &Path, iterations: u32) -> Option<f64> {
 }
 
 /// Display validation settings as a formatted list.
+#[allow(clippy::fn_params_excessive_bools)]
 fn display_validation_settings(
     trace_syscalls: bool,
     diff_output: bool,

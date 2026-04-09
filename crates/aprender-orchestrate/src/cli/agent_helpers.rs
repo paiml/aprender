@@ -33,7 +33,7 @@ pub(super) fn build_driver(
     manifest: &batuta::agent::AgentManifest,
 ) -> anyhow::Result<Box<dyn batuta::agent::driver::LlmDriver>> {
     let resolved_path = manifest.model.resolve_model_path();
-    let local = build_local_driver(manifest, &resolved_path);
+    let local = build_local_driver(manifest, resolved_path.as_ref());
     let remote = build_remote_driver(manifest);
 
     match (local, remote) {
@@ -68,10 +68,10 @@ pub(super) fn build_driver(
 /// Build local inference driver (RealizarDriver) if available.
 fn build_local_driver(
     manifest: &batuta::agent::AgentManifest,
-    resolved_path: &Option<std::path::PathBuf>,
+    resolved_path: Option<&std::path::PathBuf>,
 ) -> Option<Box<dyn batuta::agent::driver::LlmDriver>> {
     #[cfg(feature = "inference")]
-    if let Some(ref model_path) = resolved_path {
+    if let Some(model_path) = resolved_path {
         match batuta::agent::driver::realizar::RealizarDriver::new(
             model_path.clone(),
             manifest.model.context_window,

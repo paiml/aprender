@@ -385,7 +385,7 @@ fn days_since_unix_epoch(year: u32, month: u32, day: u32) -> u64 {
 
 /// Check if year is a leap year
 fn is_leap_year(year: u32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }
 
 /// Clock controller for page/context

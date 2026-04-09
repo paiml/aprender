@@ -132,20 +132,19 @@ fn plan_command(
     let config = plan(model_params, vram, method)?;
 
     if cli.format == entrenar_common::OutputFormat::Json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "method": format!("{:?}", config.method),
-                "rank": config.rank,
-                "alpha": config.alpha,
-                "target_modules": config.target_modules,
-                "trainable_params": config.trainable_params,
-                "trainable_percent": config.trainable_percent,
-                "memory_gb": config.memory_gb,
-                "utilization_percent": config.utilization_percent,
-                "speedup": config.speedup,
-            })
-        );
+        #[allow(clippy::disallowed_methods)]
+        let json = serde_json::json!({
+            "method": format!("{:?}", config.method),
+            "rank": config.rank,
+            "alpha": config.alpha,
+            "target_modules": config.target_modules,
+            "trainable_params": config.trainable_params,
+            "trainable_percent": config.trainable_percent,
+            "memory_gb": config.memory_gb,
+            "utilization_percent": config.utilization_percent,
+            "speedup": config.speedup,
+        });
+        println!("{json}");
     } else {
         if !cli.is_quiet() {
             println!(
@@ -199,6 +198,7 @@ fn compare_command(
     let comparisons = entrenar_lora::optimizer::compare_methods(model_params, vram);
 
     if cli.format == entrenar_common::OutputFormat::Json {
+        #[allow(clippy::disallowed_methods)]
         let json: Vec<_> = comparisons
             .iter()
             .map(|c| {

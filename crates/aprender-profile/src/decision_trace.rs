@@ -78,7 +78,7 @@ pub mod sampling {
     /// let random_value = fast_random();
     /// assert_ne!(random_value, 0); // Extremely unlikely to be zero
     /// ```
-    #[inline(always)]
+    #[inline]
     pub fn fast_random() -> u64 {
         RNG_STATE.with(|state| {
             let mut x = state.get();

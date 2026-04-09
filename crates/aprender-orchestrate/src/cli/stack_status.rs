@@ -185,7 +185,7 @@ pub(super) fn cmd_stack_quality(
     let report = match component {
         Some(comp_name) => {
             let checker = QualityChecker::new(workspace_path.clone());
-            let quality = rt.block_on(async { checker.check_component(&comp_name).await })?;
+            let quality = checker.check_component(&comp_name)?;
             StackQualityReport::from_components(vec![quality])
         }
         None => {
@@ -219,7 +219,7 @@ pub(super) fn cmd_stack_quality(
 
 /// Check all stack components from LAYER_DEFINITIONS.
 fn check_all_stack_components(
-    rt: &tokio::runtime::Runtime,
+    _rt: &tokio::runtime::Runtime,
     workspace_path: &std::path::Path,
 ) -> Vec<stack::ComponentQuality> {
     use stack::tree::LAYER_DEFINITIONS;
@@ -231,7 +231,7 @@ fn check_all_stack_components(
             let comp_path = workspace_path.join(comp_name);
             if comp_path.join("Cargo.toml").exists() {
                 let checker = QualityChecker::new(comp_path);
-                match rt.block_on(async { checker.check_component(comp_name).await }) {
+                match checker.check_component(comp_name) {
                     Ok(quality) => components.push(quality),
                     Err(e) => {
                         eprintln!("Warning: Failed to check {}: {}", comp_name, e);
@@ -246,18 +246,18 @@ fn check_all_stack_components(
 /// Collect quality data for all stack components in the workspace.
 pub(super) fn collect_gate_components(
     workspace_path: &std::path::Path,
-    rt: &tokio::runtime::Runtime,
+    _rt: &tokio::runtime::Runtime,
     quiet: bool,
 ) -> Vec<stack::ComponentQuality> {
     use stack::{tree::LAYER_DEFINITIONS, QualityChecker};
 
     let mut components = Vec::new();
-    for (_layer_name, layer_components) in LAYER_DEFINITIONS.iter() {
+    for (_layer_name, layer_components) in LAYER_DEFINITIONS {
         for comp_name in *layer_components {
             let comp_path = workspace_path.join(comp_name);
             if comp_path.join("Cargo.toml").exists() {
                 let checker = QualityChecker::new(comp_path);
-                match rt.block_on(async { checker.check_component(comp_name).await }) {
+                match checker.check_component(comp_name) {
                     Ok(quality) => components.push(quality),
                     Err(e) => {
                         if !quiet {

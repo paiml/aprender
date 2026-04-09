@@ -216,6 +216,7 @@ pub struct SyscallFeature {
 }
 
 /// Extract features from syscall statistics
+#[allow(clippy::implicit_hasher)]
 pub fn extract_features(
     syscall_data: &HashMap<String, (u64, u64)>,
 ) -> (Vec<String>, Vec<Vec<f64>>) {
@@ -263,6 +264,7 @@ pub struct OutlierReport {
 }
 
 /// Analyze syscall data for outliers using Isolation Forest
+#[allow(clippy::implicit_hasher)]
 pub fn analyze_outliers(
     syscall_data: &HashMap<String, (u64, u64)>,
     num_trees: usize,

@@ -501,9 +501,9 @@ fn test_initialize_tracers_full_config() {
 fn test_print_text_stats_none() {
     let stats_tracker: Option<crate::stats::StatsTracker> = None;
     #[cfg(feature = "otlp")]
-    output::print_text_stats(&stats_tracker, false, 2.0, None);
+    output::print_text_stats(stats_tracker.as_ref(), false, 2.0, None);
     #[cfg(not(feature = "otlp"))]
-    output::print_text_stats(&stats_tracker, false, 2.0, None);
+    output::print_text_stats(stats_tracker.as_ref(), false, 2.0, None);
     // Should not panic with None
 }
 
@@ -511,18 +511,18 @@ fn test_print_text_stats_none() {
 fn test_print_text_stats_with_tracker() {
     let stats_tracker = Some(crate::stats::StatsTracker::new());
     #[cfg(feature = "otlp")]
-    output::print_text_stats(&stats_tracker, false, 2.0, None);
+    output::print_text_stats(stats_tracker.as_ref(), false, 2.0, None);
     #[cfg(not(feature = "otlp"))]
-    output::print_text_stats(&stats_tracker, false, 2.0, None);
+    output::print_text_stats(stats_tracker.as_ref(), false, 2.0, None);
 }
 
 #[test]
 fn test_print_text_stats_extended() {
     let stats_tracker = Some(crate::stats::StatsTracker::new());
     #[cfg(feature = "otlp")]
-    output::print_text_stats(&stats_tracker, true, 3.0, None);
+    output::print_text_stats(stats_tracker.as_ref(), true, 3.0, None);
     #[cfg(not(feature = "otlp"))]
-    output::print_text_stats(&stats_tracker, true, 3.0, None);
+    output::print_text_stats(stats_tracker.as_ref(), true, 3.0, None);
 }
 
 #[test]
@@ -540,133 +540,133 @@ fn test_print_json_output_nonzero_exit() {
 
 #[test]
 fn test_generate_ml_analysis_none() {
-    let result = ml_analysis::generate_ml_analysis_for_json(&None, 5);
+    let result = ml_analysis::generate_ml_analysis_for_json(None, 5);
     assert!(result.is_none());
 }
 
 #[test]
 fn test_generate_ml_analysis_empty_tracker() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    let result = ml_analysis::generate_ml_analysis_for_json(&tracker, 3);
+    let result = ml_analysis::generate_ml_analysis_for_json(tracker.as_ref(), 3);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_generate_isolation_forest_none() {
-    let result = ml_analysis::generate_isolation_forest_analysis_for_json(&None, 100, 0.1, false);
+    let result = ml_analysis::generate_isolation_forest_analysis_for_json(None, 100, 0.1, false);
     assert!(result.is_none());
 }
 
 #[test]
 fn test_generate_isolation_forest_empty_tracker() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    let result = ml_analysis::generate_isolation_forest_analysis_for_json(&tracker, 50, 0.1, false);
+    let result = ml_analysis::generate_isolation_forest_analysis_for_json(tracker.as_ref(), 50, 0.1, false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_generate_isolation_forest_with_explain() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    let result = ml_analysis::generate_isolation_forest_analysis_for_json(&tracker, 50, 0.1, true);
+    let result = ml_analysis::generate_isolation_forest_analysis_for_json(tracker.as_ref(), 50, 0.1, true);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_generate_autoencoder_none() {
-    let result = ml_analysis::generate_autoencoder_analysis_for_json(&None, 8, 50, 2.0, false);
+    let result = ml_analysis::generate_autoencoder_analysis_for_json(None, 8, 50, 2.0, false);
     assert!(result.is_none());
 }
 
 #[test]
 fn test_generate_autoencoder_empty_tracker() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    let result = ml_analysis::generate_autoencoder_analysis_for_json(&tracker, 8, 50, 2.0, false);
+    let result = ml_analysis::generate_autoencoder_analysis_for_json(tracker.as_ref(), 8, 50, 2.0, false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_generate_autoencoder_with_explain() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    let result = ml_analysis::generate_autoencoder_analysis_for_json(&tracker, 8, 50, 2.0, true);
+    let result = ml_analysis::generate_autoencoder_analysis_for_json(tracker.as_ref(), 8, 50, 2.0, true);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_print_csv_stats_none() {
     let csv_stats = crate::csv_output::CsvStatsOutput::new();
-    output::print_csv_stats(csv_stats, &None, false, false, 2.0);
+    output::print_csv_stats(csv_stats, None, false, false, 2.0);
 }
 
 #[test]
 fn test_print_csv_stats_with_tracker() {
     let csv_stats = crate::csv_output::CsvStatsOutput::new();
     let tracker = Some(crate::stats::StatsTracker::new());
-    output::print_csv_stats(csv_stats, &tracker, false, false, 2.0);
+    output::print_csv_stats(csv_stats, tracker.as_ref(), false, false, 2.0);
 }
 
 #[test]
 fn test_print_csv_stats_with_timing() {
     let csv_stats = crate::csv_output::CsvStatsOutput::new();
     let tracker = Some(crate::stats::StatsTracker::new());
-    output::print_csv_stats(csv_stats, &tracker, true, false, 2.0);
+    output::print_csv_stats(csv_stats, tracker.as_ref(), true, false, 2.0);
 }
 
 #[test]
 fn test_print_csv_stats_extended() {
     let csv_stats = crate::csv_output::CsvStatsOutput::new();
     let tracker = Some(crate::stats::StatsTracker::new());
-    output::print_csv_stats(csv_stats, &tracker, true, true, 3.0);
+    output::print_csv_stats(csv_stats, tracker.as_ref(), true, true, 3.0);
 }
 
 #[test]
 fn test_print_hpu_analysis_none() {
-    output::print_hpu_analysis(&None, false);
+    output::print_hpu_analysis(None, false);
 }
 
 #[test]
 fn test_print_hpu_analysis_cpu_only() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    output::print_hpu_analysis(&tracker, true);
+    output::print_hpu_analysis(tracker.as_ref(), true);
 }
 
 #[test]
 fn test_print_hpu_analysis_with_tracker() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    output::print_hpu_analysis(&tracker, false);
+    output::print_hpu_analysis(tracker.as_ref(), false);
 }
 
 #[test]
 fn test_print_ml_analysis_none() {
-    ml_analysis::print_ml_analysis(&None, 5, false, 2.0);
+    ml_analysis::print_ml_analysis(None, 5, false, 2.0);
 }
 
 #[test]
 fn test_print_ml_analysis_with_tracker() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    ml_analysis::print_ml_analysis(&tracker, 5, false, 2.0);
+    ml_analysis::print_ml_analysis(tracker.as_ref(), 5, false, 2.0);
 }
 
 #[test]
 fn test_print_ml_analysis_compare() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    ml_analysis::print_ml_analysis(&tracker, 5, true, 2.0);
+    ml_analysis::print_ml_analysis(tracker.as_ref(), 5, true, 2.0);
 }
 
 #[test]
 fn test_print_isolation_forest_none() {
-    ml_analysis::print_isolation_forest_analysis(&None, 100, 0.1, false);
+    ml_analysis::print_isolation_forest_analysis(None, 100, 0.1, false);
 }
 
 #[test]
 fn test_print_isolation_forest_with_tracker() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    ml_analysis::print_isolation_forest_analysis(&tracker, 100, 0.1, false);
+    ml_analysis::print_isolation_forest_analysis(tracker.as_ref(), 100, 0.1, false);
 }
 
 #[test]
 fn test_print_isolation_forest_with_explain() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    ml_analysis::print_isolation_forest_analysis(&tracker, 100, 0.1, true);
+    ml_analysis::print_isolation_forest_analysis(tracker.as_ref(), 100, 0.1, true);
 }
 
 #[test]
@@ -704,19 +704,19 @@ fn test_initialize_output_tracers_html_with_timing_and_source() {
 
 #[test]
 fn test_print_autoencoder_none() {
-    ml_analysis::print_autoencoder_analysis(&None, 8, 50, 2.0, false);
+    ml_analysis::print_autoencoder_analysis(None, 8, 50, 2.0, false);
 }
 
 #[test]
 fn test_print_autoencoder_with_tracker() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    ml_analysis::print_autoencoder_analysis(&tracker, 8, 50, 2.0, false);
+    ml_analysis::print_autoencoder_analysis(tracker.as_ref(), 8, 50, 2.0, false);
 }
 
 #[test]
 fn test_print_autoencoder_with_explain() {
     let tracker = Some(crate::stats::StatsTracker::new());
-    ml_analysis::print_autoencoder_analysis(&tracker, 8, 50, 2.0, true);
+    ml_analysis::print_autoencoder_analysis(tracker.as_ref(), 8, 50, 2.0, true);
 }
 
 #[test]
@@ -807,7 +807,7 @@ fn test_print_analysis_summaries_none() {
         dl_epochs: 50,
         explain: false,
     };
-    output::print_analysis_summaries(&None, &analysis);
+    output::print_analysis_summaries(None, &analysis);
 }
 
 #[test]
@@ -830,7 +830,7 @@ fn test_print_analysis_summaries_hpu() {
         dl_epochs: 50,
         explain: false,
     };
-    output::print_analysis_summaries(&tracker, &analysis);
+    output::print_analysis_summaries(tracker.as_ref(), &analysis);
 }
 
 #[test]
@@ -853,7 +853,7 @@ fn test_print_analysis_summaries_ml() {
         dl_epochs: 50,
         explain: false,
     };
-    output::print_analysis_summaries(&tracker, &analysis);
+    output::print_analysis_summaries(tracker.as_ref(), &analysis);
 }
 
 #[test]
@@ -876,7 +876,7 @@ fn test_print_analysis_summaries_outliers() {
         dl_epochs: 50,
         explain: false,
     };
-    output::print_analysis_summaries(&tracker, &analysis);
+    output::print_analysis_summaries(tracker.as_ref(), &analysis);
 }
 
 #[test]
@@ -899,7 +899,7 @@ fn test_print_analysis_summaries_dl() {
         dl_epochs: 50,
         explain: false,
     };
-    output::print_analysis_summaries(&tracker, &analysis);
+    output::print_analysis_summaries(tracker.as_ref(), &analysis);
 }
 
 #[test]
@@ -922,7 +922,7 @@ fn test_print_analysis_summaries_all() {
         dl_epochs: 50,
         explain: true,
     };
-    output::print_analysis_summaries(&tracker, &analysis);
+    output::print_analysis_summaries(tracker.as_ref(), &analysis);
 }
 
 #[test]
@@ -945,7 +945,7 @@ fn test_handle_json_output_basic() {
         dl_epochs: 50,
         explain: false,
     };
-    output::handle_json_output(json_out, &None, &analysis, 0);
+    output::handle_json_output(json_out, None, &analysis, 0);
 }
 
 #[test]
@@ -969,7 +969,7 @@ fn test_handle_json_output_with_ml() {
         dl_epochs: 50,
         explain: false,
     };
-    output::handle_json_output(json_out, &tracker, &analysis, 0);
+    output::handle_json_output(json_out, tracker.as_ref(), &analysis, 0);
 }
 
 #[test]
@@ -993,7 +993,7 @@ fn test_handle_json_output_with_outliers() {
         dl_epochs: 50,
         explain: true,
     };
-    output::handle_json_output(json_out, &tracker, &analysis, 0);
+    output::handle_json_output(json_out, tracker.as_ref(), &analysis, 0);
 }
 
 #[test]
@@ -1017,7 +1017,7 @@ fn test_handle_json_output_with_dl() {
         dl_epochs: 50,
         explain: false,
     };
-    output::handle_json_output(json_out, &tracker, &analysis, 0);
+    output::handle_json_output(json_out, tracker.as_ref(), &analysis, 0);
 }
 
 #[test]
@@ -1041,13 +1041,13 @@ fn test_handle_json_output_all_analysis() {
         dl_epochs: 50,
         explain: true,
     };
-    output::handle_json_output(json_out, &tracker, &analysis, 1);
+    output::handle_json_output(json_out, tracker.as_ref(), &analysis, 1);
 }
 
 // should_print_result tests
 #[test]
 fn test_should_print_result_none_entry() {
-    assert!(!output::should_print_result(&None, false, false, false, false));
+    assert!(!output::should_print_result(None, false, false, false, false));
 }
 
 #[test]
@@ -1062,7 +1062,7 @@ fn test_should_print_result_with_entry_no_modes() {
         raw_arg2: None,
         _raw_arg3: None,
     });
-    assert!(output::should_print_result(&entry, false, false, false, false));
+    assert!(output::should_print_result(entry.as_ref(), false, false, false, false));
 }
 
 #[test]
@@ -1077,7 +1077,7 @@ fn test_should_print_result_stats_mode() {
         raw_arg2: None,
         _raw_arg3: None,
     });
-    assert!(!output::should_print_result(&entry, true, false, false, false));
+    assert!(!output::should_print_result(entry.as_ref(), true, false, false, false));
 }
 
 #[test]
@@ -1092,7 +1092,7 @@ fn test_should_print_result_json_mode() {
         raw_arg2: None,
         _raw_arg3: None,
     });
-    assert!(!output::should_print_result(&entry, false, true, false, false));
+    assert!(!output::should_print_result(entry.as_ref(), false, true, false, false));
 }
 
 #[test]
@@ -1107,7 +1107,7 @@ fn test_should_print_result_csv_mode() {
         raw_arg2: None,
         _raw_arg3: None,
     });
-    assert!(!output::should_print_result(&entry, false, false, true, false));
+    assert!(!output::should_print_result(entry.as_ref(), false, false, true, false));
 }
 
 #[test]
@@ -1122,7 +1122,7 @@ fn test_should_print_result_html_mode() {
         raw_arg2: None,
         _raw_arg3: None,
     });
-    assert!(!output::should_print_result(&entry, false, false, false, true));
+    assert!(!output::should_print_result(entry.as_ref(), false, false, false, true));
 }
 
 #[test]
@@ -1137,7 +1137,7 @@ fn test_should_print_result_all_modes() {
         raw_arg2: None,
         _raw_arg3: None,
     });
-    assert!(!output::should_print_result(&entry, true, true, true, true));
+    assert!(!output::should_print_result(entry.as_ref(), true, true, true, true));
 }
 
 // print_syscall_result tests
@@ -1165,7 +1165,7 @@ fn test_print_syscall_result_negative_with_timing() {
 #[test]
 fn test_record_stats_for_syscall_none_entry() {
     let mut tracker = Some(crate::stats::StatsTracker::new());
-    syscall_handling::record_stats_for_syscall_test(&None, tracker.as_mut(), 0, 100);
+    syscall_handling::record_stats_for_syscall_test(None, tracker.as_mut(), 0, 100);
 }
 
 #[test]
@@ -1180,7 +1180,7 @@ fn test_record_stats_for_syscall_none_tracker() {
         raw_arg2: None,
         _raw_arg3: None,
     });
-    syscall_handling::record_stats_for_syscall_test(&entry, None, 0, 100);
+    syscall_handling::record_stats_for_syscall_test(entry.as_ref(), None, 0, 100);
 }
 
 #[test]
@@ -1196,14 +1196,14 @@ fn test_record_stats_for_syscall_with_data() {
         _raw_arg3: None,
     });
     let mut tracker = Some(crate::stats::StatsTracker::new());
-    syscall_handling::record_stats_for_syscall_test(&entry, tracker.as_mut(), 100, 500);
+    syscall_handling::record_stats_for_syscall_test(entry.as_ref(), tracker.as_mut(), 100, 500);
 }
 
 // record_function_profiling tests
 #[test]
 fn test_record_function_profiling_none_entry() {
     let mut profiler = Some(crate::function_profiler::FunctionProfiler::new());
-    syscall_handling::record_function_profiling_test(&None, profiler.as_mut(), 100);
+    syscall_handling::record_function_profiling_test(None, profiler.as_mut(), 100);
 }
 
 #[test]
@@ -1218,7 +1218,7 @@ fn test_record_function_profiling_none_profiler() {
         raw_arg2: None,
         _raw_arg3: None,
     });
-    syscall_handling::record_function_profiling_test(&entry, None, 100);
+    syscall_handling::record_function_profiling_test(entry.as_ref(), None, 100);
 }
 
 #[test]
@@ -1234,7 +1234,7 @@ fn test_record_function_profiling_with_data() {
         _raw_arg3: None,
     });
     let mut profiler = Some(crate::function_profiler::FunctionProfiler::new());
-    syscall_handling::record_function_profiling_test(&entry, profiler.as_mut(), 100);
+    syscall_handling::record_function_profiling_test(entry.as_ref(), profiler.as_mut(), 100);
 }
 
 #[test]
@@ -1250,14 +1250,14 @@ fn test_record_function_profiling_no_function_name() {
         _raw_arg3: None,
     });
     let mut profiler = Some(crate::function_profiler::FunctionProfiler::new());
-    syscall_handling::record_function_profiling_test(&entry, profiler.as_mut(), 100);
+    syscall_handling::record_function_profiling_test(entry.as_ref(), profiler.as_mut(), 100);
 }
 
 // handle_anomaly_detection tests
 #[test]
 fn test_handle_anomaly_detection_none_entry() {
     let mut detector = Some(crate::anomaly::AnomalyDetector::new(100, 2.0));
-    syscall_handling::handle_anomaly_detection_test(&None, detector.as_mut(), 100);
+    syscall_handling::handle_anomaly_detection_test(None, detector.as_mut(), 100);
 }
 
 #[test]
@@ -1272,7 +1272,7 @@ fn test_handle_anomaly_detection_none_detector() {
         raw_arg2: None,
         _raw_arg3: None,
     });
-    syscall_handling::handle_anomaly_detection_test(&entry, None, 100);
+    syscall_handling::handle_anomaly_detection_test(entry.as_ref(), None, 100);
 }
 
 #[test]
@@ -1288,7 +1288,7 @@ fn test_handle_anomaly_detection_with_data() {
         _raw_arg3: None,
     });
     let mut detector = Some(crate::anomaly::AnomalyDetector::new(100, 2.0));
-    syscall_handling::handle_anomaly_detection_test(&entry, detector.as_mut(), 100);
+    syscall_handling::handle_anomaly_detection_test(entry.as_ref(), detector.as_mut(), 100);
 }
 
 // print_summaries tests with Tracers struct
@@ -1596,7 +1596,7 @@ fn create_populated_stats_tracker() -> crate::stats::StatsTracker {
 #[test]
 fn test_generate_ml_analysis_populated() {
     let tracker = Some(create_populated_stats_tracker());
-    let result = ml_analysis::generate_ml_analysis_for_json(&tracker, 3);
+    let result = ml_analysis::generate_ml_analysis_for_json(tracker.as_ref(), 3);
     assert!(result.is_some());
     let report = result.expect("test");
     assert!(report.total_samples > 0);
@@ -1605,28 +1605,28 @@ fn test_generate_ml_analysis_populated() {
 #[test]
 fn test_generate_isolation_forest_populated() {
     let tracker = Some(create_populated_stats_tracker());
-    let result = ml_analysis::generate_isolation_forest_analysis_for_json(&tracker, 50, 0.1, false);
+    let result = ml_analysis::generate_isolation_forest_analysis_for_json(tracker.as_ref(), 50, 0.1, false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_generate_isolation_forest_populated_with_explain() {
     let tracker = Some(create_populated_stats_tracker());
-    let result = ml_analysis::generate_isolation_forest_analysis_for_json(&tracker, 50, 0.1, true);
+    let result = ml_analysis::generate_isolation_forest_analysis_for_json(tracker.as_ref(), 50, 0.1, true);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_generate_autoencoder_populated() {
     let tracker = Some(create_populated_stats_tracker());
-    let result = ml_analysis::generate_autoencoder_analysis_for_json(&tracker, 8, 10, 2.0, false);
+    let result = ml_analysis::generate_autoencoder_analysis_for_json(tracker.as_ref(), 8, 10, 2.0, false);
     assert!(result.is_some());
 }
 
 #[test]
 fn test_generate_autoencoder_populated_with_explain() {
     let tracker = Some(create_populated_stats_tracker());
-    let result = ml_analysis::generate_autoencoder_analysis_for_json(&tracker, 8, 10, 2.0, true);
+    let result = ml_analysis::generate_autoencoder_analysis_for_json(tracker.as_ref(), 8, 10, 2.0, true);
     assert!(result.is_some());
 }
 
@@ -1634,80 +1634,80 @@ fn test_generate_autoencoder_populated_with_explain() {
 fn test_print_text_stats_populated() {
     let tracker = Some(create_populated_stats_tracker());
     #[cfg(feature = "otlp")]
-    output::print_text_stats(&tracker, false, 2.0, None);
+    output::print_text_stats(tracker.as_ref(), false, 2.0, None);
     #[cfg(not(feature = "otlp"))]
-    output::print_text_stats(&tracker, false, 2.0, None);
+    output::print_text_stats(tracker.as_ref(), false, 2.0, None);
 }
 
 #[test]
 fn test_print_text_stats_populated_extended() {
     let tracker = Some(create_populated_stats_tracker());
     #[cfg(feature = "otlp")]
-    output::print_text_stats(&tracker, true, 2.0, None);
+    output::print_text_stats(tracker.as_ref(), true, 2.0, None);
     #[cfg(not(feature = "otlp"))]
-    output::print_text_stats(&tracker, true, 2.0, None);
+    output::print_text_stats(tracker.as_ref(), true, 2.0, None);
 }
 
 #[test]
 fn test_print_csv_stats_populated() {
     let csv_stats = crate::csv_output::CsvStatsOutput::new();
     let tracker = Some(create_populated_stats_tracker());
-    output::print_csv_stats(csv_stats, &tracker, false, false, 2.0);
+    output::print_csv_stats(csv_stats, tracker.as_ref(), false, false, 2.0);
 }
 
 #[test]
 fn test_print_csv_stats_populated_extended() {
     let csv_stats = crate::csv_output::CsvStatsOutput::new();
     let tracker = Some(create_populated_stats_tracker());
-    output::print_csv_stats(csv_stats, &tracker, true, true, 2.0);
+    output::print_csv_stats(csv_stats, tracker.as_ref(), true, true, 2.0);
 }
 
 #[test]
 fn test_print_hpu_analysis_populated() {
     let tracker = Some(create_populated_stats_tracker());
-    output::print_hpu_analysis(&tracker, false);
+    output::print_hpu_analysis(tracker.as_ref(), false);
 }
 
 #[test]
 fn test_print_hpu_analysis_populated_cpu_only() {
     let tracker = Some(create_populated_stats_tracker());
-    output::print_hpu_analysis(&tracker, true);
+    output::print_hpu_analysis(tracker.as_ref(), true);
 }
 
 #[test]
 fn test_print_ml_analysis_populated() {
     let tracker = Some(create_populated_stats_tracker());
-    ml_analysis::print_ml_analysis(&tracker, 3, false, 2.0);
+    ml_analysis::print_ml_analysis(tracker.as_ref(), 3, false, 2.0);
 }
 
 #[test]
 fn test_print_ml_analysis_populated_compare() {
     let tracker = Some(create_populated_stats_tracker());
-    ml_analysis::print_ml_analysis(&tracker, 3, true, 2.0);
+    ml_analysis::print_ml_analysis(tracker.as_ref(), 3, true, 2.0);
 }
 
 #[test]
 fn test_print_isolation_forest_populated() {
     let tracker = Some(create_populated_stats_tracker());
-    ml_analysis::print_isolation_forest_analysis(&tracker, 50, 0.1, false);
+    ml_analysis::print_isolation_forest_analysis(tracker.as_ref(), 50, 0.1, false);
 }
 
 #[test]
 fn test_print_isolation_forest_populated_explain() {
     let tracker = Some(create_populated_stats_tracker());
-    ml_analysis::print_isolation_forest_analysis(&tracker, 50, 0.1, true);
+    ml_analysis::print_isolation_forest_analysis(tracker.as_ref(), 50, 0.1, true);
 }
 
 #[test]
 fn test_print_autoencoder_populated() {
     let tracker = Some(create_populated_stats_tracker());
-    ml_analysis::print_autoencoder_analysis(&tracker, 8, 10, 2.0, false);
+    ml_analysis::print_autoencoder_analysis(tracker.as_ref(), 8, 10, 2.0, false);
 }
 
 #[test]
 fn test_print_autoencoder_populated_explain() {
     let tracker = Some(create_populated_stats_tracker());
-    ml_analysis::print_autoencoder_analysis(&tracker, 8, 10, 2.0, true);
+    ml_analysis::print_autoencoder_analysis(tracker.as_ref(), 8, 10, 2.0, true);
 }
 
 #[test]
@@ -1731,7 +1731,7 @@ fn test_handle_json_output_populated() {
         dl_epochs: 50,
         explain: false,
     };
-    output::handle_json_output(json_out, &tracker, &analysis, 0);
+    output::handle_json_output(json_out, tracker.as_ref(), &analysis, 0);
 }
 
 #[test]
@@ -1755,7 +1755,7 @@ fn test_handle_json_output_populated_ml() {
         dl_epochs: 50,
         explain: false,
     };
-    output::handle_json_output(json_out, &tracker, &analysis, 0);
+    output::handle_json_output(json_out, tracker.as_ref(), &analysis, 0);
 }
 
 #[test]
@@ -1779,7 +1779,7 @@ fn test_handle_json_output_populated_outliers() {
         dl_epochs: 50,
         explain: true,
     };
-    output::handle_json_output(json_out, &tracker, &analysis, 0);
+    output::handle_json_output(json_out, tracker.as_ref(), &analysis, 0);
 }
 
 #[test]
@@ -1803,7 +1803,7 @@ fn test_handle_json_output_populated_dl() {
         dl_epochs: 10,
         explain: false,
     };
-    output::handle_json_output(json_out, &tracker, &analysis, 0);
+    output::handle_json_output(json_out, tracker.as_ref(), &analysis, 0);
 }
 
 #[test]
@@ -1827,7 +1827,7 @@ fn test_handle_json_output_populated_all() {
         dl_epochs: 10,
         explain: true,
     };
-    output::handle_json_output(json_out, &tracker, &analysis, 1);
+    output::handle_json_output(json_out, tracker.as_ref(), &analysis, 1);
 }
 
 #[test]
@@ -1850,7 +1850,7 @@ fn test_print_analysis_summaries_populated() {
         dl_epochs: 50,
         explain: false,
     };
-    output::print_analysis_summaries(&tracker, &analysis);
+    output::print_analysis_summaries(tracker.as_ref(), &analysis);
 }
 
 #[test]
@@ -1873,7 +1873,7 @@ fn test_print_analysis_summaries_populated_all() {
         dl_epochs: 10,
         explain: true,
     };
-    output::print_analysis_summaries(&tracker, &analysis);
+    output::print_analysis_summaries(tracker.as_ref(), &analysis);
 }
 
 #[test]

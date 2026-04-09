@@ -335,7 +335,7 @@ impl ReplayRecorder {
 
         // Record checkpoint if at interval
         if let Some(hash) = state_hash {
-            if self.current_frame % self.checkpoint_interval == 0 {
+            if self.current_frame.is_multiple_of(self.checkpoint_interval) {
                 self.replay
                     .add_checkpoint(StateCheckpoint::new(self.current_frame, hash));
             }
@@ -433,13 +433,15 @@ impl ReplayPlayer {
         // Collect all inputs for current frame
         while self.input_index < self.replay.inputs.len() {
             let timed = &self.replay.inputs[self.input_index];
-            if timed.frame == self.current_frame {
-                inputs.push(timed.event.clone());
-                self.input_index += 1;
-            } else if timed.frame > self.current_frame {
-                break;
-            } else {
-                self.input_index += 1;
+            match timed.frame.cmp(&self.current_frame) {
+                std::cmp::Ordering::Equal => {
+                    inputs.push(timed.event.clone());
+                    self.input_index += 1;
+                }
+                std::cmp::Ordering::Greater => break,
+                std::cmp::Ordering::Less => {
+                    self.input_index += 1;
+                }
             }
         }
 

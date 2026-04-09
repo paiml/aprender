@@ -73,14 +73,14 @@ impl QualityChecker {
     }
 
     /// Check quality for a single component
-    pub async fn check_component(&self, name: &str) -> Result<ComponentQuality> {
+    pub fn check_component(&self, name: &str) -> Result<ComponentQuality> {
         let path = self.find_component_path(name)?;
 
         // Run pmat rust-project-score
-        let rust_score = self.run_rust_project_score(&path).await?;
+        let rust_score = self.run_rust_project_score(&path)?;
 
         // Run pmat repo-score
-        let (repo_score, readme_score) = self.run_repo_score(&path).await?;
+        let (repo_score, readme_score) = self.run_repo_score(&path)?;
 
         // Detect hero image
         let hero_image = HeroImageResult::detect(&path);
@@ -89,13 +89,13 @@ impl QualityChecker {
     }
 
     /// Check quality for all stack components
-    pub async fn check_all(&self) -> Result<StackQualityReport> {
+    pub fn check_all(&self) -> Result<StackQualityReport> {
         use crate::stack::PAIML_CRATES;
 
         let mut components = Vec::new();
 
         for crate_name in PAIML_CRATES {
-            match self.check_component(crate_name).await {
+            match self.check_component(crate_name) {
                 Ok(quality) => components.push(quality),
                 Err(e) => {
                     // Log error but continue with other components
@@ -131,7 +131,7 @@ impl QualityChecker {
     }
 
     /// Run pmat rust-project-score on a path
-    async fn run_rust_project_score(&self, path: &Path) -> Result<Score> {
+    fn run_rust_project_score(&self, path: &Path) -> Result<Score> {
         use std::process::Command;
 
         let output = Command::new("pmat")
@@ -174,11 +174,11 @@ impl QualityChecker {
         }
 
         // Fallback: estimate score from cargo test and clippy
-        self.estimate_rust_score(path).await
+        self.estimate_rust_score(path)
     }
 
     /// Estimate rust project score when pmat is not available
-    async fn estimate_rust_score(&self, path: &Path) -> Result<Score> {
+    fn estimate_rust_score(&self, path: &Path) -> Result<Score> {
         let mut score = 50u32; // Base score
 
         // Check if tests pass (+20)
@@ -205,7 +205,7 @@ impl QualityChecker {
     }
 
     /// Run pmat repo-score on a path
-    async fn run_repo_score(&self, path: &Path) -> Result<(Score, Score)> {
+    fn run_repo_score(&self, path: &Path) -> Result<(Score, Score)> {
         use std::process::Command;
 
         let output = Command::new("pmat")
@@ -248,11 +248,11 @@ impl QualityChecker {
         }
 
         // Fallback: estimate scores
-        self.estimate_repo_scores(path).await
+        self.estimate_repo_scores(path)
     }
 
     /// Estimate repo and readme scores when pmat is not available
-    async fn estimate_repo_scores(&self, path: &Path) -> Result<(Score, Score)> {
+    fn estimate_repo_scores(&self, path: &Path) -> Result<(Score, Score)> {
         let mut repo_score = 40u32; // Base score
         let mut readme_score = 0u32;
 
@@ -501,7 +501,7 @@ mod tests {
         let dir = setup_test_dir("test_qc_repo_empty");
         let checker = QualityChecker::new(dir.clone());
         let (repo, readme) =
-            checker.estimate_repo_scores(&dir).await.expect("async operation failed");
+            checker.estimate_repo_scores(&dir).expect("async operation failed");
         assert_eq!(repo.value, 40); // base only
         assert_eq!(readme.value, 0);
         cleanup_test_dir(&dir);
@@ -518,7 +518,7 @@ mod tests {
         .expect("unexpected failure");
         let checker = QualityChecker::new(dir.clone());
         let (repo, readme) =
-            checker.estimate_repo_scores(&dir).await.expect("async operation failed");
+            checker.estimate_repo_scores(&dir).expect("async operation failed");
         assert!(repo.value > 40); // base + README
         assert_eq!(readme.value, 17);
         cleanup_test_dir(&dir);
@@ -530,7 +530,7 @@ mod tests {
         std::fs::write(dir.join("Makefile"), "all:\n\ttrue\n").expect("fs write failed");
         std::fs::create_dir_all(dir.join(".github/workflows")).expect("mkdir failed");
         let checker = QualityChecker::new(dir.clone());
-        let (repo, _) = checker.estimate_repo_scores(&dir).await.expect("async operation failed");
+        let (repo, _) = checker.estimate_repo_scores(&dir).expect("async operation failed");
         assert_eq!(repo.value, 40 + 15 + 15); // base + Makefile + CI
         cleanup_test_dir(&dir);
     }
@@ -541,7 +541,7 @@ mod tests {
         std::fs::write(dir.join(".pre-commit-config.yaml"), "repos: []\n")
             .expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let (repo, _) = checker.estimate_repo_scores(&dir).await.expect("async operation failed");
+        let (repo, _) = checker.estimate_repo_scores(&dir).expect("async operation failed");
         assert_eq!(repo.value, 40 + 10); // base + pre-commit
         cleanup_test_dir(&dir);
     }
@@ -552,7 +552,7 @@ mod tests {
         std::fs::write(dir.join("README.md"), "# Proj\n\n## Installation\nstuff\n")
             .expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let (_, readme) = checker.estimate_repo_scores(&dir).await.expect("async operation failed");
+        let (_, readme) = checker.estimate_repo_scores(&dir).expect("async operation failed");
         // 5 base + 3 installation = 8
         assert_eq!(readme.value, 8);
         cleanup_test_dir(&dir);
@@ -564,7 +564,7 @@ mod tests {
     async fn test_estimate_rust_score_empty_dir() {
         let dir = setup_test_dir("test_qc_rust_empty");
         let checker = QualityChecker::new(dir.clone());
-        let score = checker.estimate_rust_score(&dir).await.expect("async operation failed");
+        let score = checker.estimate_rust_score(&dir).expect("async operation failed");
         // Base 50 + cargo test/clippy succeed on empty dirs (no code = no errors)
         assert!(score.value >= 50, "score should be at least base: {}", score.value);
         cleanup_test_dir(&dir);
@@ -575,7 +575,7 @@ mod tests {
         let dir = setup_test_dir("test_qc_rust_readme");
         std::fs::write(dir.join("README.md"), "# Hello").expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let score = checker.estimate_rust_score(&dir).await.expect("async operation failed");
+        let score = checker.estimate_rust_score(&dir).expect("async operation failed");
         // README adds 10 to whatever the base+cargo score is
         assert!(score.value >= 60, "score with README should be >= 60: {}", score.value);
         cleanup_test_dir(&dir);
@@ -590,7 +590,7 @@ mod tests {
         )
         .expect("unexpected failure");
         let checker = QualityChecker::new(dir.clone());
-        let score = checker.estimate_rust_score(&dir).await.expect("async operation failed");
+        let score = checker.estimate_rust_score(&dir).expect("async operation failed");
         assert_eq!(score.value, 55); // 50 base + 5 metadata
         cleanup_test_dir(&dir);
     }
@@ -604,7 +604,7 @@ mod tests {
         )
         .expect("unexpected failure");
         let checker = QualityChecker::new(dir.clone());
-        let score = checker.estimate_rust_score(&dir).await.expect("async operation failed");
+        let score = checker.estimate_rust_score(&dir).expect("async operation failed");
         assert_eq!(score.value, 55); // 50 base + 5 metadata
         cleanup_test_dir(&dir);
     }
@@ -613,7 +613,7 @@ mod tests {
     async fn test_estimate_rust_score_no_cargo_toml() {
         let dir = setup_test_dir("test_qc_rust_nocargo");
         let checker = QualityChecker::new(dir.clone());
-        let score = checker.estimate_rust_score(&dir).await.expect("async operation failed");
+        let score = checker.estimate_rust_score(&dir).expect("async operation failed");
         // No Cargo.toml but cargo commands may still succeed (parent workspace)
         assert!(score.value >= 50, "score should be at least base: {}", score.value);
         cleanup_test_dir(&dir);
@@ -626,7 +626,7 @@ mod tests {
         std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\ndocumentation = \"y\"\n")
             .expect("unexpected failure");
         let checker = QualityChecker::new(dir.clone());
-        let score = checker.estimate_rust_score(&dir).await.expect("async operation failed");
+        let score = checker.estimate_rust_score(&dir).expect("async operation failed");
         assert_eq!(score.value, 65); // 50 + 10 README + 5 metadata
         cleanup_test_dir(&dir);
     }
@@ -639,7 +639,7 @@ mod tests {
         let dir = setup_test_dir("test_qc_pmat_fallback");
         std::fs::write(dir.join("README.md"), "# Hi").expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let score = checker.run_rust_project_score(&dir).await.expect("async operation failed");
+        let score = checker.run_rust_project_score(&dir).expect("async operation failed");
         assert!(score.value > 0);
         assert!(score.max > 0);
         cleanup_test_dir(&dir);
@@ -653,7 +653,7 @@ mod tests {
             .expect("fs write failed");
         std::fs::write(dir.join("Makefile"), "all:\n").expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let (repo, readme) = checker.run_repo_score(&dir).await.expect("async operation failed");
+        let (repo, readme) = checker.run_repo_score(&dir).expect("async operation failed");
         assert!(repo.value > 0);
         assert!(repo.max > 0);
         assert!(readme.max > 0);
@@ -673,7 +673,7 @@ mod tests {
         std::fs::write(dir.join("README.md"), "# My Crate\n## Usage\nstuff\n")
             .expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let result = checker.check_component("my-crate").await.expect("async operation failed");
+        let result = checker.check_component("my-crate").expect("async operation failed");
         assert_eq!(result.name, "my-crate");
         cleanup_test_dir(&dir);
     }
@@ -682,7 +682,7 @@ mod tests {
     async fn test_check_component_not_found() {
         let dir = setup_test_dir("test_qc_check_notfound");
         let checker = QualityChecker::new(dir.clone());
-        let result = checker.check_component("nonexistent-xyz").await;
+        let result = checker.check_component("nonexistent-xyz");
         assert!(result.is_err());
         cleanup_test_dir(&dir);
     }
@@ -695,7 +695,7 @@ mod tests {
         let long_content = format!("# Project\n\n## Installation\n\n{}\n", "x".repeat(600));
         std::fs::write(dir.join("README.md"), &long_content).expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let (_, readme) = checker.estimate_repo_scores(&dir).await.expect("async operation failed");
+        let (_, readme) = checker.estimate_repo_scores(&dir).expect("async operation failed");
         // 5 base + 3 installation + 3 length bonus = 11
         assert_eq!(readme.value, 11);
         cleanup_test_dir(&dir);
@@ -722,7 +722,7 @@ mod tests {
         std::fs::create_dir_all(dir.join(".git/hooks")).expect("mkdir failed");
         std::fs::write(dir.join(".git/hooks/pre-commit"), "#!/bin/sh\n").expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let (repo, _) = checker.estimate_repo_scores(&dir).await.expect("async operation failed");
+        let (repo, _) = checker.estimate_repo_scores(&dir).expect("async operation failed");
         assert_eq!(repo.value, 40 + 10); // base + pre-commit
         cleanup_test_dir(&dir);
     }
@@ -739,7 +739,7 @@ mod tests {
         );
         std::fs::write(dir.join("README.md"), &long_content).expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
-        let (_, readme) = checker.estimate_repo_scores(&dir).await.expect("async operation failed");
+        let (_, readme) = checker.estimate_repo_scores(&dir).expect("async operation failed");
         // 5 base + 3*4 sections + 3 length = 20, capped at 20
         assert!(readme.value <= 20);
         cleanup_test_dir(&dir);
@@ -782,7 +782,7 @@ mod tests {
             .expect("fs write failed");
         let checker = QualityChecker::new(dir.clone());
         let (repo, readme) =
-            checker.estimate_repo_scores(&dir).await.expect("async operation failed");
+            checker.estimate_repo_scores(&dir).expect("async operation failed");
         // base(40) + readme(10) + makefile(15) + ci(15) + precommit(10) = 90
         assert_eq!(repo.value, 90);
         assert_eq!(readme.value, 20); // capped
@@ -810,7 +810,7 @@ mod tests {
         .expect("unexpected failure");
         std::fs::write(project_b.join("README.md"), "# Project B\n").expect("fs write failed");
         let checker = QualityChecker::new(project_a.clone());
-        let result = checker.check_component("project-b").await.expect("async operation failed");
+        let result = checker.check_component("project-b").expect("async operation failed");
         assert_eq!(result.name, "project-b");
         cleanup_test_dir(&temp_dir);
     }
@@ -823,7 +823,7 @@ mod tests {
         std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"x\"\nversion = \"0.1.0\"\n")
             .expect("unexpected failure");
         let checker = QualityChecker::new(dir.clone());
-        let score = checker.estimate_rust_score(&dir).await.expect("async operation failed");
+        let score = checker.estimate_rust_score(&dir).expect("async operation failed");
         // 50 base, no documentation or metadata match
         assert_eq!(score.value, 50);
         cleanup_test_dir(&dir);

@@ -27,7 +27,7 @@ pub struct AprServeDriver {
     /// Model name for OpenAI API requests
     model_name: String,
     /// Child process handle (killed on drop)
-    _child: Child,
+    child: Child,
     /// Context window size
     context_window_size: usize,
 }
@@ -35,7 +35,7 @@ pub struct AprServeDriver {
 impl Drop for AprServeDriver {
     /// PMAT-166: Graceful shutdown — SIGTERM first, SIGKILL after 2s timeout.
     fn drop(&mut self) {
-        let pid = self._child.id();
+        let pid = self.child.id();
 
         // Try graceful shutdown first (SIGTERM on Unix via kill command)
         #[cfg(unix)]
@@ -49,7 +49,7 @@ impl Drop for AprServeDriver {
             // Wait up to 2s for graceful exit
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
             loop {
-                match self._child.try_wait() {
+                match self.child.try_wait() {
                     Ok(Some(_)) => return, // Exited cleanly
                     Ok(None) if std::time::Instant::now() < deadline => {
                         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -60,8 +60,8 @@ impl Drop for AprServeDriver {
         }
 
         // Fallback: force kill (always runs on Windows, or after SIGTERM timeout)
-        let _ = self._child.kill();
-        let _ = self._child.wait();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -113,7 +113,7 @@ impl AprServeDriver {
         let mut driver = Self {
             base_url,
             model_name,
-            _child: child,
+            child,
             context_window_size: context_window.unwrap_or(4096),
         };
 
@@ -150,7 +150,7 @@ impl AprServeDriver {
             }
 
             // Check if subprocess died
-            if let Ok(Some(status)) = self._child.try_wait() {
+            if let Ok(Some(status)) = self.child.try_wait() {
                 let stderr = self.drain_stderr();
                 let mut msg = format!("apr serve exited with {status} during startup");
                 if !stderr.is_empty() {
@@ -176,7 +176,7 @@ impl AprServeDriver {
     /// Read available stderr from the child process (non-blocking, last 2KB).
     fn drain_stderr(&mut self) -> String {
         use std::io::Read;
-        let Some(stderr) = self._child.stderr.as_mut() else {
+        let Some(stderr) = self.child.stderr.as_mut() else {
             return String::new();
         };
         let mut buf = vec![0u8; 2048];

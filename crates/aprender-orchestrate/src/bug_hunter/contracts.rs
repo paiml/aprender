@@ -108,7 +108,7 @@ pub fn analyze_contract_gaps(contracts_dir: &Path, _project_path: &Path) -> Vec<
     if let Ok(entries) = glob::glob(&contract_pattern) {
         for entry in entries.flatten() {
             let file_name = entry.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if file_name == "binding.yaml" || !file_name.ends_with(".yaml") {
+            if file_name == "binding.yaml" || !std::path::Path::new(file_name).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("yaml")) {
                 continue;
             }
             if !bound_contracts.contains(file_name) {

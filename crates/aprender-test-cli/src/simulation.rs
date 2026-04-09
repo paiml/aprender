@@ -201,7 +201,7 @@ impl ParameterVariation {
             distribution: Distribution::Uniform,
             min,
             max,
-            base: (min + max) / 2.0,
+            base: f64::midpoint(min, max),
         }
     }
 

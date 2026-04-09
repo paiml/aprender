@@ -416,8 +416,11 @@ Outputs:
             self.config
                 .environment
                 .iter()
-                .map(|(k, v)| format!("\n          {k}: {v}"))
-                .collect::<String>(),
+                .fold(String::new(), |mut acc, (k, v)| {
+                    use std::fmt::Write;
+                    let _ = write!(acc, "\n          {k}: {v}");
+                    acc
+                }),
             vpc_config,
             self.config.ephemeral_storage_mb,
             self.config.function_name,

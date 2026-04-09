@@ -26,6 +26,7 @@ impl RequiredHeaders {
 
 /// WASM threading capabilities detected from browser context
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct WasmThreadCapabilities {
     /// Whether `crossOriginIsolated` is true in the browser
     pub cross_origin_isolated: bool,
@@ -773,7 +774,7 @@ impl WorkerEmulator {
             .await
             .map_err(|e| CapabilityError::ParseError(format!("CDP call failed: {e}")))?
             .into_value()
-            .unwrap_or_else(|_| serde_json::json!({"error": "Unknown error"}));
+            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
 
         if result.get("error").is_some() {
             return Err(CapabilityError::ParseError(
@@ -862,7 +863,7 @@ impl WorkerEmulator {
             .await
             .map_err(|e| CapabilityError::ParseError(format!("CDP call failed: {e}")))?
             .into_value()
-            .unwrap_or_else(|_| serde_json::json!({"error": "Unknown error"}));
+            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
 
         if result.get("error").is_some() {
             return Err(CapabilityError::ParseError(

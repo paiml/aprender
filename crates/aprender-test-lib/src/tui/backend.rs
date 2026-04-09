@@ -88,7 +88,6 @@ impl TuiFrame {
     }
 
     /// Check if the frame matches a regex pattern
-    #[must_use]
     pub fn matches(&self, pattern: &str) -> ProbarResult<bool> {
         let re = regex::Regex::new(pattern).map_err(|e| ProbarError::TuiError {
             message: format!("Invalid regex pattern: {e}"),
@@ -97,7 +96,6 @@ impl TuiFrame {
     }
 
     /// Find all lines matching a pattern
-    #[must_use]
     pub fn find_matches(&self, pattern: &str) -> ProbarResult<Vec<&str>> {
         let re = regex::Regex::new(pattern).map_err(|e| ProbarError::TuiError {
             message: format!("Invalid regex pattern: {e}"),

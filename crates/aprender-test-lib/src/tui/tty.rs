@@ -16,6 +16,7 @@ use crossterm::event::Event;
 /// - Tracking terminal state (raw mode, alternate screen, etc.)
 /// - Providing mock events for input simulation
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct MockTty {
     output: Vec<u8>,
     size: (u16, u16),

@@ -4,10 +4,10 @@
 
 /// Generate and populate ML analysis for JSON output
 pub(super) fn generate_ml_analysis_for_json(
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     ml_clusters: usize,
 ) -> Option<crate::ml_anomaly::MlAnomalyReport> {
-    if let Some(ref tracker) = stats_tracker {
+    if let Some(tracker) = stats_tracker {
         let mut ml_data = std::collections::HashMap::new();
         for (syscall_name, stats) in tracker.stats_map() {
             let total_time_ns = stats.total_time_us * 1000;
@@ -22,12 +22,12 @@ pub(super) fn generate_ml_analysis_for_json(
 
 /// Generate Isolation Forest analysis for JSON output (Sprint 22)
 pub(super) fn generate_isolation_forest_analysis_for_json(
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     num_trees: usize,
     contamination: f32,
     explain: bool,
 ) -> Option<crate::isolation_forest::OutlierReport> {
-    if let Some(ref tracker) = stats_tracker {
+    if let Some(tracker) = stats_tracker {
         let mut data = std::collections::HashMap::new();
         for (syscall_name, stats) in tracker.stats_map() {
             let total_time_ns = stats.total_time_us * 1000;
@@ -41,13 +41,13 @@ pub(super) fn generate_isolation_forest_analysis_for_json(
 
 /// Generate Autoencoder analysis for JSON output (Sprint 23)
 pub(super) fn generate_autoencoder_analysis_for_json(
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     hidden_size: usize,
     epochs: usize,
     threshold: f64,
     explain: bool,
 ) -> Option<crate::autoencoder::AutoencoderReport> {
-    if let Some(ref tracker) = stats_tracker {
+    if let Some(tracker) = stats_tracker {
         let mut data = std::collections::HashMap::new();
         for (syscall_name, stats) in tracker.stats_map() {
             let total_time_ns = stats.total_time_us * 1000;
@@ -61,12 +61,12 @@ pub(super) fn generate_autoencoder_analysis_for_json(
 
 /// Print ML anomaly analysis report (Sprint 23)
 pub(super) fn print_ml_analysis(
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     ml_clusters: usize,
     ml_compare: bool,
     anomaly_threshold: f32,
 ) {
-    if let Some(ref tracker) = stats_tracker {
+    if let Some(tracker) = stats_tracker {
         let mut ml_data = std::collections::HashMap::new();
         for (syscall_name, stats) in tracker.stats_map() {
             let total_time_ns = stats.total_time_us * 1000;
@@ -103,12 +103,12 @@ pub(super) fn print_ml_analysis(
 
 /// Print Isolation Forest outlier analysis report (Sprint 22)
 pub(super) fn print_isolation_forest_analysis(
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     num_trees: usize,
     contamination: f32,
     explain: bool,
 ) {
-    if let Some(ref tracker) = stats_tracker {
+    if let Some(tracker) = stats_tracker {
         let mut data = std::collections::HashMap::new();
         for (syscall_name, stats) in tracker.stats_map() {
             let total_time_ns = stats.total_time_us * 1000;
@@ -153,13 +153,13 @@ pub(super) fn print_isolation_forest_analysis(
 
 /// Print Autoencoder anomaly detection report (Sprint 23)
 pub(super) fn print_autoencoder_analysis(
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     hidden_size: usize,
     epochs: usize,
     threshold: f32,
     explain: bool,
 ) {
-    if let Some(ref tracker) = stats_tracker {
+    if let Some(tracker) = stats_tracker {
         let mut data = std::collections::HashMap::new();
         for (syscall_name, stats) in tracker.stats_map() {
             let total_time_ns = stats.total_time_us * 1000;

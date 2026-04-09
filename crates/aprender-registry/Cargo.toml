@@ -96,6 +96,7 @@ debug = true
 
 [lints.rust]
 unsafe_code = "allow"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 
 [package.metadata.docs.rs]
 all-features = true

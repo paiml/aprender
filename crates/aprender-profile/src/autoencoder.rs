@@ -282,6 +282,7 @@ fn calculate_feature_contributions(original: &[f64], reconstructed: &[f64]) -> V
 }
 
 /// Analyze syscall data for anomalies using Autoencoder
+#[allow(clippy::implicit_hasher)]
 pub fn analyze_anomalies(
     syscall_data: &HashMap<String, (u64, u64)>,
     hidden_size: usize,

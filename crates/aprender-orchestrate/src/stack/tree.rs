@@ -81,15 +81,11 @@ impl Component {
     /// Update health based on versions
     fn update_health(&mut self) {
         self.health = match (&self.version_local, &self.version_remote) {
-            (Some(local), Some(remote)) => {
-                if local == remote {
-                    HealthStatus::Synced
-                } else if local < remote {
-                    HealthStatus::Behind
-                } else {
-                    HealthStatus::Ahead
-                }
-            }
+            (Some(local), Some(remote)) => match local.cmp(remote) {
+                std::cmp::Ordering::Equal => HealthStatus::Synced,
+                std::cmp::Ordering::Less => HealthStatus::Behind,
+                std::cmp::Ordering::Greater => HealthStatus::Ahead,
+            },
             (Some(_), None) => HealthStatus::NotFound,
             (None, Some(_)) => HealthStatus::NotFound,
             (None, None) => HealthStatus::NotFound,

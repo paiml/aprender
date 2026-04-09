@@ -190,17 +190,16 @@ fn estimate_command(
     let estimate = estimate_memory(&config)?;
 
     if cli.format == entrenar_common::OutputFormat::Json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "model_bytes": estimate.model_bytes,
-                "activation_bytes": estimate.activation_bytes,
-                "optimizer_bytes": estimate.optimizer_bytes,
-                "total_bytes": estimate.total_bytes,
-                "fits_in_vram": estimate.fits_in_vram,
-                "recommended_batch_size": estimate.recommended_batch_size,
-            })
-        );
+        #[allow(clippy::disallowed_methods)]
+        let json = serde_json::json!({
+            "model_bytes": estimate.model_bytes,
+            "activation_bytes": estimate.activation_bytes,
+            "optimizer_bytes": estimate.optimizer_bytes,
+            "total_bytes": estimate.total_bytes,
+            "fits_in_vram": estimate.fits_in_vram,
+            "recommended_batch_size": estimate.recommended_batch_size,
+        });
+        println!("{json}");
     } else {
         println!("{}", estimate.to_human_readable());
     }
@@ -403,6 +402,7 @@ fn export_apr(
     output: &std::path::Path,
 ) -> entrenar_common::Result<()> {
     // Build a simple JSON representation of the model weights
+    #[allow(clippy::disallowed_methods)]
     let model_data = serde_json::json!({
         "format": "apr",
         "version": "1.0",

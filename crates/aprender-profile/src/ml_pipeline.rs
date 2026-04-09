@@ -113,6 +113,7 @@ pub struct PCAResult {
 /// 1. Average duration (microseconds)
 /// 2. Call count (log scale)
 /// 3. Total duration (log scale)
+#[allow(clippy::implicit_hasher)]
 pub fn extract_features(
     syscall_data: &HashMap<String, (u64, u64)>,
 ) -> Result<(Vec<String>, Matrix<f32>)> {
@@ -235,6 +236,7 @@ pub fn run_dbscan(
 }
 
 /// Run Local Outlier Factor analysis
+#[allow(clippy::implicit_hasher)]
 pub fn run_lof(
     features: &NormalizedFeatures,
     syscall_data: &HashMap<String, (u64, u64)>,

@@ -271,7 +271,7 @@ impl PluginRegistry {
         self.plugins
             .iter()
             .filter(|p| p.metadata().supports_language(language))
-            .map(|p| &**p as &dyn TranspilerPlugin)
+            .map(|p| &**p)
             .collect()
     }
 

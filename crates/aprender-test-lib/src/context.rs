@@ -178,6 +178,7 @@ pub enum SameSite {
 
 /// Configuration for a browser context
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ContextConfig {
     /// Context name/ID
     pub name: String,
@@ -545,8 +546,7 @@ impl ContextPool {
     /// Create a new context
     pub fn create(&self, config: Option<ContextConfig>) -> ProbarResult<String> {
         let mut contexts = self.contexts.lock().map_err(|_| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ProbarError::Io(std::io::Error::other(
                 "Failed to lock contexts",
             ))
         })?;
@@ -559,8 +559,7 @@ impl ContextPool {
 
         let id = {
             let mut counter = self.counter.lock().map_err(|_| {
-                ProbarError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                ProbarError::Io(std::io::Error::other(
                     "Failed to lock counter",
                 ))
             })?;
@@ -581,8 +580,7 @@ impl ContextPool {
     /// Acquire an available context
     pub fn acquire(&self) -> ProbarResult<String> {
         let mut contexts = self.contexts.lock().map_err(|_| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ProbarError::Io(std::io::Error::other(
                 "Failed to lock contexts",
             ))
         })?;
@@ -599,8 +597,7 @@ impl ContextPool {
         let id = self.create(None)?;
 
         let mut contexts = self.contexts.lock().map_err(|_| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ProbarError::Io(std::io::Error::other(
                 "Failed to lock contexts",
             ))
         })?;
@@ -615,8 +612,7 @@ impl ContextPool {
     /// Release a context back to the pool
     pub fn release(&self, context_id: &str) -> ProbarResult<()> {
         let mut contexts = self.contexts.lock().map_err(|_| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ProbarError::Io(std::io::Error::other(
                 "Failed to lock contexts",
             ))
         })?;
@@ -634,8 +630,7 @@ impl ContextPool {
     /// Close a context
     pub fn close(&self, context_id: &str) -> ProbarResult<()> {
         let mut contexts = self.contexts.lock().map_err(|_| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ProbarError::Io(std::io::Error::other(
                 "Failed to lock contexts",
             ))
         })?;
@@ -653,8 +648,7 @@ impl ContextPool {
     /// Remove a closed context
     pub fn remove(&self, context_id: &str) -> ProbarResult<()> {
         let mut contexts = self.contexts.lock().map_err(|_| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ProbarError::Io(std::io::Error::other(
                 "Failed to lock contexts",
             ))
         })?;
@@ -750,8 +744,7 @@ impl ContextManager {
     /// Get a context for a test
     pub fn get_context(&self, test_id: &str) -> ProbarResult<String> {
         let mut active = self.active_contexts.lock().map_err(|_| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ProbarError::Io(std::io::Error::other(
                 "Failed to lock active contexts",
             ))
         })?;
@@ -770,8 +763,7 @@ impl ContextManager {
     /// Release a test's context
     pub fn release_context(&self, test_id: &str) -> ProbarResult<()> {
         let mut active = self.active_contexts.lock().map_err(|_| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ProbarError::Io(std::io::Error::other(
                 "Failed to lock active contexts",
             ))
         })?;
@@ -791,8 +783,7 @@ impl ContextManager {
         let context_id = self.pool.create(Some(config))?;
 
         let mut active = self.active_contexts.lock().map_err(|_| {
-            ProbarError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            ProbarError::Io(std::io::Error::other(
                 "Failed to lock active contexts",
             ))
         })?;

@@ -288,8 +288,12 @@ fn resolve_model_path(model_id: &str) -> Result<PathBuf> {
     if model_id.starts_with('/')
         || model_id.starts_with("./")
         || model_id.starts_with("../")
-        || model_id.ends_with(".safetensors")
-        || model_id.ends_with(".gguf")
+        || std::path::Path::new(model_id)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("safetensors"))
+        || std::path::Path::new(model_id)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
     {
         return Err(EntrenarError::ModelNotFound {
             path: path.to_path_buf(),

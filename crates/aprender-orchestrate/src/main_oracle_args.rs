@@ -7,6 +7,7 @@ use crate::cli;
 
 /// All arguments for the `batuta oracle` subcommand.
 #[derive(clap::Args)]
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct OracleArgs {
     /// Natural language query (e.g., "How do I train a model?")
     pub query: Option<String>,

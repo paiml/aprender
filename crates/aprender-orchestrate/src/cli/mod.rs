@@ -60,12 +60,12 @@ pub fn build_transpiler_args(
     incremental: bool,
     cache: bool,
     ruchy: bool,
-    modules: &Option<Vec<String>>,
+    modules: Option<&Vec<String>>,
 ) -> Vec<String> {
     contract_pre_transpile!(config);
     let input_path_str = config.source.path.to_string_lossy().to_string();
     let output_path_str = config.transpilation.output_dir.to_string_lossy().to_string();
-    let modules_str = modules.as_ref().map(|m| m.join(",")).unwrap_or_default();
+    let modules_str = modules.map(|m| m.join(",")).unwrap_or_default();
 
     let mut args =
         vec!["--input".to_string(), input_path_str, "--output".to_string(), output_path_str];
@@ -273,7 +273,7 @@ mod tests {
         config.transpilation.incremental = false;
         config.transpilation.cache = false;
         config.transpilation.use_ruchy = false;
-        let args = build_transpiler_args(&config, false, false, false, &None);
+        let args = build_transpiler_args(&config, false, false, false, None);
 
         assert!(args.contains(&"--input".to_string()));
         assert!(args.contains(&"--output".to_string()));
@@ -287,7 +287,7 @@ mod tests {
         let mut config = BatutaConfig::default();
         config.transpilation.incremental = false;
         config.transpilation.cache = false;
-        let args = build_transpiler_args(&config, true, true, true, &None);
+        let args = build_transpiler_args(&config, true, true, true, None);
 
         assert!(args.contains(&"--incremental".to_string()));
         assert!(args.contains(&"--cache".to_string()));
@@ -298,7 +298,7 @@ mod tests {
     fn test_CLI_003_build_transpiler_args_config_defaults() {
         // Test that config defaults are honored
         let config = BatutaConfig::default();
-        let args = build_transpiler_args(&config, false, false, false, &None);
+        let args = build_transpiler_args(&config, false, false, false, None);
 
         // Default config has incremental=true, cache=true
         assert!(args.contains(&"--incremental".to_string()));
@@ -309,7 +309,7 @@ mod tests {
     fn test_CLI_003_build_transpiler_args_with_modules() {
         let config = BatutaConfig::default();
         let modules = Some(vec!["mod1".to_string(), "mod2".to_string()]);
-        let args = build_transpiler_args(&config, false, false, false, &modules);
+        let args = build_transpiler_args(&config, false, false, false, modules.as_ref());
 
         assert!(args.contains(&"--modules".to_string()));
         assert!(args.contains(&"mod1,mod2".to_string()));

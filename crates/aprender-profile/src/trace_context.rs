@@ -208,11 +208,19 @@ fn hex_to_bytes_8(hex: &str) -> Option<[u8; 8]> {
 }
 
 fn bytes_to_hex_16(bytes: &[u8; 16]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    use std::fmt::Write;
+    bytes.iter().fold(String::with_capacity(32), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
 }
 
 fn bytes_to_hex_8(bytes: &[u8; 8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    use std::fmt::Write;
+    bytes.iter().fold(String::with_capacity(16), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
 }
 
 // Compile-time thread-safety verification (Sprint 59)
@@ -530,15 +538,14 @@ impl LamportClock {
             let current = self.counter.load(Ordering::SeqCst);
             let new_value = current.max(remote_timestamp) + 1;
 
-            match self.counter.compare_exchange(
-                current,
-                new_value,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ) {
-                Ok(_) => return new_value,
-                Err(_) => continue, // Retry on concurrent modification
+            if self
+                .counter
+                .compare_exchange(current, new_value, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return new_value;
             }
+            // Retry on concurrent modification
         }
     }
 

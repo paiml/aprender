@@ -44,6 +44,7 @@ pub enum DialogAction {
 
 /// Represents a browser dialog
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_field_names)]
 pub struct Dialog {
     /// Type of dialog
     dialog_type: DialogType,

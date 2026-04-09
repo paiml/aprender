@@ -9,13 +9,13 @@ use super::{AnalysisConfig, Tracers};
 ///
 /// Sprint 32: Now accepts optional `OtlpExporter` for compute block tracing
 pub(super) fn print_text_stats(
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     stats_extended: bool,
     anomaly_threshold: f32,
     #[cfg(feature = "otlp")] otlp_exporter: Option<&crate::otlp_exporter::OtlpExporter>,
     #[cfg(not(feature = "otlp"))] _otlp_exporter: Option<&()>,
 ) {
-    if let Some(ref tracker) = stats_tracker {
+    if let Some(tracker) = stats_tracker {
         tracker.print_summary();
         if stats_extended {
             #[cfg(feature = "otlp")]
@@ -38,12 +38,12 @@ pub(super) fn print_json_output(mut output: crate::json_output::JsonOutput, exit
 /// Print CSV statistics output
 pub(super) fn print_csv_stats(
     mut csv_stats: crate::csv_output::CsvStatsOutput,
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     timing_mode: bool,
     stats_extended: bool,
     anomaly_threshold: f32,
 ) {
-    if let Some(ref tracker) = stats_tracker {
+    if let Some(tracker) = stats_tracker {
         for (syscall_name, stats) in tracker.stats_map() {
             let total_time_us = if timing_mode { Some(stats.total_time_us) } else { None };
             csv_stats.add_stat(crate::csv_output::CsvStat {
@@ -66,10 +66,10 @@ pub(super) fn print_csv_stats(
 
 /// Print HPU analysis report
 pub(super) fn print_hpu_analysis(
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     hpu_cpu_only: bool,
 ) {
-    if let Some(ref tracker) = stats_tracker {
+    if let Some(tracker) = stats_tracker {
         let mut hpu_data = std::collections::HashMap::new();
         for (syscall_name, stats) in tracker.stats_map() {
             let total_time_ns = stats.total_time_us * 1000;
@@ -174,7 +174,7 @@ pub(super) fn print_decision_trace_summary(
 
 /// Print analysis summaries (HPU, ML, Isolation Forest, Autoencoder)
 pub(super) fn print_analysis_summaries(
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     analysis: &AnalysisConfig,
 ) {
     if analysis.hpu_analysis {
@@ -210,7 +210,7 @@ pub(super) fn print_analysis_summaries(
 /// Handle JSON output with ML analysis additions
 pub(super) fn handle_json_output(
     mut output: crate::json_output::JsonOutput,
-    stats_tracker: &Option<crate::stats::StatsTracker>,
+    stats_tracker: Option<&crate::stats::StatsTracker>,
     analysis: &AnalysisConfig,
     exit_code: i32,
 ) {
@@ -256,7 +256,7 @@ pub(super) fn print_syscall_result(result: i64, timing_mode: bool, duration_us: 
 
 /// Check if syscall result should be printed to stdout
 pub(super) fn should_print_result(
-    syscall_entry: &Option<super::SyscallEntry>,
+    syscall_entry: Option<&super::SyscallEntry>,
     in_stats_mode: bool,
     in_json_mode: bool,
     in_csv_mode: bool,
@@ -304,13 +304,13 @@ pub(super) fn print_summaries(
     if stats_tracker.is_some() && csv_stats_output.is_none() {
         #[cfg(feature = "otlp")]
         print_text_stats(
-            &stats_tracker,
+            stats_tracker.as_ref(),
             analysis.stats_extended,
             analysis.anomaly_threshold,
             otlp_exporter.as_ref(),
         );
         #[cfg(not(feature = "otlp"))]
-        print_text_stats(&stats_tracker, analysis.stats_extended, analysis.anomaly_threshold, None);
+        print_text_stats(stats_tracker.as_ref(), analysis.stats_extended, analysis.anomaly_threshold, None);
     }
 
     // Sprint 30: End root span and shutdown OTLP exporter
@@ -322,7 +322,7 @@ pub(super) fn print_summaries(
 
     // Handle output formats
     if let Some(output) = json_output {
-        handle_json_output(output, &stats_tracker, analysis, exit_code);
+        handle_json_output(output, stats_tracker.as_ref(), analysis, exit_code);
     }
     if let Some(output) = csv_output {
         print!("{}", output.to_csv());
@@ -330,7 +330,7 @@ pub(super) fn print_summaries(
     if let Some(csv_stats) = csv_stats_output {
         print_csv_stats(
             csv_stats,
-            &stats_tracker,
+            stats_tracker.as_ref(),
             timing_mode,
             analysis.stats_extended,
             analysis.anomaly_threshold,
@@ -342,7 +342,7 @@ pub(super) fn print_summaries(
 
     // Print profiling and tracing summaries
     print_optional_summaries(profiling_ctx, function_profiler, anomaly_detector);
-    print_analysis_summaries(&stats_tracker, analysis);
+    print_analysis_summaries(stats_tracker.as_ref(), analysis);
     print_decision_trace_summary(decision_tracer);
 }
 
@@ -355,7 +355,7 @@ pub(super) fn print_syscall_entry(
     arg1: u64,
     arg2: u64,
     arg3: u64,
-    source_info: &Option<crate::dwarf::SourceLocation>,
+    source_info: Option<&crate::dwarf::SourceLocation>,
     transpiler_map: Option<&crate::transpiler_map::TranspilerMap>,
 ) {
     // Print source location if available

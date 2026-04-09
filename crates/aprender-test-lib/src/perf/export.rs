@@ -58,6 +58,7 @@ impl ChromeTrace {
                     args: if span.metadata.is_empty() {
                         None
                     } else {
+                        #[allow(clippy::disallowed_methods)]
                         Some(serde_json::json!(span.metadata))
                     },
                 });

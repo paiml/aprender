@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 /// Configuration for tracing
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct TracingConfig {
     /// Capture screenshots during tracing
     pub capture_screenshots: bool,

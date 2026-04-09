@@ -32,6 +32,7 @@ pub struct GeneratedTest {
 
 /// Test generator
 #[derive(Debug)]
+#[allow(clippy::struct_field_names)]
 pub struct FalsifyGenerator {
     /// Module name placeholder
     module_placeholder: String,

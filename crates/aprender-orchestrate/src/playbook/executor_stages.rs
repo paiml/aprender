@@ -9,7 +9,7 @@ use crate::playbook::dag;
 use crate::playbook::eventlog;
 use crate::playbook::hasher;
 use crate::playbook::template;
-use crate::playbook::types::*;
+use crate::playbook::types::{Stage, Playbook, PipelineEvent, Dependency, DepLock, LockFile, StageLock, StageStatus, Output, OutLock, FailurePolicy};
 use anyhow::{bail, Context, Result};
 use std::collections::HashSet;
 use std::path::Path;
@@ -70,7 +70,7 @@ pub(super) fn compute_stage_hashes(
     let resolved_cmd = template::resolve_template(
         &stage.cmd,
         &playbook.params,
-        &stage.params,
+        stage.params.as_ref(),
         &stage.deps,
         &stage.outs,
     )
@@ -83,7 +83,7 @@ pub(super) fn compute_stage_hashes(
     let deps_combined =
         hasher::combine_deps_hashes(&dep_hashes.iter().map(|(_, h)| h.clone()).collect::<Vec<_>>());
 
-    let param_refs = hasher::effective_param_keys(&stage.params, &stage.cmd);
+    let param_refs = hasher::effective_param_keys(stage.params.as_ref(), &stage.cmd);
     let params_hash = hasher::hash_params(&playbook.params, &param_refs)?;
     let cache_key = hasher::compute_cache_key(&cmd_hash, &deps_combined, &params_hash);
 
@@ -125,7 +125,7 @@ pub(super) fn evaluate_cache(
     stage_name: &str,
     stage: &Stage,
     hashes: &StageHashes,
-    existing_lock: &Option<LockFile>,
+    existing_lock: Option<&LockFile>,
     dag_result: &dag::PlaybookDag,
     rerun_stages: &HashSet<String>,
     config: &RunConfig,

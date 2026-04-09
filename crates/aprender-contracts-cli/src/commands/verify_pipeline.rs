@@ -58,9 +58,9 @@ pub fn run(contract_dir: &Path, format: &str) {
     }
 }
 
-fn walk_composition_edges<'a>(
+fn walk_composition_edges(
     topo_order: &[String],
-    index: &BTreeMap<&str, &'a Contract>,
+    index: &BTreeMap<&str, &Contract>,
 ) -> (Vec<CompositionEdge>, usize, usize, Vec<CompositionEdge>) {
     let mut edges_total = 0usize;
     let mut edges_satisfied = 0usize;
@@ -123,7 +123,7 @@ fn walk_composition_edges<'a>(
                 let guaranteed_shapes: Vec<String> = upstream_eq
                     .guarantees
                     .as_ref()
-                    .unwrap()
+                    .expect("guarantees verified present above")
                     .shapes
                     .keys()
                     .cloned()
@@ -223,6 +223,7 @@ fn print_text(
     }
 }
 
+#[allow(clippy::disallowed_methods)]
 fn print_json(
     chains: &[CompositionEdge],
     total: usize,
@@ -261,7 +262,11 @@ fn print_json(
         "edges": edges_json,
     });
 
-    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report)
+            .expect("serde_json::to_string_pretty should not fail on valid Value")
+    );
 }
 
 #[cfg(test)]

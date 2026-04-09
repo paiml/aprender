@@ -432,7 +432,7 @@ impl StressRunner {
 
             // Simulate vsync wait
             if frame_time < frame_budget {
-                std::thread::sleep(frame_budget.checked_sub(frame_time).unwrap());
+                std::thread::sleep(frame_budget.checked_sub(frame_time).expect("frame_time < frame_budget guaranteed by enclosing if"));
             }
         }
 

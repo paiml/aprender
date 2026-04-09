@@ -432,6 +432,7 @@ pub enum EvidenceKind {
 
 /// Configuration for a bug hunt.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct HuntConfig {
     /// Hunt mode
     pub mode: HuntMode,
@@ -879,6 +880,7 @@ impl HuntStats {
 
 /// Phase timing breakdown for bug-hunter pipeline.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(clippy::struct_field_names)]
 pub struct PhaseTimings {
     /// Mode dispatch (scanning) phase duration in ms
     pub mode_dispatch_ms: u64,

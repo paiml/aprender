@@ -17,6 +17,7 @@ pub(crate) use cli::pipeline_cmds::{OptimizationProfile, ReportFormat};
 #[derive(Parser)]
 #[command(name = "batuta")]
 #[command(version, about = "Sovereign AI orchestration: agents, ML serving, code analysis, and transpilation", long_about = None)]
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -408,6 +409,7 @@ pub(crate) enum Commands {
 
         /// Resume previous session (by ID, or most recent for cwd).
         #[arg(long)]
+        #[allow(clippy::option_option)]
         resume: Option<Option<String>>,
 
         /// Initial prompt (non-interactive if provided with -p).

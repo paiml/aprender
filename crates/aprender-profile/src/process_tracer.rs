@@ -1111,20 +1111,19 @@ impl Iterator for SyscallStream {
                             result,
                             timestamp: syscall_start,
                         }));
-                    } else {
-                        // Syscall entry
-                        let regs = match crate::arch::PtraceRegs::get_nix(nix_pid) {
-                            Ok(r) => r,
-                            Err(e) => return Some(Err(TracerError::PtraceError(e))),
-                        };
-                        current_syscall_nr = regs.syscall_number();
-                        syscall_start = Instant::now();
-                        in_syscall = true;
+                    }
+                    // Syscall entry
+                    let regs = match crate::arch::PtraceRegs::get_nix(nix_pid) {
+                        Ok(r) => r,
+                        Err(e) => return Some(Err(TracerError::PtraceError(e))),
+                    };
+                    current_syscall_nr = regs.syscall_number();
+                    syscall_start = Instant::now();
+                    in_syscall = true;
 
-                        // Continue to syscall exit
-                        if let Err(e) = ptrace::syscall(nix_pid, None) {
-                            return Some(Err(TracerError::PtraceError(e)));
-                        }
+                    // Continue to syscall exit
+                    if let Err(e) = ptrace::syscall(nix_pid, None) {
+                        return Some(Err(TracerError::PtraceError(e)));
                     }
                 }
                 Ok(WaitStatus::Exited(_, _) | WaitStatus::Signaled(_, _, _)) => {

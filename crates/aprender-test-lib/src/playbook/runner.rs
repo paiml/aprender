@@ -379,6 +379,7 @@ impl<E: ActionExecutor> PlaybookRunner<E> {
     }
 
     /// Export execution trace as JSON.
+    #[allow(clippy::disallowed_methods)]
     pub fn export_trace_json(&self) -> String {
         serde_json::json!({
             "playbook": self.playbook.name,

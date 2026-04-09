@@ -512,9 +512,8 @@ impl StackComplianceRule for DuplicationRule {
         for entry in walkdir::WalkDir::new(project_path).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.is_file() && self.should_include(path) {
-                match self.extract_fragments(path) {
-                    Ok(frags) => fragments.extend(frags),
-                    Err(_) => continue, // Skip files that can't be read
+                if let Ok(frags) = self.extract_fragments(path) {
+                    fragments.extend(frags);
                 }
             }
         }

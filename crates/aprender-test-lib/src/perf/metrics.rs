@@ -43,7 +43,7 @@ impl Statistics {
         let sum: f64 = values.iter().sum();
         let mean = sum / count as f64;
 
-        let median = if count % 2 == 0 {
+        let median = if count.is_multiple_of(2) {
             (sorted[count / 2 - 1] + sorted[count / 2]) / 2.0
         } else {
             sorted[count / 2]

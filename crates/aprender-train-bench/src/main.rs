@@ -176,6 +176,7 @@ fn temperature_command(
     let result = sweeper.run()?;
 
     if cli.format == entrenar_common::OutputFormat::Json {
+        #[allow(clippy::disallowed_methods)]
         let json: Vec<_> = result
             .data_points
             .iter()
@@ -216,6 +217,7 @@ fn alpha_command(
     let result = sweeper.run()?;
 
     if cli.format == entrenar_common::OutputFormat::Json {
+        #[allow(clippy::disallowed_methods)]
         let json: Vec<_> = result
             .data_points
             .iter()
@@ -280,6 +282,7 @@ fn compare_command(
     let comparison = compare(&strategies)?;
 
     if cli.format == entrenar_common::OutputFormat::Json {
+        #[allow(clippy::disallowed_methods)]
         let json = serde_json::json!({
             "results": comparison.results.iter().map(|r| {
                 serde_json::json!({
@@ -408,6 +411,7 @@ fn cost_performance_command(
     let analysis = CostPerformanceAnalysis::from_points(points);
 
     if cli.format == entrenar_common::OutputFormat::Json {
+        #[allow(clippy::disallowed_methods)]
         let json = serde_json::json!({
             "gpu": cost_model.gpu_type,
             "cost_per_hour": cost_model.cost_per_hour,
@@ -584,6 +588,7 @@ fn recommend_command(
     let recommendations = analysis.recommend(&constraints);
 
     if cli.format == entrenar_common::OutputFormat::Json {
+        #[allow(clippy::disallowed_methods)]
         let json = serde_json::json!({
             "constraints": {
                 "max_gpu_hours": max_gpu_hours,

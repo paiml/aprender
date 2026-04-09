@@ -48,6 +48,7 @@ pub struct FusedNf4GateUpGemmKernel {
 }
 
 impl FusedNf4GateUpGemmKernel {
+    /// Creates a new fused NF4 gate+up GEMM kernel with the given dimensions.
     #[must_use]
     pub fn new(m: u32, n: u32, k: u32) -> Self {
         Self {
@@ -58,6 +59,7 @@ impl FusedNf4GateUpGemmKernel {
         }
     }
 
+    /// Returns the number of NF4 quantization blocks per column (K / block_size).
     #[must_use]
     pub const fn num_blocks_per_col(&self) -> u32 {
         self.k / NF4_BLOCK_SIZE_U32

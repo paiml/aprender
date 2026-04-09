@@ -71,7 +71,7 @@ fn format_syscall_args_for_json(
 fn extract_function_names(
     child: Pid,
     dwarf_ctx: Option<&crate::dwarf::DwarfContext>,
-    source_info: &Option<crate::dwarf::SourceLocation>,
+    source_info: Option<&crate::dwarf::SourceLocation>,
     function_profiling_enabled: bool,
 ) -> (Option<String>, Option<String>) {
     if function_profiling_enabled {
@@ -79,11 +79,11 @@ fn extract_function_names(
             find_user_function_with_caller(child, ctx)
                 .map_or((None, None), |(func, caller)| (Some(func), caller))
         } else {
-            let func = source_info.as_ref().and_then(|src| src.function.clone());
+            let func = source_info.and_then(|src| src.function.clone());
             (func, None)
         }
     } else {
-        let func = source_info.as_ref().and_then(|src| src.function.clone());
+        let func = source_info.and_then(|src| src.function.clone());
         (func, None)
     }
 }
@@ -140,14 +140,14 @@ pub(super) fn handle_syscall_entry(
             arg1,
             arg2,
             arg3,
-            &source_info,
+            source_info.as_ref(),
             transpiler_map,
         );
     }
 
     // Extract function names for profiling
     let (function_name, caller_name) =
-        extract_function_names(child, dwarf_ctx, &source_info, function_profiling_enabled);
+        extract_function_names(child, dwarf_ctx, source_info.as_ref(), function_profiling_enabled);
 
     let json_source = source_info.as_ref().map(|src| crate::json_output::JsonSourceLocation {
         file: src.file.clone(),
@@ -220,7 +220,7 @@ pub(super) fn read_string(child: Pid, addr: usize) -> Result<String> {
 
 /// Record statistics for a syscall
 fn record_stats_for_syscall(
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     stats_tracker: Option<&mut crate::stats::StatsTracker>,
     result: i64,
     duration_us: u64,
@@ -232,7 +232,7 @@ fn record_stats_for_syscall(
 
 /// Record JSON output for a syscall
 fn record_json_for_syscall(
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     json_output: Option<&mut crate::json_output::JsonOutput>,
     result: i64,
     timing_mode: bool,
@@ -253,7 +253,7 @@ fn record_json_for_syscall(
 
 /// Record CSV output for a syscall
 fn record_csv_for_syscall(
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     csv_output: Option<&mut crate::csv_output::CsvOutput>,
     result: i64,
     timing_mode: bool,
@@ -286,7 +286,7 @@ fn record_csv_for_syscall(
 
 /// Record HTML output for a syscall
 fn record_html_for_syscall(
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     html_output: Option<&mut crate::html_output::HtmlOutput>,
     result: i64,
     timing_mode: bool,
@@ -319,7 +319,7 @@ fn record_html_for_syscall(
 
 /// Record function profiling data
 fn record_function_profiling(
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     function_profiler: Option<&mut crate::function_profiler::FunctionProfiler>,
     duration_us: u64,
 ) {
@@ -332,7 +332,7 @@ fn record_function_profiling(
 
 /// Handle real-time anomaly detection and alerts
 fn handle_anomaly_detection(
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     anomaly_detector: Option<&mut crate::anomaly::AnomalyDetector>,
     duration_us: u64,
 ) {
@@ -361,7 +361,7 @@ fn handle_anomaly_detection(
 /// Intercepts write(2, buffer, count) calls and parses [DECISION] and [RESULT] lines
 fn capture_decision_trace(
     child: Pid,
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     decision_tracer: Option<&mut crate::decision_trace::DecisionTracer>,
     bytes_written: i64,
 ) {
@@ -420,7 +420,7 @@ fn capture_decision_trace(
 /// Handle syscall exit - print return value and record statistics
 pub(super) fn handle_syscall_exit(
     child: Pid,
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     tracers: &mut Tracers,
     timing_mode: bool,
     duration_us: u64,
@@ -519,7 +519,7 @@ pub(super) fn handle_syscall_exit(
 // Test-accessible wrappers for private helper functions
 #[cfg(test)]
 pub(super) fn record_stats_for_syscall_test(
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     stats_tracker: Option<&mut crate::stats::StatsTracker>,
     result: i64,
     duration_us: u64,
@@ -529,7 +529,7 @@ pub(super) fn record_stats_for_syscall_test(
 
 #[cfg(test)]
 pub(super) fn record_function_profiling_test(
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     function_profiler: Option<&mut crate::function_profiler::FunctionProfiler>,
     duration_us: u64,
 ) {
@@ -538,7 +538,7 @@ pub(super) fn record_function_profiling_test(
 
 #[cfg(test)]
 pub(super) fn handle_anomaly_detection_test(
-    syscall_entry: &Option<SyscallEntry>,
+    syscall_entry: Option<&SyscallEntry>,
     anomaly_detector: Option<&mut crate::anomaly::AnomalyDetector>,
     duration_us: u64,
 ) {

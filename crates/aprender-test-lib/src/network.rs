@@ -107,7 +107,7 @@ pub enum HttpMethod {
 impl HttpMethod {
     /// Parse from string
     #[must_use]
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_uppercase().as_str() {
             "GET" => Self::Get,
             "POST" => Self::Post,
@@ -177,7 +177,6 @@ impl MockResponse {
     }
 
     /// Create a JSON response
-    #[must_use]
     pub fn json<T: Serialize>(data: &T) -> ProbarResult<Self> {
         let body = serde_json::to_vec(data)?;
         Ok(Self {
@@ -203,6 +202,7 @@ impl MockResponse {
 
     /// Create an error response
     #[must_use]
+    #[allow(clippy::disallowed_methods)]
     pub fn error(status: u16, message: &str) -> Self {
         let body = serde_json::json!({ "error": message }).to_string();
         Self {
@@ -833,11 +833,11 @@ mod tests {
 
         #[test]
         fn test_from_str() {
-            assert_eq!(HttpMethod::from_str("GET"), HttpMethod::Get);
-            assert_eq!(HttpMethod::from_str("post"), HttpMethod::Post);
-            assert_eq!(HttpMethod::from_str("PUT"), HttpMethod::Put);
-            assert_eq!(HttpMethod::from_str("DELETE"), HttpMethod::Delete);
-            assert_eq!(HttpMethod::from_str("unknown"), HttpMethod::Any);
+            assert_eq!(HttpMethod::parse("GET"), HttpMethod::Get);
+            assert_eq!(HttpMethod::parse("post"), HttpMethod::Post);
+            assert_eq!(HttpMethod::parse("PUT"), HttpMethod::Put);
+            assert_eq!(HttpMethod::parse("DELETE"), HttpMethod::Delete);
+            assert_eq!(HttpMethod::parse("unknown"), HttpMethod::Any);
         }
 
         #[test]
@@ -1515,25 +1515,25 @@ mod tests {
 
         #[test]
         fn h0_network_07_http_method_from_str_get() {
-            let method = HttpMethod::from_str("GET");
+            let method = HttpMethod::parse("GET");
             assert_eq!(method, HttpMethod::Get);
         }
 
         #[test]
         fn h0_network_08_http_method_from_str_post() {
-            let method = HttpMethod::from_str("POST");
+            let method = HttpMethod::parse("POST");
             assert_eq!(method, HttpMethod::Post);
         }
 
         #[test]
         fn h0_network_09_http_method_from_str_put() {
-            let method = HttpMethod::from_str("PUT");
+            let method = HttpMethod::parse("PUT");
             assert_eq!(method, HttpMethod::Put);
         }
 
         #[test]
         fn h0_network_10_http_method_from_str_delete() {
-            let method = HttpMethod::from_str("DELETE");
+            let method = HttpMethod::parse("DELETE");
             assert_eq!(method, HttpMethod::Delete);
         }
     }

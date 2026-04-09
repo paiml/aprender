@@ -199,6 +199,7 @@ pub fn run_compliance_checks(config: &CliConfig, args: &ComplyArgs) -> CliResult
 
 /// Generate a compliance report in the specified format
 #[must_use]
+#[allow(clippy::disallowed_methods)] // json! macro internally uses unwrap for infallible conversions
 pub fn generate_comply_report(results: &[ComplianceResult], format: &ComplyOutputFormat) -> String {
     match format {
         ComplyOutputFormat::Json => {

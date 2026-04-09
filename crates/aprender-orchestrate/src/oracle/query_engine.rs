@@ -3,7 +3,7 @@
 //! Parses natural language queries and extracts structured information
 //! for the recommendation engine.
 
-use super::types::*;
+use super::types::{ProblemDomain, OpComplexity, DataSize};
 use std::collections::HashSet;
 
 // =============================================================================

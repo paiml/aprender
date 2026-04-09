@@ -65,7 +65,7 @@ pub fn gqa_scalar(
     output: &mut [f32],
 ) {
     assert!(
-        num_kv_heads > 0 && num_heads % num_kv_heads == 0,
+        num_kv_heads > 0 && num_heads.is_multiple_of(num_kv_heads),
         "num_heads ({num_heads}) must be divisible by num_kv_heads ({num_kv_heads})"
     );
     let q_total = num_heads * seq_len * d_k;

@@ -43,7 +43,7 @@ pub struct ClusterDefinition {
     /// Human-readable description
     pub description: String,
 
-    /// List of syscalls in this cluster (e.g., ["mmap", "munmap", "brk"])
+    /// List of syscalls in this cluster (e.g., `["mmap", "munmap", "brk"]`)
     pub syscalls: Vec<String>,
 
     /// Whether this cluster is expected in single-shot compile workflows

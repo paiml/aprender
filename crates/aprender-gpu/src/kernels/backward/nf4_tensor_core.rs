@@ -37,17 +37,22 @@ const NF4_BLOCK_SIZE_U32: u32 = NF4_BLOCK_SIZE as u32;
 /// 28 layers × 7 projections = 196 kernel launches saved per training step.
 #[derive(Debug, Clone)]
 pub struct Nf4TensorCoreGemmBackwardAKernel {
+    /// Output rows (M dimension of grad_A).
     pub m: u32,
+    /// Shared dimension (N dimension of grad_out and B).
     pub n: u32,
+    /// Output columns (K dimension of grad_A).
     pub k: u32,
 }
 
 impl Nf4TensorCoreGemmBackwardAKernel {
+    /// Creates a new NF4 backward-A kernel with the given matrix dimensions.
     #[must_use]
     pub fn new(m: u32, n: u32, k: u32) -> Self {
         Self { m, n, k }
     }
 
+    /// Returns the number of NF4 quantization blocks along the K dimension.
     #[must_use]
     pub const fn num_k_blocks(&self) -> u32 {
         self.k / NF4_BLOCK_SIZE_U32
@@ -196,7 +201,7 @@ impl Kernel for Nf4TensorCoreGemmBackwardAKernel {
                 // Global B coordinates: B[tile_k + k_out_in_tile, n_offset + n_shared_in_tile]
                 let global_k_out = ctx.add_u32_reg(tile_k, k_out_in_tile);
                 let global_n_shared = ctx.add_u32_reg(n_offset, n_shared_in_tile);
-                let ck = ctx.min_u32(global_k_out, k_minus_1);
+                let _ck = ctx.min_u32(global_k_out, k_minus_1);
                 let cn_b = ctx.min_u32(global_n_shared, n_minus_1);
 
                 // NF4 addressing: block_idx = global_k_out / 64

@@ -78,6 +78,7 @@ pub fn run(
     Ok(())
 }
 
+#[allow(clippy::disallowed_methods)]
 fn verify_composition_edges(
     graph: &provable_contracts::graph::DependencyGraph,
     index: &BTreeMap<&str, &Contract>,
@@ -103,7 +104,7 @@ fn verify_composition_edges(
             if satisfied {
                 edges_satisfied += 1;
             }
-            edge_details.push(serde_json::json!({
+        edge_details.push(serde_json::json!({
                 "downstream": format!("{stem}.{eq_name}"),
                 "upstream": format!("{from_contract}.{from_eq}"),
                 "satisfied": satisfied,
@@ -114,7 +115,7 @@ fn verify_composition_edges(
     (edges_total, edges_satisfied, edge_details)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::disallowed_methods)]
 fn build_certificate(
     contracts: &[(String, Contract)],
     graph: &provable_contracts::graph::DependencyGraph,
@@ -214,6 +215,7 @@ fn check_edge(
     }
 }
 
+#[allow(clippy::disallowed_methods)]
 fn proof_status(index: &BTreeMap<&str, &Contract>, stem: &str) -> serde_json::Value {
     if let Some(contract) = index.get(stem) {
         let eq_count = contract.equations.len();
@@ -246,6 +248,7 @@ fn proof_status(index: &BTreeMap<&str, &Contract>, stem: &str) -> serde_json::Va
     }
 }
 
+#[allow(clippy::disallowed_methods)]
 pub fn analyze_config(cfg_path: &Path) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(cfg_path)?;
     let json: serde_json::Value = serde_json::from_str(&content)?;
@@ -273,8 +276,8 @@ pub fn analyze_config(cfg_path: &Path) -> Result<serde_json::Value, Box<dyn std:
         ("num_layers > 0", l > 0),
         ("num_heads > 0", nh > 0),
         ("vocab_size > 0", v > 0),
-        ("hidden_size % num_heads == 0", nh > 0 && h % nh == 0),
-        ("num_heads % num_kv_heads == 0", nkv > 0 && nh % nkv == 0),
+        ("hidden_size % num_heads == 0", nh > 0 && h.is_multiple_of(nh)),
+        ("num_heads % num_kv_heads == 0", nkv > 0 && nh.is_multiple_of(nkv)),
         ("head_dim % 2 == 0", head_dim % 2 == 0),
     ];
 

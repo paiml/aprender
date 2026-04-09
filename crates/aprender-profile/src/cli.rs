@@ -28,6 +28,7 @@ pub enum OutputFormat {
 #[command(name = "renacer")]
 #[command(version)]
 #[command(about = "Pure Rust system call tracer with source correlation", long_about = None)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
     /// Enable source code correlation using DWARF debug info
     #[arg(short, long)]

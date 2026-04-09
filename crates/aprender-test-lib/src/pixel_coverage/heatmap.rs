@@ -417,7 +417,7 @@ impl PngHeatmap {
             let img: RgbImage = ImageBuffer::new(1, 1);
             let mut buffer = Cursor::new(Vec::new());
             img.write_to(&mut buffer, image::ImageFormat::Png)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(std::io::Error::other)?;
             return Ok(buffer.into_inner());
         }
 
@@ -644,7 +644,7 @@ impl PngHeatmap {
         // Encode to PNG
         let mut buffer = Cursor::new(Vec::new());
         img.write_to(&mut buffer, image::ImageFormat::Png)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         Ok(buffer.into_inner())
     }

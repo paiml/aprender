@@ -28,17 +28,22 @@ const NF4_BLOCK_SIZE_U32: u32 = NF4_BLOCK_SIZE as u32;
 /// SHMEM: 1024 bytes (A[16×16] FP16 + B[16×16] FP16)
 #[derive(Debug, Clone)]
 pub struct Nf4TensorCoreGemmKernel {
+    /// Activation rows (M dimension).
     pub m: u32,
+    /// Output columns (N dimension).
     pub n: u32,
+    /// Inner/shared dimension (K dimension).
     pub k: u32,
 }
 
 impl Nf4TensorCoreGemmKernel {
+    /// Creates a new NF4 tensor core GEMM kernel with the given matrix dimensions.
     #[must_use]
     pub fn new(m: u32, n: u32, k: u32) -> Self {
         Self { m, n, k }
     }
 
+    /// Returns the number of NF4 quantization blocks along the K dimension.
     #[must_use]
     pub const fn num_k_blocks(&self) -> u32 {
         self.k / NF4_BLOCK_SIZE_U32

@@ -44,3 +44,4 @@ all-features = true
 
 [lints.rust]
 unsafe_code = "allow"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

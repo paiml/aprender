@@ -28,6 +28,7 @@ pub struct VisualizerEvent {
 }
 
 /// Configuration for tracer behavior
+#[allow(clippy::struct_excessive_bools)]
 pub struct TracerConfig {
     pub enable_source: bool,
     pub filter: crate::filter::SyscallFilter,
@@ -471,7 +472,7 @@ fn handle_syscall_event(
 
         process_syscall_exit(
             child,
-            current_syscall_entry,
+            current_syscall_entry.as_ref(),
             tracers,
             config.timing_mode,
             duration_us,
@@ -534,7 +535,7 @@ fn process_syscall_entry(
 /// Process syscall exit event
 fn process_syscall_exit(
     child: Pid,
-    current_syscall_entry: &Option<SyscallEntry>,
+    current_syscall_entry: Option<&SyscallEntry>,
     tracers: &mut Tracers,
     timing_mode: bool,
     duration_us: u64,

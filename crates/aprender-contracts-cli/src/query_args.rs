@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 /// Arguments for the `pv query` command — extracted for file health compliance.
 #[derive(Args)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct QueryArgs {
     /// Search query string
     pub query: String,

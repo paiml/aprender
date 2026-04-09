@@ -1,4 +1,4 @@
-use crate::types::*;
+use crate::types::{ProjectAnalysis, LanguageStats, Language, DependencyInfo, DependencyManager};
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fs;

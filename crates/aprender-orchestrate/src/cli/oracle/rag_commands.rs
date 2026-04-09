@@ -36,9 +36,9 @@ pub(super) fn cmd_oracle_rag_sqlite(
     eprintln!();
 
     let load_start = Instant::now();
-    let _load_span = trace.then(|| span("index_load"));
+    let load_span = trace.then(|| span("index_load"));
     let indices = rag_load_all_indices()?;
-    drop(_load_span);
+    drop(load_span);
     let load_ms = load_start.elapsed().as_millis();
 
     if indices.is_empty() {
@@ -85,9 +85,9 @@ pub(super) fn cmd_oracle_rag_sqlite(
     };
 
     let retrieve_start = Instant::now();
-    let _retrieve_span = trace.then(|| span("fts5_search"));
+    let retrieve_span = trace.then(|| span("fts5_search"));
     let sqlite_results = rag_dispatch_search(&indices, &query_text, 10)?;
-    drop(_retrieve_span);
+    drop(retrieve_span);
     let retrieve_ms = retrieve_start.elapsed().as_millis();
 
     if sqlite_results.is_empty() {

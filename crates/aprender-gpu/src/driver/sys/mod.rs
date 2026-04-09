@@ -83,13 +83,17 @@ pub type CUlinkState = *mut c_void;
 pub struct CudaKernelNodeParams {
     /// Kernel function handle
     pub func: CUfunction,
-    /// Grid dimensions (x, y, z)
+    /// Grid dimension X (number of blocks in X)
     pub grid_dim_x: c_uint,
+    /// Grid dimension Y (number of blocks in Y)
     pub grid_dim_y: c_uint,
+    /// Grid dimension Z (number of blocks in Z)
     pub grid_dim_z: c_uint,
-    /// Block dimensions (x, y, z)
+    /// Block dimension X (threads per block in X)
     pub block_dim_x: c_uint,
+    /// Block dimension Y (threads per block in Y)
     pub block_dim_y: c_uint,
+    /// Block dimension Z (threads per block in Z)
     pub block_dim_z: c_uint,
     /// Dynamic shared memory size in bytes
     pub shared_mem_bytes: c_uint,

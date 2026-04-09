@@ -68,7 +68,7 @@ pub fn execute(index: &ContractIndex, params: &QueryParams) -> QueryOutput {
             {
                 std::path::Path::new(".")
             } else {
-                contracts_dir.parent().unwrap()
+                contracts_dir.parent().expect("contracts_dir has a parent directory")
             };
             let extra = params.include_project.as_ref().map(std::path::Path::new);
             cross_project::CrossProjectIndex::build_with_extra(repo_root, extra)

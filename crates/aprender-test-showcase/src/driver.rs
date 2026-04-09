@@ -157,7 +157,7 @@ pub use tui_driver::TuiDriver;
 // These tests work with ANY CalculatorDriver implementation
 
 /// Verifies basic arithmetic operations
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 pub fn verify_basic_arithmetic<D: CalculatorDriver>(driver: &mut D) {
     // Addition
     driver.enter_expression("2 + 3").unwrap();
@@ -181,7 +181,7 @@ pub fn verify_basic_arithmetic<D: CalculatorDriver>(driver: &mut D) {
 }
 
 /// Verifies operator precedence (PEMDAS)
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 pub fn verify_precedence<D: CalculatorDriver>(driver: &mut D) {
     // Multiplication before addition
     driver.enter_expression("2 + 3 * 4").unwrap();
@@ -200,7 +200,7 @@ pub fn verify_precedence<D: CalculatorDriver>(driver: &mut D) {
 }
 
 /// Verifies complex nested expressions
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 pub fn verify_complex_expressions<D: CalculatorDriver>(driver: &mut D) {
     // Showcase expression
     driver.enter_expression("42 * (3 + 7)").unwrap();
@@ -233,7 +233,7 @@ pub fn verify_error_handling<D: CalculatorDriver>(driver: &mut D) {
 }
 
 /// Verifies history tracking
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 pub fn verify_history<D: CalculatorDriver>(driver: &mut D) {
     driver.clear();
 
@@ -251,7 +251,7 @@ pub fn verify_history<D: CalculatorDriver>(driver: &mut D) {
 }
 
 /// Verifies Anomaly status reporting
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 pub fn verify_jidoka_status<D: CalculatorDriver>(driver: &mut D) {
     driver.clear();
 

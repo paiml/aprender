@@ -643,6 +643,7 @@ pub enum WidgetMouseButton {
 
 /// Keyboard modifiers
 #[derive(Debug, Clone, Copy, Default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Modifiers {
     /// Shift key pressed
     pub shift: bool,
