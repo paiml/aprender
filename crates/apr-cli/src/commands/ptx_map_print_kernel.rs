@@ -120,6 +120,14 @@ pub fn run(
     #[cfg(feature = "inference")]
     {
         let _verbose = verbose; // reserved for future PTX snippet output
+
+        // Contract: apr-gpu-parity-consistency-v1.yaml — scope clarity
+        if !json {
+            eprintln!("Scope: PTX kernel DISPATCH map — verifies kernel launch configuration");
+            eprintln!("(See also: apr parity for GPU/CPU output correctness comparison)");
+            eprintln!();
+        }
+
         let info = extract_model_info(model_path)?;
 
         let steps = if prefill {

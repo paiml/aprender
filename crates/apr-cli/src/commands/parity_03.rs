@@ -29,6 +29,14 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) 
         "GPU/CPU Statistical Process Control".white()
     );
     eprintln!(
+        "  {}",
+        "Scope: compares inference OUTPUT (logits/tokens) between GPU and CPU".dimmed()
+    );
+    eprintln!(
+        "  {}",
+        "(See also: apr ptx-map for kernel dispatch verification)".dimmed()
+    );
+    eprintln!(
         "{}",
         "══════════════════════════════════════════════════════════════════════"
             .cyan()
