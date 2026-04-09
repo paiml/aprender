@@ -19,7 +19,7 @@ concurrency:
 jobs:
   # Lint: clippy + fmt (no sibling repos needed — workspace is self-contained)
   lint:
-    runs-on: self-hosted
+    runs-on: [self-hosted, clean-room]
     container:
       image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 15
@@ -32,7 +32,7 @@ jobs:
 
   # Test: workspace lib tests + integration
   test:
-    runs-on: self-hosted
+    runs-on: [self-hosted, clean-room]
     container:
       image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 30
@@ -51,7 +51,7 @@ jobs:
 
   # Gate: aggregates lint + test (required status check for branch protection)
   gate:
-    runs-on: self-hosted
+    runs-on: [self-hosted, clean-room]
     needs: [lint, test]
     steps:
       - run: echo "All checks passed"
@@ -69,7 +69,7 @@ jobs:
 
   # Mutation testing (main only, slow)
   mutants:
-    runs-on: self-hosted
+    runs-on: [self-hosted, clean-room]
     continue-on-error: true
     container:
       image: localhost:5000/sovereign-ci:stable

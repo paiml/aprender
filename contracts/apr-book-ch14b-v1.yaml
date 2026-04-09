@@ -43,6 +43,12 @@ falsification:
 - condition: "Chapter does not mention polars calibration"
   severity: P2
   action: warn
+- condition: "Chapter does not document the 4 profiles (any/cli-tool/library/ml-framework)"
+  severity: P1
+  action: fail_chapter
+- condition: "Chapter does not show current aprender scores (all Grade A)"
+  severity: P2
+  action: warn
 
 sections:
 - heading: "Why Entity Contracts?"
