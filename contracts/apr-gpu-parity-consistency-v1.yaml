@@ -1,0 +1,66 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-09"
+  author: PAIML Engineering
+  registry: true
+  references:
+  - "crates/apr-cli/src/commands/parity.rs"
+  - "crates/apr-cli/src/commands/ptx_map.rs"
+  description: >
+    GPU parity consistency contract. Ensures apr parity and apr ptx-map
+    commands clearly communicate what they measure and do not confuse
+    users with seemingly contradictory results. Refs GH-620, GH-697.
+
+equations:
+  parity_scope_clarity:
+    formula: |
+      apr parity output MUST include a header line:
+        "GPU/CPU Output Parity: compares inference OUTPUT (logits/tokens)"
+      apr ptx-map output MUST include a header line:
+        "PTX Kernel Dispatch Map: verifies kernel LAUNCH configuration"
+      These are DIFFERENT checks. Neither contradicts the other.
+    domain: apr parity, apr ptx-map command output
+    codomain: string
+    invariants:
+    - "parity measures: GPU output == CPU output (logit-level comparison)"
+    - "ptx-map measures: PTX kernels dispatched correctly (launch params)"
+    - "Both can be true: kernels launch correctly but produce wrong output"
+    - "Header line makes scope explicit to prevent user confusion"
+
+  cross_subcmd_no_contradiction:
+    formula: |
+      If parity FAILS and ptx-map PASSES, the output MUST explain:
+        "Note: ptx-map checks kernel dispatch, not output correctness.
+         Kernels may launch correctly but compute incorrect results."
+    domain: combined parity + ptx-map results
+    codomain: string
+    invariants:
+    - "No contradictory verdicts without explanation"
+    - "User always knows what each command measures"
+
+falsification_tests:
+- id: FALSIFY-GPARITY-001
+  rule: parity scope header present
+  prediction: "apr parity --help mentions output/logit comparison"
+  test: |
+    apr parity --help 2>&1 | grep -qi "output\|logit\|inference"
+  if_fails: "parity help does not describe scope"
+
+- id: FALSIFY-GPARITY-002
+  rule: ptx-map scope header present
+  prediction: "apr ptx-map --help mentions kernel dispatch"
+  test: |
+    apr ptx-map --help 2>&1 | grep -qi "kernel\|dispatch\|launch"
+  if_fails: "ptx-map help does not describe scope"
+
+proof_obligations:
+- type: invariant
+  property: "parity and ptx-map clearly state different scopes"
+- type: invariant
+  property: "contradictory results explained with note"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: pending
