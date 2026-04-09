@@ -2,7 +2,7 @@
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
 name = "aprender-distribute"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["Pragmatic AI Labs"]
 description = "Sovereign AI-grade distributed computing primitives for Rust (CPU, GPU, HPC)"
 repository = "https://github.com/paiml/repartir"

@@ -1,5 +1,9 @@
 # Trueno-Viz: SIMD/GPU/WASM-Accelerated Visualization Library
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 0.1.0
 **Status:** Draft Specification
 **Authors:** PAIML Team

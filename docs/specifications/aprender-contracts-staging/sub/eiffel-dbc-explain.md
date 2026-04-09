@@ -1,5 +1,9 @@
 # Eiffel DbC — Migration & pv explain
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 *See also: [eiffel-dbc.md](eiffel-dbc.md) (sections 1-5)*
 
 ## 9. Migration Path

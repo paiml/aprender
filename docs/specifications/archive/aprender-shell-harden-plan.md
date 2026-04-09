@@ -1,5 +1,9 @@
 # aprender-shell Hardening Specification v1.0.1
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** ✅ Complete (Phase 1-2), Partial (Phase 3-4)
 **Created:** 2025-11-27
 **Implemented:** 2025-11-27

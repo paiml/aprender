@@ -1,5 +1,9 @@
 # Brick Testing
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [ttop-v2-spec.md](../ttop-v2-spec.md) Section 5
 
 **Scope:** Probar Brick/BrickHouse architecture, falsification test methodology,

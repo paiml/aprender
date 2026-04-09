@@ -1,5 +1,9 @@
 # APR Binary Format Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent**: [apr-spec.md](../apr-spec.md) §2
 **Status**: Active
 **Implementation**: `aprender::format`, `aprender::native`

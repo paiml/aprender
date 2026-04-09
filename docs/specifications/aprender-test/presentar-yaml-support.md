@@ -1,5 +1,9 @@
 # SPEC-030: Presentar YAML Support
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status**: DRAFT
 **Author**: probar team
 **Created**: 2025-01-12

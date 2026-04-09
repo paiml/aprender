@@ -8,6 +8,9 @@ updated: 2026-02-15T11:47:52.097363464+00:00
 
 # feat: ONNX and NeMo format support (import + export) Specification
 
+Version: 1.0
+Status: proposed
+
 **GitHub Issue**: [#238](https://github.com/YOUR_ORG/YOUR_REPO/issues/238)
 **Status**: In Progress
 

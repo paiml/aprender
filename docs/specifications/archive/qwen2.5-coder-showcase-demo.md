@@ -1,5 +1,9 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 10.52.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
 **Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 52 falsification rounds, 244 bugs found. Round 52: GH-250/254 bench --json clean stdout, run --json tokens field, GPU→CPU fallback for APR Q8. Round 51: validate --json ANSI fix, 12 spec text corrections. 11,244 tests, 3,760 apr-cli tests. `apr qa` all 10 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`

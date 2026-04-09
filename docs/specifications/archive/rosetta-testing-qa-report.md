@@ -1,5 +1,9 @@
 # QA Falsification Report: Rosetta Conversion Harness
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** CONDITIONAL PASS (12/17 Pass, 3 Design Issues, 2 FAILED)
 **Date:** 2026-02-01
 **Methodology:** Popperian Falsification + Toyota Way (Jidoka)

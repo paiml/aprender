@@ -1,5 +1,9 @@
 # ptop Analyzers
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [presentar-spec.md](../presentar-spec.md)
 
 **Scope:** 13 system analyzers, data sources, Analyzer trait, parity metrics with ttop.

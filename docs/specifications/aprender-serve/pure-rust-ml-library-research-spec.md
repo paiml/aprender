@@ -1,5 +1,9 @@
 # Realizar: Pure Rust, Portable, High-Performance ML Library
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Research and Development Specification v1.0
 
 **Project Name:** Realizar (Spanish: "to accomplish, to achieve")

@@ -1,5 +1,9 @@
 # Equation-Driven Development (EDD) Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## simular: A Falsifiable, Equation-First Simulation Framework
 
 **Version:** 1.1.0-draft

@@ -1,5 +1,9 @@
 # Specification: PMAT Compliance & Quality Gates
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** ⚠️ IN PROGRESS (2026-02-02)
 **Objective:** Achieve full PMAT compliance across all quality dimensions.
 **Command:** `pmat comply check` and `pmat quality-gate`

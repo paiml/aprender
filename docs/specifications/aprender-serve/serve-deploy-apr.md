@@ -1,5 +1,9 @@
 # Aprender Model Serving and Deployment Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.1.0
 **Status:** Peer-Reviewed
 **Project:** Aprender (paiml/aprender)

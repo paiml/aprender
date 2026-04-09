@@ -8,6 +8,9 @@ updated: 2026-02-18 (GH-280: PerHeadRmsNormKernel added to trueno-gpu)
 
 # Qwen3-8B: Performance Parity Pipeline
 
+Version: 1.0
+Status: proposed
+
 **Goal:** Import Qwen3-8B from SafeTensors, quantize to Q4K, export our own GGUF with full metadata, and achieve Ollama performance parity.
 
 **Primary Model:** [`Qwen/Qwen3-8B`](https://huggingface.co/Qwen/Qwen3-8B)

@@ -1,5 +1,9 @@
 # TRUENO-SPEC-013: Solidify Quality Gates with CUDA/WGPU Coverage
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** Approved
 **Author:** Claude Code
 **Date:** 2025-12-15

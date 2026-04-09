@@ -1,5 +1,9 @@
 # Eiffel DbC — Domain Applicability (Part 2)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 *See also: [eiffel-dbc-domains.md](eiffel-dbc-domains.md) (Part 1)*
 
 #### Orchestration / Transpilation (batuta)

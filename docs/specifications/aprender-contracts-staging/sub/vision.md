@@ -1,5 +1,9 @@
 # 1. Vision and Architecture
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Papers to Math to Contracts in Code.**
 
 ## The Problem

@@ -15,7 +15,29 @@
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
   </a>
+  <a href="https://crates.io/crates/aprender">
+    <img src="https://img.shields.io/crates/d/aprender.svg" alt="Downloads">
+  </a>
+  <a href="https://blog.rust-lang.org/2025/03/10/Rust-1.86.0.html">
+    <img src="https://img.shields.io/badge/MSRV-1.86-blue.svg" alt="MSRV 1.86">
+  </a>
 </p>
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [What is Aprender?](#what-is-aprender)
+- [Supported Architectures](#supported-architectures)
+- [Install](#install)
+- [CLI Examples](#cli-examples)
+- [Library Usage](#library-usage)
+- [Architecture](#architecture)
+- [Performance](#performance)
+- [Framework Comparison](#framework-comparison)
+- [Provable Contracts](#provable-contracts)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Quick Start
 
@@ -23,12 +45,15 @@
 cargo install aprender
 apr pull qwen2.5-coder-1.5b
 apr run qwen2.5-coder-1.5b "What is 2+2?"
+# => 2 + 2 = 4.
 ```
 
 ## What is Aprender?
 
 Aprender is a complete ML framework built from scratch in Rust. One `cargo install`,
-one `apr` binary, 57 commands covering the full ML lifecycle:
+one `apr` binary, 57 commands covering the full ML lifecycle.
+
+> **Last verified**: 2026-04-09 against apr 0.29.3 on Rust 1.93. All examples below are CI-tested.
 
 | Stage | Commands | What it does |
 |-------|----------|-------------|
@@ -44,10 +69,28 @@ one `apr` binary, 57 commands covering the full ML lifecycle:
 ### Numbers
 
 - **70** workspace crates (was 20 separate repos)
-- **25,391** tests, all passing
-- **405** provable contracts (equation-based verification)
+- **25,806** tests, all passing
+- **540** provable contracts (equation-based verification)
 - **57** CLI commands with contract coverage
 - **0** `[patch.crates-io]` — clean workspace deps
+
+## Supported Architectures
+
+| Architecture | Models | Inference | Training | Formats |
+|-------------|--------|-----------|----------|---------|
+| Qwen2 | Qwen2.5-Coder 0.5B-32B | Yes | LoRA | GGUF, SafeTensors, APR |
+| Qwen3 | Qwen3-0.6B-235B | Yes | LoRA | GGUF, SafeTensors, APR |
+| LLaMA | LLaMA-2 7B-70B, LLaMA-3 8B-70B | Yes | LoRA | GGUF, SafeTensors, APR |
+| Mistral | Mistral 7B, Mixtral 8x7B | Yes | LoRA | GGUF, SafeTensors, APR |
+| Phi | Phi-2, Phi-3 Mini/Small/Medium | Yes | LoRA | GGUF, SafeTensors, APR |
+| Gemma | Gemma 2B-27B | Yes | LoRA | GGUF, SafeTensors, APR |
+| GPT-NeoX | Pythia, StableLM | Yes | - | GGUF, SafeTensors |
+| DeepSeek | DeepSeek-V2 | Yes | - | GGUF, SafeTensors |
+| Falcon | Falcon 7B-180B | Yes | - | GGUF, SafeTensors |
+| StarCoder | StarCoder, StarCoder2 | Yes | - | GGUF, SafeTensors |
+
+**Not yet supported**: Qwen3.5 (SSM/Gated Delta Net layers — [GH-704](https://github.com/paiml/aprender/issues/704)),
+Mamba, RWKV, and other pure-SSM architectures.
 
 ## Install
 
@@ -115,7 +158,7 @@ Monorepo with 70 crates in flat `crates/aprender-*` layout
 [Burn](https://github.com/tracel-ai/burn),
 [Nushell](https://github.com/nushell/nushell)):
 
-```
+```text
 paiml/aprender/
 ├── Cargo.toml                    # Workspace root + `cargo install aprender`
 ├── crates/
@@ -133,7 +176,7 @@ paiml/aprender/
 │   ├── aprender-graph/           # Graph database
 │   ├── aprender-rag/             # RAG pipeline
 │   └── ... (70 crates total)
-├── contracts/                    # 405 provable YAML contracts
+├── contracts/                    # 540 provable YAML contracts
 └── book/                         # mdBook documentation
 ```
 
@@ -186,7 +229,7 @@ From [ground-truth-apr-ludwig](https://github.com/paiml/ground-truth-apr-ludwig)
 | LoRA fine-tuning | `apr finetune --lora` | Not native | apr: rank-64 in minutes |
 | Quantization (INT8/INT4) | `apr quantize` | Not supported | apr-native capability |
 | Model merging | `apr merge --strategy ties` | Not supported | TIES/DARE/SLERP |
-| Provable contracts | 405 YAML contracts | None | Equation-based verification |
+| Provable contracts | 540 YAML contracts | None | Equation-based verification |
 | Single binary | `cargo install aprender` | `pip install ludwig` | Rust vs Python |
 
 *All benchmarks reproducible from linked repos with `cargo test`.*
@@ -207,8 +250,16 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-405 contracts across inference, training, quantization, attention, FFN,
+540 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, and CLI safety.
+
+## Documentation
+
+- [API Reference (docs.rs)](https://docs.rs/aprender) — Full Rust API documentation
+- [Book (mdBook)](book/) — Tutorials, guides, and deep dives
+- [Specifications](docs/specifications/) — 394 spec files across 22 subsystems
+- [Contracts](contracts/) — 540 provable YAML contracts with equations and falsification tests
+- [CLI Reference](https://docs.rs/aprender/latest/aprender/) — 57 commands documented
 
 ## Migration from Old Crates
 
@@ -228,7 +279,7 @@ Old repositories are archived and read-only. All development happens here.
 ```bash
 git clone https://github.com/paiml/aprender
 cd aprender
-cargo test --workspace --lib    # 25,391 tests
+cargo test --workspace --lib    # 25,806 tests
 cargo check --workspace         # 70 crates
 apr --help                      # 57 commands
 ```

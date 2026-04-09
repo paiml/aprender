@@ -1,5 +1,9 @@
 # Eiffel DbC — Escape-Proof Enforcement (Part 2)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 *See also: [eiffel-dbc-enforcement.md](eiffel-dbc-enforcement.md) (Part 1)*
 
 ### 9.5. Chain of Thought: Orchestration (batuta)

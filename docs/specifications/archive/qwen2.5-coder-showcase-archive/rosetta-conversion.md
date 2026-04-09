@@ -1,5 +1,9 @@
 # Rosetta Format Conversion (Archived from Section 10)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from `docs/specifications/qwen2.5-coder-showcase-demo.md`, Section 10 (lines 918-982).
 
 ## 10. Rosetta Format Conversion (Simplified Provenance)

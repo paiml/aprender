@@ -1,5 +1,9 @@
 # Tiling Compute Blocks (TCB) Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0.0
 **Status**: DRAFT
 **Author**: Trueno Engineering

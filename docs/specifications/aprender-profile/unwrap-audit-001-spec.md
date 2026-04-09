@@ -8,6 +8,9 @@ updated: 2025-11-24T14:35:54.573297886+00:00
 
 # Unwrap Audit Phase 1: Risk Categorization
 
+Version: 1.0
+Status: proposed
+
 **Ticket ID**: UNWRAP-AUDIT-001
 **Status**: In Progress
 **Inspired By**: pmat-mcp-agent-toolkit unwrap elimination (commits e06b70b6-7d30becc)

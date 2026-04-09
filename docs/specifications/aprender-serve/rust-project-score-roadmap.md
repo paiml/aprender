@@ -1,4 +1,9 @@
 # Rust Project Score Roadmap
+
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Toyota Way Execution Plan
 
 **Version**: 1.2 Roadmap (2025-11-18)

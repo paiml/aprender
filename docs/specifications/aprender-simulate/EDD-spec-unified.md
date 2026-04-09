@@ -1,5 +1,9 @@
 # Equation-Driven Development (EDD) Unified Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## simular: YAML-Only Falsifiable Simulation Framework
 
 **Version:** 2.0.0

@@ -1,7 +1,7 @@
 [package]
 name = "aprender-viz"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 rust-version = "1.75"
 authors = ["PAIML Team"]
 description = "SIMD/GPU/WASM-accelerated visualization library for data science and ML"

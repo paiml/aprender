@@ -1,5 +1,9 @@
 # Sub-spec: UX Contracts, Speech/Whisper.apr, and Probar Integration
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent:** [pv-spec.md](../pv-spec.md) Section 20
 
 ---

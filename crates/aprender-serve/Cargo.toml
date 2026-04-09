@@ -3,7 +3,7 @@
 [package]
 name = "aprender-serve"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 rust-version = "1.89"
 authors = ["Pragmatic AI Labs <contact@paiml.com>"]
 license = "MIT"

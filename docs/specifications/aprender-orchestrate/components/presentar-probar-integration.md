@@ -1,5 +1,9 @@
 # Presentar + Probar Integration Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > See also: [agent-and-playbook.md](agent-and-playbook.md), [multi-provider-api.md](multi-provider-api.md)
 > Depends on: presentar 0.3.x, presentar-terminal 0.3.x, jugar-probar 1.0.x, probador CLI

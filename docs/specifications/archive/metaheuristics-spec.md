@@ -1,5 +1,9 @@
 # Metaheuristics Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.1
 **Date:** 2025-11-27
 **Status:** Planning (Revised per Toyota Way Review)

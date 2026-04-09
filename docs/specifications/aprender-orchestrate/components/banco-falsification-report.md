@@ -1,5 +1,8 @@
 # Banco Comprehensive Falsification Report
 
+Version: 1.0
+Status: proposed
+
 > Date: 2026-03-21
 > Methodology: Attempt to break every claim in banco-spec.md against source code
 > Verdict: **API excellent. Everything else has critical gaps.**

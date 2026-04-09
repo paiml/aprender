@@ -1,5 +1,9 @@
 # Trueno Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Unified high-performance compute primitives across CPU SIMD, NVIDIA CUDA, wgpu, and WebAssembly.**
 
 Version 1.0 · April 2026 · Pragmatic AI Labs · [paiml/trueno](https://github.com/paiml/trueno)

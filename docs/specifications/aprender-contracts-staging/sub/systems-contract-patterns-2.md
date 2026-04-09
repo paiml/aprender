@@ -1,3 +1,8 @@
+
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 *See also: [systems-contract-patterns.md](systems-contract-patterns.md) (sections 34.1-34.6)*
 
 ## 34.7 Cross-Cutting Contract Patterns

@@ -1,5 +1,9 @@
 # Model Bundling and Memory Paging Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** Implemented
 **Implementation Date:** 2025-11-26
 **Module:** `src/bundle/`

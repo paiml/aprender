@@ -1,0 +1,431 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'Kubernetes KEP process (k/enhancements) — lifecycle-driven spec management'
+  - 'Rust RFC process — status field + tracking issue linkage'
+  - 'IETF RFC maturity levels (Proposed Standard / Draft Standard / Internet Standard)'
+  - 'aprender docs/specifications/ — 35+ spec documents, lifecycle metadata varies'
+  - 'docs/specifications/aprender-contract-entities/spec-entity-spec.md'
+  description: >
+    Specification document quality meta-contract. Enforces 10 measurable
+    elements across 4 tiers (lifecycle, rigor, hygiene, traceability) via
+    profile parameterization. Calibrated against Kubernetes KEPs (Grade A,
+    ~95), typical Rust projects (no formal specs, score 0), and aprender
+    (specs exist but lifecycle metadata weak, ~70 Grade C). Machine-checkable
+    (regex, file existence, YAML parse). Operates on the specification
+    corpus — complements readme-entity-v1 (README quality) and
+    repo-entity-v1 (repo structure).
+
+profiles:
+  any:
+    required: [S1, S2, S3, S9]
+    recommended: [S4, S5, S6, S7, S8, S10]
+  cli-tool:
+    inherits: any
+    required: [S1, S2, S3, S7, S9]
+    recommended: [S4, S5, S6, S8, S10]
+  library:
+    inherits: cli-tool
+    required: [S1, S2, S3, S4, S5, S7, S9, S10]
+    recommended: [S6, S8]
+  ml-framework:
+    inherits: library
+    required: [S1, S2, S3, S4, S5, S6, S7, S8, S9, S10]
+    recommended: []
+
+parameters:
+  spec_dir:
+    type: string
+    default: docs/specifications
+  valid_statuses:
+    type: list
+    default: [proposed, tested, enforced, deprecated]
+  toc_file:
+    type: string
+    default: docs/specifications/TOC.md
+  min_falsification_tests:
+    type: integer
+    default: 3
+
+elements:
+  S1:
+    name: status_field
+    tier: lifecycle
+    check: "each spec has a status field with value in {proposed, tested, enforced, deprecated}"
+    measurable: "grep -P 'Status:\\s*(proposed|tested|enforced|deprecated)' in each spec .md"
+  S2:
+    name: version_field
+    tier: lifecycle
+    check: "each spec has a version field (e.g., v1.0, v2.3)"
+    measurable: "grep -P 'Version:\\s*v?[0-9]+\\.[0-9]+' in each spec .md"
+  S3:
+    name: date_field
+    tier: lifecycle
+    check: "each spec has a date or created field with ISO 8601 date"
+    measurable: "grep -P '(Date|Created|Updated):\\s*20[0-9]{2}-[0-9]{2}-[0-9]{2}' in each spec .md"
+  S4:
+    name: equations_present
+    tier: rigor
+    check: "spec contains at least one formal equation, invariant, or pseudocode block"
+    measurable: "grep for LaTeX math delimiters, 'invariant:', or fenced pseudocode blocks"
+  S5:
+    name: falsification_tests_defined
+    tier: rigor
+    check: "spec defines >= min_falsification_tests falsifiable predictions"
+    measurable: "count sections/items matching /falsif|test|prediction|assert/i"
+  S6:
+    name: evidence_of_runs
+    tier: rigor
+    check: "spec references actual test results, benchmark data, or CI run links"
+    measurable: "grep for URLs to CI runs, benchmark results, or 'measured|observed|result' keywords"
+  S7:
+    name: no_orphan_specs
+    tier: hygiene
+    check: "all spec files under spec_dir are referenced by a ToC or index file"
+    measurable: "diff between ls spec_dir/*.md and links extracted from toc_file"
+  S8:
+    name: no_aspirational_without_status
+    tier: hygiene
+    check: "no spec claims future features without explicit 'proposed' status"
+    measurable: "grep for aspirational keywords (will, should, planned) in specs missing status field"
+  S9:
+    name: contract_yaml_linked
+    tier: traceability
+    check: "specs that define contracts reference a corresponding contracts/*.yaml file"
+    measurable: "grep for contracts/*.yaml paths or contract IDs in spec body"
+  S10:
+    name: references_listed
+    tier: traceability
+    check: "each spec has a references section with >= 1 external link or citation"
+    measurable: "grep for '## References' or '## See Also' section with markdown links"
+
+equations:
+  lifecycle_complete:
+    formula: |
+      forall spec S in spec_dir:
+        status(S) in valid_statuses AND
+        version(S) matches /v?[0-9]+\.[0-9]+/ AND
+        date(S) matches /20[0-9]{2}-[0-9]{2}-[0-9]{2}/
+    domain: "Specification .md files in spec_dir"
+    codomain: bool
+    invariants:
+    - "Every spec has an explicit lifecycle status"
+    - "Version enables tracking of breaking vs non-breaking changes"
+    - "Date enables freshness and ordering assessments"
+
+  rigor_sufficient:
+    formula: |
+      forall spec S in spec_dir with profile P:
+        (P not in {library, ml-framework} OR equations_present(S)) AND
+        (P not in {library, ml-framework} OR
+         falsification_test_count(S) >= min_falsification_tests) AND
+        (P != ml-framework OR evidence_of_runs(S))
+    domain: "Specification .md files"
+    codomain: bool
+    invariants:
+    - "Formal equations prevent ambiguity in behavioral contracts"
+    - "Falsification tests make specs testable, not aspirational"
+    - "Evidence of runs proves the spec was validated, not just written"
+
+  hygiene_clean:
+    formula: |
+      forall spec S in spec_dir:
+        referenced_by_toc(S, toc_file) AND
+        (has_status_field(S) OR not contains_aspirational_keywords(S))
+    domain: "Specification .md files + ToC index"
+    codomain: bool
+    invariants:
+    - "No orphan specs — every document is discoverable via ToC"
+    - "Aspirational language requires explicit 'proposed' status"
+
+  traceability_linked:
+    formula: |
+      forall spec S in spec_dir:
+        (not defines_contract(S) OR references_yaml(S)) AND
+        reference_count(S) >= 1
+    domain: "Specification .md files + contracts/*.yaml"
+    codomain: bool
+    invariants:
+    - "Contract specs link to their YAML definition for machine validation"
+    - "References ground the spec in prior art or standards"
+
+  spec_score:
+    formula: |
+      tier_weight = {lifecycle: 30, rigor: 30, hygiene: 20, traceability: 20}
+
+      forall element E in {S1..S10}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {S1..S10})
+      max_score = sum(element_weight(E) for E in {S1..S10})
+      spec_score = round(raw_score / max_score * 100)
+
+      verdict = if spec_score >= 90 then A
+                elif spec_score >= 80 then B
+                elif spec_score >= 70 then C
+                elif spec_score >= 60 then D
+                else F
+    domain: "All gate results + profile + tier weights"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements present"
+    - "Score 100 when all required + recommended elements present"
+    - "Lifecycle + rigor account for 60% of total weight"
+    - "Required elements contribute full weight; recommended elements contribute half"
+    - "Kubernetes KEPs score >= 95 (Grade A) — calibration invariant"
+    - "Grade F (<60) means specs are not trustworthy for implementation"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-SPEC-E001
+  rule: lifecycle_complete
+  element: S1
+  prediction: "all spec files have a status field with valid lifecycle value"
+  test: |
+    SPEC_DIR="docs/specifications"
+    TOTAL=0; PASS=0; FAIL_LIST=""
+    for f in "$SPEC_DIR"/*.md "$SPEC_DIR"/**/*.md; do
+      [ -f "$f" ] || continue
+      TOTAL=$((TOTAL+1))
+      if grep -qP 'Status:\s*(proposed|tested|enforced|deprecated)' "$f" 2>/dev/null; then
+        PASS=$((PASS+1))
+      else
+        FAIL_LIST="$FAIL_LIST $(basename "$f")"
+      fi
+    done
+    echo "S1 status_field: $PASS/$TOTAL specs have valid status"
+    [ -n "$FAIL_LIST" ] && echo "  missing: $FAIL_LIST"
+    RATIO=$(python3 -c "print($PASS/$TOTAL if $TOTAL>0 else 0)")
+    echo "  coverage: $RATIO"
+    test "$PASS" -eq "$TOTAL"
+  if_fails: "specs without status field cannot be assessed for maturity"
+
+- id: F-SPEC-E002
+  rule: lifecycle_complete
+  element: S3
+  prediction: "all spec files have a date field with ISO 8601 date"
+  test: |
+    SPEC_DIR="docs/specifications"
+    TOTAL=0; PASS=0
+    for f in "$SPEC_DIR"/*.md "$SPEC_DIR"/**/*.md; do
+      [ -f "$f" ] || continue
+      TOTAL=$((TOTAL+1))
+      if grep -qP '(Date|Created|Updated):\s*20[0-9]{2}-[0-9]{2}-[0-9]{2}' "$f" 2>/dev/null; then
+        PASS=$((PASS+1))
+      fi
+    done
+    echo "S3 date_field: $PASS/$TOTAL specs have dates"
+    test "$PASS" -eq "$TOTAL"
+  if_fails: "specs without dates cannot be assessed for freshness"
+
+- id: F-SPEC-E003
+  rule: hygiene_clean
+  element: S7
+  prediction: "all spec files are referenced by the ToC index"
+  test: |
+    SPEC_DIR="docs/specifications"
+    TOC_FILE="$SPEC_DIR/TOC.md"
+    if [ ! -f "$TOC_FILE" ]; then
+      echo "FAIL: ToC file $TOC_FILE does not exist"
+      exit 1
+    fi
+    ORPHANS=0
+    for f in "$SPEC_DIR"/*.md; do
+      [ -f "$f" ] || continue
+      BASE=$(basename "$f")
+      [ "$BASE" = "TOC.md" ] && continue
+      if ! grep -q "$BASE" "$TOC_FILE" 2>/dev/null; then
+        echo "  ORPHAN: $BASE"
+        ORPHANS=$((ORPHANS+1))
+      fi
+    done
+    echo "S7 orphan specs: $ORPHANS"
+    test "$ORPHANS" -eq 0
+  if_fails: "orphan specs are undiscoverable — not linked from ToC"
+
+- id: F-SPEC-E004
+  rule: rigor_sufficient
+  element: S5
+  prediction: "specs defining contracts have >= 3 falsifiable predictions"
+  test: |
+    SPEC_DIR="docs/specifications"
+    TOTAL=0; PASS=0
+    for f in "$SPEC_DIR"/*.md "$SPEC_DIR"/**/*.md; do
+      [ -f "$f" ] || continue
+      # Only check specs that reference contracts
+      grep -q 'contract' "$f" 2>/dev/null || continue
+      TOTAL=$((TOTAL+1))
+      COUNT=$(grep -ciP 'falsif|test.*predict|assert|gate|F-[A-Z]+-' "$f" 2>/dev/null || echo 0)
+      if [ "$COUNT" -ge 3 ]; then
+        PASS=$((PASS+1))
+      else
+        echo "  LOW: $(basename "$f") has $COUNT falsification markers"
+      fi
+    done
+    echo "S5 falsification tests: $PASS/$TOTAL contract specs have >= 3"
+    test "$TOTAL" -eq 0 -o "$PASS" -eq "$TOTAL"
+  if_fails: "contract specs without falsification tests are aspirational, not enforceable"
+
+- id: F-SPEC-E005
+  rule: traceability_linked
+  element: S10
+  prediction: "each spec has a references section with >= 1 link"
+  test: |
+    SPEC_DIR="docs/specifications"
+    TOTAL=0; PASS=0
+    for f in "$SPEC_DIR"/*.md "$SPEC_DIR"/**/*.md; do
+      [ -f "$f" ] || continue
+      TOTAL=$((TOTAL+1))
+      if grep -qP '##\s*(References|See Also|Sources)' "$f" 2>/dev/null; then
+        PASS=$((PASS+1))
+      fi
+    done
+    echo "S10 references: $PASS/$TOTAL specs have references section"
+    test "$PASS" -eq "$TOTAL"
+  if_fails: "specs without references are ungrounded — no prior art cited"
+
+- id: F-SPEC-E006
+  rule: spec_score
+  element: all
+  prediction: "spec corpus scores >= 90 (grade A) under the project's profile"
+  test: |
+    python3 -c "
+    import sys, os, re, glob as g
+
+    SPEC_DIR = 'docs/specifications'
+    tier_weight = {'lifecycle': 30, 'rigor': 30, 'hygiene': 20, 'traceability': 20}
+    element_tier = {
+        'S1': 'lifecycle', 'S2': 'lifecycle', 'S3': 'lifecycle',
+        'S4': 'rigor', 'S5': 'rigor', 'S6': 'rigor',
+        'S7': 'hygiene', 'S8': 'hygiene',
+        'S9': 'traceability', 'S10': 'traceability',
+    }
+    element_name = {
+        'S1': 'status_field', 'S2': 'version_field', 'S3': 'date_field',
+        'S4': 'equations_present', 'S5': 'falsification_tests',
+        'S6': 'evidence_of_runs',
+        'S7': 'no_orphan_specs', 'S8': 'no_aspirational_without_status',
+        'S9': 'contract_yaml_linked', 'S10': 'references_listed',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    # profile: ml-framework
+    required = {'S1','S2','S3','S4','S5','S6','S7','S8','S9','S10'}
+    recommended = set()
+
+    specs = [f for f in g.glob(f'{SPEC_DIR}/**/*.md', recursive=True)
+             if os.path.basename(f) != 'README.md']
+    if not specs:
+        specs = [f for f in g.glob(f'{SPEC_DIR}/*.md')
+                 if os.path.basename(f) != 'README.md']
+
+    total = len(specs)
+    if total == 0:
+        print('No spec files found'); sys.exit(1)
+
+    def check_all(pattern):
+        count = sum(1 for s in specs
+                    if re.search(pattern, open(s).read(), re.M|re.I))
+        return count == total, count
+
+    gates = {}
+
+    # S1: status field
+    ok, n = check_all(r'Status:\s*(proposed|tested|enforced|deprecated)')
+    gates['S1'] = ok
+
+    # S2: version field
+    ok, n = check_all(r'Version:\s*v?[0-9]+\.[0-9]+')
+    gates['S2'] = ok
+
+    # S3: date field
+    ok, n = check_all(r'(Date|Created|Updated):\s*20[0-9]{2}-[0-9]{2}-[0-9]{2}')
+    gates['S3'] = ok
+
+    # S4: equations present (in >= 50% of specs)
+    ok, n = check_all(r'(\\\\[|equation|invariant|formula|pseudocode|\\\$\\\$)')
+    gates['S4'] = n >= total * 0.5
+
+    # S5: falsification tests
+    ok, n = check_all(r'(falsif|F-[A-Z]+-[A-Z]*[0-9]|prediction|assert)')
+    gates['S5'] = n >= total * 0.5
+
+    # S6: evidence of runs
+    ok, n = check_all(r'(measured|observed|benchmark|CI run|result:|passed|coverage)')
+    gates['S6'] = n >= total * 0.3
+
+    # S7: no orphan specs
+    toc_path = f'{SPEC_DIR}/TOC.md'
+    if os.path.isfile(toc_path):
+        toc = open(toc_path).read()
+        orphans = sum(1 for s in specs if os.path.basename(s) not in toc)
+        gates['S7'] = orphans == 0
+    else:
+        gates['S7'] = False
+
+    # S8: no aspirational without status
+    aspirational_no_status = 0
+    for s in specs:
+        c = open(s).read()
+        has_status = bool(re.search(r'Status:', c, re.I))
+        has_aspir = bool(re.search(r'\\bwill\\b|\\bshould\\b|\\bplanned\\b', c, re.I))
+        if has_aspir and not has_status:
+            aspirational_no_status += 1
+    gates['S8'] = aspirational_no_status == 0
+
+    # S9: contract yaml linked
+    contract_specs = [s for s in specs if 'contract' in open(s).read().lower()]
+    if contract_specs:
+        linked = sum(1 for s in contract_specs
+                     if re.search(r'contracts/.*\\.yaml', open(s).read()))
+        gates['S9'] = linked == len(contract_specs)
+    else:
+        gates['S9'] = True
+
+    # S10: references listed
+    ok, n = check_all(r'##\\s*(References|See Also|Sources)')
+    gates['S10'] = ok
+
+    raw = 0.0; max_s = 0.0
+    print(f'spec-entity-v1 | profile: ml-framework | {total} specs')
+    print('=' * 60)
+    for e in sorted(element_tier.keys(), key=lambda x: int(x[1:])):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        if e in required: mult = 1.0; req = 'REQ'
+        elif e in recommended: mult = 0.5; req = 'REC'
+        else: mult = 0.0; req = '---'
+        ew = w * mult
+        max_s += ew
+        pts = ew if gates.get(e, False) else 0.0
+        raw += pts
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        print(f'  {e:4s} [{req}] w={ew:5.1f}  {status:4s}  {element_name[e]}')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    print(f'F-SPEC-E006: {\"PASS\" if score >= 90 else \"FAIL\"}')
+    sys.exit(0 if score >= 90 else 1)
+    "
+  if_fails: "spec corpus score below 90 — specifications not trustworthy for implementation"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

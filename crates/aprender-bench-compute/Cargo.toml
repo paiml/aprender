@@ -1,9 +1,14 @@
 [package]
 name = "aprender-bench-compute"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
 description = "Head-to-head compute benchmarks: aprender/trueno vs ndarray for LLM inference hotspots"
+keywords = ["ml", "rust", "aprender", "compute", "benchmark"]
+categories = ["science"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 # Benchmarks legitimately use unwrap() on known-good data
 [lints.clippy]

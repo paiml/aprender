@@ -22,5 +22,8 @@ proc-macro2 = "1"
 [dev-dependencies]
 trybuild = "1"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true

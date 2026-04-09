@@ -1,5 +1,9 @@
 # SPEC-TUNE-2026-001: Automatic Hyperparameter Tuning for Classification Fine-Tuning
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0.0
 **Status**: DRAFT
 **Author**: paiml engineering

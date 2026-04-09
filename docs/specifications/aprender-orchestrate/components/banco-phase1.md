@@ -1,5 +1,9 @@
 # Banco Phase 1: HTTP API Foundation
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [banco-spec.md](banco-spec.md) §5
 > Ticket: PMAT-057
 > Status: **Complete** (foundation for 52 endpoints built on this skeleton)

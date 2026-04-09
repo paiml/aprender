@@ -1,5 +1,8 @@
 # Experiment Tracking Specification
 
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.8.0
 **Status:** Review
 **Author:** Entrenar Team

@@ -1,5 +1,9 @@
 # 29. Asset Contracts
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## The Gap
 
 Contracts today verify **functions** — Rust code with preconditions

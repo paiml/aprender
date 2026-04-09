@@ -1,5 +1,9 @@
 # Protocol Evolution: Rounds 5-13
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md (lines 4360-4737)
 > Note: Lines 4738-4923 were duplicates of this content and were removed.
 

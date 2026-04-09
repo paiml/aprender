@@ -1,5 +1,9 @@
 # WASM Threaded Testing Mock Runtime Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **PROBAR-SPEC-WASM-001: Mock Runtime for WASM Concurrency Testing**
 
 | Field | Value |

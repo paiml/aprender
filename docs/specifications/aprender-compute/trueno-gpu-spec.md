@@ -1,5 +1,9 @@
 # Trueno GPU: Pure Rust First-Principles GPU Compute Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.2
 **Date**: 2025-12-16
 **Status**: SPECIFICATION - Ready for Implementation

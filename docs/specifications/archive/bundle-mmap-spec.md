@@ -1,5 +1,7 @@
 # Bundle Memory-Mapped I/O Specification v1.2
 
+Status: proposed
+
 **Status:** Draft (Pending Review)
 **Created:** 2025-11-27
 **Target Module:** `src/bundle/mmap.rs`

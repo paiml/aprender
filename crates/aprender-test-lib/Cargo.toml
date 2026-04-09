@@ -196,5 +196,8 @@ name = "watch_mode"
 path = "examples/watch_mode.rs"
 required-features = ["watch"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true

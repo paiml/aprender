@@ -1,5 +1,9 @@
 # Repartir: Distributed Computing Primitives for Rust
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 2.0.0-draft (Complete Sovereign Stack)
 **Status:** DRAFT - Iteration 4 (Pepita Unified Architecture)
 **Last Updated:** 2026-01-04

@@ -8,6 +8,9 @@ updated: 2025-12-12
 
 # OR-001: Simple Operations Research Example Specification
 
+Version: 1.0
+Status: proposed
+
 **Ticket ID**: OR-001
 **Status**: Completed
 **Methodology**: Toyota Production System (TPS) + Popperian Falsification + Equation Driven Development (EDD)

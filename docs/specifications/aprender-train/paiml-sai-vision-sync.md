@@ -1,5 +1,9 @@
 # PAIML Sovereign AI Stack: Vision Sync Document
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0.0
 **Last Updated:** 2025-11-26
 **Status:** Active Development

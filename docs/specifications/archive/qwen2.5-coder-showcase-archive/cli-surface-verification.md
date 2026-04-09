@@ -1,5 +1,9 @@
 # Full CLI Surface Area Verification (Archived from Section 17)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md, Section 17 (lines 1888-1960).
 
 ## 17. Full CLI Surface Area Verification

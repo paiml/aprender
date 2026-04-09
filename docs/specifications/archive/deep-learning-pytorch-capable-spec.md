@@ -1,5 +1,9 @@
 # Deep Learning Specification: PyTorch-Compatible Pure Rust Implementation
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0.0
 **Status:** Draft
 **Authors:** Pragmatic AI Labs

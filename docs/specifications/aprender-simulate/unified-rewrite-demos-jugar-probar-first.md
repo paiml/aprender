@@ -1,5 +1,9 @@
 # Unified Demo Rewrite Specification: jugar-probar First
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** SIMULAR-DEMO-001
 **Version:** 1.0.0
 **Status:** Draft

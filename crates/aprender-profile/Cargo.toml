@@ -1,7 +1,7 @@
 [package]
 name = "aprender-profile"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 rust-version = "1.75"
 authors = ["Pragmatic AI Labs <info@paiml.com>"]
 description = "Pure Rust system call tracer with source-aware correlation for Rust binaries"

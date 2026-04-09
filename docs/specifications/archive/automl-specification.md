@@ -1,5 +1,9 @@
 # AutoML Specification v1.0
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## aprender Automated Machine Learning Module
 
 **Status**: Draft

@@ -1,0 +1,29 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Rust sources
+*.rs text diff=rust
+*.toml text
+*.lock text -diff
+
+# Scripts
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Documentation
+*.md text
+*.yml text
+*.yaml text
+
+# Binary formats — do not diff
+*.gguf binary
+*.apr binary
+*.safetensors binary
+*.onnx binary
+*.png binary
+*.svg text
+*.woff2 binary
+
+# Generated files — exclude from language stats
+contracts/*.yaml linguist-generated
+book/src/*.md linguist-documentation

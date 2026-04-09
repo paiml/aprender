@@ -2,7 +2,7 @@
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
 name = "aprender-data"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["paiml"]
 description = "Data Loading, Distribution and Tooling in Pure Rust"
 license = "MIT"

@@ -2,7 +2,7 @@
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
 name = "aprender-verify"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["Pragmatic AI Labs Research Division"]
 description = "A scientific experiment into realistic provability with Rust - asymptotic test effectiveness framework"
 repository = "https://github.com/paiml/certeza"

@@ -1,5 +1,9 @@
 # Tune (HPO) Component Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent**: [apr-spec.md](../apr-spec.md) §10
 **Status**: Active
 **CLI**: `apr tune`

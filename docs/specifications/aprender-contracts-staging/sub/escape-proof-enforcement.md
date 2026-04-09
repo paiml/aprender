@@ -1,5 +1,9 @@
 # Escape-Proof Contract Enforcement
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Sub-spec of [pv-spec.md](../pv-spec.md) | Section 13
 
 ## Principle

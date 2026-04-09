@@ -1,5 +1,9 @@
 # Sovereign AI Architecture Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > Sources: sovereign-ai-spec, stack-visualization-diagnostics-reporting
 

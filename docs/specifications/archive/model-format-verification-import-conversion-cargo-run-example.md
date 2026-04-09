@@ -1,5 +1,9 @@
 # Model Format Rosetta Stone Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.3.0-verified
 **Status**: VERIFIED (Falsification Failed)
 **Created**: 2026-01-24

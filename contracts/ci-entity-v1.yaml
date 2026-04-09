@@ -1,0 +1,430 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'OpenSSF Scorecard CI-Tests check (github.com/ossf/scorecard)'
+  - 'GitHub Actions security hardening (docs.github.com/actions/security-guides)'
+  - 'StepSecurity harden-runner — SHA pinning and permissions audit'
+  - 'bevy CI workflow — calibration benchmark (Grade A target)'
+  - 'docs/specifications/aprender-contract-entities/ci-entity-spec.md'
+  description: >
+    GitHub Actions CI quality contract for software projects.
+    Enforces 12 measurable elements across 4 tiers (security, reliability,
+    coverage, operations) via profile parameterization. Calibrated against
+    bevy/ruff (~95, Grade A) and polars (~75, Grade C). Machine-checkable
+    (YAML parse, file existence, regex matching). Complements repo-entity-v1
+    (repo structure) and dep-entity-v1 (dependency health).
+
+profiles:
+  any:
+    required: [W4, W7, W8]
+    recommended: [W1, W2, W3, W5, W6, W9, W10, W11, W12]
+  cli-tool:
+    inherits: any
+    required: [W1, W4, W5, W7, W8, W10]
+    recommended: [W2, W3, W6, W9, W11, W12]
+  library:
+    inherits: cli-tool
+    required: [W1, W2, W3, W4, W5, W7, W8, W9, W10, W12]
+    recommended: [W6, W11]
+  ml-framework:
+    inherits: library
+    required: [W1, W2, W3, W4, W5, W6, W7, W8, W9, W10, W11, W12]
+    recommended: []
+
+parameters:
+  workflows_dir:
+    type: string
+    default: ".github/workflows"
+  sha_pin_pattern:
+    type: string
+    default: "uses: .+@[a-f0-9]{40}"
+  max_timeout_minutes:
+    type: integer
+    default: 60
+
+elements:
+  W1:
+    name: permissions_set
+    tier: security
+    check: "top-level permissions: block in workflow YAML (least privilege)"
+    measurable: "YAML parse: top-level 'permissions' key exists in each workflow"
+  W2:
+    name: sha_pinned_actions
+    tier: security
+    check: "all third-party uses: directives reference SHA, not tag (supply chain)"
+    measurable: "regex: uses: owner/action@<sha40> vs uses: owner/action@v*"
+  W3:
+    name: persist_credentials_false
+    tier: security
+    check: "checkout action uses persist-credentials: false"
+    measurable: "YAML parse: actions/checkout with persist-credentials: false"
+  W4:
+    name: timeout_minutes
+    tier: reliability
+    check: "all jobs have timeout-minutes set (<= max_timeout_minutes)"
+    measurable: "YAML parse: every job object contains timeout-minutes key"
+  W5:
+    name: concurrency_cancel
+    tier: reliability
+    check: "concurrency group with cancel-in-progress: true on PR workflows"
+    measurable: "YAML parse: top-level concurrency.cancel-in-progress == true"
+  W6:
+    name: caching
+    tier: reliability
+    check: "Rust target/registry caching via actions/cache or Swatinem/rust-cache"
+    measurable: "grep: actions/cache|Swatinem/rust-cache in workflow files"
+  W7:
+    name: lint_job
+    tier: coverage
+    check: "workflow contains job running cargo fmt --check and cargo clippy"
+    measurable: "grep: 'cargo fmt' AND 'cargo clippy' in workflow steps"
+  W8:
+    name: test_job
+    tier: coverage
+    check: "workflow contains job running cargo test"
+    measurable: "grep: 'cargo test' in workflow steps"
+  W9:
+    name: audit_job
+    tier: coverage
+    check: "workflow contains job running cargo audit or cargo deny"
+    measurable: "grep: 'cargo audit|cargo deny' in workflow steps"
+  W10:
+    name: release_workflow
+    tier: operations
+    check: "dedicated release workflow triggered by tag push or workflow_dispatch"
+    measurable: "YAML parse: workflow with on.push.tags or on.workflow_dispatch"
+  W11:
+    name: matrix_builds
+    tier: operations
+    check: "CI tests on >= 2 OS targets via strategy.matrix"
+    measurable: "YAML parse: strategy.matrix with os array of length >= 2"
+  W12:
+    name: coverage_job
+    tier: operations
+    check: "workflow contains coverage collection (llvm-cov, tarpaulin, or codecov)"
+    measurable: "grep: 'llvm-cov|tarpaulin|codecov' in workflow steps"
+
+equations:
+  security_hardened:
+    formula: |
+      forall workflow W in .github/workflows/:
+        permissions_set(W) AND
+        sha_pinned_actions(W) AND
+        persist_credentials_false(W)
+    domain: "GitHub Actions workflow YAML files"
+    codomain: bool
+    invariants:
+    - "Permissions block enforces least privilege (GITHUB_TOKEN scoping)"
+    - "SHA pinning prevents supply chain attacks via tag mutation"
+    - "persist-credentials: false prevents token leakage in subsequent steps"
+
+  reliability_ensured:
+    formula: |
+      forall workflow W in .github/workflows/:
+        all_jobs_have_timeout(W, max_timeout_minutes) AND
+        (is_pr_workflow(W) implies concurrency_cancel(W)) AND
+        caching_configured(W)
+    domain: "GitHub Actions workflow YAML files"
+    codomain: bool
+    invariants:
+    - "Timeout prevents stuck jobs from consuming runner quota"
+    - "Concurrency cancellation prevents stale PR checks from wasting resources"
+    - "Caching reduces build times by 50-80% on incremental changes"
+
+  coverage_complete:
+    formula: |
+      exists workflow W in .github/workflows/:
+        lint_job_present(W) AND test_job_present(W) AND
+        (profile not in {library, ml-framework} OR audit_job_present(W))
+    domain: "GitHub Actions workflow YAML files"
+    codomain: bool
+    invariants:
+    - "Lint job catches formatting and clippy violations before merge"
+    - "Test job validates correctness on every PR"
+    - "Audit job blocks merging vulnerable dependencies"
+
+  operations_mature:
+    formula: |
+      exists workflow W in .github/workflows/:
+        release_workflow(W) AND
+        (profile != ml-framework OR matrix_builds(W)) AND
+        coverage_collection(W)
+    domain: "GitHub Actions workflow YAML files"
+    codomain: bool
+    invariants:
+    - "Release workflow automates publishing on tag push"
+    - "Matrix builds ensure cross-platform compatibility"
+    - "Coverage collection tracks test coverage over time"
+
+  ci_score:
+    formula: |
+      tier_weight = {security: 30, reliability: 25, coverage: 25, operations: 20}
+
+      forall element E in {W1..W12}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {W1..W12})
+      max_score = sum(element_weight(E) for E in {W1..W12})
+      ci_score = round(raw_score / max_score * 100)
+
+      verdict = if ci_score >= 90 then A
+                elif ci_score >= 80 then B
+                elif ci_score >= 70 then C
+                elif ci_score >= 60 then D
+                else F
+    domain: "All gate results + profile + tier weights"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements present"
+    - "Score 100 when all required + recommended elements present"
+    - "Security (30) + reliability (25) account for 55% of total weight"
+    - "bevy/ruff (ml-framework profile) scores >= 95 (calibration invariant)"
+    - "Required elements contribute full weight; recommended elements contribute half"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-CI-E001
+  rule: security_hardened
+  element: W1
+  prediction: "all CI workflows have top-level permissions block"
+  test: |
+    python3 -c "
+    import yaml, glob, sys
+    fails = 0
+    for path in sorted(glob.glob('.github/workflows/*.yml')):
+        with open(path) as f:
+            wf = yaml.safe_load(f)
+        if wf is None:
+            continue
+        if 'permissions' not in wf:
+            print(f'FAIL: {path} — missing top-level permissions')
+            fails += 1
+        else:
+            print(f'PASS: {path}')
+    print(f'W1: {\"PASS\" if fails == 0 else \"FAIL\"} ({fails} workflows missing permissions)')
+    sys.exit(0 if fails == 0 else 1)
+    "
+  if_fails: "workflow without permissions block — GITHUB_TOKEN has excessive scope"
+
+- id: F-CI-E002
+  rule: security_hardened
+  element: W2
+  prediction: "all third-party actions use SHA pinning, not version tags"
+  test: |
+    python3 -c "
+    import re, glob, sys
+    tag_pattern = re.compile(r'uses:\s+([^/]+/[^@]+)@v[\d.]+')
+    sha_pattern = re.compile(r'uses:\s+([^/]+/[^@]+)@[a-f0-9]{40}')
+    tag_refs = []
+    sha_refs = []
+    for path in sorted(glob.glob('.github/workflows/*.yml')):
+        content = open(path).read()
+        tag_refs.extend([(path, m) for m in tag_pattern.findall(content)])
+        sha_refs.extend([(path, m) for m in sha_pattern.findall(content)])
+    total = len(tag_refs) + len(sha_refs)
+    if total == 0:
+        print('W2: PASS (no third-party actions)')
+        sys.exit(0)
+    for path, action in tag_refs[:5]:
+        print(f'TAG-REF: {path} — {action}')
+    pct = len(sha_refs) / total * 100 if total > 0 else 0
+    print(f'W2: SHA-pinned {len(sha_refs)}/{total} ({pct:.0f}%)')
+    sys.exit(0 if len(tag_refs) == 0 else 1)
+    "
+  if_fails: "tag-referenced actions vulnerable to supply chain attacks via tag mutation"
+
+- id: F-CI-E003
+  rule: reliability_ensured
+  element: W4
+  prediction: "all CI jobs have timeout-minutes set"
+  test: |
+    python3 -c "
+    import yaml, glob, sys
+    missing = 0
+    total = 0
+    for path in sorted(glob.glob('.github/workflows/*.yml')):
+        with open(path) as f:
+            wf = yaml.safe_load(f)
+        if wf is None or 'jobs' not in wf:
+            continue
+        for job_name, job in wf['jobs'].items():
+            total += 1
+            if 'timeout-minutes' not in job:
+                print(f'MISSING: {path} job={job_name}')
+                missing += 1
+    print(f'W4: {\"PASS\" if missing == 0 else \"FAIL\"} ({missing}/{total} jobs missing timeout)')
+    sys.exit(0 if missing == 0 else 1)
+    "
+  if_fails: "jobs without timeout can run indefinitely — wastes runner quota"
+
+- id: F-CI-E004
+  rule: coverage_complete
+  element: W7
+  prediction: "CI has lint job (cargo fmt + cargo clippy)"
+  test: |
+    python3 -c "
+    import glob, sys
+    all_content = ''
+    for path in sorted(glob.glob('.github/workflows/*.yml')):
+        all_content += open(path).read()
+    has_fmt = 'cargo fmt' in all_content
+    has_clippy = 'cargo clippy' in all_content or 'clippy' in all_content
+    print(f'W7: fmt={has_fmt} clippy={has_clippy}')
+    sys.exit(0 if has_fmt and has_clippy else 1)
+    "
+  if_fails: "no lint job — formatting and clippy violations reach main branch"
+
+- id: F-CI-E005
+  rule: coverage_complete
+  element: W9
+  prediction: "CI has audit job (cargo audit or cargo deny)"
+  test: |
+    python3 -c "
+    import glob, sys
+    all_content = ''
+    for path in sorted(glob.glob('.github/workflows/*.yml')):
+        all_content += open(path).read()
+    has_audit = 'cargo audit' in all_content or 'cargo deny' in all_content
+    print(f'W9: audit_present={has_audit}')
+    sys.exit(0 if has_audit else 1)
+    "
+  if_fails: "no audit job — vulnerable dependencies can reach production"
+
+- id: F-CI-E006
+  rule: ci_score
+  element: all
+  prediction: "CI scores >= 90 (grade A) under the project's profile"
+  test: |
+    python3 -c "
+    import yaml, re, glob, os, sys
+
+    tier_weight = {'security': 30, 'reliability': 25, 'coverage': 25, 'operations': 20}
+    element_tier = {
+        'W1': 'security', 'W2': 'security', 'W3': 'security',
+        'W4': 'reliability', 'W5': 'reliability', 'W6': 'reliability',
+        'W7': 'coverage', 'W8': 'coverage', 'W9': 'coverage',
+        'W10': 'operations', 'W11': 'operations', 'W12': 'operations',
+    }
+    element_name = {
+        'W1': 'permissions_set', 'W2': 'sha_pinned_actions', 'W3': 'persist_credentials_false',
+        'W4': 'timeout_minutes', 'W5': 'concurrency_cancel', 'W6': 'caching',
+        'W7': 'lint_job', 'W8': 'test_job', 'W9': 'audit_job',
+        'W10': 'release_workflow', 'W11': 'matrix_builds', 'W12': 'coverage_job',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    # profile: ml-framework
+    required = {'W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12'}
+    recommended = set()
+
+    # Load all workflows
+    workflows = []
+    all_content = ''
+    for path in sorted(glob.glob('.github/workflows/*.yml')):
+        with open(path) as f:
+            content = f.read()
+        all_content += content
+        try:
+            wf = yaml.safe_load(content)
+            if wf:
+                workflows.append((path, wf, content))
+        except yaml.YAMLError:
+            pass
+
+    gates = {}
+
+    # W1: permissions in all workflows
+    gates['W1'] = all(('permissions' in wf) for _, wf, _ in workflows) and len(workflows) > 0
+
+    # W2: SHA pinning
+    tag_refs = re.findall(r'uses:\s+[^/]+/[^@]+@v[\d.]+', all_content)
+    sha_refs = re.findall(r'uses:\s+[^/]+/[^@]+@[a-f0-9]{40}', all_content)
+    gates['W2'] = len(tag_refs) == 0 and len(sha_refs) > 0
+
+    # W3: persist-credentials: false
+    gates['W3'] = 'persist-credentials: false' in all_content or 'persist-credentials:false' in all_content
+
+    # W4: timeout-minutes on all jobs
+    all_have_timeout = True
+    for _, wf, _ in workflows:
+        for job_name, job in wf.get('jobs', {}).items():
+            if isinstance(job, dict) and 'timeout-minutes' not in job:
+                all_have_timeout = False
+    gates['W4'] = all_have_timeout and len(workflows) > 0
+
+    # W5: concurrency cancel
+    gates['W5'] = any('cancel-in-progress' in c for _, wf, c in workflows)
+
+    # W6: caching
+    gates['W6'] = 'actions/cache' in all_content or 'Swatinem/rust-cache' in all_content or 'rust-cache' in all_content
+
+    # W7: lint job
+    gates['W7'] = 'cargo fmt' in all_content and ('cargo clippy' in all_content or 'clippy' in all_content)
+
+    # W8: test job
+    gates['W8'] = 'cargo test' in all_content
+
+    # W9: audit job
+    gates['W9'] = 'cargo audit' in all_content or 'cargo deny' in all_content
+
+    # W10: release workflow
+    gates['W10'] = any(
+        'tags' in str(wf.get('on', {}).get('push', {})) or
+        'workflow_dispatch' in str(wf.get('on', {}))
+        for _, wf, _ in workflows
+    )
+
+    # W11: matrix builds
+    gates['W11'] = any(
+        'matrix' in str(job)
+        for _, wf, _ in workflows
+        for job in wf.get('jobs', {}).values()
+        if isinstance(job, dict)
+    )
+
+    # W12: coverage job
+    gates['W12'] = 'llvm-cov' in all_content or 'tarpaulin' in all_content or 'codecov' in all_content
+
+    raw = 0.0; max_s = 0.0
+    print(f'ci-entity-v1 | profile: ml-framework | {len(workflows)} workflows')
+    print('=' * 60)
+    for e in sorted(element_tier.keys(), key=lambda x: int(x[1:])):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        if e in required: mult = 1.0; req = 'REQ'
+        elif e in recommended: mult = 0.5; req = 'REC'
+        else: mult = 0.0; req = '---'
+        ew = w * mult
+        max_s += ew
+        pts = ew if gates.get(e, False) else 0.0
+        raw += pts
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        print(f'  {e:4s} [{req}] w={ew:5.1f}  {status:4s}  {element_name[e]}')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    print(f'F-CI-E006: {\"PASS\" if score >= 90 else \"FAIL\"}')
+    sys.exit(0 if score >= 90 else 1)
+    "
+  if_fails: "CI score below 90 — workflow quality not production-ready"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

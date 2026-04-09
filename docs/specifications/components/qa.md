@@ -1,5 +1,9 @@
 # QA Component Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent**: [apr-spec.md](../apr-spec.md) §18
 **Status**: Active
 **CLI**: `apr qa`, `apr parity`, `apr qualify`

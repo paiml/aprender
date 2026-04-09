@@ -1,0 +1,149 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'batuta/docs/specifications/components/apr-code.md — full spec'
+  - 'batuta/docs/specifications/components/apr-code-feasibility-falsification.md — feasibility proof'
+  - 'PMAT-182 — apr code subcommand integration'
+  - 'docs/specifications/apr-code-spec.md — aprender sub-spec'
+  description: >
+    Contract for the apr code sovereign agentic coding assistant. Verifies that
+    the apr-cli subcommand correctly delegates to batuta agent runtime, discovers
+    models locally, maintains sovereign inference (zero cloud), and provides
+    minimum tool coverage for agentic coding tasks. Feature-gated behind
+    code = ["dep:batuta"].
+
+equations:
+  subcommand_exists:
+    formula: |
+      #[cfg(feature = "code")]
+      Commands::Code { model, project, prompt, resume, ... }
+      exists in apr-cli/src/commands_enum.rs AND
+      compiles with: cargo check -p apr-cli --features code
+    domain: "Rust source + compiler"
+    codomain: bool
+    invariants:
+    - "Code variant defined with model, project, prompt, resume fields"
+    - "Feature gate prevents compilation without batuta dep"
+
+  dispatch_delegates:
+    formula: |
+      Commands::Code { .. } => batuta::agent::code::cmd_code(..)
+      NOT inline logic in dispatch.rs
+    domain: "dispatch.rs source"
+    codomain: bool
+    invariants:
+    - "apr-cli is a thin shim — all agent logic lives in batuta"
+    - "No inference code in apr-cli (only dispatch)"
+
+  sovereign_only:
+    formula: |
+      forall inference_call I during apr code session:
+        I.target is localhost OR I.target is unix_socket
+        AND I.uses_api_key == false
+    domain: "Network traces during inference"
+    codomain: bool
+    invariants:
+    - "Zero external network calls during coding session"
+    - "AprServeDriver connects to localhost only"
+    - "RealizarDriver is in-process (no network)"
+    - "No API key fields in driver configuration"
+
+  tool_completeness:
+    formula: |
+      |ToolRegistry.tools()| >= 7 AND
+      tools contains {file_read, file_write, file_edit, shell, glob, grep, pmat_query}
+    domain: "Agent tool registry"
+    codomain: bool
+    invariants:
+    - "Core file operations available (read, write, edit)"
+    - "Code search available (grep, glob, pmat_query) — grep uses substring match (schema corrected 2026-04-09)"
+    - "Shell execution available with sandboxing"
+    - "Memory tool for cross-turn context"
+
+  session_lifecycle:
+    formula: |
+      forall session S:
+        start(S) → interact(S, turns) → quit(S) → resume(S) →
+        history(resumed_S) == history(S)
+    domain: "Agent session state"
+    codomain: bool
+    invariants:
+    - "Session ID persisted across quit/resume"
+    - "Two-phase compaction: compact_history (strip tool details) + truncate_messages (hard limit)"
+    - "Message history round-trips through serialization"
+    - "Context compaction is idempotent"
+
+  model_discovery:
+    formula: |
+      discover_model(None) searches:
+        1. ~/models/         (apr model cache)
+        2. ~/.apr/models/     (apr-specific cache)
+        3. ~/.cache/huggingface/  (HF cache)
+      AND prefers .apr over .gguf
+      AND validates file before selecting
+    domain: "File system search"
+    codomain: "Option<PathBuf>"
+    invariants:
+    - "APR format preferred over GGUF (faster loading)"
+    - "Invalid models (no tokenizer) deprioritized"
+    - "Empty directories produce clear error, not panic"
+
+falsification_tests:
+- id: F-CODE-001
+  rule: subcommand_exists
+  prediction: "Commands::Code variant exists and compiles with --features code"
+  test: |
+    grep -q 'Code {' crates/apr-cli/src/commands_enum.rs &&
+    grep -q 'cfg(feature = "code")' crates/apr-cli/src/commands_enum.rs &&
+    echo "F-CODE-001 PASS: Code variant exists with feature gate"
+  if_fails: "apr code subcommand not defined in CLI enum"
+
+- id: F-CODE-002
+  rule: dispatch_delegates
+  prediction: "dispatch.rs delegates to batuta, not inline logic"
+  test: |
+    grep -q 'batuta' crates/apr-cli/src/dispatch.rs &&
+    echo "F-CODE-002 PASS: dispatch delegates to batuta"
+  if_fails: "apr code has inline logic instead of delegating to batuta"
+
+- id: F-CODE-003
+  rule: sovereign_only
+  prediction: "no API key fields in Code struct or driver config"
+  test: |
+    ! grep -qi 'api_key\|api-key\|openai_key\|anthropic_key' crates/apr-cli/src/commands_enum.rs &&
+    echo "F-CODE-003 PASS: no API key fields in Code subcommand"
+  if_fails: "API key field found — violates sovereign-only invariant"
+
+- id: F-CODE-004
+  rule: tool_completeness
+  prediction: "batuta agent/tool/ directory has >= 7 tool implementations"
+  test: |
+    TOOLS=$(ls ../batuta/src/agent/tool/*.rs 2>/dev/null | grep -v mod.rs | wc -l)
+    echo "F-CODE-004: $TOOLS tool files found"
+    test "$TOOLS" -ge 7
+  if_fails: "fewer than 7 tools registered — insufficient for agentic coding"
+
+- id: F-CODE-005
+  rule: model_discovery
+  prediction: "model discovery searches standard paths"
+  test: |
+    grep -q 'discover_model\|auto.*discover\|model.*search' ../batuta/src/agent/manifest.rs 2>/dev/null &&
+    echo "F-CODE-005 PASS: model discovery function exists"
+  if_fails: "no model auto-discovery — user must always specify --model"
+
+- id: F-CODE-006
+  rule: session_lifecycle
+  prediction: "session serialization and resume exist"
+  test: |
+    grep -q 'resume\|session.*save\|session.*load\|serialize.*session' ../batuta/src/agent/ -r 2>/dev/null &&
+    echo "F-CODE-006 PASS: session persistence code exists"
+  if_fails: "no session persistence — --resume flag is dead code"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 6
+  status: proposed

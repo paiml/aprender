@@ -1,5 +1,9 @@
 # ptop Panels
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [presentar-spec.md](../presentar-spec.md)
 
 **Scope:** 14 panel implementations, layout system, widget inventory, color system, YAML configuration.

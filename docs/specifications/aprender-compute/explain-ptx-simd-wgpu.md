@@ -1,5 +1,9 @@
 # TRUENO-SPEC-015: PTX/SIMD/wgpu Visualization and Tracing CLI (trueno-explain)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.1
 **Date**: 2025-12-16
 **Status**: APPROVED - Ready for Implementation

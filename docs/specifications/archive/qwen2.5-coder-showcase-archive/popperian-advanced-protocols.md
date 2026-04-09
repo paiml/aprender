@@ -1,5 +1,9 @@
 # Appendix F: Advanced Popperian Falsification Protocols
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md (lines 8065-8136)
 
 ## Appendix F: The Popperian Enhancement - Advanced Falsification Protocols

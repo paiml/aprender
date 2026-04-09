@@ -1,4 +1,9 @@
 # Renacer: Deep Binary Inspection Framework
+
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Pure Rust strace-like Tool with WASM Deep Inspection
 
 **Version:** 2.0.0 (Toyota Way Revision)

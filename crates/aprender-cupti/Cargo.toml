@@ -1,7 +1,7 @@
 [package]
 name = "aprender-cupti"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "Rust bindings for NVIDIA CUPTI profiling - ComputeBrick analysis"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/paiml/trueno"
@@ -32,3 +32,12 @@ warp-trace = []
 pc-sampling = []
 # Enable memory access tracking
 memory-trace = []
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

@@ -1,7 +1,7 @@
 [package]
 name = "aprender-graph"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["Pragmatic AI Labs <info@paiml.com>"]
 license = "MIT"
 description = "GPU-first embedded graph database for code analysis (call graphs, dependencies, AST traversals)"
@@ -111,3 +111,6 @@ replace = "## [{{version}}] - {{date}}"
 
 [profile.dev]
 panic = "abort"
+
+[lints]
+workspace = true

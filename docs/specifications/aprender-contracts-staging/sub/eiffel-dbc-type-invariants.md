@@ -1,5 +1,9 @@
 # Sub-spec: Eiffel DbC — Type Invariants and Coq Integration
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent:** [eiffel-dbc.md](eiffel-dbc.md) Sections 6-7
 
 ---

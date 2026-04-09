@@ -1,7 +1,7 @@
 [package]
 name = "aprender-gpu"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["Pragmatic AI Labs"]
 license = "MIT"
 description = "Pure Rust PTX generation for NVIDIA CUDA - no LLVM, no nvcc"
@@ -73,6 +73,9 @@ gpu-pixels = ["dep:jugar-probar", "dep:presentar-core", "dep:presentar-terminal"
 wgpu = ["dep:wgpu"]
 # Apple Metal backend via manzana (macOS only)
 metal = ["dep:manzana"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

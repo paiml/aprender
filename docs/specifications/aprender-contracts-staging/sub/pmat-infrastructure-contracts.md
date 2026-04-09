@@ -1,5 +1,9 @@
 # Section 32: PMAT Infrastructure Contracts
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [pv-spec.md](../pv-spec.md) §32
 
 ## 32.1 Motivation

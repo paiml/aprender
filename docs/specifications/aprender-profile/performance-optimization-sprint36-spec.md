@@ -1,5 +1,9 @@
 # Sprint 36: Performance Optimization Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Overview
 
 **Goal**: Optimize Renacer's performance for production workloads by reducing overhead, improving memory efficiency, and implementing intelligent batching strategies.

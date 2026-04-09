@@ -1,5 +1,9 @@
 # Monte Carlo Simulations for Finance, Stock Market, and Real-World Events
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0
 **Date:** 2025-12-07
 **Status:** Planning (Awaiting Team Review)

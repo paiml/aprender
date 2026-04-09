@@ -1,5 +1,9 @@
 # Appendix E & I: Epistemological Audit & End of Kabuki Theatre
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md (lines 4058-4114)
 
 ## Appendix E: Epistemological Audit (Dr. K. Popper)

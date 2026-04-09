@@ -1,5 +1,9 @@
 # APR Chat Template Specification v1.4.0
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document Status:** Draft
 **Created:** 2026-01-06
 **Authors:** aprender maintainers

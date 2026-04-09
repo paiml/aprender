@@ -1,5 +1,9 @@
 # PROBAR-SPEC-009: Brick Architecture
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > **Unified Specification**: Zero-Artifact Web Development + GPU Compute
 >
 > Everything generated from Rust `#[brick]` definitions. No hand-written HTML, CSS, JavaScript, or WGSL.

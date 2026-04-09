@@ -1,5 +1,9 @@
 # Banco Phase 3: Training, Data Recipes, and Experiment Tracking
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [banco-spec.md](banco-spec.md) §5
 > Tickets: PMAT-083..088
 > Status: **Complete** — all Phase 3 features shipped (PMAT-083..104)

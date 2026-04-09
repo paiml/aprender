@@ -1,5 +1,9 @@
 # TRUENO-SPEC-014: Quality Updates and APR Runner Support
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status**: Implemented
 **Created**: 2025-12-16
 **Author**: Claude Code (Automated Analysis)

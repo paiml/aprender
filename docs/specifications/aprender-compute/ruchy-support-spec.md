@@ -1,5 +1,9 @@
 # Trueno-Ruchy Integration Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0.0
 **Date**: 2025-11-16
 **Status**: Design Phase

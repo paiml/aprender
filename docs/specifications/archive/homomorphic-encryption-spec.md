@@ -1,5 +1,9 @@
 # Homomorphic Encryption Specification for .apr Format
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0.0-draft
 **Status:** RFC (Request for Comments)
 **Author:** aprender-shell team

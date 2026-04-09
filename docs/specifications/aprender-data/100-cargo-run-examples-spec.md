@@ -1,5 +1,9 @@
 # Alimentar: 100 Cargo Run Examples Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Project**: alimentar v0.2.1
 **Date**: 2025-11-30
 **Methodology**: Toyota Production System (TPS)

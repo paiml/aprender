@@ -1,0 +1,452 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'Cargo manifest reference (doc.rust-lang.org/cargo/reference/manifest.html)'
+  - 'crates.io publishing guidelines — required vs recommended fields'
+  - 'Polars workspace Cargo.toml conventions — calibration benchmark'
+  - 'docs.rs metadata documentation — feature builds and rustdoc-args'
+  - 'docs/specifications/aprender-contract-entities/crate-entity-spec.md'
+  description: >
+    Per-crate Cargo.toml quality contract for Rust workspace projects.
+    Enforces 12 measurable elements across 4 tiers (foundation, discoverability,
+    governance, quality) via profile parameterization. Calibrated against
+    polars (~85, Grade B) and aprender (~75, Grade C). Machine-checkable
+    (TOML parse, field existence, pattern matching). Operates at the manifest
+    layer — complements repo-entity-v1 (repo structure) and dep-entity-v1
+    (dependency health).
+
+profiles:
+  any:
+    required: [C1, C2]
+    recommended: [C3, C4, C5, C6, C7, C8, C9, C10, C11, C12]
+  cli-tool:
+    inherits: any
+    required: [C1, C2, C3, C6, C7]
+    recommended: [C4, C5, C8, C9, C10, C11, C12]
+  library:
+    inherits: cli-tool
+    required: [C1, C2, C3, C4, C5, C6, C7, C8, C9, C12]
+    recommended: [C10, C11]
+  ml-framework:
+    inherits: library
+    required: [C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C12]
+    recommended: [C11]
+
+parameters:
+  min_keywords:
+    type: integer
+    default: 1
+  min_categories:
+    type: integer
+    default: 1
+  crate_paths:
+    type: string
+    default: "crates/*"
+
+elements:
+  C1:
+    name: description
+    tier: foundation
+    check: "[package] description field is non-empty (required for cargo publish)"
+    measurable: "TOML parse: package.description exists and len > 0"
+  C2:
+    name: license
+    tier: foundation
+    check: "[package] license or license-file field exists (required for cargo publish)"
+    measurable: "TOML parse: package.license OR package.license-file exists"
+  C3:
+    name: edition_inherited
+    tier: foundation
+    check: "edition field uses workspace inheritance (edition.workspace = true)"
+    measurable: "TOML parse: package.edition.workspace == true"
+  C4:
+    name: keywords
+    tier: discoverability
+    check: "keywords array has >= min_keywords entries for crates.io search"
+    measurable: "TOML parse: len(package.keywords) >= min_keywords"
+  C5:
+    name: categories
+    tier: discoverability
+    check: "categories array has >= min_categories entries for crates.io browsing"
+    measurable: "TOML parse: len(package.categories) >= min_categories"
+  C6:
+    name: repository_link
+    tier: discoverability
+    check: "repository field points to a valid URL (required for source discovery)"
+    measurable: "TOML parse: package.repository exists and starts with https://"
+  C7:
+    name: publish_false_on_internals
+    tier: governance
+    check: "internal/non-published crates have publish = false to prevent accidental publish"
+    measurable: "TOML parse: if crate name contains 'internal' or is not in publish list, publish = false"
+  C8:
+    name: readme_exists
+    tier: governance
+    check: "readme field exists or README.md is present alongside Cargo.toml"
+    measurable: "TOML parse: package.readme exists OR test -f $(dirname Cargo.toml)/README.md"
+  C9:
+    name: version_inherited
+    tier: governance
+    check: "version field uses workspace inheritance (version.workspace = true)"
+    measurable: "TOML parse: package.version.workspace == true"
+  C10:
+    name: docs_rs_metadata
+    tier: quality
+    check: "[package.metadata.docs.rs] section exists with features or rustdoc-args"
+    measurable: "TOML parse: package.metadata.docs.rs exists"
+  C11:
+    name: feature_flag_comments
+    tier: quality
+    check: "each [features] entry has a doc comment (# description) on preceding line"
+    measurable: "regex: for each feature key, preceding line matches ^# "
+  C12:
+    name: no_wildcard_deps
+    tier: quality
+    check: "zero dependency versions using wildcard (*) — all versions pinned or ranged"
+    measurable: "TOML parse: no dependency value contains version = '*'"
+
+equations:
+  foundation_present:
+    formula: |
+      forall crate C with profile P:
+        description_nonempty(C) AND
+        license_or_license_file(C) AND
+        (P == any OR edition_inherited(C))
+    domain: "Per-crate Cargo.toml [package] section"
+    codomain: bool
+    invariants:
+    - "description is mandatory for cargo publish"
+    - "license is mandatory for cargo publish"
+    - "workspace edition inheritance prevents edition drift"
+
+  discoverability_adequate:
+    formula: |
+      forall crate C with profile P:
+        (P not in {library, ml-framework} OR keyword_count(C) >= min_keywords) AND
+        (P not in {library, ml-framework} OR category_count(C) >= min_categories) AND
+        (P == any OR repository_url_valid(C))
+    domain: "Per-crate Cargo.toml [package] fields"
+    codomain: bool
+    invariants:
+    - "Keywords improve crates.io search ranking"
+    - "Categories place crate in browsable taxonomy"
+    - "Repository link enables source discovery"
+
+  governance_enforced:
+    formula: |
+      forall crate C with profile P:
+        (is_published(C) OR publish_false(C)) AND
+        (P == any OR readme_present(C)) AND
+        (P not in {library, ml-framework} OR version_inherited(C))
+    domain: "Per-crate Cargo.toml + file system"
+    codomain: bool
+    invariants:
+    - "publish = false prevents accidental crate publication"
+    - "README required for crates.io display page"
+    - "Workspace version inheritance prevents version drift"
+
+  quality_maintained:
+    formula: |
+      forall crate C with profile P:
+        wildcard_dep_count(C) == 0 AND
+        (P not in {ml-framework} OR docs_rs_metadata_exists(C))
+    domain: "Per-crate Cargo.toml [dependencies] + [package.metadata]"
+    codomain: bool
+    invariants:
+    - "Wildcard deps break reproducible builds"
+    - "docs.rs metadata controls feature-gated documentation builds"
+
+  crate_score:
+    formula: |
+      tier_weight = {foundation: 30, discoverability: 25, governance: 25, quality: 20}
+
+      forall element E in {C1..C12}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {C1..C12})
+      max_score = sum(element_weight(E) for E in {C1..C12})
+      crate_score = round(raw_score / max_score * 100)
+
+      verdict = if crate_score >= 90 then A
+                elif crate_score >= 80 then B
+                elif crate_score >= 70 then C
+                elif crate_score >= 60 then D
+                else F
+    domain: "All gate results + profile + tier weights"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements present"
+    - "Score 100 when all required + recommended elements present"
+    - "Foundation (30) + discoverability (25) account for 55% of total weight"
+    - "Polars (library profile) scores >= 85 (calibration invariant)"
+    - "Required elements contribute full weight; recommended elements contribute half"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-CRATE-E001
+  rule: foundation_present
+  element: C1
+  prediction: "all published crates have non-empty description"
+  test: |
+    python3 -c "
+    import tomllib, glob, sys
+    fails = 0
+    for path in sorted(glob.glob('crates/*/Cargo.toml')):
+        with open(path, 'rb') as f:
+            cargo = tomllib.load(f)
+        pkg = cargo.get('package', {})
+        publish = pkg.get('publish', True)
+        if publish is False or publish == []:
+            continue
+        desc = pkg.get('description', '')
+        if not desc:
+            print(f'FAIL: {path} — missing description')
+            fails += 1
+    print(f'C1: {\"PASS\" if fails == 0 else \"FAIL\"} ({fails} crates missing description)')
+    sys.exit(0 if fails == 0 else 1)
+    "
+  if_fails: "published crate missing description — cargo publish will reject"
+
+- id: F-CRATE-E002
+  rule: foundation_present
+  element: C2
+  prediction: "all published crates have license or license-file"
+  test: |
+    python3 -c "
+    import tomllib, glob, sys
+    fails = 0
+    for path in sorted(glob.glob('crates/*/Cargo.toml')):
+        with open(path, 'rb') as f:
+            cargo = tomllib.load(f)
+        pkg = cargo.get('package', {})
+        publish = pkg.get('publish', True)
+        if publish is False or publish == []:
+            continue
+        has_license = 'license' in pkg or 'license-file' in pkg
+        if not has_license:
+            # check workspace inheritance
+            lic = pkg.get('license', {})
+            has_license = isinstance(lic, dict) and lic.get('workspace', False)
+        if not has_license:
+            print(f'FAIL: {path} — missing license')
+            fails += 1
+    print(f'C2: {\"PASS\" if fails == 0 else \"FAIL\"} ({fails} crates missing license)')
+    sys.exit(0 if fails == 0 else 1)
+    "
+  if_fails: "published crate missing license — cargo publish will reject"
+
+- id: F-CRATE-E003
+  rule: governance_enforced
+  element: C7
+  prediction: "internal crates have publish = false"
+  test: |
+    python3 -c "
+    import tomllib, glob, sys
+    fails = 0
+    for path in sorted(glob.glob('crates/*/Cargo.toml')):
+        with open(path, 'rb') as f:
+            cargo = tomllib.load(f)
+        pkg = cargo.get('package', {})
+        name = pkg.get('name', '')
+        publish = pkg.get('publish', True)
+        # Crates with 'internal' in name should be publish = false
+        if 'internal' in name and publish is not False and publish != []:
+            print(f'FAIL: {path} — internal crate {name} missing publish = false')
+            fails += 1
+    print(f'C7: {\"PASS\" if fails == 0 else \"FAIL\"} ({fails} internal crates publishable)')
+    sys.exit(0 if fails == 0 else 1)
+    "
+  if_fails: "internal crate could be accidentally published to crates.io"
+
+- id: F-CRATE-E004
+  rule: quality_maintained
+  element: C12
+  prediction: "zero wildcard dependency versions across all crates"
+  test: |
+    python3 -c "
+    import tomllib, glob, sys, re
+    fails = 0
+    for path in sorted(glob.glob('crates/*/Cargo.toml')):
+        with open(path, 'rb') as f:
+            cargo = tomllib.load(f)
+        for section in ['dependencies', 'dev-dependencies', 'build-dependencies']:
+            deps = cargo.get(section, {})
+            for dep_name, dep_val in deps.items():
+                ver = ''
+                if isinstance(dep_val, str):
+                    ver = dep_val
+                elif isinstance(dep_val, dict):
+                    ver = dep_val.get('version', '')
+                if ver == '*':
+                    print(f'FAIL: {path} — {dep_name} uses wildcard version')
+                    fails += 1
+    print(f'C12: {\"PASS\" if fails == 0 else \"FAIL\"} ({fails} wildcard deps)')
+    sys.exit(0 if fails == 0 else 1)
+    "
+  if_fails: "wildcard dependency versions break reproducible builds"
+
+- id: F-CRATE-E005
+  rule: discoverability_adequate
+  element: C4
+  prediction: "published crates have >= 1 keyword for crates.io search"
+  test: |
+    python3 -c "
+    import tomllib, glob, sys
+    fails = 0
+    total = 0
+    for path in sorted(glob.glob('crates/*/Cargo.toml')):
+        with open(path, 'rb') as f:
+            cargo = tomllib.load(f)
+        pkg = cargo.get('package', {})
+        publish = pkg.get('publish', True)
+        if publish is False or publish == []:
+            continue
+        total += 1
+        keywords = pkg.get('keywords', [])
+        # Check workspace inheritance
+        if isinstance(keywords, dict) and keywords.get('workspace', False):
+            continue
+        if len(keywords) < 1:
+            print(f'MISSING: {path} — no keywords')
+            fails += 1
+    print(f'C4: {\"PASS\" if fails == 0 else \"FAIL\"} ({fails}/{total} published crates missing keywords)')
+    sys.exit(0 if fails == 0 else 1)
+    "
+  if_fails: "missing keywords reduce crates.io search discoverability"
+
+- id: F-CRATE-E006
+  rule: crate_score
+  element: all
+  prediction: "crate scores >= 90 (grade A) under the project's profile"
+  test: |
+    python3 -c "
+    import tomllib, glob, os, sys
+
+    tier_weight = {'foundation': 30, 'discoverability': 25, 'governance': 25, 'quality': 20}
+    element_tier = {
+        'C1': 'foundation', 'C2': 'foundation', 'C3': 'foundation',
+        'C4': 'discoverability', 'C5': 'discoverability', 'C6': 'discoverability',
+        'C7': 'governance', 'C8': 'governance', 'C9': 'governance',
+        'C10': 'quality', 'C11': 'quality', 'C12': 'quality',
+    }
+    element_name = {
+        'C1': 'description', 'C2': 'license', 'C3': 'edition_inherited',
+        'C4': 'keywords', 'C5': 'categories', 'C6': 'repository_link',
+        'C7': 'publish_false_internals', 'C8': 'readme_exists', 'C9': 'version_inherited',
+        'C10': 'docs_rs_metadata', 'C11': 'feature_flag_comments', 'C12': 'no_wildcard_deps',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    # profile: ml-framework
+    required = {'C1','C2','C3','C4','C5','C6','C7','C8','C9','C10','C12'}
+    recommended = {'C11'}
+
+    # Aggregate across all published crates
+    crate_paths = sorted(glob.glob('crates/*/Cargo.toml'))
+    total_published = 0
+    agg_gates = {e: 0 for e in element_tier}
+    agg_total = {e: 0 for e in element_tier}
+
+    for path in crate_paths:
+        with open(path, 'rb') as f:
+            cargo = tomllib.load(f)
+        pkg = cargo.get('package', {})
+        publish = pkg.get('publish', True)
+        if publish is False or publish == []:
+            continue
+        total_published += 1
+        crate_dir = os.path.dirname(path)
+
+        # Gate checks
+        g = {}
+        g['C1'] = bool(pkg.get('description', ''))
+        lic = pkg.get('license', '')
+        g['C2'] = bool(lic) or bool(pkg.get('license-file', '')) or (isinstance(lic, dict) and lic.get('workspace', False))
+        ed = pkg.get('edition', '')
+        g['C3'] = isinstance(ed, dict) and ed.get('workspace', False)
+        kw = pkg.get('keywords', [])
+        g['C4'] = (isinstance(kw, dict) and kw.get('workspace', False)) or (isinstance(kw, list) and len(kw) >= 1)
+        cat = pkg.get('categories', [])
+        g['C5'] = (isinstance(cat, dict) and cat.get('workspace', False)) or (isinstance(cat, list) and len(cat) >= 1)
+        repo = pkg.get('repository', '')
+        if isinstance(repo, dict):
+            repo = 'yes' if repo.get('workspace', False) else ''
+        g['C6'] = bool(repo)
+        name = pkg.get('name', '')
+        g['C7'] = 'internal' not in name  # passes if not internal, or if publish=false (already filtered)
+        g['C8'] = os.path.isfile(os.path.join(crate_dir, 'README.md')) or bool(pkg.get('readme', ''))
+        ver = pkg.get('version', '')
+        g['C9'] = isinstance(ver, dict) and ver.get('workspace', False)
+        g['C10'] = 'metadata' in pkg and 'docs' in pkg.get('metadata', {})
+        # C11: simplified check — look for feature doc comments in raw TOML
+        content = open(path).read()
+        features = cargo.get('features', {})
+        if features:
+            commented = sum(1 for line in content.split('\n') if line.startswith('# ') or line.startswith('## '))
+            g['C11'] = commented > 0
+        else:
+            g['C11'] = True  # no features = passes
+        # C12: no wildcard deps
+        wildcards = 0
+        for section in ['dependencies', 'dev-dependencies', 'build-dependencies']:
+            deps = cargo.get(section, {})
+            for dn, dv in deps.items():
+                v = dv if isinstance(dv, str) else (dv.get('version', '') if isinstance(dv, dict) else '')
+                if v == '*':
+                    wildcards += 1
+        g['C12'] = wildcards == 0
+
+        for e in element_tier:
+            agg_total[e] += 1
+            if g.get(e, False):
+                agg_gates[e] += 1
+
+    # Compute aggregate pass rate per element
+    gates = {}
+    for e in element_tier:
+        gates[e] = agg_total[e] == 0 or (agg_gates[e] / agg_total[e]) >= 0.90
+
+    raw = 0.0; max_s = 0.0
+    print(f'crate-entity-v1 | profile: ml-framework | {total_published} published crates')
+    print('=' * 65)
+    for e in sorted(element_tier.keys(), key=lambda x: int(x[1:])):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        if e in required: mult = 1.0; req = 'REQ'
+        elif e in recommended: mult = 0.5; req = 'REC'
+        else: mult = 0.0; req = '---'
+        ew = w * mult
+        max_s += ew
+        pts = ew if gates.get(e, False) else 0.0
+        raw += pts
+        pct = (agg_gates[e]/agg_total[e]*100) if agg_total[e] > 0 else 0
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        print(f'  {e:4s} [{req}] w={ew:5.1f}  {status:4s}  {element_name[e]} ({pct:.0f}%)')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    print(f'F-CRATE-E006: {\"PASS\" if score >= 90 else \"FAIL\"}')
+    sys.exit(0 if score >= 90 else 1)
+    "
+  if_fails: "crate score below 90 — manifest quality not production-ready"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

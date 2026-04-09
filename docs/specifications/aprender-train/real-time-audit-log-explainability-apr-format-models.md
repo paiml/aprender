@@ -1,5 +1,9 @@
 # Real-Time Audit Log & Explainability for APR Format Models
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > **Version:** 1.0.0
 > **Status:** Draft Specification
 > **Author:** PAIML Team

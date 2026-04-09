@@ -1,5 +1,9 @@
 # SQLite-Style Conversion Test Harness
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** CERTIFIED (2026-02-02, Rev 9 — CLI Proof-of-Concept Complete, Full Pipeline Verified)
 **Refs:** GH-186, GH-189, GH-194, GH-195, GH-196, GH-199, GH-200, PMAT-197, PMAT-ROSETTA-001, PMAT-222
 **Code:** `src/format/test_factory.rs`, `src/format/converter/tests/core.rs`

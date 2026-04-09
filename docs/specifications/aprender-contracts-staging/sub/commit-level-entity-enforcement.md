@@ -1,5 +1,9 @@
 # 35. Commit-Level Entity Enforcement
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > How PMAT enforces provable-contracts at `git commit` time.
 
 ## Problem

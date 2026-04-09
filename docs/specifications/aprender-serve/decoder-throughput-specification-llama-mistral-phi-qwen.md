@@ -1,5 +1,8 @@
 # Decoder Throughput Specification: LLaMA, Mistral, Phi, Qwen
 
+Version: 1.0
+Status: proposed
+
 **Version:** 1.3.0
 **Status:** ACTIVE
 **Date:** 2025-12-29

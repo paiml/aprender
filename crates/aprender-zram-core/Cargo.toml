@@ -45,6 +45,9 @@ nightly = []
 # Enable CUDA GPU acceleration
 cuda = ["dep:cudarc", "dep:rayon", "dep:aprender-gpu"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints.rust]
 unsafe_code = "allow"
 

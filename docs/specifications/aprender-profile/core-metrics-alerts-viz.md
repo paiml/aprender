@@ -1,5 +1,9 @@
 # Core Metrics, Alerting, and Visualization Specification v1.0
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Repository:** https://github.com/paiml/renacer
 **Ecosystem:** Pragmatic AI Labs Sovereign AI Stack
 **Status:** IMPLEMENTED (Sprint 56 Complete)

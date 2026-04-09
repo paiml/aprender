@@ -1,5 +1,9 @@
 # Multi-GPU/CPU Heterogeneous Distributed Task Execution
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0.0-draft
 **Status:** DRAFT - Awaiting Review
 **Last Updated:** 2026-01-03

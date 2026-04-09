@@ -1,5 +1,9 @@
 # Section 13: T-Series Falsification Test Results
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md (lines 4115-4359)
 
 ## 13. Popperian Falsification Test Results (T-Series)

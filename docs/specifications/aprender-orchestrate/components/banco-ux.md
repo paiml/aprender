@@ -1,5 +1,9 @@
 # Banco UX: Dual-Surface Architecture (WASM + TUI)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [banco-spec.md](banco-spec.md) §5
 > Depends on: presentar (0.3.x), presentar-terminal (0.3.x)
 

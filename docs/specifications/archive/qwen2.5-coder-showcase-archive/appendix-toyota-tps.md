@@ -1,5 +1,9 @@
 # Appendix G: Toyota Production System Integration
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md (lines 5140-5271)
 
 ## Appendix G: Toyota Production System Integration

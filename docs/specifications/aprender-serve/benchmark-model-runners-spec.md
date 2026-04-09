@@ -1,5 +1,9 @@
 # Realizar: Model Runner Benchmark Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 2.2
 **Date**: 2025-12-10
 **Status**: IMPLEMENTED - All Core Components Complete + CUDA PTX Generation

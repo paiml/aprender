@@ -1,5 +1,9 @@
 # CORE-001: Arrow Storage Backend with Morsel-Based Paging
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Ticket ID**: CORE-001
 **Priority**: High
 **Phase**: 1

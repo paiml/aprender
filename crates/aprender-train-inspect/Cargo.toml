@@ -1,11 +1,16 @@
 [package]
 name = "aprender-train-inspect"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["PAIML <hello@paiml.com>"]
 description = "SafeTensors model inspection and format conversion"
 license = "MIT"
 repository = "https://github.com/paiml/entrenar"
+keywords = ["ml", "training", "deep-learning", "aprender"]
+categories = ["science"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 name = "entrenar_inspect"

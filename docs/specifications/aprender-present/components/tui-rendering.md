@@ -1,5 +1,9 @@
 # TUI Rendering Backend
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [presentar-spec.md](../presentar-spec.md)
 
 **Scope:** Direct crossterm backend, CellBuffer, DiffRenderer, zero-allocation design, Brick compliance.

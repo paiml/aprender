@@ -1,5 +1,9 @@
 # apr code TUI: Probar-First Testing Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [apr-code.md](apr-code.md)
 > Contracts: `tui-rendering-v1.yaml`, `tui-panels-v1.yaml`, `agent-ux-v1.yaml`
 > Testing framework: probar (jugar-probar 1.0.x, probador CLI)

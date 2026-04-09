@@ -1,5 +1,8 @@
 # Banco UX Falsification Report
 
+Version: 1.0
+Status: proposed
+
 > Methodology: Attempt to break every claim in banco-ux.md against what actually ships.
 > Date: 2026-03-21
 > Verdict: **FAIL — massive gap between spec and reality**

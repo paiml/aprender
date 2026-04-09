@@ -1,0 +1,462 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'standard-readme spec (https://github.com/RichardLitt/standard-readme)'
+  - 'readme-score-api scoring heuristics (GitHub, archived)'
+  - 'Rust top-project analysis: 21 projects, 15-element taxonomy'
+  - 'ML/DL project analysis: 25 projects, domain-specific elements'
+  - 'docs/specifications/aprender-contract-entities/readme-entity-spec.md'
+  description: >
+    README quality contract for any software project. Enforces 15 measurable
+    elements across 4 tiers (identity, proof, orientation, ecosystem) via
+    profile parameterization. Profiles: any, cli-tool, library, ml-framework.
+    Machine-checkable (regex, line counting, HTTP HEAD). Operates at the
+    semantic content layer — complements structural (document-integrity-v1),
+    existence (crate-readme-v1), and correctness (apr-docs-v1) contracts.
+
+profiles:
+  any:
+    required: [E1, E3, E4, E5, E6, E9, E10, E15]
+    recommended: [E2, E7, E11, E12, E13, E14]
+  cli-tool:
+    inherits: any
+    required: [E1, E3, E4, E5, E6, E9, E10, E11, E14, E15]
+    recommended: [E2, E7, E12, E13]
+  library:
+    inherits: cli-tool
+    required: [E1, E3, E4, E5, E6, E7, E9, E10, E11, E12, E14, E15]
+    recommended: [E2, E8, E13]
+  ml-framework:
+    inherits: library
+    required: [E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E14, E15]
+    recommended: [E13]
+
+parameters:
+  readme_path:
+    type: string
+    default: README.md
+  freshness_days:
+    type: integer
+    default: 90
+  min_badges:
+    type: integer
+    default: 4
+  max_oneliner_chars:
+    type: integer
+    default: 150
+  max_install_steps:
+    type: integer
+    default: 3
+  min_toc_line_threshold:
+    type: integer
+    default: 100
+
+elements:
+  E1:
+    name: one_line_description
+    tier: identity
+    check: "first non-HTML paragraph length <= max_oneliner_chars"
+    measurable: "regex: skip <p>/<img> lines, take first markdown paragraph, count chars"
+  E2:
+    name: value_proposition
+    tier: identity
+    check: "section with heading matching /why|comparison|vs|versus|benchmark/i exists"
+    measurable: "grep heading text for value-proposition keywords"
+  E3:
+    name: status_badges
+    tier: identity
+    check: "count of img tags with badge URLs in first 20 lines >= min_badges"
+    measurable: "regex: img.shields.io|badge|github.com/.*/badge in first 20 lines"
+  E4:
+    name: working_install
+    tier: proof
+    check: "code block with install/cargo/pip/npm/brew in first 50 lines, <= max_install_steps lines"
+    measurable: "regex: fenced code block containing install keyword"
+  E5:
+    name: runnable_example_with_output
+    tier: proof
+    check: "exists code block with both command AND expected output annotation"
+    measurable: "regex: fenced block containing command ($, apr, cargo) AND output line (# =>, # Output:, > result)"
+  E6:
+    name: freshness_signal
+    tier: proof
+    check: "date in README within freshness_days of git HEAD date, OR CI badge HTTP 200"
+    measurable: "date parse + delta calc, OR HTTP HEAD on CI badge URL"
+  E7:
+    name: requirements
+    tier: orientation
+    check: "MSRV or minimum version stated (badge, section, or inline)"
+    measurable: "regex: MSRV|minimum.*rust|rust.*[0-9]+\\.[0-9]+|requires.*[0-9]"
+  E8:
+    name: supported_models
+    tier: orientation
+    check: "table or checklist with >= 3 model/architecture entries"
+    measurable: "section heading matching /supported|architecture|model/i with table rows >= 3"
+  E9:
+    name: table_of_contents
+    tier: orientation
+    check: "if line_count > min_toc_line_threshold: section with >= 3 [text](#anchor) links"
+    measurable: "wc -l + regex for anchor links in ToC-like section"
+  E10:
+    name: license_explicit
+    tier: ecosystem
+    check: "heading 'License' OR badge with license name"
+    measurable: "grep: ## License|license-.*-blue|license-.*-green"
+  E11:
+    name: ci_test_evidence
+    tier: ecosystem
+    check: "CI badge present AND (test count OR coverage percentage stated in body)"
+    measurable: "regex: badge URL + body contains /[0-9,]+ tests|[0-9]+% coverage/"
+  E12:
+    name: documentation_links
+    tier: ecosystem
+    check: "section with >= 2 links to docs.rs, mdBook, API ref, or specs"
+    measurable: "section heading matching /doc/i with >= 2 markdown links"
+  E13:
+    name: contributing_guide
+    tier: ecosystem
+    check: "heading 'Contributing' OR link to CONTRIBUTING.md"
+    measurable: "grep: ## Contributing|CONTRIBUTING.md"
+  E14:
+    name: feature_list
+    tier: ecosystem
+    check: "markdown list with >= 3 items under features/capabilities heading"
+    measurable: "section with /feature|capabilit/i heading + >= 3 list items or table rows"
+  E15:
+    name: anti_patterns_zero
+    tier: ecosystem
+    check: "zero dead links AND zero bare code fences AND valid heading hierarchy"
+    measurable: "HTTP HEAD all URLs (0 return 404) + regex (0 bare ```) + heading level check"
+
+equations:
+  identity_complete:
+    formula: |
+      forall README R with profile P:
+        length(first_non_html_paragraph(R)) <= max_oneliner_chars AND
+        badge_count(first_20_lines(R)) >= min_badges AND
+        install_step_count(first_install_block(R)) <= max_install_steps
+    domain: "README.md content + profile configuration"
+    codomain: bool
+    invariants:
+    - "First paragraph is a clear, jargon-free description"
+    - "Badges provide at-a-glance project status"
+    - "Installation is discoverable within first screenful"
+
+  proof_verifiable:
+    formula: |
+      forall README R with profile P:
+        exists code_block CB in R:
+          has_command(CB) AND has_expected_output(CB) AND
+        freshness(R, git_head_date()) <= freshness_days AND
+        forall url U in R: http_status(U) != 404
+    domain: "README.md content + git metadata + network"
+    codomain: bool
+    invariants:
+    - "At least one example proves the tool works (input → output)"
+    - "README was verified within the last 90 days"
+    - "All links resolve — no broken references"
+
+  orientation_complete:
+    formula: |
+      forall README R with profile P:
+        (line_count(R) <= min_toc_line_threshold OR
+         toc_anchor_count(R) >= 3) AND
+        (P not in {library, ml-framework} OR msrv_stated(R)) AND
+        (P != ml-framework OR supported_model_count(R) >= 3)
+    domain: "README.md content + profile"
+    codomain: bool
+    invariants:
+    - "Long READMEs have navigation (ToC)"
+    - "Libraries state minimum toolchain version"
+    - "ML frameworks list supported architectures"
+
+  trust_signals:
+    formula: |
+      forall README R with profile P:
+        license_stated(R) AND
+        (P == any OR (ci_badge_present(R) AND test_count_stated(R))) AND
+        aspirational_without_qualifier_count(R) == 0
+    domain: "README.md content"
+    codomain: bool
+    invariants:
+    - "License is explicitly named"
+    - "CI and test evidence exist for non-trivial projects"
+    - "No features claimed as current that are actually planned"
+
+  anti_patterns_zero:
+    formula: |
+      forall README R:
+        dead_link_count(R) == 0 AND
+        bare_code_fence_count(R) == 0 AND
+        heading_hierarchy_valid(R)
+    domain: "README.md content + network"
+    codomain: bool
+    invariants:
+    - "Every link resolves"
+    - "Every code block has a language tag"
+    - "Heading levels form a valid tree (no H1 -> H3 skip)"
+
+  readme_score:
+    formula: |
+      tier_weight = {identity: 30, proof: 35, orientation: 20, ecosystem: 15}
+
+      forall element E in {E1..E15}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {E1..E15})
+      max_score = sum(element_weight(E) for E in {E1..E15})
+      readme_score = round(raw_score / max_score * 100)
+
+      verdict = if readme_score >= 90 then A
+                elif readme_score >= 80 then B
+                elif readme_score >= 70 then C
+                elif readme_score >= 60 then D
+                else F
+    domain: "README.md content + profile + gate results"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements present"
+    - "Score 100 when all required + recommended elements present"
+    - "Tier 1 (identity) + Tier 2 (proof) account for 65% of total weight"
+    - "Required elements contribute full weight; recommended elements contribute half"
+    - "Grade A (>=90) requires all required gates PASS"
+    - "Grade F (<60) means project README is not adoption-ready"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-README-E001
+  rule: identity_complete
+  element: E1
+  prediction: "first non-HTML paragraph is <= 150 chars with no jargon"
+  test: |
+    # Extract first non-HTML paragraph from README.md
+    PARA=$(sed -n '/^[^<]/p' README.md | head -1)
+    LEN=${#PARA}
+    echo "One-liner: $LEN chars"
+    test "$LEN" -le 150 -a "$LEN" -gt 0
+  if_fails: "description too long or missing — users can't scan what the project does"
+
+- id: F-README-E002
+  rule: proof_verifiable
+  element: E5
+  prediction: "at least one code block shows both command AND expected output"
+  test: |
+    # Look for code blocks containing a command and output annotation
+    # Output markers: "# => ", "# Output:", "> ", "4" (bare result)
+    python3 -c "
+    import re
+    content = open('README.md').read()
+    blocks = re.findall(r'\`\`\`[a-z]*\n(.*?)\`\`\`', content, re.DOTALL)
+    for b in blocks:
+        has_cmd = bool(re.search(r'^(apr |cargo |pip |npm |\$ )', b, re.M))
+        has_out = bool(re.search(r'^(# =>|# Output|> |[0-9])', b, re.M))
+        if has_cmd and has_out:
+            print('FOUND: code block with command + output')
+            exit(0)
+    print('MISSING: no code block has both command and expected output')
+    exit(1)
+    "
+  if_fails: "no example proves the tool works — user cannot verify correctness"
+
+- id: F-README-E003
+  rule: proof_verifiable
+  element: E6
+  prediction: "freshness date in README is within 90 days of HEAD commit"
+  test: |
+    HEAD_DATE=$(git log -1 --format=%ci | cut -d' ' -f1)
+    # Look for dates in README (YYYY-MM-DD or "Month YYYY" or version badge)
+    README_DATE=$(grep -oP '\d{4}-\d{2}-\d{2}' README.md | sort -r | head -1)
+    if [ -z "$README_DATE" ]; then
+      # Fallback: check CI badge resolves
+      CI_URL=$(grep -oP 'https://github.com/[^"]+/badge\.svg' README.md | head -1)
+      if [ -n "$CI_URL" ]; then
+        HTTP_CODE=$(curl -sL -o /dev/null -w '%{http_code}' "$CI_URL" 2>/dev/null || echo 0)
+        test "$HTTP_CODE" -eq 200 && echo "FRESH: CI badge resolves (HTTP $HTTP_CODE)" && exit 0
+      fi
+      echo "STALE: no date found and no CI badge resolves"
+      exit 1
+    fi
+    DELTA=$(( ($(date -d "$HEAD_DATE" +%s) - $(date -d "$README_DATE" +%s)) / 86400 ))
+    echo "README date=$README_DATE HEAD=$HEAD_DATE delta=${DELTA}d"
+    test "$DELTA" -le 90
+  if_fails: "README has no freshness signal — user cannot tell if project is maintained"
+
+- id: F-README-E004
+  rule: orientation_complete
+  element: E9
+  prediction: "README with >100 lines has a table of contents with >= 3 anchor links"
+  test: |
+    LINES=$(wc -l < README.md)
+    if [ "$LINES" -le 100 ]; then
+      echo "SKIP: README is $LINES lines (threshold: 100)"
+      exit 0
+    fi
+    TOC_LINKS=$(grep -cP '\[.*\]\(#' README.md || echo 0)
+    echo "README: $LINES lines, $TOC_LINKS ToC anchor links"
+    test "$TOC_LINKS" -ge 3
+  if_fails: "long README has no navigation — user cannot find relevant section"
+
+- id: F-README-E005
+  rule: anti_patterns_zero
+  element: E15
+  prediction: "zero bare opening code fences (``` without language tag)"
+  test: |
+    python3 -c "
+    lines = open('README.md').readlines()
+    in_block = False
+    bare = 0
+    for l in lines:
+        s = l.strip()
+        if s.startswith('\x60\x60\x60'):
+            if not in_block:
+                if s == '\x60\x60\x60':
+                    bare += 1
+                in_block = True
+            else:
+                in_block = False
+    print(f'Bare opening fences: {bare}')
+    exit(0 if bare == 0 else 1)
+    "
+  if_fails: "code blocks without language tags — syntax highlighting broken, unclear content type"
+
+- id: F-README-E006
+  rule: readme_score
+  element: all
+  prediction: "README scores >= 90 (grade A) under the project's profile"
+  test: |
+    python3 -c "
+    import re, sys
+
+    content = open('README.md').read()
+    lines = content.split('\n')
+
+    # --- tier weights (sum = 100) ---
+    tier_weight = {'identity': 30, 'proof': 35, 'orientation': 20, 'ecosystem': 15}
+    element_tier = {
+        'E1': 'identity', 'E2': 'identity', 'E3': 'identity',
+        'E4': 'proof', 'E5': 'proof', 'E6': 'proof',
+        'E7': 'orientation', 'E8': 'orientation', 'E9': 'orientation',
+        'E10': 'ecosystem', 'E11': 'ecosystem', 'E12': 'ecosystem',
+        'E13': 'ecosystem', 'E14': 'ecosystem', 'E15': 'ecosystem',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    # --- profile: ml-framework ---
+    required = {'E1','E2','E3','E4','E5','E6','E7','E8','E9','E10','E11','E12','E14','E15'}
+    recommended = {'E13'}
+
+    # --- gate checks ---
+    gates = {}
+
+    # E1: one-liner
+    for l in lines:
+        l = l.strip()
+        if l and not l.startswith('<') and not l.startswith('#') and not l.startswith('-') and not l.startswith('[') and not l.startswith('>') and not l.startswith('|') and not l.startswith('\x60'):
+            gates['E1'] = len(l) <= 150 and len(l) > 0; break
+
+    # E2: value proposition
+    gates['E2'] = bool(re.search(r'^##.*(?:compari|vs |versus|benchmark|why)', content, re.M|re.I))
+
+    # E3: badges >= 4
+    gates['E3'] = len(re.findall(r'img\.shields\.io|badge\.svg|/badge', '\n'.join(lines[:25]))) >= 4
+
+    # E4: install in first 50 lines
+    gates['E4'] = 'cargo install' in '\n'.join(lines[:50])
+
+    # E5: code block with command + output
+    blocks = re.findall(r'\x60\x60\x60[a-z]*\n(.*?)\x60\x60\x60', content, re.DOTALL)
+    gates['E5'] = any(
+        re.search(r'^(apr |cargo )', b, re.M) and re.search(r'^# =>', b, re.M)
+        for b in blocks
+    )
+
+    # E6: freshness date
+    gates['E6'] = bool(re.findall(r'20\d{2}-\d{2}-\d{2}', content))
+
+    # E7: MSRV
+    gates['E7'] = bool(re.search(r'MSRV', content, re.I))
+
+    # E8: supported models >= 3
+    m = re.search(r'## Supported[^\n]*\n(.*?)(?=\n## |\Z)', content, re.DOTALL)
+    if m:
+        rows = [l for l in m.group(1).split('\n') if l.startswith('|') and '---' not in l and 'Architecture' not in l and l.strip()]
+        gates['E8'] = len(rows) >= 3
+    else:
+        gates['E8'] = False
+
+    # E9: ToC
+    toc_links = len(re.findall(r'\[.*?\]\(#', content))
+    gates['E9'] = len(lines) <= 100 or toc_links >= 3
+
+    # E10: license
+    gates['E10'] = bool(re.search(r'## License|license-.*-blue', content, re.I))
+
+    # E11: CI + test count
+    gates['E11'] = 'ci.yml/badge' in content and bool(re.search(r'[\d,]+ tests', content))
+
+    # E12: documentation section with >= 2 links
+    dm = re.search(r'## Documentation\n(.*?)(?=\n## |\Z)', content, re.DOTALL)
+    gates['E12'] = dm is not None and len(re.findall(r'\[.*?\]\(', dm.group(1))) >= 2
+
+    # E13: contributing
+    gates['E13'] = bool(re.search(r'## Contributing|CONTRIBUTING\.md', content))
+
+    # E14: feature list
+    gates['E14'] = len(re.findall(r'^\| \*\*', content, re.M)) >= 3
+
+    # E15: no bare opening fences
+    in_block = False; bare = 0
+    for l in lines:
+        s = l.strip()
+        if s.startswith('\x60\x60\x60'):
+            if not in_block:
+                if s == '\x60\x60\x60': bare += 1
+                in_block = True
+            else: in_block = False
+    gates['E15'] = bare == 0
+
+    # --- compute score ---
+    raw = 0.0; max_s = 0.0
+    for e in sorted(element_tier.keys(), key=lambda x: int(x[1:])):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        if e in required:
+            multiplier = 1.0
+        elif e in recommended:
+            multiplier = 0.5
+        else:
+            multiplier = 0.0
+        ew = w * multiplier
+        max_s += ew
+        if gates.get(e, False):
+            raw += ew
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        req = 'REQ' if e in required else 'REC'
+        print(f'  {e:4s} [{req}] w={ew:5.1f}  {status}')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    sys.exit(0 if score >= 90 else 1)
+    "
+  if_fails: "README score below 90 — not adoption-ready"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

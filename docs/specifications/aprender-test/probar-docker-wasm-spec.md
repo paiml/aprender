@@ -1,5 +1,8 @@
 # Probar Docker WASM Testing Specification
 
+Version: 1.0
+Status: proposed
+
 **Version**: 1.0.0
 **Status**: IMPLEMENTING
 **Ticket**: PROBAR-SPEC-014

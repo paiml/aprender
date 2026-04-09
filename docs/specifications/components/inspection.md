@@ -1,5 +1,9 @@
 # Inspect / Debug / Validate Component Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent**: [apr-spec.md](../apr-spec.md) §16
 **Status**: Active
 **CLI**: `apr inspect`, `apr debug`, `apr validate`, `apr diff`, `apr tensors`,

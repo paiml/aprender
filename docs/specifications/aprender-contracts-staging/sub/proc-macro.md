@@ -1,5 +1,9 @@
 # 9. Proc Macro (`#[contract]`)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 The `#[contract]` attribute from `provable-contracts-macros` provides
 compile-time contract enforcement.
 

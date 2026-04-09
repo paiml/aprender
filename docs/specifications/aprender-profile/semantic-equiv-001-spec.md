@@ -8,6 +8,9 @@ updated: 2025-11-24T13:12:33.078180092+00:00
 
 # New task: SEMANTIC-EQUIV-001 Specification
 
+Version: 1.0
+Status: proposed
+
 **Ticket ID**: SEMANTIC-EQUIV-001
 **Status**: In Progress
 

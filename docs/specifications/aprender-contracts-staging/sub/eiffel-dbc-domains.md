@@ -1,5 +1,9 @@
 # Eiffel DbC — Domain Applicability (Part 1)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 *See also: [eiffel-dbc.md](eiffel-dbc.md) (sections 1-5), [eiffel-dbc-type-invariants.md](eiffel-dbc-type-invariants.md) (sections 6-7)*
 
 ## 8. Domain Applicability

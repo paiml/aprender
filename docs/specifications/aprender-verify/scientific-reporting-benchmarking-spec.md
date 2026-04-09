@@ -1,5 +1,9 @@
 # Scientific Reporting and Benchmarking Framework for Rust Performance Analysis
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0
 **Date:** November 18, 2025
 **Authors:** Pragmatic AI Labs Research Division

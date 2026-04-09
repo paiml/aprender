@@ -1,5 +1,8 @@
 # Probar: WASM-Native Game Testing Framework
 
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 3.0.0
 **Status**: ✅ IMPLEMENTED
 **Ticket**: PROBAR-001

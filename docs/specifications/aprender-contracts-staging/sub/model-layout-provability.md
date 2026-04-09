@@ -1,5 +1,9 @@
 # 36. Model Layout Provability — P0 DEFECT
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > **Severity: P0.** If we cannot prove the entire LLM architecture from
 > config.json through every tensor to the output logits, the contract
 > system has failed. Individual per-contract proofs that don't compose

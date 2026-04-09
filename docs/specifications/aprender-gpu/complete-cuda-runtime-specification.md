@@ -1,5 +1,9 @@
 # Complete CUDA Runtime Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 2.0.0
 **Date:** 2025-12-14
 **Status:** Draft - Post Design Review (NO EXTERNAL DEPENDENCIES)

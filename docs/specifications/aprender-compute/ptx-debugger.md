@@ -1,5 +1,9 @@
 # PTX Debugger Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.6
 **Date**: 2026-01-05
 **Status**: DRAFT - Design Phase

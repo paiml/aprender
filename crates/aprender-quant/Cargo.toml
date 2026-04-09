@@ -1,7 +1,7 @@
 [package]
 name = "aprender-quant"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "K-quantization formats (Q4_K, Q5_K, Q6_K) for GGUF/APR model weights"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/paiml/trueno"
@@ -14,6 +14,9 @@ name = "trueno_quant"
 
 [dependencies]
 half = "2.4"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

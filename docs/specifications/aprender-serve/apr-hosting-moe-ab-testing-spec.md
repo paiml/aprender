@@ -1,5 +1,9 @@
 # APR Multi-Model Hosting with Hierarchical MOE and A/B Testing
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0.0
 **Status:** Draft
 **Date:** 2025-11-27

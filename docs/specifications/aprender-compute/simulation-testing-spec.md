@@ -1,5 +1,9 @@
 # TRUENO-SPEC-012: Simulation Testing Framework
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status**: RFC (Awaiting Review)
 **Version**: 0.1.0
 **Date**: 2025-12-15

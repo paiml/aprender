@@ -1,5 +1,9 @@
 # Advanced Neural Network Pruning: A Comprehensive Specification for Aprender
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Authors:** PAIML Research Team
 **Date:** 2026-01-05
 **Version:** 1.0.0

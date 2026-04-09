@@ -9,6 +9,9 @@ depends_on: [GH-279, GH-277]
 
 # GH-280: Kernel Capability Gate
 
+Version: 1.0
+Status: proposed
+
 **Goal:** Prevent GPU garbage output by enforcing capability matching between model contracts and inference backends at load time — before any forward pass occurs.
 
 ## Five-Whys Root Cause Analysis

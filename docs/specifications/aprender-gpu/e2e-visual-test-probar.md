@@ -1,5 +1,9 @@
 # E2E Visual Test Specification: GPU Pixel Verification with Probar
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Specification ID:** E2E-VISUAL-PROBAR-001
 **Version:** 1.3.0
 **Status:** ✅ IMPLEMENTED (Renacer/Simular Integration)

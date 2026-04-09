@@ -61,5 +61,8 @@ tempfile = { workspace = true }
 assert_cmd = "2.0"
 predicates = "3.1"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true

@@ -8,6 +8,9 @@ updated: 2025-11-30T21:30:00Z
 
 # Add TypeScript grammar for decy target Specification
 
+Version: 1.0
+Status: proposed
+
 **Ticket ID**: VERIFICAR-041
 **Status**: Complete
 

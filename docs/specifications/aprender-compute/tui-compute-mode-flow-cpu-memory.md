@@ -1,5 +1,7 @@
 # TUI Compute Mode Flow: CPU, GPU, and Memory Monitoring
 
+Status: proposed
+
 **Specification Version:** 1.1.0
 **Status:** Review
 **Date:** 2026-01-03

@@ -1,5 +1,9 @@
 # Local-Global Unified Model Serving Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0.0
 **Status:** Draft
 **Authors:** PAIML Team

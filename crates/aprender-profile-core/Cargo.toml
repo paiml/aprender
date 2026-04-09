@@ -1,12 +1,17 @@
 [package]
 name = "aprender-profile-core"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["Pragmatic AI Labs <info@paiml.com>"]
 license = "MIT"
 repository = "https://github.com/paiml/renacer"
 description = "Core tracing primitives for renacer — zero-dep span/event types for CPU-GPU pipelining instrumentation"
 rust-version = "1.75"
+keywords = ["ml", "rust", "aprender", "tracing", "profiling"]
+categories = ["development-tools::profiling"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [features]
 otlp = []

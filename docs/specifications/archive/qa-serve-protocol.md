@@ -1,5 +1,9 @@
 # QA-SERVE Protocol: HTTP Inference Falsification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0.0
 **Status:** PROTOCOL ACTIVE
 **Target Component:** `apr serve` (realizar)

@@ -1,5 +1,9 @@
 # Ollama Parity Protocol (Archived from Section 7A)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from `docs/specifications/qwen2.5-coder-showcase-demo.md`, Section 7A (lines 776-840).
 
 ## 7A. Ollama Parity Protocol

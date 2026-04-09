@@ -1,5 +1,9 @@
 # APR-MONO: Sovereign Stack Monorepo Consolidation
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 2.0
 **Date**: 2026-04-08
 **Status**: COMPLETE — 74 crates, 0 compile failures, 14 integration tests pass

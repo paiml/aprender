@@ -1,5 +1,9 @@
 # Unified Contract-by-Design Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 2.0.0
 **Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 249/251 implemented (2 SSM-only gaps). 24/24 algorithm contracts Bound, ~112 equations, 138 FALSIFY tests. Total: 307 contract tests passing (0 failures). **All 8 tensor-layout-v1 falsification tests IMPLEMENTED** (FALSIFY-001..008): 52 tests across aprender validated_tensors (36), apr-cli cross-crate parity (13), realizar contract_tests (3). One Path Rule enforced: softmax (10→1), sigmoid (8→1), relu (2→1), tanh (1→1), GELU (2→1), SiLU (1→1), cross-entropy log-softmax (2→1), layer_norm (3→1), rms_norm (2→1), dropout (2→1), transpose_last_two (2→1), batched_matmul (2→1), concat_heads/reshape_from_attention (2→1), add_tensors (3→Tensor::add), scale_tensor (2→Tensor::mul_scalar), euclidean_distance (6→1), cosine_similarity (15→1). Total: 62 duplicates eliminated → 17 canonical functions in `nn::functional` + `nn::transformer`. **Cross-crate UCBD §4 enforcement**: trueno canonical exports (activations.rs) delegated from: aprender (5 fns), realizar (15 fns + 41 rms_norm), entrenar (4 fns), whisper-apr (11 fns) = 76 cross-crate delegations. **GH-279 Architecture Enforcement**: `WeightRole` enum + `required_roles()` exhaustive match + `ValidatedLayerWeights` sealed type (15 consumer files) + `enforce_architecture_completeness()` import/export gate + FALSIFY-ARCH-001..004 (10 tests). All 5 crate test suites GREEN (trueno 3208, aprender 11626, realizar 14830, entrenar 4787, whisper-apr 2754). All 5 repos `pmat comply check` COMPLIANT. GH issues: trueno#103✓ realizar#51✓ aprender#304✓ entrenar#86✓ whisper-apr#18✓.
 **Created**: 2026-02-19

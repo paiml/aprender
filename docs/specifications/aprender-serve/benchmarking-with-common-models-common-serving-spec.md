@@ -1,5 +1,9 @@
 # Benchmarking Specification: Common Models & Common Serving
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.1.0
 **Status:** Draft
 **Authors:** Realizar Development Team

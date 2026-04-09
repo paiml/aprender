@@ -1,5 +1,9 @@
 # Machine Learning Algorithms Code Review Summary
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Scope**: Machine Learning Algorithms (Clustering, Classification, Tree)
 **Version Reviewed**: 0.9.1
 **Review Date**: 2025-11-25

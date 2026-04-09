@@ -1,5 +1,9 @@
 # 2. The Verification Ladder
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 Two complementary hierarchies: **proof levels** (what we verify about
 the math) and **enforcement layers** (how we enforce it in the build).
 

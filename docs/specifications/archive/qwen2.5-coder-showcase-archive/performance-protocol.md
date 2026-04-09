@@ -1,5 +1,9 @@
 # Performance Falsification Protocol (Archived from Section 12)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from: `docs/specifications/qwen2.5-coder-showcase-demo.md`, Lines 1176-1215, Section 12
 
 ---

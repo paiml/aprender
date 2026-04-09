@@ -1,5 +1,8 @@
 # Rounds 14-24 (Sections 21-31)
 
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md (lines 5634-7928)
 
 ## Section 21: Round 14 - The Tensor Holocaust (2026-01-31)

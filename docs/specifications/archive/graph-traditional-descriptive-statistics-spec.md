@@ -1,5 +1,9 @@
 # Graph and Traditional Descriptive Statistics Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.1.0 (Toyota Way Review Incorporated)
 **Status**: Draft - Revised
 **Last Updated**: 2025-11-19

@@ -1,5 +1,9 @@
 # alimentar Specification v1.0
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > **Toyota Way Review Summary**
 > *   **Reviewer:** Gemini CLI (Acting as Chief Engineer)
 > *   **Date:** 2025-11-25

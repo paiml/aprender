@@ -1,5 +1,9 @@
 # CODEX: Multi-Tech Python-to-Rust Training Data Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0.0
 **Last Updated:** 2025-11-26
 **Status:** Draft

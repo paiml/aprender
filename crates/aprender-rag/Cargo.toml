@@ -1,7 +1,7 @@
 [package]
 name = "aprender-rag"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["Pragmatic AI Labs"]
 description = "Pure-Rust Retrieval-Augmented Generation pipeline built on Trueno"
 license = "MIT"

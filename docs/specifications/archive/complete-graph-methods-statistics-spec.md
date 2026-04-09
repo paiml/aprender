@@ -1,5 +1,9 @@
 # Complete Graph Methods and Statistics Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 2.0.0
 **Status**: Final
 **Date**: 2025-11-22

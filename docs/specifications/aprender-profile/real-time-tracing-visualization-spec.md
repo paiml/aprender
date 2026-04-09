@@ -1,5 +1,9 @@
 # Real-Time Tracing Visualization Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0
 **Date:** 2026-01-07
 **Status:** Specification - Phase 1

@@ -1,5 +1,9 @@
 # Causal Attention Mask Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Status: CRITICAL BUG — entrenar#310
 
 **Root cause #2 of convergence gap (combined with entrenar#309 init fix).**

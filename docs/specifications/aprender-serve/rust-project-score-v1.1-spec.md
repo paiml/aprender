@@ -1,4 +1,8 @@
 # Rust Project Score v1.1 - Comprehensive Specification
+
+Version: 1.0
+Status: proposed
+
 ## Updated with Certeza Research (November 2025)
 
 **Version**: 1.1.0 (Updated 2025-11-18)

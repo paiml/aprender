@@ -1,7 +1,7 @@
 [package]
 name = "aprender-test-js-gen"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "NASA/DO-178B-grade Rust DSL for type-safe JavaScript generation"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/paiml/probar"
@@ -29,6 +29,9 @@ tempfile = "3"
 default = []
 # Enable fuzzing support
 fuzzing = []
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 unsafe_code = "forbid"

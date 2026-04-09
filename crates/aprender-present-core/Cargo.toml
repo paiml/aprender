@@ -8,6 +8,11 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+keywords = ["tui", "terminal", "ui", "ratatui", "aprender"]
+categories = ["command-line-interface"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 name = "presentar_core"

@@ -1,5 +1,9 @@
 # Simular Orbit Demo: Technical Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** SIMULAR-SPEC-ORBIT-001
 **Version:** 1.1.0
 **Status:** Draft (Revised per TPS Review)

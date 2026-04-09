@@ -1,7 +1,7 @@
 [package]
 name = "aprender-image"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "GPU image processing primitives — convolution, Gaussian blur, Sobel, Canny edge detection"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/paiml/trueno"
@@ -22,6 +22,9 @@ criterion = { workspace = true }
 [[bench]]
 name = "image_bench"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

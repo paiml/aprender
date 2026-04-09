@@ -1,5 +1,7 @@
 # Real-Time GPU Visualization Demo Specification
 
+Status: proposed
+
 **Version**: 1.0.0
 **Status**: Draft
 **Authors**: PAIML Team

@@ -1,5 +1,9 @@
 # PROBAR-SPEC-008: Performance Benchmarking
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Problem Statement
 
 **Need:** Probar requires systematic performance tracking to ensure the testing framework itself doesn't become a bottleneck when testing large WASM applications.

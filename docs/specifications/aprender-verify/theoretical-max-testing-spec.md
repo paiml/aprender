@@ -1,5 +1,9 @@
 # Asymptotic Test Effectiveness: A Practical Framework for High-Assurance Rust Verification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.1  
 **Date:** November 17, 2025  
 **Authors:** Pragmatic AI Labs Research Division  

@@ -1,5 +1,9 @@
 # Model Fixture Setup/Teardown Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.1.0
 **Status:** Draft (Revised by K. Popper)
 **Created:** 2026-01-26

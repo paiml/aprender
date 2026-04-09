@@ -1,4 +1,9 @@
 # Sovereign AI Integration Specification
+
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Aprender ML/DL Framework Architecture for Autonomous, Performant, Quality-First Machine Learning
 
 **Version:** 1.1

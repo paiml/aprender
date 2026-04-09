@@ -1,5 +1,9 @@
 # Comprehensive Review of APR Tooling Specification (v2)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document Reviewed**: APR Loading, Inspection, Diff, Debugging, Bundling, and Data Tooling Improvements
 **Reviewer**: Gemini (AI Assistant)
 **Date**: 2025-12-08

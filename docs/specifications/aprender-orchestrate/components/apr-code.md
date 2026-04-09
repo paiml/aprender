@@ -1,5 +1,9 @@
 # apr code Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > Runtime: [agent-and-playbook.md](agent-and-playbook.md) (batuta agent engine)
 > Inference: realizar (local GGUF/APR — Sovereign only)

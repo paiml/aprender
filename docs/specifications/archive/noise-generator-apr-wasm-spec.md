@@ -1,5 +1,9 @@
 # Synthetic Noise Generator .apr Model Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Issue**: https://github.com/paiml/aprender/issues/144
 **Status**: Proposed (Review)
 **Author**: Claude Code

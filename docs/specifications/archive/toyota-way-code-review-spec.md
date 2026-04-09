@@ -1,5 +1,9 @@
 # The Toyota Way in Modern Code Review: A Socio-Technical Analysis of Lean Principles in Software Engineering
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Authors:** Research Analysis Team
 **Date:** 2025-11-24
 **Status:** REFERENCE DOCUMENTATION

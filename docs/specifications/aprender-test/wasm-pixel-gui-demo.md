@@ -1,5 +1,9 @@
 # PROBAR-SPEC-009: WASM Pixel GUI Demo with GPU-Accelerated Random Fill
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** REVIEWED - Ready for Implementation
 **Author:** Claude Code
 **Date:** 2024-12-14

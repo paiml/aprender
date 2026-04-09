@@ -1,5 +1,9 @@
 # Transpilation Pipeline Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > Sources: batuta-orchestration-decy-depyler-trueno-aprender-realizar-ruchy-spec, citl-cross-language-spec
 

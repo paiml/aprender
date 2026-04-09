@@ -1,8 +1,13 @@
 [package]
 name = "aprender-compute-xtask"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
+keywords = ["ml", "rust", "aprender"]
+categories = ["development-tools"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 anyhow = "1.0"

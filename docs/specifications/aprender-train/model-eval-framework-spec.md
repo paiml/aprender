@@ -1,5 +1,9 @@
 # Model Evaluation Framework Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Issue:** https://github.com/paiml/aprender/issues/73
 **Version:** 1.1.1
 **Status:** Implemented

@@ -1,4 +1,9 @@
 # Trueno-DB: GPU-First Embedded Analytics Database
+
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.1
 **Status**: Draft (Updated with Toyota Way Review)
 **Authors**: Pragmatic AI Labs

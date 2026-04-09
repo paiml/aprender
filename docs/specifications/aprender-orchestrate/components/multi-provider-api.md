@@ -1,5 +1,8 @@
 # Multi-Provider LLM API Specification
 
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > Inspiration: CCX-RS provider-agnostic architecture (anton-abyzov/ccx-rs)
 > See also: [apr-code.md](apr-code.md) (`apr code` consumes this API for model routing)

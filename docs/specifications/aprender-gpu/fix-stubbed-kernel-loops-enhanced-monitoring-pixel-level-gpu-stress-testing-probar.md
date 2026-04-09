@@ -1,5 +1,9 @@
 # Fix Stubbed Kernel Loops: Enhanced Monitoring & Pixel-Level GPU Stress Testing
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Specification ID:** TRUENO-SATD-001
 **Version:** 1.1.0
 **Status:** In Progress

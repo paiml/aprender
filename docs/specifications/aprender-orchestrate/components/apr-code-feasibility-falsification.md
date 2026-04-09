@@ -1,5 +1,9 @@
 # apr code Feasibility Falsification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Methodology: Popperian falsification — attempt to BREAK the claim "apr code can work as a Claude Code clone"
 > Verdict: **FEASIBLE. Code-verified against actual batuta sources 2026-04-02.**
 > Previous draft had 5 "critical gaps" — re-verification found 3 were WRONG (code already exists). Revised to 2 real gaps.

@@ -1,5 +1,9 @@
 # 300-Point Falsification Checklist (Archived from Section 6)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from `docs/specifications/qwen2.5-coder-showcase-demo.md`, Section 6 (lines 632-665).
 
 ## 6. 300-Point Falsification Checklist (Summary)

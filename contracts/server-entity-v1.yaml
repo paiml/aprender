@@ -1,0 +1,474 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'OpenAI API specification (platform.openai.com/docs/api-reference)'
+  - 'Server-Sent Events specification (W3C)'
+  - 'CORS specification (fetch.spec.whatwg.org)'
+  - 'RFC 7807 — Problem Details for HTTP APIs'
+  - 'docs/specifications/aprender-contract-entities/server-entity-spec.md'
+  description: >
+    Per-server quality contract for the apr serve inference server. Enforces
+    10 measurable elements across 3 tiers (reliability, compatibility,
+    correctness) via profile parameterization. Profiles: ml-framework.
+    Machine-checkable via HTTP requests, SSE parsing, and concurrent load
+    tests. Operates at the running server instance level.
+
+profiles:
+  any:
+    required: [SV1, SV4, SV6]
+    recommended: [SV2, SV3, SV5, SV7, SV8, SV9, SV10]
+  cli-tool:
+    inherits: any
+    required: [SV1, SV4, SV5, SV6]
+    recommended: [SV2, SV3, SV7, SV8, SV9, SV10]
+  ml-framework:
+    inherits: cli-tool
+    required: [SV1, SV2, SV3, SV4, SV5, SV6, SV7, SV9]
+    recommended: [SV8, SV10]
+
+parameters:
+  server_url:
+    type: string
+    default: http://127.0.0.1:8080
+  health_path:
+    type: string
+    default: /health
+  models_path:
+    type: string
+    default: /v1/models
+  chat_path:
+    type: string
+    default: /v1/chat/completions
+  completions_path:
+    type: string
+    default: /v1/completions
+  shutdown_timeout_ms:
+    type: integer
+    default: 10000
+  concurrent_requests:
+    type: integer
+    default: 4
+
+elements:
+  SV1:
+    name: health_endpoint
+    tier: reliability
+    check: "GET /health returns 200 with body indicating healthy status"
+    measurable: "curl -s server_url/health returns HTTP 200 AND body contains 'ok' or 'healthy'"
+  SV6:
+    name: graceful_shutdown
+    tier: reliability
+    check: "SIGTERM causes server to finish in-flight requests then exit within shutdown_timeout_ms"
+    measurable: "send SIGTERM; verify exit within timeout AND no partial responses"
+  SV10:
+    name: timeout_configured
+    tier: reliability
+    check: "server has request timeout configured (not infinite wait on slow clients)"
+    measurable: "grep source for timeout configuration OR server rejects idle connection after timeout"
+    note: "REC — defense in depth, not critical for correctness"
+  SV2:
+    name: openai_compat
+    tier: compatibility
+    check: "POST /v1/chat/completions accepts OpenAI-format request and returns OpenAI-format response"
+    measurable: "POST JSON with model, messages fields; response has id, object, choices, usage fields"
+  SV3:
+    name: sse_streaming
+    tier: compatibility
+    check: "stream=true returns Server-Sent Events with data: prefix and [DONE] terminator"
+    measurable: "POST with stream=true; response has Content-Type text/event-stream, lines start with 'data:', ends with 'data: [DONE]'"
+  SV8:
+    name: models_endpoint
+    tier: compatibility
+    check: "GET /v1/models returns list of available models in OpenAI format"
+    measurable: "GET /v1/models returns JSON with 'data' array containing model objects"
+    note: "REC — useful for multi-model servers, not always applicable"
+  SV4:
+    name: json_error_envelope
+    tier: correctness
+    check: "error responses return JSON with error.message and error.type fields"
+    measurable: "send malformed request; response is JSON with 'error' object containing 'message' and 'type'"
+  SV5:
+    name: cors
+    tier: correctness
+    check: "OPTIONS request returns Access-Control-Allow-Origin header"
+    measurable: "OPTIONS /v1/chat/completions returns CORS headers"
+  SV7:
+    name: concurrent_determinism
+    tier: correctness
+    check: "concurrent requests with same seed produce identical outputs"
+    measurable: "send concurrent_requests identical requests with temperature=0; all responses match"
+  SV9:
+    name: kv_isolation
+    tier: correctness
+    check: "concurrent requests do not share KV cache state (no cross-request contamination)"
+    measurable: "send two different prompts concurrently; neither response contains content from the other prompt"
+
+equations:
+  reliability_verified:
+    formula: |
+      forall server S:
+        http_get(S, health_path).status == 200 AND
+        (SIGTERM(S) => all_inflight_complete AND exit_within(shutdown_timeout_ms)) AND
+        (has_timeout(S) => idle_connection_rejected(S, timeout))
+    domain: "running server instance"
+    codomain: bool
+    invariants:
+    - "Health endpoint is always responsive when server is ready"
+    - "Graceful shutdown completes in-flight work"
+    - "No infinite waits on misbehaving clients"
+
+  compatibility_verified:
+    formula: |
+      forall server S:
+        openai_chat_request(S) returns response with
+          {id: string, object: "chat.completion", choices: [...], usage: {...}} AND
+        openai_stream_request(S) returns SSE with
+          Content-Type "text/event-stream" AND
+          lines matching "data: {...}" AND
+          final line "data: [DONE]"
+    domain: "running server + HTTP client"
+    codomain: bool
+    invariants:
+    - "Any OpenAI-compatible client can use this server as a drop-in replacement"
+    - "Streaming follows the SSE specification exactly"
+
+  correctness_verified:
+    formula: |
+      forall server S:
+        (malformed_request(S) => json_error_envelope(response)) AND
+        (OPTIONS(S) => cors_headers(response)) AND
+        (concurrent_same_seed(S, n) => |unique_responses| == 1) AND
+        (concurrent_different_prompts(S) => no_cross_contamination)
+    domain: "running server + concurrent clients"
+    codomain: bool
+    invariants:
+    - "Error responses are machine-parseable JSON"
+    - "CORS headers enable browser-based clients"
+    - "Deterministic inference is reproducible under concurrency"
+    - "KV cache isolation prevents cross-request data leaks"
+
+  server_score:
+    formula: |
+      tier_weight = {reliability: 30, compatibility: 30, correctness: 40}
+
+      forall element E in {SV1..SV10}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {SV1..SV10})
+      max_score = sum(element_weight(E) for E in {SV1..SV10})
+      server_score = round(raw_score / max_score * 100)
+
+      verdict = if server_score >= 90 then A
+                elif server_score >= 80 then B
+                elif server_score >= 70 then C
+                elif server_score >= 60 then D
+                else F
+    domain: "running server + profile + gate results"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements pass"
+    - "Score 100 when all required + recommended elements pass"
+    - "Correctness tier (40%) is heaviest — wrong answers are worse than slow answers"
+    - "SV8 (models endpoint) and SV10 (timeout) are REC, contributing half weight"
+    - "Grade A (>=90) requires all required gates PASS"
+    - "Grade F (<60) means server is not safe for production deployment"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-SV-001
+  rule: reliability_verified
+  element: SV1
+  prediction: "GET /health returns 200 with healthy status"
+  test: |
+    python3 -c "
+    import urllib.request, sys, json
+
+    url = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:8080'
+    health_url = f'{url}/health'
+
+    try:
+        req = urllib.request.Request(health_url)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            status = resp.status
+            body = resp.read().decode().lower()
+            if status == 200 and ('ok' in body or 'healthy' in body or 'true' in body):
+                print(f'PASS: {health_url} returned {status}')
+            else:
+                print(f'FAIL: {health_url} returned {status}, body: {body[:200]}')
+                sys.exit(1)
+    except Exception as e:
+        print(f'FAIL: cannot reach {health_url}: {e}')
+        sys.exit(1)
+    " \${server_url:-http://127.0.0.1:8080}
+  if_fails: "health endpoint missing or unhealthy — load balancers cannot route traffic"
+
+- id: F-SV-002
+  rule: compatibility_verified
+  element: SV2
+  prediction: "POST /v1/chat/completions returns OpenAI-format response"
+  test: |
+    python3 -c "
+    import urllib.request, json, sys
+
+    url = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:8080'
+    chat_url = f'{url}/v1/chat/completions'
+
+    payload = json.dumps({
+        'model': 'default',
+        'messages': [{'role': 'user', 'content': 'Say hello'}],
+        'max_tokens': 5,
+        'temperature': 0.0
+    }).encode()
+
+    try:
+        req = urllib.request.Request(chat_url, data=payload,
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+
+        required_fields = ['id', 'object', 'choices']
+        missing = [f for f in required_fields if f not in data]
+        if missing:
+            print(f'FAIL: missing fields in response: {missing}')
+            sys.exit(1)
+
+        if not isinstance(data['choices'], list) or len(data['choices']) == 0:
+            print('FAIL: choices array is empty')
+            sys.exit(1)
+
+        print(f'PASS: OpenAI-compatible response with {len(data[\"choices\"])} choice(s)')
+    except Exception as e:
+        print(f'FAIL: chat completions request failed: {e}')
+        sys.exit(1)
+    " \${server_url:-http://127.0.0.1:8080}
+  if_fails: "server does not return OpenAI-format response — incompatible with standard clients"
+
+- id: F-SV-003
+  rule: compatibility_verified
+  element: SV3
+  prediction: "stream=true returns Server-Sent Events with [DONE] terminator"
+  test: |
+    python3 -c "
+    import urllib.request, json, sys
+
+    url = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:8080'
+    chat_url = f'{url}/v1/chat/completions'
+
+    payload = json.dumps({
+        'model': 'default',
+        'messages': [{'role': 'user', 'content': 'Hi'}],
+        'max_tokens': 5,
+        'stream': True
+    }).encode()
+
+    try:
+        req = urllib.request.Request(chat_url, data=payload,
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            content_type = resp.getheader('Content-Type', '')
+            if 'text/event-stream' not in content_type:
+                print(f'FAIL: Content-Type is {content_type}, expected text/event-stream')
+                sys.exit(1)
+
+            body = resp.read().decode()
+            lines = body.strip().split('\n')
+            data_lines = [l for l in lines if l.startswith('data:')]
+
+            if not data_lines:
+                print('FAIL: no SSE data lines in response')
+                sys.exit(1)
+
+            if 'data: [DONE]' not in body:
+                print('FAIL: missing [DONE] terminator')
+                sys.exit(1)
+
+            print(f'PASS: SSE stream with {len(data_lines)} data lines and [DONE] terminator')
+    except Exception as e:
+        print(f'FAIL: streaming request failed: {e}')
+        sys.exit(1)
+    " \${server_url:-http://127.0.0.1:8080}
+  if_fails: "streaming response does not follow SSE specification — clients will hang or error"
+
+- id: F-SV-004
+  rule: correctness_verified
+  element: SV4
+  prediction: "malformed request returns JSON error envelope"
+  test: |
+    python3 -c "
+    import urllib.request, json, sys
+
+    url = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:8080'
+    chat_url = f'{url}/v1/chat/completions'
+
+    # Send malformed request (missing required fields)
+    payload = json.dumps({'invalid': True}).encode()
+
+    try:
+        req = urllib.request.Request(chat_url, data=payload,
+                                     headers={'Content-Type': 'application/json'})
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            print('FAIL: malformed request returned 2xx (expected 4xx)')
+            sys.exit(1)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()
+            try:
+                data = json.loads(body)
+                if 'error' in data and 'message' in data['error']:
+                    print(f'PASS: JSON error envelope with message: {data[\"error\"][\"message\"][:100]}')
+                else:
+                    print(f'FAIL: JSON response but missing error.message: {body[:200]}')
+                    sys.exit(1)
+            except json.JSONDecodeError:
+                print(f'FAIL: error response is not JSON: {body[:200]}')
+                sys.exit(1)
+    except Exception as e:
+        print(f'FAIL: request failed unexpectedly: {e}')
+        sys.exit(1)
+    " \${server_url:-http://127.0.0.1:8080}
+  if_fails: "error responses are not JSON — clients cannot programmatically handle errors"
+
+- id: F-SV-005
+  rule: correctness_verified
+  element: SV5
+  prediction: "OPTIONS request returns CORS headers"
+  test: |
+    python3 -c "
+    import urllib.request, sys
+
+    url = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:8080'
+    chat_url = f'{url}/v1/chat/completions'
+
+    try:
+        req = urllib.request.Request(chat_url, method='OPTIONS',
+                                     headers={'Origin': 'http://localhost:3000'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            cors = resp.getheader('Access-Control-Allow-Origin', '')
+            if cors:
+                print(f'PASS: CORS header present: {cors}')
+            else:
+                print('FAIL: no Access-Control-Allow-Origin header')
+                sys.exit(1)
+    except urllib.error.HTTPError as e:
+        cors = e.headers.get('Access-Control-Allow-Origin', '')
+        if cors:
+            print(f'PASS: CORS header present: {cors} (status {e.code})')
+        else:
+            print(f'FAIL: no CORS header (status {e.code})')
+            sys.exit(1)
+    except Exception as e:
+        print(f'FAIL: OPTIONS request failed: {e}')
+        sys.exit(1)
+    " \${server_url:-http://127.0.0.1:8080}
+  if_fails: "no CORS headers — browser-based UIs cannot communicate with server"
+
+- id: F-SV-006
+  rule: server_score
+  element: all
+  prediction: "server scores >= 90 (grade A) under ml-framework profile"
+  test: |
+    python3 -c "
+    import subprocess, sys, os
+
+    # This test checks the server source code for required capabilities
+    # (runtime tests require a running server — see F-SV-001 through F-SV-005)
+
+    tier_weight = {'reliability': 30, 'compatibility': 30, 'correctness': 40}
+    element_tier = {
+        'SV1': 'reliability', 'SV6': 'reliability', 'SV10': 'reliability',
+        'SV2': 'compatibility', 'SV3': 'compatibility', 'SV8': 'compatibility',
+        'SV4': 'correctness', 'SV5': 'correctness', 'SV7': 'correctness', 'SV9': 'correctness',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    required = {'SV1','SV2','SV3','SV4','SV5','SV6','SV7','SV9'}
+    recommended = {'SV8','SV10'}
+
+    gates = {}
+
+    # Search server source for capability indicators
+    serve_dirs = ['crates/aprender-serve/src/', 'src/']
+
+    def grep_source(pattern):
+        for d in serve_dirs:
+            if os.path.isdir(d):
+                r = subprocess.run(['grep', '-rl', pattern, d],
+                                   capture_output=True, text=True)
+                if r.stdout.strip():
+                    return True
+        return False
+
+    # SV1: health endpoint
+    gates['SV1'] = grep_source('health') or grep_source('/health')
+
+    # SV2: OpenAI compat
+    gates['SV2'] = grep_source('chat/completions') or grep_source('ChatCompletion')
+
+    # SV3: SSE streaming
+    gates['SV3'] = grep_source('text/event-stream') or grep_source('ServerSentEvent') or grep_source('sse')
+
+    # SV4: JSON error envelope
+    gates['SV4'] = grep_source('error.*message') or grep_source('ErrorResponse')
+
+    # SV5: CORS
+    gates['SV5'] = grep_source('cors') or grep_source('Access-Control')
+
+    # SV6: graceful shutdown
+    gates['SV6'] = grep_source('graceful') or grep_source('shutdown') or grep_source('SIGTERM')
+
+    # SV7: deterministic inference (seed support)
+    gates['SV7'] = grep_source('seed') or grep_source('deterministic')
+
+    # SV8: models endpoint (REC)
+    gates['SV8'] = grep_source('/v1/models') or grep_source('models.*endpoint')
+
+    # SV9: KV isolation
+    gates['SV9'] = grep_source('kv_cache') or grep_source('session') or grep_source('isolation')
+
+    # SV10: timeout (REC)
+    gates['SV10'] = grep_source('timeout') or grep_source('request_timeout')
+
+    raw = 0.0; max_s = 0.0
+    for e in sorted(element_tier.keys()):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        if e in required:
+            multiplier = 1.0
+        elif e in recommended:
+            multiplier = 0.5
+        else:
+            multiplier = 0.0
+        ew = w * multiplier
+        max_s += ew
+        if gates.get(e, False):
+            raw += ew
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        req = 'REQ' if e in required else 'REC'
+        print(f'  {e:4s} [{req}] w={ew:5.1f}  {status}')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    sys.exit(0 if score >= 90 else 1)
+    "
+  if_fails: "server score below 90 — not production-ready for inference deployment"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

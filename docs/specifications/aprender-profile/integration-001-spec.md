@@ -8,6 +8,9 @@ updated: 2025-11-24T13:19:35.174623811+00:00
 
 # New task: INTEGRATION-001 Specification
 
+Version: 1.0
+Status: proposed
+
 **Ticket ID**: INTEGRATION-001
 **Status**: In Progress
 

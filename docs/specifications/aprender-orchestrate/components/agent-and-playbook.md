@@ -1,5 +1,8 @@
 # Agent and Playbook Specification
 
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > Sources: batuta-agent, batuta-playbook
 > See also: [multi-provider-api.md](multi-provider-api.md) (provider-agnostic LLM client)

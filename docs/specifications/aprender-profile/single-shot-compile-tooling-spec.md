@@ -1,4 +1,9 @@
 # Single-Shot Compile Tooling Specification
+
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## High-Level Performance and Bug Detection for Transpilers
 
 **Version**: 1.0.0

@@ -1,7 +1,7 @@
 [package]
 name = "aprender-tsp"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["paiml"]
 description = "Local TSP optimization with personalized .apr models"
 license = "MIT"
@@ -33,6 +33,9 @@ tempfile = "3"
 [[bench]]
 name = "tsp_benchmarks"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

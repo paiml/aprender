@@ -1,5 +1,9 @@
 # Review of Online Learning & Dynamic Retraining Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document Reviewed**: Online Learning and Dynamic Retraining Infrastructure (v1.0.0)
 **Reviewer**: Gemini (AI Assistant)
 **Date**: 2025-12-08

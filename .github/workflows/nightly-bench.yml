@@ -7,6 +7,9 @@ on:
     - cron: "30 5 * * *"  # 05:30 UTC (after nightly builds at 04:00)
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: bench-${{ github.ref }}
   cancel-in-progress: true
@@ -14,6 +17,7 @@ concurrency:
 jobs:
   bench:
     uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
+    timeout-minutes: 60
     with:
       repo: ${{ github.event.repository.name }}
       run_benchmarks: true

@@ -8,6 +8,8 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+keywords = ["tui", "terminal", "ui", "ratatui", "aprender"]
+categories = ["command-line-interface"]
 include = ["src/**/*", "assets/**/*", "Cargo.toml"]
 
 [dependencies]
@@ -50,6 +52,9 @@ wasm-bindgen-test = { workspace = true }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

@@ -38,6 +38,23 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
         return Some(crate::commands::mono::run(command.clone()));
     }
 
+    // Shell completion generation (hidden command)
+    if let Commands::Completions { shell } = cli.command.as_ref() {
+        let mut cmd = Cli::command();
+        clap_complete::generate(*shell, &mut cmd, "apr", &mut std::io::stdout());
+        return Some(Ok(()));
+    }
+
+    // Man page generation (hidden command)
+    if let Commands::Man = cli.command.as_ref() {
+        let cmd = Cli::command();
+        let man = clap_mangen::Man::new(cmd);
+        return Some(
+            man.render(&mut std::io::stdout())
+                .map_err(|e| CliError::Aprender(format!("failed to generate man page: {e}"))),
+        );
+    }
+
     contract_post_side_effect_classification!(&());
     contract_post_output_format_fidelity!(&());
     None

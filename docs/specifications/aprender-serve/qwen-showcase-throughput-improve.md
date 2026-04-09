@@ -32,6 +32,9 @@ citations:
 
 # Qwen2.5-Coder-0.5B Showcase Throughput Improvement Specification
 
+Version: 1.0
+Status: proposed
+
 **Document ID:** REALIZAR-QWEN-PERF-001
 **Version:** 1.4.0
 **Status:** IMPLEMENTATION

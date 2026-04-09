@@ -240,3 +240,6 @@ codegen-units = 1
 [profile.bench]
 inherits = "release"
 debug = true
+
+[lints]
+workspace = true

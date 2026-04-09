@@ -1,5 +1,9 @@
 # Contract Enforcement
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [ttop-v2-spec.md](../ttop-v2-spec.md) Section 4
 
 **Scope:** YAML contract definitions, build.rs code generation, compile-time

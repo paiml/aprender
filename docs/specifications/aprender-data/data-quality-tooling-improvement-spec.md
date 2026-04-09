@@ -1,5 +1,9 @@
 # Data Quality Tooling Improvement Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document:** ALIM-SPEC-005
 **Status:** Draft - In Review
 **Author:** PAIML Engineering

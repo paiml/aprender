@@ -1,5 +1,9 @@
 # Round 12: The Popperian Audit (Section 20)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md (lines 5296-5633)
 
 ## 20. Protocol Evolution (Round 12): The Popperian Audit

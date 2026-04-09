@@ -1,11 +1,16 @@
 [package]
 name = "aprender-train-distill"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["PAIML <hello@paiml.com>"]
 description = "End-to-end knowledge distillation CLI"
 license = "MIT"
 repository = "https://github.com/paiml/entrenar"
+keywords = ["ml", "training", "deep-learning", "aprender"]
+categories = ["science"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 name = "entrenar_distill"

@@ -1,4 +1,9 @@
 # Toyota Way Review Response
+
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Renacer Specification v1.0.1 - Kaizen Improvements
 
 **Date**: 2025-11-24

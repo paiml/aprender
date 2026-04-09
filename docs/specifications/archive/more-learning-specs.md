@@ -1,5 +1,9 @@
 # Future Learning Approaches Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 Candidate architectures and capabilities for aprender expansion.
 
 ## Current Inventory

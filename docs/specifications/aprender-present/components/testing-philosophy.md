@@ -1,5 +1,9 @@
 # Testing Philosophy
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [presentar-spec.md](../presentar-spec.md)
 
 **Scope:** Popperian falsificationism applied to software testing. Severity levels, bold conjectures, anti-patterns.

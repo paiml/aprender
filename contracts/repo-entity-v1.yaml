@@ -1,0 +1,390 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'Rust workspace best practices (Cargo Reference 1.74+)'
+  - 'OpenSSF Scorecard — 18-check repo security posture'
+  - 'Polars repo structure (pola-rs/polars) — calibration benchmark'
+  - 'cargo-deny documentation — advisories, licenses, bans, sources'
+  - 'docs/specifications/aprender-contract-entities/repo-entity-spec.md'
+  description: >
+    Repository structure quality contract for Rust workspace projects.
+    Enforces 16 measurable elements across 4 tiers (foundation, governance,
+    tooling, ecosystem) via profile parameterization. Calibrated against
+    polars (Grade A) and aprender (Grade B). Machine-checkable (file existence,
+    TOML parse, line counting). Complements readme-entity-v1 (content quality)
+    and repo-filesystem-v1 (zero cruft).
+
+profiles:
+  any:
+    required: [R1, R2, R5, R8, R10, R12]
+    recommended: [R3, R4, R6, R7, R9, R11, R13, R14, R15, R16]
+  cli-tool:
+    inherits: any
+    required: [R1, R2, R3, R5, R6, R8, R9, R10, R12]
+    recommended: [R4, R7, R11, R13, R14, R15, R16]
+  library:
+    inherits: cli-tool
+    required: [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R16]
+    recommended: [R13, R14, R15]
+  ml-framework:
+    inherits: library
+    required: [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R15, R16]
+    recommended: [R14]
+
+parameters:
+  min_ci_workflows:
+    type: integer
+    default: 3
+  lint_inheritance_threshold:
+    type: float
+    default: 0.90
+
+elements:
+  R1:
+    name: workspace_package
+    tier: foundation
+    check: "[workspace.package] section exists in root Cargo.toml"
+    measurable: "grep '[workspace.package]' Cargo.toml"
+  R2:
+    name: workspace_dependencies
+    tier: foundation
+    check: "[workspace.dependencies] section exists in root Cargo.toml"
+    measurable: "grep '[workspace.dependencies]' Cargo.toml"
+  R3:
+    name: workspace_lints_configured
+    tier: foundation
+    check: ">= 90% of sub-crates have lint config ([lints] workspace = true OR local [lints.*])"
+    measurable: "grep -l '[lints' crates/*/Cargo.toml — counts both workspace and local"
+  R4:
+    name: msrv_stated
+    tier: foundation
+    check: "rust-version field in [workspace.package]"
+    measurable: "grep 'rust-version' Cargo.toml"
+  R5:
+    name: license_file
+    tier: governance
+    check: "LICENSE file exists at repository root"
+    measurable: "test -f LICENSE"
+  R6:
+    name: security_policy
+    tier: governance
+    check: "SECURITY.md exists at repository root"
+    measurable: "test -f SECURITY.md"
+  R7:
+    name: contributing_guide
+    tier: governance
+    check: "CONTRIBUTING.md exists at repository root"
+    measurable: "test -f CONTRIBUTING.md"
+  R8:
+    name: cargo_lock_committed
+    tier: governance
+    check: "Cargo.lock is committed to version control"
+    measurable: "test -f Cargo.lock && git ls-files --error-unmatch Cargo.lock"
+  R9:
+    name: lint_config
+    tier: tooling
+    check: "clippy.toml or [workspace.lints.clippy] with >= 1 rule"
+    measurable: "test -f .clippy.toml OR grep '[workspace.lints.clippy]' Cargo.toml"
+  R10:
+    name: format_config
+    tier: tooling
+    check: "rustfmt.toml exists at repository root"
+    measurable: "test -f rustfmt.toml"
+  R11:
+    name: deny_toml
+    tier: tooling
+    check: "deny.toml exists with advisories and licenses sections"
+    measurable: "test -f deny.toml && grep -c 'advisories\\|licenses' deny.toml >= 2"
+  R12:
+    name: ci_workflows
+    tier: tooling
+    check: ">= 3 CI workflow files in .github/workflows/"
+    measurable: "ls .github/workflows/*.yml | wc -l >= min_ci_workflows"
+  R13:
+    name: gitattributes
+    tier: ecosystem
+    check: ".gitattributes file exists at repository root"
+    measurable: "test -f .gitattributes"
+  R14:
+    name: changelog
+    tier: ecosystem
+    check: "CHANGELOG.md exists at repository root"
+    measurable: "test -f CHANGELOG.md"
+  R15:
+    name: citation
+    tier: ecosystem
+    check: "CITATION.cff exists for academic/ML projects"
+    measurable: "test -f CITATION.cff"
+  R16:
+    name: subcrate_readmes
+    tier: ecosystem
+    check: "all published sub-crates have README.md"
+    measurable: "for d in crates/*/; test -f $d/README.md"
+
+equations:
+  foundation_sound:
+    formula: |
+      forall Rust workspace W with profile P:
+        workspace_package_exists(W) AND
+        workspace_dependencies_exists(W) AND
+        (P not in {library, ml-framework} OR msrv_stated(W)) AND
+        (P == any OR workspace_lints_inherited_ratio(W) >= 0.90)
+    domain: "Root Cargo.toml + sub-crate Cargo.toml files"
+    codomain: bool
+    invariants:
+    - "Shared metadata prevents version/edition drift"
+    - "Shared dependencies prevent dep version drift"
+    - "Published crates declare MSRV for downstream compatibility"
+
+  governance_complete:
+    formula: |
+      forall repo R with profile P:
+        license_exists(R) AND
+        cargo_lock_committed(R) AND
+        (P == any OR security_md_exists(R)) AND
+        (P not in {library, ml-framework} OR contributing_md_exists(R))
+    domain: "Repository root files"
+    codomain: bool
+    invariants:
+    - "LICENSE required by crates.io and all open source projects"
+    - "Cargo.lock must be committed for reproducible builds of binary projects"
+    - "SECURITY.md required by OpenSSF Scorecard for vulnerability reporting"
+
+  tooling_enforced:
+    formula: |
+      forall repo R with profile P:
+        format_config_exists(R) AND
+        ci_workflow_count(R) >= min_ci_workflows AND
+        (P not in {library, ml-framework} OR deny_toml_exists(R)) AND
+        lint_config_exists(R)
+    domain: "Repository config files + .github/workflows/"
+    codomain: bool
+    invariants:
+    - "rustfmt.toml ensures consistent formatting across contributors"
+    - "CI with >= 3 workflows covers lint, test, and audit"
+    - "deny.toml blocks vulnerable deps and license violations for published crates"
+
+  ecosystem_present:
+    formula: |
+      forall repo R with profile P:
+        (P != ml-framework OR gitattributes_exists(R)) AND
+        (P != ml-framework OR citation_exists(R)) AND
+        (P not in {library, ml-framework} OR subcrate_readmes_complete(R))
+    domain: "Repository root + sub-crate files"
+    codomain: bool
+    invariants:
+    - ".gitattributes controls line endings and binary markers"
+    - "CITATION.cff enables academic citation for ML research"
+    - "Sub-crate READMEs are required for crates.io discoverability"
+
+  anti_patterns_zero:
+    formula: |
+      forall repo R:
+        own_crate_patch_count(R) == 0 AND
+        workspace_lints_inheritance_ratio(R) >= lint_inheritance_threshold
+    domain: "Root Cargo.toml [patch] section + sub-crate [lints] sections"
+    codomain: bool
+    invariants:
+    - "Own-crate [patch.crates-io] breaks cargo install for downstream users"
+    - "External-dep patches are acceptable (polars patches jemalloc)"
+    - "Lint coverage >= 90% ensures all crates have lint enforcement"
+
+  repo_score:
+    formula: |
+      tier_weight = {foundation: 30, governance: 25, tooling: 25, ecosystem: 20}
+
+      forall element E in {R1..R16}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {R1..R16})
+      max_score = sum(element_weight(E) for E in {R1..R16})
+      repo_score = round(raw_score / max_score * 100)
+
+      verdict = if repo_score >= 90 then A
+                elif repo_score >= 80 then B
+                elif repo_score >= 70 then C
+                elif repo_score >= 60 then D
+                else F
+    domain: "All gate results + profile + tier weights"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements present"
+    - "Score 100 when all required + recommended elements present"
+    - "Foundation + governance account for 55% of total weight"
+    - "Polars (library profile) scores >= 90 (calibration invariant)"
+    - "Grade A requires all required gates PASS"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-REPO-E001
+  rule: foundation_sound
+  prediction: "workspace.package and workspace.dependencies exist in Cargo.toml"
+  test: |
+    grep -q '\[workspace\.package\]' Cargo.toml && echo "R1 PASS" || echo "R1 FAIL"
+    grep -q '\[workspace\.dependencies\]' Cargo.toml && echo "R2 PASS" || echo "R2 FAIL"
+    grep -q 'rust-version' Cargo.toml && echo "R4 PASS" || echo "R4 FAIL"
+  if_fails: "workspace configuration missing — version/dep drift risk"
+
+- id: F-REPO-E002
+  rule: governance_complete
+  prediction: "LICENSE, Cargo.lock, SECURITY.md, CONTRIBUTING.md exist"
+  test: |
+    for f in LICENSE Cargo.lock SECURITY.md CONTRIBUTING.md; do
+      test -f "$f" && echo "$f PASS" || echo "$f FAIL"
+    done
+  if_fails: "governance files missing — trust and compliance risk"
+
+- id: F-REPO-E003
+  rule: tooling_enforced
+  prediction: "rustfmt.toml, deny.toml exist; >= 3 CI workflows"
+  test: |
+    test -f rustfmt.toml && echo "R10 PASS" || echo "R10 FAIL"
+    test -f deny.toml && echo "R11 PASS" || echo "R11 FAIL"
+    WF=$(ls .github/workflows/*.yml 2>/dev/null | wc -l)
+    echo "R12 CI workflows: $WF"
+    test "$WF" -ge 3 && echo "R12 PASS" || echo "R12 FAIL"
+  if_fails: "quality tooling missing — inconsistent enforcement"
+
+- id: F-REPO-E004
+  rule: ecosystem_present
+  prediction: ".gitattributes, CITATION.cff exist; all sub-crates have README.md"
+  test: |
+    test -f .gitattributes && echo "R13 PASS" || echo "R13 FAIL"
+    test -f CITATION.cff && echo "R15 PASS" || echo "R15 FAIL"
+    MISSING=0
+    for d in crates/*/; do
+      test -f "$d/README.md" || MISSING=$((MISSING+1))
+    done
+    echo "R16 sub-crates missing README: $MISSING"
+    test "$MISSING" -eq 0 && echo "R16 PASS" || echo "R16 FAIL"
+  if_fails: "ecosystem files missing — discoverability reduced"
+
+- id: F-REPO-E005
+  rule: anti_patterns_zero
+  prediction: "zero own-crate [patch.crates-io]; >= 90% lint inheritance"
+  test: |
+    python3 -c "
+    import tomllib
+    with open('Cargo.toml', 'rb') as f:
+        cargo = tomllib.load(f)
+    members = [m.split('/')[-1] for m in cargo.get('workspace', {}).get('members', [])]
+    patches = cargo.get('patch', {}).get('crates-io', {})
+    own = [p for p in patches if p in members or p.replace('-', '_') in members]
+    print(f'Own-crate patches: {len(own)} ({own})')
+    if own:
+        print('ANTI-PATTERN FAIL: own-crate patches break cargo install')
+    else:
+        print('PASS: no own-crate patches')
+    "
+    TOTAL=$(ls -d crates/*/Cargo.toml 2>/dev/null | wc -l)
+    INHERITS=$(grep -rl 'workspace = true' crates/*/Cargo.toml 2>/dev/null | \
+               xargs grep -l '\[lints\]' 2>/dev/null | wc -l)
+    echo "Lint inheritance: $INHERITS/$TOTAL"
+  if_fails: "anti-patterns present — downstream consumers affected"
+
+- id: F-REPO-E006
+  rule: repo_score
+  prediction: "repo scores >= 90 (grade A) under the project's profile"
+  test: |
+    python3 -c "
+    import sys, os, subprocess, tomllib
+
+    tier_weight = {'foundation': 30, 'governance': 25, 'tooling': 25, 'ecosystem': 20}
+    element_tier = {
+        'R1': 'foundation', 'R2': 'foundation', 'R3': 'foundation', 'R4': 'foundation',
+        'R5': 'governance', 'R6': 'governance', 'R7': 'governance', 'R8': 'governance',
+        'R9': 'tooling', 'R10': 'tooling', 'R11': 'tooling', 'R12': 'tooling',
+        'R13': 'ecosystem', 'R14': 'ecosystem', 'R15': 'ecosystem', 'R16': 'ecosystem',
+    }
+    element_name = {
+        'R1': 'workspace_package', 'R2': 'workspace_dependencies',
+        'R3': 'workspace_lints', 'R4': 'msrv',
+        'R5': 'license', 'R6': 'security_md',
+        'R7': 'contributing', 'R8': 'cargo_lock',
+        'R9': 'lint_config', 'R10': 'rustfmt',
+        'R11': 'deny_toml', 'R12': 'ci_workflows',
+        'R13': 'gitattributes', 'R14': 'changelog',
+        'R15': 'citation', 'R16': 'subcrate_readmes',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    # profile: ml-framework
+    required = {'R1','R2','R3','R4','R5','R6','R7','R8','R9','R10','R11','R12','R13','R15','R16'}
+    recommended = {'R14'}
+
+    # --- gate checks ---
+    with open('Cargo.toml', 'rb') as f:
+        cargo = tomllib.load(f)
+
+    ws = cargo.get('workspace', {})
+    gates = {}
+    gates['R1'] = 'package' in ws
+    gates['R2'] = 'dependencies' in ws
+    # R3: lint config (workspace = true OR local [lints.*])
+    import glob
+    total_crates = len(glob.glob('crates/*/Cargo.toml'))
+    lints_crates = 0
+    for ct in glob.glob('crates/*/Cargo.toml'):
+        content = open(ct).read()
+        if '[lints]' in content or '[lints.' in content:
+            lints_crates += 1
+    gates['R3'] = total_crates == 0 or (lints_crates / total_crates) >= 0.90
+    gates['R4'] = 'rust-version' in ws.get('package', {})
+    gates['R5'] = os.path.isfile('LICENSE')
+    gates['R6'] = os.path.isfile('SECURITY.md')
+    gates['R7'] = os.path.isfile('CONTRIBUTING.md')
+    gates['R8'] = os.path.isfile('Cargo.lock')
+    gates['R9'] = os.path.isfile('.clippy.toml') or 'lints' in ws
+    gates['R10'] = os.path.isfile('rustfmt.toml') or os.path.isfile('.rustfmt.toml')
+    gates['R11'] = os.path.isfile('deny.toml')
+    wf_count = len(glob.glob('.github/workflows/*.yml'))
+    gates['R12'] = wf_count >= 3
+    gates['R13'] = os.path.isfile('.gitattributes')
+    gates['R14'] = os.path.isfile('CHANGELOG.md')
+    gates['R15'] = os.path.isfile('CITATION.cff')
+    missing_readmes = sum(1 for d in glob.glob('crates/*/') if not os.path.isfile(d + 'README.md'))
+    gates['R16'] = missing_readmes == 0
+
+    raw = 0.0; max_s = 0.0
+    print(f'repo-entity-v1 | profile: ml-framework')
+    print('=' * 55)
+    for e in sorted(element_tier.keys(), key=lambda x: int(x[1:])):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        if e in required: mult = 1.0; req = 'REQ'
+        elif e in recommended: mult = 0.5; req = 'REC'
+        else: mult = 0.0; req = '---'
+        ew = w * mult
+        max_s += ew
+        pts = ew if gates.get(e, False) else 0.0
+        raw += pts
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        print(f'  {e:4s} [{req}] w={ew:5.1f}  {status:4s}  {element_name[e]}')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    print(f'F-REPO-E006: {\"PASS\" if score >= 90 else \"FAIL\"}')
+    sys.exit(0 if score >= 90 else 1)
+    "
+  if_fails: "repo score below 90 — not production-ready"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

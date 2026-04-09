@@ -1,5 +1,9 @@
 # TTOP Enhancement Specification: World's Best Terse Systems Monitor
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 2.1.0
 **Status**: Draft
 **Target Component**: `crates/ttop` & `trueno-viz/monitor`

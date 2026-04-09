@@ -1,7 +1,7 @@
 [package]
 name = "aprender-cbtop"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "Compute Block Top - Real-time load testing and hardware monitoring TUI"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/paiml/trueno"
@@ -66,6 +66,9 @@ default = []
 cuda = ["dep:trueno-gpu", "trueno-gpu/cuda"]
 wos-kernel = []
 full = ["cuda", "wos-kernel"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.clippy]
 wildcard_enum_match_arm = "deny"

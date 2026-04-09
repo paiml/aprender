@@ -1,5 +1,9 @@
 # GPU Kernel-Level Tracing: Phase 2 - CUDA Support
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0
 **Date:** 2025-11-21
 **Status:** Specification - Design Phase

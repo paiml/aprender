@@ -8,6 +8,9 @@ updated: 2026-02-15T11:30:26.378754681+00:00
 
 # feat: apr export — MLX, CoreML, and OpenVINO format support Specification
 
+Version: 1.0
+Status: proposed
+
 **GitHub Issue**: [#246](https://github.com/YOUR_ORG/YOUR_REPO/issues/246)
 **Status**: In Progress
 

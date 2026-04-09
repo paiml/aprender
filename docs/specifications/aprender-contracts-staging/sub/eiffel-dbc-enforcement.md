@@ -1,5 +1,9 @@
 # Eiffel DbC — Escape-Proof Enforcement (Part 1)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 *See also: [eiffel-dbc.md](eiffel-dbc.md)*
 
 ## 11. Escape-Proof Enforcement by Domain

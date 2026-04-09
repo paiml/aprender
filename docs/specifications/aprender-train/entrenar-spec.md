@@ -1,5 +1,9 @@
 # Entrenar: Training & Optimization Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Repo:** https://github.com/paiml/entrenar  
 **Stack Deps:** Trueno (compute), Realizar (I/O), Aprender (loss fns)  
 **External:** None (100% PAIML)

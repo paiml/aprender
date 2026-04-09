@@ -1,5 +1,9 @@
 # Banco Specification: Local-First AI Workbench
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > Sources: model-serving-ecosystem-spec, hugging-face-integration-query-publish-spec, hugging-face-crud-spec, retriever-spec
 > Sub-specs: [banco-phase1.md](banco-phase1.md), [banco-phase2.md](banco-phase2.md), [banco-phase3.md](banco-phase3.md), [banco-phase4.md](banco-phase4.md), [banco-cross-cutting.md](banco-cross-cutting.md), [banco-ux.md](banco-ux.md), [banco-testing.md](banco-testing.md), [banco-infra.md](banco-infra.md), [banco-contracts.md](banco-contracts.md)

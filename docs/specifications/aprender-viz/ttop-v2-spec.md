@@ -1,5 +1,9 @@
 # ttop v2 Specification: Sovereign TUI Monitor
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 2.0.0-draft
 **Status:** RFC
 **Date:** 2026-04-02

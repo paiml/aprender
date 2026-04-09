@@ -1,5 +1,9 @@
 # Aprender Specifications — Table of Contents
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > 70 workspace crates. 394 specification files.
 
 ---
@@ -7,10 +11,13 @@
 
 ## Core Specifications
 
+- [Apr Book Spec](apr-book-spec.md)
+- [Apr Cli Dep Migration](apr-cli-dep-migration.md)
 - [Apr Cli Qa Spec](apr-cli-qa-spec.md)
 - [Aprender Monorepo Consolidation](aprender-monorepo-consolidation.md)
 - [Aprender Readme Book Rewrite](aprender-readme-book-rewrite.md)
 - [Aprender Spec](aprender-spec.md)
+- [Ratatui to Presentar Migration](ratatui-to-presentar-migration.md)
 
 ## Compute (was trueno)
 
@@ -105,6 +112,14 @@
 - [Verification Extensions](aprender-contracts-staging/sub/verification-extensions.md)
 - [Verification Ladder](aprender-contracts-staging/sub/verification-ladder.md)
 - [Vision](aprender-contracts-staging/sub/vision.md)
+
+## Contract Entities (14 contracts, 155 elements)
+
+- [Entity Contracts Overview](aprender-contract-entities/entity-contracts-overview.md) — 14 contracts, 0-100 scoring, 4 profiles
+- Repo-Level: readme, repo, crate, ci, changelog, dep, spec, api, error (9 contracts, 105 elements)
+- Domain-Specific: subcommand, model, template, binary, server (5 contracts, 50 elements)
+- [README Entity Spec](aprender-contract-entities/readme-entity-spec.md)
+- [Repo Entity Spec](aprender-contract-entities/repo-entity-spec.md)
 
 ## Data Pipeline (was alimentar)
 
@@ -437,6 +452,7 @@
 - [Checkpoints](components/checkpoints.md)
 - [Cli Silent Failure Enforcement](components/cli-silent-failure-enforcement.md)
 - [Cli](components/cli.md)
+- [Code (apr code)](components/code.md) — sovereign agentic coding assistant (batuta engine, 6 equations)
 - [Compile](components/compile.md)
 - [Compute Backends](components/compute-backends.md)
 - [Data](components/data.md)

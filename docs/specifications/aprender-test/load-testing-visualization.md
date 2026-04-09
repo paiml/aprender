@@ -1,5 +1,9 @@
 # Load Testing Visualization and Reporting Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** PROBAR-SPEC-006
 **Parent:** PROBAR-SPEC-005 (Enhanced Serving and Debugging)
 **Version:** 1.0.0

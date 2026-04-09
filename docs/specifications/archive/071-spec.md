@@ -8,6 +8,9 @@ updated: 2025-11-24T22:36:39.711447967+00:00
 
 # Implement Content-Based Recommender with HNSW (Phase 1) Specification
 
+Version: 1.0
+Status: proposed
+
 **GitHub Issue**: [#71](https://github.com/paiml/aprender/issues/71)
 **Status**: In Progress
 

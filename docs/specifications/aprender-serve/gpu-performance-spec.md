@@ -1,5 +1,9 @@
 # GPU Decoder Throughput Performance Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** REALIZAR-GPU-PERF-001
 **Status:** MOVED
 

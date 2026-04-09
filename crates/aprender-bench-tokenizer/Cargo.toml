@@ -1,9 +1,14 @@
 [package]
 name = "aprender-bench-tokenizer"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
 description = "Head-to-head BPE tokenizer benchmarks: aprender vs HuggingFace tokenizers v0.22"
+keywords = ["ml", "rust", "aprender", "tokenizer", "benchmark"]
+categories = ["science"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 # Benchmarks legitimately use unwrap() on known-good data
 [lints.clippy]

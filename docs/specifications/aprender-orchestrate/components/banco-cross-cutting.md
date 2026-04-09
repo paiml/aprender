@@ -1,5 +1,9 @@
 # Banco Cross-Cutting Concerns
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [banco-spec.md](banco-spec.md) §5
 > These concerns span all phases. Each section notes which phase introduces it.
 

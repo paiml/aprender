@@ -689,11 +689,11 @@ fn explain_file(path: &Path, json: bool) {
     if !path.exists() {
         if json {
             let err = serde_json::json!({ "error": format!("File not found: {}", path.display()) });
-            println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
+            eprintln!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
         } else {
-            println!("File not found: {}", path.display());
+            eprintln!("error: File not found: {}", path.display());
         }
-        return;
+        std::process::exit(3);
     }
 
     let rosetta = aprender::format::rosetta::RosettaStone::new();

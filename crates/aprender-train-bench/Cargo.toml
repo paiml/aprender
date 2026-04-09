@@ -1,11 +1,16 @@
 [package]
 name = "aprender-train-bench"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["PAIML <hello@paiml.com>"]
 description = "Distillation benchmarking and hyperparameter sweep tool"
 license = "MIT"
 repository = "https://github.com/paiml/entrenar"
+keywords = ["ml", "training", "deep-learning", "aprender"]
+categories = ["science"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 name = "entrenar_bench"

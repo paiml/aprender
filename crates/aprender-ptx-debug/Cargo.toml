@@ -1,7 +1,7 @@
 [package]
 name = "aprender-ptx-debug"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["Pragmatic AI Labs"]
 license = "MIT"
 description = "Pure Rust PTX debugging and static analysis tool"
@@ -17,6 +17,9 @@ name = "trueno_ptx_debug"
 thiserror = "2.0"
 
 # Inherit workspace lints
+[package.metadata.docs.rs]
+all-features = true
+
 [lints.rust]
 unsafe_code = "allow"
 

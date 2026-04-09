@@ -8,6 +8,9 @@ updated: 2026-02-14T16:32:00.000000000+00:00
 
 # GGUF Export Pipeline via Aprender Delegation
 
+Version: 1.0
+Status: proposed
+
 **Ticket ID**: ENT-GGUF-EXPORT
 **Status**: Complete
 

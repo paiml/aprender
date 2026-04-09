@@ -1,7 +1,7 @@
 [package]
 name = "aprender-explain"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "PTX/SIMD/wgpu visualization and tracing CLI for Trueno"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/paiml/trueno"
@@ -30,6 +30,9 @@ trueno-gpu = { version = "0.29.0", path = "../aprender-gpu", package = "aprender
 [dev-dependencies]
 proptest = "1.4"
 pretty_assertions = "1.4"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

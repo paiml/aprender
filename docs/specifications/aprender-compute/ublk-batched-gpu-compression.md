@@ -1,5 +1,9 @@
 # Ublk Batched GPU Compression Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 0.3.0
 **Date**: 2026-01-05
 **Status**: CPU PATH VALIDATED - GPU PATH IN PROGRESS

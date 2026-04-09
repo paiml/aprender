@@ -3,7 +3,7 @@
 [package]
 name = "aprender-train"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 rust-version = "1.87"
 authors = ["PAIML <hello@paiml.com>"]
 description = "Training & Optimization library with autograd, LoRA, quantization, and model merging"

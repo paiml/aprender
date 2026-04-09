@@ -1,5 +1,8 @@
 # CITL Generalization Specification
 
+Version: 1.0
+Status: proposed
+
 **Version:** 1.0.0
 **Status:** Draft
 **Date:** 2025-11-28

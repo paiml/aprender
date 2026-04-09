@@ -1,5 +1,9 @@
 # Rosetta ML Diagnostics (Archived from Section 11)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from `docs/specifications/qwen2.5-coder-showcase-demo.md`, Section 11 (lines 984-1174), including 11.5 Hex Forensics, 11.6 Model Profiling, and 11.7 Performance Sprint.
 
 ## 11. Rosetta ML Diagnostics

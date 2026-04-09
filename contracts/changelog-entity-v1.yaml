@@ -1,0 +1,423 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'Keep a Changelog 1.1.0 (keepachangelog.com)'
+  - 'Semantic Versioning 2.0.0 (semver.org)'
+  - 'ruff CHANGELOG.md — calibration benchmark (Grade A target)'
+  - 'clap CHANGELOG.md — calibration benchmark (Grade A target)'
+  - 'docs/specifications/aprender-contract-entities/changelog-entity-spec.md'
+  description: >
+    CHANGELOG.md quality contract for software projects. Enforces 10 measurable
+    elements across 4 tiers (structure, content, lifecycle, completeness) via
+    profile parameterization. Calibrated against ruff/clap (~90, Grade A) and
+    polars (~0, Grade F, no changelog). Machine-checkable (regex, line counting,
+    git tag comparison). Operates at the release documentation layer —
+    complements readme-entity-v1 (project documentation) and repo-entity-v1
+    (repo structure).
+
+profiles:
+  any:
+    required: [L1, L4]
+    recommended: [L2, L3, L5, L6, L7, L8, L9, L10]
+  cli-tool:
+    inherits: any
+    required: [L1, L2, L3, L4, L6, L7]
+    recommended: [L5, L8, L9, L10]
+  library:
+    inherits: cli-tool
+    required: [L1, L2, L3, L4, L5, L6, L7, L8, L9]
+    recommended: [L10]
+  ml-framework:
+    inherits: library
+    required: [L1, L2, L3, L4, L5, L6, L7, L8, L9, L10]
+    recommended: []
+
+parameters:
+  changelog_path:
+    type: string
+    default: CHANGELOG.md
+  min_version_entries:
+    type: integer
+    default: 3
+  date_format:
+    type: string
+    default: "YYYY-MM-DD"
+
+elements:
+  L1:
+    name: keepachangelog_format
+    tier: structure
+    check: "follows Keep a Changelog format (## [version] headings, ### category subheadings)"
+    measurable: "regex: ## \\[\\d+\\.\\d+\\.\\d+\\] headings with ### Added/Changed/Fixed subheadings"
+  L2:
+    name: version_entries
+    tier: structure
+    check: ">= min_version_entries version sections in changelog"
+    measurable: "count of ## [x.y.z] headings >= min_version_entries"
+  L3:
+    name: dates_on_versions
+    tier: structure
+    check: "every version heading includes a date in YYYY-MM-DD format"
+    measurable: "regex: ## \\[\\d+\\.\\d+\\.\\d+\\] - \\d{4}-\\d{2}-\\d{2}"
+  L4:
+    name: categorized_entries
+    tier: content
+    check: "entries grouped under Added, Changed, Deprecated, Removed, Fixed, or Security"
+    measurable: "regex: ### (Added|Changed|Deprecated|Removed|Fixed|Security) headings exist"
+  L5:
+    name: pr_issue_links
+    tier: content
+    check: "entries reference PR numbers or issue numbers as links"
+    measurable: "regex: \\(#\\d+\\)|\\[#\\d+\\]|github.com/.*/pull/\\d+ in changelog entries"
+  L6:
+    name: breaking_changes_marked
+    tier: content
+    check: "breaking changes explicitly marked with BREAKING or in Changed/Removed sections"
+    measurable: "regex: BREAKING|breaking change OR version bump from x.0 to (x+1).0 has Changed/Removed"
+  L7:
+    name: unreleased_section
+    tier: lifecycle
+    check: "## [Unreleased] section exists at top of changelog"
+    measurable: "regex: ## \\[Unreleased\\] heading present"
+  L8:
+    name: version_matches_latest_tag
+    tier: lifecycle
+    check: "latest version in CHANGELOG matches latest git tag"
+    measurable: "compare: first ## [x.y.z] version == git describe --tags --abbrev=0"
+  L9:
+    name: no_empty_versions
+    tier: completeness
+    check: "no version section has zero entries (every release documents changes)"
+    measurable: "for each ## [x.y.z]: count list items before next ## > 0"
+  L10:
+    name: github_releases_mirror
+    tier: completeness
+    check: "GitHub Releases exist and mirror changelog content for latest 3 versions"
+    measurable: "gh release list --limit 3 returns >= 3 releases with non-empty bodies"
+
+equations:
+  structure_valid:
+    formula: |
+      forall CHANGELOG C with profile P:
+        keepachangelog_format(C) AND
+        (P == any OR version_entry_count(C) >= min_version_entries) AND
+        (P == any OR all_versions_dated(C))
+    domain: "CHANGELOG.md content"
+    codomain: bool
+    invariants:
+    - "Consistent format enables automated parsing and release tooling"
+    - "Multiple version entries demonstrate active maintenance"
+    - "Dates enable temporal reasoning about release cadence"
+
+  content_informative:
+    formula: |
+      forall CHANGELOG C with profile P:
+        has_categorized_entries(C) AND
+        (P not in {library, ml-framework} OR has_pr_links(C)) AND
+        (P == any OR breaking_changes_marked(C))
+    domain: "CHANGELOG.md content"
+    codomain: bool
+    invariants:
+    - "Categorization (Added/Changed/Fixed) enables users to scan for relevant changes"
+    - "PR/issue links enable traceability from changelog to code"
+    - "Breaking changes must be explicitly called out for downstream consumers"
+
+  lifecycle_tracked:
+    formula: |
+      forall CHANGELOG C with profile P:
+        (P == any OR unreleased_section(C)) AND
+        (P not in {library, ml-framework} OR version_matches_tag(C))
+    domain: "CHANGELOG.md content + git tags"
+    codomain: bool
+    invariants:
+    - "Unreleased section collects changes for next release"
+    - "Version-tag alignment prevents changelog drift"
+
+  completeness_ensured:
+    formula: |
+      forall CHANGELOG C with profile P:
+        (P not in {library, ml-framework} OR no_empty_versions(C)) AND
+        (P != ml-framework OR github_releases_exist(C))
+    domain: "CHANGELOG.md content + GitHub Releases API"
+    codomain: bool
+    invariants:
+    - "Empty version sections indicate sloppy release process"
+    - "GitHub Releases mirror changelog for users who discover via Releases tab"
+
+  changelog_score:
+    formula: |
+      tier_weight = {structure: 30, content: 30, lifecycle: 20, completeness: 20}
+
+      forall element E in {L1..L10}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {L1..L10})
+      max_score = sum(element_weight(E) for E in {L1..L10})
+      changelog_score = round(raw_score / max_score * 100)
+
+      verdict = if changelog_score >= 90 then A
+                elif changelog_score >= 80 then B
+                elif changelog_score >= 70 then C
+                elif changelog_score >= 60 then D
+                else F
+    domain: "All gate results + profile + tier weights"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements present (or no changelog)"
+    - "Score 100 when all required + recommended elements present"
+    - "Structure (30) + content (30) account for 60% of total weight"
+    - "ruff/clap (library profile) scores >= 90 (calibration invariant)"
+    - "Required elements contribute full weight; recommended elements contribute half"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-LOG-E001
+  rule: structure_valid
+  element: L1
+  prediction: "CHANGELOG follows Keep a Changelog format with ## [version] headings"
+  test: |
+    python3 -c "
+    import re, sys, os
+    if not os.path.isfile('CHANGELOG.md'):
+        print('FAIL: CHANGELOG.md does not exist')
+        sys.exit(1)
+    content = open('CHANGELOG.md').read()
+    versions = re.findall(r'^## \[\d+\.\d+\.\d+\]', content, re.M)
+    categories = re.findall(r'^### (Added|Changed|Deprecated|Removed|Fixed|Security)', content, re.M)
+    print(f'L1: {len(versions)} version headings, {len(categories)} category headings')
+    if len(versions) >= 1 and len(categories) >= 1:
+        print('L1: PASS')
+        sys.exit(0)
+    else:
+        print('L1: FAIL — not Keep a Changelog format')
+        sys.exit(1)
+    "
+  if_fails: "CHANGELOG does not follow Keep a Changelog format — tooling cannot parse"
+
+- id: F-LOG-E002
+  rule: structure_valid
+  element: L2
+  prediction: "CHANGELOG has >= 3 version entries"
+  test: |
+    python3 -c "
+    import re, sys, os
+    if not os.path.isfile('CHANGELOG.md'):
+        print('FAIL: CHANGELOG.md does not exist')
+        sys.exit(1)
+    content = open('CHANGELOG.md').read()
+    versions = re.findall(r'^## \[\d+\.\d+\.\d+\]', content, re.M)
+    print(f'L2: {len(versions)} version entries (need >= 3)')
+    sys.exit(0 if len(versions) >= 3 else 1)
+    "
+  if_fails: "too few version entries — changelog does not demonstrate maintenance history"
+
+- id: F-LOG-E003
+  rule: content_informative
+  element: L5
+  prediction: "changelog entries include PR or issue links"
+  test: |
+    python3 -c "
+    import re, sys, os
+    if not os.path.isfile('CHANGELOG.md'):
+        print('FAIL: CHANGELOG.md does not exist')
+        sys.exit(1)
+    content = open('CHANGELOG.md').read()
+    links = re.findall(r'\(#\d+\)|\[#\d+\]|github\.com/.*/(?:pull|issues)/\d+', content)
+    print(f'L5: {len(links)} PR/issue references')
+    sys.exit(0 if len(links) >= 1 else 1)
+    "
+  if_fails: "no PR/issue links — changes not traceable to code"
+
+- id: F-LOG-E004
+  rule: lifecycle_tracked
+  element: L8
+  prediction: "latest CHANGELOG version matches latest git tag"
+  test: |
+    python3 -c "
+    import re, sys, os, subprocess
+    if not os.path.isfile('CHANGELOG.md'):
+        print('FAIL: CHANGELOG.md does not exist')
+        sys.exit(1)
+    content = open('CHANGELOG.md').read()
+    versions = re.findall(r'^## \[(\d+\.\d+\.\d+)\]', content, re.M)
+    if not versions:
+        print('L8: FAIL — no version entries')
+        sys.exit(1)
+    changelog_ver = versions[0]
+    try:
+        tag = subprocess.check_output(['git', 'describe', '--tags', '--abbrev=0'], stderr=subprocess.DEVNULL).decode().strip()
+        # Strip leading 'v' if present
+        tag_ver = tag.lstrip('v')
+    except subprocess.CalledProcessError:
+        print('L8: FAIL — no git tags found')
+        sys.exit(1)
+    print(f'L8: changelog={changelog_ver} tag={tag_ver}')
+    sys.exit(0 if changelog_ver == tag_ver else 1)
+    "
+  if_fails: "changelog version does not match latest tag — release drift detected"
+
+- id: F-LOG-E005
+  rule: completeness_ensured
+  element: L9
+  prediction: "no version section is empty (every release documents changes)"
+  test: |
+    python3 -c "
+    import re, sys, os
+    if not os.path.isfile('CHANGELOG.md'):
+        print('FAIL: CHANGELOG.md does not exist')
+        sys.exit(1)
+    content = open('CHANGELOG.md').read()
+    # Split on version headings
+    sections = re.split(r'^## \[', content, flags=re.M)
+    empty = 0
+    for s in sections[1:]:  # skip preamble
+        ver_match = re.match(r'(\d+\.\d+\.\d+)\]', s)
+        if not ver_match:
+            continue
+        ver = ver_match.group(1)
+        # Count list items (- or * prefixed lines)
+        items = re.findall(r'^[-*] ', s, re.M)
+        if len(items) == 0:
+            print(f'EMPTY: [{ver}] has 0 entries')
+            empty += 1
+    print(f'L9: {empty} empty versions')
+    sys.exit(0 if empty == 0 else 1)
+    "
+  if_fails: "empty version section — release without documented changes"
+
+- id: F-LOG-E006
+  rule: changelog_score
+  element: all
+  prediction: "changelog scores >= 90 (grade A) under the project's profile"
+  test: |
+    python3 -c "
+    import re, sys, os, subprocess
+
+    tier_weight = {'structure': 30, 'content': 30, 'lifecycle': 20, 'completeness': 20}
+    element_tier = {
+        'L1': 'structure', 'L2': 'structure', 'L3': 'structure',
+        'L4': 'content', 'L5': 'content', 'L6': 'content',
+        'L7': 'lifecycle', 'L8': 'lifecycle',
+        'L9': 'completeness', 'L10': 'completeness',
+    }
+    element_name = {
+        'L1': 'keepachangelog_format', 'L2': 'version_entries',
+        'L3': 'dates_on_versions', 'L4': 'categorized_entries',
+        'L5': 'pr_issue_links', 'L6': 'breaking_changes_marked',
+        'L7': 'unreleased_section', 'L8': 'version_matches_tag',
+        'L9': 'no_empty_versions', 'L10': 'github_releases_mirror',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    # profile: ml-framework
+    required = {'L1','L2','L3','L4','L5','L6','L7','L8','L9','L10'}
+    recommended = set()
+
+    gates = {}
+
+    if not os.path.isfile('CHANGELOG.md'):
+        print('changelog-entity-v1 | CHANGELOG.md NOT FOUND')
+        print('Score: 0/100  Grade: F')
+        print('F-LOG-E006: FAIL')
+        sys.exit(1)
+
+    content = open('CHANGELOG.md').read()
+
+    # L1: keepachangelog format
+    versions = re.findall(r'^## \[\d+\.\d+\.\d+\]', content, re.M)
+    categories = re.findall(r'^### (Added|Changed|Deprecated|Removed|Fixed|Security)', content, re.M)
+    gates['L1'] = len(versions) >= 1 and len(categories) >= 1
+
+    # L2: >= 3 version entries
+    gates['L2'] = len(versions) >= 3
+
+    # L3: dates on versions
+    dated = re.findall(r'^## \[\d+\.\d+\.\d+\] - \d{4}-\d{2}-\d{2}', content, re.M)
+    gates['L3'] = len(versions) > 0 and len(dated) == len(versions)
+
+    # L4: categorized entries
+    gates['L4'] = len(categories) >= 1
+
+    # L5: PR/issue links
+    links = re.findall(r'\(#\d+\)|\[#\d+\]|github\.com/.*/(?:pull|issues)/\d+', content)
+    gates['L5'] = len(links) >= 1
+
+    # L6: breaking changes marked
+    has_breaking = bool(re.search(r'BREAKING|breaking change', content, re.I))
+    has_changed_removed = bool(re.search(r'^### (Changed|Removed)', content, re.M))
+    gates['L6'] = has_breaking or has_changed_removed
+
+    # L7: unreleased section
+    gates['L7'] = bool(re.search(r'^## \[Unreleased\]', content, re.M))
+
+    # L8: version matches tag
+    try:
+        tag = subprocess.check_output(['git', 'describe', '--tags', '--abbrev=0'],
+                                       stderr=subprocess.DEVNULL).decode().strip().lstrip('v')
+        ver_list = re.findall(r'^## \[(\d+\.\d+\.\d+)\]', content, re.M)
+        gates['L8'] = len(ver_list) > 0 and ver_list[0] == tag
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        gates['L8'] = False
+
+    # L9: no empty versions
+    sections = re.split(r'^## \[', content, flags=re.M)
+    empty = 0
+    for s in sections[1:]:
+        if re.match(r'\d+\.\d+\.\d+\]', s):
+            items = re.findall(r'^[-*] ', s, re.M)
+            if len(items) == 0:
+                empty += 1
+    gates['L9'] = empty == 0
+
+    # L10: GitHub releases mirror
+    try:
+        out = subprocess.check_output(['gh', 'release', 'list', '--limit', '3'],
+                                       stderr=subprocess.DEVNULL).decode()
+        release_count = len([l for l in out.strip().split('\n') if l.strip()])
+        gates['L10'] = release_count >= 3
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        gates['L10'] = False
+
+    raw = 0.0; max_s = 0.0
+    print(f'changelog-entity-v1 | profile: ml-framework')
+    print('=' * 60)
+    for e in sorted(element_tier.keys(), key=lambda x: int(x[1:])):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        if e in required: mult = 1.0; req = 'REQ'
+        elif e in recommended: mult = 0.5; req = 'REC'
+        else: mult = 0.0; req = '---'
+        ew = w * mult
+        max_s += ew
+        pts = ew if gates.get(e, False) else 0.0
+        raw += pts
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        print(f'  {e:4s} [{req}] w={ew:5.1f}  {status:4s}  {element_name[e]}')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    print(f'F-LOG-E006: {\"PASS\" if score >= 90 else \"FAIL\"}')
+    sys.exit(0 if score >= 90 else 1)
+    "
+  if_fails: "changelog score below 90 — release documentation not production-ready"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

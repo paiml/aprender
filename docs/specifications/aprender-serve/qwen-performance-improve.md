@@ -1,5 +1,8 @@
 # Specification: Qwen Model Performance Optimization
 
+Version: 1.0
+Status: proposed
+
 **Document ID:** SPEC-QWEN-PERF-001
 **Version:** 1.0.0
 **Status:** ACTIVE

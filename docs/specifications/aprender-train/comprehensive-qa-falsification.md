@@ -1,5 +1,9 @@
 # Specification: Comprehensive QA & Falsification Protocol
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** SPEC-QA-001
 **Version:** 1.8.0
 **Status:** GOLD CANDIDATE

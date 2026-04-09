@@ -1,5 +1,9 @@
 # Banco Phase 2: Realizar Inference + Model Management
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [banco-spec.md](banco-spec.md) §5
 > Tickets: PMAT-057..082
 > Status: **Complete** — inference loop, tokenizer, embeddings, Ollama generate, conversation export/import

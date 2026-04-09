@@ -1,5 +1,9 @@
 # SafeTensors GPU Inference Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.4.0
 **Status:** Implemented (Pending Toyota Way Audit)
 **PMAT Ticket:** PMAT-116

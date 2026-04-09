@@ -1,5 +1,9 @@
 # Banco Infrastructure: Forjar Integration
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [banco-spec.md](banco-spec.md) §5
 > Depends on: forjar (IaC), probador CLI (optional)
 

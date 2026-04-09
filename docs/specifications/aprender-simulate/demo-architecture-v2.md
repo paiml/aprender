@@ -1,5 +1,9 @@
 # Demo Architecture v2: Probar-First Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** SIMULAR-DEMO-002
 **Version:** 2.0.0
 **Status:** Draft

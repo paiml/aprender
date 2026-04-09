@@ -1,7 +1,7 @@
 [package]
 name = "apr-cli"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 rust-version = "1.89"
 authors = ["Noah Gift <noah@paiml.com>"]
 license = "MIT"
@@ -125,6 +125,8 @@ futures-util = { version = "0.3", optional = true }
 
 # CLI framework
 clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4.6"
+clap_mangen = "0.3"
 
 # Stdout suppression for qualify command
 gag = "1.0"
@@ -209,6 +211,9 @@ required-features = ["inference", "cuda"]
 [[example]]
 name = "ptx_parity_validation"
 required-features = ["inference"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dev-dependencies]
 assert_cmd = "2.0"

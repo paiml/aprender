@@ -1,5 +1,9 @@
 # Alimentar Dataset Format Specification (.ald)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.2.0
 **Status:** Draft
 **Author:** paiml

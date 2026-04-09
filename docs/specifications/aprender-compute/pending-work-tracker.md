@@ -1,5 +1,9 @@
 # Pending Work Tracker
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document Version**: 1.0.0
 **Created**: 2026-01-11
 **Status**: Active

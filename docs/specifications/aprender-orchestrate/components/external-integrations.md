@@ -1,5 +1,9 @@
 # External Integrations Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > Sources: data-platforms-integration-spec-query, data-visualization-integration-query, content-creation-tooling-spec, manzana-apple-hardware-spec
 

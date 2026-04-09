@@ -1,5 +1,9 @@
 # Improvements in v1.1: Response to Toyota Way Review
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Key Changes Based on Critical Feedback
 
 ### 1. Reframed "Theoretical Maximum" → "Asymptotic Effectiveness"

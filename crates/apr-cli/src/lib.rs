@@ -15,7 +15,7 @@
     unused_assignments
 )]
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
 // Contract assertions from YAML (pv codegen)

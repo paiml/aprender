@@ -1,5 +1,9 @@
 # APR-MONO: Sovereign Stack Monorepo Consolidation
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **MOVED**: The canonical version of this spec lives at:
 
 **[paiml/aprender/docs/specifications/aprender-monorepo-consolidation.md](https://github.com/paiml/aprender/blob/main/docs/specifications/aprender-monorepo-consolidation.md)**

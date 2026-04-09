@@ -1,11 +1,16 @@
 [package]
 name = "aprender-train-lora"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["PAIML <hello@paiml.com>"]
 description = "LoRA/QLoRA configuration optimizer and memory planner"
 license = "MIT"
 repository = "https://github.com/paiml/entrenar"
+keywords = ["ml", "training", "deep-learning", "aprender"]
+categories = ["science"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 name = "entrenar_lora"

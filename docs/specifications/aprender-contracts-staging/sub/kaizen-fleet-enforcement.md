@@ -1,5 +1,8 @@
 # 31. Kaizen Fleet Enforcement
 
+Status: proposed
+Date: 2026-04-09
+
 ## Motivation
 
 v2.4.0 produced 540 domain-specific assertions across 170+ contracts,

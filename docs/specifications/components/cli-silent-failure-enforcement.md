@@ -1,5 +1,9 @@
 # apr-cli Silent Failure Enforcement Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.1.0
 **Status**: Active — Enforcement Required (Falsified 2026-04-04)
 **Created**: 2026-04-04

@@ -1,5 +1,9 @@
 # Toyota Way Code Review Summary
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Specification**: Graph and Traditional Descriptive Statistics (v1.0.0 → v1.1.0)
 **Review Date**: 2025-11-19
 **Reviewer**: Toyota Way Methodology Application

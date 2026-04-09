@@ -1,5 +1,9 @@
 # AutoML with Synthetic Data Specification v1.0
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## aprender Automated Synthetic Data Generation for AutoML
 
 **Status**: Implemented (Phases 1-4)

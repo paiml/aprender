@@ -1,5 +1,9 @@
 # PyTorch Testing Patterns: Learnings for Trueno
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Date**: 2025-11-16
 **Source**: PyTorch codebase analysis (v2.x)
 **Relevance**: Testing infrastructure for multi-backend SIMD library

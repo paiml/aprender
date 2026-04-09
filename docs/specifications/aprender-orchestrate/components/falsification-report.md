@@ -1,5 +1,9 @@
 # Cross-Specification Falsification Report
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Methodology: Popperian falsification (arXiv:2502.09858)
 > Scope: All specs added 2026-04-02 (apr-code, multi-provider-api, agent-and-playbook extensions, presentar-probar-integration)
 > Status: **12 contradictions found, 8 unfalsifiable claims, 6 missing failure modes, 4 circular dependencies**

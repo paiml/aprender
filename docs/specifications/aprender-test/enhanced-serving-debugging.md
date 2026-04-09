@@ -1,5 +1,9 @@
 # Enhanced Serving and Debugging Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** PROBAR-SPEC-005
 **Ticket:** PROBAR-005
 **Version:** 1.2.0

@@ -7,6 +7,11 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["contracts", "verification", "testing", "aprender"]
+categories = ["development-tools::testing"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [[bin]]
 name = "pv"

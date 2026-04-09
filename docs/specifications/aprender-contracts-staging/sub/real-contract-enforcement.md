@@ -1,5 +1,9 @@
 # 30. Real Contract Enforcement
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## The Diagnosis (v2.3.0 Falsification)
 
 v2.3.0 deployed `pv codegen` macros to 18 repos with 27 call sites.

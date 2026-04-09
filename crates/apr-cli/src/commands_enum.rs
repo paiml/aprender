@@ -71,10 +71,10 @@ pub enum Commands {
         /// Format: <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
         #[arg(long)]
         chat: bool,
-        /// Sampling temperature (0.0 = greedy, default: 0.0)
+        /// Sampling temperature (0.0 = greedy, default: 0.0, range: 0.0-2.0)
         #[arg(long, default_value = "0.0")]
         temperature: f32,
-        /// Top-k sampling (default: 1 = greedy)
+        /// Top-k sampling (default: 1 = greedy, range: 0-1000)
         #[arg(long, default_value = "1")]
         top_k: usize,
         /// Top-p nucleus sampling (0.0 = disabled). When set with --top-k, applies top-k first then top-p.
@@ -87,6 +87,7 @@ pub enum Commands {
         seed: u64,
         /// Repetition penalty (1.0 = no penalty, >1.0 penalizes repeats)
         /// F-CLIPARITY-01 / PMAT-383 / paiml/aprender#571
+        /// Repetition penalty (1.0 = no penalty, >1.0 penalizes repeats, range: 0.0-10.0)
         #[arg(long, default_value = "1.0")]
         repeat_penalty: f32,
         /// Context window for repetition penalty (number of recent tokens to check)
@@ -521,4 +522,16 @@ pub enum Commands {
     #[cfg(feature = "dev")]
     #[command(subcommand)]
     Mono(crate::commands::mono::MonoCommands),
+
+    /// Generate shell completions for bash, zsh, fish, or powershell
+    #[command(hide = true)]
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+
+    /// Generate man page and print to stdout
+    #[command(hide = true)]
+    Man,
 }

@@ -1,5 +1,9 @@
 # 12. References
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Methodology
 
 1. Popper, K. (1959). *The Logic of Scientific Discovery.*

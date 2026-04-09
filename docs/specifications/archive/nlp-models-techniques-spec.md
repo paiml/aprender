@@ -1,4 +1,7 @@
 # NLP Models and Techniques Specification
+
+Status: proposed
+
 ## Organizational Intelligence Plugin - Enhanced Defect Classification
 
 **Version:** 1.0

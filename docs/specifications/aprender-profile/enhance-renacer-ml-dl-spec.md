@@ -1,5 +1,9 @@
 # Enhanced ML/DL Integration Specification for Renacer
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.1.0
 **Sprint:** 48 (Planned)
 **Author:** Pragmatic AI Labs

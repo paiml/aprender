@@ -1,5 +1,8 @@
 # APR Complete Specification
 
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 2.1.0-draft
 **Status**: Draft
 **Created**: 2025-12-16

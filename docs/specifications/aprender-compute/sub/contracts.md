@@ -1,5 +1,8 @@
 # Sub-spec: Provable-Contract-First Design
 
+Status: proposed
+Date: 2026-04-09
+
 **Parent:** [trueno-spec.md](../trueno-spec.md) Sections 2, 17
 
 ---

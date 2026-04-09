@@ -1,5 +1,9 @@
 # Model Serialization Specification for Aprender and Realizer
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0
 **Date**: 2025-01-19
 **Authors**: PAIML Engineering Team

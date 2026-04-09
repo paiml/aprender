@@ -1,5 +1,9 @@
 # Banco Provable Contracts & Popperian Falsification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [banco-spec.md](banco-spec.md) §5
 > Depends on: provable-contracts (0.1.x), provable-contracts-macros (0.1.x)
 

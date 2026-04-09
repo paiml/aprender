@@ -10,6 +10,8 @@ methodology: Popperian Falsification + Film-Study Pixel Verification
 
 # PIXEL-001: Pixel Coverage Heatmap with Scientific Rigor
 
+Status: proposed
+
 **Ticket ID**: PIXEL-001
 **Status**: 🔬 Under Review (v2.1 Enhancement)
 **Methodology**: Popperian Falsification Framework

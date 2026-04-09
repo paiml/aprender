@@ -1,5 +1,9 @@
 # Quality and Testing Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > Sources: popperian-falsification-checklist, testing-quality-ecosystem-spec, bug-hunter-pmat-quality-integration
 

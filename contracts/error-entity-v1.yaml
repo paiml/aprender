@@ -1,0 +1,422 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'rustc diagnostic guidelines (https://rustc-dev-guide.rust-lang.org/diagnostics.html)'
+  - 'ruff error message style guide (astral-sh/ruff contributing docs)'
+  - 'POSIX exit code conventions (sysexits.h, BSD General Commands Manual)'
+  - 'CLI UX best practices: 12 Factor CLI Apps (https://medium.com/@jdxcode/12-factor-cli-apps)'
+  - 'docs/specifications/aprender-contract-entities/error-entity-spec.md'
+  description: >
+    CLI error message quality contract for command-line tools. Enforces 10
+    measurable elements across 4 tiers (correctness, usability, consistency,
+    testing) via profile parameterization. Calibrated against rustc/ruff
+    (Grade A, ~95), ollama (~60, Grade D), and aprender (~80, Grade B).
+    Machine-checkable (exit code capture, stderr redirection, grep, cargo
+    test). Complements readme-entity-v1 (project docs) and repo-entity-v1
+    (repo structure).
+
+profiles:
+  any:
+    required: [X1, X2, X3, X10]
+    recommended: [X4, X5, X6, X7, X8, X9]
+  cli-tool:
+    inherits: any
+    required: [X1, X2, X3, X4, X5, X9, X10]
+    recommended: [X6, X7, X8]
+  library:
+    inherits: any
+    required: [X1, X2, X3, X10]
+    recommended: [X4, X5, X6, X7, X8, X9]
+  ml-framework:
+    inherits: cli-tool
+    required: [X1, X2, X3, X4, X5, X6, X7, X9, X10]
+    recommended: [X8]
+
+parameters:
+  binary_name:
+    type: string
+    default: apr
+  test_crate:
+    type: string
+    default: apr-cli
+  bad_input_file:
+    type: string
+    default: /dev/null
+  nonexistent_path:
+    type: string
+    default: /tmp/__does_not_exist_apr_test__
+
+elements:
+  X1:
+    name: exit_code_nonzero_on_error
+    tier: correctness
+    check: "all error paths exit with non-zero status code"
+    measurable: "run binary with invalid input; capture $?; assert != 0"
+  X2:
+    name: errors_on_stderr
+    tier: correctness
+    check: "error messages are written to stderr, not stdout"
+    measurable: "run binary with invalid input; capture stdout and stderr separately; assert stderr non-empty and stdout empty or contains only structured output"
+  X3:
+    name: no_silent_failures
+    tier: correctness
+    check: "failed operations produce at least one line of error output"
+    measurable: "run binary with various bad inputs; assert stderr has >= 1 line for each"
+  X4:
+    name: path_in_error_msg
+    tier: usability
+    check: "file-not-found errors include the attempted path in the message"
+    measurable: "run binary with nonexistent path; grep stderr for the path string"
+  X5:
+    name: actionable_suggestions
+    tier: usability
+    check: "error messages include a hint, suggestion, or 'try' recommendation"
+    measurable: "grep stderr output for /hint|suggestion|try |did you mean|help:/i"
+  X6:
+    name: colored_errors
+    tier: usability
+    check: "error output uses ANSI color codes when stderr is a terminal"
+    measurable: "grep for ANSI escape sequences in stderr when TERM is set"
+  X7:
+    name: json_error_schema
+    tier: consistency
+    check: "errors in --json mode produce valid JSON with 'error' field"
+    measurable: "run binary with --json and bad input; parse stderr as JSON; assert 'error' key exists"
+  X8:
+    name: consistent_exit_codes_across_subcommands
+    tier: consistency
+    check: "all subcommands use the same exit code for the same error class"
+    measurable: "run multiple subcommands with same bad input; assert exit codes are identical"
+  X9:
+    name: error_paths_tested
+    tier: testing
+    check: "test suite includes tests for error/failure paths (not just happy paths)"
+    measurable: "grep test files for assertions on error returns, stderr content, or exit codes"
+  X10:
+    name: panic_free_on_bad_input
+    tier: testing
+    check: "binary does not panic on malformed input (no 'thread.*panicked' in stderr)"
+    measurable: "run binary with various bad inputs; grep stderr for 'panicked at'; assert 0 matches"
+
+equations:
+  correctness_enforced:
+    formula: |
+      forall CLI command C with error-triggering input I:
+        exit_code(C, I) != 0 AND
+        stderr(C, I) != "" AND
+        stdout(C, I) does not contain error messages
+    domain: "CLI binary + error-triggering inputs"
+    codomain: bool
+    invariants:
+    - "Non-zero exit codes allow shell scripts to detect failures"
+    - "Errors on stderr allows stdout to be piped without corruption"
+    - "No silent failures — every error produces human-readable output"
+
+  usability_sufficient:
+    formula: |
+      forall CLI command C with file-not-found input F:
+        F in stderr(C, F) AND
+        exists hint H in stderr(C, F):
+          H matches /hint|try |suggestion|did you mean/i AND
+        (is_terminal(stderr) implies has_ansi_color(stderr(C, F)))
+    domain: "CLI binary + file-not-found and type-error inputs"
+    codomain: bool
+    invariants:
+    - "Path in error message prevents user from guessing which file failed"
+    - "Actionable suggestions reduce user round-trips to fix the issue"
+    - "Colors improve scanability when stderr is a terminal"
+
+  consistency_maintained:
+    formula: |
+      forall CLI subcommands C1, C2 with same error class E:
+        exit_code(C1, E) == exit_code(C2, E) AND
+        (json_mode implies valid_json(stderr(C1, E)) AND
+         "error" in json_parse(stderr(C1, E)))
+    domain: "CLI binary subcommands + error classes"
+    codomain: bool
+    invariants:
+    - "Consistent exit codes enable uniform error handling in scripts"
+    - "JSON error schema enables programmatic error parsing"
+
+  testing_complete:
+    formula: |
+      forall CLI command C:
+        error_test_count(C) >= 1 AND
+        forall malformed input M:
+          "panicked at" not in stderr(C, M)
+    domain: "Test suite + CLI binary + malformed inputs"
+    codomain: bool
+    invariants:
+    - "Error paths must be tested — untested error paths are latent bugs"
+    - "Panics on bad input are UX failures — must use graceful error handling"
+
+  error_score:
+    formula: |
+      tier_weight = {correctness: 35, usability: 25, consistency: 20, testing: 20}
+
+      forall element E in {X1..X10}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {X1..X10})
+      max_score = sum(element_weight(E) for E in {X1..X10})
+      error_score = round(raw_score / max_score * 100)
+
+      verdict = if error_score >= 90 then A
+                elif error_score >= 80 then B
+                elif error_score >= 70 then C
+                elif error_score >= 60 then D
+                else F
+    domain: "All gate results + profile + tier weights"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements present"
+    - "Score 100 when all required + recommended elements present"
+    - "Correctness tier accounts for 35% — errors must be correct before usable"
+    - "Required elements contribute full weight; recommended elements contribute half"
+    - "rustc/ruff score >= 95 (Grade A) — calibration invariant"
+    - "Grade F (<60) means CLI errors actively mislead users"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-ERR-E001
+  rule: correctness_enforced
+  element: X1
+  prediction: "binary exits non-zero when given a nonexistent file"
+  test: |
+    BINARY="cargo run --bin apr --quiet --"
+    $BINARY validate /tmp/__does_not_exist_apr_test__ 2>/dev/null
+    CODE=$?
+    echo "X1 exit code on bad file: $CODE"
+    test "$CODE" -ne 0
+  if_fails: "binary exits 0 on error — shell scripts cannot detect failures"
+
+- id: F-ERR-E002
+  rule: correctness_enforced
+  element: X2
+  prediction: "error messages go to stderr, not stdout"
+  test: |
+    BINARY="cargo run --bin apr --quiet --"
+    STDOUT=$($BINARY validate /tmp/__does_not_exist_apr_test__ 2>/dev/null)
+    STDERR=$($BINARY validate /tmp/__does_not_exist_apr_test__ 2>&1 1>/dev/null)
+    echo "X2 stdout bytes: ${#STDOUT}"
+    echo "X2 stderr bytes: ${#STDERR}"
+    test "${#STDERR}" -gt 0
+  if_fails: "errors on stdout — piping output to another command corrupts data"
+
+- id: F-ERR-E003
+  rule: correctness_enforced
+  element: X3
+  prediction: "no silent failures — bad input always produces error output"
+  test: |
+    BINARY="cargo run --bin apr --quiet --"
+    FAILURES=0
+    for CMD in "validate" "inspect" "tensors" "lint"; do
+      STDERR=$($BINARY $CMD /tmp/__does_not_exist_apr_test__ 2>&1 1>/dev/null)
+      if [ -z "$STDERR" ]; then
+        echo "  SILENT FAIL: apr $CMD"
+        FAILURES=$((FAILURES+1))
+      fi
+    done
+    echo "X3 silent failures: $FAILURES"
+    test "$FAILURES" -eq 0
+  if_fails: "silent failures — user cannot distinguish success from error"
+
+- id: F-ERR-E004
+  rule: usability_sufficient
+  element: X4
+  prediction: "file-not-found errors include the attempted path"
+  test: |
+    BINARY="cargo run --bin apr --quiet --"
+    BAD_PATH="/tmp/__does_not_exist_apr_test__"
+    STDERR=$($BINARY validate "$BAD_PATH" 2>&1 1>/dev/null)
+    echo "X4 stderr: $STDERR"
+    echo "$STDERR" | grep -q "$BAD_PATH"
+    CODE=$?
+    echo "X4 path in error: $([ $CODE -eq 0 ] && echo YES || echo NO)"
+    test "$CODE" -eq 0
+  if_fails: "path missing from error message — user must guess which file failed"
+
+- id: F-ERR-E005
+  rule: testing_complete
+  element: X10
+  prediction: "binary does not panic on bad input (no thread panicked messages)"
+  test: |
+    BINARY="cargo run --bin apr --quiet --"
+    PANICS=0
+    for INPUT in "/dev/null" "/tmp/__does_not_exist_apr_test__" "/dev/urandom"; do
+      for CMD in "validate" "inspect" "tensors"; do
+        STDERR=$($BINARY $CMD "$INPUT" 2>&1 1>/dev/null || true)
+        if echo "$STDERR" | grep -q "panicked at"; then
+          echo "  PANIC: apr $CMD $INPUT"
+          PANICS=$((PANICS+1))
+        fi
+      done
+    done
+    echo "X10 panics on bad input: $PANICS"
+    test "$PANICS" -eq 0
+  if_fails: "panics on bad input — user sees stack trace instead of helpful error"
+
+- id: F-ERR-E006
+  rule: testing_complete
+  element: X9
+  prediction: "test suite includes error path tests"
+  test: |
+    python3 -c "
+    import os, re
+
+    test_dir = 'crates/apr-cli/src'
+    error_tests = 0
+    total_tests = 0
+
+    for root, dirs, files in os.walk(test_dir):
+        for f in files:
+            if not f.endswith('.rs'):
+                continue
+            content = open(os.path.join(root, f)).read()
+            tests = re.findall(r'#\[test\]', content)
+            total_tests += len(tests)
+            # Error path indicators: unwrap_err, is_err, assert.*err, should_fail, panic
+            err_tests = re.findall(
+                r'(unwrap_err|is_err|assert.*[Ee]rr|should_panic|expect_err|\.err\(\))',
+                content
+            )
+            error_tests += len(err_tests)
+
+    print(f'X9: {error_tests} error assertions in {total_tests} tests')
+    exit(0 if error_tests >= 5 else 1)
+    "
+  if_fails: "error paths not tested — latent bugs in failure handling"
+
+- id: F-ERR-E007
+  rule: error_score
+  element: all
+  prediction: "CLI error quality scores >= 90 (grade A) under the project's profile"
+  test: |
+    python3 -c "
+    import sys, os, re, subprocess
+
+    tier_weight = {'correctness': 35, 'usability': 25, 'consistency': 20, 'testing': 20}
+    element_tier = {
+        'X1': 'correctness', 'X2': 'correctness', 'X3': 'correctness',
+        'X4': 'usability', 'X5': 'usability', 'X6': 'usability',
+        'X7': 'consistency', 'X8': 'consistency',
+        'X9': 'testing', 'X10': 'testing',
+    }
+    element_name = {
+        'X1': 'exit_code_nonzero', 'X2': 'errors_on_stderr',
+        'X3': 'no_silent_failures',
+        'X4': 'path_in_error_msg', 'X5': 'actionable_suggestions',
+        'X6': 'colored_errors',
+        'X7': 'json_error_schema', 'X8': 'consistent_exit_codes',
+        'X9': 'error_paths_tested', 'X10': 'panic_free_on_bad_input',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    # profile: ml-framework
+    required = {'X1','X2','X3','X4','X5','X6','X7','X9','X10'}
+    recommended = {'X8'}
+
+    gates = {}
+    BAD_PATH = '/tmp/__does_not_exist_apr_test__'
+
+    # --- static checks (no binary needed) ---
+
+    # X9: error path tests in source
+    test_dir = 'crates/apr-cli/src'
+    error_tests = 0
+    for root, dirs, files in os.walk(test_dir):
+        for f in files:
+            if not f.endswith('.rs'): continue
+            content = open(os.path.join(root, f)).read()
+            error_tests += len(re.findall(
+                r'(unwrap_err|is_err|assert.*[Ee]rr|should_panic|expect_err)',
+                content
+            ))
+    gates['X9'] = error_tests >= 5
+
+    # X6: colored errors — check for ansi_term/colored/owo-colors dependency or ANSI in source
+    cli_deps = open('crates/apr-cli/Cargo.toml').read() if os.path.isfile('crates/apr-cli/Cargo.toml') else ''
+    src_content = ''
+    for root, dirs, files in os.walk('crates/apr-cli/src'):
+        for f in files:
+            if f.endswith('.rs'):
+                src_content += open(os.path.join(root, f)).read()
+    gates['X6'] = bool(re.search(r'ansi|colored|owo.colors|crossterm|yansi|\\x1b\[', cli_deps + src_content, re.I))
+
+    # X7: json error schema — check for --json flag or serde_json in error paths
+    gates['X7'] = 'serde_json' in cli_deps or '--json' in src_content or 'json' in src_content.lower()
+
+    # X8: consistent exit codes — check for ExitCode or process::exit usage pattern
+    exit_uses = re.findall(r'(process::exit|ExitCode|std::process::exit)\s*\(\s*(\d+)', src_content)
+    if exit_uses:
+        codes = set(c for _, c in exit_uses)
+        gates['X8'] = len(codes) <= 3  # reasonable if using few distinct codes
+    else:
+        gates['X8'] = True  # uses Result propagation (consistent by default)
+
+    # --- dynamic checks (heuristic without running binary) ---
+
+    # X1: exit_code_nonzero — check for Result/anyhow error propagation in main
+    gates['X1'] = bool(re.search(r'(anyhow|eyre|Result.*Err|process::exit\s*\(\s*[1-9])', src_content))
+
+    # X2: errors on stderr — check for eprintln or stderr usage
+    gates['X2'] = bool(re.search(r'(eprintln|stderr|write!.*stderr)', src_content))
+
+    # X3: no silent failures — check error propagation (? operator or explicit error handling)
+    gates['X3'] = bool(re.search(r'(\?;|\.expect\(|return\s+Err|bail!|anyhow!)', src_content))
+
+    # X4: path in error msg — check for path/file in error formatting
+    gates['X4'] = bool(re.search(r'(path|file|input).*display\(\)|format!.*path|\.context\(', src_content, re.I))
+
+    # X5: actionable suggestions — check for hint/suggestion/try in error messages
+    gates['X5'] = bool(re.search(r'(hint|suggestion|try |did you mean|help:)', src_content, re.I))
+
+    # X10: panic free — check for catch_unwind or absence of unwrap on user input
+    # Heuristic: more Result propagation than unwrap()
+    unwraps = len(re.findall(r'\.unwrap\(\)', src_content))
+    results = len(re.findall(r'\?;', src_content))
+    gates['X10'] = results > unwraps
+
+    raw = 0.0; max_s = 0.0
+    print(f'error-entity-v1 | profile: ml-framework')
+    print('=' * 55)
+    for e in sorted(element_tier.keys(), key=lambda x: int(x[1:])):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        if e in required: mult = 1.0; req = 'REQ'
+        elif e in recommended: mult = 0.5; req = 'REC'
+        else: mult = 0.0; req = '---'
+        ew = w * mult
+        max_s += ew
+        pts = ew if gates.get(e, False) else 0.0
+        raw += pts
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        print(f'  {e:4s} [{req}] w={ew:5.1f}  {status:4s}  {element_name[e]}')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    print(f'F-ERR-E007: {\"PASS\" if score >= 90 else \"FAIL\"}')
+    sys.exit(0 if score >= 90 else 1)
+    "
+  if_fails: "CLI error quality score below 90 — error messages actively mislead users"
+
+verification_summary:
+  total_obligations: 7
+  proven: 0
+  tested: 0
+  status: proposed

@@ -1,5 +1,9 @@
 # APR-DOCS: Monorepo README + Book Rewrite
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0
 **Date**: 2026-04-07
 **Status**: PROPOSAL

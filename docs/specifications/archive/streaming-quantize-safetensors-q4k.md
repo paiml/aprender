@@ -7,6 +7,9 @@ created: 2026-03-08
 
 # ALB-093: Direct SafeTensors to Q4K APR Streaming Pipeline
 
+Version: 1.0
+Status: proposed
+
 **GitHub Issue**: [#434](https://github.com/paiml/aprender/issues/434)
 **Status**: Complete
 **Contract**: `contracts/safetensors-to-q4k-v1.yaml` (albor repo)

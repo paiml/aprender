@@ -1,5 +1,9 @@
 # MVP Qualification (Archived from Section 21)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md, Section 21 (lines 2603-2817).
 
 ## 21. MVP Qualification (apr-model-qa-playbook)

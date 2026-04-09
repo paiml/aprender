@@ -1,5 +1,9 @@
 # Trueno Tracing Integration Specification for Renacer
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 2.0 (Revised per Toyota Way Code Review)
 **Date:** 2025-11-20
 **Status:** Specification - Ready for Implementation

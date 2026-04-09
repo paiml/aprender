@@ -1,5 +1,9 @@
 # Aprender Model Serialization Format Specification v1.0
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Combined Specification Document**  
 **Date**: 2025-11-19  
 **Source**: paiml-mcp-agent-toolkit/docs/specifications/  

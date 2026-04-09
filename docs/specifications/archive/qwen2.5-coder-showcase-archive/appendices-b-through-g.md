@@ -1,5 +1,9 @@
 # Appendices B through G (Archived)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md, Appendices B-G (lines 2854-2965).
 
 ## Appendix B: PMAT Work Tickets

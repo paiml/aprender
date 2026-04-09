@@ -2,7 +2,7 @@
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
 name = "aprender-registry"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["Pragmatic AI Labs <info@paiml.com>"]
 license = "MIT"
 description = "Model, Data and Recipe Registry with full lineage tracking"

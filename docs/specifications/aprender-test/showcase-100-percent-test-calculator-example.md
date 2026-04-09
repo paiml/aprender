@@ -1,5 +1,9 @@
 # Showcase: 100% Test Coverage Calculator Example
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.3.0
 **Status**: IN PROGRESS - Adding Numerical Keypad (PMAT-CALC-007)
 **Created**: 2025-12-12

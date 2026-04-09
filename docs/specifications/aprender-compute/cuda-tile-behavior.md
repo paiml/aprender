@@ -1,5 +1,9 @@
 # CUDA Tile Behavior Specification for Trueno
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.5.0
 **Date**: 2026-01-01
 **Status**: Phase 3 Verified + PARITY-114 Fixed (94.28% coverage, 72 tests passing)

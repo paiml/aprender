@@ -1,5 +1,9 @@
 # Compiler-Enforced Model Types & Model Oracle
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 2.0.0
 **Status**: Implemented
 **Updated**: 2026-02-06

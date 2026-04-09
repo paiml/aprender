@@ -1,11 +1,16 @@
 [package]
 name = "aprender-train-shell"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["PAIML <hello@paiml.com>"]
 description = "Interactive REPL for HuggingFace model exploration and distillation"
 license = "MIT"
 repository = "https://github.com/paiml/entrenar"
+keywords = ["ml", "training", "deep-learning", "aprender"]
+categories = ["science"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 name = "entrenar_shell"

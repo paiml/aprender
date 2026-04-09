@@ -1,5 +1,9 @@
 # Section 33: Forjar Heavy Types Contracts (continued)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [pv-spec.md](../pv-spec.md) §33
 >
 > See also [forjar-heavy-types-contracts.md](forjar-heavy-types-contracts.md) (sections 33.1-33.7)

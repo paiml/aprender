@@ -1,5 +1,8 @@
 # YAML Mode Training Specification
 
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0.0 (Draft)
 **Last Updated:** 2024-11-30
 **Authors:** PAIML Engineering

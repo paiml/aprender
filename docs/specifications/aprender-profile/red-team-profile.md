@@ -1,5 +1,9 @@
 # Red-Team Chaos Engineering Profile for Renacer
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 2.0
 **Date:** 2025-11-18
 **Author:** Pragmatic AI Labs

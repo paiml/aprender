@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.3] - 2026-04-09
+
+### Added
+- **Entity contracts** — 9 contracts (readme, repo, crate, ci, changelog, dep, spec, api, error) with 105 elements, 0-100 scoring, 4 profiles (any/cli-tool/library/ml-framework)
+- **SECURITY.md** — vulnerability reporting policy (R6 repo-entity gate)
+- **.gitattributes** — line endings, binary format markers, linguist config (R13 repo-entity gate)
+- **Supported Architectures table** — 10 architecture families documented in README (E8 readme-entity gate)
+- **Documentation section** — 5 links to docs.rs, book, specs, contracts, CLI reference (E12 readme-entity gate)
+
+### Changed
+- **README.md** — added ToC, MSRV badge, downloads badge, expected output in Quick Start, freshness signal, stale number corrections (25,806 tests, 540 contracts)
+- **Workspace lint inheritance** — all 73 sub-crates now have lint config (workspace = true or local overrides for FFI crates)
+
+### Fixed
+- **GH-707** — `apr validate` on truncated GGUF now detects tensor count mismatch against header
+
 ### Fixed
 - **GH-375: GGUF Q4_0/Q5_0/Q8_0 import fallback** — `apr import` of GGUF files with unsupported quantization types (Q4_0, Q5_0, Q8_0) now falls back to dequant-requant path instead of failing. Raw import preserves Q4_K/Q6_K exactly; legacy types go through f32 intermediate with optional `--quantize q4k`.
 - **GH-90: Honest brick benchmarks** — `apr bench --brick` no longer times a no-op `budget()` call (which reported 0.02us / 55M tok/s). Bricks without `run()` implementations now report their analytical budget estimate with a clear "ANALYTICAL" label. Use `apr bench --fast` for real measured throughput.

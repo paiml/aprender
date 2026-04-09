@@ -39,5 +39,8 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "benchmarks"
 harness = false
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints.rust]
 unsafe_code = "allow"

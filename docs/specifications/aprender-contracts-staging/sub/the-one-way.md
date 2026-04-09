@@ -1,5 +1,9 @@
 # 27. The One Way
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## The Problem: Three Mechanisms, One Job
 
 Contract enforcement currently uses three separate mechanisms:

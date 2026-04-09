@@ -1,5 +1,9 @@
 # Trueno Ecosystem Integration Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0
 **Date**: 2025-12-16
 **Status**: Active

@@ -1,0 +1,132 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'docs/specifications/aprender-spec.md — mono spec (single source of truth)'
+  - 'docs/specifications/TOC.md — specification table of contents'
+  - 'spec-entity-v1.yaml — spec document quality scoring'
+  description: >
+    Contract for the specification system itself. Enforces the hierarchical
+    structure: mono spec (aprender-spec.md, <=500 lines) → components/*.md
+    (detailed specs) → contracts/*.yaml (formal contracts). Every component
+    must be listed in the mono spec Component Index AND the TOC.
+
+equations:
+  mono_spec_limit:
+    formula: |
+      line_count(docs/specifications/aprender-spec.md) <= 500
+    domain: "mono spec file"
+    codomain: bool
+    invariants:
+    - "Mono spec stays concise — detail goes in components/"
+    - "Exceeding 500 lines means a section should be extracted to a component"
+
+  component_index_complete:
+    formula: |
+      forall component C in docs/specifications/components/*.md:
+        C is listed in aprender-spec.md Section 17 (Component Index) OR
+        C is a sub-spec of a listed component
+    domain: "component files vs mono spec index"
+    codomain: bool
+    invariants:
+    - "No orphan components — all are reachable from the mono spec"
+    - "Component Index is the canonical registry"
+
+  toc_complete:
+    formula: |
+      forall spec S in docs/specifications/**/*.md:
+        S is listed in docs/specifications/TOC.md
+    domain: "all spec files vs TOC"
+    codomain: bool
+    invariants:
+    - "TOC is exhaustive — every spec file is discoverable"
+    - "TOC links are valid (no dead references)"
+
+  contract_linkage:
+    formula: |
+      forall component C in components/*.md:
+        C references at least one contract in contracts/*.yaml OR
+        C has Status: proposed (not yet contracted)
+    domain: "component specs vs contract YAML files"
+    codomain: bool
+    invariants:
+    - "Active components have corresponding contracts"
+    - "Proposed components may lack contracts (work in progress)"
+
+  spec_header_schema:
+    formula: |
+      forall spec S in docs/specifications/**/*.md:
+        S has Version field AND
+        S has Status field in {proposed, tested, enforced, deprecated, Active} AND
+        S has Date field (YYYY-MM-DD format)
+    domain: "spec file headers"
+    codomain: bool
+    invariants:
+    - "Every spec has lifecycle metadata"
+    - "Status drives enforcement level"
+
+falsification_tests:
+- id: F-SCHEMA-001
+  rule: mono_spec_limit
+  prediction: "mono spec is <= 500 lines"
+  test: |
+    LINES=$(wc -l < docs/specifications/aprender-spec.md)
+    echo "Mono spec: $LINES lines"
+    test "$LINES" -le 500
+  if_fails: "mono spec exceeds 500 lines — extract detail to components/"
+
+- id: F-SCHEMA-002
+  rule: component_index_complete
+  prediction: "all components listed in mono spec Section 17"
+  test: |
+    ORPHANS=0
+    for f in docs/specifications/components/*.md; do
+      BASE=$(basename "$f")
+      if ! grep -q "$BASE" docs/specifications/aprender-spec.md; then
+        echo "ORPHAN: $BASE"
+        ORPHANS=$((ORPHANS+1))
+      fi
+    done
+    echo "Orphan components: $ORPHANS"
+    test "$ORPHANS" -le 5
+  if_fails: "component not listed in mono spec Component Index"
+
+- id: F-SCHEMA-003
+  rule: spec_header_schema
+  prediction: ">= 95% of specs have Version + Status + Date headers"
+  test: |
+    TOTAL=$(find docs/specifications/ -name "*.md" -type f | wc -l)
+    WITH_STATUS=$(find docs/specifications/ -name "*.md" -type f -exec grep -l 'Status' {} \; | wc -l)
+    PCT=$((WITH_STATUS * 100 / TOTAL))
+    echo "Specs with Status: $WITH_STATUS/$TOTAL ($PCT%)"
+    test "$PCT" -ge 95
+  if_fails: "specs missing lifecycle metadata headers"
+
+- id: F-SCHEMA-004
+  rule: toc_complete
+  prediction: "TOC lists all spec directories"
+  test: |
+    for dir in docs/specifications/*/; do
+      DIRNAME=$(basename "$dir")
+      if ! grep -q "$DIRNAME" docs/specifications/TOC.md; then
+        echo "MISSING from TOC: $DIRNAME"
+      fi
+    done
+  if_fails: "spec directory not referenced in TOC"
+
+- id: F-SCHEMA-005
+  rule: mono_spec_limit
+  prediction: "mono spec Component Index has entries for code and entity contracts"
+  test: |
+    grep -q 'code.md' docs/specifications/aprender-spec.md &&
+    grep -q 'entity' docs/specifications/aprender-spec.md &&
+    echo "PASS: code and entity contracts in Component Index"
+  if_fails: "new components not added to mono spec Component Index"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 5
+  status: proposed

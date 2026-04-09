@@ -1,5 +1,9 @@
 # Rust Tracing for Development Debugging - Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Overview
 
 Add structured logging/tracing instrumentation to renacer using the `tracing` crate to help diagnose runtime issues like hangs, deadlocks, and unexpected behavior in the ptrace-based syscall tracer.

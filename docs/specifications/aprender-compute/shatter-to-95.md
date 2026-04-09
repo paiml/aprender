@@ -1,5 +1,9 @@
 # Specification: Trueno 95% Coverage + A+ TDG
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status**: Approved
 **Target**: 95% test coverage, A+ TDG grade (≥97)
 **Approach**: Parallel execution (shatter + test simultaneously)

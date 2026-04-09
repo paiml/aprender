@@ -1,5 +1,9 @@
 # Appendix D: Historical Bug Fixes (2026-01-21 to 2026-01-28)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from qwen2.5-coder-showcase-demo.md (lines 3785-4057)
 
 ## Appendix D: Historical Bug Fixes (2026-01-21 to 2026-01-28)

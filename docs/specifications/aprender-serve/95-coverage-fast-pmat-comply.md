@@ -1,5 +1,9 @@
 # Specification: Fast O(1) Coverage with PMAT Compliance
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** SPEC-COV-95
 **Version:** 1.52.0
 **Status:** ACTIVE (Platform Ceiling Achieved)

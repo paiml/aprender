@@ -1,5 +1,9 @@
 # Aprender Specification — Single Source of Truth
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 6.0.0
 **Status**: Active
 **Created**: 2025-10-01
@@ -36,9 +40,7 @@
 
 ## 1. Overview
 
-Aprender ("to learn" in Spanish) is a machine learning library in pure Rust.
-It provides the TOP 10 ML algorithms plus advanced modules (time series, NLP,
-Bayesian, GLM, graph, audio) with 12,974 tests and 96.35% line coverage.
+Aprender is a complete ML framework in pure Rust — 70 crates, 25,806 tests, 545 contracts, 57 CLI commands.
 
 **The `apr` CLI is the primary interface.** Every capability — inference,
 training, profiling, format conversion, debugging — is accessed through
@@ -492,5 +494,6 @@ All format conversions support `--trace` for tensor layout verification.
 | QA | [components/qa.md](components/qa.md) | Active |
 | Profile | [components/profile.md](components/profile.md) | Active |
 | Tokenize | [components/tokenize.md](components/tokenize.md) | Active |
-
-Legacy specs archived in `archive/`. Not authoritative.
+| Code (apr code) | [components/code.md](components/code.md) | Proposed |
+| Entity Contracts | [aprender-contract-entities/](aprender-contract-entities/entity-contracts-overview.md) | Active |
+| Silent Failure | [components/cli-silent-failure-enforcement.md](components/cli-silent-failure-enforcement.md) | Active |

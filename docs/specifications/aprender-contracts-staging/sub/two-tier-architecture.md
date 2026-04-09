@@ -1,5 +1,9 @@
 # 26. Two-Tier Architecture and Compositional Contracts
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Two-Tier Contract Layout
 
 Contracts are organized in two tiers:

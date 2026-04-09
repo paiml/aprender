@@ -8,6 +8,9 @@ updated: 2025-11-24T12:19:50.192125887+00:00
 
 # New task: TIME-WEIGHT-001 Specification
 
+Version: 1.0
+Status: proposed
+
 **Ticket ID**: TIME-WEIGHT-001
 **Status**: In Progress
 

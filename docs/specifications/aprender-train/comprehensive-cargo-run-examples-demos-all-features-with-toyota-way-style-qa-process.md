@@ -1,5 +1,9 @@
 # Comprehensive Cargo Run Examples & Toyota Way QA Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Project**: Entrenar Ecosystem (`batuta`, `aprender`, `alimentar`, `depyler`, `decy`, `bashrs`, `ruchy`)
 **Version**: 1.0.0
 **Date**: 2025-11-30

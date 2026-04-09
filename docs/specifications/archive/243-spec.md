@@ -8,6 +8,9 @@ updated: 2026-02-15T10:52:15.943055870+00:00
 
 # feat: apr quantize — unified quantization pipeline with GGUF/AWQ/GPTQ output Specification
 
+Version: 1.0
+Status: proposed
+
 **GitHub Issue**: [#243](https://github.com/YOUR_ORG/YOUR_REPO/issues/243)
 **Status**: In Progress
 

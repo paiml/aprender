@@ -1,5 +1,9 @@
 # Scene Format (`.prs`)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [presentar-spec.md](../presentar-spec.md)
 
 **Scope:** Presentar Scene Format v1.0 -- declarative YAML manifest for sharing visualization dashboards.

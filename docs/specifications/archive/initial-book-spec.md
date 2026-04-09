@@ -1,5 +1,8 @@
 # Aprender Book Expansion: Machine Learning Fundamentals Specification
 
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0
 **Date**: 2025-11-19
 **Status**: Draft - Awaiting Citation Review

@@ -1,7 +1,7 @@
 [package]
 name = "aprender-verify-ml"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 rust-version = "1.70"
 authors = ["Pragmatic AI Labs"]
 license = "MIT"
@@ -11,6 +11,9 @@ documentation = "https://docs.rs/verificar"
 readme = "README.md"
 keywords = ["testing", "code-generation", "transpiler", "verification", "synthetic-data"]
 categories = ["development-tools::testing", "compilers"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 unsafe_code = "allow"

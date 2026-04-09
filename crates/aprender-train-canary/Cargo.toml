@@ -1,8 +1,13 @@
 [package]
 name = "aprender-train-canary"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 publish = false
+keywords = ["ml", "training", "deep-learning", "aprender"]
+categories = ["science"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 burn = { version = "0.21.0-pre.2", features = ["wgpu"] }
@@ -10,3 +15,6 @@ trueno = { version = "0.16", features = ["parallel", "gpu"] }
 
 [patch.crates-io]
 trueno = { path = "/home/noah/src/trueno" }
+
+[lints]
+workspace = true

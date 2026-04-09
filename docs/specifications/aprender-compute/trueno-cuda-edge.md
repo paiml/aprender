@@ -1,5 +1,9 @@
 # Trueno CUDA Edge: GPU Edge-Case Test Framework Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0
 **Date**: 2026-02-02
 **Status**: SPECIFICATION - Ready for Implementation

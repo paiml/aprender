@@ -1,11 +1,16 @@
 [package]
 name = "aprender-gemm-codegen"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 rust-version = "1.89"
 authors = ["Pragmatic AI Labs"]
 license = "MIT"
 description = "Compile-time GEMM microkernel code generation for trueno (sovereign, no external BLAS)"
+keywords = ["ml", "rust", "aprender", "gemm", "codegen"]
+categories = ["science"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 unsafe_code = "allow"

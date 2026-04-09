@@ -1,5 +1,9 @@
 # GPU Sharing Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** Implemented (all 3 phases complete, 143 GPU tests pass)
 **Scope:** Allow 2–3 QLoRA fine-tuning jobs to run concurrently on a single GPU, with optional multi-node heterogeneous support.
 

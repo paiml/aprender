@@ -1,5 +1,9 @@
 # 25. Full Enforcement Mandate
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Effective: 2026-03-27. Target: ALL paiml repos with bindings.**
 
 ## Goal

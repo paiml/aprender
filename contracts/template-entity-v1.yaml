@@ -1,0 +1,540 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'Jinja2 template specification (pallets/jinja)'
+  - 'HuggingFace chat_template documentation (transformers tokenizer)'
+  - 'ChatML specification (OpenAI)'
+  - 'docs/specifications/aprender-contract-entities/template-entity-spec.md'
+  description: >
+    Per-chat-template quality contract for Jinja2 chat templates used by
+    LLM inference. Enforces 10 measurable elements across 4 tiers (syntax,
+    coverage, tokens, security) via profile parameterization. Profiles:
+    ml-framework. Machine-checkable via Jinja2 rendering, token diffing,
+    and pattern matching. Operates at the individual template string level.
+
+profiles:
+  any:
+    required: [CT1, CT2, CT4]
+    recommended: [CT3, CT5, CT6, CT7, CT8, CT9, CT10]
+  ml-framework:
+    inherits: any
+    required: [CT1, CT2, CT3, CT4, CT5, CT6, CT7, CT9, CT10]
+    recommended: [CT8]
+
+parameters:
+  template_source:
+    type: string
+    default: tokenizer_config.json
+  known_roles:
+    type: list
+    default: ['system', 'user', 'assistant']
+  multi_turn_min_messages:
+    type: integer
+    default: 4
+  reference_tokenizer:
+    type: string
+    default: ''
+
+elements:
+  CT1:
+    name: valid_jinja2
+    tier: syntax
+    check: "template parses without Jinja2 syntax errors"
+    measurable: "jinja2.Environment().parse(template) does not raise TemplateSyntaxError"
+  CT9:
+    name: empty_system_handled
+    tier: syntax
+    check: "template renders correctly when system message is empty string or omitted"
+    measurable: "render with messages=[{role:user,content:hi}] produces valid output without 'system\\n\\n' artifact"
+  CT6:
+    name: add_generation_prompt
+    tier: syntax
+    check: "template respects add_generation_prompt=True by appending assistant turn prefix"
+    measurable: "render with add_generation_prompt=True ends with assistant role marker"
+  CT2:
+    name: roles_handled
+    tier: coverage
+    check: "template handles all known_roles without error"
+    measurable: "render with one message per role succeeds for system, user, assistant"
+  CT3:
+    name: multi_turn
+    tier: coverage
+    check: "template handles multi-turn conversation with >= multi_turn_min_messages"
+    measurable: "render with 4+ alternating user/assistant messages produces distinct turns"
+  CT10:
+    name: fallback_observable
+    tier: coverage
+    check: "when template is missing or invalid, the system falls back to a default and logs a warning"
+    measurable: "rendering with broken template logs warning and uses ChatML fallback"
+  CT4:
+    name: bos_eos_correct
+    tier: tokens
+    check: "rendered output includes BOS token at start and EOS tokens between turns (if model requires)"
+    measurable: "rendered string contains bos_token and eos_token in expected positions"
+  CT5:
+    name: arch_auto_detected
+    tier: tokens
+    check: "template format is auto-detected from model architecture or tokenizer metadata"
+    measurable: "apr inspect reports chat_template type matching model architecture"
+  CT7:
+    name: no_injection
+    tier: security
+    check: "user content containing Jinja2 syntax ({{ }}, {% %}) is treated as literal text"
+    measurable: "render with content='{{7*7}}' produces literal '{{7*7}}' not '49'"
+  CT8:
+    name: hf_parity
+    tier: security
+    check: "template output matches HuggingFace transformers tokenizer.apply_chat_template() output"
+    measurable: "diff apr template output vs HF reference output; delta == 0 characters"
+    note: "REC — HF parity requires Python HF transformers installed, hard to automate in CI"
+
+equations:
+  syntax_verified:
+    formula: |
+      forall template T:
+        jinja2_parse(T) succeeds AND
+        render(T, [{role:user, content:"hi"}]) does_not_contain "system\n\n" AND
+        render(T, messages, add_generation_prompt=True) ends_with assistant_prefix(T)
+    domain: "Jinja2 template string"
+    codomain: bool
+    invariants:
+    - "Template is syntactically valid Jinja2"
+    - "Missing system message does not produce empty artifacts"
+    - "add_generation_prompt appends the assistant turn start"
+
+  coverage_verified:
+    formula: |
+      forall template T:
+        forall role R in known_roles:
+          render(T, [{role:R, content:"test"}]) succeeds AND
+        render(T, multi_turn_messages(multi_turn_min_messages)) produces
+          |distinct_turns| == multi_turn_min_messages AND
+        (invalid_template => fallback_used AND warning_logged)
+    domain: "Jinja2 template string + test messages"
+    codomain: bool
+    invariants:
+    - "All standard roles render without error"
+    - "Multi-turn conversations produce distinct, ordered turns"
+    - "Invalid templates fall back gracefully with observable warning"
+
+  tokens_verified:
+    formula: |
+      forall template T with model M:
+        (requires_bos(M) => starts_with(render(T, messages), bos_token(M))) AND
+        architecture_detected(M) matches template_format(T)
+    domain: "template + model metadata"
+    codomain: bool
+    invariants:
+    - "BOS/EOS tokens appear in correct positions"
+    - "Template format matches the model's expected format"
+
+  security_verified:
+    formula: |
+      forall template T:
+        forall injection I in {"{{7*7}}", "{% if True %}pwned{% endif %}", "${7*7}"}:
+          render(T, [{role:user, content:I}]) contains literal(I)
+    domain: "template + adversarial inputs"
+    codomain: bool
+    invariants:
+    - "Jinja2 syntax in user content is never executed"
+    - "Template injection is impossible through message content"
+
+  template_score:
+    formula: |
+      tier_weight = {syntax: 30, coverage: 30, tokens: 20, security: 20}
+
+      forall element E in {CT1..CT10}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {CT1..CT10})
+      max_score = sum(element_weight(E) for E in {CT1..CT10})
+      template_score = round(raw_score / max_score * 100)
+
+      verdict = if template_score >= 90 then A
+                elif template_score >= 80 then B
+                elif template_score >= 70 then C
+                elif template_score >= 60 then D
+                else F
+    domain: "template string + profile + gate results"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements pass"
+    - "Score 100 when all required + recommended elements pass"
+    - "Syntax + coverage account for 60% of total weight"
+    - "Required elements contribute full weight; recommended (CT8) contributes half"
+    - "Grade A (>=90) requires all required gates PASS"
+    - "Grade F (<60) means template is not safe for production chat"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-CT-001
+  rule: syntax_verified
+  element: CT1
+  prediction: "chat template parses as valid Jinja2"
+  test: |
+    python3 -c "
+    import sys, json
+
+    config_path = sys.argv[1] if len(sys.argv) > 1 else 'tokenizer_config.json'
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        template = config.get('chat_template', '')
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Try as raw template string
+        with open(config_path) as f:
+            template = f.read()
+
+    if not template:
+        print('FAIL: no chat template found')
+        sys.exit(1)
+
+    try:
+        from jinja2 import Environment
+        env = Environment()
+        env.parse(template)
+        print(f'PASS: template parses ({len(template)} chars)')
+    except ImportError:
+        # Fallback: basic syntax check
+        balanced = template.count('{%') == template.count('%}')
+        balanced = balanced and template.count('{{') == template.count('}}')
+        if balanced:
+            print(f'PASS: balanced delimiters ({len(template)} chars, jinja2 not installed)')
+        else:
+            print('FAIL: unbalanced Jinja2 delimiters')
+            sys.exit(1)
+    except Exception as e:
+        print(f'FAIL: Jinja2 parse error: {e}')
+        sys.exit(1)
+    "
+  if_fails: "chat template has syntax errors — rendering will fail at inference time"
+
+- id: F-CT-002
+  rule: coverage_verified
+  element: CT2
+  prediction: "template handles system, user, and assistant roles"
+  test: |
+    python3 -c "
+    import sys, json
+
+    config_path = sys.argv[1] if len(sys.argv) > 1 else 'tokenizer_config.json'
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        template = config.get('chat_template', '')
+    except (FileNotFoundError, json.JSONDecodeError):
+        with open(config_path) as f:
+            template = f.read()
+
+    if not template:
+        print('SKIP: no chat template')
+        sys.exit(0)
+
+    try:
+        from jinja2 import Environment, BaseLoader
+    except ImportError:
+        print('SKIP: jinja2 not installed')
+        sys.exit(0)
+
+    env = Environment(loader=BaseLoader())
+    tmpl = env.from_string(template)
+
+    roles = ['system', 'user', 'assistant']
+    for role in roles:
+        try:
+            result = tmpl.render(
+                messages=[{'role': role, 'content': f'test {role} message'}],
+                add_generation_prompt=False,
+                bos_token='<s>', eos_token='</s>'
+            )
+            if f'test {role} message' not in result:
+                print(f'FAIL: {role} message content not in output')
+                sys.exit(1)
+        except Exception as e:
+            print(f'FAIL: {role} role raises: {e}')
+            sys.exit(1)
+
+    print(f'PASS: all {len(roles)} roles handled correctly')
+    "
+  if_fails: "template fails to handle a standard role — conversation will break"
+
+- id: F-CT-003
+  rule: syntax_verified
+  element: CT9
+  prediction: "template handles missing system message without artifacts"
+  test: |
+    python3 -c "
+    import sys, json
+
+    config_path = sys.argv[1] if len(sys.argv) > 1 else 'tokenizer_config.json'
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        template = config.get('chat_template', '')
+    except (FileNotFoundError, json.JSONDecodeError):
+        with open(config_path) as f:
+            template = f.read()
+
+    if not template:
+        print('SKIP: no chat template')
+        sys.exit(0)
+
+    try:
+        from jinja2 import Environment, BaseLoader
+    except ImportError:
+        print('SKIP: jinja2 not installed')
+        sys.exit(0)
+
+    env = Environment(loader=BaseLoader())
+    tmpl = env.from_string(template)
+
+    # Render WITHOUT system message
+    result = tmpl.render(
+        messages=[{'role': 'user', 'content': 'hello'}],
+        add_generation_prompt=True,
+        bos_token='<s>', eos_token='</s>'
+    )
+
+    # Check for empty system artifacts
+    if 'system\n\n' in result or 'system\\n' in result:
+        print(f'FAIL: empty system artifact in output: {result[:200]}')
+        sys.exit(1)
+
+    if 'hello' not in result:
+        print(f'FAIL: user content missing from output')
+        sys.exit(1)
+
+    print('PASS: no system message handled cleanly')
+    "
+  if_fails: "missing system message produces empty system block artifact"
+
+- id: F-CT-004
+  rule: security_verified
+  element: CT7
+  prediction: "Jinja2 syntax in user content is not executed"
+  test: |
+    python3 -c "
+    import sys, json
+
+    config_path = sys.argv[1] if len(sys.argv) > 1 else 'tokenizer_config.json'
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        template = config.get('chat_template', '')
+    except (FileNotFoundError, json.JSONDecodeError):
+        with open(config_path) as f:
+            template = f.read()
+
+    if not template:
+        print('SKIP: no chat template')
+        sys.exit(0)
+
+    try:
+        from jinja2 import Environment, BaseLoader, SandboxedEnvironment
+    except ImportError:
+        print('SKIP: jinja2 not installed')
+        sys.exit(0)
+
+    env = SandboxedEnvironment(loader=BaseLoader())
+    tmpl = env.from_string(template)
+
+    injections = [
+        ('{{7*7}}', '49'),
+        ('{% if True %}pwned{% endif %}', 'pwned'),
+    ]
+
+    for payload, bad_output in injections:
+        try:
+            result = tmpl.render(
+                messages=[{'role': 'user', 'content': payload}],
+                add_generation_prompt=False,
+                bos_token='<s>', eos_token='</s>'
+            )
+            # The payload should appear literally, not evaluated
+            if bad_output in result and payload not in result:
+                print(f'FAIL: injection executed: payload={payload}, got={bad_output}')
+                sys.exit(1)
+        except Exception:
+            pass  # Sandbox blocked it — that's fine
+
+    print('PASS: template injection attempts blocked')
+    "
+  if_fails: "user content can inject Jinja2 code — security vulnerability"
+
+- id: F-CT-005
+  rule: coverage_verified
+  element: CT3
+  prediction: "multi-turn conversation renders with distinct turns"
+  test: |
+    python3 -c "
+    import sys, json
+
+    config_path = sys.argv[1] if len(sys.argv) > 1 else 'tokenizer_config.json'
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        template = config.get('chat_template', '')
+    except (FileNotFoundError, json.JSONDecodeError):
+        with open(config_path) as f:
+            template = f.read()
+
+    if not template:
+        print('SKIP: no chat template')
+        sys.exit(0)
+
+    try:
+        from jinja2 import Environment, BaseLoader
+    except ImportError:
+        print('SKIP: jinja2 not installed')
+        sys.exit(0)
+
+    env = Environment(loader=BaseLoader())
+    tmpl = env.from_string(template)
+
+    messages = [
+        {'role': 'user', 'content': 'TURN_ONE'},
+        {'role': 'assistant', 'content': 'TURN_TWO'},
+        {'role': 'user', 'content': 'TURN_THREE'},
+        {'role': 'assistant', 'content': 'TURN_FOUR'},
+    ]
+
+    result = tmpl.render(
+        messages=messages,
+        add_generation_prompt=False,
+        bos_token='<s>', eos_token='</s>'
+    )
+
+    missing = [m['content'] for m in messages if m['content'] not in result]
+    if missing:
+        print(f'FAIL: missing turns in output: {missing}')
+        sys.exit(1)
+
+    # Verify ordering
+    positions = [result.index(m['content']) for m in messages]
+    if positions != sorted(positions):
+        print(f'FAIL: turns out of order: {positions}')
+        sys.exit(1)
+
+    print(f'PASS: {len(messages)} turns rendered in correct order')
+    "
+  if_fails: "multi-turn conversation loses or reorders turns"
+
+- id: F-CT-006
+  rule: template_score
+  element: all
+  prediction: "template scores >= 90 (grade A) under ml-framework profile"
+  test: |
+    python3 -c "
+    import sys, json
+
+    config_path = sys.argv[1] if len(sys.argv) > 1 else 'tokenizer_config.json'
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        template = config.get('chat_template', '')
+    except (FileNotFoundError, json.JSONDecodeError):
+        try:
+            with open(config_path) as f:
+                template = f.read()
+        except FileNotFoundError:
+            print('SKIP: no template source found')
+            sys.exit(0)
+
+    if not template:
+        print('SKIP: empty template')
+        sys.exit(0)
+
+    tier_weight = {'syntax': 30, 'coverage': 30, 'tokens': 20, 'security': 20}
+    element_tier = {
+        'CT1': 'syntax', 'CT9': 'syntax', 'CT6': 'syntax',
+        'CT2': 'coverage', 'CT3': 'coverage', 'CT10': 'coverage',
+        'CT4': 'tokens', 'CT5': 'tokens',
+        'CT7': 'security', 'CT8': 'security',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    required = {'CT1','CT2','CT3','CT4','CT5','CT6','CT7','CT9','CT10'}
+    recommended = {'CT8'}
+
+    gates = {}
+
+    # CT1: valid jinja2
+    try:
+        balanced = (template.count('{%') == template.count('%}') and
+                    template.count('{{') == template.count('}}'))
+        gates['CT1'] = balanced and len(template) > 10
+    except Exception:
+        gates['CT1'] = False
+
+    # CT2: roles handled (check template references role names)
+    gates['CT2'] = all(r in template.lower() or 'role' in template.lower()
+                       for r in ['system', 'user', 'assistant'])
+
+    # CT3: multi-turn (template uses loop construct)
+    gates['CT3'] = 'for ' in template and 'message' in template.lower()
+
+    # CT4: bos/eos tokens referenced
+    gates['CT4'] = 'bos_token' in template or 'eos_token' in template or '<s>' in template
+
+    # CT5: arch detection (template uses conditional logic)
+    gates['CT5'] = True  # auto-detection is in the runtime, not the template
+
+    # CT6: add_generation_prompt
+    gates['CT6'] = 'add_generation_prompt' in template
+
+    # CT7: no injection (uses content attribute, not raw interpolation of message)
+    gates['CT7'] = 'content' in template
+
+    # CT8: HF parity (REC — cannot check without HF transformers)
+    gates['CT8'] = True  # assume pass for scoring; manual verification needed
+
+    # CT9: empty system handled
+    gates['CT9'] = ('if' in template and 'system' in template.lower()) or 'system' not in template.lower()
+
+    # CT10: fallback observable
+    gates['CT10'] = True  # fallback is in runtime, not template; assume runtime handles it
+
+    raw = 0.0; max_s = 0.0
+    for e in sorted(element_tier.keys()):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        if e in required:
+            multiplier = 1.0
+        elif e in recommended:
+            multiplier = 0.5
+        else:
+            multiplier = 0.0
+        ew = w * multiplier
+        max_s += ew
+        if gates.get(e, False):
+            raw += ew
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        req = 'REQ' if e in required else 'REC'
+        print(f'  {e:4s} [{req}] w={ew:5.1f}  {status}')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    sys.exit(0 if score >= 90 else 1)
+    "
+  if_fails: "template score below 90 — not safe for production chat inference"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

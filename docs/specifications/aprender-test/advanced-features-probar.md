@@ -1,5 +1,9 @@
 # Probar Advanced Features Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0.0
 **Status**: Draft
 **Review Status**: APPROVED (with annotations)

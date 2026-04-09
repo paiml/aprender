@@ -1,5 +1,9 @@
 # Online Learning and Dynamic Retraining Infrastructure
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Specification Version**: 1.0.0
 **Status**: DRAFT - Awaiting Review
 **Author**: Claude Code

@@ -1,5 +1,9 @@
 # Probar: Missing Features Analysis for Pure Rust WASM Implementation
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document Version:** 1.0.0
 **Status:** Draft Specification
 **PMAT Work Reference:** PROBAR-SPEC-001

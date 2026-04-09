@@ -1,5 +1,9 @@
 # WARP: Multi-Vector Retrieval Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.2.0
 **Status:** Falsified (Reformulation Pending)
 **Authors:** Pragmatic AI Labs & Dr. Karl Popper (Consulting)

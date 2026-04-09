@@ -1,5 +1,9 @@
 # Trueno Compute Layer (Archived from Section 13)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Archived from: `docs/specifications/qwen2.5-coder-showcase-demo.md`, Lines 1217-1509, Section 13
 
 ---

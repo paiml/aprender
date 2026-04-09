@@ -1,7 +1,7 @@
 [package]
 name = "aprender-rand"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 description = "Counter-based parallel RNG — Philox 4x32-10 with provable statistical properties"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/paiml/trueno"
@@ -22,6 +22,9 @@ criterion = { workspace = true }
 [[bench]]
 name = "rand_bench"
 harness = false
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

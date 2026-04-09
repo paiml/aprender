@@ -1,5 +1,8 @@
 # Sovereign Dataset Sharing Specification
 
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.2
 **Status**: Draft
 **Author**: alimentar team

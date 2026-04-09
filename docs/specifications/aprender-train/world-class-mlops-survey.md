@@ -1,5 +1,9 @@
 # World-Class MLOps Training Systems: Scientific Survey & Gap Analysis
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0.0
 **Date**: 2026-03-03
 **Methodology**: arXiv literature review, batuta oracle + falsify, sovereign stack audit

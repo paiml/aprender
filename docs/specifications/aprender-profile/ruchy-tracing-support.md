@@ -1,5 +1,9 @@
 # Ruchy End-to-End Tracing Support Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document Status**: Revised (Critical Issues Addressed)
 **Version**: 2.0.0
 **Date**: November 19, 2025

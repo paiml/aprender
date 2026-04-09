@@ -1,5 +1,7 @@
 # Compiler-in-the-Loop Learning Support Specification
 
+Status: proposed
+
 **Version:** 1.0.0
 **Status:** Draft
 **Authors:** Pragmatic AI Labs

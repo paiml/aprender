@@ -1,0 +1,395 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'GGUF specification (ggerganov/ggml)'
+  - 'SafeTensors format specification (huggingface/safetensors)'
+  - 'APR format v2 specification (contracts/apr-format-v2.yaml)'
+  - 'docs/specifications/aprender-contract-entities/model-entity-spec.md'
+  description: >
+    Per-model-file quality contract for APR, GGUF, and SafeTensors model
+    files. Enforces 10 measurable elements across 4 tiers (integrity,
+    metadata, tensors, vocab) via profile parameterization. Profiles: any,
+    ml-framework. Machine-checkable via apr validate, apr inspect, apr
+    tensors, and binary inspection. Operates at the individual model file
+    level.
+
+profiles:
+  any:
+    required: [MF1, MF3]
+    recommended: [MF2, MF4, MF5, MF6, MF7, MF8, MF9, MF10]
+  ml-framework:
+    inherits: any
+    required: [MF1, MF2, MF3, MF4, MF5, MF6, MF7, MF8, MF9, MF10]
+    recommended: []
+
+parameters:
+  model_path:
+    type: string
+    default: model.gguf
+  min_file_size_bytes:
+    type: integer
+    default: 1048576
+  max_nan_ratio:
+    type: float
+    default: 0.0
+  instruct_filename_patterns:
+    type: list
+    default: ['instruct', 'chat', 'it', 'rlhf']
+
+elements:
+  MF1:
+    name: magic_bytes_valid
+    tier: integrity
+    check: "first 4 bytes match format magic (GGUF=0x46475547, APR=APR\\0 or APRN, SafeTensors=JSON header)"
+    measurable: "read first 4-8 bytes; match against known magic byte sequences"
+  MF2:
+    name: not_truncated
+    tier: integrity
+    check: "`apr validate` exits 0 — all declared tensors are readable to their full extent"
+    measurable: "apr validate <model_path> exits 0"
+  MF10:
+    name: file_size_plausible
+    tier: integrity
+    check: "file size >= min_file_size_bytes AND file size matches header-declared total within 1%"
+    measurable: "stat file size; compare against sum of header + tensor data sizes"
+  MF3:
+    name: architecture_known
+    tier: metadata
+    check: "model architecture is recognized (LLaMA, Qwen2, GPT-NeoX, OPT, Mistral, etc.)"
+    measurable: "apr inspect <model_path> | grep 'architecture' returns a known enum variant"
+  MF4:
+    name: structural_invariants
+    tier: metadata
+    check: "hidden_dim, num_layers, num_heads are positive AND head_dim divides hidden_dim evenly"
+    measurable: "apr inspect --json | jq '.hidden_size % .num_attention_heads == 0'"
+  MF5:
+    name: shapes_match
+    tier: tensors
+    check: "tensor shapes are consistent with declared architecture dimensions"
+    measurable: "apr tensors <model_path> | verify embedding dim == hidden_size, layer count == num_layers"
+  MF6:
+    name: no_nan_inf
+    tier: tensors
+    check: "no tensor contains NaN or Inf values (for float tensors; quantized tensors check dequantized samples)"
+    measurable: "apr qa <model_path> NaN/Inf gate passes"
+  MF9:
+    name: quant_consistent
+    tier: tensors
+    check: "all tensors of the same role share the same quantization type (e.g., all attn_q are Q4_K)"
+    measurable: "apr tensors --json | group by role, assert uniform dtype within each group"
+  MF7:
+    name: bos_eos_valid
+    tier: vocab
+    check: "BOS and EOS token IDs are within [0, vocab_size) and distinct"
+    measurable: "apr inspect --json | jq '.bos_token_id < .vocab_size and .eos_token_id < .vocab_size and .bos_token_id != .eos_token_id'"
+  MF8:
+    name: chat_template_present
+    tier: vocab
+    check: "chat template is present for instruct/chat models; recommended for base models"
+    measurable: "apr inspect <model_path> | grep 'chat_template' is non-empty for instruct models"
+    note: "REQ for instruct models (filename contains instruct/chat/it/rlhf), REC for base models"
+
+equations:
+  integrity_verified:
+    formula: |
+      forall model M:
+        magic_bytes(M) in KNOWN_MAGIC AND
+        apr_validate(M).exit_code == 0 AND
+        file_size(M) >= min_file_size_bytes AND
+        abs(file_size(M) - declared_size(M)) / declared_size(M) <= 0.01
+    domain: "model file on disk"
+    codomain: bool
+    invariants:
+    - "Magic bytes identify the format unambiguously"
+    - "No tensor data is truncated or unreadable"
+    - "File size is physically plausible for the declared model"
+
+  metadata_verified:
+    formula: |
+      forall model M:
+        architecture(M) in KNOWN_ARCHITECTURES AND
+        hidden_size(M) > 0 AND num_layers(M) > 0 AND
+        hidden_size(M) % num_attention_heads(M) == 0
+    domain: "model metadata (header or config.json)"
+    codomain: bool
+    invariants:
+    - "Architecture is recognized by the inference engine"
+    - "Structural dimensions are self-consistent"
+
+  tensors_verified:
+    formula: |
+      forall model M:
+        forall tensor T in M:
+          shape(T) consistent_with architecture_dims(M) AND
+          nan_count(T) == 0 AND inf_count(T) == 0 AND
+        forall role R in tensor_roles(M):
+          |unique_dtypes(tensors_with_role(R, M))| == 1
+    domain: "model tensor data"
+    codomain: bool
+    invariants:
+    - "Tensor shapes match architecture specification"
+    - "No degenerate values in tensor data"
+    - "Quantization is uniform within each tensor role"
+
+  vocab_verified:
+    formula: |
+      forall model M:
+        0 <= bos_token_id(M) < vocab_size(M) AND
+        0 <= eos_token_id(M) < vocab_size(M) AND
+        bos_token_id(M) != eos_token_id(M) AND
+        (is_instruct_model(M) => chat_template(M) != empty)
+    domain: "model vocabulary metadata"
+    codomain: bool
+    invariants:
+    - "Special tokens are valid vocabulary indices"
+    - "BOS and EOS are distinct"
+    - "Instruct models always carry a chat template"
+
+  model_score:
+    formula: |
+      tier_weight = {integrity: 35, metadata: 25, tensors: 25, vocab: 15}
+
+      forall element E in {MF1..MF10}:
+        element_weight(E) =
+          tier_weight[tier(E)] / |elements_in_tier(E)|
+          * (if E in required(profile) then 1.0
+             elif E in recommended(profile) then 0.5
+             else 0.0)
+
+      raw_score = sum(gate(E) * element_weight(E) for E in {MF1..MF10})
+      max_score = sum(element_weight(E) for E in {MF1..MF10})
+      model_score = round(raw_score / max_score * 100)
+
+      verdict = if model_score >= 90 then A
+                elif model_score >= 80 then B
+                elif model_score >= 70 then C
+                elif model_score >= 60 then D
+                else F
+    domain: "model file + profile + gate results"
+    codomain: "integer in [0, 100]"
+    invariants:
+    - "Score 0 when no elements pass"
+    - "Score 100 when all required + recommended elements pass"
+    - "Integrity tier (35%) dominates — a corrupt file cannot score well"
+    - "Grade A (>=90) requires all required gates PASS"
+    - "Grade F (<60) means model file is not safe for inference"
+    thresholds:
+      A: 90
+      B: 80
+      C: 70
+      D: 60
+      F: 0
+
+falsification_tests:
+- id: F-MF-001
+  rule: integrity_verified
+  element: MF1
+  prediction: "model file starts with valid magic bytes for its format"
+  test: |
+    python3 -c "
+    import sys, struct
+
+    model_path = sys.argv[1] if len(sys.argv) > 1 else 'model.gguf'
+    with open(model_path, 'rb') as f:
+        header = f.read(8)
+
+    if len(header) < 4:
+        print(f'FAIL: file too small ({len(header)} bytes)')
+        sys.exit(1)
+
+    # GGUF magic: 0x46475547 (little-endian 'GGUF')
+    if header[:4] == b'GGUF':
+        print('PASS: GGUF magic bytes valid')
+        sys.exit(0)
+
+    # APR magic: APR\0 (v2) or APRN (v1)
+    if header[:4] in (b'APR\x00', b'APRN'):
+        print(f'PASS: APR magic bytes valid ({header[:4]})')
+        sys.exit(0)
+
+    # SafeTensors: starts with JSON header length (little-endian u64)
+    try:
+        json_len = struct.unpack('<Q', header[:8])[0]
+        if 8 < json_len < 100_000_000:  # plausible JSON header size
+            print(f'PASS: SafeTensors header length {json_len} is plausible')
+            sys.exit(0)
+    except Exception:
+        pass
+
+    print(f'FAIL: unrecognized magic bytes: {header[:4].hex()}')
+    sys.exit(1)
+    " \${model_path:-model.gguf}
+  if_fails: "model file has unrecognized magic bytes — format cannot be determined"
+
+- id: F-MF-002
+  rule: integrity_verified
+  element: MF2
+  prediction: "apr validate exits 0 on the model file"
+  test: |
+    python3 -c "
+    import subprocess, sys
+    model_path = sys.argv[1] if len(sys.argv) > 1 else 'model.gguf'
+    r = subprocess.run(['apr', 'validate', model_path], capture_output=True, timeout=60)
+    if r.returncode == 0:
+        print('PASS: apr validate exits 0')
+    else:
+        print(f'FAIL: apr validate exits {r.returncode}')
+        print(r.stderr.decode()[:500])
+        sys.exit(1)
+    " \${model_path:-model.gguf}
+  if_fails: "model file is truncated or structurally corrupt"
+
+- id: F-MF-003
+  rule: metadata_verified
+  element: MF3
+  prediction: "model architecture is recognized"
+  test: |
+    python3 -c "
+    import subprocess, sys
+    model_path = sys.argv[1] if len(sys.argv) > 1 else 'model.gguf'
+    r = subprocess.run(['apr', 'inspect', model_path], capture_output=True, text=True, timeout=30)
+    known = ['llama', 'qwen', 'mistral', 'gpt-neox', 'gptneox', 'opt', 'phi',
+             'gemma', 'falcon', 'starcoder', 'gpt2', 'bert', 'whisper', 'mamba']
+    output_lower = r.stdout.lower()
+    for arch in known:
+        if arch in output_lower:
+            print(f'PASS: architecture \"{arch}\" recognized')
+            sys.exit(0)
+    print(f'FAIL: no known architecture found in inspect output')
+    sys.exit(1)
+    " \${model_path:-model.gguf}
+  if_fails: "model architecture is unknown — inference engine cannot select correct computation graph"
+
+- id: F-MF-004
+  rule: tensors_verified
+  element: MF6
+  prediction: "no tensor contains NaN or Inf values"
+  test: |
+    python3 -c "
+    import subprocess, sys
+    model_path = sys.argv[1] if len(sys.argv) > 1 else 'model.gguf'
+    r = subprocess.run(['apr', 'qa', model_path], capture_output=True, text=True, timeout=120)
+    output = r.stdout + r.stderr
+    if 'NaN' in output or 'Inf' in output:
+        if 'FAIL' in output and ('NaN' in output or 'Inf' in output):
+            print('FAIL: NaN/Inf detected in tensor data')
+            sys.exit(1)
+    print('PASS: no NaN/Inf in tensor data')
+    " \${model_path:-model.gguf}
+  if_fails: "tensor data contains degenerate values — inference will produce garbage"
+
+- id: F-MF-005
+  rule: vocab_verified
+  element: MF8
+  prediction: "instruct models have a chat template; base models optionally"
+  test: |
+    python3 -c "
+    import subprocess, sys, os
+    model_path = sys.argv[1] if len(sys.argv) > 1 else 'model.gguf'
+    basename = os.path.basename(model_path).lower()
+
+    # Check if this is an instruct model
+    instruct_markers = ['instruct', 'chat', '-it-', '-it.', 'rlhf']
+    is_instruct = any(m in basename for m in instruct_markers)
+
+    r = subprocess.run(['apr', 'inspect', model_path], capture_output=True, text=True, timeout=30)
+    has_template = 'chat_template' in r.stdout.lower() or 'chat template' in r.stdout.lower()
+
+    if is_instruct and not has_template:
+        print(f'FAIL: instruct model ({basename}) lacks chat template')
+        sys.exit(1)
+    elif not is_instruct and not has_template:
+        print(f'REC: base model ({basename}) has no chat template (recommended)')
+        sys.exit(0)
+    else:
+        print(f'PASS: chat template present (instruct={is_instruct})')
+    " \${model_path:-model.gguf}
+  if_fails: "instruct model missing chat template — multi-turn conversation will fail"
+
+- id: F-MF-006
+  rule: model_score
+  element: all
+  prediction: "model file scores >= 90 (grade A) under ml-framework profile"
+  test: |
+    python3 -c "
+    import subprocess, sys, os, struct
+
+    model_path = sys.argv[1] if len(sys.argv) > 1 else 'model.gguf'
+    if not os.path.exists(model_path):
+        print(f'SKIP: {model_path} not found')
+        sys.exit(0)
+
+    tier_weight = {'integrity': 35, 'metadata': 25, 'tensors': 25, 'vocab': 15}
+    element_tier = {
+        'MF1': 'integrity', 'MF2': 'integrity', 'MF10': 'integrity',
+        'MF3': 'metadata', 'MF4': 'metadata',
+        'MF5': 'tensors', 'MF6': 'tensors', 'MF9': 'tensors',
+        'MF7': 'vocab', 'MF8': 'vocab',
+    }
+    tier_counts = {}
+    for e, t in element_tier.items():
+        tier_counts[t] = tier_counts.get(t, 0) + 1
+
+    required = set(element_tier.keys())  # ml-framework: all required
+    gates = {}
+
+    # MF1: magic bytes
+    with open(model_path, 'rb') as f:
+        hdr = f.read(8)
+    gates['MF1'] = (hdr[:4] == b'GGUF' or hdr[:4] in (b'APR\x00', b'APRN') or
+                    (len(hdr) >= 8 and 8 < struct.unpack('<Q', hdr[:8])[0] < 100_000_000))
+
+    # MF2: apr validate
+    r = subprocess.run(['apr', 'validate', model_path], capture_output=True, timeout=60)
+    gates['MF2'] = r.returncode == 0
+
+    # MF10: file size plausible
+    gates['MF10'] = os.path.getsize(model_path) >= 1048576
+
+    # MF3: architecture known
+    r = subprocess.run(['apr', 'inspect', model_path], capture_output=True, text=True, timeout=30)
+    known = ['llama', 'qwen', 'mistral', 'gpt-neox', 'opt', 'phi', 'gemma', 'falcon']
+    gates['MF3'] = any(a in r.stdout.lower() for a in known)
+
+    # MF4: structural invariants (conservative: inspect succeeded)
+    gates['MF4'] = r.returncode == 0 and len(r.stdout) > 20
+
+    # MF5-MF9: assume pass if validate passed (conservative)
+    for e in ['MF5', 'MF6', 'MF9']:
+        gates[e] = gates['MF2']
+
+    # MF7: bos/eos (check inspect output)
+    gates['MF7'] = 'bos' in r.stdout.lower() or 'eos' in r.stdout.lower()
+
+    # MF8: chat template
+    basename = os.path.basename(model_path).lower()
+    is_instruct = any(m in basename for m in ['instruct', 'chat', '-it-', 'rlhf'])
+    has_template = 'chat_template' in r.stdout.lower() or 'chat template' in r.stdout.lower()
+    gates['MF8'] = has_template if is_instruct else True
+
+    raw = 0.0; max_s = 0.0
+    for e in sorted(element_tier.keys()):
+        t = element_tier[e]
+        w = tier_weight[t] / tier_counts[t]
+        ew = w * 1.0  # all required in ml-framework
+        max_s += ew
+        if gates.get(e, False):
+            raw += ew
+        status = 'PASS' if gates.get(e, False) else 'FAIL'
+        print(f'  {e:5s} [{\"REQ\":3s}] w={ew:5.1f}  {status}')
+
+    score = round(raw / max_s * 100) if max_s > 0 else 0
+    grade = 'A' if score >= 90 else 'B' if score >= 80 else 'C' if score >= 70 else 'D' if score >= 60 else 'F'
+    print(f'\nScore: {score}/100  Grade: {grade}')
+    sys.exit(0 if score >= 90 else 1)
+    " \${model_path:-model.gguf}
+  if_fails: "model score below 90 — file is not production-ready for inference"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

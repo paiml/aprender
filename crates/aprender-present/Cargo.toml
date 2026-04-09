@@ -120,3 +120,6 @@ redundant_pub_crate = "allow"
 significant_drop_tightening = "allow"
 # Cargo metadata warnings
 cargo_common_metadata = "allow"
+
+[lints]
+workspace = true

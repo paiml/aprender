@@ -1,5 +1,9 @@
 # Unified Tensor Format Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.1.0 (LAYOUT-002 Row-Major Mandate)
 **Status**: Active
 **Created**: 2026-01-23

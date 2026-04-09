@@ -1,5 +1,9 @@
 # Stack Management Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [batuta-spec.md](../batuta-spec.md)
 > Sources: batuta-stack-spec, stack-quality-matrix-spec, stack-tree-view, batuta-stack-0.1-100-point-qa-checklist, score-a-plus-spec, book-score-spec
 

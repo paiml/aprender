@@ -1,5 +1,8 @@
 # Advanced Probador Testing Concepts
 
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.1.0
 **Status**: SPECIFICATION
 **Ticket**: PROBAR-SPEC-010

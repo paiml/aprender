@@ -1,5 +1,9 @@
 # PROBAR-SPEC-007: Runtime Validation
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Problem Statement
 
 **Critical Failure:** A project can score 100/100 while having fatal runtime bugs that prevent the application from working at all.

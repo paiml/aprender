@@ -1,5 +1,9 @@
 # SIMD Optimization Specification with Popperian Falsification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** REALIZAR-SIMD-SPEC-001
 **Version:** 1.17.0
 **Status:** ACTIVE

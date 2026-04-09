@@ -1,5 +1,9 @@
 # aprender-tsp: Local TSP Optimization with .apr Models
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.0
 **Date:** 2025-11-29
 **Status:** Specification

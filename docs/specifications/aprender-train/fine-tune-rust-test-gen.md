@@ -1,5 +1,9 @@
 # Specification: Rust Test Generation Fine-Tuning Pipeline
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document ID:** SPEC-FT-001
 **Version:** 4.2.0
 **Status:** ✅ COMPLETE (146/146 tickets implemented)

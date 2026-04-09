@@ -1,5 +1,9 @@
 # APR Specification — Single Source of Truth
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 3.0.0
 **Status**: Active
 **Created**: 2025-12-16

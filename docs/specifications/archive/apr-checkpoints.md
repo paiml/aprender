@@ -1,5 +1,9 @@
 # APR Checkpoint Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.4.0
 **Status**: Complete (18/18 contracts implemented)
 **Created**: 2026-03-01

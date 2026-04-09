@@ -9,6 +9,8 @@ version: 1.1.0
 
 # SPEC-DIST-2026-001: Heterogeneous Distributed Training
 
+Status: proposed
+
 **Version**: 1.1.0
 **Status**: Core Implementation Complete (multi-node TCP AllReduce + CLI wiring)
 **Author**: paiml engineering

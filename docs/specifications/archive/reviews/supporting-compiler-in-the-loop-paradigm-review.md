@@ -1,4 +1,9 @@
 # Code Review: Compiler-in-the-Loop Learning Support Specification
+
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Target:** `docs/specifications/supporting-compiler-in-the-loop-paradigm.md`
 **Version:** 1.0.0
 **Review Date:** 2025-11-27

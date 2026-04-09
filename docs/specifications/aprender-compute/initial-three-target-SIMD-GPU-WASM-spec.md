@@ -1,4 +1,8 @@
 # Trueno: Multi-Target High-Performance Compute Library
+
+Version: 1.0
+Status: proposed
+
 ## Specification v1.0.0
 
 **Status**: Draft

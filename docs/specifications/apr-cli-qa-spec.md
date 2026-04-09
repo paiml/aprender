@@ -1,5 +1,9 @@
 # APR-CLI-QA: Exhaustive CLI Quality Assurance Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 2.1
 **Date**: 2026-04-09
 **Status**: ENFORCED (2 consecutive runs)

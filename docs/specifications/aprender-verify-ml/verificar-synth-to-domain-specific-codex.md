@@ -1,5 +1,9 @@
 # Verificar: Synthetic Data Factory for Domain-Specific Code Intelligence
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 0.3.2
 **Status**: IMPLEMENTED
 **Authors**: PAIML Engineering

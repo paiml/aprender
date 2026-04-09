@@ -1,5 +1,7 @@
 # APR File Tooling Specification
 
+Status: proposed
+
 **Document**: APR Loading, Inspection, Diff, Debugging, Bundling, and Data Tooling Improvements
 **Version**: 1.0.0
 **Status**: Draft Specification

@@ -1,5 +1,9 @@
 # Fine-Tuning Provable Design by Contract
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
 **Status**: Phase 1 COMPLETE (CPU training). Phase 2 COMPLETE (PTX forward kernels). Phase 3 PLANNED (GPU backward kernels).

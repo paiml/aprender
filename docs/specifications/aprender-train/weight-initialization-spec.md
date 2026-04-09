@@ -1,5 +1,9 @@
 # Weight Initialization Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## Status: CRITICAL BUG — entrenar#309
 
 **Root cause of 16x convergence gap between entrenar and PyTorch (albor canary).**

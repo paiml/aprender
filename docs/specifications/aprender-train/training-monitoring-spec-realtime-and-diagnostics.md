@@ -1,5 +1,9 @@
 # Training Monitoring Specification: Real-Time Diagnostics
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > **Version:** 0.1.0
 > **Status:** Draft
 > **Author:** PAIML Team

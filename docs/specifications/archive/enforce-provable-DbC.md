@@ -1,5 +1,9 @@
 # Enforce Provable Design by Contract Across the Sovereign AI Stack
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
 **Status**: ALL PHASES COMPLETE — 638 FALSIFY tests, 70 contract files with proptest, 10 YAML contracts. All 19 findings (C-01–C-11, N-01–N-08) FIXED across 4 repos. Roadmap Phases 1-4 CLOSED (0 open checkboxes). Falsification gate: 0 unwrap_or magic-number defaults in non-test code.

@@ -1,5 +1,9 @@
 # Sovereign AI Capability Specification v1.1
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** Living Document (Toyota Way Reviewed)
 **Version:** 1.1
 **Date:** 2025-11-20

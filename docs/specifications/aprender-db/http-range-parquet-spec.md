@@ -1,5 +1,9 @@
 # HTTP Range Request Parquet Reader Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Work Item**: phase4-http-range
 **Status**: In Progress
 **Priority**: High

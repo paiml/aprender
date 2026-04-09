@@ -1,5 +1,9 @@
 # Showcase Demos
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [presentar-spec.md](../presentar-spec.md)
 
 **Scope:** Shell command autocomplete demo, WASM integration, QA verification checklists.

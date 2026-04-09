@@ -1,5 +1,9 @@
 # Aprender Model Format Specification (.apr)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 1.8.0
 **Status:** Partially Implemented
 **Author:** paiml

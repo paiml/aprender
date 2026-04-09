@@ -1,5 +1,9 @@
 # SPEC-057: ptop Deep Tracing Integration via renacer
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status**: DRAFT
 **Author**: Claude Code
 **Date**: 2026-01-11

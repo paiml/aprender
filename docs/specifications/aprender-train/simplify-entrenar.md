@@ -1,5 +1,9 @@
 # SPEC: Simplify Entrenar — Dirt Simple Fine-Tune to HuggingFace
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** Draft
 **Date:** 2026-02-17
 **Author:** PAIML Engineering

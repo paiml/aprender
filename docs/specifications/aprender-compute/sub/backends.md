@@ -1,5 +1,9 @@
 # Sub-spec: Multi-Backend Architecture
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent:** [trueno-spec.md](../trueno-spec.md) Sections 3, 4
 
 ---

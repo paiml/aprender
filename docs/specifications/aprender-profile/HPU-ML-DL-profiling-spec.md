@@ -1,5 +1,9 @@
 # HPU/ML/DL-Powered Profiling Specification (v0.4.0)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Project:** Renacer
 **Version:** 0.4.0
 **Status:** Draft Specification

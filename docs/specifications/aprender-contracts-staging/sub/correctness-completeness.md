@@ -1,5 +1,9 @@
 # 28. Correctness + Completeness
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## The Problem
 
 Grade A (v2.2.0) measures **correctness** — "did you keep the promises

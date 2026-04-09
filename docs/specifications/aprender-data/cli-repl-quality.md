@@ -1,5 +1,9 @@
 # CLI & REPL Quality Specification: The Interactive Andon
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Document:** ALIM-SPEC-006
 **Status:** Draft
 **Author:** PAIML Engineering

@@ -1,5 +1,9 @@
 # Performance Parity: Ollama/llama.cpp GPU Inference
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status:** SUPERSEDED
 **Superseded By:** [decoder-throughput-specification-llama-mistral-phi-qwen.md](./decoder-throughput-specification-llama-mistral-phi-qwen.md)
 **Date:** 2025-12-16

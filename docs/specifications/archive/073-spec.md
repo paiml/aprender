@@ -8,6 +8,9 @@ updated: 2025-11-26T15:30:00.000000000+00:00
 
 # Model Evaluation Framework with Drift Detection
 
+Version: 1.0
+Status: proposed
+
 **GitHub Issue**: [#73](https://github.com/paiml/aprender/issues/73)
 **Status**: Completed
 

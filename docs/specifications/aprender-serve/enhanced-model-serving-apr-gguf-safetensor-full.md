@@ -1,5 +1,8 @@
 # Enhanced Model Serving Specification: APR, GGUF, and SafeTensors
 
+Status: proposed
+Date: 2026-04-09
+
 **Version:** 2.1.0
 **Status:** Draft for Review
 **Project:** Realizar (paiml/realizar)

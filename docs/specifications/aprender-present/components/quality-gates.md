@@ -1,5 +1,9 @@
 # Quality Gates
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [presentar-spec.md](../presentar-spec.md)
 
 **Scope:** TUI quality scoring system, coverage enforcement, mutation testing, CI/CD pipeline, quality metrics.

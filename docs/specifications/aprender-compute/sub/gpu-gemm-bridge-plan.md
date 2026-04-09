@@ -1,5 +1,9 @@
 # GPU GEMM Bridge Plan: 0.39x → 0.6x+ cuBLAS
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Date**: 2026-04-06
 **Status**: RESEARCH COMPLETE — Ready for Implementation
 **Ref**: CGP spec P3c, trueno#200, trueno#203

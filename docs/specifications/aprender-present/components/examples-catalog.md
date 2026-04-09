@@ -1,5 +1,9 @@
 # Examples Catalog
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [presentar-spec.md](../presentar-spec.md)
 
 **Scope:** 50 executable examples across 5 categories with 15-point QA checklist.

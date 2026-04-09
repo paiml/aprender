@@ -1,5 +1,9 @@
 # Aprender v1.0 Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Project**: Aprender (Spanish: "to learn")  
 **Version**: 1.0.0  
 **Status**: Specification Phase  

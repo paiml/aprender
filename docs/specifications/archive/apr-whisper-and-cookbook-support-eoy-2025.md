@@ -1,5 +1,9 @@
 # APR Whisper & Cookbook Support: Enhanced EOY 2025 Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 3.1.0-ENHANCED
 **Status**: ✅ Complete (313/313 original + 87 + 10 Z-series = 410 verification points)
 **Created**: 2025-12-21 | **Enhanced**: 2025-12-30

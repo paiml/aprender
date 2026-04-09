@@ -1,5 +1,7 @@
 # APR-BOOK: Provable Machine Learning with Aprender
 
+Version: 1.0
+
 **Version**: 3.0 FINAL
 **Date**: 2026-04-08
 **Status**: COMPLETE — 229 PCUs, 285 contracts, 1,425 falsification conditions, 10/10 gates pass

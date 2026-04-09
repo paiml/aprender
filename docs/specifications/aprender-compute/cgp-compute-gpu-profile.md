@@ -1,5 +1,8 @@
 # CGP: Compute-GPU-Profile — Unified Performance Analysis CLI
 
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0
 **Date**: 2026-04-04
 **Status**: SPECIFICATION - Ready for Implementation

@@ -8,6 +8,9 @@ updated: 2025-12-12T12:36:10.197104084+00:00
 
 # COV-001: Zero-Tolerance 95% Coverage Specification
 
+Version: 1.0
+Status: proposed
+
 **Ticket ID**: COV-001
 **Status**: In Progress
 **Current Coverage**: 93.86%

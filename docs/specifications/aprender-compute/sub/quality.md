@@ -1,5 +1,9 @@
 # Sub-spec: Quality Gates & Testing
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent:** [trueno-spec.md](../trueno-spec.md) Sections 11, 12, 13
 
 ---

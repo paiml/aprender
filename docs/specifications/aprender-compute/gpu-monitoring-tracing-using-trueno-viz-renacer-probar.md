@@ -1,5 +1,9 @@
 # TRUENO-SPEC-010: GPU Monitoring, Tracing, and Visualization
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status**: DRAFT
 **Version**: 1.1.0
 **Created**: 2024-12-14

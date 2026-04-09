@@ -1,7 +1,7 @@
 [package]
 name = "aprender-cgp"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 rust-version = "1.89"
 authors = ["Pragmatic AI Labs"]
 license = "MIT"
@@ -9,6 +9,9 @@ description = "Compute-GPU-Profile: Unified performance analysis CLI for scalar,
 repository = "https://github.com/paiml/trueno"
 keywords = ["profiling", "gpu", "simd", "cuda", "performance"]
 categories = ["command-line-utilities", "development-tools::profiling"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints.rust]
 unsafe_code = "allow"

@@ -1,5 +1,9 @@
 # Sub-spec: Contract-Aware Tracing (Tier 3 Runtime Integration)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent:** [trueno-spec.md](../trueno-spec.md) Section 23
 
 **References:**

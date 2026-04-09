@@ -1,5 +1,9 @@
 # Banco Testing Strategy: Full Probar Integration
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [banco-spec.md](banco-spec.md) §5
 > Depends on: jugar-probar (1.0.x) with features: browser, tui, runtime
 > Status: **L1 complete (353 tests). L2-L4 NOT YET IMPLEMENTED.**

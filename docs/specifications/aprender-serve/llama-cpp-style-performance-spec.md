@@ -1,5 +1,8 @@
 # Realizar LLM Inference Performance Specification
 
+Version: 1.0
+Status: proposed
+
 **Document ID:** REALIZAR-PERF-SPEC-001
 **Version:** 2.0.0
 **Status:** REVISED - INCORPORATES TEAM REVIEW FEEDBACK

@@ -8,6 +8,9 @@ updated: 2026-02-17
 
 # Qwen3.5-9B: Quantization, Serving, and Fine-Tuning Pipeline
 
+Version: 1.0
+Status: proposed
+
 **Goal:** Be the first to quantize, serve, and publish Qwen3.5-9B-Instruct in APR format.
 
 **Primary Model:** [`Qwen/Qwen3.5-9B-Instruct`](https://huggingface.co/Qwen/Qwen3.5-9B-Instruct)

@@ -1,5 +1,9 @@
 # Framework Architecture
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 > Parent: [presentar-spec.md](../presentar-spec.md)
 
 **Scope:** Layers 6-9, rendering pipeline, GPU shaders, chart primitives, layout engine, performance targets.

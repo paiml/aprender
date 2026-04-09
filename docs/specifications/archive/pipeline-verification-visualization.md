@@ -1,5 +1,9 @@
 # APR-VERIFY-001: Pipeline Verification & Visualization System
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Status**: Phase 1 IMPLEMENTED (Core Infrastructure + Whisper.apr Case Study)
 **Author**: Aprender Team
 **Date**: 2025-12-16

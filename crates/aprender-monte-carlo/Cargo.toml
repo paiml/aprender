@@ -1,7 +1,7 @@
 [package]
 name = "aprender-monte-carlo"
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 authors = ["paiml"]
 description = "Monte Carlo simulations for finance, stock market, and business forecasting"
 license = "MIT"
@@ -33,6 +33,9 @@ criterion = { workspace = true }
 predicates = "3"
 proptest = "1"
 tempfile = "3"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true

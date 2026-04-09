@@ -44,6 +44,9 @@ wasm = ["dep:wasm-bindgen", "dep:web-sys", "dep:console_error_panic_hook"]
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true
 

@@ -1,5 +1,9 @@
 # provable-contracts — Verification Extension Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Orthogonal Approaches, Integration Points, and Implementation Roadmap**
 
 Version 2.0 · March 2026 · Pragmatic AI Labs · [paiml/provable-contracts](https://github.com/paiml/provable-contracts)

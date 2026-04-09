@@ -1,5 +1,9 @@
 # Sub-spec: Lint Quality Gates (Part 2)
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 See also [lint.md](lint.md) (Sections 1-8: Design Goals, SARIF, Diff-Aware, Suppression, Severity, Auto-Fix, PR Annotations, Watch Mode).
 
 ---

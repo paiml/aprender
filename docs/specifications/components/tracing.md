@@ -1,5 +1,9 @@
 # Layer Tracing and Brick Profiling
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Version**: 1.0.0
 **Status**: Active
 **Parent**: [aprender-spec.md](../aprender-spec.md) §4

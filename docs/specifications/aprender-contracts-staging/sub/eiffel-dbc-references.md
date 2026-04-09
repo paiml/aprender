@@ -1,5 +1,9 @@
 # Eiffel DbC — Falsification & References
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 *See also: [eiffel-dbc.md](eiffel-dbc.md)*
 
 ## 12. Falsification

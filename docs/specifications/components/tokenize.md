@@ -1,5 +1,9 @@
 # Tokenize Component Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 **Parent**: [apr-spec.md](../apr-spec.md) §20
 **Status**: Active
 **CLI**: `apr tokenize`

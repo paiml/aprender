@@ -1,5 +1,9 @@
 # TUI Monitoring System Specification
 
+Version: 1.0
+Status: proposed
+Date: 2026-04-09
+
 ## trueno-viz `monitor` Feature
 
 **Version**: 0.1.0
