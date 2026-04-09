@@ -61,7 +61,7 @@ impl Trie {
         let mut buffer = String::with_capacity(prefix.len() + 64);
         buffer.push_str(prefix);
 
-        self.collect_words_optimized(node, &mut buffer, &mut results, limit);
+        Self::collect_words_optimized(node, &mut buffer, &mut results, limit);
 
         // Sort by count (descending)
         results.sort_unstable_by(|a, b| b.1.cmp(&a.1));
@@ -77,7 +77,6 @@ impl Trie {
 
     /// Optimized collection using a single mutable buffer
     fn collect_words_optimized(
-        &self,
         node: &TrieNode,
         buffer: &mut String,
         results: &mut Vec<(String, u32)>,
@@ -95,14 +94,14 @@ impl Trie {
         for (ch, child) in &node.children {
             // Push character, recurse, then pop (avoids clone)
             buffer.push(*ch);
-            self.collect_words_optimized(child, buffer, results, limit);
+            Self::collect_words_optimized(child, buffer, results, limit);
             buffer.pop();
         }
     }
 
     /// Legacy method for compatibility (unused but kept for reference)
     #[allow(dead_code)]
-    fn collect_words(&self, node: &TrieNode, current: String, results: &mut Vec<(String, u32)>) {
+    fn collect_words(node: &TrieNode, current: String, results: &mut Vec<(String, u32)>) {
         if node.is_end {
             results.push((current.clone(), node.count));
         }
@@ -115,7 +114,7 @@ impl Trie {
         for (ch, child) in &node.children {
             let mut next = current.clone();
             next.push(*ch);
-            self.collect_words(child, next, results);
+            Self::collect_words(child, next, results);
         }
     }
 }

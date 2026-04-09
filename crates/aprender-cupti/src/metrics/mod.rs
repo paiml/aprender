@@ -155,7 +155,7 @@ impl WarpMetrics {
     pub fn primary_stall_reason(&self) -> Option<WarpStallReason> {
         self.stall_reasons
             .iter()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .max_by(|a, b| a.1.partial_cmp(b.1).expect("stall reason percentages should be comparable (non-NaN)"))
             .map(|(reason, _)| *reason)
     }
 }

@@ -141,6 +141,10 @@ impl MetricsCollector {
     }
 
     pub fn state_json(&self) -> String {
+        // serde_json::json! macro internally uses unwrap() which triggers
+        // the disallowed-methods lint; allow it here since the macro is safe
+        // for these primitive types (f64, Vec<f64>).
+        #[allow(clippy::disallowed_methods)]
         let state = serde_json::json!({
             "loss_mean": self.loss_mean(),
             "loss_std": self.loss_std(),

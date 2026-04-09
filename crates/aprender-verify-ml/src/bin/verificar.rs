@@ -2,6 +2,11 @@
 //!
 //! Generate verified test cases for transpiler validation.
 
+// serde_json::json! macro internally uses unwrap() which triggers the
+// disallowed-methods lint; allow it crate-wide since the macro is safe
+// for the primitive types used here (strings, numbers, arrays).
+#![allow(clippy::disallowed_methods)]
+
 use clap::{Parser, Subcommand};
 use std::io::Write;
 use verificar::generator::{

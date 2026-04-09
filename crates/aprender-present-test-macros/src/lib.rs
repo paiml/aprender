@@ -39,7 +39,7 @@ struct PresentarTestAttrs {
 }
 
 impl Parse for PresentarTestAttrs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let mut attrs = Self {
             timeout_ms: 5000,
             ..Default::default()

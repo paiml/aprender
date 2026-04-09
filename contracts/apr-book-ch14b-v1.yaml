@@ -1,0 +1,74 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-09'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'book/src/chapters/ch14b-entity-contracts.md'
+  - 'contracts/readme-entity-v1.yaml'
+  description: >
+    Book chapter contract for ch14b: Entity Contracts (0-100 Scoring).
+    Ensures the chapter covers the scoring system, profiles, calibration,
+    and all 14 contracts.
+
+contract: apr-book-ch14b-v1
+status: enforced
+title: "Entity Contracts: Scoring Repository Artifacts 0-100"
+
+page:
+  id: ch14b-entity-contracts
+  title: "Entity Contracts (0-100 Scoring)"
+  part: IV
+  category: chapter
+  path: book/src/chapters/ch14b-entity-contracts.md
+  example: ""
+  arxiv: []
+
+preconditions:
+- "Chapter covers the 14-contract registry"
+- "Chapter explains tier-weighted scoring formula"
+- "Chapter documents 4 profiles (any, cli-tool, library, ml-framework)"
+
+postconditions:
+- "Reader can apply entity contracts to their own project"
+- "Reader understands the 0-100 scoring with A/B/C/D/F grades"
+
+falsification:
+- condition: "Chapter does not mention all 14 contracts"
+  severity: P1
+  action: fail_chapter
+- condition: "Chapter does not explain the scoring formula"
+  severity: P1
+  action: fail_chapter
+- condition: "Chapter does not mention polars calibration"
+  severity: P2
+  action: warn
+
+sections:
+- heading: "Why Entity Contracts?"
+  has_code: false
+  has_assertion: false
+- heading: "The Scoring System"
+  has_code: true
+  has_assertion: true
+- heading: "The 14 Contracts"
+  has_code: false
+  has_assertion: false
+- heading: "Profiles"
+  has_code: true
+  has_assertion: false
+- heading: "Calibration"
+  has_code: false
+  has_assertion: true
+- heading: "Applying to Your Project"
+  has_code: true
+  has_assertion: false
+- heading: "Current Aprender Scores"
+  has_code: false
+  has_assertion: true
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 3
+  status: enforced

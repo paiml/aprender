@@ -147,7 +147,19 @@ pub fn dijkstra(graph: &CsrGraph, source: NodeId) -> HashMap<NodeId, f32> {
     distances
 }
 
-/// Find the shortest path between two nodes
+/// Reconstruct the shortest path from predecessors map.
+fn reconstruct_path(predecessors: &HashMap<NodeId, NodeId>, target: NodeId) -> Vec<NodeId> {
+    let mut path = vec![target];
+    let mut current = target;
+    while let Some(&pred) = predecessors.get(&current) {
+        path.push(pred);
+        current = pred;
+    }
+    path.reverse();
+    path
+}
+
+/// Find the shortest path between two nodes.
 ///
 /// Returns the distance and the path (sequence of nodes) from source to target.
 ///
@@ -180,18 +192,6 @@ pub fn dijkstra(graph: &CsrGraph, source: NodeId) -> HashMap<NodeId, f32> {
 /// assert_eq!(path, vec![NodeId(0), NodeId(1), NodeId(2)]);
 /// ```
 #[must_use]
-/// Reconstruct the shortest path from predecessors map
-fn reconstruct_path(predecessors: &HashMap<NodeId, NodeId>, target: NodeId) -> Vec<NodeId> {
-    let mut path = vec![target];
-    let mut current = target;
-    while let Some(&pred) = predecessors.get(&current) {
-        path.push(pred);
-        current = pred;
-    }
-    path.reverse();
-    path
-}
-
 pub fn dijkstra_path(
     graph: &CsrGraph,
     source: NodeId,
@@ -222,7 +222,7 @@ pub fn dijkstra_path(
             return Some((cost, path));
         }
 
-        if distances.get(&node_id).map_or(false, |&d| cost > d) {
+        if distances.get(&node_id).is_some_and(|&d| cost > d) {
             continue;
         }
 

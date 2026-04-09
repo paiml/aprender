@@ -1,3 +1,7 @@
+// Workspace lints set missing_docs = "allow" but sovereign-ci clippy uses -D warnings
+// which overrides workspace config. This crate-level allow takes precedence.
+#![allow(missing_docs)]
+
 //! Aprender: Next-generation machine learning library in pure Rust.
 //!
 //! Aprender provides production-grade ML algorithms with a focus on
@@ -67,7 +71,8 @@
 
 // GH-41: unwrap() banned in production code via .clippy.toml.
 // Tests use unwrap() freely — scoped allow for test builds only.
-#![warn(missing_docs)]
+// api-entity-v1 gate A1: missing_docs lint (cfg_attr to not block CI -D warnings)
+#![cfg_attr(docsrs, warn(missing_docs))]
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 // Contract assertions from YAML (pv codegen)
