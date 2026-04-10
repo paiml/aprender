@@ -1,10 +1,10 @@
 <!-- PCU: ci-infrastructure | contract: contracts/ci-infra-v1.yaml -->
 <!-- Example: none (infrastructure specification) -->
-<!-- Status: proposed -->
+<!-- Status: enforced -->
 # CI Infrastructure — Permanent Fix Specification
 
 Version: 1.0
-Status: proposed
+Status: enforced
 Date: 2026-04-10
 
 **Contract**: `contracts/ci-infra-v1.yaml`

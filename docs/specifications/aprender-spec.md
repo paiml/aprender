@@ -492,5 +492,4 @@ All format conversions support `--trace` for tensor layout verification.
 | QA | [components/qa.md](components/qa.md) | Active |
 | Profile | [components/profile.md](components/profile.md) | Active |
 | Tokenize | [components/tokenize.md](components/tokenize.md) | Active |
-
-Legacy specs archived in `archive/`. Not authoritative.
+| CI Infrastructure | [components/ci-infrastructure.md](components/ci-infrastructure.md) | Active |
