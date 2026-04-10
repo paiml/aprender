@@ -4227,7 +4227,8 @@ dependencies = [
 [[package]]
 name = "cc"
 version = "1.2.59"
-source = "git+https://github.com/rust-lang/cc-rs?branch=main#c15c3eb9f10b34c9abde06b9bdf17c3de43a4658"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7a4d3ec6524d28a329fc53654bbadc9bdd7b0431f5d65f1a56ffb28a1ee5283"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -6541,7 +6542,8 @@ dependencies = [
 [[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
-source = "git+https://github.com/rust-lang/cc-rs?branch=main#c15c3eb9f10b34c9abde06b9bdf17c3de43a4658"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "finl_unicode"

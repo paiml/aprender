@@ -101,8 +101,8 @@ falsification_tests:
         if wf is None: continue
         on = wf.get('on', wf.get(True, {}))
         if isinstance(on, dict):
-            push = on.get('push', {})
-            if isinstance(push, dict) and 'branches' not in push and 'tags' not in push:
+            push = on.get('push')
+            if push is not None and isinstance(push, dict) and 'branches' not in push and 'tags' not in push:
                 print(f'BARE PUSH: {path}')
                 bare += 1
     print(f'Bare push triggers: {bare}')

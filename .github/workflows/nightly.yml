@@ -63,10 +63,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-      - name: Checkout provable-contracts (path dep)
+      - name: Checkout provable-contracts (path dep — pinned, RC3 fix)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: paiml/provable-contracts
+          ref: v0.3.1  # RC3: pinned to tag, not HEAD
           path: provable-contracts
 
       - name: Symlink provable-contracts for Cargo path deps
@@ -78,10 +79,11 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType Junction -Path "$env:GITHUB_WORKSPACE\..\provable-contracts" -Target "$env:GITHUB_WORKSPACE\provable-contracts" -Force
 
-      - name: Checkout alimentar (path dep)
+      - name: Checkout alimentar (path dep — pinned, RC3 fix)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: paiml/alimentar
+          ref: v0.2.6  # RC3: pinned to tag, not HEAD
           path: alimentar
 
       - name: Symlink alimentar for Cargo path deps
@@ -93,10 +95,11 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType Junction -Path "$env:GITHUB_WORKSPACE\..\alimentar" -Target "$env:GITHUB_WORKSPACE\alimentar" -Force
 
-      - name: Checkout batuta (path dep)
+      - name: Checkout batuta (path dep — pinned, RC3 fix)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: paiml/batuta
+          ref: v0.7.2  # RC3: pinned to tag, not HEAD
           path: batuta
 
       - name: Symlink batuta for Cargo path deps
@@ -108,10 +111,11 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType Junction -Path "$env:GITHUB_WORKSPACE\..\batuta" -Target "$env:GITHUB_WORKSPACE\batuta" -Force
 
-      - name: Checkout realizar (path dep)
+      - name: Checkout realizar (path dep — pinned, RC3 fix)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: paiml/realizar
+          ref: v0.7.0  # RC3: pinned to tag, not HEAD
           path: realizar
 
       - name: Symlink realizar for Cargo path deps
