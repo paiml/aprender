@@ -324,8 +324,17 @@ impl HeadlessMonitor {
         state: &mut super::state::TrainingState,
         mut writer: HeadlessWriter<W>,
     ) -> io::Result<()> {
+        let mut last_emitted_step: Option<usize> = None;
         loop {
             if let Some(snapshot) = state.read()? {
+                // SPEC-TRAINMON-001: Skip duplicate emissions (same step = same data)
+                let current_step = snapshot.step;
+                if last_emitted_step == Some(current_step) {
+                    std::thread::sleep(std::time::Duration::from_millis(self.refresh_ms));
+                    continue;
+                }
+                last_emitted_step = Some(current_step);
+
                 writer.write(&snapshot)?;
 
                 // Check for completion
