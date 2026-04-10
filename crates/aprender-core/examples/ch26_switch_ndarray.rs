@@ -38,7 +38,7 @@ fn main() {
     let y = Vector::from_slice(&[2.0, 4.0, 6.0, 8.0]);
     let mut lr = LinearRegression::new();
     lr.fit(&x, &y).expect("fit");
-    let pred = lr.predict(&x);
+    let _pred = lr.predict(&x);
     let r2 = lr.score(&x, &y);
     println!();
     println!("LinearRegression: R2 = {r2:.4}");
