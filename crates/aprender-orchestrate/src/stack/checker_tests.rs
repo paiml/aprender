@@ -622,7 +622,8 @@ fn test_checker_from_workspace_batuta() {
     assert!(checker.crate_count() >= 1);
     // In the monorepo, "batuta" may be named "aprender-orchestrate"
     assert!(
-        checker.get_crate("batuta").is_some() || checker.get_crate("aprender-orchestrate").is_some(),
+        checker.get_crate("batuta").is_some()
+            || checker.get_crate("aprender-orchestrate").is_some(),
         "workspace should contain batuta or aprender-orchestrate"
     );
 }
