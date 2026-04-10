@@ -108,6 +108,9 @@ impl TrainingDashboard {
             items.push(LayoutItem::new(err).fixed(1.0));
         }
 
+        // Anomaly detection footer (SPEC-TRAINMON-001 §6)
+        items.push(LayoutItem::new(build_alert_footer(snap)).fixed(1.0));
+
         self.widget_tree = Some(Layout::rows(items));
     }
 }
@@ -217,6 +220,51 @@ fn build_loss_panel(snap: &TrainingSnapshot) -> Border {
         Layout::rows([LayoutItem::new(sparkline).fixed(1.0), LayoutItem::new(range).fixed(1.0)]);
 
     Border::rounded("Loss History").child(content)
+}
+
+/// Build alert footer: anomaly detection status bar (SPEC-TRAINMON-001 §6).
+///
+/// Displays loss spike, NaN, and gradient explosion alerts using the
+/// `monitor::grid::anomaly` module. Green when healthy, red on anomaly.
+fn build_alert_footer(snap: &TrainingSnapshot) -> Text {
+    use super::super::grid::anomaly;
+
+    let mut alerts = Vec::new();
+
+    // Loss spike detection (warmup = 100 steps)
+    let loss_ema = if snap.loss_history.len() > 1 {
+        snap.loss_history.iter().sum::<f32>() / snap.loss_history.len() as f32
+    } else {
+        snap.loss
+    };
+    if anomaly::is_spike(snap.loss, loss_ema, snap.step as u64, 100) {
+        alerts.push(format!(
+            "[SPIKE] loss={:.4} ({:.1}x EMA {:.4})",
+            snap.loss,
+            snap.loss / loss_ema.max(1e-8),
+            loss_ema
+        ));
+    }
+
+    // NaN detection
+    if anomaly::is_nan_divergence(snap.loss) {
+        alerts.push("[NaN] training diverged".to_string());
+    }
+
+    // Gradient explosion
+    if anomaly::is_gradient_explosion(snap.gradient_norm, snap.gradient_norm * 0.5) {
+        alerts.push(format!("[GRAD] explosion gnorm={:.2}", snap.gradient_norm));
+    }
+
+    if alerts.is_empty() {
+        Text::new(format!(
+            "loss={:.4} | step {} | gnorm={:.3}",
+            snap.loss, snap.step, snap.gradient_norm
+        ))
+        .with_color(Color::new(0.3, 0.7, 0.3, 1.0))
+    } else {
+        Text::new(alerts.join(" | ")).with_color(Color::new(1.0, 0.3, 0.3, 1.0))
+    }
 }
 
 // =============================================================================
