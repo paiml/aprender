@@ -1,0 +1,61 @@
+contract: C-SHIPM1-001
+title: Model 1 TIES Merge + DPO Eval Gate (Qwen2.5-Coder-7B)
+kaizen: PMAT-517
+parent: SPEC-SHIP-TWO-001
+status: proposed
+date: 2026-04-10
+baseline:
+  humaneval_pass_at_1: 87.20
+  mbpp_pass_at_1: 76.20
+  contracts_passing: 67
+  contracts_total: 68
+target:
+  humaneval_pass_at_1_min: 87.0
+  mbpp_pass_at_1_min: 80.0
+  contracts_passing: 68
+  contracts_total: 68
+  model_loadable: true
+  cloud_api_calls: 0
+preconditions:
+- PMAT-014 N-sampling complete (1640/1640)
+- DPO training converged (val_loss decreasing, no NaN)
+- LoRA merge bug GH-580/581 verified not regressed
+postconditions:
+- HumanEval pass@1 >= 87.0% (GATE-SHIP-001)
+- MBPP pass@1 >= 80.0% (GATE-SHIP-002)
+- All 28 apr-leaderboard contracts passing (GATE-SHIP-003)
+- Merged model passes `apr validate --quality` (GATE-SHIP-005)
+- Zero cloud API calls in pipeline logs (GATE-SHIP-006)
+invariants:
+- HumanEval does not regress below 85.0% after DPO (FALSIFY-SHIP-001)
+- Tensor stats within 10% of base model after TIES merge (FALSIFY-SHIP-004)
+- Eval harness deterministic within 1pp across 3 runs (FALSIFY-SHIP-008)
+falsification_tests:
+- id: FALSIFY-SHIP-001
+  rule: HumanEval must not regress below 85.0% after DPO
+  prediction: DPO alignment preserves or improves code generation quality
+  test: Run HumanEval eval pre-DPO and post-DPO; compare pass@1
+  if_fails: Roll back to pre-DPO checkpoint; investigate DPO hyperparams
+- id: FALSIFY-SHIP-002
+  rule: MBPP must reach 80.0% after full pipeline
+  prediction: DPO + TIES merge closes +3.8pp gap
+  test: Run MBPP eval after TIES merge; verify pass@1 >= 80.0%
+  if_fails: Add MBPP-targeted teacher completions to DPO training data
+- id: FALSIFY-SHIP-004
+  rule: TIES merge must not corrupt weights
+  prediction: Merged model tensor stats within 10% of base
+  test: Compare tensor mean/std/min/max before and after merge
+  if_fails: Debug TIES resolution order; fall back to linear merge
+files:
+- path: paiml/apr-leaderboard (external repo)
+  change: DPO training, TIES merge, final eval, model card upload
+qa_gate:
+  id: F-SHIPM1-001
+  name: ship-m1-ties-merge-v1 Contract
+  description: Quality gate for Model 1 ship readiness
+  checks:
+  - humaneval_gate
+  - mbpp_gate
+  - contract_coverage
+  - model_loadable
+  - sovereignty_audit

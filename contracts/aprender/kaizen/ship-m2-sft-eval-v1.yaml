@@ -1,0 +1,78 @@
+contract: C-SHIPM2-001
+title: Model 2 SFT + Eval Gate (Albor 370M Sovereign Code Completion)
+kaizen: PMAT-523
+parent: SPEC-SHIP-TWO-001
+status: proposed
+date: 2026-04-10
+baseline:
+  val_ppl_v28: 38.53
+  humaneval_pass_at_1: 0.0
+  teacher_completions: 982
+  training_throughput_tok_s: 12300
+  mfu_percent: 38.7
+  contracts_passing: 54
+  contracts_total: 54
+target:
+  val_ppl_v29_max: 30.0
+  humaneval_pass_at_1_min: 30.0
+  teacher_completions_min: 100000
+  training_throughput_tok_s_min: 8000
+  model_loadable: true
+  cloud_api_calls: 0
+  python_in_training_loop: false
+preconditions:
+- v29 pre-training completed without divergence (AC-SHIP2-001)
+- ALB-010 teacher loading complete on Jetson GB10 (AC-SHIP2-004)
+- 100K filtered teacher completions generated (AC-SHIP2-005)
+postconditions:
+- SFT converges with decreasing val_loss, no NaN (AC-SHIP2-006)
+- HumanEval pass@1 >= 30.0% (GATE-SHIP-009)
+- All 54 albor contracts passing (GATE-SHIP-010)
+- Model loadable via `apr run` (GATE-SHIP-011)
+- Entire pipeline on sovereign hardware (GATE-SHIP-012)
+- Training is 100% Rust (AC-SHIP2-012)
+invariants:
+- val_ppl does not increase for 500 consecutive steps after 5K (FALSIFY-SHIP-013)
+- Post-SFT HumanEval >= pre-SFT HumanEval (FALSIFY-SHIP-017)
+- CUDA and CPU reference agree within 1e-4 (FALSIFY-SHIP-019)
+- Less than 50% degenerate output on 100 test prompts (FALSIFY-SHIP-021)
+falsification_tests:
+- id: FALSIFY-SHIP-013
+  rule: v29 must not diverge like v28
+  prediction: Filtered 2.04B tokens prevent raw-data divergence
+  test: Monitor val_ppl every 500 steps; flag 500-step increase after 5K
+  if_fails: Stop run; audit data pipeline; check LR schedule
+- id: FALSIFY-SHIP-014
+  rule: val_ppl must reach < 30.0
+  prediction: Quality-filtered data produces lower perplexity than raw
+  test: Check final val_ppl at end of v29 training
+  if_fails: Extend training by 50% steps; increase data filtering
+- id: FALSIFY-SHIP-017
+  rule: SFT must not degrade HumanEval vs base
+  prediction: Teacher distillation improves code generation quality
+  test: Compare HumanEval pre-SFT vs post-SFT
+  if_fails: Check SFT data quality; reduce epochs (overfitting)
+- id: FALSIFY-SHIP-018
+  rule: HumanEval must reach 30% after SFT
+  prediction: 370M model with teacher distillation matches phi-1 trajectory
+  test: Run full HumanEval eval on post-SFT checkpoint
+  if_fails: Accept 20%+ as preview; plan DPO follow-up
+- id: FALSIFY-SHIP-021
+  rule: Model must not produce degenerate repetitive output
+  prediction: Quality training data and proper sampling prevent repetition
+  test: Generate 100 completions; count 5-gram repetition rate
+  if_fails: Check data dedup; adjust sampling temperature
+files:
+- path: paiml/albor (external repo)
+  change: v29 pre-train, teacher loading, SFT, eval, model card upload
+qa_gate:
+  id: F-SHIPM2-001
+  name: ship-m2-sft-eval-v1 Contract
+  description: Quality gate for Model 2 ship readiness
+  checks:
+  - pretrain_convergence
+  - humaneval_gate
+  - contract_coverage
+  - model_loadable
+  - sovereignty_audit
+  - rust_only_audit
