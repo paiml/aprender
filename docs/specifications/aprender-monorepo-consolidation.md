@@ -964,10 +964,10 @@ cargo workspaces publish --from-git
 
 1. ~~`cargo test --workspace` passes~~ **DONE**: 28,700+ pass / 0 fail (2026-04-10, incl. Phase 2g QA crates)
 2. ~~`cargo publish` without `[patch.crates-io]`~~ **DONE**: 0 patches, dry-run 63/63 OK
-3. `cargo install aprender` from clean machine — Phase 5 (publishing in progress)
-4. Old crate names resolve via shims — Phase 5 (36 shims generated, pending publish)
-5. Daily aprender releases < 5 min — verified: `cargo publish -p aprender` is single command
-6. Zero version mismatch for 90 days — starts after Phase 5 completes
+3. ~~`cargo install aprender` from clean machine~~ **DONE**: v0.29.2+ live on crates.io, `apr` binary installed
+4. ~~Old crate names resolve via shims~~ **DONE**: 14 shims published (trueno, entrenar, realizar, batuta, etc.)
+5. ~~Daily aprender releases < 5 min~~ **DONE**: `cargo publish -p aprender` is single command
+6. Zero version mismatch for 90 days — monitoring (started 2026-04-06)
 
 ---
 
