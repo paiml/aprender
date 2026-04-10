@@ -151,6 +151,8 @@ fn create_mock_apr(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
+    // Flush filesystem metadata to avoid ETXTBSY in Docker overlayfs (CI containers)
+    let _ = std::fs::File::open(&path).and_then(|f| f.sync_all());
     path
 }
 
