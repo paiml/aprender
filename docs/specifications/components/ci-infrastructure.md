@@ -175,6 +175,24 @@ All 6 root causes fixed. Falsified 2026-04-10.
 | RC3 | 4 repos pinned: provable-contracts@v0.3.1, alimentar@v0.2.6, batuta@v0.7.2, realizar@v0.7.0 | 0 floating refs in nightly.yml | F-INFRA-003 PASS |
 | RC4 | `[patch.crates-io]` removed — cc fix shipped in 1.2.x | `cargo check --workspace` clean | F-INFRA-004 PASS |
 | RC5 | 8 exclusions → 2 (GPU-hardware only: aprender-gpu, aprender-cuda-edge) | 23,375 tests restored (was 8 excluded, now 2 GPU-only) | F-INFRA-005 PASS |
+
+### RC5 Path to Zero Exclusions
+
+The "yoga" self-hosted runner has GPU capability (CUDA/cuBLAS). Split `workspace-test`
+into two jobs to achieve true zero exclusions:
+
+```yaml
+workspace-test:          # Standard runner — all non-GPU crates
+  runs-on: self-hosted
+  run: cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge
+
+workspace-test-gpu:      # Yoga runner — GPU crates only
+  runs-on: [self-hosted, yoga]
+  run: cargo test -p aprender-gpu -p aprender-cuda-edge --lib
+```
+
+This eliminates ALL exclusions. Every crate tested on every PR. The yoga runner
+is optional — if unavailable, GPU tests are skipped (not failed).
 | RC6 | Already consistent | 1 distinct RUSTFLAGS value | F-INFRA-006 PASS |
 
 ## Remaining Infrastructure Issues
