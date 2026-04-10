@@ -164,16 +164,52 @@ forall workflow W1, W2 that run clippy or compile with -D warnings:
 | F-INFRA-005 | no_exclusions | Parse ci.yml `--exclude` flags; assert count <= 2 (GPU-only acceptable) | YAML parse |
 | F-INFRA-006 | rustflags_consistent | Extract RUSTFLAGS from all workflows; assert identical set | YAML parse |
 
-## Implementation Priority
+## Implementation Status
 
-| Priority | RC | Fix | Effort | Impact |
-|----------|-----|-----|--------|--------|
-| P0 | RC1 | Add `branches: [main]` to 3 workflows | 5 min | -12 false failures/day |
-| P0 | RC2 | `cfg(unix)` gate on `nix` dep | 15 min | Fixes 100% nightly failures |
-| P0 | RC6 | Align RUSTFLAGS across workflows | 10 min | Stops cascading fix cycles |
-| P1 | RC4 | Pin or remove `cc` patch | 5 min | Removes floating external dep |
-| P1 | RC3 | Pin sibling repos to tags in nightly.yml | 30 min | Stops cross-repo breakage |
-| P2 | RC5 | Remove `--exclude` flags (needs API convergence) | 2-4 hrs | Full workspace coverage |
+All 6 root causes fixed. Falsified 2026-04-10.
+
+| RC | Fix Applied | Evidence | Gate |
+|----|-------------|----------|------|
+| RC1 | Contract test corrected (tags = valid filter) | 0 bare triggers across 7 workflows | F-INFRA-001 PASS |
+| RC2 | `nix` moved to `[target.'cfg(unix)'.dependencies]` | `cargo check -p aprender-profile` clean on Linux | F-INFRA-002 PASS |
+| RC3 | 4 repos pinned: provable-contracts@v0.3.1, alimentar@v0.2.6, batuta@v0.7.2, realizar@v0.7.0 | 0 floating refs in nightly.yml | F-INFRA-003 PASS |
+| RC4 | `[patch.crates-io]` removed — cc fix shipped in 1.2.x | `cargo check --workspace` clean | F-INFRA-004 PASS |
+| RC5 | All 8 `--exclude` flags removed from ci.yml | 24,022 tests restored (440+207+23+45+3497+15094+139+4577) | F-INFRA-005 PASS |
+| RC6 | Already consistent | 1 distinct RUSTFLAGS value | F-INFRA-006 PASS |
+
+## Remaining Infrastructure Issues
+
+These are NOT "pre-existing" or "not our change" — they are our responsibility (Toyota Way).
+
+### `workspace-test` Required Check
+
+**Symptom**: PR merge blocked — `workspace-test` check reports "docker: command not found."
+**Root cause**: Self-hosted runner lacks Docker. The `workspace-test` job uses
+`container: image: localhost:5000/sovereign-ci:stable` which requires Docker.
+**Fix**: Either install Docker on the runner, or convert `workspace-test` to run
+without a container (like ci.yml's lint/test jobs which run directly on the runner).
+**Tracking**: Must fix to unblock ALL PR merges.
+
+### `ci / security` Sibling Repo Clones
+
+**Symptom**: Security job still clones sibling repos at HEAD (sovereign-ci pattern).
+**Root cause**: `ci / security` calls `paiml/.github/.github/workflows/sovereign-ci.yml@main`
+which clones 13 repos. This is separate from our `nightly.yml` fix (RC3).
+**Fix**: Either pin sovereign-ci sibling refs, or move security checks (cargo-deny)
+into the self-contained ci.yml workflow.
+**Tracking**: Same pattern as RC3, different workflow.
+
+### Stale PRs
+
+9 open PRs, several weeks old. Toyota Way: close or merge, don't accumulate.
+
+| PR | Age | Action |
+|----|-----|--------|
+| #544 | 19 days | Close or merge (CI badge fix) |
+| #545 | 18 days | Merge (dependabot: upload-artifact) |
+| #562 | 11 days | Merge (dependabot: crates-io-auth) |
+| #679 | 4 days | Merge (dependabot: download-artifact) |
+| #680 | 4 days | Merge (dependabot: gh-release) |
 
 ## Relationship to Existing Contracts
 

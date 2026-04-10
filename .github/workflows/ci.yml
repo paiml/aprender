@@ -29,10 +29,10 @@ jobs:
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 70 crates)
+  # RC-INFRA: Removed container requirement — Docker not available on all runners.
+  # Tests run directly on self-hosted runner (Rust toolchain pre-installed).
   workspace-test:
     runs-on: self-hosted
-    container:
-      image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -51,8 +51,6 @@ jobs:
   mutants:
     runs-on: self-hosted
     continue-on-error: true
-    container:
-      image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 120
     needs: [ci, workspace-test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
