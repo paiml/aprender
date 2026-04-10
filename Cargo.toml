@@ -413,6 +413,7 @@ aprender_ml = { path = "crates/aprender-core", version = ">=0.29", package = "ap
 name = "aprender"
 path = "src/lib.rs"
 
-[patch.crates-io]
-cc = { git = "https://github.com/rust-lang/cc-rs", branch = "main" }
+# [patch.crates-io] — REMOVED
+# RC4 fix: cc patch removed. The upstream fix shipped in cc 1.2.x.
+# Contract: ci-infra-v1.yaml F-INFRA-004 — every patch must have tracking issue.
 

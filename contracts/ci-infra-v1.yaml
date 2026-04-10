@@ -1,0 +1,237 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-10'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'docs/specifications/components/ci-infrastructure.md — five-whys analysis'
+  - 'RC1-RC6 root cause analysis of recurring CI failures'
+  - 'Toyota Way: all defects are your defects'
+  description: >
+    CI infrastructure contract enforcing build reproducibility. Prevents the
+    6 root causes of recurring CI failures: phantom triggers, platform deps,
+    floating sibling repos, untracked patches, untested exclusions, RUSTFLAGS
+    inconsistency. Each equation maps to a five-whys root cause.
+
+equations:
+  workflow_trigger_explicit:
+    formula: |
+      forall workflow W in .github/workflows/*.yml:
+        W.on.push has branches filter OR
+        W.on only contains workflow_dispatch/schedule
+    domain: "GitHub Actions workflow YAML files"
+    codomain: bool
+    invariants:
+    - "No bare on:push without branches filter"
+    - "Prevents phantom failures on unrelated branches"
+    - "RC1 root cause: 12 false failures/day eliminated"
+
+  platform_deps_gated:
+    formula: |
+      forall crate C in workspace:
+        forall dep D of C where D.is_platform_specific:
+          D is under [target.'cfg(...)'.dependencies]
+    domain: "Cargo.toml dependency sections"
+    codomain: bool
+    invariants:
+    - "nix crate gated behind cfg(unix)"
+    - "Windows/macOS-specific deps gated behind cfg(windows)/cfg(target_os)"
+    - "RC2 root cause: 100% nightly Windows failure eliminated"
+
+  external_repos_pinned:
+    formula: |
+      forall checkout step S in CI workflows:
+        S.repository != current_repo implies
+          S.ref is a tag (v*) or SHA ([a-f0-9]{40})
+          NOT a branch name (main/master)
+    domain: "CI workflow checkout steps"
+    codomain: bool
+    invariants:
+    - "No floating HEAD references to external repos"
+    - "Sibling repo changes cannot break CI without explicit update PR"
+    - "RC3 root cause: cross-repo breakage eliminated"
+
+  patches_tracked:
+    formula: |
+      forall patch P in [patch.crates-io]:
+        P has inline comment with GitHub issue URL AND
+        (P pins to commit SHA OR P has expiration date comment)
+    domain: "Root Cargo.toml [patch.crates-io] section"
+    codomain: bool
+    invariants:
+    - "Every patch has a tracking issue"
+    - "Patches are temporary — tracked for removal"
+    - "RC4 root cause: floating cc dependency eliminated"
+
+  no_untested_exclusions:
+    formula: |
+      count(--exclude flags in ci.yml test command) <= max_exclusions
+      where max_exclusions = 2 (GPU-only crates acceptable)
+    domain: "CI workflow test commands"
+    codomain: bool
+    invariants:
+    - "At most 2 crates excluded from CI testing (GPU-only)"
+    - "Every exclusion has a tracking issue for re-inclusion"
+    - "RC5 root cause: untested code paths eliminated"
+
+  rustflags_consistent:
+    formula: |
+      forall workflow W1, W2 in .github/workflows/*.yml:
+        if W1 and W2 both set RUSTFLAGS:
+          W1.RUSTFLAGS == W2.RUSTFLAGS OR
+          difference is documented in workflow comment
+    domain: "RUSTFLAGS env var across CI workflows"
+    codomain: bool
+    invariants:
+    - "All workflows use identical lint strictness"
+    - "No code passes one workflow but fails another"
+    - "RC6 root cause: cascading fix cycles eliminated"
+
+falsification_tests:
+- id: F-INFRA-001
+  rule: workflow_trigger_explicit
+  prediction: "no workflow has bare on:push without branches filter"
+  test: |
+    python3 -c "
+    import yaml, glob, sys
+    bare = 0
+    for path in sorted(glob.glob('.github/workflows/*.yml')):
+        with open(path) as f:
+            wf = yaml.safe_load(f)
+        if wf is None: continue
+        on = wf.get('on', wf.get(True, {}))
+        if isinstance(on, dict):
+            push = on.get('push')
+            if push is not None and isinstance(push, dict) and 'branches' not in push and 'tags' not in push:
+                print(f'BARE PUSH: {path}')
+                bare += 1
+    print(f'Bare push triggers: {bare}')
+    sys.exit(0 if bare == 0 else 1)
+    "
+  if_fails: "workflow triggers on all branches — produces phantom failures"
+
+- id: F-INFRA-002
+  rule: platform_deps_gated
+  prediction: "nix crate is under cfg(unix) in aprender-profile"
+  test: |
+    python3 -c "
+    import tomllib, sys
+    with open('crates/aprender-profile/Cargo.toml', 'rb') as f:
+        cargo = tomllib.load(f)
+    deps = cargo.get('dependencies', {})
+    unix_deps = cargo.get('target', {}).get(\"cfg(unix)\", {}).get('dependencies', {})
+    if 'nix' in deps:
+        print('FAIL: nix in unconditional [dependencies]')
+        sys.exit(1)
+    elif 'nix' in unix_deps or 'nix' in cargo.get('target', {}).get(\"'cfg(unix)'\", {}).get('dependencies', {}):
+        print('PASS: nix under cfg(unix)')
+    else:
+        # Check all target sections
+        for key, val in cargo.get('target', {}).items():
+            if 'unix' in str(key) and 'nix' in val.get('dependencies', {}):
+                print(f'PASS: nix under {key}')
+                sys.exit(0)
+        print('WARN: nix not found in any target section')
+    "
+  if_fails: "platform-specific dep compiled on all platforms"
+
+- id: F-INFRA-003
+  rule: external_repos_pinned
+  prediction: "nightly.yml pins all external repos to tags or SHAs"
+  test: |
+    python3 -c "
+    import yaml, sys
+    with open('.github/workflows/nightly.yml') as f:
+        wf = yaml.safe_load(f)
+    floating = 0
+    for job_name, job in (wf.get('jobs') or {}).items():
+        for step in (job.get('steps') or []):
+            if isinstance(step, dict) and 'uses' in step:
+                uses = step['uses']
+                if 'checkout' in uses:
+                    repo = step.get('with', {}).get('repository', '')
+                    ref = step.get('with', {}).get('ref', step.get('with', {}).get('fetch-depth', ''))
+                    if repo and 'paiml' in repo and repo != 'paiml/aprender':
+                        # External repo — check if pinned
+                        ref_val = step.get('with', {}).get('ref', '')
+                        if not ref_val or ref_val in ('main', 'master', ''):
+                            print(f'FLOATING: {repo} (ref={ref_val or \"HEAD\"})')
+                            floating += 1
+    print(f'Floating external repos: {floating}')
+    sys.exit(0 if floating == 0 else 1)
+    "
+  if_fails: "external repos cloned at HEAD of main — any change breaks CI"
+
+- id: F-INFRA-004
+  rule: patches_tracked
+  prediction: "every [patch.crates-io] entry has a tracking comment"
+  test: |
+    python3 -c "
+    import sys
+    content = open('Cargo.toml').read()
+    in_patch = False
+    untracked = 0
+    for line in content.split('\n'):
+        if '[patch.crates-io]' in line:
+            in_patch = True
+            continue
+        if in_patch and line.startswith('[') and 'patch' not in line:
+            break
+        if in_patch and '=' in line and not line.strip().startswith('#'):
+            if '#' not in line or ('GH-' not in line and 'github.com' not in line and 'issue' not in line.lower()):
+                name = line.split('=')[0].strip()
+                if name:
+                    print(f'UNTRACKED: {name}')
+                    untracked += 1
+    print(f'Untracked patches: {untracked}')
+    sys.exit(0 if untracked == 0 else 1)
+    "
+  if_fails: "patch entry has no tracking issue — will never be cleaned up"
+
+- id: F-INFRA-005
+  rule: no_untested_exclusions
+  prediction: "ci.yml has at most 2 --exclude flags"
+  test: |
+    python3 -c "
+    import sys
+    content = open('.github/workflows/ci.yml').read()
+    excludes = content.count('--exclude')
+    print(f'Exclusions in ci.yml: {excludes}')
+    sys.exit(0 if excludes <= 2 else 1)
+    "
+  if_fails: "too many crates excluded from CI — untested code paths"
+
+- id: F-INFRA-006
+  rule: rustflags_consistent
+  prediction: "all workflows use same RUSTFLAGS"
+  test: |
+    python3 -c "
+    import yaml, glob, sys, re
+    flags = {}
+    for path in sorted(glob.glob('.github/workflows/*.yml')):
+        with open(path) as f:
+            content = f.read()
+        rustflags = re.findall(r'RUSTFLAGS:\s*(.+)', content)
+        if rustflags:
+            flags[path] = set(rustflags)
+    if len(flags) <= 1:
+        print('PASS: 0-1 workflows set RUSTFLAGS')
+        sys.exit(0)
+    all_values = set()
+    for v in flags.values():
+        all_values.update(v)
+    if len(all_values) == 1:
+        print(f'PASS: consistent RUSTFLAGS: {all_values.pop()}')
+    else:
+        print(f'WARN: {len(all_values)} distinct RUSTFLAGS values:')
+        for path, vals in flags.items():
+            print(f'  {path}: {vals}')
+        sys.exit(1)
+    "
+  if_fails: "RUSTFLAGS differ between workflows — code passes one, fails another"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: proposed

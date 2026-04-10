@@ -36,9 +36,11 @@ name = "renacer"
 # CLI and argument parsing
 clap = { version = "4.5", default-features = false, features = ["derive", "cargo", "std", "help", "usage", "error-context", "suggestions"] }
 
-# Ptrace and system calls
-nix = { version = "0.30", default-features = false, features = ["ptrace", "process", "signal", "uio", "resource", "user"] }
+# Ptrace and system calls (Unix-only — RC2 fix: cfg(unix) gate)
 libc = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", default-features = false, features = ["ptrace", "process", "signal", "uio", "resource", "user"] }
 
 # Error handling
 # PMAT-284: Core tracing primitives (extracted to break circular dep)
