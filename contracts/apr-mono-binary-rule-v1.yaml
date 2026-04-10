@@ -53,19 +53,21 @@ equations:
         aprender-qa-cli        -> apr-qa           # QA playbook runner (to wire into `apr qa`)
         aprender-qa-certify    -> apr-qa-readme-sync  # README badge sync (CI tool)
 
-      LEGACY-TO-MIGRATE (10 crates, 11 binaries):
+      MIGRATED (2 crates — [[bin]] → [[example]]):
+        aprender-serve         -> [[example]] aprender-serve   # Was: inference server. Use `apr serve`.
+        aprender-train         -> [[example]] aprender-train   # Was: training CLI. Use `apr train`.
+
+      LEGACY-TO-MIGRATE (8 crates, 9 binaries):
         aprender-cgp           -> aprender-cgp     # Contract graph processor → `apr contracts graph`
         aprender-data          -> alimentar        # Data loading → `apr data`
         aprender-db            -> aprender-db      # Embedded DB → `apr db`
-        aprender-serve         -> aprender-serve   # Inference server → `apr serve` (already wired)
         aprender-simulate      -> simular          # Simulation → `apr simulate`
-        aprender-train         -> aprender-train   # Training → `apr train` (already wired)
         aprender-train-distill -> aprender-train-distill  # Distillation → `apr distill`
         aprender-train-inspect -> aprender-train-inspect  # Weight inspector → `apr train inspect`
         aprender-train-lora    -> aprender-train-lora     # LoRA training → `apr finetune`
         aprender-zram-cli      -> trueno-zram      # ZRAM manager → `apr zram`
 
-    domain: 22 crates
+    domain: 20 crates (22 → 20 after 2 migrated to [[example]])
     codomain: classification
     invariants:
     - "USER-FACING count == 1 (apr only)"
@@ -85,10 +87,10 @@ falsification_tests:
 
 - id: FALSIFY-BINRULE-002
   rule: binary count monotonically decreasing
-  prediction: "total [[bin]] count <= 24 (never increases without justification)"
+  prediction: "total [[bin]] count <= 21 (never increases without justification)"
   test: |
     COUNT=$(grep -r '^\[\[bin\]\]' crates/*/Cargo.toml | wc -l)
-    [ "$COUNT" -le 24 ]
+    [ "$COUNT" -le 21 ]
   if_fails: "new binary added without updating this contract"
 
 - id: FALSIFY-BINRULE-003

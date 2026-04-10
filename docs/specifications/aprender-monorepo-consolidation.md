@@ -84,7 +84,7 @@
 | ~~`#[contract]` on CLI commands~~ | 172 annotations workspace-wide (70 in apr-cli). PMAT-543 closed. |
 | ~~Phase 2g: QA playbook~~ | 5 crates ported, 2,792 tests, 256 playbooks. PMAT-532 closed. |
 | ~~Model type taxonomy~~ | `is_llm()` + 3 new Architecture variants + import guards. PMAT-526 closed. |
-| ~~24 unauthorized binaries~~ | 22 crates, 24 binaries classified in contract v2.0. PMAT-545 closed. |
+| ~~24 unauthorized binaries~~ | 20 crates, 21 binaries. 2 migrated to `[[example]]` (serve, train). 8 legacy remain. PMAT-545. |
 | ~~ratatui migration~~ | 0 deps remain. PMAT-539 closed. |
 
 **Open gaps (2 of 9):**
@@ -472,7 +472,7 @@ Every successful large Rust project uses this pattern:
 **Version**: 0.29.3 (`[workspace.package]`).
 **Tests**: **28,700+ pass, 0 fail** (workspace-wide `cargo test --workspace --lib`, 2026-04-10).
 **Contracts**: 799 provable contract YAML files, 172 `#[contract]` annotations.
-**Binaries**: 23 `[[bin]]` targets across 22 crates (1 user-facing: `apr`; 22 internal helpers).
+**Binaries**: 21 `[[bin]]` targets across 20 crates (1 user-facing: `apr`; 20 internal/legacy). 2 migrated to `[[example]]`.
 **Integration tests**: 14 (8 monorepo invariant + 6 CLI command).
 **Dependencies**: arrow/parquet aligned to v57 across all crates.
 **Excluded**: 4 workspace root shells (viz-ttop, present, test, train-canary).

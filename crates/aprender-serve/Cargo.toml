@@ -233,8 +233,10 @@ dhat-heap = ["dep:dhat"]  # Heap profiling with dhat-rs
 full = ["server", "cli", "gpu", "cuda", "registry"]  # Everything enabled
 minimal = []  # Only core inference engine
 
-[[bin]]
+# PMAT-545: Legacy binary → example. Use `apr serve` instead.
+[[example]]
 name = "aprender-serve"
+path = "src/main.rs"
 required-features = ["cli"]
 
 [[bench]]

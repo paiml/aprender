@@ -155,10 +155,10 @@ codegen-units = 1
 [profile.dev]
 opt-level = 0
 
-[[bin]]
+# PMAT-545: Legacy binary → example. Use `apr train` instead.
+[[example]]
 name = "aprender-train"
 path = "src/main.rs"
-required-features = []
 
 [[example]]
 name = "llama2-train"
