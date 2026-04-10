@@ -183,12 +183,12 @@ These are NOT "pre-existing" or "not our change" — they are our responsibility
 
 ### `workspace-test` Required Check
 
-**Symptom**: PR merge blocked — `workspace-test` check reports "docker: command not found."
-**Root cause**: Self-hosted runner lacks Docker. The `workspace-test` job uses
-`container: image: localhost:5000/sovereign-ci:stable` which requires Docker.
-**Fix**: Either install Docker on the runner, or convert `workspace-test` to run
-without a container (like ci.yml's lint/test jobs which run directly on the runner).
-**Tracking**: Must fix to unblock ALL PR merges.
+**Symptom**: PR merge blocked — `workspace-test` checkout fails on self-hosted runner.
+**Root cause**: Self-hosted Intel runner infrastructure issue (Docker/SSH/git config).
+All CI runs on self-hosted Intel — NEVER switch to GitHub-hosted runners.
+**Fix**: Fix the self-hosted runner: install Docker, verify SSH keys, ensure
+`localhost:5000/sovereign-ci:stable` image is available. This is a runner ops task.
+**Tracking**: Must fix on the runner machine to unblock ALL PR merges.
 
 ### `ci / security` Sibling Repo Clones
 

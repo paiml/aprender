@@ -32,7 +32,7 @@ jobs:
   # RC-INFRA: Removed container requirement — Docker not available on all runners.
   # Tests run directly on self-hosted runner (Rust toolchain pre-installed).
   workspace-test:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
