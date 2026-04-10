@@ -254,6 +254,51 @@ mod tests {
         assert!(!anomaly::is_gradient_explosion(100.0, 0.0));  // ema=0 — no reference
     }
 
+    // FALSIFY-TM-002 (proxy): Layout tiling — all regions tile without gap or overflow
+    #[test]
+    fn falsify_tm_002_layout_tiling() {
+        let grid = MonitorGrid::default();
+        let (w, h) = (160u16, 48u16);
+
+        for region in &Region::ALL {
+            let rect = grid.rect(*region, w, h);
+            assert!(
+                rect.x + rect.width <= w,
+                "{region:?} exceeds width: x={} w={} term_w={w}",
+                rect.x, rect.width
+            );
+            assert!(
+                rect.y + rect.height <= h,
+                "{region:?} exceeds height: y={} h={} term_h={h}",
+                rect.y, rect.height
+            );
+        }
+
+        // Header spans full width
+        let header = grid.rect(Region::Header, w, h);
+        assert_eq!(header.x, 0);
+        assert_eq!(header.width, w);
+
+        // Footer spans full width
+        let footer = grid.rect(Region::Footer, w, h);
+        assert_eq!(footer.x, 0);
+        assert_eq!(footer.width, w);
+    }
+
+    // FALSIFY-TM-006 (proxy): Rect computation is O(1) — no layout engine overhead
+    #[test]
+    fn falsify_tm_006_rect_perf() {
+        let grid = MonitorGrid::default();
+        let start = std::time::Instant::now();
+        for _ in 0..10_000 {
+            for region in &Region::ALL {
+                std::hint::black_box(grid.rect(*region, 160, 48));
+            }
+        }
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() < 50, "too slow: {elapsed:?} for 110K calls");
+    }
+
     // FALSIFY-TM-005: JSON serialization round-trip
     #[test]
     fn falsify_tm_005_json_roundtrip() {
