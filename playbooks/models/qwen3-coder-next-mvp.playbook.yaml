@@ -1,0 +1,66 @@
+# Qwen3-Coder-Next MVP Playbook
+# Full surface coverage: 3 formats × 2 backends × 3 modalities = 18 tests
+name: qwen3-coder-next-mvp
+version: "1.0.0"
+description: "MVP certification for Qwen/Qwen3-Coder-Next (Qwen3NextForCausalLM)"
+
+model:
+  hf_repo: "Qwen/Qwen3-Coder-Next"
+  formats:
+    - safetensors  # Ground truth (HuggingFace source)
+    - apr          # APR native format
+    - gguf         # Third-party format
+  quantizations:
+    - q4_k_m
+  size_category: medium
+
+test_matrix:
+  modalities:
+    - run
+    - chat
+    - serve
+  backends:
+    - cpu
+    - gpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 120000
+
+gates:
+  g1_model_loads: "true"
+  g2_basic_inference: "true"
+  g3_no_crashes: "true"
+  g4_output_quality: "true"
+
+oracles:
+  - type: arithmetic
+    config:
+      tolerance: 0.01
+  - type: garbage
+    config:
+      max_repetition_ratio: 0.3
+      min_unique_chars: 10
+
+failure_policy: collect_all
+
+profile_ci:
+  enabled: "true"
+  warmup: 1
+  measure: 2
+  formats: [safetensors, apr, gguf]
+  backends: [cpu, gpu]
+  assertions:
+    min_throughput_cpu: 5.0
+    min_throughput_gpu: 50.0
+
+contract_tests:
+  invariants: ["I-2", "I-3"]
+
+metadata:
+  author: "apr-qa-gen"
+  tier: "mvp"
+  architecture: "qwen3_next"
+  tags:
+    - code
+    - instruct
+    - mvp

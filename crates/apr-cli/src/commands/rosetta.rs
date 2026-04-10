@@ -226,6 +226,10 @@ pub enum RosettaCommands {
 }
 
 /// Run the rosetta inspect subcommand
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "mutating_output_contract"
+)]
 pub fn run_inspect(file: &Path, hexdump: bool, json: bool) -> Result<()> {
     contract_pre_magic_byte_validation!();
     if !file.exists() {

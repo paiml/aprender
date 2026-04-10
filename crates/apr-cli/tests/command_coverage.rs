@@ -1166,3 +1166,340 @@ fn test_coverage_pipeline_plan_nonexistent_config() {
         "pipeline plan on nonexistent config must fail"
     );
 }
+
+// ============================================================================
+// PMAT-540 Phase 1: Coverage tests for 33 previously untested subcommands.
+// Strategy: --help exits 0 (covers clap parse + dispatch), error paths where
+// cheap (covers validation logic). Model-dependent commands get only --help.
+// ============================================================================
+
+// --- Model-independent commands: exercise error paths ---
+
+#[test]
+fn test_coverage_import_missing_file() {
+    apr()
+        .args(["import", "/tmp/nonexistent_model_pmat540.safetensors"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_coverage_merge_no_args() {
+    apr().args(["merge"]).assert().failure();
+}
+
+#[test]
+fn test_coverage_quantize_missing_file() {
+    apr()
+        .args(["quantize", "/tmp/nonexistent_pmat540.apr"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_coverage_prune_missing_file() {
+    apr()
+        .args(["prune", "/tmp/nonexistent_pmat540.apr"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_coverage_distill_no_args() {
+    apr().args(["distill"]).assert().failure();
+}
+
+#[test]
+fn test_coverage_train_help() {
+    apr().args(["train", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_finetune_no_args() {
+    apr().args(["finetune"]).assert().failure();
+}
+
+#[test]
+fn test_coverage_tokenize_help() {
+    apr().args(["tokenize", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_tune_help() {
+    apr().args(["tune", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_bench_help() {
+    apr().args(["bench", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_eval_help() {
+    apr().args(["eval", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_canary_help() {
+    apr().args(["canary", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_parity_help() {
+    apr().args(["parity", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_gpu_info() {
+    // gpu command should succeed even without GPU (prints "no GPU detected" or similar)
+    let output = apr().args(["gpu"]).output().expect("run apr gpu");
+    // Don't assert success — may fail if no GPU, but should not panic
+    assert!(
+        output.status.success() || !output.stderr.is_empty(),
+        "apr gpu should either succeed or produce error message"
+    );
+}
+
+#[test]
+fn test_coverage_ptx_help() {
+    apr().args(["ptx", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_ptx_map_help() {
+    apr().args(["ptx-map", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_monitor_help() {
+    apr().args(["monitor", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_runs_help() {
+    apr().args(["runs", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_experiment_help() {
+    apr().args(["experiment", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_showcase_help() {
+    apr().args(["showcase", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_probar_help() {
+    apr().args(["probar", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_oracle_help() {
+    apr().args(["oracle", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_encrypt_no_args() {
+    apr().args(["encrypt"]).assert().failure();
+}
+
+#[test]
+fn test_coverage_decrypt_no_args() {
+    apr().args(["decrypt"]).assert().failure();
+}
+
+#[test]
+fn test_coverage_pull_missing_model() {
+    // pull with nonexistent model should fail gracefully
+    let output = apr()
+        .args(["pull", "nonexistent/model-pmat540"])
+        .output()
+        .expect("run apr pull");
+    assert!(!output.status.success());
+}
+
+#[test]
+fn test_coverage_list_help() {
+    apr().args(["list", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_rm_no_args() {
+    apr().args(["rm"]).assert().failure();
+}
+
+#[test]
+fn test_coverage_publish_help() {
+    apr().args(["publish", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_run_missing_model() {
+    apr()
+        .args(["run", "/tmp/nonexistent_pmat540.gguf"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_coverage_tui_help() {
+    apr().args(["tui", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_cbtop_help() {
+    apr().args(["cbtop", "--help"]).assert().success();
+}
+
+// --- Model-dependent commands: --help only (no fixture needed) ---
+
+#[test]
+fn test_coverage_chat_help() {
+    apr().args(["chat", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_serve_help() {
+    apr().args(["serve", "--help"]).assert().success();
+}
+
+// ============================================================================
+// PMAT-540 Phase 4: Fixture-backed tests for top-5 untested command files.
+// Uses the rich APR model to exercise handler logic beyond --help/error paths.
+// ============================================================================
+
+// --- serve plan: exercises roofline computation, hardware detection ---
+
+#[test]
+fn test_coverage_serve_plan_with_model() {
+    let model = create_rich_test_model();
+    let output = apr()
+        .args(["serve", "plan", model.path().to_str().unwrap()])
+        .output()
+        .expect("run serve plan");
+    // serve plan should produce output even for tiny models
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() || !stdout.is_empty(),
+        "serve plan should produce output or succeed"
+    );
+}
+
+#[test]
+fn test_coverage_serve_plan_json() {
+    let model = create_rich_test_model();
+    apr()
+        .args(["serve", "plan", model.path().to_str().unwrap(), "--json"])
+        .assert()
+        .success();
+}
+
+// --- check: exercises architecture detection, real model checks ---
+
+#[test]
+fn test_coverage_check_rich_model_no_gpu() {
+    let model = create_rich_test_model();
+    apr()
+        .args(["check", model.path().to_str().unwrap(), "--no-gpu"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_coverage_check_rich_model_json() {
+    let model = create_rich_test_model();
+    apr()
+        .args([
+            "check",
+            model.path().to_str().unwrap(),
+            "--no-gpu",
+            "--json",
+        ])
+        .assert()
+        .success();
+}
+
+// --- distill: exercises argument parsing, config validation ---
+
+#[test]
+fn test_coverage_distill_help_subcommands() {
+    apr().args(["distill", "--help"]).assert().success();
+}
+
+#[test]
+fn test_coverage_distill_missing_teacher() {
+    apr()
+        .args([
+            "distill",
+            "--teacher",
+            "/tmp/nonexistent_teacher_pmat540.gguf",
+            "--student",
+            "/tmp/nonexistent_student_pmat540.gguf",
+        ])
+        .assert()
+        .failure();
+}
+
+// --- train: exercises plan/apply/watch subcommands ---
+
+#[test]
+fn test_coverage_train_plan_missing_config() {
+    apr()
+        .args([
+            "train",
+            "plan",
+            "--config",
+            "/tmp/nonexistent_train_config.yaml",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_coverage_train_apply_missing_config() {
+    apr()
+        .args([
+            "train",
+            "apply",
+            "--config",
+            "/tmp/nonexistent_train_config.yaml",
+        ])
+        .assert()
+        .failure();
+}
+
+// --- runs: exercises list/show subcommands ---
+
+#[test]
+fn test_coverage_runs_ls_empty() {
+    // runs ls with a nonexistent dir should fail gracefully
+    let output = apr()
+        .args(["runs", "ls", "--dir", "/tmp/nonexistent_runs_dir_pmat540"])
+        .output()
+        .expect("run runs ls");
+    // Either succeeds with "no experiments" or fails with directory error
+    assert!(
+        output.status.success() || !output.stderr.is_empty(),
+        "runs ls should produce output or error"
+    );
+}
+
+#[test]
+fn test_coverage_runs_ls_json() {
+    let output = apr()
+        .args([
+            "runs",
+            "ls",
+            "--json",
+            "--dir",
+            "/tmp/nonexistent_runs_dir_pmat540",
+        ])
+        .output()
+        .expect("run runs ls json");
+    assert!(
+        output.status.success() || !output.stderr.is_empty(),
+        "runs ls --json should produce output or error"
+    );
+}

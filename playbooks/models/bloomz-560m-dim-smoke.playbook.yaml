@@ -1,0 +1,47 @@
+# BLOOMZ-560M Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+name: bloomz-560m-dim-smoke
+version: "1.0.0"
+description: "Dimensional smoke check for BLOOMZ-560M (metadata-only)"
+
+model:
+  hf_repo: "bigscience/bloomz-560m"
+  formats:
+    - safetensors
+  quantizations:
+    - q4_k_m
+  size_category: small
+  expected_hidden_dim: 1024
+  expected_num_layers: 24
+  expected_num_heads: 16
+  expected_vocab_size: 250880
+  family: bloom
+  size_variant: "560m"
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+    - "What is 2+2?"
+
+gates:
+  g1_model_loads: "true"
+  g2_basic_inference: "true"
+  g3_no_crashes: "true"
+  g4_output_quality: "true"
+
+failure_policy: collect_all
+
+metadata:
+  author: "apr-qa-gen"
+  tier: "dim-smoke"
+  architecture: "bloom"
+  kernel_class: "C"
+  kernel_proof_ref: "tiiuae/falcon-40b-instruct"
+  tags:
+    - dim-smoke

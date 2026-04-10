@@ -150,7 +150,10 @@ impl Verdict {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Analyze failure patterns and produce human-readable diagnosis
-#[provable_contracts_macros::contract("apr-cli-operations-v1", equation = "side_effect_classification")]
+#[provable_contracts_macros::contract(
+    "apr-cli-operations-v1",
+    equation = "side_effect_classification"
+)]
 fn auto_diagnose(metrics: &[SpcMetrics], hidden_dim: usize, num_heads: usize, kv_heads: usize) {
     let failures: Vec<_> = metrics.iter().filter(|m| m.verdict().is_fail()).collect();
     if failures.is_empty() {

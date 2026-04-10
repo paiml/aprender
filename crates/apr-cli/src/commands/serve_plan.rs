@@ -164,6 +164,10 @@ fn parse_model_source(model: &str) -> ServePlanSource {
 // Core logic
 // ============================================================================
 
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "long_running_graceful"
+)]
 pub fn run_serve_plan(
     model: &str,
     gpu: bool,
@@ -1072,5 +1076,99 @@ fn determine_verdict(contracts: &[ContractCheck]) -> PlanVerdict {
         PlanVerdict::Warnings
     } else {
         PlanVerdict::Ready
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PMAT-540 Phase 4: Inline tests for pure helper functions
+// ═══════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod serve_plan_tests {
+    use super::*;
+
+    #[test]
+    fn test_format_param_count_billions() {
+        assert_eq!(format_param_count(7_000_000_000), "7.0B");
+        assert_eq!(format_param_count(1_500_000_000), "1.5B");
+    }
+
+    #[test]
+    fn test_format_param_count_millions() {
+        assert_eq!(format_param_count(125_000_000), "125M");
+        assert_eq!(format_param_count(350_000_000), "350M");
+    }
+
+    #[test]
+    fn test_format_param_count_small() {
+        assert_eq!(format_param_count(50_000), "50000");
+    }
+
+    #[test]
+    fn test_extract_layer_index_dotted_pattern() {
+        assert_eq!(extract_layer_index("model.layers.5.attn"), Some(5));
+        assert_eq!(extract_layer_index("blk.0.ffn"), Some(0));
+        assert_eq!(extract_layer_index("h.31.attn"), Some(31));
+    }
+
+    #[test]
+    fn test_extract_layer_index_no_number() {
+        assert_eq!(extract_layer_index("model.embed_tokens.weight"), None);
+        assert_eq!(extract_layer_index("lm_head.weight"), None);
+    }
+
+    fn make_test_stats(
+        model_size_q4_mb: f64,
+        attn_flops: u64,
+        ffn_flops: u64,
+    ) -> StatisticalAnalysis {
+        StatisticalAnalysis {
+            gqa_ratio: 1.0,
+            kv_cache_reduction: 1.0,
+            model_params: 1_000_000,
+            model_size_f16_mb: model_size_q4_mb * 2.0,
+            model_size_q4_mb,
+            kv_cache_per_token_bytes: 256,
+            kv_cache_4k_mb: 1.0,
+            ffn_expansion_ratio: 2.67,
+            ffn_type_explanation: "SwiGLU".to_string(),
+            rope_max_wavelength: 10000.0,
+            effective_context_window: 4096,
+            attention_flops_per_token: attn_flops,
+            ffn_flops_per_token: ffn_flops,
+        }
+    }
+
+    fn make_test_hw() -> ServePlanHardware {
+        ServePlanHardware {
+            gpu_name: "test-cpu".to_string(),
+            bandwidth_gbps: 50.0,
+            peak_tflops: 1.0,
+            vram_mb: 0.0,
+        }
+    }
+
+    #[test]
+    fn test_compute_roofline_memory_bound() {
+        let stats = make_test_stats(4096.0, 100_000_000, 200_000_000);
+        let hw = make_test_hw();
+        let roofline = compute_roofline(&stats, &hw);
+        assert!(roofline.bandwidth_ceiling_tps > 0.0);
+        assert!(roofline.compute_ceiling_tps > 0.0);
+    }
+
+    #[test]
+    fn test_compute_roofline_zero_model_size() {
+        let stats = make_test_stats(0.0, 0, 0);
+        let hw = make_test_hw();
+        let roofline = compute_roofline(&stats, &hw);
+        assert!((roofline.bandwidth_ceiling_tps).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_detect_hardware_returns_valid() {
+        let hw = detect_hardware().expect("hardware detection");
+        assert!(!hw.gpu_name.is_empty());
+        assert!(hw.bandwidth_gbps > 0.0);
     }
 }

@@ -1,0 +1,338 @@
+# APR QA Playbook Schema
+# Version: 1.0.0
+# Validates playbook YAML files for model qualification testing
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://paiml.com/schemas/apr-qa-playbook.schema.yaml"
+title: "APR QA Playbook"
+description: "Schema for APR model qualification testing playbooks"
+
+type: object
+required:
+  - name
+  - version
+  - model
+  - test_matrix
+
+properties:
+  name:
+    type: string
+    description: "Unique playbook identifier"
+    pattern: "^[a-z0-9-]+$"
+    minLength: 1
+    maxLength: 64
+
+  version:
+    type: string
+    description: "Semantic version of the playbook"
+    pattern: "^\\d+\\.\\d+\\.\\d+$"
+
+  description:
+    type: string
+    description: "Human-readable description"
+    maxLength: 500
+
+  model:
+    type: object
+    description: "Model specification"
+    required:
+      - hf_repo
+    properties:
+      hf_repo:
+        type: string
+        description: "HuggingFace repository ID (org/model)"
+        pattern: "^[a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+$"
+      formats:
+        type: array
+        description: "Supported model formats"
+        items:
+          type: string
+          enum: [gguf, safetensors, apr]
+        default: [gguf]
+      quantizations:
+        type: array
+        description: "Quantization levels to test"
+        items:
+          type: string
+          enum: [f32, f16, q8_0, q6_k, q5_k_m, q5_0, q4_k_m, q4_0, q3_k_m, q2_k]
+        default: [q4_k_m]
+      size_category:
+        type: string
+        description: "Model size category"
+        enum: [tiny, small, medium, large, xlarge, huge]
+
+  test_matrix:
+    type: object
+    description: "Test matrix configuration"
+    required:
+      - modalities
+      - backends
+    properties:
+      modalities:
+        type: array
+        description: "Modalities to test"
+        items:
+          type: string
+          enum: [run, chat, serve]
+        minItems: 1
+      backends:
+        type: array
+        description: "Backends to test"
+        items:
+          type: string
+          enum: [cpu, gpu]
+        minItems: 1
+      scenario_count:
+        type: integer
+        description: "Number of scenarios per combination"
+        minimum: 1
+        maximum: 1000
+        default: 100
+      prompts:
+        type: array
+        description: "Architecture-specific prompts (optional; falls back to default when absent)"
+        items:
+          type: string
+      seed:
+        type: integer
+        description: "Random seed for reproducibility"
+        minimum: 0
+      timeout_ms:
+        type: integer
+        description: "Timeout per test in milliseconds"
+        minimum: 1000
+        maximum: 600000
+        default: 60000
+
+  falsification_gates:
+    type: array
+    description: "Falsification gates — each defines a condition the model must satisfy"
+    items:
+      type: object
+      required:
+        - id
+        - description
+        - condition
+      properties:
+        id:
+          type: string
+          description: "Gate ID (e.g., G1-LOAD, F-QUAL-001)"
+          pattern: "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$"
+        description:
+          type: string
+          description: "Human-readable description of the gate condition"
+        condition:
+          type: string
+          description: "Condition expression that must hold for the gate to pass"
+        severity:
+          type: string
+          description: "Failure severity: P0 = blocker (zeros MQS), P1 = must-fix, P2 = nice-to-have"
+          enum: [P0, P1, P2]
+          default: P1
+
+  oracles:
+    type: array
+    description: "Oracle configurations for output verification"
+    items:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          description: "Oracle type"
+          enum: [arithmetic, garbage, code_syntax, response, composite]
+        config:
+          type: object
+          description: "Oracle-specific configuration"
+          additionalProperties: "true"
+
+  failure_policy:
+    type: string
+    description: "How to handle failures"
+    enum: [stop_on_first, stop_on_p0, collect_all]
+    default: stop_on_p0
+
+  property_tests:
+    type: object
+    description: "Property-based test configuration"
+    properties:
+      enabled:
+        type: boolean
+        default: "true"
+      cases:
+        type: integer
+        description: "Number of proptest cases"
+        minimum: 1
+        maximum: 10000
+        default: 100
+      max_shrink_iters:
+        type: integer
+        description: "Maximum shrinking iterations"
+        minimum: 0
+        default: 1000
+
+  state_machine:
+    type: object
+    description: "State machine test configuration"
+    properties:
+      enabled:
+        type: boolean
+        default: "false"
+      states:
+        type: array
+        items:
+          type: string
+      transitions:
+        type: array
+        items:
+          type: object
+          properties:
+            from:
+              type: string
+            to:
+              type: string
+            action:
+              type: string
+
+  differential_tests:
+    type: object
+    description: "Differential test configuration (GH-188, PMAT-114)"
+    properties:
+      format_validation:
+        type: object
+        properties:
+          enabled: { type: boolean }
+          checks: { type: array, items: { type: string } }
+          gates: { type: array, items: { type: string } }
+      tensor_diff:
+        type: object
+        properties:
+          enabled: { type: boolean }
+          filter: { type: string }
+          gates: { type: array, items: { type: string } }
+      inference_compare:
+        type: object
+        properties:
+          enabled: { type: boolean }
+          prompt: { type: string }
+          max_tokens: { type: integer }
+          tolerance: { type: number }
+          gates: { type: array, items: { type: string } }
+      fingerprint:
+        type: object
+        properties:
+          enabled: { type: boolean }
+          tensors: { type: string }
+          stats: { type: array, items: { type: string } }
+          gates: { type: array, items: { type: string } }
+      validate_stats:
+        type: object
+        properties:
+          enabled: { type: boolean }
+          reference: { type: string }
+          tolerance:
+            type: object
+            properties:
+              layernorm: { type: number }
+              embedding: { type: number }
+              attention: { type: number }
+          gates: { type: array, items: { type: string } }
+
+  profile_ci:
+    type: object
+    description: "Profile CI assertions (PMAT-192)"
+    properties:
+      enabled: { type: boolean }
+      warmup: { type: integer }
+      measure: { type: integer }
+      formats: { type: array, items: { type: string } }
+      backends: { type: array, items: { type: string } }
+      assertions:
+        type: object
+        properties:
+          min_throughput: { type: number }
+          min_throughput_cpu: { type: number }
+          min_throughput_gpu: { type: number }
+          max_p99_ms: { type: number }
+          max_p50_ms: { type: number }
+      gates: { type: array, items: { type: string } }
+
+  trace_payload:
+    type: object
+    description: "Trace payload testing (APR-TRACE-001)"
+    properties:
+      enabled: { type: boolean }
+      prompt: { type: string }
+      gates: { type: array, items: { type: string } }
+
+  contract_tests:
+    type: object
+    description: "Contract invariant tests I-2 through I-5 (GH-190/191)"
+    properties:
+      invariants:
+        type: array
+        items: { type: string }
+
+  ollama_parity:
+    type: object
+    description: "Ollama parity testing (GH-6/AC-2)"
+    properties:
+      enabled:
+        type: boolean
+        description: "Enable ollama parity testing"
+      model_tag:
+        type: string
+        description: "Ollama model tag (e.g., qwen2.5-coder:7b-instruct-q4_k_m)"
+      quantizations:
+        type: array
+        description: "Quantizations to test parity on"
+        items:
+          type: string
+          enum: [f32, f16, q8_0, q6_k, q5_k_m, q5_0, q4_k_m, q4_0, q3_k_m, q2_k]
+        default: [q4_k_m]
+      prompts:
+        type: array
+        description: "Prompts to test parity on"
+        items: { type: string }
+      temperature:
+        type: number
+        description: "Inference temperature (0.0 for deterministic)"
+        minimum: 0.0
+        maximum: 2.0
+        default: 0.0
+      min_perf_ratio:
+        type: number
+        description: "Minimum APR/ollama performance ratio"
+        minimum: 0.0
+        default: 0.8
+      gates:
+        type: array
+        items: { type: string }
+
+  kernel_profile:
+    type: object
+    description: "Kernel profile metadata documenting which kernel operations are under test"
+    properties:
+      family:
+        type: string
+        description: "Model family name"
+      kernel_ops:
+        type: array
+        description: "Kernel operations exercised by this architecture"
+        items:
+          type: string
+      prompt_count:
+        type: integer
+        description: "Total number of architecture-targeted prompts"
+        minimum: 0
+      long_context:
+        type: boolean
+        description: "Whether this architecture supports long context (>4K tokens)"
+
+  metadata:
+    type: object
+    description: "Additional metadata"
+    additionalProperties: "true"
+
+additionalProperties: "false"

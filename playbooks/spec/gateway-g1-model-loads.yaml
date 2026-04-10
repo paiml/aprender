@@ -1,0 +1,91 @@
+# Executable Specification: Gateway G1 - Model Loads
+# Purpose: Define and verify G1 gateway requirements
+#
+# This is an executable specification - it documents requirements
+# AND verifies them through testing. If this playbook passes,
+# the implementation satisfies the spec.
+
+name: spec-gateway-g1
+version: "1.0.0"
+description: "Specification for Gateway G1: Model loads successfully"
+
+# Specification reference
+spec:
+  id: G1-LOAD
+  section: "7.1 Gateway Logic"
+  document: "apr-playbook-spec.md"
+  requirement: |
+    G1 (Model Loads): The model file must load into memory without error.
+    This includes:
+    - File exists and is readable
+    - Header parsing succeeds
+    - Tensor metadata is valid
+    - Memory allocation succeeds
+
+    A G1 failure zeros the entire MQS score (critical path).
+
+# Test scenarios that define the specification
+scenarios:
+  # Positive cases - MUST pass
+  - name: "Valid GGUF Q4_K_M loads"
+    command: "apr run ${VALID_GGUF_Q4} --dry-run"
+    expected: { exit_code: 0 }
+    rationale: "Standard quantized model format"
+
+  - name: "Valid GGUF Q8_0 loads"
+    command: "apr run ${VALID_GGUF_Q8} --dry-run"
+    expected: { exit_code: 0 }
+    rationale: "Higher precision quantization"
+
+  - name: "Valid SafeTensors loads"
+    command: "apr run ${VALID_SAFETENSORS} --dry-run"
+    expected: { exit_code: 0 }
+    rationale: "HuggingFace native format"
+
+  - name: "Valid APR format loads"
+    command: "apr run ${VALID_APR} --dry-run"
+    expected: { exit_code: 0 }
+    rationale: "Native APR format"
+
+  # Negative cases - MUST fail gracefully
+  - name: "Non-existent file fails gracefully"
+    command: "apr run /nonexistent/model.gguf --dry-run"
+    expected:
+      exit_code: 1
+      stderr_contains: "not found"
+      no_panic: "true"
+    rationale: "Missing files should not crash"
+
+  - name: "Invalid file type fails gracefully"
+    command: "apr run /etc/passwd --dry-run"
+    expected:
+      exit_code: 1
+      stderr_contains: "Invalid"
+      no_panic: "true"
+    rationale: "Non-model files should be rejected"
+
+  - name: "Truncated GGUF fails gracefully"
+    command: "apr run ${TRUNCATED_GGUF} --dry-run"
+    expected:
+      exit_code: 1
+      stderr_contains: "truncated"
+      no_panic: "true"
+    rationale: "Corrupted files should not crash"
+
+# Gate definition
+gate:
+  id: G1-LOAD
+  severity: P0
+  condition: |
+    file_exists(model_path) &&
+    is_valid_format(model_path) &&
+    header_parse_ok &&
+    tensor_metadata_valid &&
+    memory_alloc_ok
+  failure_action: "zero_mqs"
+  failure_message: "Model failed to load - MQS zeroed"
+
+metadata:
+  author: "apr-qa-gen"
+  spec_version: "1.1.0"
+  last_verified: "2026-01-30"

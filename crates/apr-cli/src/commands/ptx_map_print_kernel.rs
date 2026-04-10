@@ -109,6 +109,7 @@ fn print_json(steps: &[KernelStep], info: &ModelInfo, prefill: bool) {
 
 /// Main entry point for ptx-map command
 #[allow(clippy::fn_params_excessive_bools)]
+#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
 pub fn run(
     model_path: &Path,
     kernel_filter: Option<&str>,

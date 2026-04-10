@@ -5,6 +5,7 @@
 
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(feature = "cuda")]
+#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
 pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) -> Result<()> {
     use realizar::gguf::{
         MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel, OwnedQuantizedModelCuda,

@@ -28,6 +28,10 @@ use std::path::Path;
 /// - `tui` (default): Interactive terminal dashboard via presentar
 /// - `json`: JSON lines per snapshot (ALB-053 parity with TUI)
 /// - `text`: Human-readable log lines
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "long_running_graceful"
+)]
 pub(crate) fn run(
     experiment_dir: Option<&Path>,
     refresh_ms: u64,

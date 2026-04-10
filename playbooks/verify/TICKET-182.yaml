@@ -1,0 +1,57 @@
+# Verification Playbook for TICKET-182
+# FIXED: SafeTensors companion file export (tokenizer.json, config.json)
+# Fix Location: src/format/converter.rs:4157-4172 (options), 4360-4451 (helpers)
+#
+# Run with: apr-qa tools <model.gguf> --no-gpu
+
+name: verify-ticket-182
+version: "1.0.0"
+description: "Verify fix for TICKET-182: SafeTensors conversion creates companion files"
+
+verification_gates:
+  - id: V-TICKET-182-001
+    description: "GGUF → SafeTensors creates tokenizer.json"
+    tool: rosetta
+    args: ["convert", "model.gguf", "model.safetensors"]
+    condition: "file_exists('tokenizer.json')"
+
+  - id: V-TICKET-182-002
+    description: "GGUF → SafeTensors creates config.json"
+    tool: rosetta
+    args: ["convert", "model.gguf", "model.safetensors"]
+    condition: "file_exists('config.json')"
+
+  - id: V-TICKET-182-003
+    description: "Converted SafeTensors runs inference"
+    tool: run
+    args: ["model.safetensors", "What is 2+2?", "-n", "32"]
+    condition: "exit_code == 0 && stdout.contains('4')"
+
+  - id: V-TICKET-182-004
+    description: "APR → SafeTensors creates companion files"
+    tool: rosetta
+    args: ["convert", "model.apr", "model.safetensors"]
+    condition: "file_exists('tokenizer.json') && file_exists('config.json')"
+
+  - id: V-TICKET-182-005
+    description: "F-CONV-003 gate passes"
+    gate: F-CONV-003
+    condition: "exit_code == 0 && diff < 1e-6"
+
+  - id: V-TICKET-182-006
+    description: "F-CONV-005 gate passes"
+    gate: F-CONV-005
+    condition: "exit_code == 0 && diff < 1e-6"
+
+acceptance:
+  safetensors_inference_works: "true"
+  companion_files_created: "true"
+
+metadata:
+  ticket: "https://github.com/paiml/aprender/issues/182"
+  severity: P1
+  component: apr-rosetta
+  discovered: "2026-01-30"
+  fixed: "2026-01-30"
+  fix_location: "src/format/converter.rs:4157-4172, 4360-4451"
+  pmat_contract: "PMAT-194"

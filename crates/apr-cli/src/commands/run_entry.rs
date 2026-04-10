@@ -5,6 +5,7 @@
 /// - When `true`, all network access is blocked at the type level
 /// - Production deployments MUST use `--offline` mode
 #[allow(clippy::too_many_arguments)]
+#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "long_running_graceful")]
 pub(crate) fn run(
     source: &str,
     input: Option<&Path>,

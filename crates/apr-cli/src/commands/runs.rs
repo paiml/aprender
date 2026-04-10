@@ -171,6 +171,10 @@ fn loss_trend_arrow(data: &[f64]) -> &'static str {
 // ─── Commands ───────────────────────────────────────────────────────────────
 
 /// List experiment runs from SQLite DB
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "read_only_no_side_effects"
+)]
 pub(crate) fn run_ls(
     dir: &Option<PathBuf>,
     global: bool,
@@ -971,5 +975,151 @@ fn param_display(pv: &entrenar::storage::ParameterValue) -> String {
         ParameterValue::Float(f) => format!("{f}"),
         ParameterValue::Bool(b) => b.to_string(),
         _ => pv.to_json(),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PMAT-540 Phase 4: Inline tests for pure helper functions
+// ═══════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod runs_tests {
+    use super::*;
+
+    #[test]
+    fn test_sparkline_empty() {
+        assert_eq!(sparkline(&[], 10), "—");
+    }
+
+    #[test]
+    fn test_sparkline_single_value() {
+        let result = sparkline(&[1.0], 5);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_sparkline_ascending() {
+        let data: Vec<f64> = (0..8).map(|i| i as f64).collect();
+        let result = sparkline(&data, 8);
+        assert_eq!(result.chars().count(), 8);
+        // First char should be lowest, last should be highest
+        let chars: Vec<char> = result.chars().collect();
+        assert!(chars[0] <= chars[7]);
+    }
+
+    #[test]
+    fn test_sparkline_constant() {
+        let result = sparkline(&[5.0, 5.0, 5.0, 5.0], 4);
+        // All same value → all same sparkline char
+        let chars: Vec<char> = result.chars().collect();
+        assert!(chars.iter().all(|c| *c == chars[0]));
+    }
+
+    #[test]
+    fn test_loss_trend_arrow_decreasing() {
+        let data = vec![1.0, 0.9, 0.8, 0.7, 0.6, 0.5];
+        let arrow = loss_trend_arrow(&data);
+        assert!(arrow.contains('↓'), "decreasing loss should show ↓");
+    }
+
+    #[test]
+    fn test_loss_trend_arrow_increasing() {
+        let data = vec![0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+        let arrow = loss_trend_arrow(&data);
+        assert!(arrow.contains('↑'), "increasing loss should show ↑");
+    }
+
+    #[test]
+    fn test_loss_trend_arrow_flat() {
+        let data = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let arrow = loss_trend_arrow(&data);
+        assert!(arrow.contains('→'), "flat loss should show →");
+    }
+
+    #[test]
+    fn test_loss_trend_arrow_too_short() {
+        assert_eq!(loss_trend_arrow(&[1.0, 2.0]), "—");
+        assert_eq!(loss_trend_arrow(&[]), "—");
+    }
+
+    #[test]
+    fn test_truncate_str_short() {
+        assert_eq!(truncate_str("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_exact() {
+        assert_eq!(truncate_str("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_long() {
+        let result = truncate_str("hello world", 8);
+        assert!(result.ends_with('…'));
+        assert!(result.len() <= 10); // 7 chars + multi-byte …
+    }
+
+    #[test]
+    fn test_mean_values() {
+        assert!((mean(&[1.0, 2.0, 3.0]) - 2.0).abs() < 1e-10);
+        assert!((mean(&[10.0]) - 10.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_mean_empty() {
+        assert!((mean(&[]) - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_min_val_some() {
+        assert_eq!(min_val(&[3.0, 1.0, 2.0]), Some(1.0));
+    }
+
+    #[test]
+    fn test_min_val_empty() {
+        assert_eq!(min_val(&[]), None);
+    }
+
+    #[test]
+    fn test_fmt_loss_some() {
+        assert_eq!(fmt_loss(Some(0.123456)), "0.123456");
+    }
+
+    #[test]
+    fn test_fmt_loss_none() {
+        assert_eq!(fmt_loss(None), "—");
+    }
+
+    #[test]
+    fn test_format_duration_long_seconds() {
+        assert_eq!(format_duration_long(45), "45s");
+    }
+
+    #[test]
+    fn test_format_duration_long_minutes() {
+        assert_eq!(format_duration_long(125), "2m 5s");
+    }
+
+    #[test]
+    fn test_format_duration_long_hours() {
+        assert_eq!(format_duration_long(3725), "1h 2m 5s");
+    }
+
+    #[test]
+    fn test_format_duration_long_days() {
+        assert_eq!(format_duration_long(90061), "1d 1h 1m");
+    }
+
+    #[test]
+    fn test_braille_chart_empty() {
+        let result = braille_chart(&[], 10, 5);
+        // Empty data produces empty or minimal output
+        assert!(result.is_empty() || result.len() < 20);
+    }
+
+    #[test]
+    fn test_braille_chart_single() {
+        let result = braille_chart(&[1.0], 10, 3);
+        assert!(!result.is_empty());
     }
 }

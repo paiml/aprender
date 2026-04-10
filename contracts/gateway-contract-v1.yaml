@@ -1,0 +1,103 @@
+metadata:
+  version: "1.1.0"
+  created: "2026-03-08"
+  author: "PAIML Engineering"
+  description: "Gateway pipeline (G0-G4) preconditions with zeroing invariant"
+  registry: true
+  references:
+    - "§8.3 Gateway Categories (Pass/Fail)"
+    - "§11 Falsification Protocol"
+    - "docs/design-by-contract.md — Gateway Checks: G0-G4"
+    - "crates/apr-qa-report/src/mqs_gateways.rs — gateway evaluation"
+
+equations:
+  gateway_zeroing:
+    formula: "forall g in {G0..G4}: not pass(g) -> MQS = 0"
+    domain: "g in GatewayResult"
+    invariants:
+      - "Any single gateway failure zeros the entire score"
+      - "Implemented via: gateways.iter().all(|g| g.passed) check in MqsCalculator::calculate"
+      - "G4 uses a 25% garbage threshold (not binary per-output)"
+  gateway_two_phase:
+    formula: "G0 sub-gates execute before scenario-based G1-G4"
+    domain: "execution timeline"
+    invariants:
+      - "G0 sub-gates (INTEGRITY, LAYOUT, DIM, TENSOR, PULL, VALIDATE, FORMAT) run in execute()"
+      - "G1-G4 are derived post-hoc from scenario evidence"
+      - "G0 failures cause early return before G1-G4 scenarios run"
+      - "G1-G4 have no enforced ordering relative to each other"
+  gateway_scoring:
+    formula: "check_gateways produces exactly 5 GatewayResult items"
+    domain: "MqsCalculator"
+    invariants:
+      - "MQS gateway evaluator: G0 scans gate_id prefix 'G0-', G1 fails when all non-G0 evidence has is_fail() outcomes (Falsified/Timeout/Crashed), G2 scans gate_id starts_with('G2'), G3 checks Outcome::Crashed, G4 checks oracle_type='garbage' on failing evidence (>25% threshold)"
+      - "Absence of evidence for a gateway counts as pass (no evidence = no failure)"
+      - "All G0 sub-gates (FORMAT, TENSOR, INTEGRITY, LAYOUT, VALIDATE, PULL) enforce via Jidoka early-return before scenario execution"
+
+proof_obligations:
+  - type: invariant
+    property: "Gateway zeroing"
+    formal: "forall g in G: not pass(g) implies MQS(model) = 0"
+    applies_to: all
+  - type: invariant
+    property: "Two-phase execution"
+    formal: "G0 sub-gates complete before scenario execution begins"
+    applies_to: all
+  - type: invariant
+    property: "G4 garbage threshold"
+    formal: "G4 fails when garbage_count > floor(evidence_count / 4) (integer division)"
+    tolerance: 0.25
+    applies_to: all
+  - type: completeness
+    property: "Five gateway types in scorer"
+    formal: "check_gateways returns Vec<GatewayResult> with len = 5"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-GW-001
+    rule: "Gateway zeroing"
+    prediction: "MQS = 0 when any single gateway fails"
+    test: "Inject G0-INTEGRITY failure, verify MQS = 0; repeat for G1..G4"
+    if_fails: "Gateway failure does not zero MQS — partial credit bug"
+  - id: FALSIFY-GW-002
+    rule: "Two-phase execution"
+    prediction: "G0 sub-gates (PULL, FORMAT, VALIDATE, TENSOR, INTEGRITY, LAYOUT) complete before scenarios"
+    test: "Instrument execute(), verify Jidoka early-return before execute_scenarios()"
+    if_fails: "Scenarios run before G0 validation — wasted compute on broken models"
+  - id: FALSIFY-GW-003
+    rule: "G4 garbage threshold"
+    prediction: "G4 passes when garbage_count <= evidence_count / 4"
+    test: "Construct evidence with exactly 25% garbage, verify G4 passes; add one more, verify fail"
+    if_fails: "G4 threshold miscalibrated — too strict or too lenient"
+  - id: FALSIFY-GW-004
+    rule: "Five gateway types"
+    prediction: "check_gateways returns exactly 5 items"
+    test: "Call check_gateways with varied evidence, verify len = 5"
+    if_fails: "Gateway count wrong — model evaluated against incomplete gate set"
+
+kani_harnesses: []
+
+enforcement:
+  gateway_zeroing:
+    description: "Any gateway failure must zero the MQS score"
+    check: "contract_tests::FALSIFY-GW-001"
+    severity: "ERROR"
+  two_phase:
+    description: "G0 must complete before scenario execution"
+    check: "contract_tests::FALSIFY-GW-002"
+    severity: "ERROR"
+  garbage_threshold:
+    description: "G4 garbage threshold at 25%"
+    check: "contract_tests::FALSIFY-GW-003"
+    severity: "ERROR"
+
+qa_gate:
+  id: F-GW-001
+  name: "Gateway Pipeline Contract"
+  description: "G0-G4 preconditions with zeroing invariant and two-phase execution"
+  checks:
+    - "gateway_zeroing"
+    - "two_phase"
+    - "garbage_threshold"
+  pass_criteria: "All 4 falsification tests pass"
+  falsification: "Remove zeroing logic from one gateway — gate must catch the regression"

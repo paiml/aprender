@@ -1,0 +1,51 @@
+# Pythia-410M Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+# Class B kernel: MHA + LayerNorm + GELU (GPT-NeoX architecture)
+name: pythia-410m-deduped-dim-smoke
+version: "1.0.0"
+description: "Dimensional smoke check for Pythia-410M-deduped (metadata-only)"
+
+model:
+  hf_repo: "EleutherAI/pythia-410m-deduped"
+  formats:
+    - safetensors
+  quantizations:
+    - q4_k_m
+  size_category: tiny
+  expected_hidden_dim: 1024
+  expected_num_layers: 24
+  expected_num_heads: 16
+  expected_vocab_size: 50304
+  expected_intermediate_dim: 4096
+  family: gpt-neox
+  size_variant: "410m"
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+    - "What is 2+2?"
+
+gates:
+  g1_model_loads: "true"
+  g2_basic_inference: "true"
+  g3_no_crashes: "true"
+  g4_output_quality: "true"
+
+failure_policy: collect_all
+
+metadata:
+  author: "apr-qa-gen"
+  tier: "dim-smoke"
+  architecture: "gpt-neox"
+  kernel_class: "B"
+  kernel_proof_ref: "EleutherAI/pythia-410m-deduped"
+  tags:
+    - base
+    - dim-smoke
+    - class-b-proof-ref

@@ -97,15 +97,18 @@ impl<M> std::fmt::Debug for Command<M> {
             Self::None => write!(f, "Command::None"),
             Self::Batch(cmds) => f.debug_tuple("Command::Batch").field(&cmds.len()).finish(),
             Self::Task(_) => write!(f, "Command::Task(..)"),
-            Self::Navigate { route } => {
-                f.debug_struct("Command::Navigate").field("route", route).finish()
-            }
-            Self::SaveState { key } => {
-                f.debug_struct("Command::SaveState").field("key", key).finish()
-            }
-            Self::LoadState { key, .. } => {
-                f.debug_struct("Command::LoadState").field("key", key).finish_non_exhaustive()
-            }
+            Self::Navigate { route } => f
+                .debug_struct("Command::Navigate")
+                .field("route", route)
+                .finish(),
+            Self::SaveState { key } => f
+                .debug_struct("Command::SaveState")
+                .field("key", key)
+                .finish(),
+            Self::LoadState { key, .. } => f
+                .debug_struct("Command::LoadState")
+                .field("key", key)
+                .finish_non_exhaustive(),
         }
     }
 }

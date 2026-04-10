@@ -1,0 +1,48 @@
+# Falcon-7B-Instruct Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+name: falcon-7b-dim-smoke
+version: "1.0.0"
+description: "Dimensional smoke check for Falcon-7B-Instruct (metadata-only)"
+
+model:
+  hf_repo: "tiiuae/falcon-7b-instruct"
+  formats:
+    - safetensors
+  quantizations:
+    - q4_k_m
+  size_category: medium
+  expected_hidden_dim: 4544
+  expected_num_layers: 32
+  expected_num_heads: 71
+  expected_vocab_size: 65024
+  family: falcon-7b
+  size_variant: "7b"
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+    - "What is 2+2?"
+
+gates:
+  g1_model_loads: "true"
+  g2_basic_inference: "true"
+  g3_no_crashes: "true"
+  g4_output_quality: "true"
+
+failure_policy: collect_all
+
+metadata:
+  author: "apr-qa-gen"
+  tier: "dim-smoke"
+  architecture: "falcon"
+  kernel_class: "B"
+  kernel_proof_ref: "EleutherAI/gpt-neox-20b"
+  tags:
+    - instruct
+    - dim-smoke

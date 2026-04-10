@@ -1,0 +1,54 @@
+# Dimensional Smoke Playbook Template
+# Verifies dimensions wire up correctly via kernel equivalence.
+# Requires kernel proof (full MVP) on the representative model for the class.
+# Target: <30 seconds per model.
+name: dim-smoke
+version: "1.0.0"
+description: "Dimensional smoke test — kernel-proven, dimension-only verification"
+
+model:
+  hf_repo: "${MODEL_ID}"
+  formats:
+    - safetensors  # Ground truth only — no format conversion
+  quantizations:
+    - q4_k_m
+  size_category: auto
+
+test_matrix:
+  modalities:
+    - run          # Single modality
+  backends:
+    - cpu          # CPU only for speed
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+
+gates:
+  g1_model_loads: "true"      # Model loads without error
+  g2_basic_inference: "true"  # Produces output
+  g3_no_crashes: "true"       # No segfaults/panics
+  g4_output_quality: "true"   # Not garbage
+
+oracles:
+  - type: arithmetic
+    config:
+      tolerance: 0.01
+  - type: garbage
+    config:
+      max_repetition_ratio: 0.3
+      min_unique_chars: 10
+
+verification_tests:
+  - name: "SafeTensors loads and produces coherent output"
+    format: safetensors
+    prompt: "What is 2+2?"
+    expect: "4"
+
+failure_policy: fail_fast
+
+metadata:
+  author: "apr-qa"
+  purpose: "Dimensional smoke — kernel equivalence verification"
+  estimated_time: "<30 seconds"
+  kernel_class: "${KERNEL_CLASS}"
+  kernel_proof_ref: "${KERNEL_PROOF_MODEL}"

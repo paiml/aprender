@@ -1,6 +1,6 @@
 # Aprender Specifications — Table of Contents
 
-> 70 workspace crates. 394 specification files.
+> 75 workspace crates. 398 specification files.
 
 ---
 

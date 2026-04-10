@@ -1,0 +1,36 @@
+# deepseek-coder-v2-lite Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+name: deepseek-coder-v2-lite-dim-smoke
+version: 1.0.0
+description: Dimensional smoke check for deepseek-coder-v2-lite (metadata-only)
+model:
+  hf_repo: deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct
+  formats:
+  - safetensors
+  quantizations:
+  - q4_k_m
+  size_category: xlarge
+  family: deepseek-coder-v2
+  size_variant: ''
+test_matrix:
+  modalities:
+  - run
+  backends:
+  - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+  - What is 2+2?
+gates:
+  g1_model_loads: 'true'
+  g2_basic_inference: 'true'
+  g3_no_crashes: 'true'
+  g4_output_quality: 'true'
+failure_policy: collect_all
+metadata:
+  author: apr-qa-gen
+  tier: dim-smoke
+  architecture: deepseek2
+  tags:
+  - dim-smoke

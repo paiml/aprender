@@ -1,0 +1,182 @@
+# Full Model Qualification Template
+#
+# This template tests ALL modalities, backends, and formats.
+# Use this for comprehensive qualification before production deployment.
+#
+# Expected test count: modalities × backends × formats × scenarios
+# Default: 3 × 2 × 3 × 100 = 1,800 tests per model
+
+name: "${MODEL_NAME}-full-qualification"
+version: "1.0.0"
+
+model:
+  hf_repo: "${HF_REPO}"
+  formats:
+    - gguf
+    - safetensors
+    - apr
+  quantizations:
+    - q4_k_m
+    - q5_k_m
+    - q8_0
+
+test_matrix:
+  modalities:
+    - run
+    - chat
+    - serve
+  backends:
+    - cpu
+    - gpu
+  scenario_count: 100
+
+# Property tests for rigorous validation
+property_tests:
+  - name: arithmetic_correctness
+    generator: "arithmetic(a: i32, b: i32, op: +|-|*)"
+    oracle: "eval(a op b) == parse_int(output)"
+    count: 50
+
+  - name: code_syntax_validity
+    generator: "code_prompt(lang: rust|python|js)"
+    oracle: "is_valid_syntax(output, lang)"
+    count: 50
+
+  - name: response_non_empty
+    generator: "any_prompt()"
+    oracle: "output.len() > 0"
+    count: 100
+
+  - name: no_garbage_output
+    generator: "any_prompt()"
+    oracle: "!is_garbage(output)"
+    count: 100
+
+  - name: deterministic_with_seed
+    generator: "any_prompt(seed: fixed)"
+    oracle: "run(seed) == run(seed)"
+    count: 20
+
+# Full gateway checks
+falsification_gates:
+  # Gateway G1-G4 (must all pass)
+  - id: G1-LOAD
+    description: "Model loads successfully"
+    condition: "!load_error"
+    severity: P0
+
+  - id: G2-INFER
+    description: "Basic inference produces output"
+    condition: "output.len() > 0"
+    severity: P0
+
+  - id: G3-STABLE
+    description: "No crashes during execution"
+    condition: "exit_code == 0 && !panic"
+    severity: P0
+
+  - id: G4-VALID
+    description: "Output is not garbage"
+    condition: "!is_garbage(output)"
+    severity: P0
+
+  # Quality gates (F-QUAL-*)
+  - id: F-QUAL-001
+    description: "Arithmetic oracle passes"
+    condition: "arithmetic_oracle(prompt, output)"
+    severity: P1
+
+  - id: F-QUAL-002
+    description: "Code syntax is valid"
+    condition: "syntax_check(output)"
+    severity: P1
+
+  - id: F-QUAL-003
+    description: "Response is contextually relevant"
+    condition: "relevance_score > 0.3"
+    severity: P2
+
+  # Performance gates (F-PERF-*)
+  - id: F-PERF-001
+    description: "CPU throughput >= 10 tok/s"
+    condition: "backend == 'cpu' => tps >= 10"
+    severity: P1
+
+  - id: F-PERF-002
+    description: "GPU throughput >= 100 tok/s"
+    condition: "backend == 'gpu' => tps >= 100"
+    severity: P1
+
+  - id: F-PERF-003
+    description: "Time to first token < 2s (CPU) or < 500ms (GPU)"
+    condition: "ttft < (backend == 'cpu' ? 2000 : 500)"
+    severity: P1
+
+  - id: F-PERF-004
+    description: "GPU speedup >= 2x CPU"
+    condition: "gpu_tps / cpu_tps >= 2.0"
+    severity: P2
+
+  # Stability gates (F-STAB-*)
+  - id: F-STAB-001
+    description: "Deterministic output with fixed seed"
+    condition: "run(seed=42) == run(seed=42)"
+    severity: P1
+
+  - id: F-STAB-002
+    description: "No memory leaks over 100 iterations"
+    condition: "memory_growth_rate < 0.01"
+    severity: P1
+
+  - id: F-STAB-003
+    description: "Handles concurrent requests"
+    condition: "concurrent_success_rate > 0.99"
+    severity: P2
+
+  # Compatibility gates (F-COMP-*)
+  - id: F-COMP-001
+    description: "All quantizations work"
+    condition: "all_quants_pass"
+    severity: P1
+
+  - id: F-COMP-002
+    description: "GGUF and APR produce equivalent outputs"
+    condition: "gguf_output ≈ apr_output"
+    severity: P1
+
+  - id: F-COMP-003
+    description: "CPU and GPU produce equivalent outputs"
+    condition: "cpu_output ≈ gpu_output"
+    severity: P2
+
+  # Edge case gates (F-EDGE-*)
+  - id: F-EDGE-001
+    description: "Handles empty prompt gracefully"
+    condition: "!crash && !panic"
+    severity: P2
+
+  - id: F-EDGE-002
+    description: "Handles very long prompts"
+    condition: "!crash && !timeout"
+    severity: P2
+
+  - id: F-EDGE-003
+    description: "Handles unicode correctly"
+    condition: "unicode_output_valid"
+    severity: P2
+
+  - id: F-EDGE-004
+    description: "Respects max_tokens limit"
+    condition: "output_tokens <= max_tokens"
+    severity: P2
+
+  # Regression gates (F-REGR-*)
+  - id: F-REGR-001
+    description: "No regression from baseline"
+    condition: "mqs_score >= baseline_score"
+    severity: P1
+
+  - id: F-REGR-002
+    description: "Performance not degraded >10%"
+    condition: "current_tps / baseline_tps > 0.9"
+    severity: P2

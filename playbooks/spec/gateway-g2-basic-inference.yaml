@@ -1,0 +1,70 @@
+# Executable Specification: Gateway G2 - Basic Inference
+# Purpose: Define and verify G2 gateway requirements
+
+name: spec-gateway-g2
+version: "1.0.0"
+description: "Specification for Gateway G2: Basic inference works"
+
+spec:
+  id: G2-INFER
+  section: "7.1 Gateway Logic"
+  document: "apr-playbook-spec.md"
+  requirement: |
+    G2 (Basic Inference): The model must produce output for a simple prompt.
+    This verifies:
+    - Forward pass executes without error
+    - Token generation works
+    - Output is returned (non-empty)
+
+    A G2 failure zeros the entire MQS score (critical path).
+
+scenarios:
+  # Minimal prompt - MUST produce output
+  - name: "Simple arithmetic prompt"
+    command: "apr run ${MODEL} '2+2='"
+    expected:
+      exit_code: 0
+      stdout_not_empty: "true"
+    rationale: "Most basic inference test"
+
+  - name: "Hello world prompt"
+    command: "apr run ${MODEL} 'Hello'"
+    expected:
+      exit_code: 0
+      stdout_not_empty: "true"
+    rationale: "Generic greeting response"
+
+  - name: "Single token prompt"
+    command: "apr run ${MODEL} 'The'"
+    expected:
+      exit_code: 0
+      stdout_not_empty: "true"
+    rationale: "Minimal continuation"
+
+  # Edge cases - MUST handle gracefully
+  - name: "Empty prompt produces output"
+    command: "apr run ${MODEL} ''"
+    expected:
+      exit_code: 0
+      # Empty prompt should still work (model generates continuation)
+    rationale: "Edge case handling"
+
+  - name: "Whitespace-only prompt"
+    command: "apr run ${MODEL} '   '"
+    expected:
+      exit_code: 0
+    rationale: "Whitespace should be handled"
+
+gate:
+  id: G2-INFER
+  severity: P0
+  condition: |
+    forward_pass_ok &&
+    tokens_generated > 0 &&
+    output.len() > 0
+  failure_action: "zero_mqs"
+  failure_message: "Basic inference failed - MQS zeroed"
+
+metadata:
+  author: "apr-qa-gen"
+  spec_version: "1.1.0"

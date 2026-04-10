@@ -121,6 +121,12 @@ pub enum Architecture {
     GptNeoX,
     /// Meta OPT (Open Pre-trained Transformer)
     Opt,
+    /// DeepSeek (DeepSeek-V2, DeepSeek-Coder)
+    DeepSeek,
+    /// Google Gemma (Gemma-2, CodeGemma)
+    Gemma,
+    /// Mistral AI (Mistral, Mixtral)
+    Mistral,
 }
 
 include!("tensor_expectation.rs");

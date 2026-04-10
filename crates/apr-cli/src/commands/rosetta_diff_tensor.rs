@@ -44,6 +44,7 @@ fn diff_tensor_pair(
     }
 }
 
+#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
 pub fn run_diff_tensors(
     model_a: &Path,
     model_b: &Path,

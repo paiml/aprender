@@ -1,0 +1,36 @@
+# qwen3-coder-30b-a3b Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+name: qwen3-coder-30b-a3b-dim-smoke
+version: 1.0.0
+description: Dimensional smoke check for qwen3-coder-30b-a3b (metadata-only)
+model:
+  hf_repo: Qwen/Qwen3-Coder-30B-A3B-Instruct
+  formats:
+  - safetensors
+  quantizations:
+  - q4_k_m
+  size_category: xlarge
+  family: qwen3-coder-30b
+  size_variant: ''
+test_matrix:
+  modalities:
+  - run
+  backends:
+  - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+  - What is 2+2?
+gates:
+  g1_model_loads: 'true'
+  g2_basic_inference: 'true'
+  g3_no_crashes: 'true'
+  g4_output_quality: 'true'
+failure_policy: collect_all
+metadata:
+  author: apr-qa-gen
+  tier: dim-smoke
+  architecture: qwen3_moe
+  tags:
+  - dim-smoke

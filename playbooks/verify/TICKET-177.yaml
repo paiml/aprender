@@ -1,0 +1,82 @@
+# Verification Playbook for TICKET-177
+# P0 CRITICAL: Format conversion introduces NaN/Inf corruption
+#
+# This playbook verifies the fix for format conversion issues.
+# Run with: apr-qa run playbooks/verify/TICKET-177.yaml --subprocess --model-path <model.gguf>
+
+name: verify-ticket-177
+version: "1.0.0"
+description: "Verify fix for TICKET-177: Format conversion NaN/Inf corruption"
+
+model:
+  hf_repo: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+  formats:
+    - gguf
+    - apr
+    - safetensors
+  quantizations:
+    - q4_k_m
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 1
+  timeout_ms: 120000
+
+# Critical conversion tests - ALL must pass for ticket to be verified
+verification_gates:
+  # Direct conversion gates
+  - id: V-TICKET-177-001
+    description: "GGUF → APR conversion preserves output"
+    gate: F-CONV-G-A
+    condition: "diff < 1e-6"
+
+  - id: V-TICKET-177-002
+    description: "APR → GGUF conversion preserves output"
+    gate: F-CONV-A-G
+    condition: "diff < 1e-6"
+
+  - id: V-TICKET-177-003
+    description: "GGUF → SafeTensors conversion works"
+    gate: F-CONV-G-S
+    condition: "exit_code == 0 && diff < 1e-6"
+
+  - id: V-TICKET-177-004
+    description: "SafeTensors → GGUF conversion preserves output"
+    gate: F-CONV-S-G
+    condition: "diff < 1e-6"
+
+  - id: V-TICKET-177-005
+    description: "APR → SafeTensors conversion works"
+    gate: F-CONV-A-S
+    condition: "exit_code == 0 && diff < 1e-6"
+
+  - id: V-TICKET-177-006
+    description: "SafeTensors → APR conversion preserves output"
+    gate: F-CONV-S-A
+    condition: "diff < 1e-6"
+
+  # Round-trip gate (most critical)
+  - id: V-TICKET-177-007
+    description: "Round-trip conversion produces NO NaN/Inf values"
+    gate: F-CONV-RT-001
+    condition: "nan_count == 0 && inf_count == 0 && validation_errors == 0"
+
+# Acceptance criteria
+acceptance:
+  all_gates_pass: "true"
+  max_output_diff: 1e-6
+  no_nan_values: "true"
+  no_inf_values: "true"
+  no_numerical_explosion: "true"  # mean must be in [-100, 100]
+
+failure_policy: stop_on_first
+
+metadata:
+  ticket: "https://github.com/paiml/aprender/issues/177"
+  severity: P0
+  component: apr-rosetta
+  discovered: "2026-01-30"
+  author: "apr-qa-playbook"

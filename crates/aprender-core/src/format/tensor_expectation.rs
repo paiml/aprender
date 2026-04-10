@@ -15,6 +15,10 @@ impl Architecture {
             Self::Phi => Self::llama_map_name(source_name), // Phi uses HuggingFace model.layers naming
             Self::GptNeoX => Self::gpt_neox_map_name(source_name),
             Self::Opt => Self::opt_map_name(source_name),
+            // PMAT-526: New architectures — use LLaMA-like naming (HuggingFace model.layers)
+            Self::DeepSeek => Self::llama_map_name(source_name),
+            Self::Gemma => Self::llama_map_name(source_name),
+            Self::Mistral => Self::llama_map_name(source_name),
         }
     }
 
@@ -25,6 +29,27 @@ impl Architecture {
     #[must_use]
     pub fn is_inference_verified(&self) -> bool {
         matches!(self, Self::Qwen2 | Self::Qwen3 | Self::Qwen3_5 | Self::Llama | Self::Phi)
+    }
+
+    /// PMAT-526: Returns true for decoder-only LLM architectures that use BPE tokenizers
+    /// and support chat templates. Returns false for audio models (Whisper), encoder-only
+    /// models (BERT), and Auto (indeterminate).
+    #[must_use]
+    pub fn is_llm(&self) -> bool {
+        matches!(
+            self,
+            Self::Llama
+                | Self::Qwen2
+                | Self::Qwen3
+                | Self::Qwen3_5
+                | Self::Gpt2
+                | Self::Phi
+                | Self::GptNeoX
+                | Self::Opt
+                | Self::DeepSeek
+                | Self::Gemma
+                | Self::Mistral
+        )
     }
 
     /// GH-279: Get the architecture key for `enforce_architecture_completeness()`.
@@ -61,6 +86,9 @@ impl Architecture {
             Self::Phi => "Phi",
             Self::GptNeoX => "GPT-NeoX",
             Self::Opt => "OPT",
+            Self::DeepSeek => "DeepSeek",
+            Self::Gemma => "Gemma",
+            Self::Mistral => "Mistral",
         }
     }
 
@@ -85,9 +113,12 @@ impl Architecture {
             "opt" | "galactica" => Some(Self::Opt),
             // GH-311: StarCoder reuses GPT-2 tensor naming
             "starcoder" | "starcoder2" | "bigcode" => Some(Self::Gpt2),
-            // LLaMA derivatives
-            "smollm" | "smollm2" | "granite" | "granite3" | "nemotron" | "mistral" | "gemma"
-            | "gemma2" | "gemma3" => Some(Self::Llama),
+            // PMAT-526: Proper architecture variants for major model families
+            "deepseek" | "deepseek_v2" | "deepseek-v2" => Some(Self::DeepSeek),
+            "gemma" | "gemma2" | "gemma3" => Some(Self::Gemma),
+            "mistral" | "mixtral" => Some(Self::Mistral),
+            // LLaMA derivatives (use LLaMA tensor naming)
+            "smollm" | "smollm2" | "granite" | "granite3" | "nemotron" => Some(Self::Llama),
             _ => None,
         }
     }

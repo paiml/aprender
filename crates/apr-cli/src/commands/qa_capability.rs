@@ -26,6 +26,10 @@ use std::time::Instant;
 /// - `GateResult::passed` if all required ops are GPU-supported (or non-GGUF)
 /// - `GateResult::failed` if the GPU lacks required kernels (lists missing ops)
 /// - `GateResult::skipped` if the file can't be read or isn't GGUF
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "read_only_no_side_effects"
+)]
 pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     let start = Instant::now();
 

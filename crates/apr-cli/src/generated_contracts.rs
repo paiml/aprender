@@ -2,6 +2,11 @@
 // Zero cost in release builds (debug_assert!).
 // Regenerate: pv codegen contracts/ -o src/generated_contracts.rs
 // Include:   #[macro_use] #[allow(unused_macros)] mod generated_contracts;
+//
+// PMAT-540: Excluded from coverage — auto-generated macro boilerplate (26K lines).
+// These macros expand at call sites which ARE measured. Measuring the macro
+// definitions themselves is meaningless (they're templates, not executable code).
+#![cfg_attr(coverage_nightly, coverage(off))]
 
 // Auto-generated from contracts/absolute-position-v1.yaml — DO NOT EDIT
 // Contract: absolute-position-v1

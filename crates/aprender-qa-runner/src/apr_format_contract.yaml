@@ -1,0 +1,77 @@
+# APR Format Contract v1
+# Single source of truth for writer/reader behavioral invariants.
+# See: docs/five-whys/GH-190, GH-191
+
+version: "1.0"
+
+tensor_naming:
+  convention: "gguf-short"
+  description: "All tensors use short GGUF-style names: {layer}.{component}.{param}"
+  examples:
+    - { canonical: "0.q_proj.weight", forbidden: "model.layers.0.self_attn.q_proj.weight" }
+    - { canonical: "0.down_proj.weight", forbidden: "model.layers.0.mlp.down_proj.weight" }
+    - { canonical: "token_embd.weight", forbidden: "model.embed_tokens.weight" }
+  pattern: "^(\\d+\\.\\w+\\.\\w+|token_embd\\.\\w+|output_norm\\.\\w+|output\\.\\w+)$"
+
+dtype_bytes:
+  description: "GGML type values — writer and reader MUST agree"
+  mappings:
+    - { dtype: "F32",  byte: 0 }
+    - { dtype: "F16",  byte: 1 }
+    - { dtype: "Q4_0", byte: 2 }
+    - { dtype: "Q5_0", byte: 6 }
+    - { dtype: "Q8_0", byte: 8 }
+    - { dtype: "Q2_K", byte: 10 }
+    - { dtype: "Q3_K", byte: 11 }
+    - { dtype: "Q4_K", byte: 12 }
+    - { dtype: "Q5_K", byte: 13 }
+    - { dtype: "Q6_K", byte: 14 }
+    - { dtype: "BF16", byte: 30 }
+
+tolerances:
+  - { dtype: "F32",  atol: 0.0,    rtol: 0.0 }
+  - { dtype: "F16",  atol: 0.001,  rtol: 0.001 }
+  - { dtype: "BF16", atol: 0.005,  rtol: 0.005 }
+  - { dtype: "Q8_0", atol: 0.01,   rtol: 0.01 }
+  - { dtype: "Q6_K", atol: 0.02,   rtol: 0.02 }
+  - { dtype: "Q5_K", atol: 0.03,   rtol: 0.03 }
+  - { dtype: "Q4_K", atol: 0.05,   rtol: 0.05 }
+  - { dtype: "Q4_0", atol: 0.05,   rtol: 0.05 }
+  - { dtype: "Q3_K", atol: 0.08,   rtol: 0.08 }
+  - { dtype: "Q2_K", atol: 0.15,   rtol: 0.15 }
+
+invariants:
+  - id: "I-1"
+    name: "Round-trip Identity"
+    description: "inference(convert(model)) == inference(model)"
+    catches: ["GH-186", "GH-189", "GH-190", "GH-191"]
+    gate_id: "F-CONTRACT-I1-001"
+    implemented: "true"
+
+  - id: "I-2"
+    name: "Tensor Name Bijection"
+    description: "Writer tensor names == Reader tensor names (exact match, no pattern matching)"
+    catches: ["GH-190"]
+    gate_id: "F-CONTRACT-I2-001"
+    test: "apr rosetta diff-tensors <original> <converted> --json"
+
+  - id: "I-3"
+    name: "No Silent Fallbacks"
+    description: "Unknown dtype/tensor → error, never default to F32"
+    catches: ["GH-186", "GH-191"]
+    gate_id: "F-CONTRACT-I3-001"
+    test: "apr check <converted> --json"
+
+  - id: "I-4"
+    name: "Statistical Preservation"
+    description: "Tensor statistics (mean, std, min, max) preserved within dtype tolerance"
+    catches: ["GH-189", "GH-191"]
+    gate_id: "F-CONTRACT-I4-001"
+    test: "apr rosetta validate-stats <original_fp> <converted_fp>"
+
+  - id: "I-5"
+    name: "Tokenizer Roundtrip"
+    description: "encode(decode(tokens)) == tokens for the embedded tokenizer"
+    catches: ["GH-185"]
+    gate_id: "F-CONTRACT-I5-001"
+    test: "apr rosetta compare-inference <original> <converted> --prompt 'Hello' --max-tokens 1"

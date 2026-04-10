@@ -16,6 +16,10 @@ use std::path::Path;
 use aprender::inspect::safetensors::{BatchComparison, HfSafetensors, TensorComparison};
 
 /// Run the compare-hf command
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "read_only_no_side_effects"
+)]
 pub(crate) fn run(
     apr_path: &Path,
     hf_repo: &str,
