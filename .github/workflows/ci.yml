@@ -29,17 +29,17 @@ jobs:
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 70 crates)
-  # RC-INFRA: Removed container requirement — Docker not available on all runners.
-  # Tests run directly on self-hosted runner (Rust toolchain pre-installed).
   workspace-test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    container:
+      image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Workspace check (all 70 crates)
         run: cargo check --workspace
       - name: Workspace lib tests (25,300+)
-        # RC5 fix: zero exclusions — all 70 crates tested (was 8 excluded due to stale [patch.crates-io])
+        # RC5 fix: zero exclusions — all 70 crates tested
         run: cargo test --workspace --lib
         timeout-minutes: 25
       - name: Integration tests
@@ -51,6 +51,8 @@ jobs:
   mutants:
     runs-on: self-hosted
     continue-on-error: true
+    container:
+      image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 120
     needs: [ci, workspace-test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
