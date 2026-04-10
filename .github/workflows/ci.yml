@@ -39,8 +39,9 @@ jobs:
       - name: Workspace check (all 70 crates)
         run: cargo check --workspace
       - name: Workspace lib tests (25,300+)
-        # RC5 fix: zero exclusions — all 70 crates tested
-        run: cargo test --workspace --lib
+        # RC5 fix: only GPU-hardware crates excluded (need physical GPU)
+        # Was 8 excluded — now 2 (aprender-gpu needs cuBLAS, aprender-cuda-edge needs CUDA)
+        run: cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge
         timeout-minutes: 25
       - name: Integration tests
         run: |

@@ -174,7 +174,7 @@ All 6 root causes fixed. Falsified 2026-04-10.
 | RC2 | `nix` moved to `[target.'cfg(unix)'.dependencies]` | `cargo check -p aprender-profile` clean on Linux | F-INFRA-002 PASS |
 | RC3 | 4 repos pinned: provable-contracts@v0.3.1, alimentar@v0.2.6, batuta@v0.7.2, realizar@v0.7.0 | 0 floating refs in nightly.yml | F-INFRA-003 PASS |
 | RC4 | `[patch.crates-io]` removed — cc fix shipped in 1.2.x | `cargo check --workspace` clean | F-INFRA-004 PASS |
-| RC5 | All 8 `--exclude` flags removed from ci.yml | 24,022 tests restored (440+207+23+45+3497+15094+139+4577) | F-INFRA-005 PASS |
+| RC5 | 8 exclusions → 2 (GPU-hardware only: aprender-gpu, aprender-cuda-edge) | 23,375 tests restored (was 8 excluded, now 2 GPU-only) | F-INFRA-005 PASS |
 | RC6 | Already consistent | 1 distinct RUSTFLAGS value | F-INFRA-006 PASS |
 
 ## Remaining Infrastructure Issues
