@@ -306,8 +306,7 @@
 - [World Class Mlops Survey](aprender-train/world-class-mlops-survey.md)
 - [Yaml Mode Train](aprender-train/yaml-mode-train.md)
 - [Ship Two Models](aprender-train/ship-two-models-spec.md)
-- [Model Type Tokenizer Contract](aprender-train/model-type-tokenizer-contract-spec.md)
-- [Migrate QA Playbook](aprender-train/migrate-qa-playbook-spec.md)
+- [Training Monitor DBC](aprender-train/training-monitor-dbc-spec.md)
 
 ## Quality Validation (was certeza)
 

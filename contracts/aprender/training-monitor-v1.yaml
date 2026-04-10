@@ -1,0 +1,229 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-10"
+  author: "PAIML Engineering"
+  description: "Training monitor layout, data, and anomaly detection contracts"
+  references:
+    - "SPEC-TRAINMON-001: Design-by-Provable-Contract Training Monitoring"
+    - "[C2] Pascanu et al. (2013) gradient norm monitoring. arXiv:1211.5063"
+    - "[C5] Zhang et al. (2022) OPT training logbook — loss spike patterns. arXiv:2205.01068"
+    - "rmedia-semantic/src/grid.rs — integer grid layout protocol"
+    - "presentar-terminal RecordingCanvas — snapshot testing"
+  tags:
+    - training
+    - monitoring
+    - tui
+    - wasm
+    - layout
+    - anomaly-detection
+
+constants:
+  GRID_COLS: 8
+  GRID_ROWS: 6
+  TOTAL_CELLS: 48
+  REGIONS: 11
+  REFRESH_MS: 500
+  SPIKE_THRESHOLD: 2.0
+  EXPLOSION_THRESHOLD: 100.0
+
+equations:
+  grid_occupancy:
+    formula: |
+      assign_regions(grid: MonitorGrid) -> Result<()>:
+        FOR EACH region IN [Header, Loss, Throughput, Mfu, Gradient,
+                            GpuVram, GpuUtil, GpuTemp, LrSchedule, Config, Footer]:
+          FOR EACH cell IN region.cells():
+            REQUIRE cell NOT IN grid.occupied
+            grid.occupied.insert(cell)
+        REQUIRE grid.occupied.len() == GRID_COLS * GRID_ROWS  // 48
+    domain: "MonitorGrid with 8 columns × 6 rows"
+    codomain: "Fully occupied grid with zero overlaps"
+    invariants:
+      - "No cell (col, row) assigned to more than one region"
+      - "All 48 cells assigned (no gaps)"
+      - "Region boundaries are axis-aligned rectangles"
+    postconditions:
+      - "grid.occupied.len() == 48"
+      - "grid.regions.len() == 11"
+
+  cell_sizing:
+    formula: |
+      cell_width(terminal_width: u16) -> u16 = terminal_width / GRID_COLS
+      cell_height(terminal_height: u16) -> u16 = terminal_height / GRID_ROWS
+    domain: "terminal dimensions (u16, u16)"
+    codomain: "cell dimensions (u16, u16)"
+    invariants:
+      - "Integer division — zero floating-point error"
+      - "cell_width * GRID_COLS <= terminal_width (no overflow)"
+      - "Remainder pixels distributed to last column/row (≤7 pixels)"
+
+  metric_completeness:
+    formula: |
+      validate_snapshot(s: MetricSnapshot) -> Result<()>:
+        REQUIRE s.step is defined
+        REQUIRE s.loss is finite (not NaN, not Inf)  // or NaN triggers alert
+        REQUIRE s.lr > 0.0
+        REQUIRE s.throughput >= 0.0
+        REQUIRE s.gpu_vram_used <= s.gpu_vram_total
+    domain: "MetricSnapshot from DashboardSource"
+    codomain: "Validated snapshot or anomaly alert"
+    invariants:
+      - "All required fields present (15 fields per snapshot)"
+      - "GPU VRAM used never exceeds total"
+      - "Throughput is non-negative"
+
+  spike_detection:
+    formula: |
+      is_spike(loss: f32, ema_loss: f32, step: u64, warmup: u64) -> bool:
+        step > warmup AND loss > SPIKE_THRESHOLD * ema_loss
+    domain: "loss ∈ ℝ+, ema_loss ∈ ℝ+, step ∈ ℕ"
+    codomain: "bool"
+    invariants:
+      - "No false positives during warmup (step <= warmup)"
+      - "Threshold is 2.0× EMA (configurable)"
+      - "EMA uses α=0.99 (Welford or exponential moving average)"
+    references:
+      - "[C5] OPT logbook: loss spikes at steps 33K, 67K, 82K, 102K, 130K required manual restarts"
+
+  nan_detection:
+    formula: |
+      is_nan_divergence(loss: f32) -> bool:
+        loss.is_nan() OR loss.is_infinite()
+    domain: "loss ∈ ℝ ∪ {NaN, ±Inf}"
+    codomain: "bool"
+    invariants:
+      - "Catches both NaN and ±Inf"
+      - "Triggers before next training step (not retroactive)"
+
+  layout_parity:
+    formula: |
+      tui_layout(grid: MonitorGrid, w: u16, h: u16) -> Vec<Rect>
+      wasm_layout(grid: MonitorGrid, w: u32, h: u32) -> Vec<Rect>
+      FOR EACH region:
+        tui_rect.relative_position() == wasm_rect.relative_position()
+    domain: "Same MonitorGrid rendered to TUI and WASM"
+    codomain: "Proportionally identical layouts"
+    invariants:
+      - "Same grid constants (8×6)"
+      - "Same cell assignment"
+      - "Pixel sizes differ (terminal cells vs canvas pixels) but proportions match"
+
+proof_obligations:
+  - type: invariant
+    property: "Grid occupancy completeness"
+    formal: "occupied.len() == 48 after all 11 regions assigned"
+    applies_to: grid_occupancy
+  - type: invariant
+    property: "No cell overlap"
+    formal: "for all r1, r2 in regions: r1 != r2 => r1.cells() ∩ r2.cells() = ∅"
+    applies_to: grid_occupancy
+  - type: invariant
+    property: "Integer cell sizing"
+    formal: "cell_width * GRID_COLS <= terminal_width (no overflow)"
+    applies_to: cell_sizing
+  - type: postcondition
+    property: "Spike detection warmup immunity"
+    formal: "step <= warmup => is_spike() == false"
+    applies_to: spike_detection
+  - type: postcondition
+    property: "NaN always detected"
+    formal: "loss.is_nan() => is_nan_divergence() == true"
+    applies_to: nan_detection
+  - type: equivalence
+    property: "TUI-WASM layout parity"
+    formal: "relative positions of all 11 regions identical across backends"
+    applies_to: layout_parity
+
+falsification_tests:
+  - id: FALSIFY-TM-001
+    rule: "No cell overlap in grid"
+    prediction: "assign_regions succeeds with 48 unique cells"
+    test: |
+      #[test]
+      fn falsify_tm_001_no_overlap() {
+          let grid = MonitorGrid::default();
+          let cells: Vec<(u8,u8)> = grid.all_cells();
+          let unique: HashSet<(u8,u8)> = cells.iter().copied().collect();
+          assert_eq!(cells.len(), unique.len(), "cell overlap detected");
+          assert_eq!(unique.len(), 48, "not all cells assigned");
+      }
+    if_fails: "Two regions share a cell — layout corruption"
+
+  - id: FALSIFY-TM-002
+    rule: "TUI and WASM produce same grid proportions"
+    prediction: "Relative positions match between backends"
+    test: |
+      Render MonitorGrid to RecordingCanvas (TUI) and test Canvas (WASM).
+      Compare relative positions of all 11 regions.
+    if_fails: "Backend-specific layout code diverged from shared grid"
+
+  - id: FALSIFY-TM-003
+    rule: "Loss spike detected when loss > 2× EMA"
+    prediction: "is_spike returns true for 2.01× EMA, false for 1.99× EMA"
+    test: |
+      #[test]
+      fn falsify_tm_003_spike_boundary() {
+          let ema = 5.0;
+          assert!(is_spike(10.01, ema, 1000, 100));   // 2.002× — spike
+          assert!(!is_spike(9.99, ema, 1000, 100));    // 1.998× — not spike
+          assert!(!is_spike(10.01, ema, 50, 100));     // warmup — immune
+      }
+    if_fails: "Spike threshold miscalibrated"
+
+  - id: FALSIFY-TM-004
+    rule: "NaN triggers alert"
+    prediction: "is_nan_divergence returns true for NaN and Inf"
+    test: |
+      #[test]
+      fn falsify_tm_004_nan_detection() {
+          assert!(is_nan_divergence(f32::NAN));
+          assert!(is_nan_divergence(f32::INFINITY));
+          assert!(is_nan_divergence(f32::NEG_INFINITY));
+          assert!(!is_nan_divergence(5.0));
+      }
+    if_fails: "NaN slips through to dashboard without alert"
+
+  - id: FALSIFY-TM-005
+    rule: "JSON output is valid JSONL"
+    prediction: "Each line parses as valid JSON"
+    test: |
+      Run apr monitor --json on test data.
+      For each line: serde_json::from_str::<MetricSnapshot>(line).unwrap()
+    if_fails: "JSON serialization broken — CI/agent integration fails"
+
+  - id: FALSIFY-TM-006
+    rule: "Refresh rate ≤ 500ms"
+    prediction: "Frame-to-frame delta < 500ms in TUI mode"
+    test: |
+      Measure wall-clock between consecutive render calls.
+      Assert p99 < 500ms.
+    if_fails: "Render loop too slow — profile widget draw calls"
+
+  - id: FALSIFY-TM-007
+    rule: "GPU metrics non-zero when GPU active"
+    prediction: "gpu_utilization > 0 and gpu_vram_used > 0 during training"
+    test: |
+      Attach to running training. Sample 10 snapshots.
+      Assert all have gpu_vram_used > 0.
+    if_fails: "NVML bindings broken or permissions missing"
+
+  - id: FALSIFY-TM-008
+    rule: "Monitor handles training completion gracefully"
+    prediction: "No crash when DashboardSource stops emitting"
+    test: |
+      Start monitor, send 10 snapshots, then close source.
+      Monitor should display final state, not crash.
+    if_fails: "EOF not handled — panic on closed channel"
+
+qa_gate:
+  id: F-TRAINMON-001
+  name: training-monitor-v1 Contract
+  description: "Quality gate for training monitor layout, data, and anomaly detection"
+  checks:
+    - grid_occupancy
+    - cell_sizing
+    - spike_detection
+    - nan_detection
+    - layout_parity
+    - json_output
+  pass_criteria: "All 8 falsification tests pass, grid occupancy = 48/48"
