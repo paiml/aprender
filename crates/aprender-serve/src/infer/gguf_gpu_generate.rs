@@ -763,6 +763,31 @@ fn run_apr_quantized_cpu_inference(
     use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
 
     let mapped = MappedAprModel::from_path(&config.model_path)?;
+
+    // SPEC-MOE-APR-001: MoE models need F32 AprTransformer path (has MoE dispatch).
+    // OwnedQuantizedModel doesn't support MoE yet — Q4K expert loading is Phase 2/3.
+    // Detect MoE from metadata OR tensor names (APR files created before metadata existed).
+    // SPEC-MOE-APR-001: Detect MoE from metadata OR tensor names.
+    // Q4K MoE loading (Phase 2/3) not yet implemented — fail with clear message.
+    let is_moe = mapped.metadata.num_experts.unwrap_or(0) > 0
+        || mapped.find_tensor("model.layers.0.mlp.experts.0.gate_proj.weight").is_some()
+        || mapped.find_tensor("model.layers.0.mlp.gate.weight").is_some();
+    if is_moe {
+        eprintln!(
+            "\n[SPEC-MOE-APR-001] MoE model detected. Q4K MoE inference not yet implemented."
+        );
+        eprintln!(
+            "  Blocked: OwnedQuantizedModel needs per-expert tensor loading (Phase 2/3)."
+        );
+        eprintln!(
+            "  Workaround: Use SafeTensors source directly with `apr run` on a machine with"
+        );
+        eprintln!("  sufficient RAM (>120 GB for 30B F32 dequant).\n");
+        return Err(RealizarError::InvalidConfiguration(
+            "MoE APR Q4K inference not yet implemented (SPEC-MOE-APR-001 Phase 2/3 pending)".into(),
+        ));
+    }
+
     let model = OwnedQuantizedModel::from_apr(&mapped)?;
     let load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
 
