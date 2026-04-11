@@ -42,15 +42,27 @@ impl AprV2Model {
                     if let Some(tokenizer) = model.load_embedded_sentencepiece_tokenizer() {
                         return Some(tokenizer.encode(text));
                     }
-                    // PMAT-172: FAIL FAST - No embedded tokenizer found
-                    eprintln!("\n[PMAT-172] ERROR: APR file missing embedded tokenizer.");
-                    eprintln!("           APR format requires self-contained tokenizer.");
-                    eprintln!(
-                        "           Re-convert with: apr convert <source>.gguf -o {}",
-                        model_path.display()
-                    );
-                    eprintln!("           Or use the original GGUF file directly.\n");
-                    return None;
+                    // SPEC-MODEL-TYPE-001: Try sidecar tokenizer.json before failing.
+                    // APR files SHOULD embed tokenizer, but sidecar is a valid fallback
+                    // for models converted without tokenizer (ALB-010, PMAT-172).
+                    if find_sibling_file(model_path, "tokenizer.json").is_some() {
+                        eprintln!(
+                            "[PMAT-172] WARNING: APR file missing embedded tokenizer. \
+                             Falling back to sidecar tokenizer.json."
+                        );
+                        // Fall through to the non-APR path below which handles
+                        // sibling tokenizer.json loading with BPE parsing.
+                    } else {
+                        // No sidecar either — fail fast
+                        eprintln!("\n[PMAT-172] ERROR: APR file missing embedded tokenizer.");
+                        eprintln!("           APR format requires self-contained tokenizer.");
+                        eprintln!(
+                            "           Re-convert with: apr convert <source>.gguf -o {}",
+                            model_path.display()
+                        );
+                        eprintln!("           Or place tokenizer.json alongside the APR file.\n");
+                        return None;
+                    }
                 },
                 Err(e) => {
                     eprintln!("[PMAT-172] Error loading APR file: {}", e);

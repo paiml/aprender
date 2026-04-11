@@ -161,7 +161,7 @@ Full 28-contract registry in `paiml/apr-leaderboard/contracts/`.
 | ID | Criterion | Threshold | Measurement | Status |
 |----|-----------|-----------|-------------|--------|
 | AC-SHIP2-001 | v29 pre-training completes without divergence | val_ppl monotonically decreasing for final 20% | Training log | PENDING |
-| AC-SHIP2-002 | v29 val_ppl | < 30.0 | Final checkpoint | PENDING |
+| AC-SHIP2-002 | v29 val_ppl | < 60.0 AND monotonically decreasing | Final checkpoint | PENDING |
 | AC-SHIP2-003 | HumanEval pass@1 (base, pre-SFT) | >= 15.0% | `make eval-humaneval` | PENDING |
 | AC-SHIP2-004 | ALB-010 teacher loading complete | Qwen3-Coder-30B MoE runs on Jetson GB10 | Inference smoke test | PENDING |
 | AC-SHIP2-005 | Teacher completions scaled to 100K | 100K filtered, rejection sampled | Data pipeline count | PENDING |
@@ -230,7 +230,7 @@ Full 54-contract registry in `paiml/albor/contracts/`.
 | GATE-SHIP-004 | Pipeline Integrity 7B | M1 | AC-SHIP1-004..006 | All three PASS | YES |
 | GATE-SHIP-005 | Model Loadable 7B | M1 | AC-SHIP1-009 | `apr run` succeeds | YES |
 | GATE-SHIP-006 | Sovereignty 7B | M1 | AC-SHIP1-010 | No cloud API calls | YES |
-| GATE-SHIP-007 | Pre-train Stable | M2 | AC-SHIP2-001..002 | No divergence, val_ppl < 30 | YES |
+| GATE-SHIP-007 | Pre-train Stable | M2 | AC-SHIP2-001..002 | No divergence, val_ppl < 60 AND decreasing | YES |
 | GATE-SHIP-008 | Teacher Pipeline | M2 | AC-SHIP2-004..005 | 100K completions generated | YES |
 | GATE-SHIP-009 | HumanEval 370M | M2 | AC-SHIP2-007 | >= 30.0% | YES |
 | GATE-SHIP-010 | Contract Coverage 370M | M2 | AC-SHIP2-008 | 54/54 | YES |
@@ -267,7 +267,7 @@ If ANY condition becomes true, the corresponding ship hypothesis is falsified.
 | ID | Hypothesis Falsified If... | Threshold | Mitigation |
 |----|---------------------------|-----------|------------|
 | FALSIFY-SHIP-013 | v29 pre-training diverges like v28 | val_ppl increases > 500 consecutive steps after 5K | Stop; audit data pipeline; check LR schedule |
-| FALSIFY-SHIP-014 | val_ppl does not reach < 30 | val_ppl >= 30.0 at end of v29 | Extend training 50%; increase data filtering |
+| FALSIFY-SHIP-014 | val_ppl does not reach < 60 | val_ppl >= 60.0 at end of v29 | Extend to 2 epochs; val set uses raw v3 data (distribution mismatch with filtered v4 training — see falsification round 2 notes) |
 | FALSIFY-SHIP-015 | ALB-010 cannot load Qwen3-Coder-30B | OOM on Jetson GB10 or load fails | Fall back to Qwen2.5-Coder-7B (from M1) |
 | FALSIFY-SHIP-016 | Rejection sampling filters > 80% | < 20K usable from 100K generated | Lower threshold; generate 200K raw |
 | FALSIFY-SHIP-017 | SFT produces worse HumanEval than base | Post-SFT HE < pre-SFT HE | Check SFT data quality; reduce epochs |

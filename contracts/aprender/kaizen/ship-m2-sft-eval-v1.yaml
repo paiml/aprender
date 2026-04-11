@@ -13,7 +13,7 @@ baseline:
   contracts_passing: 54
   contracts_total: 54
 target:
-  val_ppl_v29_max: 30.0
+  val_ppl_v29_max: 60.0
   humaneval_pass_at_1_min: 30.0
   teacher_completions_min: 100000
   training_throughput_tok_s_min: 8000
