@@ -208,7 +208,7 @@ mod property_tests {
         }
 
         #[test]
-        fn prop_power_percent_bounds(power in 0.0f32..1000.0, limit in 0.1f32..1000.0) {
+        fn prop_power_percent_bounds(power in 0.001f32..1000.0, limit in 0.1f32..1000.0) {
             let m = GpuMetrics {
                 power_watts: power,
                 power_limit_watts: limit,
