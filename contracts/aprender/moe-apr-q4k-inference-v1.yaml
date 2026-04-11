@@ -1,0 +1,188 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-11"
+  author: "PAIML Engineering"
+  description: "MoE inference for APR Q4K models — tensor loading, expert dispatch, forward block"
+  references:
+    - "SPEC-MOE-APR-001: MoE Inference for APR Q4K Models"
+    - "[C1] Shazeer et al. (2017) Sparsely-Gated MoE. arXiv:1701.06538"
+    - "[C3] Jiang et al. (2024) Mixtral of Experts. arXiv:2401.04088"
+    - "[C4] Dai et al. (2024) DeepSeek-V2. arXiv:2405.04434"
+    - "candle FusedMoeGGUF: candle-transformers/src/fused_moe.rs"
+    - "llama.cpp tensor_mapping: ffn_gate_exps, ffn_up_exps, ffn_down_exps"
+  tags:
+    - moe
+    - inference
+    - q4k
+    - apr
+    - experts
+
+constants:
+  QWEN3_CODER_30B_EXPERTS: 128
+  QWEN3_CODER_30B_TOP_K: 8
+  QWEN3_CODER_30B_LAYERS: 48
+  QWEN3_CODER_30B_HIDDEN: 2048
+  QWEN3_CODER_30B_MOE_INTERMEDIATE: 768
+  EXPERT_TENSORS_PER_LAYER: 384  # 128 experts × 3 projections
+
+equations:
+  moe_tensor_completeness:
+    formula: |
+      load_moe_layer(apr, layer_idx, num_experts) -> Result<MoeExpertWeights>:
+        router = apr.find("model.layers.{layer_idx}.mlp.gate.weight")
+        REQUIRE router.shape == [num_experts, hidden_dim]
+        FOR e IN 0..num_experts:
+          gate = apr.find("model.layers.{layer_idx}.mlp.experts.{e}.gate_proj.weight")
+          up   = apr.find("model.layers.{layer_idx}.mlp.experts.{e}.up_proj.weight")
+          down = apr.find("model.layers.{layer_idx}.mlp.experts.{e}.down_proj.weight")
+          REQUIRE gate.shape == [moe_intermediate, hidden_dim]
+          REQUIRE up.shape   == [moe_intermediate, hidden_dim]
+          REQUIRE down.shape == [hidden_dim, moe_intermediate]
+        total_expert_tensors = num_experts * 3
+    domain: "APR file with MoE architecture"
+    codomain: "MoeExpertWeights with packed expert tensors"
+    invariants:
+      - "All 128 experts loaded per layer (no partial loading)"
+      - "Router shape matches [num_experts, hidden_dim]"
+      - "Expert shapes match MoE intermediate dimensions"
+      - "Total expert tensors per layer = num_experts * 3"
+    postconditions:
+      - "expert_gate_up.len() == num_experts * 2 * moe_intermediate * hidden_dim"
+      - "expert_down.len() == num_experts * hidden_dim * moe_intermediate"
+
+  moe_routing:
+    formula: |
+      route(hidden: [hidden_dim], gate_weight: [num_experts, hidden_dim], top_k: u32) -> Vec<(usize, f32)>:
+        logits = hidden @ gate_weight.T                    // [num_experts]
+        probs = softmax(logits)                            // [num_experts], sum to 1.0
+        selected = top_k_indices(probs, top_k)             // [(expert_idx, weight)] × top_k
+        IF norm_topk_prob:
+          total = sum(selected.weights)
+          selected.weights /= total                        // renormalize to sum=1.0
+    domain: "hidden state ∈ ℝ^2048, gate_weight ∈ ℝ^{128×2048}"
+    codomain: "top-8 (expert_idx, weight) pairs, weights sum to 1.0"
+    invariants:
+      - "Softmax is numerically stable (max-subtract)"
+      - "Exactly top_k experts selected (8 for Qwen3-Coder)"
+      - "Selected weights sum to 1.0 when norm_topk_prob=true"
+      - "Expert indices in range [0, num_experts)"
+    references:
+      - "[C1] Shazeer: noisy top-k gating"
+      - "[C3] Mixtral: top-2 routing (we generalize to top-k)"
+
+  moe_expert_ffn:
+    formula: |
+      expert_forward(x: [hidden_dim], expert_weights: ExpertWeights) -> [hidden_dim]:
+        gate_out = x @ gate_proj.T                         // [moe_intermediate]
+        up_out   = x @ up_proj.T                           // [moe_intermediate]
+        swiglu   = SiLU(gate_out) * up_out                 // [moe_intermediate]
+        output   = swiglu @ down_proj.T                    // [hidden_dim]
+    domain: "hidden state ∈ ℝ^2048, expert weights Q4K"
+    codomain: "output ∈ ℝ^2048"
+    invariants:
+      - "SwiGLU activation: SiLU(gate) * up (not GELU, not ReLU)"
+      - "Q4K dequant via fused_q4k_parallel_matvec (row-major, LAYOUT-002)"
+      - "Output dimension matches input dimension (hidden_dim)"
+
+  moe_weighted_sum:
+    formula: |
+      moe_forward(hidden, gate_weight, experts, top_k) -> [hidden_dim]:
+        routes = route(hidden, gate_weight, top_k)
+        output = zeros(hidden_dim)
+        FOR (expert_idx, weight) IN routes:
+          expert_out = expert_forward(hidden, experts[expert_idx])
+          output += weight * expert_out
+    domain: "hidden state + all expert weights"
+    codomain: "MoE output ∈ ℝ^hidden_dim"
+    invariants:
+      - "Only top_k experts computed (sparse activation)"
+      - "Weighted sum with renormalized weights"
+      - "Active parameters = top_k × expert_params (3.3B of 30.5B)"
+
+proof_obligations:
+  - type: invariant
+    property: "All experts loaded"
+    formal: "for all layers L, for all experts E in [0,128): gate/up/down tensors present"
+    applies_to: moe_tensor_completeness
+  - type: postcondition
+    property: "Router produces valid top-k"
+    formal: "len(route()) == top_k AND all indices in [0, num_experts)"
+    applies_to: moe_routing
+  - type: invariant
+    property: "Weights sum to 1.0 with norm_topk_prob"
+    formal: "|sum(selected_weights) - 1.0| < 1e-6"
+    applies_to: moe_routing
+  - type: invariant
+    property: "SwiGLU activation (not GELU)"
+    formal: "activation(x) = SiLU(gate(x)) * up(x)"
+    applies_to: moe_expert_ffn
+  - type: invariant
+    property: "Q4K row-major layout (LAYOUT-002)"
+    formal: "all expert weights use fused_q4k_parallel_matvec (row-major)"
+    applies_to: moe_expert_ffn
+  - type: bound
+    property: "Memory bounded by Q4K model size"
+    formal: "peak_rss < model_file_size * 1.5"
+    tolerance: 0.5
+    applies_to: moe_tensor_completeness
+
+falsification_tests:
+  - id: FALSIFY-MOE-001
+    rule: "Expert tensor count matches expected"
+    prediction: "128 × 3 × 48 = 18,432 expert tensors loaded"
+    test: |
+      Count expert tensors loaded across all layers.
+      Assert total == QWEN3_CODER_30B_EXPERTS * 3 * QWEN3_CODER_30B_LAYERS
+    if_fails: "Expert enumeration loop bounds wrong"
+
+  - id: FALSIFY-MOE-002
+    rule: "Router softmax numerically stable"
+    prediction: "No NaN in routing probabilities"
+    test: |
+      Feed extreme hidden states (all zeros, all large, mixed) through router.
+      Assert no NaN/Inf in output probabilities.
+    if_fails: "Missing max-subtract in softmax"
+
+  - id: FALSIFY-MOE-003
+    rule: "Top-k selection correct"
+    prediction: "Returns exactly top_k experts with highest probabilities"
+    test: |
+      Construct router output with known ranking.
+      Assert selected indices match expected top-8.
+    if_fails: "Sort order or k boundary wrong"
+
+  - id: FALSIFY-MOE-004
+    rule: "Expert weights non-zero after Q4K load"
+    prediction: "Dequantized expert output is non-zero for non-zero input"
+    test: |
+      Load one expert from APR Q4K. Dequant gate_proj. Matvec with ones vector.
+      Assert output is not all-zeros.
+    if_fails: "Q4K dequant broken or expert data offset wrong"
+
+  - id: FALSIFY-MOE-005
+    rule: "No OOM during 128-expert loading"
+    prediction: "Peak RSS < 24 GB for 17 GB Q4K model"
+    test: |
+      Load full model. Check peak RSS via /proc/self/status VmPeak.
+      Assert VmPeak < 24 GB.
+    if_fails: "Experts loaded as F32 instead of staying Q4K — use mmap"
+
+  - id: FALSIFY-MOE-006
+    rule: "Output is coherent (not garbage)"
+    prediction: "apr run produces syntactically valid Python"
+    test: |
+      Run: apr run qwen3-coder-30b-q4k.apr --prompt "def fibonacci(n):" --max-tokens 32
+      Assert output contains Python keywords (return, if, else) not random tokens.
+    if_fails: "Layer-by-layer trace needed — compare with SafeTensors F32 path"
+
+qa_gate:
+  id: F-MOE-APR-001
+  name: moe-apr-q4k-inference-v1 Contract
+  description: "Quality gate for MoE APR Q4K inference"
+  checks:
+    - tensor_completeness
+    - routing_stability
+    - expert_non_zero
+    - memory_bounded
+    - output_coherent
+  pass_criteria: "All 6 falsification tests pass, model generates coherent text"
