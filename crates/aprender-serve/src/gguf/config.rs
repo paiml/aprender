@@ -414,10 +414,33 @@ impl GGUFConfig {
         let bos_token_id = apr.metadata.get_embedded_bos_token_id();
 
         // SPEC-MOE-APR-001: Extract MoE config from APR metadata.
-        // If metadata doesn't have it, infer from tensor names (phase 2 fallback).
-        let num_experts = apr.metadata.num_experts.unwrap_or(0);
-        let num_experts_per_tok = apr.metadata.num_experts_per_tok.unwrap_or(0);
-        let moe_intermediate_size = apr.metadata.moe_intermediate_size.unwrap_or(0);
+        // Fallback: infer from tensor names (APR files created before MoE metadata existed).
+        let mut num_experts = apr.metadata.num_experts.unwrap_or(0);
+        let mut num_experts_per_tok = apr.metadata.num_experts_per_tok.unwrap_or(0);
+        let mut moe_intermediate_size = apr.metadata.moe_intermediate_size.unwrap_or(0);
+        if num_experts == 0 {
+            // Infer from tensor names: probe for experts.N in layer 0
+            // Binary search: check powers of 2 to find max expert index quickly
+            let mut max_expert_idx = 0usize;
+            for probe in [0, 1, 7, 15, 31, 63, 127, 255] {
+                let name = format!("model.layers.0.mlp.experts.{probe}.gate_proj.weight");
+                if apr.find_tensor(&name).is_some() {
+                    max_expert_idx = max_expert_idx.max(probe + 1);
+                }
+            }
+            if max_expert_idx > 0 {
+                num_experts = max_expert_idx;
+                num_experts_per_tok = 8; // Qwen3-MoE default
+                // Infer moe_intermediate from first expert tensor shape
+                if let Some(t) = apr.find_tensor("model.layers.0.mlp.experts.0.gate_proj.weight") {
+                    moe_intermediate_size = t.shape.first().copied().unwrap_or(0);
+                }
+                eprintln!(
+                    "[SPEC-MOE-APR-001] Inferred MoE config from tensors: {} experts, top-{}, intermediate={}",
+                    num_experts, num_experts_per_tok, moe_intermediate_size
+                );
+            }
+        }
         let norm_topk_prob = apr.metadata.norm_topk_prob.unwrap_or(num_experts > 0);
 
         Ok(Self {

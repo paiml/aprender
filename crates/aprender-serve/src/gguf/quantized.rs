@@ -313,6 +313,14 @@ pub struct OwnedQuantizedLayer {
     pub attn_q_norm_weight: Option<Vec<f32>>,
     /// GH-279: Per-head K RMSNorm weight [head_dim] (Qwen3)
     pub attn_k_norm_weight: Option<Vec<f32>>,
+    /// SPEC-MOE-APR-001: MoE router gate weight [num_experts, hidden_dim] (F32)
+    pub moe_gate_weight: Option<Vec<f32>>,
+    /// SPEC-MOE-APR-001: Per-expert gate+up projection weights (Q4K, packed)
+    /// Layout: [num_experts][gate_proj ++ up_proj] each [moe_intermediate, hidden_dim]
+    pub moe_expert_weights: Option<Vec<OwnedQuantizedTensor>>,
+    /// SPEC-MOE-APR-001: Per-expert down projection weights (Q4K)
+    /// Layout: [num_experts] each [hidden_dim, moe_intermediate]
+    pub moe_expert_down_weights: Option<Vec<OwnedQuantizedTensor>>,
 }
 
 impl OwnedQuantizedLayer {
@@ -392,6 +400,9 @@ impl OwnedQuantizedLayer {
             ffn_norm_bias: layer.ffn_norm_bias.clone(),
             attn_q_norm_weight: layer.attn_q_norm_weight.clone(),
             attn_k_norm_weight: layer.attn_k_norm_weight.clone(),
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
         }
     }
 }

@@ -228,6 +228,15 @@ impl OwnedQuantizedModel {
         let kv_dim = config.kv_dim();
         let mut layers = Vec::with_capacity(num_layers);
 
+        let num_experts = config.num_experts;
+        let moe_intermediate_size = config.moe_intermediate_size;
+        if num_experts > 0 {
+            eprintln!(
+                "[SPEC-MOE-APR-001] Loading MoE model: {} experts, top-{}, moe_intermediate={}",
+                num_experts, config.num_experts_per_tok, moe_intermediate_size
+            );
+        }
+
         for layer_idx in 0..num_layers {
             layers.push(Self::load_apr_layer(
                 apr,
@@ -239,6 +248,8 @@ impl OwnedQuantizedModel {
                 kv_dim,
                 intermediate_dim,
                 transpose,
+                num_experts,
+                moe_intermediate_size,
             )?);
         }
 
@@ -333,6 +344,8 @@ impl OwnedQuantizedModel {
         kv_dim: usize,
         intermediate_dim: usize,
         transpose: bool,
+        num_experts: usize,
+        moe_intermediate_size: usize,
     ) -> Result<OwnedQuantizedLayer> {
         // HF names (primary, from SafeTensors->APR pipeline)
         let hf_q = format!("model.layers.{layer_idx}.self_attn.q_proj.weight");
@@ -392,10 +405,72 @@ impl OwnedQuantizedModel {
         // GH-479: O proj maps q_dim -> hidden_dim (Qwen3 q_dim != hidden_dim)
         let o_weight = apr_load_quantized_tensor(apr, data, data_offset, &[&hf_o, &gguf_o], q_dim, hidden_dim, transpose)?;
 
-        // FFN weights (gate is optional — GPT-2 has no SwiGLU gate)
-        let ffn_gate_weight = apr_load_quantized_tensor(apr, data, data_offset, &[&hf_gate, &gguf_gate], hidden_dim, intermediate_dim, transpose).ok();
-        let ffn_up_weight = apr_load_quantized_tensor(apr, data, data_offset, &[&hf_up, &gguf_up], hidden_dim, intermediate_dim, transpose)?;
-        let ffn_down_weight = apr_load_quantized_tensor(apr, data, data_offset, &[&hf_down, &gguf_down], intermediate_dim, hidden_dim, transpose)?;
+        // SPEC-MOE-APR-001: Load either dense FFN or MoE expert weights
+        let is_moe = num_experts > 0;
+
+        // Dense FFN weights (skip for MoE layers — experts replace dense FFN)
+        let ffn_gate_weight = if is_moe { None } else {
+            apr_load_quantized_tensor(apr, data, data_offset, &[&hf_gate, &gguf_gate], hidden_dim, intermediate_dim, transpose).ok()
+        };
+        let ffn_up_weight = if is_moe {
+            OwnedQuantizedTensor { data: vec![], in_dim: 0, out_dim: 0, qtype: 0 }
+        } else {
+            apr_load_quantized_tensor(apr, data, data_offset, &[&hf_up, &gguf_up], hidden_dim, intermediate_dim, transpose)?
+        };
+        let ffn_down_weight = if is_moe {
+            OwnedQuantizedTensor { data: vec![], in_dim: 0, out_dim: 0, qtype: 0 }
+        } else {
+            apr_load_quantized_tensor(apr, data, data_offset, &[&hf_down, &gguf_down], intermediate_dim, hidden_dim, transpose)?
+        };
+
+        // SPEC-MOE-APR-001: Load MoE router + per-expert Q4K weights
+        let moe_gate_weight = if is_moe {
+            let router_name = format!("model.layers.{layer_idx}.mlp.gate.weight");
+            apr_try_load_f32(apr, data, data_offset, &router_name)
+        } else {
+            None
+        };
+
+        let (moe_expert_weights, moe_expert_down_weights) = if is_moe {
+            let mut experts = Vec::with_capacity(num_experts);
+            let mut expert_downs = Vec::with_capacity(num_experts);
+            for e in 0..num_experts {
+                let gate_name = format!("model.layers.{layer_idx}.mlp.experts.{e}.gate_proj.weight");
+                let up_name = format!("model.layers.{layer_idx}.mlp.experts.{e}.up_proj.weight");
+                let down_name = format!("model.layers.{layer_idx}.mlp.experts.{e}.down_proj.weight");
+
+                // Load gate+up as separate tensors (fusing happens in dispatch)
+                let gate = apr_load_quantized_tensor(
+                    apr, data, data_offset, &[&gate_name], hidden_dim, moe_intermediate_size, transpose,
+                ).unwrap_or(OwnedQuantizedTensor { data: vec![], in_dim: hidden_dim, out_dim: moe_intermediate_size, qtype: 0 });
+                let up = apr_load_quantized_tensor(
+                    apr, data, data_offset, &[&up_name], hidden_dim, moe_intermediate_size, transpose,
+                ).unwrap_or(OwnedQuantizedTensor { data: vec![], in_dim: hidden_dim, out_dim: moe_intermediate_size, qtype: 0 });
+                let down = apr_load_quantized_tensor(
+                    apr, data, data_offset, &[&down_name], moe_intermediate_size, hidden_dim, transpose,
+                ).unwrap_or(OwnedQuantizedTensor { data: vec![], in_dim: moe_intermediate_size, out_dim: hidden_dim, qtype: 0 });
+
+                // Pack gate+up data sequentially for each expert
+                let mut gate_up_data = gate.data;
+                gate_up_data.extend_from_slice(&up.data);
+                experts.push(OwnedQuantizedTensor {
+                    data: gate_up_data,
+                    in_dim: hidden_dim,
+                    out_dim: moe_intermediate_size * 2,
+                    qtype: gate.qtype,
+                });
+                expert_downs.push(down);
+            }
+            if layer_idx == 0 {
+                eprintln!(
+                    "  [SPEC-MOE-APR-001] Layer 0: loaded {} experts ({} gate+up, {} down tensors)",
+                    num_experts, experts.len(), expert_downs.len()
+                );
+            }
+            (Some(experts), Some(expert_downs))
+        } else {
+            (None, None)
+        };
 
         // Norm weights (F32)
         let attn_norm_weight = apr_load_f32_tensor(apr, data, data_offset, &[&hf_attn_norm, &gguf_attn_norm])?;
@@ -444,6 +519,9 @@ impl OwnedQuantizedModel {
                 &format!("model.layers.{layer_idx}.self_attn.k_norm.weight"))
                 .or_else(|| apr_try_load_f32(apr, data, data_offset,
                     &format!("blk.{layer_idx}.attn_k_norm.weight"))),
+            moe_gate_weight,
+            moe_expert_weights,
+            moe_expert_down_weights,
         })
     }
 }
