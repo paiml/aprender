@@ -85,6 +85,18 @@ pub struct AprMetadata {
     /// Aliases: layer_norm_eps, norm_eps (PMAT-111 schema resilience)
     #[serde(default, alias = "layer_norm_eps", alias = "norm_eps")]
     pub rms_norm_eps: Option<f32>,
+    /// SPEC-MOE-APR-001: Number of MoE experts (0 or absent = dense model)
+    #[serde(default)]
+    pub num_experts: Option<usize>,
+    /// SPEC-MOE-APR-001: Experts selected per token (top-k)
+    #[serde(default)]
+    pub num_experts_per_tok: Option<usize>,
+    /// SPEC-MOE-APR-001: MoE expert FFN intermediate dimension
+    #[serde(default)]
+    pub moe_intermediate_size: Option<usize>,
+    /// SPEC-MOE-APR-001: Renormalize top-k routing weights to sum=1.0
+    #[serde(default)]
+    pub norm_topk_prob: Option<bool>,
     /// Additional metadata fields
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,

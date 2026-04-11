@@ -276,6 +276,14 @@ pub struct GGUFConfig {
     /// after construction, the model must know its own EOS token.
     /// Callers must NOT use hardcoded fallbacks like `unwrap_or(151645)`.
     pub eos_token_id: Option<u32>,
+    /// SPEC-MOE-APR-001: Number of MoE experts (0 = dense model).
+    pub num_experts: usize,
+    /// SPEC-MOE-APR-001: Number of experts selected per token (top-k).
+    pub num_experts_per_tok: usize,
+    /// SPEC-MOE-APR-001: MoE expert intermediate dimension.
+    pub moe_intermediate_size: usize,
+    /// SPEC-MOE-APR-001: Whether to renormalize top-k weights to sum to 1.0.
+    pub norm_topk_prob: bool,
 }
 
 /// Architecture-default BOS token IDs for weights-only GGUFs.
@@ -405,6 +413,13 @@ impl GGUFConfig {
             .or_else(|| default_eos_for_architecture(&architecture));
         let bos_token_id = apr.metadata.get_embedded_bos_token_id();
 
+        // SPEC-MOE-APR-001: Extract MoE config from APR metadata.
+        // If metadata doesn't have it, infer from tensor names (phase 2 fallback).
+        let num_experts = apr.metadata.num_experts.unwrap_or(0);
+        let num_experts_per_tok = apr.metadata.num_experts_per_tok.unwrap_or(0);
+        let moe_intermediate_size = apr.metadata.moe_intermediate_size.unwrap_or(0);
+        let norm_topk_prob = apr.metadata.norm_topk_prob.unwrap_or(num_experts > 0);
+
         Ok(Self {
             architecture,
             constraints,
@@ -421,6 +436,10 @@ impl GGUFConfig {
             explicit_head_dim: None,
             bos_token_id,
             eos_token_id,
+            num_experts,
+            num_experts_per_tok,
+            moe_intermediate_size,
+            norm_topk_prob,
         })
     }
 
@@ -530,6 +549,26 @@ impl GGUFConfig {
             .unwrap_or(hidden_dim * 4)
     }
 
+    /// SPEC-MOE-APR-001: Count experts from GGUF tensor names.
+    fn count_experts_from_tensors(model: &crate::gguf::GGUFModel) -> usize {
+        // GGUF packed: blk.0.ffn_gate_exps.weight has shape [num_experts, ...]
+        if let Some(t) = model.tensors.iter().find(|t| t.name == "blk.0.ffn_gate_exps.weight") {
+            return t.dims.first().copied().unwrap_or(0) as usize;
+        }
+        // HF-style per-expert: count model.layers.0.mlp.experts.N patterns
+        let mut max_expert = 0usize;
+        for t in &model.tensors {
+            if let Some(rest) = t.name.strip_prefix("blk.0.ffn_gate.") {
+                if let Some(idx) = rest.strip_suffix(".weight") {
+                    if let Ok(n) = idx.parse::<usize>() {
+                        max_expert = max_expert.max(n + 1);
+                    }
+                }
+            }
+        }
+        max_expert
+    }
+
     /// Extract configuration from GGUF model metadata
     ///
     /// # Errors
@@ -616,6 +655,26 @@ impl GGUFConfig {
             .eos_token_id()
             .or_else(|| default_eos_for_architecture(&architecture));
 
+        // SPEC-MOE-APR-001: Infer MoE config from GGUF tensor names
+        let num_experts = model
+            .tensors
+            .iter()
+            .filter(|t| t.name.starts_with("blk.0.ffn_gate_exps") || t.name.contains(".experts."))
+            .count()
+            .min(1)
+            * Self::count_experts_from_tensors(model);
+        let num_experts_per_tok = if num_experts > 0 { 8 } else { 0 }; // Qwen3-MoE default
+        let moe_intermediate_size = if num_experts > 0 {
+            model
+                .tensors
+                .iter()
+                .find(|t| t.name.contains("experts.0.gate_proj") || t.name.contains("ffn_gate_exps"))
+                .and_then(|t| t.dims.first().copied())
+                .unwrap_or(0) as usize
+        } else {
+            0
+        };
+
         Ok(Self {
             architecture,
             constraints,
@@ -632,6 +691,10 @@ impl GGUFConfig {
             explicit_head_dim,
             bos_token_id,
             eos_token_id,
+            num_experts,
+            num_experts_per_tok,
+            moe_intermediate_size,
+            norm_topk_prob: num_experts > 0,
         })
     }
 }
@@ -809,6 +872,10 @@ impl ValidatedModelConfig {
             explicit_head_dim: None,
             bos_token_id: config.bos_token_id,
             eos_token_id: config.eos_token_id,
+            num_experts: config.num_experts.unwrap_or(0),
+            num_experts_per_tok: config.num_experts_per_tok.unwrap_or(0),
+            moe_intermediate_size: config.moe_intermediate_size.unwrap_or(0),
+            norm_topk_prob: config.num_experts.unwrap_or(0) > 0,
         };
         Self::validate(raw)
     }
