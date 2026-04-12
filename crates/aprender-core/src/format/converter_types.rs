@@ -127,6 +127,16 @@ pub enum Architecture {
     Gemma,
     /// Mistral AI (Mistral, Mixtral)
     Mistral,
+    /// TII Falcon-H1 (Hybrid Transformer+SSM)
+    FalconH1,
+    /// state-spaces Mamba (State Space Model)
+    Mamba,
+    /// `UsefulSensors` Moonshine (audio, encoder-decoder)
+    Moonshine,
+    /// Apple `OpenELM` (variable-width attention)
+    OpenElm,
+    /// RWKV-7 (linear attention / recurrence)
+    Rwkv7,
 }
 
 include!("tensor_expectation.rs");

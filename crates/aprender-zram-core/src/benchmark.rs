@@ -361,7 +361,9 @@ mod tests {
 
         // Correctness: 1000 compressions all succeed
         for _ in 0..1000 {
-            compressor.compress(&page).expect("compression must succeed");
+            compressor
+                .compress(&page)
+                .expect("compression must succeed");
         }
     }
 

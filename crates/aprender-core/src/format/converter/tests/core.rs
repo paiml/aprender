@@ -210,7 +210,7 @@ mod tests_name_mapping {
     /// FALSIFY-TNAME-APRENDER-002: Unknown architectures return None (not panic).
     #[test]
     fn test_falsify_from_model_type_unknown_returns_none() {
-        let unknowns = ["mamba", "rwkv", "jamba", "future_model_2027", ""];
+        let unknowns = ["jamba", "future_model_2027", ""];
         for name in &unknowns {
             assert_eq!(
                 Architecture::from_model_type(name),

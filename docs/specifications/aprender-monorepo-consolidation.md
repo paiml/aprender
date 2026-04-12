@@ -14,6 +14,7 @@
 
 ### Changes since v2.0 (2026-04-10 Falsification Audit)
 
+- **PMAT-546: Architecture↔model-family parity** (2026-04-12): Added 5 missing Architecture enum variants (FalconH1, Mamba, Moonshine, OpenElm, Rwkv7). Created 2 missing model-family YAML contracts (gptneox.yaml, opt.yaml). Provable contract `model-family-parity-v1.yaml` with 5 falsification conditions. 6 parity tests + updated 1 pre-existing test. 19 Architecture variants ↔ 18 model-family YAMLs (Auto excluded). aprender-core now 13,011 tests.
 - **Test count corrected**: apr-cli is 4,577 (was 4,070); workspace total is 25,806 (was 18,416)
 - **Contract YAML count corrected**: 797 (was 522). Growth from model-family contracts + new CLI contracts
 - **`#[contract]` annotation count corrected**: 52 total (was "44 on CLI commands"). NONE are on CLI commands — they live in serve, compute, train, and contracts crates. CLI `#[contract]` coverage is a new P0 gap (PMAT-543)
@@ -52,7 +53,7 @@
 | Coverage (aprender-compute) | **48.56%** lines (212K/437K) | **≥95%** | **FAIL** — 3,497 tests. Per-crate measurement. |
 | Coverage (workspace aggregate) | **~55%** weighted average | **≥95%** | **FAIL** — prior "46%" was instrumentation artifact. True baseline ~55%. PMAT-541. |
 | Tests (apr-cli) | **4,633** (lib) + **108** (integration) | — | PASS — +37 Phase 4 inline + 10 Phase 4 integration |
-| Tests (aprender-core) | **13,005** | — | PASS — +24 tokenizer_loader + 6 arch + 1 fix |
+| Tests (aprender-core) | **13,011** | — | PASS — +6 PMAT-546 parity tests, +24 tokenizer_loader + 6 arch + 1 fix |
 | Tests (contracts) | 1,371 | — | PASS |
 | Tests (workspace total) | **28,700+** | — | PASS |
 | Integration (monorepo) | 8/8 | 8/8 | PASS |
@@ -60,7 +61,7 @@
 | Clippy errors | 0 | 0 | PASS |
 | `#[contract]` annotations | **172** (70 cli + 52 serve/compute/train + 50 other) | ≥50 | **PASS** |
 | `#[contract]` on CLI commands | **70** (59 cmd files + 11 dispatch) | ≥57 | **PASS** — PMAT-543 |
-| Contract YAML files | 797 | — | INFO |
+| Contract YAML files | 800 | — | INFO — +3: gptneox.yaml, opt.yaml, model-family-parity-v1.yaml |
 | unwrap() in production code | **0** (test-only: 584 in test files) | 0 | **PASS** — clippy ban effective |
 | pmat TDG | 92.5/100 (A) | A+ | **PASS** |
 | pmat comply | PASS (4 warnings) | PASS | **PASS** — 52 work contracts valid, 85 bindings verified, 0 ghosts |
@@ -201,7 +202,8 @@ workspace-wide number.
 
 | Epic | Status |
 |------|--------|
-| ~~PMAT-526 (Model Type)~~ | `is_llm()` + 3 new Architecture variants + import guards + contract. 6 falsification tests. |
+| ~~PMAT-526 (Model Type)~~ | `is_llm()` + 3 new Architecture variants + import guards + contract. 6 falsification tests. Extended by PMAT-546. |
+| ~~PMAT-546 (Model-Family Parity)~~ | 5 new Architecture variants (FalconH1, Mamba, Moonshine, OpenElm, Rwkv7) + 2 new YAML contracts (gptneox, opt). 19 variants ↔ 18 YAMLs: 1:1 parity enforced. 6 falsification tests. Contract: `model-family-parity-v1.yaml`. |
 | ~~PMAT-532 (QA Migration)~~ | 5 crates ported, 2,792 tests, 256 playbooks. Source repo archived. |
 | ~~PMAT-543 (CLI Contracts)~~ | 172 annotations workspace-wide. 0 unannotated CLI handlers. |
 | ~~PMAT-544 (unwrap)~~ | 0 production unwrap(). False positive from test files. Clippy ban effective. |
