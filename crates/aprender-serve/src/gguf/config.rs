@@ -427,9 +427,9 @@ impl GGUFConfig {
             apr.find_tensor("model.layers.0.self_attn.q_proj.weight")
                 .and_then(|t| {
                     let q_dim = *t.shape.first()?;
-                    // Try common head dims: 128, 64
-                    for hd in [128, 64] {
-                        if q_dim % hd == 0 { return Some(q_dim / hd); }
+                    // Try common head dims: 64 first (small models), then 128 (large)
+                    for hd in [64, 128] {
+                        if q_dim % hd == 0 && q_dim / hd >= 2 { return Some(q_dim / hd); }
                     }
                     None
                 })
@@ -442,8 +442,8 @@ impl GGUFConfig {
             apr.find_tensor("model.layers.0.self_attn.k_proj.weight")
                 .and_then(|t| {
                     let k_dim = *t.shape.first()?;
-                    for hd in [128, 64] {
-                        if k_dim % hd == 0 { return Some(k_dim / hd); }
+                    for hd in [64, 128] {
+                        if k_dim % hd == 0 && k_dim / hd >= 1 { return Some(k_dim / hd); }
                     }
                     None
                 })
