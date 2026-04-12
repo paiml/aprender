@@ -423,10 +423,27 @@ impl OwnedQuantizedModel {
             apr_load_quantized_tensor(apr, data, data_offset, &[&hf_down, &gguf_down], intermediate_dim, hidden_dim, transpose)?
         };
 
-        // SPEC-MOE-APR-001: Load MoE router + per-expert Q4K weights
+        // SPEC-MOE-APR-001: Load MoE router gate weight (may be Q4K — dequant to F32)
         let moe_gate_weight = if is_moe {
             let router_name = format!("model.layers.{layer_idx}.mlp.gate.weight");
-            apr_try_load_f32(apr, data, data_offset, &router_name)
+            // Load as quantized tensor, then dequant to F32 for softmax routing
+            apr_load_quantized_tensor(
+                apr, data, data_offset, &[&router_name],
+                hidden_dim, num_experts, false,
+            ).ok().map(|qt| {
+                // Dequant Q4K to F32 for router — small tensor (128×2048 = 256K floats)
+                if qt.qtype == 0 {
+                    // Already F32
+                    qt.data.chunks_exact(4)
+                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                        .collect()
+                } else {
+                    // Q4K: use the standard dequant path
+                    let num_elements = num_experts * hidden_dim;
+                    crate::quantize::dequantize_q4_k(&qt.data)
+                        .unwrap_or_else(|_| vec![0.0f32; num_experts * hidden_dim])
+                }
+            })
         } else {
             None
         };

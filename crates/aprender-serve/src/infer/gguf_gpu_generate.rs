@@ -11,6 +11,13 @@ fn try_wgpu_generate(
 ) -> Result<(Vec<u32>, bool)> {
     use crate::gpu::adapters::wgpu_adapter;
 
+    // SPEC-MOE-APR-001: WGPU adapter doesn't support MoE — skip to CPU path
+    if model.config.num_experts > 0 {
+        return Err(RealizarError::InferenceError(
+            "WGPU does not support MoE models — using CPU Q4K path".into(),
+        ));
+    }
+
     if !trueno::backends::gpu::GpuDevice::is_available() {
         return Err(RealizarError::InferenceError("wgpu not available".into()));
     }
@@ -269,6 +276,15 @@ fn try_apr_wgpu_inference(
 
     if !GpuDevice::is_available() {
         return None;
+    }
+
+    // SPEC-MOE-APR-001: WGPU adapter doesn't support MoE — skip to CPU
+    if let Ok(mapped) = MappedAprModel::from_path(&config.model_path) {
+        let is_moe = mapped.metadata.num_experts.unwrap_or(0) > 0
+            || mapped.find_tensor("model.layers.0.mlp.gate.weight").is_some();
+        if is_moe {
+            return None;
+        }
     }
 
     let gpu = match GpuDevice::new() {
