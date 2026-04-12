@@ -88,12 +88,13 @@
 | ~~24 unauthorized binaries~~ | 20 crates, 21 binaries. 2 migrated to `[[example]]` (serve, train). 8 legacy remain. PMAT-545. |
 | ~~ratatui migration~~ | 0 deps remain. PMAT-539 closed. |
 
-**Open gaps (2 of 9):**
+**Open gaps (3 of 10):**
 
 | Gap | Severity | Status |
 |-----|----------|--------|
 | **apr-cli coverage** | P0 | Phases 0a–4 done. 4,633 lib + 108 integration tests. Only Phase 5 (long tail) remains. PMAT-540. |
 | **Workspace coverage ~55%** | P1 | Per-crate baseline measured (serve 57%, train 54%, compute 49%). Prior "46%" was instrumentation artifact. PMAT-541. |
+| **Ghost contracts** | P1 | 162 contract YAMLs referenced in code but missing from `contracts/`. Created `sparse-spmv-v1.yaml` (was ghost). PMAT-547. |
 
 ### Coverage Improvement Plan — Chain of Thought
 
