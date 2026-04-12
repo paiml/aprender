@@ -28,7 +28,7 @@ jobs:
       repo: ${{ github.event.repository.name }}
     secrets: inherit
 
-  # APR-MONO: Workspace-wide test (all 70 crates)
+  # APR-MONO: Workspace-wide test (all 75 crates)
   workspace-test:
     runs-on: self-hosted
     container:
@@ -96,4 +96,3 @@ jobs:
         with:
           name: mutation-results
           path: mutants.out/
-

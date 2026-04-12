@@ -3,7 +3,7 @@
 **Version**: 1.1
 **Date**: 2026-04-12
 **Status**: COMPLETE — PR #731
-**Priority**: P1 — eliminates 5 recurring security advisory exemptions per config file
+**Priority**: P1 — upgrades wasmtime for security patches (note: v43 still has 8 cranelift advisories, test-only dep)
 **Contract**: `contracts/wasmtime-upgrade-v1.yaml`
 
 ## Five-Whys: Why Upgrade?

@@ -16,7 +16,7 @@ ignore = [
 
     # atty 0.2.14 — unsound read (different advisory from 2024-0375 unmaintained)
     "RUSTSEC-2021-0145",
-    # rand 0.10.0 — unsound with custom logger using rand::rng(), transitive via quickcheck
+    # rand 0.8.5 — unmaintained, transitive (no drop-in for 0.8 API)
     "RUSTSEC-2026-0097",
 
     # wasmtime 43 + cranelift — test-only dep (aprender-test-lib), not production.
