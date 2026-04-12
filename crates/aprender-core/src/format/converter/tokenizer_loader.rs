@@ -410,6 +410,22 @@ fn infer_architecture_from_names(
             .any(|k| k.starts_with("h.") && k.contains(".attn."));
     let has_blk = tensors.keys().any(|k| k.contains("blk."));
 
+    // PMAT-546: Detect Mamba (backbone.layers.N.mixer.*) — SSM, not transformer
+    let has_mamba = tensors
+        .keys()
+        .any(|k| k.contains("mixer.in_proj") || k.contains("mixer.out_proj"));
+    if has_mamba {
+        return Some("mamba".to_string());
+    }
+
+    // PMAT-546: Detect RWKV (rwkv.blocks.N.*)
+    let has_rwkv = tensors
+        .keys()
+        .any(|k| k.starts_with("rwkv.blocks.") || k.contains("blocks.0.att."));
+    if has_rwkv {
+        return Some("rwkv".to_string());
+    }
+
     // GH-311: Detect GPT-NeoX (gpt_neox.layers.N.*) — must check before model.layers
     let has_gpt_neox = tensors.keys().any(|k| k.starts_with("gpt_neox."));
     if has_gpt_neox {
