@@ -14,10 +14,33 @@ impl RosettaStone {
     }
 
     /// GH-249: Infer architecture from tensor naming patterns when metadata is absent.
+    ///
+    /// PMAT-546: Extended with GPT-NeoX, OPT, BERT, Mamba, RWKV detection.
+    /// Order matters: specific patterns before generic ones.
     fn infer_architecture_from_tensors(tensors: &[TensorInfo]) -> Option<String> {
         let names: Vec<&str> = tensors.iter().map(|t| t.name.as_str()).collect();
         let has = |pat: &str| names.iter().any(|n| n.contains(pat));
 
+        // PMAT-546: Mamba SSM — mixer.in_proj is unique to Mamba
+        if has("mixer.in_proj") || has("mixer.out_proj") {
+            return Some("mamba".to_string());
+        }
+        // PMAT-546: RWKV — rwkv.blocks.* is unique to RWKV
+        if has("rwkv.blocks.") || has("blocks.0.att.") {
+            return Some("rwkv".to_string());
+        }
+        // PMAT-546: GPT-NeoX — gpt_neox.* prefix with fused query_key_value
+        if has("gpt_neox.") || has("query_key_value") {
+            return Some("gpt_neox".to_string());
+        }
+        // PMAT-546: OPT — model.decoder.layers.* (distinct from model.layers.*)
+        if has("model.decoder.layers.") {
+            return Some("opt".to_string());
+        }
+        // PMAT-546: BERT — bert.encoder.layer.*
+        if has("bert.") {
+            return Some("bert".to_string());
+        }
         // GPT-2: uses c_attn, c_proj, c_fc (Conv1D-style naming)
         if has("c_attn") || has("attn.c_proj") {
             return Some("gpt2".to_string());

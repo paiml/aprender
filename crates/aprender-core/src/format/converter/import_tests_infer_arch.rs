@@ -457,3 +457,36 @@
         let result = infer_architecture_from_names(&tensors);
         assert_eq!(result, Some("qwen3".to_string()), "QK norm must infer qwen3");
     }
+
+    // PMAT-546: Mamba and RWKV detection in import pipeline
+    #[test]
+    fn test_infer_arch_mamba_from_mixer() {
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+        tensors.insert(
+            "backbone.layers.0.mixer.in_proj.weight".to_string(),
+            (vec![1.0], vec![1]),
+        );
+        tensors.insert(
+            "backbone.layers.0.mixer.out_proj.weight".to_string(),
+            (vec![1.0], vec![1]),
+        );
+
+        let result = infer_architecture_from_names(&tensors);
+        assert_eq!(result, Some("mamba".to_string()));
+    }
+
+    #[test]
+    fn test_infer_arch_rwkv_from_blocks() {
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+        tensors.insert(
+            "rwkv.blocks.0.att.key.weight".to_string(),
+            (vec![1.0], vec![1]),
+        );
+        tensors.insert(
+            "rwkv.blocks.0.ffn.key.weight".to_string(),
+            (vec![1.0], vec![1]),
+        );
+
+        let result = infer_architecture_from_names(&tensors);
+        assert_eq!(result, Some("rwkv".to_string()));
+    }

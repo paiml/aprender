@@ -1,0 +1,180 @@
+metadata:
+  version: "1.0"
+  created: "2026-04-12"
+  description: "Model family descriptor: gptneox"
+  kind: model-family
+  references:
+    - "https://huggingface.co/"
+
+family: gptneox
+display_name: "GPT-NeoX / Pythia"
+vendor: EleutherAI
+architectures:
+  - GPTNeoXForCausalLM
+hf_pattern: "EleutherAI/pythia-*"
+
+size_variants:
+  70m:
+    parameters: "70M"
+    hidden_dim: 512
+    num_layers: 6
+    num_heads: 8
+    num_kv_heads: 8
+    intermediate_dim: 2048
+    vocab_size: 50304
+    max_position_embeddings: 2048
+    head_dim: 64
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+  160m:
+    parameters: "160M"
+    hidden_dim: 768
+    num_layers: 12
+    num_heads: 12
+    num_kv_heads: 12
+    intermediate_dim: 3072
+    vocab_size: 50304
+    max_position_embeddings: 2048
+    head_dim: 64
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+  410m:
+    parameters: "410M"
+    hidden_dim: 1024
+    num_layers: 24
+    num_heads: 16
+    num_kv_heads: 16
+    intermediate_dim: 4096
+    vocab_size: 50304
+    max_position_embeddings: 2048
+    head_dim: 64
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+  1b:
+    parameters: "1B"
+    hidden_dim: 2048
+    num_layers: 16
+    num_heads: 8
+    num_kv_heads: 8
+    intermediate_dim: 8192
+    vocab_size: 50304
+    max_position_embeddings: 2048
+    head_dim: 256
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+  1.4b:
+    parameters: "1.4B"
+    hidden_dim: 2048
+    num_layers: 24
+    num_heads: 16
+    num_kv_heads: 16
+    intermediate_dim: 8192
+    vocab_size: 50304
+    max_position_embeddings: 2048
+    head_dim: 128
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+  2.8b:
+    parameters: "2.8B"
+    hidden_dim: 2560
+    num_layers: 32
+    num_heads: 32
+    num_kv_heads: 32
+    intermediate_dim: 10240
+    vocab_size: 50304
+    max_position_embeddings: 2048
+    head_dim: 80
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+  6.9b:
+    parameters: "6.9B"
+    hidden_dim: 4096
+    num_layers: 32
+    num_heads: 32
+    num_kv_heads: 32
+    intermediate_dim: 16384
+    vocab_size: 50304
+    max_position_embeddings: 2048
+    head_dim: 128
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+  12b:
+    parameters: "12B"
+    hidden_dim: 5120
+    num_layers: 36
+    num_heads: 40
+    num_kv_heads: 40
+    intermediate_dim: 20480
+    vocab_size: 50304
+    max_position_embeddings: 2048
+    head_dim: 128
+    rope_theta: 10000.0
+    norm_eps: 0.00001
+
+constraints:
+  attention_type: mha
+  activation: gelu
+  norm_type: layernorm
+  has_bias: true
+  tied_embeddings: false
+  positional_encoding: rope
+  mlp_type: gelu_mlp
+
+# GPT-NeoX tensor naming: gpt_neox.layers.{n}.* with fused query_key_value.
+# Mapped to APR canonical names by Architecture::gpt_neox_map_name().
+#
+# HuggingFace raw name mapping (for reference):
+#   gpt_neox.embed_in.weight                        -> model.embed_tokens.weight
+#   gpt_neox.layers.{n}.input_layernorm.weight       -> model.layers.{n}.input_layernorm.weight
+#   gpt_neox.layers.{n}.input_layernorm.bias         -> model.layers.{n}.input_layernorm.bias
+#   gpt_neox.layers.{n}.post_attention_layernorm.*   -> model.layers.{n}.post_attention_layernorm.*
+#   gpt_neox.layers.{n}.attention.query_key_value.*  -> split into q_proj/k_proj/v_proj
+#   gpt_neox.layers.{n}.attention.dense.*            -> model.layers.{n}.self_attn.o_proj.*
+#   gpt_neox.layers.{n}.mlp.dense_h_to_4h.*         -> model.layers.{n}.mlp.up_proj.*
+#   gpt_neox.layers.{n}.mlp.dense_4h_to_h.*         -> model.layers.{n}.mlp.down_proj.*
+#   gpt_neox.final_layer_norm.*                      -> model.norm.*
+#   embed_out.weight                                 -> lm_head.weight
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    # QKV is fused in source; split by Architecture::split_neox_fused_qkv()
+    q_proj_weight: "model.layers.{n}.self_attn.q_proj.weight"
+    q_proj_bias: "model.layers.{n}.self_attn.q_proj.bias"
+    k_proj_weight: "model.layers.{n}.self_attn.k_proj.weight"
+    k_proj_bias: "model.layers.{n}.self_attn.k_proj.bias"
+    v_proj_weight: "model.layers.{n}.self_attn.v_proj.weight"
+    v_proj_bias: "model.layers.{n}.self_attn.v_proj.bias"
+    o_proj_weight: "model.layers.{n}.self_attn.o_proj.weight"
+    o_proj_bias: "model.layers.{n}.self_attn.o_proj.bias"
+    up_proj_weight: "model.layers.{n}.mlp.up_proj.weight"
+    up_proj_bias: "model.layers.{n}.mlp.up_proj.bias"
+    down_proj_weight: "model.layers.{n}.mlp.down_proj.weight"
+    down_proj_bias: "model.layers.{n}.mlp.down_proj.bias"
+    input_layernorm_weight: "model.layers.{n}.input_layernorm.weight"
+    input_layernorm_bias: "model.layers.{n}.input_layernorm.bias"
+    post_attention_layernorm_weight: "model.layers.{n}.post_attention_layernorm.weight"
+    post_attention_layernorm_bias: "model.layers.{n}.post_attention_layernorm.bias"
+    gate_proj_weight: null
+    gate_proj_bias: null
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  final_norm: "[hidden_dim]"
+  q_proj: "[hidden_dim, hidden_dim]"
+  k_proj: "[hidden_dim, hidden_dim]"
+  v_proj: "[hidden_dim, hidden_dim]"
+  o_proj: "[hidden_dim, hidden_dim]"
+  up_proj: "[hidden_dim, intermediate_dim]"
+  down_proj: "[intermediate_dim, hidden_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+  bias: "[hidden_dim]"
+
+quantizations:
+  - q4_k_m
+  - q8_0
+  - f16
+  - f32

@@ -25,6 +25,19 @@ ignore = [
     { id = "RUSTSEC-2025-0046", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
     { id = "RUSTSEC-2026-0020", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
     { id = "RUSTSEC-2026-0087", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
+    # wasmtime 27 batch 2026-04-09 — 10 new advisories (test-only, not production)
+    { id = "RUSTSEC-2026-0085", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    { id = "RUSTSEC-2026-0086", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    { id = "RUSTSEC-2026-0088", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    { id = "RUSTSEC-2026-0089", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    { id = "RUSTSEC-2026-0091", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    { id = "RUSTSEC-2026-0092", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    { id = "RUSTSEC-2026-0093", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    { id = "RUSTSEC-2026-0094", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    { id = "RUSTSEC-2026-0095", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    { id = "RUSTSEC-2026-0096", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
+    # rand 0.10.0 — unsound with custom logger using rand::rng(), transitive via quickcheck
+    { id = "RUSTSEC-2026-0097", reason = "rand 0.10: unsound with custom logger, transitive via quickcheck (test-only)" },
 ]
 
 [licenses]

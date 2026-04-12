@@ -1,0 +1,78 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-12"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+    - "docs/specifications/archive/compiler-enforced-model-types-model-oracle.md"
+  description: |
+    PMAT-546: Architecture enum ↔ model-family YAML 1:1 parity contract.
+    Every non-Auto Architecture variant MUST have a matching model-family YAML,
+    and every model-family YAML MUST have a matching Architecture variant.
+
+kind: ParityContract
+name: model-family-parity
+version: "1.0.0"
+scope: "Architecture enum (converter_types.rs) ↔ contracts/model-families/*.yaml"
+
+description: |
+  Five-Whys: Why this contract?
+
+  1. Why did PMAT-526 miss 5 model families? Architecture enum and YAML contracts
+     were authored at different times with no cross-validation.
+  2. Why no cross-validation? Each was treated as an independent deliverable.
+  3. Why independent? No single contract enforced the invariant that they must match.
+  4. Why no enforcement? The parity invariant was implicit, not codified.
+  5. Why not codified? Because nobody had yet written the contract. This contract
+     closes the gap with a falsifiable CI test.
+
+  Root cause: implicit assumption that YAML contracts and Rust enum variants
+  would stay in sync without enforcement.
+
+equations:
+  enum_has_yaml:
+    description: "Every non-Auto Architecture variant has a matching model-family YAML"
+    formula: "∀ variant ∈ Architecture \\ {Auto} : ∃ file ∈ contracts/model-families/{variant_key}.yaml"
+    note: "variant_key is the lowercase/snake_case form of the variant name"
+
+  yaml_has_enum:
+    description: "Every model-family YAML has a matching Architecture variant"
+    formula: "∀ file ∈ contracts/model-families/*.yaml \\ {_schema.yaml} : ∃ variant ∈ Architecture where from_model_type(family) = Some(variant)"
+    note: "family is the 'family' field in the YAML file"
+
+  display_name_exhaustive:
+    description: "display_name() covers all variants (no wildcard fallback)"
+    formula: "∀ variant ∈ Architecture : display_name(variant) ≠ variant.debug_name()"
+    note: "Ensures every variant has a human-readable name, not just Debug formatting"
+
+  is_llm_classified:
+    description: "Every non-Auto variant is explicitly classified as LLM or non-LLM"
+    formula: "∀ variant ∈ Architecture \\ {Auto} : is_llm(variant) ∨ ¬is_llm(variant) is intentional"
+    note: "Audio models (Whisper, Moonshine) and BERT return false; all others return true"
+
+falsification:
+  - id: FALSIFY-PARITY-001
+    description: "Enum→YAML parity: every non-Auto variant has a YAML file"
+    test: "tests in converter_types_tests_parity.rs: test_every_architecture_has_model_family_yaml"
+    evidence: "cargo test -p aprender-core --lib test_every_architecture_has_model_family_yaml"
+
+  - id: FALSIFY-PARITY-002
+    description: "YAML→Enum parity: every YAML family is recognized by from_model_type()"
+    test: "tests in converter_types_tests_parity.rs: test_every_model_family_yaml_has_architecture"
+    evidence: "cargo test -p aprender-core --lib test_every_model_family_yaml_has_architecture"
+
+  - id: FALSIFY-PARITY-003
+    description: "from_model_type() returns correct variant for all new architectures"
+    test: "tests in converter_types_tests_parity.rs: test_from_model_type_new_variants"
+    evidence: "cargo test -p aprender-core --lib test_from_model_type_new_variants"
+
+  - id: FALSIFY-PARITY-004
+    description: "display_name() is non-empty for all variants"
+    test: "tests in converter_types_tests_parity.rs: test_display_name_all_variants"
+    evidence: "cargo test -p aprender-core --lib test_display_name_all_variants"
+
+  - id: FALSIFY-PARITY-005
+    description: "is_llm() classification matches model-family contract constraints"
+    test: "tests in converter_types_tests_parity.rs: test_is_llm_matches_contract"
+    evidence: "cargo test -p aprender-core --lib test_is_llm_matches_contract"

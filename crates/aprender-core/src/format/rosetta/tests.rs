@@ -426,3 +426,5 @@ mod tests_conversion_inspection;
 mod minimal;
 #[path = "tests_tokenizer_stress.rs"]
 mod tests_tokenizer_stress;
+#[path = "tests_arch_inference.rs"]
+mod tests_arch_inference;

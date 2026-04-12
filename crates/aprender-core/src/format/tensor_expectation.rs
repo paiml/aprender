@@ -19,6 +19,12 @@ impl Architecture {
             Self::DeepSeek => Self::llama_map_name(source_name),
             Self::Gemma => Self::llama_map_name(source_name),
             Self::Mistral => Self::llama_map_name(source_name),
+            // PMAT-546: Model-family parity — new architectures
+            Self::FalconH1 => Self::llama_map_name(source_name), // HuggingFace model.layers naming
+            Self::OpenElm => Self::llama_map_name(source_name),  // HuggingFace model.layers naming
+            Self::Moonshine => Self::whisper_map_name(source_name), // Audio model, strip model. prefix
+            Self::Mamba => Self::auto_map_name(source_name),     // SSM: mixer.* naming, passthrough
+            Self::Rwkv7 => Self::auto_map_name(source_name),     // Recurrence: rwkv.blocks.* naming, passthrough
         }
     }
 
@@ -32,8 +38,8 @@ impl Architecture {
     }
 
     /// PMAT-526: Returns true for decoder-only LLM architectures that use BPE tokenizers
-    /// and support chat templates. Returns false for audio models (Whisper), encoder-only
-    /// models (BERT), and Auto (indeterminate).
+    /// and support chat templates. Returns false for audio models (Whisper, Moonshine),
+    /// encoder-only models (BERT), and Auto (indeterminate).
     #[must_use]
     pub fn is_llm(&self) -> bool {
         matches!(
@@ -49,6 +55,10 @@ impl Architecture {
                 | Self::DeepSeek
                 | Self::Gemma
                 | Self::Mistral
+                | Self::FalconH1
+                | Self::Mamba
+                | Self::OpenElm
+                | Self::Rwkv7
         )
     }
 
@@ -89,6 +99,11 @@ impl Architecture {
             Self::DeepSeek => "DeepSeek",
             Self::Gemma => "Gemma",
             Self::Mistral => "Mistral",
+            Self::FalconH1 => "Falcon-H1",
+            Self::Mamba => "Mamba",
+            Self::Moonshine => "Moonshine",
+            Self::OpenElm => "OpenELM",
+            Self::Rwkv7 => "RWKV-7",
         }
     }
 
@@ -117,6 +132,12 @@ impl Architecture {
             "deepseek" | "deepseek_v2" | "deepseek-v2" => Some(Self::DeepSeek),
             "gemma" | "gemma2" | "gemma3" => Some(Self::Gemma),
             "mistral" | "mixtral" => Some(Self::Mistral),
+            // PMAT-546: Model-family parity — new architecture variants
+            "falcon_h1" | "falcon-h1" | "falconh1" | "falcon3" => Some(Self::FalconH1),
+            "mamba" | "mamba2" => Some(Self::Mamba),
+            "moonshine" => Some(Self::Moonshine),
+            "openelm" => Some(Self::OpenElm),
+            "rwkv" | "rwkv7" | "rwkv-7" => Some(Self::Rwkv7),
             // LLaMA derivatives (use LLaMA tensor naming)
             "smollm" | "smollm2" | "granite" | "granite3" | "nemotron" => Some(Self::Llama),
             _ => None,

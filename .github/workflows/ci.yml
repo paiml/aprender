@@ -48,6 +48,33 @@ jobs:
           cargo test -p aprender-core --test monorepo_invariants
           cargo test -p aprender-core --test readme_contract
           cargo test -p apr-cli --test cli_commands
+      - name: Fix file ownership (container runs as root, runner as noah:1000)
+        if: always()
+        run: |
+          # Five-whys: Docker container creates files as root on bind-mounted
+          # workspace. Runner (noah:1000) can't git-clean them on next run
+          # → checkout fails → CI breaks. This runs inside the container
+          # (as root) restoring host ownership for subsequent bare-metal jobs.
+          chown -R 1000:1000 "$GITHUB_WORKSPACE" || true
+
+  # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
+  # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
+  gate:
+    runs-on: self-hosted
+    needs: [ci, workspace-test]
+    if: always()
+    steps:
+      - name: Check required jobs
+        run: |
+          if [ "${{ needs.ci.result }}" != "success" ]; then
+            echo "ci failed: ${{ needs.ci.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.workspace-test.result }}" != "success" ]; then
+            echo "workspace-test failed: ${{ needs.workspace-test.result }}"
+            exit 1
+          fi
+          echo "All required jobs passed"
 
   mutants:
     runs-on: self-hosted
@@ -55,7 +82,7 @@ jobs:
     container:
       image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 120
-    needs: [ci, workspace-test]
+    needs: [gate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
