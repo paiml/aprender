@@ -175,6 +175,23 @@ falsification_tests:
       Assert output contains Python keywords (return, if, else) not random tokens.
     if_fails: "Layer-by-layer trace needed — compare with SafeTensors F32 path"
 
+kani_harnesses:
+- id: KANI-MOE-001
+  obligation: Router top-k indices bounded
+  property: "for all top-k selections: indices in [0, num_experts) and count == top_k"
+  bound: 8
+  strategy: bounded_int
+- id: KANI-MOE-002
+  obligation: Softmax normalization
+  property: "for all logit vectors: softmax sums to 1.0, all elements non-negative"
+  bound: 16
+  strategy: stub_float
+- id: KANI-MOE-003
+  obligation: SwiGLU dimension preservation
+  property: "for all expert forwards: output.len() == hidden_dim"
+  bound: 4
+  strategy: bounded_int
+
 qa_gate:
   id: F-MOE-APR-001
   name: moe-apr-q4k-inference-v1 Contract

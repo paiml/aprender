@@ -228,24 +228,39 @@ impl OwnedQuantizedModel {
 
     /// Single expert SwiGLU forward: down(SiLU(gate(x)) * up(x))
     ///
-    /// Expert weights are packed as gate_proj ++ up_proj in `expert.data`.
+    /// Expert gate+up stored as separate Q4K halves in `expert.data`.
+    /// Contract: moe-apr-q4k-inference-v1.yaml equation `moe_expert_ffn`.
     fn moe_expert_swiglu(
         &self,
         input: &[f32],
         expert_gate_up: &crate::gguf::quantized::OwnedQuantizedTensor,
         expert_down: &crate::gguf::quantized::OwnedQuantizedTensor,
     ) -> Result<Vec<f32>> {
-        let hidden_dim = input.len();
         let moe_intermediate = expert_gate_up.out_dim / 2;
 
-        // Gate and up projections via fused matmul on packed data
-        let gate_up = self.fused_matmul(input, expert_gate_up)?;
-        let (gate_data, up_data) = gate_up.split_at(moe_intermediate);
+        // Split packed gate+up into two virtual tensors
+        let gate_bytes = expert_gate_up.data.len() / 2;
+        let gate_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
+            data: expert_gate_up.data[..gate_bytes].to_vec(),
+            in_dim: expert_gate_up.in_dim,
+            out_dim: moe_intermediate,
+            qtype: expert_gate_up.qtype,
+        };
+        let up_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
+            data: expert_gate_up.data[gate_bytes..].to_vec(),
+            in_dim: expert_gate_up.in_dim,
+            out_dim: moe_intermediate,
+            qtype: expert_gate_up.qtype,
+        };
+
+        // Separate matmuls for gate and up projections
+        let gate_data = self.fused_matmul(input, &gate_tensor)?;
+        let up_data = self.fused_matmul(input, &up_tensor)?;
 
         // SwiGLU: SiLU(gate) * up
         let mut swiglu = vec![0.0f32; moe_intermediate];
         for i in 0..moe_intermediate {
-            let silu = gate_data[i] / (1.0 + (-gate_data[i]).exp()); // SiLU(x) = x * sigmoid(x)
+            let silu = gate_data[i] / (1.0 + (-gate_data[i]).exp());
             swiglu[i] = silu * up_data[i];
         }
 

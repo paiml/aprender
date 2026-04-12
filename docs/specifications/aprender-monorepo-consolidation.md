@@ -95,8 +95,34 @@ apr rag                     # RAG pipeline (was: trueno-rag)
 apr registry                # model registry (was: pacha)
 apr present                 # TUI dashboards (was: presentar)
 apr test                    # WASM/browser testing (was: probar)
-apr contracts               # provable contracts (was: pv)
 ```
+
+### Rule 1b: `pv` Binary Exception (Dev Tooling)
+
+The `pv` binary (provable-contracts CLI) is an **exception** to Rule 1.
+It stays as a separate binary — NOT absorbed into `apr`.
+
+**Rationale:** `pv` is a development/CI tool (like `pmat`, `cargo-deny`,
+`cargo-mutants`), not a user-facing model operation. Users never run `pv`
+in production. It validates YAML contracts, generates scaffolding, runs
+Kani harnesses, and produces codegen — all build-time concerns.
+
+**Crate:** `aprender-contracts-cli` (library name: `provable-contracts`)
+**Binary:** `pv` (installed via `cargo install aprender-contracts-cli`)
+**Commands:** `pv validate`, `pv scaffold`, `pv codegen`, `pv kani`,
+`pv probar`, `pv status`, `pv audit`, `pv coverage`, `pv generate`
+
+**What `apr` consumes from `pv`:**
+- `#[contract]` proc macro (compile-time enforcement)
+- `build.rs` binding validation (compile-time)
+- YAML contracts in `contracts/` (runtime contract checks)
+
+**What `pv` does independently:**
+- `pv validate contracts/*.yaml` — CI gate
+- `pv scaffold` — generate Rust trait stubs from contract
+- `pv codegen` — generate `debug_assert!()` from equations
+- `pv kani` — generate Kani proof harnesses
+- `pv audit` — traceability audit
 
 ### Rule 2: Libraries Are Libraries
 
@@ -104,8 +130,7 @@ Every `aprender-*` crate is a **library**. They expose `pub fn` APIs consumed
 by `apr-cli` or by external Rust code via `use aprender_compute::*;`.
 They do NOT produce binaries, CLIs, or executables.
 
-Exception: `aprender-contracts-cli` may produce a `pv` binary for standalone
-contract validation (build tooling, not user-facing ML tooling).
+Exception: `aprender-contracts-cli` produces the `pv` binary (Rule 1b above).
 
 ### Rule 3: CLI Contract Coverage
 
