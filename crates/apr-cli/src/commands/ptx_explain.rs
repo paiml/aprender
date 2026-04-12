@@ -8,6 +8,10 @@ use crate::error::Result;
 use std::path::Path;
 
 /// Run PTX analysis on a file or kernel name.
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "read_only_no_side_effects"
+)]
 pub(crate) fn run(
     file: Option<&Path>,
     kernel: Option<&str>,

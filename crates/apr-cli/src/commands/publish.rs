@@ -114,6 +114,10 @@ fn upload_to_hub(
 }
 
 /// Execute the publish command
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "mutating_output_contract"
+)]
 pub fn execute(
     directory: &Path,
     repo_id: &str,

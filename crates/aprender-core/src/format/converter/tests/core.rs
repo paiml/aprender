@@ -189,10 +189,11 @@ mod tests_name_mapping {
             ("gpt2", Architecture::Gpt2),
             ("phi", Architecture::Phi),
             ("phi3", Architecture::Phi),
-            // LLaMA derivatives (per YAML: same tensor naming)
-            ("mistral", Architecture::Llama),
-            ("gemma", Architecture::Llama),
-            ("gemma2", Architecture::Llama),
+            // PMAT-526: Proper architecture variants matching tensor-names-v1.yaml
+            ("mistral", Architecture::Mistral),
+            ("gemma", Architecture::Gemma),
+            ("gemma2", Architecture::Gemma),
+            ("deepseek", Architecture::DeepSeek),
         ];
 
         for &(model_type, expected) in supported {

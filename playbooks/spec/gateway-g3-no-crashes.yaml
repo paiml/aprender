@@ -1,0 +1,101 @@
+# Executable Specification: Gateway G3 - No Crashes
+# Purpose: Define and verify G3 gateway requirements
+
+name: spec-gateway-g3
+version: "1.0.0"
+description: "Specification for Gateway G3: No panics or crashes"
+
+spec:
+  id: G3-STABLE
+  section: "7.1 Gateway Logic"
+  document: "apr-playbook-spec.md"
+  requirement: |
+    G3 (No Crashes): The process must complete without panic, SIGSEGV, or abort.
+    This verifies:
+    - No Rust panics
+    - No segmentation faults
+    - No illegal instructions
+    - No double-free or memory corruption
+
+    A G3 failure zeros the entire MQS score (critical path).
+
+scenarios:
+  # Standard usage - MUST not crash
+  - name: "Normal inference no crash"
+    command: "apr run ${MODEL} 'Complete this: The weather is'"
+    expected:
+      exit_code: 0
+      no_panic: "true"
+      no_sigsegv: "true"
+    rationale: "Basic stability"
+
+  - name: "Long output no crash"
+    command: "apr run ${MODEL} 'Write a long story' --max-tokens 500"
+    expected:
+      exit_code: 0
+      no_panic: "true"
+    rationale: "Extended generation stability"
+
+  # Stress cases - MUST survive
+  - name: "Very long prompt no crash"
+    command: "apr run ${MODEL} '${LONG_PROMPT}' --max-tokens 10"
+    expected:
+      no_panic: "true"
+      no_sigsegv: "true"
+    rationale: "Long input handling"
+
+  - name: "Unicode heavy prompt no crash"
+    command: "apr run ${MODEL} '${UNICODE_PROMPT}'"
+    expected:
+      no_panic: "true"
+      no_sigsegv: "true"
+    rationale: "Unicode handling"
+
+  - name: "Rapid successive calls no crash"
+    command: |
+      for i in $(seq 1 10); do
+        apr run ${MODEL} "Test $i" --max-tokens 5
+      done
+    expected:
+      no_panic: "true"
+    rationale: "Repeated usage stability"
+
+  # Edge cases - MUST handle without crash
+  - name: "Zero max tokens no crash"
+    command: "apr run ${MODEL} 'Test' --max-tokens 0"
+    expected:
+      no_panic: "true"
+      # May error but should not crash
+    rationale: "Edge case: zero tokens"
+
+  - name: "Ctrl-C during generation no crash"
+    timeout_ms: 5000
+    command: "timeout 2 apr run ${MODEL} 'Write forever' --max-tokens 10000"
+    expected:
+      no_panic: "true"
+      # Timeout is OK, crash is not
+    rationale: "Interrupt handling"
+
+gate:
+  id: G3-STABLE
+  severity: P0
+  condition: |
+    exit_code >= 0 &&
+    !panic_detected &&
+    !sigsegv_detected &&
+    !sigabrt_detected &&
+    !sigill_detected
+  failure_action: "zero_mqs"
+  failure_message: "Process crashed - MQS zeroed"
+
+# Crash detection patterns
+crash_patterns:
+  panic: "thread 'main' panicked"
+  sigsegv: "SIGSEGV|Segmentation fault"
+  sigabrt: "SIGABRT|Aborted"
+  sigill: "SIGILL|Illegal instruction"
+  double_free: "double free or corruption"
+
+metadata:
+  author: "apr-qa-gen"
+  spec_version: "1.1.0"

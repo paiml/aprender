@@ -55,13 +55,32 @@ fn test_from_model_type_phi_variants_gh219() {
 
 #[test]
 fn test_from_model_type_llama_derivatives_gh219() {
-    for name in &["smollm", "smollm2", "granite", "granite3", "nemotron", "mistral", "gemma", "gemma2", "gemma3"] {
+    for name in &["smollm", "smollm2", "granite", "granite3", "nemotron"] {
         assert_eq!(
             Architecture::from_model_type(name),
             Some(Architecture::Llama),
             "Expected Llama for derivative: {name}"
         );
     }
+}
+
+#[test]
+fn test_from_model_type_deepseek_pmat526() {
+    assert_eq!(Architecture::from_model_type("deepseek"), Some(Architecture::DeepSeek));
+    assert_eq!(Architecture::from_model_type("deepseek_v2"), Some(Architecture::DeepSeek));
+}
+
+#[test]
+fn test_from_model_type_gemma_pmat526() {
+    assert_eq!(Architecture::from_model_type("gemma"), Some(Architecture::Gemma));
+    assert_eq!(Architecture::from_model_type("gemma2"), Some(Architecture::Gemma));
+    assert_eq!(Architecture::from_model_type("gemma3"), Some(Architecture::Gemma));
+}
+
+#[test]
+fn test_from_model_type_mistral_pmat526() {
+    assert_eq!(Architecture::from_model_type("mistral"), Some(Architecture::Mistral));
+    assert_eq!(Architecture::from_model_type("mixtral"), Some(Architecture::Mistral));
 }
 
 #[test]
@@ -99,6 +118,50 @@ fn test_is_inference_verified_false_gh219() {
 }
 
 // -------------------------------------------------------------------------
+// Architecture::is_llm (PMAT-526)
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_is_llm_true_decoder_architectures_pmat526() {
+    assert!(Architecture::Llama.is_llm());
+    assert!(Architecture::Qwen2.is_llm());
+    assert!(Architecture::Qwen3.is_llm());
+    assert!(Architecture::Qwen3_5.is_llm());
+    assert!(Architecture::Gpt2.is_llm());
+    assert!(Architecture::Phi.is_llm());
+    assert!(Architecture::GptNeoX.is_llm());
+    assert!(Architecture::Opt.is_llm());
+    assert!(Architecture::DeepSeek.is_llm());
+    assert!(Architecture::Gemma.is_llm());
+    assert!(Architecture::Mistral.is_llm());
+}
+
+#[test]
+fn test_is_llm_false_non_llm_architectures_pmat526() {
+    assert!(!Architecture::Auto.is_llm());
+    assert!(!Architecture::Whisper.is_llm());
+    assert!(!Architecture::Bert.is_llm());
+}
+
+#[test]
+fn test_is_llm_superset_of_inference_verified_pmat526() {
+    // Every inference-verified architecture must be an LLM
+    for arch in [
+        Architecture::Qwen2,
+        Architecture::Qwen3,
+        Architecture::Qwen3_5,
+        Architecture::Llama,
+        Architecture::Phi,
+    ] {
+        assert!(
+            arch.is_inference_verified() && arch.is_llm(),
+            "{} is inference_verified but not is_llm",
+            arch.display_name()
+        );
+    }
+}
+
+// -------------------------------------------------------------------------
 // Architecture::display_name
 // -------------------------------------------------------------------------
 
@@ -112,6 +175,11 @@ fn test_display_name_all_architectures_gh219() {
     assert_eq!(Architecture::Qwen3.display_name(), "Qwen3");
     assert_eq!(Architecture::Gpt2.display_name(), "GPT-2");
     assert_eq!(Architecture::Phi.display_name(), "Phi");
+    assert_eq!(Architecture::GptNeoX.display_name(), "GPT-NeoX");
+    assert_eq!(Architecture::Opt.display_name(), "OPT");
+    assert_eq!(Architecture::DeepSeek.display_name(), "DeepSeek");
+    assert_eq!(Architecture::Gemma.display_name(), "Gemma");
+    assert_eq!(Architecture::Mistral.display_name(), "Mistral");
 }
 
 // -------------------------------------------------------------------------

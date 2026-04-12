@@ -1,0 +1,53 @@
+# Quick Check Template
+#
+# Fast smoke test for rapid feedback during development.
+# Tests SafeTensors on CPU with minimal scenarios.
+#
+# Expected test count: 1 × 1 × 1 × 10 = 10 tests
+
+name: "${MODEL_NAME}-quick-check"
+version: "1.0.0"
+
+model:
+  hf_repo: "${HF_REPO}"
+  formats:
+    - safetensors
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 10
+
+property_tests:
+  - name: basic_sanity
+    generator: "arithmetic(a: 1..10, b: 1..10, op: +)"
+    oracle: "output.contains(expected)"
+    count: 10
+
+falsification_gates:
+  - id: G1-LOAD
+    description: "Model loads"
+    condition: "!error"
+    severity: P0
+
+  - id: G2-INFER
+    description: "Produces output"
+    condition: "output.len() > 0"
+    severity: P0
+
+  - id: G3-STABLE
+    description: "No crashes"
+    condition: "exit_code == 0"
+    severity: P0
+
+  - id: G4-VALID
+    description: "Valid output"
+    condition: "!is_garbage(output)"
+    severity: P0
+
+  - id: F-QUAL-001
+    description: "Basic correctness"
+    condition: "arithmetic_oracle(prompt, output)"
+    severity: P1

@@ -1,0 +1,82 @@
+# Verification Playbook for TICKET-181
+# FIXED: Q4_K_M block alignment via raw byte pass-through
+# Fix Location: src/format/converter.rs:2633-2690
+#
+# Run with: apr-qa run playbooks/verify/TICKET-181.yaml --subprocess --model-path <model.gguf>
+
+name: verify-ticket-181
+version: "1.0.0"
+description: "Verify fix for TICKET-181: Conversion diffs must be < 1e-6"
+
+model:
+  hf_repo: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+  formats:
+    - gguf
+    - apr
+    - safetensors
+  quantizations:
+    - q4_k_m
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 1
+  timeout_ms: 120000
+
+verification_gates:
+  # All 6 direct conversions must pass
+  - id: V-TICKET-181-001
+    description: "GGUF → APR diff < 1e-6"
+    gate: F-CONV-001
+    condition: "diff < 1e-6"
+
+  - id: V-TICKET-181-002
+    description: "APR → GGUF diff < 1e-6"
+    gate: F-CONV-002
+    condition: "diff < 1e-6"
+
+  - id: V-TICKET-181-003
+    description: "GGUF → SafeTensors diff < 1e-6"
+    gate: F-CONV-003
+    condition: "diff < 1e-6"
+
+  - id: V-TICKET-181-004
+    description: "SafeTensors → GGUF diff < 1e-6"
+    gate: F-CONV-004
+    condition: "diff < 1e-6"
+
+  - id: V-TICKET-181-005
+    description: "APR → SafeTensors diff < 1e-6"
+    gate: F-CONV-005
+    condition: "diff < 1e-6"
+
+  - id: V-TICKET-181-006
+    description: "SafeTensors → APR diff < 1e-6"
+    gate: F-CONV-006
+    condition: "diff < 1e-6"
+
+  # Round-trip must be lossless
+  - id: V-TICKET-181-007
+    description: "Round-trip GGUF→APR→SafeTensors→GGUF lossless"
+    gate: F-CONV-RT-001
+    condition: "diff < 1e-6 && nan_count == 0 && inf_count == 0"
+
+acceptance:
+  all_gates_pass: "true"
+  max_output_diff: 1e-6
+  no_nan_values: "true"
+  no_inf_values: "true"
+  mqs_score_minimum: 87
+
+failure_policy: stop_on_first
+
+metadata:
+  ticket: "https://github.com/paiml/aprender/issues/181"
+  severity: P0
+  component: apr-rosetta
+  discovered: "2026-01-30"
+  fixed: "2026-01-30"
+  fix_location: "src/format/converter.rs:2633-2690"
+  pmat_contract: "PMAT-193"

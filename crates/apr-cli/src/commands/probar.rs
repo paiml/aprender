@@ -77,6 +77,10 @@ impl std::str::FromStr for ExportFormat {
 ///
 /// When `assert_mode` is true, exit non-zero if any layer diverges from
 /// golden reference beyond `tolerance` (cosine similarity threshold).
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "read_only_no_side_effects"
+)]
 pub(crate) fn run(
     path: &Path,
     output_dir: &Path,

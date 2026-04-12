@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0f89df8df0cee1ea88fe08ff4f6cd0dee2fd9f06e5f5dc5328156a233c0f8d5b # shrinks to scenario = QaScenario { id: "Qwen2.5-Coder-1.5B-Instruct_run_cpu_gguf_0000000000000000", model: ModelId { org: "Qwen", name: "Qwen2.5-Coder-1.5B-Instruct", variant: None }, modality: Run, backend: Cpu, format: Gguf, prompt: "What is 1+1?", temperature: 0.0, max_tokens: 32, seed: 0, trace_level: None, oracle_type: "arithmetic" }
+cc eb14fc009c20006df5e7d2f5b8e3d61e7d85937c1bafdcbf264de5f99ead046a # shrinks to prompt = "What is 1/1?"

@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paiml.com/schemas/apr-qa/evidence.json",
+  "title": "APR QA Evidence Schema",
+  "description": "JSON Schema for evidence.json artifacts produced by the APR QA framework (QA-ART-01)",
+  "type": "object",
+  "required": ["evidence", "metadata"],
+  "properties": {
+    "evidence": {
+      "type": "array",
+      "description": "List of evidence entries from test execution",
+      "items": {
+        "$ref": "#/$defs/EvidenceEntry"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Execution metadata",
+      "required": ["timestamp", "version", "model_id"],
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of evidence collection"
+        },
+        "version": {
+          "type": "string",
+          "description": "APR QA framework version"
+        },
+        "model_id": {
+          "type": "string",
+          "description": "Model identifier being tested"
+        },
+        "total_duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total execution duration in milliseconds"
+        },
+        "passed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of corroborated tests"
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of falsified tests"
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of skipped tests"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "EvidenceEntry": {
+      "type": "object",
+      "description": "Single evidence entry from a test",
+      "required": ["id", "gate_id", "outcome", "timestamp"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique evidence identifier (UUID v4)"
+        },
+        "gate_id": {
+          "type": "string",
+          "pattern": "^F-[A-Z]+-[0-9]+$",
+          "description": "Falsification gate ID (e.g., F-INT-001, F-API-002)",
+          "examples": ["F-INT-001", "F-API-002", "F-NUM-003", "F-SEC-001"]
+        },
+        "scenario": {
+          "$ref": "#/$defs/Scenario"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable reason for the outcome"
+        },
+        "output": {
+          "type": "string",
+          "description": "Raw output from the test execution"
+        },
+        "stderr": {
+          "type": ["string", "null"],
+          "description": "Standard error output if any"
+        },
+        "exit_code": {
+          "type": ["integer", "null"],
+          "description": "Process exit code"
+        },
+        "metrics": {
+          "$ref": "#/$defs/PerformanceMetrics"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when this test completed"
+        },
+        "host": {
+          "$ref": "#/$defs/HostInfo"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Additional key-value metadata"
+        }
+      }
+    },
+    "Scenario": {
+      "type": "object",
+      "description": "Test scenario configuration",
+      "properties": {
+        "model_id": {
+          "type": "string",
+          "description": "Model identifier (org/name format)"
+        },
+        "modality": {
+          "type": "string",
+          "enum": ["run", "chat", "serve"],
+          "description": "Execution modality"
+        },
+        "backend": {
+          "type": "string",
+          "enum": ["cpu", "gpu"],
+          "description": "Compute backend"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["gguf", "safetensors", "apr"],
+          "description": "Model format"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Test prompt/input"
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Random seed for reproducibility"
+        }
+      }
+    },
+    "Outcome": {
+      "type": "object",
+      "description": "Test outcome following Popperian falsification",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["Corroborated"],
+          "properties": {
+            "Corroborated": {
+              "type": "object",
+              "description": "Hypothesis survived refutation attempt"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["Falsified"],
+          "properties": {
+            "Falsified": {
+              "type": "object",
+              "description": "Hypothesis was refuted by evidence",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "description": "Reason for falsification"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["Timeout"],
+          "properties": {
+            "Timeout": {
+              "type": "object",
+              "description": "Test exceeded time limit (F-INT-002 violation)",
+              "properties": {
+                "duration_ms": {
+                  "type": "integer",
+                  "description": "Actual duration before timeout"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["Crashed"],
+          "properties": {
+            "Crashed": {
+              "type": "object",
+              "description": "Process crashed (F-INT-001/F-INT-002 violation)",
+              "properties": {
+                "exit_code": {
+                  "type": "integer",
+                  "description": "Non-zero exit code"
+                },
+                "signal": {
+                  "type": ["integer", "null"],
+                  "description": "Signal that killed the process"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["Skipped"],
+          "properties": {
+            "Skipped": {
+              "type": "object",
+              "description": "Test was skipped due to stop-on-failure policy",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "description": "Reason for skipping"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "PerformanceMetrics": {
+      "type": "object",
+      "description": "Performance measurements",
+      "properties": {
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Test duration in milliseconds"
+        },
+        "tokens_per_second": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Inference throughput (F-PERF-001)"
+        },
+        "time_to_first_token_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Time to first token in ms (F-PERF-002)"
+        },
+        "total_tokens": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Total tokens generated"
+        },
+        "memory_mb": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Memory usage in MB (F-PERF-003)"
+        },
+        "gpu_utilization": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "GPU utilization percentage (F-PERF-004)"
+        }
+      }
+    },
+    "HostInfo": {
+      "type": "object",
+      "description": "Host environment information for reproducibility",
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "description": "Machine hostname"
+        },
+        "os": {
+          "type": "string",
+          "description": "Operating system"
+        },
+        "cpu": {
+          "type": "string",
+          "description": "CPU information"
+        },
+        "gpu": {
+          "type": ["string", "null"],
+          "description": "GPU information if available"
+        },
+        "apr_version": {
+          "type": "string",
+          "description": "APR framework version"
+        }
+      }
+    }
+  }
+}

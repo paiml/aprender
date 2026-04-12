@@ -51,6 +51,7 @@ fn classify_metric(
 ///
 /// Returns Ok(true) if model_b is better or equal, Ok(false) if regression detected.
 #[allow(dead_code)]
+#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
 pub(crate) fn run_diff_benchmark(
     model_a: &Path,
     model_b: &Path,

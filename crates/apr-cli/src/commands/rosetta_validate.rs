@@ -1,4 +1,5 @@
 
+#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
 pub fn run_validate_stats(
     model: &Path,
     reference: Option<&Path>,

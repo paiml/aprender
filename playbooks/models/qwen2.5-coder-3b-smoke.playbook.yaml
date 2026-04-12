@@ -1,0 +1,78 @@
+# Qwen2.5-Coder-3B Smoke Test Playbook
+# Kernel profile: GQA + RMSNorm + SiLU + SwiGLU + RoPE + BiasAdd
+# Ultra-light: 1 format × 1 backend × 1 modality = 1 test
+name: qwen2.5-coder-3b-smoke
+version: "2.0.0"
+description: "Smoke test for Qwen2.5-Coder-3B-Instruct (kernel profile-driven)"
+
+model:
+  hf_repo: "Qwen/Qwen2.5-Coder-3B-Instruct"
+  formats:
+    - safetensors
+  quantizations:
+    - q4_k_m
+  size_category: small
+  expected_hidden_dim: 2048
+  expected_num_layers: 36
+  expected_num_heads: 32
+  expected_num_kv_heads: 4
+  expected_vocab_size: 151936
+  expected_intermediate_dim: 11008
+  family: qwen2
+  size_variant: "3b"
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 3
+  seed: 42
+  timeout_ms: 120000
+  prompts:
+    # GQA multi-turn (stress KV cache sharing)
+    - "Given x=5 and y=3, what is x*y? Then what is the result plus 10?"
+    # Arithmetic verification
+    - "What is 2+2?"
+    # Code completion
+    - "def fibonacci(n):"
+
+kernel_profile:
+  family: qwen2
+  kernel_ops:
+    - FusedQ4kMatvec
+    - FusedQ6kMatvec
+    - GroupedQueryAttention
+    - RmsNorm
+    - Silu
+    - SwiGlu
+    - Rope
+    - BiasAdd
+  prompt_count: 3
+  long_context: true
+
+gates:
+  g1_model_loads: "true"
+  g2_basic_inference: "true"
+  g3_no_crashes: "true"
+  g4_output_quality: "true"
+
+oracles:
+  - type: arithmetic
+    config:
+      tolerance: 0.01
+  - type: garbage
+    config:
+      max_repetition_ratio: 0.3
+      min_unique_chars: 10
+
+failure_policy: collect_all
+
+metadata:
+  author: "apr-qa-gen"
+  tier: "smoke"
+  architecture: "qwen2"
+  tags:
+    - code
+    - instruct
+    - smoke

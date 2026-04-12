@@ -1,0 +1,41 @@
+{
+  "model": "qwen2.5-coder-1.5b-instruct-q4_k_m",
+  "format": "gguf",
+  "source": "~/.apr/cache/hf/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+  "generated": "2026-01-30",
+  "apr_version": "0.2.12",
+  "purpose": "Golden Rule Test baseline - convert(model) inference MUST match these outputs",
+  "golden_outputs": [
+    {
+      "prompt": "What is 2+2?",
+      "max_tokens": 30,
+      "temperature": 0,
+      "expected_prefix": "2 + 2 equals 4.",
+      "must_contain": ["4"],
+      "must_not_contain": ["NaN", "Inf", "<pad>"]
+    },
+    {
+      "prompt": "Write a Python function to calculate factorial.",
+      "max_tokens": 50,
+      "temperature": 0,
+      "expected_prefix": "```python\ndef factorial(n):",
+      "must_contain": ["def", "factorial", "n"],
+      "must_not_contain": ["NaN", "Inf", "<pad>"]
+    },
+    {
+      "prompt": "Explain recursion in one sentence.",
+      "max_tokens": 30,
+      "temperature": 0,
+      "expected_prefix": "Recursion is a programming technique where a function calls itself",
+      "must_contain": ["recursion", "function", "calls"],
+      "must_not_contain": ["NaN", "Inf", "<pad>"]
+    }
+  ],
+  "invariants": {
+    "I-1_roundtrip": "convert(gguf) → inference → output MUST match golden_outputs",
+    "I-2_tensor_names": "all 339 tensor names accessible after conversion",
+    "I-3_no_fallback": "unknown dtype/name → error, never silent default",
+    "I-4_stats_preserved": "tensor fingerprint checksums match qwen2.5-coder-1.5b-reference.json",
+    "I-5_tokenizer": "encode(decode(tokens)) == tokens for all golden output tokens"
+  }
+}

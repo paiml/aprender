@@ -1,0 +1,44 @@
+# Qwen2.5-Coder-3B Quick Qualification
+# SafeTensors on CPU — fast smoke test
+
+name: qwen2.5-coder-3b-quick
+version: "1.0.0"
+
+model:
+  hf_repo: "Qwen/Qwen2.5-Coder-3B-Instruct"
+  formats:
+    - safetensors
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 10
+
+oracles:
+  - type: garbage
+    config:
+      max_repetition_ratio: 0.3
+      min_unique_chars: 10
+
+property_tests:
+  - name: arithmetic
+    generator: "arithmetic()"
+    oracle: "correct"
+    count: 10
+
+# Minimal Differential Testing (v1.3.0)
+differential_tests:
+  inference_compare:
+    enabled: "true"
+    prompt: "What is 2+2?"
+    max_tokens: 5
+    tolerance: 1e-5
+    gates: ["F-ROSETTA-INF-001", "F-ROSETTA-INF-003"]
+
+# Trace Payload (v1.3.0)
+trace_payload:
+  enabled: "true"
+  prompt: "2+2="
+  gates: ["F-TRACE-PAYLOAD-001"]

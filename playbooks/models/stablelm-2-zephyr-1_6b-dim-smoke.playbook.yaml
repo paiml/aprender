@@ -1,0 +1,51 @@
+# StableLM-2-Zephyr-1.6B Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+# Class D kernel: GQA + LayerNorm + GELU/SiLU (StableLM architecture)
+name: stablelm-2-zephyr-1_6b-dim-smoke
+version: "1.0.0"
+description: "Dimensional smoke check for StableLM-2-Zephyr-1.6B (metadata-only)"
+
+model:
+  hf_repo: "stabilityai/stablelm-2-zephyr-1_6b"
+  formats:
+    - safetensors
+  quantizations:
+    - q4_k_m
+  size_category: small
+  expected_hidden_dim: 2048
+  expected_num_layers: 24
+  expected_num_heads: 32
+  expected_num_kv_heads: 32
+  expected_vocab_size: 100352
+  expected_intermediate_dim: 5632
+  family: stablelm
+  size_variant: "1.6b"
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+    - "What is 2+2?"
+
+gates:
+  g1_model_loads: "true"
+  g2_basic_inference: "true"
+  g3_no_crashes: "true"
+  g4_output_quality: "true"
+
+failure_policy: collect_all
+
+metadata:
+  author: "apr-qa-gen"
+  tier: "dim-smoke"
+  architecture: "stablelm"
+  kernel_class: "D"
+  kernel_proof_ref: "microsoft/phi-1_5"
+  tags:
+    - instruct
+    - dim-smoke

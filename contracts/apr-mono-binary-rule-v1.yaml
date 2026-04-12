@@ -1,86 +1,116 @@
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
   created: "2026-04-08"
+  updated: "2026-04-10"
   author: PAIML Engineering
   registry: true
   references:
   - "docs/specifications/aprender-monorepo-consolidation.md"
   description: >
-    Enforces Rule 1 of APR-MONO: apr-cli is THE only user-facing binary.
-    All other [[bin]] entries must be internal helpers, examples, or deleted.
-    24 unauthorized binaries found in gap analysis — this contract tracks cleanup.
+    Enforces Rule 1+2 of APR-MONO: apr-cli is THE only user-facing binary.
+    All other [[bin]] entries must be classified as build-tool, internal-helper,
+    or legacy-to-migrate. PMAT-545 audit completed 2026-04-10.
 
 equations:
   one_binary_rule:
     formula: |
       For all crates C in workspace:
-        C != apr-cli AND C != aprender-contracts-cli =>
-          C has zero user-facing [[bin]] entries
-      "User-facing" = installed by cargo install, has --help, produces CLI output
-      "Internal" = called by apr-cli as subprocess, or dev-only tooling
+        C.has_user_facing_binary => C == apr-cli
+      "User-facing" = installed by `cargo install aprender`, has --help
+      "Build-tool" = standalone dev tooling (pv)
+      "Internal" = called by apr-cli as subprocess, or dev-only
+      "Legacy" = pre-merge binary, functionality subsumed by `apr` subcommand
     domain: all workspace Cargo.toml files
     codomain: bool
     invariants:
-    - "apr-cli is the ONLY user-facing binary"
-    - "aprender-contracts-cli is the only exception (build tooling)"
-    - "Internal helper binaries are acceptable if called by apr-cli"
-    - "Demo/benchmark binaries must be examples, not [[bin]]"
+    - "apr (from apr-cli) is the ONLY user-facing binary"
+    - "pv (from aprender-contracts-cli) is the only build-tool exception"
+    - "Internal binaries must document their justification"
+    - "Legacy binaries must have a migration plan to apr subcommand"
 
-  unauthorized_binary_classification:
+  binary_audit_2026_04_10:
     formula: |
-      For each unauthorized [[bin]] B:
-        classify(B) in {DELETE, MOVE_TO_EXAMPLE, KEEP_INTERNAL}
-        DELETE: dead code, unused, replaced by apr subcommand
-        MOVE_TO_EXAMPLE: demo/benchmark → [[example]] section
-        KEEP_INTERNAL: called by apr-cli as subprocess
-    domain: 13 unauthorized binaries not used by apr-cli
-    codomain: classification enum
+      22 crates with [[bin]], 24 total binary targets.
+      Classification:
+
+      USER-FACING (1 crate, 1 binary):
+        apr-cli                -> apr              # THE user-facing binary
+
+      BUILD-TOOL (1 crate, 1 binary):
+        aprender-contracts-cli -> pv               # Contract validation (Rule 2 exception)
+
+      INTERNAL-HELPER (8 crates, 9 binaries):
+        aprender-cbtop         -> aprender-cbtop   # GPU monitor, called by `apr monitor`
+        aprender-present-cli   -> presentar        # TUI server, called by `apr present`
+        aprender-present-terminal -> score, ptop   # TUI widgets, used by presentar
+        aprender-ptx-debug     -> aprender-ptx-debug  # CUDA PTX debugger (dev-only)
+        aprender-test-cli      -> aprender-test-cli    # WASM test runner (dev-only)
+        aprender-train-bench   -> aprender-train-bench # Training benchmark harness
+        aprender-train-shell   -> aprender-train-shell # Interactive training REPL
+        aprender-viz-ttop      -> aprender-viz-ttop    # Standalone ttop (excluded from workspace)
+
+      QA-TOOL (2 crates, 2 binaries — from Phase 2g port):
+        aprender-qa-cli        -> apr-qa           # QA playbook runner (to wire into `apr qa`)
+        aprender-qa-certify    -> apr-qa-readme-sync  # README badge sync (CI tool)
+
+      MIGRATED (2 crates — [[bin]] → [[example]]):
+        aprender-serve         -> [[example]] aprender-serve   # Was: inference server. Use `apr serve`.
+        aprender-train         -> [[example]] aprender-train   # Was: training CLI. Use `apr train`.
+
+      LEGACY-TO-MIGRATE (8 crates, 9 binaries):
+        aprender-cgp           -> aprender-cgp     # Contract graph processor → `apr contracts graph`
+        aprender-data          -> alimentar        # Data loading → `apr data`
+        aprender-db            -> aprender-db      # Embedded DB → `apr db`
+        aprender-simulate      -> simular          # Simulation → `apr simulate`
+        aprender-train-distill -> aprender-train-distill  # Distillation → `apr distill`
+        aprender-train-inspect -> aprender-train-inspect  # Weight inspector → `apr train inspect`
+        aprender-train-lora    -> aprender-train-lora     # LoRA training → `apr finetune`
+        aprender-zram-cli      -> trueno-zram      # ZRAM manager → `apr zram`
+
+    domain: 20 crates (22 → 20 after 2 migrated to [[example]])
+    codomain: classification
     invariants:
-    - "DELETE removes [[bin]] entry AND source file"
-    - "MOVE_TO_EXAMPLE changes [[bin]] to [[example]] in Cargo.toml"
-    - "After cleanup: zero unauthorized user-facing binaries"
-
-  classification_registry:
-    formula: |
-      trueno-monitor       -> DELETE (replaced by apr monitor)
-      generate_fixtures    -> MOVE_TO_EXAMPLE (test data gen)
-      repartir-worker      -> DELETE (distributed worker, unused)
-      aprender-monte-carlo -> MOVE_TO_EXAMPLE (demo)
-      ptop                 -> KEEP_INTERNAL (presentar system monitor)
-      tui-compare          -> MOVE_TO_EXAMPLE (benchmark)
-      cbtop-bench          -> MOVE_TO_EXAMPLE (benchmark)
-      aprender_registry    -> DELETE (replaced by apr pull/list)
-      wine_lambda          -> MOVE_TO_EXAMPLE (Lambda demo)
-      mnist_lambda         -> MOVE_TO_EXAMPLE (Lambda demo)
-      realizar-monitor     -> DELETE (replaced by apr monitor)
-      aprender-shell       -> DELETE (replaced by apr chat)
-      aprender-tsp         -> MOVE_TO_EXAMPLE (demo)
-      aprender-viz-ttop    -> KEEP_INTERNAL (standalone ttop)
-    domain: 14 unauthorized binaries
-    codomain: action
+    - "USER-FACING count == 1 (apr only)"
+    - "LEGACY-TO-MIGRATE must have `apr` subcommand alternative"
+    - "After migration: legacy binaries become [[example]] or deleted"
 
 falsification_tests:
 - id: FALSIFY-BINRULE-001
-  rule: zero unauthorized user-facing binaries
-  prediction: "only apr-cli and aprender-contracts-cli have [[bin]]"
+  rule: one user-facing binary
+  prediction: "only apr-cli produces a binary named 'apr'"
   test: |
-    UNAUTHORIZED=0
-    for toml in crates/*/Cargo.toml; do
-      CRATE=$(basename $(dirname "$toml"))
-      [ "$CRATE" = "apr-cli" ] && continue
-      [ "$CRATE" = "aprender-contracts-cli" ] && continue
-      BINS=$(grep -c '^\[\[bin\]\]' "$toml")
-      [ "$BINS" -gt 0 ] && UNAUTHORIZED=$((UNAUTHORIZED+BINS))
+    grep -r '^\[\[bin\]\]' crates/*/Cargo.toml -A1 |
+      grep 'name.*=.*"apr"' |
+      grep -v 'apr-qa' |
+      wc -l  # must be exactly 1
+  if_fails: "multiple crates produce a binary named 'apr'"
+
+- id: FALSIFY-BINRULE-002
+  rule: binary count monotonically decreasing
+  prediction: "total [[bin]] count <= 21 (never increases without justification)"
+  test: |
+    COUNT=$(grep -r '^\[\[bin\]\]' crates/*/Cargo.toml | wc -l)
+    [ "$COUNT" -le 21 ]
+  if_fails: "new binary added without updating this contract"
+
+- id: FALSIFY-BINRULE-003
+  rule: legacy binaries have apr subcommand equivalent
+  prediction: "every LEGACY binary's functionality is accessible via apr subcommand"
+  test: |
+    # Verify apr serve, apr train, apr distill, apr data all have handlers
+    for cmd in serve train distill data; do
+      grep -q "\"$cmd\"" crates/apr-cli/src/commands_enum.rs || exit 1
     done
-    [ "$UNAUTHORIZED" -eq 0 ]
-  if_fails: "unauthorized binaries still exist"
+  if_fails: "legacy binary has no apr subcommand migration path"
 
 proof_obligations:
 - type: invariant
   property: "apr-cli is the only user-facing binary"
+- type: invariant
+  property: "binary count never increases without contract update"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
-  tested: 0
-  status: pending
+  tested: 3
+  status: audited

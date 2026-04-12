@@ -1,0 +1,129 @@
+# Qwen2.5-Coder-7B Full Qualification Playbook (GH-6/AC-1)
+# Primary QA model: 5-quant ladder × 3 modalities × 2 backends × 100 scenarios
+name: qwen2.5-coder-7b-full
+version: "1.0.0"
+description: "Full qualification for Qwen2.5-Coder-7B-Instruct — primary QA model"
+
+model:
+  hf_repo: "Qwen/Qwen2.5-Coder-7B-Instruct"
+  formats:
+    - safetensors  # Ground truth (HuggingFace source)
+    - apr          # APR native format
+    - gguf         # Third-party format
+  quantizations:
+    - f16
+    - q8_0
+    - q6_k
+    - q5_k_m
+    - q4_k_m
+  size_category: large  # 7B F16 needs ~14GB
+
+test_matrix:
+  modalities:
+    - run
+    - chat
+    - serve
+  backends:
+    - cpu
+    - gpu
+  scenario_count: 100
+  seed: 42
+  timeout_ms: 300000  # 300s for F16
+
+gates:
+  g1_model_loads: "true"
+  g2_basic_inference: "true"
+  g3_no_crashes: "true"
+  g4_output_quality: "true"
+
+oracles:
+  - type: arithmetic
+    config:
+      tolerance: 0.01
+  - type: garbage
+    config:
+      max_repetition_ratio: 0.3
+      min_unique_chars: 10
+  - type: code_syntax
+    config:
+      languages: [python, rust, javascript]
+
+failure_policy: collect_all
+
+# Differential testing: tensor + inference comparison
+differential_tests:
+  format_validation:
+    enabled: "true"
+    checks: [dtype_mapping, tensor_alignment, header_integrity]
+    gates: ["F-ROSETTA-FMT-001", "F-ROSETTA-FMT-002"]
+  tensor_diff:
+    enabled: "true"
+    gates: ["F-ROSETTA-DIFF-001", "F-ROSETTA-DIFF-002"]
+  inference_compare:
+    enabled: "true"
+    prompt: "What is 2+2?"
+    max_tokens: 10
+    tolerance: 0.00001
+    gates: ["F-ROSETTA-INF-001"]
+  fingerprint:
+    enabled: "true"
+    tensors: "all"
+    stats: ["mean", "std", "min", "max", "checksum"]
+    gates: ["F-ROSETTA-FP-001", "F-ROSETTA-FP-002"]
+  validate_stats:
+    enabled: "true"
+    tolerance:
+      layernorm: 0.001
+      embedding: 0.1
+      attention: 0.01
+    gates: ["F-ROSETTA-STATS-001", "F-ROSETTA-STATS-002"]
+
+# 6-column profiling: 3 formats × 2 backends
+profile_ci:
+  enabled: "true"
+  warmup: 3
+  measure: 10
+  formats: [safetensors, apr, gguf]
+  backends: [cpu, gpu]
+  assertions:
+    min_throughput_cpu: 5.0
+    min_throughput_gpu: 50.0
+    max_p99_ms: 5000.0
+  gates: ["F-PROFILE-CI-001", "F-PROFILE-CI-002", "F-PERF-006", "F-PERF-005"]
+
+# Trace payload testing
+trace_payload:
+  enabled: "true"
+  prompt: "def fibonacci(n):"
+  gates: ["F-TRACE-PAYLOAD-001", "F-TRACE-PAYLOAD-002"]
+
+# Format contract invariant tests
+contract_tests:
+  invariants: ["I-2", "I-3", "I-4", "I-5"]
+
+# Ollama parity tests (GH-6/AC-2)
+ollama_parity:
+  enabled: "true"
+  model_tag: "qwen2.5-coder:7b-instruct-q4_k_m"
+  quantizations:
+    - q4_k_m
+    - q6_k
+    - q8_0
+  prompts:
+    - "What is 2+2?"
+    - "def fibonacci(n):"
+    - "Explain the difference between a stack and a queue."
+  temperature: 0.0
+  min_perf_ratio: 0.8
+  gates: ["F-OLLAMA-001", "F-OLLAMA-002", "F-OLLAMA-003", "F-OLLAMA-004", "F-OLLAMA-005"]
+
+metadata:
+  author: "apr-qa-gen"
+  tier: "full"
+  architecture: "qwen2"
+  primary_qa_model: "true"
+  tags:
+    - code
+    - instruct
+    - full
+    - primary

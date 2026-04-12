@@ -1,0 +1,43 @@
+[package]
+name = "aprender-qa-runner"
+description = "Playbook executor for APR model qualification testing"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+test-fixtures = ["dep:tempfile", "dep:half"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+tracing = { workspace = true }
+aprender-qa-gen = { path = "../aprender-qa-gen" }
+hostname = "0.4"
+rayon = "1.10"
+sha2 = "0.10"
+regex = { workspace = true }
+num_cpus = "1.16"
+safetensors = { workspace = true }
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib", features = ["llm-types"] }
+# Test fixtures dependencies (optional)
+tempfile = { version = "3", optional = true }
+half = { version = "2.4", optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"
+half = "2.4"
+
+[lints]
+workspace = true

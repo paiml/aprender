@@ -81,6 +81,12 @@ members = [
     "crates/aprender-test-derive",
     "crates/aprender-test-js-gen",
     "crates/aprender-test-showcase",
+    # --- APR-MONO Phase 2g: QA playbook crates ---
+    "crates/aprender-qa-gen",
+    "crates/aprender-qa-runner",
+    "crates/aprender-qa-report",
+    "crates/aprender-qa-certify",
+    "crates/aprender-qa-cli",
     # Remaining excluded (workspace root shells with no src):
     # "crates/aprender-viz-ttop",
     # "crates/aprender-present",

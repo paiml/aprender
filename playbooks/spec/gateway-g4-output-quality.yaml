@@ -1,0 +1,96 @@
+# Executable Specification: Gateway G4 - Output Quality
+# Purpose: Define and verify G4 gateway requirements
+
+name: spec-gateway-g4
+version: "1.0.0"
+description: "Specification for Gateway G4: Output is not garbage"
+
+spec:
+  id: G4-VALID
+  section: "7.1 Gateway Logic"
+  document: "apr-playbook-spec.md"
+  requirement: |
+    G4 (Output Quality): The model output must not be garbage.
+    This verifies:
+    - Output is not random bytes
+    - No excessive repetition
+    - Minimum unique character count
+    - Reasonable token distribution
+
+    A G4 failure zeros the entire MQS score (critical path).
+
+scenarios:
+  # Normal prompts - MUST produce quality output
+  - name: "Arithmetic produces valid output"
+    command: "apr run ${MODEL} '2+2='"
+    expected:
+      garbage_check: "false"
+      min_unique_chars: 2
+    rationale: "Simple computation"
+
+  - name: "Code prompt produces valid syntax"
+    command: "apr run ${MODEL} 'def hello():'"
+    expected:
+      garbage_check: "false"
+      # Should not be random characters
+    rationale: "Code continuation"
+
+  - name: "Text prompt produces coherent text"
+    command: "apr run ${MODEL} 'The capital of France is'"
+    expected:
+      garbage_check: "false"
+      min_unique_chars: 5
+    rationale: "Factual completion"
+
+# Garbage detection oracle
+garbage_oracle:
+  name: "Garbage Detection"
+  conditions:
+    # Output is garbage if ANY of these are true
+    - name: "excessive_repetition"
+      description: "Same token repeated > 30% of output"
+      threshold: 0.3
+      formula: "max_token_frequency / total_tokens > 0.3"
+
+    - name: "low_uniqueness"
+      description: "Fewer than 10 unique characters"
+      threshold: 10
+      formula: "unique_chars(output) < 10"
+
+    - name: "non_printable"
+      description: "Contains non-printable bytes (except newline/tab)"
+      formula: "has_non_printable(output)"
+
+    - name: "entropy_collapse"
+      description: "Shannon entropy below threshold"
+      threshold: 1.0
+      formula: "shannon_entropy(output) < 1.0"
+
+# Examples of garbage output (for testing the detector)
+garbage_examples:
+  - "aaaaaaaaaaaaaaaaaaaaaaa"  # Repetition
+  - "\x00\x01\x02\x03\x04"    # Non-printable
+  - "the the the the the the"  # Token repetition
+  - "!@#$%^&*()_+"            # Random symbols only
+
+# Examples of valid output (should NOT be flagged)
+valid_examples:
+  - "4"                        # Short but valid
+  - "The answer is 4."        # Normal sentence
+  - "```python\nprint('hi')\n```"  # Code block
+  - "Paris"                    # Single word answer
+
+gate:
+  id: G4-VALID
+  severity: P0
+  condition: |
+    !is_garbage(output) &&
+    unique_chars(output) >= 10 &&
+    max_repetition_ratio < 0.3 &&
+    !has_non_printable(output)
+  failure_action: "zero_mqs"
+  failure_message: "Output is garbage - MQS zeroed"
+
+metadata:
+  author: "apr-qa-gen"
+  spec_version: "1.1.0"

@@ -149,6 +149,7 @@ impl OracleFlags {
 /// - HuggingFace: `apr oracle hf://org/repo`
 /// - Family: `apr oracle --family qwen2`
 #[allow(clippy::fn_params_excessive_bools)]
+#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
 pub(crate) fn run(
     source: Option<&String>,
     family_name: Option<&String>,

@@ -275,6 +275,10 @@ const ARCHIVE_REPOS: &[(&str, &str)] = &[
     ("paiml/batuta-common", "crates/aprender-orchestrate/"),
 ];
 
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "mutating_output_contract"
+)]
 pub fn run(command: MonoCommands) -> Result<(), CliError> {
     match command {
         MonoCommands::Publish { dry_run } => run_publish(dry_run),

@@ -81,6 +81,7 @@ fn print_flamegraph(
 ///
 /// Usage: `apr profile model.apr --compare model.gguf`
 #[cfg(feature = "inference")]
+#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
 pub(crate) fn run_cross_format_comparison(
     path_a: &Path,
     path_b: &Path,

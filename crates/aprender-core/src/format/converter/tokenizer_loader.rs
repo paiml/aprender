@@ -661,3 +661,189 @@ fn read_varint(data: &[u8], start: usize) -> Option<(u64, usize)> {
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// PMAT-540: Coverage tests for tokenizer_loader.rs helper functions
+// ═══════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tokenizer_loader_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_is_bos_token_matches_bos_content() {
+        assert!(is_bos_token("<s>"));           // exact match
+        assert!(is_bos_token("<bos>"));         // contains "bos"
+        assert!(is_bos_token("<|startoftext|>"));  // exact match
+        assert!(is_bos_token("bos_token"));     // contains "bos"
+    }
+
+    #[test]
+    fn test_is_bos_token_rejects_non_bos() {
+        assert!(!is_bos_token("</s>"));
+        assert!(!is_bos_token("<eos>"));
+        assert!(!is_bos_token("hello"));
+    }
+
+    #[test]
+    fn test_is_eos_token_matches_eos_content() {
+        assert!(is_eos_token("</s>"));          // exact match
+        assert!(is_eos_token("<eos>"));         // contains "eos"
+        assert!(is_eos_token("<|eot_id|>"));    // exact match
+        assert!(is_eos_token("eos_token"));     // contains "eos"
+    }
+
+    #[test]
+    fn test_is_eos_token_rejects_non_eos() {
+        assert!(!is_eos_token("<s>"));
+        assert!(!is_eos_token("<bos>"));
+        assert!(!is_eos_token("hello"));
+    }
+
+    #[test]
+    fn test_infer_gqa_heads_llama_7b() {
+        // HEAD_DIMS=[64,128,96,80]; 4096/64=64 heads, 1024/64=16 KV (tries 64 first)
+        let (heads, kv) = infer_gqa_heads(4096, 1024);
+        assert_eq!(heads, Some(64));
+        assert_eq!(kv, Some(16));
+    }
+
+    #[test]
+    fn test_infer_gqa_heads_equal_is_mha() {
+        // Equal Q and KV dims → MHA; 4096/64=64
+        let (heads, kv) = infer_gqa_heads(4096, 4096);
+        assert_eq!(heads, Some(64));
+        assert_eq!(kv, Some(64));
+    }
+
+    #[test]
+    fn test_infer_gqa_heads_mqa_single_kv() {
+        // Multi-query: Q=4096/64=64 heads, KV=64/64=1 head
+        let (heads, kv) = infer_gqa_heads(4096, 64);
+        assert_eq!(heads, Some(64));
+        assert_eq!(kv, Some(1));
+    }
+
+    #[test]
+    fn test_infer_mha_heads_common_sizes() {
+        // HEAD_DIMS=[64,128,96,80]; tries 64 first
+        // 4096 / 64 = 64 heads
+        assert_eq!(infer_mha_heads(4096).0, Some(64));
+        // 2048 / 64 = 32 heads
+        assert_eq!(infer_mha_heads(2048).0, Some(32));
+        // 768 / 64 = 12 heads (BERT)
+        assert_eq!(infer_mha_heads(768).0, Some(12));
+    }
+
+    #[test]
+    fn test_extract_layer_index_llama() {
+        assert_eq!(extract_layer_index("model.layers.0.self_attn.q_proj.weight", "model.layers."), Some(0));
+        assert_eq!(extract_layer_index("model.layers.31.mlp.gate_proj.weight", "model.layers."), Some(31));
+    }
+
+    #[test]
+    fn test_extract_layer_index_no_match() {
+        assert_eq!(extract_layer_index("model.embed_tokens.weight", "model.layers."), None);
+        assert_eq!(extract_layer_index("lm_head.weight", "model.layers."), None);
+    }
+
+    #[test]
+    fn test_count_transformer_layers() {
+        let mut tensors = BTreeMap::new();
+        for i in 0..4 {
+            tensors.insert(
+                format!("model.layers.{i}.self_attn.q_proj.weight"),
+                (vec![1.0], vec![32, 32]),
+            );
+        }
+        assert_eq!(count_transformer_layers(&tensors), 4);
+    }
+
+    #[test]
+    fn test_count_transformer_layers_empty() {
+        let tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+        assert_eq!(count_transformer_layers(&tensors), 0);
+    }
+
+    #[test]
+    fn test_get_config_u32_present() {
+        let config: serde_json::Value = serde_json::json!({"hidden_size": 4096});
+        assert_eq!(get_config_u32(Some(&config), "hidden_size"), 4096);
+    }
+
+    #[test]
+    fn test_get_config_u32_missing() {
+        let config: serde_json::Value = serde_json::json!({"hidden_size": 4096});
+        assert_eq!(get_config_u32(Some(&config), "nonexistent"), 0);
+    }
+
+    #[test]
+    fn test_get_config_u32_none_config() {
+        assert_eq!(get_config_u32(None, "anything"), 0);
+    }
+
+    #[test]
+    fn test_read_varint_single_byte() {
+        let (val, next) = read_varint(&[0x05], 0).expect("varint");
+        assert_eq!(val, 5);
+        assert_eq!(next, 1);
+    }
+
+    #[test]
+    fn test_read_varint_multi_byte() {
+        let (val, next) = read_varint(&[0xAC, 0x02], 0).expect("varint 300");
+        assert_eq!(val, 300);
+        assert_eq!(next, 2);
+    }
+
+    #[test]
+    fn test_read_varint_empty() {
+        assert!(read_varint(&[], 0).is_none());
+    }
+
+    #[test]
+    fn test_infer_architecture_from_names_llama() {
+        let mut tensors = BTreeMap::new();
+        tensors.insert("model.layers.0.self_attn.q_proj.weight".to_string(), (vec![0.0], vec![32, 32]));
+        assert_eq!(infer_architecture_from_names(&tensors), Some("llama".to_string()));
+    }
+
+    #[test]
+    fn test_infer_architecture_from_names_bert() {
+        let mut tensors = BTreeMap::new();
+        tensors.insert("bert.encoder.layer.0.attention.self.query.weight".to_string(), (vec![0.0], vec![32, 32]));
+        assert_eq!(infer_architecture_from_names(&tensors), Some("bert".to_string()));
+    }
+
+    #[test]
+    fn test_infer_architecture_from_names_gpt2() {
+        let mut tensors = BTreeMap::new();
+        tensors.insert("transformer.h.0.attn.c_attn.weight".to_string(), (vec![0.0], vec![32, 32]));
+        assert_eq!(infer_architecture_from_names(&tensors), Some("gpt2".to_string()));
+    }
+
+    #[test]
+    fn test_infer_architecture_from_names_neox() {
+        let mut tensors = BTreeMap::new();
+        tensors.insert("gpt_neox.layers.0.attention.query_key_value.weight".to_string(), (vec![0.0], vec![32, 32]));
+        assert_eq!(infer_architecture_from_names(&tensors), Some("gpt-neox".to_string()));
+    }
+
+    #[test]
+    fn test_infer_intermediate_size_from_gate_proj() {
+        let mut tensors = BTreeMap::new();
+        tensors.insert(
+            "model.layers.0.mlp.gate_proj.weight".to_string(),
+            (vec![0.0; 4], vec![11008, 4096]),
+        );
+        assert_eq!(infer_intermediate_size_from_tensors(&tensors), Some(11008));
+    }
+
+    #[test]
+    fn test_infer_intermediate_size_no_mlp() {
+        let mut tensors = BTreeMap::new();
+        tensors.insert("model.embed_tokens.weight".to_string(), (vec![0.0; 4], vec![64, 32]));
+        assert_eq!(infer_intermediate_size_from_tensors(&tensors), None);
+    }
+}

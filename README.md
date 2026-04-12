@@ -43,9 +43,9 @@ one `apr` binary, 57 commands covering the full ML lifecycle:
 
 ### Numbers
 
-- **70** workspace crates (was 20 separate repos)
-- **25,391** tests, all passing
-- **405** provable contracts (equation-based verification)
+- **75** workspace crates (was 20 separate repos)
+- **28,700+** tests, all passing
+- **799** provable contracts (equation-based verification)
 - **57** CLI commands with contract coverage
 - **0** `[patch.crates-io]` — clean workspace deps
 

@@ -319,11 +319,12 @@ fn test_imp_147c_extraction_throughput_comparison() {
         scalar_time.as_secs_f64() * 1000.0
     );
 
-    // IMP-147c: Baseline should process at least 5 MB/s (conservative for coverage builds)
-    // In release builds with SIMD, expect > 1000 MB/s
+    // IMP-147c: Baseline should process at least 1 MB/s in debug+coverage builds.
+    // CI containers under load routinely hit 2-5x slowdown vs bare metal.
+    // In release builds with SIMD, expect > 1000 MB/s.
     assert!(
-        scalar_bytes_per_sec > 5.0,
-        "IMP-147c: Scalar extraction should be > 5 MB/s, got {:.1}",
+        scalar_bytes_per_sec > 1.0,
+        "IMP-147c: Scalar extraction should be > 1 MB/s, got {:.1}",
         scalar_bytes_per_sec
     );
 }

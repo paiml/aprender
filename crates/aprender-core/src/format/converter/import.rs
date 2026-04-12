@@ -65,8 +65,12 @@ pub fn apr_import<P: AsRef<Path>>(
     let mut load_result = load_source_tensors(&local_path, &options)?;
 
     // PMAT-SAFETENSORS-TOK-001: For HuggingFace SafeTensors imports, try to find
-    // tokenizer.json from the same repo if not found as sibling file
-    resolve_hf_tokenizer_fallback(&mut load_result, &parsed_source);
+    // tokenizer.json from the same repo if not found as sibling file.
+    // PMAT-526: Skip for known non-LLM architectures (Whisper, BERT) — they use
+    // different tokenizer formats that the BPE path doesn't handle.
+    if options.architecture.is_llm() || options.architecture == Architecture::Auto {
+        resolve_hf_tokenizer_fallback(&mut load_result, &parsed_source);
+    }
 
     // model-metadata-bounds-v1.yaml: warn on out-of-bounds config values at import time
     if let Some(config) = load_result.model_config.as_ref() {
@@ -185,6 +189,15 @@ pub fn apr_import<P: AsRef<Path>>(
 
     // Step 5: Write APR format (with tokenizer AND model config - CRITICAL for inference)
     // Note: Quantization (fp16/int8/int4) is applied during write for true packed storage
+    // PMAT-526: Only embed BPE tokenizer for LLM architectures.
+    // Non-LLM models (Whisper, BERT) use different tokenizer formats that
+    // the BPE path doesn't handle correctly.
+    let tokenizer_for_write = if effective_arch.is_llm() {
+        load_result.tokenizer.as_ref()
+    } else {
+        None
+    };
+
     // PMAT-223: Pass user metadata for preservation in APR custom field
     // GH-205: Pass F16 raw tensors for passthrough
     write_apr_file(
@@ -192,7 +205,7 @@ pub fn apr_import<P: AsRef<Path>>(
         &mapped_f16_raw,
         output_path,
         &options,
-        load_result.tokenizer.as_ref(),
+        tokenizer_for_write,
         load_result.model_config.as_ref(),
         &load_result.user_metadata,
     )?;

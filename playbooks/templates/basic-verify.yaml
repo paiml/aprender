@@ -1,0 +1,69 @@
+# Basic Functionality Verification Playbook
+# Verifies G1-G4 gates across all formats in ~2-5 minutes
+name: basic-verify
+version: "1.0.0"
+description: "Quick verification of model functionality across formats"
+
+model:
+  hf_repo: "${MODEL_ID}"
+  formats:
+    - safetensors  # Ground truth (HuggingFace source)
+    - apr          # APR native format
+    - gguf         # Third-party format
+  quantizations:
+    - q4_k_m
+  size_category: auto
+
+test_matrix:
+  modalities:
+    - run          # Basic inference
+  backends:
+    - cpu          # CPU only for speed
+  scenario_count: 3
+  seed: 42
+  timeout_ms: 60000
+
+gates:
+  g1_model_loads: "true"      # Model loads without error
+  g2_basic_inference: "true"  # Produces output
+  g3_no_crashes: "true"       # No segfaults/panics
+  g4_output_quality: "true"   # Not garbage
+
+oracles:
+  - type: arithmetic
+    config:
+      tolerance: 0.01
+  - type: garbage
+    config:
+      max_repetition_ratio: 0.3
+      min_unique_chars: 10
+
+# Key verification tests (SafeTensors first as ground truth)
+verification_tests:
+  - name: "SafeTensors loads and runs (ground truth)"
+    format: safetensors
+    prompt: "What is 2+2?"
+    expect: "4"
+
+  - name: "APR loads and runs"
+    format: apr
+    prompt: "What is 2+2?"
+    expect: "4"
+
+  - name: "GGUF loads and runs"
+    format: gguf
+    prompt: "What is 2+2?"
+    expect: "4"
+
+  - name: "Cross-format consistency"
+    type: differential
+    formats: [safetensors, apr, gguf]  # Compare against safetensors ground truth
+    prompt: "Write hello world in Python"
+    tolerance: semantic  # Outputs should be semantically equivalent
+
+failure_policy: collect_all
+
+metadata:
+  author: "apr-qa"
+  purpose: "Basic format verification"
+  estimated_time: "2-5 minutes"

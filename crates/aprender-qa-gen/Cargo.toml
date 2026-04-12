@@ -1,0 +1,28 @@
+[package]
+name = "aprender-qa-gen"
+description = "Property-based scenario generator for APR model qualification"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+proptest = { workspace = true }
+chrono = { workspace = true }
+safetensors = { workspace = true }
+sha2 = "0.10"
+hex = "0.4"
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = "3"
+
+[lints]
+workspace = true

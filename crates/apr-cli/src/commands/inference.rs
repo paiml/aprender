@@ -1,5 +1,6 @@
 
 /// Run the rosetta verify subcommand
+#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
 pub fn run_verify(source: &Path, intermediate: &str, tolerance: f32, json: bool) -> Result<()> {
     if !source.exists() {
         return Err(CliError::FileNotFound(source.to_path_buf()));

@@ -1,0 +1,49 @@
+# tiny_starcoder_py Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+name: tiny_starcoder_py-dim-smoke
+version: "1.0.0"
+description: "Dimensional smoke check for tiny_starcoder_py (metadata-only)"
+
+model:
+  hf_repo: "bigcode/tiny_starcoder_py"
+  formats:
+    - safetensors
+  quantizations:
+    - q4_k_m
+  size_category: tiny
+  expected_hidden_dim: 768
+  expected_num_layers: 20
+  expected_num_heads: 12
+  expected_vocab_size: 49152
+  expected_intermediate_dim: 3072
+  family: gpt-bigcode
+  size_variant: "164m"
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+    - "What is 2+2?"
+
+gates:
+  g1_model_loads: "true"
+  g2_basic_inference: "true"
+  g3_no_crashes: "true"
+  g4_output_quality: "true"
+
+failure_policy: collect_all
+
+metadata:
+  author: "apr-qa-gen"
+  tier: "dim-smoke"
+  architecture: "gpt_bigcode"
+  kernel_class: "B"
+  kernel_proof_ref: "EleutherAI/gpt-neox-20b"
+  tags:
+    - code
+    - dim-smoke

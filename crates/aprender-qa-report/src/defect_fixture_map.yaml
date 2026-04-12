@@ -1,0 +1,89 @@
+# Defect-to-Fixture Mapping (§3.5)
+#
+# Maps ConversionFailureType keys to upstream fixture builders.
+# Used by auto-ticket generation to provide structured reproduction steps.
+
+tensor_name_mismatch:
+  upstream_fixture: "fixtures/tensor_name_mismatch.py"
+  pygmy_builder: "test_tensor_naming_convention"
+  ticket_template: |
+    ## Tensor Name Mismatch
+
+    Converted model uses naming convention `{source_naming}` but target expects `{target_naming}`.
+
+    **Affected tensors:** {affected_count}
+    **Model:** {model_id}
+
+    ### Reproduction
+    ```bash
+    apr-cli inspect {model_path} --tensor-names
+    ```
+
+dequantization_failure:
+  upstream_fixture: "fixtures/dequantization_roundtrip.py"
+  pygmy_builder: "test_dequantization_roundtrip"
+  ticket_template: |
+    ## Dequantization Failure
+
+    Round-trip quantization failed for `{quant_type}` format.
+
+    **Max error:** {max_error}
+    **Tolerance:** {tolerance}
+    **Model:** {model_id}
+
+    ### Reproduction
+    ```bash
+    apr-cli convert {model_path} --to {target_format} --verify
+    ```
+
+config_metadata_mismatch:
+  upstream_fixture: "fixtures/config_metadata_check.py"
+  pygmy_builder: "test_config_metadata_preservation"
+  ticket_template: |
+    ## Config Metadata Mismatch
+
+    Model configuration metadata was not preserved during conversion.
+
+    **Missing fields:** {missing_fields}
+    **Model:** {model_id}
+
+    ### Reproduction
+    ```bash
+    apr-cli inspect {model_path} --config
+    diff <(apr-cli inspect {original_path} --config) <(apr-cli inspect {converted_path} --config)
+    ```
+
+missing_artifact:
+  upstream_fixture: "fixtures/artifact_completeness.py"
+  pygmy_builder: "test_artifact_completeness"
+  ticket_template: |
+    ## Missing Artifact
+
+    Expected artifact not found after conversion.
+
+    **Missing:** {missing_artifact}
+    **Model:** {model_id}
+
+    ### Reproduction
+    ```bash
+    apr-cli convert {model_path} --to {target_format}
+    ls -la {output_dir}
+    ```
+
+inference_failure:
+  upstream_fixture: "fixtures/inference_smoke.py"
+  pygmy_builder: "test_inference_after_conversion"
+  ticket_template: |
+    ## Inference Failure After Conversion
+
+    Model fails to produce valid inference output after format conversion.
+
+    **Exit code:** {exit_code}
+    **Stderr:** ```{stderr}```
+    **Model:** {model_id}
+
+    ### Reproduction
+    ```bash
+    apr-cli convert {model_path} --to {target_format}
+    apr-cli run {converted_path} --prompt "What is 2+2?" --max-tokens 10
+    ```

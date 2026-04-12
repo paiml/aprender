@@ -698,3 +698,60 @@ fn run_real_checks_safetensors(path: &Path) -> Result<Vec<StageResult>, CliError
 
 include!("stage.rs");
 include!("check_03.rs");
+
+// ═══════════════════════════════════════════════════════════════════
+// PMAT-540 Phase 4: Inline tests for pure helper functions
+// ═══════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod check_tests {
+    use super::*;
+
+    #[test]
+    fn test_any_name_contains_finds_match() {
+        let names = &["model.layers.0.self_attn.q_proj.weight", "lm_head.weight"];
+        assert!(any_name_contains(names, &["self_attn", "mlp"]));
+        assert!(any_name_contains(names, &["lm_head"]));
+    }
+
+    #[test]
+    fn test_any_name_contains_no_match() {
+        let names = &["model.layers.0.self_attn.q_proj.weight"];
+        assert!(!any_name_contains(names, &["decoder", "encoder"]));
+    }
+
+    #[test]
+    fn test_all_groups_match_all_present() {
+        let names = &[
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.mlp.gate_proj.weight",
+            "model.embed_tokens.weight",
+        ];
+        let groups: &[&[&str]] = &[&["self_attn", "attention"], &["mlp", "ffn"], &["embed"]];
+        assert!(all_groups_match(names, groups));
+    }
+
+    #[test]
+    fn test_all_groups_match_missing_group() {
+        let names = &["model.layers.0.self_attn.q_proj.weight"];
+        let groups: &[&[&str]] = &[
+            &["self_attn"],
+            &["mlp", "ffn"], // not present
+        ];
+        assert!(!all_groups_match(names, groups));
+    }
+
+    #[test]
+    fn test_all_groups_match_empty_names() {
+        let names: &[&str] = &[];
+        let groups: &[&[&str]] = &[&["anything"]];
+        assert!(!all_groups_match(names, groups));
+    }
+
+    #[test]
+    fn test_all_groups_match_empty_groups() {
+        let names = &["model.layers.0.weight"];
+        let groups: &[&[&str]] = &[];
+        assert!(all_groups_match(names, groups)); // vacuously true
+    }
+}

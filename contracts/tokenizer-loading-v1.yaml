@@ -11,8 +11,11 @@ metadata:
   depends_on:
   - classification-finetune-v1
 tokenizer_config:
-  model_family: Qwen2
-  model_name: Qwen2.5-Coder-0.5B
+  # PMAT-526: Scoped to LLM architectures (Architecture::is_llm() == true).
+  # Non-LLM models (Whisper, BERT) use different tokenizer formats.
+  applicable_architectures: [Llama, Qwen2, Qwen3, Qwen3_5, Gpt2, Phi, GptNeoX, Opt]
+  reference_model_family: Qwen2
+  reference_model_name: Qwen2.5-Coder-0.5B
   vocab_size: 151936
   special_tokens:
   - id: 151643
