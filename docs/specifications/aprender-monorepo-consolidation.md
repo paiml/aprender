@@ -1,16 +1,16 @@
 # APR-MONO: Sovereign Stack Monorepo Consolidation
 
-**Version**: 2.1
-**Date**: 2026-04-10
+**Version**: 2.2
+**Date**: 2026-04-12
 **Status**: COMPLETE — 75 workspace crates (79 dirs, 4 excluded), 0 compile failures, 14 integration tests pass
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
 **Contracts**: `cgp-monorepo-consolidation-v1.yaml`, `cgp-monorepo-build-v1.yaml`, `apr-cli-commands-v1.yaml`, `apr-cli-command-safety-v1.yaml`, `tui-rendering-ux-v1.yaml`, `ratatui-migration-v1.yaml`
-**Falsification**: 13 MONO + 7 BUILD + 7 CLI + 4 RATATUI + 4 CMD-SAFETY = 35 falsification conditions
+**Falsification**: 13 MONO + 7 BUILD + 7 CLI + 4 RATATUI + 4 CMD-SAFETY + 5 PARITY = 40 falsification conditions
 **Integration Tests**: `tests/monorepo_invariants.rs` (8 tests), `crates/apr-cli/tests/cli_commands.rs` (6 tests, 56 commands)
-**Tests**: 4,633 apr-cli + 13,005 core + 1,371 contracts + 2,792 QA = 21,801 (key crates); 28,700+ workspace-wide
-**Contracts**: 799 YAML files, 172 `#[contract]` annotations (70 apr-cli + 52 serve/compute/train + 50 other crates)
+**Tests**: 4,633 apr-cli + 13,023 core + 1,371 contracts + 2,792 QA = 21,819 (key crates); 28,700+ workspace-wide
+**Contracts**: 803 YAML files, 172 `#[contract]` annotations (70 apr-cli + 52 serve/compute/train + 50 other crates)
 
 ### Changes since v2.0 (2026-04-10 Falsification Audit)
 
@@ -61,7 +61,7 @@
 | Clippy errors | 0 | 0 | PASS |
 | `#[contract]` annotations | **172** (70 cli + 52 serve/compute/train + 50 other) | ≥50 | **PASS** |
 | `#[contract]` on CLI commands | **70** (59 cmd files + 11 dispatch) | ≥57 | **PASS** — PMAT-543 |
-| Contract YAML files | 800 | — | INFO — +3: gptneox.yaml, opt.yaml, model-family-parity-v1.yaml |
+| Contract YAML files | 803 | — | INFO — +4 PMAT-546: gptneox.yaml, opt.yaml, model-family-parity-v1.yaml |
 | unwrap() in production code | **0** (test-only: 584 in test files) | 0 | **PASS** — clippy ban effective |
 | pmat TDG | 92.5/100 (A) | A+ | **PASS** |
 | pmat comply | PASS (4 warnings) | PASS | **PASS** — 52 work contracts valid, 85 bindings verified, 0 ghosts |
