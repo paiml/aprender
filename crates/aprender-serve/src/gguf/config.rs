@@ -399,26 +399,63 @@ impl GGUFConfig {
                 "C-01: APR model missing 'architecture' metadata — cannot infer model type".into(),
             )
         })?;
-        // C-03 (Meyer DbC): Required model dimensions — no silent defaults.
-        let hidden_dim = apr.metadata.hidden_size.ok_or_else(|| {
+        // C-03: Required model dimensions — infer from tensors when metadata absent.
+        // Entrenar training checkpoints don't embed full config (SPEC-MOE-APR-001).
+        let hidden_dim = apr.metadata.hidden_size.or_else(|| {
+            // Infer from embedding tensor: shape = [vocab_size, hidden_dim]
+            apr.find_tensor("model.embed_tokens.weight")
+                .or_else(|| apr.find_tensor("token_embd.weight"))
+                .and_then(|t| t.shape.get(1).copied())
+        }).ok_or_else(|| {
             RealizarError::InvalidConfiguration(
                 "C-03: APR model missing 'hidden_size' metadata".into(),
             )
         })?;
-        let num_layers = apr.metadata.num_layers.ok_or_else(|| {
+        let num_layers = apr.metadata.num_layers.or_else(|| {
+            // Infer: count layer norm tensors (model.layers.N.input_layernorm.weight)
+            (0..200).take_while(|i| {
+                apr.find_tensor(&format!("model.layers.{i}.input_layernorm.weight")).is_some()
+            }).count().checked_sub(0).filter(|&n| n > 0)
+        }).ok_or_else(|| {
             RealizarError::InvalidConfiguration(
-                "C-03: APR model missing 'num_layers' metadata".into(),
+                "C-03: APR model missing 'num_layers' metadata and cannot infer from tensors".into(),
             )
         })?;
-        let num_heads = apr.metadata.num_heads.ok_or_else(|| {
+        let num_heads = apr.metadata.num_heads.or_else(|| {
+            // Infer: q_proj shape [q_dim, hidden_dim], q_dim / head_dim = num_heads
+            // For standard LLaMA: q_dim == hidden_dim, head_dim = 64 or 128
+            apr.find_tensor("model.layers.0.self_attn.q_proj.weight")
+                .and_then(|t| {
+                    let q_dim = *t.shape.first()?;
+                    // Try common head dims: 128, 64
+                    for hd in [128, 64] {
+                        if q_dim % hd == 0 { return Some(q_dim / hd); }
+                    }
+                    None
+                })
+        }).ok_or_else(|| {
             RealizarError::InvalidConfiguration(
-                "C-03: APR model missing 'num_heads' metadata".into(),
+                "C-03: APR model missing 'num_heads' metadata and cannot infer from tensors".into(),
             )
         })?;
-        let num_kv_heads = apr.metadata.num_kv_heads.unwrap_or(num_heads);
-        let intermediate_dim = apr.metadata.intermediate_size.ok_or_else(|| {
+        let num_kv_heads = apr.metadata.num_kv_heads.or_else(|| {
+            apr.find_tensor("model.layers.0.self_attn.k_proj.weight")
+                .and_then(|t| {
+                    let k_dim = *t.shape.first()?;
+                    for hd in [128, 64] {
+                        if k_dim % hd == 0 { return Some(k_dim / hd); }
+                    }
+                    None
+                })
+        }).unwrap_or(num_heads);
+        let intermediate_dim = apr.metadata.intermediate_size.or_else(|| {
+            // Infer: gate_proj or up_proj shape [intermediate, hidden_dim]
+            apr.find_tensor("model.layers.0.mlp.gate_proj.weight")
+                .or_else(|| apr.find_tensor("model.layers.0.mlp.up_proj.weight"))
+                .and_then(|t| t.shape.first().copied())
+        }).ok_or_else(|| {
             RealizarError::InvalidConfiguration(
-                "C-03: APR model missing 'intermediate_size' metadata".into(),
+                "C-03: APR model missing 'intermediate_size' metadata and cannot infer from tensors".into(),
             )
         })?;
         let constraints = ArchConstraints::from_architecture(&architecture);
