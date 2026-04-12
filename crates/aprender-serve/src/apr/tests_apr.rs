@@ -418,6 +418,10 @@
             rope_type: Some(2),
             rms_norm_eps: Some(1e-5),
             extra: HashMap::new(),
+            num_experts: None,
+            num_experts_per_tok: None,
+            moe_intermediate_size: None,
+            norm_topk_prob: None,
         };
         let json = serde_json::to_string(&meta).expect("invalid UTF-8");
         let parsed: AprMetadata = serde_json::from_str(&json).expect("parse failed");

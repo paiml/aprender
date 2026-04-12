@@ -47,6 +47,9 @@ fn create_llama_256_model() -> crate::gguf::OwnedQuantizedModel {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     OwnedQuantizedModel {
@@ -145,6 +148,9 @@ fn create_phi_256_model() -> crate::gguf::OwnedQuantizedModel {
         ffn_norm_bias: Some(vec![0.0f32; hidden_dim]),
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     OwnedQuantizedModel {
@@ -213,6 +219,9 @@ fn create_llama_256_gqa_model() -> crate::gguf::OwnedQuantizedModel {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     OwnedQuantizedModel {

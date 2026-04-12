@@ -89,6 +89,9 @@ fn build_minimal_owned_quantized_model() -> OwnedQuantizedModel {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     OwnedQuantizedModel {
@@ -181,6 +184,9 @@ fn build_fused_qkv_model() -> OwnedQuantizedModel {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     OwnedQuantizedModel {
@@ -274,6 +280,9 @@ fn build_q4k_model() -> OwnedQuantizedModel {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     // Q6_K lm_head: 210 bytes per 256 elements

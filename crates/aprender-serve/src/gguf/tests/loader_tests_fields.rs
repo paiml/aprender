@@ -57,6 +57,9 @@ fn test_loader_part02_owned_model_with_biases() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     }];
     let output_norm_weight = vec![1.0f32; 32];
     let output_norm_bias = Some(vec![0.0f32; 32]);
@@ -162,6 +165,9 @@ fn test_loader_part02_owned_qkv_separate() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     }];
 
     let model = OwnedQuantizedModel::new_for_test(

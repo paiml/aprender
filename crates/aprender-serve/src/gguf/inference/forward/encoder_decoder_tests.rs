@@ -61,6 +61,9 @@ mod tests {
             ffn_norm_bias: Some(vec![0.0f32; hidden_dim]),
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
         }
     }
 

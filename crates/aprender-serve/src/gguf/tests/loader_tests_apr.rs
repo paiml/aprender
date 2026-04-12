@@ -277,6 +277,9 @@ fn test_to_apr_bytes_various_qtypes() {
             ffn_norm_bias: None,
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
         };
 
         let model = OwnedQuantizedModel {

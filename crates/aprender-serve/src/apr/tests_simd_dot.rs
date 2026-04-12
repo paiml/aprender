@@ -346,6 +346,10 @@
             rope_type: Some(2),
             rms_norm_eps: Some(1e-5),
             extra: HashMap::new(),
+            num_experts: None,
+            num_experts_per_tok: None,
+            moe_intermediate_size: None,
+            norm_topk_prob: None,
         };
         assert!(meta.is_transformer());
         assert_eq!(meta.num_kv_heads, Some(4));

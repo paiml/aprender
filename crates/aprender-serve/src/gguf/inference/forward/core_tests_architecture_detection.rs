@@ -134,6 +134,9 @@ fn test_forward_with_separate_qkv() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     let model = OwnedQuantizedModel {
@@ -274,6 +277,9 @@ fn test_forward_cached_separate_qkv() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     let model = OwnedQuantizedModel {

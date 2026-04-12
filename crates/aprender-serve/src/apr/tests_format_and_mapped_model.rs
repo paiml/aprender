@@ -389,7 +389,6 @@
             id_to_token: vec!["hello".to_string(), "world".to_string()],
             bos_token_id: None,
             eos_token_id: None,
-            ..GGUFConfig::default()
         };
 
         let decoded = tokenizer.decode(&[0, 1]);
@@ -403,7 +402,6 @@
             id_to_token: vec!["hello".to_string()],
             bos_token_id: None,
             eos_token_id: None,
-            ..GGUFConfig::default()
         };
 
         let decoded = tokenizer.decode(&[]);
@@ -416,7 +414,6 @@
             id_to_token: vec!["hello".to_string()],
             bos_token_id: None,
             eos_token_id: None,
-            ..GGUFConfig::default()
         };
 
         // Token 100 is out of bounds - should be handled gracefully
@@ -430,7 +427,6 @@
             id_to_token: vec!["<s>".to_string(), "</s>".to_string(), "hello".to_string()],
             bos_token_id: Some(0),
             eos_token_id: Some(1),
-            ..GGUFConfig::default()
         };
 
         assert_eq!(tokenizer.bos_token_id, Some(0));

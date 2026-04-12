@@ -357,6 +357,9 @@ fn test_imp_400c_realizar_native_forward_performance() {
             ffn_down_bias: None,
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
         })
         .collect();
 

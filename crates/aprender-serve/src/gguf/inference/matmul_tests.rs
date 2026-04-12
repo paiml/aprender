@@ -159,6 +159,9 @@ fn create_test_model(hidden_dim: usize, vocab_size: usize) -> OwnedQuantizedMode
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     let lm_head_weight = create_q4k_test_data(hidden_dim, vocab_size);
@@ -1230,6 +1233,9 @@ fn create_test_model_with_pos_embed(
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     let lm_head_weight = create_q4k_test_data(hidden_dim, vocab_size);
@@ -1324,6 +1330,9 @@ fn falsify_ap_002_additive_identity() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+            moe_gate_weight: None,
+            moe_expert_weights: None,
+            moe_expert_down_weights: None,
     };
 
     let lm_head_weight = create_q4k_test_data(hidden_dim, vocab_size);
