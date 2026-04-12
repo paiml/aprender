@@ -1,0 +1,89 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-12"
+  author: PAIML Engineering
+  registry: true
+  description: >
+    Provable contract for wasmtime 27→43 upgrade. Ensures the upgrade
+    preserves all WasmRuntime functionality and eliminates security
+    advisory exemptions.
+  references:
+  - "docs/specifications/wasmtime-upgrade-v1.md"
+  - "crates/aprender-test-lib/src/runtime.rs"
+
+equations:
+  api_compatibility:
+    formula: |
+      For all public methods M used by WasmRuntime:
+        M exists in wasmtime 43 AND
+        signature(M, v43) is compatible with signature(M, v27)
+    domain: wasmtime public API
+    codomain: bool
+    invariants:
+    - "Engine::new(&Config) compiles"
+    - "Store::new(&Engine, T) compiles"
+    - "Module::new(&Engine, &[u8]) compiles"
+    - "Linker::new(&Engine) compiles"
+    - "Linker::func_wrap(mod, name, closure) compiles"
+    - "Linker::instantiate(&mut Store, &Module) compiles"
+    - "Instance::get_memory(&mut Store, name) compiles"
+    - "Caller::data() returns &T"
+
+  behavioral_parity:
+    formula: |
+      For all test cases T in WasmRuntime tests:
+        result(T, wasmtime_43) == result(T, wasmtime_27)
+    domain: WasmRuntime test suite
+    codomain: bool
+    invariants:
+    - "WASM module loading succeeds for valid modules"
+    - "Host function registration works"
+    - "Fuel metering behavior preserved"
+    - "Memory access returns same data"
+
+  advisory_elimination:
+    formula: |
+      count(wasmtime RUSTSEC exemptions in .cargo/audit.toml) == 0
+      AND cargo audit passes without --ignore for wasmtime
+    domain: security advisory database
+    codomain: bool
+    invariants:
+    - "No wasmtime advisory in RUSTSEC database for v43"
+    - ".cargo/audit.toml has zero wasmtime entries"
+    - "deny.toml has zero wasmtime entries"
+
+falsification_tests:
+- id: FALSIFY-WASM-001
+  rule: api_compatibility
+  prediction: "cargo check -p aprender-test-lib --features runtime compiles"
+  test: "cargo check -p aprender-test-lib --features runtime"
+  if_fails: "API signature changed — check compiler errors for specific methods"
+
+- id: FALSIFY-WASM-002
+  rule: behavioral_parity
+  prediction: "all WasmRuntime tests pass unchanged"
+  test: "cargo test -p aprender-test-lib --features runtime -- runtime"
+  if_fails: "Behavioral change — check fuel accounting, memory layout, or host function calling convention"
+
+- id: FALSIFY-WASM-003
+  rule: advisory_elimination
+  prediction: "cargo deny check advisories passes without wasmtime exemptions"
+  test: "cargo deny check advisories"
+  if_fails: "wasmtime 43 still has active advisories — check RUSTSEC database"
+
+- id: FALSIFY-WASM-004
+  rule: api_compatibility
+  prediction: "wasm_reference_types works with gc feature"
+  test: "cargo check -p aprender-test-lib --features runtime"
+  if_fails: "gc feature not enabled or wasm_reference_types removed in v43"
+
+proof_obligations:
+- type: postcondition
+  property: "Zero wasmtime security exemptions after upgrade"
+  formal: "grep -c 'wasmtime' .cargo/audit.toml == lines mentioning wasmtime as comment only"
+  applies_to: advisory_elimination
+
+- type: invariant
+  property: "WasmRuntime public API unchanged"
+  formal: "cargo check && cargo test"
+  applies_to: api_compatibility

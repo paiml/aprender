@@ -28,9 +28,9 @@ jobs:
       repo: ${{ github.event.repository.name }}
     secrets: inherit
 
-  # APR-MONO: Workspace-wide test (all 70 crates)
+  # APR-MONO: Workspace-wide test (all 75 crates)
   workspace-test:
-    runs-on: self-hosted
+    runs-on: [self-hosted, X64]
     container:
       image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 30
@@ -60,7 +60,7 @@ jobs:
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
   gate:
-    runs-on: self-hosted
+    runs-on: [self-hosted, X64]
     needs: [ci, workspace-test]
     if: always()
     steps:
@@ -77,7 +77,7 @@ jobs:
           echo "All required jobs passed"
 
   mutants:
-    runs-on: self-hosted
+    runs-on: [self-hosted, X64]
     continue-on-error: true
     container:
       image: localhost:5000/sovereign-ci:stable
@@ -96,4 +96,3 @@ jobs:
         with:
           name: mutation-results
           path: mutants.out/
-

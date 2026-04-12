@@ -18,26 +18,19 @@ ignore = [
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: transitive via tabled_derive, no safe upgrade available" },
     { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile 1.x: transitive, upstream uses 2.x but older consumers pin 1.x" },
     { id = "RUSTSEC-2026-0002", reason = "lru 0.12.5: transitive via ratatui, fixed in 0.16 but ratatui pins 0.12" },
-    # wasmtime 27.0.0 — test-only dependency (aprender-test-lib), not in production path.
-    # Upgrade to wasmtime >=43 is tracked but requires API migration.
-    { id = "RUSTSEC-2026-0021", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
-    { id = "RUSTSEC-2025-0118", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
-    { id = "RUSTSEC-2025-0046", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
-    { id = "RUSTSEC-2026-0020", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
-    { id = "RUSTSEC-2026-0087", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
-    # wasmtime 27 batch 2026-04-09 — 10 new advisories (test-only, not production)
-    { id = "RUSTSEC-2026-0085", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    { id = "RUSTSEC-2026-0086", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    { id = "RUSTSEC-2026-0088", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    { id = "RUSTSEC-2026-0089", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    { id = "RUSTSEC-2026-0091", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    { id = "RUSTSEC-2026-0092", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    { id = "RUSTSEC-2026-0093", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    { id = "RUSTSEC-2026-0094", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    { id = "RUSTSEC-2026-0095", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    { id = "RUSTSEC-2026-0096", reason = "wasmtime 27: test-only dep, not production. Upgrade to 43 in PR #731" },
-    # rand 0.10.0 — unsound with custom logger using rand::rng(), transitive via quickcheck
-    { id = "RUSTSEC-2026-0097", reason = "rand 0.10: unsound with custom logger, transitive via quickcheck (test-only)" },
+    # atty 0.2.14 — unsound read (different from 2024-0375 unmaintained)
+    { id = "RUSTSEC-2021-0145", reason = "atty: unsound read, transitive via aprender-test-cli" },
+    # rand 0.8.5 — unmaintained, transitive (no drop-in for 0.8 API)
+    { id = "RUSTSEC-2026-0097", reason = "rand 0.8: unmaintained, transitive, waiting for ecosystem migration to 0.9" },
+    # wasmtime 43 + cranelift — test-only dep, not production. Upgrade to >=43.0.2 when available.
+    { id = "RUSTSEC-2026-0085", reason = "cranelift: test-only dep via wasmtime (aprender-test-lib)" },
+    { id = "RUSTSEC-2026-0086", reason = "cranelift: test-only dep via wasmtime (aprender-test-lib)" },
+    { id = "RUSTSEC-2026-0088", reason = "wasmtime: test-only dep (aprender-test-lib)" },
+    { id = "RUSTSEC-2026-0089", reason = "wasmtime: test-only dep (aprender-test-lib)" },
+    { id = "RUSTSEC-2026-0091", reason = "wasmtime: test-only dep (aprender-test-lib)" },
+    { id = "RUSTSEC-2026-0092", reason = "wasmtime: test-only dep (aprender-test-lib)" },
+    { id = "RUSTSEC-2026-0094", reason = "wasmtime: test-only dep (aprender-test-lib)" },
+    { id = "RUSTSEC-2026-0096", reason = "wasmtime: test-only dep (aprender-test-lib)" },
 ]
 
 [licenses]
