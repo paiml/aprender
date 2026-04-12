@@ -25,6 +25,13 @@ ignore = [
     { id = "RUSTSEC-2025-0046", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
     { id = "RUSTSEC-2026-0020", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
     { id = "RUSTSEC-2026-0087", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
+    { id = "RUSTSEC-2026-0088", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
+    { id = "RUSTSEC-2026-0089", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
+    { id = "RUSTSEC-2026-0092", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
+    { id = "RUSTSEC-2026-0095", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
+    { id = "RUSTSEC-2026-0096", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
+    # atty 0.2.14 — unmaintained, transitive via aprender-test-cli
+    { id = "RUSTSEC-2021-0145", reason = "atty: unmaintained transitive dep (aprender-test-cli)" },
 ]
 
 [licenses]
