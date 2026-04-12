@@ -53,7 +53,7 @@
 | Coverage (aprender-compute) | **48.56%** lines (212K/437K) | **≥95%** | **FAIL** — 3,497 tests. Per-crate measurement. |
 | Coverage (workspace aggregate) | **~55%** weighted average | **≥95%** | **FAIL** — prior "46%" was instrumentation artifact. True baseline ~55%. PMAT-541. |
 | Tests (apr-cli) | **4,633** (lib) + **108** (integration) | — | PASS — +37 Phase 4 inline + 10 Phase 4 integration |
-| Tests (aprender-core) | **13,021** | — | PASS — +16 PMAT-546 (6 parity + 10 arch inference), +24 tokenizer_loader + 6 arch + 1 fix |
+| Tests (aprender-core) | **13,023** | — | PASS — +18 PMAT-546 (6 parity + 10 arch inference + 2 import inference), +24 tokenizer_loader + 6 arch + 1 fix |
 | Tests (contracts) | 1,371 | — | PASS |
 | Tests (workspace total) | **28,700+** | — | PASS |
 | Integration (monorepo) | 8/8 | 8/8 | PASS |
