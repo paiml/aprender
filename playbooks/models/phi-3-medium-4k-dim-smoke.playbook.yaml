@@ -1,0 +1,36 @@
+# phi-3-medium-4k Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+name: phi-3-medium-4k-dim-smoke
+version: 1.0.0
+description: Dimensional smoke check for phi-3-medium-4k (metadata-only)
+model:
+  hf_repo: microsoft/Phi-3-medium-4k-instruct
+  formats:
+  - safetensors
+  quantizations:
+  - q4_k_m
+  size_category: xlarge
+  family: phi-3-medium
+  size_variant: ''
+test_matrix:
+  modalities:
+  - run
+  backends:
+  - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+  - What is 2+2?
+gates:
+  g1_model_loads: 'true'
+  g2_basic_inference: 'true'
+  g3_no_crashes: 'true'
+  g4_output_quality: 'true'
+failure_policy: collect_all
+metadata:
+  author: apr-qa-gen
+  tier: dim-smoke
+  architecture: phi3
+  tags:
+  - dim-smoke

@@ -370,8 +370,7 @@ impl Widget for CollapsiblePanel {
         let title_len = displayed_title.chars().count() + 2; // +2 for spaces
         let rest_start = title_start + title_len;
         if rest_start < width - 1 {
-            let rest: String = std::iter::repeat_n(top, width - rest_start - 1)
-                .collect();
+            let rest: String = std::iter::repeat_n(top, width - rest_start - 1).collect();
             canvas.draw_text(
                 &rest,
                 Point::new(self.bounds.x + rest_start as f32, self.bounds.y),

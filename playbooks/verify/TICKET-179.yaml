@@ -1,0 +1,92 @@
+# Verification Playbook for TICKET-179
+# Expand tool test coverage: 4 tools untested, tracing only tested on run
+#
+# Run with: apr-qa tools <model.gguf> --full
+
+name: verify-ticket-179
+version: "1.0.0"
+description: "Verify fix for TICKET-179: Complete APR tool test coverage"
+
+# All APR tools that must have direct tests
+tools_required:
+  - run
+  - chat
+  - serve
+  - inspect
+  - validate
+  - bench
+  - profile
+  - trace
+  - check
+  - canary
+  - convert
+  - tune
+
+verification_gates:
+  # Direct run tests
+  - id: V-TICKET-179-001
+    description: "apr run has direct test (not just via trace)"
+    tool: run
+    condition: "exit_code == 0 && stdout.length > 0"
+
+  # Chat mode tests
+  - id: V-TICKET-179-002
+    description: "apr chat works in non-interactive mode"
+    tool: chat
+    condition: "exit_code == 0"
+
+  - id: V-TICKET-179-003
+    description: "apr chat supports --trace-level"
+    tool: chat
+    args: ["--trace-level", "layer"]
+    condition: "exit_code == 0 && stderr.contains('TRACE')"
+
+  # Serve mode tests
+  - id: V-TICKET-179-004
+    description: "apr serve starts and responds to health check"
+    tool: serve
+    condition: "health_check == 200"
+
+  - id: V-TICKET-179-005
+    description: "apr serve accepts X-Trace-Level header"
+    tool: serve
+    condition: "trace_header_works == true"
+
+  # Canary tests
+  - id: V-TICKET-179-006
+    description: "apr canary --save creates baseline"
+    tool: canary
+    args: ["--save", "baseline.json"]
+    condition: "exit_code == 0 && file_exists('baseline.json')"
+
+  - id: V-TICKET-179-007
+    description: "apr canary --compare detects no drift on same model"
+    tool: canary
+    args: ["--compare", "baseline.json"]
+    condition: "exit_code == 0"
+
+  # Tune planning tests
+  - id: V-TICKET-179-008
+    description: "apr tune --plan outputs LoRA config"
+    tool: tune
+    args: ["--plan", "--method", "lora"]
+    condition: "exit_code == 0 && stdout.contains('lora')"
+
+  - id: V-TICKET-179-009
+    description: "apr tune --plan respects --vram constraint"
+    tool: tune
+    args: ["--plan", "--vram", "8"]
+    condition: "exit_code == 0 && estimated_vram <= 8"
+
+acceptance:
+  tool_coverage_percent: 90
+  all_trace_modes_tested:
+    - run
+    - chat
+    - serve
+
+metadata:
+  ticket: "https://github.com/paiml/aprender/issues/179"
+  severity: P2
+  component: apr-cli
+  discovered: "2026-01-30"

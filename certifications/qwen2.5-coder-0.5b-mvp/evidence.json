@@ -1,0 +1,1892 @@
+[
+  {
+    "id": "0000000000000000189208ee19ed5b29",
+    "gate_id": "G0-PULL-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Pull: acquire model via apr pull",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: model acquired via apr pull\n=== APR Pull ===\n\nModel: hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors\n✓ Model already cached\n  Path: /home/noah/.cache/pacha/models/d71534cb948e32eb.safetensors\n  Size: 942.32 MB\n  Format: SafeTensors(SafeTensorsInfo { tensor_count: 0, tensors: {}, metadata: {}, parameters: None, dtype: None })\n  ✓ d71534cb948e32eb.tokenizer.json (already exists)\n  ✓ d71534cb948e32eb.config.json (already exists)\n\nUsage:\n  apr run /home/noah/.cache/pacha/models/d71534cb948e32eb.safetensors\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 169
+    },
+    "timestamp": "2026-02-07T18:03:42.240251817Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189208f2add0c9d6",
+    "gate_id": "G0-FORMAT-APR-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "G0 Format: prepare Apr workspace",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: converted to apr\n=== Rosetta Stone Conversion ===\n\nSource: /home/noah/.cache/pacha/models/d71534cb948e32eb.safetensors\nTarget: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\n\n--- Source Inspection ---\n  Format: SafeTensors\n  File Size: 988097824 bytes\n  Tensors: 290\n  Parameters: 494032768\n\nConverting...\n\n--- Target Inspection ---\n  Format: APR\n  File Size: 2524510980 bytes\n  Tensors: 291\n  Parameters: 630167424\n  Architecture: qwen2\n\n=== Conversion Summary ===\nPath: SafeTensors → APR\nDuration: 16086ms\nTensors: 290 -> 291\n\nWarning: Tensor count changed during conversion\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 19659
+    },
+    "timestamp": "2026-02-07T18:04:01.901276768Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189208f89d286f91",
+    "gate_id": "G0-FORMAT-GGUF-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_gguf_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "G0 Format: prepare Gguf workspace",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: converted to gguf\n=== Rosetta Stone Conversion ===\n\nSource: /home/noah/.cache/pacha/models/d71534cb948e32eb.safetensors\nTarget: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf\n\n--- Source Inspection ---\n  Format: SafeTensors\n  File Size: 988097824 bytes\n  Tensors: 290\n  Parameters: 494032768\n\nConverting...\n\n--- Target Inspection ---\n  Format: GGUF\n  File Size: 837357824 bytes\n  Tensors: 291\n  Parameters: 630167424\n  Architecture: qwen2\n  Quantization: 0\n\n=== Conversion Summary ===\nPath: SafeTensors → GGUF\nDuration: 22297ms\nTensors: 290 -> 291\n\nWarning: Tensor count changed during conversion\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 25490
+    },
+    "timestamp": "2026-02-07T18:04:27.391611871Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189208fa1aa0668d",
+    "gate_id": "G0-VALIDATE-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Validate: NaN/Inf/all-zeros tensor check",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: model.converted.converted.converted.converted.converted.safetensors physics validated\nValidating output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.converted.converted.converted.converted.converted.safetensors...\n\nFormat: SafeTensors (using Rosetta Stone validation)\n\n  [PASS] lm_head.weight\n  [PASS] model.embed_tokens.weight\n  [PASS] model.layers.0.input_layernorm.weight\n  [PASS] model.layers.0.mlp.down_proj.weight\n  [PASS] model.layers.0.mlp.gate_proj.weight\n  [PASS] model.layers.0.mlp.up_proj.weight\n  [PASS] model.layers.0.post_attention_layernorm.weight\n  [PASS] model.layers.0.self_attn.k_proj.bias\n  [PASS] model.layers.0.self_attn.k_proj.weight\n  [PASS] model.layers.0.self_attn.o_proj.weight\n  [PASS] model.layers.0.self_attn.q_proj.bias\n  [PASS] model.layers.0.self_attn.q_proj.weight\n  [PASS] model.layers.0.self_attn.v_proj.bias\n  [PASS] model.layers.0.self_attn.v_proj.weight\n  [PASS] model.layers.1.input_layernorm.weight\n  [PASS] model.layers.1.mlp.down_proj.weight\n  [PASS] model.layers.1.mlp.gate_proj.weight\n  [PASS] model.layers.1.mlp.up_proj.weight\n  [PASS] model.layers.1.post_attention_layernorm.weight\n  [PASS] model.layers.1.self_attn.k_proj.bias\n  [PASS] model.layers.1.self_attn.k_proj.weight\n  [PASS] model.layers.1.self_attn.o_proj.weight\n  [PASS] model.layers.1.self_attn.q_proj.bias\n  [PASS] model.layers.1.self_attn.q_proj.weight\n  [PASS] model.layers.1.self_attn.v_proj.bias\n  [PASS] model.layers.1.self_attn.v_proj.weight\n  [PASS] model.layers.10.input_layernorm.weight\n  [PASS] model.layers.10.mlp.down_proj.weight\n  [PASS] model.layers.10.mlp.gate_proj.weight\n  [PASS] model.layers.10.mlp.up_proj.weight\n  [PASS] model.layers.10.post_attention_layernorm.weight\n  [PASS] model.layers.10.self_attn.k_proj.bias\n  [PASS] model.layers.10.self_attn.k_proj.weight\n  [PASS] model.layers.10.self_attn.o_proj.weight\n  [PASS] model.layers.10.self_attn.q_proj.bias\n  [PASS] model.layers.10.self_attn.q_proj.weight\n  [PASS] model.layers.10.self_attn.v_proj.bias\n  [PASS] model.layers.10.self_attn.v_proj.weight\n  [PASS] model.layers.11.input_layernorm.weight\n  [PASS] model.layers.11.mlp.down_proj.weight\n  [PASS] model.layers.11.mlp.gate_proj.weight\n  [PASS] model.layers.11.mlp.up_proj.weight\n  [PASS] model.layers.11.post_attention_layernorm.weight\n  [PASS] model.layers.11.self_attn.k_proj.bias\n  [PASS] model.layers.11.self_attn.k_proj.weight\n  [PASS] model.layers.11.self_attn.o_proj.weight\n  [PASS] model.layers.11.self_attn.q_proj.bias\n  [PASS] model.layers.11.self_attn.q_proj.weight\n  [PASS] model.layers.11.self_attn.v_proj.bias\n  [PASS] model.layers.11.self_attn.v_proj.weight\n  [PASS] model.layers.12.input_layernorm.weight\n  [PASS] model.layers.12.mlp.down_proj.weight\n  [PASS] model.layers.12.mlp.gate_proj.weight\n  [PASS] model.layers.12.mlp.up_proj.weight\n  [PASS] model.layers.12.post_attention_layernorm.weight\n  [PASS] model.layers.12.self_attn.k_proj.bias\n  [PASS] model.layers.12.self_attn.k_proj.weight\n  [PASS] model.layers.12.self_attn.o_proj.weight\n  [PASS] model.layers.12.self_attn.q_proj.bias\n  [PASS] model.layers.12.self_attn.q_proj.weight\n  [PASS] model.layers.12.self_attn.v_proj.bias\n  [PASS] model.layers.12.self_attn.v_proj.weight\n  [PASS] model.layers.13.input_layernorm.weight\n  [PASS] model.layers.13.mlp.down_proj.weight\n  [PASS] model.layers.13.mlp.gate_proj.weight\n  [PASS] model.layers.13.mlp.up_proj.weight\n  [PASS] model.layers.13.post_attention_layernorm.weight\n  [PASS] model.layers.13.self_attn.k_proj.bias\n  [PASS] model.layers.13.self_attn.k_proj.weight\n  [PASS] model.layers.13.self_attn.o_proj.weight\n  [PASS] model.layers.13.self_attn.q_proj.bias\n  [PASS] model.layers.13.self_attn.q_proj.weight\n  [PASS] model.layers.13.self_attn.v_proj.bias\n  [PASS] model.layers.13.self_attn.v_proj.weight\n  [PASS] model.layers.14.input_layernorm.weight\n  [PASS] model.layers.14.mlp.down_proj.weight\n  [PASS] model.layers.14.mlp.gate_proj.weight\n  [PASS] model.layers.14.mlp.up_proj.weight\n  [PASS] model.layers.14.post_attention_layernorm.weight\n  [PASS] model.layers.14.self_attn.k_proj.bias\n  [PASS] model.layers.14.self_attn.k_proj.weight\n  [PASS] model.layers.14.self_attn.o_proj.weight\n  [PASS] model.layers.14.self_attn.q_proj.bias\n  [PASS] model.layers.14.self_attn.q_proj.weight\n  [PASS] model.layers.14.self_attn.v_proj.bias\n  [PASS] model.layers.14.self_attn.v_proj.weight\n  [PASS] model.layers.15.input_layernorm.weight\n  [PASS] model.layers.15.mlp.down_proj.weight\n  [PASS] model.layers.15.mlp.gate_proj.weight\n  [PASS] model.layers.15.mlp.up_proj.weight\n  [PASS] model.layers.15.post_attention_layernorm.weight\n  [PASS] model.layers.15.self_attn.k_proj.bias\n  [PASS] model.layers.15.self_attn.k_proj.weight\n  [PASS] model.layers.15.self_attn.o_proj.weight\n  [PASS] model.layers.15.self_attn.q_proj.bias\n  [PASS] model.layers.15.self_attn.q_proj.weight\n  [PASS] model.layers.15.self_attn.v_proj.bias\n  [PASS] model.layers.15.self_attn.v_proj.weight\n  [PASS] model.layers.16.input_layernorm.weight\n  [PASS] model.layers.16.mlp.down_proj.weight\n  [PASS] model.layers.16.mlp.gate_proj.weight\n  [PASS] model.layers.16.mlp.up_proj.weight\n  [PASS] model.layers.16.post_attention_layernorm.weight\n  [PASS] model.layers.16.self_attn.k_proj.bias\n  [PASS] model.layers.16.self_attn.k_proj.weight\n  [PASS] model.layers.16.self_attn.o_proj.weight\n  [PASS] model.layers.16.self_attn.q_proj.bias\n  [PASS] model.layers.16.self_attn.q_proj.weight\n  [PASS] model.layers.16.self_attn.v_proj.bias\n  [PASS] model.layers.16.self_attn.v_proj.weight\n  [PASS] model.layers.17.input_layernorm.weight\n  [PASS] model.layers.17.mlp.down_proj.weight\n  [PASS] model.layers.17.mlp.gate_proj.weight\n  [PASS] model.layers.17.mlp.up_proj.weight\n  [PASS] model.layers.17.post_attention_layernorm.weight\n  [PASS] model.layers.17.self_attn.k_proj.bias\n  [PASS] model.layers.17.self_attn.k_proj.weight\n  [PASS] model.layers.17.self_attn.o_proj.weight\n  [PASS] model.layers.17.self_attn.q_proj.bias\n  [PASS] model.layers.17.self_attn.q_proj.weight\n  [PASS] model.layers.17.self_attn.v_proj.bias\n  [PASS] model.layers.17.self_attn.v_proj.weight\n  [PASS] model.layers.18.input_layernorm.weight\n  [PASS] model.layers.18.mlp.down_proj.weight\n  [PASS] model.layers.18.mlp.gate_proj.weight\n  [PASS] model.layers.18.mlp.up_proj.weight\n  [PASS] model.layers.18.post_attention_layernorm.weight\n  [PASS] model.layers.18.self_attn.k_proj.bias\n  [PASS] model.layers.18.self_attn.k_proj.weight\n  [PASS] model.layers.18.self_attn.o_proj.weight\n  [PASS] model.layers.18.self_attn.q_proj.bias\n  [PASS] model.layers.18.self_attn.q_proj.weight\n  [PASS] model.layers.18.self_attn.v_proj.bias\n  [PASS] model.layers.18.self_attn.v_proj.weight\n  [PASS] model.layers.19.input_layernorm.weight\n  [PASS] model.layers.19.mlp.down_proj.weight\n  [PASS] model.layers.19.mlp.gate_proj.weight\n  [PASS] model.layers.19.mlp.up_proj.weight\n  [PASS] model.layers.19.post_attention_layernorm.weight\n  [PASS] model.layers.19.self_attn.k_proj.bias\n  [PASS] model.layers.19.self_attn.k_proj.weight\n  [PASS] model.layers.19.self_attn.o_proj.weight\n  [PASS] model.layers.19.self_attn.q_proj.bias\n  [PASS] model.layers.19.self_attn.q_proj.weight\n  [PASS] model.layers.19.self_attn.v_proj.bias\n  [PASS] model.layers.19.self_attn.v_proj.weight\n  [PASS] model.layers.2.input_layernorm.weight\n  [PASS] model.layers.2.mlp.down_proj.weight\n  [PASS] model.layers.2.mlp.gate_proj.weight\n  [PASS] model.layers.2.mlp.up_proj.weight\n  [PASS] model.layers.2.post_attention_layernorm.weight\n  [PASS] model.layers.2.self_attn.k_proj.bias\n  [PASS] model.layers.2.self_attn.k_proj.weight\n  [PASS] model.layers.2.self_attn.o_proj.weight\n  [PASS] model.layers.2.self_attn.q_proj.bias\n  [PASS] model.layers.2.self_attn.q_proj.weight\n  [PASS] model.layers.2.self_attn.v_proj.bias\n  [PASS] model.layers.2.self_attn.v_proj.weight\n  [PASS] model.layers.20.input_layernorm.weight\n  [PASS] model.layers.20.mlp.down_proj.weight\n  [PASS] model.layers.20.mlp.gate_proj.weight\n  [PASS] model.layers.20.mlp.up_proj.weight\n  [PASS] model.layers.20.post_attention_layernorm.weight\n  [PASS] model.layers.20.self_attn.k_proj.bias\n  [PASS] model.layers.20.self_attn.k_proj.weight\n  [PASS] model.layers.20.self_attn.o_proj.weight\n  [PASS] model.layers.20.self_attn.q_proj.bias\n  [PASS] model.layers.20.self_attn.q_proj.weight\n  [PASS] model.layers.20.self_attn.v_proj.bias\n  [PASS] model.layers.20.self_attn.v_proj.weight\n  [PASS] model.layers.21.input_layernorm.weight\n  [PASS] model.layers.21.mlp.down_proj.weight\n  [PASS] model.layers.21.mlp.gate_proj.weight\n  [PASS] model.layers.21.mlp.up_proj.weight\n  [PASS] model.layers.21.post_attention_layernorm.weight\n  [PASS] model.layers.21.self_attn.k_proj.bias\n  [PASS] model.layers.21.self_attn.k_proj.weight\n  [PASS] model.layers.21.self_attn.o_proj.weight\n  [PASS] model.layers.21.self_attn.q_proj.bias\n  [PASS] model.layers.21.self_attn.q_proj.weight\n  [PASS] model.layers.21.self_attn.v_proj.bias\n  [PASS] model.layers.21.self_attn.v_proj.weight\n  [PASS] model.layers.22.input_layernorm.weight\n  [PASS] model.layers.22.mlp.down_proj.weight\n  [PASS] model.layers.22.mlp.gate_proj.weight\n  [PASS] model.layers.22.mlp.up_proj.weight\n  [PASS] model.layers.22.post_attention_layernorm.weight\n  [PASS] model.layers.22.self_attn.k_proj.bias\n  [PASS] model.layers.22.self_attn.k_proj.weight\n  [PASS] model.layers.22.self_attn.o_proj.weight\n  [PASS] model.layers.22.self_attn.q_proj.bias\n  [PASS] model.layers.22.self_attn.q_proj.weight\n  [PASS] model.layers.22.self_attn.v_proj.bias\n  [PASS] model.layers.22.self_attn.v_proj.weight\n  [PASS] model.layers.23.input_layernorm.weight\n  [PASS] model.layers.23.mlp.down_proj.weight\n  [PASS] model.layers.23.mlp.gate_proj.weight\n  [PASS] model.layers.23.mlp.up_proj.weight\n  [PASS] model.layers.23.post_attention_layernorm.weight\n  [PASS] model.layers.23.self_attn.k_proj.bias\n  [PASS] model.layers.23.self_attn.k_proj.weight\n  [PASS] model.layers.23.self_attn.o_proj.weight\n  [PASS] model.layers.23.self_attn.q_proj.bias\n  [PASS] model.layers.23.self_attn.q_proj.weight\n  [PASS] model.layers.23.self_attn.v_proj.bias\n  [PASS] model.layers.23.self_attn.v_proj.weight\n  [PASS] model.layers.3.input_layernorm.weight\n  [PASS] model.layers.3.mlp.down_proj.weight\n  [PASS] model.layers.3.mlp.gate_proj.weight\n  [PASS] model.layers.3.mlp.up_proj.weight\n  [PASS] model.layers.3.post_attention_layernorm.weight\n  [PASS] model.layers.3.self_attn.k_proj.bias\n  [PASS] model.layers.3.self_attn.k_proj.weight\n  [PASS] model.layers.3.self_attn.o_proj.weight\n  [PASS] model.layers.3.self_attn.q_proj.bias\n  [PASS] model.layers.3.self_attn.q_proj.weight\n  [PASS] model.layers.3.self_attn.v_proj.bias\n  [PASS] model.layers.3.self_attn.v_proj.weight\n  [PASS] model.layers.4.input_layernorm.weight\n  [PASS] model.layers.4.mlp.down_proj.weight\n  [PASS] model.layers.4.mlp.gate_proj.weight\n  [PASS] model.layers.4.mlp.up_proj.weight\n  [PASS] model.layers.4.post_attention_layernorm.weight\n  [PASS] model.layers.4.self_attn.k_proj.bias\n  [PASS] model.layers.4.self_attn.k_proj.weight\n  [PASS] model.layers.4.self_attn.o_proj.weight\n  [PASS] model.layers.4.self_attn.q_proj.bias\n  [PASS] model.layers.4.self_attn.q_proj.weight\n  [PASS] model.layers.4.self_attn.v_proj.bias\n  [PASS] model.layers.4.self_attn.v_proj.weight\n  [PASS] model.layers.5.input_layernorm.weight\n  [PASS] model.layers.5.mlp.down_proj.weight\n  [PASS] model.layers.5.mlp.gate_proj.weight\n  [PASS] model.layers.5.mlp.up_proj.weight\n  [PASS] model.layers.5.post_attention_layernorm.weight\n  [PASS] model.layers.5.self_attn.k_proj.bias\n  [PASS] model.layers.5.self_attn.k_proj.weight\n  [PASS] model.layers.5.self_attn.o_proj.weight\n  [PASS] model.layers.5.self_attn.q_proj.bias\n  [PASS] model.layers.5.self_attn.q_proj.weight\n  [PASS] model.layers.5.self_attn.v_proj.bias\n  [PASS] model.layers.5.self_attn.v_proj.weight\n  [PASS] model.layers.6.input_layernorm.weight\n  [PASS] model.layers.6.mlp.down_proj.weight\n  [PASS] model.layers.6.mlp.gate_proj.weight\n  [PASS] model.layers.6.mlp.up_proj.weight\n  [PASS] model.layers.6.post_attention_layernorm.weight\n  [PASS] model.layers.6.self_attn.k_proj.bias\n  [PASS] model.layers.6.self_attn.k_proj.weight\n  [PASS] model.layers.6.self_attn.o_proj.weight\n  [PASS] model.layers.6.self_attn.q_proj.bias\n  [PASS] model.layers.6.self_attn.q_proj.weight\n  [PASS] model.layers.6.self_attn.v_proj.bias\n  [PASS] model.layers.6.self_attn.v_proj.weight\n  [PASS] model.layers.7.input_layernorm.weight\n  [PASS] model.layers.7.mlp.down_proj.weight\n  [PASS] model.layers.7.mlp.gate_proj.weight\n  [PASS] model.layers.7.mlp.up_proj.weight\n  [PASS] model.layers.7.post_attention_layernorm.weight\n  [PASS] model.layers.7.self_attn.k_proj.bias\n  [PASS] model.layers.7.self_attn.k_proj.weight\n  [PASS] model.layers.7.self_attn.o_proj.weight\n  [PASS] model.layers.7.self_attn.q_proj.bias\n  [PASS] model.layers.7.self_attn.q_proj.weight\n  [PASS] model.layers.7.self_attn.v_proj.bias\n  [PASS] model.layers.7.self_attn.v_proj.weight\n  [PASS] model.layers.8.input_layernorm.weight\n  [PASS] model.layers.8.mlp.down_proj.weight\n  [PASS] model.layers.8.mlp.gate_proj.weight\n  [PASS] model.layers.8.mlp.up_proj.weight\n  [PASS] model.layers.8.post_attention_layernorm.weight\n  [PASS] model.layers.8.self_attn.k_proj.bias\n  [PASS] model.layers.8.self_attn.k_proj.weight\n  [PASS] model.layers.8.self_attn.o_proj.weight\n  [PASS] model.layers.8.self_attn.q_proj.bias\n  [PASS] model.layers.8.self_attn.q_proj.weight\n  [PASS] model.layers.8.self_attn.v_proj.bias\n  [PASS] model.layers.8.self_attn.v_proj.weight\n  [PASS] model.layers.9.input_layernorm.weight\n  [PASS] model.layers.9.mlp.down_proj.weight\n  [PASS] model.layers.9.mlp.gate_proj.weight\n  [PASS] model.layers.9.mlp.up_proj.weight\n  [PASS] model.layers.9.post_attention_layernorm.weight\n  [PASS] model.layers.9.self_attn.k_proj.bias\n  [PASS] model.layers.9.self_attn.k_proj.weight\n  [PASS] model.layers.9.self_attn.o_proj.weight\n  [PASS] model.layers.9.self_attn.q_proj.bias\n  [PASS] model.layers.9.self_attn.q_proj.weight\n  [PASS] model.layers.9.self_attn.v_proj.bias\n  [PASS] model.layers.9.self_attn.v_proj.weight\n  [PASS] model.norm.weight\n\nVALID: 291 tensors checked, 0 contract violations (PMAT-235)\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 6399
+    },
+    "timestamp": "2026-02-07T18:04:33.791598397Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189208fb6c53bdc7",
+    "gate_id": "G0-VALIDATE-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Validate: NaN/Inf/all-zeros tensor check",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: model.converted.converted.converted.converted.safetensors physics validated\nValidating output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.converted.converted.converted.converted.safetensors...\n\nFormat: SafeTensors (using Rosetta Stone validation)\n\n  [PASS] lm_head.weight\n  [PASS] model.embed_tokens.weight\n  [PASS] model.layers.0.input_layernorm.weight\n  [PASS] model.layers.0.mlp.down_proj.weight\n  [PASS] model.layers.0.mlp.gate_proj.weight\n  [PASS] model.layers.0.mlp.up_proj.weight\n  [PASS] model.layers.0.post_attention_layernorm.weight\n  [PASS] model.layers.0.self_attn.k_proj.bias\n  [PASS] model.layers.0.self_attn.k_proj.weight\n  [PASS] model.layers.0.self_attn.o_proj.weight\n  [PASS] model.layers.0.self_attn.q_proj.bias\n  [PASS] model.layers.0.self_attn.q_proj.weight\n  [PASS] model.layers.0.self_attn.v_proj.bias\n  [PASS] model.layers.0.self_attn.v_proj.weight\n  [PASS] model.layers.1.input_layernorm.weight\n  [PASS] model.layers.1.mlp.down_proj.weight\n  [PASS] model.layers.1.mlp.gate_proj.weight\n  [PASS] model.layers.1.mlp.up_proj.weight\n  [PASS] model.layers.1.post_attention_layernorm.weight\n  [PASS] model.layers.1.self_attn.k_proj.bias\n  [PASS] model.layers.1.self_attn.k_proj.weight\n  [PASS] model.layers.1.self_attn.o_proj.weight\n  [PASS] model.layers.1.self_attn.q_proj.bias\n  [PASS] model.layers.1.self_attn.q_proj.weight\n  [PASS] model.layers.1.self_attn.v_proj.bias\n  [PASS] model.layers.1.self_attn.v_proj.weight\n  [PASS] model.layers.10.input_layernorm.weight\n  [PASS] model.layers.10.mlp.down_proj.weight\n  [PASS] model.layers.10.mlp.gate_proj.weight\n  [PASS] model.layers.10.mlp.up_proj.weight\n  [PASS] model.layers.10.post_attention_layernorm.weight\n  [PASS] model.layers.10.self_attn.k_proj.bias\n  [PASS] model.layers.10.self_attn.k_proj.weight\n  [PASS] model.layers.10.self_attn.o_proj.weight\n  [PASS] model.layers.10.self_attn.q_proj.bias\n  [PASS] model.layers.10.self_attn.q_proj.weight\n  [PASS] model.layers.10.self_attn.v_proj.bias\n  [PASS] model.layers.10.self_attn.v_proj.weight\n  [PASS] model.layers.11.input_layernorm.weight\n  [PASS] model.layers.11.mlp.down_proj.weight\n  [PASS] model.layers.11.mlp.gate_proj.weight\n  [PASS] model.layers.11.mlp.up_proj.weight\n  [PASS] model.layers.11.post_attention_layernorm.weight\n  [PASS] model.layers.11.self_attn.k_proj.bias\n  [PASS] model.layers.11.self_attn.k_proj.weight\n  [PASS] model.layers.11.self_attn.o_proj.weight\n  [PASS] model.layers.11.self_attn.q_proj.bias\n  [PASS] model.layers.11.self_attn.q_proj.weight\n  [PASS] model.layers.11.self_attn.v_proj.bias\n  [PASS] model.layers.11.self_attn.v_proj.weight\n  [PASS] model.layers.12.input_layernorm.weight\n  [PASS] model.layers.12.mlp.down_proj.weight\n  [PASS] model.layers.12.mlp.gate_proj.weight\n  [PASS] model.layers.12.mlp.up_proj.weight\n  [PASS] model.layers.12.post_attention_layernorm.weight\n  [PASS] model.layers.12.self_attn.k_proj.bias\n  [PASS] model.layers.12.self_attn.k_proj.weight\n  [PASS] model.layers.12.self_attn.o_proj.weight\n  [PASS] model.layers.12.self_attn.q_proj.bias\n  [PASS] model.layers.12.self_attn.q_proj.weight\n  [PASS] model.layers.12.self_attn.v_proj.bias\n  [PASS] model.layers.12.self_attn.v_proj.weight\n  [PASS] model.layers.13.input_layernorm.weight\n  [PASS] model.layers.13.mlp.down_proj.weight\n  [PASS] model.layers.13.mlp.gate_proj.weight\n  [PASS] model.layers.13.mlp.up_proj.weight\n  [PASS] model.layers.13.post_attention_layernorm.weight\n  [PASS] model.layers.13.self_attn.k_proj.bias\n  [PASS] model.layers.13.self_attn.k_proj.weight\n  [PASS] model.layers.13.self_attn.o_proj.weight\n  [PASS] model.layers.13.self_attn.q_proj.bias\n  [PASS] model.layers.13.self_attn.q_proj.weight\n  [PASS] model.layers.13.self_attn.v_proj.bias\n  [PASS] model.layers.13.self_attn.v_proj.weight\n  [PASS] model.layers.14.input_layernorm.weight\n  [PASS] model.layers.14.mlp.down_proj.weight\n  [PASS] model.layers.14.mlp.gate_proj.weight\n  [PASS] model.layers.14.mlp.up_proj.weight\n  [PASS] model.layers.14.post_attention_layernorm.weight\n  [PASS] model.layers.14.self_attn.k_proj.bias\n  [PASS] model.layers.14.self_attn.k_proj.weight\n  [PASS] model.layers.14.self_attn.o_proj.weight\n  [PASS] model.layers.14.self_attn.q_proj.bias\n  [PASS] model.layers.14.self_attn.q_proj.weight\n  [PASS] model.layers.14.self_attn.v_proj.bias\n  [PASS] model.layers.14.self_attn.v_proj.weight\n  [PASS] model.layers.15.input_layernorm.weight\n  [PASS] model.layers.15.mlp.down_proj.weight\n  [PASS] model.layers.15.mlp.gate_proj.weight\n  [PASS] model.layers.15.mlp.up_proj.weight\n  [PASS] model.layers.15.post_attention_layernorm.weight\n  [PASS] model.layers.15.self_attn.k_proj.bias\n  [PASS] model.layers.15.self_attn.k_proj.weight\n  [PASS] model.layers.15.self_attn.o_proj.weight\n  [PASS] model.layers.15.self_attn.q_proj.bias\n  [PASS] model.layers.15.self_attn.q_proj.weight\n  [PASS] model.layers.15.self_attn.v_proj.bias\n  [PASS] model.layers.15.self_attn.v_proj.weight\n  [PASS] model.layers.16.input_layernorm.weight\n  [PASS] model.layers.16.mlp.down_proj.weight\n  [PASS] model.layers.16.mlp.gate_proj.weight\n  [PASS] model.layers.16.mlp.up_proj.weight\n  [PASS] model.layers.16.post_attention_layernorm.weight\n  [PASS] model.layers.16.self_attn.k_proj.bias\n  [PASS] model.layers.16.self_attn.k_proj.weight\n  [PASS] model.layers.16.self_attn.o_proj.weight\n  [PASS] model.layers.16.self_attn.q_proj.bias\n  [PASS] model.layers.16.self_attn.q_proj.weight\n  [PASS] model.layers.16.self_attn.v_proj.bias\n  [PASS] model.layers.16.self_attn.v_proj.weight\n  [PASS] model.layers.17.input_layernorm.weight\n  [PASS] model.layers.17.mlp.down_proj.weight\n  [PASS] model.layers.17.mlp.gate_proj.weight\n  [PASS] model.layers.17.mlp.up_proj.weight\n  [PASS] model.layers.17.post_attention_layernorm.weight\n  [PASS] model.layers.17.self_attn.k_proj.bias\n  [PASS] model.layers.17.self_attn.k_proj.weight\n  [PASS] model.layers.17.self_attn.o_proj.weight\n  [PASS] model.layers.17.self_attn.q_proj.bias\n  [PASS] model.layers.17.self_attn.q_proj.weight\n  [PASS] model.layers.17.self_attn.v_proj.bias\n  [PASS] model.layers.17.self_attn.v_proj.weight\n  [PASS] model.layers.18.input_layernorm.weight\n  [PASS] model.layers.18.mlp.down_proj.weight\n  [PASS] model.layers.18.mlp.gate_proj.weight\n  [PASS] model.layers.18.mlp.up_proj.weight\n  [PASS] model.layers.18.post_attention_layernorm.weight\n  [PASS] model.layers.18.self_attn.k_proj.bias\n  [PASS] model.layers.18.self_attn.k_proj.weight\n  [PASS] model.layers.18.self_attn.o_proj.weight\n  [PASS] model.layers.18.self_attn.q_proj.bias\n  [PASS] model.layers.18.self_attn.q_proj.weight\n  [PASS] model.layers.18.self_attn.v_proj.bias\n  [PASS] model.layers.18.self_attn.v_proj.weight\n  [PASS] model.layers.19.input_layernorm.weight\n  [PASS] model.layers.19.mlp.down_proj.weight\n  [PASS] model.layers.19.mlp.gate_proj.weight\n  [PASS] model.layers.19.mlp.up_proj.weight\n  [PASS] model.layers.19.post_attention_layernorm.weight\n  [PASS] model.layers.19.self_attn.k_proj.bias\n  [PASS] model.layers.19.self_attn.k_proj.weight\n  [PASS] model.layers.19.self_attn.o_proj.weight\n  [PASS] model.layers.19.self_attn.q_proj.bias\n  [PASS] model.layers.19.self_attn.q_proj.weight\n  [PASS] model.layers.19.self_attn.v_proj.bias\n  [PASS] model.layers.19.self_attn.v_proj.weight\n  [PASS] model.layers.2.input_layernorm.weight\n  [PASS] model.layers.2.mlp.down_proj.weight\n  [PASS] model.layers.2.mlp.gate_proj.weight\n  [PASS] model.layers.2.mlp.up_proj.weight\n  [PASS] model.layers.2.post_attention_layernorm.weight\n  [PASS] model.layers.2.self_attn.k_proj.bias\n  [PASS] model.layers.2.self_attn.k_proj.weight\n  [PASS] model.layers.2.self_attn.o_proj.weight\n  [PASS] model.layers.2.self_attn.q_proj.bias\n  [PASS] model.layers.2.self_attn.q_proj.weight\n  [PASS] model.layers.2.self_attn.v_proj.bias\n  [PASS] model.layers.2.self_attn.v_proj.weight\n  [PASS] model.layers.20.input_layernorm.weight\n  [PASS] model.layers.20.mlp.down_proj.weight\n  [PASS] model.layers.20.mlp.gate_proj.weight\n  [PASS] model.layers.20.mlp.up_proj.weight\n  [PASS] model.layers.20.post_attention_layernorm.weight\n  [PASS] model.layers.20.self_attn.k_proj.bias\n  [PASS] model.layers.20.self_attn.k_proj.weight\n  [PASS] model.layers.20.self_attn.o_proj.weight\n  [PASS] model.layers.20.self_attn.q_proj.bias\n  [PASS] model.layers.20.self_attn.q_proj.weight\n  [PASS] model.layers.20.self_attn.v_proj.bias\n  [PASS] model.layers.20.self_attn.v_proj.weight\n  [PASS] model.layers.21.input_layernorm.weight\n  [PASS] model.layers.21.mlp.down_proj.weight\n  [PASS] model.layers.21.mlp.gate_proj.weight\n  [PASS] model.layers.21.mlp.up_proj.weight\n  [PASS] model.layers.21.post_attention_layernorm.weight\n  [PASS] model.layers.21.self_attn.k_proj.bias\n  [PASS] model.layers.21.self_attn.k_proj.weight\n  [PASS] model.layers.21.self_attn.o_proj.weight\n  [PASS] model.layers.21.self_attn.q_proj.bias\n  [PASS] model.layers.21.self_attn.q_proj.weight\n  [PASS] model.layers.21.self_attn.v_proj.bias\n  [PASS] model.layers.21.self_attn.v_proj.weight\n  [PASS] model.layers.22.input_layernorm.weight\n  [PASS] model.layers.22.mlp.down_proj.weight\n  [PASS] model.layers.22.mlp.gate_proj.weight\n  [PASS] model.layers.22.mlp.up_proj.weight\n  [PASS] model.layers.22.post_attention_layernorm.weight\n  [PASS] model.layers.22.self_attn.k_proj.bias\n  [PASS] model.layers.22.self_attn.k_proj.weight\n  [PASS] model.layers.22.self_attn.o_proj.weight\n  [PASS] model.layers.22.self_attn.q_proj.bias\n  [PASS] model.layers.22.self_attn.q_proj.weight\n  [PASS] model.layers.22.self_attn.v_proj.bias\n  [PASS] model.layers.22.self_attn.v_proj.weight\n  [PASS] model.layers.23.input_layernorm.weight\n  [PASS] model.layers.23.mlp.down_proj.weight\n  [PASS] model.layers.23.mlp.gate_proj.weight\n  [PASS] model.layers.23.mlp.up_proj.weight\n  [PASS] model.layers.23.post_attention_layernorm.weight\n  [PASS] model.layers.23.self_attn.k_proj.bias\n  [PASS] model.layers.23.self_attn.k_proj.weight\n  [PASS] model.layers.23.self_attn.o_proj.weight\n  [PASS] model.layers.23.self_attn.q_proj.bias\n  [PASS] model.layers.23.self_attn.q_proj.weight\n  [PASS] model.layers.23.self_attn.v_proj.bias\n  [PASS] model.layers.23.self_attn.v_proj.weight\n  [PASS] model.layers.3.input_layernorm.weight\n  [PASS] model.layers.3.mlp.down_proj.weight\n  [PASS] model.layers.3.mlp.gate_proj.weight\n  [PASS] model.layers.3.mlp.up_proj.weight\n  [PASS] model.layers.3.post_attention_layernorm.weight\n  [PASS] model.layers.3.self_attn.k_proj.bias\n  [PASS] model.layers.3.self_attn.k_proj.weight\n  [PASS] model.layers.3.self_attn.o_proj.weight\n  [PASS] model.layers.3.self_attn.q_proj.bias\n  [PASS] model.layers.3.self_attn.q_proj.weight\n  [PASS] model.layers.3.self_attn.v_proj.bias\n  [PASS] model.layers.3.self_attn.v_proj.weight\n  [PASS] model.layers.4.input_layernorm.weight\n  [PASS] model.layers.4.mlp.down_proj.weight\n  [PASS] model.layers.4.mlp.gate_proj.weight\n  [PASS] model.layers.4.mlp.up_proj.weight\n  [PASS] model.layers.4.post_attention_layernorm.weight\n  [PASS] model.layers.4.self_attn.k_proj.bias\n  [PASS] model.layers.4.self_attn.k_proj.weight\n  [PASS] model.layers.4.self_attn.o_proj.weight\n  [PASS] model.layers.4.self_attn.q_proj.bias\n  [PASS] model.layers.4.self_attn.q_proj.weight\n  [PASS] model.layers.4.self_attn.v_proj.bias\n  [PASS] model.layers.4.self_attn.v_proj.weight\n  [PASS] model.layers.5.input_layernorm.weight\n  [PASS] model.layers.5.mlp.down_proj.weight\n  [PASS] model.layers.5.mlp.gate_proj.weight\n  [PASS] model.layers.5.mlp.up_proj.weight\n  [PASS] model.layers.5.post_attention_layernorm.weight\n  [PASS] model.layers.5.self_attn.k_proj.bias\n  [PASS] model.layers.5.self_attn.k_proj.weight\n  [PASS] model.layers.5.self_attn.o_proj.weight\n  [PASS] model.layers.5.self_attn.q_proj.bias\n  [PASS] model.layers.5.self_attn.q_proj.weight\n  [PASS] model.layers.5.self_attn.v_proj.bias\n  [PASS] model.layers.5.self_attn.v_proj.weight\n  [PASS] model.layers.6.input_layernorm.weight\n  [PASS] model.layers.6.mlp.down_proj.weight\n  [PASS] model.layers.6.mlp.gate_proj.weight\n  [PASS] model.layers.6.mlp.up_proj.weight\n  [PASS] model.layers.6.post_attention_layernorm.weight\n  [PASS] model.layers.6.self_attn.k_proj.bias\n  [PASS] model.layers.6.self_attn.k_proj.weight\n  [PASS] model.layers.6.self_attn.o_proj.weight\n  [PASS] model.layers.6.self_attn.q_proj.bias\n  [PASS] model.layers.6.self_attn.q_proj.weight\n  [PASS] model.layers.6.self_attn.v_proj.bias\n  [PASS] model.layers.6.self_attn.v_proj.weight\n  [PASS] model.layers.7.input_layernorm.weight\n  [PASS] model.layers.7.mlp.down_proj.weight\n  [PASS] model.layers.7.mlp.gate_proj.weight\n  [PASS] model.layers.7.mlp.up_proj.weight\n  [PASS] model.layers.7.post_attention_layernorm.weight\n  [PASS] model.layers.7.self_attn.k_proj.bias\n  [PASS] model.layers.7.self_attn.k_proj.weight\n  [PASS] model.layers.7.self_attn.o_proj.weight\n  [PASS] model.layers.7.self_attn.q_proj.bias\n  [PASS] model.layers.7.self_attn.q_proj.weight\n  [PASS] model.layers.7.self_attn.v_proj.bias\n  [PASS] model.layers.7.self_attn.v_proj.weight\n  [PASS] model.layers.8.input_layernorm.weight\n  [PASS] model.layers.8.mlp.down_proj.weight\n  [PASS] model.layers.8.mlp.gate_proj.weight\n  [PASS] model.layers.8.mlp.up_proj.weight\n  [PASS] model.layers.8.post_attention_layernorm.weight\n  [PASS] model.layers.8.self_attn.k_proj.bias\n  [PASS] model.layers.8.self_attn.k_proj.weight\n  [PASS] model.layers.8.self_attn.o_proj.weight\n  [PASS] model.layers.8.self_attn.q_proj.bias\n  [PASS] model.layers.8.self_attn.q_proj.weight\n  [PASS] model.layers.8.self_attn.v_proj.bias\n  [PASS] model.layers.8.self_attn.v_proj.weight\n  [PASS] model.layers.9.input_layernorm.weight\n  [PASS] model.layers.9.mlp.down_proj.weight\n  [PASS] model.layers.9.mlp.gate_proj.weight\n  [PASS] model.layers.9.mlp.up_proj.weight\n  [PASS] model.layers.9.post_attention_layernorm.weight\n  [PASS] model.layers.9.self_attn.k_proj.bias\n  [PASS] model.layers.9.self_attn.k_proj.weight\n  [PASS] model.layers.9.self_attn.o_proj.weight\n  [PASS] model.layers.9.self_attn.q_proj.bias\n  [PASS] model.layers.9.self_attn.q_proj.weight\n  [PASS] model.layers.9.self_attn.v_proj.bias\n  [PASS] model.layers.9.self_attn.v_proj.weight\n  [PASS] model.norm.weight\n\nVALID: 291 tensors checked, 0 contract violations (PMAT-235)\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 5665
+    },
+    "timestamp": "2026-02-07T18:04:39.457280073Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189208fc9cf8fea4",
+    "gate_id": "G0-VALIDATE-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Validate: NaN/Inf/all-zeros tensor check",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: model.converted.converted.converted.safetensors physics validated\nValidating output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.converted.converted.converted.safetensors...\n\nFormat: SafeTensors (using Rosetta Stone validation)\n\n  [PASS] lm_head.weight\n  [PASS] model.embed_tokens.weight\n  [PASS] model.layers.0.input_layernorm.weight\n  [PASS] model.layers.0.mlp.down_proj.weight\n  [PASS] model.layers.0.mlp.gate_proj.weight\n  [PASS] model.layers.0.mlp.up_proj.weight\n  [PASS] model.layers.0.post_attention_layernorm.weight\n  [PASS] model.layers.0.self_attn.k_proj.bias\n  [PASS] model.layers.0.self_attn.k_proj.weight\n  [PASS] model.layers.0.self_attn.o_proj.weight\n  [PASS] model.layers.0.self_attn.q_proj.bias\n  [PASS] model.layers.0.self_attn.q_proj.weight\n  [PASS] model.layers.0.self_attn.v_proj.bias\n  [PASS] model.layers.0.self_attn.v_proj.weight\n  [PASS] model.layers.1.input_layernorm.weight\n  [PASS] model.layers.1.mlp.down_proj.weight\n  [PASS] model.layers.1.mlp.gate_proj.weight\n  [PASS] model.layers.1.mlp.up_proj.weight\n  [PASS] model.layers.1.post_attention_layernorm.weight\n  [PASS] model.layers.1.self_attn.k_proj.bias\n  [PASS] model.layers.1.self_attn.k_proj.weight\n  [PASS] model.layers.1.self_attn.o_proj.weight\n  [PASS] model.layers.1.self_attn.q_proj.bias\n  [PASS] model.layers.1.self_attn.q_proj.weight\n  [PASS] model.layers.1.self_attn.v_proj.bias\n  [PASS] model.layers.1.self_attn.v_proj.weight\n  [PASS] model.layers.10.input_layernorm.weight\n  [PASS] model.layers.10.mlp.down_proj.weight\n  [PASS] model.layers.10.mlp.gate_proj.weight\n  [PASS] model.layers.10.mlp.up_proj.weight\n  [PASS] model.layers.10.post_attention_layernorm.weight\n  [PASS] model.layers.10.self_attn.k_proj.bias\n  [PASS] model.layers.10.self_attn.k_proj.weight\n  [PASS] model.layers.10.self_attn.o_proj.weight\n  [PASS] model.layers.10.self_attn.q_proj.bias\n  [PASS] model.layers.10.self_attn.q_proj.weight\n  [PASS] model.layers.10.self_attn.v_proj.bias\n  [PASS] model.layers.10.self_attn.v_proj.weight\n  [PASS] model.layers.11.input_layernorm.weight\n  [PASS] model.layers.11.mlp.down_proj.weight\n  [PASS] model.layers.11.mlp.gate_proj.weight\n  [PASS] model.layers.11.mlp.up_proj.weight\n  [PASS] model.layers.11.post_attention_layernorm.weight\n  [PASS] model.layers.11.self_attn.k_proj.bias\n  [PASS] model.layers.11.self_attn.k_proj.weight\n  [PASS] model.layers.11.self_attn.o_proj.weight\n  [PASS] model.layers.11.self_attn.q_proj.bias\n  [PASS] model.layers.11.self_attn.q_proj.weight\n  [PASS] model.layers.11.self_attn.v_proj.bias\n  [PASS] model.layers.11.self_attn.v_proj.weight\n  [PASS] model.layers.12.input_layernorm.weight\n  [PASS] model.layers.12.mlp.down_proj.weight\n  [PASS] model.layers.12.mlp.gate_proj.weight\n  [PASS] model.layers.12.mlp.up_proj.weight\n  [PASS] model.layers.12.post_attention_layernorm.weight\n  [PASS] model.layers.12.self_attn.k_proj.bias\n  [PASS] model.layers.12.self_attn.k_proj.weight\n  [PASS] model.layers.12.self_attn.o_proj.weight\n  [PASS] model.layers.12.self_attn.q_proj.bias\n  [PASS] model.layers.12.self_attn.q_proj.weight\n  [PASS] model.layers.12.self_attn.v_proj.bias\n  [PASS] model.layers.12.self_attn.v_proj.weight\n  [PASS] model.layers.13.input_layernorm.weight\n  [PASS] model.layers.13.mlp.down_proj.weight\n  [PASS] model.layers.13.mlp.gate_proj.weight\n  [PASS] model.layers.13.mlp.up_proj.weight\n  [PASS] model.layers.13.post_attention_layernorm.weight\n  [PASS] model.layers.13.self_attn.k_proj.bias\n  [PASS] model.layers.13.self_attn.k_proj.weight\n  [PASS] model.layers.13.self_attn.o_proj.weight\n  [PASS] model.layers.13.self_attn.q_proj.bias\n  [PASS] model.layers.13.self_attn.q_proj.weight\n  [PASS] model.layers.13.self_attn.v_proj.bias\n  [PASS] model.layers.13.self_attn.v_proj.weight\n  [PASS] model.layers.14.input_layernorm.weight\n  [PASS] model.layers.14.mlp.down_proj.weight\n  [PASS] model.layers.14.mlp.gate_proj.weight\n  [PASS] model.layers.14.mlp.up_proj.weight\n  [PASS] model.layers.14.post_attention_layernorm.weight\n  [PASS] model.layers.14.self_attn.k_proj.bias\n  [PASS] model.layers.14.self_attn.k_proj.weight\n  [PASS] model.layers.14.self_attn.o_proj.weight\n  [PASS] model.layers.14.self_attn.q_proj.bias\n  [PASS] model.layers.14.self_attn.q_proj.weight\n  [PASS] model.layers.14.self_attn.v_proj.bias\n  [PASS] model.layers.14.self_attn.v_proj.weight\n  [PASS] model.layers.15.input_layernorm.weight\n  [PASS] model.layers.15.mlp.down_proj.weight\n  [PASS] model.layers.15.mlp.gate_proj.weight\n  [PASS] model.layers.15.mlp.up_proj.weight\n  [PASS] model.layers.15.post_attention_layernorm.weight\n  [PASS] model.layers.15.self_attn.k_proj.bias\n  [PASS] model.layers.15.self_attn.k_proj.weight\n  [PASS] model.layers.15.self_attn.o_proj.weight\n  [PASS] model.layers.15.self_attn.q_proj.bias\n  [PASS] model.layers.15.self_attn.q_proj.weight\n  [PASS] model.layers.15.self_attn.v_proj.bias\n  [PASS] model.layers.15.self_attn.v_proj.weight\n  [PASS] model.layers.16.input_layernorm.weight\n  [PASS] model.layers.16.mlp.down_proj.weight\n  [PASS] model.layers.16.mlp.gate_proj.weight\n  [PASS] model.layers.16.mlp.up_proj.weight\n  [PASS] model.layers.16.post_attention_layernorm.weight\n  [PASS] model.layers.16.self_attn.k_proj.bias\n  [PASS] model.layers.16.self_attn.k_proj.weight\n  [PASS] model.layers.16.self_attn.o_proj.weight\n  [PASS] model.layers.16.self_attn.q_proj.bias\n  [PASS] model.layers.16.self_attn.q_proj.weight\n  [PASS] model.layers.16.self_attn.v_proj.bias\n  [PASS] model.layers.16.self_attn.v_proj.weight\n  [PASS] model.layers.17.input_layernorm.weight\n  [PASS] model.layers.17.mlp.down_proj.weight\n  [PASS] model.layers.17.mlp.gate_proj.weight\n  [PASS] model.layers.17.mlp.up_proj.weight\n  [PASS] model.layers.17.post_attention_layernorm.weight\n  [PASS] model.layers.17.self_attn.k_proj.bias\n  [PASS] model.layers.17.self_attn.k_proj.weight\n  [PASS] model.layers.17.self_attn.o_proj.weight\n  [PASS] model.layers.17.self_attn.q_proj.bias\n  [PASS] model.layers.17.self_attn.q_proj.weight\n  [PASS] model.layers.17.self_attn.v_proj.bias\n  [PASS] model.layers.17.self_attn.v_proj.weight\n  [PASS] model.layers.18.input_layernorm.weight\n  [PASS] model.layers.18.mlp.down_proj.weight\n  [PASS] model.layers.18.mlp.gate_proj.weight\n  [PASS] model.layers.18.mlp.up_proj.weight\n  [PASS] model.layers.18.post_attention_layernorm.weight\n  [PASS] model.layers.18.self_attn.k_proj.bias\n  [PASS] model.layers.18.self_attn.k_proj.weight\n  [PASS] model.layers.18.self_attn.o_proj.weight\n  [PASS] model.layers.18.self_attn.q_proj.bias\n  [PASS] model.layers.18.self_attn.q_proj.weight\n  [PASS] model.layers.18.self_attn.v_proj.bias\n  [PASS] model.layers.18.self_attn.v_proj.weight\n  [PASS] model.layers.19.input_layernorm.weight\n  [PASS] model.layers.19.mlp.down_proj.weight\n  [PASS] model.layers.19.mlp.gate_proj.weight\n  [PASS] model.layers.19.mlp.up_proj.weight\n  [PASS] model.layers.19.post_attention_layernorm.weight\n  [PASS] model.layers.19.self_attn.k_proj.bias\n  [PASS] model.layers.19.self_attn.k_proj.weight\n  [PASS] model.layers.19.self_attn.o_proj.weight\n  [PASS] model.layers.19.self_attn.q_proj.bias\n  [PASS] model.layers.19.self_attn.q_proj.weight\n  [PASS] model.layers.19.self_attn.v_proj.bias\n  [PASS] model.layers.19.self_attn.v_proj.weight\n  [PASS] model.layers.2.input_layernorm.weight\n  [PASS] model.layers.2.mlp.down_proj.weight\n  [PASS] model.layers.2.mlp.gate_proj.weight\n  [PASS] model.layers.2.mlp.up_proj.weight\n  [PASS] model.layers.2.post_attention_layernorm.weight\n  [PASS] model.layers.2.self_attn.k_proj.bias\n  [PASS] model.layers.2.self_attn.k_proj.weight\n  [PASS] model.layers.2.self_attn.o_proj.weight\n  [PASS] model.layers.2.self_attn.q_proj.bias\n  [PASS] model.layers.2.self_attn.q_proj.weight\n  [PASS] model.layers.2.self_attn.v_proj.bias\n  [PASS] model.layers.2.self_attn.v_proj.weight\n  [PASS] model.layers.20.input_layernorm.weight\n  [PASS] model.layers.20.mlp.down_proj.weight\n  [PASS] model.layers.20.mlp.gate_proj.weight\n  [PASS] model.layers.20.mlp.up_proj.weight\n  [PASS] model.layers.20.post_attention_layernorm.weight\n  [PASS] model.layers.20.self_attn.k_proj.bias\n  [PASS] model.layers.20.self_attn.k_proj.weight\n  [PASS] model.layers.20.self_attn.o_proj.weight\n  [PASS] model.layers.20.self_attn.q_proj.bias\n  [PASS] model.layers.20.self_attn.q_proj.weight\n  [PASS] model.layers.20.self_attn.v_proj.bias\n  [PASS] model.layers.20.self_attn.v_proj.weight\n  [PASS] model.layers.21.input_layernorm.weight\n  [PASS] model.layers.21.mlp.down_proj.weight\n  [PASS] model.layers.21.mlp.gate_proj.weight\n  [PASS] model.layers.21.mlp.up_proj.weight\n  [PASS] model.layers.21.post_attention_layernorm.weight\n  [PASS] model.layers.21.self_attn.k_proj.bias\n  [PASS] model.layers.21.self_attn.k_proj.weight\n  [PASS] model.layers.21.self_attn.o_proj.weight\n  [PASS] model.layers.21.self_attn.q_proj.bias\n  [PASS] model.layers.21.self_attn.q_proj.weight\n  [PASS] model.layers.21.self_attn.v_proj.bias\n  [PASS] model.layers.21.self_attn.v_proj.weight\n  [PASS] model.layers.22.input_layernorm.weight\n  [PASS] model.layers.22.mlp.down_proj.weight\n  [PASS] model.layers.22.mlp.gate_proj.weight\n  [PASS] model.layers.22.mlp.up_proj.weight\n  [PASS] model.layers.22.post_attention_layernorm.weight\n  [PASS] model.layers.22.self_attn.k_proj.bias\n  [PASS] model.layers.22.self_attn.k_proj.weight\n  [PASS] model.layers.22.self_attn.o_proj.weight\n  [PASS] model.layers.22.self_attn.q_proj.bias\n  [PASS] model.layers.22.self_attn.q_proj.weight\n  [PASS] model.layers.22.self_attn.v_proj.bias\n  [PASS] model.layers.22.self_attn.v_proj.weight\n  [PASS] model.layers.23.input_layernorm.weight\n  [PASS] model.layers.23.mlp.down_proj.weight\n  [PASS] model.layers.23.mlp.gate_proj.weight\n  [PASS] model.layers.23.mlp.up_proj.weight\n  [PASS] model.layers.23.post_attention_layernorm.weight\n  [PASS] model.layers.23.self_attn.k_proj.bias\n  [PASS] model.layers.23.self_attn.k_proj.weight\n  [PASS] model.layers.23.self_attn.o_proj.weight\n  [PASS] model.layers.23.self_attn.q_proj.bias\n  [PASS] model.layers.23.self_attn.q_proj.weight\n  [PASS] model.layers.23.self_attn.v_proj.bias\n  [PASS] model.layers.23.self_attn.v_proj.weight\n  [PASS] model.layers.3.input_layernorm.weight\n  [PASS] model.layers.3.mlp.down_proj.weight\n  [PASS] model.layers.3.mlp.gate_proj.weight\n  [PASS] model.layers.3.mlp.up_proj.weight\n  [PASS] model.layers.3.post_attention_layernorm.weight\n  [PASS] model.layers.3.self_attn.k_proj.bias\n  [PASS] model.layers.3.self_attn.k_proj.weight\n  [PASS] model.layers.3.self_attn.o_proj.weight\n  [PASS] model.layers.3.self_attn.q_proj.bias\n  [PASS] model.layers.3.self_attn.q_proj.weight\n  [PASS] model.layers.3.self_attn.v_proj.bias\n  [PASS] model.layers.3.self_attn.v_proj.weight\n  [PASS] model.layers.4.input_layernorm.weight\n  [PASS] model.layers.4.mlp.down_proj.weight\n  [PASS] model.layers.4.mlp.gate_proj.weight\n  [PASS] model.layers.4.mlp.up_proj.weight\n  [PASS] model.layers.4.post_attention_layernorm.weight\n  [PASS] model.layers.4.self_attn.k_proj.bias\n  [PASS] model.layers.4.self_attn.k_proj.weight\n  [PASS] model.layers.4.self_attn.o_proj.weight\n  [PASS] model.layers.4.self_attn.q_proj.bias\n  [PASS] model.layers.4.self_attn.q_proj.weight\n  [PASS] model.layers.4.self_attn.v_proj.bias\n  [PASS] model.layers.4.self_attn.v_proj.weight\n  [PASS] model.layers.5.input_layernorm.weight\n  [PASS] model.layers.5.mlp.down_proj.weight\n  [PASS] model.layers.5.mlp.gate_proj.weight\n  [PASS] model.layers.5.mlp.up_proj.weight\n  [PASS] model.layers.5.post_attention_layernorm.weight\n  [PASS] model.layers.5.self_attn.k_proj.bias\n  [PASS] model.layers.5.self_attn.k_proj.weight\n  [PASS] model.layers.5.self_attn.o_proj.weight\n  [PASS] model.layers.5.self_attn.q_proj.bias\n  [PASS] model.layers.5.self_attn.q_proj.weight\n  [PASS] model.layers.5.self_attn.v_proj.bias\n  [PASS] model.layers.5.self_attn.v_proj.weight\n  [PASS] model.layers.6.input_layernorm.weight\n  [PASS] model.layers.6.mlp.down_proj.weight\n  [PASS] model.layers.6.mlp.gate_proj.weight\n  [PASS] model.layers.6.mlp.up_proj.weight\n  [PASS] model.layers.6.post_attention_layernorm.weight\n  [PASS] model.layers.6.self_attn.k_proj.bias\n  [PASS] model.layers.6.self_attn.k_proj.weight\n  [PASS] model.layers.6.self_attn.o_proj.weight\n  [PASS] model.layers.6.self_attn.q_proj.bias\n  [PASS] model.layers.6.self_attn.q_proj.weight\n  [PASS] model.layers.6.self_attn.v_proj.bias\n  [PASS] model.layers.6.self_attn.v_proj.weight\n  [PASS] model.layers.7.input_layernorm.weight\n  [PASS] model.layers.7.mlp.down_proj.weight\n  [PASS] model.layers.7.mlp.gate_proj.weight\n  [PASS] model.layers.7.mlp.up_proj.weight\n  [PASS] model.layers.7.post_attention_layernorm.weight\n  [PASS] model.layers.7.self_attn.k_proj.bias\n  [PASS] model.layers.7.self_attn.k_proj.weight\n  [PASS] model.layers.7.self_attn.o_proj.weight\n  [PASS] model.layers.7.self_attn.q_proj.bias\n  [PASS] model.layers.7.self_attn.q_proj.weight\n  [PASS] model.layers.7.self_attn.v_proj.bias\n  [PASS] model.layers.7.self_attn.v_proj.weight\n  [PASS] model.layers.8.input_layernorm.weight\n  [PASS] model.layers.8.mlp.down_proj.weight\n  [PASS] model.layers.8.mlp.gate_proj.weight\n  [PASS] model.layers.8.mlp.up_proj.weight\n  [PASS] model.layers.8.post_attention_layernorm.weight\n  [PASS] model.layers.8.self_attn.k_proj.bias\n  [PASS] model.layers.8.self_attn.k_proj.weight\n  [PASS] model.layers.8.self_attn.o_proj.weight\n  [PASS] model.layers.8.self_attn.q_proj.bias\n  [PASS] model.layers.8.self_attn.q_proj.weight\n  [PASS] model.layers.8.self_attn.v_proj.bias\n  [PASS] model.layers.8.self_attn.v_proj.weight\n  [PASS] model.layers.9.input_layernorm.weight\n  [PASS] model.layers.9.mlp.down_proj.weight\n  [PASS] model.layers.9.mlp.gate_proj.weight\n  [PASS] model.layers.9.mlp.up_proj.weight\n  [PASS] model.layers.9.post_attention_layernorm.weight\n  [PASS] model.layers.9.self_attn.k_proj.bias\n  [PASS] model.layers.9.self_attn.k_proj.weight\n  [PASS] model.layers.9.self_attn.o_proj.weight\n  [PASS] model.layers.9.self_attn.q_proj.bias\n  [PASS] model.layers.9.self_attn.q_proj.weight\n  [PASS] model.layers.9.self_attn.v_proj.bias\n  [PASS] model.layers.9.self_attn.v_proj.weight\n  [PASS] model.norm.weight\n\nVALID: 291 tensors checked, 0 contract violations (PMAT-235)\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 5111
+    },
+    "timestamp": "2026-02-07T18:04:44.568377813Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189208fd3f788988",
+    "gate_id": "G0-VALIDATE-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Validate: NaN/Inf/all-zeros tensor check",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: model.safetensors physics validated\nValidating output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors...\n\nFormat: SafeTensors (using Rosetta Stone validation)\n\n  [PASS] model.embed_tokens.weight\n  [PASS] model.layers.0.input_layernorm.weight\n  [PASS] model.layers.0.mlp.down_proj.weight\n  [PASS] model.layers.0.mlp.gate_proj.weight\n  [PASS] model.layers.0.mlp.up_proj.weight\n  [PASS] model.layers.0.post_attention_layernorm.weight\n  [PASS] model.layers.0.self_attn.k_proj.bias\n  [PASS] model.layers.0.self_attn.k_proj.weight\n  [PASS] model.layers.0.self_attn.o_proj.weight\n  [PASS] model.layers.0.self_attn.q_proj.bias\n  [PASS] model.layers.0.self_attn.q_proj.weight\n  [PASS] model.layers.0.self_attn.v_proj.bias\n  [PASS] model.layers.0.self_attn.v_proj.weight\n  [PASS] model.layers.1.input_layernorm.weight\n  [PASS] model.layers.1.mlp.down_proj.weight\n  [PASS] model.layers.1.mlp.gate_proj.weight\n  [PASS] model.layers.1.mlp.up_proj.weight\n  [PASS] model.layers.1.post_attention_layernorm.weight\n  [PASS] model.layers.1.self_attn.k_proj.bias\n  [PASS] model.layers.1.self_attn.k_proj.weight\n  [PASS] model.layers.1.self_attn.o_proj.weight\n  [PASS] model.layers.1.self_attn.q_proj.bias\n  [PASS] model.layers.1.self_attn.q_proj.weight\n  [PASS] model.layers.1.self_attn.v_proj.bias\n  [PASS] model.layers.1.self_attn.v_proj.weight\n  [PASS] model.layers.10.input_layernorm.weight\n  [PASS] model.layers.10.mlp.down_proj.weight\n  [PASS] model.layers.10.mlp.gate_proj.weight\n  [PASS] model.layers.10.mlp.up_proj.weight\n  [PASS] model.layers.10.post_attention_layernorm.weight\n  [PASS] model.layers.10.self_attn.k_proj.bias\n  [PASS] model.layers.10.self_attn.k_proj.weight\n  [PASS] model.layers.10.self_attn.o_proj.weight\n  [PASS] model.layers.10.self_attn.q_proj.bias\n  [PASS] model.layers.10.self_attn.q_proj.weight\n  [PASS] model.layers.10.self_attn.v_proj.bias\n  [PASS] model.layers.10.self_attn.v_proj.weight\n  [PASS] model.layers.11.input_layernorm.weight\n  [PASS] model.layers.11.mlp.down_proj.weight\n  [PASS] model.layers.11.mlp.gate_proj.weight\n  [PASS] model.layers.11.mlp.up_proj.weight\n  [PASS] model.layers.11.post_attention_layernorm.weight\n  [PASS] model.layers.11.self_attn.k_proj.bias\n  [PASS] model.layers.11.self_attn.k_proj.weight\n  [PASS] model.layers.11.self_attn.o_proj.weight\n  [PASS] model.layers.11.self_attn.q_proj.bias\n  [PASS] model.layers.11.self_attn.q_proj.weight\n  [PASS] model.layers.11.self_attn.v_proj.bias\n  [PASS] model.layers.11.self_attn.v_proj.weight\n  [PASS] model.layers.12.input_layernorm.weight\n  [PASS] model.layers.12.mlp.down_proj.weight\n  [PASS] model.layers.12.mlp.gate_proj.weight\n  [PASS] model.layers.12.mlp.up_proj.weight\n  [PASS] model.layers.12.post_attention_layernorm.weight\n  [PASS] model.layers.12.self_attn.k_proj.bias\n  [PASS] model.layers.12.self_attn.k_proj.weight\n  [PASS] model.layers.12.self_attn.o_proj.weight\n  [PASS] model.layers.12.self_attn.q_proj.bias\n  [PASS] model.layers.12.self_attn.q_proj.weight\n  [PASS] model.layers.12.self_attn.v_proj.bias\n  [PASS] model.layers.12.self_attn.v_proj.weight\n  [PASS] model.layers.13.input_layernorm.weight\n  [PASS] model.layers.13.mlp.down_proj.weight\n  [PASS] model.layers.13.mlp.gate_proj.weight\n  [PASS] model.layers.13.mlp.up_proj.weight\n  [PASS] model.layers.13.post_attention_layernorm.weight\n  [PASS] model.layers.13.self_attn.k_proj.bias\n  [PASS] model.layers.13.self_attn.k_proj.weight\n  [PASS] model.layers.13.self_attn.o_proj.weight\n  [PASS] model.layers.13.self_attn.q_proj.bias\n  [PASS] model.layers.13.self_attn.q_proj.weight\n  [PASS] model.layers.13.self_attn.v_proj.bias\n  [PASS] model.layers.13.self_attn.v_proj.weight\n  [PASS] model.layers.14.input_layernorm.weight\n  [PASS] model.layers.14.mlp.down_proj.weight\n  [PASS] model.layers.14.mlp.gate_proj.weight\n  [PASS] model.layers.14.mlp.up_proj.weight\n  [PASS] model.layers.14.post_attention_layernorm.weight\n  [PASS] model.layers.14.self_attn.k_proj.bias\n  [PASS] model.layers.14.self_attn.k_proj.weight\n  [PASS] model.layers.14.self_attn.o_proj.weight\n  [PASS] model.layers.14.self_attn.q_proj.bias\n  [PASS] model.layers.14.self_attn.q_proj.weight\n  [PASS] model.layers.14.self_attn.v_proj.bias\n  [PASS] model.layers.14.self_attn.v_proj.weight\n  [PASS] model.layers.15.input_layernorm.weight\n  [PASS] model.layers.15.mlp.down_proj.weight\n  [PASS] model.layers.15.mlp.gate_proj.weight\n  [PASS] model.layers.15.mlp.up_proj.weight\n  [PASS] model.layers.15.post_attention_layernorm.weight\n  [PASS] model.layers.15.self_attn.k_proj.bias\n  [PASS] model.layers.15.self_attn.k_proj.weight\n  [PASS] model.layers.15.self_attn.o_proj.weight\n  [PASS] model.layers.15.self_attn.q_proj.bias\n  [PASS] model.layers.15.self_attn.q_proj.weight\n  [PASS] model.layers.15.self_attn.v_proj.bias\n  [PASS] model.layers.15.self_attn.v_proj.weight\n  [PASS] model.layers.16.input_layernorm.weight\n  [PASS] model.layers.16.mlp.down_proj.weight\n  [PASS] model.layers.16.mlp.gate_proj.weight\n  [PASS] model.layers.16.mlp.up_proj.weight\n  [PASS] model.layers.16.post_attention_layernorm.weight\n  [PASS] model.layers.16.self_attn.k_proj.bias\n  [PASS] model.layers.16.self_attn.k_proj.weight\n  [PASS] model.layers.16.self_attn.o_proj.weight\n  [PASS] model.layers.16.self_attn.q_proj.bias\n  [PASS] model.layers.16.self_attn.q_proj.weight\n  [PASS] model.layers.16.self_attn.v_proj.bias\n  [PASS] model.layers.16.self_attn.v_proj.weight\n  [PASS] model.layers.17.input_layernorm.weight\n  [PASS] model.layers.17.mlp.down_proj.weight\n  [PASS] model.layers.17.mlp.gate_proj.weight\n  [PASS] model.layers.17.mlp.up_proj.weight\n  [PASS] model.layers.17.post_attention_layernorm.weight\n  [PASS] model.layers.17.self_attn.k_proj.bias\n  [PASS] model.layers.17.self_attn.k_proj.weight\n  [PASS] model.layers.17.self_attn.o_proj.weight\n  [PASS] model.layers.17.self_attn.q_proj.bias\n  [PASS] model.layers.17.self_attn.q_proj.weight\n  [PASS] model.layers.17.self_attn.v_proj.bias\n  [PASS] model.layers.17.self_attn.v_proj.weight\n  [PASS] model.layers.18.input_layernorm.weight\n  [PASS] model.layers.18.mlp.down_proj.weight\n  [PASS] model.layers.18.mlp.gate_proj.weight\n  [PASS] model.layers.18.mlp.up_proj.weight\n  [PASS] model.layers.18.post_attention_layernorm.weight\n  [PASS] model.layers.18.self_attn.k_proj.bias\n  [PASS] model.layers.18.self_attn.k_proj.weight\n  [PASS] model.layers.18.self_attn.o_proj.weight\n  [PASS] model.layers.18.self_attn.q_proj.bias\n  [PASS] model.layers.18.self_attn.q_proj.weight\n  [PASS] model.layers.18.self_attn.v_proj.bias\n  [PASS] model.layers.18.self_attn.v_proj.weight\n  [PASS] model.layers.19.input_layernorm.weight\n  [PASS] model.layers.19.mlp.down_proj.weight\n  [PASS] model.layers.19.mlp.gate_proj.weight\n  [PASS] model.layers.19.mlp.up_proj.weight\n  [PASS] model.layers.19.post_attention_layernorm.weight\n  [PASS] model.layers.19.self_attn.k_proj.bias\n  [PASS] model.layers.19.self_attn.k_proj.weight\n  [PASS] model.layers.19.self_attn.o_proj.weight\n  [PASS] model.layers.19.self_attn.q_proj.bias\n  [PASS] model.layers.19.self_attn.q_proj.weight\n  [PASS] model.layers.19.self_attn.v_proj.bias\n  [PASS] model.layers.19.self_attn.v_proj.weight\n  [PASS] model.layers.2.input_layernorm.weight\n  [PASS] model.layers.2.mlp.down_proj.weight\n  [PASS] model.layers.2.mlp.gate_proj.weight\n  [PASS] model.layers.2.mlp.up_proj.weight\n  [PASS] model.layers.2.post_attention_layernorm.weight\n  [PASS] model.layers.2.self_attn.k_proj.bias\n  [PASS] model.layers.2.self_attn.k_proj.weight\n  [PASS] model.layers.2.self_attn.o_proj.weight\n  [PASS] model.layers.2.self_attn.q_proj.bias\n  [PASS] model.layers.2.self_attn.q_proj.weight\n  [PASS] model.layers.2.self_attn.v_proj.bias\n  [PASS] model.layers.2.self_attn.v_proj.weight\n  [PASS] model.layers.20.input_layernorm.weight\n  [PASS] model.layers.20.mlp.down_proj.weight\n  [PASS] model.layers.20.mlp.gate_proj.weight\n  [PASS] model.layers.20.mlp.up_proj.weight\n  [PASS] model.layers.20.post_attention_layernorm.weight\n  [PASS] model.layers.20.self_attn.k_proj.bias\n  [PASS] model.layers.20.self_attn.k_proj.weight\n  [PASS] model.layers.20.self_attn.o_proj.weight\n  [PASS] model.layers.20.self_attn.q_proj.bias\n  [PASS] model.layers.20.self_attn.q_proj.weight\n  [PASS] model.layers.20.self_attn.v_proj.bias\n  [PASS] model.layers.20.self_attn.v_proj.weight\n  [PASS] model.layers.21.input_layernorm.weight\n  [PASS] model.layers.21.mlp.down_proj.weight\n  [PASS] model.layers.21.mlp.gate_proj.weight\n  [PASS] model.layers.21.mlp.up_proj.weight\n  [PASS] model.layers.21.post_attention_layernorm.weight\n  [PASS] model.layers.21.self_attn.k_proj.bias\n  [PASS] model.layers.21.self_attn.k_proj.weight\n  [PASS] model.layers.21.self_attn.o_proj.weight\n  [PASS] model.layers.21.self_attn.q_proj.bias\n  [PASS] model.layers.21.self_attn.q_proj.weight\n  [PASS] model.layers.21.self_attn.v_proj.bias\n  [PASS] model.layers.21.self_attn.v_proj.weight\n  [PASS] model.layers.22.input_layernorm.weight\n  [PASS] model.layers.22.mlp.down_proj.weight\n  [PASS] model.layers.22.mlp.gate_proj.weight\n  [PASS] model.layers.22.mlp.up_proj.weight\n  [PASS] model.layers.22.post_attention_layernorm.weight\n  [PASS] model.layers.22.self_attn.k_proj.bias\n  [PASS] model.layers.22.self_attn.k_proj.weight\n  [PASS] model.layers.22.self_attn.o_proj.weight\n  [PASS] model.layers.22.self_attn.q_proj.bias\n  [PASS] model.layers.22.self_attn.q_proj.weight\n  [PASS] model.layers.22.self_attn.v_proj.bias\n  [PASS] model.layers.22.self_attn.v_proj.weight\n  [PASS] model.layers.23.input_layernorm.weight\n  [PASS] model.layers.23.mlp.down_proj.weight\n  [PASS] model.layers.23.mlp.gate_proj.weight\n  [PASS] model.layers.23.mlp.up_proj.weight\n  [PASS] model.layers.23.post_attention_layernorm.weight\n  [PASS] model.layers.23.self_attn.k_proj.bias\n  [PASS] model.layers.23.self_attn.k_proj.weight\n  [PASS] model.layers.23.self_attn.o_proj.weight\n  [PASS] model.layers.23.self_attn.q_proj.bias\n  [PASS] model.layers.23.self_attn.q_proj.weight\n  [PASS] model.layers.23.self_attn.v_proj.bias\n  [PASS] model.layers.23.self_attn.v_proj.weight\n  [PASS] model.layers.3.input_layernorm.weight\n  [PASS] model.layers.3.mlp.down_proj.weight\n  [PASS] model.layers.3.mlp.gate_proj.weight\n  [PASS] model.layers.3.mlp.up_proj.weight\n  [PASS] model.layers.3.post_attention_layernorm.weight\n  [PASS] model.layers.3.self_attn.k_proj.bias\n  [PASS] model.layers.3.self_attn.k_proj.weight\n  [PASS] model.layers.3.self_attn.o_proj.weight\n  [PASS] model.layers.3.self_attn.q_proj.bias\n  [PASS] model.layers.3.self_attn.q_proj.weight\n  [PASS] model.layers.3.self_attn.v_proj.bias\n  [PASS] model.layers.3.self_attn.v_proj.weight\n  [PASS] model.layers.4.input_layernorm.weight\n  [PASS] model.layers.4.mlp.down_proj.weight\n  [PASS] model.layers.4.mlp.gate_proj.weight\n  [PASS] model.layers.4.mlp.up_proj.weight\n  [PASS] model.layers.4.post_attention_layernorm.weight\n  [PASS] model.layers.4.self_attn.k_proj.bias\n  [PASS] model.layers.4.self_attn.k_proj.weight\n  [PASS] model.layers.4.self_attn.o_proj.weight\n  [PASS] model.layers.4.self_attn.q_proj.bias\n  [PASS] model.layers.4.self_attn.q_proj.weight\n  [PASS] model.layers.4.self_attn.v_proj.bias\n  [PASS] model.layers.4.self_attn.v_proj.weight\n  [PASS] model.layers.5.input_layernorm.weight\n  [PASS] model.layers.5.mlp.down_proj.weight\n  [PASS] model.layers.5.mlp.gate_proj.weight\n  [PASS] model.layers.5.mlp.up_proj.weight\n  [PASS] model.layers.5.post_attention_layernorm.weight\n  [PASS] model.layers.5.self_attn.k_proj.bias\n  [PASS] model.layers.5.self_attn.k_proj.weight\n  [PASS] model.layers.5.self_attn.o_proj.weight\n  [PASS] model.layers.5.self_attn.q_proj.bias\n  [PASS] model.layers.5.self_attn.q_proj.weight\n  [PASS] model.layers.5.self_attn.v_proj.bias\n  [PASS] model.layers.5.self_attn.v_proj.weight\n  [PASS] model.layers.6.input_layernorm.weight\n  [PASS] model.layers.6.mlp.down_proj.weight\n  [PASS] model.layers.6.mlp.gate_proj.weight\n  [PASS] model.layers.6.mlp.up_proj.weight\n  [PASS] model.layers.6.post_attention_layernorm.weight\n  [PASS] model.layers.6.self_attn.k_proj.bias\n  [PASS] model.layers.6.self_attn.k_proj.weight\n  [PASS] model.layers.6.self_attn.o_proj.weight\n  [PASS] model.layers.6.self_attn.q_proj.bias\n  [PASS] model.layers.6.self_attn.q_proj.weight\n  [PASS] model.layers.6.self_attn.v_proj.bias\n  [PASS] model.layers.6.self_attn.v_proj.weight\n  [PASS] model.layers.7.input_layernorm.weight\n  [PASS] model.layers.7.mlp.down_proj.weight\n  [PASS] model.layers.7.mlp.gate_proj.weight\n  [PASS] model.layers.7.mlp.up_proj.weight\n  [PASS] model.layers.7.post_attention_layernorm.weight\n  [PASS] model.layers.7.self_attn.k_proj.bias\n  [PASS] model.layers.7.self_attn.k_proj.weight\n  [PASS] model.layers.7.self_attn.o_proj.weight\n  [PASS] model.layers.7.self_attn.q_proj.bias\n  [PASS] model.layers.7.self_attn.q_proj.weight\n  [PASS] model.layers.7.self_attn.v_proj.bias\n  [PASS] model.layers.7.self_attn.v_proj.weight\n  [PASS] model.layers.8.input_layernorm.weight\n  [PASS] model.layers.8.mlp.down_proj.weight\n  [PASS] model.layers.8.mlp.gate_proj.weight\n  [PASS] model.layers.8.mlp.up_proj.weight\n  [PASS] model.layers.8.post_attention_layernorm.weight\n  [PASS] model.layers.8.self_attn.k_proj.bias\n  [PASS] model.layers.8.self_attn.k_proj.weight\n  [PASS] model.layers.8.self_attn.o_proj.weight\n  [PASS] model.layers.8.self_attn.q_proj.bias\n  [PASS] model.layers.8.self_attn.q_proj.weight\n  [PASS] model.layers.8.self_attn.v_proj.bias\n  [PASS] model.layers.8.self_attn.v_proj.weight\n  [PASS] model.layers.9.input_layernorm.weight\n  [PASS] model.layers.9.mlp.down_proj.weight\n  [PASS] model.layers.9.mlp.gate_proj.weight\n  [PASS] model.layers.9.mlp.up_proj.weight\n  [PASS] model.layers.9.post_attention_layernorm.weight\n  [PASS] model.layers.9.self_attn.k_proj.bias\n  [PASS] model.layers.9.self_attn.k_proj.weight\n  [PASS] model.layers.9.self_attn.o_proj.weight\n  [PASS] model.layers.9.self_attn.q_proj.bias\n  [PASS] model.layers.9.self_attn.q_proj.weight\n  [PASS] model.layers.9.self_attn.v_proj.bias\n  [PASS] model.layers.9.self_attn.v_proj.weight\n  [PASS] model.norm.weight\n\nVALID: 290 tensors checked, 0 contract violations (PMAT-235)\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 2726
+    },
+    "timestamp": "2026-02-07T18:04:47.294647586Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189208fd3f8aa7e4",
+    "gate_id": "G0-INTEGRITY-CONFIG",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Integrity: config.json vs tensor metadata",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: config.json matches tensor metadata",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:04:47.295826322Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189208fd3fb59186",
+    "gate_id": "G0-LAYOUT-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Layout: tensor shape contract validation",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: Tensor layouts conform to contract\n  Rules checked: 220\n  Rules passed: 220",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-02-07T18:04:47.298638635Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189208ffcc9ae7de",
+    "gate_id": "F-A1-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors\n\ntokens: 8\nlatency: 8140.20ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors",
+    "stderr": "[DEBUG] Input tokens: [151644, 872, 198, 3838, 374, 220, 17, 10, 17, 30, 151645, 198, 151644, 77091, 198]\n[DEBUG] Generated tokens: [17, 488, 220, 17, 16819, 220, 19, 13]\n[GH-189] Loaded tokenizer from output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/tokenizer.json: 22 special tokens\nGenerated 8 tokens in 3911.4ms (2.0 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.0,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 10953
+    },
+    "timestamp": "2026-02-07T18:04:58.252414617Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018920903db874919",
+    "gate_id": "F-A1-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000001",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 1,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\n\ntokens: 8\nlatency: 9922.32ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr",
+    "stderr": "[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\n[APR-LOAD] Embedding tensor 'model.embed_tokens.weight': dims=[151936, 896], expected [vocab=151936, hidden=896]\n[APR-LOAD] Embedding dims=[151936, 896], using raw data (no transpose needed)\n[APR-LOAD] Token 0 embedding sample: [-0.0166, 0.0251, 0.0231, 0.0123, -0.0299]\n[APR-LOAD] Embedding loaded: 136134656 elements (vocab=151936 x hidden=896)\n[APR-LOAD] LM head tensor 'lm_head.weight': dims=[151936, 896], dtype=0, expected [vocab=151936, hidden=896]\n[APR-LOAD] LM head loaded: 136134656 elements (hidden=896 x vocab=151936)\n[APR-LOAD] LM head using F32 matmul (no Q4K/Q6K found)\n[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\nGenerated 8 tokens in 3867.3ms (2.1 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.8,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 17430
+    },
+    "timestamp": "2026-02-07T18:05:15.682655891Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892090546bef2da",
+    "gate_id": "F-A1-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_gguf_0000000000000002",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 2,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf\n\ntokens: 32\nlatency: 1780.06ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf",
+    "stderr": "Generated 32 tokens in 822.8ms (38.9 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 18.0,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 6093
+    },
+    "timestamp": "2026-02-07T18:05:21.776433616Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018920907cd5c2fa7",
+    "gate_id": "F-A2-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_gpu_safetensors_0000000000000003",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 3,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors\n\ntokens: 8\nlatency: 7943.15ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors",
+    "stderr": "[DEBUG] Input tokens: [151644, 872, 198, 3838, 374, 220, 17, 10, 17, 30, 151645, 198, 151644, 77091, 198]\n[DEBUG] Generated tokens: [17, 488, 220, 17, 16819, 220, 19, 13]\n[GH-189] Loaded tokenizer from output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/tokenizer.json: 22 special tokens\nGenerated 8 tokens in 3689.8ms (2.2 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.0,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 10848
+    },
+    "timestamp": "2026-02-07T18:05:32.624819960Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892090c8b87a66c",
+    "gate_id": "F-A2-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_gpu_apr_0000000000000004",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 4,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\n\ntokens: 8\nlatency: 12746.34ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr",
+    "stderr": "[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\n[APR-LOAD] Embedding tensor 'model.embed_tokens.weight': dims=[151936, 896], expected [vocab=151936, hidden=896]\n[APR-LOAD] Embedding dims=[151936, 896], using raw data (no transpose needed)\n[APR-LOAD] Token 0 embedding sample: [-0.0166, 0.0251, 0.0231, 0.0123, -0.0299]\n[APR-LOAD] Embedding loaded: 136134656 elements (vocab=151936 x hidden=896)\n[APR-LOAD] LM head tensor 'lm_head.weight': dims=[151936, 896], dtype=0, expected [vocab=151936, hidden=896]\n[APR-LOAD] LM head loaded: 136134656 elements (hidden=896 x vocab=151936)\n[APR-LOAD] LM head using F32 matmul (no Q4K/Q6K found)\n[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\nGenerated 8 tokens in 4959.1ms (1.6 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.6,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 20370
+    },
+    "timestamp": "2026-02-07T18:05:52.995208858Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892090f75b0266b",
+    "gate_id": "F-A2-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_gpu_gguf_0000000000000005",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "gpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 5,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf\n\ntokens: 32\nlatency: 7802.69ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf",
+    "stderr": "Generated 32 tokens in 6696.3ms (4.8 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 4.1,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 12518
+    },
+    "timestamp": "2026-02-07T18:06:05.513665840Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209129ffd1cac",
+    "gate_id": "F-A3-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_chat_cpu_safetensors_0000000000000006",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 6,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors\n\ntokens: 8\nlatency: 10415.31ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors",
+    "stderr": "[DEBUG] Input tokens: [151644, 872, 198, 3838, 374, 220, 17, 10, 17, 30, 151645, 198, 151644, 77091, 198]\n[DEBUG] Generated tokens: [17, 488, 220, 17, 16819, 220, 19, 13]\n[GH-189] Loaded tokenizer from output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/tokenizer.json: 22 special tokens\nGenerated 8 tokens in 5024.5ms (1.6 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.8,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13594
+    },
+    "timestamp": "2026-02-07T18:06:19.108255208Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209175a072c97",
+    "gate_id": "F-A3-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_chat_cpu_apr_0000000000000007",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 7,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\n\ntokens: 8\nlatency: 11255.08ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr",
+    "stderr": "[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\n[APR-LOAD] Embedding tensor 'model.embed_tokens.weight': dims=[151936, 896], expected [vocab=151936, hidden=896]\n[APR-LOAD] Embedding dims=[151936, 896], using raw data (no transpose needed)\n[APR-LOAD] Token 0 embedding sample: [-0.0166, 0.0251, 0.0231, 0.0123, -0.0299]\n[APR-LOAD] Embedding loaded: 136134656 elements (vocab=151936 x hidden=896)\n[APR-LOAD] LM head tensor 'lm_head.weight': dims=[151936, 896], dtype=0, expected [vocab=151936, hidden=896]\n[APR-LOAD] LM head loaded: 136134656 elements (hidden=896 x vocab=151936)\n[APR-LOAD] LM head using F32 matmul (no Q4K/Q6K found)\n[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\nGenerated 8 tokens in 4761.7ms (1.7 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.7,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 20301
+    },
+    "timestamp": "2026-02-07T18:06:39.409345803Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209194e5604fe",
+    "gate_id": "F-A3-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_chat_cpu_gguf_0000000000000008",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 8,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf\n\ntokens: 32\nlatency: 3371.86ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf",
+    "stderr": "Generated 32 tokens in 2274.4ms (14.1 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 9.5,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 8393
+    },
+    "timestamp": "2026-02-07T18:06:47.803120468Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892091c9af1818e",
+    "gate_id": "F-A4-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_chat_gpu_safetensors_0000000000000009",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 9,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors\n\ntokens: 8\nlatency: 11295.31ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors",
+    "stderr": "[DEBUG] Input tokens: [151644, 872, 198, 3838, 374, 220, 17, 10, 17, 30, 151645, 198, 151644, 77091, 198]\n[DEBUG] Generated tokens: [17, 488, 220, 17, 16819, 220, 19, 13]\n[GH-189] Loaded tokenizer from output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/tokenizer.json: 22 special tokens\nGenerated 8 tokens in 6303.7ms (1.3 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.7,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 14170
+    },
+    "timestamp": "2026-02-07T18:07:01.973280811Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892092098c200aa",
+    "gate_id": "F-A4-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_chat_gpu_apr_000000000000000a",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 10,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\n\ntokens: 8\nlatency: 9776.68ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr",
+    "stderr": "[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\n[APR-LOAD] Embedding tensor 'model.embed_tokens.weight': dims=[151936, 896], expected [vocab=151936, hidden=896]\n[APR-LOAD] Embedding dims=[151936, 896], using raw data (no transpose needed)\n[APR-LOAD] Token 0 embedding sample: [-0.0166, 0.0251, 0.0231, 0.0123, -0.0299]\n[APR-LOAD] Embedding loaded: 136134656 elements (vocab=151936 x hidden=896)\n[APR-LOAD] LM head tensor 'lm_head.weight': dims=[151936, 896], dtype=0, expected [vocab=151936, hidden=896]\n[APR-LOAD] LM head loaded: 136134656 elements (hidden=896 x vocab=151936)\n[APR-LOAD] LM head using F32 matmul (no Q4K/Q6K found)\n[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\nGenerated 8 tokens in 3779.6ms (2.1 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.8,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 17143
+    },
+    "timestamp": "2026-02-07T18:07:19.116482274Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892092209905625",
+    "gate_id": "F-A4-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_chat_gpu_gguf_000000000000000b",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "gpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 11,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf\n\ntokens: 32\nlatency: 1957.22ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf",
+    "stderr": "Generated 32 tokens in 991.5ms (32.3 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 16.3,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 6187
+    },
+    "timestamp": "2026-02-07T18:07:25.304020422Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209246be262cb",
+    "gate_id": "F-A5-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors\n\ntokens: 8\nlatency: 7459.78ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors",
+    "stderr": "[DEBUG] Input tokens: [151644, 872, 198, 3838, 374, 220, 17, 10, 17, 30, 151645, 198, 151644, 77091, 198]\n[DEBUG] Generated tokens: [17, 488, 220, 17, 16819, 220, 19, 13]\n[GH-189] Loaded tokenizer from output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/tokenizer.json: 22 special tokens\nGenerated 8 tokens in 3559.2ms (2.2 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.1,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 10239
+    },
+    "timestamp": "2026-02-07T18:07:35.543499041Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892092825931cb8",
+    "gate_id": "F-A5-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\n\ntokens: 8\nlatency: 9550.85ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr",
+    "stderr": "[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\n[APR-LOAD] Embedding tensor 'model.embed_tokens.weight': dims=[151936, 896], expected [vocab=151936, hidden=896]\n[APR-LOAD] Embedding dims=[151936, 896], using raw data (no transpose needed)\n[APR-LOAD] Token 0 embedding sample: [-0.0166, 0.0251, 0.0231, 0.0123, -0.0299]\n[APR-LOAD] Embedding loaded: 136134656 elements (vocab=151936 x hidden=896)\n[APR-LOAD] LM head tensor 'lm_head.weight': dims=[151936, 896], dtype=0, expected [vocab=151936, hidden=896]\n[APR-LOAD] LM head loaded: 136134656 elements (hidden=896 x vocab=151936)\n[APR-LOAD] LM head using F32 matmul (no Q4K/Q6K found)\n[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\nGenerated 8 tokens in 3716.4ms (2.2 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.8,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 16000
+    },
+    "timestamp": "2026-02-07T18:07:51.543767782Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892092988ac605a",
+    "gate_id": "F-A5-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_serve_cpu_gguf_000000000000000e",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 14,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf\n\ntokens: 32\nlatency: 1746.30ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf",
+    "stderr": "Generated 32 tokens in 810.7ms (39.5 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 18.3,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 5957
+    },
+    "timestamp": "2026-02-07T18:07:57.501335017Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892092bf053bd98",
+    "gate_id": "F-A6-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors\n\ntokens: 8\nlatency: 7532.30ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors",
+    "stderr": "[DEBUG] Input tokens: [151644, 872, 198, 3838, 374, 220, 17, 10, 17, 30, 151645, 198, 151644, 77091, 198]\n[DEBUG] Generated tokens: [17, 488, 220, 17, 16819, 220, 19, 13]\n[GH-189] Loaded tokenizer from output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/tokenizer.json: 22 special tokens\nGenerated 8 tokens in 3560.1ms (2.2 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.1,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 10328
+    },
+    "timestamp": "2026-02-07T18:08:07.830291528Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892092fa8589305",
+    "gate_id": "F-A6-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\n\ntokens: 8\nlatency: 9708.39ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr",
+    "stderr": "[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\n[APR-LOAD] Embedding tensor 'model.embed_tokens.weight': dims=[151936, 896], expected [vocab=151936, hidden=896]\n[APR-LOAD] Embedding dims=[151936, 896], using raw data (no transpose needed)\n[APR-LOAD] Token 0 embedding sample: [-0.0166, 0.0251, 0.0231, 0.0123, -0.0299]\n[APR-LOAD] Embedding loaded: 136134656 elements (vocab=151936 x hidden=896)\n[APR-LOAD] LM head tensor 'lm_head.weight': dims=[151936, 896], dtype=0, expected [vocab=151936, hidden=896]\n[APR-LOAD] LM head loaded: 136134656 elements (hidden=896 x vocab=151936)\n[APR-LOAD] LM head using F32 matmul (no Q4K/Q6K found)\n[PMAT-171] Loaded embedded BPE tokenizer: 151936 vocab, 151387 merges, 23 special tokens\nGenerated 8 tokens in 3678.3ms (2.2 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.8,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 15972
+    },
+    "timestamp": "2026-02-07T18:08:23.802517551Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209310c2851f8",
+    "gate_id": "F-A6-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_serve_gpu_gguf_0000000000000011",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 17,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf\n\ntokens: 32\nlatency: 1744.57ms\nmodel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf",
+    "stderr": "Generated 32 tokens in 794.4ms (40.3 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 18.3,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 5969
+    },
+    "timestamp": "2026-02-07T18:08:29.772044857Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892093427dbf361",
+    "gate_id": "F-CONV-G-A",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Convert Gguf to Apr",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion infrastructure error: Execution error: Conversion failed: [PMAT-232] ERROR: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\nerror: Validation failed: Conversion failed: Invalid model format: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:08:43.121702541Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892093fb46619b1",
+    "gate_id": "F-CONV-A-G",
+    "scenario": {
+      "id": "test_run_cpu_gguf_0000000000000000",
+      "model": {
+        "org": "conversion",
+        "name": "test",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "Convert Apr to Gguf",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion Apr → Gguf produced different output (diff: 8.00e-1, ε: 1.00e-6)",
+    "output": "299e3917f2c10bfc",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:09:32.724207082Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018920942b1cd66ed",
+    "gate_id": "F-CONV-G-S",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Convert Gguf to SafeTensors",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion infrastructure error: Execution error: Conversion failed: [PMAT-232] ERROR: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\nerror: Validation failed: Conversion failed: Invalid model format: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:09:45.565547162Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892094d2ddadefa",
+    "gate_id": "F-CONV-S-G",
+    "scenario": {
+      "id": "test_run_cpu_gguf_0000000000000000",
+      "model": {
+        "org": "conversion",
+        "name": "test",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "Convert SafeTensors to Gguf",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion SafeTensors → Gguf produced different output (diff: 8.00e-1, ε: 1.00e-6)",
+    "output": "d798268e8686f8e2",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:10:30.596477417Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892095a30638866",
+    "gate_id": "F-CONV-A-S",
+    "scenario": {
+      "id": "test_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "conversion",
+        "name": "test",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Convert Apr to SafeTensors",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion Apr → SafeTensors produced different output (diff: 8.12e-1, ε: 1.00e-6)",
+    "output": "89c307a502677d5b",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:11:26.473563326Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209655862e035",
+    "gate_id": "F-CONV-S-A",
+    "scenario": {
+      "id": "test_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "conversion",
+        "name": "test",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Convert SafeTensors to Apr",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion SafeTensors → Apr produced different output (diff: 7.67e-1, ε: 1.00e-6)",
+    "output": "68d1884cf3a1a298",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:12:14.389249005Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209688007cd43",
+    "gate_id": "F-CONV-RT-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_gguf_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "Round-trip conversion",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Round-trip failed: Execution error: Conversion failed: [PMAT-232] ERROR: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\nerror: Validation failed: Conversion failed: Invalid model format: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:12:27.939270867Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001892097ca00ececc",
+    "gate_id": "F-CONV-RT-002",
+    "scenario": {
+      "id": "test_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "conversion",
+        "name": "test",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Convert SafeTensors to SafeTensors",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Round-trip conversion produced different output",
+    "output": "6377819394a42037",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:13:54.375946854Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018920992ed9f4194",
+    "gate_id": "F-CONV-RT-003",
+    "scenario": {
+      "id": "test_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "conversion",
+        "name": "test",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Convert SafeTensors to SafeTensors",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Round-trip conversion produced different output",
+    "output": "0af8a3ea40de9c3f",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:15:30.166539435Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209a927a5eb38",
+    "gate_id": "F-CONV-RT-004",
+    "scenario": {
+      "id": "test_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "conversion",
+        "name": "test",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Convert SafeTensors to SafeTensors",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Round-trip conversion produced different output",
+    "output": "4e65c793cde2259c",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:17:05.629335209Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209bef0f7f4ec",
+    "gate_id": "F-CONV-SafeTensors-Apr",
+    "scenario": {
+      "id": "test_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "conversion",
+        "name": "test",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Convert SafeTensors to Apr",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Conversion successful, max_diff: 0.00e0",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:18:39.201245698Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209c08e0cbe7a",
+    "gate_id": "F-CONV-IDEM-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Idempotency: GGUF→APR twice",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Idempotency test failed: Execution error: Conversion failed: [PMAT-232] ERROR: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\nerror: Validation failed: Conversion failed: Invalid model format: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:18:46.131597833Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209c21ced5f58",
+    "gate_id": "F-CONV-COM-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Commutativity: GGUF→APR vs GGUF→ST→APR",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Commutativity test failed: Execution error: Conversion failed: [PMAT-232] ERROR: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\nerror: Validation failed: Conversion failed: Invalid model format: GGUF file 'output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/gguf/model.gguf' has no embedded tokenizer vocabulary. This is a 'weights-only' GGUF that cannot produce a working APR file. Solutions: (1) Use a GGUF with embedded tokenizer, or (2) Provide --tokenizer /path/to/tokenizer.json, or (3) Use SafeTensors format with sibling tokenizer.json, or (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:18:52.823651057Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209cc5e30845c",
+    "gate_id": "F-GOLDEN-RULE-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Golden Rule: convert → inference → diff",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Golden Rule PASS: identical output: 2 + 2 equals 4.",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:19:36.868243485Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209cd473c78b3",
+    "gate_id": "F-CONTRACT-I2-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Format contract invariant",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "I-2 Tensor Name Bijection: all 0 source tensors present in APR (0 total)",
+    "output": "source=0, apr=0",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:19:40.778118220Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209cfa217e21f",
+    "gate_id": "F-CONTRACT-I3-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Format contract invariant",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "I-3 No Silent Fallbacks: no F32 fallbacks detected",
+    "output": "\n=== Model Self-Test (PMAT-112: Real Validation) ===\nModel: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\n\n┌─────┬─────────────────────┬──────────────────────────────────────┬──────┐\n│  #  │      Component      │               Details                │ Pass │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 1   │ Tokenizer           │ tokens=[1, 2]                        │ ✅    │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 2   │ Embedding           │ Found embedding tensor               │ ✅    │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 3   │ Positional Encoding │ RoPE computed inline                 │ ✅    │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 4   │ Q/K/V Projection    │ Q/K/V found                          │ ✅    │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 5   │ Attention Scores    │ Attention output found               │ ✅    │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 6   │ Feed-Forward (MLP)  │ MLP found                            │ ✅    │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 7   │ Layer Norm          │ 24 layers                            │ ✅    │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 8   │ LM Head             │ vocab_size=151936                    │ ✅    │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 9   │ Logits → Probs      │ logits[151936]                       │ ✅    │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 10  │ Sampler/Decode      │ softmax sum = 1.000068               │ ✅    │\n└─────┴─────────────────────┴──────────────────────────────────────┴──────┘\n\n✅ 10/10 STAGES PASSED. MODEL PROVEN CORRECT.\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:19:50.892382416Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209d4e9a47b7a",
+    "gate_id": "F-CONTRACT-I4-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Format contract invariant",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "I-4 Statistical Preservation: statistics diverged: ╔══════════════════════════════════════════════════════════════════════════════╗\n║             TENSOR STATISTICS VALIDATION (PMAT-202, JAX-STAT-002)           ║\n╠══════════════════════════════════════════════════════════════════════════════╣\n║ Model: ...ace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors ║\n║ Threshold: 3.0σ                                                             ║\n║ Reference: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr   ║\n╠══════════════════════════════════════════════════════════════════════════════╣\n║ ✓ All tensors within expected statistical bounds ║\n╚══════════════════════════════════════════════════════════════════════════════╝\n",
+    "output": "╔══════════════════════════════════════════════════════════════════════════════╗\n║             TENSOR STATISTICS VALIDATION (PMAT-202, JAX-STAT-002)           ║\n╠══════════════════════════════════════════════════════════════════════════════╣\n║ Model: ...ace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors ║\n║ Threshold: 3.0σ                                                             ║\n║ Reference: output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr   ║\n╠══════════════════════════════════════════════════════════════════════════════╣\n║ ✓ All tensors within expected statistical bounds ║\n╚══════════════════════════════════════════════════════════════════════════════╝\n",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:20:13.567614900Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189209d93a77241f",
+    "gate_id": "F-CONTRACT-I5-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-0.5B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-0.5B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Format contract invariant",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "I-5 Tokenizer Roundtrip: inference output mismatch: {\n  \"model_a\": \"output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors\",\n  \"model_b\": \"output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\",\n  \"prompt\": \"Hello\",\n  \"total_tokens\": 0,\n  \"mismatches\": 0,\n  \"match_rate\": 0.0000,\n  \"text_a\": \"Architecture: Qwen2ForCausalLM (24 layers, vocab_size=151936) #\",\n  \"text_b\": \"Hello\",\n  \"passed\": true\n}\n",
+    "output": "{\n  \"model_a\": \"output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/safetensors/model.safetensors\",\n  \"model_b\": \"output/workspace/Qwen/Qwen2.5-Coder-0.5B-Instruct/apr/model.apr\",\n  \"prompt\": \"Hello\",\n  \"total_tokens\": 0,\n  \"mismatches\": 0,\n  \"match_rate\": 0.0000,\n  \"text_a\": \"Architecture: Qwen2ForCausalLM (24 layers, vocab_size=151936) #\",\n  \"text_b\": \"Hello\",\n  \"passed\": true\n}\n",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-02-07T18:20:32.103466916Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  }
+]

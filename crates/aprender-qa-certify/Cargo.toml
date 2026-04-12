@@ -1,0 +1,24 @@
+[package]
+name = "aprender-qa-certify"
+description = "Model certification tools and README synchronization"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "apr_qa_certify"
+
+[dependencies]
+thiserror = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[bin]]
+name = "aprender-qa-readme-sync"
+path = "src/main.rs"

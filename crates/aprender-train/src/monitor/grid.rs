@@ -80,9 +80,7 @@ pub struct MonitorGrid {
 
 impl Default for MonitorGrid {
     fn default() -> Self {
-        let mut grid = Self {
-            occupied: std::collections::HashSet::with_capacity(TOTAL_CELLS),
-        };
+        let mut grid = Self { occupied: std::collections::HashSet::with_capacity(TOTAL_CELLS) };
         grid.assign_all();
         grid
     }
@@ -204,10 +202,13 @@ mod tests {
         assert_eq!(Region::ALL.len(), 11);
         let grid = MonitorGrid::default();
         // Count cells per region
-        let total: usize = Region::ALL.iter().map(|r| {
-            let (c0, c1, r0, r1) = r.bounds();
-            (c1 - c0) as usize * (r1 - r0) as usize
-        }).sum();
+        let total: usize = Region::ALL
+            .iter()
+            .map(|r| {
+                let (c0, c1, r0, r1) = r.bounds();
+                (c1 - c0) as usize * (r1 - r0) as usize
+            })
+            .sum();
         assert_eq!(total, TOTAL_CELLS);
         assert_eq!(grid.occupied_count(), total);
     }
@@ -231,7 +232,7 @@ mod tests {
         let ema = 5.0;
         assert!(anomaly::is_spike(10.01, ema, 1000, 100)); // 2.002× — spike
         assert!(!anomaly::is_spike(9.99, ema, 1000, 100)); // 1.998× — not spike
-        assert!(!anomaly::is_spike(10.01, ema, 50, 100));  // warmup — immune
+        assert!(!anomaly::is_spike(10.01, ema, 50, 100)); // warmup — immune
         assert!(!anomaly::is_spike(10.01, ema, 100, 100)); // boundary — immune (step == warmup)
     }
 
@@ -249,9 +250,9 @@ mod tests {
     // Gradient explosion detection
     #[test]
     fn gradient_explosion_detection() {
-        assert!(anomaly::is_gradient_explosion(1000.0, 1.0));  // 1000×
-        assert!(!anomaly::is_gradient_explosion(99.0, 1.0));   // 99× — not explosion
-        assert!(!anomaly::is_gradient_explosion(100.0, 0.0));  // ema=0 — no reference
+        assert!(anomaly::is_gradient_explosion(1000.0, 1.0)); // 1000×
+        assert!(!anomaly::is_gradient_explosion(99.0, 1.0)); // 99× — not explosion
+        assert!(!anomaly::is_gradient_explosion(100.0, 0.0)); // ema=0 — no reference
     }
 
     // FALSIFY-TM-002 (proxy): Layout tiling — all regions tile without gap or overflow
@@ -265,12 +266,14 @@ mod tests {
             assert!(
                 rect.x + rect.width <= w,
                 "{region:?} exceeds width: x={} w={} term_w={w}",
-                rect.x, rect.width
+                rect.x,
+                rect.width
             );
             assert!(
                 rect.y + rect.height <= h,
                 "{region:?} exceeds height: y={} h={} term_h={h}",
-                rect.y, rect.height
+                rect.y,
+                rect.height
             );
         }
 

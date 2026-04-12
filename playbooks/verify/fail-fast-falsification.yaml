@@ -1,0 +1,115 @@
+name: fail-fast-falsification
+description: |
+  Popperian falsification tests for --fail-fast feature (§12.5.3)
+  Each test attempts to refute a hypothesis about the implementation.
+
+model: Qwen/Qwen2.5-Coder-1.5B-Instruct
+tier: verification
+
+tests:
+  # === CLI Flag Parsing (F-FF-CLI-*) ===
+  - id: F-FF-CLI-001
+    name: "--fail-fast flag is recognized"
+    hypothesis: "The CLI accepts --fail-fast without error"
+    command: "apr-qa run --help | grep -q 'fail-fast'"
+
+  - id: F-FF-CLI-002
+    name: "--failure-policy fail-fast is recognized"
+    hypothesis: "The CLI accepts --failure-policy fail-fast"
+    command: "apr-qa run --help | grep -q 'fail-fast'"
+
+  - id: F-FF-CLI-003
+    name: "--fail-fast overrides --failure-policy"
+    hypothesis: "When both flags provided, --fail-fast takes precedence"
+
+  - id: F-FF-CLI-004
+    name: "Invalid failure policy rejected"
+    hypothesis: "Unknown policy strings return error"
+
+  - id: F-FF-CLI-005
+    name: "Default policy unchanged"
+    hypothesis: "Without flags, default is still stop-on-p0"
+
+  # === FailurePolicy Enum (F-FF-ENUM-*) ===
+  - id: F-FF-ENUM-001
+    name: "FailFast variant exists"
+    hypothesis: "FailurePolicy::FailFast is a valid variant"
+
+  - id: F-FF-ENUM-002
+    name: "emit_diagnostic() returns true for FailFast"
+    hypothesis: "Only FailFast returns true from emit_diagnostic()"
+
+  - id: F-FF-ENUM-003
+    name: "stops_on_any_failure() returns true for FailFast"
+    hypothesis: "FailFast and StopOnFirst both stop on any failure"
+
+  - id: F-FF-ENUM-004
+    name: "FailFast is Copy"
+    hypothesis: "FailurePolicy implements Copy trait"
+
+  - id: F-FF-ENUM-005
+    name: "FailFast is Debug"
+    hypothesis: "FailurePolicy implements Debug trait"
+
+  # === Execution Behavior (F-FF-EXEC-*) ===
+  - id: F-FF-EXEC-001
+    name: "Stops on first failure"
+    hypothesis: "With FailFast, execution stops after first falsified gate"
+
+  - id: F-FF-EXEC-002
+    name: "Emits diagnostic output"
+    hypothesis: "FailFast emits [FAIL-FAST] prefixed messages to stderr"
+
+  - id: F-FF-EXEC-003
+    name: "Includes gate ID in output"
+    hypothesis: "Diagnostic includes the failing gate ID"
+
+  - id: F-FF-EXEC-004
+    name: "Includes model ID in output"
+    hypothesis: "Diagnostic includes the model identifier"
+
+  - id: F-FF-EXEC-005
+    name: "Includes stderr capture"
+    hypothesis: "If command has stderr, it's included in diagnostic"
+
+  # === Environment Logging (F-FF-ENV-*) ===
+  - id: F-FF-ENV-001
+    name: "Environment logged on fail-fast startup"
+    hypothesis: "log_environment() called when fail-fast mode active"
+
+  - id: F-FF-ENV-002
+    name: "OS info logged"
+    hypothesis: "Environment output includes OS and arch"
+
+  - id: F-FF-ENV-003
+    name: "Git commit logged"
+    hypothesis: "Environment output includes git commit hash"
+
+  - id: F-FF-ENV-004
+    name: "Dirty files detected"
+    hypothesis: "If repo is dirty, count is logged"
+
+  - id: F-FF-ENV-005
+    name: "apr-qa version logged"
+    hypothesis: "Environment includes apr-qa version"
+
+  # === Edge Cases (F-FF-EDGE-*) ===
+  - id: F-FF-EDGE-001
+    name: "No failure = no diagnostic"
+    hypothesis: "If all tests pass, no [FAIL-FAST] output"
+
+  - id: F-FF-EDGE-002
+    name: "Exit code 1 on failure"
+    hypothesis: "Process exits with code 1 when test fails"
+
+  - id: F-FF-EDGE-003
+    name: "Exit code 0 on success"
+    hypothesis: "Process exits with code 0 when all pass"
+
+  - id: F-FF-EDGE-004
+    name: "Evidence still collected"
+    hypothesis: "Even with early stop, evidence is saved"
+
+  - id: F-FF-EDGE-005
+    name: "Works with dry-run"
+    hypothesis: "--fail-fast --dry-run doesn't crash"

@@ -1,0 +1,34 @@
+# Verification Playbook for TICKET-178
+# apr validate incorrectly rejects valid GGUF v3 files
+#
+# Run with: apr-qa tools <model.gguf> --no-gpu
+
+name: verify-ticket-178
+version: "1.0.0"
+description: "Verify fix for TICKET-178: apr validate GGUF v3 support"
+
+verification_gates:
+  - id: V-TICKET-178-001
+    description: "apr validate accepts GGUF v3 magic bytes"
+    tool: validate
+    condition: "exit_code == 0"
+
+  - id: V-TICKET-178-002
+    description: "apr validate supports GGUF version 3.0"
+    tool: validate
+    condition: "!stderr.contains('Unsupported version')"
+
+  - id: V-TICKET-178-003
+    description: "apr validate reports VALID for working models"
+    tool: validate
+    condition: "stdout.contains('VALID') || exit_code == 0"
+
+acceptance:
+  validate_exit_code: 0
+  no_false_negatives: "true"
+
+metadata:
+  ticket: "https://github.com/paiml/aprender/issues/178"
+  severity: P2
+  component: apr-cli/validate
+  discovered: "2026-01-30"

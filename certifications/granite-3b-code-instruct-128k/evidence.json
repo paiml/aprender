@@ -1,0 +1,338 @@
+[
+  {
+    "id": "00000000000000001894ad4012d6ead2",
+    "gate_id": "G0-DIM-CONFIG_PARSE",
+    "scenario": {
+      "id": "granite-3b-code-instruct-128k_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "ibm-granite",
+        "name": "granite-3b-code-instruct-128k",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: config_parse",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: config_parse expected=config.json parseable actual=parsed successfully",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-02-16T08:37:24.169036954Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001894ad4012d71789",
+    "gate_id": "G0-DIM-HIDDEN_SIZE",
+    "scenario": {
+      "id": "granite-3b-code-instruct-128k_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "ibm-granite",
+        "name": "granite-3b-code-instruct-128k",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: hidden_size",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: hidden_size expected=2560 actual=2560",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-02-16T08:37:24.169046168Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001894ad4012d72179",
+    "gate_id": "G0-DIM-NUM_LAYERS",
+    "scenario": {
+      "id": "granite-3b-code-instruct-128k_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "ibm-granite",
+        "name": "granite-3b-code-instruct-128k",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: num_layers",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: num_layers expected=32 actual=32",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-02-16T08:37:24.169048702Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001894ad4012d729f6",
+    "gate_id": "G0-DIM-NUM_HEADS",
+    "scenario": {
+      "id": "granite-3b-code-instruct-128k_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "ibm-granite",
+        "name": "granite-3b-code-instruct-128k",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: num_heads",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: num_heads expected=32 actual=32",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-02-16T08:37:24.169050935Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001894ad4012d732b0",
+    "gate_id": "G0-DIM-NUM_KV_HEADS",
+    "scenario": {
+      "id": "granite-3b-code-instruct-128k_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "ibm-granite",
+        "name": "granite-3b-code-instruct-128k",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: num_kv_heads",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: num_kv_heads expected=32 actual=32",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-02-16T08:37:24.169053088Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001894ad4012d73d68",
+    "gate_id": "G0-DIM-VOCAB_SIZE",
+    "scenario": {
+      "id": "granite-3b-code-instruct-128k_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "ibm-granite",
+        "name": "granite-3b-code-instruct-128k",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: vocab_size",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: vocab_size expected=49152 actual=49152",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-02-16T08:37:24.169055862Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001894ad4012d746e0",
+    "gate_id": "G0-DIM-SAFETENSORS_FOUND",
+    "scenario": {
+      "id": "granite-3b-code-instruct-128k_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "ibm-granite",
+        "name": "granite-3b-code-instruct-128k",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: safetensors_found",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: safetensors_found expected=>= 1 file actual=2 file(s)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-02-16T08:37:24.169058286Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "00000000000000001894ad4012d74fa3",
+    "gate_id": "G0-DIM-SAFETENSORS_HEADER",
+    "scenario": {
+      "id": "granite-3b-code-instruct-128k_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "ibm-granite",
+        "name": "granite-3b-code-instruct-128k",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: safetensors_header",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: safetensors_header expected=>= 1 tensor actual=151 tensor(s)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-02-16T08:37:24.169060530Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  }
+]

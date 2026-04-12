@@ -1,8 +1,8 @@
 //! Benchmark tests for layout operations.
 
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion};
 use presentar_core::{Constraints, Size};
+use std::hint::black_box;
 
 fn bench_constraints_constrain(c: &mut Criterion) {
     let constraints = Constraints::new(0.0, 100.0, 0.0, 100.0);

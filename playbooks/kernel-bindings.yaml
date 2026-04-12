@@ -1,0 +1,114 @@
+# Kernel operation binding registry
+#
+# Maps QA framework kernel operations to their implementations in
+# trueno (SIMD kernels) and realizar (inference dispatch).
+#
+# Source of truth for `apr-qa kernel-coverage`.
+# Update this file when new kernels are added upstream.
+# Use `--verify` to validate claims against source code.
+#
+# op values use serde snake_case of KernelOp enum variants.
+# status values: fused, fallback, missing.
+
+version: "1.0.0"
+
+bindings:
+  # ── Quantized matmul (fused) ──
+  - op: fused_q4k_matvec
+    trueno_function: matmul_q4k_f32
+    realizar_function: fused_q4k_parallel_matvec_into
+    status: fused
+    notes: "K-quant 4-bit with SIMD. trueno::backends::q4k"
+
+  - op: fused_q5k_matvec
+    trueno_function: "BlockQ5K::dequantize"
+    realizar_function: fused_q5k_parallel_matvec_into
+    status: fused
+    notes: "K-quant 5-bit. trueno::brick::quant_ops"
+
+  - op: fused_q6k_matvec
+    trueno_function: matmul_q6k_f32
+    realizar_function: fused_q6k_parallel_matvec_into
+    status: fused
+    notes: "K-quant 6-bit with SIMD. trueno::backends::q6k"
+
+  # ── Normalization ──
+  - op: rms_norm
+    trueno_function: rms_norm_alloc
+    realizar_function: rms_norm
+    status: fused
+    notes: "trueno::blis::norms AVX2+FMA. realizar::gguf::ops"
+
+  - op: layer_norm
+    trueno_function: layer_norm_alloc
+    realizar_function: simd_layer_norm
+    status: fused
+    notes: "trueno::blis::norms AVX2+FMA. realizar::inference::norm"
+
+  # ── Activation functions ──
+  - op: silu
+    trueno_function: silu_scalar
+    realizar_function: simd_silu
+    status: fused
+    notes: "x * sigmoid(x). trueno::activations, realizar SIMD path"
+
+  - op: gelu
+    trueno_function: gelu_scalar
+    realizar_function: simd_gelu
+    status: fused
+    notes: "tanh approx. trueno::activations, realizar::inference::simd"
+
+  - op: swi_glu
+    trueno_function: silu_scalar
+    realizar_function: fused_gate_up_q4k_into
+    status: fused
+    notes: "gate * SiLU(up). realizar::quantize::fused_gate_up (Q4K/Q5K/Q6K)"
+
+  - op: gated_mlp
+    status: fallback
+    notes: "gate * GELU(up). No fused GELU-gated kernel; decomposes to matmul + gelu + mul"
+
+  # ── Positional encodings ──
+  - op: rope
+    realizar_function: apply_rope_rotation_simd
+    status: fused
+    notes: "NORM and NEOX styles. realizar::quantize::rope"
+
+  - op: alibi
+    status: missing
+    notes: "Required by Falcon, BLOOM. Not implemented in stack"
+
+  - op: absolute_position
+    realizar_function: position_embedding
+    status: fused
+    notes: "Learned position embeddings. realizar::gguf::model (GPT-2)"
+
+  # ── Attention mechanisms ──
+  - op: grouped_query_attention
+    trueno_function: DotOp
+    realizar_function: attention_with_cache_gqa
+    status: fused
+    notes: "trueno::brick::DotOp + realizar GQA dispatch. AVX2+FMA"
+
+  - op: multi_head_attention
+    trueno_function: DotOp
+    realizar_function: attention_with_cache_gqa
+    status: fused
+    notes: "MHA is GQA with kv_heads == num_heads"
+
+  - op: multi_query_attention
+    trueno_function: DotOp
+    realizar_function: attention_with_cache_gqa
+    status: fused
+    notes: "MQA is GQA with kv_heads == 1"
+
+  # ── Other operations ──
+  - op: bias_add
+    realizar_function: add_bias
+    status: fused
+    notes: "realizar::gguf::ops + realizar::apr_transformer::helpers"
+
+  - op: tied_embeddings
+    realizar_function: load_apr_lm_head
+    status: fused
+    notes: "Tied-weight fallback in realizar::apr_transformer::embedding"

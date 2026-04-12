@@ -1,0 +1,44 @@
+[
+  {
+    "id": "00000000000000001893a9dd2f24b887",
+    "gate_id": "G0-PULL-001",
+    "scenario": {
+      "id": "gemma-3-1b-it_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "google",
+        "name": "gemma-3-1b-it",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Pull: acquire model via apr pull",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "G0 FAIL: apr pull failed for google/gemma-3-1b-it: error: Network error: Download failed: artifact not found: huggingface 'google/gemma-3-1b-it' version main\n",
+    "output": "\u001b[1;36m=== APR Pull ===\u001b[0m\n\nModel: \u001b[36mhf://google/gemma-3-1b-it/model.safetensors\u001b[0m\n\n\u001b[33mDownloading...\u001b[0m\n\r  [==================================================] 100.0% (0 B/0 B)",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 390
+    },
+    "timestamp": "2026-02-13T01:24:05.930539864Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  }
+]

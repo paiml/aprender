@@ -123,6 +123,56 @@ pub enum Architecture {
     Opt,
 }
 
+/// Model category for tokenizer and preprocessor requirements (SPEC-MODEL-TYPE-001).
+///
+/// Orthogonal to kernel class (compute dispatch). See contract
+/// `contracts/aprender/model-type-taxonomy-v1.yaml`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelCategory {
+    /// Text-generating language model — requires text tokenizer for inference.
+    Llm,
+    /// Classical/statistical ML model — numeric input, no tokenizer needed.
+    Ml,
+    /// Speech/audio model — uses mel spectrogram features, not text tokenizer.
+    Audio,
+    /// Classification/embedding model — no text generation.
+    Embedding,
+}
+
+impl Architecture {
+    /// Returns true for text-generating LLM architectures that require a tokenizer.
+    ///
+    /// Audio (Whisper) and embedding (BERT) models do not require text tokenizers.
+    /// `Auto` defaults to true (fail-safe: require tokenizer unless proven otherwise).
+    ///
+    /// Contract: `contracts/aprender/model-type-taxonomy-v1.yaml` equation `is_llm`.
+    #[must_use]
+    pub const fn is_llm(&self) -> bool {
+        matches!(
+            self,
+            Self::Llama
+                | Self::Qwen2
+                | Self::Qwen3
+                | Self::Qwen3_5
+                | Self::Gpt2
+                | Self::Phi
+                | Self::GptNeoX
+                | Self::Opt
+                | Self::Auto
+        )
+    }
+
+    /// Returns the model category for this architecture.
+    #[must_use]
+    pub const fn category(&self) -> ModelCategory {
+        match self {
+            Self::Whisper => ModelCategory::Audio,
+            Self::Bert => ModelCategory::Embedding,
+            _ => ModelCategory::Llm,
+        }
+    }
+}
+
 include!("tensor_expectation.rs");
 include!("converter_types_expectations.rs");
 include!("sharded_index.rs");

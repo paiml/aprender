@@ -1,0 +1,37 @@
+[package]
+name = "aprender-qa-cli"
+description = "CLI for APR model qualification testing"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "apr_qa_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "apr-qa"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+aprender-qa-gen = { path = "../aprender-qa-gen" }
+aprender-qa-runner = { path = "../aprender-qa-runner" }
+aprender-qa-report = { path = "../aprender-qa-report" }
+aprender-qa-certify = { path = "../aprender-qa-certify" }
+ctrlc = "3.4"
+safetensors = { workspace = true }
+colored = "2.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

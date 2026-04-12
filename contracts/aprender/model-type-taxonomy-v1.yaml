@@ -1,0 +1,272 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-10"
+  author: "PAIML Engineering"
+  description: "Model type taxonomy — four categories with tokenizer requirements"
+  references:
+    - "SPEC-MODEL-TYPE-001: Model Type Taxonomy and Tokenizer Embedding Contract"
+    - "F-APR-SELF-CONTAINED-001 (scoped to LLM category by this contract)"
+    - "apr-cookbook: create_apr_linear_regression.rs (ML model without tokenizer)"
+    - "apr-cookbook: whisper_transcribe.rs (audio model without text tokenizer)"
+    - "[C1] Baltrusaitis et al. (2019) Multimodal ML: A Survey and Taxonomy. arXiv:1705.09406"
+    - "[C2] Patro & Agneeswaran (2026) LLMOrbit: Circular Taxonomy of LLMs. arXiv:2601.14053"
+    - "[C3] Casey et al. (2025) Empirical Study of Safetensors. arXiv:2501.02170"
+    - "HuggingFace AutoModelFor* task-based dispatch pattern (prior art for category→preprocessor mapping)"
+    - "Candle: 119 model modules, zero formal categorization (gap in Rust ML ecosystem)"
+    - "apr-model-qa-playbook: KernelClass A-F+SSM+Linear (kernel dispatch, orthogonal to modality)"
+    - "apr-model-qa-playbook: gateway-contract-v1.yaml G0 does not check tokenizer per model category"
+  tags:
+    - model-type
+    - tokenizer
+    - taxonomy
+    - jidoka
+
+categories:
+  llm:
+    description: "Text-generating language models (causal LM)"
+    architectures:
+      - Llama
+      - Qwen2
+      - Qwen3
+      - Qwen3_5
+      - Gpt2
+      - Phi
+      - GptNeoX
+      - Opt
+    tokenizer_required: true
+    rationale: "Tokenizer encodes prompt text to token IDs, decodes output IDs to text"
+    families:
+      - llama.yaml
+      - qwen2.yaml
+      - qwen3.yaml
+      - qwen3_5.yaml
+      - gpt2.yaml
+      - phi.yaml
+      - deepseek.yaml
+      - mistral.yaml
+      - falcon_h1.yaml
+      - gemma.yaml
+      - openelm.yaml
+      - mamba.yaml
+      - rwkv7.yaml
+
+  ml:
+    description: "Classical/statistical ML models (numeric input/output)"
+    architectures: []
+    models:
+      - LinearRegression
+      - LogisticRegression
+      - DecisionTree
+      - RandomForest
+      - GBM
+      - NaiveBayes
+      - KNN
+      - SVM
+      - KMeans
+      - PCA
+      - ARIMA
+      - ICA
+      - GLM
+      - BayesianLR
+    tokenizer_required: false
+    rationale: "Operate on Vec<f32> / Matrix feature vectors, not text"
+    apr_write_path: "AprConverter::to_apr() — does not use write_apr_file()"
+
+  audio:
+    description: "Speech-to-text encoder-decoder models"
+    architectures:
+      - Whisper
+    models:
+      - Whisper
+      - Moonshine
+    tokenizer_required: false
+    rationale: "Speech feature extraction via mel spectrogram, not text tokenizer"
+    families:
+      - whisper.yaml
+      - moonshine.yaml
+
+  embedding:
+    description: "Classification and embedding models (no text generation)"
+    architectures:
+      - Bert
+    tokenizer_required: false
+    rationale: "No text generation — classification head output or dense embedding"
+    families:
+      - bert.yaml
+
+equations:
+  is_llm:
+    formula: |
+      is_llm(arch: Architecture) -> bool =
+        arch ∈ {Llama, Qwen2, Qwen3, Qwen3_5, Gpt2, Phi, GptNeoX, Opt, Auto}
+    domain: "Architecture enum variants"
+    codomain: "bool"
+    invariants:
+      - "Auto defaults to true (fail-safe: assume LLM unless proven otherwise)"
+      - "Whisper returns false"
+      - "Bert returns false"
+      - "All LLM family architectures return true"
+    postconditions:
+      - "is_llm(arch) == true implies tokenizer must be present for APR write"
+      - "is_llm(arch) == false implies tokenizer is optional for APR write"
+
+  tokenizer_gate:
+    formula: |
+      apr_import(source, options) -> Result<AprFile>:
+        IF source is SafeTensors AND is_llm(options.architecture):
+          REQUIRE tokenizer.json exists alongside source
+          OR options.tokenizer_path is Some
+        IF source is GGUF:
+          tokenizer always present in GGUF metadata (no check needed)
+        IF NOT is_llm(options.architecture):
+          tokenizer is Optional (None is valid)
+    domain: "All APR creation paths (import, convert, merge, quantize)"
+    codomain: "APR file with conditional tokenizer embedding"
+    invariants:
+      - "LLM + SafeTensors + no tokenizer = hard error (not silent success)"
+      - "GGUF always has tokenizer (format guarantee)"
+      - "ML models never call write_apr_file (use AprConverter::to_apr)"
+      - "Audio models may omit text tokenizer without error"
+    preconditions:
+      - "Architecture is detected or specified by user"
+    postconditions:
+      - "is_llm(arch) => output APR has tokenizer.merges OR tokenizer.vocabulary"
+      - "NOT is_llm(arch) => output APR may or may not have tokenizer data"
+
+  validate_tokenizer_presence:
+    formula: |
+      apr_validate(apr_file) -> ValidationResult:
+        arch = detect_architecture(apr_file)
+        has_tokenizer = metadata.contains("tokenizer.merges")
+                     OR metadata.contains("tokenizer.vocabulary")
+                     OR metadata.contains("tokenizer.ggml")
+        IF is_llm(arch) AND NOT has_tokenizer:
+          emit WARNING "LLM model missing embedded tokenizer — inference will fail"
+    domain: "Any APR file"
+    codomain: "ValidationResult with optional warnings"
+    invariants:
+      - "Non-LLM APR files pass validation without tokenizer"
+      - "LLM APR files without tokenizer produce warning (not error — file may be valid structurally)"
+
+proof_obligations:
+  - type: precondition
+    property: "LLM SafeTensors import requires tokenizer"
+    formal: "is_llm(arch) AND source == SafeTensors => tokenizer.is_some()"
+    applies_to: tokenizer_gate
+  - type: invariant
+    property: "is_llm exhaustive match"
+    formal: "for all a in Architecture, is_llm(a) is defined (no panic)"
+    applies_to: is_llm
+  - type: postcondition
+    property: "LLM APR files embed tokenizer"
+    formal: "is_llm(arch) => output.metadata has tokenizer data"
+    applies_to: tokenizer_gate
+  - type: frame
+    property: "ML models unaffected"
+    formal: "ML model save path (AprConverter) does not call write_apr_file"
+    applies_to: tokenizer_gate
+  - type: invariant
+    property: "Audio models not required to have text tokenizer"
+    formal: "NOT is_llm(Whisper) AND NOT is_llm(Bert)"
+    applies_to: is_llm
+
+falsification_tests:
+  - id: FALSIFY-MT-001
+    rule: "LLM SafeTensors import without tokenizer must fail"
+    prediction: "Import pipeline rejects LLM SafeTensors without tokenizer.json or --tokenizer flag"
+    test: |
+      Import a Qwen2 SafeTensors model with no sibling tokenizer.json
+      and no --tokenizer flag. Must return Err, not Ok with missing tokenizer.
+    if_fails: "LLM APR without tokenizer produced silently — P0 defect (PMAT-172 recurrence)"
+
+  - id: FALSIFY-MT-002
+    rule: "Whisper import succeeds without text tokenizer"
+    prediction: "Audio model import does not require text tokenizer"
+    test: |
+      Import Whisper SafeTensors model with no tokenizer.json.
+      Must succeed (Ok) because audio models use mel features, not text tokens.
+    if_fails: "is_llm() incorrectly returns true for Whisper"
+
+  - id: FALSIFY-MT-003
+    rule: "apr validate warns on LLM APR missing tokenizer"
+    prediction: "Validation detects missing tokenizer in LLM APR and warns"
+    test: |
+      Run `apr validate` on an LLM APR file with tokenizer data removed.
+      Output must contain warning about missing tokenizer.
+    if_fails: "Validation does not check tokenizer presence for LLMs"
+
+  - id: FALSIFY-MT-004
+    rule: "is_llm returns true for all LLM architectures"
+    prediction: "Exhaustive match over LLM variants"
+    test: |
+      #[test]
+      fn falsify_mt_004_is_llm_exhaustive() {
+          use Architecture::*;
+          for arch in [Llama, Qwen2, Qwen3, Qwen3_5, Gpt2, Phi, GptNeoX, Opt, Auto] {
+              assert!(arch.is_llm(), "{:?} should be LLM", arch);
+          }
+      }
+    if_fails: "New LLM architecture added without updating is_llm()"
+
+  - id: FALSIFY-MT-005
+    rule: "is_llm returns false for non-LLM architectures"
+    prediction: "Audio and embedding models are not LLMs"
+    test: |
+      #[test]
+      fn falsify_mt_005_non_llm() {
+          use Architecture::*;
+          assert!(!Whisper.is_llm());
+          assert!(!Bert.is_llm());
+      }
+    if_fails: "is_llm() incorrectly classifies non-LLM as LLM"
+
+  - id: FALSIFY-MT-006
+    rule: "GGUF import always produces APR with tokenizer"
+    prediction: "GGUF format always contains tokenizer metadata"
+    test: |
+      Import any GGUF model (Q4K, Q6K, F16). Inspect output APR metadata.
+      Must contain tokenizer.merges or tokenizer.vocabulary.
+    if_fails: "GGUF import path drops tokenizer — converter bug"
+
+  - id: FALSIFY-MT-007
+    rule: "ML model APR creation does not require tokenizer"
+    prediction: "AprConverter::to_apr() produces valid APR without tokenizer"
+    test: |
+      Create APR from scratch using AprConverter (as in apr-cookbook
+      create_apr_linear_regression.rs). No tokenizer. Must succeed and
+      roundtrip via AprReader.
+    if_fails: "AprConverter added tokenizer requirement — breaks ML model workflow"
+
+  - id: FALSIFY-MT-008
+    rule: "apr-cookbook creation examples all pass"
+    prediction: "All create_apr_*.rs examples produce valid APR files"
+    test: |
+      Run all creation examples from apr-cookbook:
+        cargo run --example create_apr_linear_regression
+        cargo run --example create_apr_decision_tree
+        cargo run --example create_apr_kmeans_clustering
+        cargo run --example create_apr_from_scratch
+      All must exit 0 and produce non-empty APR files.
+    if_fails: "Tokenizer contract broke ML model creation path"
+
+kani_harnesses:
+  - id: KANI-MT-001
+    property: "is_llm is total (defined for all Architecture variants)"
+    bound: 4
+    strategy: "exhaustive enum variant enumeration"
+  - id: KANI-MT-002
+    property: "tokenizer_gate postcondition: LLM => tokenizer present"
+    bound: 8
+    strategy: "symbolic architecture + symbolic tokenizer option"
+
+qa_gate:
+  id: F-MODEL-TYPE-001
+  name: model-type-taxonomy-v1 Contract
+  description: "Quality gate for model type taxonomy and tokenizer enforcement"
+  checks:
+    - is_llm_exhaustive
+    - tokenizer_gate_llm
+    - tokenizer_gate_audio
+    - tokenizer_gate_ml
+    - apr_cookbook_regression
+  pass_criteria: "All 8 falsification tests pass, all 2 kani harnesses verify"

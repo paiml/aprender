@@ -1,0 +1,36 @@
+# deepseek-r1-distill-qwen-32b Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+name: deepseek-r1-distill-qwen-32b-dim-smoke
+version: 1.0.0
+description: Dimensional smoke check for deepseek-r1-distill-qwen-32b (metadata-only)
+model:
+  hf_repo: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+  formats:
+  - safetensors
+  quantizations:
+  - q4_k_m
+  size_category: xlarge
+  family: deepseek-r1-distill-qwen
+  size_variant: ''
+test_matrix:
+  modalities:
+  - run
+  backends:
+  - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+  - What is 2+2?
+gates:
+  g1_model_loads: 'true'
+  g2_basic_inference: 'true'
+  g3_no_crashes: 'true'
+  g4_output_quality: 'true'
+failure_policy: collect_all
+metadata:
+  author: apr-qa-gen
+  tier: dim-smoke
+  architecture: qwen2
+  tags:
+  - dim-smoke

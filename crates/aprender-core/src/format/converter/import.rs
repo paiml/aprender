@@ -183,7 +183,16 @@ pub fn apr_import<P: AsRef<Path>>(
     // Step 5: Validate tensors (inline validation)
     let validation_result = validate_tensors(&mapped_tensors, &options)?;
 
-    // Step 5: Write APR format (with tokenizer AND model config - CRITICAL for inference)
+    // F-APR-SELF-CONTAINED-001 (scoped to LLM by SPEC-MODEL-TYPE-001):
+    if effective_arch.is_llm() && load_result.tokenizer.is_none() {
+        eprintln!(
+            "[F-APR-SELF-CONTAINED-001] WARNING: LLM model ({effective_arch:?}) imported \
+             without tokenizer. Inference will fail. Provide --tokenizer <path> or place \
+             tokenizer.json alongside the model."
+        );
+    }
+
+    // Step 6: Write APR format (with tokenizer AND model config - CRITICAL for inference)
     // Note: Quantization (fp16/int8/int4) is applied during write for true packed storage
     // PMAT-223: Pass user metadata for preservation in APR custom field
     // GH-205: Pass F16 raw tensors for passthrough

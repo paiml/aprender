@@ -1,0 +1,158 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-08"
+  author: "PAIML Engineering"
+  description: "APR format writer/reader behavioral invariants (I-1 through I-5)"
+  registry: true
+  references:
+    - "§17 Invariant Testing (Five Whys: GH-190)"
+    - "§4.1.1 LAYOUT-002: Row-Major Mandate"
+    - "crates/apr-qa-runner/src/apr_format_contract.yaml — embedded contract"
+    - "docs/five-whys/GH-190-systemic-conversion-failures.md"
+  depends_on:
+    - "gateway-contract-v1"
+
+equations:
+  round_trip_identity:
+    formula: "inference(convert(M)) = inference(M)"
+    domain: "M in {SafeTensors models with config.json}"
+    invariants:
+      - "Token-level output equivalence within dtype tolerance"
+      - "Tolerance derived from quantization error analysis (spec §4.9)"
+      - "Gate: F-GOLDEN-RULE-001"
+  tensor_name_bijection:
+    formula: "names(writer(M)) = names(reader(M))"
+    domain: "M in {APR models}"
+    invariants:
+      - "Exact set equality — no pattern matching fallbacks"
+      - "Short GGUF naming: {layer}.{component}.{param}"
+      - "Gate: F-CONTRACT-I2-001"
+  no_silent_fallbacks:
+    formula: "unknown_dtype(t) -> Error, never default to F32"
+    domain: "t in tensors(M)"
+    invariants:
+      - "Unknown dtype byte must produce an error, not a silent default"
+      - "Catches: GH-186 BF16 dtype collision, GH-191 missing dequant"
+      - "Gate: F-CONTRACT-I3-001"
+  statistical_preservation:
+    formula: "|mu(original) - mu(converted)| < atol(dtype)"
+    domain: "t in tensors(M), mu in {mean, std, min, max}"
+    invariants:
+      - "Tensor statistics preserved within dtype tolerance"
+      - "Tolerance table: F32=0, F16=0.001, BF16=0.005, Q8_0=0.01, Q6_K=0.02, Q5_K=0.03, Q4_K=0.05"
+      - "Gate: F-CONTRACT-I4-001"
+  tokenizer_roundtrip:
+    formula: "encode(decode(tokens)) = tokens"
+    domain: "tokens in {valid token sequences for embedded tokenizer}"
+    invariants:
+      - "Embedded tokenizer must roundtrip all valid token sequences"
+      - "Covers tokenizer.json (BPE) and tokenizer.model (SentencePiece)"
+      - "Gate: F-CONTRACT-I5-001"
+
+proof_obligations:
+  - type: invariant
+    property: "Round-trip identity (I-1)"
+    formal: "forall M: maxdiff(inference(convert(M)), inference(M)) < epsilon(dtype)"
+    tolerance: 0.05
+    applies_to: all
+  - type: invariant
+    property: "Tensor name bijection (I-2)"
+    formal: "forall M: names(write(M)) = names(read(M))"
+    applies_to: all
+  - type: invariant
+    property: "No silent fallbacks (I-3)"
+    formal: "forall t in tensors(M): dtype(t) not in known_types -> Error"
+    applies_to: all
+  - type: invariant
+    property: "Statistical preservation (I-4)"
+    formal: "|mu(original) - mu(converted)| < atol(dtype) for mu in {mean, std, min, max}"
+    tolerance: 0.15
+    applies_to: all
+  - type: invariant
+    property: "Tokenizer roundtrip (I-5)"
+    formal: "forall tokens: encode(decode(tokens)) = tokens"
+    applies_to: all
+  - type: equivalence
+    property: "GGUF-to-APR layout transposition"
+    formal: "apr_shape = swap(gguf_shape) for 2D tensors"
+    tolerance: 0.0
+    applies_to: converter
+  - type: equivalence
+    property: "Dtype byte agreement"
+    formal: "writer_dtype_byte(t) = reader_dtype_byte(t) forall t"
+    tolerance: 0.0
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-FI-001
+    rule: "Round-trip identity"
+    prediction: "inference(convert(M)) matches inference(M) within dtype tolerance"
+    test: "Golden Rule Test — convert model, run inference, diff against original"
+    if_fails: "Format conversion corrupts weights (e.g., BF16 dtype collision GH-190)"
+  - id: FALSIFY-FI-002
+    rule: "Tensor name bijection"
+    prediction: "Writer tensor names exactly match reader tensor names"
+    test: "apr rosetta diff-tensors <original> <converted> --json"
+    if_fails: "Name mapping mismatch — writer uses different convention than reader"
+  - id: FALSIFY-FI-003
+    rule: "No silent fallbacks"
+    prediction: "Unknown dtype produces error, not silent F32 default"
+    test: "Inject unknown dtype byte, verify error"
+    if_fails: "Silent fallback to F32 causes data corruption (GH-186, GH-191)"
+  - id: FALSIFY-FI-004
+    rule: "Statistical preservation"
+    prediction: "Tensor mean/std/min/max preserved within tolerance"
+    test: "apr rosetta validate-stats <original_fp> <converted_fp>"
+    if_fails: "Quantization error exceeds dtype tolerance bounds"
+  - id: FALSIFY-FI-005
+    rule: "Tokenizer roundtrip"
+    prediction: "encode(decode(tokens)) = tokens for embedded tokenizer"
+    test: "apr rosetta compare-inference <original> <converted> --prompt 'Hello' --max-tokens 1"
+    if_fails: "Embedded tokenizer corrupted during conversion"
+  - id: FALSIFY-FI-006
+    rule: "Layout transposition"
+    prediction: "APR shape is swap(GGUF shape) for 2D, identity for 1D"
+    test: "proptest with random shapes — verify swap(swap(s)) = s"
+    if_fails: "LAYOUT-002 violation — column-major data in row-major kernel"
+  - id: FALSIFY-FI-007
+    rule: "Dtype byte agreement"
+    prediction: "Writer and reader agree on all dtype byte values"
+    test: "Enumerate all dtype mappings against GGML spec"
+    if_fails: "Dtype byte collision (e.g., BF16=2 collides with Q4_0=2)"
+
+kani_harnesses: []
+
+enforcement:
+  round_trip_identity:
+    description: "inference(convert(M)) must match inference(M)"
+    check: "contract_tests::FALSIFY-FI-001"
+    severity: "ERROR"
+  tensor_name_bijection:
+    description: "Writer and reader tensor names must match exactly"
+    check: "contract_tests::FALSIFY-FI-002"
+    severity: "ERROR"
+  no_silent_fallbacks:
+    description: "Unknown dtype must error, never default"
+    check: "contract_tests::FALSIFY-FI-003"
+    severity: "ERROR"
+  statistical_preservation:
+    description: "Tensor statistics within dtype tolerance"
+    check: "contract_tests::FALSIFY-FI-004"
+    severity: "ERROR"
+  tokenizer_roundtrip:
+    description: "Tokenizer encode/decode must roundtrip"
+    check: "contract_tests::FALSIFY-FI-005"
+    severity: "ERROR"
+
+qa_gate:
+  id: F-CONTRACT-001
+  name: "APR Format Invariants"
+  description: "Five behavioral invariants preventing silent format conversion corruption"
+  checks:
+    - "round_trip_identity"
+    - "tensor_name_bijection"
+    - "no_silent_fallbacks"
+    - "statistical_preservation"
+    - "tokenizer_roundtrip"
+  pass_criteria: "All 7 falsification tests pass"
+  falsification: "Introduce dtype byte collision (BF16=2 vs Q4_0=2) — gate must catch"

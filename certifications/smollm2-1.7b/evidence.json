@@ -1,0 +1,380 @@
+[
+  {
+    "id": "000000000000000018996a024e90a3be",
+    "gate_id": "G0-PULL-001",
+    "scenario": {
+      "id": "SmolLM2-1.7B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "HuggingFaceTB",
+        "name": "SmolLM2-1.7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Pull: acquire model via apr pull",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: model acquired via apr pull\n\u001b[1;36m=== APR Pull ===\u001b[0m\n\nModel: \u001b[36mhf://HuggingFaceTB/SmolLM2-1.7B-Instruct/model.safetensors\u001b[0m\n\n\u001b[33mDownloading (streaming)...\u001b[0m\n 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%\n\u001b[32m✓\u001b[0m Downloaded successfully\n  Path: \u001b[32m/home/noah/.cache/pacha/models/7064f6b7086493ab.safetensors\u001b[0m\n  Size: \u001b[33m3.2 GB\u001b[0m\n  Hash: 78e60245c60e4a73\n  \u001b[32m✓\u001b[0m 7064f6b7086493ab.tokenizer.json (\u001b[2m2.0 MB\u001b[0m)\n  \u001b[32m✓\u001b[0m 7064f6b7086493ab.config.json (\u001b[2m908 B\u001b[0m)\n  \u001b[32m✓\u001b[0m 7064f6b7086493ab.tokenizer_config.json (\u001b[2m3.7 KB\u001b[0m)\n  \u001b[33m⚠\u001b[0m \u001b[2m7064f6b7086493ab.tokenizer.model\u001b[0m (not found in repo)\n\n  \u001b[36mℹ\u001b[0m To convert formats, run:\n    apr convert /home/noah/.cache/pacha/models/7064f6b7086493ab.safetensors --format apr\n    apr convert /home/noah/.cache/pacha/models/7064f6b7086493ab.safetensors --format gguf\n\n\u001b[1;36mUsage:\u001b[0m\n  apr run /home/noah/.cache/pacha/models/7064f6b7086493ab.safetensors\n  apr serve /home/noah/.cache/pacha/models/7064f6b7086493ab.safetensors\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 34751
+    },
+    "timestamp": "2026-03-03T19:01:26.487584560Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018996a024eabe325",
+    "gate_id": "G0-DIM-CONFIG_PARSE",
+    "scenario": {
+      "id": "SmolLM2-1.7B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "HuggingFaceTB",
+        "name": "SmolLM2-1.7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: config_parse",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: config_parse expected=config.json parseable actual=parsed successfully",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-03-03T19:01:26.489368807Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018996a024eac0a2b",
+    "gate_id": "G0-DIM-SAFETENSORS_FOUND",
+    "scenario": {
+      "id": "SmolLM2-1.7B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "HuggingFaceTB",
+        "name": "SmolLM2-1.7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: safetensors_found",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: safetensors_found expected=>= 1 file actual=1 file(s)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-03-03T19:01:26.489378288Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018996a024eac2167",
+    "gate_id": "G0-DIM-SAFETENSORS_HEADER",
+    "scenario": {
+      "id": "SmolLM2-1.7B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "HuggingFaceTB",
+        "name": "SmolLM2-1.7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: safetensors_header",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: safetensors_header expected=>= 1 tensor actual=218 tensor(s)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-03-03T19:01:26.489384005Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018996a024eac35a4",
+    "gate_id": "G0-DIM-TENSOR_EMBED_TOKENS",
+    "scenario": {
+      "id": "SmolLM2-1.7B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "HuggingFaceTB",
+        "name": "SmolLM2-1.7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: tensor_embed_tokens",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: tensor_embed_tokens expected=dim0=49152, dim1=2048 actual=[49152, 2048]",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-03-03T19:01:26.489389136Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018996a024eac9fed",
+    "gate_id": "G0-DIM-TOKENIZER_EXISTS",
+    "scenario": {
+      "id": "SmolLM2-1.7B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "HuggingFaceTB",
+        "name": "SmolLM2-1.7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: tokenizer_exists",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "G0 FAIL: tokenizer_exists expected=valid tokenizer.json or non-empty tokenizer.model actual=no tokenizer file",
+    "output": "expected=valid tokenizer.json or non-empty tokenizer.model actual=no tokenizer file",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-03-03T19:01:26.489417129Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018996a024eacc96d",
+    "gate_id": "G0-DIM-EOS_TOKEN_VALID",
+    "scenario": {
+      "id": "SmolLM2-1.7B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "HuggingFaceTB",
+        "name": "SmolLM2-1.7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: eos_token_valid",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "G0 FAIL: eos_token_valid expected=eos_token or eos_token_id actual=missing (no eos_token or eos_token_id)",
+    "output": "expected=eos_token or eos_token_id actual=missing (no eos_token or eos_token_id)",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-03-03T19:01:26.489427254Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018996a024eace4d2",
+    "gate_id": "G0-DIM-DTYPE_SUPPORTED",
+    "scenario": {
+      "id": "SmolLM2-1.7B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "HuggingFaceTB",
+        "name": "SmolLM2-1.7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: dtype_supported",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: dtype_supported expected=all dtypes in supported set actual=all supported (BF16)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-03-03T19:01:26.489434509Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018996a024eacffde",
+    "gate_id": "G0-DIM-DTYPE_CONSISTENT",
+    "scenario": {
+      "id": "SmolLM2-1.7B-Instruct_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "HuggingFaceTB",
+        "name": "SmolLM2-1.7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Dimensional check: dtype_consistent",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: dtype_consistent expected=single dtype across interior 2D weight tensors actual=uniform: BF16",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 1
+    },
+    "timestamp": "2026-03-03T19:01:26.489441129Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  }
+]

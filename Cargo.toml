@@ -27,6 +27,12 @@ members = [
     "crates/aprender-tensor",
     "crates/aprender-gemm-codegen",
     "crates/aprender-compute-xtask",
+    # --- APR-MONO Phase 2g: was apr-model-qa-playbook ---
+    "crates/aprender-qa-gen",
+    "crates/aprender-qa-runner",
+    "crates/aprender-qa-report",
+    "crates/aprender-qa-certify",
+    "crates/aprender-qa-cli",
     # --- APR-MONO Phase 2b: was provable-contracts ---
     "crates/aprender-contracts",
     "crates/aprender-contracts-macros",

@@ -1,0 +1,64 @@
+# DeepSeek Coder 7B CI Qualification
+# ~50 tests for CI/CD integration
+
+name: deepseek-coder-7b-ci
+version: "1.0.0"
+
+model:
+  hf_repo: "deepseek-ai/deepseek-coder-7b-instruct"
+  formats:
+    - gguf
+  quantizations:
+    - q4_k_m
+
+test_matrix:
+  modalities:
+    - run
+    - chat
+  backends:
+    - cpu
+  scenario_count: 25
+
+property_tests:
+  - name: arithmetic
+    generator: "arithmetic()"
+    oracle: "correct"
+    count: 25
+  - name: code_completion
+    generator: "code_prompt()"
+    oracle: "valid_syntax"
+    count: 25
+
+# Minimal Differential Testing (v1.3.0) - CI-optimized
+differential_tests:
+  inference_compare:
+    enabled: "true"
+    prompt: "What is 2+2?"
+    max_tokens: 10
+    tolerance: 1e-5
+    gates: ["F-ROSETTA-INF-001", "F-ROSETTA-INF-003"]
+  fingerprint:
+    enabled: "true"
+    tensors: "embed,lm_head"
+    stats: ["mean", "std", "checksum"]
+    gates: ["F-ROSETTA-FP-001"]
+
+# Profile CI Assertions - Relaxed for 7B model
+profile_ci:
+  enabled: "true"
+  warmup: 2
+  measure: 5
+  assertions:
+    min_throughput: 2.0     # tok/s (relaxed for 7B)
+    max_p99_ms: 2000        # 2s max p99 latency
+  gates:
+    - F-PROFILE-CI-001      # Throughput gate
+    - F-PROFILE-CI-002      # Latency gate
+
+# Trace Payload - Quick sanity check
+trace_payload:
+  enabled: "true"
+  prompt: "Write a Python function to calculate factorial."
+  gates:
+    - F-TRACE-PAYLOAD-001   # No NaN/Inf
+    - F-TRACE-PAYLOAD-002   # No garbage

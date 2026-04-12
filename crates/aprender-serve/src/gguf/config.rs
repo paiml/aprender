@@ -431,7 +431,7 @@ impl GGUFConfig {
             if max_expert_idx > 0 {
                 num_experts = max_expert_idx;
                 num_experts_per_tok = 8; // Qwen3-MoE default
-                // Infer moe_intermediate from first expert tensor shape
+                                         // Infer moe_intermediate from first expert tensor shape
                 if let Some(t) = apr.find_tensor("model.layers.0.mlp.experts.0.gate_proj.weight") {
                     moe_intermediate_size = t.shape.first().copied().unwrap_or(0);
                 }
@@ -575,7 +575,11 @@ impl GGUFConfig {
     /// SPEC-MOE-APR-001: Count experts from GGUF tensor names.
     fn count_experts_from_tensors(model: &crate::gguf::GGUFModel) -> usize {
         // GGUF packed: blk.0.ffn_gate_exps.weight has shape [num_experts, ...]
-        if let Some(t) = model.tensors.iter().find(|t| t.name == "blk.0.ffn_gate_exps.weight") {
+        if let Some(t) = model
+            .tensors
+            .iter()
+            .find(|t| t.name == "blk.0.ffn_gate_exps.weight")
+        {
             return t.dims.first().copied().unwrap_or(0) as usize;
         }
         // HF-style per-expert: count model.layers.0.mlp.experts.N patterns
@@ -691,7 +695,9 @@ impl GGUFConfig {
             model
                 .tensors
                 .iter()
-                .find(|t| t.name.contains("experts.0.gate_proj") || t.name.contains("ffn_gate_exps"))
+                .find(|t| {
+                    t.name.contains("experts.0.gate_proj") || t.name.contains("ffn_gate_exps")
+                })
                 .and_then(|t| t.dims.first().copied())
                 .unwrap_or(0) as usize
         } else {

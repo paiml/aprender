@@ -1,0 +1,28 @@
+[package]
+name = "aprender-qa-report"
+description = "Popperian report generator and MQS scoring for APR model qualification"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "apr_qa_report"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+colored = "2.2"
+csv = "1.3"
+aprender-qa-gen = { path = "../aprender-qa-gen" }
+aprender-qa-runner = { path = "../aprender-qa-runner" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = "3.15"

@@ -1,0 +1,99 @@
+metadata:
+  version: "1.2.0"
+  created: "2026-03-08"
+  author: "PAIML Engineering"
+  description: "GarbageOracle output quality gate (G4) with LAYOUT-002 detection"
+  registry: true
+  references:
+    - "crates/apr-qa-gen/src/oracle.rs:153 — GarbageOracle::evaluate(prompt, output)"
+    - "§10.2 Oracle Definitions"
+    - "§4.1.1 LAYOUT-002: Row-Major Mandate"
+    - "docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md"
+  depends_on:
+    - "gateway-contract-v1"
+
+equations:
+  garbage_detection:
+    formula: "garbage(output) = empty(output) OR control_chars(output) OR nan_inf(output) OR repetitive(output) OR replacement_char(output)"
+    domain: "output in String"
+    invariants:
+      - "Empty or whitespace-only output is garbage"
+      - "Control characters (excluding \\n, \\t, \\r) indicate encoding corruption"
+      - "Standalone NaN/nan/Inf/inf tokens indicate numerical explosion (word-boundary aware)"
+      - "Repetitive n-gram patterns indicate degenerate output"
+      - "U+FFFD replacement characters indicate encoding failures"
+      - "LAYOUT-002 violations manifest as garbage output (control chars or repetition)"
+  layout_implication:
+    formula: "layout_violation(model) implies garbage(inference(model))"
+    domain: "model in {APR models}"
+    invariants:
+      - "Column-major data fed to row-major kernel produces garbage"
+      - "This is the primary LAYOUT-002 detection mechanism"
+      - "Catches: GH-190 GGUF→APR conversion garbage"
+
+proof_obligations:
+  - type: soundness
+    property: "No false positives on valid output"
+    formal: "forall output in ValidModelOutput: not garbage(output)"
+    applies_to: all
+  - type: invariant
+    property: "LAYOUT-002 detection"
+    formal: "layout_violation(model) implies garbage(inference(model))"
+    applies_to: all
+  - type: invariant
+    property: "Five garbage detectors"
+    formal: "garbage = empty OR control_chars OR nan_inf OR repetitive OR replacement_char"
+    applies_to: all
+  - type: invariant
+    property: "Empty or whitespace-only output is garbage"
+    formal: "trim(output).is_empty() implies garbage(output) = true"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-GO-001
+    rule: "No false positives"
+    prediction: "Valid English/code output not flagged as garbage"
+    test: "Feed known-good outputs from certified models, verify not garbage"
+    if_fails: "GarbageOracle threshold too aggressive — rejects valid output"
+  - id: FALSIFY-GO-002
+    rule: "LAYOUT-002 detection"
+    prediction: "Column-major garbage like 'olumbia+lsi nunca/localENTS' is detected"
+    test: "Feed known LAYOUT-002 garbage strings, verify detected"
+    if_fails: "GarbageOracle misses layout violation — model falsely certified"
+  - id: FALSIFY-GO-003
+    rule: "Control character detection"
+    prediction: "Output containing control characters (except \\n, \\t, \\r) is flagged as garbage"
+    test: "Construct strings with embedded control chars (\\x00, \\x01, etc.), verify detection"
+    if_fails: "Control char detection broken — encoding corruption passes as valid output"
+  - id: FALSIFY-GO-004
+    rule: "Empty output"
+    prediction: "Empty string is always classified as garbage"
+    test: "Pass empty string to GarbageOracle, verify garbage = true"
+    if_fails: "Empty output accepted as valid — model appears to work but produces nothing"
+
+kani_harnesses: []
+
+enforcement:
+  no_false_positives:
+    description: "Valid model output must not be flagged as garbage"
+    check: "contract_tests::FALSIFY-GO-001"
+    severity: "ERROR"
+  layout_detection:
+    description: "LAYOUT-002 violations must be caught"
+    check: "contract_tests::FALSIFY-GO-002"
+    severity: "ERROR"
+  empty_output:
+    description: "Empty output must be classified as garbage"
+    check: "contract_tests::FALSIFY-GO-004"
+    severity: "ERROR"
+
+qa_gate:
+  id: F-GO-001
+  name: "GarbageOracle Contract"
+  description: "Output quality gate — soundness and LAYOUT-002 detection"
+  checks:
+    - "no_false_positives"
+    - "layout_detection"
+    - "empty_output"
+  pass_criteria: "All 4 falsification tests pass"
+  falsification: "Feed LAYOUT-002 garbage string — oracle must flag it"

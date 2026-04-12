@@ -1,0 +1,800 @@
+[
+  {
+    "id": "0000000000000000188fde0fad47b09c",
+    "gate_id": "F-A1-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_run_cpu_gguf_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 12\nlatency: 52973.57ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 16834.3ms (1.9 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.2,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 54081
+    },
+    "timestamp": "2026-01-31T16:35:37.492936565Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde13d9c7f304",
+    "gate_id": "F-A1-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_run_cpu_apr_0000000000000001",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 1,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 16\nlatency: 17764.02ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5452.0ms (5.9 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.9,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 17926
+    },
+    "timestamp": "2026-01-31T16:35:55.419400568Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde1718fb0382",
+    "gate_id": "F-A1-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_run_cpu_safetensors_0000000000000002",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 2,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 1\nlatency: 13726.83ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5633.8ms (5.7 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.1,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13945
+    },
+    "timestamp": "2026-01-31T16:36:09.364614584Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde1a45ff4b60",
+    "gate_id": "F-A2-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_run_gpu_gguf_0000000000000003",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "gpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 3,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 10\nlatency: 13539.69ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5425.8ms (5.9 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.7,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13640
+    },
+    "timestamp": "2026-01-31T16:36:23.004770882Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde1d89e88fe8",
+    "gate_id": "F-A2-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_run_gpu_apr_0000000000000004",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 4,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 15\nlatency: 13831.50ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5850.8ms (5.5 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.1,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 14024
+    },
+    "timestamp": "2026-01-31T16:36:37.029033995Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde20dd7bca9f",
+    "gate_id": "F-A2-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_run_gpu_safetensors_0000000000000005",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 5,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 16\nlatency: 14089.40ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5965.7ms (5.4 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.1,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 14286
+    },
+    "timestamp": "2026-01-31T16:36:51.316093364Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde24166d3537",
+    "gate_id": "F-A3-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_chat_cpu_gguf_0000000000000006",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 6,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 20\nlatency: 13622.65ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5455.2ms (5.9 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.5,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13840
+    },
+    "timestamp": "2026-01-31T16:37:05.156340822Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde27329bbaa5",
+    "gate_id": "F-A3-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_chat_cpu_apr_0000000000000007",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 7,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 8\nlatency: 13251.66ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5369.5ms (6.0 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.6,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13357
+    },
+    "timestamp": "2026-01-31T16:37:18.514054012Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde2a5db913df",
+    "gate_id": "F-A3-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_chat_cpu_safetensors_0000000000000008",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 8,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 6\nlatency: 13364.36ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5331.5ms (6.0 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.4,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13608
+    },
+    "timestamp": "2026-01-31T16:37:32.122298993Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde2d9a1a4d3e",
+    "gate_id": "F-A4-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_chat_gpu_gguf_0000000000000009",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "gpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 9,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 13\nlatency: 13736.55ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5314.1ms (6.0 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.9,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13897
+    },
+    "timestamp": "2026-01-31T16:37:46.020206052Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde30a8482975",
+    "gate_id": "F-A4-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_chat_gpu_apr_000000000000000a",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 10,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 8\nlatency: 12950.27ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5106.7ms (6.3 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.6,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13122
+    },
+    "timestamp": "2026-01-31T16:37:59.142994408Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde33c3ee87c5",
+    "gate_id": "F-A4-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_chat_gpu_safetensors_000000000000000b",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 11,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 13\nlatency: 13118.67ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5238.5ms (6.1 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.0,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13348
+    },
+    "timestamp": "2026-01-31T16:38:12.491783877Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde36dbcb085f",
+    "gate_id": "F-A5-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_serve_cpu_gguf_000000000000000c",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 22\nlatency: 13147.79ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5315.0ms (6.0 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.7,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13285
+    },
+    "timestamp": "2026-01-31T16:38:25.777013277Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde39ef904366",
+    "gate_id": "F-A5-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 23\nlatency: 13123.69ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5263.9ms (6.1 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.8,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13216
+    },
+    "timestamp": "2026-01-31T16:38:38.993607712Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde3d0cebdcac",
+    "gate_id": "F-A5-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_serve_cpu_safetensors_000000000000000e",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 14,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 17\nlatency: 13203.90ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5436.5ms (5.9 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.3,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13377
+    },
+    "timestamp": "2026-01-31T16:38:52.371051958Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde401e02cfca",
+    "gate_id": "F-A6-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_serve_gpu_gguf_000000000000000f",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 19\nlatency: 12949.60ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5168.5ms (6.2 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.5,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13171
+    },
+    "timestamp": "2026-01-31T16:39:05.542670247Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde4329a172fe",
+    "gate_id": "F-A6-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 21\nlatency: 12879.05ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5161.4ms (6.2 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.6,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13079
+    },
+    "timestamp": "2026-01-31T16:39:18.622517939Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde464aa47c79",
+    "gate_id": "F-A6-001",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_serve_gpu_safetensors_0000000000000011",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 17,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Source: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf\n\ntokens: 18\nlatency: 13243.34ms\nmodel: /home/noah/.cache/pacha/models/e0abfc1f71fa8f14.gguf",
+    "stderr": "Generated 32 tokens in 5119.3ms (6.3 tok/s)\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 1.4,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 13438
+    },
+    "timestamp": "2026-01-31T16:39:32.061266679Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000188fde5e594a8637",
+    "gate_id": "F-GOLDEN-RULE-003",
+    "scenario": {
+      "id": "Qwen2.5-Coder-7B-Instruct_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "Qwen",
+        "name": "Qwen2.5-Coder-7B-Instruct",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Golden Rule: convert → inference → diff",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Golden Rule: converted inference failed: [PMAT-171] Loaded embedded BPE tokenizer: 152064 vocab, 151387 merges, 23 special tokens\n[AprV2ModelCuda] Warning: Could not build indexed weights: Invalid launch config: PAR-043: Quantized weight 'blk.23.ffn_down.weight' not cached\n[AprV2ModelCuda] Pre-cached 21879 MB of weights on GPU (28 layers, 175 quantized, 91 F32 tensors)\n[AprV2ModelCuda] Cached embedding table: 2079 MB\nerror: Inference failed: Inference failed: Inference error: GPU generation failed: Operation 'GPU GEMM' not supported: CUDA GEMM failed: GPU memory allocation failed: CUDA driver error: CUDA_ERROR_OUT_OF_MEMORY (code: 2)\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-01-31T16:41:15.386243526Z",
+    "host": {
+      "hostname": "noah-Lambda-Vector",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  }
+]

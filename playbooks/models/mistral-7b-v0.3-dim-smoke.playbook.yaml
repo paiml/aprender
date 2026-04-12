@@ -1,0 +1,48 @@
+# Mistral-7B-Instruct-v0.3 Dimensional Smoke Playbook
+# Metadata-only: verifies config.json + SafeTensors headers (~2-5s, no inference)
+name: mistral-7b-v0.3-dim-smoke
+version: "1.0.0"
+description: "Dimensional smoke check for Mistral-7B-Instruct-v0.3 (metadata-only)"
+
+model:
+  hf_repo: "mistralai/Mistral-7B-Instruct-v0.3"
+  formats:
+    - safetensors
+  quantizations:
+    - q4_k_m
+  size_category: medium
+  expected_hidden_dim: 4096
+  expected_num_layers: 32
+  expected_num_heads: 32
+  expected_num_kv_heads: 8
+  expected_vocab_size: 32768
+  expected_intermediate_dim: 14336
+  family: mistral
+  size_variant: "7b"
+
+test_matrix:
+  modalities:
+    - run
+  backends:
+    - cpu
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 30000
+  prompts:
+    - "What is 2+2?"
+
+gates:
+  g1_model_loads: "true"
+  g2_basic_inference: "true"
+  g3_no_crashes: "true"
+  g4_output_quality: "true"
+
+failure_policy: collect_all
+
+metadata:
+  author: "apr-qa-gen"
+  tier: "dim-smoke"
+  architecture: "mistral"
+  tags:
+    - instruct
+    - dim-smoke

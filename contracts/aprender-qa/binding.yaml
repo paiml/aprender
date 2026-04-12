@@ -1,0 +1,113 @@
+# Binding Registry: provable-contracts <-> apr-model-qa-playbook
+# Falsified and corrected 2026-03-08 — all bindings verified against source.
+version: "1.1.0"
+target_crate: apr-model-qa-playbook
+
+bindings:
+  # ── APR Format Invariants (I-1 through I-5) ──────────────────
+  - contract: apr-format-invariants-v1.yaml
+    equation: round_trip_identity
+    module_path: "apr_qa_runner::executor"
+    function: run_golden_rule_test
+    signature: "fn run_golden_rule_test(&mut self, model_path: &Path, model_id: &ModelId) -> (usize, usize)"
+    status: implemented
+    notes: "Gate F-GOLDEN-RULE-001. Physical file: golden.rs, included into executor.rs via executor_lifecycle.rs."
+
+  - contract: apr-format-invariants-v1.yaml
+    equation: tensor_name_bijection
+    module_path: "apr_qa_runner::contract"
+    function: run_i2_tensor_bijection
+    signature: "fn run_i2_tensor_bijection(runner: &Arc<dyn CommandRunner>, model_path: &Path, model_id: &ModelId, gate_id: &str) -> Evidence"
+    status: implemented
+    notes: "Gate F-CONTRACT-I2-001. Physical file: contract.rs:367."
+
+  - contract: apr-format-invariants-v1.yaml
+    equation: no_silent_fallbacks
+    module_path: "apr_qa_runner::contract"
+    function: run_i3_no_silent_fallbacks
+    signature: "fn run_i3_no_silent_fallbacks(runner: &Arc<dyn CommandRunner>, model_path: &Path, model_id: &ModelId, gate_id: &str) -> Evidence"
+    status: implemented
+    notes: "Gate F-CONTRACT-I3-001. Physical file: contract_invariant_checks.rs:25, included into contract.rs."
+
+  - contract: apr-format-invariants-v1.yaml
+    equation: statistical_preservation
+    module_path: "apr_qa_runner::contract"
+    function: run_i4_statistical_preservation
+    signature: "fn run_i4_statistical_preservation(runner: &Arc<dyn CommandRunner>, model_path: &Path, model_id: &ModelId, gate_id: &str) -> Evidence"
+    status: implemented
+    notes: "Gate F-CONTRACT-I4-001. Physical file: contract_invariant_checks.rs:69."
+
+  - contract: apr-format-invariants-v1.yaml
+    equation: tokenizer_roundtrip
+    module_path: "apr_qa_runner::contract"
+    function: run_i5_tokenizer_roundtrip
+    signature: "fn run_i5_tokenizer_roundtrip(runner: &Arc<dyn CommandRunner>, model_path: &Path, model_id: &ModelId, gate_id: &str) -> Evidence"
+    status: implemented
+    notes: "Gate F-CONTRACT-I5-001. Physical file: contract_invariant_checks.rs:113."
+
+  # ── Gateway Pipeline (G0-G4) ─────────────────────────────────
+  - contract: gateway-contract-v1.yaml
+    equation: gateway_zeroing
+    module_path: "apr_qa_report::mqs"
+    function: MqsCalculator::check_gateways
+    signature: "fn check_gateways(&self, evidence: &[Evidence]) -> Vec<GatewayResult>"
+    status: implemented
+    notes: "Zeros MQS when gateways.iter().all(|g| g.passed) is false. Physical file: mqs_gateways.rs:3."
+
+  - contract: gateway-contract-v1.yaml
+    equation: gateway_two_phase
+    module_path: "apr_qa_runner::executor"
+    function: execute
+    signature: "fn execute(&mut self, playbook: &Playbook) -> Result<ExecutionResult>"
+    status: implemented
+    notes: "G0 sub-gates run first in execute(), G1-G4 from scenarios. Physical file: executor_lifecycle.rs:39."
+
+  - contract: gateway-contract-v1.yaml
+    equation: gateway_scoring
+    module_path: "apr_qa_report::mqs"
+    function: MqsCalculator::calculate
+    signature: "pub fn calculate(&self, model_id: &str, evidence: &EvidenceCollector) -> Result<MqsScore>"
+    status: implemented
+    notes: "Calls check_gateways() which produces 5 GatewayResult items. Physical file: mqs.rs:253."
+
+  # ── MQS Scoring ──────────────────────────────────────────────
+  - contract: mqs-scoring-v1.yaml
+    equation: mqs_composite
+    module_path: "apr_qa_report::mqs"
+    function: MqsCalculator::calculate
+    signature: "pub fn calculate(&self, model_id: &str, evidence: &EvidenceCollector) -> Result<MqsScore>"
+    status: implemented
+    notes: "Weighted composite: QUAL=200, PERF=150, STAB=200, COMP=150, EDGE=150, REGR=150. Physical file: mqs.rs:253."
+
+  - contract: mqs-scoring-v1.yaml
+    equation: grade_mapping
+    module_path: "apr_qa_report::mqs"
+    function: MqsCalculator::calculate_grade
+    signature: "fn calculate_grade(score: f64) -> String"
+    status: implemented
+    notes: "12 grades (A+ through D-, F) on normalized 0-100 scale. Physical file: mqs_gateways.rs:205."
+
+  - contract: mqs-scoring-v1.yaml
+    equation: penalty_floor
+    module_path: "apr_qa_report::mqs"
+    function: MqsCalculator::calculate
+    signature: "pub fn calculate(&self, model_id: &str, evidence: &EvidenceCollector) -> Result<MqsScore>"
+    status: implemented
+    notes: "Penalty floor via saturating_sub — inlined at mqs.rs:347. No standalone function."
+
+  # ── GarbageOracle (G4) ───────────────────────────────────────
+  - contract: garbage-oracle-v1.yaml
+    equation: garbage_detection
+    module_path: "apr_qa_gen::oracle"
+    function: GarbageOracle::evaluate
+    signature: "fn evaluate(&self, _prompt: &str, output: &str) -> OracleResult"
+    status: implemented
+    notes: "Takes (prompt, output), not just output. Physical file: oracle.rs:138."
+
+  - contract: garbage-oracle-v1.yaml
+    equation: layout_implication
+    module_path: "apr_qa_gen::oracle"
+    function: GarbageOracle::evaluate
+    signature: "fn evaluate(&self, _prompt: &str, output: &str) -> OracleResult"
+    status: implemented
+    notes: "LAYOUT-002 garbage detected via same evaluate() call."

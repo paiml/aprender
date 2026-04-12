@@ -1,0 +1,57 @@
+# Verification Playbook: TICKET-0001
+# Purpose: Verify fix for model loading crash on malformed GGUF
+# Original failure: SIGSEGV during tensor metadata parsing
+#
+# This playbook is auto-generated when a ticket is created.
+# It passes when the fix is verified and the ticket can be closed.
+
+name: verify-ticket-0001
+version: "1.0.0"
+description: "Verify fix for TICKET-0001: GGUF loading crash on malformed tensor metadata"
+
+# Exact reproduction of the original failure
+reproduction:
+  model: "test-fixtures/malformed-tensor.gguf"
+  command: "apr run ${model} 'test'"
+  original_exit_code: -11  # SIGSEGV
+  original_error: "panic at tensor.rs:142"
+
+# Fixed behavior expectations
+expected:
+  exit_code: 0
+  output_not_contains:
+    - "panic"
+    - "SIGSEGV"
+    - "thread 'main' panicked"
+  output_contains:
+    - "Error: Invalid tensor metadata"  # Graceful error message
+
+# Verification gates
+verification_gates:
+  - id: V-TICKET-0001-001
+    description: "Original failure no longer occurs"
+    condition: "exit_code == 0 || exit_code == 1"  # Clean exit
+
+  - id: V-TICKET-0001-002
+    description: "No crash or panic"
+    condition: "!crash && !panic"
+
+  - id: V-TICKET-0001-003
+    description: "Error is handled gracefully"
+    condition: "stderr.contains('Error:') && !stderr.contains('panic')"
+
+# Regression prevention
+regression_tests:
+  - name: "Similar malformed inputs"
+    inputs:
+      - "test-fixtures/truncated-header.gguf"
+      - "test-fixtures/invalid-version.gguf"
+      - "test-fixtures/missing-tensor-data.gguf"
+    expected: "graceful_error"
+
+metadata:
+  ticket_id: "TICKET-0001"
+  created_by: "apr-qa-gen"
+  original_failure_date: "2026-01-25"
+  severity: "P0"
+  component: "gguf-loader"

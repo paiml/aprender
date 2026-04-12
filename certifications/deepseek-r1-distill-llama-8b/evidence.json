@@ -1,0 +1,4706 @@
+[
+  {
+    "id": "0000000000000000189999e3880f2c03",
+    "gate_id": "G0-PULL-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Pull: acquire model via apr pull",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: model acquired via apr pull\n\u001b[1;36m=== APR Pull ===\u001b[0m\n\nModel: \u001b[36mdeepseek-ai\u001b[0m/\u001b[36mDeepSeek-R1-Distill-Llama-8B\u001b[0m (\u001b[33m2\u001b[0m shards)\n\n  \u001b[33mDownloading\u001b[0m model.safetensors.index.json\n  \u001b[33m↓\u001b[0m [1/2] model-00001-of-000002.safetensors... 10% 20% 30% 40% 50% 60% 70% 80% 90% 100% \u001b[32mdone\u001b[0m\n  \u001b[33m↓\u001b[0m [2/2] model-00002-of-000002.safetensors... 10% 20% 30% 40% 50% 60% 70% 80% 90% 100% \u001b[32mdone\u001b[0m\n  \u001b[32m✓\u001b[0m tokenizer.json\n  \u001b[32m✓\u001b[0m config.json\n  \u001b[32m✓\u001b[0m tokenizer_config.json\n  \u001b[33m⚠\u001b[0m tokenizer.model (not found in repo)\n  \u001b[32m✓\u001b[0m .apr-manifest.json (integrity checksums)\n\n\u001b[32m✓\u001b[0m Downloaded successfully\n  Path: \u001b[32m/home/noah/.apr/cache/hf/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/model.safetensors.index.json\u001b[0m\n  Shards: \u001b[33m2\u001b[0m\n\n  \u001b[36mℹ\u001b[0m To convert formats, run:\n    apr convert /home/noah/.apr/cache/hf/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/model.safetensors.index.json --format apr\n    apr convert /home/noah/.apr/cache/hf/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/model.safetensors.index.json --format gguf\n\n\u001b[1;36mUsage:\u001b[0m\n  apr run /home/noah/.apr/cache/hf/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/model.safetensors.index.json\n  apr serve /home/noah/.apr/cache/hf/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/model.safetensors.index.json\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 159112
+    },
+    "timestamp": "2026-03-04T09:38:50.866324928Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "0000000000000000189999f7b68adcb8",
+    "gate_id": "G0-FORMAT-APR-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "G0 Format: prepare Apr workspace",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: converted to apr\n\u001b[1;36m=== Rosetta Stone Conversion ===\u001b[0m\n\nSource: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model.safetensors.index.json\nTarget: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\n\n\u001b[33m--- Source Inspection ---\u001b[0m\n╭────────────┬───────────────╮\n│     Format │ SafeTensors   │\n├────────────┼───────────────┤\n│  File Size │ 14.96 GiB     │\n│    Tensors │ 291           │\n│ Parameters │ 8,030,261,248 │\n╰────────────┴───────────────╯\n\n\u001b[33mConverting...\u001b[0m\n\n\u001b[33m--- Target Inspection ---\u001b[0m\n╭──────────────┬───────────────╮\n│       Format │ APR           │\n├──────────────┼───────────────┤\n│    File Size │ 14.96 GiB     │\n│      Tensors │ 291           │\n│   Parameters │ 8,030,261,248 │\n│ Architecture │ llama         │\n╰──────────────┴───────────────╯\n\n\u001b[1;36m=== Conversion Summary ===\u001b[0m\nPath: SafeTensors → APR\nDuration: 86662ms\nTensors: 291 -> 291\n\n\u001b[1;32mConversion successful\u001b[0m\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 86678
+    },
+    "timestamp": "2026-03-04T09:40:17.545528943Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a10f821ab6a",
+    "gate_id": "G0-FORMAT-GGUF-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_gguf_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "G0 Format: prepare Gguf workspace",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "G0 FAIL: conversion to gguf failed: [BUG-212] Converting sharded SafeTensors → GGUF (via temp APR): output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model.safetensors.index.json\n[GH-218] Loading sharded SafeTensors: 2 shards, 291 tensors\n[GH-218] Loading shard: model-00001-of-000002.safetensors\n[PMAT-223] Extracted 1 user metadata key(s) from SafeTensors __metadata__\n[GH-353] F16/BF16 passthrough: 159 of 159 tensors (skipped F32 conversion, saving ~16.1 GB RAM)\n[GH-218] Loading shard: model-00002-of-000002.safetensors\n[PMAT-223] Extracted 1 user metadata key(s) from SafeTensors __metadata__\n[GH-353] F16/BF16 passthrough: 132 of 132 tensors (skipped F32 conversion, saving ~13.8 GB RAM)\n[GH-218] Merged 291 tensors (291 F16 passthrough) from 2 shards\n[BUG-EXPORT-004] Vocab: base=128000, added=256, expected=128256, final=128256\n[BUG-EXPORT-004] Read BOS/EOS from config.json: bos=Some(128000), eos=Some(128001)\n[CONTRACT] Validated 291 tensors against tensor-layout-v1.yaml (vocab=128256, hidden=4096)\n[PMAT-221] Embedding 280147 BPE merge rules into APR metadata (SafeTensors path)\n[GH-205] F16 passthrough: 291 tensors written as raw F16 (no precision loss)\nerror: Validation failed: Conversion failed: Invalid model format: Failed to dequantize tensor 'lm_head.weight'\n",
+    "output": "\u001b[1;36m=== Rosetta Stone Conversion ===\u001b[0m\n\nSource: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model.safetensors.index.json\nTarget: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/gguf/model.gguf\n\n\u001b[33m--- Source Inspection ---\u001b[0m\n╭────────────┬───────────────╮\n│     Format │ SafeTensors   │\n├────────────┼───────────────┤\n│  File Size │ 14.96 GiB     │\n│    Tensors │ 291           │\n│ Parameters │ 8,030,261,248 │\n╰────────────┴───────────────╯\n\n\u001b[33mConverting...\u001b[0m\n",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 108474
+    },
+    "timestamp": "2026-03-04T09:42:06.020114150Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a1646a2c75c",
+    "gate_id": "G0-VALIDATE-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Validate: NaN/Inf/all-zeros tensor check",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: model-00001-of-000002.safetensors physics validated\n{\n  \"checks\": [\n    {\n      \"detail\": \"\",\n      \"name\": \"model.embed_tokens.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.0.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.0.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.0.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.0.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.0.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.0.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.0.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.0.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.0.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.1.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.1.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.1.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.1.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.1.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.1.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.1.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.1.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.1.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.10.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.10.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.10.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.10.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.10.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.10.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.10.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.10.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.10.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.11.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.11.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.11.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.11.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.11.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.11.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.11.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.11.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.11.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.12.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.12.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.12.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.12.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.12.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.12.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.12.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.12.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.12.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.13.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.13.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.13.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.13.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.13.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.13.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.13.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.13.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.13.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.14.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.14.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.14.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.14.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.14.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.14.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.14.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.14.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.14.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.15.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.15.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.15.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.15.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.15.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.15.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.15.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.15.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.15.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.16.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.16.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.16.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.16.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.16.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.16.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.16.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.16.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.16.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.17.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.17.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.17.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.17.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.17.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.2.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.2.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.2.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.2.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.2.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.2.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.2.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.2.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.2.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.3.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.3.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.3.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.3.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.3.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.3.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.3.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.3.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.3.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.4.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.4.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.4.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.4.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.4.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.4.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.4.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.4.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.4.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.5.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.5.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.5.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.5.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.5.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.5.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.5.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.5.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.5.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.6.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.6.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.6.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.6.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.6.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.6.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.6.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.6.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.6.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.7.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.7.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.7.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.7.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.7.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.7.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.7.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.7.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.7.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.8.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.8.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.8.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.8.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.8.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.8.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.8.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.8.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.8.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.9.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.9.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.9.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.9.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.9.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.9.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.9.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.9.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.9.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    }\n  ],\n  \"duration_ms\": 22787,\n  \"failed\": 0,\n  \"failed_tensors\": 0,\n  \"format\": \"safetensors\",\n  \"model\": \"output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model-00001-of-000002.safetensors\",\n  \"passed\": true,\n  \"total_checks\": 159,\n  \"total_inf\": 0,\n  \"total_nan\": 0,\n  \"total_tensors\": 159\n}\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 22791
+    },
+    "timestamp": "2026-03-04T09:42:28.812036136Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a1ab5972aa4",
+    "gate_id": "G0-VALIDATE-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Validate: NaN/Inf/all-zeros tensor check",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: model-00002-of-000002.safetensors physics validated\n{\n  \"checks\": [\n    {\n      \"detail\": \"\",\n      \"name\": \"lm_head.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.17.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.17.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.17.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.17.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.18.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.18.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.18.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.18.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.18.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.18.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.18.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.18.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.18.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.19.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.19.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.19.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.19.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.19.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.19.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.19.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.19.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.19.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.20.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.20.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.20.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.20.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.20.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.20.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.20.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.20.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.20.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.21.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.21.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.21.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.21.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.21.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.21.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.21.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.21.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.21.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.22.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.22.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.22.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.22.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.22.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.22.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.22.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.22.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.22.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.23.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.23.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.23.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.23.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.23.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.23.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.23.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.23.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.23.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.24.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.24.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.24.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.24.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.24.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.24.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.24.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.24.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.24.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.25.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.25.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.25.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.25.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.25.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.25.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.25.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.25.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.25.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.26.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.26.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.26.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.26.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.26.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.26.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.26.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.26.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.26.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.27.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.27.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.27.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.27.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.27.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.27.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.27.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.27.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.27.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.28.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.28.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.28.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.28.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.28.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.28.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.28.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.28.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.28.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.29.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.29.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.29.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.29.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.29.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.29.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.29.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.29.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.29.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.30.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.30.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.30.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.30.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.30.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.30.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.30.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.30.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.30.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.31.input_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.31.mlp.down_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.31.mlp.gate_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.31.mlp.up_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.31.post_attention_layernorm.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.31.self_attn.k_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.31.self_attn.o_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.31.self_attn.q_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.layers.31.self_attn.v_proj.weight\",\n      \"status\": \"PASS\"\n    },\n    {\n      \"detail\": \"\",\n      \"name\": \"model.norm.weight\",\n      \"status\": \"PASS\"\n    }\n  ],\n  \"duration_ms\": 19037,\n  \"failed\": 0,\n  \"failed_tensors\": 0,\n  \"format\": \"safetensors\",\n  \"model\": \"output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model-00002-of-000002.safetensors\",\n  \"passed\": true,\n  \"total_checks\": 132,\n  \"total_inf\": 0,\n  \"total_nan\": 0,\n  \"total_tensors\": 132\n}\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 19041
+    },
+    "timestamp": "2026-03-04T09:42:47.853414653Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a1ab5b9b42d",
+    "gate_id": "G0-INTEGRITY-CONFIG",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "G0 Integrity: config.json vs tensor metadata",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "G0 PASS: config.json matches tensor metadata",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T09:42:47.855676135Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a2da85f3376",
+    "gate_id": "F-A1-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "\u001b[1;36m=== Benchmark Results ===\u001b[0m\ntokens: 32\nlatency: 81354.70ms\nmodel: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model.safetensors.index.json\n\n{\"tok_s\": 0.4, \"tokens\": 32, \"latency_ms\": 81354.70}",
+    "stderr": "[GH-189] Loaded tokenizer from output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/tokenizer.json: 256 special tokens\n\u001b[32mGenerated 32 tokens in 14960.7ms (2.1 tok/s)\u001b[0m\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.4,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 81377
+    },
+    "timestamp": "2026-03-04T09:44:09.236020071Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a44253bb314",
+    "gate_id": "F-A1-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_apr_0000000000000001",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 1,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "\u001b[1;36m=== Benchmark Results ===\u001b[0m\ntokens: 32\nlatency: 81232.72ms\nmodel: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\n\n{\"tok_s\": 0.4, \"tokens\": 32, \"latency_ms\": 81232.72}",
+    "stderr": "[GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\n[PMAT-171] Loaded embedded BPE tokenizer: 128256 vocab, 280147 merges, 251 special tokens\n[PMAT-171] Loaded embedded BPE tokenizer: 128256 vocab, 280147 merges, 251 special tokens\n\u001b[32mGenerated 32 tokens in 14140.0ms (2.3 tok/s)\u001b[0m\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.4,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 96584
+    },
+    "timestamp": "2026-03-04T09:45:45.820127137Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a44253d7bb8",
+    "gate_id": "F-A1-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_gguf_0000000000000002",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 2,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Skipped",
+    "reason": "Format Gguf not available for model file",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T09:45:45.820243486Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a573399ae16",
+    "gate_id": "F-A2-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_gpu_safetensors_0000000000000003",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 3,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "\u001b[1;36m=== Benchmark Results ===\u001b[0m\ntokens: 32\nlatency: 81822.18ms\nmodel: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model.safetensors.index.json\n\n{\"tok_s\": 0.4, \"tokens\": 32, \"latency_ms\": 81822.18}",
+    "stderr": "[GH-189] Loaded tokenizer from output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/tokenizer.json: 256 special tokens\n\u001b[32mGenerated 32 tokens in 14597.3ms (2.2 tok/s)\u001b[0m\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.4,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 81845
+    },
+    "timestamp": "2026-03-04T09:47:07.665545886Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a6f964719bf",
+    "gate_id": "F-A2-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_gpu_apr_0000000000000004",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 4,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "\u001b[1;36m=== Benchmark Results ===\u001b[0m\ntokens: 32\nlatency: 89430.85ms\nmodel: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\n\n{\"tok_s\": 0.4, \"tokens\": 32, \"latency_ms\": 89430.85}",
+    "stderr": "[GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\n[PMAT-171] Loaded embedded BPE tokenizer: 128256 vocab, 280147 merges, 251 special tokens\n[PMAT-171] Loaded embedded BPE tokenizer: 128256 vocab, 280147 merges, 251 special tokens\n\u001b[32mGenerated 32 tokens in 15677.2ms (2.0 tok/s)\u001b[0m\n",
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": 0.4,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 104734
+    },
+    "timestamp": "2026-03-04T09:48:52.400293236Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a6f9648778f",
+    "gate_id": "F-A2-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_gpu_gguf_0000000000000005",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "gpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 5,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Skipped",
+    "reason": "Format Gguf not available for model file",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T09:48:52.400381702Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a6f96759c69",
+    "gate_id": "F-A3-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_chat_cpu_safetensors_0000000000000006",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 6,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "\u001b[1;36m=== Chat Demo (Tiny Model) ===\u001b[0m\n\n\u001b[33mNote: Using tiny demo model. Pass .apr, .gguf, or .safetensors file for full model.\u001b[0m\n\n  \u001b[1;37mModel\u001b[0m: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model.safetensors.index.json\n  \u001b[1;37mChat Template\u001b[0m: Raw\n  \u001b[1;37mTemperature\u001b[0m: 0.7\n  \u001b[1;37mTop-P\u001b[0m: 0.9\n  \u001b[1;37mMax Tokens\u001b[0m: 512\n\n\u001b[1;37mCommands:\u001b[0m\n  /quit     Exit the chat\n  /clear    Clear conversation history\n  /system   Set system prompt\n  /help     Show help\n\n════════════════════════════════════════════════════════════\n\n\u001b[36mLoading model...\u001b[0m\n\u001b[32mLoaded\u001b[0m Demo format in 0.00s (0.0 MB)\n\u001b[32mDetected\u001b[0m \u001b[36mRaw\u001b[0m chat template\n\u001b[1;34mAssistant:\u001b[0m \n\n\u001b[1;32mYou: \u001b[0m\n\u001b[36mGoodbye!\u001b[0m",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 2
+    },
+    "timestamp": "2026-03-04T09:48:52.403341367Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a7b3e9de59f",
+    "gate_id": "G2-BASIC",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_chat_cpu_apr_0000000000000007",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 7,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Command failed (exit 4): [GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Invalid APR format: No Qwen tokenizer found. Searched:\n1. Pacha cache ({stem}.tokenizer.json alongside model)\n2. Model directory (tokenizer.json)\n3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\nTo fix: Download a Qwen model with tokenizer:\napr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF\n\n--- TRACE OUTPUT ---\n[GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\n\u001b[36mInference tracing enabled for chat (APR-TRACE-001)\u001b[0m\n  Trace level: basic\nerror: Invalid APR format: No Qwen tokenizer found. Searched:\n1. Pacha cache ({stem}.tokenizer.json alongside model)\n2. Model directory (tokenizer.json)\n3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\nTo fix: Download a Qwen model with tokenizer:\napr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF\n\n--- TRACE STDOUT ---\n\n\u001b[1;36m=== Model Chat (APR Format) ===\u001b[0m\n\n\u001b[36mUsing APR v2 format with mmap (Native Library Mandate)\u001b[0m\n\n  \u001b[1;37mModel\u001b[0m: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\n  \u001b[1;37mChat Template\u001b[0m: Raw\n  \u001b[1;37mTemperature\u001b[0m: 0.7\n  \u001b[1;37mTop-P\u001b[0m: 0.9\n  \u001b[1;37mMax Tokens\u001b[0m: 512\n\n\u001b[1;37mCommands:\u001b[0m\n  /quit     Exit the chat\n  /clear    Clear conversation history\n  /system   Set system prompt\n  /help     Show help\n\n════════════════════════════════════════════════════════════\n\n\u001b[36mLoading model...\u001b[0m\n\u001b[32mLoaded\u001b[0m APR format in 6.70s (16065.8 MB)\n",
+    "output": "\u001b[1;36m=== Model Chat (APR Format) ===\u001b[0m\n\n\u001b[36mUsing APR v2 format with mmap (Native Library Mandate)\u001b[0m\n\n  \u001b[1;37mModel\u001b[0m: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\n  \u001b[1;37mChat Template\u001b[0m: Raw\n  \u001b[1;37mTemperature\u001b[0m: 0.7\n  \u001b[1;37mTop-P\u001b[0m: 0.9\n  \u001b[1;37mMax Tokens\u001b[0m: 512\n\n\u001b[1;37mCommands:\u001b[0m\n  /quit     Exit the chat\n  /clear    Clear conversation history\n  /system   Set system prompt\n  /help     Show help\n\n════════════════════════════════════════════════════════════\n\n\u001b[36mLoading model...\u001b[0m\n\u001b[32mLoaded\u001b[0m APR format in 6.72s (16065.8 MB)",
+    "stderr": "[GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Invalid APR format: No Qwen tokenizer found. Searched:\n1. Pacha cache ({stem}.tokenizer.json alongside model)\n2. Model directory (tokenizer.json)\n3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\nTo fix: Download a Qwen model with tokenizer:\napr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF\n\n--- TRACE OUTPUT ---\n[GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\n\u001b[36mInference tracing enabled for chat (APR-TRACE-001)\u001b[0m\n  Trace level: basic\nerror: Invalid APR format: No Qwen tokenizer found. Searched:\n1. Pacha cache ({stem}.tokenizer.json alongside model)\n2. Model directory (tokenizer.json)\n3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\nTo fix: Download a Qwen model with tokenizer:\napr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF\n\n--- TRACE STDOUT ---\n\n\u001b[1;36m=== Model Chat (APR Format) ===\u001b[0m\n\n\u001b[36mUsing APR v2 format with mmap (Native Library Mandate)\u001b[0m\n\n  \u001b[1;37mModel\u001b[0m: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\n  \u001b[1;37mChat Template\u001b[0m: Raw\n  \u001b[1;37mTemperature\u001b[0m: 0.7\n  \u001b[1;37mTop-P\u001b[0m: 0.9\n  \u001b[1;37mMax Tokens\u001b[0m: 512\n\n\u001b[1;37mCommands:\u001b[0m\n  /quit     Exit the chat\n  /clear    Clear conversation history\n  /system   Set system prompt\n  /help     Show help\n\n════════════════════════════════════════════════════════════\n\n\u001b[36mLoading model...\u001b[0m\n\u001b[32mLoaded\u001b[0m APR format in 6.70s (16065.8 MB)\n",
+    "exit_code": 4,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 50065
+    },
+    "timestamp": "2026-03-04T09:49:42.469192990Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a7b3e9f13c5",
+    "gate_id": "F-A3-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_chat_cpu_gguf_0000000000000008",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 8,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Skipped",
+    "reason": "Format Gguf not available for model file",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T09:49:42.469269177Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a7b3ed24c71",
+    "gate_id": "F-A4-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_chat_gpu_safetensors_0000000000000009",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 9,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "\u001b[1;36m=== Chat Demo (Tiny Model) ===\u001b[0m\n\n\u001b[33mNote: Using tiny demo model. Pass .apr, .gguf, or .safetensors file for full model.\u001b[0m\n\n  \u001b[1;37mModel\u001b[0m: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model.safetensors.index.json\n  \u001b[1;37mChat Template\u001b[0m: Raw\n  \u001b[1;37mTemperature\u001b[0m: 0.7\n  \u001b[1;37mTop-P\u001b[0m: 0.9\n  \u001b[1;37mMax Tokens\u001b[0m: 512\n\n\u001b[1;37mCommands:\u001b[0m\n  /quit     Exit the chat\n  /clear    Clear conversation history\n  /system   Set system prompt\n  /help     Show help\n\n════════════════════════════════════════════════════════════\n\n\u001b[36mLoading model...\u001b[0m\n\u001b[32mLoaded\u001b[0m Demo format in 0.00s (0.0 MB)\n\u001b[32mDetected\u001b[0m \u001b[36mRaw\u001b[0m chat template\n\u001b[1;34mAssistant:\u001b[0m \n\n\u001b[1;32mYou: \u001b[0m\n\u001b[36mGoodbye!\u001b[0m",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": 32,
+      "memory_peak_mb": null,
+      "duration_ms": 3
+    },
+    "timestamp": "2026-03-04T09:49:42.472627123Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a862d4b0e3d",
+    "gate_id": "G2-BASIC",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_chat_gpu_apr_000000000000000a",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 10,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Command failed (exit 4): [GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Invalid APR format: No Qwen tokenizer found. Searched:\n1. Pacha cache ({stem}.tokenizer.json alongside model)\n2. Model directory (tokenizer.json)\n3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\nTo fix: Download a Qwen model with tokenizer:\napr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF\n\n--- TRACE OUTPUT ---\n[GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\n\u001b[36mInference tracing enabled for chat (APR-TRACE-001)\u001b[0m\n  Trace level: basic\nerror: Invalid APR format: No Qwen tokenizer found. Searched:\n1. Pacha cache ({stem}.tokenizer.json alongside model)\n2. Model directory (tokenizer.json)\n3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\nTo fix: Download a Qwen model with tokenizer:\napr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF\n\n--- TRACE STDOUT ---\n\n\u001b[1;36m=== Model Chat (APR Format) ===\u001b[0m\n\n\u001b[36mUsing APR v2 format with mmap (Native Library Mandate)\u001b[0m\n\n  \u001b[1;37mModel\u001b[0m: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\n  \u001b[1;37mChat Template\u001b[0m: Raw\n  \u001b[1;37mTemperature\u001b[0m: 0.7\n  \u001b[1;37mTop-P\u001b[0m: 0.9\n  \u001b[1;37mMax Tokens\u001b[0m: 512\n\n\u001b[1;37mCommands:\u001b[0m\n  /quit     Exit the chat\n  /clear    Clear conversation history\n  /system   Set system prompt\n  /help     Show help\n\n════════════════════════════════════════════════════════════\n\n\u001b[36mLoading model...\u001b[0m\n\u001b[32mLoaded\u001b[0m APR format in 6.66s (16065.8 MB)\n",
+    "output": "\u001b[1;36m=== Model Chat (APR Format) ===\u001b[0m\n\n\u001b[36mUsing APR v2 format with mmap (Native Library Mandate)\u001b[0m\n\n  \u001b[1;37mModel\u001b[0m: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\n  \u001b[1;37mChat Template\u001b[0m: Raw\n  \u001b[1;37mTemperature\u001b[0m: 0.7\n  \u001b[1;37mTop-P\u001b[0m: 0.9\n  \u001b[1;37mMax Tokens\u001b[0m: 512\n\n\u001b[1;37mCommands:\u001b[0m\n  /quit     Exit the chat\n  /clear    Clear conversation history\n  /system   Set system prompt\n  /help     Show help\n\n════════════════════════════════════════════════════════════\n\n\u001b[36mLoading model...\u001b[0m\n\u001b[32mLoaded\u001b[0m APR format in 6.64s (16065.8 MB)",
+    "stderr": "[GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Invalid APR format: No Qwen tokenizer found. Searched:\n1. Pacha cache ({stem}.tokenizer.json alongside model)\n2. Model directory (tokenizer.json)\n3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\nTo fix: Download a Qwen model with tokenizer:\napr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF\n\n--- TRACE OUTPUT ---\n[GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\n\u001b[36mInference tracing enabled for chat (APR-TRACE-001)\u001b[0m\n  Trace level: basic\nerror: Invalid APR format: No Qwen tokenizer found. Searched:\n1. Pacha cache ({stem}.tokenizer.json alongside model)\n2. Model directory (tokenizer.json)\n3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\nTo fix: Download a Qwen model with tokenizer:\napr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF\n\n--- TRACE STDOUT ---\n\n\u001b[1;36m=== Model Chat (APR Format) ===\u001b[0m\n\n\u001b[36mUsing APR v2 format with mmap (Native Library Mandate)\u001b[0m\n\n  \u001b[1;37mModel\u001b[0m: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\n  \u001b[1;37mChat Template\u001b[0m: Raw\n  \u001b[1;37mTemperature\u001b[0m: 0.7\n  \u001b[1;37mTop-P\u001b[0m: 0.9\n  \u001b[1;37mMax Tokens\u001b[0m: 512\n\n\u001b[1;37mCommands:\u001b[0m\n  /quit     Exit the chat\n  /clear    Clear conversation history\n  /system   Set system prompt\n  /help     Show help\n\n════════════════════════════════════════════════════════════\n\n\u001b[36mLoading model...\u001b[0m\n\u001b[32mLoaded\u001b[0m APR format in 6.66s (16065.8 MB)\n",
+    "exit_code": 4,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 46950
+    },
+    "timestamp": "2026-03-04T09:50:29.423193058Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a862d4caac1",
+    "gate_id": "F-A4-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_chat_gpu_gguf_000000000000000b",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "chat",
+      "backend": "gpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 11,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Skipped",
+    "reason": "Format Gguf not available for model file",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T09:50:29.423297109Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a8e9bd6a2d5",
+    "gate_id": "F-A6-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 36214
+    },
+    "timestamp": "2026-03-04T09:51:05.637571248Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a91df6f4da9",
+    "gate_id": "F-A6-COMP-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"text\":\"ŶĈΝ\\u000bŃɈҵķסėմĻ᎘㼒̺İƱ\\r࠴\\u000bėҘఖŶķᮜʪ೔㼒̺Ļė\",\"tokens_generated\":32,\"latency_ms\":14006,\"tok_per_sec\":2.28465876357412}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 50233
+    },
+    "timestamp": "2026-03-04T09:51:19.656551943Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a98c79c14f5",
+    "gate_id": "F-A6-CHAT-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"_apr_metrics\":{\"latency_ms\":29658,\"tok_per_sec\":1.0789613096588395},\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁\",\"role\":\"assistant\"}}],\"created\":1772617909,\"id\":\"chatcmpl-1772617909320586927-1511520\",\"model\":\"model\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":32,\"prompt_tokens\":62,\"total_tokens\":94}}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 79898
+    },
+    "timestamp": "2026-03-04T09:51:49.321604196Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a98c7e7c506",
+    "gate_id": "F-A6-STREAM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "SSE response format invalid: expected 'data: ' prefixed lines ending with 'data: [DONE]'",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 79903
+    },
+    "timestamp": "2026-03-04T09:51:49.326564862Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a98c83027ab",
+    "gate_id": "F-A6-STOP-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 79907
+    },
+    "timestamp": "2026-03-04T09:51:49.331307777Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a98c8c912fe",
+    "gate_id": "F-A6-ERR-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Server survived malformed request (status=0)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 79912
+    },
+    "timestamp": "2026-03-04T09:51:49.341329659Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a98c937cc46",
+    "gate_id": "F-A6-INFO-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 79925
+    },
+    "timestamp": "2026-03-04T09:51:49.348586390Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a98c9bbcf8d",
+    "gate_id": "F-A6-METRICS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET /metrics failed or empty: ",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 79933
+    },
+    "timestamp": "2026-03-04T09:51:49.357237678Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a98ca2a955b",
+    "gate_id": "F-A6-EOS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 79941
+    },
+    "timestamp": "2026-03-04T09:51:49.364497427Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a98ca2ab24a",
+    "gate_id": "F-A6-PERF-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "no tok/s metric reported (skipped)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 79941
+    },
+    "timestamp": "2026-03-04T09:51:49.364504045Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a98cade7a7b",
+    "gate_id": "F-A6-MODELS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET /v1/models: missing or empty 'data' array",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 79952
+    },
+    "timestamp": "2026-03-04T09:51:49.376286995Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999a9f4acde2cb",
+    "gate_id": "F-A6-TMPL-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 107869
+    },
+    "timestamp": "2026-03-04T09:52:17.292487194Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999aad2dfd75d1",
+    "gate_id": "F-A6-DETERM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "temp=0 deterministic: 'T\n⟌\nŁ\nT\n'",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 167515
+    },
+    "timestamp": "2026-03-04T09:53:16.938607555Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999abf61ce87e1",
+    "gate_id": "F-A6-MULTI-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Multi-turn context lost: response does not contain 'blue'",
+    "output": "got it!<?<?<?<?<",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 245694
+    },
+    "timestamp": "2026-03-04T09:54:35.117360412Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999abf6225509c",
+    "gate_id": "F-A6-TOK-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "POST /tokenize: response missing 'tokens' or 'count' field",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 245699
+    },
+    "timestamp": "2026-03-04T09:54:35.123046853Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999abf6277a52c",
+    "gate_id": "F-A6-CHARS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Special chars handled: ",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 245705
+    },
+    "timestamp": "2026-03-04T09:54:35.128442550Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ac43b0a5b06",
+    "gate_id": "F-A6-CSTREAM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "data: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618075,\"id\":\"chatcmpl-1772618075133154238-1511520\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618075,\"id\":\"chatcmpl-1772618075133154238-1511520\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618075,\"id\":\"chatcmpl-1772618075133154238-1511520\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618075,\"id\":\"chatcmpl-1772618075133154238-1511520\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618075,\"id\":\"chatcmpl-1772618075133154238-1511520\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618075,\"id\":\"chatcmpl-1772618075133154238-1511520\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618075,\"id\":\"chatcmpl-1772618075133154238-1511520\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618075,\"id\":\"chatcmpl-1772618075133154238-1511520\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: [DONE]\n\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 266518
+    },
+    "timestamp": "2026-03-04T09:54:55.941804607Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ac43b56a4e0",
+    "gate_id": "F-A6-MAXTOK-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "max_tokens=1: 0 word(s): ''",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 266523
+    },
+    "timestamp": "2026-03-04T09:54:55.946803119Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ac8495bc2d4",
+    "gate_id": "F-A6-SCHEMA-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_apr_0000000000000010",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 16,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"_apr_metrics\":{\"latency_ms\":17409,\"tok_per_sec\":0.22975807108328172},\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"㸁㸁㸁㸁\",\"role\":\"assistant\"}}],\"created\":1772618113,\"id\":\"chatcmpl-1772618113360518954-1511520\",\"model\":\"model\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":4,\"prompt_tokens\":52,\"total_tokens\":56}}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 283938
+    },
+    "timestamp": "2026-03-04T09:55:13.361890050Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ac84988c51c",
+    "gate_id": "F-A6-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_gguf_0000000000000011",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 17,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Skipped",
+    "reason": "Format Gguf not available for model file",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T09:55:13.364838485Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ae0cc0951e6",
+    "gate_id": "F-A5-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"latency_ms\":24787,\"text\":\"\\u000b\\r\\u000b\",\"tok_per_sec\":1.2909873993851038,\"tokens_generated\":32}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 105268
+    },
+    "timestamp": "2026-03-04T09:56:58.633517540Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ae0cc5c8934",
+    "gate_id": "F-A5-COMP-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 105274
+    },
+    "timestamp": "2026-03-04T09:56:58.638970405Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ae8cc7c6054",
+    "gate_id": "F-A5-CHAT-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\"}}],\"created\":1772618252,\"id\":\"chatcmpl-1772618252999742148-1541264\",\"latency_ms\":34355,\"model\":\"safetensors\",\"object\":\"chat.completion\",\"tok_per_sec\":0.9314239310635694,\"usage\":{\"completion_tokens\":32,\"prompt_tokens\":62,\"total_tokens\":94}}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 139635
+    },
+    "timestamp": "2026-03-04T09:57:33.000797102Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999aeacf90866a",
+    "gate_id": "F-A5-STREAM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "SSE response format invalid: expected 'data: ' prefixed lines ending with 'data: [DONE]'",
+    "output": "{\"latency_ms\":8635,\"text\":\"\\u000b\",\"tok_per_sec\":1.852712794192383,\"tokens_generated\":16}",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 148277
+    },
+    "timestamp": "2026-03-04T09:57:41.642383160Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999aee98c1d53c",
+    "gate_id": "F-A5-STOP-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Stop sequence not honored: output contains '5'",
+    "output": "{\"latency_ms\":16254,\"text\":\"\",\"tok_per_sec\":1.9687185295075198,\"tokens_generated\":32}",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 164537
+    },
+    "timestamp": "2026-03-04T09:57:57.902736502Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999aee995e9d60",
+    "gate_id": "F-A5-ERR-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Server survived malformed request (status=0)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 164542
+    },
+    "timestamp": "2026-03-04T09:57:57.913010429Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999aee99a389e8",
+    "gate_id": "F-A5-INFO-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET / failed or empty response: ",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 164552
+    },
+    "timestamp": "2026-03-04T09:57:57.917527180Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999aee9a047c9a",
+    "gate_id": "F-A5-METRICS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET /metrics failed or empty: ",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 164559
+    },
+    "timestamp": "2026-03-04T09:57:57.923880994Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999af17097cd20",
+    "gate_id": "F-A5-EOS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"latency_ms\":12183,\"text\":\"@\\u000b.@\",\"tok_per_sec\":2.6264157673264523,\"tokens_generated\":32}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 176748
+    },
+    "timestamp": "2026-03-04T09:58:10.113794998Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999af17097e953",
+    "gate_id": "F-A5-PERF-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "no tok/s metric reported (skipped)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 176748
+    },
+    "timestamp": "2026-03-04T09:58:10.113801170Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999af170e48749",
+    "gate_id": "F-A5-MODELS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET /v1/models: missing or empty 'data' array",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 176753
+    },
+    "timestamp": "2026-03-04T09:58:10.118822808Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999af81849e431",
+    "gate_id": "F-A5-TMPL-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 205332
+    },
+    "timestamp": "2026-03-04T09:58:38.697065400Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b03df16e96e",
+    "gate_id": "F-A5-DETERM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "temp=0 deterministic: 'T\n\n\nT\n'",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 255912
+    },
+    "timestamp": "2026-03-04T09:59:29.277030435Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b11940593db",
+    "gate_id": "F-A5-MULTI-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Multi-turn context lost: response does not contain 'blue'",
+    "output": "got it!<?<?<?<?<",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 314782
+    },
+    "timestamp": "2026-03-04T10:00:28.147145684Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b1194540d74",
+    "gate_id": "F-A5-TOK-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "POST /tokenize: response missing 'tokens' or 'count' field",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 314787
+    },
+    "timestamp": "2026-03-04T10:00:28.152288011Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b157eeca9dd",
+    "gate_id": "F-A5-CHARS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Special chars handled: {\"latency_ms\":16815,\"text\":\"F1B#Ieeee\",\"tok_per_sec\":0.9514974637647778,\"tokens_generated\":16",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 331608
+    },
+    "timestamp": "2026-03-04T10:00:44.973060252Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b19c0897765",
+    "gate_id": "F-A5-CSTREAM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Chat SSE format invalid: expected 'data: ' lines ending with 'data: [DONE]'",
+    "output": "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"stop\",\"index\":0}],\"created\":1772618463,\"id\":\"chatcmpl-1772618463252705328-1541264\",\"model\":\"safetensors\",\"object\":\"chat.completion.chunk\"}\n\n",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 349888
+    },
+    "timestamp": "2026-03-04T10:01:03.253725011Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b1a1d1041dc",
+    "gate_id": "F-A5-MAXTOK-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "max_tokens=1: 1 word(s): '{\"latency_ms\":1546,\"text\":\"\",\"tok_per_sec\":0.6464744129037933,\"tokens_generated\":1}'",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 351441
+    },
+    "timestamp": "2026-03-04T10:01:04.806061818Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b1e17d65a18",
+    "gate_id": "F-A5-SCHEMA-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_safetensors_000000000000000c",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 12,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\"}}],\"created\":1772618481,\"id\":\"chatcmpl-1772618481897183748-1541264\",\"latency_ms\":17086,\"model\":\"safetensors\",\"object\":\"chat.completion\",\"tok_per_sec\":0.23410118413066222,\"usage\":{\"completion_tokens\":4,\"prompt_tokens\":52,\"total_tokens\":56}}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 368533
+    },
+    "timestamp": "2026-03-04T10:01:21.898250523Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b1e17f4ac53",
+    "gate_id": "F-A5-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_gguf_000000000000000e",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 14,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Skipped",
+    "reason": "Format Gguf not available for model file",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:01:21.900236550Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b2687766f27",
+    "gate_id": "F-A5-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 36230
+    },
+    "timestamp": "2026-03-04T10:01:58.130752432Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b29a1081835",
+    "gate_id": "F-A5-COMP-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"text\":\"ŶĈΝ\\u000bŃɈҵķסėմĻ᎘㼒̺İƱ\\r࠴\\u000bėҘఖŶķᮜʪ೔㼒̺Ļė\",\"tokens_generated\":32,\"latency_ms\":13301,\"tok_per_sec\":2.4056850164986145}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 49544
+    },
+    "timestamp": "2026-03-04T10:02:11.444629344Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b3067bfe023",
+    "gate_id": "F-A5-CHAT-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"_apr_metrics\":{\"latency_ms\":29098,\"tok_per_sec\":1.0997278427591937},\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁\",\"role\":\"assistant\"}}],\"created\":1772618560,\"id\":\"chatcmpl-1772618560547203824-1559707\",\"model\":\"model\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":32,\"prompt_tokens\":62,\"total_tokens\":94}}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 78648
+    },
+    "timestamp": "2026-03-04T10:02:40.548366586Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b306809b86b",
+    "gate_id": "F-A5-STREAM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "SSE response format invalid: expected 'data: ' prefixed lines ending with 'data: [DONE]'",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 78652
+    },
+    "timestamp": "2026-03-04T10:02:40.553205694Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b30684d642f",
+    "gate_id": "F-A5-STOP-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 78657
+    },
+    "timestamp": "2026-03-04T10:02:40.557639477Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b3068e9180a",
+    "gate_id": "F-A5-ERR-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Server survived malformed request (status=0)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 78663
+    },
+    "timestamp": "2026-03-04T10:02:40.567843774Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b30694d107d",
+    "gate_id": "F-A5-INFO-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 78674
+    },
+    "timestamp": "2026-03-04T10:02:40.574396109Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b3069a1b9d7",
+    "gate_id": "F-A5-METRICS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET /metrics failed or empty: ",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 78679
+    },
+    "timestamp": "2026-03-04T10:02:40.579944582Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b306a3fb758",
+    "gate_id": "F-A5-EOS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 78690
+    },
+    "timestamp": "2026-03-04T10:02:40.590298638Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b306a3fd42e",
+    "gate_id": "F-A5-PERF-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "no tok/s metric reported (skipped)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 78690
+    },
+    "timestamp": "2026-03-04T10:02:40.590305869Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b306ac82ee9",
+    "gate_id": "F-A5-MODELS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET /v1/models: missing or empty 'data' array",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 78698
+    },
+    "timestamp": "2026-03-04T10:02:40.599242430Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b37006b8c06",
+    "gate_id": "F-A5-TMPL-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁㸁",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 106979
+    },
+    "timestamp": "2026-03-04T10:03:08.879557208Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b449e2735b9",
+    "gate_id": "F-A5-DETERM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "temp=0 deterministic: 'T\n⟌\nŁ\nT\n'",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 165460
+    },
+    "timestamp": "2026-03-04T10:04:07.360453464Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b527964b92a",
+    "gate_id": "F-A5-MULTI-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Multi-turn context lost: response does not contain 'blue'",
+    "output": "got it!<?<?<?<?<",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 224973
+    },
+    "timestamp": "2026-03-04T10:05:06.873270853Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b5279b38b29",
+    "gate_id": "F-A5-TOK-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "POST /tokenize: response missing 'tokens' or 'count' field",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 224978
+    },
+    "timestamp": "2026-03-04T10:05:06.878436181Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b527a0034c1",
+    "gate_id": "F-A5-CHARS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Special chars handled: ",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 224983
+    },
+    "timestamp": "2026-03-04T10:05:06.883459133Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b56bf77c69c",
+    "gate_id": "F-A5-CSTREAM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "data: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618706,\"id\":\"chatcmpl-1772618706887751795-1559707\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618706,\"id\":\"chatcmpl-1772618706887751795-1559707\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618706,\"id\":\"chatcmpl-1772618706887751795-1559707\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618706,\"id\":\"chatcmpl-1772618706887751795-1559707\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618706,\"id\":\"chatcmpl-1772618706887751795-1559707\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618706,\"id\":\"chatcmpl-1772618706887751795-1559707\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618706,\"id\":\"chatcmpl-1772618706887751795-1559707\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"㸁\"},\"finish_reason\":null,\"index\":0}],\"created\":1772618706,\"id\":\"chatcmpl-1772618706887751795-1559707\",\"model\":\"model\",\"object\":\"chat.completion.chunk\"}\n\ndata: [DONE]\n\n",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 243328
+    },
+    "timestamp": "2026-03-04T10:05:25.228793277Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b56bfc3c7ec",
+    "gate_id": "F-A5-MAXTOK-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "max_tokens=1: 0 word(s): ''",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 243333
+    },
+    "timestamp": "2026-03-04T10:05:25.233773844Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b5ac4162878",
+    "gate_id": "F-A5-SCHEMA-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_cpu_apr_000000000000000d",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 13,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"_apr_metrics\":{\"latency_ms\":17247,\"tok_per_sec\":0.23192472308727435},\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"㸁㸁㸁㸁\",\"role\":\"assistant\"}}],\"created\":1772618742,\"id\":\"chatcmpl-1772618742485122123-1559707\",\"model\":\"model\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":4,\"prompt_tokens\":52,\"total_tokens\":56}}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 260585
+    },
+    "timestamp": "2026-03-04T10:05:42.486151231Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b6d672a15ce",
+    "gate_id": "F-A6-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"latency_ms\":13609,\"text\":\"\\u000b\\r\\u000b\",\"tok_per_sec\":2.351307523273031,\"tokens_generated\":32}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 80043
+    },
+    "timestamp": "2026-03-04T10:07:02.531554705Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b6d6777cb7e",
+    "gate_id": "F-A6-COMP-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 80048
+    },
+    "timestamp": "2026-03-04T10:07:02.536646670Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b744d716f45",
+    "gate_id": "F-A6-CHAT-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\"}}],\"created\":1772618852,\"id\":\"chatcmpl-1772618852163783249-1570111\",\"latency_ms\":29622,\"model\":\"safetensors\",\"object\":\"chat.completion\",\"tok_per_sec\":1.0802504226645528,\"usage\":{\"completion_tokens\":32,\"prompt_tokens\":62,\"total_tokens\":94}}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 109676
+    },
+    "timestamp": "2026-03-04T10:07:32.164794374Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b764914dd7f",
+    "gate_id": "F-A6-STREAM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "SSE response format invalid: expected 'data: ' prefixed lines ending with 'data: [DONE]'",
+    "output": "{\"latency_ms\":8511,\"text\":\"\\u000b\",\"tok_per_sec\":1.8798584168278596,\"tokens_generated\":16}",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 118193
+    },
+    "timestamp": "2026-03-04T10:07:40.681553500Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b7a067817a0",
+    "gate_id": "F-A6-STOP-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Stop sequence not honored: output contains '5'",
+    "output": "{\"latency_ms\":16056,\"text\":\"\",\"tok_per_sec\":1.9929158686535375,\"tokens_generated\":32}",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 134255
+    },
+    "timestamp": "2026-03-04T10:07:56.743851799Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b7a070da864",
+    "gate_id": "F-A6-ERR-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Server survived malformed request (status=0)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 134261
+    },
+    "timestamp": "2026-03-04T10:07:56.753653102Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b7a076125dd",
+    "gate_id": "F-A6-INFO-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET / failed or empty response: ",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 134271
+    },
+    "timestamp": "2026-03-04T10:07:56.759124294Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b7a07a754c4",
+    "gate_id": "F-A6-METRICS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET /metrics failed or empty: ",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 134275
+    },
+    "timestamp": "2026-03-04T10:07:56.763723609Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b7cd89970e0",
+    "gate_id": "F-A6-EOS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"latency_ms\":12088,\"text\":\"@\\u000b.@\",\"tok_per_sec\":2.6471023155177758,\"tokens_generated\":32}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 146371
+    },
+    "timestamp": "2026-03-04T10:08:08.859187553Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b7cd8998d47",
+    "gate_id": "F-A6-PERF-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "no tok/s metric reported (skipped)",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 146371
+    },
+    "timestamp": "2026-03-04T10:08:08.859193408Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b7cd8e6d65c",
+    "gate_id": "F-A6-MODELS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "GET /v1/models: missing or empty 'data' array",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 146376
+    },
+    "timestamp": "2026-03-04T10:08:08.864258998Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b837b726b2a",
+    "gate_id": "F-A6-TMPL-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 174873
+    },
+    "timestamp": "2026-03-04T10:08:37.361119696Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b8f434d10a1",
+    "gate_id": "F-A6-DETERM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "temp=0 deterministic: 'T\n\n\nT\n'",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 225470
+    },
+    "timestamp": "2026-03-04T10:09:27.958754785Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b9cf34e0f8e",
+    "gate_id": "F-A6-MULTI-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Multi-turn context lost: response does not contain 'blue'",
+    "output": "got it!<?<?<?<?<",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 284258
+    },
+    "timestamp": "2026-03-04T10:10:26.746185353Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999b9cf39a9e2b",
+    "gate_id": "F-A6-TOK-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "POST /tokenize: response missing 'tokens' or 'count' field",
+    "output": "",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 284263
+    },
+    "timestamp": "2026-03-04T10:10:26.751201895Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ba0dbdae585",
+    "gate_id": "F-A6-CHARS-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Special chars handled: {\"latency_ms\":16776,\"text\":\"F1B#Ieeee\",\"tok_per_sec\":0.953716530424974,\"tokens_generated\":16}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 301044
+    },
+    "timestamp": "2026-03-04T10:10:43.532630844Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ba52102f8a2",
+    "gate_id": "F-A6-CSTREAM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Falsified",
+    "reason": "Chat SSE format invalid: expected 'data: ' lines ending with 'data: [DONE]'",
+    "output": "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"stop\",\"index\":0}],\"created\":1772619061,\"id\":\"chatcmpl-1772619061871736857-1570111\",\"model\":\"safetensors\",\"object\":\"chat.completion.chunk\"}\n\n",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 319384
+    },
+    "timestamp": "2026-03-04T10:11:01.872755008Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ba57d874066",
+    "gate_id": "F-A6-MAXTOK-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "max_tokens=1: 1 word(s): '{\"latency_ms\":1546,\"text\":\"\",\"tok_per_sec\":0.6465284004865455,\"tokens_generated\":1}'",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 320937
+    },
+    "timestamp": "2026-03-04T10:11:03.424926874Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ba975e563d1",
+    "gate_id": "F-A6-SCHEMA-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_serve_gpu_safetensors_000000000000000f",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "serve",
+      "backend": "gpu",
+      "format": "safetensors",
+      "prompt": "What is 2+2?",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 15,
+      "trace_level": "none",
+      "oracle_type": "arithmetic"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\"}}],\"created\":1772619080,\"id\":\"chatcmpl-1772619080475723460-1570111\",\"latency_ms\":17046,\"model\":\"safetensors\",\"object\":\"chat.completion\",\"tok_per_sec\":0.23465629190627538,\"usage\":{\"completion_tokens\":4,\"prompt_tokens\":52,\"total_tokens\":56}}",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 337988
+    },
+    "timestamp": "2026-03-04T10:11:20.476748633Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ba97600402a",
+    "gate_id": "F-CONV-G-A",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Convert Gguf to Apr",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion infrastructure error: Execution error: No gguf file found in output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/gguf/ or output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:11:20.478507988Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999bd31441734e",
+    "gate_id": "F-CONV-A-G",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_gguf_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "Convert Apr to Gguf",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion infrastructure error: Execution error: Conversion failed: [GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Validation failed: Conversion failed: Invalid model format: Failed to dequantize tensor 'lm_head.weight'\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:14:19.227241189Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999bd31442fc8a",
+    "gate_id": "F-CONV-G-S",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Convert Gguf to SafeTensors",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion infrastructure error: Execution error: No gguf file found in output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/gguf/ or output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:14:19.227342047Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999bfe9990aa24",
+    "gate_id": "F-CONV-S-G",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_gguf_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "Convert SafeTensors to Gguf",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion infrastructure error: Execution error: Conversion failed: [BUG-212] Converting sharded SafeTensors → GGUF (via temp APR): output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model.safetensors.index.json\n[GH-218] Loading sharded SafeTensors: 2 shards, 291 tensors\n[GH-218] Loading shard: model-00001-of-000002.safetensors\n[PMAT-223] Extracted 1 user metadata key(s) from SafeTensors __metadata__\n[GH-353] F16/BF16 passthrough: 159 of 159 tensors (skipped F32 conversion, saving ~16.1 GB RAM)\n[GH-218] Loading shard: model-00002-of-000002.safetensors\n[PMAT-223] Extracted 1 user metadata key(s) from SafeTensors __metadata__\n[GH-353] F16/BF16 passthrough: 132 of 132 tensors (skipped F32 conversion, saving ~13.8 GB RAM)\n[GH-218] Merged 291 tensors (291 F16 passthrough) from 2 shards\n[BUG-EXPORT-004] Vocab: base=128000, added=256, expected=128256, final=128256\n[BUG-EXPORT-004] Read BOS/EOS from config.json: bos=Some(128000), eos=Some(128001)\n[CONTRACT] Validated 291 tensors against tensor-layout-v1.yaml (vocab=128256, hidden=4096)\n[PMAT-221] Embedding 280147 BPE merge rules into APR metadata (SafeTensors path)\n[GH-205] F16 passthrough: 291 tensors written as raw F16 (no precision loss)\nerror: Validation failed: Conversion failed: Invalid model format: Failed to dequantize tensor 'lm_head.weight'\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:17:26.147396053Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999c2856be42e9",
+    "gate_id": "F-CONV-A-S",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Convert Apr to SafeTensors",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Conversion infrastructure error: Execution error: Conversion failed: [GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Validation failed: Conversion failed: Invalid model format: Failed to dequantize tensor 'lm_head.weight'\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:20:25.414937200Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999c67ad80738a",
+    "gate_id": "F-CONV-SafeTensors-Apr",
+    "scenario": {
+      "id": "test_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "conversion",
+        "name": "test",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Convert SafeTensors to Apr",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Conversion successful, max_diff: 8.46e-1",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:24:57.453443785Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999c67ad820772",
+    "gate_id": "F-CONV-RT-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_gguf_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "gguf",
+      "prompt": "Round-trip conversion",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Round-trip failed: Execution error: No gguf file found in output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/gguf/ or output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:24:57.453547055Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999ca0f30288df",
+    "gate_id": "F-CONV-RT-002",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Multi-hop: SafeTensors→Apr→Gguf→SafeTensors",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Multi-hop chain failed: Execution error: Conversion failed: [GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Validation failed: Conversion failed: Invalid model format: Failed to dequantize tensor 'lm_head.weight'\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:29:03.432732379Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999cdd1f622bb1",
+    "gate_id": "F-CONV-RT-003",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Multi-hop: SafeTensors→Apr→Gguf→Apr→SafeTensors",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Multi-hop chain failed: Execution error: Conversion failed: [GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Validation failed: Conversion failed: Invalid model format: Failed to dequantize tensor 'lm_head.weight'\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:33:21.875234971Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999d1d92929401",
+    "gate_id": "F-CONV-RT-004",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Multi-hop: SafeTensors→Apr→Gguf→Apr",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Multi-hop chain failed: Execution error: Conversion failed: [GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Validation failed: Conversion failed: Invalid model format: Failed to dequantize tensor 'lm_head.weight'\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:37:58.685695078Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999d57d65d937e",
+    "gate_id": "F-CONV-RT-BYTE-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_safetensors_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "safetensors",
+      "prompt": "Byte-level round-trip ST→APR→GGUF→APR",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Byte-level round-trip failed: Execution error: Conversion failed: [GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Validation failed: Conversion failed: Invalid model format: Failed to dequantize tensor 'lm_head.weight'\n",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:42:08.931175146Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999d57d65f6cca",
+    "gate_id": "F-CONV-IDEM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Idempotency: GGUF→APR twice",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Idempotency test failed: Execution error: No gguf file found in output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/gguf/ or output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:42:08.931295042Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999d57d65fb910",
+    "gate_id": "F-CONV-COM-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Commutativity: GGUF→APR vs GGUF→ST→APR",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "Commutativity test failed: Execution error: No gguf file found in output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/gguf/ or output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/",
+    "output": "N/A",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:42:08.931314578Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999d93f1505bff",
+    "gate_id": "F-GOLDEN-RULE-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Golden Rule: convert → inference → diff",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Corroborated",
+    "reason": "Test passed",
+    "output": "Golden Rule PASS: identical output: ",
+    "stderr": null,
+    "exit_code": 0,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:46:27.081331542Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999d9808229ab0",
+    "gate_id": "F-CONTRACT-I2-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Format contract invariant",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "I-2 Tensor Name Bijection: inspect failed: error: File not found: output/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/safetensors/model.safetensors\n",
+    "output": "st: , apr: {\n  \"format\": \"APR\",\n  \"file_size\": 16065828420,\n  \"total_params\": 8030261248,\n  \"tensor_count\": 291,\n  \"architecture\": \"llama\",\n  \"metadata_keys\": 3\n}\n",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:46:44.644077951Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  },
+  {
+    "id": "000000000000000018999d9be85df868",
+    "gate_id": "F-CONTRACT-I3-001",
+    "scenario": {
+      "id": "DeepSeek-R1-Distill-Llama-8B_run_cpu_apr_0000000000000000",
+      "model": {
+        "org": "deepseek-ai",
+        "name": "DeepSeek-R1-Distill-Llama-8B",
+        "variant": null
+      },
+      "modality": "run",
+      "backend": "cpu",
+      "format": "apr",
+      "prompt": "Format contract invariant",
+      "temperature": 0.0,
+      "max_tokens": 32,
+      "seed": 0,
+      "trace_level": "none",
+      "oracle_type": "garbage"
+    },
+    "outcome": "Falsified",
+    "reason": "I-3 No Silent Fallbacks: check failed: [GH-187] Embedding 'lm_head.weight': shape=[128256, 4096], dtype=BF16\n[GH-187] Embedding 'model.embed_tokens.weight': shape=[128256, 4096], dtype=BF16\nerror: Validation failed: Model self-test failed\n",
+    "output": "\n\u001b[1;36m=== Model Self-Test (PMAT-112: Real Validation) ===\u001b[0m\nModel: \u001b[36moutput/workspace/deepseek-ai/DeepSeek-R1-Distill-Llama-8B/apr/model.apr\u001b[0m\n\n┌─────┬─────────────────────┬──────────────────────────────────────┬──────┐\n│  #  │      Component      │               Details                │ Pass │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 1   │ Tokenizer           │ tokens=[1, 2]                        │ \u001b[31m❌   \u001b[0m │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 2   │ Embedding           │ Found embedding tensor               │ \u001b[32m✅   \u001b[0m │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 3   │ Positional Encoding │ RoPE computed inline                 │ \u001b[32m✅   \u001b[0m │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 4   │ Q/K/V Projection    │ Q/K/V found                          │ \u001b[32m✅   \u001b[0m │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 5   │ Attention Scores    │ Attention output found               │ \u001b[32m✅   \u001b[0m │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 6   │ Feed-Forward (MLP)  │ MLP found                            │ \u001b[32m✅   \u001b[0m │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 7   │ Layer Norm          │ 32 layers                            │ \u001b[32m✅   \u001b[0m │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 8   │ LM Head             │ vocab_size=128256                    │ \u001b[32m✅   \u001b[0m │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 9   │ Logits → Probs      │ Forward failed: Format error: Uns... │ \u001b[31m❌   \u001b[0m │\n├─────┼─────────────────────┼──────────────────────────────────────┼──────┤\n│ 10  │ Sampler/Decode      │ Forward failed: Format error: Uns... │ \u001b[31m❌   \u001b[0m │\n└─────┴─────────────────────┴──────────────────────────────────────┴──────┘\n\n\u001b[1;31m❌ 7/10 STAGES PASSED. CHECK STAGE LOGS.\u001b[0m\n",
+    "stderr": null,
+    "exit_code": null,
+    "metrics": {
+      "tokens_per_second": null,
+      "time_to_first_token_ms": null,
+      "total_tokens": null,
+      "memory_peak_mb": null,
+      "duration_ms": 0
+    },
+    "timestamp": "2026-03-04T10:47:01.290967900Z",
+    "host": {
+      "hostname": "mac-server",
+      "os": "linux",
+      "cpu": "unknown",
+      "gpu": null,
+      "apr_version": "unknown"
+    },
+    "metadata": {}
+  }
+]

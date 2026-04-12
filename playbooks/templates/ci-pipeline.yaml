@@ -1,0 +1,109 @@
+# CI Pipeline Template
+#
+# Balanced template for CI/CD pipelines.
+# Tests core paths with reasonable coverage in ~5 minutes.
+#
+# Expected test count: 3 × 1 × 2 × 25 = 150 tests
+
+name: "${MODEL_NAME}-ci-pipeline"
+version: "1.0.0"
+
+model:
+  hf_repo: "${HF_REPO}"
+  formats:
+    - gguf
+    - safetensors
+  quantizations:
+    - q4_k_m
+
+test_matrix:
+  modalities:
+    - run
+    - chat
+    - serve
+  backends:
+    - cpu
+  scenario_count: 25
+
+property_tests:
+  - name: arithmetic
+    generator: "arithmetic()"
+    oracle: "correct_answer"
+    count: 20
+
+  - name: code_completion
+    generator: "code_prompt()"
+    oracle: "valid_syntax"
+    count: 15
+
+  - name: chat_coherence
+    generator: "chat_prompt()"
+    oracle: "coherent_response"
+    count: 10
+
+falsification_gates:
+  # Gateways (P0 - must pass)
+  - id: G1-LOAD
+    description: "Model loads successfully"
+    condition: "loaded"
+    severity: P0
+
+  - id: G2-INFER
+    description: "Basic inference works"
+    condition: "has_output"
+    severity: P0
+
+  - id: G3-STABLE
+    description: "No crashes"
+    condition: "stable"
+    severity: P0
+
+  - id: G4-VALID
+    description: "Output not garbage"
+    condition: "valid_output"
+    severity: P0
+
+  # Quality (P1 - important)
+  - id: F-QUAL-001
+    description: "Arithmetic correctness"
+    condition: "arithmetic_passes"
+    severity: P1
+
+  - id: F-QUAL-002
+    description: "Code validity"
+    condition: "code_passes"
+    severity: P1
+
+  # Performance (P1 - important for CI)
+  - id: F-PERF-001
+    description: "Meets throughput threshold"
+    condition: "tps >= 10"
+    severity: P1
+
+  - id: F-PERF-002
+    description: "Reasonable latency"
+    condition: "ttft < 5000"
+    severity: P1
+
+  # Stability (P2 - nice to have)
+  - id: F-STAB-001
+    description: "Deterministic output"
+    condition: "reproducible"
+    severity: P2
+
+  # Compatibility (P1 - important)
+  - id: F-COMP-001
+    description: "All formats work"
+    condition: "all_formats_pass"
+    severity: P1
+
+  # Serve-specific (P1)
+  - id: F-HTTP-001
+    description: "Health endpoint works"
+    condition: "health_check == 200"
+    severity: P1
+
+  - id: F-HTTP-002
+    description: "Completions endpoint works"
+    condition: "completions_valid_json"
+    severity: P1

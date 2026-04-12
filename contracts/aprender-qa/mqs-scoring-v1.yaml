@@ -1,0 +1,120 @@
+metadata:
+  version: "1.1.0"
+  created: "2026-03-08"
+  author: "PAIML Engineering"
+  description: "MQS composite scoring formula with bounded, deterministic computation"
+  registry: true
+  references:
+    - "§8.2 Scoring Architecture"
+    - "§8.11 Final Score Calculation"
+    - "crates/apr-qa-report/src/mqs.rs — MqsCalculator::calculate"
+    - "crates/apr-qa-report/src/mqs_gateways.rs — grade function"
+  depends_on:
+    - "gateway-contract-v1"
+
+equations:
+  mqs_composite:
+    formula: "MQS = sum(category_scores) - penalties + proof_bonus"
+    domain: "category_scores in {QUAL, PERF, STAB, COMP, EDGE, REGR}"
+    invariants:
+      - "Category weights: QUAL=200, PERF=150, STAB=200, COMP=150, EDGE=150, REGR=150"
+      - "MAX_TOTAL = 1000 (sum of category maxima)"
+      - "MAX_PROOF_BONUS = 50 (proof status bonus points, capped at calculate time)"
+      - "raw_score in [0, 1050] (1000 + 50 proof bonus, capped)"
+      - "normalized_score in [0.0, 100.0] (clamped)"
+      - "Untested categories (0 evidence) score 0 points (Popper: untested ≠ qualified)"
+      - "Deterministic: same evidence -> same score"
+  grade_mapping:
+    formula: "grade(normalized) on 0-100 scale with 12 levels"
+    domain: "normalized_score in [0.0, 100.0]"
+    invariants:
+      - "A+ >= 97.0, A >= 93.0, A- >= 90.0"
+      - "B+ >= 87.0, B >= 83.0, B- >= 80.0"
+      - "C+ >= 77.0, C >= 73.0, C- >= 70.0"
+      - "D+ >= 67.0, D >= 63.0, D- >= 60.0"
+      - "F < 60.0"
+      - "Monotonic: higher normalized score -> higher or equal grade"
+  penalty_floor:
+    formula: "raw_score = categories.total().saturating_sub(penalties).saturating_add(bonus)"
+    domain: "raw_score: u32"
+    invariants:
+      - "saturating_sub prevents underflow — floor at 0"
+      - "No standalone apply_penalties function — logic inlined in calculate()"
+
+proof_obligations:
+  - type: bound
+    property: "Raw score range"
+    formal: "0 <= raw_score <= 1050"
+    tolerance: 1050.0
+    applies_to: all
+  - type: bound
+    property: "Normalized score range"
+    formal: "0.0 <= normalized_score <= 100.0 (clamped)"
+    tolerance: 100.0
+    applies_to: all
+  - type: invariant
+    property: "Determinism"
+    formal: "forall E: score(E) = score(E)"
+    applies_to: all
+  - type: invariant
+    property: "Weight normalization"
+    formal: "QUAL + PERF + STAB + COMP + EDGE + REGR = 1000"
+    applies_to: all
+  - type: monotonicity
+    property: "Grade monotonicity"
+    formal: "normalized_1 > normalized_2 implies grade(normalized_1) >= grade(normalized_2)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-MQS-001
+    rule: "Raw score range"
+    prediction: "raw_score in [0, 1050] for any evidence including proof bonus"
+    test: "proptest with random evidence — verify 0 <= raw_score <= 1050"
+    if_fails: "Score computation overflow or incorrect bonus cap"
+  - id: FALSIFY-MQS-002
+    rule: "Determinism"
+    prediction: "Same evidence produces same MQS on repeated runs"
+    test: "Score same evidence 100 times, verify all equal"
+    if_fails: "Non-deterministic scoring (HashMap iteration, float, etc.)"
+  - id: FALSIFY-MQS-003
+    rule: "Weight normalization"
+    prediction: "Category maxima sum to 1000"
+    test: "Assert QUAL(200) + PERF(150) + STAB(200) + COMP(150) + EDGE(150) + REGR(150) = 1000"
+    if_fails: "Weight configuration error — scores miscalibrated"
+  - id: FALSIFY-MQS-004
+    rule: "Grade monotonicity"
+    prediction: "Higher normalized score never produces lower grade"
+    test: "proptest with pairs (n1, n2) where n1 > n2, verify grade(n1) >= grade(n2)"
+    if_fails: "Grade boundary overlap or inversion"
+  - id: FALSIFY-MQS-005
+    rule: "Penalty floor"
+    prediction: "saturating_sub prevents negative raw_score"
+    test: "Construct evidence with penalties > categories.total(), verify raw_score = 0"
+    if_fails: "Underflow — negative score or panic"
+
+kani_harnesses: []
+
+enforcement:
+  score_range:
+    description: "MQS raw_score must be in [0, 1050]"
+    check: "contract_tests::FALSIFY-MQS-001"
+    severity: "ERROR"
+  determinism:
+    description: "Scoring must be deterministic"
+    check: "contract_tests::FALSIFY-MQS-002"
+    severity: "ERROR"
+  weight_normalization:
+    description: "Category maxima must sum to 1000"
+    check: "contract_tests::FALSIFY-MQS-003"
+    severity: "ERROR"
+
+qa_gate:
+  id: F-MQS-001
+  name: "MQS Scoring Contract"
+  description: "Bounded, deterministic, monotonic qualification scoring"
+  checks:
+    - "score_range"
+    - "determinism"
+    - "weight_normalization"
+  pass_criteria: "All 5 falsification tests pass"
+  falsification: "Change one weight without updating MAX_TOTAL — gate must catch the imbalance"
