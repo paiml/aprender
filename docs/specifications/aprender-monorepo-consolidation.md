@@ -695,6 +695,74 @@ for crate in trueno trueno-gpu trueno-quant trueno-db trueno-viz \
 done
 ```
 
+### Release Workflow: Two Binaries, One Monorepo
+
+**Install commands (user-facing):**
+```bash
+cargo install aprender                  # → apr binary (model ops: run, train, serve, ...)
+cargo install aprender-contracts-cli    # → pv binary (contract tooling: validate, scaffold, codegen)
+```
+
+Both publish from `paiml/aprender` on the same git tag. Same version via
+`version.workspace = true`. Same CI pipeline. Different crates.io packages.
+
+**Release steps:**
+
+```bash
+# 1. Bump workspace version
+sed -i 's/version = "0.29.3"/version = "0.30.0"/' Cargo.toml
+
+# 2. Pre-release gates
+cargo fmt --all -- --check
+cargo test --workspace --lib
+cargo clippy --workspace -- -D warnings
+pv validate contracts/**/*.yaml
+cargo deny check advisories
+
+# 3. Tag and push (triggers CI release)
+git add -A && git commit -m "release: v0.30.0"
+git tag v0.30.0
+git push origin main --tags
+
+# 4. CI publishes in topological order (leaf → root)
+#    Leaf crates (no internal deps):
+cargo publish -p aprender-common
+cargo publish -p aprender-contracts-macros
+#    Mid-tier (depend on leaves):
+cargo publish -p aprender-contracts
+cargo publish -p aprender-compute
+#    Libraries (depend on mid-tier):
+cargo publish -p aprender-core
+cargo publish -p aprender-serve
+cargo publish -p aprender-train
+#    Binaries (depend on everything):
+cargo publish -p apr-cli                    # → apr binary
+cargo publish -p aprender-contracts-cli     # → pv binary
+#    Facade (re-exports apr-cli):
+cargo publish -p aprender                   # cargo install aprender → apr
+
+# 5. Smoke test
+cargo install aprender --force
+apr --version  # v0.30.0
+cargo install aprender-contracts-cli --force
+pv --help
+```
+
+**Version policy:** All workspace crates share one version. Bumping the workspace
+version bumps everything. No independent versioning — simplifies dependency
+management and user communication.
+
+**crates.io packages:**
+
+| Package | Binary | Purpose | Install |
+|---------|--------|---------|---------|
+| `aprender` | `apr` | ML framework (inference, training, serving) | `cargo install aprender` |
+| `aprender-contracts-cli` | `pv` | Contract tooling (validate, scaffold, codegen) | `cargo install aprender-contracts-cli` |
+| `aprender-core` | — | ML library (Rust API) | `aprender-core = "0.30"` |
+| `aprender-compute` | — | SIMD/GPU compute | `aprender-compute = "0.30"` |
+| `aprender-serve` | — | Inference engine | `aprender-serve = "0.30"` |
+| `aprender-train` | — | Training engine | `aprender-train = "0.30"` |
+
 ### Phase 6: Documentation Update (1 day)
 
 #### 6a. Unified book
