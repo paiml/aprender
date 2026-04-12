@@ -17,29 +17,31 @@ equations:
       For all crates C in workspace:
         C.has_user_facing_binary => C == apr-cli
       "User-facing" = installed by `cargo install aprender`, has --help
-      "Build-tool" = standalone dev tooling (pv)
+      "Standalone" = independent tool with its own install/use case (pv, ttop)
       "Internal" = called by apr-cli as subprocess, or dev-only
       "Legacy" = pre-merge binary, functionality subsumed by `apr` subcommand
     domain: all workspace Cargo.toml files
     codomain: bool
     invariants:
-    - "apr (from apr-cli) is the ONLY user-facing binary"
-    - "pv (from aprender-contracts-cli) is the only build-tool exception"
+    - "apr (from apr-cli) is the ONLY user-facing ML binary"
+    - "pv (aprender-contracts-cli) is a standalone build tool — not an apr subcommand"
+    - "ttop (aprender-viz-ttop) is a standalone system monitor — not an apr subcommand"
     - "Internal binaries must document their justification"
     - "Legacy binaries must have a migration plan to apr subcommand"
 
   binary_audit_2026_04_10:
     formula: |
-      22 crates with [[bin]], 24 total binary targets.
+      20 crates with [[bin]], 21 total binary targets.
       Classification:
 
       USER-FACING (1 crate, 1 binary):
-        apr-cli                -> apr              # THE user-facing binary
+        apr-cli                -> apr              # THE user-facing ML binary
 
-      BUILD-TOOL (1 crate, 1 binary):
-        aprender-contracts-cli -> pv               # Contract validation (Rule 2 exception)
+      STANDALONE TOOLS (2 crates, 2 binaries — permanent exceptions):
+        aprender-contracts-cli -> pv               # Build tool: contract validation, pre-commit, CI
+        aprender-viz-ttop      -> aprender-viz-ttop    # System monitor: GPU/CPU, independent of ML workflow
 
-      INTERNAL-HELPER (8 crates, 9 binaries):
+      INTERNAL-HELPER (7 crates, 8 binaries):
         aprender-cbtop         -> aprender-cbtop   # GPU monitor, called by `apr monitor`
         aprender-present-cli   -> presentar        # TUI server, called by `apr present`
         aprender-present-terminal -> score, ptop   # TUI widgets, used by presentar
@@ -47,7 +49,6 @@ equations:
         aprender-test-cli      -> aprender-test-cli    # WASM test runner (dev-only)
         aprender-train-bench   -> aprender-train-bench # Training benchmark harness
         aprender-train-shell   -> aprender-train-shell # Interactive training REPL
-        aprender-viz-ttop      -> aprender-viz-ttop    # Standalone ttop (excluded from workspace)
 
       QA-TOOL (2 crates, 2 binaries — from Phase 2g port):
         aprender-qa-cli        -> apr-qa           # QA playbook runner (to wire into `apr qa`)

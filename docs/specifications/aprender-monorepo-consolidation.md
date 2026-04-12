@@ -84,7 +84,7 @@
 | ~~`#[contract]` on CLI commands~~ | 172 annotations workspace-wide (70 in apr-cli). PMAT-543 closed. |
 | ~~Phase 2g: QA playbook~~ | 5 crates ported, 2,792 tests, 256 playbooks. PMAT-532 closed. |
 | ~~Model type taxonomy~~ | `is_llm()` + 3 new Architecture variants + import guards. PMAT-526 closed. |
-| ~~24 unauthorized binaries~~ | 20 crates, 21 binaries. 2 migrated to `[[example]]` (serve, train). 8 legacy remain. PMAT-545. |
+| ~~24 unauthorized binaries~~ | 20 crates, 21 binaries: 1 user-facing (`apr`), 2 standalone (`pv`, `ttop`), 8 legacy. PMAT-545. |
 | ~~ratatui migration~~ | 0 deps remain. PMAT-539 closed. |
 
 **Open gaps (2 of 9):**
@@ -262,12 +262,19 @@ Every `aprender-*` crate is a **library**. They expose `pub fn` APIs consumed
 by `apr-cli` or by external Rust code via `use aprender_compute::*;`.
 They do NOT produce binaries, CLIs, or executables.
 
-Exception: `aprender-contracts-cli` may produce a `pv` binary for standalone
-contract validation (build tooling, not user-facing ML tooling).
+**Exceptions** (2 standalone binaries that MUST remain separate):
 
-**Status (2026-04-10)**: AUDITED — 22 crates have `[[bin]]` targets (24 total).
+1. **`pv`** (`aprender-contracts-cli`) — standalone contract validation tool.
+   Used in build.rs, pre-commit hooks, and CI pipelines independently of `apr`.
+   Cannot be an `apr` subcommand because it's a build dependency, not a runtime tool.
+
+2. **`ttop`** (`aprender-viz-ttop`) — standalone terminal system monitor.
+   Used independently for GPU/CPU monitoring outside the ML workflow.
+   Separate binary provides zero-dep install for sysadmin use cases.
+
+**Status (2026-04-12)**: AUDITED — 20 crates have `[[bin]]` targets (21 total).
 Classified in `apr-mono-binary-rule-v1.yaml` v2.0: 1 user-facing (`apr`),
-1 build-tool (`pv`), 9 internal-helpers, 2 QA-tools, 11 legacy-to-migrate.
+2 standalone tools (`pv`, `ttop`), 9 internal-helpers, 2 QA-tools, 8 legacy-to-migrate.
 Legacy binaries have `apr` subcommand migration paths documented. PMAT-545 closed.
 
 ### Rule 3: CLI Contract Coverage
@@ -383,6 +390,69 @@ apr run model.gguf "prompt"
 The CUDA executor tries to initialize; on failure, falls through to CPU.
 
 **Contract**: `contracts/apr-cli-command-safety-v1.yaml` — `long_running_graceful` equation.
+
+### Rule 8: CI Gate Completeness
+
+**The `ci / gate` check MUST verify ALL quality dimensions. No silent skips.**
+
+This rule was added after PR #726 exposed a spec-implementation gap: the spec
+said "CI must pass before merge" but `ci / gate` only checked 3 of 6 CI jobs,
+allowing security failures to merge silently.
+
+#### Five-Whys (2026-04-12)
+
+| # | Question | Answer |
+|---|----------|--------|
+| 1 | Why is main broken after PR merge? | `ci / security` fails on main |
+| 2 | Why did security-failing PR merge? | `ci / security` is not a required check |
+| 3 | Why isn't security required? | `ci / gate` doesn't check `needs.security.result` |
+| 4 | Why doesn't gate check security? | Security was `continue-on-error: true` ("informational") |
+| 5 | Why was this accepted? | Spec says "CI must pass" but doesn't define which checks |
+
+**Root cause**: Spec-implementation gap. The spec promises "CI must pass before
+merge" but doesn't enumerate which jobs constitute "CI". Branch protection
+enforces `ci / gate` only, and the gate silently skips security.
+
+#### Required CI jobs (MUST block merge)
+
+| Job | What it validates | Runner | Required? |
+|-----|-------------------|--------|-----------|
+| `ci / test` | `cargo test --workspace --lib` | `[self-hosted, clean-room]` | **YES** |
+| `ci / lint` | `cargo clippy` + `cargo fmt` | `[self-hosted, clean-room]` | **YES** |
+| `ci / coverage` | Coverage report generation | `[self-hosted, clean-room]` | **YES** |
+| `ci / security` | `cargo audit` (exemptions via `.cargo/audit.toml`) | `[self-hosted, clean-room]` | **YES** — was ubuntu-latest + informational, now self-hosted + mandatory |
+| `ci / gate` | Aggregates test + lint + coverage + security | `[self-hosted, clean-room]` | **YES** — branch protection required check |
+| `workspace-test` | Full workspace test + integration tests | `self-hosted` + container | **YES** — branch protection required check |
+| `ci / provenance` | SLSA attestation | `ubuntu-latest` | NO — informational (no code execution) |
+| `ci / bench` | Performance benchmarks | `[self-hosted, clean-room]` | NO — main-only |
+
+**Sovereign runner policy**: ALL jobs that execute repo code MUST run on
+`[self-hosted, clean-room]` or `self-hosted` with the sovereign container.
+Only metadata jobs (provenance attestation) may use `ubuntu-latest`.
+This ensures consistent hardware (Intel + GPU), local container registry
+(`localhost:5000/sovereign-ci:stable`), and NVMe RAID storage.
+
+#### Implementation
+
+The `ci / gate` job in `paiml/.github/sovereign-ci.yml` must check:
+
+```yaml
+# BEFORE (broken — silently skips security):
+if needs.test.result == "failure" → fail
+if needs.lint.result == "failure" → fail
+if needs.coverage.result == "failure" → fail
+
+# AFTER (complete — all quality dimensions):
+if needs.test.result == "failure" → fail
+if needs.lint.result == "failure" → fail
+if needs.coverage.result == "failure" → fail
+if needs.security.result == "failure" → fail   # ADDED
+```
+
+Branch protection must also add `workspace-test` as a required check
+(it's a local job in `ci.yml`, not part of the reusable workflow).
+
+**Contract**: `contracts/ci-security-audit-v1.yaml` (FALSIFY-AUDIT-001, FALSIFY-AUDIT-002).
 
 ---
 

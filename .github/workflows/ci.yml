@@ -28,7 +28,7 @@ jobs:
       repo: ${{ github.event.repository.name }}
     secrets: inherit
 
-  # APR-MONO: Workspace-wide test (all 70 crates)
+  # APR-MONO: Workspace-wide test (all 75 crates)
   workspace-test:
     runs-on: self-hosted
     container:
@@ -48,6 +48,14 @@ jobs:
           cargo test -p aprender-core --test monorepo_invariants
           cargo test -p aprender-core --test readme_contract
           cargo test -p apr-cli --test cli_commands
+      - name: Fix file ownership (container runs as root, runner as noah:1000)
+        if: always()
+        run: |
+          # Five-whys: Docker container creates files as root on bind-mounted
+          # workspace. Runner (noah:1000) can't git-clean them on next run
+          # → checkout fails → CI breaks. This runs inside the container
+          # (as root) restoring host ownership for subsequent bare-metal jobs.
+          chown -R 1000:1000 "$GITHUB_WORKSPACE" || true
 
   mutants:
     runs-on: self-hosted
