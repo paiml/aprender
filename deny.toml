@@ -24,6 +24,7 @@ ignore = [
     { id = "RUSTSEC-2025-0118", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
     { id = "RUSTSEC-2025-0046", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
     { id = "RUSTSEC-2026-0020", reason = "wasmtime: test-only dep (aprender-test-lib), not production" },
+    { id = "RUSTSEC-2026-0097", reason = "rand 0.10.0: transitive via quickcheck, dev-only dep" },
 ]
 
 [licenses]
