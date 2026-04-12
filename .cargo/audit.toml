@@ -20,4 +20,7 @@ ignore = [
     "RUSTSEC-2026-0020",
     "RUSTSEC-2026-0021",
     "RUSTSEC-2026-0087",
+
+    # rand 0.10.0 — unsound with custom logger using rand::rng(), transitive via quickcheck
+    "RUSTSEC-2026-0097",
 ]
