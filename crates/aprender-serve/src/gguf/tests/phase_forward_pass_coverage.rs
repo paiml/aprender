@@ -32,6 +32,7 @@ fn test_phase33_forward_basic() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -65,6 +66,7 @@ fn test_phase33_forward_multi_token() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -96,6 +98,7 @@ fn test_phase33_forward_multi_layer() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -127,6 +130,7 @@ fn test_phase33_forward_cached_single() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -159,6 +163,7 @@ fn test_phase33_forward_cached_sequence() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -194,6 +199,7 @@ fn test_phase33_forward_cached_multi_layer() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -228,6 +234,7 @@ fn test_phase33_forward_single_layer_single_head() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);

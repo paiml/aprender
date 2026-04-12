@@ -50,6 +50,7 @@ async fn test_imp_128a_prometheus_format_endpoint() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -108,6 +109,7 @@ async fn test_imp_128b_prometheus_format_structure() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -169,6 +171,7 @@ async fn test_imp_128c_default_format_is_json() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -221,6 +224,7 @@ async fn test_imp_128d_explicit_json_format() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -274,6 +278,7 @@ async fn test_imp_130a_prometheus_includes_cpu_latency_histogram() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -343,6 +348,7 @@ async fn test_imp_130b_prometheus_includes_gpu_latency_histogram() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -411,6 +417,7 @@ async fn test_imp_130c_prometheus_latency_buckets_have_correct_labels() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);

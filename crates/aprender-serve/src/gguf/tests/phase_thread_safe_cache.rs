@@ -36,6 +36,7 @@ fn test_phase34_cached_sync_new() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -65,6 +66,7 @@ fn test_phase34_cached_sync_model_accessor() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -99,6 +101,7 @@ fn test_phase34_cached_sync_concurrent_model_access() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -146,6 +149,7 @@ fn test_phase34_cached_sync_send_sync_bounds() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -193,6 +197,7 @@ fn test_phase34_cached_sync_multiple_configs() {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = create_test_model_with_config(&config);
@@ -229,6 +234,7 @@ fn test_phase34_cached_sync_no_gpu_feature() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let _model = create_test_model_with_config(&config);
@@ -258,6 +264,7 @@ fn test_phase34_cached_sync_rapid_access() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -291,6 +298,7 @@ fn test_phase34_cached_sync_thread_stress() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);

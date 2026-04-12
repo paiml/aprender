@@ -24,6 +24,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = OwnedQuantizedModel {
@@ -82,6 +83,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         assert_eq!(config.architecture, "mistral");
@@ -131,6 +133,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = OwnedQuantizedModel {
@@ -202,6 +205,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: Some(1),
             eos_token_id: Some(2),
+            ..GGUFConfig::default()
         };
         assert_eq!(
             config.bos_token_id,

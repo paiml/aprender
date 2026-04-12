@@ -309,6 +309,7 @@ fn test_parity006a_batch_generate_exists() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
     let model = create_test_model_with_config(&config);
     let cached = OwnedQuantizedModelCached::new(model);
@@ -365,6 +366,7 @@ fn test_parity006b_single_prompt_optimization() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
     let model = create_test_model_with_config(&config);
 

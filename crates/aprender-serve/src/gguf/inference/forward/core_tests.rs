@@ -65,6 +65,7 @@ fn create_llama_style_model(
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let head_dim = hidden_dim / num_heads;
@@ -143,6 +144,7 @@ fn create_phi2_style_model(
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let qkv_out_dim = 3 * hidden_dim; // MHA: Q=K=V=hidden_dim

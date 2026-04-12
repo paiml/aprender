@@ -387,6 +387,7 @@ fn test_loader_part02_owned_model_new_for_test() {
         rope_type: 0,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let token_embedding = vec![0.1f32; 50 * 32];

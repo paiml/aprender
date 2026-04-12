@@ -44,6 +44,7 @@ async fn test_quantized_model_chat_completions_routing() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -106,6 +107,7 @@ async fn test_quantized_model_streaming_path() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -161,6 +163,7 @@ async fn test_quantized_model_with_trace_headers() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -223,6 +226,7 @@ async fn test_cached_model_chat_completions_routing() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -284,6 +288,7 @@ async fn test_cached_model_streaming_path() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);

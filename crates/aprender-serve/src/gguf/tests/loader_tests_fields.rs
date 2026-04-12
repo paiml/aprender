@@ -16,6 +16,7 @@ fn test_loader_part02_owned_model_with_biases() {
         rope_type: 2,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let token_embedding = vec![0.1f32; 50 * 32];
@@ -100,6 +101,7 @@ fn test_loader_part02_owned_qkv_separate() {
         rope_type: 0,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let kv_dim = 16; // num_kv_heads * head_dim

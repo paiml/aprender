@@ -41,6 +41,7 @@ fn test_imp_106a_batch_matmul_correctness() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -109,6 +110,7 @@ fn test_imp_106b_forward_batch_correctness() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -158,6 +160,7 @@ fn test_imp_106c_prefill_with_batch() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -247,6 +250,7 @@ fn test_imp_107b_forward_batch_gpu() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -356,6 +360,7 @@ fn test_imp_108a_batched_causal_attention_correctness() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -420,6 +425,7 @@ fn test_imp_108b_causal_mask_gpu() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);

@@ -18,6 +18,7 @@ fn test_imp_101c_attention_with_cache_softmax_normalized() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = OwnedQuantizedModel {
@@ -130,6 +131,7 @@ fn test_imp_105_gqa_attention_multiple_q_per_kv() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     // Create model with dummy weights
@@ -190,6 +192,7 @@ fn test_imp_105_gqa_kv_head_sharing() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let hidden_dim = config.hidden_dim;

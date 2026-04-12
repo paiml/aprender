@@ -260,6 +260,7 @@ fn test_imp_116a_appstate_cached_model_storage() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     // Create test model
@@ -300,6 +301,7 @@ async fn test_imp_116b_cached_model_thread_safety() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -346,6 +348,7 @@ async fn test_imp_116c_completions_uses_cached_model() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);

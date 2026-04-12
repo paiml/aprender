@@ -354,6 +354,7 @@ fn test_from_gguf_transformer_preserves_config() {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         },
         token_embedding: vec![0.0; 512 * 32000],
         position_embedding: None,

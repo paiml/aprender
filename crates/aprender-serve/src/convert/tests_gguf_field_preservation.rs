@@ -179,6 +179,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let layers: Vec<GGUFTransformerLayer> = (0..num_layers)

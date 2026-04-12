@@ -335,6 +335,7 @@ fn test_imp_400c_realizar_native_forward_performance() {
         rope_type: 0,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     // Create layers with properly sized weights

@@ -38,6 +38,7 @@ fn test_phase34_embed_single_token() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -65,6 +66,7 @@ fn test_phase34_embed_multiple_tokens() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -92,6 +94,7 @@ fn test_phase34_embed_out_of_vocab() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -121,6 +124,7 @@ fn test_phase34_embed_boundary_token() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -149,6 +153,7 @@ fn test_phase34_embed_empty() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -179,6 +184,7 @@ fn test_phase34_embed_into_single() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -209,6 +215,7 @@ fn test_phase34_embed_into_out_of_vocab() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -266,6 +273,7 @@ fn test_phase34_fused_matmul_q4_0_single_seq() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -305,6 +313,7 @@ fn test_phase34_fused_matmul_q4_0_multi_seq() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -372,6 +381,7 @@ fn test_phase34_fused_matmul_q8_0_single_seq() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -410,6 +420,7 @@ fn test_phase34_fused_matmul_q8_0_multi_seq() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);

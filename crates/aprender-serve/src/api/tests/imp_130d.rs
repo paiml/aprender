@@ -21,6 +21,7 @@ async fn test_imp_130d_prometheus_latency_has_help_and_type() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -92,6 +93,7 @@ async fn test_imp_141a_prometheus_includes_throughput_rps() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -154,6 +156,7 @@ async fn test_imp_141b_prometheus_includes_elapsed_seconds() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -208,6 +211,7 @@ async fn test_imp_141c_throughput_rps_has_help_and_type() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -265,6 +269,7 @@ async fn test_imp_141d_elapsed_seconds_has_help_and_type() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -387,6 +392,7 @@ async fn test_imp_131c_json_response_includes_percentiles() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);

@@ -402,6 +402,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let cache = OwnedQuantizedKVCache::from_config(&config, 512);
@@ -429,6 +430,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let kv_dim = config.num_kv_heads * config.head_dim(); // 4 * 64 = 256
@@ -469,6 +471,7 @@ mod tests {
             explicit_head_dim: Some(128),
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let kv_dim = config.num_kv_heads * config.head_dim(); // 4 * 128 = 512

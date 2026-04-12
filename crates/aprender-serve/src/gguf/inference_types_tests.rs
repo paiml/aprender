@@ -31,6 +31,7 @@ fn test_config() -> GGUFConfig {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     }
 }
 
@@ -92,6 +93,7 @@ fn test_inference_scratch_buffer_q8k_padding() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
     let buf = InferenceScratchBuffer::from_config(&config);
 

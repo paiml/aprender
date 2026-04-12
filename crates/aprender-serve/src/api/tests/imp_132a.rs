@@ -26,6 +26,7 @@ fn test_imp_132a_adaptive_attention_records_cpu_latency() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -78,6 +79,7 @@ fn test_imp_132b_latency_values_are_reasonable() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -130,6 +132,7 @@ fn test_imp_132c_latency_count_matches_dispatch_count() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -184,6 +187,7 @@ fn test_imp_132d_gpu_dispatches_record_latency() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);

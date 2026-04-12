@@ -105,6 +105,7 @@ fn test_forward_with_separate_qkv() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     // Create separate Q, K, V weights
@@ -249,6 +250,7 @@ fn test_forward_cached_separate_qkv() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let layer = OwnedQuantizedLayer {

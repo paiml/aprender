@@ -24,6 +24,7 @@ fn test_imp_118a_true_batched_gemm_correctness() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -107,6 +108,7 @@ fn test_imp_118b_true_batched_gemm_matches_flattened() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -170,6 +172,7 @@ fn test_imp_118c_true_batched_gemm_large_batch() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -230,6 +233,7 @@ fn test_imp_118d_true_batched_attention() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -302,6 +306,7 @@ fn test_imp_119a_gpu_fused_attention_correctness() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -368,6 +373,7 @@ fn test_imp_119b_gpu_fused_matches_cpu_fused() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);

@@ -132,6 +132,7 @@ fn test_from_gguf_transformer_preserves_layer_biases() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let layer = GGUFTransformerLayer {
@@ -202,6 +203,7 @@ fn test_from_gguf_transformer_no_biases() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let layer = GGUFTransformerLayer {
@@ -264,6 +266,7 @@ fn test_from_gguf_transformer_multi_layer() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let make_layer = || GGUFTransformerLayer {

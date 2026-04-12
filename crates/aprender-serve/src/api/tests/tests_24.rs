@@ -42,6 +42,7 @@ mod potemkin_village {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         // Create mock quantized model using test helper

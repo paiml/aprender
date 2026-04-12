@@ -23,6 +23,7 @@ fn create_llama_256_model() -> crate::gguf::OwnedQuantizedModel {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
     let hidden_dim = config.hidden_dim;
     let intermediate_dim = config.intermediate_dim;
@@ -120,6 +121,7 @@ fn create_phi_256_model() -> crate::gguf::OwnedQuantizedModel {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
     let hidden_dim = config.hidden_dim;
     let intermediate_dim = config.intermediate_dim;
@@ -186,6 +188,7 @@ fn create_llama_256_gqa_model() -> crate::gguf::OwnedQuantizedModel {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
     let hidden_dim = config.hidden_dim;
     let intermediate_dim = config.intermediate_dim;

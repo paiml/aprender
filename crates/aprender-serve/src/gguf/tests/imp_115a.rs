@@ -30,6 +30,7 @@ fn test_imp_115a_fused_single_head_attention_correctness() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -95,6 +96,7 @@ fn test_imp_115b_fused_multihead_attention_correctness() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -158,6 +160,7 @@ fn test_imp_115c_fused_attention_no_intermediate_allocation() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -214,6 +217,7 @@ fn test_imp_115d_fused_causal_mask_correctness() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);
@@ -405,6 +409,7 @@ fn test_imp_117f_generate_with_token_buffer() {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_model_with_config(&config);

@@ -42,6 +42,7 @@ fn build_minimal_owned_quantized_model() -> OwnedQuantizedModel {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     // Token embedding (F32): vocab_size * hidden_dim floats -> 4 bytes each
@@ -135,6 +136,7 @@ fn build_fused_qkv_model() -> OwnedQuantizedModel {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let embed_data: Vec<f32> = (0..vocab_size * hidden_dim)
@@ -228,6 +230,7 @@ fn build_q4k_model() -> OwnedQuantizedModel {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let embed_data: Vec<f32> = (0..vocab_size * hidden_dim)

@@ -25,6 +25,7 @@ async fn test_quantized_multi_turn_conversation() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);

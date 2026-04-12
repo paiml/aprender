@@ -17,6 +17,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         assert_eq!(config.architecture, "llama");
@@ -50,6 +51,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let cloned = config.clone();
@@ -76,6 +78,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let debug_str = format!("{:?}", config);
@@ -102,6 +105,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         assert_eq!(config.num_heads / config.num_kv_heads, 4);
@@ -126,6 +130,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         assert_eq!(config.num_heads, config.num_kv_heads);
@@ -150,6 +155,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         assert_eq!(config.rope_type, 2);
@@ -174,6 +180,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         assert!(config.rope_theta > 100_000.0);
@@ -199,6 +206,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         assert!((config.eps - 1e-6).abs() < 1e-10);
@@ -223,6 +231,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let head_dim = config.hidden_dim / config.num_heads;
@@ -248,6 +257,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let head_dim = config.hidden_dim / config.num_heads;
@@ -274,6 +284,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let head_dim = config.hidden_dim / config.num_heads;
@@ -300,6 +311,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let debug = format!("{:?}", config);
@@ -334,6 +346,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let cloned = original.clone();
@@ -416,6 +429,7 @@
             explicit_head_dim: None,
             bos_token_id: Some(128_000),
             eos_token_id: Some(128_001),
+            ..GGUFConfig::default()
         }
     }
 

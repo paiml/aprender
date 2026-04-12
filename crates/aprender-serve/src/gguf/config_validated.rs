@@ -94,6 +94,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: Some(151_643),
             eos_token_id: Some(151_645),
+            ..GGUFConfig::default()
         };
         let v = ValidatedModelConfig::validate(cfg).expect("Qwen config should be valid");
         assert_eq!(v.head_dim(), 128); // 1536 / 12
@@ -119,6 +120,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: Some(151_643),
             eos_token_id: Some(151_645),
+            ..GGUFConfig::default()
         };
         let v = ValidatedModelConfig::validate(cfg)
             .expect("GH-39: Qwen2.5-0.5B config should be valid");

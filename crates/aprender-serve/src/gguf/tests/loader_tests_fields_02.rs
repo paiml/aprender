@@ -20,6 +20,7 @@ fn test_loader_part02_config_clone() {
         rope_type: 0,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let cloned = config.clone();
@@ -54,6 +55,7 @@ fn test_loader_part02_config_debug() {
         rope_type: 2,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let debug_str = format!("{:?}", config);

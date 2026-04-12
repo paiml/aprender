@@ -24,6 +24,7 @@ fn test_forward_single_gqa_config() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let hidden_dim = config.hidden_dim;
@@ -109,6 +110,7 @@ fn test_forward_single_multiple_layers() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let hidden_dim = config.hidden_dim;

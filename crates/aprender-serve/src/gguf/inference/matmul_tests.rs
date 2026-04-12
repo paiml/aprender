@@ -42,6 +42,7 @@ fn test_config(hidden_dim: usize, vocab_size: usize) -> GGUFConfig {
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     }
 }
 

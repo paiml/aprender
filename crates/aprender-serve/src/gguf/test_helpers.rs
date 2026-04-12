@@ -209,6 +209,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = create_test_model_with_config(&config);
@@ -273,6 +274,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = create_test_model_with_config(&config);
@@ -298,6 +300,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = create_test_model_with_config(&config);
@@ -327,6 +330,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = create_test_model_with_config(&config);
@@ -353,6 +357,7 @@ mod tests {
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = create_test_model_with_config(&config);

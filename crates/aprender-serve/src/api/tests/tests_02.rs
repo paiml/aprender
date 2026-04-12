@@ -38,6 +38,7 @@ async fn test_imp_116d_scheduler_reuse_across_requests() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -92,6 +93,7 @@ fn test_imp_126a_appstate_has_dispatch_metrics() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -143,6 +145,7 @@ fn test_imp_126b_cached_sync_has_generate_adaptive() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -193,6 +196,7 @@ fn test_imp_126c_dispatch_metrics_integration() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -243,6 +247,7 @@ fn test_imp_126d_handler_uses_adaptive_generation() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -306,6 +311,7 @@ async fn test_imp_127a_dispatch_metrics_endpoint_exists() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -364,6 +370,7 @@ async fn test_imp_127b_dispatch_metrics_response_structure() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);
@@ -430,6 +437,7 @@ async fn test_imp_127c_dispatch_metrics_starts_zero() {
             explicit_head_dim: None,
         bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     let model = create_test_quantized_model(&config);

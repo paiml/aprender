@@ -267,6 +267,7 @@ mod tests {
             has_qk_norm: false,
             has_bias: true,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let debug_str = format!("{:?}", config);
@@ -292,6 +293,7 @@ mod tests {
             has_qk_norm: false,
             has_bias: false,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let cloned = config.clone();
@@ -352,6 +354,7 @@ mod tests {
             has_qk_norm: false,
             has_bias: true,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let vram = SafeTensorsCudaModel::estimate_vram_bytes(&config, 2048);
@@ -393,6 +396,7 @@ mod tests {
             has_qk_norm: false,
             has_bias: false,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let config_24 = SafeTensorsCudaConfig {
@@ -430,6 +434,7 @@ mod tests {
             has_qk_norm: false,
             has_bias: false,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let vram_1k = SafeTensorsCudaModel::estimate_vram_bytes(&config, 1024);

@@ -70,6 +70,7 @@ fn create_gqa_model(
         explicit_head_dim: None,
         bos_token_id: None,
         eos_token_id: None,
+            ..GGUFConfig::default()
     };
 
     // GQA dimensions

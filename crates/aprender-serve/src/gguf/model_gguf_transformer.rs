@@ -17,6 +17,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let transformer = GGUFTransformer {
@@ -82,6 +83,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = OwnedQuantizedModel {
@@ -147,6 +149,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = OwnedQuantizedModel {
@@ -198,6 +201,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let transformer = GGUFTransformer {
@@ -234,6 +238,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let layer1 = GGUFTransformerLayer {
@@ -367,6 +372,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = OwnedQuantizedModel {
@@ -420,6 +426,7 @@
             explicit_head_dim: None,
             bos_token_id: None,
             eos_token_id: None,
+            ..GGUFConfig::default()
         };
 
         let model = OwnedQuantizedModel {

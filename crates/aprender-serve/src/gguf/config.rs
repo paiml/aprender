@@ -234,6 +234,8 @@ pub fn infer_rope_type(arch: &str) -> u32 {
 
 /// Configuration for GGUF transformer inference
 #[derive(Debug, Clone)]
+/// Toyota Way: New fields must not break existing constructors.
+/// `..GGUFConfig::default()` allows adding fields without touching 261 test sites.
 pub struct GGUFConfig {
     /// Model architecture (e.g., "phi2", "llama", "qwen2")
     pub architecture: String,
@@ -284,6 +286,32 @@ pub struct GGUFConfig {
     pub moe_intermediate_size: usize,
     /// SPEC-MOE-APR-001: Whether to renormalize top-k weights to sum to 1.0.
     pub norm_topk_prob: bool,
+}
+
+impl Default for GGUFConfig {
+    fn default() -> Self {
+        Self {
+            architecture: String::new(),
+            constraints: ArchConstraints::from_architecture(""),
+            hidden_dim: 0,
+            num_layers: 0,
+            num_heads: 0,
+            num_kv_heads: 0,
+            vocab_size: 0,
+            intermediate_dim: 0,
+            context_length: 0,
+            rope_theta: 10000.0,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            bos_token_id: None,
+            eos_token_id: None,
+            num_experts: 0,
+            num_experts_per_tok: 0,
+            moe_intermediate_size: 0,
+            norm_topk_prob: false,
+        }
+    }
 }
 
 /// Architecture-default BOS token IDs for weights-only GGUFs.
