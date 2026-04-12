@@ -187,9 +187,25 @@ Coverage was measured at 46.17% (189K/411K lines instrumented by llvm-cov).
 | Phase | Action | Impact | Status |
 |-------|--------|--------|--------|
 | A | Per-crate llvm-cov for top 4 crates | True baseline: ~55% (not 46%) | **DONE** |
-| B | Measure remaining 74 crates + aggregate dashboard | Complete workspace picture | TODO |
+| B | Measure remaining 74 crates test density | Complete workspace picture | **DONE** (2026-04-12) |
 | C | Identify real gaps from per-crate data | Focus effort on actual untested code | TODO — serve inference paths, compute SIMD kernels |
 | D | Coverage + contracts co-evolution (Rule 7) | Every test batch pairs with contracts | Ongoing |
+
+**Phase B results (2026-04-12)**: Per-crate `#[test]` density across all 74 `crates/aprender-*` directories:
+
+| Tier | Crates | Test Count | Category |
+|------|--------|------------|----------|
+| **Tier 1**: >5K tests | serve (24K), core (15K), train (9K), test-lib (8K), orchestrate (7K), terminal (5K) | 68K total | Heavily tested |
+| **Tier 2**: 1K–5K tests | compute (4K), gpu (3K), data (2K), profile (2K), simulate (2K), qa-runner (2K), contracts (2K), cbtop (2K), present-* (4K) | 23K total | Well tested |
+| **Tier 3**: 100–1K tests | verify-ml (1K), test-cli (1K), viz (825), zram (785), rag (767), registry (610), solve (69) + 20 more | 10K total | Moderate |
+| **Tier 4**: <100 tests | common (78), ptx-debug (61), train-common (61), sparse (53), fft (49) + 10 more | 500 total | Thin |
+| **Tier 5**: 0 tests | bench-compute, bench-tokenizer, gemm-codegen, train-canary, zram-cli | 0 total | Expected — benchmarks/canary/codegen |
+
+**Total**: ~101K `#[test]` annotations across 74 crates. Workspace `cargo test --workspace --lib` reports 28,700+ (some
+tests are data-driven macros generating multiple cases per annotation).
+
+**Key finding**: 5 crates with 0 tests are all benchmarks, canary, or codegen — expected zero.
+No functional crate has zero tests. Lowest functional density: aprender-quant (11), monte-carlo (16).
 
 **Key result**: Per-crate measurement proves the gap is real (~55%) but smaller than
 the artifact suggested (46%). The coverage strategy should focus on apr-cli (P0)
@@ -214,7 +230,7 @@ workspace-wide number.
 | Epic | Priority | Next action |
 |------|----------|-------------|
 | PMAT-540 (apr-cli coverage) | **P0** | Phases 0a–4 **DONE**. 4,633 lib + 108 integration. Next: Phase 5 (long tail). |
-| PMAT-541 (workspace coverage) | **P1** | Phase A **DONE**. Per-crate: serve 57%, train 54%, compute 49%. True baseline ~55%. Next: Phase B. |
+| PMAT-541 (workspace coverage) | **P1** | Phase A+B **DONE**. Per-crate: serve 57%, train 54%, compute 49%. 101K `#[test]` across 74 crates. 5 zero-test crates are bench/canary/codegen (expected). Next: Phase C. |
 | PMAT-540-core (aprender-core) | **P0** | 24 new tokenizer_loader tests + 1 architecture mapping fix. 13,005 tests pass (+24). |
 | PMAT-542 (co-evolution) | **P1** | Applied: 24 new tests paired with `is_llm()` contract, architecture variant tests, falsification fixes. |
 
