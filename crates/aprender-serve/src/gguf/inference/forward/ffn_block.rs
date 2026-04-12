@@ -19,6 +19,33 @@ impl OwnedQuantizedModel {
     ) -> Result<Vec<f32>> {
         let layer = &self.layers[layer_idx];
 
+        // SPEC-MOE-APR-001 Phase 3: MoE dispatch — route through experts instead of dense FFN
+        if let Some(ref gate_weight) = layer.moe_gate_weight {
+            if let (Some(ref experts), Some(ref expert_downs)) =
+                (&layer.moe_expert_weights, &layer.moe_expert_down_weights)
+            {
+                // RMSNorm on FFN input
+                let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
+                    if use_rmsnorm {
+                        ops::rms_norm(hidden, ffn_norm, self.config.eps)
+                    } else {
+                        ops::layer_norm(hidden, ffn_norm, layer.ffn_norm_bias.as_deref(), self.config.eps)
+                    }
+                } else {
+                    hidden.to_vec()
+                };
+
+                return self.moe_forward_q4k(
+                    &ffn_input,
+                    gate_weight,
+                    experts,
+                    expert_downs,
+                    self.config.num_experts_per_tok.max(1),
+                    self.config.norm_topk_prob,
+                );
+            }
+        }
+
         if self.config.constraints.has_gate_ffn() {
             // GH-306: Fused path only when separate gate weight exists
             if let Some(ref gate_weight) = layer.ffn_gate_weight {
@@ -128,6 +155,103 @@ impl OwnedQuantizedModel {
             ops::gelu(&mut ffn_hidden);
             Ok(ffn_hidden)
         }
+    }
+
+    /// SPEC-MOE-APR-001 Phase 3: MoE forward pass with Q4K expert weights.
+    ///
+    /// Routes input through top-k experts using softmax gating, then computes
+    /// weighted sum of expert outputs. Each expert is SwiGLU: down(SiLU(gate) * up).
+    ///
+    /// Contract: `moe-apr-q4k-inference-v1.yaml` equations `moe_routing`, `moe_expert_ffn`, `moe_weighted_sum`.
+    fn moe_forward_q4k(
+        &self,
+        input: &[f32],
+        gate_weight: &[f32],
+        experts: &[crate::gguf::quantized::OwnedQuantizedTensor],
+        expert_downs: &[crate::gguf::quantized::OwnedQuantizedTensor],
+        top_k: usize,
+        norm_topk_prob: bool,
+    ) -> Result<Vec<f32>> {
+        let hidden_dim = input.len();
+        let num_experts = experts.len();
+
+        // Step 1: Router logits = input @ gate_weight.T → [num_experts]
+        let mut logits = vec![0.0f32; num_experts];
+        for (e, logit) in logits.iter_mut().enumerate() {
+            let offset = e * hidden_dim;
+            let mut sum = 0.0f32;
+            for j in 0..hidden_dim {
+                sum += input[j] * gate_weight[offset + j];
+            }
+            *logit = sum;
+        }
+
+        // Step 2: Numerically stable softmax
+        let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut probs: Vec<f32> = logits.iter().map(|&l| (l - max_logit).exp()).collect();
+        let sum: f32 = probs.iter().sum();
+        if sum > 0.0 {
+            for p in &mut probs {
+                *p /= sum;
+            }
+        }
+
+        // Step 3: Top-k selection
+        let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
+        indexed.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let selected = &indexed[..top_k.min(num_experts)];
+
+        // Step 4: Renormalize selected weights
+        let mut weights: Vec<(usize, f32)> = selected.to_vec();
+        if norm_topk_prob {
+            let total: f32 = weights.iter().map(|(_, w)| w).sum();
+            if total > 0.0 {
+                for (_, w) in &mut weights {
+                    *w /= total;
+                }
+            }
+        }
+
+        // Step 5: Expert forward passes (SwiGLU per expert) + weighted sum
+        let mut output = vec![0.0f32; hidden_dim];
+        for &(expert_idx, weight) in &weights {
+            let expert_out = self.moe_expert_swiglu(
+                input, &experts[expert_idx], &expert_downs[expert_idx],
+            )?;
+            for i in 0..hidden_dim {
+                output[i] += weight * expert_out[i];
+            }
+        }
+
+        Ok(output)
+    }
+
+    /// Single expert SwiGLU forward: down(SiLU(gate(x)) * up(x))
+    ///
+    /// Expert weights are packed as gate_proj ++ up_proj in `expert.data`.
+    fn moe_expert_swiglu(
+        &self,
+        input: &[f32],
+        expert_gate_up: &crate::gguf::quantized::OwnedQuantizedTensor,
+        expert_down: &crate::gguf::quantized::OwnedQuantizedTensor,
+    ) -> Result<Vec<f32>> {
+        let hidden_dim = input.len();
+        let moe_intermediate = expert_gate_up.out_dim / 2;
+
+        // Gate and up projections via fused matmul on packed data
+        let gate_up = self.fused_matmul(input, expert_gate_up)?;
+        let (gate_data, up_data) = gate_up.split_at(moe_intermediate);
+
+        // SwiGLU: SiLU(gate) * up
+        let mut swiglu = vec![0.0f32; moe_intermediate];
+        for i in 0..moe_intermediate {
+            let silu = gate_data[i] / (1.0 + (-gate_data[i]).exp()); // SiLU(x) = x * sigmoid(x)
+            swiglu[i] = silu * up_data[i];
+        }
+
+        // Down projection
+        let output = self.fused_matmul(&swiglu, expert_down)?;
+        Ok(output)
     }
 
     /// Final output computation for single-token cached forward pass
