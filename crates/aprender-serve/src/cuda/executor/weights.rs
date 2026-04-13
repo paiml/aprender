@@ -381,10 +381,10 @@ impl CudaExecutor {
             let attn_k_qtype = self.resolve_qtype(&k_name);
             let attn_v_qtype = self.resolve_qtype(&v_name);
             let attn_output_qtype = self.resolve_qtype(&o_name);
-            // MoE layers: qtype defaults to 0 (unused — MoE dispatch handles its own qtypes)
-            let ffn_gate_qtype = if ffn_gate_ptr != 0 { self.resolve_qtype(&gate_name) } else { 0 };
-            let ffn_up_qtype = if ffn_up_ptr != 0 { self.resolve_qtype(&up_name) } else { 0 };
-            let ffn_down_qtype = if ffn_down_ptr != 0 { self.resolve_qtype(&down_name) } else { 0 };
+            // MoE layers: qtype defaults to Q4K (unused — MoE dispatch handles its own qtypes)
+            let ffn_gate_qtype = if ffn_gate_ptr != 0 { self.resolve_qtype(&gate_name) } else { crate::cuda::types::WeightQuantType::Q4K };
+            let ffn_up_qtype = if ffn_up_ptr != 0 { self.resolve_qtype(&up_name) } else { crate::cuda::types::WeightQuantType::Q4K };
+            let ffn_down_qtype = if ffn_down_ptr != 0 { self.resolve_qtype(&down_name) } else { crate::cuda::types::WeightQuantType::Q4K };
 
             // Log if non-Q4K types detected (for debugging mixed-quant models)
             self.log_mixed_quant_types(
