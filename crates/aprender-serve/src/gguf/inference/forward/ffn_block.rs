@@ -173,7 +173,10 @@ impl OwnedQuantizedModel {
         norm_topk_prob: bool,
     ) -> Result<Vec<f32>> {
         let hidden_dim = input.len();
-        let num_experts = experts.len();
+        // Router gate determines num_experts (not the expert vec length, which
+        // may include shared experts or differ from router width)
+        let num_experts_router = gate_weight.len() / hidden_dim;
+        let num_experts = num_experts_router.min(experts.len());
 
         // Step 1: Router logits = input @ gate_weight.T → [num_experts]
         let mut logits = vec![0.0f32; num_experts];
