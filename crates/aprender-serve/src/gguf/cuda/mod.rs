@@ -270,9 +270,8 @@ impl OwnedQuantizedModelCuda {
             .unwrap_or(false);
 
         // SPEC-MOE-APR-001: Skip parity gate for MoE models.
-        // MoE uses hybrid GPU attention + CPU expert FFN — the GPU forward path
-        // is different from CPU (by design), so parity gate would always fail.
         let is_moe = self.model.config.num_experts > 0;
+        eprintln!("[SPEC-MOE-APR-001] num_experts={}, is_moe={}", self.model.config.num_experts, is_moe);
         if is_moe {
             eprintln!("[SPEC-MOE-APR-001] MoE model: skipping PARITY-GATE (hybrid GPU+CPU forward)");
         }
