@@ -12,7 +12,7 @@ equations:
   arch_constraint_lookup:
     formula: constraints(arch) = { norm_type, activation, pos_enc, mlp_type, weight_layout,
       has_bias, tied_emb, has_qk_norm, eps }
-    domain: arch ∈ { llama, mistral, phi3, qwen2, qwen3, deepseek2, gemma, gemma2,
+    domain: arch ∈ { llama, mistral, phi3, qwen2, qwen3, qwen3moe, deepseek2, gemma, gemma2,
       gpt2, bloom, stablelm, falcon, falcon_7b, falcon_40b, yi, internlm2, command-r,
       mamba, smollm, olmo, granite, starcoder, t5, whisper }
     codomain: ArchConstraints struct
@@ -81,6 +81,18 @@ architectures:
     default_eps: 1.0e-06
   qwen3:
     aliases: []
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: true
+    default_eps: 1.0e-06
+  qwen3moe:
+    aliases:
+      - qwen3_moe
     norm_type: RmsNorm
     activation: Silu
     positional_encoding: Rope
