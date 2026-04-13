@@ -439,12 +439,13 @@ impl OwnedQuantizedLayer {
         let up_expert_bytes = up_ref.byte_size / num_experts;
 
         eprintln!(
-            "[MOE-UNPACK] gate: byte_size={}, num_experts={}, per_expert={}, qtype={}",
-            gate_ref.byte_size, num_experts, gate_expert_bytes, gate_ref.qtype
+            "[MOE-UNPACK] gate: offset={}, byte_size={}, num_experts={}, per_expert={}, qtype={}, in_dim={}, out_dim={}",
+            gate_ref.offset, gate_ref.byte_size, num_experts, gate_expert_bytes, gate_ref.qtype,
+            hidden_dim, moe_intermediate
         );
         eprintln!(
-            "[MOE-UNPACK] up: byte_size={}, per_expert={}, qtype={}",
-            up_ref.byte_size, up_expert_bytes, up_ref.qtype
+            "[MOE-UNPACK] up: offset={}, byte_size={}, per_expert={}, qtype={}",
+            up_ref.offset, up_ref.byte_size, up_expert_bytes, up_ref.qtype
         );
 
         let mut experts = Vec::with_capacity(num_experts);

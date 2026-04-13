@@ -28,6 +28,7 @@ pub mod checkpoint;
 mod ensemble;
 mod loss;
 mod progressive;
+pub mod rejection_sampling;
 
 #[cfg(test)]
 mod tests;
@@ -36,3 +37,6 @@ pub use checkpoint::{save_student_checkpoint, DistillationCheckpoint};
 pub use ensemble::EnsembleDistiller;
 pub use loss::DistillationLoss;
 pub use progressive::ProgressiveDistiller;
+pub use rejection_sampling::{
+    filter_completions, FilterResult, RejectionConfig, RejectionReason, TeacherCompletion,
+};

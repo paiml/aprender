@@ -1,0 +1,211 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: "PAIML Engineering"
+  description: "SFT distillation pipeline — teacher completions, rejection sampling, supervised fine-tuning, eval gate"
+  references:
+    - "SPEC-SHIP-TWO-001 v1.1: Ship Two Models (§5, §10.2, §13)"
+    - "[C1] Gunasekar et al. (2023) Textbooks Are All You Need. arXiv:2306.11644"
+    - "[C2] Mukherjee et al. (2023) Orca: Progressive Learning from Complex Explanation Traces. arXiv:2306.02707"
+    - "[C3] Xu et al. (2024) WizardLM: Empowering LLMs to Follow Complex Instructions. arXiv:2304.12244"
+    - "[C4] Wei et al. (2023) Magicoder: Source Code Is All You Need. arXiv:2312.02120"
+    - "contracts/aprender/kaizen/ship-m2-sft-eval-v1.yaml (parent kaizen)"
+  tags:
+    - sft
+    - distillation
+    - rejection-sampling
+    - humaneval
+    - albor
+
+constants:
+  STUDENT_PARAMS: 370_000_000
+  STUDENT_HIDDEN: 1024
+  STUDENT_LAYERS: 24
+  STUDENT_HEADS: 16
+  STUDENT_KV_HEADS: 4
+  STUDENT_VOCAB: 32000
+  STUDENT_CTX: 1024
+  TEACHER_MODEL: "Qwen3-8B"
+  TARGET_COMPLETIONS: 100_000
+  MIN_COMPLETIONS_AFTER_FILTER: 20_000
+  HUMANEVAL_PROBLEMS: 164
+  HUMANEVAL_GATE: 30.0
+  HUMANEVAL_PREVIEW_GATE: 20.0
+
+equations:
+  teacher_completion_quality:
+    formula: |
+      generate_completions(teacher, prompts, n) -> Vec<Completion>:
+        FOR prompt IN prompts:
+          completion = teacher.generate(prompt, max_tokens=512, temperature=0.8)
+          EMIT {prompt, completion, tokens: len(completion)}
+        ENSURE completions.len() == n
+        ENSURE avg(completions.tokens) >= 50   // non-trivial
+    domain: "teacher model serving on gx10, prompts ∈ JSONL"
+    codomain: "raw completions JSONL, each with prompt + completion text"
+    invariants:
+      - "Teacher serves via OpenAI-compatible API (/v1/completions)"
+      - "Each completion is non-empty"
+      - "Generation is resumable (dedup by prompt SHA256)"
+    references:
+      - "[C2] Orca: teacher completions as training signal"
+
+  rejection_sampling:
+    formula: |
+      filter(completions) -> Vec<Completion>:
+        accepted = []
+        FOR c IN completions:
+          IF NOT parse_ast(c.completion):     REJECT("syntax error")
+          IF len(c.completion) < 20:          REJECT("too short")
+          IF repetition_ratio(c.completion, n=5) > 0.3: REJECT("degenerate")
+          IF contains_only_comments(c.completion):       REJECT("no code")
+          accepted.push(c)
+        yield_rate = accepted.len() / completions.len()
+        ENSURE yield_rate >= 0.20   // at least 20% pass
+        ENSURE accepted.len() >= MIN_COMPLETIONS_AFTER_FILTER
+    domain: "raw teacher completions"
+    codomain: "filtered completions passing AST + quality checks"
+    invariants:
+      - "AST parse uses Python 3 grammar"
+      - "Repetition measured by 5-gram overlap ratio"
+      - "Yield rate >= 20% (FALSIFY-SHIP-016 mitigation: generate 200K if below)"
+    references:
+      - "[C4] Magicoder: quality-filtered code training data"
+
+  sft_convergence:
+    formula: |
+      sft_train(student, data, config) -> Checkpoint:
+        FOR epoch IN 1..config.max_epochs:
+          train_loss = train_epoch(student, data.train, lr=config.lr)
+          val_loss = validate(student, data.val)
+          IF val_loss increases for config.patience epochs: BREAK
+        ENSURE final_val_loss < initial_val_loss
+        ENSURE no NaN in loss history
+    domain: "v29 base checkpoint + filtered completions"
+    codomain: "SFT checkpoint with lower val_loss"
+    invariants:
+      - "Learning rate with linear warmup + cosine decay"
+      - "Gradient clipping at 1.0"
+      - "Batch size 8, gradient accumulation 4 (effective 32)"
+      - "No NaN at any step (FALSIFY-SHIP-003 equivalent)"
+      - "Val loss must decrease overall (early stopping patience=3)"
+    references:
+      - "[C1] phi-1: SFT on high-quality code improves HumanEval dramatically"
+
+  humaneval_gate:
+    formula: |
+      eval_humaneval(model, problems) -> GateResult:
+        correct = 0
+        FOR problem IN problems:
+          completion = model.generate(problem.prompt, max_tokens=256, temp=0.0)
+          IF problem.test_cases.all_pass(completion):
+            correct += 1
+        pass_at_1 = correct / problems.len() * 100.0
+        GATE pass_at_1 >= HUMANEVAL_GATE
+    domain: "SFT checkpoint + 164 HumanEval problems"
+    codomain: "pass@1 percentage, GATE-SHIP-009 verdict"
+    invariants:
+      - "Greedy decode (temperature=0.0) for reproducibility"
+      - "Max 256 tokens per completion"
+      - "All 164 problems evaluated (no skips)"
+      - "Test execution in sandboxed subprocess"
+
+proof_obligations:
+  - type: precondition
+    property: "v29 base checkpoint exists and is valid"
+    formal: "apr validate v29-checkpoint.apr passes"
+    applies_to: sft_convergence
+  - type: precondition
+    property: "Teacher model serving and healthy"
+    formal: "GET /health returns 200 with compute_mode"
+    applies_to: teacher_completion_quality
+  - type: invariant
+    property: "Rejection sampling yield above threshold"
+    formal: "accepted / total >= 0.20"
+    applies_to: rejection_sampling
+  - type: postcondition
+    property: "SFT improves over base"
+    formal: "humaneval_post_sft >= humaneval_pre_sft (0.0%)"
+    applies_to: sft_convergence
+  - type: bound
+    property: "HumanEval gate"
+    formal: "pass_at_1 >= 30.0"
+    tolerance: 0.0
+    applies_to: humaneval_gate
+
+falsification_tests:
+  - id: FALSIFY-SFT-001
+    rule: "Teacher completions are syntactically valid Python"
+    prediction: "Qwen3-8B generates valid Python >= 80% of the time"
+    test: |
+      Sample 1000 teacher completions. Parse each with ast.parse().
+      Assert >= 800 parse successfully.
+    if_fails: "Teacher model quality too low — switch to larger teacher or lower temperature"
+
+  - id: FALSIFY-SFT-002
+    rule: "Rejection sampling yield >= 20%"
+    prediction: "AST + length + repetition filters keep >= 20% of completions"
+    test: |
+      Run rejection sampling on first 10K completions.
+      Assert accepted / total >= 0.20.
+    if_fails: "Filters too aggressive — relax repetition threshold or remove length filter"
+
+  - id: FALSIFY-SFT-003
+    rule: "SFT training does not diverge"
+    prediction: "Val loss decreases monotonically for first 3 epochs"
+    test: |
+      Train for 5 epochs. Check val_loss trajectory.
+      Assert val_loss[epoch_3] < val_loss[epoch_0].
+    if_fails: "LR too high (reduce 10x) or data quality issue (audit filter)"
+
+  - id: FALSIFY-SFT-004
+    rule: "Post-SFT model generates Python (not garbage)"
+    prediction: "SFT teaches the model to follow HumanEval format"
+    test: |
+      Generate 10 completions for simple prompts (fibonacci, factorial, etc.).
+      Assert >= 7 contain Python keywords (def, return, if, for, while).
+    if_fails: "SFT format mismatch — check prompt template matches HumanEval format"
+
+  - id: FALSIFY-SFT-005
+    rule: "GATE-SHIP-009: HumanEval >= 30%"
+    prediction: "SFT on 20K+ quality completions lifts 370M model to 30%+"
+    test: |
+      Run full HumanEval eval (164 problems, pass@1, temp=0).
+      Assert pass_at_1 >= 30.0.
+    if_fails: |
+      Apply §10.2 Hansei:
+      - If >= 20%: ship as preview, plan DPO follow-up
+      - If >= 15%: document, add more training data, retry
+      - If < 15%: full stop, Five Whys, architecture revision
+
+  - id: FALSIFY-SFT-006
+    rule: "No regression on base capabilities"
+    prediction: "SFT adds instruction-following without destroying pre-trained knowledge"
+    test: |
+      Run 100 next-token-prediction samples from validation set.
+      Assert perplexity does not increase more than 2x from base.
+    if_fails: "Catastrophic forgetting — reduce SFT epochs, increase LR warmup"
+
+kani_harnesses:
+  - id: KANI-SFT-001
+    obligation: "Rejection sampling bounds"
+    property: "for all filter runs: 0 <= accepted <= total AND yield = accepted/total"
+    bound: 16
+    strategy: bounded_int
+  - id: KANI-SFT-002
+    obligation: "HumanEval pass@1 bounded"
+    property: "for all evals: 0.0 <= pass_at_1 <= 100.0 AND correct <= total_problems"
+    bound: 8
+    strategy: bounded_int
+
+qa_gate:
+  id: F-SFT-DISTILL-001
+  name: sft-distillation-pipeline-v1 Contract
+  description: "Quality gate for SFT distillation pipeline (PMAT-522/523)"
+  checks:
+    - teacher_completion_quality
+    - rejection_sampling_yield
+    - sft_convergence
+    - humaneval_gate
+    - no_regression
+  pass_criteria: "All 6 falsification tests pass, GATE-SHIP-009 >= 30%"
