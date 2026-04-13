@@ -88,6 +88,22 @@ pub struct IndexedLayerWeights {
     pub attn_k_norm_ptr: u64,
     /// Per-head K RMSNorm gamma size in elements (0 if no QkNorm)
     pub attn_k_norm_len: usize,
+    /// SPEC-MOE-APR-001: Packed 3D gate_exps GPU pointer (0 if not MoE)
+    pub moe_gate_exps_ptr: u64,
+    /// Packed 3D gate_exps total size in bytes
+    pub moe_gate_exps_len: usize,
+    /// SPEC-MOE-APR-001: Packed 3D up_exps GPU pointer
+    pub moe_up_exps_ptr: u64,
+    /// Packed 3D up_exps total size in bytes
+    pub moe_up_exps_len: usize,
+    /// SPEC-MOE-APR-001: Packed 3D down_exps GPU pointer
+    pub moe_down_exps_ptr: u64,
+    /// Packed 3D down_exps total size in bytes
+    pub moe_down_exps_len: usize,
+    /// MoE gate_exps quantization type
+    pub moe_gate_exps_qtype: WeightQuantType,
+    /// MoE down_exps quantization type (may differ — Q6K for Qwen3)
+    pub moe_down_exps_qtype: WeightQuantType,
 }
 
 /// Weight quantization type for GGUF tensors

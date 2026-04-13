@@ -466,6 +466,39 @@ impl CudaExecutor {
                 attn_q_norm_len,
                 attn_k_norm_ptr,
                 attn_k_norm_len,
+                // SPEC-MOE-APR-001: Packed 3D MoE expert GPU pointers
+                moe_gate_exps_ptr: {
+                    let name = format!("{}.ffn_gate_exps.weight", prefix);
+                    get_qweight(&name).map(|(p, _)| p).unwrap_or(0)
+                },
+                moe_gate_exps_len: {
+                    let name = format!("{}.ffn_gate_exps.weight", prefix);
+                    get_qweight(&name).map(|(_, l)| l).unwrap_or(0)
+                },
+                moe_up_exps_ptr: {
+                    let name = format!("{}.ffn_up_exps.weight", prefix);
+                    get_qweight(&name).map(|(p, _)| p).unwrap_or(0)
+                },
+                moe_up_exps_len: {
+                    let name = format!("{}.ffn_up_exps.weight", prefix);
+                    get_qweight(&name).map(|(_, l)| l).unwrap_or(0)
+                },
+                moe_down_exps_ptr: {
+                    let name = format!("{}.ffn_down_exps.weight", prefix);
+                    get_qweight(&name).map(|(p, _)| p).unwrap_or(0)
+                },
+                moe_down_exps_len: {
+                    let name = format!("{}.ffn_down_exps.weight", prefix);
+                    get_qweight(&name).map(|(_, l)| l).unwrap_or(0)
+                },
+                moe_gate_exps_qtype: {
+                    let name = format!("{}.ffn_gate_exps.weight", prefix);
+                    if get_qweight(&name).is_ok() { self.resolve_qtype(&name) } else { crate::cuda::types::WeightQuantType::Q4K }
+                },
+                moe_down_exps_qtype: {
+                    let name = format!("{}.ffn_down_exps.weight", prefix);
+                    if get_qweight(&name).is_ok() { self.resolve_qtype(&name) } else { crate::cuda::types::WeightQuantType::Q4K }
+                },
             };
 
             // GH-279: Validate that all architecture-required fields are non-zero.

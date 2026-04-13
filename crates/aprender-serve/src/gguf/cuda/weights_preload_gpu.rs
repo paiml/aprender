@@ -158,7 +158,7 @@ impl OwnedQuantizedModelCuda {
         for (layer_idx, layer) in self.model.layers.iter().enumerate() {
             let prefix = format!("blk.{}", layer_idx);
             total_bytes += upload_layer_qkv(&mut self.executor, &prefix, layer_idx, layer)?;
-            total_bytes += upload_layer_ffn(&mut self.executor, &prefix, layer)?;
+            total_bytes += upload_layer_ffn(&mut self.executor, &prefix, layer, self.model.moe_backing_data.as_ref())?;
         }
 
         // LM head weights
@@ -349,10 +349,24 @@ fn upload_layer_ffn(
     executor: &mut crate::cuda::CudaExecutor,
     prefix: &str,
     layer: &crate::gguf::quantized::OwnedQuantizedLayer,
+    moe_backing: Option<&std::sync::Arc<memmap2::Mmap>>,
 ) -> Result<usize> {
-    // SPEC-MOE-APR-001: MoE layers have no dense FFN weights — skip upload.
+    // SPEC-MOE-APR-001: MoE layers upload packed 3D tensors (zero-copy on unified memory)
     if layer.moe_gate_weight.is_some() {
-        return Ok(0);
+        let mut total = 0usize;
+        if let (Some(ref gate_ref), Some(ref up_ref), Some(ref down_ref), Some(backing)) =
+            (&layer.moe_gate_packed, &layer.moe_up_packed, &layer.moe_down_packed, moe_backing)
+        {
+            // Upload packed 3D gate/up/down tensors as single GPU buffers
+            // On unified memory (GB10): from_host_registered = zero-copy mmap registration
+            let gate_data = &backing[gate_ref.offset..gate_ref.offset + gate_ref.byte_size];
+            total += upload_if_absent(executor, &format!("{prefix}.ffn_gate_exps.weight"), gate_data, gate_ref.qtype)?;
+            let up_data = &backing[up_ref.offset..up_ref.offset + up_ref.byte_size];
+            total += upload_if_absent(executor, &format!("{prefix}.ffn_up_exps.weight"), up_data, up_ref.qtype)?;
+            let down_data = &backing[down_ref.offset..down_ref.offset + down_ref.byte_size];
+            total += upload_if_absent(executor, &format!("{prefix}.ffn_down_exps.weight"), down_data, down_ref.qtype)?;
+        }
+        return Ok(total);
     }
 
     let mut total = 0usize;
