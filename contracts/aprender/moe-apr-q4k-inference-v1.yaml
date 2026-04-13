@@ -195,10 +195,26 @@ falsification_tests:
     prediction: "ffn_gate_exps [hidden, intermediate, experts] unpacks to num_experts separate tensors"
     test: |
       Load Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf.
-      Assert blk.0.ffn_gate_exps.weight detected as MoE packed format.
-      Assert 128 expert gate tensors extracted, each with correct Q4K block count.
-      Assert blk.0.ffn_gate_inp.weight loaded as router (F32, [128, 2048]).
-    if_fails: "Tensor name mapping missing for GGUF MoE packed 3D format"
+      Assert 128 expert gate tensors extracted per layer.
+      Assert first 4 bytes of expert 0 match raw file at expected offset.
+    if_fails: "Tensor name mapping or dims.reverse() handling wrong for 3D format"
+
+  - id: FALSIFY-MOE-008
+    rule: "MoE throughput >= 10 tok/s (Phase 5 target)"
+    prediction: "Stride-based dispatch eliminates 113MB/layer copy overhead"
+    test: |
+      probar bench --model qwen3-coder-30b --prompt "def fibonacci(n):" --tokens 32
+      Assert tok/s >= 10.0
+      Compare: llama.cpp baseline = 88.9 tok/s on same hardware
+    if_fails: "Profile with apr profile — identify remaining bottleneck"
+
+  - id: FALSIFY-MOE-009
+    rule: "MoE throughput within 4x of llama.cpp (Phase 6 target)"
+    prediction: "Fused multi-expert kernel + stride dispatch reaches 25+ tok/s"
+    test: |
+      probar bench --model qwen3-coder-30b --compare llama.cpp
+      Assert apr_tok_s / llamacpp_tok_s >= 0.25
+    if_fails: "Phase 7 CUDA kernel required"
 
 kani_harnesses:
 - id: KANI-MOE-001

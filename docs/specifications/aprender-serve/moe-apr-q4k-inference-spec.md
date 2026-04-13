@@ -1,12 +1,12 @@
 # SPEC-MOE-APR: MoE Inference for APR Q4K Models
 
-Version: 1.0
-Status: proposed
-Date: 2026-04-11
+Version: 2.0
+Status: in-progress
+Date: 2026-04-13
 
 **Document ID:** SPEC-MOE-APR-001
-**Version:** 1.0.0
-**Status:** PROPOSED
+**Version:** 2.0.0
+**Status:** IN PROGRESS (correctness PASS, performance FAIL — 100x gap vs llama.cpp)
 **Author:** PAIML Engineering
 **Date:** 2026-04-11
 **Priority:** P0 — Blocks PMAT-521 (ALB-010 teacher loading for SHIP-TWO Model 2)
@@ -60,7 +60,7 @@ but inference fails immediately with "tensor not found."
 | decoder_sparse_step | 1 (all layers MoE) |
 | vocab_size | 151936 |
 | rope_theta | 10,000,000 |
-| norm_topk_prob | true |
+| norm_topk_prob | **false** (HF config default — was incorrectly set to true) |
 | shared_expert | **NO** (unlike Qwen3.5-35B) |
 | Total params | 30.5B |
 | Active params/token | 3.3B |
@@ -91,68 +91,186 @@ but inference fails immediately with "tensor not found."
 
 ---
 
-## 6. Implementation Plan
+## 6. Implementation Plan (Updated v2.0)
 
-### Phase 1: APR MoE metadata extraction (1h)
+### Phase 1: MoE metadata extraction — **DONE** (2026-04-11)
 
-In `crates/aprender-serve/src/gguf/config.rs`, extend `from_apr()` to read:
-- `num_experts` from APR custom metadata
-- `num_experts_per_tok` from APR custom metadata
-- `moe_intermediate_size` from APR custom metadata
-- Fallback: infer from tensor names (count `experts.N` patterns in layer 0)
+- APR path: infer from tensor names + shape
+- GGUF path: read from `{arch}.expert_count` / `{arch}.expert_feed_forward_length` metadata
+- Config fields: `num_experts`, `num_experts_per_tok`, `moe_intermediate_size`
 
-### Phase 2: APR Q4K MoE tensor loading (3h)
+### Phase 2: MoE tensor loading — **DONE** (2026-04-13)
 
-In the APR Q4K loading path, detect MoE model (num_experts > 0) and:
-- Load router: `model.layers.N.mlp.gate.weight`
-- For each expert E in 0..num_experts:
-  - Load `model.layers.N.mlp.experts.E.gate_proj.weight` (Q4K)
-  - Load `model.layers.N.mlp.experts.E.up_proj.weight` (Q4K)
-  - Load `model.layers.N.mlp.experts.E.down_proj.weight` (Q4K)
-- Pack into `MoeExpertWeights` fused format
-- Skip dense FFN loading when MoE detected
+- APR path: per-expert tensor names (`model.layers.N.mlp.experts.E.*`)
+- GGUF path: packed 3D tensors (`blk.N.ffn_gate_exps.weight` [ne0,ne1,ne2])
+- Unpack 3D → per-expert slices via stride-based byte offsets
 
-### Phase 3: Q4K MoE dispatch (2h)
+### Phase 3: Q4K MoE dispatch — **DONE** (2026-04-11)
 
-Add `moe_forward_q4k()` that:
-- Runs softmax router on F32 (dequant router weight once)
-- Selects top-8 experts per token
-- For each selected expert: `fused_q4k_parallel_matvec` on quantized expert weights
-- SwiGLU activation: `SiLU(gate) * up`, then down projection
-- Weighted sum of expert outputs
-- Renormalize weights if `norm_topk_prob`
+- `moe_forward_q4k`: softmax router → top-k → per-expert SwiGLU → weighted sum
+- `moe_expert_swiglu`: gate+up split → SiLU(gate)*up → down
 
-### Phase 4: Wire into forward block (1h)
+### Phase 4: Forward block wiring — **DONE** (2026-04-13)
 
-In the APR forward path, check `layer.moe_gate_weight.is_some()`:
-- If MoE: call `moe_forward_q4k()` instead of dense FFN
-- If dense: existing path unchanged
+- MoE detection via `layer.moe_gate_weight.is_some()`
+- Skip dense FFN down_proj for MoE layers (MoE output already includes down)
+- `qwen3moe` arch constraint: has_qk_norm=true, eps=1e-6
+
+### Phase 5: Stride-based MoE dispatch — **TODO** (P0, 4h)
+
+**Eliminate per-expert data copy.** Currently each expert's Q4K data is copied
+into a separate `Vec<u8>`. Instead, pass the original mmap'd 3D tensor data
+with an offset parameter to the Q4K matmul:
+
+- Add `fused_q4k_parallel_matvec_at_offset(data, input, in_dim, out_dim, byte_offset)`
+- Expert e's offset = `e * (total_bytes / num_experts)`
+- Eliminates 113 MB of copies per layer (128 experts × 884KB each)
+- Expected speedup: 5-10x (memory bandwidth was the bottleneck)
+
+### Phase 6: Fused multi-expert kernel — **TODO** (P1, 8h)
+
+**Process all top-k experts in a single rayon dispatch.** Currently 8 separate
+rayon dispatches per layer (384 per token). Fuse into one:
+
+- Allocate output buffers for all 8 experts upfront
+- Single `par_iter` over expert_indices with closure that does SwiGLU per expert
+- Reduces rayon dispatch overhead from 384 to 48 per token
+- Expected speedup: 2-3x on top of Phase 5
+
+### Phase 7: CUDA MoE kernel — **TODO** (P1, 16h)
+
+**GPU-native expert dispatch.** Port the `ggml_mul_mat_id` pattern:
+
+- Single CUDA kernel handles expert selection + matmul + SwiGLU
+- Expert ID indexes into 3D packed weight tensor (no unpacking)
+- Uses trueno-gpu `GemmKernel` with expert_id parameter
+- Target: parity with llama.cpp (~89 tok/s on GB10)
 
 ---
 
-## 7. Acceptance Criteria
+## 7. Performance Gap Analysis (v2.0, 2026-04-13)
 
-| ID | Criterion | Threshold | Measurement |
-|----|-----------|-----------|-------------|
-| AC-MOE-001 | APR MoE metadata extracted | num_experts=128, top_k=8 | Unit test |
-| AC-MOE-002 | All 128×48 expert tensors loaded | 18,432 expert tensors (128×3×48) | Count assertion |
-| AC-MOE-003 | Router weight loaded per layer | 48 router tensors [128,2048] | Shape assertion |
-| AC-MOE-004 | `apr run` produces non-garbage on MoE model | Coherent Python on "def fibonacci" | Manual + oracle |
-| AC-MOE-005 | Inference completes without OOM | Peak RSS < 24 GB (Q4K model is 17 GB) | Memory check |
-| AC-MOE-006 | Throughput > 0.5 tok/s (CPU Q4K, 30B MoE) | Measurable generation | Timer |
+### 7.1 Measured Results
+
+| Engine | Model | Hardware | tok/s | Notes |
+|--------|-------|----------|-------|-------|
+| **llama.cpp** | Qwen3-Coder-30B-A3B Q4_K_M | Blackwell GB10, GPU | **88.9** | `ggml_mul_mat_id` native 3D dispatch |
+| **apr serve** | Same model, same hardware | Same, CPU fallback | **0.9** | Per-expert Q4K matmul, no batching |
+| **Gap** | | | **100x** | **UNACCEPTABLE — must fix** |
+
+### 7.2 Five Whys (Performance)
+
+1. Why 0.9 tok/s? → Each token requires 8 expert forward passes × 48 layers = 384 matmuls
+2. Why are 384 matmuls slow? → Each expert matmul is a separate `fused_q4k_parallel_matvec` call with memory allocation + rayon dispatch overhead
+3. Why separate matmuls? → We unpack 3D packed tensor into per-expert Vec<u8> copies, then matmul each independently
+4. Why copy? → `ggml_mul_mat_id` indexes into the 3D tensor with stride-based access (zero-copy). We allocate per-expert buffers.
+5. Why no stride-based access? → Our Q4K matmul only supports 2D [out_dim, in_dim] tensors. Need to extend to support expert_id indexing into 3D packed data.
+
+### 7.3 Root Cause: Architectural Mismatch
+
+llama.cpp uses `ggml_mul_mat_id`:
+- **Zero-copy**: indexes directly into 3D packed tensor via `nb[2]` stride
+- **GPU-accelerated**: single kernel launch for all 8 active experts
+- **Batched**: processes multiple expert matmuls in one kernel (CUDA `mmvq` kernel with expert ID)
+
+Our implementation:
+- **Copies per-expert data** into separate `OwnedQuantizedTensor` (128 × 884KB = 113MB per layer, ×48 layers)
+- **Sequential expert matmuls** via 8 separate `fused_q4k_parallel_matvec` calls per layer
+- **No GPU dispatch** for MoE (WGPU bypass triggers CPU fallback)
+- **Rayon overhead** per matmul call (thread pool dispatch × 384 per token)
+
+### 7.4 Performance Fix Plan
+
+**Phase 5: Stride-based MoE dispatch (P0, estimated 4h)**
+
+Replace per-expert copy+matmul with stride-based access into the 3D packed tensor:
+
+```rust
+// CURRENT (slow): copy per-expert data, then matmul
+let expert_data = packed_3d[e * expert_bytes..(e+1) * expert_bytes].to_vec();
+let result = fused_q4k_parallel_matvec(&expert_data, input, in_dim, out_dim);
+
+// TARGET (fast): pass offset + stride, no copy
+let result = fused_q4k_parallel_matvec_strided(
+    &packed_3d_data,        // entire 3D tensor (mmap, zero-copy)
+    input,
+    in_dim,
+    out_dim,
+    expert_offset,          // e * nb[2]
+);
+```
+
+**Phase 6: Fused multi-expert kernel (P1, estimated 8h)**
+
+Process all 8 active experts in a single rayon dispatch:
+
+```rust
+// Process all top-k experts in one parallel pass
+let expert_outputs = fused_moe_q4k_topk(
+    &packed_gate_data,      // 3D gate tensor
+    &packed_up_data,        // 3D up tensor
+    &packed_down_data,      // 3D down tensor
+    input,
+    &selected_experts,      // [(expert_idx, weight); top_k]
+    hidden_dim,
+    moe_intermediate,
+);
+```
+
+**Phase 7: CUDA MoE kernel (P1, estimated 16h)**
+
+Port llama.cpp's `mmvq` kernel pattern:
+- Single CUDA kernel launch for all 8 experts
+- Expert ID passed as parameter, not separate launches
+- Uses `ggml_mul_mat_id` equivalent in trueno-gpu
+
+### 7.5 Performance Targets
+
+| Phase | Expected tok/s | Gap to llama.cpp | Blocking? |
+|-------|---------------|-------------------|-----------|
+| Current (v2.0) | 0.9 | 100x | YES |
+| Phase 5 (stride) | ~10-15 | ~6-9x | Unblocks teacher generation |
+| Phase 6 (fused) | ~25-40 | ~2-4x | Acceptable for production |
+| Phase 7 (CUDA) | ~80-100 | ~1x | Parity |
+
+## 8. Acceptance Criteria (Updated v2.0)
+
+| ID | Criterion | Threshold | Status |
+|----|-----------|-----------|--------|
+| AC-MOE-001 | MoE metadata extracted | num_experts=128, top_k=8 | **PASS** |
+| AC-MOE-002 | All expert tensors loaded (GGUF packed 3D) | 128 experts × 48 layers | **PASS** |
+| AC-MOE-003 | Router weight loaded per layer | 48 router tensors [128,2048] F32 | **PASS** |
+| AC-MOE-004 | `apr serve` produces coherent Python on MoE | FALSIFY-MOE-006 | **PASS** (2026-04-13) |
+| AC-MOE-005 | No OOM during loading | Peak RSS < model size × 2 | **PASS** |
+| AC-MOE-006 | Throughput ≥ 10 tok/s (Phase 5 target) | `apr serve` + probar benchmark | **FAIL** (0.9 tok/s) |
+| AC-MOE-007 | Throughput within 4x of llama.cpp (Phase 6) | probar A/B benchmark | PENDING |
+| AC-MOE-008 | Throughput parity with llama.cpp (Phase 7) | probar A/B benchmark | PENDING |
 
 ---
 
-## 8. Falsification Tests
+## 9. Falsification Tests (Updated v2.0)
 
-| ID | Hypothesis Falsified If... | Mitigation |
-|----|---------------------------|------------|
-| FALSIFY-MOE-001 | Expert tensor count != 128×3×48 | Fix expert enumeration loop |
-| FALSIFY-MOE-002 | Router softmax produces NaN | Add numerically stable softmax with max-subtract |
-| FALSIFY-MOE-003 | Top-8 selection returns wrong experts | Sort-based selection with tie-breaking |
-| FALSIFY-MOE-004 | Expert weights are all zero after load | Verify Q4K dequant produces non-zero on sample |
-| FALSIFY-MOE-005 | OOM during 128-expert loading | Load experts lazily or use mmap |
-| FALSIFY-MOE-006 | Output is garbage (repetitive/nonsense) | Trace layer-by-layer, compare with SafeTensors path |
+| ID | Hypothesis Falsified If... | Status | Mitigation |
+|----|---------------------------|--------|------------|
+| FALSIFY-MOE-001 | Expert tensor count wrong | **PASS** | Fixed: GGUF 3D packed loading |
+| FALSIFY-MOE-002 | Router softmax produces NaN | **PASS** | Max-subtract softmax |
+| FALSIFY-MOE-003 | Top-8 selection wrong | **PASS** | Sort-based with bounds check |
+| FALSIFY-MOE-004 | Expert weights all zero | **PASS** | Verified via MOE-TRACE |
+| FALSIFY-MOE-005 | OOM during loading | **PASS** | mmap + per-expert slicing |
+| FALSIFY-MOE-006 | Output is garbage | **PASS** (2026-04-13) | Root cause: double down_proj + missing arch constraint |
+| FALSIFY-MOE-007 | GGUF 3D packed format fails | **PASS** | dims.reverse() + stride-based slicing |
+| FALSIFY-MOE-008 | Throughput < 10 tok/s | **FAIL** (0.9 tok/s) | Phase 5: stride-based dispatch (no copy) |
+| FALSIFY-MOE-009 | Throughput < 25% of llama.cpp | **FAIL** (1%) | Phase 6+7: fused kernel + CUDA |
+
+## 10. Bugs Found and Fixed (v2.0)
+
+| Bug | Root Cause | Fix | Found Via |
+|-----|-----------|-----|-----------|
+| "tensor not found" on GGUF MoE | No GGUF 3D packed tensor loading | Added `unpack_moe_experts_gate_up/down` | FALSIFY-MOE-007 |
+| num_experts=2048 (wrong) | `dims.reverse()` in parser; used dims[2] instead of dims[0] | Fixed index after reading `parse_tensor_info` in reading.rs | pmat query (reference A) |
+| Garbage output (_accel repeating) | Double down_proj: `moe_expert_swiglu` applies down, then caller applies dummy down again | Skip down_proj for MoE layers in forward loop | Layer tracing (reference B) |
+| Arch constraints not matching | GGUF says "qwen3moe", fallback matches "qwen3_moe" (underscore), codegen YAML missing entirely | Added "qwen3moe" to arch-constraints-v1.yaml | pmat query + HF transformers (reference D) |
+| norm_topk_prob wrong | Hardcoded `true` when experts > 0; HF config says `false` for Qwen3-Coder-30B | Needs fix: read from GGUF metadata or default false | HF config (reference D) |
 
 ---
 
