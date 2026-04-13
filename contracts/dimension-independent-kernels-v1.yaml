@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "trueno#200, trueno#203: Blackwell JIT pre-warming fix."
+  description: "Dimension-independent CUDA kernels"
+
+kind: KernelContract
+name: dimension-independent-kernels
+version: "1.0.0"
+scope: "crates/aprender-compute/src/backends/gpu/"
+
+description: |
+  CUDA kernels parameterized by M,K,N at runtime instead of compile-time specialization. Reduces kernel variants from 50+ to ~15 types.
+
+equations:
+  output_equivalence:
+    description: "∀ M,K,N: dim_independent_output == specialized_output within ε"
+    formula: "∀ M,K,N: dim_independent_output == specialized_output within ε"
+
+  no_recompilation:
+    description: "kernel binary loaded once, M/K/N passed as launch params"
+    formula: "kernel binary loaded once, M/K/N passed as launch params"
+
+falsification:
+  - id: FALSIFY-DIMENSION_INDEPENDENT_KERNELS_V1_001
+    description: "∀ M,K,N: dim_independent_output == specialized_output within ε"
+    test: "Related tests in crates/aprender-compute/src/backends/gpu/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-DIMENSION_INDEPENDENT_KERNELS_V1_002
+    description: "kernel binary loaded once, M/K/N passed as launch params"
+    test: "Related tests in crates/aprender-compute/src/backends/gpu/"
+    evidence: "cargo test --lib"

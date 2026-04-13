@@ -1,0 +1,45 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Shazeer et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer."
+  description: "MoE router: softmax → top-k → renormalize"
+
+kind: KernelContract
+name: moe-router
+version: "1.0.0"
+scope: "crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
+
+description: |
+  Mixture of Experts router. Computes expert selection via softmax over router logits, selects top-k experts per token, renormalizes weights.
+
+equations:
+  softmax_normalization:
+    description: "∀ token: Σ router_probs[token] = 1.0"
+    formula: "∀ token: Σ router_probs[token] = 1.0"
+
+  topk_selection:
+    description: "∀ token: exactly k experts selected where k = num_experts_per_token"
+    formula: "∀ token: exactly k experts selected where k = num_experts_per_token"
+
+  weight_renormalization:
+    description: "∀ token: Σ selected_weights[token] = 1.0 after renorm"
+    formula: "∀ token: Σ selected_weights[token] = 1.0 after renorm"
+
+falsification:
+  - id: FALSIFY-MOE_ROUTER_V1_001
+    description: "∀ token: Σ router_probs[token] = 1.0"
+    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-MOE_ROUTER_V1_002
+    description: "∀ token: exactly k experts selected where k = num_experts_per_token"
+    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-MOE_ROUTER_V1_003
+    description: "∀ token: Σ selected_weights[token] = 1.0 after renorm"
+    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
+    evidence: "cargo test --lib"

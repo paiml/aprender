@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "PMAT-QA golden output methodology."
+  description: "Golden trace validation for inference correctness"
+
+kind: AlgorithmContract
+name: golden-trace
+version: "1.0.0"
+scope: "crates/aprender-serve/src/"
+
+description: |
+  Golden trace: run inference with known input, compare output logits against reference. Validates model loading, tensor layout, and computation pipeline.
+
+equations:
+  logit_parity:
+    description: "∀ token_pos: |model_logits - reference_logits| < ε"
+    formula: "∀ token_pos: |model_logits - reference_logits| < ε"
+
+  argmax_identity:
+    description: "argmax(model_logits) == argmax(reference_logits) for all positions"
+    formula: "argmax(model_logits) == argmax(reference_logits) for all positions"
+
+falsification:
+  - id: FALSIFY-GOLDEN_TRACE_V1_001
+    description: "∀ token_pos: |model_logits - reference_logits| < ε"
+    test: "Related tests in crates/aprender-serve/src/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-GOLDEN_TRACE_V1_002
+    description: "argmax(model_logits) == argmax(reference_logits) for all positions"
+    test: "Related tests in crates/aprender-serve/src/"
+    evidence: "cargo test --lib"

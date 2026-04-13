@@ -108,6 +108,28 @@
     }
 
     // ====================================================================
+    // GH-729: GGUF repo detection in default_file()
+    // ====================================================================
+
+    #[test]
+    fn test_default_file_gguf_repo() {
+        let src = Source::parse("hf://Qwen/Qwen2.5-Coder-32B-Instruct-GGUF").expect("parse");
+        assert_eq!(src.default_file(), "model.gguf", "GGUF repo should default to .gguf");
+    }
+
+    #[test]
+    fn test_default_file_safetensors_repo() {
+        let src = Source::parse("hf://Qwen/Qwen2.5-Coder-32B-Instruct").expect("parse");
+        assert_eq!(src.default_file(), "model.safetensors", "Non-GGUF repo should default to .safetensors");
+    }
+
+    #[test]
+    fn test_default_file_explicit_file_overrides() {
+        let src = Source::parse("hf://Qwen/Qwen2.5-Coder-32B-Instruct-GGUF/specific-model-q4.gguf").expect("parse");
+        assert_eq!(src.default_file(), "specific-model-q4.gguf", "Explicit file should override default");
+    }
+
+    // ====================================================================
     // split_gpt2_fused_qkv: Coverage tests (impact 5.4)
     // ====================================================================
 
