@@ -251,8 +251,10 @@ impl OwnedQuantizedModelCuda {
         }
 
         // GH-94: Batched prefill is default (36% throughput improvement).
-        // Set BATCHED_PREFILL=0 to disable (serial fallback).
-        let use_batched = std::env::var("BATCHED_PREFILL")
+        // SPEC-MOE-APR-001: MoE models use serial prefill (GPU batched prefill
+        // doesn't support MoE FFN dispatch — expert routing is per-token).
+        let is_moe = self.model.config.num_experts > 0;
+        let use_batched = !is_moe && std::env::var("BATCHED_PREFILL")
             .map(|v| v != "0")
             .unwrap_or(true);
 
