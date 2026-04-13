@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  description: "Distributed training correctness"
+  references:
+    - "Provable contract for distributed-training-v1"
+
+kind: AlgorithmContract
+name: distributed-training
+version: "1.0.0"
+scope: "crates/aprender-distribute/src/"
+
+description: |
+  Data-parallel training: all-reduce gradients, synchronized parameters, deterministic with seed.
+
+equations:
+  gradient_sync:
+    description: "∀ rank: params_after_step identical across workers"
+    formula: "∀ rank: params_after_step identical across workers"
+
+  loss_equivalence:
+    description: "loss(distributed, N) ≈ loss(single, N) within ε"
+    formula: "loss(distributed, N) ≈ loss(single, N) within ε"
+
+falsification:
+  - id: FALSIFY-DISTRIBUTED_TRAINING_V1_001
+    description: "∀ rank: params_after_step identical across workers"
+    test: "Related tests in crates/aprender-distribute/src/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-DISTRIBUTED_TRAINING_V1_002
+    description: "loss(distributed, N) ≈ loss(single, N) within ε"
+    test: "Related tests in crates/aprender-distribute/src/"
+    evidence: "cargo test --lib"

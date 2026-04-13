@@ -1,0 +1,40 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Van Zee & van de Geijn (2015). BLIS: A Framework for Rapidly Instantiating BLAS Functionality. ACM TOMS."
+    - "Goto & Van De Geijn (2008). Anatomy of High-Performance Matrix Multiplication. ACM TOMS."
+  description: |
+    AVX-512 BLIS-style GEMM kernel contract. Tiled matrix multiplication
+    using BLIS micro-kernel approach with AVX-512 registers.
+
+kind: KernelContract
+name: avx512-blis
+version: "1.0.0"
+scope: "crates/aprender-compute/src/backends/blis/"
+
+description: |
+  BLIS-style tiled GEMM using AVX-512. Uses Goto's approach:
+  macro-kernel tiles L2, micro-kernel tiles registers.
+
+  Register blocking: 6×16 micro-tile (6 rows × 16 cols in zmm).
+  L1 panel: mc×kc. L2 panel: kc×nc. L3: full C tile.
+
+equations:
+  C-AVX512-BLIS-001:
+    description: "GEMM output matches naive O(n³) reference"
+    formula: "∀ i,j: |C_blis[i,j] - C_naive[i,j]| < ε·max(|C_naive|) where ε = 1e-5"
+    note: "FMA reordering causes small accumulation differences"
+
+  C-AVX512-BLIS-002:
+    description: "Tile boundary correctness — no out-of-bounds access"
+    formula: "∀ M,N,K: output shape = [M,N] regardless of tile alignment"
+    note: "Remainder tiles handled by masked stores or scalar fallback"
+
+falsification:
+  - id: FALSIFY-AVX512-BLIS-001
+    description: "BLIS GEMM matches naive for random matrices"
+    test: "backend equivalence tests"
+    evidence: "cargo test -p aprender-compute --lib blis"

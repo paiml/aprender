@@ -1,0 +1,56 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "HuggingFace tokenizers chat_template specification"
+    - "Jinja2/minijinja template engine"
+  description: |
+    Chat template rendering contract. Defines correctness for Jinja2-style
+    chat templates used by LLMs (ChatML, Llama, Qwen, Mistral formats).
+
+kind: AlgorithmContract
+name: chat-template
+version: "1.0.0"
+scope: "crates/aprender-core/src/text/chat_template.rs + crates/aprender-serve/src/chat/"
+
+description: |
+  Chat templates convert structured messages [{role, content}] into
+  model-specific prompt strings. Uses minijinja for Jinja2 compatibility
+  with HuggingFace tokenizer_config.json chat_template field.
+
+  Critical correctness property: template rendering must produce identical
+  output to HuggingFace transformers for the same inputs.
+
+equations:
+  render_correctness:
+    description: "Template rendering matches HuggingFace reference output"
+    formula: "∀ messages, template: render(template, messages) == hf_render(template, messages)"
+    note: "Verified against golden outputs from HuggingFace tokenizers"
+
+  special_token_injection:
+    description: "BOS/EOS tokens are correctly placed"
+    formula: "∀ rendered: starts_with(bos_token) ∧ ends_with(eos_token) when add_generation_prompt=false"
+    note: "Some templates omit BOS (e.g., Llama 3). Template-dependent."
+
+  role_mapping:
+    description: "All standard roles are supported"
+    formula: "∀ role ∈ {system, user, assistant, tool}: template handles role without error"
+    note: "Unknown roles should produce a clear error, not silently drop"
+
+falsification:
+  - id: FALSIFY-CHAT-001
+    description: "ChatML template produces correct output"
+    test: "chat template tests in aprender-core"
+    evidence: "cargo test -p aprender-core --lib chat_template"
+
+  - id: FALSIFY-CHAT-002
+    description: "Llama 3 template produces correct output"
+    test: "chat template tests"
+    evidence: "cargo test -p aprender-core --lib chat_template"
+
+  - id: FALSIFY-CHAT-003
+    description: "Missing template produces error, not silent skip"
+    test: "PMAT-237 lesson: process validation, not outcome validation"
+    evidence: "cargo test -p aprender-core --lib chat_template"

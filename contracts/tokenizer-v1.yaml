@@ -1,0 +1,54 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "HuggingFace tokenizers library"
+    - "SentencePiece: A simple and language independent subword tokenizer (Kudo & Richardson, 2018)"
+  description: |
+    Tokenizer loading and encoding contract. Covers BPE, Unigram, and
+    SentencePiece tokenizers loaded from HuggingFace tokenizer.json or
+    GGUF embedded vocabularies.
+
+kind: AlgorithmContract
+name: tokenizer
+version: "1.0.0"
+scope: "crates/aprender-core/src/text/ + crates/aprender-core/src/format/converter/tokenizer_loader.rs"
+
+description: |
+  Tokenizer operations: load vocabulary from tokenizer.json, GGUF metadata,
+  or SentencePiece .model files. Encode text to token IDs, decode back.
+  Special tokens (BOS, EOS, PAD) must be correctly identified.
+
+equations:
+  encode_decode_roundtrip:
+    description: "Encode→decode preserves text (modulo whitespace normalization)"
+    formula: "∀ text: decode(encode(text)) ≈ text (whitespace-normalized)"
+    note: "BPE merges may normalize whitespace differently"
+
+  special_token_detection:
+    description: "BOS/EOS tokens correctly identified from vocabulary"
+    formula: "∀ tokenizer: bos_id ∈ vocab ∧ eos_id ∈ vocab when defined in config"
+    note: "Some models define special tokens in added_tokens, not base vocab"
+
+  vocab_size_consistency:
+    description: "Reported vocab_size matches actual vocabulary length"
+    formula: "tokenizer.vocab_size() == tokenizer.vocab().len()"
+    note: "GGUF may report different vocab_size than token count due to padding"
+
+falsification:
+  - id: FALSIFY-TOK-001
+    description: "BPE tokenizer encodes known text correctly"
+    test: "tokenizer tests in aprender-core"
+    evidence: "cargo test -p aprender-core --lib tokenizer"
+
+  - id: FALSIFY-TOK-002
+    description: "Special tokens detected from tokenizer.json"
+    test: "special token detection tests"
+    evidence: "cargo test -p aprender-core --lib special_token"
+
+  - id: FALSIFY-TOK-003
+    description: "GGUF vocabulary extraction matches tokenizer.json"
+    test: "GGUF tokenizer loader tests"
+    evidence: "cargo test -p aprender-core --lib gguf_tokenizer"

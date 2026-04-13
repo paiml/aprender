@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  description: "RAG context generation"
+  references:
+    - "Provable contract for context-generation-v1"
+
+kind: AlgorithmContract
+name: context-generation
+version: "1.0.0"
+scope: "crates/aprender-rag/src/"
+
+description: |
+  Retrieval-augmented generation: query → retrieve → rank → generate context window.
+
+equations:
+  relevance_ordering:
+    description: "retrieved docs sorted by descending relevance score"
+    formula: "retrieved docs sorted by descending relevance score"
+
+  context_budget:
+    description: "total tokens ≤ max_context_length"
+    formula: "total tokens ≤ max_context_length"
+
+falsification:
+  - id: FALSIFY-CONTEXT_GENERATION_V1_001
+    description: "retrieved docs sorted by descending relevance score"
+    test: "Related tests in crates/aprender-rag/src/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-CONTEXT_GENERATION_V1_002
+    description: "total tokens ≤ max_context_length"
+    test: "Related tests in crates/aprender-rag/src/"
+    evidence: "cargo test --lib"

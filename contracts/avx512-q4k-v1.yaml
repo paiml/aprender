@@ -1,0 +1,51 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers (Frantar et al., 2023)"
+    - "QuIP#: Even Better LLM Quantization with Hadamard Incoherence (Chee et al., 2023)"
+  description: |
+    AVX-512 Q4_K quantized GEMV kernel contract. Processes 16 f32 elements
+    per iteration using zmm registers (2x throughput vs AVX2 8-wide).
+
+kind: KernelContract
+name: avx512-q4k
+version: "1.0.0"
+scope: "crates/aprender-compute/src/backends/q4k/gemv/avx512.rs"
+
+description: |
+  Fused dequantize + matrix-vector multiply for Q4_K quantized weights
+  using AVX-512 SIMD (512-bit zmm registers, 16-wide f32).
+
+  Q4_K super-block layout: 256 elements per block, 144 bytes.
+  Each block: d(f16) + dmin(f16) + scales[12] + qs[128].
+  4-bit values dequantized to f32 and accumulated via FMA.
+
+equations:
+  C-AVX512-Q4K-001:
+    description: "Output matches scalar reference within tolerance"
+    formula: "∀ i: |avx512_output[i] - scalar_output[i]| < ε where ε = 1e-3"
+    note: "Tolerance accounts for FMA instruction reordering vs serial accumulation"
+
+  C-AVX512-Q4K-002:
+    description: "Performance: AVX-512 achieves ≥1.5x throughput vs AVX2"
+    formula: "throughput(avx512) ≥ 1.5 × throughput(avx2) for in_dim ≥ 1024"
+    note: "16-wide vs 8-wide; overhead from zmm register management limits to ~1.5x (not 2x)"
+
+  C-AVX512-Q4K-003:
+    description: "Super-block processing is complete (no elements skipped)"
+    formula: "∀ row: Σ elements_processed = in_dim (with remainder handling)"
+    note: "Scalar fallback handles remainder elements after SIMD loop"
+
+falsification:
+  - id: FALSIFY-AVX512-Q4K-001
+    description: "AVX-512 output matches scalar for random inputs"
+    test: "backend equivalence tests in aprender-compute"
+    evidence: "cargo test -p aprender-compute --lib avx512"
+
+  - id: FALSIFY-AVX512-Q4K-002
+    description: "Performance threshold verified by benchmark"
+    test: "Q4K GEMV benchmark"
+    evidence: "cargo bench -p aprender-compute -- q4k"

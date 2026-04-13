@@ -1,0 +1,58 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "contracts/compression-roundtrip-v1.yaml — codec-level lossless roundtrip"
+    - "contracts/tensor-layout-v1.yaml — row-major layout enforced at import"
+    - "crates/aprender-core/src/format/converter/ — APR/GGUF/SafeTensors converters"
+  description: |
+    Format encode/decode roundtrip contract for APR, GGUF, and SafeTensors.
+    Write→read, export→import, and save→load pipelines must preserve tensor
+    data, metadata, and shapes exactly for lossless dtype paths.
+
+kind: AlgorithmContract
+name: encoder-roundtrip
+version: "1.0.0"
+scope: "crates/aprender-core/src/format/converter/ — APR, GGUF, SafeTensors converters"
+
+description: |
+  A roundtrip (encode then decode) must be an identity operation for lossless
+  dtypes (F32, F16, BF16, Q4_K, Q6_K). Tensor values, shapes, and all
+  metadata fields must survive the full pipeline unchanged. This contract
+  explicitly excludes lossy quantization conversions (e.g. F32→Q4_K), which
+  are governed by the quantization-error contract.
+
+equations:
+  data_preservation:
+    description: "decode(encode(tensors)) == tensors for lossless dtypes"
+    formula: |
+      ∀ T, d ∈ {F32, F16, BF16, Q4_K, Q6_K}: read(write(T, d)) == T  (bit-exact)
+    note: "Lossy conversions (e.g. F32→Q4_K) excluded; only same-dtype roundtrips apply"
+
+  metadata_preservation:
+    description: "All metadata fields survive roundtrip unchanged"
+    formula: "∀ model M: read(write(M)).metadata == M.metadata"
+    note: "Covers architecture, vocab_size, rope_theta, tokenizer config, chat_template, kv pairs"
+
+  shape_preservation:
+    description: "Tensor shapes are identical before and after roundtrip"
+    formula: "∀ t ∈ model: read(write(model)).tensor(t.name).shape == t.shape"
+    note: "GGUF col-major transpose at import only; export→import is net-identity"
+
+falsification:
+  - id: FALSIFY-RT-001
+    description: "APR write→read roundtrip preserves F32 tensor values bit-exactly"
+    test: "Write random F32 tensor to APR file; read back; assert byte-level buffer equality"
+    evidence: "cargo test -p aprender-core --lib encoder_roundtrip"
+
+  - id: FALSIFY-RT-002
+    description: "GGUF export→import roundtrip preserves tensor shapes and names"
+    test: "Export to GGUF; re-import; assert names/ranks/dims identical (net-identity)"
+    evidence: "cargo test -p aprender-core --lib encoder_roundtrip"
+
+  - id: FALSIFY-RT-003
+    description: "SafeTensors save→load roundtrip preserves all metadata key-value pairs"
+    test: "Save with custom metadata map; load back; assert map equality"
+    evidence: "cargo test -p aprender-core --lib encoder_roundtrip"
