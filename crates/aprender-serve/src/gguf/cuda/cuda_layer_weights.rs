@@ -401,14 +401,24 @@ impl OwnedQuantizedModelCuda {
                 hidden[i] += attn_output[i];
             }
 
-            // 2h/2i. FFN (extracted helper)
-            let ffn_output = self.cuda_layer_ffn(
-                &hidden, &normed, layer_idx, &lw, use_rmsnorm, eps, hidden_dim,
-            )?;
+            // 2h/2i. FFN — MoE uses CPU stride dispatch, dense uses CUDA
+            let layer = &self.model.layers[layer_idx];
+            let is_moe = layer.moe_gate_weight.is_some();
 
-            // Residual
-            for i in 0..hidden_dim {
-                hidden[i] += ffn_output[i];
+            if is_moe {
+                // SPEC-MOE-APR-001: MoE FFN via CPU stride-based expert dispatch
+                let moe_output = self.model.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?;
+                for i in 0..hidden_dim {
+                    hidden[i] += moe_output[i];
+                }
+            } else {
+                let ffn_output = self.cuda_layer_ffn(
+                    &hidden, &normed, layer_idx, &lw, use_rmsnorm, eps, hidden_dim,
+                )?;
+                // Residual
+                for i in 0..hidden_dim {
+                    hidden[i] += ffn_output[i];
+                }
             }
 
             // NaN safety check for early positions
