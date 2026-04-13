@@ -1,0 +1,58 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Rust Reference — memory safety guarantees"
+    - "trueno SIMD backend allocation invariants"
+    - "contracts/tensor-layout-v1.yaml — row-major layout contract"
+  description: |
+    Memory allocation safety for tensor operations across the workspace.
+    No buffer overflows, no uninitialized reads, all allocations validated
+    against declared shape before use.
+
+kind: AlgorithmContract
+name: memory-safety
+version: "1.0.0"
+scope: "workspace-wide — all crates handling tensor data"
+
+description: |
+  Every tensor allocation must be sized exactly to its declared shape and dtype.
+  Index operations must be bounds-checked against that shape. Newly allocated
+  tensors must be zero-initialized before any read. These invariants hold
+  regardless of quantization type (F32, F16, Q4_K, Q6_K, Q8_0).
+
+equations:
+  allocation_bounds:
+    description: "Allocated byte count equals product(shape) × dtype_size"
+    formula: "∀ t: allocated_bytes(t) == product(t.shape) * dtype_size(t.dtype)"
+    note: "Quantized dtypes use block-aligned sizes; formula applies per-block (Q4_K, Q6_K)"
+
+  no_oob_access:
+    description: "All index operations checked against shape before access"
+    formula: |
+      ∀ tensor t, flat index i: access(t, i) requires i < product(t.shape)
+      Violation -> Err(TensorError::IndexOutOfBounds), never UB
+    note: "Enforced at ValidatedTensor newtype boundary (see contracts/validated-tensor-v1)"
+
+  zero_init_guarantee:
+    description: "Newly allocated tensors are zero-initialized before any read"
+    formula: "∀ t = Tensor::zeros(shape, dtype), ∀ i < product(shape): t[i] == 0"
+    note: "vec![0u8; n] or bytemuck::zeroed_slice required; MaybeUninit forbidden in public API"
+
+falsification:
+  - id: FALSIFY-MEM-001
+    description: "Tensor::zeros(shape) byte length equals product(shape) * dtype_size"
+    test: "proptest: random shape [d0,d1,d2], F32; assert buf.len() == d0*d1*d2*4"
+    evidence: "cargo test -p aprender-core --lib memory_safety"
+
+  - id: FALSIFY-MEM-002
+    description: "Out-of-bounds index returns TensorError, not panic"
+    test: "Tensor shape [4,4]; access flat index 16; assert Err(IndexOutOfBounds)"
+    evidence: "cargo test -p aprender-core --lib memory_safety"
+
+  - id: FALSIFY-MEM-003
+    description: "All bytes of Tensor::zeros are 0 after construction"
+    test: "proptest: random shape; Tensor::zeros(shape, F32); assert all bytes == 0u8"
+    evidence: "cargo test -p aprender-core --lib memory_safety"
