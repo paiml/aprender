@@ -323,6 +323,13 @@ fn upload_layer_ffn(
     prefix: &str,
     layer: &crate::gguf::quantized::OwnedQuantizedLayer,
 ) -> Result<usize> {
+    // SPEC-MOE-APR-001: MoE layers have no dense FFN weights — skip upload.
+    // MoE expert dispatch uses stride-based access into packed 3D tensors.
+    let is_moe = layer.moe_gate_weight.is_some();
+    if is_moe {
+        return Ok(0);
+    }
+
     let mut total = 0usize;
     if let Some(ref gate) = layer.ffn_gate_weight {
         total += upload_if_absent(executor, &format!("{prefix}.ffn_gate.weight"), &gate.data, gate.qtype)?;
