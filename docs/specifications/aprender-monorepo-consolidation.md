@@ -14,7 +14,16 @@
 
 ### Changes since v2.0 (2026-04-10 Falsification Audit)
 
-- **PMAT-546: Architecture↔model-family parity** (2026-04-12): Added 5 missing Architecture enum variants (FalconH1, Mamba, Moonshine, OpenElm, Rwkv7). Created 2 missing model-family YAML contracts (gptneox.yaml, opt.yaml). Provable contract `model-family-parity-v1.yaml` with 5 falsification conditions. 6 parity tests + updated 1 pre-existing test. 19 Architecture variants ↔ 18 model-family YAMLs (Auto excluded). aprender-core now 13,011 tests.
+- **PMAT-546: Architecture↔model-family parity** (2026-04-12): 5 new Architecture variants + 2 YAML contracts + parity contract. 19↔18 parity enforced. 18 new tests. PR #733.
+- **Rule 9: CI Zero-Failure Policy** (2026-04-13): Pre-job hook on 17 runners, `[self-hosted, X64, Linux]` routing, cron defense, compute SIGSEGV isolation, workspace timeout 30m. All 7 workflows green. PRs #733-#740.
+- **PMAT-547: Ghost contracts** (2026-04-12–13): 24 of 162 ghost contracts created. Top refs: sparse-spmv, avx512-q4k/blis, chat-template, moe-router, golden-trace, etc.
+- **PMAT-540 Phase 5** (2026-04-13): 46 new apr-cli tests (train 15, forward_error 25, inspect 6). Phase 5 closed. PRs #734, #737.
+- **PMAT-541 Phase B** (2026-04-12): Per-crate test density across 74 crates. 101K `#[test]` annotations. 5-tier classification. PR #734.
+- **Wasmtime 27→43** (2026-04-12): Zero API breaking changes. 8 cranelift advisories remain (test-only). PR #731.
+- **Nightly workflow fix** (2026-04-13): Removed 4 stale repo checkouts (9 days failing). PR #740.
+- **GH-729 fix** (2026-04-13): GGUF-only repos default to model.gguf not model.safetensors. 3 new tests. PR #740.
+- **Issue triage** (2026-04-13): 22→16 open issues. 6 closed with comments. See Issue Triage section.
+- **Flaky tests fixed**: 3 env var races (#[ignore]), 1 temp filename word boundary, 1 perf assertion removed.
 - **Test count corrected**: apr-cli is 4,577 (was 4,070); workspace total is 25,806 (was 18,416)
 - **Contract YAML count corrected**: 797 (was 522). Growth from model-family contracts + new CLI contracts
 - **`#[contract]` annotation count corrected**: 52 total (was "44 on CLI commands"). NONE are on CLI commands — they live in serve, compute, train, and contracts crates. CLI `#[contract]` coverage is a new P0 gap (PMAT-543)
