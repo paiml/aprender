@@ -540,3 +540,4 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
 
 include!("inspect_output_json.rs");
 include!("inspect_03.rs");
+include!("inspect_tests.rs");
