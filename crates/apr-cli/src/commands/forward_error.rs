@@ -451,18 +451,33 @@ fn check_ollama_available() -> bool {
 /// Detect model size label from a lowercased filename.
 /// Returns None if no known size pattern is found.
 fn detect_size_from_filename(filename_lower: &str) -> Option<&'static str> {
-    // (primary pattern, alternate pattern, size label)
-    const SIZE_PATTERNS: &[(&str, &str, &str)] = &[
-        ("0.5b", "-0_5b", "0.5b"),
-        ("1.5b", "-1_5b", "1.5b"),
-        ("3b", "-3b", "3b"),
-        ("7b", "-7b", "7b"),
-        ("14b", "-14b", "14b"),
-        ("32b", "-32b", "32b"),
+    // Match size patterns with boundary checks to avoid false positives from
+    // random hex in temp filenames (e.g., ".tmp3bF2a1.gguf" must NOT match "3b").
+    //
+    // Rule: the char AFTER the pattern must be a word boundary (end of string,
+    // '-', '_', '.', or non-alphanumeric). This prevents "3b" matching in "3bF2a1"
+    // but allows it in "model3b.gguf" or "model-3b-chat.gguf".
+    const SIZE_PATTERNS: &[(&str, &str)] = &[
+        ("0.5b", "0.5b"),
+        ("0_5b", "0.5b"),
+        ("1.5b", "1.5b"),
+        ("1_5b", "1.5b"),
+        ("3b", "3b"),
+        ("7b", "7b"),
+        ("14b", "14b"),
+        ("32b", "32b"),
     ];
-    SIZE_PATTERNS.iter().find_map(|(primary, alt, label)| {
-        let matched = filename_lower.contains(primary) || filename_lower.contains(alt);
-        matched.then_some(*label)
+    SIZE_PATTERNS.iter().find_map(|(pattern, label)| {
+        if let Some(pos) = filename_lower.find(pattern) {
+            let end = pos + pattern.len();
+            // Require word boundary AFTER: end of string or non-alphanumeric
+            let has_boundary = end >= filename_lower.len()
+                || !filename_lower.as_bytes()[end].is_ascii_alphanumeric();
+            if has_boundary {
+                return Some(*label);
+            }
+        }
+        None
     })
 }
 
