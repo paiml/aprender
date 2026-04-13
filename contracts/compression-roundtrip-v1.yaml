@@ -1,0 +1,42 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "LZ4 Frame format specification"
+    - "Zstd compression format"
+  description: |
+    Compression codec roundtrip contract. APR format supports LZ4 and Zstd
+    compression for tensor data. Compress→decompress must be lossless.
+
+kind: AlgorithmContract
+name: compression-roundtrip
+version: "1.0.0"
+scope: "crates/aprender-core/src/format/ — APR tensor compression"
+
+description: |
+  APR format stores tensor data with optional LZ4 or Zstd compression.
+  This contract ensures lossless roundtrip: decompress(compress(data)) == data.
+
+equations:
+  lossless_roundtrip:
+    description: "Compression roundtrip is bit-exact"
+    formula: "∀ data, codec ∈ {lz4, zstd}: decompress(compress(data, codec), codec) == data"
+    note: "Byte-level equality, not floating-point tolerance"
+
+  size_reduction:
+    description: "Compressed size ≤ original size (or minimal overhead for incompressible data)"
+    formula: "∀ data, codec: compressed_size(data, codec) ≤ len(data) + overhead(codec)"
+    note: "LZ4 overhead ~16 bytes, Zstd ~18 bytes for incompressible data"
+
+falsification:
+  - id: FALSIFY-COMP-001
+    description: "LZ4 roundtrip is lossless"
+    test: "compression roundtrip tests"
+    evidence: "cargo test -p aprender-core --lib compression"
+
+  - id: FALSIFY-COMP-002
+    description: "Zstd roundtrip is lossless"
+    test: "compression roundtrip tests"
+    evidence: "cargo test -p aprender-core --lib compression"
