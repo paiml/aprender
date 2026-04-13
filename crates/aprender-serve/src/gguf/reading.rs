@@ -31,9 +31,18 @@ impl GGUFModel {
         // Parse tensor info
         let tensors = Self::parse_tensor_info(&mut cursor, header.tensor_count)?;
 
-        // Calculate tensor data start with 32-byte alignment
+        // Calculate tensor data start with alignment.
+        // GGUF v3 may store alignment in metadata (general.alignment).
+        let alignment = metadata
+            .get("general.alignment")
+            .and_then(|v| match v {
+                GGUFValue::U32(a) => Some(*a as usize),
+                GGUFValue::U64(a) => Some(*a as usize),
+                _ => None,
+            })
+            .unwrap_or(GGUF_ALIGNMENT);
         let current_pos = cursor.position() as usize;
-        let tensor_data_start = current_pos.div_ceil(GGUF_ALIGNMENT) * GGUF_ALIGNMENT;
+        let tensor_data_start = current_pos.div_ceil(alignment) * alignment;
 
         Ok(Self {
             header,

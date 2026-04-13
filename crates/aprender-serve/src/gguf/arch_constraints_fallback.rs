@@ -186,7 +186,7 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
         // ALB-010: Qwen3 MoE (Qwen3-Coder-30B-A3B: 128 experts, per-head QK norm)
         // and Qwen3.5 MoE (Qwen3.5-35B-A3B: 256 experts, DeltaNet+GQA)
         // Both have per-head Q/K RMSNorm: q_norm.weight/k_norm.weight [head_dim]
-        "qwen3_moe" | "qwen3_5_moe" => ArchConstraints {
+        "qwen3moe" | "qwen3_moe" | "qwen3_5_moe" => ArchConstraints {
             norm_type: NormType::RmsNorm,
             activation: Activation::Silu,
             positional_encoding: PositionalEncoding::Rope,
