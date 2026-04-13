@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "OpenTelemetry specification v1.0."
+  description: "Distributed tracing and observability"
+
+kind: AlgorithmContract
+name: tracing-observability
+version: "1.0.0"
+scope: "crates/aprender-profile/src/ + crates/aprender-profile-core/src/"
+
+description: |
+  OpenTelemetry-based tracing for inference and training. Spans, traces, metrics export via OTLP.
+
+equations:
+  span_lifecycle:
+    description: "∀ span: started → ended, no orphan spans"
+    formula: "∀ span: started → ended, no orphan spans"
+
+  parent_child_ordering:
+    description: "∀ child span: child.start ≥ parent.start ∧ child.end ≤ parent.end"
+    formula: "∀ child span: child.start ≥ parent.start ∧ child.end ≤ parent.end"
+
+falsification:
+  - id: FALSIFY-TRACING_OBSERVABILITY_V1_001
+    description: "∀ span: started → ended, no orphan spans"
+    test: "Related tests in crates/aprender-profile/src/ + crates/aprender-profile-core/src/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-TRACING_OBSERVABILITY_V1_002
+    description: "∀ child span: child.start ≥ parent.start ∧ child.end ≤ parent.end"
+    test: "Related tests in crates/aprender-profile/src/ + crates/aprender-profile-core/src/"
+    evidence: "cargo test --lib"
