@@ -370,31 +370,36 @@ impl OwnedQuantizedModel {
             }
         }
 
-        // Expert dispatch — stride-based
-        // Uses self.fused_matmul to route through CUDA when available
+        // Expert dispatch — true zero-copy: slice directly into mmap'd data
+        // Contract: moe-stride-dispatch-v1.yaml "Zero heap allocation for expert weight access"
         let gate_stride = gate_packed.len() / num_experts;
         let up_stride = up_packed.len() / num_experts;
         let down_stride = down_packed.len() / num_experts;
 
+        use crate::quantize::{fused_q4k_parallel_matvec, fused_q6k_parallel_matvec};
+        use crate::gguf::types::{GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K};
+
+        /// Dispatch matmul based on qtype — zero-copy, no OwnedQuantizedTensor wrapper
+        fn expert_matvec(data: &[u8], input: &[f32], in_dim: usize, out_dim: usize, qtype: u32) -> Result<Vec<f32>> {
+            match qtype {
+                GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(data, input, in_dim, out_dim),
+                GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(data, input, in_dim, out_dim),
+                _ => Err(crate::error::RealizarError::UnsupportedOperation {
+                    operation: "expert_matvec".into(),
+                    reason: format!("MoE expert qtype {} not supported", qtype),
+                }),
+            }
+        }
+
         let mut output = vec![0.0f32; hidden_dim];
         for &(expert_idx, weight) in &weights {
-            let gate_offset = expert_idx * gate_stride;
-            let up_offset = expert_idx * up_stride;
-            let down_offset = expert_idx * down_stride;
+            // Zero-copy slices into mmap'd packed 3D tensor
+            let gate_slice = &gate_packed[expert_idx * gate_stride..(expert_idx + 1) * gate_stride];
+            let up_slice = &up_packed[expert_idx * up_stride..(expert_idx + 1) * up_stride];
+            let down_slice = &down_packed[expert_idx * down_stride..(expert_idx + 1) * down_stride];
 
-            // Gate matmul via fused_matmul (routes to CUDA when cuda_executor is set)
-            let gate_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
-                data: gate_packed[gate_offset..gate_offset + gate_stride].to_vec(),
-                in_dim: hidden_dim, out_dim: moe_intermediate, qtype: gate_up_qtype,
-            };
-            let gate_data = self.fused_matmul(input, &gate_tensor)?;
-
-            // Up matmul
-            let up_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
-                data: up_packed[up_offset..up_offset + up_stride].to_vec(),
-                in_dim: hidden_dim, out_dim: moe_intermediate, qtype: gate_up_qtype,
-            };
-            let up_data = self.fused_matmul(input, &up_tensor)?;
+            let gate_data = expert_matvec(gate_slice, input, hidden_dim, moe_intermediate, gate_up_qtype)?;
+            let up_data = expert_matvec(up_slice, input, hidden_dim, moe_intermediate, gate_up_qtype)?;
 
             // SwiGLU: SiLU(gate) * up
             let mut swiglu = vec![0.0f32; moe_intermediate];
@@ -403,12 +408,7 @@ impl OwnedQuantizedModel {
                 swiglu[i] = silu * up_data[i];
             }
 
-            // Down matmul (may be Q6K)
-            let down_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
-                data: down_packed[down_offset..down_offset + down_stride].to_vec(),
-                in_dim: moe_intermediate, out_dim: hidden_dim, qtype: down_qtype,
-            };
-            let down_data = self.fused_matmul(&swiglu, &down_tensor)?;
+            let down_data = expert_matvec(down_slice, &swiglu, moe_intermediate, hidden_dim, down_qtype)?;
 
             for i in 0..hidden_dim {
                 output[i] += weight * down_data[i];
