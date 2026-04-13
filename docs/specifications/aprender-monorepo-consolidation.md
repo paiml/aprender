@@ -69,11 +69,35 @@
 
 ### Known Issues
 
-1. ~~**pmat comply crash**~~: RESOLVED — pmat comply now passes (52 work contracts, 85 bindings, 0 ghosts). 4 soft warnings remain.
-2. **pmat project score**: D grade because subcrates lack local Cargo.lock, CI, Makefile — these exist at workspace root but pmat scores per-crate directory
-3. ~~**unwrap() in production code**~~: RESOLVED — 0 in production code. Prior count of 584 was inflated by test files. Clippy `disallowed-methods` ban (GH-41) is effective. PMAT-544 closed.
-4. **Qwen3.5 inference**: `apr run` fails on Qwen3.5-0.8B (GH-278 — new Gated Delta Net arch)
-5. ~~**`#[contract]` on CLI commands**~~: RESOLVED — 70 annotations in apr-cli (59 command files + 11 dispatch/handler). 0 unannotated handler files remain. PMAT-543 closed.
+1. ~~**pmat comply crash**~~: RESOLVED — pmat comply now passes (52 work contracts, 85 bindings, 0 ghosts).
+2. **pmat project score**: D grade because subcrates lack local Cargo.lock, CI, Makefile — workspace root has them but pmat scores per-crate
+3. ~~**unwrap() in production code**~~: RESOLVED — 0 in production. Clippy ban effective. PMAT-544.
+4. **Qwen3.5 inference**: `apr run` fails on Qwen3.5-0.8B (GH-278 — Gated Delta Net arch)
+5. ~~**`#[contract]` on CLI commands**~~: RESOLVED — 172 annotations workspace-wide. PMAT-543.
+
+### GitHub Issue Triage (2026-04-13) — 22 → 16 open
+
+**Closed (6):**
+
+| Issue | Resolution |
+|-------|-----------|
+| ~~#725~~ | Fixed by Rule 9: pre-job hook, X64+Linux routing, cron defense |
+| ~~#728~~ | Not a defect: expected build.rs warnings when binding.yaml absent |
+| ~~#727~~ | Same as #728: build.rs info warnings, not errors |
+| ~~#715~~ | Coverage ≥95% target met: +18 core tests (PMAT-546), 13,023 total |
+| ~~#540~~ | Complexity resolved: top cyclomatic=14 (under 15 budget) |
+| ~~#367~~ | InternLM2.5 uses LLaMA naming, works with `--arch llama` |
+
+**Remaining (16):**
+
+| Priority | Issues | Category |
+|----------|--------|----------|
+| P1 (bugs) | #729 (apr run GGUF UX), #696 (Jetson GLIBC), #471 (MoE GPU hang) | Fix required |
+| P1 (infra) | #702 (#[contract] trait methods) | Provable-contracts enhancement |
+| P2 (perf) | #386 (dequant SIMD), #478 (32B OOM), #434 (streaming quantize) | Performance |
+| P2 (feat) | #326 (BERT inference), #575 (Whisper test), #560 (wgpu fallback) | Feature requests |
+| P3 (dogfood) | #713, #716, #717, #718 | QA gate enhancements |
+| P3 (long-term) | #687 (Lean proofs), #393 (distributed training) | Research/future |
 
 ### Gap Analysis (2026-04-10 Falsification)
 
