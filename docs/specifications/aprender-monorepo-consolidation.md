@@ -463,10 +463,12 @@ The Toyota Way treats these as production defects requiring permanent root-cause
 
 | Runner | Count | OS | Labels | Container-Safe | Used For |
 |--------|-------|-----|--------|---------------|----------|
-| intel-clean-room-* | 17 | Linux x86_64 | X64, Linux, clean-room | YES | workspace-test, gate, security, lint, test, coverage |
-| lambda-labs-gpu | 1 | Linux x86_64 | X64, Linux, gpu, cuda | YES | GPU tests (not currently in aprender CI) |
+| intel-clean-room-* | 17 | Linux x86_64 | X64, Linux, clean-room | YES | ALL CI jobs |
 | macmini-local-alfredo | 1 | macOS x86_64 | X64, macOS | NO (no Docker) | Excluded by +Linux label |
 | jetson-edge | 1 | Linux aarch64 | ARM64, Linux | NO (wrong arch) | Excluded by X64 label |
+
+**Removed runners:**
+- ~~lambda-labs-gpu~~ (2026-04-13): Removed — no local container registry, caused checkout failures. GPU tests not in aprender CI.
 
 #### Pre-Job Hook (Permanent Fix)
 
