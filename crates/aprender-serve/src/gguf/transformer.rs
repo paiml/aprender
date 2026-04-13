@@ -188,12 +188,14 @@ impl<'a> QuantizedGGUFTransformer<'a> {
                     rows * cols.div_ceil(QK_K) * super_block_bytes
                 }
                 3 => {
-                    // 3D packed MoE: [ne0, ne1, num_experts]
-                    // Each expert is a 2D matrix [ne0, ne1], quantized independently
-                    let ne0 = dims[0] as usize;
-                    let ne1 = dims[1] as usize;
-                    let num_experts = dims[2] as usize;
-                    let per_expert = ne0 * ne1.div_ceil(QK_K) * super_block_bytes;
+                    // 3D packed MoE after dims.reverse() (reading.rs:309):
+                    // dims = [num_experts, moe_intermediate, hidden_dim]
+                    // Each expert is a 2D matrix quantized with hidden_dim as the row length.
+                    // Q4K quantization runs along the innermost GGUF dimension (ne0 = hidden_dim).
+                    let num_experts = dims[0] as usize;
+                    let moe_intermediate = dims[1] as usize;
+                    let hidden_dim = dims[2] as usize;
+                    let per_expert = moe_intermediate * hidden_dim.div_ceil(QK_K) * super_block_bytes;
                     num_experts * per_expert
                 }
                 _ => {

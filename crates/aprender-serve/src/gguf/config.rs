@@ -639,17 +639,16 @@ impl GGUFConfig {
 
     /// SPEC-MOE-APR-001: Count experts from GGUF tensor names.
     fn count_experts_from_tensors(model: &crate::gguf::GGUFModel) -> usize {
-        // GGUF packed: blk.0.ffn_gate_exps.weight has shape [ne0, ne1, ne2]
-        // where ne0=hidden_dim, ne1=moe_intermediate, ne2=num_experts
+        // GGUF packed: blk.0.ffn_gate_exps.weight
+        // GGUF stores raw ne0/ne1/ne2 then dims.reverse() in parser (reading.rs:309)
+        // After reverse: dims = [num_experts, moe_intermediate, hidden_dim]
+        // So dims[0] = num_experts
         if let Some(t) = model
             .tensors
             .iter()
             .find(|t| t.name == "blk.0.ffn_gate_exps.weight")
         {
-            // Expert count is the LAST dimension (ne2)
-            return t.dims.get(2).copied().unwrap_or(
-                t.dims.first().copied().unwrap_or(0)
-            ) as usize;
+            return t.dims.first().copied().unwrap_or(0) as usize;
         }
         // HF-style per-expert: count model.layers.0.mlp.experts.N patterns
         let mut max_expert = 0usize;
