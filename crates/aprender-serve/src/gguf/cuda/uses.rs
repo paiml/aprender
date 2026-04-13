@@ -133,7 +133,7 @@ impl OwnedQuantizedModelCuda {
         // SPEC-MOE-APR-001: MoE models use hybrid forward (GPU attention + CPU expert FFN).
         // CUDA graphs don't support variable expert routing, so skip graphed path.
         let is_moe = self.model.config.num_experts > 0;
-        let logits = if is_moe {
+        let mut logits = if is_moe {
             // Hybrid path: GPU attention + CPU MoE FFN (no graph)
             self.forward_single_full_cuda_with_cache(token_id, cache, position)?
         } else {
@@ -250,8 +250,15 @@ impl OwnedQuantizedModelCuda {
         let profiling_enabled = self.executor.is_profiling_enabled();
 
         // 2. Check if CUDA graph is captured; if not, use regular path first
-        // The graphed path needs to be initialized via forward_all_layers_gpu_to_logits_graphed
-        if profiling_enabled || !self.executor.has_decode_graph() {
+        // SPEC-MOE-APR-001: MoE models skip graphed path (dynamic expert routing)
+        let is_moe = self.model.config.num_experts > 0;
+        if profiling_enabled || is_moe || !self.executor.has_decode_graph() {
+            if is_moe {
+                // Hybrid path: GPU attention + CPU MoE FFN
+                let logits = self.forward_single_full_cuda_with_cache(token_id, cache, position)?;
+                cache.advance();
+                return Ok(logits
+            }
             // First call - need to capture graph, use regular path
             let mut logits = vec![0.0f32; vocab_size];
             self.executor

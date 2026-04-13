@@ -11,7 +11,7 @@ impl OwnedQuantizedModel {
     ///
     /// Uses `constraints.has_gate_ffn()` to select SwiGLU vs GELU path,
     /// with fused RMSNorm optimization when applicable.
-    fn single_cache_ffn_block(
+    pub(crate) fn single_cache_ffn_block(
         &self,
         hidden: &[f32],
         layer_idx: usize,
