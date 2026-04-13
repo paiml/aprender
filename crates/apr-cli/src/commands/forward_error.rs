@@ -493,3 +493,4 @@ fn estimate_size_from_file(path: &Path) -> &'static str {
 }
 
 include!("ollama.rs");
+include!("forward_error_tests.rs");

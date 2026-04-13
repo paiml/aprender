@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Hu et al. (2022). LoRA: Low-Rank Adaptation of Large Language Models."
+  description: "LoRA target module selection"
+
+kind: AlgorithmContract
+name: lora-target-selection
+version: "1.0.0"
+scope: "crates/aprender-train/src/finetune/"
+
+description: |
+  Selects which modules to apply LoRA adapters: q_proj, v_proj by default. Validates targets exist in model.
+
+equations:
+  target_exists:
+    description: "∀ target ∈ selected: target exists in base model weights"
+    formula: "∀ target ∈ selected: target exists in base model weights"
+
+  default_targets:
+    description: "default selection = {q_proj, v_proj} for decoder-only LLMs"
+    formula: "default selection = {q_proj, v_proj} for decoder-only LLMs"
+
+falsification:
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_001
+    description: "∀ target ∈ selected: target exists in base model weights"
+    test: "Related tests in crates/aprender-train/src/finetune/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-LORA_TARGET_SELECTION_V1_002
+    description: "default selection = {q_proj, v_proj} for decoder-only LLMs"
+    test: "Related tests in crates/aprender-train/src/finetune/"
+    evidence: "cargo test --lib"
