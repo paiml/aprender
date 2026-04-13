@@ -1,0 +1,111 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: "PAIML Engineering"
+  description: "CUDA MoE expert dispatch kernel — single launch for all top-k experts"
+  references:
+    - "SPEC-MOE-APR-001 v2.0 Phase 7: CUDA MoE kernel"
+    - "llama.cpp ggml-cuda/mmvq.cu: mul_mat_vec_q_moe kernel"
+    - "vLLM vllm/model_executor/layers/fused_moe/fused_moe.py: fused_moe_kernel"
+    - "FALSIFY-MOE-008: throughput >= 10 tok/s (Phase 5 result: 1.76)"
+    - "Target: 1.5x parity with llama.cpp (92 tok/s → target 61+ tok/s)"
+  tags:
+    - moe
+    - cuda
+    - performance
+    - kernel
+    - q4k
+
+constants:
+  LLAMACPP_BASELINE_TOKS: 92
+  PARITY_FACTOR: 1.5
+  TARGET_TOKS: 61  # 92 / 1.5
+  WARP_SIZE: 32
+  ROWS_PER_BLOCK: 2
+
+equations:
+  cuda_moe_dispatch:
+    formula: |
+      moe_forward_cuda(hidden, gate_weight, packed_3d_gate, packed_3d_up, packed_3d_down, expert_ids, weights):
+        # Step 1: Router on CPU or GPU (softmax + top-k)
+        expert_ids, weights = route(hidden, gate_weight, top_k)
+
+        # Step 2: Single CUDA kernel launch for all top-k experts
+        # Grid: (nblocks_rows, top_k)  — rows of output × number of active experts
+        # Each block: (warp_size, 1)
+        # Expert data indexed via stride: expert_id * stride_channel
+        FOR expert_slot IN 0..top_k:
+          expert_id = expert_ids[expert_slot]
+          gate_offset = expert_id * gate_stride
+          up_offset = expert_id * up_stride
+          down_offset = expert_id * down_stride
+
+          gate_out = cuda_q4k_matvec(packed_3d_gate + gate_offset, hidden, hidden_dim, moe_intermediate)
+          up_out = cuda_q4k_matvec(packed_3d_up + up_offset, hidden, hidden_dim, moe_intermediate)
+          swiglu = SiLU(gate_out) * up_out
+          down_out = cuda_q6k_matvec(packed_3d_down + down_offset, swiglu, moe_intermediate, hidden_dim)
+
+          output += weights[expert_slot] * down_out
+    domain: "hidden state on GPU + packed 3D expert tensors in GPU memory"
+    codomain: "MoE output [hidden_dim] on GPU"
+    invariants:
+      - "Single CUDA kernel launch per MoE layer (not per expert)"
+      - "Expert data accessed via stride offset — no per-expert buffer allocation"
+      - "Q4K/Q6K dot product uses existing trueno vec_dot_q4k kernel"
+      - "Output identical to CPU path (FALSIFY-STRIDE-001 equivalence)"
+    references:
+      - "llama.cpp mul_mat_vec_q_moe: stride_channel_x indexing"
+      - "vLLM fused_moe_kernel: sorted token blocks for L2 reuse"
+
+proof_obligations:
+  - type: bound
+    property: "Throughput >= 61 tok/s (1.5x parity with llama.cpp)"
+    formal: "measured_tok_s >= LLAMACPP_BASELINE_TOKS / PARITY_FACTOR"
+    tolerance: 0.0
+    applies_to: cuda_moe_dispatch
+  - type: postcondition
+    property: "Output matches CPU path"
+    formal: "for all inputs: |cuda_output - cpu_output| < 1e-3 per element"
+    applies_to: cuda_moe_dispatch
+
+falsification_tests:
+  - id: FALSIFY-CUDA-MOE-001
+    rule: "CUDA MoE output matches CPU MoE output"
+    prediction: "Same quantized matmul, same routing — results within float tolerance"
+    test: |
+      Run same prompt through CPU and CUDA MoE paths.
+      Assert max element-wise difference < 1e-3.
+    if_fails: "Stride offset or Q4K kernel produces different results on GPU"
+
+  - id: FALSIFY-CUDA-MOE-002
+    rule: "Throughput >= 61 tok/s on Blackwell GB10"
+    prediction: "Single kernel launch eliminates 1152 per-token dispatch overhead"
+    test: |
+      probar bench --model qwen3-coder-30b --tokens 64 --gpu
+      Assert tok/s >= 61.0
+      Compare: llama.cpp = 92 tok/s, target = 92/1.5 = 61
+    if_fails: "Profile CUDA kernel — check occupancy, memory bandwidth, kernel latency"
+
+  - id: FALSIFY-CUDA-MOE-003
+    rule: "No OOM on GPU for MoE expert weights"
+    prediction: "Packed 3D tensors fit in GB10 unified memory (17 GB model)"
+    test: |
+      Load full Qwen3-Coder-30B-A3B with CUDA. Check GPU memory < 80% of total.
+    if_fails: "Expert tensors too large — use CPU offload for non-active experts"
+
+kani_harnesses:
+  - id: KANI-CUDA-MOE-001
+    obligation: "Expert stride bounds on GPU"
+    property: "for all expert_id in [0, num_experts): offset + stride <= packed_size"
+    bound: 128
+    strategy: bounded_int
+
+qa_gate:
+  id: F-CUDA-MOE-001
+  name: moe-cuda-kernel-v1 Contract
+  description: "Quality gate for CUDA MoE kernel (Phase 7)"
+  checks:
+    - cpu_gpu_parity
+    - throughput_gate
+    - memory_bounded
+  pass_criteria: "All 3 falsification tests pass, throughput >= 61 tok/s"

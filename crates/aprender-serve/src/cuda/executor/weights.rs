@@ -368,9 +368,11 @@ impl CudaExecutor {
             let (attn_k_ptr, attn_k_len) = get_qweight(&k_name)?;
             let (attn_v_ptr, attn_v_len) = get_qweight(&v_name)?;
             let (attn_output_ptr, attn_output_len) = get_qweight(&o_name)?;
-            let (ffn_gate_ptr, ffn_gate_len) = get_qweight(&gate_name)?;
-            let (ffn_up_ptr, ffn_up_len) = get_qweight(&up_name)?;
-            let (ffn_down_ptr, ffn_down_len) = get_qweight(&down_name)?;
+            // SPEC-MOE-APR-001: MoE layers have no dense FFN weights — use (0, 0) placeholder.
+            // MoE dispatch handles expert weights via stride-based packed tensor access.
+            let (ffn_gate_ptr, ffn_gate_len) = get_qweight(&gate_name).unwrap_or((0, 0));
+            let (ffn_up_ptr, ffn_up_len) = get_qweight(&up_name).unwrap_or((0, 0));
+            let (ffn_down_ptr, ffn_down_len) = get_qweight(&down_name).unwrap_or((0, 0));
             let (attn_norm_ptr, attn_norm_len) = get_rmsnorm(&attn_norm_name)?;
             let (ffn_norm_ptr, ffn_norm_len) = get_rmsnorm(&ffn_norm_name)?;
 
@@ -379,9 +381,10 @@ impl CudaExecutor {
             let attn_k_qtype = self.resolve_qtype(&k_name);
             let attn_v_qtype = self.resolve_qtype(&v_name);
             let attn_output_qtype = self.resolve_qtype(&o_name);
-            let ffn_gate_qtype = self.resolve_qtype(&gate_name);
-            let ffn_up_qtype = self.resolve_qtype(&up_name);
-            let ffn_down_qtype = self.resolve_qtype(&down_name);
+            // MoE layers: qtype defaults to 0 (unused — MoE dispatch handles its own qtypes)
+            let ffn_gate_qtype = if ffn_gate_ptr != 0 { self.resolve_qtype(&gate_name) } else { 0 };
+            let ffn_up_qtype = if ffn_up_ptr != 0 { self.resolve_qtype(&up_name) } else { 0 };
+            let ffn_down_qtype = if ffn_down_ptr != 0 { self.resolve_qtype(&down_name) } else { 0 };
 
             // Log if non-Q4K types detected (for debugging mixed-quant models)
             self.log_mixed_quant_types(
