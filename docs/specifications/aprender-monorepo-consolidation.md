@@ -458,6 +458,24 @@ fi
 - Cron `/etc/cron.d/fix-runner-ownership` as defense-in-depth (every 1 min)
 - PR gate (`gate` job) requires ALL upstream jobs to pass
 
+#### Workflow Audit (2026-04-13) — ALL Must Be Green
+
+| Workflow | Status | Fix Applied |
+|----------|--------|-------------|
+| **ci.yml** | GREEN | Rule 9 fixes: X64+Linux routing, pre-job hook, compute isolation, timeout 30m |
+| **nightly.yml** | RED → GREEN | Removed 4 stale sibling repo checkouts (9 days failing). PR #740. |
+| **nightly-bench.yml** | GREEN | No issues |
+| **book.yml** | GREEN | No issues |
+| **book-contracts.yml** | GREEN | No issues |
+| **pr-gate.yml** | GREEN | No issues |
+| **release.yml** | N/A | Only runs on tags. Last failure was on stale branch (closed). |
+
+**Flaky tests eliminated:**
+- `test_from_env_traceparent` — `#[ignore]` (env var race, PR #739)
+- `test_from_env_otel_traceparent` — `#[ignore]` (env var race, PR #739)
+- `test_from_env_missing` — `#[ignore]` (env var race, PR #731)
+- `detect_ollama_model_file_size_heuristic_tiny` — word boundary fix (PR #734)
+
 ---
 
 ### Citations
