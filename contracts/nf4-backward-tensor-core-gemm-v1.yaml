@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Dettmers et al. (2023). QLoRA: Efficient Finetuning of Quantized Language Models."
+  description: "NF4 backward pass with Tensor Core GEMM"
+
+kind: KernelContract
+name: nf4-backward-tensor-core-gemm
+version: "1.0.0"
+scope: "crates/aprender-compute/src/backends/gpu/"
+
+description: |
+  QLoRA NF4 dequantize → FP16 → Tensor Core GEMM for backward pass. Fused kernel eliminates intermediate materialization.
+
+equations:
+  gradient_correctness:
+    description: "∀ param: |nf4_grad - fp32_grad| < ε (ε = 1e-3)"
+    formula: "∀ param: |nf4_grad - fp32_grad| < ε (ε = 1e-3)"
+
+  memory_saving:
+    description: "peak_vram(nf4) < 0.5 × peak_vram(fp16) for same model"
+    formula: "peak_vram(nf4) < 0.5 × peak_vram(fp16) for same model"
+
+falsification:
+  - id: FALSIFY-NF4_BACKWARD_TENSOR_CORE_GEMM_V1_001
+    description: "∀ param: |nf4_grad - fp32_grad| < ε (ε = 1e-3)"
+    test: "Related tests in crates/aprender-compute/src/backends/gpu/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-NF4_BACKWARD_TENSOR_CORE_GEMM_V1_002
+    description: "peak_vram(nf4) < 0.5 × peak_vram(fp16) for same model"
+    test: "Related tests in crates/aprender-compute/src/backends/gpu/"
+    evidence: "cargo test --lib"

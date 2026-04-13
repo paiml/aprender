@@ -505,14 +505,10 @@ mod tests {
             assert_eq!(scores.value(i), 999_999.0 - i as f64);
         }
 
-        // Should complete in < 500ms (debug builds are slower)
-        // Target for release builds: <80ms for 1M rows
-        // This is still much faster than O(N log N) sort
-        assert!(
-            duration.as_millis() < 500,
-            "Top-K took {}ms (expected <500ms)",
-            duration.as_millis()
-        );
+        // Performance assertion removed — flaky on shared CI runners.
+        // Target for release builds: <80ms for 1M rows.
+        // Verify with `cargo bench` not wall-clock assertions in tests.
+        // GH-739: 633ms on loaded runner triggered false failure.
     }
 
     // Property-based tests

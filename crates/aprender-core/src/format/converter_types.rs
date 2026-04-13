@@ -80,11 +80,24 @@ impl Source {
     }
 
     /// Get the default model file for this source
+    ///
+    /// GH-729: GGUF-only repos (name contains "GGUF") should not default to
+    /// `model.safetensors`. We return a sentinel that the download layer
+    /// can use to try GGUF files instead.
     #[must_use]
     pub fn default_file(&self) -> &str {
         match self {
             Self::HuggingFace { file: Some(f), .. } => f,
-            Self::HuggingFace { file: None, .. } => "model.safetensors",
+            Self::HuggingFace {
+                file: None, repo, ..
+            } => {
+                if repo.to_lowercase().contains("gguf") {
+                    // GGUF-only repo — don't try model.safetensors (404 guaranteed)
+                    "model.gguf"
+                } else {
+                    "model.safetensors"
+                }
+            }
             Self::Local(p) => p.to_str().unwrap_or("model.safetensors"),
             Self::Url(u) => u.rsplit('/').next().unwrap_or("model.safetensors"),
         }
