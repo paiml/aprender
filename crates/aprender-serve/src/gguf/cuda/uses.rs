@@ -130,25 +130,32 @@ impl OwnedQuantizedModelCuda {
         // PAR-083: Use pre-allocated embed_buf to eliminate per-token heap allocation.
         self.model.embed_into(token_id, &mut self.embed_buf);
 
-        // 2. Fully GPU-resident forward: layers + output norm + LM head
-        // PAR-054: Use CUDA graph-captured path for decode (reduces 280 launches to 1)
-        // Only 2 syncs total: embedding upload + logits download
-        let mut logits = vec![0.0f32; vocab_size];
-        self.executor
-            .forward_all_layers_gpu_to_logits_graphed(
-                &self.embed_buf,
-                &mut logits,
-                position as u32,
-                num_layers,
-                hidden_dim as u32,
-                intermediate_dim as u32,
-                vocab_size as u32,
-                eps,
-            )
-            .map_err(|e| RealizarError::UnsupportedOperation {
-                operation: "forward_gpu_resident".to_string(),
-                reason: format!("forward_all_layers_gpu_to_logits_graphed failed: {}", e),
-            })?;
+        // SPEC-MOE-APR-001: MoE models use hybrid forward (GPU attention + CPU expert FFN).
+        // CUDA graphs don't support variable expert routing, so skip graphed path.
+        let is_moe = self.model.config.num_experts > 0;
+        let logits = if is_moe {
+            // Hybrid path: GPU attention + CPU MoE FFN (no graph)
+            self.forward_single_full_cuda_with_cache(token_id, cache, position)?
+        } else {
+            // Dense path: fully GPU-resident with CUDA graph
+            let mut logits_buf = vec![0.0f32; vocab_size];
+            self.executor
+                .forward_all_layers_gpu_to_logits_graphed(
+                    &self.embed_buf,
+                    &mut logits_buf,
+                    position as u32,
+                    num_layers,
+                    hidden_dim as u32,
+                    intermediate_dim as u32,
+                    vocab_size as u32,
+                    eps,
+                )
+                .map_err(|e| RealizarError::UnsupportedOperation {
+                    operation: "forward_gpu_resident".to_string(),
+                    reason: format!("forward_all_layers_gpu_to_logits_graphed failed: {}", e),
+                })?;
+            logits_buf
+        };
 
         // 3. Add LM head bias if present (CPU - fast)
         if let Some(ref bias) = self.model.lm_head_bias {
