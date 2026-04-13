@@ -71,8 +71,15 @@ jobs:
       - name: Ensure target is installed
         run: rustup target add ${{ matrix.target }}
 
-      - name: Build release binary
+      - name: Build release binary (unix)
+        if: runner.os != 'Windows'
         run: cargo build --release -p apr-cli --target ${{ matrix.target }}
+
+      - name: Build release binary (windows — no visualization feature)
+        if: runner.os == 'Windows'
+        run: cargo build --release -p apr-cli --target ${{ matrix.target }} --no-default-features --features inference
+        # renacer 0.11 on crates.io uses nix::sys without #[cfg(unix)].
+        # Drop optional visualization feature on Windows until crates.io updated.
 
       - name: Package (unix)
         if: runner.os != 'Windows'

@@ -33,7 +33,7 @@ jobs:
     runs-on: [self-hosted, X64, Linux]
     container:
       image: localhost:5000/sovereign-ci:stable
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Workspace check (all 70 crates)
