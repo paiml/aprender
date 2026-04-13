@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Dao et al. (2022). FlashAttention: Fast and Memory-Efficient Exact Attention."
+  description: "Attention backward pass kernel"
+
+kind: KernelContract
+name: attention-backward
+version: "1.0.0"
+scope: "crates/aprender-train/src/"
+
+description: |
+  Backward pass for scaled dot-product attention: dQ, dK, dV from dO. Tiled for memory efficiency.
+
+equations:
+  gradient_correctness:
+    description: "∀ head: |tiled_dQ - naive_dQ| < ε"
+    formula: "∀ head: |tiled_dQ - naive_dQ| < ε"
+
+  causal_mask:
+    description: "∀ i<j: attention_weight[i,j] == 0 (causal masking preserved in backward)"
+    formula: "∀ i<j: attention_weight[i,j] == 0 (causal masking preserved in backward)"
+
+falsification:
+  - id: FALSIFY-ATTENTION_BACKWARD_V1_001
+    description: "∀ head: |tiled_dQ - naive_dQ| < ε"
+    test: "Related tests in crates/aprender-train/src/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-ATTENTION_BACKWARD_V1_002
+    description: "∀ i<j: attention_weight[i,j] == 0 (causal masking preserved in backward)"
+    test: "Related tests in crates/aprender-train/src/"
+    evidence: "cargo test --lib"

@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "NVIDIA cuBLAS documentation; Micikevicius et al. (2018). Mixed Precision Training."
+  description: "FP16 cuBLAS GEMM for inference"
+
+kind: KernelContract
+name: fp16-cublas-gemm
+version: "1.0.0"
+scope: "crates/aprender-compute/src/backends/gpu/"
+
+description: |
+  Half-precision GEMM via cuBLAS for inference hot path. 2x throughput vs FP32 on Tensor Cores.
+
+equations:
+  precision_bound:
+    description: "∀ i,j: |fp16_result[i,j] - fp32_result[i,j]| < ε where ε = 1e-2"
+    formula: "∀ i,j: |fp16_result[i,j] - fp32_result[i,j]| < ε where ε = 1e-2"
+
+  throughput_gain:
+    description: "throughput(fp16) ≥ 1.5 × throughput(fp32) for M,N ≥ 512"
+    formula: "throughput(fp16) ≥ 1.5 × throughput(fp32) for M,N ≥ 512"
+
+falsification:
+  - id: FALSIFY-FP16_CUBLAS_GEMM_V1_001
+    description: "∀ i,j: |fp16_result[i,j] - fp32_result[i,j]| < ε where ε = 1e-2"
+    test: "Related tests in crates/aprender-compute/src/backends/gpu/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-FP16_CUBLAS_GEMM_V1_002
+    description: "throughput(fp16) ≥ 1.5 × throughput(fp32) for M,N ≥ 512"
+    test: "Related tests in crates/aprender-compute/src/backends/gpu/"
+    evidence: "cargo test --lib"
