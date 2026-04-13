@@ -77,24 +77,25 @@
 
 ### Gap Analysis (2026-04-10 Falsification)
 
-**Closed gaps (6 of 9):**
+**Closed gaps (7 of 10):**
 
 | Gap | Resolution |
 |-----|------------|
-| ~~unwrap() in production code~~ | 0 in production. 584 were test-only. Clippy ban effective. PMAT-544 closed. |
-| ~~`#[contract]` on CLI commands~~ | 172 annotations workspace-wide (70 in apr-cli). PMAT-543 closed. |
-| ~~Phase 2g: QA playbook~~ | 5 crates ported, 2,792 tests, 256 playbooks. PMAT-532 closed. |
-| ~~Model type taxonomy~~ | `is_llm()` + 3 new Architecture variants + import guards. PMAT-526 closed. |
-| ~~24 unauthorized binaries~~ | 20 crates, 21 binaries. 2 migrated to `[[example]]` (serve, train). 8 legacy remain. PMAT-545. |
-| ~~ratatui migration~~ | 0 deps remain. PMAT-539 closed. |
+| ~~unwrap() in production code~~ | 0 in production. 584 were test-only. Clippy ban effective. PMAT-544. |
+| ~~`#[contract]` on CLI commands~~ | 172 annotations workspace-wide (70 in apr-cli). PMAT-543. |
+| ~~Phase 2g: QA playbook~~ | 5 crates ported, 2,792 tests, 256 playbooks. PMAT-532. |
+| ~~Model type taxonomy~~ | 19 Architecture variants, 18 model-family YAMLs, 1:1 parity enforced. PMAT-526 + PMAT-546. |
+| ~~24 unauthorized binaries~~ | 22 crates, 24 binaries classified. 8 legacy remain (low urgency). PMAT-545. |
+| ~~ratatui migration~~ | 0 deps remain. 45K lines dead code removed. PMAT-539. |
+| ~~Wasmtime 27 advisories~~ | Upgraded to wasmtime 43. 5 old exemptions removed. 8 cranelift advisories remain (test-only). PR #731. |
 
 **Open gaps (3 of 10):**
 
 | Gap | Severity | Status |
 |-----|----------|--------|
-| **apr-cli coverage** | P0 | Phases 0a–4 done. 4,633 lib + 108 integration tests. Only Phase 5 (long tail) remains. PMAT-540. |
-| **Workspace coverage ~55%** | P1 | Per-crate baseline measured (serve 57%, train 54%, compute 49%). Prior "46%" was instrumentation artifact. PMAT-541. |
-| **Ghost contracts** | P1 | 162 contract YAMLs referenced in code but missing from `contracts/`. Created 6 (sparse-spmv, avx512-q4k, avx512-blis, chat-template, compression-roundtrip, tokenizer). 156 remain. PMAT-547. |
+| **apr-cli coverage** | P0 | Phases 0a–4 done. 4,633 lib + 108 integration. Phase 5 (long tail) remaining. PMAT-540. |
+| **Workspace coverage ~55%** | P1 | Phase A+B done. 101K tests across 74 crates. Phase C (targeted gaps) remaining. PMAT-541. |
+| **Ghost contracts** | P1 | 162 discovered, 9 created. ~153 remain (many from generated code). PMAT-547. |
 
 ### Coverage Improvement Plan — Chain of Thought
 
@@ -213,27 +214,29 @@ the artifact suggested (46%). The coverage strategy should focus on apr-cli (P0)
 then serve inference paths and compute SIMD kernels (P1), not chase the phantom
 workspace-wide number.
 
-### PMAT Work Items (2026-04-10)
+### PMAT Work Items (2026-04-13)
 
-**Closed:**
+**Closed (8):**
 
 | Epic | Status |
 |------|--------|
-| ~~PMAT-526 (Model Type)~~ | `is_llm()` + 3 new Architecture variants + import guards + contract. 6 falsification tests. Extended by PMAT-546. |
-| ~~PMAT-546 (Model-Family Parity)~~ | 5 new Architecture variants (FalconH1, Mamba, Moonshine, OpenElm, Rwkv7) + 2 new YAML contracts (gptneox, opt). 19 variants ↔ 18 YAMLs: 1:1 parity enforced. 6 falsification tests. Contract: `model-family-parity-v1.yaml`. |
+| ~~PMAT-526 (Model Type)~~ | `is_llm()` + 3 Architecture variants + import guards. Extended by PMAT-546. |
 | ~~PMAT-532 (QA Migration)~~ | 5 crates ported, 2,792 tests, 256 playbooks. Source repo archived. |
+| ~~PMAT-539 (Ratatui)~~ | 0 deps remain. 45K lines dead code removed. |
+| ~~PMAT-540-core (Core Tests)~~ | 13,023 tests (+18 PMAT-546 parity/inference). Architecture mapping fix. |
+| ~~PMAT-542 (Co-Evolution)~~ | 24 new tests paired with contracts. Rule 7 applied. |
 | ~~PMAT-543 (CLI Contracts)~~ | 172 annotations workspace-wide. 0 unannotated CLI handlers. |
-| ~~PMAT-544 (unwrap)~~ | 0 production unwrap(). False positive from test files. Clippy ban effective. |
-| ~~PMAT-545 (Binary Audit)~~ | 22 crates, 24 binaries classified. Contract v2.0 with 3 falsification tests. |
+| ~~PMAT-544 (unwrap)~~ | 0 production unwrap(). Clippy ban effective. |
+| ~~PMAT-546 (Model-Family Parity)~~ | 5 new Architecture variants + 2 YAML contracts. 19↔18 parity enforced. Contract: `model-family-parity-v1.yaml`. |
 
-**Open:**
+**Open (4):**
 
 | Epic | Priority | Next action |
 |------|----------|-------------|
-| PMAT-540 (apr-cli coverage) | **P0** | Phases 0a–4 **DONE**. 4,633 lib + 108 integration. Next: Phase 5 (long tail). |
-| PMAT-541 (workspace coverage) | **P1** | Phase A+B **DONE**. Per-crate: serve 57%, train 54%, compute 49%. 101K `#[test]` across 74 crates. 5 zero-test crates are bench/canary/codegen (expected). Next: Phase C. |
-| PMAT-540-core (aprender-core) | **P0** | 24 new tokenizer_loader tests + 1 architecture mapping fix. 13,005 tests pass (+24). |
-| PMAT-542 (co-evolution) | **P1** | Applied: 24 new tests paired with `is_llm()` contract, architecture variant tests, falsification fixes. |
+| PMAT-540 (apr-cli coverage) | **P0** | Phases 0a–4 **DONE**. 4,633 lib + 108 integration. Phase 5 (long tail): property-based tests for ~150 command handler files. |
+| PMAT-541 (workspace coverage) | **P1** | Phase A+B **DONE** (per-crate density: 101K tests, 5 tiers). Phase C: identify real gaps in serve inference paths + compute SIMD kernels. |
+| PMAT-545 (Binary Audit) | **P2** | 22 crates, 24 binaries classified. 8 legacy binaries with `apr` migration paths. Low urgency — all work. |
+| PMAT-547 (Ghost Contracts) | **P1** | 162 contract YAMLs referenced in code but missing. 9 created (sparse-spmv, avx512-q4k, avx512-blis, chat-template, compression-roundtrip, tokenizer, parser-soundness, memory-safety, encoder-roundtrip). ~153 remain. Many from generated code. |
 
 ---
 
