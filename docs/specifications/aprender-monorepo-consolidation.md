@@ -141,7 +141,8 @@ genuinely undertested code.
 | 2 | 19 unit tests for all 5 dispatch sub-dispatchers | 19 new lib tests | +dispatch fan-out covered | **DONE** — 47 total dispatch tests |
 | 3 | Model fixture | N/A | N/A | **SKIPPED** — rich APR fixture already covers 20+ commands; GGUF fixture exists |
 | 4 | Top-5 files: serve_plan (8), check (6), runs (23), distill/train (10 integration) | 37 lib + 10 integration | handler logic covered | **DONE** — 4,633 lib + 108 integration |
-| 5 | Long tail: property-based tests for remaining 150 files | ~6,500 lines | bulk coverage | TODO — next iteration |
+| 5 | Long tail: pure function tests for untested handlers | 46 new tests | train (15), forward_error (25), inspect (6) | **DONE** — covers train.rs, QA helpers, inspect validation |
+| 6 | Remaining handlers: kernel (CUDA), gguf (fixture), profile_safetensors (fixture) | IO-heavy | requires model fixtures or CUDA | BLOCKED — remaining handlers are IO-bound or feature-gated |
 
 **Measured coverage (2026-04-10, stable toolchain)**:
 - apr-cli lib: **~50%** lines (4,633 tests)
@@ -234,7 +235,7 @@ workspace-wide number.
 
 | Epic | Priority | Next action |
 |------|----------|-------------|
-| PMAT-540 (apr-cli coverage) | **P0** | Phases 0a–4 **DONE**. 4,633 lib + 108 integration. Phase 5 (long tail): property-based tests for ~150 command handler files. |
+| PMAT-540 (apr-cli coverage) | **P0** | Phases 0a–5 **DONE**. 4,693+ lib + 108 integration. Phase 6 BLOCKED: remaining untested handlers are IO-bound (need model fixtures) or CUDA-gated. |
 | PMAT-541 (workspace coverage) | **P1** | Phase A+B **DONE** (per-crate density: 101K tests, 5 tiers). Phase C: identify real gaps in serve inference paths + compute SIMD kernels. |
 | PMAT-545 (Binary Audit) | **P2** | 22 crates, 24 binaries classified. 8 legacy binaries with `apr` migration paths. Low urgency — all work. |
 | PMAT-547 (Ghost Contracts) | **P1** | 162 contract YAMLs referenced in code but missing. **19 created** in 3 batches. ~143 remain (majority from `generated_contracts.rs`). |
