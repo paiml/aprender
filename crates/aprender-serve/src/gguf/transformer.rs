@@ -179,14 +179,27 @@ impl<'a> QuantizedGGUFTransformer<'a> {
     /// Calculate byte size for a quantized tensor based on its type and dimensions.
     fn tensor_byte_size(qtype: u32, num_elements: usize, dims: &[u64]) -> Result<usize> {
         /// Row-padded K-quant byte size: each row pads to super-block boundaries.
+        /// For 3D MoE packed tensors [ne0, ne1, ne2], treat as ne2 × (2D matrix [ne0, ne1]).
         fn k_quant_bytes(dims: &[u64], super_block_bytes: usize) -> usize {
-            if dims.len() == 2 {
-                let rows = dims[0] as usize;
-                let cols = dims[1] as usize;
-                rows * cols.div_ceil(QK_K) * super_block_bytes
-            } else {
-                let n: usize = dims.iter().map(|&d| d as usize).product();
-                n.div_ceil(QK_K) * super_block_bytes
+            match dims.len() {
+                2 => {
+                    let rows = dims[0] as usize;
+                    let cols = dims[1] as usize;
+                    rows * cols.div_ceil(QK_K) * super_block_bytes
+                }
+                3 => {
+                    // 3D packed MoE: [ne0, ne1, num_experts]
+                    // Each expert is a 2D matrix [ne0, ne1], quantized independently
+                    let ne0 = dims[0] as usize;
+                    let ne1 = dims[1] as usize;
+                    let num_experts = dims[2] as usize;
+                    let per_expert = ne0 * ne1.div_ceil(QK_K) * super_block_bytes;
+                    num_experts * per_expert
+                }
+                _ => {
+                    let n: usize = dims.iter().map(|&d| d as usize).product();
+                    n.div_ceil(QK_K) * super_block_bytes
+                }
             }
         }
 
