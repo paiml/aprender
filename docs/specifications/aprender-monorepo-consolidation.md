@@ -10,7 +10,7 @@
 **Falsification**: 13 MONO + 7 BUILD + 7 CLI + 4 RATATUI + 4 CMD-SAFETY + 5 PARITY = 40 falsification conditions
 **Integration Tests**: `tests/monorepo_invariants.rs` (8 tests), `crates/apr-cli/tests/cli_commands.rs` (6 tests, 56 commands)
 **Tests**: 4,633 apr-cli + 13,023 core + 1,371 contracts + 2,792 QA = 21,819 (key crates); 28,700+ workspace-wide
-**Contracts**: 803 YAML files, 172 `#[contract]` annotations (70 apr-cli + 52 serve/compute/train + 50 other crates)
+**Contracts**: 810 YAML files, 172 `#[contract]` annotations (70 apr-cli + 52 serve/compute/train + 50 other crates)
 
 ### Changes since v2.0 (2026-04-10 Falsification Audit)
 
@@ -61,7 +61,7 @@
 | Clippy errors | 0 | 0 | PASS |
 | `#[contract]` annotations | **172** (70 cli + 52 serve/compute/train + 50 other) | ≥50 | **PASS** |
 | `#[contract]` on CLI commands | **70** (59 cmd files + 11 dispatch) | ≥57 | **PASS** — PMAT-543 |
-| Contract YAML files | 803 | — | INFO — +4 PMAT-546: gptneox.yaml, opt.yaml, model-family-parity-v1.yaml |
+| Contract YAML files | 810 | — | INFO — +11 (PMAT-546: 3, PMAT-547: 6, sparse-spmv: 1, wasmtime: 1) |
 | unwrap() in production code | **0** (test-only: 584 in test files) | 0 | **PASS** — clippy ban effective |
 | pmat TDG | 92.5/100 (A) | A+ | **PASS** |
 | pmat comply | PASS (4 warnings) | PASS | **PASS** — 52 work contracts valid, 85 bindings verified, 0 ghosts |
@@ -94,7 +94,7 @@
 |-----|----------|--------|
 | **apr-cli coverage** | P0 | Phases 0a–4 done. 4,633 lib + 108 integration tests. Only Phase 5 (long tail) remains. PMAT-540. |
 | **Workspace coverage ~55%** | P1 | Per-crate baseline measured (serve 57%, train 54%, compute 49%). Prior "46%" was instrumentation artifact. PMAT-541. |
-| **Ghost contracts** | P1 | 162 contract YAMLs referenced in code but missing from `contracts/`. Created `sparse-spmv-v1.yaml` (was ghost). PMAT-547. |
+| **Ghost contracts** | P1 | 162 contract YAMLs referenced in code but missing from `contracts/`. Created 6 (sparse-spmv, avx512-q4k, avx512-blis, chat-template, compression-roundtrip, tokenizer). 156 remain. PMAT-547. |
 
 ### Coverage Improvement Plan — Chain of Thought
 
