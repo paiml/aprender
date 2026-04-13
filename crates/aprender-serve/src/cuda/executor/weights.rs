@@ -469,10 +469,10 @@ impl CudaExecutor {
             };
 
             // GH-279: Validate that all architecture-required fields are non-zero.
-            // This is the Poka-Yoke enforcement point — if a loader forgot to
-            // populate a required field, we fail HERE (not during inference).
+            // SPEC-MOE-APR-001: MoE layers skip FFN validation (experts use stride dispatch).
             use crate::cuda::types::ValidatedLayerWeights;
-            let validated = ValidatedLayerWeights::validate(raw, arch, layer_idx)
+            let is_moe_layer = ffn_gate_ptr == 0 && ffn_up_ptr == 0;
+            let validated = ValidatedLayerWeights::validate_with_moe(raw, arch, layer_idx, is_moe_layer)
                 .map_err(|e| GpuError::InvalidLaunchConfig(e.to_string()))?;
 
             indexed.push(validated);

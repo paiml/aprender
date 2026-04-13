@@ -537,9 +537,25 @@ impl ValidatedLayerWeights {
         arch: &ArchConstraints,
         layer_idx: usize,
     ) -> Result<Self, WeightValidationError> {
+        Self::validate_with_moe(raw, arch, layer_idx, false)
+    }
+
+    /// SPEC-MOE-APR-001: Validate with MoE awareness.
+    /// MoE layers skip FFN weight validation (experts use stride-based packed dispatch).
+    pub fn validate_with_moe(
+        raw: IndexedLayerWeights,
+        arch: &ArchConstraints,
+        layer_idx: usize,
+        is_moe_layer: bool,
+    ) -> Result<Self, WeightValidationError> {
         let roles = required_roles(arch);
 
         for &role in roles {
+            // MoE layers: FFN weights are handled by stride-based expert dispatch,
+            // not the indexed weight table. Skip validation for FFN roles.
+            if is_moe_layer && role.is_ffn() {
+                continue;
+            }
             let (ptr, len) = Self::get_field(&raw, role);
             if ptr == 0 && len == 0 {
                 return Err(WeightValidationError {

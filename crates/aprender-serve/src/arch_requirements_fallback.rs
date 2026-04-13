@@ -43,6 +43,15 @@ pub enum WeightRole {
 }
 
 impl WeightRole {
+    /// Returns true if this role is an FFN weight (gate, up, down).
+    /// MoE layers handle these via stride-based expert dispatch, not indexed weights.
+    #[must_use]
+    pub const fn is_ffn(&self) -> bool {
+        matches!(self, Self::FfnGate | Self::FfnUp | Self::FfnDown)
+    }
+}
+
+impl WeightRole {
     /// Returns the field name prefix as it appears in `IndexedLayerWeights`.
     #[must_use]
     pub const fn field_name(&self) -> &'static str {
