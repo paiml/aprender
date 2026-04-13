@@ -275,6 +275,7 @@ impl ChaosConfig {
     /// - `RLIMIT_AS` (address space / virtual memory) if `memory_limit` > 0
     /// - `RLIMIT_CPU` (CPU time) derived from `cpu_limit` fraction
     /// - `RLIMIT_RTTIME` (soft timeout hint) from timeout
+    #[cfg(unix)]
     pub fn apply_limits(&self) -> Result<(), ChaosError> {
         use nix::sys::resource::{setrlimit, Resource};
 
@@ -307,6 +308,12 @@ impl ChaosConfig {
         }
 
         Ok(())
+    }
+
+    /// Windows stub — resource limits not available on Windows.
+    #[cfg(not(unix))]
+    pub fn apply_limits(&self) -> Result<(), ChaosError> {
+        Ok(()) // No-op on Windows — rlimits are Unix-only
     }
 }
 
