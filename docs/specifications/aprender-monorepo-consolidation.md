@@ -10,7 +10,7 @@
 **Falsification**: 13 MONO + 7 BUILD + 7 CLI + 4 RATATUI + 4 CMD-SAFETY + 5 PARITY = 40 falsification conditions
 **Integration Tests**: `tests/monorepo_invariants.rs` (8 tests), `crates/apr-cli/tests/cli_commands.rs` (6 tests, 56 commands)
 **Tests**: 4,633 apr-cli + 13,023 core + 1,371 contracts + 2,792 QA = 21,819 (key crates); 28,700+ workspace-wide
-**Contracts**: 823 YAML files, 172 `#[contract]` annotations (70 apr-cli + 52 serve/compute/train + 50 other crates)
+**Contracts**: 833 YAML files, 172 `#[contract]` annotations (70 apr-cli + 52 serve/compute/train + 50 other crates)
 
 ### Changes since v2.0 (2026-04-10 Falsification Audit)
 
@@ -70,7 +70,7 @@
 | Clippy errors | 0 | 0 | PASS |
 | `#[contract]` annotations | **172** (70 cli + 52 serve/compute/train + 50 other) | ≥50 | **PASS** |
 | `#[contract]` on CLI commands | **70** (59 cmd files + 11 dispatch) | ≥57 | **PASS** — PMAT-543 |
-| Contract YAML files | 823 | — | INFO — +24 (PMAT-546: 3, PMAT-547: 19, sparse-spmv: 1, wasmtime: 1) |
+| Contract YAML files | 833 | — | INFO — +34 (PMAT-546: 3, PMAT-547: 29, sparse-spmv: 1, wasmtime: 1) |
 | unwrap() in production code | **0** (test-only: 584 in test files) | 0 | **PASS** — clippy ban effective |
 | pmat TDG | 92.5/100 (A) | A+ | **PASS** |
 | pmat comply | PASS (4 warnings) | PASS | **PASS** — 52 work contracts valid, 85 bindings verified, 0 ghosts |
@@ -129,7 +129,7 @@
 |-----|----------|--------|
 | **apr-cli coverage** | P0 | Phases 0a–4 done. 4,633 lib + 108 integration. Phase 5 (long tail) remaining. PMAT-540. |
 | **Workspace coverage ~55%** | P1 | Phase A+B done. 101K tests across 74 crates. Phase C (targeted gaps) remaining. PMAT-541. |
-| **Ghost contracts** | P1 | 162 discovered, 19 created. ~143 remain (many from generated code). PMAT-547. |
+| **Ghost contracts** | P1 | 162 discovered, 29 created. ~133 remain (many from generated code). PMAT-547. |
 
 ### Coverage Improvement Plan — Chain of Thought
 
@@ -271,7 +271,7 @@ workspace-wide number.
 | PMAT-540 (apr-cli coverage) | **P0** | Phases 0a–5 **DONE**. 4,693+ lib + 108 integration. Phase 6 BLOCKED: remaining untested handlers are IO-bound (need model fixtures) or CUDA-gated. |
 | PMAT-541 (workspace coverage) | **P1** | Phase A+B **DONE** (per-crate density: 101K tests, 5 tiers). Phase C: identify real gaps in serve inference paths + compute SIMD kernels. |
 | PMAT-545 (Binary Audit) | **P2** | 22 crates, 24 binaries classified. 8 legacy binaries with `apr` migration paths. Low urgency — all work. |
-| PMAT-547 (Ghost Contracts) | **P1** | 162 contract YAMLs referenced in code but missing. **19 created** in 3 batches. ~143 remain (majority from `generated_contracts.rs`). |
+| PMAT-547 (Ghost Contracts) | **P1** | 162 contract YAMLs referenced in code but missing. **29 created** in 4 batches. ~133 remain (majority from `generated_contracts.rs`). |
 
 ---
 
