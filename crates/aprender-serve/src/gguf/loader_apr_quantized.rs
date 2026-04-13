@@ -539,6 +539,9 @@ impl OwnedQuantizedModel {
             moe_gate_weight,
             moe_expert_weights,
             moe_expert_down_weights,
+            moe_gate_packed: None,  // APR path uses per-expert loading, not packed 3D
+            moe_up_packed: None,
+            moe_down_packed: None,
         })
     }
 }

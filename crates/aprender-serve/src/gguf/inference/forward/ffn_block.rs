@@ -19,22 +19,46 @@ impl OwnedQuantizedModel {
     ) -> Result<Vec<f32>> {
         let layer = &self.layers[layer_idx];
 
-        // SPEC-MOE-APR-001 Phase 3: MoE dispatch — route through experts instead of dense FFN
+        // SPEC-MOE-APR-001 Phase 5: Stride-based MoE dispatch (zero-copy)
+        // Falls back to Phase 3 copy-based dispatch if packed tensors not available
         if let Some(ref gate_weight) = layer.moe_gate_weight {
+            // RMSNorm on FFN input (shared by both paths)
+            let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
+                if use_rmsnorm {
+                    ops::rms_norm(hidden, ffn_norm, self.config.eps)
+                } else {
+                    ops::layer_norm(hidden, ffn_norm, layer.ffn_norm_bias.as_deref(), self.config.eps)
+                }
+            } else {
+                hidden.to_vec()
+            };
+
+            // Phase 5: stride-based path (preferred — zero-copy)
+            if let (Some(ref gate_packed), Some(ref up_packed), Some(ref down_packed)) =
+                (&layer.moe_gate_packed, &layer.moe_up_packed, &layer.moe_down_packed)
+            {
+                let num_experts = self.config.num_experts;
+                let moe_intermediate = self.config.moe_intermediate_size;
+                let top_k = self.config.num_experts_per_tok.max(1);
+                return self.moe_forward_strided(
+                    &ffn_input,
+                    gate_weight,
+                    &gate_packed.data,
+                    &up_packed.data,
+                    &down_packed.data,
+                    gate_packed.qtype,
+                    down_packed.qtype,
+                    num_experts,
+                    moe_intermediate,
+                    top_k,
+                    self.config.norm_topk_prob,
+                );
+            }
+
+            // Phase 3 fallback: copy-based path
             if let (Some(ref experts), Some(ref expert_downs)) =
                 (&layer.moe_expert_weights, &layer.moe_expert_down_weights)
             {
-                // RMSNorm on FFN input
-                let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
-                    if use_rmsnorm {
-                        ops::rms_norm(hidden, ffn_norm, self.config.eps)
-                    } else {
-                        ops::layer_norm(hidden, ffn_norm, layer.ffn_norm_bias.as_deref(), self.config.eps)
-                    }
-                } else {
-                    hidden.to_vec()
-                };
-
                 return self.moe_forward_q4k(
                     &ffn_input,
                     gate_weight,
@@ -287,6 +311,135 @@ impl OwnedQuantizedModel {
 
         // Down projection
         let output = self.fused_matmul(&swiglu, expert_down)?;
+        Ok(output)
+    }
+
+    /// SPEC-MOE-APR-001 v2 Phase 5: Stride-based MoE forward (zero-copy).
+    ///
+    /// Contract: `moe-stride-dispatch-v1.yaml` equation `moe_forward_strided`.
+    /// Uses packed 3D tensor data directly — no per-expert Vec<u8> allocation.
+    #[allow(clippy::too_many_arguments)]
+    fn moe_forward_strided(
+        &self,
+        input: &[f32],
+        gate_weight: &[f32],
+        gate_packed: &[u8],
+        up_packed: &[u8],
+        down_packed: &[u8],
+        gate_up_qtype: u32,
+        down_qtype: u32,
+        num_experts: usize,
+        moe_intermediate: usize,
+        top_k: usize,
+        norm_topk_prob: bool,
+    ) -> Result<Vec<f32>> {
+        let hidden_dim = input.len();
+
+        // Router: softmax + top-k (same as moe_forward_q4k)
+        let num_experts_router = gate_weight.len() / hidden_dim;
+        let num_experts_eff = num_experts_router.min(num_experts);
+        let mut logits = vec![0.0f32; num_experts_eff];
+        for (e, logit) in logits.iter_mut().enumerate() {
+            let offset = e * hidden_dim;
+            let mut sum = 0.0f32;
+            for j in 0..hidden_dim {
+                sum += input[j] * gate_weight[offset + j];
+            }
+            *logit = sum;
+        }
+
+        let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut probs: Vec<f32> = logits.iter().map(|&l| (l - max_logit).exp()).collect();
+        let sum: f32 = probs.iter().sum();
+        if sum > 0.0 {
+            for p in &mut probs {
+                *p /= sum;
+            }
+        }
+
+        let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
+        indexed.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let selected = &indexed[..top_k.min(num_experts_eff)];
+
+        let mut weights: Vec<(usize, f32)> = selected.to_vec();
+        if norm_topk_prob {
+            let total: f32 = weights.iter().map(|(_, w)| w).sum();
+            if total > 0.0 {
+                for (_, w) in &mut weights {
+                    *w /= total;
+                }
+            }
+        }
+
+        // Expert dispatch — stride-based, zero-copy
+        // Contract: moe-stride-dispatch-v1.yaml invariant "Zero Vec<u8> allocation per expert"
+        let gate_stride = gate_packed.len() / num_experts;
+        let up_stride = up_packed.len() / num_experts;
+        let down_stride = down_packed.len() / num_experts;
+
+        use crate::quantize::{
+            fused_q4k_parallel_matvec, fused_q6k_parallel_matvec,
+        };
+        use crate::gguf::types::{GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K};
+
+        let mut output = vec![0.0f32; hidden_dim];
+        for &(expert_idx, weight) in &weights {
+            let gate_offset = expert_idx * gate_stride;
+            let up_offset = expert_idx * up_stride;
+            let down_offset = expert_idx * down_stride;
+
+            // Gate matmul: zero-copy slice into packed 3D data
+            let gate_slice = &gate_packed[gate_offset..gate_offset + gate_stride];
+            let gate_data = match gate_up_qtype {
+                GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(gate_slice, input, hidden_dim, moe_intermediate)?,
+                GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(gate_slice, input, hidden_dim, moe_intermediate)?,
+                _ => {
+                    // Fallback: wrap in OwnedQuantizedTensor (copies)
+                    let t = crate::gguf::quantized::OwnedQuantizedTensor {
+                        data: gate_slice.to_vec(), in_dim: hidden_dim, out_dim: moe_intermediate, qtype: gate_up_qtype,
+                    };
+                    self.fused_matmul(input, &t)?
+                }
+            };
+
+            // Up matmul: zero-copy
+            let up_slice = &up_packed[up_offset..up_offset + up_stride];
+            let up_data = match gate_up_qtype {
+                GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(up_slice, input, hidden_dim, moe_intermediate)?,
+                GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(up_slice, input, hidden_dim, moe_intermediate)?,
+                _ => {
+                    let t = crate::gguf::quantized::OwnedQuantizedTensor {
+                        data: up_slice.to_vec(), in_dim: hidden_dim, out_dim: moe_intermediate, qtype: gate_up_qtype,
+                    };
+                    self.fused_matmul(input, &t)?
+                }
+            };
+
+            // SwiGLU: SiLU(gate) * up
+            let mut swiglu = vec![0.0f32; moe_intermediate];
+            for i in 0..moe_intermediate {
+                let silu = gate_data[i] / (1.0 + (-gate_data[i]).exp());
+                swiglu[i] = silu * up_data[i];
+            }
+
+            // Down matmul: zero-copy (may be different qtype — Q6K for Qwen3)
+            let down_slice = &down_packed[down_offset..down_offset + down_stride];
+            let down_data = match down_qtype {
+                GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(down_slice, &swiglu, moe_intermediate, hidden_dim)?,
+                GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(down_slice, &swiglu, moe_intermediate, hidden_dim)?,
+                _ => {
+                    let t = crate::gguf::quantized::OwnedQuantizedTensor {
+                        data: down_slice.to_vec(), in_dim: moe_intermediate, out_dim: hidden_dim, qtype: down_qtype,
+                    };
+                    self.fused_matmul(&swiglu, &t)?
+                }
+            };
+
+            for i in 0..hidden_dim {
+                output[i] += weight * down_data[i];
+            }
+        }
+
         Ok(output)
     }
 

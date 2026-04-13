@@ -127,6 +127,24 @@ impl OwnedQuantizedTensor {
             qtype: tensor_ref.qtype,
         }
     }
+
+    /// Copy raw tensor data from a QuantizedTensorRef without dimension interpretation.
+    /// Used for packed 3D MoE tensors stored as a single blob.
+    pub fn from_ref_raw(tensor_ref: &QuantizedTensorRef, data: &[u8]) -> Self {
+        let start = tensor_ref.offset;
+        let end = start + tensor_ref.byte_size;
+        let tensor_data = if end <= data.len() {
+            data[start..end].to_vec()
+        } else {
+            Vec::new()
+        };
+        Self {
+            data: tensor_data,
+            in_dim: 0,   // 3D packed — dimensions handled by caller via stride
+            out_dim: 0,
+            qtype: tensor_ref.qtype,
+        }
+    }
 }
 
 // ============================================================================
@@ -321,6 +339,13 @@ pub struct OwnedQuantizedLayer {
     /// SPEC-MOE-APR-001: Per-expert down projection weights (Q4K)
     /// Layout: [num_experts] each [hidden_dim, moe_intermediate]
     pub moe_expert_down_weights: Option<Vec<OwnedQuantizedTensor>>,
+    /// SPEC-MOE-APR-001 v2 Phase 5: Packed 3D gate expert data (zero-copy reference)
+    /// Stores the entire packed tensor — experts accessed via stride offset.
+    pub moe_gate_packed: Option<OwnedQuantizedTensor>,
+    /// SPEC-MOE-APR-001 v2 Phase 5: Packed 3D up expert data (zero-copy reference)
+    pub moe_up_packed: Option<OwnedQuantizedTensor>,
+    /// SPEC-MOE-APR-001 v2 Phase 5: Packed 3D down expert data (zero-copy reference)
+    pub moe_down_packed: Option<OwnedQuantizedTensor>,
 }
 
 impl OwnedQuantizedLayer {
@@ -412,6 +437,16 @@ impl OwnedQuantizedLayer {
                 data,
                 config,
             ),
+            // Phase 5: Store entire packed 3D tensors for stride-based access
+            moe_gate_packed: layer.moe_gate_exps.as_ref().map(|r| {
+                OwnedQuantizedTensor::from_ref_raw(r, data)
+            }),
+            moe_up_packed: layer.moe_up_exps.as_ref().map(|r| {
+                OwnedQuantizedTensor::from_ref_raw(r, data)
+            }),
+            moe_down_packed: layer.moe_down_exps.as_ref().map(|r| {
+                OwnedQuantizedTensor::from_ref_raw(r, data)
+            }),
         }
     }
 

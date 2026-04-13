@@ -76,6 +76,9 @@ fn test_owned_quantized_layer_clone() {
             moe_gate_weight: None,
             moe_expert_weights: None,
             moe_expert_down_weights: None,
+            moe_gate_packed: None,
+            moe_up_packed: None,
+            moe_down_packed: None,
     };
 
     let cloned = original.clone();

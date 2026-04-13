@@ -99,6 +99,9 @@ fn create_gqa_model(
             moe_gate_weight: None,
             moe_expert_weights: None,
             moe_expert_down_weights: None,
+            moe_gate_packed: None,
+            moe_up_packed: None,
+            moe_down_packed: None,
     };
 
     let token_embedding = vec![0.1f32; vocab_size * hidden_dim];

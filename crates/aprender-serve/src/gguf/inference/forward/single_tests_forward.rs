@@ -52,6 +52,9 @@ fn test_forward_single_gqa_config() {
             moe_gate_weight: None,
             moe_expert_weights: None,
             moe_expert_down_weights: None,
+            moe_gate_packed: None,
+            moe_up_packed: None,
+            moe_down_packed: None,
     };
 
     let model = OwnedQuantizedModel {
@@ -141,6 +144,9 @@ fn test_forward_single_multiple_layers() {
             moe_gate_weight: None,
             moe_expert_weights: None,
             moe_expert_down_weights: None,
+            moe_gate_packed: None,
+            moe_up_packed: None,
+            moe_down_packed: None,
         })
         .collect();
 

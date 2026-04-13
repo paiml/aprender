@@ -287,6 +287,9 @@ fn create_f32_test_model(hidden_dim: usize, vocab_size: usize) -> OwnedQuantized
             moe_gate_weight: None,
             moe_expert_weights: None,
             moe_expert_down_weights: None,
+            moe_gate_packed: None,
+            moe_up_packed: None,
+            moe_down_packed: None,
     };
 
     let lm_head_weight = create_f32_test_data(hidden_dim, vocab_size);

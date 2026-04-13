@@ -1,0 +1,123 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: "PAIML Engineering"
+  description: "Stride-based MoE expert dispatch — zero-copy Q4K matmul into packed 3D tensor"
+  references:
+    - "SPEC-MOE-APR-001 v2.0 Phase 5: Stride-based MoE dispatch"
+    - "llama.cpp ggml.c: ggml_mul_mat_id uses nb[2] stride for expert indexing"
+    - "FALSIFY-MOE-008: throughput >= 10 tok/s (current: 0.9)"
+    - "Five Whys §7.2: per-expert Vec<u8> copy is the bottleneck"
+  tags:
+    - moe
+    - performance
+    - zero-copy
+    - stride
+    - q4k
+
+constants:
+  EXPERT_BYTES_GATE: 884736  # 768 rows × 8 super blocks × 144 bytes (Q4K)
+  EXPERT_BYTES_UP: 884736
+  EXPERT_BYTES_DOWN: 1290240  # 2048 rows × 3 super blocks × 210 bytes (Q6K)
+  NUM_EXPERTS: 128
+  TOP_K: 8
+  NUM_LAYERS: 48
+  COPY_PER_LAYER_MB: 113  # 128 experts × 884KB gate + 884KB up = 113 MB copied per layer
+  COPIES_PER_TOKEN: 48  # one per layer
+  TOTAL_COPY_PER_TOKEN_GB: 5.4  # 113 MB × 48 layers
+
+equations:
+  stride_expert_access:
+    formula: |
+      expert_matmul_strided(packed_data, input, in_dim, out_dim, expert_idx, expert_stride):
+        offset = expert_idx * expert_stride
+        // NO COPY — pass slice reference directly to Q4K kernel
+        result = fused_q4k_parallel_matvec(&packed_data[offset..offset+expert_stride], input, in_dim, out_dim)
+    domain: "mmap'd 3D packed tensor + expert index"
+    codomain: "matmul result [out_dim] without data copy"
+    invariants:
+      - "Zero heap allocation for expert weight access"
+      - "expert_stride = total_bytes / num_experts"
+      - "offset + expert_stride <= packed_data.len()"
+      - "Q4K block alignment preserved (stride is multiple of 144)"
+    postconditions:
+      - "Result is identical to copy-then-matmul path (bit-for-bit)"
+
+  moe_forward_strided:
+    formula: |
+      moe_forward_strided(hidden, gate_weight, gate_packed, up_packed, down_packed, top_k):
+        routes = route(hidden, gate_weight, top_k)
+        output = zeros(hidden_dim)
+        gate_stride = gate_packed.len() / num_experts
+        up_stride = up_packed.len() / num_experts
+        down_stride = down_packed.len() / num_experts
+        FOR (expert_idx, weight) IN routes:
+          gate_out = expert_matmul_strided(gate_packed, hidden, hidden_dim, moe_intermediate, expert_idx, gate_stride)
+          up_out = expert_matmul_strided(up_packed, hidden, hidden_dim, moe_intermediate, expert_idx, up_stride)
+          swiglu = SiLU(gate_out) * up_out
+          down_out = expert_matmul_strided(down_packed, swiglu, moe_intermediate, hidden_dim, expert_idx, down_stride)
+          output += weight * down_out
+    domain: "hidden state + 3D packed expert tensors (mmap, zero-copy)"
+    codomain: "MoE output [hidden_dim]"
+    invariants:
+      - "Zero Vec<u8> allocation per expert (no .to_vec())"
+      - "Gate, up, down accessed via stride offset into original data"
+      - "Output identical to current copy-based path"
+
+proof_obligations:
+  - type: invariant
+    property: "Zero-copy expert access"
+    formal: "no heap allocation in expert_matmul_strided hot path"
+    applies_to: stride_expert_access
+  - type: postcondition
+    property: "Bit-identical output"
+    formal: "strided_result == copy_result for all expert indices"
+    applies_to: stride_expert_access
+  - type: bound
+    property: "Throughput >= 10 tok/s"
+    formal: "measured tok/s >= 10.0 on Qwen3-Coder-30B Q4K (GB10)"
+    tolerance: 0.0
+    applies_to: moe_forward_strided
+
+falsification_tests:
+  - id: FALSIFY-STRIDE-001
+    rule: "Strided output matches copy-based output"
+    prediction: "Both paths read identical bytes, produce identical matmul results"
+    test: |
+      For expert 0 of layer 0: run both copy-based and stride-based matmul.
+      Assert outputs are bit-identical (f32 exact match).
+    if_fails: "Offset calculation wrong — check expert_stride vs actual 3D layout"
+
+  - id: FALSIFY-STRIDE-002
+    rule: "No heap allocation in expert dispatch hot path"
+    prediction: "Removing .to_vec() eliminates 5.4 GB/token of copies"
+    test: |
+      Profile with DHAT or track allocator: run 10 tokens of MoE inference.
+      Assert zero Vec<u8> allocations in moe_expert_swiglu.
+    if_fails: "Residual .to_vec() or intermediate buffer allocation remains"
+
+  - id: FALSIFY-STRIDE-003
+    rule: "Throughput >= 10 tok/s after Phase 5"
+    prediction: "Eliminating copy overhead yields 10-15x speedup"
+    test: |
+      apr serve + probar bench: 32 tokens on Qwen3-Coder-30B Q4K.
+      Assert tok/s >= 10.0.
+      Compare against llama.cpp baseline (88.9 tok/s).
+    if_fails: "Copy was not the bottleneck — profile rayon dispatch overhead (Phase 6)"
+
+kani_harnesses:
+  - id: KANI-STRIDE-001
+    obligation: "Expert offset bounds"
+    property: "for all expert_idx in [0, num_experts): offset + stride <= data.len()"
+    bound: 128
+    strategy: bounded_int
+
+qa_gate:
+  id: F-MOE-STRIDE-001
+  name: moe-stride-dispatch-v1 Contract
+  description: "Quality gate for stride-based MoE dispatch (Phase 5)"
+  checks:
+    - bit_identical_output
+    - zero_copy_access
+    - throughput_gate
+  pass_criteria: "All 3 falsification tests pass, throughput >= 10 tok/s"

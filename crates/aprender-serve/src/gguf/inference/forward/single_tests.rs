@@ -91,6 +91,9 @@ fn create_llama_style_model() -> crate::gguf::OwnedQuantizedModel {
             moe_gate_weight: None,
             moe_expert_weights: None,
             moe_expert_down_weights: None,
+            moe_gate_packed: None,
+            moe_up_packed: None,
+            moe_down_packed: None,
     };
 
     OwnedQuantizedModel {
@@ -149,6 +152,9 @@ fn create_phi_style_model() -> crate::gguf::OwnedQuantizedModel {
             moe_gate_weight: None,
             moe_expert_weights: None,
             moe_expert_down_weights: None,
+            moe_gate_packed: None,
+            moe_up_packed: None,
+            moe_down_packed: None,
     };
 
     OwnedQuantizedModel {

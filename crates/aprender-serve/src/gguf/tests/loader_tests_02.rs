@@ -431,6 +431,9 @@ fn test_loader_part02_owned_model_new_for_test() {
             moe_gate_weight: None,
             moe_expert_weights: None,
             moe_expert_down_weights: None,
+            moe_gate_packed: None,
+            moe_up_packed: None,
+            moe_down_packed: None,
     }];
     let output_norm_weight = vec![1.0f32; 32];
     let lm_head_weight = OwnedQuantizedTensor {
