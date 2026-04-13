@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  description: "CUDA classifier training kernels"
+  references:
+    - "Provable contract for cuda-classify-training-v1"
+
+kind: KernelContract
+name: cuda-classify-training
+version: "1.0.0"
+scope: "crates/aprender-train/src/finetune/classify_pipeline/"
+
+description: |
+  CUDA kernels for SSC classifier training: forward (linear+softmax), backward (cross-entropy), optimizer (AdamW).
+
+equations:
+  forward_parity:
+    description: "CUDA forward matches CPU within ε"
+    formula: "CUDA forward matches CPU within ε"
+
+  backward_parity:
+    description: "CUDA gradients match CPU within ε"
+    formula: "CUDA gradients match CPU within ε"
+
+falsification:
+  - id: FALSIFY-CUDA_CLASSIFY_TRAINING_V1_001
+    description: "CUDA forward matches CPU within ε"
+    test: "Related tests in crates/aprender-train/src/finetune/classify_pipeline/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-CUDA_CLASSIFY_TRAINING_V1_002
+    description: "CUDA gradients match CPU within ε"
+    test: "Related tests in crates/aprender-train/src/finetune/classify_pipeline/"
+    evidence: "cargo test --lib"

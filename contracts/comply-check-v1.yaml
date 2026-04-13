@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  description: "Contract compliance checker"
+  references:
+    - "Provable contract for comply-check-v1"
+
+kind: AlgorithmContract
+name: comply-check
+version: "1.0.0"
+scope: "crates/aprender-contracts/src/"
+
+description: |
+  pv comply check: validates all contract bindings are implemented, no ghosts, no orphans.
+
+equations:
+  binding_completeness:
+    description: "∀ equation in YAML: ∃ binding in code"
+    formula: "∀ equation in YAML: ∃ binding in code"
+
+  no_ghosts:
+    description: "∀ binding in code: ∃ equation in YAML"
+    formula: "∀ binding in code: ∃ equation in YAML"
+
+falsification:
+  - id: FALSIFY-COMPLY_CHECK_V1_001
+    description: "∀ equation in YAML: ∃ binding in code"
+    test: "Related tests in crates/aprender-contracts/src/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-COMPLY_CHECK_V1_002
+    description: "∀ binding in code: ∃ equation in YAML"
+    test: "Related tests in crates/aprender-contracts/src/"
+    evidence: "cargo test --lib"

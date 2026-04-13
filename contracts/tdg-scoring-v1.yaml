@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  description: "Technical Debt Grading scoring"
+  references:
+    - "Provable contract for tdg-scoring-v1"
+
+kind: AlgorithmContract
+name: tdg-scoring
+version: "1.0.0"
+scope: "crates/aprender-contracts/src/"
+
+description: |
+  TDG score computation: weighted sum of complexity, coverage, SATD, mutation metrics.
+
+equations:
+  score_range:
+    description: "0 ≤ TDG ≤ 100"
+    formula: "0 ≤ TDG ≤ 100"
+
+  grade_monotonicity:
+    description: "score(A) > score(B) ⟹ grade(A) ≥ grade(B)"
+    formula: "score(A) > score(B) ⟹ grade(A) ≥ grade(B)"
+
+falsification:
+  - id: FALSIFY-TDG_SCORING_V1_001
+    description: "0 ≤ TDG ≤ 100"
+    test: "Related tests in crates/aprender-contracts/src/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-TDG_SCORING_V1_002
+    description: "score(A) > score(B) ⟹ grade(A) ≥ grade(B)"
+    test: "Related tests in crates/aprender-contracts/src/"
+    evidence: "cargo test --lib"
