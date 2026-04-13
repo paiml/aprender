@@ -1,7 +1,7 @@
 # APR-MONO: Sovereign Stack Monorepo Consolidation
 
-**Version**: 2.2
-**Date**: 2026-04-12
+**Version**: 2.3
+**Date**: 2026-04-13
 **Status**: COMPLETE — 75 workspace crates (79 dirs, 4 excluded), 0 compile failures, 14 integration tests pass
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
@@ -255,23 +255,46 @@ workspace-wide number.
 
 | Epic | Status |
 |------|--------|
-| ~~PMAT-526 (Model Type)~~ | `is_llm()` + 3 Architecture variants + import guards. Extended by PMAT-546. |
-| ~~PMAT-532 (QA Migration)~~ | 5 crates ported, 2,792 tests, 256 playbooks. Source repo archived. |
+| ~~PMAT-526 (Model Type)~~ | 19 Architecture variants, import guards, `is_llm()`. Extended by PMAT-546. |
+| ~~PMAT-532 (QA Migration)~~ | 5 crates ported, 2,792 tests, 256 playbooks. |
 | ~~PMAT-539 (Ratatui)~~ | 0 deps remain. 45K lines dead code removed. |
-| ~~PMAT-540-core (Core Tests)~~ | 13,023 tests (+18 PMAT-546 parity/inference). Architecture mapping fix. |
-| ~~PMAT-542 (Co-Evolution)~~ | 24 new tests paired with contracts. Rule 7 applied. |
-| ~~PMAT-543 (CLI Contracts)~~ | 172 annotations workspace-wide. 0 unannotated CLI handlers. |
+| ~~PMAT-540-core (Core Tests)~~ | 13,023 tests. Architecture mapping fix. |
+| ~~PMAT-542 (Co-Evolution)~~ | Rule 7 applied. Tests paired with contracts. |
+| ~~PMAT-543 (CLI Contracts)~~ | 172 annotations workspace-wide. |
 | ~~PMAT-544 (unwrap)~~ | 0 production unwrap(). Clippy ban effective. |
-| ~~PMAT-546 (Model-Family Parity)~~ | 5 new Architecture variants + 2 YAML contracts. 19↔18 parity enforced. Contract: `model-family-parity-v1.yaml`. |
+| ~~PMAT-546 (Model-Family Parity)~~ | 19↔18 parity enforced. 18 new tests. |
 
 **Open (4):**
 
 | Epic | Priority | Next action |
 |------|----------|-------------|
-| PMAT-540 (apr-cli coverage) | **P0** | Phases 0a–5 **DONE**. 4,693+ lib + 108 integration. Phase 6 BLOCKED: remaining untested handlers are IO-bound (need model fixtures) or CUDA-gated. |
-| PMAT-541 (workspace coverage) | **P1** | Phase A+B **DONE** (per-crate density: 101K tests, 5 tiers). Phase C: identify real gaps in serve inference paths + compute SIMD kernels. |
-| PMAT-545 (Binary Audit) | **P2** | 22 crates, 24 binaries classified. 8 legacy binaries with `apr` migration paths. Low urgency — all work. |
-| PMAT-547 (Ghost Contracts) | **P1** | 162 contract YAMLs referenced in code but missing. **29 created** in 4 batches. ~133 remain (majority from `generated_contracts.rs`). |
+| PMAT-540 (apr-cli coverage) | **P2** | Phases 0a–5 DONE. Phase 6 BLOCKED on model fixtures / CUDA features. |
+| PMAT-541 (workspace coverage) | **P2** | Phase A+B DONE. Phase C: `cargo llvm-cov` per-crate for serve/compute. |
+| PMAT-545 (Binary Audit) | **P3** | 8 legacy binaries with `apr` migration paths. All work, low urgency. |
+| PMAT-547 (Ghost Contracts) | **P2** | 29/162 created. ~133 remain (mostly generated code). |
+
+### Consolidation Status: COMPLETE (2026-04-13)
+
+The monorepo consolidation is **DONE**. All 9 architectural rules enforced, 8 PMAT epics
+closed, Rule 9 CI zero-failure deployed, nightly builds fixed, 833 contracts, 28,700+ tests.
+
+**Remaining monorepo-scoped work:**
+
+| Item | Priority | Status |
+|------|----------|--------|
+| PMAT-547: Ghost contracts | P2 | 29/162 created. ~133 remain (mostly `generated_contracts.rs`). Mechanical. |
+| PMAT-541 Phase C: Per-crate llvm-cov | P2 | Need `cargo llvm-cov` on serve/compute to find real uncovered paths. |
+| PMAT-540 Phase 6: Model fixture tests | P3 | Remaining untested handlers need APR/GGUF fixtures or CUDA. |
+| PMAT-545: Legacy binary migration | P3 | 8 legacy binaries documented. All work. Low urgency. |
+| #702: `#[contract]` trait methods | P2 | Proc-macro fix to unblock contract penetration past 39%. |
+
+**Out of scope** (product bugs/features, tracked in GitHub issues, not this spec):
+#471 (GPU hang), #478 (OOM), #386 (SIMD perf), #434 (streaming quant), #326 (BERT),
+#575 (Whisper), #560 (wgpu), #393 (distributed), #696 (Jetson GLIBC).
+
+### PR Triage (2026-04-13) — 9 → 3 open
+
+Closed: #732, #544, #735, #679, #721, #722. Open (auto-merge): #739, #736, #562.
 
 ---
 
