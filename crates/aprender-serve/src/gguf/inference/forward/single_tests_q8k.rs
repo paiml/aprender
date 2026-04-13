@@ -67,6 +67,7 @@ fn create_llama_256_model() -> crate::gguf::OwnedQuantizedModel {
         output_norm_bias: None,
         lm_head_weight: create_q4k_test_data(hidden_dim, config.vocab_size),
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]
@@ -171,6 +172,7 @@ fn create_phi_256_model() -> crate::gguf::OwnedQuantizedModel {
         output_norm_bias: Some(vec![0.0f32; hidden_dim]),
         lm_head_weight: create_q4k_test_data(hidden_dim, config.vocab_size),
         lm_head_bias: Some(vec![0.0f32; config.vocab_size]),
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]
@@ -245,6 +247,7 @@ fn create_llama_256_gqa_model() -> crate::gguf::OwnedQuantizedModel {
         output_norm_bias: None,
         lm_head_weight: create_q4k_test_data(hidden_dim, config.vocab_size),
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]

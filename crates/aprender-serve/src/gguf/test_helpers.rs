@@ -122,6 +122,7 @@ pub(crate) fn create_test_model_with_config(config: &GGUFConfig) -> OwnedQuantiz
         output_norm_bias,
         lm_head_weight,
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]

@@ -74,6 +74,7 @@ fn test_from_gguf_separate_qkv() {
         output_norm_bias: None,
         lm_head_weight: create_q4k_test_data(hidden_dim, 100),
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]
@@ -199,6 +200,7 @@ fn test_from_gguf_with_ffn_gate() {
         output_norm_bias: None,
         lm_head_weight: create_q4k_test_data(hidden_dim, 100),
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]

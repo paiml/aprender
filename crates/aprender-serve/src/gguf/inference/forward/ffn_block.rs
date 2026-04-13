@@ -33,22 +33,21 @@ impl OwnedQuantizedModel {
                 hidden.to_vec()
             };
 
-            // Phase 5: stride-based path (preferred — zero-copy)
-            if let (Some(ref gate_packed), Some(ref up_packed), Some(ref down_packed)) =
-                (&layer.moe_gate_packed, &layer.moe_up_packed, &layer.moe_down_packed)
+            // Phase 5: stride-based path (zero-copy into mmap)
+            if let (Some(ref gate_ref), Some(ref up_ref), Some(ref down_ref), Some(ref backing)) =
+                (&layer.moe_gate_packed, &layer.moe_up_packed, &layer.moe_down_packed, &self.moe_backing_data)
             {
-                let num_experts = self.config.num_experts;
-                let moe_intermediate = self.config.moe_intermediate_size;
                 let top_k = self.config.num_experts_per_tok.max(1);
+                let moe_intermediate = self.config.moe_intermediate_size;
                 return self.moe_forward_strided(
                     &ffn_input,
                     gate_weight,
-                    &gate_packed.data,
-                    &up_packed.data,
-                    &down_packed.data,
-                    gate_packed.qtype,
-                    down_packed.qtype,
-                    num_experts,
+                    &backing[gate_ref.offset..gate_ref.offset + gate_ref.byte_size],
+                    &backing[up_ref.offset..up_ref.offset + up_ref.byte_size],
+                    &backing[down_ref.offset..down_ref.offset + down_ref.byte_size],
+                    gate_ref.qtype,
+                    down_ref.qtype,
+                    gate_ref.num_experts,
                     moe_intermediate,
                     top_k,
                     self.config.norm_topk_prob,

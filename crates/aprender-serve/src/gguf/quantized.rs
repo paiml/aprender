@@ -148,6 +148,41 @@ impl OwnedQuantizedTensor {
 }
 
 // ============================================================================
+// PackedMoeRef - Zero-copy reference into mmap'd 3D expert tensor
+// Contract: moe-stride-dispatch-v1.yaml
+
+/// Reference into a packed 3D MoE expert tensor (zero allocation).
+/// The actual data lives in `OwnedQuantizedModel.moe_backing_data` (Arc<Mmap>).
+/// Expert e's data is at `offset + e * (byte_size / num_experts)`.
+#[derive(Debug, Clone)]
+pub struct PackedMoeRef {
+    /// Absolute byte offset in the mmap'd file
+    pub offset: usize,
+    /// Total byte size of the packed 3D tensor (all experts)
+    pub byte_size: usize,
+    /// Number of experts in this tensor
+    pub num_experts: usize,
+    /// Quantization type (GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K, etc.)
+    pub qtype: u32,
+}
+
+impl PackedMoeRef {
+    /// Byte size of one expert's data
+    #[must_use]
+    pub fn expert_stride(&self) -> usize {
+        if self.num_experts > 0 { self.byte_size / self.num_experts } else { 0 }
+    }
+
+    /// Byte range for expert `e` in the backing data
+    #[must_use]
+    pub fn expert_range(&self, e: usize) -> std::ops::Range<usize> {
+        let stride = self.expert_stride();
+        let start = self.offset + e * stride;
+        start..start + stride
+    }
+}
+
+// ============================================================================
 // OwnedQKVWeights - Owned QKV weight storage
 // ============================================================================
 
@@ -339,13 +374,13 @@ pub struct OwnedQuantizedLayer {
     /// SPEC-MOE-APR-001: Per-expert down projection weights (Q4K)
     /// Layout: [num_experts] each [hidden_dim, moe_intermediate]
     pub moe_expert_down_weights: Option<Vec<OwnedQuantizedTensor>>,
-    /// SPEC-MOE-APR-001 v2 Phase 5: Packed 3D gate expert data (zero-copy reference)
-    /// Stores the entire packed tensor — experts accessed via stride offset.
-    pub moe_gate_packed: Option<OwnedQuantizedTensor>,
-    /// SPEC-MOE-APR-001 v2 Phase 5: Packed 3D up expert data (zero-copy reference)
-    pub moe_up_packed: Option<OwnedQuantizedTensor>,
-    /// SPEC-MOE-APR-001 v2 Phase 5: Packed 3D down expert data (zero-copy reference)
-    pub moe_down_packed: Option<OwnedQuantizedTensor>,
+    /// SPEC-MOE-APR-001 v2 Phase 5: Packed 3D gate expert offset+size (zero-copy ref into mmap)
+    /// Contract: moe-stride-dispatch-v1.yaml — "Zero heap allocation for expert weight access"
+    pub moe_gate_packed: Option<PackedMoeRef>,
+    /// SPEC-MOE-APR-001 v2 Phase 5: Packed 3D up expert offset+size
+    pub moe_up_packed: Option<PackedMoeRef>,
+    /// SPEC-MOE-APR-001 v2 Phase 5: Packed 3D down expert offset+size
+    pub moe_down_packed: Option<PackedMoeRef>,
 }
 
 impl OwnedQuantizedLayer {
@@ -437,15 +472,15 @@ impl OwnedQuantizedLayer {
                 data,
                 config,
             ),
-            // Phase 5: Store entire packed 3D tensors for stride-based access
+            // Phase 5: Store offset+size refs into mmap (zero-copy, 72 bytes total)
             moe_gate_packed: layer.moe_gate_exps.as_ref().map(|r| {
-                OwnedQuantizedTensor::from_ref_raw(r, data)
+                PackedMoeRef { offset: r.offset, byte_size: r.byte_size, num_experts: config.num_experts, qtype: r.qtype }
             }),
             moe_up_packed: layer.moe_up_exps.as_ref().map(|r| {
-                OwnedQuantizedTensor::from_ref_raw(r, data)
+                PackedMoeRef { offset: r.offset, byte_size: r.byte_size, num_experts: config.num_experts, qtype: r.qtype }
             }),
             moe_down_packed: layer.moe_down_exps.as_ref().map(|r| {
-                OwnedQuantizedTensor::from_ref_raw(r, data)
+                PackedMoeRef { offset: r.offset, byte_size: r.byte_size, num_experts: config.num_experts, qtype: r.qtype }
             }),
         }
     }

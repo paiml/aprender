@@ -178,6 +178,7 @@ pub fn create_test_quantized_model(
         output_norm_bias,
         lm_head_weight: create_q4k_data(hidden_dim, vocab_size),
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]

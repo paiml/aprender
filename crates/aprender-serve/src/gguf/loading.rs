@@ -274,6 +274,7 @@ impl OwnedQuantizedModel {
             output_norm_bias,
             lm_head_weight,
             lm_head_bias,
+            moe_backing_data: None, // APR path uses per-expert loading, not mmap
             #[cfg(feature = "cuda")]
             cuda_executor: None,
             #[cfg(feature = "cuda")]

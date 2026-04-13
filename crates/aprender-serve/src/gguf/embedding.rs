@@ -88,6 +88,16 @@ impl OwnedQuantizedModel {
             .map(|l| OwnedQuantizedLayer::from_borrowed(l, data, config))
             .collect();
 
+        // SPEC-MOE-APR-001 v2 Phase 5: Share the mmap for stride-based MoE access.
+        // Arc<Mmap> lets the model hold a reference without lifetime constraints.
+        // The OS kernel deduplicates physical pages for the same file.
+        let is_moe = config.num_experts > 0;
+        let moe_backing = if is_moe {
+            Some(mapped.share_mmap())
+        } else {
+            None
+        };
+
         Ok(Self {
             config: transformer.config.clone(),
             token_embedding: transformer.token_embedding,
@@ -106,6 +116,7 @@ impl OwnedQuantizedModel {
                 vocab_size,
             ),
             lm_head_bias: transformer.lm_head_bias,
+            moe_backing_data: moe_backing,
             #[cfg(feature = "cuda")]
             cuda_executor: None,
             #[cfg(feature = "cuda")]
@@ -150,6 +161,7 @@ impl OwnedQuantizedModel {
             output_norm_bias,
             lm_head_weight,
             lm_head_bias,
+            moe_backing_data: None,
             #[cfg(feature = "cuda")]
             cuda_executor: None,
             #[cfg(feature = "cuda")]

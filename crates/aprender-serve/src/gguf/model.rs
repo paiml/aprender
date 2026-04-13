@@ -19,6 +19,7 @@ use std::fs::File;
 use std::path::Path;
 
 use memmap2::Mmap;
+use std::sync::Arc;
 
 use super::config::GGUFConfig;
 use super::quantized::{OwnedQuantizedLayer, OwnedQuantizedTensor};
@@ -44,7 +45,7 @@ pub struct MappedGGUFModel {
     /// Parsed model metadata (header, tensors, etc.)
     pub model: GGUFModel,
     /// Memory-mapped file contents
-    pub(crate) mmap: Mmap,
+    pub(crate) mmap: Arc<Mmap>,
 }
 
 impl MappedGGUFModel {
@@ -118,7 +119,7 @@ impl MappedGGUFModel {
         // Parse the memory-mapped data
         let model = GGUFModel::from_bytes(&mmap)?;
 
-        Ok(Self { model, mmap })
+        Ok(Self { model, mmap: Arc::new(mmap) })
     }
 
     /// Get the raw memory-mapped file data
@@ -128,6 +129,13 @@ impl MappedGGUFModel {
     #[must_use]
     pub fn data(&self) -> &[u8] {
         &self.mmap
+    }
+
+    /// SPEC-MOE-APR-001 v2 Phase 5: Share the mmap handle for zero-copy MoE expert access.
+    /// Returns Arc<Mmap> that can be stored on OwnedQuantizedModel.
+    #[must_use]
+    pub fn share_mmap(&self) -> std::sync::Arc<Mmap> {
+        Arc::clone(&self.mmap)
     }
 
     /// Get tensor data slice by offset and size
@@ -331,6 +339,11 @@ pub struct OwnedQuantizedModel {
     pub(crate) lm_head_weight: OwnedQuantizedTensor,
     /// LM head bias (optional, f32)
     pub(crate) lm_head_bias: Option<Vec<f32>>,
+    /// SPEC-MOE-APR-001 v2 Phase 5: Shared reference to mmap'd file for stride-based
+    /// MoE expert access. Expert dispatch indexes into this via PackedMoeRef offsets.
+    /// Zero per-expert allocation. Only populated for MoE models; None for dense.
+    /// Contract: moe-stride-dispatch-v1.yaml invariant "Zero heap allocation for expert weight access"
+    pub(crate) moe_backing_data: Option<std::sync::Arc<memmap2::Mmap>>,
     /// PARITY-113: Optional CUDA executor for GPU acceleration
     /// When present, fused_matmul routes to CUDA GEMM kernels
     /// Uses Mutex for thread-safety in async handlers
@@ -404,6 +417,7 @@ impl Clone for OwnedQuantizedModel {
             output_norm_bias: self.output_norm_bias.clone(),
             lm_head_weight: self.lm_head_weight.clone(),
             lm_head_bias: self.lm_head_bias.clone(),
+            moe_backing_data: self.moe_backing_data.clone(),
             // CUDA executor is not cloned - new instance must enable CUDA separately
             #[cfg(feature = "cuda")]
             cuda_executor: None,

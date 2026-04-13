@@ -108,6 +108,7 @@ mod tests {
                 qtype: GGUF_TYPE_Q4_K,
             },
             lm_head_bias: None,
+            moe_backing_data: None,
             #[cfg(feature = "cuda")]
             cuda_executor: None,
             #[cfg(feature = "cuda")]
@@ -164,6 +165,7 @@ mod tests {
                 qtype: GGUF_TYPE_Q4_K,
             },
             lm_head_bias: None,
+            moe_backing_data: None,
             #[cfg(feature = "cuda")]
             cuda_executor: None,
             #[cfg(feature = "cuda")]
@@ -205,6 +207,7 @@ mod tests {
             output_norm_bias: Some(vec![0.0f32; hidden_dim]),
             lm_head_weight: create_q4k_test_data(hidden_dim, 100),
             lm_head_bias: None,
+            moe_backing_data: None,
             #[cfg(feature = "cuda")]
             cuda_executor: None,
             #[cfg(feature = "cuda")]
@@ -246,6 +249,7 @@ mod tests {
             output_norm_bias: Some(vec![0.0f32; hidden_dim]),
             lm_head_weight: create_q4k_test_data(hidden_dim, vocab_size),
             lm_head_bias: None,
+            moe_backing_data: None,
             #[cfg(feature = "cuda")]
             cuda_executor: None,
             #[cfg(feature = "cuda")]
@@ -285,6 +289,7 @@ mod tests {
             output_norm_bias: Some(vec![0.0f32; hidden_dim]),
             lm_head_weight: create_q4k_test_data(hidden_dim, 100),
             lm_head_bias: None,
+            moe_backing_data: None,
             #[cfg(feature = "cuda")]
             cuda_executor: None,
             #[cfg(feature = "cuda")]

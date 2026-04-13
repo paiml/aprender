@@ -117,6 +117,7 @@ fn create_llama_style_model(
         output_norm_bias: None,
         lm_head_weight,
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]
@@ -200,6 +201,7 @@ fn create_phi2_style_model(
         output_norm_bias: Some(vec![0.0f32; hidden_dim]),
         lm_head_weight,
         lm_head_bias: Some(vec![0.0f32; vocab_size]),
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]

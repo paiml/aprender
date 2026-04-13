@@ -109,6 +109,7 @@ fn build_minimal_owned_quantized_model() -> OwnedQuantizedModel {
         output_norm_bias: None,
         lm_head_weight: make_f32_tensor(hidden_dim, vocab_size),
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]
@@ -207,6 +208,7 @@ fn build_fused_qkv_model() -> OwnedQuantizedModel {
         output_norm_bias: None,
         lm_head_weight: make_f32_tensor(hidden_dim, vocab_size),
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]
@@ -316,6 +318,7 @@ fn build_q4k_model() -> OwnedQuantizedModel {
         output_norm_bias: None,
         lm_head_weight: lm_head,
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]

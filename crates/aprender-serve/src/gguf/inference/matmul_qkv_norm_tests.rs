@@ -306,6 +306,7 @@ fn create_f32_test_model(hidden_dim: usize, vocab_size: usize) -> OwnedQuantized
         output_norm_bias: None,
         lm_head_weight,
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]

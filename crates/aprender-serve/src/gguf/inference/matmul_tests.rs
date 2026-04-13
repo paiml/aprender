@@ -181,6 +181,7 @@ fn create_test_model(hidden_dim: usize, vocab_size: usize) -> OwnedQuantizedMode
         output_norm_bias: None,
         lm_head_weight,
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]
@@ -1263,6 +1264,7 @@ fn create_test_model_with_pos_embed(
         output_norm_bias: None,
         lm_head_weight,
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]
@@ -1361,6 +1363,7 @@ fn falsify_ap_002_additive_identity() {
         output_norm_bias: None,
         lm_head_weight,
         lm_head_bias: None,
+            moe_backing_data: None,
         #[cfg(feature = "cuda")]
         cuda_executor: None,
         #[cfg(feature = "cuda")]
