@@ -88,8 +88,9 @@
 | ~~24 unauthorized binaries~~ | 22 crates, 24 binaries classified. 8 legacy remain (low urgency). PMAT-545. |
 | ~~ratatui migration~~ | 0 deps remain. 45K lines dead code removed. PMAT-539. |
 | ~~Wasmtime 27 advisories~~ | Upgraded to wasmtime 43. 5 old exemptions removed. 8 cranelift advisories remain (test-only). PR #731. |
+| ~~CI infrastructure flakiness~~ | Zero-tolerance Toyota Way fix (2026-04-13). See Rule 9 below. |
 
-**Open gaps (3 of 10):**
+**Open gaps (3 of 11):**
 
 | Gap | Severity | Status |
 |-----|----------|--------|
@@ -405,6 +406,56 @@ apr run model.gguf "prompt"
 The CUDA executor tries to initialize; on failure, falls through to CPU.
 
 **Contract**: `contracts/apr-cli-command-safety-v1.yaml` — `long_running_graceful` equation.
+
+### Rule 9: CI Zero-Failure Policy (Toyota Way)
+
+**No failed CI jobs of ANY kind are allowed. Infrastructure failures ARE defects.**
+
+A CI run that fails on checkout, runner misconfiguration, or Docker contamination
+is the same as a failed test — it blocks the PR gate and wastes engineer time.
+The Toyota Way treats these as production defects requiring permanent root-cause fixes.
+
+#### Five-Whys: CI Infrastructure Failures (2026-04-13)
+
+| Root Cause | Failures | Permanent Fix |
+|-----------|----------|---------------|
+| **Mac runner picks up Linux container jobs** | 8 (27%) | `[self-hosted, X64, Linux]` label filter in ci.yml |
+| **Root-owned files from Docker containers** | 5 (17%) | `ACTIONS_RUNNER_HOOK_JOB_STARTED` pre-job hook on all 17 runners |
+| **Cascade** (gate fails because upstream failed) | 6 (20%) | Resolves when root causes above are fixed |
+| **New security advisories** | 3 (10%) | Exemptions in `.cargo/audit.toml` + `deny.toml` |
+| **Org ruleset name mismatch** | 2 (7%) | Top-level `gate` job in ci.yml (PR #733) |
+
+#### Runner Architecture (2026-04-13)
+
+| Runner | Count | OS | Labels | Container-Safe | Used For |
+|--------|-------|-----|--------|---------------|----------|
+| intel-clean-room-* | 17 | Linux x86_64 | X64, Linux, clean-room | YES | workspace-test, gate, security, lint, test, coverage |
+| lambda-labs-gpu | 1 | Linux x86_64 | X64, Linux, gpu, cuda | YES | GPU tests (not currently in aprender CI) |
+| macmini-local-alfredo | 1 | macOS x86_64 | X64, macOS | NO (no Docker) | Excluded by +Linux label |
+| jetson-edge | 1 | Linux aarch64 | ARM64, Linux | NO (wrong arch) | Excluded by X64 label |
+
+#### Pre-Job Hook (Permanent Fix)
+
+All 17 runners have `ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/bin/runner-pre-job.sh`
+which runs `chown -R noah:noah $GITHUB_WORKSPACE` BEFORE every job starts.
+This eliminates the Docker root-ownership contamination window with **zero** latency
+(vs the cron workaround which had up to 60s gap).
+
+```bash
+# /usr/local/bin/runner-pre-job.sh
+#!/bin/bash
+WORKSPACE="${GITHUB_WORKSPACE:-}"
+if [ -n "$WORKSPACE" ] && [ -d "$WORKSPACE" ]; then
+  chown -R noah:noah "$WORKSPACE" 2>/dev/null || true
+fi
+```
+
+#### Enforcement
+
+- ci.yml uses `[self-hosted, X64, Linux]` for ALL container/bare-metal jobs
+- Pre-job hook runs on every job start (no window for contamination)
+- Cron `/etc/cron.d/fix-runner-ownership` as defense-in-depth (every 1 min)
+- PR gate (`gate` job) requires ALL upstream jobs to pass
 
 ---
 
