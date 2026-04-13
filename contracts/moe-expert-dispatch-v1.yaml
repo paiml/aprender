@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Fedus et al. (2022). Switch Transformers: Scaling to Trillion Parameter Models."
+  description: "MoE expert dispatch and weighted aggregation"
+
+kind: KernelContract
+name: moe-expert-dispatch
+version: "1.0.0"
+scope: "crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
+
+description: |
+  Dispatches tokens to selected experts, runs expert FFN, aggregates weighted outputs. Includes shared expert path.
+
+equations:
+  expert_isolation:
+    description: "∀ expert e: only processes tokens routed to e"
+    formula: "∀ expert e: only processes tokens routed to e"
+
+  weighted_aggregation:
+    description: "output[t] = Σ_e weight[t,e] * expert_output[t,e]"
+    formula: "output[t] = Σ_e weight[t,e] * expert_output[t,e]"
+
+falsification:
+  - id: FALSIFY-MOE_EXPERT_DISPATCH_V1_001
+    description: "∀ expert e: only processes tokens routed to e"
+    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-MOE_EXPERT_DISPATCH_V1_002
+    description: "output[t] = Σ_e weight[t,e] * expert_output[t,e]"
+    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
+    evidence: "cargo test --lib"

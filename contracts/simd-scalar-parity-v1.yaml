@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Intel Intrinsics Guide; ARM NEON Programmer's Guide."
+  description: "SIMD kernels match scalar reference"
+
+kind: KernelContract
+name: simd-scalar-parity
+version: "1.0.0"
+scope: "crates/aprender-compute/src/backends/"
+
+description: |
+  Every SIMD kernel (SSE2, AVX2, AVX-512, NEON) must produce output matching the scalar fallback within floating-point tolerance.
+
+equations:
+  output_equivalence:
+    description: "∀ input: |simd_output - scalar_output| < ε where ε = 1e-5"
+    formula: "∀ input: |simd_output - scalar_output| < ε where ε = 1e-5"
+
+  remainder_handling:
+    description: "∀ input_len: SIMD + scalar remainder = complete output"
+    formula: "∀ input_len: SIMD + scalar remainder = complete output"
+
+falsification:
+  - id: FALSIFY-SIMD_SCALAR_PARITY_V1_001
+    description: "∀ input: |simd_output - scalar_output| < ε where ε = 1e-5"
+    test: "Related tests in crates/aprender-compute/src/backends/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-SIMD_SCALAR_PARITY_V1_002
+    description: "∀ input_len: SIMD + scalar remainder = complete output"
+    test: "Related tests in crates/aprender-compute/src/backends/"
+    evidence: "cargo test --lib"
