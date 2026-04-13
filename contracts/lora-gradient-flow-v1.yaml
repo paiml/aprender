@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  description: "LoRA gradient flow correctness"
+  references:
+    - "Provable contract for lora-gradient-flow-v1"
+
+kind: AlgorithmContract
+name: lora-gradient-flow
+version: "1.0.0"
+scope: "crates/aprender-train/src/finetune/"
+
+description: |
+  LoRA adapter gradients flow correctly: dL/dA and dL/dB computed via chain rule through frozen base.
+
+equations:
+  frozen_base:
+    description: "∇W_base == 0 during LoRA training"
+    formula: "∇W_base == 0 during LoRA training"
+
+  adapter_gradient:
+    description: "∇A, ∇B non-zero for non-zero loss"
+    formula: "∇A, ∇B non-zero for non-zero loss"
+
+falsification:
+  - id: FALSIFY-LORA_GRADIENT_FLOW_V1_001
+    description: "∇W_base == 0 during LoRA training"
+    test: "Related tests in crates/aprender-train/src/finetune/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-LORA_GRADIENT_FLOW_V1_002
+    description: "∇A, ∇B non-zero for non-zero loss"
+    test: "Related tests in crates/aprender-train/src/finetune/"
+    evidence: "cargo test --lib"

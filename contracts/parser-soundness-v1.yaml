@@ -1,0 +1,58 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "GGUF Specification v3 (ggerganov/ggml)"
+    - "Safetensors specification (huggingface/safetensors)"
+    - "APR format specification (docs/specifications/aprender-monorepo-consolidation.md)"
+  description: "GGUF, SafeTensors, and APR parser soundness — no panics, typed errors, magic-byte detection"
+
+kind: AlgorithmContract
+name: parser-soundness
+version: "1.0.0"
+scope: "crates/aprender-core/src/format/ — GGUF, SafeTensors, and APR parsers"
+
+description: |
+  Format parsers are the trust boundary between untrusted bytes on disk and
+  safe in-memory representations. Any input must produce either a valid parse
+  result or a typed error — never a panic, never silent corruption.
+
+equations:
+  magic_byte_detection:
+    description: "Format identified from first 4–8 bytes before any allocation"
+    formula: |
+      bytes[0..4] == "GGUF" -> Ok(Gguf)
+      bytes[0..4] == "APR\0" or "APRN" -> Ok(Apr)
+      bytes[0..8] is valid LE u64 followed by '{' -> Ok(SafeTensors)
+      _ -> Err(FormatError::UnknownMagic)
+    note: "Magic check is O(1); runs before any heap allocation"
+
+  malformed_rejection:
+    description: "Invalid files produce SparseError, not panic"
+    formula: "∀ bytes ∈ Bytes: parse(bytes) ∈ Ok(T) ∪ Err(SparseError); panic! is FORBIDDEN"
+    note: "Enforced by #[no_panic] on parser entry points"
+
+  header_integrity:
+    description: "Parsed header field totals are consistent with file size"
+    formula: |
+      header.n_tensors * min_entry_bytes + metadata_overhead ≤ file_size
+      ∀ tensor t: t.offset + t.byte_size ≤ file_size
+    note: "Both conditions checked before constructing any TensorInfo"
+
+falsification:
+  - id: FALSIFY-PARSE-001
+    description: "Truncated GGUF (3 bytes) returns FormatError, does not panic"
+    test: "Feed 3-byte buffer to GGUF parser; assert Err, no panic"
+    evidence: "cargo test -p aprender-core --lib parser_soundness"
+
+  - id: FALSIFY-PARSE-002
+    description: "SafeTensors with header_size > file_size returns bounds error"
+    test: "Craft 8-byte file claiming header_size = 0xFFFFFFFF; assert FormatError"
+    evidence: "cargo test -p aprender-core --lib parser_soundness"
+
+  - id: FALSIFY-PARSE-003
+    description: "APR file with wrong magic bytes ('GGUF') is rejected as UnknownMagic"
+    test: "Write APR magic field as GGUF bytes; assert FormatError::UnknownMagic"
+    evidence: "cargo test -p aprender-core --lib parser_soundness"

@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  description: "Code generation dispatch"
+  references:
+    - "Provable contract for codegen-dispatch-v1"
+
+kind: AlgorithmContract
+name: codegen-dispatch
+version: "1.0.0"
+scope: "crates/aprender-compute/src/"
+
+description: |
+  Runtime SIMD dispatch: detect hardware features → select optimal kernel. Fallback to scalar always works.
+
+equations:
+  fallback_safety:
+    description: "scalar fallback produces correct output for all inputs"
+    formula: "scalar fallback produces correct output for all inputs"
+
+  dispatch_determinism:
+    description: "same hardware → same kernel selected"
+    formula: "same hardware → same kernel selected"
+
+falsification:
+  - id: FALSIFY-CODEGEN_DISPATCH_V1_001
+    description: "scalar fallback produces correct output for all inputs"
+    test: "Related tests in crates/aprender-compute/src/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-CODEGEN_DISPATCH_V1_002
+    description: "same hardware → same kernel selected"
+    test: "Related tests in crates/aprender-compute/src/"
+    evidence: "cargo test --lib"

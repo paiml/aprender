@@ -1581,3 +1581,5 @@ fn format_archive_size(bytes: u64) -> String {
         format!("{bytes} B")
     }
 }
+
+include!("train_tests.rs");

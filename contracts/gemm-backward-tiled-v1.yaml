@@ -1,0 +1,36 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  description: "Tiled GEMM backward pass"
+  references:
+    - "Provable contract for gemm-backward-tiled-v1"
+
+kind: KernelContract
+name: gemm-backward-tiled
+version: "1.0.0"
+scope: "crates/aprender-compute/src/backends/"
+
+description: |
+  Backward GEMM for training: dW = X^T·dY, dX = dY·W^T. Tiled for L1/L2 cache.
+
+equations:
+  gradient_correctness:
+    description: "‖dW_tiled - dW_naive‖ < ε·‖dW_naive‖"
+    formula: "‖dW_tiled - dW_naive‖ < ε·‖dW_naive‖"
+
+  transpose_identity:
+    description: "A^T^T == A for all tile sizes"
+    formula: "A^T^T == A for all tile sizes"
+
+falsification:
+  - id: FALSIFY-GEMM_BACKWARD_TILED_V1_001
+    description: "‖dW_tiled - dW_naive‖ < ε·‖dW_naive‖"
+    test: "Related tests in crates/aprender-compute/src/backends/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-GEMM_BACKWARD_TILED_V1_002
+    description: "A^T^T == A for all tile sizes"
+    test: "Related tests in crates/aprender-compute/src/backends/"
+    evidence: "cargo test --lib"

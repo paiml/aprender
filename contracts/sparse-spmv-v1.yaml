@@ -1,0 +1,96 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-12"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Saad, Y. (2003). Iterative Methods for Sparse Linear Systems. SIAM."
+    - "Bell & Garland (2008). Efficient Sparse Matrix-Vector Multiplication on CUDA."
+  description: |
+    Provable contract for sparse matrix formats and SpMV/SpMM operations.
+    Defines CSR format invariants, SpMV correctness, and error bounds.
+
+kind: AlgorithmContract
+name: sparse-spmv
+version: "1.0.0"
+scope: "crates/aprender-sparse — CSR, COO, BSR, SELL formats + SpMV/SpMM/SpGEMM"
+
+description: |
+  Sparse matrix operations for the Sovereign AI Stack. CSR is the primary format.
+  COO for construction, BSR for block-structured patterns, SELL for GPU.
+
+  All operations are validated against dense equivalents with bounded error.
+  Format invariants are checked at construction time (fail-fast).
+
+equations:
+  format_validation:
+    description: "CSR format invariants hold after construction"
+    formula: |
+      ∀ CSR matrix M:
+        1. offsets.len() == rows + 1
+        2. offsets[0] == 0
+        3. ∀ i ∈ [0, rows): offsets[i] ≤ offsets[i+1]
+        4. offsets[rows] == col_indices.len() == values.len()
+        5. ∀ j ∈ col_indices: j < cols
+    note: "Checked in validate_csr_invariants(). Invalid CSR cannot be constructed."
+
+  spmv:
+    description: "SpMV produces correct result y = α·A·x + β·y"
+    formula: "∀ i ∈ [0, rows): y[i] = α·Σ_{j ∈ row(i)} A[i,j]·x[j] + β·y_prev[i]"
+    note: "Tested by comparing against dense matmul for random inputs"
+
+  spmm:
+    description: "SpMM produces correct result C = α·A·B + β·C"
+    formula: "∀ i,k: C[i,k] = α·Σ_{j ∈ row(i)} A[i,j]·B[j,k] + β·C_prev[i,k]"
+    note: "Tested by comparing against dense matmul"
+
+  spgemm:
+    description: "SpGEMM produces correct sparse result C = A·B"
+    formula: "∀ i,k: C[i,k] = Σ_{j} A[i,j]·B[j,k] where C is CSR"
+    note: "Gustavson's algorithm. Verified against dense multiplication."
+
+  coo_to_csr:
+    description: "COO→CSR conversion preserves all entries"
+    formula: "∀ (i,j,v) ∈ COO: CSR[i,j] contains v (duplicates summed)"
+    note: "Verified by to_dense() roundtrip equality"
+
+falsification:
+  - id: FALSIFY-SPARSE-001
+    description: "CSR rejects non-monotonic offsets"
+    test: "test_reject_non_monotonic_offsets"
+    evidence: "cargo test -p aprender-sparse --lib test_reject_non_monotonic_offsets"
+
+  - id: FALSIFY-SPARSE-002
+    description: "CSR rejects nonzero first offset"
+    test: "test_reject_nonzero_first_offset"
+    evidence: "cargo test -p aprender-sparse --lib test_reject_nonzero_first_offset"
+
+  - id: FALSIFY-SPARSE-003
+    description: "CSR rejects column out of bounds"
+    test: "test_reject_column_out_of_bounds"
+    evidence: "cargo test -p aprender-sparse --lib test_reject_column_out_of_bounds"
+
+  - id: FALSIFY-SPARSE-004
+    description: "SpMV matches dense for identity matrix"
+    test: "test_spmv_identity"
+    evidence: "cargo test -p aprender-sparse --lib test_spmv_identity"
+
+  - id: FALSIFY-SPARSE-005
+    description: "SpMV alpha/beta parameters work correctly"
+    test: "test_spmv_alpha_beta"
+    evidence: "cargo test -p aprender-sparse --lib test_spmv_alpha_beta"
+
+  - id: FALSIFY-SPARSE-006
+    description: "SpGEMM produces correct identity product"
+    test: "test_spgemm_identity"
+    evidence: "cargo test -p aprender-sparse --lib test_spgemm_identity"
+
+  - id: FALSIFY-SPARSE-007
+    description: "COO→CSR roundtrip preserves all entries"
+    test: "test_coo_to_csr_basic + test_to_dense_roundtrip"
+    evidence: "cargo test -p aprender-sparse --lib test_coo_to_csr"
+
+  - id: FALSIFY-SPARSE-008
+    description: "Property: SpMV is linear (matches dense for random inputs)"
+    test: "prop_spmv_matches_dense"
+    evidence: "cargo test -p aprender-sparse --lib prop_spmv_matches_dense"

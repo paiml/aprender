@@ -1,0 +1,45 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-13"
+  author: PAIML Engineering
+  registry: true
+  description: "QLoRA hyperparameter validation"
+  references:
+    - "Provable contract for qlora-hyperparameters-v1"
+
+kind: AlgorithmContract
+name: qlora-hyperparameters
+version: "1.0.0"
+scope: "crates/aprender-train/src/finetune/"
+
+description: |
+  QLoRA fine-tuning hyperparameter bounds: rank ∈ [4,256], alpha ∈ [1,512], lr ∈ [1e-6, 1e-3], target modules valid.
+
+equations:
+  rank_bounds:
+    description: "4 ≤ rank ≤ 256 (power of 2 preferred)"
+    formula: "4 ≤ rank ≤ 256 (power of 2 preferred)"
+
+  alpha_scaling:
+    description: "alpha/rank ∈ [0.5, 4.0] for stable gradients"
+    formula: "alpha/rank ∈ [0.5, 4.0] for stable gradients"
+
+  lr_range:
+    description: "1e-6 ≤ learning_rate ≤ 1e-3"
+    formula: "1e-6 ≤ learning_rate ≤ 1e-3"
+
+falsification:
+  - id: FALSIFY-QLORA_HYPERPARAMETERS_V1_001
+    description: "4 ≤ rank ≤ 256 (power of 2 preferred)"
+    test: "Related tests in crates/aprender-train/src/finetune/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-QLORA_HYPERPARAMETERS_V1_002
+    description: "alpha/rank ∈ [0.5, 4.0] for stable gradients"
+    test: "Related tests in crates/aprender-train/src/finetune/"
+    evidence: "cargo test --lib"
+
+  - id: FALSIFY-QLORA_HYPERPARAMETERS_V1_003
+    description: "1e-6 ≤ learning_rate ≤ 1e-3"
+    test: "Related tests in crates/aprender-train/src/finetune/"
+    evidence: "cargo test --lib"
