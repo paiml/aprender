@@ -418,8 +418,10 @@ impl OwnedQuantizedLayer {
     /// SPEC-MOE-APR-001 v1.1: Unpack GGUF 3D packed gate+up expert tensors
     /// into per-expert `OwnedQuantizedTensor` with concatenated gate+up data.
     ///
-    /// GGUF stores experts as 3D: [in_dim, out_dim, num_experts]
-    /// Each expert slice = total_bytes / num_experts (contiguous along expert axis)
+    /// GGUF stores experts as 3D: [ne0, ne1, ne2] where ne0=hidden_dim (quantization axis),
+    /// ne1=moe_intermediate, ne2=num_experts. After dims.reverse() in parser:
+    /// dims = [num_experts, moe_intermediate, hidden_dim].
+    /// Each expert slice = total_bytes / num_experts (contiguous along expert axis).
     fn unpack_moe_experts_gate_up(
         gate_exps: Option<&QuantizedTensorRef>,
         up_exps: Option<&QuantizedTensorRef>,
@@ -442,19 +444,6 @@ impl OwnedQuantizedLayer {
             "[MOE-UNPACK] gate: offset={}, byte_size={}, num_experts={}, per_expert={}, qtype={}, in_dim={}, out_dim={}",
             gate_ref.offset, gate_ref.byte_size, num_experts, gate_expert_bytes, gate_ref.qtype,
             hidden_dim, moe_intermediate
-        );
-        // FALSIFY-MOE-007: Verify expert 0 data matches raw file at expected offset
-        if gate_ref.offset + 4 <= data.len() {
-            eprintln!(
-                "[MOE-VERIFY] gate expert 0 first 4 bytes at offset {}: {:02x} {:02x} {:02x} {:02x}",
-                gate_ref.offset,
-                data[gate_ref.offset], data[gate_ref.offset+1],
-                data[gate_ref.offset+2], data[gate_ref.offset+3]
-            );
-        }
-        eprintln!(
-            "[MOE-UNPACK] up: offset={}, byte_size={}, per_expert={}, qtype={}",
-            up_ref.offset, up_ref.byte_size, up_expert_bytes, up_ref.qtype
         );
 
         let mut experts = Vec::with_capacity(num_experts);

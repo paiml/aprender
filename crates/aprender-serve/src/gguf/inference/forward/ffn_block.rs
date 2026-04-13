@@ -242,7 +242,7 @@ impl OwnedQuantizedModel {
 
     /// Single expert SwiGLU forward: down(SiLU(gate(x)) * up(x))
     ///
-    /// Expert gate+up stored as separate Q4K halves in `expert.data`.
+    /// Expert gate+up stored as concatenated Q4K data [gate_bytes | up_bytes].
     /// Contract: moe-apr-q4k-inference-v1.yaml equation `moe_expert_ffn`.
     fn moe_expert_swiglu(
         &self,
@@ -252,24 +252,31 @@ impl OwnedQuantizedModel {
     ) -> Result<Vec<f32>> {
         let moe_intermediate = expert_gate_up.out_dim / 2;
 
-        // Split packed gate+up into two virtual tensors
+        // Gate and up were loaded from separate GGUF tensors then concatenated.
+        // Split at byte midpoint to recover each projection's Q4K data.
         let gate_bytes = expert_gate_up.data.len() / 2;
-        let gate_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
-            data: expert_gate_up.data[..gate_bytes].to_vec(),
-            in_dim: expert_gate_up.in_dim,
-            out_dim: moe_intermediate,
-            qtype: expert_gate_up.qtype,
-        };
-        let up_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
-            data: expert_gate_up.data[gate_bytes..].to_vec(),
-            in_dim: expert_gate_up.in_dim,
-            out_dim: moe_intermediate,
-            qtype: expert_gate_up.qtype,
-        };
 
-        // Separate matmuls for gate and up projections
-        let gate_data = self.fused_matmul(input, &gate_tensor)?;
-        let up_data = self.fused_matmul(input, &up_tensor)?;
+        // Use fused_matmul directly with sub-sliced data via temporary tensors
+        // Gate projection: input[hidden_dim] × gate[moe_intermediate, hidden_dim] → [moe_intermediate]
+        let gate_data = {
+            let t = crate::gguf::quantized::OwnedQuantizedTensor {
+                data: expert_gate_up.data[..gate_bytes].to_vec(),
+                in_dim: expert_gate_up.in_dim,
+                out_dim: moe_intermediate,
+                qtype: expert_gate_up.qtype,
+            };
+            self.fused_matmul(input, &t)?
+        };
+        // Up projection: same dimensions
+        let up_data = {
+            let t = crate::gguf::quantized::OwnedQuantizedTensor {
+                data: expert_gate_up.data[gate_bytes..].to_vec(),
+                in_dim: expert_gate_up.in_dim,
+                out_dim: moe_intermediate,
+                qtype: expert_gate_up.qtype,
+            };
+            self.fused_matmul(input, &t)?
+        };
 
         // SwiGLU: SiLU(gate) * up
         let mut swiglu = vec![0.0f32; moe_intermediate];
@@ -811,15 +818,25 @@ impl OwnedQuantizedModel {
             // 2h+2i. FFN with optional layer norm and SwiGLU/GELU activation
             let ffn_activated = self.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?;
 
-            // 2j. FFN down projection → ffn_down_buffer (PMAT-305: no alloc)
-            self.fused_matmul_into(&ffn_activated, &layer.ffn_down_weight, &mut ffn_down_buffer)?;
-            if let Some(ref bias) = layer.ffn_down_bias {
-                ops::add_bias(&mut ffn_down_buffer, bias);
-            }
+            // SPEC-MOE-APR-001: MoE forward already includes down projection per expert.
+            // Dense FFN needs separate down_proj; MoE does not.
+            let is_moe = layer.moe_gate_weight.is_some();
+            if is_moe {
+                // MoE output is already [hidden_dim] — add directly as residual
+                for i in 0..hidden_dim {
+                    hidden[i] += ffn_activated[i];
+                }
+            } else {
+                // 2j. FFN down projection → ffn_down_buffer (PMAT-305: no alloc)
+                self.fused_matmul_into(&ffn_activated, &layer.ffn_down_weight, &mut ffn_down_buffer)?;
+                if let Some(ref bias) = layer.ffn_down_bias {
+                    ops::add_bias(&mut ffn_down_buffer, bias);
+                }
 
-            // Residual
-            for i in 0..hidden_dim {
-                hidden[i] += ffn_down_buffer[i];
+                // Residual
+                for i in 0..hidden_dim {
+                    hidden[i] += ffn_down_buffer[i];
+                }
             }
 
             // DEBUG: Consolidated per-layer output trace (PMAT-260)
