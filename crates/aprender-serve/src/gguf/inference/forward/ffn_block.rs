@@ -371,16 +371,11 @@ impl OwnedQuantizedModel {
             }
         }
 
-        // Expert dispatch — stride-based, zero-copy
-        // Contract: moe-stride-dispatch-v1.yaml invariant "Zero Vec<u8> allocation per expert"
+        // Expert dispatch — stride-based
+        // Uses self.fused_matmul to route through CUDA when available
         let gate_stride = gate_packed.len() / num_experts;
         let up_stride = up_packed.len() / num_experts;
         let down_stride = down_packed.len() / num_experts;
-
-        use crate::quantize::{
-            fused_q4k_parallel_matvec, fused_q6k_parallel_matvec,
-        };
-        use crate::gguf::types::{GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K};
 
         let mut output = vec![0.0f32; hidden_dim];
         for &(expert_idx, weight) in &weights {
@@ -388,32 +383,19 @@ impl OwnedQuantizedModel {
             let up_offset = expert_idx * up_stride;
             let down_offset = expert_idx * down_stride;
 
-            // Gate matmul: zero-copy slice into packed 3D data
-            let gate_slice = &gate_packed[gate_offset..gate_offset + gate_stride];
-            let gate_data = match gate_up_qtype {
-                GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(gate_slice, input, hidden_dim, moe_intermediate)?,
-                GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(gate_slice, input, hidden_dim, moe_intermediate)?,
-                _ => {
-                    // Fallback: wrap in OwnedQuantizedTensor (copies)
-                    let t = crate::gguf::quantized::OwnedQuantizedTensor {
-                        data: gate_slice.to_vec(), in_dim: hidden_dim, out_dim: moe_intermediate, qtype: gate_up_qtype,
-                    };
-                    self.fused_matmul(input, &t)?
-                }
+            // Gate matmul via fused_matmul (routes to CUDA when cuda_executor is set)
+            let gate_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
+                data: gate_packed[gate_offset..gate_offset + gate_stride].to_vec(),
+                in_dim: hidden_dim, out_dim: moe_intermediate, qtype: gate_up_qtype,
             };
+            let gate_data = self.fused_matmul(input, &gate_tensor)?;
 
-            // Up matmul: zero-copy
-            let up_slice = &up_packed[up_offset..up_offset + up_stride];
-            let up_data = match gate_up_qtype {
-                GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(up_slice, input, hidden_dim, moe_intermediate)?,
-                GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(up_slice, input, hidden_dim, moe_intermediate)?,
-                _ => {
-                    let t = crate::gguf::quantized::OwnedQuantizedTensor {
-                        data: up_slice.to_vec(), in_dim: hidden_dim, out_dim: moe_intermediate, qtype: gate_up_qtype,
-                    };
-                    self.fused_matmul(input, &t)?
-                }
+            // Up matmul
+            let up_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
+                data: up_packed[up_offset..up_offset + up_stride].to_vec(),
+                in_dim: hidden_dim, out_dim: moe_intermediate, qtype: gate_up_qtype,
             };
+            let up_data = self.fused_matmul(input, &up_tensor)?;
 
             // SwiGLU: SiLU(gate) * up
             let mut swiglu = vec![0.0f32; moe_intermediate];
@@ -422,18 +404,12 @@ impl OwnedQuantizedModel {
                 swiglu[i] = silu * up_data[i];
             }
 
-            // Down matmul: zero-copy (may be different qtype — Q6K for Qwen3)
-            let down_slice = &down_packed[down_offset..down_offset + down_stride];
-            let down_data = match down_qtype {
-                GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(down_slice, &swiglu, moe_intermediate, hidden_dim)?,
-                GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(down_slice, &swiglu, moe_intermediate, hidden_dim)?,
-                _ => {
-                    let t = crate::gguf::quantized::OwnedQuantizedTensor {
-                        data: down_slice.to_vec(), in_dim: moe_intermediate, out_dim: hidden_dim, qtype: down_qtype,
-                    };
-                    self.fused_matmul(&swiglu, &t)?
-                }
+            // Down matmul (may be Q6K)
+            let down_tensor = crate::gguf::quantized::OwnedQuantizedTensor {
+                data: down_packed[down_offset..down_offset + down_stride].to_vec(),
+                in_dim: moe_intermediate, out_dim: hidden_dim, qtype: down_qtype,
             };
+            let down_data = self.fused_matmul(&swiglu, &down_tensor)?;
 
             for i in 0..hidden_dim {
                 output[i] += weight * down_data[i];
