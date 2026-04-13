@@ -221,6 +221,17 @@ impl OwnedQuantizedModel {
             let expert_out = self.moe_expert_swiglu(
                 input, &experts[expert_idx], &expert_downs[expert_idx],
             )?;
+            // FALSIFY-MOE-006 trace: check expert output is not garbage
+            if std::env::var("MOE_TRACE").is_ok() {
+                let sum: f32 = expert_out.iter().sum();
+                let max = expert_out.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                let min = expert_out.iter().copied().fold(f32::INFINITY, f32::min);
+                let non_zero = expert_out.iter().filter(|&&x| x != 0.0).count();
+                eprintln!(
+                    "[MOE-TRACE] expert={} weight={:.4} out_len={} sum={:.4} min={:.4} max={:.4} non_zero={}",
+                    expert_idx, weight, expert_out.len(), sum, min, max, non_zero
+                );
+            }
             for i in 0..hidden_dim {
                 output[i] += weight * expert_out[i];
             }
