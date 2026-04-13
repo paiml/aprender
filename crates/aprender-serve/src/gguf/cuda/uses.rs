@@ -254,10 +254,16 @@ impl OwnedQuantizedModelCuda {
         let is_moe = self.model.config.num_experts > 0;
         if profiling_enabled || is_moe || !self.executor.has_decode_graph() {
             if is_moe {
-                // Hybrid path: GPU attention + CPU MoE FFN
+                // Hybrid path: GPU attention + CPU MoE FFN → sample token
                 let logits = self.forward_single_full_cuda_with_cache(token_id, cache, position)?;
                 cache.advance();
-                return Ok(logits
+                // Greedy argmax
+                let best_token = logits.iter()
+                    .enumerate()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(idx, _)| idx as u32)
+                    .unwrap_or(0);
+                return Ok(best_token);
             }
             // First call - need to capture graph, use regular path
             let mut logits = vec![0.0f32; vocab_size];
