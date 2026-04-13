@@ -443,6 +443,15 @@ impl OwnedQuantizedLayer {
             gate_ref.offset, gate_ref.byte_size, num_experts, gate_expert_bytes, gate_ref.qtype,
             hidden_dim, moe_intermediate
         );
+        // FALSIFY-MOE-007: Verify expert 0 data matches raw file at expected offset
+        if gate_ref.offset + 4 <= data.len() {
+            eprintln!(
+                "[MOE-VERIFY] gate expert 0 first 4 bytes at offset {}: {:02x} {:02x} {:02x} {:02x}",
+                gate_ref.offset,
+                data[gate_ref.offset], data[gate_ref.offset+1],
+                data[gate_ref.offset+2], data[gate_ref.offset+3]
+            );
+        }
         eprintln!(
             "[MOE-UNPACK] up: offset={}, byte_size={}, per_expert={}, qtype={}",
             up_ref.offset, up_ref.byte_size, up_expert_bytes, up_ref.qtype
