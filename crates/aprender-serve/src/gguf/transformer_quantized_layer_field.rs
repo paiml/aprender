@@ -48,6 +48,10 @@ mod tests {
             ffn_norm_bias: None,
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            moe_gate_inp_weight: None,
+            moe_gate_exps: None,
+            moe_up_exps: None,
+            moe_down_exps: None,
         };
 
         assert_eq!(layer.attn_norm_weight.len(), 64);
@@ -113,6 +117,10 @@ mod tests {
             ffn_norm_bias: Some(vec![0.0; 32]),
             attn_q_norm_weight: None,
             attn_k_norm_weight: None,
+            moe_gate_inp_weight: None,
+            moe_gate_exps: None,
+            moe_up_exps: None,
+            moe_down_exps: None,
         };
 
         assert!(layer.attn_norm_bias.is_some());

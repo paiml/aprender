@@ -639,13 +639,17 @@ impl GGUFConfig {
 
     /// SPEC-MOE-APR-001: Count experts from GGUF tensor names.
     fn count_experts_from_tensors(model: &crate::gguf::GGUFModel) -> usize {
-        // GGUF packed: blk.0.ffn_gate_exps.weight has shape [num_experts, ...]
+        // GGUF packed: blk.0.ffn_gate_exps.weight has shape [ne0, ne1, ne2]
+        // where ne0=hidden_dim, ne1=moe_intermediate, ne2=num_experts
         if let Some(t) = model
             .tensors
             .iter()
             .find(|t| t.name == "blk.0.ffn_gate_exps.weight")
         {
-            return t.dims.first().copied().unwrap_or(0) as usize;
+            // Expert count is the LAST dimension (ne2)
+            return t.dims.get(2).copied().unwrap_or(
+                t.dims.first().copied().unwrap_or(0)
+            ) as usize;
         }
         // HF-style per-expert: count model.layers.0.mlp.experts.N patterns
         let mut max_expert = 0usize;
@@ -763,7 +767,15 @@ impl GGUFConfig {
                 .find(|t| {
                     t.name.contains("experts.0.gate_proj") || t.name.contains("ffn_gate_exps")
                 })
-                .and_then(|t| t.dims.first().copied())
+                .and_then(|t| {
+                    // Per-expert: dims = [intermediate, hidden] → dims[0]
+                    // Packed 3D: dims = [hidden, intermediate, experts] → dims[1]
+                    if t.name.contains("ffn_gate_exps") {
+                        t.dims.get(1).copied()
+                    } else {
+                        t.dims.first().copied()
+                    }
+                })
                 .unwrap_or(0) as usize
         } else {
             0

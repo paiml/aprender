@@ -1,6 +1,7 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-11"
+  updated: "2026-04-13"
   author: "PAIML Engineering"
   description: "MoE inference for APR Q4K models — tensor loading, expert dispatch, forward block"
   references:
@@ -28,27 +29,41 @@ constants:
 equations:
   moe_tensor_completeness:
     formula: |
-      load_moe_layer(apr, layer_idx, num_experts) -> Result<MoeExpertWeights>:
-        router = apr.find("model.layers.{layer_idx}.mlp.gate.weight")
+      load_moe_layer(source, layer_idx, num_experts) -> Result<MoeExpertWeights>:
+        # Format A: APR per-expert tensors
+        IF source has "model.layers.{layer_idx}.mlp.experts.0.gate_proj.weight":
+          router = source.find("model.layers.{layer_idx}.mlp.gate.weight")
+          FOR e IN 0..num_experts:
+            gate = source.find("model.layers.{layer_idx}.mlp.experts.{e}.gate_proj.weight")
+            up   = source.find("model.layers.{layer_idx}.mlp.experts.{e}.up_proj.weight")
+            down = source.find("model.layers.{layer_idx}.mlp.experts.{e}.down_proj.weight")
+
+        # Format B: GGUF packed 3D tensors (llama.cpp convention)
+        ELIF source has "blk.{layer_idx}.ffn_gate_exps.weight":
+          router = source.find("blk.{layer_idx}.ffn_gate_inp.weight")
+          gate_3d = source.find("blk.{layer_idx}.ffn_gate_exps.weight")  # [hidden, intermediate, experts]
+          up_3d   = source.find("blk.{layer_idx}.ffn_up_exps.weight")    # [hidden, intermediate, experts]
+          down_3d = source.find("blk.{layer_idx}.ffn_down_exps.weight")  # [intermediate, hidden, experts]
+          FOR e IN 0..num_experts:
+            gate[e] = gate_3d[:, :, e]   # slice along expert axis
+            up[e]   = up_3d[:, :, e]
+            down[e] = down_3d[:, :, e]
+
         REQUIRE router.shape == [num_experts, hidden_dim]
-        FOR e IN 0..num_experts:
-          gate = apr.find("model.layers.{layer_idx}.mlp.experts.{e}.gate_proj.weight")
-          up   = apr.find("model.layers.{layer_idx}.mlp.experts.{e}.up_proj.weight")
-          down = apr.find("model.layers.{layer_idx}.mlp.experts.{e}.down_proj.weight")
-          REQUIRE gate.shape == [moe_intermediate, hidden_dim]
-          REQUIRE up.shape   == [moe_intermediate, hidden_dim]
-          REQUIRE down.shape == [hidden_dim, moe_intermediate]
-        total_expert_tensors = num_experts * 3
-    domain: "APR file with MoE architecture"
-    codomain: "MoeExpertWeights with packed expert tensors"
+        REQUIRE len(gate) == num_experts
+        REQUIRE each gate[e].logical_shape == [moe_intermediate, hidden_dim]
+    domain: "APR or GGUF file with MoE architecture"
+    codomain: "MoeExpertWeights with per-expert tensors (unpacked from 3D if needed)"
     invariants:
-      - "All 128 experts loaded per layer (no partial loading)"
+      - "All num_experts experts loaded per layer (no partial loading)"
       - "Router shape matches [num_experts, hidden_dim]"
       - "Expert shapes match MoE intermediate dimensions"
-      - "Total expert tensors per layer = num_experts * 3"
+      - "GGUF packed 3D tensors correctly sliced along expert dimension"
+      - "Q4K block boundaries preserved during 3D→per-expert slicing"
     postconditions:
-      - "expert_gate_up.len() == num_experts * 2 * moe_intermediate * hidden_dim"
-      - "expert_down.len() == num_experts * hidden_dim * moe_intermediate"
+      - "expert_gate_up.len() == num_experts"
+      - "expert_down.len() == num_experts"
+      - "each expert_gate_up[e] contains gate+up data for one expert"
 
   moe_routing:
     formula: |
@@ -171,9 +186,19 @@ falsification_tests:
     rule: "Output is coherent (not garbage)"
     prediction: "apr run produces syntactically valid Python"
     test: |
-      Run: apr run qwen3-coder-30b-q4k.apr --prompt "def fibonacci(n):" --max-tokens 32
+      Run: apr run qwen3-coder-30b-q4k.gguf --prompt "def fibonacci(n):" --max-tokens 32
       Assert output contains Python keywords (return, if, else) not random tokens.
     if_fails: "Layer-by-layer trace needed — compare with SafeTensors F32 path"
+
+  - id: FALSIFY-MOE-007
+    rule: "GGUF packed 3D expert tensors load correctly"
+    prediction: "ffn_gate_exps [hidden, intermediate, experts] unpacks to num_experts separate tensors"
+    test: |
+      Load Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf.
+      Assert blk.0.ffn_gate_exps.weight detected as MoE packed format.
+      Assert 128 expert gate tensors extracted, each with correct Q4K block count.
+      Assert blk.0.ffn_gate_inp.weight loaded as router (F32, [128, 2048]).
+    if_fails: "Tensor name mapping missing for GGUF MoE packed 3D format"
 
 kani_harnesses:
 - id: KANI-MOE-001

@@ -50,6 +50,14 @@ pub struct QuantizedGGUFTransformerLayer {
     pub attn_q_norm_weight: Option<Vec<f32>>,
     /// GH-279: Per-head K RMSNorm weight [head_dim] (Qwen3)
     pub attn_k_norm_weight: Option<Vec<f32>>,
+    /// SPEC-MOE-APR-001 v1.1: MoE router gate weight (F32, [num_experts, hidden_dim])
+    pub moe_gate_inp_weight: Option<Vec<f32>>,
+    /// SPEC-MOE-APR-001 v1.1: MoE packed gate expert weights (3D Q4K ref)
+    pub moe_gate_exps: Option<QuantizedTensorRef>,
+    /// SPEC-MOE-APR-001 v1.1: MoE packed up expert weights (3D Q4K ref)
+    pub moe_up_exps: Option<QuantizedTensorRef>,
+    /// SPEC-MOE-APR-001 v1.1: MoE packed down expert weights (3D Q6K ref)
+    pub moe_down_exps: Option<QuantizedTensorRef>,
 }
 
 /// Quantized GGUF Transformer for fused inference
@@ -337,23 +345,37 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             .ok();
 
         // FFN - large, keep quantized
-        let ffn_up_weight =
-            Self::get_tensor_ref(model, data, &format!("{}.ffn_up.weight", prefix))?;
+        // SPEC-MOE-APR-001 v1.1: MoE models have ffn_gate_exps/ffn_up_exps/ffn_down_exps
+        // instead of ffn_up/ffn_down. Detect MoE and use dummy dense weights.
+        let is_moe_layer = model.tensors.iter().any(|t| t.name == format!("{}.ffn_gate_exps.weight", prefix));
+
+        let ffn_up_weight = if is_moe_layer {
+            // MoE layer: no dense FFN — use dummy tensor ref (forward path checks MoE fields first)
+            QuantizedTensorRef { offset: 0, byte_size: 0, num_elements: 0, qtype: 0 }
+        } else {
+            Self::get_tensor_ref(model, data, &format!("{}.ffn_up.weight", prefix))?
+        };
         // GH-278: FFN biases — standard GGUF + aprender fallback
         let ffn_up_bias = model
             .get_tensor_f32(&format!("{}.ffn_up.bias", prefix), data)
             .or_else(|_| model.get_tensor_f32(&format!("{}.mlp.up_proj.bias", prefix), data))
             .ok();
-        let ffn_down_weight =
-            Self::get_tensor_ref(model, data, &format!("{}.ffn_down.weight", prefix))?;
+        let ffn_down_weight = if is_moe_layer {
+            QuantizedTensorRef { offset: 0, byte_size: 0, num_elements: 0, qtype: 0 }
+        } else {
+            Self::get_tensor_ref(model, data, &format!("{}.ffn_down.weight", prefix))?
+        };
         let ffn_down_bias = model
             .get_tensor_f32(&format!("{}.ffn_down.bias", prefix), data)
             .or_else(|_| model.get_tensor_f32(&format!("{}.mlp.down_proj.bias", prefix), data))
             .ok();
 
         // FFN gate - SwiGLU models like LLaMA have this
-        let ffn_gate_weight =
-            Self::get_tensor_ref(model, data, &format!("{}.ffn_gate.weight", prefix)).ok();
+        let ffn_gate_weight = if is_moe_layer {
+            None
+        } else {
+            Self::get_tensor_ref(model, data, &format!("{}.ffn_gate.weight", prefix)).ok()
+        };
         let ffn_gate_bias = model
             .get_tensor_f32(&format!("{}.ffn_gate.bias", prefix), data)
             .ok();
@@ -378,6 +400,19 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             .get_tensor_f32(&format!("{}.attn_k_norm.weight", prefix), data)
             .ok();
 
+        // SPEC-MOE-APR-001 v1.1: Load GGUF packed 3D MoE expert tensors
+        let (moe_gate_inp_weight, moe_gate_exps, moe_up_exps, moe_down_exps) = if is_moe_layer {
+            let gate_inp = model
+                .get_tensor_f32(&format!("{}.ffn_gate_inp.weight", prefix), data)
+                .ok();
+            let gate_exps = Self::get_tensor_ref(model, data, &format!("{}.ffn_gate_exps.weight", prefix)).ok();
+            let up_exps = Self::get_tensor_ref(model, data, &format!("{}.ffn_up_exps.weight", prefix)).ok();
+            let down_exps = Self::get_tensor_ref(model, data, &format!("{}.ffn_down_exps.weight", prefix)).ok();
+            (gate_inp, gate_exps, up_exps, down_exps)
+        } else {
+            (None, None, None, None)
+        };
+
         Ok(QuantizedGGUFTransformerLayer {
             attn_norm_weight,
             attn_norm_bias,
@@ -395,6 +430,10 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             ffn_norm_bias,
             attn_q_norm_weight,
             attn_k_norm_weight,
+            moe_gate_inp_weight,
+            moe_gate_exps,
+            moe_up_exps,
+            moe_down_exps,
         })
     }
 }

@@ -400,10 +400,105 @@ impl OwnedQuantizedLayer {
             ffn_norm_bias: layer.ffn_norm_bias.clone(),
             attn_q_norm_weight: layer.attn_q_norm_weight.clone(),
             attn_k_norm_weight: layer.attn_k_norm_weight.clone(),
-            moe_gate_weight: None,
-            moe_expert_weights: None,
-            moe_expert_down_weights: None,
+            moe_gate_weight: layer.moe_gate_inp_weight.clone(),
+            moe_expert_weights: Self::unpack_moe_experts_gate_up(
+                layer.moe_gate_exps.as_ref(),
+                layer.moe_up_exps.as_ref(),
+                data,
+                config,
+            ),
+            moe_expert_down_weights: Self::unpack_moe_experts_down(
+                layer.moe_down_exps.as_ref(),
+                data,
+                config,
+            ),
         }
+    }
+
+    /// SPEC-MOE-APR-001 v1.1: Unpack GGUF 3D packed gate+up expert tensors
+    /// into per-expert `OwnedQuantizedTensor` with concatenated gate+up data.
+    ///
+    /// GGUF stores experts as 3D: [in_dim, out_dim, num_experts]
+    /// Each expert slice = total_bytes / num_experts (contiguous along expert axis)
+    fn unpack_moe_experts_gate_up(
+        gate_exps: Option<&QuantizedTensorRef>,
+        up_exps: Option<&QuantizedTensorRef>,
+        data: &[u8],
+        config: &crate::gguf::GGUFConfig,
+    ) -> Option<Vec<OwnedQuantizedTensor>> {
+        let gate_ref = gate_exps?;
+        let up_ref = up_exps?;
+        let num_experts = config.num_experts;
+        if num_experts == 0 {
+            return None;
+        }
+
+        let moe_intermediate = if config.moe_intermediate_size > 0 { config.moe_intermediate_size } else { config.intermediate_dim };
+        let hidden_dim = config.hidden_dim;
+        let gate_expert_bytes = gate_ref.byte_size / num_experts;
+        let up_expert_bytes = up_ref.byte_size / num_experts;
+
+        let mut experts = Vec::with_capacity(num_experts);
+        for e in 0..num_experts {
+            let gate_start = gate_ref.offset + e * gate_expert_bytes;
+            let gate_end = gate_start + gate_expert_bytes;
+            let up_start = up_ref.offset + e * up_expert_bytes;
+            let up_end = up_start + up_expert_bytes;
+
+            // Concatenate gate + up for this expert (same format as APR loader)
+            let mut gate_up_data = Vec::with_capacity(gate_expert_bytes + up_expert_bytes);
+            if gate_end <= data.len() && up_end <= data.len() {
+                gate_up_data.extend_from_slice(&data[gate_start..gate_end]);
+                gate_up_data.extend_from_slice(&data[up_start..up_end]);
+            }
+
+            experts.push(OwnedQuantizedTensor {
+                data: gate_up_data,
+                in_dim: hidden_dim,
+                out_dim: moe_intermediate * 2,
+                qtype: gate_ref.qtype,
+            });
+        }
+
+        Some(experts)
+    }
+
+    /// SPEC-MOE-APR-001 v1.1: Unpack GGUF 3D packed down expert tensors
+    fn unpack_moe_experts_down(
+        down_exps: Option<&QuantizedTensorRef>,
+        data: &[u8],
+        config: &crate::gguf::GGUFConfig,
+    ) -> Option<Vec<OwnedQuantizedTensor>> {
+        let down_ref = down_exps?;
+        let num_experts = config.num_experts;
+        if num_experts == 0 {
+            return None;
+        }
+
+        let moe_intermediate = if config.moe_intermediate_size > 0 { config.moe_intermediate_size } else { config.intermediate_dim };
+        let hidden_dim = config.hidden_dim;
+        let expert_bytes = down_ref.byte_size / num_experts;
+
+        let mut experts = Vec::with_capacity(num_experts);
+        for e in 0..num_experts {
+            let start = down_ref.offset + e * expert_bytes;
+            let end = start + expert_bytes;
+
+            let expert_data = if end <= data.len() {
+                data[start..end].to_vec()
+            } else {
+                vec![]
+            };
+
+            experts.push(OwnedQuantizedTensor {
+                data: expert_data,
+                in_dim: moe_intermediate,
+                out_dim: hidden_dim,
+                qtype: down_ref.qtype,
+            });
+        }
+
+        Some(experts)
     }
 }
 

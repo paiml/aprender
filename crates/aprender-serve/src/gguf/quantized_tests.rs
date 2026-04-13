@@ -172,6 +172,10 @@ fn test_owned_quantized_layer_from_borrowed_minimal() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        moe_gate_inp_weight: None,
+        moe_gate_exps: None,
+        moe_up_exps: None,
+        moe_down_exps: None,
     };
 
     let data = create_test_data(400);
@@ -223,6 +227,10 @@ fn test_owned_quantized_layer_from_borrowed_with_gate() {
         ffn_norm_bias: Some(vec![0.0; 64]),
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        moe_gate_inp_weight: None,
+        moe_gate_exps: None,
+        moe_up_exps: None,
+        moe_down_exps: None,
     };
 
     let data = create_test_data(450);
@@ -281,6 +289,10 @@ fn test_owned_quantized_layer_from_borrowed_separate_qkv() {
         ffn_norm_bias: None,
         attn_q_norm_weight: None,
         attn_k_norm_weight: None,
+        moe_gate_inp_weight: None,
+        moe_gate_exps: None,
+        moe_up_exps: None,
+        moe_down_exps: None,
     };
 
     let data = create_test_data(450);
