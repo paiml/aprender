@@ -565,20 +565,21 @@ impl OwnedQuantizedModelCuda {
                 swiglu[i] = silu * ud[i];
             }
 
-            let gpu_sw = self.executor.upload_f32(&swiglu)
-                .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
-                    operation: "moe_sw".into(), reason: format!("{e}"),
-                })?;
-            let down_out = self.executor.q4k_gemv_indexed_async(
-                dp + (ei * ds) as u64, &gpu_sw, hidden_dim as u32, moe_intermediate as u32,
-            ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
-                operation: "moe_down".into(), reason: format!("{e}"),
-            })?;
-
-            let mut dd = vec![0.0f32; hidden_dim];
-            down_out.copy_to_host(&mut dd).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
-                operation: "moe_dl".into(), reason: format!("{e}"),
-            })?;
+            // Down projection: CPU Q6K matmul (no Q6K CUDA kernel yet)
+            // TODO: Add q6k_gemv_indexed_async to trueno-gpu
+            let down_slice = if let Some(ref backing) = self.model.moe_backing_data {
+                let ref_down = self.model.layers[layer_idx].moe_down_packed.as_ref().unwrap();
+                let off = ref_down.offset + ei * (ref_down.byte_size / ref_down.num_experts);
+                let stride = ref_down.byte_size / ref_down.num_experts;
+                &backing[off..off + stride]
+            } else {
+                &[] as &[u8]
+            };
+            let dd = if !down_slice.is_empty() {
+                crate::quantize::fused_q6k_parallel_matvec(down_slice, &swiglu, moe_intermediate, hidden_dim)?
+            } else {
+                vec![0.0f32; hidden_dim]
+            };
 
             for i in 0..hidden_dim { output[i] += w * dd[i]; }
         }
