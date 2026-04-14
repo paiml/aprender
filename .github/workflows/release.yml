@@ -38,7 +38,7 @@ jobs:
   # ── Verify: tag-version match + package tarball ─────────
   verify:
     needs: gate
-    runs-on: [self-hosted, clean-room]
+    runs-on: [self-hosted, X64, Linux]
     outputs:
       crate_name: ${{ steps.parse.outputs.crate_name }}
       version: ${{ steps.parse.outputs.version }}
@@ -99,7 +99,7 @@ jobs:
   # ── Publish: OIDC trusted publishing to crates.io ──────
   publish:
     needs: verify
-    runs-on: [self-hosted, clean-room]
+    runs-on: [self-hosted, X64, Linux]
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
