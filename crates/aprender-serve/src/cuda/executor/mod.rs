@@ -275,6 +275,7 @@ mod q_basic;
 mod quantized;
 mod weights;
 mod workspace;
+mod moe_kernel;
 
 // Test modules
 #[cfg(test)]
