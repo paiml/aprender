@@ -130,12 +130,28 @@ impl OwnedQuantizedModelCuda {
         // PAR-083: Use pre-allocated embed_buf to eliminate per-token heap allocation.
         self.model.embed_into(token_id, &mut self.embed_buf);
 
-        // SPEC-MOE-APR-001: MoE models use hybrid forward (GPU attention + CPU expert FFN).
-        // CUDA graphs don't support variable expert routing, so skip graphed path.
+        // SPEC-MOE-APR-001: MoE uses non-graphed all-GPU workspace path.
+        // Dense models use CUDA graph for maximum throughput.
         let is_moe = self.model.config.num_experts > 0;
         let mut logits = if is_moe {
-            // Hybrid path: GPU attention + CPU MoE FFN (no graph)
-            self.forward_single_full_cuda_with_cache(token_id, cache, position)?
+            // All-GPU workspace path with MoE FFN phase (no graph, no CPU roundtrips)
+            let mut logits_buf = vec![0.0f32; vocab_size];
+            self.executor
+                .forward_all_layers_gpu_to_logits(
+                    &self.embed_buf,
+                    &mut logits_buf,
+                    position as u32,
+                    num_layers,
+                    hidden_dim as u32,
+                    intermediate_dim as u32,
+                    vocab_size as u32,
+                    eps,
+                )
+                .map_err(|e| RealizarError::UnsupportedOperation {
+                    operation: "forward_gpu_resident_moe".to_string(),
+                    reason: format!("forward_all_layers_gpu_to_logits failed: {}", e),
+                })?;
+            logits_buf
         } else {
             // Dense path: fully GPU-resident with CUDA graph
             let mut logits_buf = vec![0.0f32; vocab_size];
@@ -254,11 +270,25 @@ impl OwnedQuantizedModelCuda {
         let is_moe = self.model.config.num_experts > 0;
         if profiling_enabled || is_moe || !self.executor.has_decode_graph() {
             if is_moe {
-                // Hybrid path: GPU attention + CPU MoE FFN → sample token
-                let logits = self.forward_single_full_cuda_with_cache(token_id, cache, position)?;
+                // All-GPU workspace path with MoE FFN phase
+                let mut logits_buf = vec![0.0f32; vocab_size];
+                self.executor
+                    .forward_all_layers_gpu_to_logits(
+                        &self.embed_buf,
+                        &mut logits_buf,
+                        position as u32,
+                        num_layers,
+                        hidden_dim as u32,
+                        intermediate_dim as u32,
+                        vocab_size as u32,
+                        eps,
+                    )
+                    .map_err(|e| RealizarError::UnsupportedOperation {
+                        operation: "forward_gpu_resident_to_token_id_moe".to_string(),
+                        reason: format!("{}", e),
+                    })?;
                 cache.advance();
-                // Greedy argmax
-                let best_token = logits.iter()
+                let best_token = logits_buf.iter()
                     .enumerate()
                     .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
                     .map(|(idx, _)| idx as u32)
