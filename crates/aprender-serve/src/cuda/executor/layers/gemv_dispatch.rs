@@ -94,18 +94,22 @@ impl CudaExecutor {
                 "ffn_norm_ptr is null (0)".into(),
             ));
         }
-        if layer_weights.ffn_gate_ptr == 0 {
-            return Err(GpuError::InvalidParameter(
-                "ffn_gate_ptr is null (0)".into(),
-            ));
-        }
-        if layer_weights.ffn_up_ptr == 0 {
-            return Err(GpuError::InvalidParameter("ffn_up_ptr is null (0)".into()));
-        }
-        if layer_weights.ffn_down_ptr == 0 {
-            return Err(GpuError::InvalidParameter(
-                "ffn_down_ptr is null (0)".into(),
-            ));
+        // SPEC-MOE-APR-001: MoE layers have null FFN pointers (experts use packed 3D)
+        let is_moe_layer = layer_weights.inner().moe_gate_exps_ptr != 0;
+        if !is_moe_layer {
+            if layer_weights.ffn_gate_ptr == 0 {
+                return Err(GpuError::InvalidParameter(
+                    "ffn_gate_ptr is null (0)".into(),
+                ));
+            }
+            if layer_weights.ffn_up_ptr == 0 {
+                return Err(GpuError::InvalidParameter("ffn_up_ptr is null (0)".into()));
+            }
+            if layer_weights.ffn_down_ptr == 0 {
+                return Err(GpuError::InvalidParameter(
+                    "ffn_down_ptr is null (0)".into(),
+                ));
+            }
         }
 
         // Get dimension info
@@ -285,12 +289,25 @@ impl CudaExecutor {
         )?;
 
         // Phase 6-10: FFN RMSNorm + gate/up + SwiGLU + down + residual2
-        self.workspace_ffn_phase(
-            &hidden_buf1, &hidden_buf2, &input_staging,
-            &ffn_gate_buf, &ffn_up_buf, &ffn_act_buf,
-            layer_idx, layer_weights, hidden_dim, intermediate_dim,
-            epsilon, skip_debug, profiling,
-        )?;
+        // SPEC-MOE-APR-001: MoE layers use fused WMMA kernel for expert dispatch
+        if is_moe_layer && self.has_moe_kernel() {
+            self.workspace_moe_ffn_phase(
+                &hidden_buf1, &hidden_buf2, &input_staging,
+                layer_idx, layer_weights, hidden_dim,
+                epsilon, skip_debug,
+            )?;
+        } else if !is_moe_layer {
+            self.workspace_ffn_phase(
+                &hidden_buf1, &hidden_buf2, &input_staging,
+                &ffn_gate_buf, &ffn_up_buf, &ffn_act_buf,
+                layer_idx, layer_weights, hidden_dim, intermediate_dim,
+                epsilon, skip_debug, profiling,
+            )?;
+        } else {
+            return Err(GpuError::InvalidLaunchConfig(
+                "MoE layer requires fused kernel. Load PTX with load_moe_kernel().".into(),
+            ));
+        }
 
         // Prevent Drop from freeing the borrowed memory
         std::mem::forget(hidden_buf1);
@@ -313,3 +330,4 @@ include!("indexed_transformer.rs");
 include!("apply.rs");
 include!("phase_attention.rs");
 include!("indexed_ffn.rs");
+include!("moe_ffn_phase.rs");
