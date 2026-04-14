@@ -153,6 +153,27 @@ impl CudaExecutor {
         Ok(size_bytes)
     }
 
+    /// SPEC-MOE-APR-001: Upload f32 data to GPU (for MoE input/swiglu buffers).
+    pub fn upload_f32(&self, data: &[f32]) -> Result<GpuBuffer<f32>, GpuError> {
+        GpuBuffer::from_host(&self.context, data)
+    }
+
+    /// SPEC-MOE-APR-001: Upload weights via explicit copy (cuMemcpyHtoD).
+    /// Used for MoE packed tensors where mmap'd slice may not be page-aligned
+    /// for cuMemHostRegister. Slightly slower upload but always works.
+    pub fn load_quantized_weights_copy(
+        &mut self,
+        name: &str,
+        data: &[u8],
+        qtype: u32,
+    ) -> Result<usize, GpuError> {
+        let buf = GpuBuffer::from_host(&self.context, data)?;
+        let size_bytes = buf.size_bytes();
+        self.quantized_weight_cache.insert(name.to_string(), buf);
+        self.quantized_weight_types.insert(name.to_string(), qtype);
+        Ok(size_bytes)
+    }
+
     /// PAR-058: Get the quantization type for a cached weight
     ///
     /// Returns the GGML type ID (6=Q5_0, 8=Q8_0, 12=Q4K, 13=Q5K, 14=Q6K).

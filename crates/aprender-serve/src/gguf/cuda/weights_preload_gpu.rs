@@ -296,6 +296,25 @@ impl OwnedQuantizedModelCuda {
 }
 
 /// Upload a single quantized weight to GPU if not already present (free function to avoid borrow conflicts).
+/// Upload MoE packed tensor to GPU via explicit copy (not host_register).
+/// Mmap'd slices may not be page-aligned for cuMemHostRegister.
+fn upload_moe_tensor(
+    executor: &mut crate::cuda::CudaExecutor,
+    name: &str,
+    data: &[u8],
+    qtype: u32,
+) -> Result<usize> {
+    if executor.has_quantized_weights(name) {
+        return Ok(0);
+    }
+    executor
+        .load_quantized_weights_copy(name, data, qtype)
+        .map_err(|e| RealizarError::UnsupportedOperation {
+            operation: "upload_moe_tensor".to_string(),
+            reason: format!("Failed to upload '{}': {}", name, e),
+        })
+}
+
 fn upload_if_absent(
     executor: &mut crate::cuda::CudaExecutor,
     name: &str,
@@ -357,14 +376,14 @@ fn upload_layer_ffn(
         if let (Some(ref gate_ref), Some(ref up_ref), Some(ref down_ref), Some(backing)) =
             (&layer.moe_gate_packed, &layer.moe_up_packed, &layer.moe_down_packed, moe_backing)
         {
-            // Upload packed 3D gate/up/down tensors as single GPU buffers
-            // On unified memory (GB10): from_host_registered = zero-copy mmap registration
+            // Upload packed 3D expert tensors — use explicit copy (not host_register)
+            // because mmap'd slices may not be page-aligned for cuMemHostRegister
             let gate_data = &backing[gate_ref.offset..gate_ref.offset + gate_ref.byte_size];
-            total += upload_if_absent(executor, &format!("{prefix}.ffn_gate_exps.weight"), gate_data, gate_ref.qtype)?;
+            total += upload_moe_tensor(executor, &format!("{prefix}.ffn_gate_exps.weight"), gate_data, gate_ref.qtype)?;
             let up_data = &backing[up_ref.offset..up_ref.offset + up_ref.byte_size];
-            total += upload_if_absent(executor, &format!("{prefix}.ffn_up_exps.weight"), up_data, up_ref.qtype)?;
+            total += upload_moe_tensor(executor, &format!("{prefix}.ffn_up_exps.weight"), up_data, up_ref.qtype)?;
             let down_data = &backing[down_ref.offset..down_ref.offset + down_ref.byte_size];
-            total += upload_if_absent(executor, &format!("{prefix}.ffn_down_exps.weight"), down_data, down_ref.qtype)?;
+            total += upload_moe_tensor(executor, &format!("{prefix}.ffn_down_exps.weight"), down_data, down_ref.qtype)?;
         }
         return Ok(total);
     }

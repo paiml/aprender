@@ -530,7 +530,7 @@ impl OwnedQuantizedModelCuda {
         let us = ul / num_experts;
         let ds = dl / num_experts;
 
-        let gpu_in = unsafe { trueno_gpu::driver::GpuBuffer::from_host_registered(ffn_input.as_ptr().cast_mut(), ffn_input.len()) }
+        let gpu_in = self.executor.upload_f32(&ffn_input)
             .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
                 operation: "moe_upload".into(), reason: format!("{e}"),
             })?;
@@ -564,7 +564,7 @@ impl OwnedQuantizedModelCuda {
                 swiglu[i] = silu * ud[i];
             }
 
-            let gpu_sw = unsafe { trueno_gpu::driver::GpuBuffer::from_host_registered(swiglu.as_ptr().cast_mut(), swiglu.len()) }
+            let gpu_sw = self.executor.upload_f32(&swiglu)
                 .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
                     operation: "moe_sw".into(), reason: format!("{e}"),
                 })?;
