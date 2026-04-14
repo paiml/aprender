@@ -1,1 +1,0 @@
-{"content_hash":"1711d24ca2fefe9e","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-013: No qa_gate defined — contract should define a certeza quality gate","file":"contracts/bpe-tokenizer-v1.yaml","line":null,"contract_stem":"bpe-tokenizer-v1","suppressed":false,"is_new":false}]}

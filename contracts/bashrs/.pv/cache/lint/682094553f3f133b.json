@@ -1,1 +1,0 @@
-{"content_hash":"682094553f3f133b","findings":[{"rule_id":"PV-PRV-001","severity":"error","message":"PROVABILITY-001: falsification_tests (4) < proof_obligations (7)","file":"contracts/cli-lint-v1.yaml","line":null,"contract_stem":"cli-lint-v1","suppressed":false,"is_new":true}]}

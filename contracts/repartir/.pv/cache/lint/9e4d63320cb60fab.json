@@ -1,1 +1,0 @@
-{"content_hash":"9e4d63320cb60fab","findings":[{"rule_id":"PV-PRV-001","severity":"error","message":"PROVABILITY-001: falsification_tests (2) < proof_obligations (3)","file":"contracts/builder-pattern-v1.yaml","line":null,"contract_stem":"builder-pattern-v1","suppressed":false,"is_new":true}]}

@@ -76,3 +76,5 @@ probar-export/
 .pmat/deps-cache.json
 src/generated_contracts.rs
 crates/apr-cli/trace-*.json
+.pv/cache/
+**/.pv/cache/

@@ -1,1 +1,0 @@
-{"content_hash":"1b2274cd0c625f8c","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-013: No qa_gate defined — contract should define a certeza quality gate","file":"contracts/tensor-layout-v1.yaml","line":null,"contract_stem":"tensor-layout-v1","suppressed":false,"is_new":false}]}
