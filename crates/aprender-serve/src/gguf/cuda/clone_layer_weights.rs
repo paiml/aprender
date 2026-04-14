@@ -565,23 +565,20 @@ impl OwnedQuantizedModelCuda {
                 swiglu[i] = silu * ud[i];
             }
 
-            // Down projection: CPU Q6K matmul (no Q6K CUDA kernel yet)
-            let down_slice = if let Some(ref backing) = self.model.moe_backing_data {
-                let ref_down = self.model.layers[layer_idx].moe_down_packed.as_ref().unwrap();
-                let stride = ref_down.byte_size / ref_down.num_experts;
-                let off = ref_down.offset + ei * stride;
-                if layer_idx == 0 && ei == sel[0].0 {
-                    eprintln!("[MOE-DOWN] layer=0 expert={} offset={} stride={} byte_size={} num_experts={} qtype={}",
-                        ei, off, stride, ref_down.byte_size, ref_down.num_experts, ref_down.qtype);
+            // Down projection: use CPU stride path (handles Q6K 3D layout correctly)
+            // The packed 3D Q6K layout has different per-expert sizing than our formula;
+            // the CPU fused_matmul path in single_cache_ffn_block handles this via
+            // the per-expert OwnedQuantizedTensor which was split at the correct stride.
+            // TODO: Fix 3D Q6K byte_size formula to match actual GGUF layout.
+            let dd = {
+                // Build temporary tensor for this expert's down projection
+                let layer_ref = &self.model.layers[layer_idx];
+                if let Some(ref expert_downs) = layer_ref.moe_expert_down_weights {
+                    let down_t = &expert_downs[ei];
+                    self.model.fused_matmul(&swiglu, down_t)?
+                } else {
+                    vec![0.0f32; hidden_dim]
                 }
-                &backing[off..off + stride]
-            } else {
-                &[] as &[u8]
-            };
-            let dd = if !down_slice.is_empty() {
-                crate::quantize::fused_q6k_parallel_matvec(down_slice, &swiglu, moe_intermediate, hidden_dim)?
-            } else {
-                vec![0.0f32; hidden_dim]
             };
 
             for i in 0..hidden_dim { output[i] += w * dd[i]; }
