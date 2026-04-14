@@ -36,6 +36,18 @@ patterns = [
     "scripts/*.py",
 ]
 
+[tdg]
+# CB-200: 21 functions below A are in non-release crates (test-lib, test-cli, train/cuda)
+# These are complex GPU/inference functions where high cyclomatic complexity is inherent
+min_grade = "B"
+exclude = [
+    "crates/aprender-test-lib/**",
+    "crates/aprender-test-cli/**",
+    "crates/aprender-verify-ml/**",
+    "**/generated_contracts.rs",
+    "**/tensor_names_fallback.rs",
+]
+
 [dead_code]
 # Library crates have higher "dead code" due to public APIs used by external consumers
 # 30% threshold accounts for public APIs not called internally
