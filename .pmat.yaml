@@ -1,9 +1,15 @@
 comply:
   thresholds:
+    tdg:
+      min_grade: B
+    dependency_health:
+      max_transitive: 500
     file_health:
       critical_lines: 5000
       warning_lines: 2500
       min_grade: C
+    verification_ladder:
+      min_level: L3
       exclude_patterns:
       - "**/generated_contracts.rs"
       - "*_tests*.rs"
