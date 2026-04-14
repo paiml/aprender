@@ -566,11 +566,14 @@ impl OwnedQuantizedModelCuda {
             }
 
             // Down projection: CPU Q6K matmul (no Q6K CUDA kernel yet)
-            // TODO: Add q6k_gemv_indexed_async to trueno-gpu
             let down_slice = if let Some(ref backing) = self.model.moe_backing_data {
                 let ref_down = self.model.layers[layer_idx].moe_down_packed.as_ref().unwrap();
-                let off = ref_down.offset + ei * (ref_down.byte_size / ref_down.num_experts);
                 let stride = ref_down.byte_size / ref_down.num_experts;
+                let off = ref_down.offset + ei * stride;
+                if layer_idx == 0 && ei == sel[0].0 {
+                    eprintln!("[MOE-DOWN] layer=0 expert={} offset={} stride={} byte_size={} num_experts={} qtype={}",
+                        ei, off, stride, ref_down.byte_size, ref_down.num_experts, ref_down.qtype);
+                }
                 &backing[off..off + stride]
             } else {
                 &[] as &[u8]
