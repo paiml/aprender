@@ -1,1 +1,0 @@
-{"content_hash":"f14071bd00c2c5ba","findings":[{"rule_id":"PV-VAL-001","severity":"error","message":"SCHEMA-001: metadata.references must not be empty — every contract must cite its source paper(s)","file":"contracts/apr-corpus-jax-ground-truth-corpus-v1.yaml","line":null,"contract_stem":"apr-corpus-jax-ground-truth-corpus-v1","suppressed":false,"is_new":true}]}

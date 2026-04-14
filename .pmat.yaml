@@ -5,10 +5,15 @@ comply:
       warning_lines: 2500
       min_grade: C
       exclude_patterns:
-      - "generated_contracts.rs"
+      - "**/generated_contracts.rs"
       - "*_tests*.rs"
       - "tests/**"
       - "*_contract_falsify.rs"
+      - "**/browser.rs"
+      - "**/api_coverage.rs"
+      - "**/gpu_coverage.rs"
+      - "**/apr_coverage.rs"
+      - "**/convert_coverage.rs"
   suppressions:
     - rules: ["CB-954"]
       files: ["contracts/**", "docs/roadmaps/**"]

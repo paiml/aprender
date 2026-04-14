@@ -1,1 +1,0 @@
-{"content_hash":"e03361e67c177b99","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-012: kani_harnesses.KH-HYGIENE-001.bound not specified — Kani requires an unwind bound","file":"contracts/crate-hygiene-v1.yaml","line":null,"contract_stem":"crate-hygiene-v1","suppressed":false,"is_new":true}]}

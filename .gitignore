@@ -77,3 +77,4 @@ probar-export/
 src/generated_contracts.rs
 crates/apr-cli/trace-*.json
 .pv/cache/
+**/.pv/cache/

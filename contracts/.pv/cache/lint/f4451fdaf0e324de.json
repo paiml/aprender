@@ -1,1 +1,0 @@
-{"content_hash":"f4451fdaf0e324de","findings":[{"rule_id":"PV-PRV-001","severity":"error","message":"PROVABILITY-001: falsification_tests (6) < proof_obligations (15)","file":"contracts/compute-backend-equivalence-v1.yaml","line":null,"contract_stem":"compute-backend-equivalence-v1","suppressed":false,"is_new":false}]}

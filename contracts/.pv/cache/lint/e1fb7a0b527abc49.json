@@ -1,1 +1,0 @@
-{"content_hash":"e1fb7a0b527abc49","findings":[{"rule_id":"PV-SCR-001","severity":"error","message":"Score 0.25 (Grade F) below threshold 0.99","file":"contracts/apr-corpus-lean-ground-truth-v1.yaml","line":null,"contract_stem":"apr-corpus-lean-ground-truth-v1","suppressed":false,"is_new":true,"evidence":"spec=0.10 falsify=0.00 kani=0.00 lean=0.50 bind=1.00"}]}
