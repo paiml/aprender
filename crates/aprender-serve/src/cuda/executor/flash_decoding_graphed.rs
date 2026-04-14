@@ -99,7 +99,15 @@ impl CudaExecutor {
                     "PAR-118: flash_decode_seq_lens_buf not initialized".to_string(),
                 )
             })?;
-            buf.copy_from_host(&[seq_len])?;
+            // SPEC-MOE-APR-001: Buffer may be batch-sized (32) but we're in M=1 decode.
+            // Fill first element only, zero-pad rest if needed.
+            if buf.len() == 1 {
+                buf.copy_from_host(&[seq_len])?;
+            } else {
+                let mut padded = vec![0u32; buf.len()];
+                padded[0] = seq_len;
+                buf.copy_from_host(&padded)?;
+            }
             buf.as_ptr()
         };
 

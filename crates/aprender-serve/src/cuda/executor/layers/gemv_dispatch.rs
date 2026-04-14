@@ -278,7 +278,7 @@ impl CudaExecutor {
             input, &hidden_buf1, &q_buf, &k_buf, &v_buf,
             layer_idx, layer_weights, hidden_dim, q_dim, kv_dim,
             epsilon, position, skip_debug, profiling,
-        )?;
+        ).map_err(|e| GpuError::KernelLaunch(format!("L{} QKV+RoPE: {}", layer_idx, e)))?;
 
         // Phase 3-5: Attention + output projection + residual1
         self.workspace_attention_residual_phase(
@@ -286,7 +286,7 @@ impl CudaExecutor {
             &attn_out_buf, &input_staging,
             layer_idx, layer_weights, hidden_dim, q_dim,
             skip_debug, profiling,
-        )?;
+        ).map_err(|e| GpuError::KernelLaunch(format!("L{} Attention: {}", layer_idx, e)))?;
 
         // Phase 6-10: FFN RMSNorm + gate/up + SwiGLU + down + residual2
         // SPEC-MOE-APR-001: MoE layers use fused WMMA kernel for expert dispatch
