@@ -16,6 +16,12 @@ const MOE_COUNT_TOKENS_KERNEL: &str = "_Z30count_tokens_per_expert_kernelPKiPii"
 const MOE_PREFIX_SUM_KERNEL: &str = "_Z24expert_prefix_sum_kernelPKiPii";
 
 impl super::CudaExecutor {
+    /// Check if the fused MoE kernel is loaded
+    #[must_use]
+    pub fn has_moe_kernel(&self) -> bool {
+        self.modules.contains_key("moe_wmma_gguf")
+    }
+
     /// Load the fused MoE WMMA GGUF kernel from PTX file.
     /// Called once during model init.
     pub fn load_moe_kernel(&mut self, ptx_path: &str) -> Result<(), GpuError> {

@@ -269,6 +269,27 @@ impl OwnedQuantizedModelCuda {
             .map(|v| v == "1")
             .unwrap_or(false);
 
+        // SPEC-MOE-APR-001 Phase 8: Load fused MoE WMMA GGUF kernel
+        if self.model.config.num_experts > 0 {
+            // Try to load PTX from default path (alongside the binary or in cwd)
+            let ptx_candidates = [
+                "/tmp/moe_wmma_gguf.ptx",
+                "moe_wmma_gguf.ptx",
+                "crates/aprender-serve/src/cuda/kernels/moe/moe_wmma_gguf.ptx",
+            ];
+            for path in &ptx_candidates {
+                if std::path::Path::new(path).exists() {
+                    match self.executor.load_moe_kernel(path) {
+                        Ok(()) => break,
+                        Err(e) => eprintln!("[SPEC-MOE-APR-001] MoE kernel load failed from {}: {}", path, e),
+                    }
+                }
+            }
+            if !self.executor.has_moe_kernel() {
+                eprintln!("[SPEC-MOE-APR-001] No MoE PTX found. Using CPU MoE FFN fallback.");
+            }
+        }
+
         // SPEC-MOE-APR-001: Skip parity gate for MoE models.
         let is_moe = self.model.config.num_experts > 0;
         eprintln!("[SPEC-MOE-APR-001] num_experts={}, is_moe={}", self.model.config.num_experts, is_moe);

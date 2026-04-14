@@ -406,11 +406,13 @@ impl OwnedQuantizedModelCuda {
             let is_moe = layer.moe_gate_weight.is_some();
 
             let ffn_output = if is_moe {
-                // SPEC-MOE-APR-001: CPU MoE FFN (correct, 1.76 tok/s)
-                // Phase 8 TODO: dispatch via fused_moe_gemv for GPU parity
-                // Kernel compiled: crates/aprender-serve/src/cuda/kernels/moe/moe_wmma_gguf.ptx
-                // Next: convert FP32→FP16 input, set up sorted token buffers, call fused_moe_gemv
-                self.model.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?
+                // SPEC-MOE-APR-001 Phase 8: Fused MoE WMMA GGUF kernel
+                if self.executor.has_moe_kernel() {
+                    self.cuda_moe_ffn(&hidden, layer_idx, use_rmsnorm, eps)?
+                } else {
+                    // Fallback: CPU MoE FFN (1.76 tok/s)
+                    self.model.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?
+                }
             } else {
                 self.cuda_layer_ffn(
                     &hidden, &normed, layer_idx, &lw, use_rmsnorm, eps, hidden_dim,
@@ -517,71 +519,126 @@ impl OwnedQuantizedModelCuda {
         idx.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         let sel = &idx[..top_k.min(ne)];
 
-        // GPU pointers
-        let ilw = self.executor.get_indexed_layer(layer_idx);
-        let gp = ilw.inner().moe_gate_exps_ptr;
-        let up = ilw.inner().moe_up_exps_ptr;
-        let dp = ilw.inner().moe_down_exps_ptr;
-        let gl = ilw.inner().moe_gate_exps_len;
-        let ul = ilw.inner().moe_up_exps_len;
-        let dl = ilw.inner().moe_down_exps_len;
+        // Build expert_offsets for fused kernel: prefix sum of token counts per expert
+        // For single-token decode: each selected expert gets 1 token
+        let mut expert_offsets = vec![0i32; num_experts + 1];
+        let mut sorted_token_ids = vec![0i32; top_k]; // all token 0
+        let mut topk_weights_arr = vec![0.0f32; top_k];
+        {
+            let mut slot = 0usize;
+            for e in 0..num_experts {
+                expert_offsets[e] = slot as i32;
+                // Check if expert e is in the selected set
+                if let Some(pos) = sel.iter().position(|&(eid, _)| eid == e) {
+                    sorted_token_ids[slot] = 0; // token 0
+                    topk_weights_arr[slot] = sel[pos].1;
+                    slot += 1;
+                }
+            }
+            expert_offsets[num_experts] = slot as i32;
+        }
 
-        if gp == 0 || up == 0 || dp == 0 {
+        // GPU pointers for packed 3D expert tensors
+        let ilw = self.executor.get_indexed_layer(layer_idx);
+        let gate_ptr = ilw.inner().moe_gate_exps_ptr;
+        let up_ptr = ilw.inner().moe_up_exps_ptr;
+        let down_ptr = ilw.inner().moe_down_exps_ptr;
+
+        if gate_ptr == 0 || up_ptr == 0 || down_ptr == 0 {
             return self.model.single_cache_ffn_block(hidden, layer_idx, use_rmsnorm);
         }
 
-        let gs = gl / num_experts;
-        let us = ul / num_experts;
-        let ds = dl / num_experts;
+        // Convert FP32 input to FP16 for WMMA kernel
+        let input_f16: Vec<half::f16> = ffn_input.iter().map(|&x| half::f16::from_f32(x)).collect();
+        let gpu_input = self.executor.upload_f32(
+            // Upload as raw bytes (f16 is 2 bytes per element)
+            unsafe { std::slice::from_raw_parts(input_f16.as_ptr() as *const f32, input_f16.len() / 2) }
+        ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+            operation: "moe_input_f16".into(), reason: format!("{e}"),
+        })?;
 
-        let gpu_in = self.executor.upload_f32(&ffn_input)
+        // Upload routing buffers
+        let gpu_sorted = self.executor.upload_f32(
+            unsafe { std::slice::from_raw_parts(sorted_token_ids.as_ptr() as *const f32, (sorted_token_ids.len() + 1) / 2) }
+        ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+            operation: "moe_sorted".into(), reason: format!("{e}"),
+        })?;
+        let gpu_offsets = self.executor.upload_f32(
+            unsafe { std::slice::from_raw_parts(expert_offsets.as_ptr() as *const f32, (expert_offsets.len() + 1) / 2) }
+        ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+            operation: "moe_offsets".into(), reason: format!("{e}"),
+        })?;
+        let gpu_weights = self.executor.upload_f32(&topk_weights_arr)
             .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
-                operation: "moe_upload".into(), reason: format!("{e}"),
+                operation: "moe_weights".into(), reason: format!("{e}"),
             })?;
 
+        // Allocate output buffers
+        let gate_out_size = top_k * moe_intermediate;
+        let gpu_gate_out = self.executor.upload_f32(&vec![0.0f32; gate_out_size])
+            .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_gate_out".into(), reason: format!("{e}"),
+            })?;
+        let gpu_up_out = self.executor.upload_f32(&vec![0.0f32; gate_out_size])
+            .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_up_out".into(), reason: format!("{e}"),
+            })?;
+
+        // Gate GEMM: fused kernel, all experts, NO topk_weights (per-expert output)
+        self.executor.fused_moe_gemv(
+            gpu_input.as_ptr(), gate_ptr,
+            gpu_sorted.as_ptr(), gpu_offsets.as_ptr(),
+            0, // no topk_weights for gate
+            gpu_gate_out.as_ptr(),
+            num_experts as u32, top_k as u32,
+            1, // size_m = 1 token
+            moe_intermediate as u32, hidden_dim as u32,
+            false, // Q4K
+        ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+            operation: "moe_gate_gemm".into(), reason: format!("{e}"),
+        })?;
+
+        // Up GEMM
+        self.executor.fused_moe_gemv(
+            gpu_input.as_ptr(), up_ptr,
+            gpu_sorted.as_ptr(), gpu_offsets.as_ptr(),
+            0,
+            gpu_up_out.as_ptr(),
+            num_experts as u32, top_k as u32,
+            1, moe_intermediate as u32, hidden_dim as u32,
+            false,
+        ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+            operation: "moe_up_gemm".into(), reason: format!("{e}"),
+        })?;
+
+        // Download gate + up results for SwiGLU (CPU)
+        let mut gate_data = vec![0.0f32; gate_out_size];
+        let mut up_data = vec![0.0f32; gate_out_size];
+        gpu_gate_out.copy_to_host(&mut gate_data).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+            operation: "moe_dl_gate".into(), reason: format!("{e}"),
+        })?;
+        gpu_up_out.copy_to_host(&mut up_data).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+            operation: "moe_dl_up".into(), reason: format!("{e}"),
+        })?;
+
+        // SwiGLU per expert, then weighted down projection (CPU)
+        // TODO: fuse SwiGLU + down on GPU once Q6K kernel available
         let mut output = vec![0.0f32; hidden_dim];
-        for &(ei, w) in sel {
-            let gate_out = self.executor.q4k_gemv_indexed_async(
-                gp + (ei * gs) as u64, &gpu_in, moe_intermediate as u32, hidden_dim as u32,
-            ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
-                operation: "moe_gate".into(), reason: format!("{e}"),
-            })?;
-            let up_out = self.executor.q4k_gemv_indexed_async(
-                up + (ei * us) as u64, &gpu_in, moe_intermediate as u32, hidden_dim as u32,
-            ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
-                operation: "moe_up".into(), reason: format!("{e}"),
-            })?;
+        for (slot, &(ei, w)) in sel.iter().enumerate() {
+            let g = &gate_data[slot * moe_intermediate..(slot + 1) * moe_intermediate];
+            let u = &up_data[slot * moe_intermediate..(slot + 1) * moe_intermediate];
 
-            let mut gd = vec![0.0f32; moe_intermediate];
-            let mut ud = vec![0.0f32; moe_intermediate];
-            gate_out.copy_to_host(&mut gd).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
-                operation: "moe_dl".into(), reason: format!("{e}"),
-            })?;
-            up_out.copy_to_host(&mut ud).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
-                operation: "moe_dl".into(), reason: format!("{e}"),
-            })?;
-
-            // SwiGLU (CPU — small vector, TODO: fuse on GPU)
             let mut swiglu = vec![0.0f32; moe_intermediate];
             for i in 0..moe_intermediate {
-                let silu = gd[i] / (1.0 + (-gd[i]).exp());
-                swiglu[i] = silu * ud[i];
+                let silu = g[i] / (1.0 + (-g[i]).exp());
+                swiglu[i] = silu * u[i];
             }
 
-            // Down projection: use CPU stride path (handles Q6K 3D layout correctly)
-            // The packed 3D Q6K layout has different per-expert sizing than our formula;
-            // the CPU fused_matmul path in single_cache_ffn_block handles this via
-            // the per-expert OwnedQuantizedTensor which was split at the correct stride.
-            // TODO: Fix 3D Q6K byte_size formula to match actual GGUF layout.
-            let dd = {
-                // Build temporary tensor for this expert's down projection
-                let layer_ref = &self.model.layers[layer_idx];
-                if let Some(ref expert_downs) = layer_ref.moe_expert_down_weights {
-                    let down_t = &expert_downs[ei];
-                    self.model.fused_matmul(&swiglu, down_t)?
-                } else {
-                    vec![0.0f32; hidden_dim]
-                }
+            // Down projection (CPU — Q6K, per-expert)
+            let dd = if let Some(ref expert_downs) = self.model.layers[layer_idx].moe_expert_down_weights {
+                self.model.fused_matmul(&swiglu, &expert_downs[ei])?
+            } else {
+                vec![0.0f32; hidden_dim]
             };
 
             for i in 0..hidden_dim { output[i] += w * dd[i]; }
