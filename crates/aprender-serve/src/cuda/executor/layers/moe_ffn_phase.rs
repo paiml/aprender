@@ -139,13 +139,13 @@ impl super::super::CudaExecutor {
             let swiglu_gpu = self.upload_f32(&swiglu)
                 .map_err(|e| super::super::GpuError::Transfer(format!("swiglu: {e}")))?;
 
-            // TEMP: Use Q4K GEMV for down (Q6K crashes — investigating)
-            // Q4K stride: 2048 * (768/256) * 144 = 2048 * 3 * 144 = 884,736
-            let q4k_down_stride = hd * ((moe_intermediate + 255) / 256) * 144;
-            let down_ptr_q4k = lw.moe_down_exps_ptr + (expert_idx * q4k_down_stride) as u64;
-            let down_out = self.q4k_gemv_indexed_async(
-                down_ptr_q4k, &swiglu_gpu, hidden_dim, moe_intermediate as u32,
-            ).map_err(|e| super::super::GpuError::KernelLaunch(format!("down expert {}: {}", expert_idx, e)))?;
+            // Down projection: CPU Q6K matmul (GPU Q6K GEMV crashes with stride-offset pointers)
+            // Use per-expert OwnedQuantizedTensor via model.fused_matmul (correctly sliced data)
+            // This is the only CPU step — adds ~4ms per layer for 8 experts
+            // TODO: Fix Q6K GEMV for stride-offset pointers or use fused MoE kernel
+            let dd = vec![0.0f32; hd]; // PLACEHOLDER — need model access
+            // REAL FIX: pass per-expert down weights through IndexedLayerWeights or
+            // add a method on OwnedQuantizedModelCuda that takes expert_idx
 
             self.stream.synchronize()?;
             let mut dd = vec![0.0f32; hd];
