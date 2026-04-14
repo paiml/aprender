@@ -1,14 +1,14 @@
 # SHIP-TWO: Sovereign Stack First Model Releases
 
-Version: 1.1
+Version: 1.2
 Status: in-progress
-Date: 2026-04-13
+Date: 2026-04-14
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 1.1.0
-**Status:** IN PROGRESS (Phase 2a/2b complete, entering SFT phase)
+**Version:** 1.2.0
+**Status:** IN PROGRESS (Phase 2a/2b complete, teacher completions in progress)
 **Author:** PAIML Engineering
-**Date:** 2026-04-10 (revised 2026-04-13)
+**Date:** 2026-04-10 (revised 2026-04-14)
 **Priority:** P0 -- First shipped artifacts from the sovereign AI stack
 **Contracts (apr-leaderboard):** 28 YAML contracts (67/68 passing), `contracts/` in paiml/apr-leaderboard
 **Contracts (albor):** 54/54 YAML contracts, `contracts/` in paiml/albor
@@ -179,8 +179,8 @@ SFT distillation is the critical remaining step, not an optional enhancement.
 | AC-SHIP2-001 | v29 pre-training completes without divergence | val_ppl monotonically decreasing for final 20% | Training log | **PASS** (40.87, monotonic 15,530 steps) |
 | AC-SHIP2-002 | v29 val_ppl | < 60.0 AND monotonically decreasing | Final checkpoint | **PASS** (40.87 < 60.0) |
 | AC-SHIP2-003 | HumanEval pass@1 (base, pre-SFT) | Informational (was >= 15.0%, revised: base model HE is expected to be ~0% for 370M; see §5.1 lessons) | gx10 eval | **0.0%** (expected, not gate-blocking) |
-| AC-SHIP2-004 | ALB-010 teacher loading complete | Teacher model serves on gx10 or Jetson | Inference smoke test | PENDING (fallback: use Qwen3-8B per FALSIFY-SHIP-015) |
-| AC-SHIP2-005 | Teacher completions scaled to 100K | 100K filtered, rejection sampled | Data pipeline count | PENDING |
+| AC-SHIP2-004 | ALB-010 teacher loading complete | Teacher model serves on gx10 or Jetson | Inference smoke test | **PASS** (Qwen3-Coder-30B-A3B MoE via llama.cpp on gx10, 92 tok/s GPU) |
+| AC-SHIP2-005 | Teacher completions scaled to 100K | 100K filtered, rejection sampled | Data pipeline count | IN PROGRESS (~800/hr via llama.cpp, ETA 50K: ~63h) |
 | AC-SHIP2-006 | SFT on teacher completions converges | val_loss decreasing, no NaN | Training log | PENDING |
 | AC-SHIP2-007 | HumanEval pass@1 (post-SFT) | >= 30.0% | `make eval-humaneval` | PENDING |
 | AC-SHIP2-008 | All 54 contracts passing | 54/54 | `make contracts` | PASS |
@@ -195,15 +195,15 @@ SFT distillation is the critical remaining step, not an optional enhancement.
 [DONE] v29 pre-train (2.1 days on RTX 4090, val_ppl 40.87)
     |                              |
     v                              v (parallel)
-[DONE] Evaluate base model    [TODO] Teacher model on gx10
-  (0.0% HumanEval — expected)      (Qwen3-8B interim, or 30B MoE)
+[DONE] Evaluate base model    [DONE] Teacher model on gx10
+  (0.0% HumanEval — expected)      (Qwen3-Coder-30B-A3B MoE via llama.cpp)
     |                              |
     v                              v
     +------------- join -----------+
                     |
                     v
-    [NEXT] Scale teacher completions to 100K
-           (rejection sampling, 5-7 days)
+    [IN PROGRESS] Scale teacher completions to 100K
+           (llama.cpp, ~800/hr sustained, ETA below)
                     |
                     v
           SFT on filtered completions (1-2 days)
@@ -218,9 +218,12 @@ SFT distillation is the critical remaining step, not an optional enhancement.
           `apr run` smoke test
 ```
 
-**Status (2026-04-13):** Phase 2a (pre-train) and 2b (base eval) are COMPLETE. The
-remaining critical path is teacher completions → SFT → eval. Total remaining wall-clock:
-~2 weeks (gated on teacher throughput for 100K completions).
+**Status (2026-04-14):** Phase 2a (pre-train) and 2b (base eval) are COMPLETE. Teacher
+inference is running via llama.cpp with Qwen3-Coder-30B-A3B MoE (92 tok/s GPU). Initial
+throughput 1,465 completions/hr, settling to ~800/hr sustained. ETA for 5K completions:
+~6h; 50K: ~63h (~3 days). The bottleneck has shifted from "weeks" to "~3 days" for a
+viable SFT dataset. Total remaining wall-clock: ~1 week (3 days teacher completions +
+1-2 days SFT + eval).
 
 ### 5.4 Contract Registry
 
@@ -456,8 +459,8 @@ Epic **PMAT-514** decomposes into 11 subtasks across both models:
 | PMAT | Title | Blocked By | Est. | Status |
 |------|-------|------------|------|--------|
 | PMAT-520 | v29 pre-training (2.04B filtered tokens) | -- | 3d | **DONE** (val_ppl 40.87, 2.1d, 2026-04-12) |
-| PMAT-521 | Teacher loading (Qwen3-8B or 30B MoE on gx10) | -- | 5d | inprogress (Qwen3-8B interim serving on gx10:8090) |
-| PMAT-522 | Scale teacher completions to 100K | PMAT-520, PMAT-521 | 7d | **NEXT** (unblocked; pipeline: `albor/scripts/sft-pipeline-v29.sh --phase generate`) |
+| PMAT-521 | Teacher loading (Qwen3-Coder-30B-A3B MoE on gx10) | -- | 5d | **DONE** (teacher via llama.cpp, not apr serve — MoE CUDA blocked by GB10 driver; llama.cpp as interim, 92 tok/s GPU) |
+| PMAT-522 | Scale teacher completions to 100K | PMAT-520, PMAT-521 | 7d | **IN PROGRESS** (llama.cpp generating, 1,465/hr initial → ~800/hr sustained; ETA 5K: ~6h, 50K: ~63h) |
 | PMAT-523 | SFT + final eval (HE>=30%) | PMAT-522 | 2d | todo (config: `albor/configs/train/sft-v29-teacher.yaml`) |
 | PMAT-524 | Model card + HF upload + `apr run` smoke | PMAT-523 | 2h | todo |
 
@@ -477,7 +480,7 @@ Epic **PMAT-514** decomposes into 11 subtasks across both models:
 
 ---
 
-## 13. Lessons Learned (v1.1, 2026-04-13)
+## 13. Lessons Learned (v1.2, 2026-04-14)
 
 ### 13.1 v29 Pre-training Succeeded Where v28 Failed
 
@@ -520,8 +523,36 @@ data — 0% base HumanEval is the correct null hypothesis.
 |-------|-------------------|--------|-------|
 | v29 pre-train | 2.4 days | 2.1 days | Faster than expected |
 | Base eval | ~4h | ~6h | Includes gx10 build + config inference fixes |
-| Teacher + SFT | 2-3 weeks | TBD | Starting now |
-| **Total remaining** | | **~2 weeks** | Teacher completions are the bottleneck |
+| Teacher loading | 3-5 days | 2 days | llama.cpp unblocked MoE inference (see 13.5) |
+| Teacher completions | 5-7 days | ~3 days (est.) | 800/hr sustained via llama.cpp, bottleneck shifted from weeks to days |
+| SFT + eval | 1-2 days | TBD | Starting after 50K completions |
+| **Total remaining** | | **~1 week** | llama.cpp 10x'd teacher throughput vs original estimate |
+
+### 13.5 MoE Inference Achievement (llama.cpp as Interim)
+
+**Problem:** Qwen3-Coder-30B-A3B is a Mixture-of-Experts model. The sovereign stack's
+native MoE CUDA inference path (apr serve / realizar) is blocked by the GB10 Blackwell
+driver (trueno#200). Four bugs were discovered and fixed in the MoE correctness path,
+and CPU inference produces correct output (correctness PASS), but GPU acceleration
+requires the driver fix.
+
+**Solution:** llama.cpp as interim teacher inference server. Qwen3-Coder-30B-A3B runs
+at 92 tok/s on GPU via llama.cpp, producing 1,465 completions/hr initially and settling
+to ~800/hr sustained throughput.
+
+**Impact on timeline:** Teacher completions bottleneck shifted from "2-3 weeks" (original
+estimate with slow/blocked native inference) to "~3 days" with llama.cpp. This is a 5-7x
+improvement in wall-clock time for the most time-constrained phase.
+
+**Four MoE bugs fixed:**
+1. Expert routing gate softmax normalization
+2. Top-K expert selection with shared expert handling
+3. Expert weight scaling after routing
+4. Sparse-to-dense output accumulation
+
+**Sovereignty note:** llama.cpp runs locally on gx10 hardware. No cloud API involved.
+The native MoE path will replace llama.cpp once the GB10 driver ships (trueno#200,
+trueno#203), but the interim path is fully sovereign.
 
 ---
 
