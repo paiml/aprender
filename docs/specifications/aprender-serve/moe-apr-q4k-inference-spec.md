@@ -137,14 +137,25 @@ rayon dispatches per layer (384 per token). Fuse into one:
 - Reduces rayon dispatch overhead from 384 to 48 per token
 - Expected speedup: 2-3x on top of Phase 5
 
-### Phase 7: CUDA MoE kernel — **TODO** (P1, 16h)
+### Phase 7: CUDA MoE kernel — **BLOCKED** (P1, driver issue)
 
-**GPU-native expert dispatch.** Port the `ggml_mul_mat_id` pattern:
+**GPU-native expert dispatch implemented but blocked by GB10 driver:**
 
-- Single CUDA kernel handles expert selection + matmul + SwiGLU
-- Expert ID indexes into 3D packed weight tensor (no unpacking)
-- Uses trueno-gpu `GemmKernel` with expert_id parameter
-- Target: parity with llama.cpp (~89 tok/s on GB10)
+- CUDA MoE infrastructure built: PackedMoeRef, indexed weights, expert GEMV dispatch
+- `cuda_moe_ffn`: router on CPU, expert matmuls via `q4k_gemv_indexed_async` with stride offsets
+- **Blocked:** `cuMemHostRegister` fails on GB10 aarch64 for large mmap'd tensors (113MB packed experts)
+- `cuMemcpyHtoD` also fails with CUDA_ERROR_INVALID_VALUE after registration attempt
+- **Dense models work on GPU** (32B Qwen2.5-Coder confirmed at ~0.3 tok/s GPU)
+- Root cause: Blackwell unified memory driver limitation for large registered buffers
+- **Workaround:** Use llama.cpp as teacher server (92 tok/s confirmed)
+- **Future fix:** trueno-gpu direct pointer passing (no GpuBuffer abstraction), or CUDA driver update
+
+### Interim: llama.cpp teacher server
+
+While CUDA MoE is blocked, use llama.cpp-server for teacher completion generation:
+- `llama-server -m model.gguf --port 8091 -ngl 999`: 92 tok/s on GB10
+- Compatible with `generate_teacher_completions_api.py` (OpenAI API)
+- Teacher quality: Qwen3-Coder-30B-A3B (92%+ HumanEval)
 
 ---
 
