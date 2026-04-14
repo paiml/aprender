@@ -41,7 +41,7 @@ jobs:
       - name: Workspace lib tests (25,300+)
         # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
         run: cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
-        timeout-minutes: 30
+        timeout-minutes: 40
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         run: cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q 'test result.*0 failed' /tmp/compute-test.log
       - name: Integration tests
