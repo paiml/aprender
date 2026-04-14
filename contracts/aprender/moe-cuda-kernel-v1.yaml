@@ -4,10 +4,11 @@ metadata:
   author: "PAIML Engineering"
   description: "CUDA MoE expert dispatch kernel — single launch for all top-k experts"
   references:
-    - "SPEC-MOE-APR-001 v2.0 Phase 7: CUDA MoE kernel"
+    - "SPEC-MOE-APR-001 v2.0 Phase 8: Port candle fused MoE WMMA kernel"
+    - "candle/candle-kernels/src/moe/moe_wmma_gguf.cu: PROVEN fused MoE kernel"
     - "llama.cpp ggml-cuda/mmvq.cu: mul_mat_vec_q_moe kernel"
     - "vLLM vllm/model_executor/layers/fused_moe/fused_moe.py: fused_moe_kernel"
-    - "FALSIFY-MOE-008: throughput >= 10 tok/s (Phase 5 result: 1.76)"
+    - "qwen-coder-deploy PMAT-105: achieved 1.01x parity on dense models"
     - "Target: 1.5x parity with llama.cpp (92 tok/s → target 61+ tok/s)"
   tags:
     - moe

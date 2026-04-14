@@ -150,12 +150,29 @@ rayon dispatches per layer (384 per token). Fuse into one:
 - **Workaround:** Use llama.cpp as teacher server (92 tok/s confirmed)
 - **Future fix:** trueno-gpu direct pointer passing (no GpuBuffer abstraction), or CUDA driver update
 
-### Interim: llama.cpp teacher server
+### Phase 8: Port candle fused MoE WMMA kernel — **TODO** (P0, 8h)
 
-While CUDA MoE is blocked, use llama.cpp-server for teacher completion generation:
-- `llama-server -m model.gguf --port 8091 -ngl 999`: 92 tok/s on GB10
-- Compatible with `generate_teacher_completions_api.py` (OpenAI API)
-- Teacher quality: Qwen3-Coder-30B-A3B (92%+ HumanEval)
+**Five Whys (revised 2026-04-14):**
+1. Why 1.76 tok/s? → 1,152 separate CPU matmuls per token
+2. Why separate matmuls? → Our Q4K GEMV assumes standalone 2D tensor, can't handle 3D packed stride
+3. Why can't we fix the stride? → Wrong approach. The kernel must handle expert routing INSIDE
+4. Why don't we have a fused MoE kernel? → Haven't ported candle's pattern yet
+5. Where is the reference? → `candle/candle-kernels/src/moe/moe_wmma_gguf.cu` — PROVEN, working code
+
+**Prior art (from our own stack):**
+- Dense model parity: **1.01x llama.cpp** at c=4 (PMAT-105, qwen-coder-deploy)
+- Candle fused MoE kernel: WMMA tensor cores, Q4K/Q6K dequant, sorted token routing
+- llama.cpp `mul_mat_vec_q_moe`: stride_channel_x into packed 3D, one kernel all experts
+
+**Implementation: Port candle `moe_wmma_gguf.cu` to trueno-gpu:**
+
+1. Copy `candle-kernels/src/moe/moe_wmma_gguf.cu` + `moe_utils.cuh` + `gguf.cuh`
+2. Add to trueno-gpu as `MoeGemmKernel` (alongside existing `GemmKernel`)
+3. Wire into `CudaExecutor::fused_moe_gemv(packed_3d_ptr, input, expert_ids, weights, ...)`
+4. Dispatch from `cuda_moe_ffn`: router on CPU → expert_ids to GPU → one kernel for all experts
+5. Remove per-expert GEMV loop
+
+**Expected result:** ONE kernel launch per MoE layer (vs 24 now) = 50-90 tok/s target
 
 ---
 
