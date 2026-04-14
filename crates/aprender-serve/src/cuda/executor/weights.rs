@@ -141,9 +141,12 @@ impl CudaExecutor {
         data: &[u8],
         qtype: u32,
     ) -> Result<usize, GpuError> {
-        // PMAT-396: On unified memory (cc>=120), register mmap'd pages directly
+        // PMAT-396: On unified memory (cc>=120), try registering mmap'd pages.
+        // SPEC-MOE-APR-001: Fall back to explicit copy if registration fails
+        // (mmap'd slices may not be page-aligned on Blackwell aarch64).
         let buf = if self.gpu_profile.cc >= 120 {
-            unsafe { GpuBuffer::from_host_registered(data.as_ptr().cast_mut(), data.len())? }
+            unsafe { GpuBuffer::from_host_registered(data.as_ptr().cast_mut(), data.len()) }
+                .unwrap_or_else(|_| GpuBuffer::from_host(&self.context, data).expect("GPU alloc"))
         } else {
             GpuBuffer::from_host(&self.context, data)?
         };
