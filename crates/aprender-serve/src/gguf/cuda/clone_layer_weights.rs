@@ -406,7 +406,9 @@ impl OwnedQuantizedModelCuda {
             let is_moe = layer.moe_gate_weight.is_some();
 
             let ffn_output = if is_moe {
-                self.cuda_moe_ffn(&hidden, layer_idx, use_rmsnorm, eps)?
+                // SPEC-MOE-APR-001: CPU MoE FFN (CUDA expert dispatch blocked by
+                // cuMemHostRegister failures on GB10. TODO: fix with direct pointer passing)
+                self.model.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?
             } else {
                 self.cuda_layer_ffn(
                     &hidden, &normed, layer_idx, &lw, use_rmsnorm, eps, hidden_dim,
