@@ -141,13 +141,22 @@ impl CudaExecutor {
         data: &[u8],
         qtype: u32,
     ) -> Result<usize, GpuError> {
-        // PMAT-396: On unified memory (cc>=120), try registering mmap'd pages.
-        // SPEC-MOE-APR-001: Fall back to explicit copy if registration fails
-        // (mmap'd slices may not be page-aligned on Blackwell aarch64).
-        let buf = if self.gpu_profile.cc >= 120 {
-            match unsafe { GpuBuffer::from_host_registered(data.as_ptr().cast_mut(), data.len()) } {
-                Ok(b) => b,
-                Err(_) => GpuBuffer::from_host(&self.context, data)?,
+        // PMAT-396: On unified memory (cc>=120), try registering page-aligned mmap'd pages.
+        // SPEC-MOE-APR-001: Skip registration entirely if CUDA_NO_HOST_REGISTER=1.
+        // Blackwell aarch64 cuMemHostRegister fails on non-page-aligned mmap'd slices,
+        // and the failure corrupts the CUDA context for subsequent operations.
+        let skip_register = std::env::var("CUDA_NO_HOST_REGISTER").as_deref() == Ok("1");
+        let buf = if self.gpu_profile.cc >= 120 && !skip_register {
+            let page_size = 4096usize;
+            let ptr = data.as_ptr() as usize;
+            let is_page_aligned = ptr % page_size == 0 && data.len() % page_size == 0;
+            if is_page_aligned {
+                match unsafe { GpuBuffer::from_host_registered(data.as_ptr().cast_mut(), data.len()) } {
+                    Ok(b) => b,
+                    Err(_) => GpuBuffer::from_host(&self.context, data)?,
+                }
+            } else {
+                GpuBuffer::from_host(&self.context, data)?
             }
         } else {
             GpuBuffer::from_host(&self.context, data)?
