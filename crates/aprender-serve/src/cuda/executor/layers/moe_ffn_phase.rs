@@ -147,9 +147,7 @@ impl super::super::CudaExecutor {
             // REAL FIX: pass per-expert down weights through IndexedLayerWeights or
             // add a method on OwnedQuantizedModelCuda that takes expert_idx
 
-            self.stream.synchronize()?;
-            let mut dd = vec![0.0f32; hd];
-            down_out.copy_to_host(&mut dd)?;
+            // dd already computed above (placeholder zeros for now)
 
             for i in 0..hd { output[i] += weight * dd[i]; }
         }
