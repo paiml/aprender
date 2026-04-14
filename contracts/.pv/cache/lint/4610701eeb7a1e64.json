@@ -1,0 +1,1 @@
+{"content_hash":"4610701eeb7a1e64","findings":[{"rule_id":"PV-SCR-001","severity":"error","message":"Score 0.33 (Grade F) below threshold 0.99","file":"contracts/image-color-v1.yaml","line":null,"contract_stem":"image-color-v1","suppressed":false,"is_new":true,"evidence":"spec=0.40 falsify=0.00 kani=0.00 lean=0.50 bind=1.00"}]}

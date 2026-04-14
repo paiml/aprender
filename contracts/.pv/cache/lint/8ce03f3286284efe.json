@@ -1,0 +1,1 @@
+{"content_hash":"8ce03f3286284efe","findings":[{"rule_id":"PV-SCR-001","severity":"error","message":"Score 0.66 (Grade C) below threshold 0.99","file":"contracts/garbage-oracle-v1.yaml","line":null,"contract_stem":"garbage-oracle-v1","suppressed":false,"is_new":true,"evidence":"spec=0.75 falsify=1.00 kani=-0.00 lean=0.50 bind=1.00"}]}

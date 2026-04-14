@@ -1,0 +1,1 @@
+{"content_hash":"6d9df2959a036ce7","findings":[{"rule_id":"PV-VAL-001","severity":"error","message":"SCHEMA-001: metadata.references must not be empty — every contract must cite its source paper(s)","file":"contracts/codegen-dispatch-v1.yaml","line":null,"contract_stem":"codegen-dispatch-v1","suppressed":false,"is_new":true}]}

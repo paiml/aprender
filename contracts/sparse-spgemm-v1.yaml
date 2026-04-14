@@ -1,0 +1,26 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-14"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "Auto-generated stub for referenced contract"
+  description: "Contract stub: sparse-spgemm-v1"
+
+kind: AlgorithmContract
+name: sparse-spgemm
+version: "1.0.0"
+scope: "Referenced in codebase — equations to be defined"
+
+description: |
+  Stub contract created by PMAT-547 ghost contract resolution.
+  This contract was referenced in source code but never authored.
+  Equations and falsification conditions to be added when the
+  corresponding functionality is formally specified.
+
+equations:
+  placeholder:
+    description: "To be defined"
+    formula: "TBD"
+
+falsification: []

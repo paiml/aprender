@@ -1,0 +1,1 @@
+{"content_hash":"201efc1dd4b92e14","findings":[{"rule_id":"PV-VAL-001","severity":"error","message":"SCHEMA-001: metadata.references must not be empty — every contract must cite its source paper(s)","file":"contracts/tdg-scoring-v1.yaml","line":null,"contract_stem":"tdg-scoring-v1","suppressed":false,"is_new":true}]}
