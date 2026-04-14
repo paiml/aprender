@@ -534,6 +534,17 @@ impl CudaExecutor {
                     let name = format!("{}.ffn_down_exps.weight", prefix);
                     if get_qweight(&name).is_ok() { self.resolve_qtype(&name) } else { crate::cuda::types::WeightQuantType::Q4K }
                 },
+                moe_router_ptr: {
+                    let name = format!("{}.ffn_gate_inp.weight", prefix);
+                    get_qweight(&name).map(|(p, _)| p).unwrap_or(0)
+                },
+                moe_router_len: {
+                    let name = format!("{}.ffn_gate_inp.weight", prefix);
+                    get_qweight(&name).map(|(_, l)| l).unwrap_or(0)
+                },
+                moe_num_experts: 0, // Set by caller
+                moe_intermediate: 0,
+                moe_top_k: 0,
             };
 
             // GH-279: Validate that all architecture-required fields are non-zero.

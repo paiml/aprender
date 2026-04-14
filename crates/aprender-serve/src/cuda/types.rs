@@ -104,6 +104,16 @@ pub struct IndexedLayerWeights {
     pub moe_gate_exps_qtype: WeightQuantType,
     /// MoE down_exps quantization type (may differ — Q6K for Qwen3)
     pub moe_down_exps_qtype: WeightQuantType,
+    /// MoE router gate weight GPU pointer (F32, [num_experts, hidden_dim])
+    pub moe_router_ptr: u64,
+    /// MoE router gate weight size in elements
+    pub moe_router_len: usize,
+    /// Number of MoE experts
+    pub moe_num_experts: u32,
+    /// MoE intermediate size per expert
+    pub moe_intermediate: u32,
+    /// Top-k experts per token
+    pub moe_top_k: u32,
 }
 
 /// Weight quantization type for GGUF tensors

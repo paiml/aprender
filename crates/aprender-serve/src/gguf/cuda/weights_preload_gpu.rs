@@ -370,9 +370,21 @@ fn upload_layer_ffn(
     layer: &crate::gguf::quantized::OwnedQuantizedLayer,
     moe_backing: Option<&std::sync::Arc<memmap2::Mmap>>,
 ) -> Result<usize> {
-    // SPEC-MOE-APR-001: MoE layers upload packed 3D expert tensors for CUDA dispatch
+    // SPEC-MOE-APR-001: MoE layers upload packed 3D expert tensors + router weight
     if layer.moe_gate_weight.is_some() {
         let mut total = 0usize;
+        // Upload router gate weight (F32, small: 128 × 2048 = 1 MB)
+        if let Some(ref gate_weight) = layer.moe_gate_weight {
+            let router_name = format!("{prefix}.ffn_gate_inp.weight");
+            let router_bytes: &[u8] = unsafe {
+                std::slice::from_raw_parts(
+                    gate_weight.as_ptr() as *const u8,
+                    gate_weight.len() * std::mem::size_of::<f32>(),
+                )
+            };
+            total += upload_moe_tensor(executor, &router_name, router_bytes, 0)?; // qtype=0 for F32
+        }
+        // Upload packed 3D expert tensors
         if let (Some(ref gate_ref), Some(ref up_ref), Some(ref down_ref), Some(backing)) =
             (&layer.moe_gate_packed, &layer.moe_up_packed, &layer.moe_down_packed, moe_backing)
         {
