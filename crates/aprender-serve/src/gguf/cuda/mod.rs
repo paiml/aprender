@@ -359,7 +359,8 @@ impl OwnedQuantizedModelCuda {
         let num_layers = model.layers.len();
         let num_heads = model.config.num_heads;
         let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
-        let head_dim = model.config.hidden_dim / num_heads;
+        // GH-479: Use config.head_dim() for Qwen3-MoE (head_dim=128, hidden/heads=64)
+        let head_dim = model.config.head_dim();
 
         if let Err(e) =
             executor.init_kv_cache_gpu(num_layers, num_heads, num_kv_heads, head_dim, max_seq_len)

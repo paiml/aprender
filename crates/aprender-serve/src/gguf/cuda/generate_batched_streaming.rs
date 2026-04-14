@@ -175,8 +175,8 @@ impl OwnedQuantizedModelCuda {
 
         // Create CPU KV caches for each slot (needed for prefill path)
         let num_kv_heads = self.model.config.num_kv_heads;
-        let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;
-        let kv_dim = num_kv_heads * head_dim;
+        let head_dim = self.model.config.head_dim();
+        let kv_dim = self.model.config.kv_dim();
         let max_seq_len = max_prompt_len + max_tokens_max;
         let mut caches: Vec<OwnedQuantizedKVCache> = (0..m)
             .map(|_| OwnedQuantizedKVCache::new(num_layers, kv_dim, max_seq_len))

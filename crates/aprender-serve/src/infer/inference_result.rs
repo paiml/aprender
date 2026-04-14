@@ -410,7 +410,8 @@ fn validate_gpu_first_token(
     };
     let probe_token: &[u32] = &[bos_id];
 
-    let kv_dim = model.config.num_kv_heads * (model.config.hidden_dim / model.config.num_heads);
+    // GH-479: Use config.kv_dim() for correct head_dim (Qwen3-MoE: head_dim=128, hidden/heads=64)
+    let kv_dim = model.config.kv_dim();
     let num_layers = model.config.num_layers;
 
     // CPU forward pass for reference

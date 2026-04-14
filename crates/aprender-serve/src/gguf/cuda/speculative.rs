@@ -58,7 +58,7 @@ impl OwnedQuantizedModelCuda {
 
         // PAR-100: Setup KV cache with GQA-aware dimensions
         let num_kv_heads = self.model.config.num_kv_heads;
-        let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;
+        let head_dim = self.model.config.head_dim();
         let kv_dim = num_kv_heads * head_dim;
         let mut cache = OwnedQuantizedKVCache::new(
             self.model.config.num_layers,
@@ -287,7 +287,7 @@ impl OwnedQuantizedModelCuda {
         // Setup KV caches for both models
         let target_kv_dim = {
             let num_kv_heads = self.model.config.num_kv_heads;
-            let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;
+            let head_dim = self.model.config.head_dim();
             num_kv_heads * head_dim
         };
         let draft_kv_dim = {

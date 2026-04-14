@@ -16,12 +16,9 @@ fn parity_gate(cuda_model: &mut OwnedQuantizedModelCuda) -> Result<()> {
     let hidden_dim = cuda_model.model.config.hidden_dim;
     let num_heads = cuda_model.model.config.num_heads;
     let num_kv_heads = cuda_model.model.config.num_kv_heads;
-    let head_dim = if num_heads > 0 {
-        hidden_dim / num_heads
-    } else {
-        0
-    };
-    let kv_dim = num_kv_heads * head_dim;
+    // GH-479: Use config methods for correct head_dim (Qwen3-MoE: head_dim=128)
+    let head_dim = cuda_model.model.config.head_dim();
+    let kv_dim = cuda_model.model.config.kv_dim();
     let num_layers = cuda_model.model.config.num_layers;
 
     // Use architecture-aware BOS token from GGUFConfig (which applies
