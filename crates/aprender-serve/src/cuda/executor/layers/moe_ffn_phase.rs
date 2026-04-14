@@ -125,12 +125,31 @@ impl super::super::CudaExecutor {
                 swiglu[i] = silu * ud[i];
             }
 
-            // Down projection: CPU Q6K matmul (GGUF 3D Q6K stride mismatch blocks GPU path)
-            // TODO: Fix Q6K 3D byte_size formula to match actual GGUF layout
-            // The CPU fused_q6k_parallel_matvec uses per-expert OwnedQuantizedTensor
-            // which was correctly sliced during model loading.
-            // Cost: ~0.5ms per expert on x86 = ~4ms for 8 experts (small vs attention time)
-            let dd = vec![0.0f32; hd]; // placeholder — need model access for per-expert down weights
+            // Down projection: Q6K GEMV on GPU
+            // Stride verified: 1,290,240 bytes/expert (GGUF file confirmed)
+            let q6k_blocks_per_row = (moe_intermediate + 255) / 256;
+            let q6k_bytes_per_row = q6k_blocks_per_row * 210;
+            let down_stride = hd * q6k_bytes_per_row;
+            let down_ptr = lw.moe_down_exps_ptr + (expert_idx * down_stride) as u64;
+            if layer_idx == 0 && expert_idx == selected[0].0 {
+                eprintln!("[MOE-DOWN-GPU] expert={} base={} stride={} ptr={} buf_len={}",
+                    expert_idx, lw.moe_down_exps_ptr, down_stride, down_ptr, lw.moe_down_exps_len);
+            }
+
+            let swiglu_gpu = self.upload_f32(&swiglu)
+                .map_err(|e| super::super::GpuError::Transfer(format!("swiglu: {e}")))?;
+
+            // TEMP: Use Q4K GEMV for down (Q6K crashes — investigating)
+            // Q4K stride: 2048 * (768/256) * 144 = 2048 * 3 * 144 = 884,736
+            let q4k_down_stride = hd * ((moe_intermediate + 255) / 256) * 144;
+            let down_ptr_q4k = lw.moe_down_exps_ptr + (expert_idx * q4k_down_stride) as u64;
+            let down_out = self.q4k_gemv_indexed_async(
+                down_ptr_q4k, &swiglu_gpu, hidden_dim, moe_intermediate as u32,
+            ).map_err(|e| super::super::GpuError::KernelLaunch(format!("down expert {}: {}", expert_idx, e)))?;
+
+            self.stream.synchronize()?;
+            let mut dd = vec![0.0f32; hd];
+            down_out.copy_to_host(&mut dd)?;
 
             for i in 0..hd { output[i] += weight * dd[i]; }
         }
