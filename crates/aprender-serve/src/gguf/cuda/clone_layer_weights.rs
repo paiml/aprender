@@ -406,8 +406,11 @@ impl OwnedQuantizedModelCuda {
             let is_moe = layer.moe_gate_weight.is_some();
 
             let ffn_output = if is_moe {
-                // SPEC-MOE-APR-001 Phase 7: CUDA MoE expert dispatch
-                self.cuda_moe_ffn(&hidden, layer_idx, use_rmsnorm, eps)?
+                // SPEC-MOE-APR-001: CPU MoE FFN (CUDA expert GEMV produces wrong output
+                // due to 3D packed tensor stride mismatch with Q4K kernel expectations).
+                // GPU attention + CPU MoE FFN = hybrid path.
+                // TODO: Fix CUDA expert GEMV stride or implement fused MoE kernel.
+                self.model.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?
             } else {
                 self.cuda_layer_ffn(
                     &hidden, &normed, layer_idx, &lw, use_rmsnorm, eps, hidden_dim,
