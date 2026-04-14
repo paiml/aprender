@@ -1,16 +1,33 @@
 # APR-MONO: Sovereign Stack Monorepo Consolidation
 
-**Version**: 2.3
-**Date**: 2026-04-13
+**Version**: 2.4
+**Date**: 2026-04-14
 **Status**: COMPLETE — 75 workspace crates (79 dirs, 4 excluded), 0 compile failures, 14 integration tests pass
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
 **Contracts**: `cgp-monorepo-consolidation-v1.yaml`, `cgp-monorepo-build-v1.yaml`, `apr-cli-commands-v1.yaml`, `apr-cli-command-safety-v1.yaml`, `tui-rendering-ux-v1.yaml`, `ratatui-migration-v1.yaml`
-**Falsification**: 13 MONO + 7 BUILD + 7 CLI + 4 RATATUI + 4 CMD-SAFETY + 5 PARITY = 40 falsification conditions
+**Falsification**: 17 MONO + 7 BUILD + 11 CLI + 4 CMD-SAFETY + 8 RATATUI + 5 PARITY = 52 falsification conditions (verified 2026-04-14)
 **Integration Tests**: `tests/monorepo_invariants.rs` (8 tests), `crates/apr-cli/tests/cli_commands.rs` (6 tests, 56 commands)
-**Tests**: 4,633 apr-cli + 13,023 core + 1,371 contracts + 2,792 QA = 21,819 (key crates); 28,700+ workspace-wide
-**Contracts**: 833 YAML files, 172 `#[contract]` annotations (70 apr-cli + 52 serve/compute/train + 50 other crates)
+**Tests**: 4,693+ apr-cli + 13,026 core + 1,371 contracts + 2,792 QA = 21,882 (key crates); 28,700+ workspace-wide (verified 2026-04-14)
+**Contracts**: 833 YAML files, 132 `#[contract]` annotations (non-generated, verified 2026-04-14)
+
+### Falsification Audit v2.4 (2026-04-14)
+
+| Claim | Spec Value | Actual | Verdict |
+|-------|-----------|--------|---------|
+| YAML contract files | 833 | 833 | **PASS** |
+| Workspace crates | 75 | 75 | **PASS** |
+| `#[contract]` annotations | 132 | 132 | **PASS** (corrected from 172 in v2.3) |
+| Falsification conditions | 52 | 52 | **PASS** (corrected from 40 in v2.2) |
+| Compile failures | 0 | 0 | **PASS** |
+| Architecture variants | 19 | 19 | **PASS** |
+| Core tests | 13,026 | 13,026 | **PASS** |
+| Nightly workflow | GREEN | GREEN | **PASS** (first in 10+ days, verified 2026-04-14 04:53 UTC) |
+
+**Corrections applied:**
+- `#[contract]` count: 172 → 132 (v2.3 included CLI handler files that use the attribute indirectly via generated code)
+- Falsification conditions: 40 → 52 (v2.2 undercounted; recount shows 17+7+11+4+8+5=52)
 
 ### Changes since v2.0 (2026-04-10 Falsification Audit)
 
