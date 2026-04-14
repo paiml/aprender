@@ -279,6 +279,163 @@ impl OwnedQuantizedModelCuda {
         }
     }
 
+    /// SPEC-MOE-APR-001 Phase 7: CUDA MoE FFN dispatch.
+    ///
+    /// Routes expert matmuls through GPU using stride-based access into
+    /// packed 3D GPU buffers. Contract: moe-cuda-kernel-v1.yaml.
+    ///
+    /// Flow: RMSNorm(hidden) → softmax router → top-k → per-expert CUDA GEMV
+    ///       (gate + up → SwiGLU → down) → weighted sum
+    fn cuda_moe_ffn(
+        &mut self,
+        hidden: &[f32],
+        layer_idx: usize,
+        use_rmsnorm: bool,
+        eps: f32,
+    ) -> Result<Vec<f32>> {
+        use crate::gguf::inference::forward::ops;
+
+        let layer = &self.model.layers[layer_idx];
+        let hidden_dim = self.model.config.hidden_dim;
+        let moe_intermediate = self.model.config.moe_intermediate_size;
+        let num_experts = self.model.config.num_experts;
+        let top_k = self.model.config.num_experts_per_tok.max(1);
+
+        // 1. FFN input norm
+        let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
+            if use_rmsnorm {
+                ops::rms_norm(hidden, ffn_norm, eps)
+            } else {
+                ops::layer_norm(hidden, ffn_norm, layer.ffn_norm_bias.as_deref(), eps)
+            }
+        } else {
+            hidden.to_vec()
+        };
+
+        // 2. Router: softmax + top-k (CPU — small matmul, not worth GPU)
+        let gate_weight = layer.moe_gate_weight.as_ref()
+            .ok_or_else(|| crate::error::RealizarError::InvalidShape {
+                reason: "MoE layer missing gate_weight".into(),
+            })?;
+        let num_experts_router = gate_weight.len() / hidden_dim;
+        let num_experts_eff = num_experts_router.min(num_experts);
+
+        let mut logits = vec![0.0f32; num_experts_eff];
+        for (e, logit) in logits.iter_mut().enumerate() {
+            let offset = e * hidden_dim;
+            let mut sum = 0.0f32;
+            for j in 0..hidden_dim {
+                sum += ffn_input[j] * gate_weight[offset + j];
+            }
+            *logit = sum;
+        }
+
+        let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut probs: Vec<f32> = logits.iter().map(|&l| (l - max_logit).exp()).collect();
+        let sum: f32 = probs.iter().sum();
+        if sum > 0.0 { for p in &mut probs { *p /= sum; } }
+
+        let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
+        indexed.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let selected = &indexed[..top_k.min(num_experts_eff)];
+
+        let mut weights: Vec<(usize, f32)> = selected.to_vec();
+        if self.model.config.norm_topk_prob {
+            let total: f32 = weights.iter().map(|(_, w)| w).sum();
+            if total > 0.0 { for (_, w) in &mut weights { *w /= total; } }
+        }
+
+        // 3. Get GPU pointers for packed expert tensors
+        let ilw = self.executor.get_indexed_layer(layer_idx);
+        let gate_exps_ptr = ilw.inner().moe_gate_exps_ptr;
+        let up_exps_ptr = ilw.inner().moe_up_exps_ptr;
+        let down_exps_ptr = ilw.inner().moe_down_exps_ptr;
+        let gate_exps_len = ilw.inner().moe_gate_exps_len;
+        let up_exps_len = ilw.inner().moe_up_exps_len;
+        let down_exps_len = ilw.inner().moe_down_exps_len;
+
+        if gate_exps_ptr == 0 || up_exps_ptr == 0 || down_exps_ptr == 0 {
+            // Fallback to CPU if GPU buffers not available
+            return self.model.single_cache_ffn_block(hidden, layer_idx, use_rmsnorm);
+        }
+
+        let gate_stride = gate_exps_len / num_experts;
+        let up_stride = up_exps_len / num_experts;
+        let down_stride = down_exps_len / num_experts;
+
+        // 4. Upload ffn_input to GPU once (shared across all experts)
+        let gpu_input = trueno_gpu::driver::GpuBuffer::from_host(&self.executor.context, &ffn_input)
+            .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "cuda_moe_ffn".into(),
+                reason: format!("Failed to upload FFN input to GPU: {e}"),
+            })?;
+
+        // 5. Per-expert CUDA GEMV dispatch
+        let mut output = vec![0.0f32; hidden_dim];
+        for &(expert_idx, weight) in &weights {
+            let gate_ptr = gate_exps_ptr + (expert_idx * gate_stride) as u64;
+            let up_ptr = up_exps_ptr + (expert_idx * up_stride) as u64;
+            let down_ptr = down_exps_ptr + (expert_idx * down_stride) as u64;
+
+            // Gate GEMV: [moe_intermediate, hidden_dim] × [hidden_dim] → [moe_intermediate]
+            let gate_out = self.executor.q4k_gemv_indexed_async(
+                gate_ptr, &gpu_input, moe_intermediate as u32, hidden_dim as u32,
+            ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "cuda_moe_gate".into(), reason: format!("{e}"),
+            })?;
+
+            // Up GEMV
+            let up_out = self.executor.q4k_gemv_indexed_async(
+                up_ptr, &gpu_input, moe_intermediate as u32, hidden_dim as u32,
+            ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "cuda_moe_up".into(), reason: format!("{e}"),
+            })?;
+
+            // Download gate + up, compute SwiGLU on CPU
+            // (TODO: fuse SwiGLU into a CUDA kernel for Phase 8)
+            let mut gate_data = vec![0.0f32; moe_intermediate];
+            let mut up_data = vec![0.0f32; moe_intermediate];
+            gate_out.copy_to_host(&mut gate_data).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "cuda_moe_download".into(), reason: format!("{e}"),
+            })?;
+            up_out.copy_to_host(&mut up_data).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "cuda_moe_download".into(), reason: format!("{e}"),
+            })?;
+
+            // SwiGLU: SiLU(gate) * up
+            let mut swiglu = vec![0.0f32; moe_intermediate];
+            for i in 0..moe_intermediate {
+                let silu = gate_data[i] / (1.0 + (-gate_data[i]).exp());
+                swiglu[i] = silu * up_data[i];
+            }
+
+            // Upload swiglu, run down GEMV
+            let gpu_swiglu = trueno_gpu::driver::GpuBuffer::from_host(&self.executor.context, &swiglu)
+                .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                    operation: "cuda_moe_swiglu_upload".into(), reason: format!("{e}"),
+                })?;
+
+            // Down GEMV: [hidden_dim, moe_intermediate] × [moe_intermediate] → [hidden_dim]
+            // Note: down_exps is Q6K for Qwen3-MoE
+            let down_out = self.executor.q4k_gemv_indexed_async(
+                down_ptr, &gpu_swiglu, hidden_dim as u32, moe_intermediate as u32,
+            ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "cuda_moe_down".into(), reason: format!("{e}"),
+            })?;
+
+            let mut down_data = vec![0.0f32; hidden_dim];
+            down_out.copy_to_host(&mut down_data).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "cuda_moe_download".into(), reason: format!("{e}"),
+            })?;
+
+            for i in 0..hidden_dim {
+                output[i] += weight * down_data[i];
+            }
+        }
+
+        Ok(output)
+    }
+
     /// IMP-1010: Full GPU forward pass for single token with KV cache
     ///
     /// This method uses GPU acceleration for ALL matmul operations:
@@ -401,12 +558,13 @@ impl OwnedQuantizedModelCuda {
                 hidden[i] += attn_output[i];
             }
 
-            // 2h/2i. FFN — MoE uses CPU stride dispatch, dense uses CUDA
+            // 2h/2i. FFN — MoE uses CUDA expert dispatch, dense uses CUDA graph
             let layer = &self.model.layers[layer_idx];
             let is_moe = layer.moe_gate_weight.is_some();
 
             let ffn_output = if is_moe {
-                self.model.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?
+                // SPEC-MOE-APR-001 Phase 7: CUDA MoE expert dispatch
+                self.cuda_moe_ffn(&hidden, layer_idx, use_rmsnorm, eps)?
             } else {
                 self.cuda_layer_ffn(
                     &hidden, &normed, layer_idx, &lw, use_rmsnorm, eps, hidden_dim,

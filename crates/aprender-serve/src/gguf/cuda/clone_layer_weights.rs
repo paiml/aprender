@@ -406,7 +406,7 @@ impl OwnedQuantizedModelCuda {
             let is_moe = layer.moe_gate_weight.is_some();
 
             let ffn_output = if is_moe {
-                self.model.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?
+                self.cuda_moe_ffn(&hidden, layer_idx, use_rmsnorm, eps)?
             } else {
                 self.cuda_layer_ffn(
                     &hidden, &normed, layer_idx, &lw, use_rmsnorm, eps, hidden_dim,
@@ -474,6 +474,115 @@ impl OwnedQuantizedModelCuda {
         }
 
         Ok(logits)
+    }
+
+    /// SPEC-MOE-APR-001 Phase 7: CUDA MoE FFN dispatch.
+    /// Contract: moe-cuda-kernel-v1.yaml
+    fn cuda_moe_ffn(
+        &mut self,
+        hidden: &[f32],
+        layer_idx: usize,
+        use_rmsnorm: bool,
+        eps: f32,
+    ) -> Result<Vec<f32>> {
+        let layer = &self.model.layers[layer_idx];
+        let hidden_dim = self.model.config.hidden_dim;
+        let moe_intermediate = self.model.config.moe_intermediate_size;
+        let num_experts = self.model.config.num_experts;
+        let top_k = self.model.config.num_experts_per_tok.max(1);
+
+        let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
+            if use_rmsnorm { ops::rms_norm(hidden, ffn_norm, eps) }
+            else { ops::layer_norm(hidden, ffn_norm, layer.ffn_norm_bias.as_deref(), eps) }
+        } else { hidden.to_vec() };
+
+        // Router (CPU — small)
+        let gate_weight = layer.moe_gate_weight.as_ref()
+            .ok_or_else(|| crate::error::RealizarError::InvalidShape { reason: "MoE missing gate".into() })?;
+        let ne = (gate_weight.len() / hidden_dim).min(num_experts);
+        let mut logits = vec![0.0f32; ne];
+        for (e, l) in logits.iter_mut().enumerate() {
+            let o = e * hidden_dim;
+            *l = (0..hidden_dim).map(|j| ffn_input[j] * gate_weight[o + j]).sum();
+        }
+        let mx = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut probs: Vec<f32> = logits.iter().map(|&l| (l - mx).exp()).collect();
+        let s: f32 = probs.iter().sum();
+        if s > 0.0 { for p in &mut probs { *p /= s; } }
+        let mut idx: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
+        idx.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let sel = &idx[..top_k.min(ne)];
+
+        // GPU pointers
+        let ilw = self.executor.get_indexed_layer(layer_idx);
+        let gp = ilw.inner().moe_gate_exps_ptr;
+        let up = ilw.inner().moe_up_exps_ptr;
+        let dp = ilw.inner().moe_down_exps_ptr;
+        let gl = ilw.inner().moe_gate_exps_len;
+        let ul = ilw.inner().moe_up_exps_len;
+        let dl = ilw.inner().moe_down_exps_len;
+
+        if gp == 0 || up == 0 || dp == 0 {
+            return self.model.single_cache_ffn_block(hidden, layer_idx, use_rmsnorm);
+        }
+
+        let gs = gl / num_experts;
+        let us = ul / num_experts;
+        let ds = dl / num_experts;
+
+        let gpu_in = unsafe { trueno_gpu::driver::GpuBuffer::from_host_registered(ffn_input.as_ptr().cast_mut(), ffn_input.len()) }
+            .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_upload".into(), reason: format!("{e}"),
+            })?;
+
+        let mut output = vec![0.0f32; hidden_dim];
+        for &(ei, w) in sel {
+            let gate_out = self.executor.q4k_gemv_indexed_async(
+                gp + (ei * gs) as u64, &gpu_in, moe_intermediate as u32, hidden_dim as u32,
+            ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_gate".into(), reason: format!("{e}"),
+            })?;
+            let up_out = self.executor.q4k_gemv_indexed_async(
+                up + (ei * us) as u64, &gpu_in, moe_intermediate as u32, hidden_dim as u32,
+            ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_up".into(), reason: format!("{e}"),
+            })?;
+
+            let mut gd = vec![0.0f32; moe_intermediate];
+            let mut ud = vec![0.0f32; moe_intermediate];
+            gate_out.copy_to_host(&mut gd).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_dl".into(), reason: format!("{e}"),
+            })?;
+            up_out.copy_to_host(&mut ud).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_dl".into(), reason: format!("{e}"),
+            })?;
+
+            // SwiGLU (CPU — small vector, TODO: fuse on GPU)
+            let mut swiglu = vec![0.0f32; moe_intermediate];
+            for i in 0..moe_intermediate {
+                let silu = gd[i] / (1.0 + (-gd[i]).exp());
+                swiglu[i] = silu * ud[i];
+            }
+
+            let gpu_sw = unsafe { trueno_gpu::driver::GpuBuffer::from_host_registered(swiglu.as_ptr().cast_mut(), swiglu.len()) }
+                .map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                    operation: "moe_sw".into(), reason: format!("{e}"),
+                })?;
+            let down_out = self.executor.q4k_gemv_indexed_async(
+                dp + (ei * ds) as u64, &gpu_sw, hidden_dim as u32, moe_intermediate as u32,
+            ).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_down".into(), reason: format!("{e}"),
+            })?;
+
+            let mut dd = vec![0.0f32; hidden_dim];
+            down_out.copy_to_host(&mut dd).map_err(|e| crate::error::RealizarError::UnsupportedOperation {
+                operation: "moe_dl".into(), reason: format!("{e}"),
+            })?;
+
+            for i in 0..hidden_dim { output[i] += w * dd[i]; }
+        }
+
+        Ok(output)
     }
 }
 
