@@ -1,16 +1,50 @@
 # APR-MONO: Sovereign Stack Monorepo Consolidation
 
-**Version**: 2.4
-**Date**: 2026-04-14
-**Status**: COMPLETE — 75 workspace crates (79 dirs, 4 excluded), 0 compile failures, 14 integration tests pass
+**Version**: 2.5
+**Date**: 2026-04-15
+**Status**: SHIPPED — v0.30.0 published to crates.io (10 crates + 41 transitive). `cargo install aprender` works.
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
-**Priority**: P0 — Unblocks daily apr-cli releases
+**Priority**: COMPLETE — v0.30.0 released, daily apr-cli releases unblocked
 **Author**: PAIML Team + Claude
 **Contracts**: `cgp-monorepo-consolidation-v1.yaml`, `cgp-monorepo-build-v1.yaml`, `apr-cli-commands-v1.yaml`, `apr-cli-command-safety-v1.yaml`, `tui-rendering-ux-v1.yaml`, `ratatui-migration-v1.yaml`
 **Falsification**: 17 MONO + 7 BUILD + 11 CLI + 4 CMD-SAFETY + 8 RATATUI + 5 PARITY = 52 falsification conditions (verified 2026-04-14)
 **Integration Tests**: `tests/monorepo_invariants.rs` (8 tests), `crates/apr-cli/tests/cli_commands.rs` (6 tests, 56 commands)
 **Tests**: 4,693+ apr-cli + 13,026 core + 1,371 contracts + 2,792 QA = 21,882 (key crates); 28,700+ workspace-wide (verified 2026-04-14)
 **Contracts**: 833 YAML files, 132 `#[contract]` annotations (non-generated, verified 2026-04-14)
+
+### v0.30.0 Release (2026-04-15)
+
+**Published to crates.io** — 10 release crates + 41 transitive workspace crates:
+
+| Crate | Version | What |
+|-------|---------|------|
+| aprender | 0.30.0 | Root facade + `apr` binary (`cargo install aprender`) |
+| aprender-core | 0.30.0 | ML library (13,026 tests) |
+| apr-cli | 0.30.0 | CLI logic (4,693+ tests, 32 subcommands verified) |
+| aprender-compute | 0.30.0 | SIMD/GPU compute (wasmtime 43) |
+| aprender-serve | 0.30.0 | Inference engine |
+| aprender-train | 0.30.0 | Training pipeline |
+| aprender-profile | 0.30.0 | Tracing/profiling (`#[cfg(unix)]` fix for Windows) |
+| aprender-contracts | 0.30.0 | 968 YAML contracts, linting, falsification |
+| aprender-contracts-macros | 0.30.0 | `#[contract]`, `#[requires]`, `#[ensures]`, `#[invariant]` |
+| aprender-orchestrate | 0.30.0 | Pipeline orchestration |
+
+**Post-release dogfood (2026-04-15)** — `cargo install aprender` from crates.io:
+
+| Gate | Result |
+|------|--------|
+| Version | `apr 0.30.0 (v0.30.0+no-git)` ✓ |
+| Inspection (11 cmds) | 11/11 PASS ✓ |
+| Help (32 cmds) | 32/32 PASS ✓ |
+| NaN/Inf sentinel | PASS ✓ |
+| JSON schema | PASS ✓ |
+| Truncated GGUF (S1) | Rejected with error ✓ |
+| Missing file (S5) | Exit 3 ✓ |
+| /dev/null (S2) | Exit 3 ✓ |
+| Contract YAML | Valid ✓ |
+| Cross-format tensors | GGUF=5, APR=5 ✓ |
+
+**Zero bugs found in production release.**
 
 ### Falsification Audit v2.4 (2026-04-14)
 
