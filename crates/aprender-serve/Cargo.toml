@@ -53,7 +53,7 @@ renacer-core = { version = "0.1" }
 
 # ML algorithms and .apr model format (optional for aprender model serving)
 # v0.24.1: chat templates, GGUF tokenizer preservation (local may be newer)
-aprender = { path = "../aprender-core", version = "0.30.0", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.31.0", package = "aprender-core", optional = true }
 
 # Data loading library (optional for data pipeline examples)
 alimentar = { version = "0.2", optional = true, default-features = false, features = ["local", "shuffle"] }

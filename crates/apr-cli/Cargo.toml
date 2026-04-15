@@ -89,7 +89,7 @@ libc = "0.2"
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../aprender-core", version = "0.30.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
+aprender = { path = "../aprender-core", version = "0.31.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 async-stream = "0.3"
 provable-contracts-macros = "0.3"
 
