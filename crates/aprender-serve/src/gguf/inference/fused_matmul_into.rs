@@ -541,6 +541,15 @@ impl OwnedQuantizedModel {
             GGUF_TYPE_Q4_K => dequantize_q4_k(&weight.data),
             GGUF_TYPE_Q5_K => dequantize_q5_k(&weight.data),
             GGUF_TYPE_Q6_K => dequantize_q6_k(&weight.data),
+            // GH-478: Native APR q4/q8 — per-tensor scratch dequant
+            APR_TYPE_Q4 => Ok(crate::apr::dequant::dequantize_apr_q4(
+                &weight.data,
+                weight.in_dim * weight.out_dim,
+            )),
+            APR_TYPE_Q8 => Ok(crate::apr::dequant::dequantize_apr_q8(
+                &weight.data,
+                weight.in_dim * weight.out_dim,
+            )),
             _ => Err(RealizarError::UnsupportedOperation {
                 operation: "dequantize_weight_for_cuda".to_string(),
                 reason: format!("Unsupported quantization type: {}", weight.qtype),
