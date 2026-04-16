@@ -282,8 +282,10 @@ async fn run_model_command(
         },
     }
 
-    // #170: Disabled broken Q4K APR GPU shortcut (run_apr_inference_gpu_q4k produces garbage).
-    // Falls through to dispatch_inference → run_apr_inference → from_apr → OwnedQuantizedModelCuda.
+    // APR GPU inference routes through dispatch_inference → run_apr_inference →
+    // from_apr → OwnedQuantizedModelCuda (same path as GGUF). The legacy
+    // run_apr_inference_gpu_q4k and run_apr_inference_gpu shortcuts produced
+    // garbage (#170) and were removed.
 
     let file_data = std::fs::read(model_ref).map_err(|e| RealizarError::UnsupportedOperation {
         operation: "read_model".to_string(),
