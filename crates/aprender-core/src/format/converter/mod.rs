@@ -20,13 +20,13 @@ pub use trueno_quant::F16_MIN_NORMAL;
 // Note: Only import functions actually used in this module
 pub(crate) use trueno_quant::{dequantize_q4_k_to_f32, quantize_q4_k, quantize_q4_k_matrix};
 
+use crate::format::Compression;
 use crate::format::gguf::{
-    load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufReader,
-    GgufTokenizer,
+    GgufModelConfig, GgufRawTensor, GgufReader, GgufTokenizer, load_gguf_raw,
+    load_gguf_with_tokenizer,
 };
 use crate::format::v2::{AprV2Metadata, AprV2Writer, QuantizationMetadata};
-use crate::format::Compression;
-use crate::serialization::safetensors::{save_safetensors, SafeTensorsMetadata, TensorMetadata};
+use crate::serialization::safetensors::{SafeTensorsMetadata, TensorMetadata, save_safetensors};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -35,9 +35,9 @@ use std::path::Path;
 #[cfg(feature = "hf-hub-integration")]
 pub use crate::format::converter_types::parse_import_error;
 pub use crate::format::converter_types::{
-    detect_sharded_model, Architecture, DequantizedTensors, ImportError, ImportOptions,
-    NativeF32Tensors, QuantizationType, ShardedIndex, Source, TensorExpectation, TensorProvenance,
-    ValidationConfig,
+    Architecture, DequantizedTensors, ImportError, ImportOptions, NativeF32Tensors,
+    QuantizationType, ShardedIndex, Source, TensorExpectation, TensorProvenance, ValidationConfig,
+    detect_sharded_model,
 };
 
 // PMAT-197: Import functions moved to import.rs that are used elsewhere
@@ -52,8 +52,8 @@ pub use import::sanitize_hf_json;
 pub(crate) use crate::format::validation::{AprValidator, TensorStats};
 #[cfg(test)]
 pub(crate) use import::{
-    compute_std, compute_tensor_stats, parse_tokenizer_json, validate_single_tensor,
-    TensorAccumulator,
+    TensorAccumulator, compute_std, compute_tensor_stats, parse_tokenizer_json,
+    validate_single_tensor,
 };
 #[cfg(test)]
 pub(crate) use merge::calculate_merge_weights;
@@ -347,6 +347,25 @@ pub fn apr_convert<P: AsRef<Path>>(
         (None, None)
     };
 
+    // GH-434 / ALB-093: Streaming Q4K path for large APR inputs (≥4 GiB).
+    // Avoids the ~3x file-size RAM requirement of the full-load path.
+    if !is_gguf
+        && options.quantize == Some(QuantizationType::Q4K)
+        && qualifies_for_streaming_q4k(input_path)
+    {
+        let tensor_count = streaming_quantize_apr_to_q4k(input_path, output_path)?;
+        let original_size = fs::metadata(input_path)
+            .map(|m| m.len() as usize)
+            .unwrap_or(0);
+        return Ok(ConvertReport::build(
+            original_size,
+            output_path,
+            tensor_count,
+            options.quantize,
+            options.compress,
+        ));
+    }
+
     // Step 1: Load tensors
     let tensors = load_model_tensors(input_path)?;
     // PMAT-274 FIX: Use input FILE size (not raw F32 tensor bytes) for fair comparison.
@@ -424,3 +443,4 @@ pub struct ConvertReport {
 include!("convert_report.rs");
 include!("f16_convert.rs");
 include!("infer_q4k_config.rs");
+include!("streaming_quantize.rs");

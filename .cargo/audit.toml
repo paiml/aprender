@@ -30,10 +30,10 @@ ignore = [
     "RUSTSEC-2026-0094",
     "RUSTSEC-2026-0096",
 
-    # rustls-webpki 0.101.7 — transitive via legacy AWS SDK (aws-smithy-http-client
-    # 1.1.12 → rustls 0.21.12 → rustls-webpki 0.101.7). Direct path
-    # (reqwest/hyper-rustls) already uses rustls-webpki 0.103.12 which IS fixed.
-    # Remove once AWS SDK drops rustls 0.21 dep.
+    # rustls-webpki 0.101.7 — transitive via aws-smithy-http-client (rustls 0.21).
+    # Direct 0.103.x path already bumped to >=0.103.12. The 0.101.7 pin lives
+    # inside AWS SDK transitive graph with no drop-in upgrade path short of a
+    # major-version SDK bump.
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
 ]
