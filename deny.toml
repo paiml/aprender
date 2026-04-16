@@ -31,6 +31,11 @@ ignore = [
     { id = "RUSTSEC-2026-0092", reason = "wasmtime: test-only dep (aprender-test-lib)" },
     { id = "RUSTSEC-2026-0094", reason = "wasmtime: test-only dep (aprender-test-lib)" },
     { id = "RUSTSEC-2026-0096", reason = "wasmtime: test-only dep (aprender-test-lib)" },
+    # rustls-webpki 0.101.7 — transitive via aws-smithy-http-client (rustls 0.21).
+    # Direct 0.103.x path already patched to >=0.103.12; 0.101.7 is pinned inside
+    # the AWS SDK graph and can only move via a major SDK bump.
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101.7: transitive via aws-smithy-http-client (rustls 0.21), no drop-in fix" },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101.7: transitive via aws-smithy-http-client (rustls 0.21), no drop-in fix" },
 ]
 
 [licenses]
