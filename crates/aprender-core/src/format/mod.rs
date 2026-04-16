@@ -51,7 +51,7 @@
 #[allow(unused_imports)]
 use crate::error::{AprenderError, Result};
 #[allow(unused_imports)]
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 #[allow(unused_imports)]
 use std::collections::HashMap;
 #[allow(unused_imports)]
@@ -221,7 +221,7 @@ pub mod test_factory;
 
 // Re-export golden trace types
 pub use golden::{
-    verify_logits, GoldenTrace, GoldenTraceSet, GoldenVerifyReport, LogitStats, TraceVerifyResult,
+    GoldenTrace, GoldenTraceSet, GoldenVerifyReport, LogitStats, TraceVerifyResult, verify_logits,
 };
 
 // Re-export model card types
@@ -235,26 +235,27 @@ pub use validation::{
 // Re-export Poka-yoke types (APR-POKA-001 - Toyota Way mistake-proofing)
 #[allow(deprecated)]
 pub use validation::no_validation_result;
-pub use validation::{fail_no_validation_rules, Gate, PokaYoke, PokaYokeResult};
+pub use validation::{Gate, PokaYoke, PokaYokeResult, fail_no_validation_rules};
 
 // Re-export converter types (spec §13 - Import/Convert Pipeline)
 pub use converter::{
-    apr_convert, apr_export, apr_import, apr_merge, AprConverter, Architecture, ConvertOptions,
-    ConvertReport, EvolutionaryMergeConfig, EvolutionaryMergeResult, ExportFormat, ExportOptions,
-    ExportReport, ImportError, ImportOptions, MergeOptions, MergeReport, MergeStrategy,
-    QuantizationType, Source, TensorExpectation, ValidationConfig,
+    AprConverter, Architecture, ConvertOptions, ConvertReport, EvolutionaryMergeConfig,
+    EvolutionaryMergeResult, ExportFormat, ExportOptions, ExportReport, ImportError, ImportOptions,
+    MergeOptions, MergeReport, MergeStrategy, QuantizationType, Source, TensorExpectation,
+    ValidationConfig, apr_convert, apr_export, apr_import, apr_merge,
+    streaming_quantize_peak_estimate,
 };
 
 // Re-export lint types (spec §4.11 - Best Practices & Conventions)
 pub use lint::{
-    lint_apr_file, lint_model, lint_model_file, LintCategory, LintIssue, LintLevel, LintReport,
-    ModelLintInfo, TensorLintInfo,
+    LintCategory, LintIssue, LintLevel, LintReport, ModelLintInfo, TensorLintInfo, lint_apr_file,
+    lint_model, lint_model_file,
 };
 
 // Re-export sharded import types (GH-127 - multi-tensor repos)
 pub use sharded::{
-    estimate_shard_memory, get_shard_files, is_sharded_model, CacheStats, CachedShard, ImportPhase,
-    ImportProgress, ImportReport, ShardCache, ShardIndex, ShardedImportConfig, ShardedImporter,
+    CacheStats, CachedShard, ImportPhase, ImportProgress, ImportReport, ShardCache, ShardIndex,
+    ShardedImportConfig, ShardedImporter, estimate_shard_memory, get_shard_files, is_sharded_model,
 };
 
 // Re-export Rosetta Stone types (PMAT-ROSETTA-001 - Universal Model Format Converter)
@@ -276,17 +277,17 @@ pub use rosetta_ml::{
 // Re-export tensor listing types (TOOL-APR-001 - reads actual tensor index)
 // Note: TensorListInfo used instead of TensorInfo to avoid conflict with rosetta::TensorInfo
 pub use tensors::{
-    format_size, is_valid_apr_magic, list_tensors, list_tensors_from_bytes,
-    TensorInfo as TensorListInfo, TensorListOptions, TensorListResult,
+    TensorInfo as TensorListInfo, TensorListOptions, TensorListResult, format_size,
+    is_valid_apr_magic, list_tensors, list_tensors_from_bytes,
 };
 
 // Re-export diff types (TOOL-APR-002 - format-agnostic comparison)
-pub use diff::{diff_inspections, diff_models, DiffCategory, DiffEntry, DiffOptions, DiffReport};
+pub use diff::{DiffCategory, DiffEntry, DiffOptions, DiffReport, diff_inspections, diff_models};
 
 // Re-export layout contract types (LAYOUT-CONTRACT-001 - Source of Truth)
 pub use layout_contract::{
-    block_sizes, contract, validate_ffn_shape_symmetry, validation_rules, ContractError,
-    LayoutContract, TensorContract,
+    ContractError, LayoutContract, TensorContract, block_sizes, contract,
+    validate_ffn_shape_symmetry, validation_rules,
 };
 
 // Re-export validated tensor types (PMAT-235 - Compile-Time Contract Enforcement)
@@ -305,8 +306,8 @@ pub use validated_classification::{
 // Re-export quantization types when feature is enabled
 #[cfg(feature = "format-quantize")]
 pub use quantize::{
-    dequantize, quantize as quantize_data, Q4_0Quantizer, Q8_0Quantizer, QuantType,
-    QuantizationInfo, QuantizedBlock, QuantizedTensor, Quantizer, BLOCK_SIZE,
+    BLOCK_SIZE, Q4_0Quantizer, Q8_0Quantizer, QuantType, QuantizationInfo, QuantizedBlock,
+    QuantizedTensor, Quantizer, dequantize, quantize as quantize_data,
 };
 
 // Re-export homomorphic encryption types when feature is enabled
