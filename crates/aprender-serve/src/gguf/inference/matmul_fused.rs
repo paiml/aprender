@@ -151,6 +151,35 @@ impl OwnedQuantizedModel {
             return Ok(output);
         }
 
+        // GH-478: APR-native Q4 / Q8 — per-tensor scratch dequant.
+        // Storage stays at 4-/8-bit; F32 expansion is bounded to one tensor's
+        // working set instead of `4 × num_params` bytes at load time.
+        if weight.qtype == APR_TYPE_Q4 || weight.qtype == APR_TYPE_Q8 {
+            let num_elements = in_dim * out_dim;
+            let weights_f32 = if weight.qtype == APR_TYPE_Q4 {
+                crate::apr::dequant::dequantize_apr_q4(&weight.data, num_elements)
+            } else {
+                crate::apr::dequant::dequantize_apr_q8(&weight.data, num_elements)
+            };
+            let label = if weight.qtype == APR_TYPE_Q4 { "APR-Q4" } else { "APR-Q8" };
+
+            let weight_matrix = TruenoMatrix::from_vec(out_dim, in_dim, weights_f32)
+                .map_err(|_| RealizarError::InvalidShape {
+                    reason: format!("Failed to create weight matrix for {label}"),
+                })?;
+
+            let mut output = Vec::with_capacity(seq_len * out_dim);
+            for s in 0..seq_len {
+                let x = &input[s * in_dim..(s + 1) * in_dim];
+                let x_vec = TruenoVector::from_slice(x);
+                let r = weight_matrix.matvec(&x_vec).map_err(|_| RealizarError::InvalidShape {
+                    reason: format!("SIMD matvec failed for {label}"),
+                })?;
+                output.extend_from_slice(r.as_slice());
+            }
+            return Ok(output);
+        }
+
         // CPU path: Fused K-quant kernels for Q4_K, Q5_K, Q6_K
         self.fused_matmul_k_quants(input, weight, in_dim, out_dim, seq_len)
     }
