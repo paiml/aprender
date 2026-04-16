@@ -31,6 +31,8 @@ ignore = [
     { id = "RUSTSEC-2026-0092", reason = "wasmtime: test-only dep (aprender-test-lib)" },
     { id = "RUSTSEC-2026-0094", reason = "wasmtime: test-only dep (aprender-test-lib)" },
     { id = "RUSTSEC-2026-0096", reason = "wasmtime: test-only dep (aprender-test-lib)" },
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101.7: transitive via legacy AWS SDK (aws-smithy-http-client → rustls 0.21). Direct path uses 0.103.12 which IS fixed." },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101.7: transitive via legacy AWS SDK (aws-smithy-http-client → rustls 0.21). Direct path uses 0.103.12 which IS fixed." },
 ]
 
 [licenses]

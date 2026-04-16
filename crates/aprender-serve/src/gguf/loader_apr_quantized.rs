@@ -617,4 +617,85 @@ mod gh478_per_layer_dequant_tests {
             "Conv1D (transpose=true) path keeps legacy F32 expansion");
         assert_eq!(tensor.qtype, 0, "Conv1D path flattens qtype to F32");
     }
+
+    /// GH-478: End-to-end memory-bound check on a real APR-native q4/q8 model.
+    ///
+    /// Iterates all q4/q8 tensors via `apr_load_quantized_tensor` and asserts
+    /// the total stored byte count stays at the on-disk raw-quantized size,
+    /// never inflating to 4× (F32) — which would OOM large models.
+    ///
+    /// Gated on `GH478_APR_Q4_MODEL` so CI/regular `cargo test` skip it.
+    /// Run:
+    ///   GH478_APR_Q4_MODEL=/tmp/gh478-qwen-1.5b-aprq4.apr \
+    ///   cargo test -p aprender-serve --lib \
+    ///     gh478_real_model_load_stays_bounded -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn gh478_real_model_load_stays_bounded() {
+        let path = match std::env::var("GH478_APR_Q4_MODEL") {
+            Ok(p) => p,
+            Err(_) => return, // gated
+        };
+        let apr = MappedAprModel::from_path(&path).expect("mmap apr");
+        let data = apr.data();
+        let data_offset = apr.data_offset() as usize;
+
+        let mut total_raw_bytes: u64 = 0;
+        let mut total_stored_bytes: u64 = 0;
+        let mut total_elements: u64 = 0;
+        let mut qtensor_count = 0usize;
+
+        for tensor in &apr.tensors {
+            let dtype = tensor.dtype.as_str();
+            if dtype != "q4" && dtype != "q8" {
+                continue;
+            }
+            if tensor.shape.len() != 2 {
+                continue; // skip 1-D and Conv1D-transpose edge cases
+            }
+            let out_dim = tensor.shape[0] as usize;
+            let in_dim = tensor.shape[1] as usize;
+            let raw_size = tensor.size;
+            let expected_f32_size = (in_dim * out_dim * 4) as u64;
+
+            let loaded = super::apr_load_quantized_tensor(
+                &apr, data, data_offset, &[tensor.name.as_str()],
+                in_dim, out_dim, false,
+            ).expect("load tensor");
+
+            total_raw_bytes += raw_size;
+            total_stored_bytes += loaded.data.len() as u64;
+            total_elements += (in_dim * out_dim) as u64;
+            qtensor_count += 1;
+
+            // Per-tensor invariant: raw bytes, not F32 expansion.
+            assert_eq!(loaded.data.len() as u64, raw_size,
+                "tensor {}: data.len()={} raw_size={} expected_f32={} — regression!",
+                tensor.name, loaded.data.len(), raw_size, expected_f32_size);
+        }
+
+        let stored_gb = total_stored_bytes as f64 / 1e9;
+        let would_be_f32_gb = (total_elements * 4) as f64 / 1e9;
+        eprintln!(
+            "[GH-478] {} q-tensors  stored={:.3} GB  would-be-F32={:.3} GB  ratio={:.1}×",
+            qtensor_count, stored_gb, would_be_f32_gb, would_be_f32_gb / stored_gb
+        );
+        assert!(qtensor_count > 0, "no q4/q8 tensors found — wrong model?");
+        assert_eq!(total_stored_bytes, total_raw_bytes,
+            "total stored bytes must equal on-disk raw quant bytes");
+        assert!(would_be_f32_gb > stored_gb * 2.0,
+            "falsification sanity: F32 expansion must be ≥2× the stored size");
+    }
+
+    fn read_rss_gb() -> f64 {
+        let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+        for line in status.lines() {
+            if let Some(rest) = line.strip_prefix("VmRSS:") {
+                let kb: f64 = rest.trim().trim_end_matches(" kB")
+                    .parse().unwrap_or(0.0);
+                return kb / 1_048_576.0; // KiB → GiB (close enough)
+            }
+        }
+        0.0
+    }
 }
