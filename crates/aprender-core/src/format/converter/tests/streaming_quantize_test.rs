@@ -48,6 +48,11 @@ mod tests_streaming_quantize {
 
     #[test]
     fn qualifies_for_streaming_requires_threshold_and_apr_magic() {
+        use crate::format::converter::STREAMING_THRESHOLD_TEST_MUTEX;
+        // Any test that reads the effective threshold must hold this mutex so
+        // it cannot race with a concurrent test that sets the override.
+        let _guard = STREAMING_THRESHOLD_TEST_MUTEX.lock().expect("mutex");
+
         let dir = tempfile::tempdir().expect("tempdir");
         let small = dir.path().join("small.apr");
         std::fs::write(&small, build_pygmy_apr_gguf_names()).expect("write small");
@@ -100,5 +105,59 @@ mod tests_streaming_quantize {
         let path = dir.path().join("bogus.bin");
         std::fs::write(&path, vec![0u8; 128]).expect("write");
         assert!(streaming_quantize_peak_estimate(&path).is_none());
+    }
+
+    // GH-434 / FALSIFY-CONV-009: `apr_convert` must take the streaming path
+    // whenever the input qualifies (≥ threshold + APR magic + Q4K quantize).
+    //
+    // We lower the threshold via the cfg(test) override so the pygmy fixture
+    // qualifies. The streaming path is distinguishable from the full-load
+    // path by a metadata fingerprint: streaming clones the source metadata
+    // (preserving `model_type == "pygmy-gguf"`), whereas the full-load Q4K
+    // builder hardcodes `model_type == "qwen2"`.
+    #[test]
+    fn apr_convert_short_circuits_to_streaming_when_threshold_qualifies() {
+        use crate::format::converter::{
+            STREAMING_THRESHOLD_TEST_MUTEX, STREAMING_THRESHOLD_TEST_OVERRIDE,
+        };
+        use crate::format::{ConvertOptions, QuantizationType, apr_convert};
+        use std::sync::atomic::Ordering;
+
+        let _guard = STREAMING_THRESHOLD_TEST_MUTEX.lock().expect("mutex");
+        STREAMING_THRESHOLD_TEST_OVERRIDE.store(1, Ordering::Relaxed);
+        let result = (|| -> Result<(), String> {
+            let dir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
+            let input = dir.path().join("in.apr");
+            let output = dir.path().join("out.apr");
+            std::fs::write(&input, build_pygmy_apr_gguf_names())
+                .map_err(|e| format!("write: {e}"))?;
+
+            let options = ConvertOptions {
+                quantize: Some(QuantizationType::Q4K),
+                ..Default::default()
+            };
+            apr_convert(&input, &output, options).map_err(|e| format!("convert: {e:?}"))?;
+
+            let bytes = std::fs::read(&output).map_err(|e| format!("read out: {e}"))?;
+            let reader = AprV2Reader::from_bytes(&bytes).map_err(|e| format!("parse: {e:?}"))?;
+            let meta = reader.metadata();
+
+            if meta.model_type != "pygmy-gguf" {
+                return Err(format!(
+                    "expected streaming metadata fingerprint 'pygmy-gguf', got '{}' (full-load path taken?)",
+                    meta.model_type
+                ));
+            }
+            let q = meta
+                .quantization
+                .as_ref()
+                .ok_or_else(|| "missing quantization meta".to_string())?;
+            if q.quant_type != "q4_k" {
+                return Err(format!("expected q4_k, got '{}'", q.quant_type));
+            }
+            Ok(())
+        })();
+        STREAMING_THRESHOLD_TEST_OVERRIDE.store(u64::MAX, Ordering::Relaxed);
+        result.expect("streaming short-circuit assertion");
     }
 }

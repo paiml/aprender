@@ -149,16 +149,54 @@ fn build_streaming_q4k_metadata(
 ///
 /// Criteria (all must hold):
 ///   1. Magic bytes parse as APR v2.
-///   2. File size ≥ `STREAMING_THRESHOLD_BYTES`.
+///   2. File size ≥ effective threshold.
+///
+/// The effective threshold is the `APR_STREAMING_THRESHOLD` env var (bytes,
+/// decimal) if set and parsable as `u64`, else `STREAMING_THRESHOLD_BYTES`.
+/// The env override exists so integration tests can exercise the streaming
+/// path on pygmy fixtures (the 4 GiB default is infeasible for CI) and so ops
+/// can lower the bar on memory-constrained hosts. Production deployments that
+/// do not set the variable see the compile-time default.
 pub(crate) fn qualifies_for_streaming_q4k(path: &Path) -> bool {
     use crate::format::rosetta::FormatType;
 
+    let threshold = effective_streaming_threshold();
     let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    if size < STREAMING_THRESHOLD_BYTES {
+    if size < threshold {
         return false;
     }
     matches!(FormatType::from_magic(path), Ok(FormatType::Apr))
 }
+
+/// Resolve the streaming threshold, honoring test overrides and env var.
+///
+/// Precedence: test override (cfg(test) only) > env var > compile-time default.
+/// Test override is a `cfg(test)` static so it is compiled out of production
+/// builds.
+fn effective_streaming_threshold() -> u64 {
+    #[cfg(test)]
+    {
+        let t = STREAMING_THRESHOLD_TEST_OVERRIDE.load(std::sync::atomic::Ordering::Relaxed);
+        if t != u64::MAX {
+            return t;
+        }
+    }
+    std::env::var("APR_STREAMING_THRESHOLD")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(STREAMING_THRESHOLD_BYTES)
+}
+
+/// Test-only threshold override. `u64::MAX` means "no override, use env/default".
+/// Tests that mutate this MUST serialize via `STREAMING_THRESHOLD_TEST_MUTEX`
+/// to avoid races with any concurrently-running test.
+#[cfg(test)]
+pub(crate) static STREAMING_THRESHOLD_TEST_OVERRIDE: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(u64::MAX);
+
+/// Serializes tests that set `STREAMING_THRESHOLD_TEST_OVERRIDE`.
+#[cfg(test)]
+pub(crate) static STREAMING_THRESHOLD_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Estimate the peak RAM the streaming Q4K path would require, scanning only
 /// the APR v2 tensor index (no tensor data loaded).

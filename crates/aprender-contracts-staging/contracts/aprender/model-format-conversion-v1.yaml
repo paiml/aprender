@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-03'
   author: PAIML Engineering
+  registry: true
   description: >
     Model format conversion safety — apr convert/quantize/merge/import/export
     operations preserve tensor integrity, maintain weight equivalence,
@@ -237,10 +238,24 @@ falsification_tests:
   test: Build pygmy APR, call streaming_quantize_apr_to_q4k directly, read output via AprV2Reader, assert tensor_names equality, iterate dequant values for NaN/Inf, assert quant_type.
   if_fails: Streaming path silently drops tensors OR introduces NaN/Inf during per-tensor dequant→quantize OR writes wrong metadata — the full-load fallback would hide this because it's only used for ≥ 4 GiB models in practice.
 - id: FALSIFY-CONV-009
-  rule: Streaming Q4K threshold gate rejects small or non-APR inputs
-  prediction: qualifies_for_streaming_q4k returns false for inputs < 4 GiB OR for files without APR magic bytes, regardless of extension
-  test: Write a small APR file and a non-APR blob; assert qualifies_for_streaming_q4k returns false for both.
-  if_fails: Streaming path is engaged for small models (regressing the full-load fast path that all existing tests depend on) OR for non-APR inputs (attempting APR parse on GGUF/SafeTensors produces confusing errors).
+  rule: Streaming Q4K threshold gate rejects small or non-APR inputs and apr_convert short-circuits when qualified
+  prediction: |
+    qualifies_for_streaming_q4k returns false for inputs below the effective threshold OR for
+    files without APR magic bytes. When the gate returns true, apr_convert must take the
+    streaming path (not the full-load path). The effective threshold is, in precedence order:
+    (1) cfg(test) override STREAMING_THRESHOLD_TEST_OVERRIDE, (2) env var APR_STREAMING_THRESHOLD,
+    (3) compile-time default STREAMING_THRESHOLD_BYTES (4 GiB).
+  test: |
+    (a) Write a small APR file and a non-APR blob; assert qualifies_for_streaming_q4k returns
+    false for both under the default threshold. (b) Lower the threshold via the cfg(test)
+    override, call apr_convert(pygmy, …, Q4K), and assert the output's metadata.model_type
+    preserves the source value (streaming fingerprint — the full-load Q4K builder hardcodes
+    "qwen2", so a mismatch proves the streaming path was taken).
+  if_fails: |
+    Streaming path is engaged for small production models (regressing the full-load fast path
+    that all existing tests depend on) OR non-APR inputs hit APR parse logic (confusing
+    errors) OR apr_convert's short-circuit is bypassed so ≥ 4 GiB models OOM on commodity
+    hosts even though the streaming implementation exists.
 kani_harnesses:
 - id: KANI-CONV-001
   obligation: Format conversion preserves tensor count
