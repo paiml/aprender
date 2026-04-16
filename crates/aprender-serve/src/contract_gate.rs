@@ -355,20 +355,6 @@ fn estimate_elements(byte_size: usize, dtype: u8) -> usize {
     }
 }
 
-/// Convenience: check file size against system RAM for pre-dispatch routing.
-///
-/// Used by the inference dispatch layer to route large models to the quantized
-/// CPU path BEFORE reading the file. This is a fast heuristic (file_size × 8);
-/// the precise check happens in `validate_f32_dequant_limits()` after parsing.
-pub fn exceeds_f32_dequant_estimate(file_size: u64) -> bool {
-    if file_size == 0 {
-        return false;
-    }
-    let estimated_peak = file_size.saturating_mul(8);
-    let mem_total = system_memory_bytes().unwrap_or(u64::MAX);
-    estimated_peak > mem_total * 80 / 100
-}
-
 /// Read total system memory from /proc/meminfo (Linux).
 ///
 /// Returns `None` on non-Linux or if /proc/meminfo is unreadable.
@@ -681,8 +667,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_exceeds_f32_dequant_estimate_zero_file() {
-        assert!(!exceeds_f32_dequant_estimate(0));
-    }
 }
