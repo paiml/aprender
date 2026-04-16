@@ -15,11 +15,16 @@ pub fn run_apr_inference(
     verbose: bool,
     trace_config: Option<crate::inference_trace::TraceConfig>,
 ) -> Result<()> {
-    use crate::apr::AprV2Model;
-    use crate::apr_transformer::AprTransformer;
+    use crate::apr::{AprV2Model, MappedAprModel};
+    use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
     use crate::inference_trace::{InferenceTracer, ModelInfo, TraceStep};
     use std::path::Path;
     use std::time::Instant;
+
+    // GH-479: CPU path now loads via MappedAprModel + OwnedQuantizedModel (per-tensor
+    // scratch dequant from GH-478) instead of eager F32 AprTransformer. file_data is
+    // unused on both paths but kept in the signature for caller compatibility.
+    let _ = file_data;
 
     // APR-TRACE-001: Create tracer from config
     let mut tracer = trace_config
@@ -41,9 +46,7 @@ pub fn run_apr_inference(
     // Both AprF32ToGpuAdapter and forward_token_apr_q4k produce garbage on GPU.
     #[cfg(feature = "cuda")]
     if force_gpu {
-        use crate::apr::MappedAprModel;
-        use crate::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig};
-        use std::path::Path;
+        use crate::gguf::OwnedQuantizedModelCuda;
 
         let model_path = Path::new(model_ref);
 
@@ -81,27 +84,35 @@ pub fn run_apr_inference(
 
     let load_start = Instant::now();
 
-    // Load APR transformer (CPU path)
-    let transformer = AprTransformer::from_apr_bytes(file_data).map_err(|e| {
+    // GH-479: Load APR via MappedAprModel + OwnedQuantizedModel — per-tensor scratch
+    // dequant avoids eager F32 inflation (GH-478). Replaces AprTransformer::from_apr_bytes.
+    let model_path_for_load = Path::new(model_ref);
+    let mapped = MappedAprModel::from_path(model_path_for_load).map_err(|e| {
         crate::error::RealizarError::UnsupportedOperation {
             operation: "parse_apr".to_string(),
-            reason: format!("Failed to parse APR: {e}"),
+            reason: format!("Failed to map APR file: {e}"),
+        }
+    })?;
+    let model = OwnedQuantizedModel::from_apr(&mapped).map_err(|e| {
+        crate::error::RealizarError::UnsupportedOperation {
+            operation: "parse_apr".to_string(),
+            reason: format!("Failed to load APR as OwnedQuantizedModel: {e}"),
         }
     })?;
 
     // APR-TRACE-001: Set model info
     tracer.set_model_info(ModelInfo {
         name: model_ref.to_string(),
-        num_layers: transformer.config.num_layers,
-        hidden_dim: transformer.config.hidden_dim,
-        vocab_size: transformer.config.vocab_size,
-        num_heads: transformer.config.num_heads,
-        quant_type: Some("APR F32".to_string()),
+        num_layers: model.config.num_layers,
+        hidden_dim: model.config.hidden_dim,
+        vocab_size: model.config.vocab_size,
+        num_heads: model.config.num_heads,
+        quant_type: Some("APR scratch-dequant".to_string()),
     });
 
     let load_time = load_start.elapsed();
     if verbose {
-        println!("Backend: CPU (AVX2 + SIMD)");
+        println!("Backend: CPU (per-tensor scratch dequant)");
         println!("Model loaded in {:.2}ms", load_time.as_secs_f64() * 1000.0);
     }
 
@@ -122,39 +133,41 @@ pub fn run_apr_inference(
         .unwrap_or_else(|| prompt.chars().map(|c| c as u32).collect());
     let prompt_len = prompt_tokens.len();
 
-    tracer.trace_encode(prompt, &prompt_tokens, transformer.config.vocab_size);
+    tracer.trace_encode(prompt, &prompt_tokens, model.config.vocab_size);
 
     if verbose {
         println!("Prompt tokens: {}", prompt_len);
-        println!("Temperature: {:.1} (using greedy decoding)", temperature);
+        println!("Temperature: {:.1}", temperature);
         println!();
     }
 
     // APR-TRACE-001: Trace embedding (approximation - we don't have direct access)
     tracer.start_step(TraceStep::Embed);
-    tracer.trace_embed(prompt_len, transformer.config.hidden_dim, None);
+    tracer.trace_embed(prompt_len, model.config.hidden_dim, None);
 
     // APR-TRACE-001: Trace transformer blocks (high-level, generation is a black box)
     tracer.start_step(TraceStep::TransformerBlock);
 
-    // Run inference with timing
-    // PMAT-103 FIX: Use generate_with_cache for O(n) instead of O(n²) complexity
-    let gen_config = crate::apr_transformer::GenerateConfig {
+    // GH-479: OwnedQuantizedModel::generate_with_cache — O(n) autoregressive decode
+    // with per-tensor scratch dequant on each matmul (no eager F32 inflation).
+    let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
+        top_k: if temperature == 0.0 { 1 } else { 40 },
+        trace: trace_config.is_some(),
         ..Default::default()
     };
     let gen_start = Instant::now();
-    let generated = transformer.generate_with_cache(&prompt_tokens, &gen_config)?;
+    let generated = model.generate_with_cache(&prompt_tokens, &gen_config)?;
     let gen_time = gen_start.elapsed();
 
     // Record transformer block completion (aggregate timing)
     tracer.trace_layer(
-        transformer.config.num_layers - 1,
+        model.config.num_layers - 1,
         0,
         None,
         1,
-        transformer.config.hidden_dim,
+        model.config.hidden_dim,
     );
 
     let tokens_generated = generated.len().saturating_sub(prompt_len);
@@ -175,7 +188,7 @@ pub fn run_apr_inference(
             .chars()
             .nth(i.min(output_text.len().saturating_sub(1)))
             .map_or_else(|| format!("<{token}>"), |c| c.to_string());
-        tracer.trace_decode(i, token, &decoded, transformer.config.vocab_size);
+        tracer.trace_decode(i, token, &decoded, model.config.vocab_size);
     }
 
     match format {

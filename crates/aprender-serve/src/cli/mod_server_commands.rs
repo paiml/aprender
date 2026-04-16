@@ -374,28 +374,30 @@ mod server_commands {
             return prepare_gguf_cuda_state_from_apr(model_path);
         }
 
-        // F32 CPU path (original)
-        use crate::apr_transformer::AprTransformer;
-
-        let file_data = std::fs::read(model_path).map_err(|e| {
-            crate::error::RealizarError::UnsupportedOperation {
-                operation: "read_model_file".to_string(),
-                reason: format!("Failed to read {model_path}: {e}"),
-            }
-        })?;
-
-        let transformer = AprTransformer::from_apr_bytes(&file_data).map_err(|e| {
-            crate::error::RealizarError::UnsupportedOperation {
-                operation: "load_apr".to_string(),
-                reason: format!("Failed to load APR: {e}"),
-            }
-        })?;
-
-        println!("  Architecture: {}", transformer.config.architecture);
-        println!("  Layers: {}", transformer.config.num_layers);
-        println!("  Hidden: {}", transformer.config.hidden_dim);
+        // GH-479: CPU path loads via MappedAprModel + OwnedQuantizedModel (per-tensor
+        // scratch dequant from GH-478) instead of eager F32 AprTransformer. Serving
+        // routes through try_quantized_generate (batch.rs) via state.quantized_model().
+        use crate::apr::MappedAprModel;
+        use crate::gguf::OwnedQuantizedModel;
 
         let model_path_obj = Path::new(model_path);
+        let mapped = MappedAprModel::from_path(model_path_obj).map_err(|e| {
+            crate::error::RealizarError::UnsupportedOperation {
+                operation: "load_apr".to_string(),
+                reason: format!("Failed to map APR file {model_path}: {e}"),
+            }
+        })?;
+        let model = OwnedQuantizedModel::from_apr(&mapped).map_err(|e| {
+            crate::error::RealizarError::UnsupportedOperation {
+                operation: "load_apr".to_string(),
+                reason: format!("Failed to load APR as OwnedQuantizedModel: {e}"),
+            }
+        })?;
+
+        println!("  Architecture: {}", model.config.architecture);
+        println!("  Layers: {}", model.config.num_layers);
+        println!("  Hidden: {}", model.config.hidden_dim);
+
         let vocab = crate::apr::AprV2Model::load_tokenizer_from_sibling(model_path_obj)
             .map(|(v, _, _)| v)
             .or_else(|| {
@@ -406,15 +408,15 @@ mod server_commands {
             })
             .unwrap_or_else(|| {
                 println!("  Warning: No vocabulary found, using simple vocabulary");
-                (0..transformer.config.vocab_size)
+                (0..model.config.vocab_size)
                     .map(|i| format!("token{i}"))
                     .collect()
             });
 
         println!("  Vocab size: {}", vocab.len());
-        println!("  Mode: CPU (F32 inference)");
+        println!("  Mode: CPU (per-tensor scratch dequant)");
 
-        let state = crate::api::AppState::with_apr_transformer_and_vocab(transformer, vocab)?;
+        let state = crate::api::AppState::with_quantized_model_and_vocab(model, vocab)?;
 
         Ok(PreparedServer {
             state,
