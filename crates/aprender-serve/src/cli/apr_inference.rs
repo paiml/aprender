@@ -259,108 +259,42 @@ fn decode_apr_output_tokens(model_path: &std::path::Path, output_tokens: &[u32])
         .collect()
 }
 
-/// Print verbose debug weight comparison between CPU and GPU models
+/// Greedy argmax over logits.
 #[cfg(feature = "cuda")]
-fn print_gpu_debug_weights(
-    transformer: &crate::apr_transformer::AprTransformer,
-    gpu_model: &crate::gpu::GpuModel,
-) {
-    let has_gate = transformer
-        .layers
-        .first()
-        .is_some_and(|l| l.ffn_gate_weight.is_some());
-    eprintln!(
-        "[DEBUG-SwiGLU] APR transformer has gate weight: {}",
-        has_gate
-    );
-    if has_gate {
-        let gate_len = transformer.layers[0]
-            .ffn_gate_weight
-            .as_ref()
-            .map_or(0, Vec::len);
-        eprintln!(
-            "[DEBUG-SwiGLU] Gate weight elements: {} (expected: {}x{}={})",
-            gate_len,
-            transformer.config.hidden_dim,
-            transformer.config.intermediate_dim,
-            transformer.config.hidden_dim * transformer.config.intermediate_dim
-        );
-    }
+pub(crate) fn argmax(logits: &[f32]) -> u32 {
+    logits
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map_or(0, |(idx, _)| idx as u32)
+}
 
-    let has_gpu_gate = gpu_model
-        .block_weights
-        .first()
-        .is_some_and(|b| b.ffn_gate_weight.is_some());
-    eprintln!("[DEBUG-SwiGLU] GpuModel has gate weight: {}", has_gpu_gate);
+/// Sample a token with temperature and top-k.
+#[cfg(feature = "cuda")]
+pub(crate) fn sample_with_temperature(logits: &[f32], temperature: f32, top_k: usize) -> u32 {
+    let scaled: Vec<f32> = logits.iter().map(|&l| l / temperature).collect();
 
-    if let Some(layer0) = transformer.layers.first() {
-        eprintln!(
-            "[DEBUG-WEIGHT] CPU qkv_weight first 5: {:?}",
-            &layer0.qkv_weight[0..5.min(layer0.qkv_weight.len())]
-        );
-        eprintln!(
-            "[DEBUG-WEIGHT] GPU qkv_weight first 5: {:?}",
-            &gpu_model.block_weights[0].qkv_weight
-                [0..5.min(gpu_model.block_weights[0].qkv_weight.len())]
-        );
-        eprintln!(
-            "[DEBUG-WEIGHT] CPU fc1 (up) first 5: {:?}",
-            &layer0.ffn_up_weight[0..5.min(layer0.ffn_up_weight.len())]
-        );
-        eprintln!(
-            "[DEBUG-WEIGHT] GPU fc1 (up) first 5: {:?}",
-            &gpu_model.block_weights[0].ffn_fc1_weight
-                [0..5.min(gpu_model.block_weights[0].ffn_fc1_weight.len())]
-        );
+    let mut indexed: Vec<(usize, f32)> = scaled.into_iter().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let top = &indexed[..top_k.min(indexed.len())];
 
-        let hidden_dim = transformer.config.hidden_dim;
-        if transformer.token_embedding.len() < hidden_dim {
-            eprintln!("[DEBUG] token_embedding too short ({} < {hidden_dim}), skipping weight debug", transformer.token_embedding.len());
-            return;
-        }
-        let test_embedding = &transformer.token_embedding[0..hidden_dim];
+    let max_val = top[0].1;
+    let exp_vals: Vec<(usize, f32)> = top.iter().map(|&(i, v)| (i, (v - max_val).exp())).collect();
+    let sum: f32 = exp_vals.iter().map(|(_, v)| v).sum();
 
-        // CPU matmul: y = x @ W where W is [out_dim, in_dim] (transposed internally)
-        let cpu_qkv_dim = layer0.qkv_weight.len() / hidden_dim;
-        let mut cpu_qkv = vec![0.0f32; cpu_qkv_dim];
-        for o in 0..cpu_qkv_dim {
-            let w_start = o * hidden_dim;
-            let mut sum = 0.0f32;
-            for i in 0..hidden_dim {
-                sum += test_embedding[i] * layer0.qkv_weight[w_start + i];
-            }
-            cpu_qkv[o] = sum;
-        }
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::time::SystemTime;
+    let mut hasher = DefaultHasher::new();
+    SystemTime::now().hash(&mut hasher);
+    let r = (hasher.finish() as f32 / u64::MAX as f32) * sum;
 
-        // GPU matmul: y = x @ W_t where W_t is [in_dim, out_dim] (already transposed)
-        let gpu_qkv_weight = &gpu_model.block_weights[0].qkv_weight;
-        let gpu_qkv_dim = gpu_qkv_weight.len() / hidden_dim;
-        let mut gpu_qkv = vec![0.0f32; gpu_qkv_dim];
-        for j in 0..gpu_qkv_dim {
-            let mut sum = 0.0f32;
-            for i in 0..hidden_dim {
-                sum += test_embedding[i] * gpu_qkv_weight[i * gpu_qkv_dim + j];
-            }
-            gpu_qkv[j] = sum;
-        }
-
-        eprintln!(
-            "[DEBUG-MATMUL] CPU QKV first 5: {:?}",
-            &cpu_qkv[0..5.min(cpu_qkv.len())]
-        );
-        eprintln!(
-            "[DEBUG-MATMUL] GPU QKV first 5: {:?}",
-            &gpu_qkv[0..5.min(gpu_qkv.len())]
-        );
-
-        let max_diff: f32 = cpu_qkv
-            .iter()
-            .zip(gpu_qkv.iter())
-            .map(|(c, g)| (c - g).abs())
-            .fold(0.0f32, f32::max);
-        eprintln!("[DEBUG-MATMUL] Max diff: {}", max_diff);
-        if max_diff > 0.01 {
-            eprintln!("[DEBUG-MATMUL] WARNING: CPU vs GPU QKV mismatch!");
+    let mut cumsum = 0.0f32;
+    for &(idx, val) in &exp_vals {
+        cumsum += val;
+        if cumsum >= r {
+            return idx as u32;
         }
     }
+    exp_vals.last().map_or(0, |&(i, _)| i as u32)
 }
