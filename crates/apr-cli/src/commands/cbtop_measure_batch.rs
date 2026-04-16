@@ -339,8 +339,8 @@ fn build_and_output_report(
     let p50 = sorted[sorted.len() / 2];
     let p99 = sorted[(sorted.len() as f64 * 0.99).min((sorted.len() - 1) as f64) as usize];
 
-    // GH-420 Bug 2: Use equal weights for all bricks (dynamic count).
-    // Previous code used 7 hardcoded weights and silently dropped bricks beyond 7.
+    // Equal weights across all bricks — brick count is dynamic, so any
+    // fixed-weight table would silently drop bricks beyond its length.
     let n_bricks = brick_reports.len().max(1);
     let score_sum: f64 = brick_reports.iter().map(|b| b.score as f64).sum();
     let pmat_brick_score = (score_sum / n_bricks as f64) as u32;
@@ -348,12 +348,11 @@ fn build_and_output_report(
     // 1e-9 epsilon: budget derived from same profiler data, so gap ≈ 1.0;
     // without epsilon, floating-point rounding makes gap 1.0000000000001 → false fail.
     let all_pass = brick_reports.iter().all(|b| b.gap_factor <= 1.0 + 1e-9);
-    // GH-420 Bug 5: status is pass/fail on brick gaps only.
-    // Throughput target is hardware-dependent — do not hardcode.
+    // Status reflects brick gaps only — throughput targets are
+    // hardware-dependent and must not be hardcoded.
     let status = if all_pass { "PASS" } else { "FAIL" };
     let ci_result = if all_pass { "green" } else { "red" };
 
-    // GH-420 Bug 4: Count actual brick pass/fail for falsification summary.
     let brick_passed = brick_reports.iter().filter(|b| b.gap_factor <= 1.0 + 1e-9).count() as u32;
     let brick_failed = (n_bricks as u32).saturating_sub(brick_passed);
 
@@ -373,7 +372,9 @@ fn build_and_output_report(
             p99_us: p99,
         },
         brick_scores: brick_reports,
-        // GH-420 Bug 3: Report 0 for scores not actually computed.
+        // Unset pmat score fields are reported as 0.0 — brick_score is the
+        // only score computed here; rust-project/TDG/cuda-TDG are filled by
+        // downstream tools that aggregate this report.
         pmat_scores: PmatScores {
             rust_project_score: 0.0,
             tdg_score: 0.0,
@@ -381,7 +382,6 @@ fn build_and_output_report(
             brick_score: pmat_brick_score,
             grade: score_to_grade(pmat_brick_score),
         },
-        // GH-420 Bug 4: Real falsification from brick pass/fail counts.
         falsification: FalsificationSummary {
             total_points: n_bricks as u32,
             passed: brick_passed,

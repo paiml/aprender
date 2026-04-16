@@ -429,8 +429,9 @@ fn brick_scores_from_profiler(
             name: stats.name.clone(),
             score,
             grade: grade.to_string(),
-            // GH-420 Bug 1: budget_us must be the wall-fraction budget, not the actual.
-            // actual_us must be per_decoded_tok_us (what scoring compares against budget).
+            // budget_us is the wall-fraction budget (not the measured actual);
+            // actual_us is per_decoded_tok_us — the value scoring compares
+            // against the budget.
             budget_us,
             actual_us: per_decoded_tok_us,
             gap_factor: if budget_us > 0.0 { per_decoded_tok_us / budget_us } else { 1.0 },
