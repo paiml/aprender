@@ -227,8 +227,14 @@ mod tests_name_mapping {
     #[test]
     fn test_falsify_phi_architecture_mapping() {
         // Aprender maps "phi" and "phi3" to the same Architecture::Phi
-        assert_eq!(Architecture::from_model_type("phi"), Some(Architecture::Phi));
-        assert_eq!(Architecture::from_model_type("phi3"), Some(Architecture::Phi));
+        assert_eq!(
+            Architecture::from_model_type("phi"),
+            Some(Architecture::Phi)
+        );
+        assert_eq!(
+            Architecture::from_model_type("phi3"),
+            Some(Architecture::Phi)
+        );
         // phi2 as a model_type string is not a separate variant in aprender
         // (realizAR handles the phi2 distinction via tensor_names.rs)
     }
@@ -396,3 +402,4 @@ include!("core_conversion.rs");
 include!("core_convert.rs");
 include!("core_rosetta_gqa.rs");
 include!("core_q4k_q6k_roundtrip.rs");
+include!("streaming_quantize_test.rs");
