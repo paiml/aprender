@@ -1,117 +1,13 @@
 impl MqsCalculator {
     /// Check gateway conditions (G0-G4)
     fn check_gateways(&self, evidence: &[Evidence]) -> Vec<GatewayResult> {
-        let mut results = Vec::new();
-
-        // G0: Model integrity — all G0-* sub-gates (INTEGRITY, DIM, FORMAT, VALIDATE,
-        // TENSOR, LAYOUT, PULL). The executor enforces Jidoka early returns, but when
-        // evidence is scored independently (via `score` or `report` CLI), we must catch
-        // ALL G0 failures, not just G0-INTEGRITY.
-        let g0_failures: Vec<&Evidence> = evidence
-            .iter()
-            .filter(|e| e.gate_id.starts_with("G0-") && e.outcome.is_fail())
-            .collect();
-        if g0_failures.is_empty() {
-            results.push(GatewayResult::passed(
-                "G0",
-                "Model integrity (config/tensor/format/layout)",
-            ));
-        } else {
-            let error_details: Vec<&str> = g0_failures
-                .iter()
-                .map(|e| e.reason.as_str())
-                .collect();
-            results.push(GatewayResult::failed(
-                "G0",
-                "Model integrity (config/tensor/format/layout)",
-                format!(
-                    "{} G0 check(s) failed: {}",
-                    g0_failures.len(),
-                    error_details.join("; ")
-                ),
-            ));
-        }
-
-        // G1: Model loads successfully
-        // No evidence uses "G1-*" gate_id prefix directly. Instead, a model that
-        // fails to load causes ALL tests to fail. G1 fails when all non-G0 outcomes
-        // are failures (Falsified/Timeout/Crashed) with zero successes — indicating
-        // the model never loaded. If any test succeeds, the model loaded.
-        let non_g0_evidence: Vec<&Evidence> = evidence
-            .iter()
-            .filter(|e| !e.gate_id.starts_with("G0-"))
-            .collect();
-        let all_non_g0_failed = !non_g0_evidence.is_empty()
-            && non_g0_evidence
-                .iter()
-                .all(|e| e.outcome.is_fail());
-        if all_non_g0_failed {
-            results.push(GatewayResult::failed(
-                "G1",
-                "Model loads successfully",
-                "All test attempts failed — model may not have loaded",
-            ));
-        } else {
-            results.push(GatewayResult::passed("G1", "Model loads successfully"));
-        }
-
-        // G2: Basic inference works
-        let has_inference_failure = evidence
-            .iter()
-            .any(|e| e.gate_id.starts_with("G2") && e.outcome.is_fail());
-        if has_inference_failure {
-            results.push(GatewayResult::failed(
-                "G2",
-                "Basic inference works",
-                "Inference failed",
-            ));
-        } else {
-            results.push(GatewayResult::passed("G2", "Basic inference works"));
-        }
-
-        // G3: No crashes
-        let crash_count = evidence
-            .iter()
-            .filter(|e| e.outcome == Outcome::Crashed)
-            .count();
-        if crash_count > 0 {
-            results.push(GatewayResult::failed(
-                "G3",
-                "No crashes",
-                format!("{crash_count} crash(es) detected"),
-            ));
-        } else {
-            results.push(GatewayResult::passed("G3", "No crashes"));
-        }
-
-        // G4: Output is not garbage
-        // The GarbageOracle produces evidence with gate_ids like "F-A1-001" (QUAL
-        // category), not "G4-*". Detect garbage by checking oracle_type == "garbage"
-        // on falsified evidence. Threshold: >25% garbage across garbage-oracle tests.
-        let garbage_tests: Vec<&Evidence> = evidence
-            .iter()
-            .filter(|e| e.scenario.oracle_type == "garbage")
-            .collect();
-        let garbage_failures = garbage_tests
-            .iter()
-            .filter(|e| e.outcome.is_fail())
-            .count();
-        let garbage_total = garbage_tests.len();
-        if garbage_total > 0 && garbage_failures * 4 > garbage_total {
-            // More than 25% garbage output (use multiplication to avoid integer truncation)
-            results.push(GatewayResult::failed(
-                "G4",
-                "Output is not garbage",
-                format!(
-                    "{garbage_failures}/{garbage_total} garbage-oracle tests failed (>{} threshold)",
-                    "25%"
-                ),
-            ));
-        } else {
-            results.push(GatewayResult::passed("G4", "Output is not garbage"));
-        }
-
-        results
+        vec![
+            check_g0_model_integrity(evidence),
+            check_g1_model_loads(evidence),
+            check_g2_basic_inference(evidence),
+            check_g3_no_crashes(evidence),
+            check_g4_no_garbage(evidence),
+        ]
     }
 
     /// Calculate category scores from evidence
@@ -306,5 +202,102 @@ impl MqsCalculator {
             .iter()
             .find(|(threshold, _)| score >= *threshold)
             .map_or_else(|| "F".to_string(), |(_, grade)| (*grade).to_string())
+    }
+}
+
+/// G0: Model integrity — all G0-* sub-gates (INTEGRITY, DIM, FORMAT, VALIDATE,
+/// TENSOR, LAYOUT, PULL). Scored independently of the executor's Jidoka early
+/// returns so `score`/`report` CLI catch every G0 failure.
+fn check_g0_model_integrity(evidence: &[Evidence]) -> GatewayResult {
+    const TITLE: &str = "Model integrity (config/tensor/format/layout)";
+    let g0_failures: Vec<&Evidence> = evidence
+        .iter()
+        .filter(|e| e.gate_id.starts_with("G0-") && e.outcome.is_fail())
+        .collect();
+    if g0_failures.is_empty() {
+        return GatewayResult::passed("G0", TITLE);
+    }
+    let error_details: Vec<&str> = g0_failures.iter().map(|e| e.reason.as_str()).collect();
+    GatewayResult::failed(
+        "G0",
+        TITLE,
+        format!(
+            "{} G0 check(s) failed: {}",
+            g0_failures.len(),
+            error_details.join("; ")
+        ),
+    )
+}
+
+/// G1: Model loads successfully. No gate_id prefix exists for G1; we infer it
+/// from whether ALL non-G0 outcomes failed — that indicates the model never
+/// loaded. A single non-failure proves it loaded.
+fn check_g1_model_loads(evidence: &[Evidence]) -> GatewayResult {
+    const TITLE: &str = "Model loads successfully";
+    let non_g0_evidence: Vec<&Evidence> = evidence
+        .iter()
+        .filter(|e| !e.gate_id.starts_with("G0-"))
+        .collect();
+    let all_non_g0_failed =
+        !non_g0_evidence.is_empty() && non_g0_evidence.iter().all(|e| e.outcome.is_fail());
+    if all_non_g0_failed {
+        GatewayResult::failed(
+            "G1",
+            TITLE,
+            "All test attempts failed — model may not have loaded",
+        )
+    } else {
+        GatewayResult::passed("G1", TITLE)
+    }
+}
+
+/// G2: Basic inference works — any G2-prefixed evidence with a failure outcome.
+fn check_g2_basic_inference(evidence: &[Evidence]) -> GatewayResult {
+    const TITLE: &str = "Basic inference works";
+    let has_inference_failure = evidence
+        .iter()
+        .any(|e| e.gate_id.starts_with("G2") && e.outcome.is_fail());
+    if has_inference_failure {
+        GatewayResult::failed("G2", TITLE, "Inference failed")
+    } else {
+        GatewayResult::passed("G2", TITLE)
+    }
+}
+
+/// G3: No crashes — any evidence with `Outcome::Crashed`.
+fn check_g3_no_crashes(evidence: &[Evidence]) -> GatewayResult {
+    const TITLE: &str = "No crashes";
+    let crash_count = evidence
+        .iter()
+        .filter(|e| e.outcome == Outcome::Crashed)
+        .count();
+    if crash_count > 0 {
+        GatewayResult::failed("G3", TITLE, format!("{crash_count} crash(es) detected"))
+    } else {
+        GatewayResult::passed("G3", TITLE)
+    }
+}
+
+/// G4: Output is not garbage. The GarbageOracle emits evidence with gate_ids
+/// like `F-A1-001` (QUAL category), not `G4-*`. Detect via
+/// `scenario.oracle_type == "garbage"`. Threshold: >25% garbage-oracle failures.
+fn check_g4_no_garbage(evidence: &[Evidence]) -> GatewayResult {
+    const TITLE: &str = "Output is not garbage";
+    let garbage_tests: Vec<&Evidence> = evidence
+        .iter()
+        .filter(|e| e.scenario.oracle_type == "garbage")
+        .collect();
+    let garbage_failures = garbage_tests.iter().filter(|e| e.outcome.is_fail()).count();
+    let garbage_total = garbage_tests.len();
+    if garbage_total > 0 && garbage_failures * 4 > garbage_total {
+        GatewayResult::failed(
+            "G4",
+            TITLE,
+            format!(
+                "{garbage_failures}/{garbage_total} garbage-oracle tests failed (>25% threshold)"
+            ),
+        )
+    } else {
+        GatewayResult::passed("G4", TITLE)
     }
 }
