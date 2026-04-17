@@ -985,56 +985,81 @@ fn parse_trailing_blocks(
     checksum_offset: usize,
     options: &LoadOptions,
 ) -> Result<(Option<[u8; 32]>, Option<license::LicenseBlock>)> {
-    #[allow(unused_mut)]
     let mut trailing_offset = payload_end;
-    #[allow(unused_mut)]
-    let mut signer_public_key: Option<[u8; 32]> = None;
-    let mut license_block: Option<license::LicenseBlock> = None;
 
-    if header.is_signed() {
-        #[cfg(feature = "format-signing")]
-        {
-            let sig_end = trailing_offset + signing::SignatureBlock::SIZE;
-            if sig_end > checksum_offset {
-                return Err(Error::Format(
-                    "Signature block extends beyond data".to_string(),
-                ));
-            }
+    let signer_public_key = if header.is_signed() {
+        parse_signature_block(all_data, &mut trailing_offset, checksum_offset, options)?
+    } else {
+        None
+    };
 
-            let sig_block =
-                signing::SignatureBlock::from_bytes(&all_data[trailing_offset..sig_end])?;
-
-            if !options.trusted_keys.is_empty() {
-                let signed_data = &all_data[..trailing_offset];
-                if !options.trusted_keys.contains(&sig_block.public_key) {
-                    return Err(Error::Format("Signer not in trusted keys list".to_string()));
-                }
-                sig_block.verify(signed_data)?;
-            }
-
-            signer_public_key = Some(sig_block.public_key);
-            trailing_offset = sig_end;
-        }
-        #[cfg(not(feature = "format-signing"))]
-        {
-            return Err(Error::Format(
-                "Dataset is signed but format-signing feature is not enabled".to_string(),
-            ));
-        }
-    }
-
-    if header.is_licensed() {
-        if trailing_offset >= checksum_offset {
-            return Err(Error::Format("Missing license block".to_string()));
-        }
-        let lic = license::LicenseBlock::from_bytes(&all_data[trailing_offset..checksum_offset])?;
-        if options.verify_license {
-            lic.verify()?;
-        }
-        license_block = Some(lic);
-    }
+    let license_block = if header.is_licensed() {
+        Some(parse_license_block(
+            all_data,
+            trailing_offset,
+            checksum_offset,
+            options,
+        )?)
+    } else {
+        None
+    };
 
     Ok((signer_public_key, license_block))
+}
+
+#[cfg(feature = "format-signing")]
+fn parse_signature_block(
+    all_data: &[u8],
+    trailing_offset: &mut usize,
+    checksum_offset: usize,
+    options: &LoadOptions,
+) -> Result<Option<[u8; 32]>> {
+    let sig_end = *trailing_offset + signing::SignatureBlock::SIZE;
+    if sig_end > checksum_offset {
+        return Err(Error::Format(
+            "Signature block extends beyond data".to_string(),
+        ));
+    }
+
+    let sig_block = signing::SignatureBlock::from_bytes(&all_data[*trailing_offset..sig_end])?;
+
+    if !options.trusted_keys.is_empty() {
+        if !options.trusted_keys.contains(&sig_block.public_key) {
+            return Err(Error::Format("Signer not in trusted keys list".to_string()));
+        }
+        sig_block.verify(&all_data[..*trailing_offset])?;
+    }
+
+    *trailing_offset = sig_end;
+    Ok(Some(sig_block.public_key))
+}
+
+#[cfg(not(feature = "format-signing"))]
+fn parse_signature_block(
+    _all_data: &[u8],
+    _trailing_offset: &mut usize,
+    _checksum_offset: usize,
+    _options: &LoadOptions,
+) -> Result<Option<[u8; 32]>> {
+    Err(Error::Format(
+        "Dataset is signed but format-signing feature is not enabled".to_string(),
+    ))
+}
+
+fn parse_license_block(
+    all_data: &[u8],
+    trailing_offset: usize,
+    checksum_offset: usize,
+    options: &LoadOptions,
+) -> Result<license::LicenseBlock> {
+    if trailing_offset >= checksum_offset {
+        return Err(Error::Format("Missing license block".to_string()));
+    }
+    let lic = license::LicenseBlock::from_bytes(&all_data[trailing_offset..checksum_offset])?;
+    if options.verify_license {
+        lic.verify()?;
+    }
+    Ok(lic)
 }
 
 /// Decompress a payload buffer using the specified compression method.
