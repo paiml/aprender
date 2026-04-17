@@ -569,184 +569,19 @@ fn try_apr_cuda_inference(
     }))
 }
 
-/// Log model architecture and configuration details for APR CPU inference.
-fn log_apr_cpu_model_info(
-    verbose: bool,
-    validated: &crate::safetensors::validation::ValidatedAprTransformer,
-    load_ms: f64,
-) {
-    if !verbose {
-        return;
-    }
-    let arch = &validated.config.architecture;
-    let thread_count = rayon::current_num_threads();
-    eprintln!(
-        "Architecture: {} ({} layers, vocab_size={})",
-        arch, validated.config.num_layers, validated.config.vocab_size
-    );
-    eprintln!(
-        "Config: hidden_size={}, context_length={}, quant=F32 (dequantized), threads={}",
-        validated.config.hidden_dim, validated.config.context_length, thread_count
-    );
-    eprintln!("Model loaded in {:.1}ms", load_ms);
-    eprintln!("Backend: CPU (SIMD-accelerated)");
-}
-
-/// Try loading an APR model as LLaMA-style. Returns None if the model
-/// needs the quantized path (GPT-2, load failure, large model OOM guard, etc.).
-fn try_load_llama_style(
-    model_path: &std::path::Path,
-) -> Option<crate::safetensors::validation::ValidatedAprTransformer> {
-    // GH-478: Skip F32 dequant path for large models to avoid OOM.
-    // AprTransformer reads the entire file into Vec<u8> then dequantizes ALL
-    // Q4K tensors to F32 eagerly. Peak memory ≈ file_size × 8.
-    // For 32B Q4K (19 GB on disk), peak = 152 GB — exceeds most systems.
-    // Route to OwnedQuantizedModel which keeps weights in Q4K form.
-    if exceeds_f32_dequant_limit(model_path) {
-        return None;
-    }
-
-    // PMAT-156: Skip AprTransformer for Q4K/Q6K passthrough APR models.
-    // AprTransformer only handles F32 tensors correctly. When APR files
-    // contain raw quantized tensors (from GGUF Q4K passthrough), the F32
-    // forward path produces garbage. Route to OwnedQuantizedModel which
-    // keeps weights in native Q4K form and uses quantized dot products.
-    if has_quantized_tensors_apr(model_path) {
-        return None;
-    }
-
-    match crate::apr_transformer::AprTransformer::from_apr_file_validated(model_path) {
-        Ok(t) => {
-            let arch = t.config.architecture.to_lowercase();
-            if arch.contains("gpt2") || arch.contains("gpt-2") {
-                None
-            } else {
-                Some(t)
-            }
-        }
-        Err(_) => None,
-    }
-}
-
-/// PMAT-156: Check if APR file contains quantized tensors (Q4K/Q6K/Q8K/etc).
+/// Run APR inference on CPU.
 ///
-/// Scans the APR tensor index for non-F32/F16 dtypes. If any quantized tensor
-/// is found, returns true — the caller should use OwnedQuantizedModel instead
-/// of AprTransformer (which only handles F32 data correctly).
-fn has_quantized_tensors_apr(model_path: &std::path::Path) -> bool {
-    use crate::apr::MappedAprModel;
-    let mapped = match MappedAprModel::from_path(model_path) {
-        Ok(m) => m,
-        Err(_) => return false,
-    };
-    mapped.tensors.iter().any(|t| {
-        let dtype = t.dtype.as_str();
-        dtype != "f32" && dtype != "f16" && dtype != "bf16"
-    })
-}
-
-/// GH-478: Check if F32 dequantization would exceed system memory.
-///
-/// Delegates to `contract_gate::exceeds_f32_dequant_estimate()` — the contract
-/// system is the single source of truth for resource limit checks.
-///
-/// This pre-dispatch check prevents reading the file at all for large models,
-/// routing directly to `OwnedQuantizedModel` (keeps weights in Q4K form).
-/// A precise check also fires inside `from_apr_bytes()` via
-/// `validate_f32_dequant_limits()` as a safety net.
-fn exceeds_f32_dequant_limit(model_path: &std::path::Path) -> bool {
-    let file_size = std::fs::metadata(model_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
-
-    let exceeds = crate::contract_gate::exceeds_f32_dequant_estimate(file_size);
-    if exceeds {
-        let mem_total = crate::contract_gate::system_memory_bytes().unwrap_or(0);
-        eprintln!(
-            "[GH-478] Model {} GB on disk → ~{} GB F32 dequant (system RAM: {} GB). \
-             Using quantized CPU inference to avoid OOM.",
-            file_size / (1 << 30),
-            file_size.saturating_mul(8) / (1 << 30),
-            mem_total / (1 << 30),
-        );
-    }
-    exceeds
-}
-
-/// Run APR inference on CPU with KV-cache (PMAT-103)
+/// GH-479: Delegates unconditionally to `run_apr_quantized_cpu_inference`,
+/// which uses `OwnedQuantizedModel` with per-tensor scratch dequant (GH-478).
+/// The previous F32 `AprTransformer` path required eager dequant of the entire
+/// model (peak memory ≈ file_size × 8) and has been removed.
 fn run_apr_cpu_inference(
     config: &InferenceConfig,
     input_tokens: &[u32],
     input_token_count: usize,
     load_start: Instant,
 ) -> Result<InferenceResult> {
-    // GH-278: AprTransformer only supports LLaMA-style models (RoPE + SwiGLU).
-    // For GPT-2 and other architectures, use OwnedQuantizedModel which supports
-    // learned position embeddings, LayerNorm, GELU, etc.
-    let validated = match try_load_llama_style(&config.model_path) {
-        Some(t) => t,
-        None => return run_apr_quantized_cpu_inference(config, input_tokens, input_token_count, load_start),
-    };
-    let load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
-
-    log_apr_cpu_model_info(config.verbose, &validated, load_ms);
-
-    // GH-373: Resolve stop tokens from model config, caller, and sibling tokenizer
-    let stop_tokens = resolve_apr_stop_tokens(
-        validated.config.eos_token_id,
-        &config.stop_tokens,
-        &config.model_path,
-    );
-    if config.verbose && !stop_tokens.is_empty() {
-        eprintln!("Stop tokens: {:?}", stop_tokens);
-    }
-
-    let infer_start = Instant::now();
-    let mut all_tokens = input_tokens.to_vec();
-    let mut cache = crate::apr_transformer::AprKVCache::new(&validated.config);
-
-    // Prefill: populate KV cache
-    for (pos, &token) in input_tokens.iter().enumerate() {
-        let _ = validated.forward_with_cache(token, &mut cache, pos)?;
-    }
-
-    // Generate with KV cache (O(1) per token)
-    let mut position = input_tokens.len();
-    for _ in 0..config.max_tokens {
-        let last_token = *all_tokens.last().unwrap_or(&1);
-        let logits = validated.forward_with_cache(last_token, &mut cache, position)?;
-
-        let next_token = logits
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .map_or(0, |(i, _)| i as u32);
-
-        // GH-373: EOS from model config + sibling tokenizer + caller
-        if next_token == 0 || stop_tokens.contains(&next_token) {
-            break;
-        }
-
-        all_tokens.push(next_token);
-        position += 1;
-    }
-
-    let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
-    let generated_tokens = &all_tokens[input_token_count..];
-    let text = decode_apr_tokens(&config.model_path, generated_tokens);
-    let generated_token_count = generated_tokens.len();
-
-    Ok(InferenceResult {
-        text,
-        tokens: all_tokens,
-        input_token_count,
-        generated_token_count,
-        inference_ms,
-        tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
-        load_ms,
-        format: "APR".to_string(),
-        used_gpu: false,
-    })
+    run_apr_quantized_cpu_inference(config, input_tokens, input_token_count, load_start)
 }
 
 /// GH-278: CPU inference for APR models using OwnedQuantizedModel
