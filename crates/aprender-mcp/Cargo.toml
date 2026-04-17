@@ -1,0 +1,31 @@
+[package]
+name = "aprender-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Model Context Protocol (MCP) server for aprender — exposes apr CLI as MCP tools"
+keywords = ["mcp", "llm", "inference", "aprender", "claude"]
+categories = ["command-line-utilities", "science"]
+readme = "README.md"
+
+[lib]
+name = "aprender_mcp"
+path = "src/lib.rs"
+
+[features]
+default = ["native"]
+native = ["dep:anyhow"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
