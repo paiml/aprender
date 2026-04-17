@@ -160,31 +160,16 @@ pub fn profile_scaling(
     json: bool,
 ) -> anyhow::Result<()> {
     let max_t = max_threads.unwrap_or_else(num_cpus::get);
-    let binary = find_parallel_binary();
-    let bin = match &binary {
-        Some(b) => b.as_str(),
-        None => {
-            anyhow::bail!(
-                "No benchmark binary found. Build with: cargo build --release --example benchmark_matrix_suite --features parallel"
-            )
-        }
-    };
+    let binary = resolve_bench_binary()?;
+    let bin = binary.as_str();
 
-    // Thread counts to test: 1, 2, 4, 8, 12, 16, 24, ... up to max
-    let mut thread_counts: Vec<usize> = vec![1, 2, 4, 8, 12, 16, 24, 32, 48, 64];
-    thread_counts.retain(|&t| t <= max_t);
-    if !thread_counts.contains(&max_t) {
-        thread_counts.push(max_t);
-    }
+    let thread_counts = build_thread_counts(max_t);
 
-    // First: measure single-thread baseline by parsing benchmark output
     let (baseline_ms, baseline_gflops) = parse_gemm_time(bin, size, 1, runs)
         .ok_or_else(|| anyhow::anyhow!(
             "Failed to parse GEMM {size}x{size} from benchmark output (1 thread). \
              Ensure the binary outputs 'Matrix Multiplication ({size}x{size}x{size})... X.XX ms (Y.YY GFLOPS)'"
         ))?;
-
-    let mut results: Vec<ScalingPoint> = Vec::new();
 
     if !json {
         println!("\n=== CGP Parallel Scaling: GEMM {size}x{size}, min-of-{runs} runs ===\n");
@@ -195,20 +180,54 @@ pub fn profile_scaling(
         println!("  {}", "-".repeat(60));
     }
 
-    for &t in &thread_counts {
+    let results = run_scaling_sweep(bin, size, &thread_counts, runs, baseline_ms, json);
+
+    if !json {
+        print_scaling_peak(&results, baseline_gflops);
+    }
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&results)?);
+    } else {
+        println!();
+    }
+
+    Ok(())
+}
+
+/// Locate the benchmark binary or bail with a build hint.
+fn resolve_bench_binary() -> anyhow::Result<String> {
+    find_parallel_binary().ok_or_else(|| anyhow::anyhow!(
+        "No benchmark binary found. Build with: cargo build --release --example benchmark_matrix_suite --features parallel"
+    ))
+}
+
+/// Build the thread-count sweep, filtered to `max_t` and ensuring `max_t` is present.
+fn build_thread_counts(max_t: usize) -> Vec<usize> {
+    let mut thread_counts: Vec<usize> = vec![1, 2, 4, 8, 12, 16, 24, 32, 48, 64];
+    thread_counts.retain(|&t| t <= max_t);
+    if !thread_counts.contains(&max_t) {
+        thread_counts.push(max_t);
+    }
+    thread_counts
+}
+
+/// Run the scaling measurement loop, printing each row unless `json` is set.
+fn run_scaling_sweep(
+    bin: &str,
+    size: u32,
+    thread_counts: &[usize],
+    runs: usize,
+    baseline_ms: f64,
+    json: bool,
+) -> Vec<ScalingPoint> {
+    let mut results: Vec<ScalingPoint> = Vec::new();
+    for &t in thread_counts {
         match parse_gemm_time(bin, size, t, runs) {
             Some((time_ms, gflops)) => {
                 let scaling = baseline_ms / time_ms;
-
-                let notes = if t == 1 {
-                    "baseline".to_string()
-                } else if scaling >= (t as f64) * 0.9 {
-                    "near-linear".to_string()
-                } else {
-                    String::new()
-                };
-
                 if !json {
+                    let notes = scaling_notes(t, scaling);
                     println!(
                         "  {:>8} | {:>9.2} | {:>10.1} | {:>7.1}x | {notes}",
                         t, time_ms, gflops, scaling
@@ -228,31 +247,36 @@ pub fn profile_scaling(
             }
         }
     }
+    results
+}
 
-    // Find peak
-    if let Some(peak) = results.iter().max_by(|a, b| {
+/// Classify a row of the scaling table as baseline / near-linear / regular.
+fn scaling_notes(threads: usize, scaling: f64) -> String {
+    if threads == 1 {
+        "baseline".to_string()
+    } else if scaling >= (threads as f64) * 0.9 {
+        "near-linear".to_string()
+    } else {
+        String::new()
+    }
+}
+
+/// Print the peak GFLOPS row and its efficiency vs ideal linear scaling.
+fn print_scaling_peak(results: &[ScalingPoint], baseline_gflops: f64) {
+    let Some(peak) = results.iter().max_by(|a, b| {
         a.gflops
             .partial_cmp(&b.gflops)
             .unwrap_or(std::cmp::Ordering::Equal)
-    }) {
-        if !json {
-            println!(
-                "\n  Peak: {:.1} GFLOPS at {}T ({:.1}x scaling)",
-                peak.gflops, peak.threads, peak.scaling
-            );
-            let theoretical_peak = baseline_gflops * peak.threads as f64;
-            let efficiency = peak.gflops / theoretical_peak * 100.0;
-            println!("  Efficiency: {efficiency:.1}% vs linear scaling");
-        }
-    }
-
-    if json {
-        println!("{}", serde_json::to_string_pretty(&results)?);
-    } else {
-        println!();
-    }
-
-    Ok(())
+    }) else {
+        return;
+    };
+    println!(
+        "\n  Peak: {:.1} GFLOPS at {}T ({:.1}x scaling)",
+        peak.gflops, peak.threads, peak.scaling
+    );
+    let theoretical_peak = baseline_gflops * peak.threads as f64;
+    let efficiency = peak.gflops / theoretical_peak * 100.0;
+    println!("  Efficiency: {efficiency:.1}% vs linear scaling");
 }
 
 /// A single point in a parallel scaling curve.
@@ -293,42 +317,57 @@ fn time_binary_min_of_n(binary: &str, threads: usize, runs: usize) -> Option<f64
 /// Returns (time_ms, gflops) for the best of N runs.
 fn parse_gemm_time(binary: &str, size: u32, threads: usize, runs: usize) -> Option<(f64, f64)> {
     let pattern = format!("{size}x{size}x{size}");
-    let mut best_time_ms: Option<f64> = None;
-    let mut best_gflops: Option<f64> = None;
+    let mut best: Option<(f64, f64)> = None;
 
     for _ in 0..runs {
-        let output = std::process::Command::new(binary)
-            .env("RAYON_NUM_THREADS", threads.to_string())
-            .output()
-            .ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            if line.contains("Matrix Multiplication") && line.contains(&pattern) {
-                // Parse "... X.XX ms  (Y.YY GFLOPS)"
-                if let Some(ms_str) = extract_between(line, "...", " ms") {
-                    if let Ok(ms) = ms_str.trim().parse::<f64>() {
-                        if best_time_ms.is_none_or(|best| ms < best) {
-                            best_time_ms = Some(ms);
-                            // Parse GFLOPS
-                            if let Some(gf_str) = extract_between(line, "(", " GFLOPS)") {
-                                if let Ok(gf) = gf_str.trim().parse::<f64>() {
-                                    best_gflops = Some(gf);
-                                }
-                            }
-                        }
-                    }
-                }
+        let stdout = run_bench_once(binary, threads)?;
+        if let Some((ms, gf)) = extract_best_matching(&stdout, &pattern) {
+            if best.is_none_or(|(b_ms, _)| ms < b_ms) {
+                best = Some((ms, gf));
             }
         }
     }
 
-    match (best_time_ms, best_gflops) {
-        (Some(ms), Some(gf)) => Some((ms, gf)),
-        _ => None,
+    best
+}
+
+/// Run the benchmark binary once at `threads`, returning stdout on success.
+fn run_bench_once(binary: &str, threads: usize) -> Option<String> {
+    let output = std::process::Command::new(binary)
+        .env("RAYON_NUM_THREADS", threads.to_string())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Scan stdout for the best `(time_ms, gflops)` pair matching the size pattern.
+fn extract_best_matching(stdout: &str, pattern: &str) -> Option<(f64, f64)> {
+    let mut best: Option<(f64, f64)> = None;
+    for line in stdout.lines() {
+        let Some((ms, gf)) = parse_gemm_line(line, pattern) else {
+            continue;
+        };
+        if best.is_none_or(|(b_ms, _)| ms < b_ms) {
+            best = Some((ms, gf));
+        }
+    }
+    best
+}
+
+/// Parse a single "Matrix Multiplication (NxNxN)... X.XX ms (Y.YY GFLOPS)" line.
+fn parse_gemm_line(line: &str, pattern: &str) -> Option<(f64, f64)> {
+    if !line.contains("Matrix Multiplication") || !line.contains(pattern) {
+        return None;
+    }
+    let ms = extract_between(line, "...", " ms")?.trim().parse::<f64>().ok()?;
+    let gf = extract_between(line, "(", " GFLOPS)")?
+        .trim()
+        .parse::<f64>()
+        .ok()?;
+    Some((ms, gf))
 }
 
 /// Extract text between two markers in a string.
