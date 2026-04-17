@@ -1,26 +1,20 @@
 
 /// Run Ollama and collect baseline performance
 fn run_ollama_comparison(path: &Path, tokens: usize) -> Option<OllamaBaseline> {
-    // Determine model name from path
     let filename = path
         .file_stem()
         .and_then(|f| f.to_str())
         .unwrap_or("unknown");
 
-    // Map common filenames to Ollama model names
-    let ollama_model = if filename.contains("qwen2.5-coder-7b") {
-        "qwen2.5-coder:7b"
-    } else if filename.contains("qwen2.5-coder-1.5b") {
-        "qwen2.5-coder:1.5b"
-    } else if filename.contains("TinyLlama") || filename.contains("tinyllama") {
-        "tinyllama"
-    } else {
-        // Can't auto-detect — skip
-        output::warn(&format!(
-            "Cannot auto-detect Ollama model name for '{}'. Use known model files.",
-            filename
-        ));
-        return None;
+    let ollama_model = match map_filename_to_ollama_model(filename) {
+        Some(m) => m,
+        None => {
+            output::warn(&format!(
+                "Cannot auto-detect Ollama model name for '{}'. Use known model files.",
+                filename
+            ));
+            return None;
+        }
     };
 
     println!(
@@ -32,8 +26,6 @@ fn run_ollama_comparison(path: &Path, tokens: usize) -> Option<OllamaBaseline> {
         .dimmed()
     );
 
-    // Run ollama with --verbose to get timing stats
-    // Use a prompt that generates many tokens for accurate eval rate measurement
     let result = std::process::Command::new("ollama")
         .args([
             "run",
@@ -46,46 +38,61 @@ fn run_ollama_comparison(path: &Path, tokens: usize) -> Option<OllamaBaseline> {
     match result {
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
-
-            // Parse eval rate from Ollama output
-            // IMPORTANT: "prompt eval rate:" also contains "eval rate:", so
-            // we must match decode line as "eval rate:" but NOT "prompt eval rate:"
-            let decode_tok_s = stderr
-                .lines()
-                .find(|l| l.contains("eval rate:") && !l.contains("prompt eval rate:"))
-                .and_then(|l| {
-                    l.split_whitespace()
-                        .find(|w| w.parse::<f64>().is_ok())
-                        .and_then(|w| w.parse::<f64>().ok())
-                })
-                .unwrap_or(0.0);
-
-            let prefill_tok_s = stderr
-                .lines()
-                .find(|l| l.contains("prompt eval rate:"))
-                .and_then(|l| {
-                    l.split_whitespace()
-                        .find(|w| w.parse::<f64>().is_ok())
-                        .and_then(|w| w.parse::<f64>().ok())
-                })
-                .unwrap_or(0.0);
-
-            if decode_tok_s > 0.0 {
-                Some(OllamaBaseline {
-                    decode_tok_s,
-                    prefill_tok_s,
-                    model_name: ollama_model.to_string(),
-                })
-            } else {
-                output::warn("Failed to parse Ollama output. Is Ollama running?");
-                None
-            }
+            parse_ollama_baseline(&stderr, ollama_model)
         }
         Err(e) => {
             output::warn(&format!("Ollama not available: {e}"));
             None
         }
     }
+}
+
+/// Map a model filename to its registered Ollama model tag.
+fn map_filename_to_ollama_model(filename: &str) -> Option<&'static str> {
+    if filename.contains("qwen2.5-coder-7b") {
+        Some("qwen2.5-coder:7b")
+    } else if filename.contains("qwen2.5-coder-1.5b") {
+        Some("qwen2.5-coder:1.5b")
+    } else if filename.contains("TinyLlama") || filename.contains("tinyllama") {
+        Some("tinyllama")
+    } else {
+        None
+    }
+}
+
+/// Parse decode/prefill eval-rate lines from `ollama run --verbose` stderr.
+///
+/// IMPORTANT: "prompt eval rate:" also contains "eval rate:", so the decode
+/// predicate must match "eval rate:" while rejecting "prompt eval rate:".
+fn parse_ollama_baseline(stderr: &str, ollama_model: &str) -> Option<OllamaBaseline> {
+    let decode_tok_s = parse_eval_rate(stderr, |l| {
+        l.contains("eval rate:") && !l.contains("prompt eval rate:")
+    });
+    let prefill_tok_s = parse_eval_rate(stderr, |l| l.contains("prompt eval rate:"));
+
+    if decode_tok_s > 0.0 {
+        Some(OllamaBaseline {
+            decode_tok_s,
+            prefill_tok_s,
+            model_name: ollama_model.to_string(),
+        })
+    } else {
+        output::warn("Failed to parse Ollama output. Is Ollama running?");
+        None
+    }
+}
+
+/// Find the first line matching `pred` and return its first parseable f64, or 0.0.
+fn parse_eval_rate(stderr: &str, pred: impl Fn(&&str) -> bool) -> f64 {
+    stderr
+        .lines()
+        .find(pred)
+        .and_then(|l| {
+            l.split_whitespace()
+                .find(|w| w.parse::<f64>().is_ok())
+                .and_then(|w| w.parse::<f64>().ok())
+        })
+        .unwrap_or(0.0)
 }
 
 /// Print Ollama comparison report
