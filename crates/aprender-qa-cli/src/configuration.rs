@@ -330,7 +330,7 @@ fn print_run_status(
 }
 
 /// Load, validate, and execute a playbook with the given configuration
-#[allow(clippy::fn_params_excessive_bools, clippy::too_many_lines)]
+#[allow(clippy::fn_params_excessive_bools, clippy::too_many_arguments)]
 fn run_playbook(
     playbook_path: &PathBuf,
     output_dir: &PathBuf,
@@ -353,40 +353,15 @@ fn run_playbook(
         log_environment();
     }
 
-    println!(
-        "{} {}",
-        "Loading playbook:".bold().cyan(),
-        playbook_path.display().to_string().cyan()
-    );
-
-    let playbook = match load_playbook(playbook_path) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("{}", e.red());
-            std::process::exit(1);
-        }
-    };
+    let playbook = load_playbook_or_exit(playbook_path);
 
     if !no_integrity_check {
         verify_playbook_lock_or_exit(playbook_path, &playbook.name);
     }
 
-    if parse_failure_policy(failure_policy).is_err() {
-        eprintln!("Unknown failure policy: {failure_policy}");
-        std::process::exit(1);
-    }
+    validate_failure_policy_or_exit(failure_policy);
 
-    // §3.4: Resource-aware scheduling - enforce worker limits based on model size
-    let effective_workers = playbook.effective_max_workers(workers);
-    if effective_workers < workers {
-        eprintln!(
-            "{} Model size {:?} caps workers at {} (requested {})",
-            "[RESOURCE]".yellow(),
-            playbook.size_category(),
-            effective_workers,
-            workers
-        );
-    }
+    let effective_workers = resolve_effective_workers(&playbook, workers);
 
     print_run_status(
         &playbook,
@@ -400,25 +375,21 @@ fn run_playbook(
         hf_model_family.as_deref(),
     );
 
-    let run_config = PlaybookRunConfig {
-        failure_policy: failure_policy.to_string(),
+    let run_config = build_run_config(
+        failure_policy,
         dry_run,
-        workers: effective_workers,
-        model_path: model_path.clone(),
+        effective_workers,
+        model_path.clone(),
         timeout,
         no_gpu,
         skip_conversion_tests,
-        run_tool_tests: run_tool_tests_flag,
-        run_profile_ci: profile_ci,
-        run_hf_parity: hf_parity,
-        hf_parity_corpus_path: if hf_parity {
-            Some(hf_corpus_path.to_string())
-        } else {
-            None
-        },
-        hf_parity_model_family: hf_model_family,
+        run_tool_tests_flag,
+        profile_ci,
+        hf_parity,
+        hf_corpus_path,
+        hf_model_family,
         metadata_only,
-    };
+    );
 
     let config = match build_execution_config(&run_config) {
         Ok(c) => c,
@@ -428,30 +399,8 @@ fn run_playbook(
         }
     };
 
-    // Run tool tests if enabled (skip during dry-run)
     if run_tool_tests_flag && !dry_run {
-        let Some(ref mp) = model_path else {
-            eprintln!("Error: --run-tool-tests requires --model-path to be set");
-            std::process::exit(1);
-        };
-        println!("\n{}", "=== Running APR Tool Tests ===".bold().cyan());
-        let tool_executor = ToolExecutor::new(mp.clone(), no_gpu, timeout);
-        let tool_results = tool_executor.execute_all();
-        let tool_passed = tool_results.iter().filter(|r| r.passed).count();
-        let tool_failed = tool_results.len() - tool_passed;
-        println!(
-            "  Tool tests: {} passed, {} failed",
-            tool_passed.to_string().green(),
-            if tool_failed > 0 {
-                tool_failed.to_string().red()
-            } else {
-                tool_failed.to_string().dimmed()
-            }
-        );
-        if tool_failed > 0 {
-            eprintln!("Aborting: {tool_failed} tool test(s) failed (Jidoka: stop the line)");
-            std::process::exit(1);
-        }
+        run_tool_tests_or_exit(model_path.as_deref(), no_gpu, timeout);
     }
 
     let result = match execute_playbook(&playbook, config) {
@@ -463,15 +412,126 @@ fn run_playbook(
     };
 
     print_playbook_results(&result);
+    persist_and_exit(dry_run, &result, output_dir);
+}
 
-    // Dry-run: skip evidence persistence — output directory may not be writable
-    // and the purpose of dry-run is inspection, not artifact production.
-    if !dry_run && !save_playbook_evidence(&result, output_dir) {
+fn load_playbook_or_exit(playbook_path: &PathBuf) -> aprender_qa_runner::Playbook {
+    println!(
+        "{} {}",
+        "Loading playbook:".bold().cyan(),
+        playbook_path.display().to_string().cyan()
+    );
+    match load_playbook(playbook_path) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{}", e.red());
+            std::process::exit(1);
+        }
+    }
+}
+
+fn validate_failure_policy_or_exit(failure_policy: &str) {
+    if parse_failure_policy(failure_policy).is_err() {
+        eprintln!("Unknown failure policy: {failure_policy}");
+        std::process::exit(1);
+    }
+}
+
+/// §3.4: Resource-aware scheduling — enforce worker limits based on model size.
+fn resolve_effective_workers(
+    playbook: &aprender_qa_runner::Playbook,
+    requested: usize,
+) -> usize {
+    let effective = playbook.effective_max_workers(requested);
+    if effective < requested {
+        eprintln!(
+            "{} Model size {:?} caps workers at {} (requested {})",
+            "[RESOURCE]".yellow(),
+            playbook.size_category(),
+            effective,
+            requested
+        );
+    }
+    effective
+}
+
+#[allow(clippy::fn_params_excessive_bools, clippy::too_many_arguments)]
+fn build_run_config(
+    failure_policy: &str,
+    dry_run: bool,
+    workers: usize,
+    model_path: Option<String>,
+    timeout: u64,
+    no_gpu: bool,
+    skip_conversion_tests: bool,
+    run_tool_tests: bool,
+    run_profile_ci: bool,
+    hf_parity: bool,
+    hf_corpus_path: &str,
+    hf_model_family: Option<String>,
+    metadata_only: bool,
+) -> PlaybookRunConfig {
+    PlaybookRunConfig {
+        failure_policy: failure_policy.to_string(),
+        dry_run,
+        workers,
+        model_path,
+        timeout,
+        no_gpu,
+        skip_conversion_tests,
+        run_tool_tests,
+        run_profile_ci,
+        run_hf_parity: hf_parity,
+        hf_parity_corpus_path: if hf_parity {
+            Some(hf_corpus_path.to_string())
+        } else {
+            None
+        },
+        hf_parity_model_family: hf_model_family,
+        metadata_only,
+    }
+}
+
+fn run_tool_tests_or_exit(model_path: Option<&str>, no_gpu: bool, timeout: u64) {
+    let Some(mp) = model_path else {
+        eprintln!("Error: --run-tool-tests requires --model-path to be set");
+        std::process::exit(1);
+    };
+    println!("\n{}", "=== Running APR Tool Tests ===".bold().cyan());
+    let tool_executor = ToolExecutor::new(mp.to_string(), no_gpu, timeout);
+    let tool_results = tool_executor.execute_all();
+    let tool_passed = tool_results.iter().filter(|r| r.passed).count();
+    let tool_failed = tool_results.len() - tool_passed;
+    println!(
+        "  Tool tests: {} passed, {} failed",
+        tool_passed.to_string().green(),
+        if tool_failed > 0 {
+            tool_failed.to_string().red()
+        } else {
+            tool_failed.to_string().dimmed()
+        }
+    );
+    if tool_failed > 0 {
+        eprintln!("Aborting: {tool_failed} tool test(s) failed (Jidoka: stop the line)");
+        std::process::exit(1);
+    }
+}
+
+/// Persist evidence (unless dry-run) and exit non-zero on any failure.
+///
+/// Dry-run skips evidence persistence: output directory may not be writable and
+/// the purpose of dry-run is inspection, not artifact production. Jidoka: stop
+/// the line on any failed scenario or gateway blow.
+fn persist_and_exit(
+    dry_run: bool,
+    result: &aprender_qa_runner::ExecutionResult,
+    output_dir: &PathBuf,
+) {
+    if !dry_run && !save_playbook_evidence(result, output_dir) {
         eprintln!("Error: evidence save failed — results may be lost");
         std::process::exit(1);
     }
 
-    // Jidoka: non-zero exit on any failure or gateway blow (not in dry-run)
     if !dry_run && (result.failed > 0 || result.gateway_failed.is_some()) {
         std::process::exit(1);
     }

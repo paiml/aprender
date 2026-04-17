@@ -49,85 +49,82 @@ pub fn run_compete(
     label: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    let labels: Vec<String> = match label {
-        Some(l) => l.split(',').map(String::from).collect(),
-        None => {
-            let mut v = vec!["ours".to_string()];
-            v.extend((0..theirs.len()).map(|i| format!("theirs-{}", i + 1)));
-            v
-        }
-    };
+    let labels = build_labels(label, theirs.len());
 
     println!("\n=== CGP Head-to-Head: {workload} ===\n");
 
     let mut results: Vec<CompetitorResult> = Vec::new();
-
     let default_ours = "ours".to_string();
-    let ours_label = labels.first().unwrap_or(&default_ours);
+    let ours_label = labels.first().unwrap_or(&default_ours).clone();
+    results.push(run_and_record(&ours_label, ours));
 
-    // Run ours
-    eprint!("  Running: {ours_label} ...");
-    match run_timed(ours) {
-        Ok(mut r) => {
-            r.label = ours_label.clone();
-            eprintln!(" {:.1}ms", r.wall_time_ms);
-            results.push(r);
-        }
-        Err(e) => {
-            eprintln!(" FAILED: {e}");
-            results.push(CompetitorResult {
-                label: ours_label.clone(),
-                command: ours.to_string(),
-                wall_time_ms: f64::INFINITY,
-                exit_code: -1,
-            });
-        }
-    }
-
-    // Run theirs
     for (i, cmd) in theirs.iter().enumerate() {
         let default_theirs = format!("theirs-{}", i + 1);
-        let lbl = labels.get(i + 1).unwrap_or(&default_theirs);
-        eprint!("  Running: {lbl} ...");
-        match run_timed(cmd) {
-            Ok(mut r) => {
-                r.label = lbl.to_string();
-                eprintln!(" {:.1}ms", r.wall_time_ms);
-                results.push(r);
-            }
-            Err(e) => {
-                eprintln!(" FAILED: {e}");
-                results.push(CompetitorResult {
-                    label: lbl.to_string(),
-                    command: cmd.clone(),
-                    wall_time_ms: f64::INFINITY,
-                    exit_code: -1,
-                });
-            }
-        }
+        let lbl = labels.get(i + 1).unwrap_or(&default_theirs).clone();
+        results.push(run_and_record(&lbl, cmd));
     }
-
-    // Find best time
-    let best_time = results
-        .iter()
-        .filter(|r| r.wall_time_ms.is_finite())
-        .map(|r| r.wall_time_ms)
-        .fold(f64::INFINITY, f64::min);
 
     if json {
         println!("{}", serde_json::to_string_pretty(&results)?);
         return Ok(());
     }
 
-    // Print table
+    print_compete_table(&results);
+    print_compete_winner(&results);
+    println!();
+    Ok(())
+}
+
+/// Build label vector: parse comma-separated overrides, or synthesize defaults.
+fn build_labels(label: Option<&str>, theirs_len: usize) -> Vec<String> {
+    match label {
+        Some(l) => l.split(',').map(String::from).collect(),
+        None => {
+            let mut v = vec!["ours".to_string()];
+            v.extend((0..theirs_len).map(|i| format!("theirs-{}", i + 1)));
+            v
+        }
+    }
+}
+
+/// Run a single competitor and push a `CompetitorResult` with failure handling.
+fn run_and_record(label: &str, command: &str) -> CompetitorResult {
+    eprint!("  Running: {label} ...");
+    match run_timed(command) {
+        Ok(mut r) => {
+            r.label = label.to_string();
+            eprintln!(" {:.1}ms", r.wall_time_ms);
+            r
+        }
+        Err(e) => {
+            eprintln!(" FAILED: {e}");
+            CompetitorResult {
+                label: label.to_string(),
+                command: command.to_string(),
+                wall_time_ms: f64::INFINITY,
+                exit_code: -1,
+            }
+        }
+    }
+}
+
+fn best_finite_time(results: &[CompetitorResult]) -> f64 {
+    results
+        .iter()
+        .filter(|r| r.wall_time_ms.is_finite())
+        .map(|r| r.wall_time_ms)
+        .fold(f64::INFINITY, f64::min)
+}
+
+fn print_compete_table(results: &[CompetitorResult]) {
+    let best_time = best_finite_time(results);
     println!();
     println!(
         "  {:20} {:>12} {:>8} {:>10}",
         "Competitor", "Time (ms)", "Exit", "vs Best"
     );
     println!("  {}", "-".repeat(54));
-
-    for r in &results {
+    for r in results {
         let ratio = if best_time > 0.0 && r.wall_time_ms.is_finite() {
             format!("{:.2}x", r.wall_time_ms / best_time)
         } else {
@@ -143,9 +140,10 @@ pub fn run_compete(
             r.label, time_str, r.exit_code, ratio
         );
     }
+}
 
-    // Winner
-    if let Some(winner) = results
+fn print_compete_winner(results: &[CompetitorResult]) {
+    let Some(winner) = results
         .iter()
         .filter(|r| r.wall_time_ms.is_finite())
         .min_by(|a, b| {
@@ -153,15 +151,13 @@ pub fn run_compete(
                 .partial_cmp(&b.wall_time_ms)
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
-    {
-        println!(
-            "\n  Winner: {} ({:.1}ms)",
-            winner.label, winner.wall_time_ms
-        );
-    }
-
-    println!();
-    Ok(())
+    else {
+        return;
+    };
+    println!(
+        "\n  Winner: {} ({:.1}ms)",
+        winner.label, winner.wall_time_ms
+    );
 }
 
 #[cfg(test)]

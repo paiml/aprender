@@ -1,4 +1,12 @@
 
+/// Running state for the dead-code removal tokenizer pass.
+#[derive(Default)]
+struct DeadCodeState {
+    in_comment: bool,
+    prev_was_whitespace: bool,
+    prev_was_slash: bool,
+}
+
 impl CodeEda {
     /// Create a new code EDA generator with the given configuration.
     #[must_use]
@@ -185,64 +193,63 @@ impl CodeEda {
     #[allow(clippy::unused_self)]
     fn apply_dead_code_removal(&self, tokens: &[String]) -> Vec<String> {
         let mut result = Vec::with_capacity(tokens.len());
-        let mut in_comment = false;
-        let mut prev_was_whitespace = false;
-        let mut prev_was_slash = false;
-
+        let mut state = DeadCodeState::default();
         for token in tokens {
-            // Detect // comment start (two consecutive slashes)
-            if token == "/" {
-                if prev_was_slash {
-                    // This is the second slash, start comment
-                    in_comment = true;
-                    prev_was_slash = false;
-                    // Remove the first slash we already added
-                    if result.last() == Some(&"/".to_string()) {
-                        result.pop();
-                    }
-                    continue;
-                }
-                prev_was_slash = true;
-                if !in_comment {
-                    result.push(token.clone());
-                }
-                continue;
-            }
+            Self::step_dead_code(token, &mut result, &mut state);
+        }
+        result
+    }
 
-            // Reset slash tracking for non-slash tokens
-            prev_was_slash = false;
+    fn step_dead_code(token: &str, result: &mut Vec<String>, state: &mut DeadCodeState) {
+        if token == "/" {
+            Self::handle_slash_token(result, state);
+            return;
+        }
+        state.prev_was_slash = false;
 
-            // Detect # comment start (Python)
-            if token == "#" {
-                in_comment = true;
-                continue;
+        if token == "#" {
+            state.in_comment = true;
+            return;
+        }
+        if state.in_comment {
+            if token == "\n" {
+                state.in_comment = false;
+                result.push(token.to_string());
             }
-
-            // End single-line comment on newline
-            if in_comment && token == "\n" {
-                in_comment = false;
-                result.push(token.clone());
-                continue;
-            }
-
-            if in_comment {
-                continue;
-            }
-
-            // Collapse multiple whitespace
-            let is_whitespace = token.chars().all(char::is_whitespace);
-            if is_whitespace {
-                if !prev_was_whitespace {
-                    result.push(token.clone());
-                }
-                prev_was_whitespace = true;
-            } else {
-                result.push(token.clone());
-                prev_was_whitespace = false;
-            }
+            return;
         }
 
-        result
+        Self::push_non_comment_token(token, result, state);
+    }
+
+    /// `/` is ambiguous: first slash buffers; second starts a `//` comment.
+    fn handle_slash_token(result: &mut Vec<String>, state: &mut DeadCodeState) {
+        if state.prev_was_slash {
+            state.in_comment = true;
+            state.prev_was_slash = false;
+            if result.last().is_some_and(|s| s == "/") {
+                result.pop();
+            }
+            return;
+        }
+        state.prev_was_slash = true;
+        if !state.in_comment {
+            result.push("/".to_string());
+        }
+    }
+
+    /// Emit a non-comment token, collapsing consecutive whitespace runs.
+    fn push_non_comment_token(token: &str, result: &mut Vec<String>, state: &mut DeadCodeState) {
+        let is_whitespace = token.chars().all(char::is_whitespace);
+        if is_whitespace {
+            if !state.prev_was_whitespace {
+                result.push(token.to_string());
+            }
+            state.prev_was_whitespace = true;
+        } else {
+            result.push(token.to_string());
+            state.prev_was_whitespace = false;
+        }
     }
 
     /// Check if token is a valid identifier.

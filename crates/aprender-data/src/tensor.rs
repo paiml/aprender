@@ -38,10 +38,7 @@
 use std::sync::Arc;
 
 use arrow::{
-    array::{
-        Array, AsArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
-        UInt16Array, UInt32Array, UInt64Array, UInt8Array,
-    },
+    array::{Array, AsArray},
     datatypes::DataType,
     record_batch::RecordBatch,
 };
@@ -542,6 +539,11 @@ pub fn extract_column_f64(batch: &RecordBatch, column: &str) -> Result<Vec<f64>>
 ///
 /// Returns an error if the column doesn't exist.
 pub fn extract_labels_i64(batch: &RecordBatch, column: &str) -> Result<Vec<i64>> {
+    use arrow::datatypes::{
+        Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, UInt16Type,
+        UInt32Type, UInt64Type, UInt8Type,
+    };
+
     let col_index = batch
         .schema()
         .index_of(column)
@@ -550,81 +552,52 @@ pub fn extract_labels_i64(batch: &RecordBatch, column: &str) -> Result<Vec<i64>>
     let array = batch.column(col_index);
 
     match array.data_type() {
-        DataType::Int8 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<Int8Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to Int8Array"))?;
-            Ok(arr.iter().map(|v| i64::from(v.unwrap_or(0))).collect())
-        }
-        DataType::Int16 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<Int16Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to Int16Array"))?;
-            Ok(arr.iter().map(|v| i64::from(v.unwrap_or(0))).collect())
-        }
-        DataType::Int32 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<Int32Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to Int32Array"))?;
-            Ok(arr.iter().map(|v| i64::from(v.unwrap_or(0))).collect())
-        }
-        DataType::Int64 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to Int64Array"))?;
-            Ok(arr.iter().map(|v| v.unwrap_or(0)).collect())
-        }
-        DataType::UInt8 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<UInt8Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to UInt8Array"))?;
-            Ok(arr.iter().map(|v| i64::from(v.unwrap_or(0))).collect())
-        }
+        DataType::Int8 => cast_and_collect::<Int8Type>(array, "Int8Array", |v| i64::from(v)),
+        DataType::Int16 => cast_and_collect::<Int16Type>(array, "Int16Array", |v| i64::from(v)),
+        DataType::Int32 => cast_and_collect::<Int32Type>(array, "Int32Array", |v| i64::from(v)),
+        DataType::Int64 => cast_and_collect::<Int64Type>(array, "Int64Array", |v| v),
+        DataType::UInt8 => cast_and_collect::<UInt8Type>(array, "UInt8Array", |v| i64::from(v)),
         DataType::UInt16 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<UInt16Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to UInt16Array"))?;
-            Ok(arr.iter().map(|v| i64::from(v.unwrap_or(0))).collect())
+            cast_and_collect::<UInt16Type>(array, "UInt16Array", |v| i64::from(v))
         }
         DataType::UInt32 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<UInt32Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to UInt32Array"))?;
-            Ok(arr.iter().map(|v| i64::from(v.unwrap_or(0))).collect())
+            cast_and_collect::<UInt32Type>(array, "UInt32Array", |v| i64::from(v))
         }
         DataType::UInt64 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<UInt64Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to UInt64Array"))?;
             #[allow(clippy::cast_possible_wrap)]
-            Ok(arr.iter().map(|v| v.unwrap_or(0) as i64).collect())
+            cast_and_collect::<UInt64Type>(array, "UInt64Array", |v| v as i64)
         }
         DataType::Float32 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<Float32Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to Float32Array"))?;
             #[allow(clippy::cast_possible_truncation)]
-            Ok(arr.iter().map(|v| v.unwrap_or(0.0) as i64).collect())
+            cast_and_collect::<Float32Type>(array, "Float32Array", |v| v as i64)
         }
         DataType::Float64 => {
-            let arr = array
-                .as_any()
-                .downcast_ref::<Float64Array>()
-                .ok_or_else(|| Error::data("Failed to downcast to Float64Array"))?;
             #[allow(clippy::cast_possible_truncation)]
-            Ok(arr.iter().map(|v| v.unwrap_or(0.0) as i64).collect())
+            cast_and_collect::<Float64Type>(array, "Float64Array", |v| v as i64)
         }
         dt => Err(Error::data(format!("Cannot extract labels from {:?}", dt))),
     }
+}
+
+/// Downcast `array` to `PrimitiveArray<T>` and map each element (or
+/// default on null) through `cast`.
+fn cast_and_collect<T>(
+    array: &dyn arrow::array::Array,
+    type_name: &str,
+    cast: impl Fn(T::Native) -> i64,
+) -> Result<Vec<i64>>
+where
+    T: arrow::datatypes::ArrowPrimitiveType,
+    T::Native: Copy + Default,
+{
+    let arr = array
+        .as_any()
+        .downcast_ref::<arrow::array::PrimitiveArray<T>>()
+        .ok_or_else(|| Error::data(format!("Failed to downcast to {type_name}")))?;
+    Ok(arr
+        .iter()
+        .map(|v| cast(v.unwrap_or_default()))
+        .collect())
 }
 
 #[cfg(test)]
@@ -637,7 +610,13 @@ pub fn extract_labels_i64(batch: &RecordBatch, column: &str) -> Result<Vec<i64>>
     clippy::float_cmp
 )]
 mod tests {
-    use arrow::datatypes::{Field, Schema};
+    use arrow::{
+        array::{
+            Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
+            UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+        },
+        datatypes::{Field, Schema},
+    };
 
     use super::*;
 

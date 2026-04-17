@@ -68,6 +68,29 @@ fn run_family_mode(
 // Enhanced Sections Builder
 // ============================================================================
 
+/// Resolve `(size, constraints)` if the caller supplied enough inputs to build
+/// any enhanced section; return `None` to short-circuit otherwise.
+fn resolve_family_size_constraints<'a>(
+    family: Option<&'a dyn ModelFamily>,
+    size_name: Option<&str>,
+) -> Option<(&'a ModelSizeConfig, &'a ModelConstraints)> {
+    let family = family?;
+    let size = family.size_config(size_name?)?;
+    Some((size, family.constraints()))
+}
+
+fn maybe_build_statistical_analysis(
+    flags: OracleFlags,
+    size: &ModelSizeConfig,
+    constraints: &ModelConstraints,
+) -> Option<StatisticalAnalysis> {
+    if flags.show_stats() || flags.show_explain() || flags.show_kernels() {
+        Some(build_statistical_analysis(size, constraints))
+    } else {
+        None
+    }
+}
+
 fn build_enhanced_sections(
     family: Option<&dyn ModelFamily>,
     size_name: Option<&str>,
@@ -77,43 +100,22 @@ fn build_enhanced_sections(
     Option<ArchitectureExplanation>,
     Option<KernelCompatibility>,
 ) {
-    let Some(family) = family else {
+    let Some((size, constraints)) = resolve_family_size_constraints(family, size_name) else {
         return (None, None, None);
     };
 
-    let Some(size_name) = size_name else {
-        return (None, None, None);
-    };
+    let stats = maybe_build_statistical_analysis(flags, size, constraints);
 
-    let Some(size) = family.size_config(size_name) else {
-        return (None, None, None);
-    };
+    let explanation = flags
+        .show_explain()
+        .then(|| stats.as_ref().map(|s| build_architecture_explanation(size, constraints, s)))
+        .flatten();
 
-    let constraints = family.constraints();
+    let kernel_compat = flags
+        .show_kernels()
+        .then(|| stats.as_ref().map(|s| build_kernel_compatibility(size, constraints, s)))
+        .flatten();
 
-    let stats = if flags.show_stats() || flags.show_explain() || flags.show_kernels() {
-        Some(build_statistical_analysis(size, constraints))
-    } else {
-        None
-    };
-
-    let explanation = if flags.show_explain() {
-        stats
-            .as_ref()
-            .map(|s| build_architecture_explanation(size, constraints, s))
-    } else {
-        None
-    };
-
-    let kernel_compat = if flags.show_kernels() {
-        stats
-            .as_ref()
-            .map(|s| build_kernel_compatibility(size, constraints, s))
-    } else {
-        None
-    };
-
-    // Only return stats if explicitly requested
     let stats = if flags.show_stats() { stats } else { None };
 
     (stats, explanation, kernel_compat)
@@ -214,56 +216,63 @@ fn detect_size_from_inspection(
     family: &dyn ModelFamily,
     report: &aprender::format::rosetta::InspectionReport,
 ) -> Option<SizeVariantInfo> {
-    // Try to extract hidden_dim from metadata
-    let hidden_dim = report
+    let hidden_dim = hidden_dim_from_metadata(report).or_else(|| hidden_dim_from_tensors(report))?;
+    let num_layers = num_layers_from_metadata(report).or_else(|| num_layers_from_tensors(report))?;
+    let size_name = family.detect_size(hidden_dim, num_layers)?;
+    let sc = family.size_config(&size_name)?;
+    Some(build_size_info(&size_name, sc, family))
+}
+
+fn hidden_dim_from_metadata(report: &aprender::format::rosetta::InspectionReport) -> Option<usize> {
+    report
         .metadata
         .get("hidden_size")
         .or_else(|| report.metadata.get("embedding_length"))
         .or_else(|| report.metadata.get("hidden_dim"))
-        .and_then(|v| v.parse::<usize>().ok());
+        .and_then(|v| v.parse::<usize>().ok())
+}
 
-    let num_layers = report
+fn num_layers_from_metadata(report: &aprender::format::rosetta::InspectionReport) -> Option<usize> {
+    report
         .metadata
         .get("num_hidden_layers")
         .or_else(|| report.metadata.get("block_count"))
         .or_else(|| report.metadata.get("num_layers"))
-        .and_then(|v| v.parse::<usize>().ok());
+        .and_then(|v| v.parse::<usize>().ok())
+}
 
-    // Also try to infer from tensor shapes (embedding shape[1] = hidden_dim)
-    let hidden_from_tensors = report.tensors.iter().find_map(|t| {
+/// Infer hidden dim from 2D embedding-tensor shape: `shape[1]`.
+fn hidden_dim_from_tensors(report: &aprender::format::rosetta::InspectionReport) -> Option<usize> {
+    report.tensors.iter().find_map(|t| {
         if t.name.contains("embed") && t.shape.len() == 2 {
             Some(t.shape[1])
         } else {
             None
         }
-    });
+    })
+}
 
-    let layers_from_tensors = {
-        let mut max_layer: Option<usize> = None;
-        for t in &report.tensors {
-            // Match patterns like "layers.N." or "blk.N."
-            if let Some(rest) = t
-                .name
-                .strip_prefix("model.layers.")
-                .or_else(|| t.name.strip_prefix("blk."))
-                .or_else(|| t.name.strip_prefix("encoder.layers."))
-            {
-                if let Some(dot_pos) = rest.find('.') {
-                    if let Ok(n) = rest[..dot_pos].parse::<usize>() {
-                        max_layer = Some(max_layer.map_or(n, |m: usize| m.max(n)));
-                    }
-                }
-            }
-        }
-        max_layer.map(|m| m + 1) // 0-indexed → count
-    };
-
-    let h = hidden_dim.or(hidden_from_tensors)?;
-    let l = num_layers.or(layers_from_tensors)?;
-
-    let size_name = family.detect_size(h, l)?;
-    let sc = family.size_config(&size_name)?;
-    Some(build_size_info(&size_name, sc, family))
+/// Infer layer count by scanning "model.layers.N.", "blk.N.", or "encoder.layers.N." prefixes.
+fn num_layers_from_tensors(report: &aprender::format::rosetta::InspectionReport) -> Option<usize> {
+    let mut max_layer: Option<usize> = None;
+    for t in &report.tensors {
+        let Some(rest) = t
+            .name
+            .strip_prefix("model.layers.")
+            .or_else(|| t.name.strip_prefix("blk."))
+            .or_else(|| t.name.strip_prefix("encoder.layers."))
+        else {
+            continue;
+        };
+        let Some(dot_pos) = rest.find('.') else {
+            continue;
+        };
+        let Ok(n) = rest[..dot_pos].parse::<usize>() else {
+            continue;
+        };
+        max_layer = Some(max_layer.map_or(n, |m: usize| m.max(n)));
+    }
+    max_layer.map(|m| m + 1) // 0-indexed → count
 }
 
 fn build_compliance(

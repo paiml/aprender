@@ -502,30 +502,38 @@ fn print_brick_results(
 ) {
     output::section("Results");
     println!();
+    maybe_print_analytical_notice(report);
+    print_mean_latency_line(report.mean_us, budget_target);
+    print_cv_line(report.cv);
+    print_stats_block(report, elapsed);
+    print_throughput_line(report.tokens_per_sec);
+    print_performance_grade(report.mean_us, budget_target);
+    print_statistical_validity(report.statistically_valid);
+}
 
-    let mean_us = report.mean_us;
-    let cv = report.cv;
-    let budget_met = mean_us <= budget_target;
-    let cv_stable = cv <= 0.05;
-
+#[cfg(feature = "inference")]
+fn maybe_print_analytical_notice(report: &realizar::brick::BenchmarkReport) {
     // GH-90: Indicate when results are analytical (not measured)
     let is_analytical =
         report.std_us == 0.0 && report.p50_us == report.p99_us && report.p50_us == report.mean_us;
-    if is_analytical {
-        println!(
-            "{}",
-            "NOTE: This is an ANALYTICAL budget estimate (no run() implementation).".yellow()
-        );
-        println!(
-            "{}",
-            "Use `apr bench <model> --fast` for real measured throughput.".yellow()
-        );
-        println!();
+    if !is_analytical {
+        return;
     }
+    println!(
+        "{}",
+        "NOTE: This is an ANALYTICAL budget estimate (no run() implementation).".yellow()
+    );
+    println!(
+        "{}",
+        "Use `apr bench <model> --fast` for real measured throughput.".yellow()
+    );
+    println!();
+}
 
-    // Mean latency
+#[cfg(feature = "inference")]
+fn print_mean_latency_line(mean_us: f64, budget_target: f64) {
     let mean_str = format!("{:.2}µs", mean_us);
-    if budget_met {
+    if mean_us <= budget_target {
         println!(
             "{} {} {}",
             "Mean Latency:".white().bold(),
@@ -540,10 +548,12 @@ fn print_brick_results(
             format!("(FAIL: > {:.1}µs)", budget_target).red()
         );
     }
+}
 
-    // Coefficient of variation (stability)
+#[cfg(feature = "inference")]
+fn print_cv_line(cv: f64) {
     let cv_str = format!("{:.2}%", cv * 100.0);
-    if cv_stable {
+    if cv <= 0.05 {
         println!(
             "{} {} {}",
             "CV (stability):".white().bold(),
@@ -558,7 +568,10 @@ fn print_brick_results(
             "(WARN: > 5%)".yellow()
         );
     }
+}
 
+#[cfg(feature = "inference")]
+fn print_stats_block(report: &realizar::brick::BenchmarkReport, elapsed: Duration) {
     println!();
     output::kv("P50", format!("{:.2}µs", report.p50_us));
     output::kv("P99", format!("{:.2}µs", report.p99_us));
@@ -566,11 +579,16 @@ fn print_brick_results(
     output::kv("Budget", format!("{:.2}µs", report.budget_us));
     output::kv("Benchmark Time", format!("{:.2}s", elapsed.as_secs_f32()));
     println!();
+}
 
-    output::kv("Throughput", format!("{:.0} tok/s", report.tokens_per_sec));
+#[cfg(feature = "inference")]
+fn print_throughput_line(tokens_per_sec: f64) {
+    output::kv("Throughput", format!("{:.0} tok/s", tokens_per_sec));
     println!();
+}
 
-    // Performance grade
+#[cfg(feature = "inference")]
+fn print_performance_grade(mean_us: f64, budget_target: f64) {
     let grade = if mean_us <= budget_target * 0.5 {
         "A+ (Excellent: < 50% of budget)".green()
     } else if mean_us <= budget_target * 0.75 {
@@ -584,9 +602,11 @@ fn print_brick_results(
     };
     output::kv("Performance Grade", grade);
     println!();
+}
 
-    // Statistical validity check
-    if report.statistically_valid {
+#[cfg(feature = "inference")]
+fn print_statistical_validity(valid: bool) {
+    if valid {
         println!("{}", "Statistical validity: PASS (CV < 5%)".green());
     } else {
         println!("{}", "Statistical validity: WARN (CV >= 5%)".yellow());

@@ -8,117 +8,148 @@ use std::path::Path;
 /// Analyze a PTX file for performance-relevant patterns.
 pub fn analyze_ptx(source: &str) -> PtxAnalysis {
     let lines: Vec<&str> = source.lines().collect();
-    let total_instructions = lines
-        .iter()
-        .filter(|l| {
-            let trimmed = l.trim();
-            !trimmed.is_empty()
-                && !trimmed.starts_with("//")
-                && !trimmed.starts_with('.')
-                && !trimmed.starts_with('{')
-                && !trimmed.starts_with('}')
-        })
-        .count();
+    let total_instructions = count_ptx_instructions(&lines);
 
-    // Count instruction types
-    let mut memory_ops = 0u32;
-    let mut compute_ops = 0u32;
-    let mut control_ops = 0u32;
-    let mut sync_ops = 0u32;
-    let mut shared_ops = 0u32;
-    let mut registers_declared = 0u32;
-    let mut has_wmma = false;
-    let mut has_fma = false;
-    let mut warnings: Vec<String> = Vec::new();
-
+    let mut counters = PtxCounters::default();
     for line in &lines {
-        let trimmed = line.trim();
-
-        // Register declarations
-        if trimmed.starts_with(".reg") {
-            if let Some(count_str) = trimmed.split('<').nth(1).and_then(|s| s.split('>').next()) {
-                if let Ok(count) = count_str.parse::<u32>() {
-                    registers_declared += count;
-                }
-            }
-        }
-
-        // Memory operations
-        if trimmed.starts_with("ld.") || trimmed.starts_with("st.") {
-            memory_ops += 1;
-            if trimmed.contains(".global") {
-                // Global memory ops are expensive
-            }
-            if trimmed.contains(".shared") {
-                shared_ops += 1;
-            }
-        }
-
-        // Compute operations
-        if trimmed.starts_with("add.")
-            || trimmed.starts_with("mul.")
-            || trimmed.starts_with("mad.")
-            || trimmed.starts_with("fma.")
-        {
-            compute_ops += 1;
-            if trimmed.starts_with("fma.") || trimmed.starts_with("mad.") {
-                has_fma = true;
-            }
-        }
-
-        // Control flow
-        if trimmed.starts_with("bra") || trimmed.starts_with('@') {
-            control_ops += 1;
-            // Predicated instructions with data-dependent condition
-            if trimmed.starts_with("@%p") && trimmed.contains("bra") {
-                warnings.push("Data-dependent branch may cause warp divergence".to_string());
-            }
-        }
-
-        // Synchronization
-        if trimmed.starts_with("bar.") {
-            sync_ops += 1;
-        }
-
-        // WMMA (tensor core) instructions
-        if trimmed.contains("wmma.") || trimmed.contains("mma.") {
-            has_wmma = true;
-        }
+        classify_ptx_line(line, &mut counters);
     }
+    append_ptx_pressure_warnings(&mut counters);
 
-    // Compute/memory ratio (higher = more compute-bound)
-    let compute_memory_ratio = if memory_ops > 0 {
-        compute_ops as f64 / memory_ops as f64
+    let compute_memory_ratio = if counters.memory_ops > 0 {
+        f64::from(counters.compute_ops) / f64::from(counters.memory_ops)
     } else {
         f64::INFINITY
     };
 
-    // Register pressure warning
-    if registers_declared > 128 {
-        warnings.push(format!(
-            "High register usage ({registers_declared}) may limit occupancy"
-        ));
-    }
-
-    // Sync overhead
-    if sync_ops > 2 {
-        warnings.push(format!(
-            "{sync_ops} barrier syncs — review if all are necessary"
-        ));
-    }
-
     PtxAnalysis {
-        total_instructions: total_instructions as u32,
-        memory_ops,
-        compute_ops,
-        control_ops,
-        sync_ops,
-        shared_ops,
-        registers_declared,
-        has_wmma,
-        has_fma,
+        total_instructions,
+        memory_ops: counters.memory_ops,
+        compute_ops: counters.compute_ops,
+        control_ops: counters.control_ops,
+        sync_ops: counters.sync_ops,
+        shared_ops: counters.shared_ops,
+        registers_declared: counters.registers_declared,
+        has_wmma: counters.has_wmma,
+        has_fma: counters.has_fma,
         compute_memory_ratio,
-        warnings,
+        warnings: counters.warnings,
+    }
+}
+
+/// Mutable accumulator used while walking PTX lines.
+#[derive(Default)]
+struct PtxCounters {
+    memory_ops: u32,
+    compute_ops: u32,
+    control_ops: u32,
+    sync_ops: u32,
+    shared_ops: u32,
+    registers_declared: u32,
+    has_wmma: bool,
+    has_fma: bool,
+    warnings: Vec<String>,
+}
+
+/// Count non-trivial PTX instructions (skip blanks, comments, directives, braces).
+fn count_ptx_instructions(lines: &[&str]) -> u32 {
+    u32::try_from(
+        lines
+            .iter()
+            .filter(|l| {
+                let t = l.trim();
+                !t.is_empty()
+                    && !t.starts_with("//")
+                    && !t.starts_with('.')
+                    && !t.starts_with('{')
+                    && !t.starts_with('}')
+            })
+            .count(),
+    )
+    .unwrap_or(u32::MAX)
+}
+
+/// Dispatch a single PTX line to all per-category counters.
+fn classify_ptx_line(line: &str, counters: &mut PtxCounters) {
+    let trimmed = line.trim();
+    tally_register_declaration(trimmed, counters);
+    tally_memory_op(trimmed, counters);
+    tally_compute_op(trimmed, counters);
+    tally_control_op(trimmed, counters);
+    if trimmed.starts_with("bar.") {
+        counters.sync_ops += 1;
+    }
+    if trimmed.contains("wmma.") || trimmed.contains("mma.") {
+        counters.has_wmma = true;
+    }
+}
+
+/// Parse `.reg .TYPE %name<N>;` and accumulate the declared register count.
+fn tally_register_declaration(trimmed: &str, counters: &mut PtxCounters) {
+    if !trimmed.starts_with(".reg") {
+        return;
+    }
+    let Some(count_str) = trimmed.split('<').nth(1).and_then(|s| s.split('>').next()) else {
+        return;
+    };
+    let Ok(count) = count_str.parse::<u32>() else {
+        return;
+    };
+    counters.registers_declared += count;
+}
+
+/// Track `ld.*` / `st.*` operations, flagging shared-memory traffic separately.
+fn tally_memory_op(trimmed: &str, counters: &mut PtxCounters) {
+    if !(trimmed.starts_with("ld.") || trimmed.starts_with("st.")) {
+        return;
+    }
+    counters.memory_ops += 1;
+    if trimmed.contains(".shared") {
+        counters.shared_ops += 1;
+    }
+}
+
+/// Track arithmetic ops and record whether FMA-class instructions are present.
+fn tally_compute_op(trimmed: &str, counters: &mut PtxCounters) {
+    let is_compute = trimmed.starts_with("add.")
+        || trimmed.starts_with("mul.")
+        || trimmed.starts_with("mad.")
+        || trimmed.starts_with("fma.");
+    if !is_compute {
+        return;
+    }
+    counters.compute_ops += 1;
+    if trimmed.starts_with("fma.") || trimmed.starts_with("mad.") {
+        counters.has_fma = true;
+    }
+}
+
+/// Track branches and predicated branches; warn on data-dependent divergence.
+fn tally_control_op(trimmed: &str, counters: &mut PtxCounters) {
+    if !(trimmed.starts_with("bra") || trimmed.starts_with('@')) {
+        return;
+    }
+    counters.control_ops += 1;
+    if trimmed.starts_with("@%p") && trimmed.contains("bra") {
+        counters
+            .warnings
+            .push("Data-dependent branch may cause warp divergence".to_string());
+    }
+}
+
+/// Add register-pressure and sync-overhead warnings after counting is complete.
+fn append_ptx_pressure_warnings(counters: &mut PtxCounters) {
+    if counters.registers_declared > 128 {
+        counters.warnings.push(format!(
+            "High register usage ({}) may limit occupancy",
+            counters.registers_declared
+        ));
+    }
+    if counters.sync_ops > 2 {
+        counters.warnings.push(format!(
+            "{} barrier syncs — review if all are necessary",
+            counters.sync_ops
+        ));
     }
 }
 
@@ -141,63 +172,81 @@ pub struct PtxAnalysis {
 /// Analyze a WGSL shader for compute patterns.
 pub fn analyze_wgsl(source: &str) -> WgslAnalysis {
     let lines: Vec<&str> = source.lines().collect();
-    let total_lines = lines.len() as u32;
+    let total_lines = u32::try_from(lines.len()).unwrap_or(u32::MAX);
 
-    let mut workgroup_size = None;
-    let mut bindings = 0u32;
-    let mut has_atomics = false;
-    let mut has_shared = false;
-    let mut warnings: Vec<String> = Vec::new();
-
+    let mut counters = WgslCounters::default();
     for line in &lines {
-        let trimmed = line.trim();
-
-        if trimmed.contains("@workgroup_size") {
-            let start = trimmed.find('(').map(|i| i + 1);
-            let end = trimmed.find(')');
-            if let (Some(s), Some(e)) = (start, end) {
-                workgroup_size = Some(trimmed[s..e].to_string());
-            }
-        }
-
-        if trimmed.contains("@binding") {
-            bindings += 1;
-        }
-
-        if trimmed.contains("atomicAdd") || trimmed.contains("atomicStore") {
-            has_atomics = true;
-        }
-
-        if trimmed.contains("var<workgroup>") {
-            has_shared = true;
-        }
+        classify_wgsl_line(line, &mut counters);
     }
-
-    // Workgroup size warnings
-    if let Some(ref ws) = workgroup_size {
-        let total: u32 = ws
-            .split(',')
-            .filter_map(|s| s.trim().parse::<u32>().ok())
-            .product();
-        if total < 64 {
-            warnings.push(format!(
-                "Workgroup size ({ws}) = {total} threads — consider >=64 for GPU occupancy"
-            ));
-        }
-        if total > 1024 {
-            warnings.push(format!(
-                "Workgroup size ({ws}) = {total} threads — exceeds common hardware limit (1024)"
-            ));
-        }
-    }
+    append_wgsl_workgroup_warnings(&mut counters);
 
     WgslAnalysis {
         total_lines,
-        workgroup_size,
-        bindings,
-        has_atomics,
-        has_shared,
-        warnings,
+        workgroup_size: counters.workgroup_size,
+        bindings: counters.bindings,
+        has_atomics: counters.has_atomics,
+        has_shared: counters.has_shared,
+        warnings: counters.warnings,
+    }
+}
+
+/// Mutable accumulator used while walking WGSL lines.
+#[derive(Default)]
+struct WgslCounters {
+    workgroup_size: Option<String>,
+    bindings: u32,
+    has_atomics: bool,
+    has_shared: bool,
+    warnings: Vec<String>,
+}
+
+/// Dispatch a single WGSL line to each feature detector.
+fn classify_wgsl_line(line: &str, counters: &mut WgslCounters) {
+    let trimmed = line.trim();
+    capture_workgroup_size(trimmed, counters);
+    if trimmed.contains("@binding") {
+        counters.bindings += 1;
+    }
+    if trimmed.contains("atomicAdd") || trimmed.contains("atomicStore") {
+        counters.has_atomics = true;
+    }
+    if trimmed.contains("var<workgroup>") {
+        counters.has_shared = true;
+    }
+}
+
+/// Extract the literal arguments of `@workgroup_size(...)` when present.
+fn capture_workgroup_size(trimmed: &str, counters: &mut WgslCounters) {
+    if !trimmed.contains("@workgroup_size") {
+        return;
+    }
+    let Some(start) = trimmed.find('(').map(|i| i + 1) else {
+        return;
+    };
+    let Some(end) = trimmed.find(')') else {
+        return;
+    };
+    counters.workgroup_size = Some(trimmed[start..end].to_string());
+}
+
+/// Emit warnings when the workgroup size is too small or too large for typical GPUs.
+fn append_wgsl_workgroup_warnings(counters: &mut WgslCounters) {
+    let Some(ref ws) = counters.workgroup_size else {
+        return;
+    };
+    let total: u32 = ws
+        .split(',')
+        .filter_map(|s| s.trim().parse::<u32>().ok())
+        .product();
+    if total < 64 {
+        counters.warnings.push(format!(
+            "Workgroup size ({ws}) = {total} threads — consider >=64 for GPU occupancy"
+        ));
+    }
+    if total > 1024 {
+        counters.warnings.push(format!(
+            "Workgroup size ({ws}) = {total} threads — exceeds common hardware limit (1024)"
+        ));
     }
 }
 

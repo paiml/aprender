@@ -62,30 +62,9 @@ impl CudaExecutor {
         epsilon: f32,
         position: u32,
     ) -> Result<(), GpuError> {
-        // GH-559: Per-layer debug (moved OnceLock here for early use)
-        static DEBUG_LAYERS_EARLY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let debug_layers_early = *DEBUG_LAYERS_EARLY.get_or_init(|| {
-            std::env::var("GPU_DEBUG_ALL_LAYERS")
-                .map(|v| v == "1")
-                .unwrap_or(false)
-        });
+        let debug_layers = Self::debug_layers_enabled();
+        Self::debug_dump_input(debug_layers, hidden_gpu, hidden_dim);
 
-        // GH-559: Check embedding upload
-        if debug_layers_early {
-            let n = (hidden_dim as usize).min(hidden_gpu.len());
-            let mut host = vec![0.0f32; n];
-            if hidden_gpu.copy_to_host(&mut host).is_ok() {
-                let sum: f32 = host.iter().sum();
-                let rms = (host.iter().map(|x| x * x).sum::<f32>() / n as f32).sqrt();
-                eprintln!(
-                    "[GH-559] Layer 0 INPUT (hidden_gpu embed): sum={:.6}, rms={:.6}, first5={:?}",
-                    sum, rms, &host[..5.min(n)]
-                );
-            }
-        }
-
-        // Layer 0: input from external hidden_gpu
-        // PAR-070: Pass explicit position for RoPE and KV cache
         if num_layers > 0 {
             let layer_weights = self.indexed_layer_weights[0].clone();
             self.transformer_layer_workspace(
@@ -99,83 +78,106 @@ impl CudaExecutor {
             )?;
         }
 
-        // GH-559: Per-layer debug checksum for GPU parity diagnosis
+        self.debug_dump_layer0_output(debug_layers, hidden_dim);
+        self.run_remaining_workspace_layers(
+            num_layers,
+            hidden_dim,
+            intermediate_dim,
+            epsilon,
+            position,
+            debug_layers,
+        )
+    }
+
+    /// GH-559: Returns cached `GPU_DEBUG_ALL_LAYERS` env flag.
+    fn debug_layers_enabled() -> bool {
         static DEBUG_LAYERS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let debug_layers = *DEBUG_LAYERS.get_or_init(|| {
+        *DEBUG_LAYERS.get_or_init(|| {
             std::env::var("GPU_DEBUG_ALL_LAYERS")
                 .map(|v| v == "1")
                 .unwrap_or(false)
-        });
+        })
+    }
 
-        // GH-559: Check layer 0 output
-        if debug_layers {
-            if let Some(ref buf2) = self.workspace.hidden_buf2 {
-                let n = (hidden_dim as usize).min(buf2.len());
-                let mut host = vec![0.0f32; n];
-                if buf2.copy_to_host(&mut host).is_ok() {
-                    let sum: f32 = host.iter().sum();
-                    let rms = (host.iter().map(|x| x * x).sum::<f32>() / n as f32).sqrt();
-                    eprintln!(
-                        "[GH-559] Layer 0/28 OUTPUT (hidden_buf2): sum={:.6}, rms={:.6}, first5={:?}",
-                        sum, rms, &host[..5.min(n)]
-                    );
-                    // GH-559: Dump per-super-block sums to find divergent region
-                    for sb in 0..(n / 256) {
-                        let idx = sb * 256;
-                        let end = (idx + 5).min(n);
-                        let sb_sum: f32 = host[idx..idx+256.min(n-idx)].iter().sum();
-                        eprintln!(
-                            "[GH-559-GPU] L0 sb{}: idx={}, sum={:.4}, vals={:?}",
-                            sb, idx, sb_sum, &host[idx..end]
-                        );
-                    }
-                }
-            }
+    /// GH-559: Dump embedding input checksum for parity diagnosis.
+    fn debug_dump_input(enabled: bool, hidden_gpu: &GpuBuffer<f32>, hidden_dim: u32) {
+        if !enabled {
+            return;
         }
+        let n = (hidden_dim as usize).min(hidden_gpu.len());
+        let mut host = vec![0.0f32; n];
+        if hidden_gpu.copy_to_host(&mut host).is_ok() {
+            let sum: f32 = host.iter().sum();
+            let rms = (host.iter().map(|x| x * x).sum::<f32>() / n as f32).sqrt();
+            eprintln!(
+                "[GH-559] Layer 0 INPUT (hidden_gpu embed): sum={:.6}, rms={:.6}, first5={:?}",
+                sum, rms, &host[..5.min(n)]
+            );
+        }
+    }
 
-        // Layers 1+: input from hidden_buf2 (output of previous layer)
-        // Use raw pointer to avoid borrow conflict with &mut self
+    /// GH-559: Dump layer-0 output checksum + per-super-block sums.
+    fn debug_dump_layer0_output(&self, enabled: bool, hidden_dim: u32) {
+        if !enabled {
+            return;
+        }
+        let Some(buf2) = self.workspace.hidden_buf2.as_ref() else {
+            return;
+        };
+        let n = (hidden_dim as usize).min(buf2.len());
+        let mut host = vec![0.0f32; n];
+        if buf2.copy_to_host(&mut host).is_err() {
+            return;
+        }
+        let sum: f32 = host.iter().sum();
+        let rms = (host.iter().map(|x| x * x).sum::<f32>() / n as f32).sqrt();
+        eprintln!(
+            "[GH-559] Layer 0/28 OUTPUT (hidden_buf2): sum={:.6}, rms={:.6}, first5={:?}",
+            sum, rms, &host[..5.min(n)]
+        );
+        for sb in 0..(n / 256) {
+            let idx = sb * 256;
+            let end = (idx + 5).min(n);
+            let sb_sum: f32 = host[idx..idx + 256.min(n - idx)].iter().sum();
+            eprintln!(
+                "[GH-559-GPU] L0 sb{}: idx={}, sum={:.4}, vals={:?}",
+                sb, idx, sb_sum, &host[idx..end]
+            );
+        }
+    }
+
+    /// Run layers 1..num_layers using `hidden_buf2` as input (output of previous layer).
+    fn run_remaining_workspace_layers(
+        &mut self,
+        num_layers: usize,
+        hidden_dim: u32,
+        intermediate_dim: u32,
+        epsilon: f32,
+        position: u32,
+        debug_layers: bool,
+    ) -> Result<(), GpuError> {
         for layer_idx in 1..num_layers {
             let layer_weights = self.indexed_layer_weights[layer_idx].clone();
-            // SAFETY: hidden_buf2 is initialized and remains valid throughout
-            // We get ptr/len before the mutable borrow, avoiding conflict
-            let buf_ptr = self
+            let buf2 = self
                 .workspace
                 .hidden_buf2
                 .as_ref()
-                .expect("hidden_buf2 must be initialized")
-                .as_ptr();
-            let buf_len = self
-                .workspace
-                .hidden_buf2
-                .as_ref()
-                .expect("hidden_buf2 must be initialized")
-                .len();
-            // Create temporary non-owning view of hidden_buf2
-            // SAFETY: Memory safety ensured by bounds checking and alignment
-            // SAFETY: Pointer valid from allocation, length verified, used within scope
+                .expect("hidden_buf2 must be initialized");
+            let buf_ptr = buf2.as_ptr();
+            let buf_len = buf2.len();
+            // SAFETY: hidden_buf2 remains allocated for the entire loop body;
+            // ptr/len captured before mutable borrow avoids aliasing.
             let input_buf = unsafe { GpuBuffer::<f32>::from_raw_parts(buf_ptr, buf_len) };
 
-            // GH-559: Download hidden state checksum BEFORE this layer
-            if debug_layers {
-                let mut host_buf = vec![0.0f32; buf_len.min(hidden_dim as usize)];
-                if input_buf.copy_to_host(&mut host_buf).is_ok() {
-                    let sum: f32 = host_buf.iter().sum();
-                    let rms: f32 = (host_buf.iter().map(|x| x * x).sum::<f32>()
-                        / host_buf.len() as f32)
-                        .sqrt();
-                    eprintln!(
-                        "[GH-559] Layer {}/{} input: sum={:.6}, rms={:.6}, first5={:?}",
-                        layer_idx,
-                        num_layers,
-                        sum,
-                        rms,
-                        &host_buf[..5.min(host_buf.len())]
-                    );
-                }
-            }
+            Self::debug_dump_layer_input(
+                debug_layers,
+                &input_buf,
+                buf_len,
+                hidden_dim,
+                layer_idx,
+                num_layers,
+            );
 
-            // PAR-070: Pass explicit position for RoPE and KV cache
             self.transformer_layer_workspace(
                 &input_buf,
                 layer_idx,
@@ -189,6 +191,34 @@ impl CudaExecutor {
             std::mem::forget(input_buf);
         }
         Ok(())
+    }
+
+    /// GH-559: Dump per-layer input checksum before execution.
+    fn debug_dump_layer_input(
+        enabled: bool,
+        input_buf: &GpuBuffer<f32>,
+        buf_len: usize,
+        hidden_dim: u32,
+        layer_idx: usize,
+        num_layers: usize,
+    ) {
+        if !enabled {
+            return;
+        }
+        let mut host_buf = vec![0.0f32; buf_len.min(hidden_dim as usize)];
+        if input_buf.copy_to_host(&mut host_buf).is_ok() {
+            let sum: f32 = host_buf.iter().sum();
+            let rms: f32 =
+                (host_buf.iter().map(|x| x * x).sum::<f32>() / host_buf.len() as f32).sqrt();
+            eprintln!(
+                "[GH-559] Layer {}/{} input: sum={:.6}, rms={:.6}, first5={:?}",
+                layer_idx,
+                num_layers,
+                sum,
+                rms,
+                &host_buf[..5.min(host_buf.len())]
+            );
+        }
     }
 
     /// PAR-043: Run all transformer layers via the indexed path (O(1) weight access).
@@ -425,13 +455,56 @@ impl CudaExecutor {
         vocab_size: u32,
         epsilon: f32,
     ) -> Result<(), GpuError> {
-        // PERF-002: Debug code removed for performance (was PAR-058-DEBUG)
-        // NaN checks required D2H transfer on every token - ~10ms overhead each
-
-        // 1. Validate all RMSNorm weights are cached (including output norm)
         self.validate_rmsnorm_cache_for_logits(num_layers)?;
 
-        // 2. Collect all cache key names
+        let hidden_gpu = self.pad_and_upload_input(input)?;
+        let (hidden_gpu, workspace_used) = self.run_transformer_stack(
+            hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon, position,
+        )?;
+
+        let debug_enabled = Self::gpu_debug_enabled();
+        self.debug_dump_hidden_state(&hidden_gpu, workspace_used, debug_enabled)?;
+
+        let normed_hidden = self.apply_output_rmsnorm_timed(
+            &hidden_gpu, workspace_used, hidden_dim, epsilon,
+        )?;
+        self.debug_dump_normed_hidden(&normed_hidden, debug_enabled)?;
+
+        self.dispatch_lm_head_and_download(
+            &normed_hidden, logits, vocab_size, hidden_dim, debug_enabled,
+        )
+    }
+
+    /// Pick the fastest available path (workspace / indexed / legacy) for the
+    /// transformer stack. Returns `(hidden_gpu, workspace_used)` where
+    /// `workspace_used = true` means the workspace buffer now holds the output.
+    fn run_transformer_stack(
+        &mut self,
+        mut hidden_gpu: GpuBuffer<f32>,
+        num_layers: usize,
+        hidden_dim: u32,
+        intermediate_dim: u32,
+        epsilon: f32,
+        position: u32,
+    ) -> Result<(GpuBuffer<f32>, bool), GpuError> {
+        let use_workspace = self.has_workspace()
+            && self.has_indexed_weights()
+            && self.indexed_layer_weights.len() == num_layers;
+
+        if use_workspace {
+            self.run_workspace_layers(
+                &hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon, position,
+            )?;
+            return Ok((hidden_gpu, true));
+        }
+
+        if self.has_indexed_weights() && self.indexed_layer_weights.len() == num_layers {
+            hidden_gpu = self.run_indexed_layers(
+                hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon,
+            )?;
+            return Ok((hidden_gpu, false));
+        }
+
         let layer_keys: Vec<(String, String)> = (0..num_layers)
             .map(|i| {
                 (
@@ -440,75 +513,42 @@ impl CudaExecutor {
                 )
             })
             .collect();
+        hidden_gpu = self.run_legacy_layers(
+            hidden_gpu, num_layers, &layer_keys, hidden_dim, intermediate_dim, epsilon,
+        )?;
+        Ok((hidden_gpu, false))
+    }
 
-        // 3. Upload input embedding - sync point #1
-        // PAR-044: Check if we can use zero-allocation workspace path
-        let use_workspace = self.has_workspace()
-            && self.has_indexed_weights()
-            && self.indexed_layer_weights.len() == num_layers;
-
-        let mut hidden_gpu = self.pad_and_upload_input(input)?;
-
-        // 4. Chain all transformer layers (no intermediate syncs)
-        // PAR-044: Use workspace path for zero-allocation forward (fastest)
-        // PAR-043: Use indexed path if weights are pre-indexed (10x faster per-token)
-        // PAR-044 FIX: Track which buffer has output to avoid unnecessary D2D copy
-        // PAR-044: Workspace path enabled - confirmed same performance as indexed path
-        // See five-whys-gpu-performance-gap for analysis
-        let workspace_used = if use_workspace {
-            self.run_workspace_layers(
-                &hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon, position,
-            )?;
-            true
-        } else if self.has_indexed_weights() && self.indexed_layer_weights.len() == num_layers {
-            hidden_gpu = self.run_indexed_layers(
-                hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon,
-            )?;
-            false
-        } else {
-            hidden_gpu = self.run_legacy_layers(
-                hidden_gpu, num_layers, &layer_keys, hidden_dim, intermediate_dim, epsilon,
-            )?;
-            false
-        };
-
-        // PERF-002: Debug code removed (was PAR-058-DEBUG hidden state check)
-        // D2H transfer + NaN check was ~15ms overhead per token
-
-        // CORRECTNESS-001: Compare hidden state before output norm
+    /// Cached read of `GPU_DEBUG=1`. Once-init so the env var is only
+    /// consulted on the first call per process.
+    fn gpu_debug_enabled() -> bool {
         static HIDDEN_DEBUG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let debug_enabled = *HIDDEN_DEBUG.get_or_init(|| {
+        *HIDDEN_DEBUG.get_or_init(|| {
             std::env::var("GPU_DEBUG")
                 .map(|v| v == "1")
                 .unwrap_or(false)
-        });
-        self.debug_dump_hidden_state(&hidden_gpu, workspace_used, debug_enabled)?;
+        })
+    }
 
-        // 5. Output RMSNorm on GPU (no sync)
-        // PAR-PROFILE: Brick timer for output norm
+    /// Run output RMSNorm bracketed by a profiler brick when profiling is on.
+    fn apply_output_rmsnorm_timed(
+        &mut self,
+        hidden_gpu: &GpuBuffer<f32>,
+        workspace_used: bool,
+        hidden_dim: u32,
+        epsilon: f32,
+    ) -> Result<GpuBuffer<f32>, GpuError> {
         let profiling = self.profiler.is_enabled();
-        let timer_output_norm = if profiling {
+        let timer = if profiling {
             self.start_brick_id(trueno::BrickId::RmsNorm)
         } else {
             None
         };
-
-        let normed_hidden = self.apply_output_rmsnorm(
-            &hidden_gpu, workspace_used, hidden_dim, epsilon,
-        )?;
-
-        // CORRECTNESS-002: Debug normed_hidden output (before LM head)
-        self.debug_dump_normed_hidden(&normed_hidden, debug_enabled)?;
-
-        // PAR-PROFILE: Stop output norm timer, start LM head timer
+        let normed = self.apply_output_rmsnorm(hidden_gpu, workspace_used, hidden_dim, epsilon)?;
         if profiling {
-            self.stop_brick_id(timer_output_norm, 1);
+            self.stop_brick_id(timer, 1);
         }
-
-        // 6-7. LM head projection + final sync + download
-        self.dispatch_lm_head_and_download(
-            &normed_hidden, logits, vocab_size, hidden_dim, debug_enabled,
-        )
+        Ok(normed)
     }
 
     /// realizr#203: Apply output norm + LM head to a pre-computed hidden state.
