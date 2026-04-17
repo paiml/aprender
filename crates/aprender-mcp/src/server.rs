@@ -67,6 +67,8 @@ impl AprMcpServer {
             Some(tools::validate::NAME) => tools::validate::call(&arguments),
             Some(tools::tensors::NAME) => tools::tensors::call(&arguments),
             Some(tools::bench::NAME) => tools::bench::call(&arguments),
+            Some(tools::qa::NAME) => tools::qa::call(&arguments),
+            Some(tools::trace::NAME) => tools::trace::call(&arguments),
             Some(other) => ToolCallResult::error(format!("Unknown tool: {other}")),
             None => ToolCallResult::error("Missing tool name"),
         };
@@ -85,6 +87,8 @@ impl AprMcpServer {
             tools::validate_tool_definition(),
             tools::tensors_tool_definition(),
             tools::bench_tool_definition(),
+            tools::qa_tool_definition(),
+            tools::trace_tool_definition(),
         ]
     }
 
@@ -162,7 +166,14 @@ mod tests {
         let result = resp.result.expect("result present");
         let tools = result["tools"].as_array().expect("tools array");
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        for expected in ["apr.version", "apr.validate", "apr.tensors", "apr.bench"] {
+        for expected in [
+            "apr.version",
+            "apr.validate",
+            "apr.tensors",
+            "apr.bench",
+            "apr.qa",
+            "apr.trace",
+        ] {
             assert!(names.contains(&expected), "{expected} registered");
         }
 
