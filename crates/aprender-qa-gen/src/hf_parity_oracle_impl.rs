@@ -146,48 +146,47 @@ impl HfParityOracle {
                 actual: actual.len(),
             });
         }
-
         if expected.is_empty() {
             return Ok(());
         }
 
-        let mut max_diff: f32 = 0.0;
-        let mut max_diff_idx: usize = 0;
-        let mut num_mismatches: usize = 0;
-        let mut sum_diff: f64 = 0.0;
+        let stats = self.accumulate_mismatch_stats(expected, actual);
+        let total = expected.len();
+        #[allow(clippy::cast_precision_loss)]
+        let mismatch_ratio = stats.num_mismatches as f32 / total as f32;
+        if mismatch_ratio <= self.tolerance.max_mismatch_ratio {
+            return Ok(());
+        }
 
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+        let mean_diff = (stats.sum_diff / total as f64) as f32;
+        Err(TensorDiff::ValueMismatch {
+            num_mismatches: stats.num_mismatches,
+            total,
+            mismatch_ratio,
+            max_diff: stats.max_diff,
+            max_diff_idx: stats.max_diff_idx,
+            expected_val: expected[stats.max_diff_idx],
+            actual_val: actual[stats.max_diff_idx],
+            mean_diff,
+        })
+    }
+
+    /// Single-pass accumulate max/sum/mismatch stats over `(expected, actual)`.
+    fn accumulate_mismatch_stats(&self, expected: &[f32], actual: &[f32]) -> MismatchStats {
+        let mut stats = MismatchStats::default();
         for (i, (&e, &a)) in expected.iter().zip(actual.iter()).enumerate() {
             let diff = (e - a).abs();
-            sum_diff += f64::from(diff);
-
+            stats.sum_diff += f64::from(diff);
             if !self.tolerance.is_close(a, e) {
-                num_mismatches += 1;
-                if diff > max_diff {
-                    max_diff = diff;
-                    max_diff_idx = i;
+                stats.num_mismatches += 1;
+                if diff > stats.max_diff {
+                    stats.max_diff = diff;
+                    stats.max_diff_idx = i;
                 }
             }
         }
-
-        let mismatch_ratio = num_mismatches as f32 / expected.len() as f32;
-        // Mean diff is intentionally truncated to f32 for consistency with tensor data
-        #[allow(clippy::cast_possible_truncation)]
-        let mean_diff = (sum_diff / expected.len() as f64) as f32;
-
-        if mismatch_ratio > self.tolerance.max_mismatch_ratio {
-            Err(TensorDiff::ValueMismatch {
-                num_mismatches,
-                total: expected.len(),
-                mismatch_ratio,
-                max_diff,
-                max_diff_idx,
-                expected_val: expected[max_diff_idx],
-                actual_val: actual[max_diff_idx],
-                mean_diff,
-            })
-        } else {
-            Ok(())
-        }
+        stats
     }
 
     /// Compare actual output tensor file against golden.
@@ -309,89 +308,108 @@ impl HfParityOracle {
 impl Oracle for HfParityOracle {
     /// Evaluate model output by comparing text or tensor data against golden reference
     fn evaluate(&self, prompt: &str, output: &str) -> OracleResult {
-        // Try to load golden output for this prompt
         let golden = match self.load_golden(prompt) {
             Ok(g) => g,
-            Err(e) => {
-                // No golden output available - skip (not a failure)
-                return OracleResult::Corroborated {
-                    evidence: format!(
-                        "No golden output for prompt (hash: {}): {e}",
-                        hash_prompt(prompt)
-                    ),
-                };
-            }
+            Err(e) => return skip_result_no_golden(prompt, &e),
         };
 
-        // If golden has expected text, compare text output
-        if let Some(expected_text) = &golden.text {
-            let output_trimmed = output.trim();
-            let expected_trimmed = expected_text.trim();
-
-            if output_trimmed == expected_trimmed {
-                return OracleResult::Corroborated {
-                    evidence: format!(
-                        "Text output matches HF golden ({} chars)",
-                        output_trimmed.len()
-                    ),
-                };
-            }
-            // Text mismatch - only fall through to tensor comparison if output
-            // is an existing .safetensors file path; otherwise falsify immediately
-            let output_path = Path::new(output_trimmed);
-            if !output_path.exists()
-                || output_path
-                    .extension()
-                    .is_none_or(|ext| ext != "safetensors")
-            {
-                return OracleResult::Falsified {
-                    reason: "Text output differs from HF golden".to_string(),
-                    evidence: format!(
-                        "Expected: '{}'\nActual: '{}'",
-                        truncate(expected_trimmed, 100),
-                        truncate(output_trimmed, 100)
-                    ),
-                };
-            }
+        if let Some(result) = self.evaluate_text_branch(&golden, output) {
+            return result;
         }
 
-        // Try to interpret output as a tensor file path
-        let output_path = Path::new(output.trim());
-        if output_path.exists()
-            && output_path
-                .extension()
-                .is_some_and(|ext| ext == "safetensors")
-        {
-            match self.compare_tensor_file(output_path, &golden) {
-                Ok(()) => {
-                    return OracleResult::Corroborated {
-                        evidence: format!(
-                            "Tensor parity verified: {} elements within tolerance (atol={}, rtol={})",
-                            golden.logits.len(),
-                            self.tolerance.atol_fp32,
-                            self.tolerance.rtol_fp32
-                        ),
-                    };
-                }
-                Err(diff) => {
-                    return OracleResult::Falsified {
-                        reason: "Tensor mismatch with HF golden".to_string(),
-                        evidence: diff.to_string(),
-                    };
-                }
-            }
-        }
-
-        // Output is plain text, no tensor file - check for text comparison
-        OracleResult::Corroborated {
-            evidence: "Output is text, no tensor comparison available".to_string(),
-        }
+        self.evaluate_tensor_branch(&golden, output)
     }
 
     /// Return the oracle identifier string
     fn name(&self) -> &'static str {
         "hf_parity"
     }
+}
+
+impl HfParityOracle {
+    /// Text branch: compare trimmed output to `golden.text`. Returns `None` when
+    /// the output might still be a tensor file path worth tensor-comparing
+    /// (either no golden text or text matched).
+    fn evaluate_text_branch(&self, golden: &GoldenOutput, output: &str) -> Option<OracleResult> {
+        let expected_text = golden.text.as_ref()?;
+        let output_trimmed = output.trim();
+        let expected_trimmed = expected_text.trim();
+
+        if output_trimmed == expected_trimmed {
+            return Some(OracleResult::Corroborated {
+                evidence: format!(
+                    "Text output matches HF golden ({} chars)",
+                    output_trimmed.len()
+                ),
+            });
+        }
+
+        if is_existing_safetensors(output_trimmed) {
+            return None;
+        }
+
+        Some(OracleResult::Falsified {
+            reason: "Text output differs from HF golden".to_string(),
+            evidence: format!(
+                "Expected: '{}'\nActual: '{}'",
+                truncate(expected_trimmed, 100),
+                truncate(output_trimmed, 100)
+            ),
+        })
+    }
+
+    /// Tensor branch: if output is an existing safetensors file, compare it to
+    /// `golden`. Otherwise treat the output as plain text (corroborated).
+    fn evaluate_tensor_branch(&self, golden: &GoldenOutput, output: &str) -> OracleResult {
+        let output_trimmed = output.trim();
+        if !is_existing_safetensors(output_trimmed) {
+            return OracleResult::Corroborated {
+                evidence: "Output is text, no tensor comparison available".to_string(),
+            };
+        }
+
+        let output_path = Path::new(output_trimmed);
+        match self.compare_tensor_file(output_path, golden) {
+            Ok(()) => OracleResult::Corroborated {
+                evidence: format!(
+                    "Tensor parity verified: {} elements within tolerance (atol={}, rtol={})",
+                    golden.logits.len(),
+                    self.tolerance.atol_fp32,
+                    self.tolerance.rtol_fp32
+                ),
+            },
+            Err(diff) => OracleResult::Falsified {
+                reason: "Tensor mismatch with HF golden".to_string(),
+                evidence: diff.to_string(),
+            },
+        }
+    }
+}
+
+/// Missing-golden case: corroborate with a note so tests without reference data
+/// don't falsify runs.
+fn skip_result_no_golden(prompt: &str, err: &str) -> OracleResult {
+    OracleResult::Corroborated {
+        evidence: format!(
+            "No golden output for prompt (hash: {}): {err}",
+            hash_prompt(prompt)
+        ),
+    }
+}
+
+/// True iff `trimmed` names an existing file with a `.safetensors` extension.
+fn is_existing_safetensors(trimmed: &str) -> bool {
+    let path = Path::new(trimmed);
+    path.exists() && path.extension().is_some_and(|ext| ext == "safetensors")
+}
+
+/// Per-pass accumulator for `tensors_close`.
+#[derive(Default)]
+struct MismatchStats {
+    max_diff: f32,
+    max_diff_idx: usize,
+    num_mismatches: usize,
+    sum_diff: f64,
 }
 
 /// Hash a prompt string for golden output lookup.
