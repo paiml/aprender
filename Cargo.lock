@@ -288,6 +288,7 @@ version = "0.30.0"
 dependencies = [
  "alimentar",
  "aprender-core 0.30.0",
+ "aprender-mcp",
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-serve",
@@ -967,6 +968,15 @@ dependencies = [
  "criterion 0.7.0",
  "proptest",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "aprender-mcp"
+version = "0.30.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

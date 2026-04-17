@@ -3,6 +3,7 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
+use std::collections::HashMap;
 
 /// Tool name registered with MCP clients.
 pub const NAME: &str = "apr.version";
@@ -11,24 +12,16 @@ pub const NAME: &str = "apr.version";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Return the MCP tool definition for `apr.version`.
-///
-/// FALSIFY-MCP-008: the `inputSchema` is parsed from the build-time codegen
-/// constant `crate::schemas::APR_VERSION_SCHEMA`, which `build.rs` emits from
-/// `contracts/apr-mcp-tool-schemas-v1.yaml`. The contract is the single
-/// source of truth — the live `tools/list` response and the YAML must agree
-/// byte-for-byte after JSON canonicalization (asserted by
-/// `tests/falsify_mcp_008.rs`).
 #[must_use]
 pub fn version_tool_definition() -> ToolDefinition {
-    let input_schema: InputSchema = serde_json::from_str(crate::schemas::APR_VERSION_SCHEMA)
-        .expect(
-            "FALSIFY-MCP-008: apr.version codegen constant must parse as InputSchema; \
-             regenerate by editing contracts/apr-mcp-tool-schemas-v1.yaml and rebuilding",
-        );
     ToolDefinition {
         name: NAME.to_string(),
-        description: crate::schemas::APR_VERSION_DESCRIPTION.to_string(),
-        input_schema,
+        description: "Return the aprender-mcp server version. Takes no arguments.".to_string(),
+        input_schema: InputSchema {
+            schema_type: "object".to_string(),
+            properties: HashMap::new(),
+            required: vec![],
+        },
     }
 }
 
