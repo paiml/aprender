@@ -879,14 +879,30 @@ pub fn load<R: std::io::Read>(reader: &mut R) -> Result<LoadedDataset> {
 ///
 /// Returns error if deserialization, decompression, decryption,
 /// signature verification, license validation, or checksum validation fails.
-#[allow(clippy::too_many_lines)]
 pub fn load_with_options<R: std::io::Read>(
     reader: &mut R,
     options: &LoadOptions,
 ) -> Result<LoadedDataset> {
-    use arrow::ipc::reader::StreamReader;
+    let (all_data, checksum_offset) = read_and_verify_integrity(reader)?;
+    let (header, metadata, metadata_end) = parse_header_and_metadata(&all_data)?;
+    let (payload_end, compressed_payload) =
+        extract_payload_bytes(&header, &all_data, metadata_end, checksum_offset, options)?;
+    let (signer_public_key, license_block) =
+        parse_trailing_blocks(&header, &all_data, payload_end, checksum_offset, options)?;
+    let decompressed_payload = decompress_payload(compressed_payload, header.compression)?;
+    let batches = parse_arrow_batches(decompressed_payload)?;
+    Ok(LoadedDataset {
+        header,
+        metadata,
+        batches,
+        license: license_block,
+        signer_public_key,
+    })
+}
 
-    // Read all data
+/// Read all bytes from `reader`, validate minimum size, and verify the trailing CRC32 checksum.
+/// Returns `(all_data, checksum_offset)` on success.
+fn read_and_verify_integrity<R: std::io::Read>(reader: &mut R) -> Result<(Vec<u8>, usize)> {
     let mut all_data = Vec::new();
     reader
         .read_to_end(&mut all_data)
@@ -896,7 +912,6 @@ pub fn load_with_options<R: std::io::Read>(
         return Err(Error::Format("File too small".to_string()));
     }
 
-    // Split off checksum (last 4 bytes)
     let checksum_offset = all_data.len() - 4;
     let stored_checksum = u32::from_le_bytes([
         all_data[checksum_offset],
@@ -905,7 +920,6 @@ pub fn load_with_options<R: std::io::Read>(
         all_data[checksum_offset + 3],
     ]);
 
-    // Verify checksum
     let computed_checksum = crc32(&all_data[..checksum_offset]);
     if stored_checksum != computed_checksum {
         return Err(Error::ChecksumMismatch {
@@ -914,21 +928,31 @@ pub fn load_with_options<R: std::io::Read>(
         });
     }
 
-    // Parse header
-    let header = Header::from_bytes(&all_data[..HEADER_SIZE])?;
+    Ok((all_data, checksum_offset))
+}
 
-    // Parse metadata
+/// Parse the fixed header and metadata block.
+/// Returns `(header, metadata, metadata_end_offset)`.
+fn parse_header_and_metadata(all_data: &[u8]) -> Result<(Header, Metadata, usize)> {
+    let header = Header::from_bytes(&all_data[..HEADER_SIZE])?;
     let metadata_start = HEADER_SIZE;
     let metadata_end = metadata_start + header.metadata_size as usize;
     let metadata: Metadata = rmp_serde::from_slice(&all_data[metadata_start..metadata_end])
         .map_err(|e| Error::Format(format!("Metadata parse error: {e}")))?;
+    Ok((header, metadata, metadata_end))
+}
 
-    // Skip schema (embedded in payload IPC stream)
+/// Locate the compressed payload bytes, decrypting if the header is flagged encrypted.
+/// Returns `(payload_end_offset, compressed_payload_bytes)`.
+fn extract_payload_bytes(
+    header: &Header,
+    all_data: &[u8],
+    metadata_end: usize,
+    checksum_offset: usize,
+    options: &LoadOptions,
+) -> Result<(usize, Vec<u8>)> {
     let schema_end = metadata_end + header.schema_size as usize;
-
-    // Determine encryption header size
-    let encryption_header_size = determine_encryption_header_size(&header, &all_data, schema_end)?;
-
+    let encryption_header_size = determine_encryption_header_size(header, all_data, schema_end)?;
     let payload_start = schema_end + encryption_header_size;
     let payload_end = payload_start + header.payload_size as usize;
 
@@ -936,52 +960,64 @@ pub fn load_with_options<R: std::io::Read>(
         return Err(Error::Format("Payload extends beyond data".to_string()));
     }
 
-    // Extract and decrypt payload if encrypted
-    let compressed_payload: Vec<u8> = if header.is_encrypted() {
-        #[cfg(feature = "format-encryption")]
-        {
-            let enc_header = &all_data[schema_end..payload_start];
-            let ciphertext = &all_data[payload_start..payload_end];
+    let bytes = decrypt_or_copy_payload(
+        header,
+        all_data,
+        schema_end,
+        payload_start,
+        payload_end,
+        options,
+    )?;
+    Ok((payload_end, bytes))
+}
 
-            let decryption_params = options.decryption.as_ref().ok_or_else(|| {
-                Error::Format("Dataset is encrypted but no decryption params provided".to_string())
-            })?;
+/// Decrypt the payload if encrypted; otherwise return a copy of the raw payload slice.
+#[cfg(feature = "format-encryption")]
+fn decrypt_or_copy_payload(
+    header: &Header,
+    all_data: &[u8],
+    schema_end: usize,
+    payload_start: usize,
+    payload_end: usize,
+    options: &LoadOptions,
+) -> Result<Vec<u8>> {
+    if !header.is_encrypted() {
+        return Ok(all_data[payload_start..payload_end].to_vec());
+    }
+    let enc_header = &all_data[schema_end..payload_start];
+    let ciphertext = &all_data[payload_start..payload_end];
+    let decryption_params = options.decryption.as_ref().ok_or_else(|| {
+        Error::Format("Dataset is encrypted but no decryption params provided".to_string())
+    })?;
+    decrypt_payload(enc_header, ciphertext, decryption_params)
+}
 
-            decrypt_payload(enc_header, ciphertext, decryption_params)?
-        }
-        #[cfg(not(feature = "format-encryption"))]
-        {
-            return Err(Error::Format(
-                "Dataset is encrypted but format-encryption feature is not enabled".to_string(),
-            ));
-        }
-    } else {
-        all_data[payload_start..payload_end].to_vec()
-    };
+#[cfg(not(feature = "format-encryption"))]
+fn decrypt_or_copy_payload(
+    header: &Header,
+    all_data: &[u8],
+    _schema_end: usize,
+    payload_start: usize,
+    payload_end: usize,
+    _options: &LoadOptions,
+) -> Result<Vec<u8>> {
+    if header.is_encrypted() {
+        return Err(Error::Format(
+            "Dataset is encrypted but format-encryption feature is not enabled".to_string(),
+        ));
+    }
+    Ok(all_data[payload_start..payload_end].to_vec())
+}
 
-    // Parse trailing blocks (signature, license)
-    let (signer_public_key, license_block) =
-        parse_trailing_blocks(&header, &all_data, payload_end, checksum_offset, options)?;
-
-    // Decompress payload
-    let decompressed_payload = decompress_payload(compressed_payload, header.compression)?;
-
-    // Parse Arrow IPC stream
+/// Parse the Arrow IPC stream from the decompressed payload into a vector of `RecordBatch`es.
+fn parse_arrow_batches(decompressed_payload: Vec<u8>) -> Result<Vec<arrow::record_batch::RecordBatch>> {
+    use arrow::ipc::reader::StreamReader;
     let cursor = std::io::Cursor::new(decompressed_payload);
     let stream_reader = StreamReader::try_new(cursor, None).map_err(Error::Arrow)?;
-
-    let batches: Vec<_> = stream_reader
+    stream_reader
         .into_iter()
         .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(Error::Arrow)?;
-
-    Ok(LoadedDataset {
-        header,
-        metadata,
-        batches,
-        license: license_block,
-        signer_public_key,
-    })
+        .map_err(Error::Arrow)
 }
 
 /// Determine the encryption header size from the mode byte.
