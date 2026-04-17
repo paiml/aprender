@@ -108,134 +108,18 @@ fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
         ));
     }
 
-    // Check magic
-    let magic = u32::from_le_bytes([input[0], input[1], input[2], input[3]]);
-    if magic != ZSTD_MAGIC {
-        return Err(Error::CorruptedData(format!(
-            "invalid magic: expected {ZSTD_MAGIC:#X}, got {magic:#X}"
-        )));
-    }
+    check_magic(input)?;
     *pos = 4;
 
-    // Read descriptor
-    let descriptor = input[*pos];
-    *pos += 1;
-
+    let descriptor = read_u8(input, pos, "descriptor")?;
     let fcs_flag = (descriptor >> 6) & 0x03;
     let single_segment = (descriptor >> 5) & 0x01 != 0;
     let checksum = (descriptor >> 2) & 0x01 != 0;
     let dict_id_flag = descriptor & 0x03;
 
-    // Window descriptor (if not single segment)
-    let window_size = if single_segment {
-        0 // Will be determined by frame content size
-    } else {
-        if *pos >= input.len() {
-            return Err(Error::CorruptedData(
-                "missing window descriptor".to_string(),
-            ));
-        }
-        let wd = input[*pos];
-        *pos += 1;
-        let exponent = u64::from(wd >> 3);
-        let mantissa = u64::from(wd & 0x07);
-        (1u64 << (10 + exponent)) + (mantissa << (7 + exponent))
-    };
-
-    // Dictionary ID
-    let dictionary_id = match dict_id_flag {
-        0 => None,
-        1 => {
-            if *pos >= input.len() {
-                return Err(Error::CorruptedData("missing dict id".to_string()));
-            }
-            let id = u32::from(input[*pos]);
-            *pos += 1;
-            Some(id)
-        }
-        2 => {
-            if *pos + 2 > input.len() {
-                return Err(Error::CorruptedData("missing dict id".to_string()));
-            }
-            let id = u32::from(u16::from_le_bytes([input[*pos], input[*pos + 1]]));
-            *pos += 2;
-            Some(id)
-        }
-        3 => {
-            if *pos + 4 > input.len() {
-                return Err(Error::CorruptedData("missing dict id".to_string()));
-            }
-            let id = u32::from_le_bytes([
-                input[*pos],
-                input[*pos + 1],
-                input[*pos + 2],
-                input[*pos + 3],
-            ]);
-            *pos += 4;
-            Some(id)
-        }
-        _ => unreachable!(),
-    };
-
-    // Frame content size
-    let frame_content_size = match fcs_flag {
-        0 if single_segment => {
-            if *pos >= input.len() {
-                return Err(Error::CorruptedData(
-                    "missing frame content size".to_string(),
-                ));
-            }
-            let size = u64::from(input[*pos]);
-            *pos += 1;
-            Some(size)
-        }
-        0 => None,
-        1 => {
-            if *pos + 2 > input.len() {
-                return Err(Error::CorruptedData(
-                    "missing frame content size".to_string(),
-                ));
-            }
-            let size = u64::from(u16::from_le_bytes([input[*pos], input[*pos + 1]])) + 256;
-            *pos += 2;
-            Some(size)
-        }
-        2 => {
-            if *pos + 4 > input.len() {
-                return Err(Error::CorruptedData(
-                    "missing frame content size".to_string(),
-                ));
-            }
-            let size = u64::from(u32::from_le_bytes([
-                input[*pos],
-                input[*pos + 1],
-                input[*pos + 2],
-                input[*pos + 3],
-            ]));
-            *pos += 4;
-            Some(size)
-        }
-        3 => {
-            if *pos + 8 > input.len() {
-                return Err(Error::CorruptedData(
-                    "missing frame content size".to_string(),
-                ));
-            }
-            let size = u64::from_le_bytes([
-                input[*pos],
-                input[*pos + 1],
-                input[*pos + 2],
-                input[*pos + 3],
-                input[*pos + 4],
-                input[*pos + 5],
-                input[*pos + 6],
-                input[*pos + 7],
-            ]);
-            *pos += 8;
-            Some(size)
-        }
-        _ => unreachable!(),
-    };
+    let window_size = read_window_size(input, pos, single_segment)?;
+    let dictionary_id = read_dictionary_id(input, pos, dict_id_flag)?;
+    let frame_content_size = read_frame_content_size(input, pos, fcs_flag, single_segment)?;
 
     Ok(FrameHeader {
         window_size,
@@ -244,6 +128,108 @@ fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
         checksum,
         single_segment,
     })
+}
+
+fn check_magic(input: &[u8]) -> Result<()> {
+    let magic = u32::from_le_bytes([input[0], input[1], input[2], input[3]]);
+    if magic != ZSTD_MAGIC {
+        return Err(Error::CorruptedData(format!(
+            "invalid magic: expected {ZSTD_MAGIC:#X}, got {magic:#X}"
+        )));
+    }
+    Ok(())
+}
+
+fn read_u8(input: &[u8], pos: &mut usize, what: &str) -> Result<u8> {
+    if *pos >= input.len() {
+        return Err(Error::CorruptedData(format!("missing {what}")));
+    }
+    let v = input[*pos];
+    *pos += 1;
+    Ok(v)
+}
+
+fn read_u16_le(input: &[u8], pos: &mut usize, what: &str) -> Result<u16> {
+    if *pos + 2 > input.len() {
+        return Err(Error::CorruptedData(format!("missing {what}")));
+    }
+    let v = u16::from_le_bytes([input[*pos], input[*pos + 1]]);
+    *pos += 2;
+    Ok(v)
+}
+
+fn read_u32_le(input: &[u8], pos: &mut usize, what: &str) -> Result<u32> {
+    if *pos + 4 > input.len() {
+        return Err(Error::CorruptedData(format!("missing {what}")));
+    }
+    let v = u32::from_le_bytes([
+        input[*pos],
+        input[*pos + 1],
+        input[*pos + 2],
+        input[*pos + 3],
+    ]);
+    *pos += 4;
+    Ok(v)
+}
+
+fn read_u64_le(input: &[u8], pos: &mut usize, what: &str) -> Result<u64> {
+    if *pos + 8 > input.len() {
+        return Err(Error::CorruptedData(format!("missing {what}")));
+    }
+    let v = u64::from_le_bytes([
+        input[*pos],
+        input[*pos + 1],
+        input[*pos + 2],
+        input[*pos + 3],
+        input[*pos + 4],
+        input[*pos + 5],
+        input[*pos + 6],
+        input[*pos + 7],
+    ]);
+    *pos += 8;
+    Ok(v)
+}
+
+fn read_window_size(input: &[u8], pos: &mut usize, single_segment: bool) -> Result<u64> {
+    if single_segment {
+        return Ok(0);
+    }
+    let wd = read_u8(input, pos, "window descriptor")?;
+    let exponent = u64::from(wd >> 3);
+    let mantissa = u64::from(wd & 0x07);
+    Ok((1u64 << (10 + exponent)) + (mantissa << (7 + exponent)))
+}
+
+fn read_dictionary_id(input: &[u8], pos: &mut usize, flag: u8) -> Result<Option<u32>> {
+    match flag {
+        0 => Ok(None),
+        1 => Ok(Some(u32::from(read_u8(input, pos, "dict id")?))),
+        2 => Ok(Some(u32::from(read_u16_le(input, pos, "dict id")?))),
+        3 => Ok(Some(read_u32_le(input, pos, "dict id")?)),
+        _ => unreachable!(),
+    }
+}
+
+fn read_frame_content_size(
+    input: &[u8],
+    pos: &mut usize,
+    flag: u8,
+    single_segment: bool,
+) -> Result<Option<u64>> {
+    match flag {
+        0 if single_segment => Ok(Some(u64::from(read_u8(input, pos, "frame content size")?))),
+        0 => Ok(None),
+        1 => Ok(Some(
+            u64::from(read_u16_le(input, pos, "frame content size")?) + 256,
+        )),
+        2 => Ok(Some(u64::from(read_u32_le(
+            input,
+            pos,
+            "frame content size",
+        )?))),
+        3 => Ok(Some(read_u64_le(input, pos, "frame content size")?)),
+        _ => unreachable!(),
+    }
 }
 
 fn read_block_header(input: &[u8], pos: &mut usize) -> Result<BlockHeader> {
