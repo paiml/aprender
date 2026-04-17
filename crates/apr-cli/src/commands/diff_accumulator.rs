@@ -74,67 +74,91 @@ fn print_diff_diagnosis(
     medium: usize,
 ) {
     if critical > 0 {
-        println!(
-            "║ {} ║",
-            "DIAGNOSIS: Critical value differences detected!"
-                .red()
-                .bold()
-        );
-        println!("║ {:<75} ║", "Possible causes:".yellow());
-        println!(
-            "║ {:<75} ║",
-            "  - Different quantization/dequantization algorithms"
-        );
-        println!(
-            "║ {:<75} ║",
-            "  - Tensor layout mismatch (row-major vs column-major)"
-        );
-        println!("║ {:<75} ║", "  - Corrupted weights during conversion");
+        print_critical_diagnosis();
     } else if large > 0 {
-        println!(
-            "║ {} ║",
-            "DIAGNOSIS: Large value differences - may affect inference quality"
-                .yellow()
-                .bold()
-        );
-        let transposed_with_diffs = results
-            .iter()
-            .filter(|r| {
-                let is_t = r.shape_a.len() == 2
-                    && r.shape_b.len() == 2
-                    && r.shape_a[0] == r.shape_b[1]
-                    && r.shape_a[1] == r.shape_b[0];
-                is_t && r.status != TensorDiffStatus::Transposed
-            })
-            .count();
-        if transposed_with_diffs > 0 {
-            println!(
-                "║ {:<75} ║",
-                "NOTE: Differences in transposed tensors may be expected when".cyan()
-            );
-            println!(
-                "║ {:<75} ║",
-                "comparing GGUF (col-major) to APR (row-major) linearly.".cyan()
-            );
-        }
+        print_large_diagnosis(results);
     } else if medium > 0 {
-        println!(
-            "║ {} ║",
-            "DIAGNOSIS: Medium differences - likely acceptable quantization variance".blue()
-        );
+        print_medium_diagnosis();
     } else if transposed > 0 && identical > 0 {
-        println!(
-            "║ {} ║",
-            "DIAGNOSIS: Values identical, shapes transposed (format layout diff)"
-                .cyan()
-                .bold()
-        );
+        print_transposed_diagnosis();
     } else {
+        print_identical_diagnosis();
+    }
+}
+
+fn print_critical_diagnosis() {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Critical value differences detected!"
+            .red()
+            .bold()
+    );
+    println!("║ {:<75} ║", "Possible causes:".yellow());
+    println!(
+        "║ {:<75} ║",
+        "  - Different quantization/dequantization algorithms"
+    );
+    println!(
+        "║ {:<75} ║",
+        "  - Tensor layout mismatch (row-major vs column-major)"
+    );
+    println!("║ {:<75} ║", "  - Corrupted weights during conversion");
+}
+
+fn print_large_diagnosis(results: &[TensorValueStats]) {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Large value differences - may affect inference quality"
+            .yellow()
+            .bold()
+    );
+    let transposed_with_diffs = results
+        .iter()
+        .filter(|r| {
+            is_shape_transposed(&r.shape_a, &r.shape_b) && r.status != TensorDiffStatus::Transposed
+        })
+        .count();
+    if transposed_with_diffs > 0 {
         println!(
-            "║ {} ║",
-            "DIAGNOSIS: Tensors are nearly identical".green().bold()
+            "║ {:<75} ║",
+            "NOTE: Differences in transposed tensors may be expected when".cyan()
+        );
+        println!(
+            "║ {:<75} ║",
+            "comparing GGUF (col-major) to APR (row-major) linearly.".cyan()
         );
     }
+}
+
+fn print_medium_diagnosis() {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Medium differences - likely acceptable quantization variance".blue()
+    );
+}
+
+fn print_transposed_diagnosis() {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Values identical, shapes transposed (format layout diff)"
+            .cyan()
+            .bold()
+    );
+}
+
+fn print_identical_diagnosis() {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Tensors are nearly identical".green().bold()
+    );
+}
+
+/// A pair of 2D shapes is transposed iff shape_a == reverse(shape_b).
+fn is_shape_transposed(shape_a: &[usize], shape_b: &[usize]) -> bool {
+    shape_a.len() == 2
+        && shape_b.len() == 2
+        && shape_a[0] == shape_b[1]
+        && shape_a[1] == shape_b[0]
 }
 
 /// Look up element in data_b at the transposed position corresponding to index `i` in data_a.
