@@ -404,6 +404,23 @@ fn run_tool_tests(
 ) {
     use aprender_qa_runner::ToolExecutor;
 
+    print_tool_tests_banner(model_path, no_gpu, include_serve);
+
+    let executor = ToolExecutor::new(model_path.to_string_lossy().to_string(), no_gpu, 120_000);
+    let results = executor.execute_all_with_serve(include_serve);
+
+    let (passed, failed) = print_tool_results_table(&results);
+    println!("{}", "-".repeat(60));
+    println!("Total: {passed} passed, {failed} failed\n");
+
+    save_tool_results_json_or_exit(&results, output_dir);
+
+    if failed > 0 {
+        std::process::exit(1);
+    }
+}
+
+fn print_tool_tests_banner(model_path: &std::path::Path, no_gpu: bool, include_serve: bool) {
     println!("=== APR Tool Coverage Tests ===\n");
     println!("Model: {}", model_path.display());
     println!("GPU: {}", if no_gpu { "disabled" } else { "enabled" });
@@ -411,41 +428,34 @@ fn run_tool_tests(
         "Serve test: {}\n",
         if include_serve { "enabled" } else { "disabled" }
     );
+}
 
-    let executor = ToolExecutor::new(model_path.to_string_lossy().to_string(), no_gpu, 120_000);
-
-    let results = executor.execute_all_with_serve(include_serve);
-
-    let mut passed = 0;
-    let mut failed = 0;
-
+/// Print per-tool results table, return (passed, failed) counts.
+fn print_tool_results_table(results: &[aprender_qa_runner::ToolTestResult]) -> (usize, usize) {
     println!("{:<20} {:<10} {:<10} Duration", "Tool", "Status", "Exit");
     println!("{}", "-".repeat(60));
 
-    for result in &results {
-        let status = if result.passed {
-            "✅ PASS"
-        } else {
-            "❌ FAIL"
-        };
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+    for result in results {
+        let status = if result.passed { "✅ PASS" } else { "❌ FAIL" };
         println!(
             "{:<20} {:<10} {:<10} {}ms",
             result.tool, status, result.exit_code, result.duration_ms
         );
-
         if result.passed {
             passed += 1;
         } else {
             failed += 1;
         }
     }
+    (passed, failed)
+}
 
-    println!("{}", "-".repeat(60));
-    println!("Total: {passed} passed, {failed} failed\n");
-
-    let has_failures = failed > 0;
-
-    // Save results to JSON
+fn save_tool_results_json_or_exit(
+    results: &[aprender_qa_runner::ToolTestResult],
+    output_dir: &std::path::Path,
+) {
     if let Err(e) = std::fs::create_dir_all(output_dir) {
         eprintln!("Error creating output directory: {e}");
         std::process::exit(1);
@@ -475,13 +485,8 @@ fn run_tool_tests(
     if let Err(e) = std::fs::write(&results_path, results_json) {
         eprintln!("Error saving tool test results: {e}");
         std::process::exit(1);
-    } else {
-        println!("Results saved to: {}", results_path.display());
     }
-
-    if has_failures {
-        std::process::exit(1);
-    }
+    println!("Results saved to: {}", results_path.display());
 }
 
 // Certification workflow — see certification.rs
