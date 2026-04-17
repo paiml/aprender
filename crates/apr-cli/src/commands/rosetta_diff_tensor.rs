@@ -44,6 +44,110 @@ fn diff_tensor_pair(
     }
 }
 
+fn ensure_model_paths_exist(model_a: &Path, model_b: &Path) -> Result<()> {
+    if !model_a.exists() {
+        return Err(CliError::FileNotFound(model_a.to_path_buf()));
+    }
+    if !model_b.exists() {
+        return Err(CliError::FileNotFound(model_b.to_path_buf()));
+    }
+    Ok(())
+}
+
+fn emit_mixed_quant_warning(model_a: &Path, model_b: &Path, json: bool) {
+    if json {
+        return;
+    }
+    if let Some(warning) = check_mixed_quant_warning(model_a, model_b) {
+        println!("{}", warning.yellow());
+        println!();
+    }
+}
+
+fn inspect_model_report(rosetta: &RosettaStone, path: &Path, label: &str) -> Result<InspectionReport> {
+    rosetta
+        .inspect(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model {label}: {e}")))
+}
+
+fn sorted_unique_filtered_tensor_names<'a>(
+    tensors_a: &'a std::collections::HashMap<String, &'a TensorInfo>,
+    tensors_b: &'a std::collections::HashMap<String, &'a TensorInfo>,
+    filter: Option<&str>,
+) -> Vec<&'a String> {
+    let mut all_names: Vec<_> = tensors_a.keys().chain(tensors_b.keys()).collect();
+    all_names.sort();
+    all_names.dedup();
+    match filter {
+        Some(pattern) => all_names.into_iter().filter(|n| n.contains(pattern)).collect(),
+        None => all_names,
+    }
+}
+
+#[derive(Default)]
+struct DiffBuckets {
+    layout_mismatches: Vec<(String, Vec<usize>, Vec<usize>)>,
+    missing_in_a: Vec<(String, Vec<usize>)>,
+    missing_in_b: Vec<(String, Vec<usize>)>,
+}
+
+fn emit_diff_summary(
+    model_a: &Path,
+    model_b: &Path,
+    count_a: usize,
+    count_b: usize,
+    buckets: &DiffBuckets,
+    json: bool,
+) {
+    if json {
+        print_diff_json_summary(
+            model_a,
+            model_b,
+            count_a,
+            count_b,
+            &buckets.layout_mismatches,
+            &buckets.missing_in_a,
+            &buckets.missing_in_b,
+        );
+    } else {
+        print_diff_text_summary(
+            count_a,
+            count_b,
+            &buckets.layout_mismatches,
+            &buckets.missing_in_a,
+            &buckets.missing_in_b,
+        );
+    }
+}
+
+fn check_diff_errors(count_a: usize, count_b: usize, buckets: &DiffBuckets) -> Result<()> {
+    if count_a != count_b {
+        return Err(CliError::ValidationFailed(format!(
+            "TENSOR COUNT MISMATCH: Model A has {} tensors, Model B has {} ({} missing!)",
+            count_a,
+            count_b,
+            (count_a as i64 - count_b as i64).abs()
+        )));
+    }
+    if !buckets.layout_mismatches.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "Layout mismatch: {} tensors have transposed dimensions",
+            buckets.layout_mismatches.len()
+        )));
+    }
+    Ok(())
+}
+
+fn warn_show_values_unimplemented(show_values: usize) {
+    if show_values == 0 {
+        return;
+    }
+    eprintln!(
+        "Note: --show-values {show_values} requested but value comparison not yet implemented. \
+         Use 'apr rosetta fingerprint' for tensor statistics.",
+    );
+}
+
 #[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
 pub fn run_diff_tensors(
     model_a: &Path,
@@ -53,32 +157,14 @@ pub fn run_diff_tensors(
     filter: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    if !model_a.exists() {
-        return Err(CliError::FileNotFound(model_a.to_path_buf()));
-    }
-    if !model_b.exists() {
-        return Err(CliError::FileNotFound(model_b.to_path_buf()));
-    }
+    ensure_model_paths_exist(model_a, model_b)?;
 
     let rosetta = RosettaStone::new();
+    emit_mixed_quant_warning(model_a, model_b, json);
 
-    // F-GT-002: Check for mixed quantization levels (R3 violation)
-    if let Some(warning) = check_mixed_quant_warning(model_a, model_b) {
-        if !json {
-            println!("{}", warning.yellow());
-            println!();
-        }
-    }
+    let report_a = inspect_model_report(&rosetta, model_a, "A")?;
+    let report_b = inspect_model_report(&rosetta, model_b, "B")?;
 
-    // Inspect both models
-    let report_a = rosetta
-        .inspect(model_a)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model A: {e}")))?;
-    let report_b = rosetta
-        .inspect(model_b)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model B: {e}")))?;
-
-    // Build tensor maps by normalized name (GH-202: cross-format tensor matching)
     let tensors_a: std::collections::HashMap<String, _> = report_a
         .tensors
         .iter()
@@ -90,24 +176,7 @@ pub fn run_diff_tensors(
         .map(|t| (normalize_tensor_name(&t.name), t))
         .collect();
 
-    // Collect all unique tensor names
-    let mut all_names: Vec<_> = tensors_a.keys().chain(tensors_b.keys()).collect();
-    all_names.sort();
-    all_names.dedup();
-
-    // Apply filter
-    let filtered_names: Vec<_> = if let Some(pattern) = filter {
-        all_names
-            .into_iter()
-            .filter(|n| n.contains(pattern))
-            .collect()
-    } else {
-        all_names
-    };
-
-    let mut layout_mismatches = Vec::new();
-    let mut missing_in_a = Vec::new();
-    let mut missing_in_b = Vec::new();
+    let filtered_names = sorted_unique_filtered_tensor_names(&tensors_a, &tensors_b, filter);
 
     if !json {
         print_diff_header(
@@ -118,73 +187,31 @@ pub fn run_diff_tensors(
         );
     }
 
+    let mut buckets = DiffBuckets::default();
     for name in &filtered_names {
-        let tensor_a = tensors_a.get(*name);
-        let tensor_b = tensors_b.get(*name);
         diff_tensor_pair(
             name,
-            tensor_a.copied(),
-            tensor_b.copied(),
+            tensors_a.get(*name).copied(),
+            tensors_b.get(*name).copied(),
             mismatches_only,
             json,
-            &mut layout_mismatches,
-            &mut missing_in_a,
-            &mut missing_in_b,
+            &mut buckets.layout_mismatches,
+            &mut buckets.missing_in_a,
+            &mut buckets.missing_in_b,
         );
     }
 
-    // Summary
-    if json {
-        print_diff_json_summary(
-            model_a,
-            model_b,
-            tensors_a.len(),
-            tensors_b.len(),
-            &layout_mismatches,
-            &missing_in_a,
-            &missing_in_b,
-        );
-    } else {
-        print_diff_text_summary(
-            tensors_a.len(),
-            tensors_b.len(),
-            &layout_mismatches,
-            &missing_in_a,
-            &missing_in_b,
-        );
-    }
+    emit_diff_summary(
+        model_a,
+        model_b,
+        tensors_a.len(),
+        tensors_b.len(),
+        &buckets,
+        json,
+    );
 
-    // Return error if mismatches found (for CI assertion)
-    let count_a = report_a.tensors.len();
-    let count_b = report_b.tensors.len();
-
-    // GH-188: Tensor count mismatch is CRITICAL - fail immediately
-    if count_a != count_b {
-        return Err(CliError::ValidationFailed(format!(
-            "TENSOR COUNT MISMATCH: Model A has {} tensors, Model B has {} ({} missing!)",
-            count_a,
-            count_b,
-            (count_a as i64 - count_b as i64).abs()
-        )));
-    }
-
-    if !layout_mismatches.is_empty() {
-        return Err(CliError::ValidationFailed(format!(
-            "Layout mismatch: {} tensors have transposed dimensions",
-            layout_mismatches.len()
-        )));
-    }
-
-    // PMAT-GLASS-HOUSE: show_values feature deferred (P2)
-    // When show_values > 0, user expects to see tensor value samples.
-    // Currently not implemented - inform user rather than silently ignore.
-    if show_values > 0 {
-        eprintln!(
-            "Note: --show-values {} requested but value comparison not yet implemented. \
-             Use 'apr rosetta fingerprint' for tensor statistics.",
-            show_values
-        );
-    }
+    check_diff_errors(report_a.tensors.len(), report_b.tensors.len(), &buckets)?;
+    warn_show_values_unimplemented(show_values);
 
     Ok(())
 }
