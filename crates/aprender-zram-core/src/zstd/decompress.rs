@@ -24,81 +24,112 @@ pub fn decompress(input: &[u8], output: &mut [u8]) -> Result<usize> {
 
     let mut pos = 0usize;
     let mut out_pos = 0usize;
-
-    // Read frame header
     let header = read_frame_header(input, &mut pos)?;
 
-    // Decompress blocks
     loop {
         let block = read_block_header(input, &mut pos)?;
-
-        match block.block_type {
-            BlockType::Raw => {
-                // Copy raw data
-                if pos + block.block_size as usize > input.len() {
-                    return Err(Error::CorruptedData("block extends past input".to_string()));
-                }
-                if out_pos + block.block_size as usize > output.len() {
-                    return Err(Error::BufferTooSmall {
-                        needed: out_pos + block.block_size as usize,
-                        available: output.len(),
-                    });
-                }
-
-                output[out_pos..out_pos + block.block_size as usize]
-                    .copy_from_slice(&input[pos..pos + block.block_size as usize]);
-                pos += block.block_size as usize;
-                out_pos += block.block_size as usize;
-            }
-            BlockType::Rle => {
-                // Repeat single byte
-                if pos >= input.len() {
-                    return Err(Error::CorruptedData("missing RLE byte".to_string()));
-                }
-                let byte = input[pos];
-                pos += 1;
-
-                if out_pos + block.block_size as usize > output.len() {
-                    return Err(Error::BufferTooSmall {
-                        needed: out_pos + block.block_size as usize,
-                        available: output.len(),
-                    });
-                }
-
-                for i in 0..block.block_size as usize {
-                    output[out_pos + i] = byte;
-                }
-                out_pos += block.block_size as usize;
-            }
-            BlockType::Compressed => {
-                let block_end = pos + block.block_size as usize;
-                if block_end > input.len() {
-                    return Err(Error::CorruptedData("block extends past input".to_string()));
-                }
-
-                out_pos += decompress_block(&input[pos..block_end], &mut output[out_pos..])?;
-                pos = block_end;
-            }
-            BlockType::Reserved => {
-                return Err(Error::CorruptedData("reserved block type".to_string()));
-            }
-        }
-
+        process_block(input, output, &block, &mut pos, &mut out_pos)?;
         if block.last_block {
             break;
         }
     }
 
-    // Verify size if known
-    if let Some(expected) = header.frame_content_size {
-        if out_pos as u64 != expected {
-            return Err(Error::CorruptedData(format!(
-                "size mismatch: expected {expected}, got {out_pos}"
-            )));
-        }
-    }
-
+    verify_output_size(&header, out_pos)?;
     Ok(out_pos)
+}
+
+fn process_block(
+    input: &[u8],
+    output: &mut [u8],
+    block: &BlockHeader,
+    pos: &mut usize,
+    out_pos: &mut usize,
+) -> Result<()> {
+    match block.block_type {
+        BlockType::Raw => process_raw_block(input, output, block.block_size, pos, out_pos),
+        BlockType::Rle => process_rle_block(input, output, block.block_size, pos, out_pos),
+        BlockType::Compressed => {
+            process_compressed_block(input, output, block.block_size, pos, out_pos)
+        }
+        BlockType::Reserved => Err(Error::CorruptedData("reserved block type".to_string())),
+    }
+}
+
+fn process_raw_block(
+    input: &[u8],
+    output: &mut [u8],
+    block_size: u32,
+    pos: &mut usize,
+    out_pos: &mut usize,
+) -> Result<()> {
+    let size = block_size as usize;
+    if *pos + size > input.len() {
+        return Err(Error::CorruptedData("block extends past input".to_string()));
+    }
+    ensure_output_capacity(output, *out_pos, size)?;
+    output[*out_pos..*out_pos + size].copy_from_slice(&input[*pos..*pos + size]);
+    *pos += size;
+    *out_pos += size;
+    Ok(())
+}
+
+fn process_rle_block(
+    input: &[u8],
+    output: &mut [u8],
+    block_size: u32,
+    pos: &mut usize,
+    out_pos: &mut usize,
+) -> Result<()> {
+    if *pos >= input.len() {
+        return Err(Error::CorruptedData("missing RLE byte".to_string()));
+    }
+    let byte = input[*pos];
+    *pos += 1;
+    let size = block_size as usize;
+    ensure_output_capacity(output, *out_pos, size)?;
+    for i in 0..size {
+        output[*out_pos + i] = byte;
+    }
+    *out_pos += size;
+    Ok(())
+}
+
+fn process_compressed_block(
+    input: &[u8],
+    output: &mut [u8],
+    block_size: u32,
+    pos: &mut usize,
+    out_pos: &mut usize,
+) -> Result<()> {
+    let block_end = *pos + block_size as usize;
+    if block_end > input.len() {
+        return Err(Error::CorruptedData("block extends past input".to_string()));
+    }
+    *out_pos += decompress_block(&input[*pos..block_end], &mut output[*out_pos..])?;
+    *pos = block_end;
+    Ok(())
+}
+
+fn ensure_output_capacity(output: &[u8], out_pos: usize, size: usize) -> Result<()> {
+    if out_pos + size > output.len() {
+        return Err(Error::BufferTooSmall {
+            needed: out_pos + size,
+            available: output.len(),
+        });
+    }
+    Ok(())
+}
+
+fn verify_output_size(header: &FrameHeader, out_pos: usize) -> Result<()> {
+    let Some(expected) = header.frame_content_size else {
+        return Ok(());
+    };
+    if out_pos as u64 != expected {
+        return Err(Error::CorruptedData(format!(
+            "size mismatch: expected {expected}, got {out_pos}"
+        )));
+    }
+    Ok(())
 }
 
 fn read_frame_header(input: &[u8], pos: &mut usize) -> Result<FrameHeader> {
