@@ -7,9 +7,9 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
+use crate::tools::subprocess::run_apr;
 use crate::types::{InputSchema, PropertySchema, ToolCallResult, ToolDefinition};
 use std::collections::HashMap;
-use std::process::Command;
 
 /// Tool name registered with MCP clients.
 pub const NAME: &str = "apr.validate";
@@ -45,34 +45,7 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
     let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
         return ToolCallResult::error("Missing required argument: model_path");
     };
-
-    let output = match Command::new("apr")
-        .args(["validate", model_path, "--json"])
-        .output()
-    {
-        Ok(o) => o,
-        Err(e) => return ToolCallResult::error(format!("Failed to spawn `apr validate`: {e}")),
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-
-    if output.status.success() {
-        // stdout is JSON from `apr validate --json`; pass through verbatim.
-        if stdout.trim().is_empty() {
-            ToolCallResult::error("apr validate produced no output")
-        } else {
-            ToolCallResult::success(stdout)
-        }
-    } else {
-        let code = output.status.code().unwrap_or(-1);
-        let detail = if stderr.trim().is_empty() {
-            stdout
-        } else {
-            stderr
-        };
-        ToolCallResult::error(format!("apr validate failed (exit {code}): {detail}"))
-    }
+    run_apr(&["validate", model_path, "--json"])
 }
 
 #[cfg(test)]

@@ -65,6 +65,8 @@ impl AprMcpServer {
         let result = match name {
             Some(tools::version::NAME) => tools::version::call(&arguments),
             Some(tools::validate::NAME) => tools::validate::call(&arguments),
+            Some(tools::tensors::NAME) => tools::tensors::call(&arguments),
+            Some(tools::bench::NAME) => tools::bench::call(&arguments),
             Some(other) => ToolCallResult::error(format!("Unknown tool: {other}")),
             None => ToolCallResult::error("Missing tool name"),
         };
@@ -81,6 +83,8 @@ impl AprMcpServer {
         vec![
             tools::version_tool_definition(),
             tools::validate_tool_definition(),
+            tools::tensors_tool_definition(),
+            tools::bench_tool_definition(),
         ]
     }
 
@@ -147,8 +151,8 @@ mod tests {
         assert!(result["capabilities"]["tools"].is_object());
     }
 
-    /// FALSIFY-MCP-002 (M2 slice 1): tools/list returns the currently-registered
-    /// tools (apr.version + apr.validate). Full 8-tool set lands when M2 completes.
+    /// FALSIFY-MCP-002 (progressive): tools/list returns every tool that has
+    /// shipped so far. Full 8-tool set lands when M2 completes.
     #[test]
     fn tools_list_returns_registered_tools() {
         let mut server = AprMcpServer::new();
@@ -158,8 +162,9 @@ mod tests {
         let result = resp.result.expect("result present");
         let tools = result["tools"].as_array().expect("tools array");
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert!(names.contains(&"apr.version"), "apr.version registered");
-        assert!(names.contains(&"apr.validate"), "apr.validate registered");
+        for expected in ["apr.version", "apr.validate", "apr.tensors", "apr.bench"] {
+            assert!(names.contains(&expected), "{expected} registered");
+        }
 
         for tool in tools {
             assert_eq!(tool["inputSchema"]["type"], "object");
