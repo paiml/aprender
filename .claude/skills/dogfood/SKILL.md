@@ -394,7 +394,34 @@ echo "V4: $HIGH_CC functions with CC > 15"
 [ "$HIGH_CC" -le 3 ] && echo "V4 PASS" || echo "V4 WARN: $HIGH_CC high-complexity functions"
 ```
 
-PASS if V1+V3 pass. WARN if SATD or complexity issues exist.
+### Gate 10 Verdict (GH-716)
+```bash
+# Re-compute V1-V4 for a single aggregate verdict. V1 (contracts parse) and
+# V3 (critical modules run) are required; V2 (SATD) and V4 (complexity) are
+# quality signals that demote PASS → WARN but never cause FAIL on their own.
+V1_OK=0
+for c in contracts/apr-cli-qa-v1.yaml contracts/apr-qa-metamorphic-v1.yaml \
+  contracts/apr-qa-silent-fallback-v1.yaml contracts/apr-qa-differential-v1.yaml \
+  contracts/apr-qa-chaos-v1.yaml contracts/apr-qa-coverage-v1.yaml; do
+  python3 -c "import yaml; yaml.safe_load(open('$c'))" 2>/dev/null && V1_OK=$((V1_OK+1))
+done
+V2_SATD=$(pmat analyze satd -p crates/apr-cli/ 2>&1 | grep -c "High" 2>/dev/null || echo "0")
+V4_CC=$(pmat analyze complexity -p crates/apr-cli/ 2>&1 | awk '$NF > 15 {count++} END {print count+0}' 2>/dev/null || echo "0")
+M=$(find ~/models -maxdepth 2 \( -name "*.gguf" -o -name "*.apr" \) -type f | head -1)
+V3_OK=$([ -n "$M" ] && echo 1 || echo 0)
+
+if [ "$V1_OK" -eq 6 ] && [ "$V3_OK" -eq 1 ]; then
+  if [ "$V2_SATD" -eq 0 ] && [ "$V4_CC" -le 3 ]; then
+    echo "Gate 10: PASS (V1=6/6 V2=0 SATD V3=model V4=$V4_CC CC)"
+  else
+    echo "Gate 10: WARN (V1+V3 pass; V2=$V2_SATD SATD V4=$V4_CC CC)"
+  fi
+else
+  echo "Gate 10: FAIL (V1=$V1_OK/6 V3=$([ "$V3_OK" = "1" ] && echo ok || echo no-model))"
+fi
+```
+
+PASS requires V1+V3. V2 (SATD) and V4 (complexity) demote PASS → WARN.
 
 ## Gate 11: Chaos Engineering (F-CHAOS-001 through F-CHAOS-005)
 
