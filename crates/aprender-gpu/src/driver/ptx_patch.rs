@@ -18,92 +18,122 @@ use std::collections::{HashMap, HashSet};
 /// Returns `None` if no patches were needed (fast path for loop-free kernels).
 pub(crate) fn patch_backward_branches_sm121(ptx: &str) -> Option<String> {
     let lines: Vec<&str> = ptx.lines().collect();
-
-    // Pass 1: Collect label definition positions
-    let mut label_pos: HashMap<&str, usize> = HashMap::new();
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim();
-        if let Some(name) = t.strip_suffix(':') {
-            if !name.is_empty() && !name.starts_with('.') && !name.contains(' ') {
-                label_pos.insert(name, i);
-            }
-        }
-    }
-
-    // Pass 2: Find unconditional backward branches
-    let mut patch_set: HashSet<usize> = HashSet::new();
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim();
-        // Match "bra LABEL;" — unconditional (no @%p prefix)
-        if let Some(rest) = t.strip_prefix("bra ") {
-            if let Some(target) = rest.strip_suffix(';') {
-                let target = target.trim();
-                if let Some(&def_line) = label_pos.get(target) {
-                    if def_line < i {
-                        patch_set.insert(i);
-                    }
-                }
-            }
-        }
-    }
-
+    let label_pos = collect_label_positions(&lines);
+    let patch_set = find_backward_branches(&lines, &label_pos);
     if patch_set.is_empty() {
         return None;
     }
-
     let patch_count = patch_set.len();
+    let out = emit_patched_ptx(ptx, &lines, &patch_set);
+    eprintln!("[GH-480] Patched {patch_count} backward branch(es) for sm_121 JIT workaround");
+    Some(out)
+}
 
-    // Pass 3: Build patched PTX
+/// Pass 1: collect PTX label definition positions keyed by label name.
+fn collect_label_positions<'a>(lines: &[&'a str]) -> HashMap<&'a str, usize> {
+    let mut label_pos: HashMap<&str, usize> = HashMap::new();
+    for (i, line) in lines.iter().enumerate() {
+        let Some(name) = line.trim().strip_suffix(':') else {
+            continue;
+        };
+        if !name.is_empty() && !name.starts_with('.') && !name.contains(' ') {
+            label_pos.insert(name, i);
+        }
+    }
+    label_pos
+}
+
+/// Pass 2: identify line indices containing unconditional backward branches.
+fn find_backward_branches(lines: &[&str], label_pos: &HashMap<&str, usize>) -> HashSet<usize> {
+    let mut patch_set: HashSet<usize> = HashSet::new();
+    for (i, line) in lines.iter().enumerate() {
+        if is_backward_branch(line.trim(), i, label_pos) {
+            patch_set.insert(i);
+        }
+    }
+    patch_set
+}
+
+/// True when `t` is an unconditional `bra LABEL;` whose target was defined earlier.
+fn is_backward_branch(t: &str, i: usize, label_pos: &HashMap<&str, usize>) -> bool {
+    let Some(rest) = t.strip_prefix("bra ") else {
+        return false;
+    };
+    let Some(target) = rest.strip_suffix(';') else {
+        return false;
+    };
+    matches!(label_pos.get(target.trim()), Some(&def_line) if def_line < i)
+}
+
+/// Pass 3: emit the patched PTX string.
+fn emit_patched_ptx(ptx: &str, lines: &[&str], patch_set: &HashSet<usize>) -> String {
     let mut out = String::with_capacity(ptx.len() + 128);
     let mut in_body = false;
     let mut decl_emitted = false;
 
     for (i, line) in lines.iter().enumerate() {
-        let t = line.trim();
-
-        // Detect kernel body entry
-        if !in_body && (t == "{" || t.ends_with('{')) {
-            in_body = true;
-            out.push_str(line);
-            out.push('\n');
-            continue;
-        }
-
-        // Insert predicate declaration + init before first executable line
-        if in_body && !decl_emitted {
-            let is_meta =
-                t.is_empty() || t.starts_with('.') || t.starts_with("//") || t == "{" || t == "}";
-            if !is_meta {
-                out.push_str("    .reg .pred %p_jw;\n");
-                out.push_str("    setp.ne.u32 %p_jw, 1, 0;\n");
-                decl_emitted = true;
-            }
-        }
-
-        // Patch backward branches
-        if patch_set.contains(&i) {
-            let indent_len = line.len() - line.trim_start().len();
-            let indent = &line[..indent_len];
-            // Safety: patch_set only contains lines where strip_prefix/suffix succeeded
-            let target = t.get("bra ".len()..t.len() - 1).unwrap_or(t).trim();
-            out.push_str(indent);
-            out.push_str("@%p_jw bra ");
-            out.push_str(target);
-            out.push_str(";\n");
-        } else {
-            out.push_str(line);
-            out.push('\n');
-        }
+        emit_patched_line(
+            &mut out,
+            i,
+            line,
+            patch_set,
+            &mut in_body,
+            &mut decl_emitted,
+        );
     }
 
-    // Match trailing newline behavior of input
     if !ptx.ends_with('\n') && out.ends_with('\n') {
         out.pop();
     }
+    out
+}
 
-    eprintln!("[GH-480] Patched {patch_count} backward branch(es) for sm_121 JIT workaround");
+/// Emit one line of the patched PTX, updating body/decl state in place.
+fn emit_patched_line(
+    out: &mut String,
+    i: usize,
+    line: &str,
+    patch_set: &HashSet<usize>,
+    in_body: &mut bool,
+    decl_emitted: &mut bool,
+) {
+    let t = line.trim();
 
-    Some(out)
+    if !*in_body && (t == "{" || t.ends_with('{')) {
+        *in_body = true;
+        out.push_str(line);
+        out.push('\n');
+        return;
+    }
+
+    if *in_body && !*decl_emitted && !is_meta_line(t) {
+        out.push_str("    .reg .pred %p_jw;\n");
+        out.push_str("    setp.ne.u32 %p_jw, 1, 0;\n");
+        *decl_emitted = true;
+    }
+
+    if patch_set.contains(&i) {
+        emit_patched_branch(out, line, t);
+    } else {
+        out.push_str(line);
+        out.push('\n');
+    }
+}
+
+/// True for PTX lines that should not trigger predicate declaration insertion.
+fn is_meta_line(t: &str) -> bool {
+    t.is_empty() || t.starts_with('.') || t.starts_with("//") || t == "{" || t == "}"
+}
+
+/// Emit a single patched backward branch with preserved indentation.
+fn emit_patched_branch(out: &mut String, line: &str, t: &str) {
+    let indent_len = line.len() - line.trim_start().len();
+    let indent = &line[..indent_len];
+    let target = t.get("bra ".len()..t.len() - 1).unwrap_or(t).trim();
+    out.push_str(indent);
+    out.push_str("@%p_jw bra ");
+    out.push_str(target);
+    out.push_str(";\n");
 }
 
 #[cfg(test)]

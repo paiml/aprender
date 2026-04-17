@@ -446,38 +446,68 @@ fn run_auto_ticket_generation(
     output_dir: &PathBuf,
     ticket_repo: &str,
 ) {
-    let mut all_evidence: Vec<aprender_qa_runner::Evidence> = Vec::new();
-    for model_id in models_to_certify {
-        let short: &str = model_id.split('/').next_back().unwrap_or(model_id);
-        let evidence_path = output_dir
-            .join(short.to_lowercase().replace('.', "-"))
-            .join("evidence.json");
-        match std::fs::read_to_string(&evidence_path) {
-            Ok(json) => match parse_evidence(&json) {
-                Ok(ev) => all_evidence.extend(ev),
-                Err(e) => eprintln!("  [WARN] Failed to parse evidence for {model_id}: {e}"),
-            },
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                eprintln!("  [WARN] Failed to read evidence for {model_id}: {e}");
-            }
-            Err(_) => {} // NotFound is expected for skipped models
-        }
-    }
-
+    let all_evidence = collect_models_evidence(models_to_certify, output_dir);
     if all_evidence.is_empty() {
         return;
     }
-
     let tickets = execute_auto_tickets(&all_evidence, ticket_repo);
+    print_auto_tickets_summary(&tickets);
+}
+
+/// Read and parse evidence JSON for every certified model, skipping missing files.
+fn collect_models_evidence(
+    models_to_certify: &[String],
+    output_dir: &PathBuf,
+) -> Vec<aprender_qa_runner::Evidence> {
+    let mut all_evidence: Vec<aprender_qa_runner::Evidence> = Vec::new();
+    for model_id in models_to_certify {
+        all_evidence.extend(load_model_evidence(model_id, output_dir));
+    }
+    all_evidence
+}
+
+/// Load evidence for a single model; returns empty Vec on any error or missing file.
+fn load_model_evidence(
+    model_id: &str,
+    output_dir: &PathBuf,
+) -> Vec<aprender_qa_runner::Evidence> {
+    let short: &str = model_id.split('/').next_back().unwrap_or(model_id);
+    let evidence_path = output_dir
+        .join(short.to_lowercase().replace('.', "-"))
+        .join("evidence.json");
+    let json = match std::fs::read_to_string(&evidence_path) {
+        Ok(j) => j,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            eprintln!("  [WARN] Failed to read evidence for {model_id}: {e}");
+            return Vec::new();
+        }
+    };
+    match parse_evidence(&json) {
+        Ok(ev) => ev,
+        Err(e) => {
+            eprintln!("  [WARN] Failed to parse evidence for {model_id}: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// Print auto-generated ticket summary, or a placeholder if no tickets were produced.
+fn print_auto_tickets_summary(tickets: &[aprender_qa_report::ticket::UpstreamTicket]) {
     if tickets.is_empty() {
         println!("\n[AUTO-TICKET] No structured tickets generated (no classified failures).");
-    } else {
-        println!("\n=== Auto-Generated Tickets ({}) ===", tickets.len());
-        for ticket in &tickets {
-            println!("  {} [{}]", ticket.title, ticket.priority);
-            if let Some(ref fixture) = ticket.upstream_fixture {
-                println!("    Fixture: {fixture}");
-            }
-        }
+        return;
+    }
+    println!("\n=== Auto-Generated Tickets ({}) ===", tickets.len());
+    for ticket in tickets {
+        print_ticket_line(ticket);
+    }
+}
+
+/// Print a single ticket's title/priority line and optional fixture path.
+fn print_ticket_line(ticket: &aprender_qa_report::ticket::UpstreamTicket) {
+    println!("  {} [{}]", ticket.title, ticket.priority);
+    if let Some(ref fixture) = ticket.upstream_fixture {
+        println!("    Fixture: {fixture}");
     }
 }

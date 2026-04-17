@@ -8,7 +8,7 @@ use super::basic::load_dataset;
 use crate::{
     drift::{DriftDetector, DriftSeverity, DriftTest},
     sketch::{DataSketch, DistributedDriftDetector, SketchType},
-    Dataset,
+    ArrowDataset, Dataset,
 };
 
 /// Drift detection commands.
@@ -133,83 +133,109 @@ pub(crate) fn cmd_drift_detect(
         ));
     }
 
+    let report = run_drift_detection(ref_dataset, &cur_dataset, tests, alpha)?;
+
+    if format == "json" {
+        print_drift_report_json(&report)
+    } else {
+        print_drift_report_text(&report, reference, current, alpha);
+        Ok(())
+    }
+}
+
+fn run_drift_detection(
+    ref_dataset: ArrowDataset,
+    cur_dataset: &ArrowDataset,
+    tests: Vec<DriftTest>,
+    alpha: f64,
+) -> crate::Result<crate::drift::DriftReport> {
     let mut detector = DriftDetector::new(ref_dataset).with_alpha(alpha);
     for test in tests {
         detector = detector.with_test(test);
     }
+    detector.detect(cur_dataset)
+}
 
-    let report = detector.detect(&cur_dataset)?;
+fn print_drift_report_json(report: &crate::drift::DriftReport) -> crate::Result<()> {
+    let json = serde_json::json!({
+        "drift_detected": report.drift_detected,
+        "columns": report.column_scores.values().map(|d| {
+            serde_json::json!({
+                "column": d.column,
+                "test": format!("{:?}", d.test),
+                "statistic": d.statistic,
+                "p_value": d.p_value,
+                "drift_detected": d.drift_detected,
+                "severity": format!("{:?}", d.severity),
+            })
+        }).collect::<Vec<_>>()
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).map_err(|e| crate::Error::Format(e.to_string()))?
+    );
+    Ok(())
+}
 
-    if format == "json" {
-        // JSON output
-        let json = serde_json::json!({
-            "drift_detected": report.drift_detected,
-            "columns": report.column_scores.values().map(|d| {
-                serde_json::json!({
-                    "column": d.column,
-                    "test": format!("{:?}", d.test),
-                    "statistic": d.statistic,
-                    "p_value": d.p_value,
-                    "drift_detected": d.drift_detected,
-                    "severity": format!("{:?}", d.severity),
-                })
-            }).collect::<Vec<_>>()
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json).map_err(|e| crate::Error::Format(e.to_string()))?
-        );
+fn print_drift_report_text(
+    report: &crate::drift::DriftReport,
+    reference: &Path,
+    current: &Path,
+    alpha: f64,
+) {
+    println!("Drift Detection Report");
+    println!("======================");
+    println!("Reference: {}", reference.display());
+    println!("Current:   {}", current.display());
+    println!("Alpha:     {}", alpha);
+    println!();
+
+    if report.drift_detected {
+        println!("\u{26A0}\u{FE0F}  DRIFT DETECTED\n");
     } else {
-        // Text output
-        println!("Drift Detection Report");
-        println!("======================");
-        println!("Reference: {}", reference.display());
-        println!("Current:   {}", current.display());
-        println!("Alpha:     {}", alpha);
-        println!();
-
-        if report.drift_detected {
-            println!("\u{26A0}\u{FE0F}  DRIFT DETECTED\n");
-        } else {
-            println!("\u{2713} No significant drift detected\n");
-        }
-
-        println!(
-            "{:<20} {:<15} {:<12} {:<12} {:<10} DRIFT",
-            "COLUMN", "TEST", "STATISTIC", "P-VALUE", "SEVERITY"
-        );
-        println!("{}", "-".repeat(80));
-
-        for drift in report.column_scores.values() {
-            let drift_str = if drift.drift_detected { "YES" } else { "no" };
-            let p_value_str = drift
-                .p_value
-                .map_or_else(|| "N/A".to_string(), |p| format!("{:.4}", p));
-            println!(
-                "{:<20} {:<15} {:<12.4} {:<12} {:<10} {} {}",
-                drift.column,
-                format!("{:?}", drift.test),
-                drift.statistic,
-                p_value_str,
-                format!("{:?}", drift.severity),
-                severity_symbol(drift.severity),
-                drift_str
-            );
-        }
-
-        println!();
-        let drifted: Vec<_> = report
-            .column_scores
-            .values()
-            .filter(|d| d.drift_detected)
-            .map(|d| d.column.clone())
-            .collect();
-        if !drifted.is_empty() {
-            println!("Columns with drift: {}", drifted.join(", "));
-        }
+        println!("\u{2713} No significant drift detected\n");
     }
 
-    Ok(())
+    print_drift_table(report);
+    print_drifted_columns(report);
+}
+
+fn print_drift_table(report: &crate::drift::DriftReport) {
+    println!(
+        "{:<20} {:<15} {:<12} {:<12} {:<10} DRIFT",
+        "COLUMN", "TEST", "STATISTIC", "P-VALUE", "SEVERITY"
+    );
+    println!("{}", "-".repeat(80));
+
+    for drift in report.column_scores.values() {
+        let drift_str = if drift.drift_detected { "YES" } else { "no" };
+        let p_value_str = drift
+            .p_value
+            .map_or_else(|| "N/A".to_string(), |p| format!("{:.4}", p));
+        println!(
+            "{:<20} {:<15} {:<12.4} {:<12} {:<10} {} {}",
+            drift.column,
+            format!("{:?}", drift.test),
+            drift.statistic,
+            p_value_str,
+            format!("{:?}", drift.severity),
+            severity_symbol(drift.severity),
+            drift_str
+        );
+    }
+}
+
+fn print_drifted_columns(report: &crate::drift::DriftReport) {
+    println!();
+    let drifted: Vec<_> = report
+        .column_scores
+        .values()
+        .filter(|d| d.drift_detected)
+        .map(|d| d.column.clone())
+        .collect();
+    if !drifted.is_empty() {
+        println!("Columns with drift: {}", drifted.join(", "));
+    }
 }
 
 /// Generate a drift report summary.

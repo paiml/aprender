@@ -390,88 +390,97 @@ fn find_cached_model(org: &str, repo: &str, file: Option<&str>) -> Option<PathBu
 /// If `file` is specified (e.g., "model-q4_k_m.gguf"), download that specific file.
 /// Otherwise, download model.safetensors (or sharded version).
 pub(crate) fn download_hf_model(org: &str, repo: &str, file: Option<&str>) -> Result<PathBuf> {
-    let cache_dir = dirs::home_dir()
+    let cache_dir = hf_cache_dir(org, repo)?;
+    let base_url = format!("https://huggingface.co/{org}/{repo}/resolve/main");
+
+    if let Some(filename) = file {
+        return download_single_hf_file(&cache_dir, &base_url, filename);
+    }
+
+    let model_path = download_main_safetensors(&cache_dir, &base_url)?;
+    let config_path =
+        download_required_companion(&base_url, &cache_dir, "config.json", &[&model_path])?;
+    download_required_companion(
+        &base_url,
+        &cache_dir,
+        "tokenizer.json",
+        &[&model_path, &config_path],
+    )?;
+    download_optional_companion(&base_url, &cache_dir, "tokenizer_config.json");
+
+    eprintln!("{}", "  Download complete!".green());
+    Ok(model_path)
+}
+
+fn hf_cache_dir(org: &str, repo: &str) -> Result<PathBuf> {
+    let dir = dirs::home_dir()
         .ok_or_else(|| CliError::ValidationFailed("Cannot find home directory".to_string()))?
         .join(".apr")
         .join("cache")
         .join("hf")
         .join(org)
         .join(repo);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
 
-    std::fs::create_dir_all(&cache_dir)?;
+fn download_single_hf_file(cache_dir: &Path, base_url: &str, filename: &str) -> Result<PathBuf> {
+    let model_url = format!("{base_url}/{filename}");
+    let model_path = cache_dir.join(filename);
 
-    let base_url = format!("https://huggingface.co/{org}/{repo}/resolve/main");
+    eprintln!("  Downloading {}...", filename);
+    download_file(&model_url, &model_path)?;
+    eprintln!("{}", "  Download complete!".green());
+    Ok(model_path)
+}
 
-    // If specific file requested (e.g., GGUF), download just that file
-    if let Some(filename) = file {
-        let model_url = format!("{base_url}/{filename}");
-        let model_path = cache_dir.join(filename);
-
-        eprintln!("  Downloading {}...", filename);
-        download_file(&model_url, &model_path)?;
-        eprintln!("{}", "  Download complete!".green());
-        return Ok(model_path);
-    }
-
-    // Default path: download SafeTensors model with config/tokenizer
-    let tokenizer_url = format!("{base_url}/tokenizer.json");
-    let config_url = format!("{base_url}/config.json");
-
-    let tokenizer_path = cache_dir.join("tokenizer.json");
-    let config_path = cache_dir.join("config.json");
-
-    // GH-127: Check for sharded model first (index.json indicates multi-tensor model)
+/// Download SafeTensors weights. GH-127: prefer sharded (index.json) over single file.
+fn download_main_safetensors(cache_dir: &Path, base_url: &str) -> Result<PathBuf> {
     let index_url = format!("{base_url}/model.safetensors.index.json");
     let index_path = cache_dir.join("model.safetensors.index.json");
 
-    let model_path = if download_file(&index_url, &index_path).is_ok() {
-        // Sharded model - download all shards listed in index
+    if download_file(&index_url, &index_path).is_ok() {
         eprintln!("  Detected sharded model (multi-tensor)");
-        download_sharded_model(&cache_dir, &index_path, &base_url)?
-    } else {
-        // Single model.safetensors file
-        let model_url = format!("{base_url}/model.safetensors");
-        let model_path = cache_dir.join("model.safetensors");
-
-        eprintln!("  Downloading model.safetensors...");
-        download_file(&model_url, &model_path)?;
-        model_path
-    };
-
-    // Download config.json (REQUIRED for SafeTensors inference) - GH-150
-    eprintln!("  Downloading config.json...");
-    download_file(&config_url, &config_path).map_err(|e| {
-        // Clean up partial download on failure
-        let _ = std::fs::remove_file(&model_path);
-        CliError::ValidationFailed(format!(
-            "config.json is required for inference but download failed: {e}\n\
-             Ensure the HuggingFace repo contains config.json"
-        ))
-    })?;
-
-    // Download tokenizer.json (REQUIRED for text encoding/decoding)
-    eprintln!("  Downloading tokenizer.json...");
-    download_file(&tokenizer_url, &tokenizer_path).map_err(|e| {
-        // Clean up partial download on failure
-        let _ = std::fs::remove_file(&model_path);
-        let _ = std::fs::remove_file(&config_path);
-        CliError::ValidationFailed(format!(
-            "tokenizer.json is required for inference but download failed: {e}\n\
-             Ensure the HuggingFace repo contains tokenizer.json"
-        ))
-    })?;
-
-    // Download tokenizer_config.json (optional but recommended)
-    let tokenizer_config_url = format!("{base_url}/tokenizer_config.json");
-    let tokenizer_config_path = cache_dir.join("tokenizer_config.json");
-    eprintln!("  Downloading tokenizer_config.json...");
-    if let Err(e) = download_file(&tokenizer_config_url, &tokenizer_config_path) {
-        eprintln!("  Note: tokenizer_config.json not available (optional): {e}");
+        return download_sharded_model(cache_dir, &index_path, base_url);
     }
 
-    eprintln!("{}", "  Download complete!".green());
-
+    let model_url = format!("{base_url}/model.safetensors");
+    let model_path = cache_dir.join("model.safetensors");
+    eprintln!("  Downloading model.safetensors...");
+    download_file(&model_url, &model_path)?;
     Ok(model_path)
+}
+
+/// Download a required companion file. On failure, delete `cleanup_paths` and return a
+/// contextual error. Used for config.json / tokenizer.json (GH-150).
+fn download_required_companion(
+    base_url: &str,
+    cache_dir: &Path,
+    filename: &str,
+    cleanup_paths: &[&Path],
+) -> Result<PathBuf> {
+    let url = format!("{base_url}/{filename}");
+    let path = cache_dir.join(filename);
+    eprintln!("  Downloading {}...", filename);
+    download_file(&url, &path).map_err(|e| {
+        for p in cleanup_paths {
+            let _ = std::fs::remove_file(p);
+        }
+        CliError::ValidationFailed(format!(
+            "{filename} is required for inference but download failed: {e}\n\
+             Ensure the HuggingFace repo contains {filename}"
+        ))
+    })?;
+    Ok(path)
+}
+
+fn download_optional_companion(base_url: &str, cache_dir: &Path, filename: &str) {
+    let url = format!("{base_url}/{filename}");
+    let path = cache_dir.join(filename);
+    eprintln!("  Downloading {}...", filename);
+    if let Err(e) = download_file(&url, &path) {
+        eprintln!("  Note: {filename} not available (optional): {e}");
+    }
 }
 
 include!("inference_output.rs");
