@@ -1,40 +1,41 @@
 //! `apr.validate` — M2 subprocess wrapper over `apr validate <model> --json`.
 //!
-//! This was the first M2 tool shipped and established the subprocess pattern
-//! every M2/M3 `apr.*` wrapper follows: spawn `apr <subcommand> --json`,
+//! This is the first M2 tool and exercises the subprocess pattern that the
+//! remaining 7 Phase-1 tools will follow: spawn `apr <subcommand> --json`,
 //! capture stdout, pass through to the MCP client as a single text content
-//! block. Non-zero exit maps to `isError: true` with stderr attached. All 7
-//! M2 wrappers (`apr.validate`, `apr.tensors`, `apr.bench`, `apr.qa`,
-//! `apr.trace`, `apr.run`, `apr.serve`) and the M3 addition `apr.finetune`
-//! now ship on this pattern.
+//! block. Non-zero exit maps to `isError: true` with stderr attached.
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
-use crate::tools::subprocess::run_apr;
-use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
+use crate::types::{InputSchema, PropertySchema, ToolCallResult, ToolDefinition};
+use std::collections::HashMap;
+use std::process::Command;
 
 /// Tool name registered with MCP clients.
 pub const NAME: &str = "apr.validate";
 
 /// Return the MCP tool definition for `apr.validate`.
-///
-/// FALSIFY-MCP-008: the `inputSchema` is parsed from the build-time codegen
-/// constant `crate::schemas::APR_VALIDATE_SCHEMA`, which `build.rs` emits from
-/// `contracts/apr-mcp-tool-schemas-v1.yaml`. The contract is the single
-/// source of truth — the live `tools/list` response and the YAML must agree
-/// byte-for-byte after JSON canonicalization (asserted by
-/// `tests/falsify_mcp_008.rs`).
 #[must_use]
 pub fn validate_tool_definition() -> ToolDefinition {
-    let input_schema: InputSchema = serde_json::from_str(crate::schemas::APR_VALIDATE_SCHEMA)
-        .expect(
-            "FALSIFY-MCP-008: apr.validate codegen constant must parse as InputSchema; \
-             regenerate by editing contracts/apr-mcp-tool-schemas-v1.yaml and rebuilding",
-        );
+    let mut properties = HashMap::new();
+    properties.insert(
+        "model_path".to_string(),
+        PropertySchema {
+            prop_type: "string".to_string(),
+            description: "Path to the model file (.apr, .gguf, or .safetensors)".to_string(),
+            r#enum: None,
+        },
+    );
     ToolDefinition {
         name: NAME.to_string(),
-        description: crate::schemas::APR_VALIDATE_DESCRIPTION.to_string(),
-        input_schema,
+        description:
+            "Validate a model file's integrity and quality. Wraps `apr validate <model> --json`."
+                .to_string(),
+        input_schema: InputSchema {
+            schema_type: "object".to_string(),
+            properties,
+            required: vec!["model_path".to_string()],
+        },
     }
 }
 
@@ -44,7 +45,34 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
     let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
         return ToolCallResult::error("Missing required argument: model_path");
     };
-    run_apr(&["validate", model_path, "--json"])
+
+    let output = match Command::new("apr")
+        .args(["validate", model_path, "--json"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => return ToolCallResult::error(format!("Failed to spawn `apr validate`: {e}")),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    if output.status.success() {
+        // stdout is JSON from `apr validate --json`; pass through verbatim.
+        if stdout.trim().is_empty() {
+            ToolCallResult::error("apr validate produced no output")
+        } else {
+            ToolCallResult::success(stdout)
+        }
+    } else {
+        let code = output.status.code().unwrap_or(-1);
+        let detail = if stderr.trim().is_empty() {
+            stdout
+        } else {
+            stderr
+        };
+        ToolCallResult::error(format!("apr validate failed (exit {code}): {detail}"))
+    }
 }
 
 #[cfg(test)]
