@@ -416,24 +416,8 @@ fn kernel_coverage_command(
 ) {
     use aprender_qa_gen::CoverageContext;
 
-    if !matches!(format, "json" | "text") {
-        eprintln!("Error: Unknown format: {format}");
-        eprintln!("  Valid formats: json, text");
-        std::process::exit(1);
-    }
-
-    // Jidoka: reject mutually exclusive flag combinations (Bug #86)
-    let mode_count = [verify, models, all, architecture.is_some()]
-        .iter()
-        .filter(|&&b| b)
-        .count();
-    if mode_count > 1 {
-        eprintln!(
-            "Error: --verify, --models, --all, and --architecture are mutually exclusive"
-        );
-        eprintln!("  Specify exactly one mode at a time.");
-        std::process::exit(1);
-    }
+    validate_format_or_exit(format);
+    validate_mode_exclusivity_or_exit(verify, models, all, architecture.is_some());
 
     let ctx = match CoverageContext::load(contracts_path, bindings_path) {
         Ok(ctx) => ctx,
@@ -446,56 +430,13 @@ fn kernel_coverage_command(
         }
     };
 
-    // --verify mode: check binding claims against source code
     if verify {
-        if let Some(report) = ctx.verify_bindings_against_source(trueno_path, realizar_path) {
-            if format == "json" {
-                match serde_json::to_string_pretty(&report) {
-                    Ok(json) => println!("{json}"),
-                    Err(e) => {
-                        eprintln!("Error serializing report: {e}");
-                        std::process::exit(1);
-                    }
-                }
-            } else {
-                print_binding_verification(&report);
-            }
-            if report.drift_count > 0 {
-                std::process::exit(1);
-            }
-        } else {
-            eprintln!("Error: Neither trueno nor realizar repos found");
-            eprintln!("  trueno:   {}", trueno_path.display());
-            eprintln!("  realizar: {}", realizar_path.display());
-            eprintln!("\nHint: Use --trueno-path and --realizar-path to specify locations");
-            std::process::exit(1);
-        }
+        run_verify_mode(&ctx, trueno_path, realizar_path, format);
         return;
     }
 
-    // --models mode: walk all registry models
     if models {
-        let summary = ctx.verify_all_registry_models();
-        if format == "json" {
-            match serde_json::to_string_pretty(&summary) {
-                Ok(json) => println!("{json}"),
-                Err(e) => {
-                    eprintln!("Error serializing summary: {e}");
-                    std::process::exit(1);
-                }
-            }
-        } else {
-            print_model_coverage_summary(&summary);
-        }
-        if file_tickets {
-            let arch_report = ctx.verify_all_architectures();
-            if !arch_report.gaps.is_empty() {
-                write_gap_tickets(&arch_report, output_dir);
-            }
-        }
-        if summary.gap_count > 0 {
-            std::process::exit(1);
-        }
+        run_models_mode(&ctx, format, file_tickets, output_dir);
         return;
     }
 
@@ -504,7 +445,116 @@ fn kernel_coverage_command(
         std::process::exit(1);
     }
 
-    let report = architecture.map_or_else(
+    run_architecture_mode(&ctx, architecture, format, file_tickets, output_dir);
+}
+
+fn validate_format_or_exit(format: &str) {
+    if !matches!(format, "json" | "text") {
+        eprintln!("Error: Unknown format: {format}");
+        eprintln!("  Valid formats: json, text");
+        std::process::exit(1);
+    }
+}
+
+fn validate_mode_exclusivity_or_exit(verify: bool, models: bool, all: bool, arch: bool) {
+    let mode_count = [verify, models, all, arch].iter().filter(|&&b| b).count();
+    if mode_count > 1 {
+        eprintln!("Error: --verify, --models, --all, and --architecture are mutually exclusive");
+        eprintln!("  Specify exactly one mode at a time.");
+        std::process::exit(1);
+    }
+}
+
+fn print_json_or_exit<T: serde::Serialize>(value: &T, context: &str) {
+    match serde_json::to_string_pretty(value) {
+        Ok(json) => println!("{json}"),
+        Err(e) => {
+            eprintln!("Error serializing {context}: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_verify_mode(
+    ctx: &aprender_qa_gen::CoverageContext,
+    trueno_path: &Path,
+    realizar_path: &Path,
+    format: &str,
+) {
+    let Some(report) = ctx.verify_bindings_against_source(trueno_path, realizar_path) else {
+        eprintln!("Error: Neither trueno nor realizar repos found");
+        eprintln!("  trueno:   {}", trueno_path.display());
+        eprintln!("  realizar: {}", realizar_path.display());
+        eprintln!("\nHint: Use --trueno-path and --realizar-path to specify locations");
+        std::process::exit(1);
+    };
+
+    if format == "json" {
+        print_json_or_exit(&report, "report");
+    } else {
+        print_binding_verification(&report);
+    }
+
+    if report.drift_count > 0 {
+        std::process::exit(1);
+    }
+}
+
+fn run_models_mode(
+    ctx: &aprender_qa_gen::CoverageContext,
+    format: &str,
+    file_tickets: bool,
+    output_dir: &Path,
+) {
+    let summary = ctx.verify_all_registry_models();
+
+    if format == "json" {
+        print_json_or_exit(&summary, "summary");
+    } else {
+        print_model_coverage_summary(&summary);
+    }
+
+    if file_tickets {
+        let arch_report = ctx.verify_all_architectures();
+        if !arch_report.gaps.is_empty() {
+            write_gap_tickets(&arch_report, output_dir);
+        }
+    }
+
+    if summary.gap_count > 0 {
+        std::process::exit(1);
+    }
+}
+
+fn run_architecture_mode(
+    ctx: &aprender_qa_gen::CoverageContext,
+    architecture: Option<&str>,
+    format: &str,
+    file_tickets: bool,
+    output_dir: &Path,
+) {
+    let report = resolve_coverage_report(ctx, architecture);
+
+    if format == "json" {
+        print_json_or_exit(&report, "report");
+    } else {
+        print_coverage_report(&report);
+    }
+
+    if file_tickets && !report.gaps.is_empty() {
+        write_gap_tickets(&report, output_dir);
+    }
+
+    if report.missing_count > 0 {
+        std::process::exit(1);
+    }
+}
+
+fn resolve_coverage_report(
+    ctx: &aprender_qa_gen::CoverageContext,
+    architecture: Option<&str>,
+) -> aprender_qa_gen::CoverageReport {
+    architecture.map_or_else(
         || ctx.verify_all_architectures(),
         |arch| {
             ctx.verify_by_name(arch).unwrap_or_else(|| {
@@ -516,28 +566,7 @@ fn kernel_coverage_command(
                 std::process::exit(1);
             })
         },
-    );
-
-    if format == "json" {
-        match serde_json::to_string_pretty(&report) {
-            Ok(json) => println!("{json}"),
-            Err(e) => {
-                eprintln!("Error serializing report: {e}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        print_coverage_report(&report);
-    }
-
-    if file_tickets && !report.gaps.is_empty() {
-        write_gap_tickets(&report, output_dir);
-    }
-
-    // Exit with failure if missing gaps found (Jidoka: stop the line)
-    if report.missing_count > 0 {
-        std::process::exit(1);
-    }
+    )
 }
 
 /// Print a human-readable kernel coverage matrix.
