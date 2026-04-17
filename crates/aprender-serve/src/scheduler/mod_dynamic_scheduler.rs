@@ -208,100 +208,133 @@ impl DynamicPriorityScheduler {
     ///
     /// Returns (scheduled_request_ids, tokens_allocated_per_request)
     pub fn schedule(&mut self, available_slots: usize) -> Vec<(u64, usize)> {
-        // First, handle promotions and expirations
         self.promote_aged_requests();
         self.drop_expired();
 
         let mut scheduled = Vec::new();
         let mut remaining_budget = self.batch_token_budget;
         let mut remaining_slots = available_slots;
-
-        // Calculate token budgets per priority level
-        let budgets: [usize; 4] = if self.config.enable_fair_share {
-            self.config
-                .priority_budgets
-                .map(|b| (b * self.batch_token_budget as f64) as usize)
-        } else {
-            [
-                remaining_budget,
-                remaining_budget,
-                remaining_budget,
-                remaining_budget,
-            ]
-        };
+        let budgets = self.priority_budgets();
 
         // Schedule from highest priority to lowest
         for queue_idx in (0..4).rev() {
             if remaining_slots == 0 || remaining_budget == 0 {
                 break;
             }
-
-            let queue = &mut self.priority_queues[queue_idx];
-            let mut priority_budget = budgets[queue_idx].min(remaining_budget);
-
-            // Sort queue by urgency for deadline-aware scheduling
-            if self.config.enable_deadline_scheduling {
-                let mut sorted: Vec<_> = queue.iter().copied().collect();
-                sorted.sort_by(|&a, &b| {
-                    let req_a = self.requests.get(&a);
-                    let req_b = self.requests.get(&b);
-                    match (req_a, req_b) {
-                        (Some(ra), Some(rb)) => rb
-                            .urgency_score()
-                            .partial_cmp(&ra.urgency_score())
-                            .unwrap_or(std::cmp::Ordering::Equal),
-                        _ => std::cmp::Ordering::Equal,
-                    }
-                });
-                *queue = sorted.into_iter().collect();
-            }
-
-            // Schedule requests from this priority level
-            let mut scheduled_from_queue = Vec::new();
-            for &request_id in queue.iter() {
-                if remaining_slots == 0 || priority_budget < self.config.min_tokens_per_request {
-                    break;
-                }
-
-                if let Some(request) = self.requests.get(&request_id) {
-                    // Calculate tokens to allocate
-                    let tokens_needed = request.remaining_tokens().max(1);
-                    let tokens_to_allocate = tokens_needed
-                        .min(priority_budget)
-                        .max(self.config.min_tokens_per_request);
-
-                    if tokens_to_allocate > 0 {
-                        scheduled.push((request_id, tokens_to_allocate));
-                        scheduled_from_queue.push(request_id);
-                        priority_budget = priority_budget.saturating_sub(tokens_to_allocate);
-                        remaining_budget = remaining_budget.saturating_sub(tokens_to_allocate);
-                        remaining_slots -= 1;
-
-                        // Track tokens by priority
-                        self.stats.tokens_by_priority[queue_idx] += tokens_to_allocate as u64;
-                    }
-                }
-            }
-
-            // Remove scheduled requests from queue and update state
-            for request_id in scheduled_from_queue {
-                queue.retain(|&id| id != request_id);
-                if let Some(request) = self.requests.get_mut(&request_id) {
-                    request.state = SequenceState::Running;
-                    self.running.push(request_id);
-
-                    // Record TTFT if first time running
-                    if request.ttft_ms.is_none() {
-                        let ttft = request.wait_time_ms() as f64;
-                        request.ttft_ms = Some(ttft);
-                        self.ttft_samples.push(ttft);
-                    }
-                }
-            }
+            let priority_budget = budgets[queue_idx].min(remaining_budget);
+            self.sort_priority_queue_by_urgency(queue_idx);
+            let scheduled_ids = self.allocate_from_priority(
+                queue_idx,
+                priority_budget,
+                &mut remaining_slots,
+                &mut remaining_budget,
+                &mut scheduled,
+            );
+            self.promote_scheduled_to_running(queue_idx, &scheduled_ids);
         }
 
         self.update_queue_depths();
         scheduled
+    }
+
+    /// Compute per-priority token budgets for a single schedule tick.
+    /// Fair-share mode splits the batch budget via `priority_budgets` ratios;
+    /// otherwise each priority may claim the full batch budget.
+    fn priority_budgets(&self) -> [usize; 4] {
+        if self.config.enable_fair_share {
+            self.config
+                .priority_budgets
+                .map(|b| (b * self.batch_token_budget as f64) as usize)
+        } else {
+            [self.batch_token_budget; 4]
+        }
+    }
+
+    /// Reorder a priority queue by urgency score (descending) when
+    /// deadline-aware scheduling is enabled.
+    fn sort_priority_queue_by_urgency(&mut self, queue_idx: usize) {
+        if !self.config.enable_deadline_scheduling {
+            return;
+        }
+        let mut sorted: Vec<_> = self.priority_queues[queue_idx].iter().copied().collect();
+        sorted.sort_by(|&a, &b| {
+            match (self.requests.get(&a), self.requests.get(&b)) {
+                (Some(ra), Some(rb)) => rb
+                    .urgency_score()
+                    .partial_cmp(&ra.urgency_score())
+                    .unwrap_or(std::cmp::Ordering::Equal),
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+        self.priority_queues[queue_idx] = sorted.into_iter().collect();
+    }
+
+    /// Walk a priority queue and allocate tokens to requests, appending
+    /// `(id, tokens)` pairs to `scheduled`. Returns the ids scheduled from
+    /// this queue so callers can promote them to running.
+    fn allocate_from_priority(
+        &mut self,
+        queue_idx: usize,
+        mut priority_budget: usize,
+        remaining_slots: &mut usize,
+        remaining_budget: &mut usize,
+        scheduled: &mut Vec<(u64, usize)>,
+    ) -> Vec<u64> {
+        let min_tokens = self.config.min_tokens_per_request;
+        let mut scheduled_from_queue = Vec::new();
+        let queue_snapshot: Vec<u64> = self.priority_queues[queue_idx].iter().copied().collect();
+
+        for request_id in queue_snapshot {
+            if *remaining_slots == 0 || priority_budget < min_tokens {
+                break;
+            }
+            let Some(tokens_to_allocate) =
+                self.tokens_to_allocate_for(request_id, priority_budget, min_tokens)
+            else {
+                continue;
+            };
+
+            scheduled.push((request_id, tokens_to_allocate));
+            scheduled_from_queue.push(request_id);
+            priority_budget = priority_budget.saturating_sub(tokens_to_allocate);
+            *remaining_budget = remaining_budget.saturating_sub(tokens_to_allocate);
+            *remaining_slots -= 1;
+            self.stats.tokens_by_priority[queue_idx] += tokens_to_allocate as u64;
+        }
+        scheduled_from_queue
+    }
+
+    /// Compute tokens to allocate to a single request, clamped to the priority
+    /// budget and `min_tokens_per_request` floor. Returns `None` if the
+    /// request id is no longer present.
+    fn tokens_to_allocate_for(
+        &self,
+        request_id: u64,
+        priority_budget: usize,
+        min_tokens: usize,
+    ) -> Option<usize> {
+        let request = self.requests.get(&request_id)?;
+        let tokens_needed = request.remaining_tokens().max(1);
+        let allocated = tokens_needed.min(priority_budget).max(min_tokens);
+        (allocated > 0).then_some(allocated)
+    }
+
+    /// Move scheduled ids out of their priority queue into `running` and
+    /// record TTFT on first promotion.
+    fn promote_scheduled_to_running(&mut self, queue_idx: usize, scheduled_ids: &[u64]) {
+        for &request_id in scheduled_ids {
+            self.priority_queues[queue_idx].retain(|&id| id != request_id);
+            let Some(request) = self.requests.get_mut(&request_id) else {
+                continue;
+            };
+            request.state = SequenceState::Running;
+            self.running.push(request_id);
+            if request.ttft_ms.is_none() {
+                let ttft = request.wait_time_ms() as f64;
+                request.ttft_ms = Some(ttft);
+                self.ttft_samples.push(ttft);
+            }
+        }
     }
 
     /// Complete a request and update statistics
