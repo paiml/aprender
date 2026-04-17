@@ -14,28 +14,50 @@ impl OwnedQuantizedModelCuda {
     ///
     /// Returns error if weight upload fails or model uses fused QKV (phi-2 style).
     pub fn preload_weights_gpu(&mut self) -> Result<usize> {
-        // THREAD-RESOLVED: Ensure CUDA context is current for this thread
+        self.make_cuda_current()?;
+        let num_layers = self.model.layers.len();
+
+        let mut total_bytes = self.preload_layer_projection_weights()?;
+        total_bytes += self.preload_all_norm_weights(num_layers)?;
+        total_bytes += self.preload_qkv_bias_weights(num_layers)?;
+        total_bytes += self.preload_lm_head_bias_wrapped()?;
+        total_bytes += self.preload_qk_norm_weights()?;
+        self.ensure_indexed_weights_and_workspace(num_layers)?;
+
+        Ok(total_bytes)
+    }
+
+    /// THREAD-RESOLVED: Ensure CUDA context is current for this thread.
+    fn make_cuda_current(&mut self) -> Result<()> {
         self.executor
             .make_current()
-            .map_err(|e| RealizarError::UnsupportedOperation {
-                operation: "cuda_make_current".to_string(),
-                reason: format!("Failed to set CUDA context current: {e}"),
+            .map_err(|e| Self::cuda_err("cuda_make_current", "Failed to set CUDA context current", e))
+    }
+
+    /// PAR-023: Pre-cache per-layer RMSNorm weights + final output norm.
+    fn preload_all_norm_weights(&mut self, num_layers: usize) -> Result<usize> {
+        let (attn_norms, ffn_norms) = self.collect_layer_norm_slices();
+        let mut total_bytes = self
+            .executor
+            .preload_rmsnorm_weights(num_layers, &attn_norms, &ffn_norms)
+            .map_err(|e| Self::cuda_err("preload_weights_gpu", "Failed to upload RMSNorm weights", e))?;
+        total_bytes += self
+            .executor
+            .preload_output_norm(&self.model.output_norm_weight)
+            .map_err(|e| {
+                Self::cuda_err("preload_weights_gpu", "Failed to upload output norm weights", e)
             })?;
+        Ok(total_bytes)
+    }
 
-        let mut total_bytes = 0usize;
-
-        // Upload per-layer projection weights (Q/K/V, O, FFN) + LM head
-        total_bytes += self.preload_layer_projection_weights()?;
-
-        // PAR-023: Pre-cache RMSNorm weights for all layers
-        let num_layers = self.model.layers.len();
-        let attn_norms: Vec<&[f32]> = self
+    fn collect_layer_norm_slices(&self) -> (Vec<&[f32]>, Vec<&[f32]>) {
+        let attn_norms = self
             .model
             .layers
             .iter()
             .map(|l| l.attn_norm_weight.as_slice())
             .collect();
-        let ffn_norms: Vec<&[f32]> = self
+        let ffn_norms = self
             .model
             .layers
             .iter()
@@ -45,72 +67,56 @@ impl OwnedQuantizedModelCuda {
                     .map_or(l.attn_norm_weight.as_slice(), |w| w.as_slice())
             })
             .collect();
+        (attn_norms, ffn_norms)
+    }
 
-        total_bytes += self
-            .executor
-            .preload_rmsnorm_weights(num_layers, &attn_norms, &ffn_norms)
-            .map_err(|e| RealizarError::UnsupportedOperation {
-                operation: "preload_weights_gpu".to_string(),
-                reason: format!("Failed to upload RMSNorm weights: {}", e),
-            })?;
-
-        // PAR-023: Pre-cache output norm (final layer norm) weight
-        // This enables fully GPU-resident forward pass including output norm + LM head
-        total_bytes += self
-            .executor
-            .preload_output_norm(&self.model.output_norm_weight)
-            .map_err(|e| RealizarError::UnsupportedOperation {
-                operation: "preload_weights_gpu".to_string(),
-                reason: format!("Failed to upload output norm weights: {}", e),
-            })?;
-
-        // BIAS-FIX: Pre-cache QKV bias vectors for all layers (GQA-aware)
-        total_bytes += self.preload_qkv_bias_weights(num_layers)?;
-
-        // PAR-064-FIX: Pre-cache LM head bias (output.bias) for models that have it
-        // Without this bias, GPU inference produces incorrect token predictions
-        total_bytes += self
-            .executor
+    /// PAR-064-FIX: Pre-cache LM head bias (output.bias). Without this bias,
+    /// GPU inference produces incorrect token predictions for models that have
+    /// it.
+    fn preload_lm_head_bias_wrapped(&mut self) -> Result<usize> {
+        self.executor
             .preload_lm_head_bias(self.model.lm_head_bias.as_deref())
-            .map_err(|e| RealizarError::UnsupportedOperation {
-                operation: "preload_weights_gpu".to_string(),
-                reason: format!("Failed to upload LM head bias: {}", e),
-            })?;
+            .map_err(|e| Self::cuda_err("preload_weights_gpu", "Failed to upload LM head bias", e))
+    }
 
-        // GH-279: Pre-cache QkNorm weights for Qwen3 per-head RMSNorm
-        total_bytes += self.preload_qk_norm_weights()?;
-
-        // PAR-043: Build indexed weight lookup table for O(1) access during decode
-        // This eliminates ~10ms constant CPU overhead per token from string formatting + HashMap lookups
-        // PAR-107: Skip if already indexed to preserve CUDA graph (graph captures buffer addresses)
+    /// PAR-043/044/107: Build indexed weight lookup + initialize workspace.
+    /// Skipped when already built — CUDA graph capture freezes buffer
+    /// addresses, so reallocating would invalidate the graph.
+    fn ensure_indexed_weights_and_workspace(&mut self, num_layers: usize) -> Result<()> {
         if !self.executor.has_indexed_weights() {
-            // GH-279: Pass ArchConstraints for ValidatedLayerWeights enforcement
             let arch = &self.model.config.constraints;
             self.executor
                 .build_indexed_weights(num_layers, |i| format!("blk.{}", i), arch)
-                .map_err(|e| RealizarError::UnsupportedOperation {
-                    operation: "preload_weights_gpu".to_string(),
-                    reason: format!("PAR-043: Failed to build indexed weights: {}", e),
+                .map_err(|e| {
+                    Self::cuda_err(
+                        "preload_weights_gpu",
+                        "PAR-043: Failed to build indexed weights",
+                        e,
+                    )
                 })?;
         }
-
-        // PAR-044: Initialize workspace buffers for zero-allocation forward pass
-        // This eliminates ~288 buffer allocations per token
-        // PAR-107: Skip if already initialized to preserve CUDA graph (graph captures buffer addresses)
-        // ROOT CAUSE FIX: Reallocating workspace invalidates graph since addresses change
         if !self.executor.has_workspace() {
             self.executor
                 .init_workspace(
                     self.model.config.hidden_dim,
                     self.model.config.intermediate_dim,
                 )
-                .map_err(|e| RealizarError::UnsupportedOperation {
-                    operation: "preload_weights_gpu".to_string(),
-                    reason: format!("PAR-044: Failed to initialize workspace: {}", e),
+                .map_err(|e| {
+                    Self::cuda_err(
+                        "preload_weights_gpu",
+                        "PAR-044: Failed to initialize workspace",
+                        e,
+                    )
                 })?;
         }
+        Ok(())
+    }
 
-        Ok(total_bytes)
+    fn cuda_err<E: std::fmt::Display>(op: &str, reason: &str, e: E) -> RealizarError {
+        RealizarError::UnsupportedOperation {
+            operation: op.to_string(),
+            reason: format!("{reason}: {e}"),
+        }
     }
 
     /// GH-279: Pre-cache QkNorm weights for Qwen3 per-head RMSNorm.
