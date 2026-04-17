@@ -45,48 +45,64 @@ pub fn qr_factorize(a: &[f32], m: usize, n: usize) -> Result<QrFactorization, So
     let mut tau = vec![0.0f32; min_mn];
 
     for k in 0..min_mn {
-        // Compute Householder vector for column k, rows k..m
-        let mut norm_sq = 0.0f64;
-        for i in k..m {
-            let v = f64::from(qr[i * n + k]);
-            norm_sq += v * v;
-        }
-        let norm = norm_sq.sqrt();
-
+        let norm = householder_column_norm(&qr, k, m, n);
         if norm < f64::from(f32::EPSILON) {
             tau[k] = 0.0;
             continue;
         }
-
-        // Choose sign to avoid cancellation
-        let alpha = f64::from(qr[k * n + k]);
-        let beta = if alpha >= 0.0 { -norm } else { norm };
-
-        tau[k] = ((beta - alpha) / beta) as f32;
-        let scale = 1.0 / (alpha - beta);
-
-        // Scale the Householder vector
-        for i in (k + 1)..m {
-            qr[i * n + k] = (f64::from(qr[i * n + k]) * scale) as f32;
-        }
+        let beta = build_householder_vector(&mut qr, &mut tau, k, norm, m, n);
+        apply_householder_to_trailing(&mut qr, tau[k], k, m, n);
         qr[k * n + k] = beta as f32;
-
-        // Apply Householder reflection to remaining columns
-        for j in (k + 1)..n {
-            let mut dot = f64::from(qr[k * n + j]);
-            for i in (k + 1)..m {
-                dot += f64::from(qr[i * n + k]) * f64::from(qr[i * n + j]);
-            }
-            dot *= f64::from(tau[k]);
-
-            qr[k * n + j] -= dot as f32;
-            for i in (k + 1)..m {
-                qr[i * n + j] -= (f64::from(qr[i * n + k]) * dot) as f32;
-            }
-        }
     }
 
     Ok(QrFactorization { m, n, qr, tau })
+}
+
+/// Norm of the subcolumn qr[k..m, k] (in f64 for accuracy).
+fn householder_column_norm(qr: &[f32], k: usize, m: usize, n: usize) -> f64 {
+    let mut norm_sq = 0.0f64;
+    for i in k..m {
+        let v = f64::from(qr[i * n + k]);
+        norm_sq += v * v;
+    }
+    norm_sq.sqrt()
+}
+
+/// Compute `tau[k]`, scale the Householder sub-vector in place, and return `beta`.
+#[allow(clippy::cast_possible_truncation)]
+fn build_householder_vector(
+    qr: &mut [f32],
+    tau: &mut [f32],
+    k: usize,
+    norm: f64,
+    m: usize,
+    n: usize,
+) -> f64 {
+    let alpha = f64::from(qr[k * n + k]);
+    let beta = if alpha >= 0.0 { -norm } else { norm };
+    tau[k] = ((beta - alpha) / beta) as f32;
+    let scale = 1.0 / (alpha - beta);
+    for i in (k + 1)..m {
+        qr[i * n + k] = (f64::from(qr[i * n + k]) * scale) as f32;
+    }
+    beta
+}
+
+/// Apply the current Householder reflector to columns `k+1..n`.
+#[allow(clippy::cast_possible_truncation)]
+fn apply_householder_to_trailing(qr: &mut [f32], tau_k: f32, k: usize, m: usize, n: usize) {
+    for j in (k + 1)..n {
+        let mut dot = f64::from(qr[k * n + j]);
+        for i in (k + 1)..m {
+            dot += f64::from(qr[i * n + k]) * f64::from(qr[i * n + j]);
+        }
+        dot *= f64::from(tau_k);
+
+        qr[k * n + j] -= dot as f32;
+        for i in (k + 1)..m {
+            qr[i * n + j] -= (f64::from(qr[i * n + k]) * dot) as f32;
+        }
+    }
 }
 
 impl QrFactorization {
