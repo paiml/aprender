@@ -7,29 +7,11 @@ fn generate_tickets(
     min_occurrences: usize,
     ticket_mode: &str,
 ) {
-    if !matches!(ticket_mode, "draft" | "create") {
-        eprintln!("Error: Unknown ticket mode: {ticket_mode}");
-        eprintln!("  Valid modes: draft, create");
-        std::process::exit(1);
-    }
+    validate_ticket_mode_or_exit(ticket_mode);
     let is_draft = ticket_mode == "draft";
 
-    let evidence_json = match std::fs::read_to_string(evidence_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error reading evidence file: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    let evidence = match parse_evidence(&evidence_json) {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    };
-
+    let evidence_json = read_file_or_exit(evidence_path, "evidence file");
+    let evidence = parse_evidence_or_exit(&evidence_json);
     let tickets =
         generate_tickets_from_evidence(&evidence, repo, black_swans_only, min_occurrences);
 
@@ -40,61 +22,89 @@ fn generate_tickets(
     }
 
     if is_draft {
-        // F-TICKET-004: Draft mode - only print, don't create files
-        println!("=== Ticket Drafts ({}) ===", tickets.len());
-        println!("(Draft mode: No files created)\n");
-
-        for ticket in &tickets {
-            println!("--- {} ---", ticket.title);
-            println!("Priority: {}", ticket.priority);
-            println!("Category: {}", ticket.category);
-            println!("Labels: {}", ticket.labels.join(", "));
-            println!();
-            println!("Body:");
-            println!("{}", ticket.body);
-            println!();
-            println!("gh command (would run):");
-            println!("  {}\n", ticket.to_gh_command(repo));
-            println!("{}", "=".repeat(60));
-        }
+        print_ticket_drafts(&tickets, repo);
     } else {
-        // Create mode — actually run gh commands to file issues
-        println!("=== Creating Tickets ({}) ===\n", tickets.len());
-        let mut created = 0;
-        let mut failed = 0;
+        create_tickets_or_exit(&tickets, repo);
+    }
+}
 
-        for ticket in &tickets {
-            println!("--- {} ---", ticket.title);
-            let gh_cmd = ticket.to_gh_command(repo);
-            println!("  Running: {gh_cmd}");
+fn validate_ticket_mode_or_exit(ticket_mode: &str) {
+    if !matches!(ticket_mode, "draft" | "create") {
+        eprintln!("Error: Unknown ticket mode: {ticket_mode}");
+        eprintln!("  Valid modes: draft, create");
+        std::process::exit(1);
+    }
+}
 
-            // Build the gh issue create command
-            let mut args = vec!["issue", "create", "--repo", repo, "--title", &ticket.title, "--body", &ticket.body];
-            for label in &ticket.labels {
-                args.push("--label");
-                args.push(label);
-            }
-            match std::process::Command::new("gh").args(&args).output() {
-                Ok(output) if output.status.success() => {
-                    let url = String::from_utf8_lossy(&output.stdout);
-                    println!("  Created: {}", url.trim());
-                    created += 1;
-                }
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    eprintln!("  Failed: {}", stderr.trim());
-                    failed += 1;
-                }
-                Err(e) => {
-                    eprintln!("  Failed to run gh: {e}");
-                    failed += 1;
-                }
-            }
+/// F-TICKET-004: Draft mode — only print, don't create files.
+fn print_ticket_drafts(tickets: &[aprender_qa_report::ticket::UpstreamTicket], repo: &str) {
+    println!("=== Ticket Drafts ({}) ===", tickets.len());
+    println!("(Draft mode: No files created)\n");
+
+    for ticket in tickets {
+        println!("--- {} ---", ticket.title);
+        println!("Priority: {}", ticket.priority);
+        println!("Category: {}", ticket.category);
+        println!("Labels: {}", ticket.labels.join(", "));
+        println!();
+        println!("Body:");
+        println!("{}", ticket.body);
+        println!();
+        println!("gh command (would run):");
+        println!("  {}\n", ticket.to_gh_command(repo));
+        println!("{}", "=".repeat(60));
+    }
+}
+
+/// Create mode — actually run gh commands to file issues.
+fn create_tickets_or_exit(tickets: &[aprender_qa_report::ticket::UpstreamTicket], repo: &str) {
+    println!("=== Creating Tickets ({}) ===\n", tickets.len());
+    let mut created = 0usize;
+    let mut failed = 0usize;
+
+    for ticket in tickets {
+        println!("--- {} ---", ticket.title);
+        let gh_cmd = ticket.to_gh_command(repo);
+        println!("  Running: {gh_cmd}");
+        if create_single_ticket(ticket, repo) {
+            created += 1;
+        } else {
+            failed += 1;
         }
+    }
 
-        println!("\nCreated: {created}, Failed: {failed}");
-        if failed > 0 {
-            std::process::exit(1);
+    println!("\nCreated: {created}, Failed: {failed}");
+    if failed > 0 {
+        std::process::exit(1);
+    }
+}
+
+/// Run `gh issue create` for a single ticket; return true on success.
+fn create_single_ticket(ticket: &aprender_qa_report::ticket::UpstreamTicket, repo: &str) -> bool {
+    let mut args = vec![
+        "issue", "create",
+        "--repo", repo,
+        "--title", &ticket.title,
+        "--body", &ticket.body,
+    ];
+    for label in &ticket.labels {
+        args.push("--label");
+        args.push(label);
+    }
+    match std::process::Command::new("gh").args(&args).output() {
+        Ok(output) if output.status.success() => {
+            let url = String::from_utf8_lossy(&output.stdout);
+            println!("  Created: {}", url.trim());
+            true
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("  Failed: {}", stderr.trim());
+            false
+        }
+        Err(e) => {
+            eprintln!("  Failed to run gh: {e}");
+            false
         }
     }
 }
