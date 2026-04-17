@@ -389,7 +389,13 @@ fi
 
 ### V4. Complexity hotspots tracked
 ```bash
-HIGH_CC=$(pmat analyze complexity -p crates/apr-cli/ 2>&1 | awk '$NF > 15 {count++} END {print count+0}' 2>/dev/null || echo "0")
+# Count true CC>15 functions via JSON. The ANSI-coloured text output also
+# contains section headers whose last numeric field exceeds 15 (e.g. the
+# refactoring-time estimate or the per-file Cyclomatic totals), so awk over
+# stdout was over-counting; use the structured format instead.
+HIGH_CC=$(pmat analyze complexity -p crates/apr-cli/ --format json 2>/dev/null \
+  | jq '[.files[].functions[] | select(.metrics.cyclomatic > 15)] | length' 2>/dev/null \
+  || echo "0")
 echo "V4: $HIGH_CC functions with CC > 15"
 [ "$HIGH_CC" -le 3 ] && echo "V4 PASS" || echo "V4 WARN: $HIGH_CC high-complexity functions"
 ```
@@ -406,7 +412,9 @@ for c in contracts/apr-cli-qa-v1.yaml contracts/apr-qa-metamorphic-v1.yaml \
   python3 -c "import yaml; yaml.safe_load(open('$c'))" 2>/dev/null && V1_OK=$((V1_OK+1))
 done
 V2_SATD=$(pmat analyze satd -p crates/apr-cli/ 2>&1 | grep -c "High" 2>/dev/null || echo "0")
-V4_CC=$(pmat analyze complexity -p crates/apr-cli/ 2>&1 | awk '$NF > 15 {count++} END {print count+0}' 2>/dev/null || echo "0")
+V4_CC=$(pmat analyze complexity -p crates/apr-cli/ --format json 2>/dev/null \
+  | jq '[.files[].functions[] | select(.metrics.cyclomatic > 15)] | length' 2>/dev/null \
+  || echo "0")
 M=$(find ~/models -maxdepth 2 \( -name "*.gguf" -o -name "*.apr" \) -type f | head -1)
 V3_OK=$([ -n "$M" ] && echo 1 || echo 0)
 
