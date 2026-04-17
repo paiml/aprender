@@ -438,9 +438,10 @@ fn looks_like_code_output(trimmed: &str) -> bool {
         || trimmed.starts_with('(')
 }
 
-/// Returns true if a line looks like a continuation of a prose paragraph
-/// (lowercase first word, not a field/header marker) rather than the start
-/// of a new section, so multi-line descriptions merge correctly.
+/// Returns true if `line` looks like a continuation of a prose paragraph.
+///
+/// Lowercase first word with no field/header marker indicates the line should
+/// be merged into the preceding description rather than starting a new section.
 #[must_use]
 pub fn is_prose_continuation(line: &str) -> bool {
     let trimmed = line.trim();
