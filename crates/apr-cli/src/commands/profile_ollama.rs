@@ -88,52 +88,45 @@ fn run_ollama_comparison(path: &Path, tokens: usize) -> Option<OllamaBaseline> {
     }
 }
 
-/// Print Ollama comparison report
-fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseline) {
-    println!();
-    output::subheader("Ollama Parity Report");
-    println!();
-
-    let parity_ratio = if baseline.decode_tok_s > 0.0 {
-        results.decode_tok_s / baseline.decode_tok_s
+fn parity_ratio(apr_tok_s: f64, baseline_tok_s: f64) -> f64 {
+    if baseline_tok_s > 0.0 {
+        apr_tok_s / baseline_tok_s
     } else {
         0.0
-    };
+    }
+}
 
-    // Grade based on Ollama parity
-    // C = parity (1.0x), A = 2.0x, F = <0.5x
-    let grade = if parity_ratio >= 2.0 {
+/// Map a decode parity ratio to (letter grade, human label, colour tag).
+/// Boundaries: A+ ≥ 2.0×, A ≥ 1.5×, B ≥ 1.0×, C ≥ 0.75×, D ≥ 0.5×, else F.
+fn parity_grade(ratio: f64) -> (&'static str, &'static str, &'static str) {
+    if ratio >= 2.0 {
         ("A+", "Excellent — 2x+ Ollama", "green")
-    } else if parity_ratio >= 1.5 {
+    } else if ratio >= 1.5 {
         ("A", "Great — 1.5x+ Ollama", "green")
-    } else if parity_ratio >= 1.0 {
+    } else if ratio >= 1.0 {
         ("B", "Good — Ollama parity achieved", "cyan")
-    } else if parity_ratio >= 0.75 {
+    } else if ratio >= 0.75 {
         ("C", "Passing — within 75% of Ollama", "yellow")
-    } else if parity_ratio >= 0.5 {
+    } else if ratio >= 0.5 {
         ("D", "Below parity — 50-75% of Ollama", "yellow")
     } else {
         ("F", "Critical — less than 50% of Ollama", "red")
-    };
+    }
+}
 
-    println!(
-        "  {} ({})",
-        baseline.model_name.cyan(),
-        results.backend.to_uppercase()
-    );
-    println!();
+fn print_parity_table(
+    results: &RealProfileResults,
+    baseline: &OllamaBaseline,
+    decode_ratio: f64,
+) {
     println!("  ┌────────────┬──────────────┬──────────────┬───────────┐");
     println!("  │ Metric     │ apr          │ Ollama       │ Ratio     │");
     println!("  ├────────────┼──────────────┼──────────────┼───────────┤");
-
-    // Decode throughput
-    let decode_ratio_str = format!("{:.2}x", parity_ratio);
+    let decode_ratio_str = format!("{:.2}x", decode_ratio);
     println!(
         "  │ Decode     │ {:>8.1} t/s │ {:>8.1} t/s │ {:>9} │",
         results.decode_tok_s, baseline.decode_tok_s, decode_ratio_str
     );
-
-    // Prefill throughput
     if baseline.prefill_tok_s > 0.0 && results.prefill_tok_s > 0.0 {
         let prefill_ratio = results.prefill_tok_s / baseline.prefill_tok_s;
         println!(
@@ -141,18 +134,10 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
             results.prefill_tok_s, baseline.prefill_tok_s, prefill_ratio
         );
     }
-
     println!("  └────────────┴──────────────┴──────────────┴───────────┘");
-    println!();
+}
 
-    println!("  Grade: {} — {}", grade.0.bold(), grade.1);
-    println!(
-        "  Parity: {:.1}% of Ollama decode throughput",
-        parity_ratio * 100.0
-    );
-    println!();
-
-    // Citations for methodology
+fn print_methodology_citations() {
     println!("  {}", "Methodology:".dimmed());
     println!(
         "  {}",
@@ -162,6 +147,33 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
         "  {}",
         "  Williams et al. (2009) 'Roofline: An Insightful Visual Performance Model'".dimmed()
     );
+}
+
+/// Print Ollama comparison report
+fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseline) {
+    println!();
+    output::subheader("Ollama Parity Report");
+    println!();
+
+    let ratio = parity_ratio(results.decode_tok_s, baseline.decode_tok_s);
+    let grade = parity_grade(ratio);
+
+    println!(
+        "  {} ({})",
+        baseline.model_name.cyan(),
+        results.backend.to_uppercase()
+    );
+    println!();
+    print_parity_table(results, baseline, ratio);
+    println!();
+
+    println!("  Grade: {} — {}", grade.0.bold(), grade.1);
+    println!(
+        "  Parity: {:.1}% of Ollama decode throughput",
+        ratio * 100.0
+    );
+    println!();
+    print_methodology_citations();
 }
 
 // ============================================================================
