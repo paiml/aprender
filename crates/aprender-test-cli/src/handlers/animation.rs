@@ -11,57 +11,18 @@ use jugar_probar::animation::{
 
 /// Execute the animation check command.
 pub fn execute_check(config: &CliConfig, args: &AnimationCheckArgs) -> CliResult<()> {
-    let timeline_path = &args.timeline;
-    if !timeline_path.exists() {
-        return Err(CliError::invalid_argument(format!(
-            "Timeline file not found: {}",
-            timeline_path.display()
-        )));
-    }
-
-    let observed_path = &args.observed;
-    if !observed_path.exists() {
-        return Err(CliError::invalid_argument(format!(
-            "Observed events file not found: {}",
-            observed_path.display()
-        )));
-    }
+    ensure_exists(&args.timeline, "Timeline file not found")?;
+    ensure_exists(&args.observed, "Observed events file not found")?;
 
     if config.verbosity.is_verbose() {
-        println!("Verifying animation timeline: {}", timeline_path.display());
+        println!("Verifying animation timeline: {}", args.timeline.display());
     }
 
-    let timeline_json = std::fs::read_to_string(timeline_path)
-        .map_err(|e| CliError::test_execution(format!("Failed to read timeline: {e}")))?;
-    let timeline: AnimationTimeline = serde_json::from_str(&timeline_json)
-        .map_err(|e| CliError::test_execution(format!("Failed to parse timeline JSON: {e}")))?;
-
-    let observed_json = std::fs::read_to_string(observed_path)
-        .map_err(|e| CliError::test_execution(format!("Failed to read observed events: {e}")))?;
-    let observed: Vec<ObservedEventJson> = serde_json::from_str(&observed_json).map_err(|e| {
-        CliError::test_execution(format!("Failed to parse observed events JSON: {e}"))
-    })?;
-
-    let observed_events: Vec<ObservedEvent> = observed
-        .into_iter()
-        .map(|o| ObservedEvent {
-            name: o.name,
-            time_secs: o.time_secs,
-        })
-        .collect();
-
+    let timeline = load_timeline(&args.timeline)?;
+    let observed_events = load_observed_events(&args.observed)?;
     let report = verify_timeline(&timeline, &observed_events, args.tolerance_ms);
 
-    match args.format {
-        OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&report)
-                .map_err(|e| CliError::test_execution(format!("JSON serialization failed: {e}")))?;
-            println!("{json}");
-        }
-        OutputFormat::Text => {
-            render_text_report(&report, args.tolerance_ms);
-        }
-    }
+    emit_report(args, &report)?;
 
     if report.verdict == AnimationVerdict::Pass {
         Ok(())
@@ -71,6 +32,54 @@ pub fn execute_check(config: &CliConfig, args: &AnimationCheckArgs) -> CliResult
             report.video_id, report.verified_events, report.total_events
         )))
     }
+}
+
+fn ensure_exists(path: &std::path::Path, what: &str) -> CliResult<()> {
+    if path.exists() {
+        Ok(())
+    } else {
+        Err(CliError::invalid_argument(format!(
+            "{what}: {}",
+            path.display()
+        )))
+    }
+}
+
+fn load_timeline(path: &std::path::Path) -> CliResult<AnimationTimeline> {
+    let body = std::fs::read_to_string(path)
+        .map_err(|e| CliError::test_execution(format!("Failed to read timeline: {e}")))?;
+    serde_json::from_str(&body)
+        .map_err(|e| CliError::test_execution(format!("Failed to parse timeline JSON: {e}")))
+}
+
+fn load_observed_events(path: &std::path::Path) -> CliResult<Vec<ObservedEvent>> {
+    let body = std::fs::read_to_string(path)
+        .map_err(|e| CliError::test_execution(format!("Failed to read observed events: {e}")))?;
+    let raw: Vec<ObservedEventJson> = serde_json::from_str(&body).map_err(|e| {
+        CliError::test_execution(format!("Failed to parse observed events JSON: {e}"))
+    })?;
+    Ok(raw
+        .into_iter()
+        .map(|o| ObservedEvent {
+            name: o.name,
+            time_secs: o.time_secs,
+        })
+        .collect())
+}
+
+fn emit_report(
+    args: &AnimationCheckArgs,
+    report: &jugar_probar::animation::AnimationReport,
+) -> CliResult<()> {
+    match args.format {
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(&report)
+                .map_err(|e| CliError::test_execution(format!("JSON serialization failed: {e}")))?;
+            println!("{json}");
+        }
+        OutputFormat::Text => render_text_report(report, args.tolerance_ms),
+    }
+    Ok(())
 }
 
 /// JSON-deserializable observed event (matches the file format).
