@@ -1,0 +1,211 @@
+---
+contract_id: F-PROFILE-010
+title: "apr profile — Separate Graphed Throughput from Ungraphed Per-Op Hotspots"
+version: 1.0.0
+status: PROPOSED
+created: 2026-04-17
+author: aprender-perf
+related:
+  - F-PROFILE-009  # per-token normalization of launch overhead (SHIPPED)
+  - F-PROFILE-009-V2  # V2 normalization fix
+  - F-DECODE-HOTPATH-001  # per-token fs::write removal
+  - F-DECODE-HOTPATH-002  # first-N-tokens diagnostic removal
+  - F-DECODE-HOTPATH-003  # prefix-cache config.trace gating
+
+abstract: |
+  `apr profile` conflates two measurement modes in a single report:
+    (1) GRAPHED throughput — `profile_gpu_generation` runs
+        `generate_gpu_resident` end-to-end with CUDA graph capture
+        enabled (default), yielding the headline "Decode throughput: X
+        tok/s" number. This is the path `apr qa` exercises and the
+        path production serving hits.
+    (2) UNGRAPHED per-operation hotspots — `run_brick_profiler_pass`
+        (kernel.rs:371) explicitly sets `SKIP_CUDA_GRAPH=1` and calls
+        `cuda_model.clear_decode_graph()` so each kernel is launched
+        individually, instrumented via `BrickProfiler`. The resulting
+        per-op table shows `avg=16.2µs` per AttentionScore call, but
+        ~2µs of that is per-launch host overhead that graph replay
+        eliminates.
+
+  The report renders both together without distinguishing them, and
+  the "Category Summary" percentages are computed over ungraphed
+  totals. Performance engineers picking fusion targets from the
+  hotspot ranking are optimizing a measurement that does not match the
+  production hot path.
+
+# ─────────────────────────────────────────────────────────────
+# FIVE WHYS
+# ─────────────────────────────────────────────────────────────
+five_whys:
+  problem: |
+    On Qwen2.5-Coder-1.5B Q4_K_M / RTX 4090, `apr profile --granular`
+    reports "AttentionScore 37.5%, RmsNorm 21.8%, Kernel Launch
+    Overhead 48.1%" while the same run reports "Decode throughput
+    429.1 tok/s" (graphed). Summed ungraphed per-op time = ~19300µs
+    per 16 tokens = 1206µs/tok. Graphed per-token decode = 1000ms/429
+    = 2331µs/tok. Ungraphed shows only 1206µs of kernel time, so the
+    other 1125µs/tok is graph-replay internal dispatch — a *different*
+    signal from the "Kernel Launch Overhead 48.1%" number.
+
+  why_1: |
+    WHY does the hotspot table overstate kernel cost?
+    Because the brick profiler runs with `SKIP_CUDA_GRAPH=1` — every
+    kernel pays full per-launch host overhead (cuLaunchKernel ~2µs on
+    modern drivers). Graphed replay amortizes this: 647 nodes in a
+    single cuGraphLaunch → ~0.3µs average dispatch per node.
+
+  why_2: |
+    WHY was the profiler built to skip the graph?
+    BrickProfiler inserts cudaEventRecord before/after each kernel via
+    per-op timing hooks. Graph capture freezes the node list; you
+    can't inject event records without re-capturing, and re-capturing
+    every iteration defeats the graph's amortization. So SKIP was
+    chosen as the simpler implementation.
+
+  why_3: |
+    WHY is this missing from the rendered output?
+    `profile_print_hotspot.rs` renders the hotspot table without a
+    "measurement mode" annotation. The F-PROFILE-009 overhead line
+    already exists but doesn't explain the methodology gap.
+
+  why_4: |
+    WHY does this matter for optimization decisions?
+    The ungraphed AttentionScore cost is 16.2µs/call. Of that,
+    ~2µs is launch overhead — graphed mode pays ~0.3µs → ~14.5µs is
+    real GPU compute. Fusing two sequential kernels eliminates 0.3µs
+    of graph-replay overhead (not 2µs). So fusion ROI is 6-7× smaller
+    than the hotspot table suggests.
+
+  why_5: |
+    WHY hasn't this been fixed?
+    Because the metric "looks" correct — large ratios, red warning,
+    invites action. F-PROFILE-009 fixed the per-token normalization
+    math but did not address the graphed-vs-ungraphed methodology
+    split. No falsification test catches the conflation.
+
+# ─────────────────────────────────────────────────────────────
+# INVARIANTS
+# ─────────────────────────────────────────────────────────────
+equations:
+  - id: methodology_separation
+    description: |
+      Report MUST distinguish graphed throughput (production-relevant)
+      from ungraphed per-op cost (fusion-target triage only).
+    requirements:
+      - 'Hotspot table header explicitly says "ungraphed" or "SKIP_CUDA_GRAPH=1"'
+      - "Graphed replay dispatch cost per kernel is computed as (graphed_decode_us - sum_kernel_compute_us) / num_nodes"
+      - "Category Summary percentages are computed from GRAPHED breakdown when available, else clearly marked ungraphed"
+
+  - id: fusion_roi_bound
+    description: |
+      Fusion savings estimate in graphed mode.
+    formula: |
+      fusion_savings_us_per_token = num_fused_nodes * graph_dispatch_per_node_us
+      (NOT: num_fused_kernels * launch_overhead_us)
+    domain: |
+      Graph-captured decode hot path. Only valid when graph replay is
+      the production path (true for all non-MoE 1.5B models today).
+
+# ─────────────────────────────────────────────────────────────
+# PROOF OBLIGATIONS
+# ─────────────────────────────────────────────────────────────
+proof_obligations:
+  - id: PO-PROF10-001
+    statement: "apr profile output clearly labels the hotspot table as ungraphed"
+    verification: |
+      apr profile <model.gguf> --granular 2>&1 | grep -E "ungraphed|SKIP_CUDA_GRAPH|per-op breakdown measured without graph"
+
+  - id: PO-PROF10-002
+    statement: "Graphed dispatch-per-kernel cost is reported separately"
+    verification: |
+      apr profile output includes a line like:
+      "Graph replay dispatch: X.Xµs per kernel node (Y nodes, Zµs per token)"
+
+  - id: PO-PROF10-003
+    statement: "Fusion ROI estimator uses graphed dispatch cost, not per-launch overhead"
+    verification: |
+      Source inspection: no code path uses (num_kernels * kernel_launch_overhead_us)
+      as a fusion savings estimate. Fusion estimates use graph-node overhead.
+
+# ─────────────────────────────────────────────────────────────
+# FALSIFICATION TESTS
+# ─────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-PROF10-001
+    name: "Hotspot table labels measurement mode"
+    method: |
+      apr profile /path/to/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --granular
+      # Output MUST contain the phrase "ungraphed" or "SKIP_CUDA_GRAPH" near
+      # the "Per-Operation Hotspots" header, OR a methodology footnote
+      # explicitly stating per-op times exclude CUDA graph amortization.
+    expected: |
+      User reading output can distinguish graphed (throughput) from
+      ungraphed (hotspots) numbers without reading source code.
+    fails_if: |
+      Hotspot table renders without methodology disclosure, or uses the
+      word "decode" interchangeably with both graphed and ungraphed
+      measurements in the same report.
+
+  - id: FALSIFY-PROF10-002
+    name: "Graph-node dispatch cost derived from measured data"
+    method: |
+      apr profile <model.gguf> --granular
+      # Output MUST include a graphed-dispatch line whose value is
+      # computed as (graphed_total_us - sum_ungraphed_kernel_compute_us) /
+      # num_graph_nodes.
+    expected: |
+      Reported graph dispatch cost is in range [0.1µs, 2µs] for RTX 4090.
+    fails_if: |
+      No graph dispatch cost reported, OR cost is computed from
+      hypothetical values rather than both measurement passes.
+
+  - id: FALSIFY-PROF10-003
+    name: "Sanity: hotspot sum < graphed decode time in modern models"
+    method: |
+      On Qwen2.5-Coder-1.5B Q4_K_M, ungraphed kernel sum per token should
+      EXCEED graphed decode per token (because ungraphed includes launch
+      overhead that graph eliminates). Check the inequality holds.
+    expected: |
+      sum_kernel_us_per_token > graphed_decode_us_per_token
+      (difference represents launch overhead saved by graphing)
+    fails_if: |
+      sum_kernel_us_per_token <= graphed_decode_us_per_token
+      (would indicate profiler is missing kernels or graphed path is
+      running something else).
+
+# ─────────────────────────────────────────────────────────────
+# IMPLEMENTATION PLAN
+# ─────────────────────────────────────────────────────────────
+implementation:
+  files_to_modify:
+    - path: crates/apr-cli/src/commands/kernel.rs
+      change: |
+        - In run_brick_profiler_pass, record the number of graph nodes
+          captured during the non-profiled warmup pass (before enabling
+          SKIP_CUDA_GRAPH) so we can report graph-node count.
+        - After both passes, compute graph_dispatch_per_node_us =
+          (graphed_decode_us/token - sum_kernel_compute_us/token) /
+          graph_node_count.
+
+    - path: crates/apr-cli/src/commands/profile_print_hotspot.rs
+      change: |
+        - Annotate "Per-Operation Hotspots" header with
+          "(measured WITHOUT CUDA graph; per-kernel includes ~1-2µs
+          launch overhead that graph replay eliminates)".
+        - Add a "Graph Replay Efficiency" section showing graph-node
+          count, graphed decode per token, and dispatch-per-node cost.
+
+  followup:
+    - "Gate the brick-profiler pass behind `--per-op` flag (default: off) so fast profile runs skip the 2× cost of ungraphed measurement."
+    - "Emit JSON in profile output with explicit `graphed_us` and `ungraphed_us` fields per kernel for downstream tooling."
+
+# ─────────────────────────────────────────────────────────────
+# QA GATE
+# ─────────────────────────────────────────────────────────────
+qa_gate:
+  must_pass:
+    - FALSIFY-PROF10-001  # output labeling
+    - FALSIFY-PROF10-002  # graph dispatch reported
+    - FALSIFY-PROF10-003  # sanity inequality
+  integration: "apr profile on any graph-capable model"
+  regression_protection: "Prevents future features from re-conflating graphed/ungraphed timings."
