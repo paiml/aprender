@@ -40,39 +40,82 @@ pub fn draw_line(fb: &mut Framebuffer, x0: i32, y0: i32, x1: i32, y1: i32, color
     // Contract: display-format-v1.yaml precondition (pv codegen)
     contract_pre_display_format!(fb.pixels());
     contract_post_display_format!(&"ok");
-    let dx = (x1 - x0).abs();
-    let dy = -(y1 - y0).abs();
-    let sx = if x0 < x1 { 1 } else { -1 };
-    let sy = if y0 < y1 { 1 } else { -1 };
-    let mut err = dx + dy;
 
-    let mut x = x0;
-    let mut y = y0;
-
+    let mut cursor = BresenhamCursor::new(x0, y0, x1, y1);
     loop {
-        if x >= 0 && y >= 0 {
-            fb.set_pixel(x as u32, y as u32, color);
-        }
-
-        if x == x1 && y == y1 {
+        plot_pixel_if_visible(fb, cursor.x, cursor.y, color);
+        if cursor.finished() {
             break;
         }
+        if cursor.step() {
+            break;
+        }
+    }
+}
 
-        let e2 = 2 * err;
-        if e2 >= dy {
-            if x == x1 {
-                break;
-            }
-            err += dy;
-            x += sx;
+/// Plot one integer pixel into the framebuffer, skipping negative
+/// coordinates (off-screen on the top/left).
+fn plot_pixel_if_visible(fb: &mut Framebuffer, x: i32, y: i32, color: Rgba) {
+    if x >= 0 && y >= 0 {
+        fb.set_pixel(x as u32, y as u32, color);
+    }
+}
+
+/// State for one run of Bresenham's line algorithm.
+struct BresenhamCursor {
+    x: i32,
+    y: i32,
+    x1: i32,
+    y1: i32,
+    dx: i32,
+    dy: i32,
+    sx: i32,
+    sy: i32,
+    err: i32,
+}
+
+impl BresenhamCursor {
+    fn new(x0: i32, y0: i32, x1: i32, y1: i32) -> Self {
+        let dx = (x1 - x0).abs();
+        let dy = -(y1 - y0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
+        Self {
+            x: x0,
+            y: y0,
+            x1,
+            y1,
+            dx,
+            dy,
+            sx,
+            sy,
+            err: dx + dy,
         }
-        if e2 <= dx {
-            if y == y1 {
-                break;
+    }
+
+    fn finished(&self) -> bool {
+        self.x == self.x1 && self.y == self.y1
+    }
+
+    /// Advance one Bresenham step. Returns `true` when the step would
+    /// have moved past the endpoint — caller should stop plotting.
+    fn step(&mut self) -> bool {
+        let e2 = 2 * self.err;
+        if e2 >= self.dy {
+            if self.x == self.x1 {
+                return true;
             }
-            err += dx;
-            y += sy;
+            self.err += self.dy;
+            self.x += self.sx;
         }
+        if e2 <= self.dx {
+            if self.y == self.y1 {
+                return true;
+            }
+            self.err += self.dx;
+            self.y += self.sy;
+        }
+        false
     }
 }
 
