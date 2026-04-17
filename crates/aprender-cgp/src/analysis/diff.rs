@@ -175,21 +175,11 @@ pub fn run_diff(
     _after: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    let (baseline_path, current_path) = match (baseline, current) {
-        (Some(b), Some(c)) => (b, c),
-        _ => {
-            anyhow::bail!(
-                "Usage: cgp diff --baseline <file.json> --current <file.json>\n\
-                 Or: cgp diff --before <commit> --after <commit> (not yet implemented)"
-            );
-        }
-    };
+    let (baseline_path, current_path) = resolve_diff_paths(baseline, current)?;
 
     let start = std::time::Instant::now();
-
     let baseline_profile = export::load_json(Path::new(baseline_path))?;
     let current_profile = export::load_json(Path::new(current_path))?;
-
     let diffs = diff_profiles(&baseline_profile, &current_profile);
 
     if json {
@@ -198,44 +188,7 @@ pub fn run_diff(
     }
 
     render_diff(&diffs, baseline_path, current_path);
-
-    // Statistical regression only if we have real multi-sample data
-    if baseline_profile.timing.samples > 1 && current_profile.timing.samples > 1 {
-        let detector = RegressionDetector::new();
-        // Synthesize samples with realistic variance (stddev)
-        let b_mean = baseline_profile.timing.wall_clock_time_us;
-        let b_std = baseline_profile.timing.stddev_us.max(b_mean * 0.01);
-        let c_mean = current_profile.timing.wall_clock_time_us;
-        let c_std = current_profile.timing.stddev_us.max(c_mean * 0.01);
-
-        let b_samples: Vec<f64> = (0..30)
-            .map(|i| b_mean + b_std * ((i as f64 - 15.0) / 15.0))
-            .collect();
-        let c_samples: Vec<f64> = (0..30)
-            .map(|i| c_mean + c_std * ((i as f64 - 15.0) / 15.0))
-            .collect();
-
-        let result = detector.compare(&b_samples, &c_samples);
-        println!(
-            "  Statistical: {} (change {:.1}%, Cohen's d = {:.2})",
-            result.verdict, result.change_pct, result.effect_size_cohens_d
-        );
-    } else {
-        // Single-sample comparison — just show the change direction
-        let b = baseline_profile.timing.wall_clock_time_us;
-        let c = current_profile.timing.wall_clock_time_us;
-        if b > 0.0 && c > 0.0 {
-            let change = (c - b) / b * 100.0;
-            let verdict = if change < -5.0 {
-                "IMPROVED"
-            } else if change > 5.0 {
-                "REGRESSED"
-            } else {
-                "NO_CHANGE"
-            };
-            println!("  Statistical: {verdict} (change {change:.1}%, single-sample)");
-        }
-    }
+    print_statistical_summary(&baseline_profile, &current_profile);
 
     let elapsed = start.elapsed();
     println!(
@@ -245,6 +198,71 @@ pub fn run_diff(
     println!();
 
     Ok(())
+}
+
+/// Resolve the `--baseline`/`--current` pair or bail with usage text.
+fn resolve_diff_paths<'a>(
+    baseline: Option<&'a str>,
+    current: Option<&'a str>,
+) -> Result<(&'a str, &'a str)> {
+    match (baseline, current) {
+        (Some(b), Some(c)) => Ok((b, c)),
+        _ => anyhow::bail!(
+            "Usage: cgp diff --baseline <file.json> --current <file.json>\n\
+             Or: cgp diff --before <commit> --after <commit> (not yet implemented)"
+        ),
+    }
+}
+
+/// Print statistical regression summary, using real multi-sample analysis when
+/// both profiles have `samples > 1`, otherwise a single-sample change direction.
+fn print_statistical_summary(baseline: &FullProfile, current: &FullProfile) {
+    if baseline.timing.samples > 1 && current.timing.samples > 1 {
+        print_multi_sample_regression(baseline, current);
+    } else {
+        print_single_sample_compare(baseline, current);
+    }
+}
+
+fn print_multi_sample_regression(baseline: &FullProfile, current: &FullProfile) {
+    let detector = RegressionDetector::new();
+    let b_samples = synth_samples(
+        baseline.timing.wall_clock_time_us,
+        baseline.timing.stddev_us,
+    );
+    let c_samples = synth_samples(
+        current.timing.wall_clock_time_us,
+        current.timing.stddev_us,
+    );
+    let result = detector.compare(&b_samples, &c_samples);
+    println!(
+        "  Statistical: {} (change {:.1}%, Cohen's d = {:.2})",
+        result.verdict, result.change_pct, result.effect_size_cohens_d
+    );
+}
+
+fn synth_samples(mean: f64, stddev: f64) -> Vec<f64> {
+    let std = stddev.max(mean * 0.01);
+    (0..30)
+        .map(|i| mean + std * ((i as f64 - 15.0) / 15.0))
+        .collect()
+}
+
+fn print_single_sample_compare(baseline: &FullProfile, current: &FullProfile) {
+    let b = baseline.timing.wall_clock_time_us;
+    let c = current.timing.wall_clock_time_us;
+    if b <= 0.0 || c <= 0.0 {
+        return;
+    }
+    let change = (c - b) / b * 100.0;
+    let verdict = if change < -5.0 {
+        "IMPROVED"
+    } else if change > 5.0 {
+        "REGRESSED"
+    } else {
+        "NO_CHANGE"
+    };
+    println!("  Statistical: {verdict} (change {change:.1}%, single-sample)");
 }
 
 #[cfg(test)]
