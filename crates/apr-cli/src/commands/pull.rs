@@ -104,6 +104,41 @@ fn run_single_file(model_ref: &str, force: bool) -> Result<()> {
 /// which consumed ~4.5 GB for a 7B GGUF. This function streams with a 64KB
 /// chunked read, computes BLAKE3 incrementally, and saves to the pacha cache.
 fn run_single_file_streaming(model_ref: &str, force: bool) -> Result<()> {
+    let (org, repo, filename) = parse_hf_single_uri(model_ref)?;
+    let url = format!("https://huggingface.co/{org}/{repo}/resolve/main/{filename}");
+
+    let cache_dir = get_pacha_cache_dir()?;
+    std::fs::create_dir_all(&cache_dir)?;
+    let (extension, cache_path) = build_single_cache_path(&cache_dir, model_ref, &filename);
+
+    if !force && cache_path.exists() {
+        return report_cached_single(&cache_path);
+    }
+
+    stream_and_post_process(&url, &cache_path, model_ref, &extension)?;
+    print_pull_usage(&cache_path, true);
+    Ok(())
+}
+
+fn stream_and_post_process(
+    url: &str,
+    cache_path: &std::path::Path,
+    model_ref: &str,
+    extension: &str,
+) -> Result<()> {
+    println!();
+    println!("{}", "Downloading (streaming)...".yellow());
+    let checksum = download_file_with_progress(url, cache_path)?;
+    report_downloaded_single(cache_path, &checksum);
+
+    if extension == "safetensors" {
+        fetch_safetensors_companions(cache_path, model_ref)?;
+        convert_safetensors_formats(cache_path)?;
+    }
+    Ok(())
+}
+
+fn parse_hf_single_uri(model_ref: &str) -> Result<(String, String, String)> {
     let path = model_ref.strip_prefix("hf://").unwrap_or(model_ref);
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() < 3 {
@@ -111,54 +146,44 @@ fn run_single_file_streaming(model_ref: &str, force: bool) -> Result<()> {
             "HuggingFace URI must include a filename: {model_ref}"
         )));
     }
+    Ok((
+        parts[0].to_string(),
+        parts[1].to_string(),
+        parts[2..].join("/"),
+    ))
+}
 
-    let filename = parts[2..].join("/");
-    let url = format!(
-        "https://huggingface.co/{}/{}/resolve/main/{}",
-        parts[0], parts[1], filename
-    );
-
-    // Determine cache path in pacha cache dir
-    let cache_dir = get_pacha_cache_dir()?;
-    std::fs::create_dir_all(&cache_dir)?;
-
-    // Check if already cached (by URI hash)
+fn build_single_cache_path(
+    cache_dir: &std::path::Path,
+    model_ref: &str,
+    filename: &str,
+) -> (String, std::path::PathBuf) {
     let uri_hash = blake3::hash(model_ref.as_bytes()).to_hex().to_string();
-    let extension = std::path::Path::new(&filename)
+    let extension = std::path::Path::new(filename)
         .extension()
         .and_then(|e| e.to_str())
-        .unwrap_or("bin");
-    let cache_filename = format!("{}.{}", &uri_hash[..16], extension);
+        .unwrap_or("bin")
+        .to_string();
+    let cache_filename = format!("{}.{extension}", &uri_hash[..16]);
     let cache_path = cache_dir.join(&cache_filename);
+    (extension, cache_path)
+}
 
-    if !force && cache_path.exists() {
-        let metadata = std::fs::metadata(&cache_path)?;
-        println!("{} Model already cached", "✓".green());
-        println!("  Path: {}", cache_path.display());
-        println!("  Size: {}", format_bytes(metadata.len()));
-        print_pull_usage(&cache_path, true);
-        return Ok(());
-    }
+fn report_cached_single(cache_path: &std::path::Path) -> Result<()> {
+    let metadata = std::fs::metadata(cache_path)?;
+    println!("{} Model already cached", "✓".green());
+    println!("  Path: {}", cache_path.display());
+    println!("  Size: {}", format_bytes(metadata.len()));
+    print_pull_usage(cache_path, true);
+    Ok(())
+}
 
-    println!();
-    println!("{}", "Downloading (streaming)...".yellow());
-
-    let checksum = download_file_with_progress(&url, &cache_path)?;
-
+fn report_downloaded_single(cache_path: &std::path::Path, checksum: &FileChecksum) {
     println!();
     println!("{} Downloaded successfully", "✓".green());
     println!("  Path: {}", cache_path.display().to_string().green());
     println!("  Size: {}", format_bytes(checksum.size).yellow());
     println!("  Hash: {}", &checksum.blake3[..16]);
-
-    // Handle SafeTensors companions
-    if extension == "safetensors" {
-        fetch_safetensors_companions(&cache_path, model_ref)?;
-        convert_safetensors_formats(&cache_path)?;
-    }
-
-    print_pull_usage(&cache_path, true);
-    Ok(())
 }
 
 /// Get the pacha model cache directory.
