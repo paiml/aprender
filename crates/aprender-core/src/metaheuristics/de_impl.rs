@@ -1,4 +1,15 @@
 
+/// Accumulator for one DE generation's side-effects.
+#[derive(Default)]
+struct GenerationOutcomes {
+    evaluations: usize,
+    successful_f: Vec<f64>,
+    successful_cr: Vec<f64>,
+    improvements: Vec<f64>,
+    replacements: Vec<(usize, Vec<f64>, f64)>,
+    archive_additions: Vec<Vec<f64>>,
+}
+
 impl DifferentialEvolution {
     /// Create a new DE optimizer with default parameters.
     ///
@@ -264,82 +275,78 @@ impl DifferentialEvolution {
         F: Fn(&[f64]) -> f64,
     {
         let pop_size = self.population.len();
-        let mut evaluations = 0;
-
-        // Store successful parameters for adaptation
-        let mut successful_f = Vec::new();
-        let mut successful_cr = Vec::new();
-        let mut improvements = Vec::new();
-
-        // Store replacements to apply after the loop (avoid borrow issues)
-        let mut replacements: Vec<(usize, Vec<f64>, f64)> = Vec::new();
-        let mut archive_additions: Vec<Vec<f64>> = Vec::new();
+        let mut outcomes = GenerationOutcomes::default();
 
         for i in 0..pop_size {
-            // Get (possibly adaptive) parameters
-            let (f, cr) = self.get_adaptive_params(rng);
-
-            // Mutation
-            let mutant = self.mutate(i, f, rng);
-
-            // Crossover
-            let mut trial = Self::crossover(&self.population[i], &mutant, cr, rng);
-
-            // Bound handling
-            Self::clip_to_bounds(&mut trial, space);
-
-            // Evaluate trial
-            let trial_fitness = objective(&trial);
-            evaluations += 1;
-
-            // Selection (greedy)
-            if trial_fitness <= self.fitness[i] {
-                // Record successful params for adaptation
-                if trial_fitness < self.fitness[i] {
-                    successful_f.push(f);
-                    successful_cr.push(cr);
-                    improvements.push(self.fitness[i] - trial_fitness);
-
-                    // JADE: store old individual for archive
-                    if matches!(self.adaptation, AdaptationStrategy::JADE { .. }) {
-                        archive_additions.push(self.population[i].clone());
-                    }
-                }
-
-                replacements.push((i, trial, trial_fitness));
-            }
+            self.evaluate_trial(i, objective, space, rng, &mut outcomes);
         }
 
-        // Apply replacements
-        for (i, trial, trial_fitness) in replacements {
+        for (i, trial, trial_fitness) in outcomes.replacements {
             self.population[i] = trial;
             self.fitness[i] = trial_fitness;
         }
 
-        // Update JADE archive
-        if let AdaptationStrategy::JADE {
+        self.update_jade_archive(outcomes.archive_additions, rng);
+        self.update_best();
+        self.update_adaptation(
+            &outcomes.successful_f,
+            &outcomes.successful_cr,
+            &outcomes.improvements,
+        );
+
+        outcomes.evaluations
+    }
+
+    /// Evaluate one trial (mutate + crossover + select) and record outcomes.
+    fn evaluate_trial<F>(
+        &self,
+        i: usize,
+        objective: &F,
+        space: &SearchSpace,
+        rng: &mut StdRng,
+        outcomes: &mut GenerationOutcomes,
+    ) where
+        F: Fn(&[f64]) -> f64,
+    {
+        let (f, cr) = self.get_adaptive_params(rng);
+        let mutant = self.mutate(i, f, rng);
+        let mut trial = Self::crossover(&self.population[i], &mutant, cr, rng);
+        Self::clip_to_bounds(&mut trial, space);
+        let trial_fitness = objective(&trial);
+        outcomes.evaluations += 1;
+
+        if trial_fitness > self.fitness[i] {
+            return;
+        }
+        if trial_fitness < self.fitness[i] {
+            outcomes.successful_f.push(f);
+            outcomes.successful_cr.push(cr);
+            outcomes.improvements.push(self.fitness[i] - trial_fitness);
+            if matches!(self.adaptation, AdaptationStrategy::JADE { .. }) {
+                outcomes.archive_additions.push(self.population[i].clone());
+            }
+        }
+        outcomes.replacements.push((i, trial, trial_fitness));
+    }
+
+    /// JADE: merge old individuals into the archive, replacing randomly when full.
+    fn update_jade_archive(&mut self, additions: Vec<Vec<f64>>, rng: &mut StdRng) {
+        let AdaptationStrategy::JADE {
             archive,
             archive_size,
             ..
         } = &mut self.adaptation
-        {
-            for individual in archive_additions {
-                if archive.len() < *archive_size {
-                    archive.push(individual);
-                } else if !archive.is_empty() {
-                    let idx = rng.random_range(0..archive.len());
-                    archive[idx] = individual;
-                }
+        else {
+            return;
+        };
+        for individual in additions {
+            if archive.len() < *archive_size {
+                archive.push(individual);
+            } else if !archive.is_empty() {
+                let idx = rng.random_range(0..archive.len());
+                archive[idx] = individual;
             }
         }
-
-        // Update best
-        self.update_best();
-
-        // Update adaptation parameters
-        self.update_adaptation(&successful_f, &successful_cr, &improvements);
-
-        evaluations
     }
 
     /// Update adaptive parameters based on successful mutations.
