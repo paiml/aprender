@@ -51,7 +51,14 @@ fn falsify_mcp_002_tools_list_schema_shape() {
     let tools = result["tools"].as_array().expect("tools array");
 
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-    for expected in ["apr.version", "apr.validate", "apr.tensors", "apr.bench"] {
+    for expected in [
+        "apr.version",
+        "apr.validate",
+        "apr.tensors",
+        "apr.bench",
+        "apr.qa",
+        "apr.trace",
+    ] {
         assert!(names.contains(&expected), "{expected} registered");
     }
 

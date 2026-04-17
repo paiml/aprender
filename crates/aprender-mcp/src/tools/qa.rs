@@ -5,29 +5,59 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::tools::subprocess::run_apr;
-use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
+use crate::types::{InputSchema, PropertySchema, ToolCallResult, ToolDefinition};
+use std::collections::HashMap;
 
 /// Tool name registered with MCP clients.
 pub const NAME: &str = "apr.qa";
 
 /// Return the MCP tool definition for `apr.qa`.
-///
-/// FALSIFY-MCP-008: the `inputSchema` is parsed from the build-time codegen
-/// constant `crate::schemas::APR_QA_SCHEMA`, which `build.rs` emits from
-/// `contracts/apr-mcp-tool-schemas-v1.yaml`. The contract is the single
-/// source of truth — the live `tools/list` response and the YAML must agree
-/// byte-for-byte after JSON canonicalization (asserted by
-/// `tests/falsify_mcp_008.rs`).
 #[must_use]
 pub fn qa_tool_definition() -> ToolDefinition {
-    let input_schema: InputSchema = serde_json::from_str(crate::schemas::APR_QA_SCHEMA).expect(
-        "FALSIFY-MCP-008: apr.qa codegen constant must parse as InputSchema; \
-             regenerate by editing contracts/apr-mcp-tool-schemas-v1.yaml and rebuilding",
+    let mut properties = HashMap::new();
+    properties.insert(
+        "model_path".to_string(),
+        PropertySchema {
+            prop_type: "string".to_string(),
+            description: "Path to the model file (.apr, .gguf, or .safetensors)".to_string(),
+            r#enum: None,
+        },
+    );
+    properties.insert(
+        "assert_tps".to_string(),
+        PropertySchema {
+            prop_type: "number".to_string(),
+            description: "Minimum throughput threshold in tok/s — gate fails below this"
+                .to_string(),
+            r#enum: None,
+        },
+    );
+    properties.insert(
+        "max_tokens".to_string(),
+        PropertySchema {
+            prop_type: "integer".to_string(),
+            description: "Maximum tokens to generate per iteration (default 32)".to_string(),
+            r#enum: None,
+        },
+    );
+    properties.insert(
+        "iterations".to_string(),
+        PropertySchema {
+            prop_type: "integer".to_string(),
+            description: "Benchmark iterations (default 10)".to_string(),
+            r#enum: None,
+        },
     );
     ToolDefinition {
         name: NAME.to_string(),
-        description: crate::schemas::APR_QA_DESCRIPTION.to_string(),
-        input_schema,
+        description:
+            "Run the 8-gate falsifiable QA checklist on a model. Wraps `apr qa <model> --json`."
+                .to_string(),
+        input_schema: InputSchema {
+            schema_type: "object".to_string(),
+            properties,
+            required: vec!["model_path".to_string()],
+        },
     }
 }
 
