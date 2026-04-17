@@ -455,13 +455,56 @@ impl CudaExecutor {
         vocab_size: u32,
         epsilon: f32,
     ) -> Result<(), GpuError> {
-        // PERF-002: Debug code removed for performance (was PAR-058-DEBUG)
-        // NaN checks required D2H transfer on every token - ~10ms overhead each
-
-        // 1. Validate all RMSNorm weights are cached (including output norm)
         self.validate_rmsnorm_cache_for_logits(num_layers)?;
 
-        // 2. Collect all cache key names
+        let hidden_gpu = self.pad_and_upload_input(input)?;
+        let (hidden_gpu, workspace_used) = self.run_transformer_stack(
+            hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon, position,
+        )?;
+
+        let debug_enabled = Self::gpu_debug_enabled();
+        self.debug_dump_hidden_state(&hidden_gpu, workspace_used, debug_enabled)?;
+
+        let normed_hidden = self.apply_output_rmsnorm_timed(
+            &hidden_gpu, workspace_used, hidden_dim, epsilon,
+        )?;
+        self.debug_dump_normed_hidden(&normed_hidden, debug_enabled)?;
+
+        self.dispatch_lm_head_and_download(
+            &normed_hidden, logits, vocab_size, hidden_dim, debug_enabled,
+        )
+    }
+
+    /// Pick the fastest available path (workspace / indexed / legacy) for the
+    /// transformer stack. Returns `(hidden_gpu, workspace_used)` where
+    /// `workspace_used = true` means the workspace buffer now holds the output.
+    fn run_transformer_stack(
+        &mut self,
+        mut hidden_gpu: GpuBuffer<f32>,
+        num_layers: usize,
+        hidden_dim: u32,
+        intermediate_dim: u32,
+        epsilon: f32,
+        position: u32,
+    ) -> Result<(GpuBuffer<f32>, bool), GpuError> {
+        let use_workspace = self.has_workspace()
+            && self.has_indexed_weights()
+            && self.indexed_layer_weights.len() == num_layers;
+
+        if use_workspace {
+            self.run_workspace_layers(
+                &hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon, position,
+            )?;
+            return Ok((hidden_gpu, true));
+        }
+
+        if self.has_indexed_weights() && self.indexed_layer_weights.len() == num_layers {
+            hidden_gpu = self.run_indexed_layers(
+                hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon,
+            )?;
+            return Ok((hidden_gpu, false));
+        }
+
         let layer_keys: Vec<(String, String)> = (0..num_layers)
             .map(|i| {
                 (
@@ -470,75 +513,42 @@ impl CudaExecutor {
                 )
             })
             .collect();
+        hidden_gpu = self.run_legacy_layers(
+            hidden_gpu, num_layers, &layer_keys, hidden_dim, intermediate_dim, epsilon,
+        )?;
+        Ok((hidden_gpu, false))
+    }
 
-        // 3. Upload input embedding - sync point #1
-        // PAR-044: Check if we can use zero-allocation workspace path
-        let use_workspace = self.has_workspace()
-            && self.has_indexed_weights()
-            && self.indexed_layer_weights.len() == num_layers;
-
-        let mut hidden_gpu = self.pad_and_upload_input(input)?;
-
-        // 4. Chain all transformer layers (no intermediate syncs)
-        // PAR-044: Use workspace path for zero-allocation forward (fastest)
-        // PAR-043: Use indexed path if weights are pre-indexed (10x faster per-token)
-        // PAR-044 FIX: Track which buffer has output to avoid unnecessary D2D copy
-        // PAR-044: Workspace path enabled - confirmed same performance as indexed path
-        // See five-whys-gpu-performance-gap for analysis
-        let workspace_used = if use_workspace {
-            self.run_workspace_layers(
-                &hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon, position,
-            )?;
-            true
-        } else if self.has_indexed_weights() && self.indexed_layer_weights.len() == num_layers {
-            hidden_gpu = self.run_indexed_layers(
-                hidden_gpu, num_layers, hidden_dim, intermediate_dim, epsilon,
-            )?;
-            false
-        } else {
-            hidden_gpu = self.run_legacy_layers(
-                hidden_gpu, num_layers, &layer_keys, hidden_dim, intermediate_dim, epsilon,
-            )?;
-            false
-        };
-
-        // PERF-002: Debug code removed (was PAR-058-DEBUG hidden state check)
-        // D2H transfer + NaN check was ~15ms overhead per token
-
-        // CORRECTNESS-001: Compare hidden state before output norm
+    /// Cached read of `GPU_DEBUG=1`. Once-init so the env var is only
+    /// consulted on the first call per process.
+    fn gpu_debug_enabled() -> bool {
         static HIDDEN_DEBUG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let debug_enabled = *HIDDEN_DEBUG.get_or_init(|| {
+        *HIDDEN_DEBUG.get_or_init(|| {
             std::env::var("GPU_DEBUG")
                 .map(|v| v == "1")
                 .unwrap_or(false)
-        });
-        self.debug_dump_hidden_state(&hidden_gpu, workspace_used, debug_enabled)?;
+        })
+    }
 
-        // 5. Output RMSNorm on GPU (no sync)
-        // PAR-PROFILE: Brick timer for output norm
+    /// Run output RMSNorm bracketed by a profiler brick when profiling is on.
+    fn apply_output_rmsnorm_timed(
+        &mut self,
+        hidden_gpu: &GpuBuffer<f32>,
+        workspace_used: bool,
+        hidden_dim: u32,
+        epsilon: f32,
+    ) -> Result<GpuBuffer<f32>, GpuError> {
         let profiling = self.profiler.is_enabled();
-        let timer_output_norm = if profiling {
+        let timer = if profiling {
             self.start_brick_id(trueno::BrickId::RmsNorm)
         } else {
             None
         };
-
-        let normed_hidden = self.apply_output_rmsnorm(
-            &hidden_gpu, workspace_used, hidden_dim, epsilon,
-        )?;
-
-        // CORRECTNESS-002: Debug normed_hidden output (before LM head)
-        self.debug_dump_normed_hidden(&normed_hidden, debug_enabled)?;
-
-        // PAR-PROFILE: Stop output norm timer, start LM head timer
+        let normed = self.apply_output_rmsnorm(hidden_gpu, workspace_used, hidden_dim, epsilon)?;
         if profiling {
-            self.stop_brick_id(timer_output_norm, 1);
+            self.stop_brick_id(timer, 1);
         }
-
-        // 6-7. LM head projection + final sync + download
-        self.dispatch_lm_head_and_download(
-            &normed_hidden, logits, vocab_size, hidden_dim, debug_enabled,
-        )
+        Ok(normed)
     }
 
     /// realizr#203: Apply output norm + LM head to a pre-computed hidden state.
