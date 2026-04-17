@@ -2,7 +2,7 @@
 /// Export evidence to schema-compliant JSON (PMAT-265)
 ///
 /// Converts test run results to the EvidenceExport format for oracle consumption.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
 fn export_evidence(
     source: &Path,
     output_dir: &Path,
@@ -12,48 +12,13 @@ fn export_evidence(
     playbook_name: &str,
     tier: &str,
 ) {
-    use aprender_qa_report::{
-        EvidenceExport, ExportSummary, GateResult, ModelMeta, MqsExport, PlaybookMeta,
-    };
-    use chrono::Utc;
-    use std::collections::HashMap;
-
     println!("Exporting evidence to schema-compliant JSON...");
     println!("  Source: {}", source.display());
     println!("  Output dir: {}", output_dir.display());
     println!("  Model: {model}");
 
-    // Read source file
-    let content = match std::fs::read_to_string(source) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: Cannot read source file: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    // Try to parse as execution result (from apr-qa run output)
-    let json_value: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Error: Invalid JSON in source file: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    // Extract evidence array — supports two source formats:
-    //   1. Plain array (certifications/*/evidence.json): [{...}, ...]
-    //   2. Execution result object (apr-qa run output): {"evidence": [...], ...}
-    let (evidence_array, meta) = if json_value.is_array() {
-        (json_value.as_array().cloned().unwrap_or_default(), None)
-    } else {
-        let arr = json_value
-            .get("evidence")
-            .and_then(|e| e.as_array())
-            .cloned()
-            .unwrap_or_default();
-        (arr, Some(&json_value))
-    };
+    let json_value = read_source_json_or_exit(source);
+    let (evidence_array, meta) = extract_evidence_and_meta(&json_value);
 
     if evidence_array.is_empty() {
         eprintln!("Error: Source file contains no evidence entries");
@@ -61,144 +26,232 @@ fn export_evidence(
         std::process::exit(1);
     }
 
-    // Count outcomes from the evidence array when no execution metadata is available
-    // (plain array format from certifications/*/evidence.json).
-    let (ev_passed, ev_failed, ev_skipped, ev_duration_ms) =
-        evidence_array.iter().fold((0usize, 0usize, 0usize, 0u64), |(p, f, s, d), ev| {
-            let outcome = ev.get("outcome").and_then(|o| o.as_str()).unwrap_or("");
-            let dur = ev
-                .get("duration_ms")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0);
-            match outcome {
-                "Corroborated" => (p + 1, f, s, d + dur),
-                "Falsified" | "Timeout" | "Crashed" => (p, f + 1, s, d + dur),
-                "Skipped" => (p, f, s + 1, d + dur),
-                _ => (p, f, s, d + dur),
-            }
-        });
+    let summary = build_export_summary(&evidence_array, meta);
+    let (mqs_score, gateway_passed, grade) = compute_mqs_triple(model, &evidence_array);
+    let gates = collect_gates_from_evidence(&evidence_array);
+    let export = build_evidence_export(
+        ExportIdentity { model, family, size, playbook_name, tier },
+        summary.clone(),
+        mqs_score,
+        &grade,
+        gateway_passed,
+        gates,
+        evidence_array,
+    );
 
-    #[allow(clippy::cast_possible_truncation)]
-    let total_scenarios = meta
-        .and_then(|v| v.get("total_scenarios"))
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(evidence_array.len() as u64) as usize;
-    #[allow(clippy::cast_possible_truncation)]
-    let passed = meta
-        .and_then(|v| v.get("passed"))
-        .and_then(serde_json::Value::as_u64)
-        .map_or(ev_passed, |v| v as usize);
-    #[allow(clippy::cast_possible_truncation)]
-    let failed = meta
-        .and_then(|v| v.get("failed"))
-        .and_then(serde_json::Value::as_u64)
-        .map_or(ev_failed, |v| v as usize);
-    #[allow(clippy::cast_possible_truncation)]
-    let skipped = meta
-        .and_then(|v| v.get("skipped"))
-        .and_then(serde_json::Value::as_u64)
-        .map_or(ev_skipped, |v| v as usize);
+    let output_path = write_export_file_or_exit(output_dir, model, &export);
+    print_export_summary(&output_path, model, mqs_score, &grade, &summary);
+}
+
+fn read_source_json_or_exit(source: &Path) -> serde_json::Value {
+    let content = match std::fs::read_to_string(source) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: Cannot read source file: {e}");
+            std::process::exit(1);
+        }
+    };
+    match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error: Invalid JSON in source file: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Extract evidence array and optional meta object from source JSON.
+///
+/// Supports two source formats:
+///   1. Plain array (`certifications/*/evidence.json`): `[{...}, ...]`
+///   2. Execution result object (apr-qa run output): `{"evidence": [...], ...}`
+fn extract_evidence_and_meta(
+    json_value: &serde_json::Value,
+) -> (Vec<serde_json::Value>, Option<&serde_json::Value>) {
+    if json_value.is_array() {
+        (json_value.as_array().cloned().unwrap_or_default(), None)
+    } else {
+        let arr = json_value
+            .get("evidence")
+            .and_then(|e| e.as_array())
+            .cloned()
+            .unwrap_or_default();
+        (arr, Some(json_value))
+    }
+}
+
+/// Tally evidence outcomes into (passed, failed, skipped, total_duration_ms).
+fn count_evidence_outcomes(arr: &[serde_json::Value]) -> (usize, usize, usize, u64) {
+    arr.iter().fold((0usize, 0usize, 0usize, 0u64), |(p, f, s, d), ev| {
+        let outcome = ev.get("outcome").and_then(|o| o.as_str()).unwrap_or("");
+        let dur = ev
+            .get("duration_ms")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        match outcome {
+            "Corroborated" => (p + 1, f, s, d + dur),
+            "Falsified" | "Timeout" | "Crashed" => (p, f + 1, s, d + dur),
+            "Skipped" => (p, f, s + 1, d + dur),
+            _ => (p, f, s, d + dur),
+        }
+    })
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn build_export_summary(
+    evidence_array: &[serde_json::Value],
+    meta: Option<&serde_json::Value>,
+) -> aprender_qa_report::ExportSummary {
+    use chrono::Utc;
+
+    let (ev_passed, ev_failed, ev_skipped, ev_duration_ms) =
+        count_evidence_outcomes(evidence_array);
+
+    let meta_usize = |key: &str, fallback: usize| {
+        meta.and_then(|v| v.get(key))
+            .and_then(serde_json::Value::as_u64)
+            .map_or(fallback, |v| v as usize)
+    };
+
+    let total_scenarios = meta_usize("total_scenarios", evidence_array.len());
+    let passed = meta_usize("passed", ev_passed);
+    let failed = meta_usize("failed", ev_failed);
+    let skipped = meta_usize("skipped", ev_skipped);
     let duration_ms = meta
         .and_then(|v| v.get("duration_ms"))
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(ev_duration_ms);
 
-    #[allow(clippy::cast_precision_loss)]
     let pass_rate = if total_scenarios > 0 {
         passed as f64 / total_scenarios as f64
     } else {
         0.0
     };
 
-    // Use canonical MQS calculator — consistent with `score` and `report` commands.
-    let evidence_json = serde_json::to_string(&serde_json::Value::Array(evidence_array.clone()))
-        .unwrap_or_default();
-    let (mqs_score, gateway_passed, grade) =
-        match crate::parse_evidence(&evidence_json).and_then(|ev| {
-            let collector = crate::collect_evidence(ev);
-            crate::calculate_mqs_score(model, &collector)
-        }) {
-            Ok(mqs) => {
-                let grade = mqs.grade.clone();
-                let gw = mqs.gateways_passed;
-                (mqs.raw_score, gw, grade)
-            }
-            Err(_) => (0, false, "F".to_string()),
-        };
+    aprender_qa_report::ExportSummary {
+        total_scenarios,
+        passed,
+        failed,
+        skipped,
+        pass_rate,
+        duration_ms,
+        timestamp: Utc::now(),
+    }
+}
 
-    // Extract gateway gate-level results from evidence (pessimistic: failure wins)
+/// Compute canonical (MQS score, gateway_passed, grade) triple.
+///
+/// Uses the same calculator as `score` and `report` commands for consistency.
+fn compute_mqs_triple(model: &str, evidence_array: &[serde_json::Value]) -> (u32, bool, String) {
+    let evidence_json =
+        serde_json::to_string(&serde_json::Value::Array(evidence_array.to_vec()))
+            .unwrap_or_default();
+    match crate::parse_evidence(&evidence_json).and_then(|ev| {
+        let collector = crate::collect_evidence(ev);
+        crate::calculate_mqs_score(model, &collector)
+    }) {
+        Ok(mqs) => (mqs.raw_score, mqs.gateways_passed, mqs.grade),
+        Err(_) => (0, false, "F".to_string()),
+    }
+}
+
+/// Collect gateway-level gate results from evidence using pessimistic merge
+/// (any failure overrides a prior pass — Jidoka).
+fn collect_gates_from_evidence(
+    evidence_array: &[serde_json::Value],
+) -> std::collections::HashMap<String, aprender_qa_report::GateResult> {
+    use aprender_qa_report::GateResult;
+    use std::collections::HashMap;
+
     let mut gates: HashMap<String, GateResult> = HashMap::new();
-    for ev in &evidence_array {
-        if let Some(gate_id) = ev.get("gate_id").and_then(|g| g.as_str()) {
-            if gate_id.starts_with('G') {
-                let passed = ev
-                    .get("outcome")
-                    .and_then(|o| o.as_str())
-                    .is_some_and(|o| o == "Corroborated" || o == "Skipped");
-                let reason = ev
-                    .get("reason")
-                    .and_then(|r| r.as_str())
-                    .unwrap_or("")
-                    .to_string();
+    for ev in evidence_array {
+        let Some(gate_id) = ev.get("gate_id").and_then(|g| g.as_str()) else {
+            continue;
+        };
+        if !gate_id.starts_with('G') {
+            continue;
+        }
+        let passed = ev
+            .get("outcome")
+            .and_then(|o| o.as_str())
+            .is_some_and(|o| o == "Corroborated" || o == "Skipped");
+        let reason = ev
+            .get("reason")
+            .and_then(|r| r.as_str())
+            .unwrap_or("")
+            .to_string();
 
-                // Pessimistic merge: if gate already exists and was passing,
-                // a new failure overrides it (Jidoka: any failure matters)
-                if let Some(existing) = gates.get(gate_id) {
-                    if existing.passed && !passed {
-                        gates.insert(gate_id.to_string(), GateResult { passed, reason });
-                    }
-                } else {
-                    gates.insert(gate_id.to_string(), GateResult { passed, reason });
-                }
+        if let Some(existing) = gates.get(gate_id) {
+            if existing.passed && !passed {
+                gates.insert(gate_id.to_string(), GateResult { passed, reason });
             }
+        } else {
+            gates.insert(gate_id.to_string(), GateResult { passed, reason });
         }
     }
+    gates
+}
 
-    // Build export structure
-    let export = EvidenceExport {
+struct ExportIdentity<'a> {
+    model: &'a str,
+    family: &'a str,
+    size: &'a str,
+    playbook_name: &'a str,
+    tier: &'a str,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_evidence_export(
+    identity: ExportIdentity<'_>,
+    summary: aprender_qa_report::ExportSummary,
+    mqs_score: u32,
+    grade: &str,
+    gateway_passed: bool,
+    gates: std::collections::HashMap<String, aprender_qa_report::GateResult>,
+    evidence: Vec<serde_json::Value>,
+) -> aprender_qa_report::EvidenceExport {
+    use aprender_qa_report::{EvidenceExport, ModelMeta, MqsExport, PlaybookMeta};
+    use std::collections::HashMap;
+
+    EvidenceExport {
         schema: "https://paiml.com/schemas/apr-qa-evidence.schema.json".to_string(),
         version: "1.0.0".to_string(),
         model: ModelMeta {
-            hf_repo: model.to_string(),
-            family: family.to_string(),
-            size: size.to_string(),
+            hf_repo: identity.model.to_string(),
+            family: identity.family.to_string(),
+            size: identity.size.to_string(),
             format: "safetensors".to_string(),
         },
         playbook: PlaybookMeta {
-            name: playbook_name.to_string(),
+            name: identity.playbook_name.to_string(),
             version: "1.0.0".to_string(),
-            tier: tier.to_string(),
+            tier: identity.tier.to_string(),
         },
-        summary: ExportSummary {
-            total_scenarios,
-            passed,
-            failed,
-            skipped,
-            pass_rate,
-            duration_ms,
-            timestamp: Utc::now(),
-        },
+        summary,
         mqs: MqsExport {
             score: mqs_score,
-            grade: grade.clone(),
+            grade: grade.to_string(),
             gateway_passed,
             category_scores: HashMap::new(),
         },
         gates,
-        evidence: evidence_array,
-    };
+        evidence,
+    }
+}
 
-    // Create output directory
+fn write_export_file_or_exit(
+    output_dir: &Path,
+    model: &str,
+    export: &aprender_qa_report::EvidenceExport,
+) -> std::path::PathBuf {
     if let Err(e) = std::fs::create_dir_all(output_dir) {
         eprintln!("Error: Cannot create output directory: {e}");
         std::process::exit(1);
     }
 
-    // Generate output filename from model
     let safe_name = model.replace('/', "-").to_lowercase();
     let output_path = output_dir.join(format!("{safe_name}.json"));
 
-    // Write export
     let json = match export.to_json() {
         Ok(j) => j,
         Err(e) => {
@@ -212,12 +265,22 @@ fn export_evidence(
         std::process::exit(1);
     }
 
+    output_path
+}
+
+fn print_export_summary(
+    output_path: &Path,
+    model: &str,
+    mqs_score: u32,
+    grade: &str,
+    summary: &aprender_qa_report::ExportSummary,
+) {
     println!("\nExported evidence to: {}", output_path.display());
     println!("  Model: {model}");
     println!("  MQS Score: {mqs_score}");
     println!("  Grade: {grade}");
-    println!("  Pass Rate: {:.1}%", pass_rate * 100.0);
-    println!("  Total Scenarios: {total_scenarios}");
+    println!("  Pass Rate: {:.1}%", summary.pass_rate * 100.0);
+    println!("  Total Scenarios: {}", summary.total_scenarios);
 }
 
 /// Validate a model against the tensor layout contract (Issue #4)
