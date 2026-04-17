@@ -821,22 +821,29 @@ fn print_binding_verification(report: &aprender_qa_gen::BindingVerificationRepor
 }
 
 /// Print per-model kernel coverage summary for the full registry.
-#[allow(clippy::too_many_lines)]
 fn print_model_coverage_summary(summary: &aprender_qa_gen::ModelCoverageSummary) {
+    print_coverage_summary_header(summary);
+    print_class_summary_table(&summary.class_summary);
+    print_per_model_table(&summary.models);
+    print_coverage_verdict(summary);
+}
+
+fn print_coverage_summary_header(summary: &aprender_qa_gen::ModelCoverageSummary) {
     println!(
         "\n{} Model Kernel Coverage ({} models)",
         "===".bold().cyan(),
         summary.models.len()
     );
+    let gap_str = if summary.gap_count > 0 {
+        summary.gap_count.to_string().red().to_string()
+    } else {
+        summary.gap_count.to_string()
+    };
     println!(
         "  {} {} covered, {} with gaps",
         "Summary:".dimmed(),
         summary.covered_count.to_string().green(),
-        if summary.gap_count > 0 {
-            summary.gap_count.to_string().red().to_string()
-        } else {
-            summary.gap_count.to_string()
-        },
+        gap_str,
     );
     if summary.defaults_count > 0 {
         println!(
@@ -845,10 +852,11 @@ fn print_model_coverage_summary(summary: &aprender_qa_gen::ModelCoverageSummary)
             summary.defaults_count,
         );
     }
+}
 
-    // Class summary table
+fn print_class_summary_table(class_summary: &[aprender_qa_gen::ClassSummary]) {
     println!("\n  {}", "By Kernel Class:".bold());
-    for cs in &summary.class_summary {
+    for cs in class_summary {
         let status = if cs.fully_covered {
             "✓".green().to_string()
         } else {
@@ -858,52 +866,54 @@ fn print_model_coverage_summary(summary: &aprender_qa_gen::ModelCoverageSummary)
             "    {status} Class {} ({}) — {} model(s)",
             cs.class, cs.label, cs.model_count
         );
-        if !cs.missing_ops.is_empty() {
-            for op in &cs.missing_ops {
-                println!("      {} {op}", "└".dimmed());
-            }
+        for op in &cs.missing_ops {
+            println!("      {} {op}", "└".dimmed());
         }
     }
+}
 
-    // Per-model table
+fn print_per_model_table(models: &[aprender_qa_gen::ModelCoverage]) {
     println!("\n  {}", "Per-Model Coverage:".bold());
     let mut current_arch = String::new();
-    for model in &summary.models {
+    for model in models {
         if model.architecture != current_arch {
             current_arch.clone_from(&model.architecture);
-            let class_str = model
-                .kernel_class
-                .as_deref()
-                .unwrap_or("?");
+            let class_str = model.kernel_class.as_deref().unwrap_or("?");
             println!(
                 "\n    {} [Class {}]",
                 current_arch.bold().cyan(),
                 class_str
             );
         }
-
-        let status = if model.using_defaults {
-            "?".yellow().to_string()
-        } else if model.fully_covered {
-            "✓".green().to_string()
-        } else if model.missing_ops > 0 {
-            "✗".red().to_string()
-        } else {
-            "~".yellow().to_string()
-        };
-
-        let gap_info = if model.using_defaults {
-            " — arch not in contracts YAML (using defaults)".to_string()
-        } else if model.gap_ops.is_empty() {
-            String::new()
-        } else {
-            format!(" — {}", model.gap_ops.join(", "))
-        };
-
+        let status = model_status_symbol(model);
+        let gap_info = model_gap_info(model);
         println!("      {status} {}{gap_info}", model.model_id);
     }
+}
 
-    // Final verdict
+fn model_status_symbol(model: &aprender_qa_gen::ModelCoverage) -> String {
+    if model.using_defaults {
+        "?".yellow().to_string()
+    } else if model.fully_covered {
+        "✓".green().to_string()
+    } else if model.missing_ops > 0 {
+        "✗".red().to_string()
+    } else {
+        "~".yellow().to_string()
+    }
+}
+
+fn model_gap_info(model: &aprender_qa_gen::ModelCoverage) -> String {
+    if model.using_defaults {
+        " — arch not in contracts YAML (using defaults)".to_string()
+    } else if model.gap_ops.is_empty() {
+        String::new()
+    } else {
+        format!(" — {}", model.gap_ops.join(", "))
+    }
+}
+
+fn print_coverage_verdict(summary: &aprender_qa_gen::ModelCoverageSummary) {
     if summary.gap_count == 0 && summary.defaults_count == 0 {
         println!(
             "\n{}",
@@ -911,37 +921,41 @@ fn print_model_coverage_summary(summary: &aprender_qa_gen::ModelCoverageSummary)
                 .green()
                 .bold()
         );
-    } else {
-        if summary.gap_count > 0 {
-            println!(
-                "\n{} {}/{} models have kernel gaps",
-                "BLOCKED:".red().bold(),
-                summary.gap_count,
-                summary.models.len()
-            );
-        }
-        if summary.defaults_count > 0 {
-            println!(
-                "\n{} {}/{} models use default constraints (arch missing from contracts YAML)",
-                "UNVERIFIED:".yellow().bold(),
-                summary.defaults_count,
-                summary.models.len()
-            );
-            // Collect unique unknown architectures
-            let mut unknown_archs: Vec<&str> = summary
-                .models
-                .iter()
-                .filter(|m| m.using_defaults)
-                .map(|m| m.architecture.as_str())
-                .collect();
-            unknown_archs.sort_unstable();
-            unknown_archs.dedup();
-            println!(
-                "  Add to arch-constraints-v1.yaml: {}",
-                unknown_archs.join(", ")
-            );
-        }
+        return;
     }
+
+    if summary.gap_count > 0 {
+        println!(
+            "\n{} {}/{} models have kernel gaps",
+            "BLOCKED:".red().bold(),
+            summary.gap_count,
+            summary.models.len()
+        );
+    }
+    if summary.defaults_count > 0 {
+        print_unverified_defaults_block(summary);
+    }
+}
+
+fn print_unverified_defaults_block(summary: &aprender_qa_gen::ModelCoverageSummary) {
+    println!(
+        "\n{} {}/{} models use default constraints (arch missing from contracts YAML)",
+        "UNVERIFIED:".yellow().bold(),
+        summary.defaults_count,
+        summary.models.len()
+    );
+    let mut unknown_archs: Vec<&str> = summary
+        .models
+        .iter()
+        .filter(|m| m.using_defaults)
+        .map(|m| m.architecture.as_str())
+        .collect();
+    unknown_archs.sort_unstable();
+    unknown_archs.dedup();
+    println!(
+        "  Add to arch-constraints-v1.yaml: {}",
+        unknown_archs.join(", ")
+    );
 }
 
 /// Bootstrap an architecture-aware playbook from a family contract.
