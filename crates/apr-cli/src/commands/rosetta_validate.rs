@@ -8,41 +8,10 @@ pub fn run_validate_stats(
     strict: bool,
     json: bool,
 ) -> Result<()> {
-    if !model.exists() {
-        return Err(CliError::FileNotFound(model.to_path_buf()));
-    }
-
-    if reference.is_none() && fingerprints_file.is_none() {
-        return Err(CliError::ValidationFailed(
-            "Must provide either --reference or --fingerprints".to_string(),
-        ));
-    }
+    validate_stats_inputs(model, reference, fingerprints_file)?;
 
     if !json {
-        println!(
-            "{}",
-            "╔══════════════════════════════════════════════════════════════════════════════╗"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "║             TENSOR STATISTICS VALIDATION (PMAT-202, JAX-STAT-002)           ║"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-        println!(
-            "║ Model: {:<69} ║",
-            truncate_path(model.display().to_string(), 69)
-        );
-        println!(
-            "║ Threshold: {:.1}σ{:<60} ║",
-            threshold,
-            if strict { " (strict mode)" } else { "" }
-        );
+        print_validate_stats_header(model, threshold, strict);
     }
 
     let actual = compute_fingerprints(model, None)?;
@@ -57,26 +26,82 @@ pub fn run_validate_stats(
     }
 
     let anomalies = validate_fingerprints(&actual, &reference_fps, threshold, strict);
+    report_anomalies(&anomalies, model, threshold, strict, actual.len(), json);
+    check_critical_anomalies(&anomalies, threshold)
+}
 
+fn validate_stats_inputs(
+    model: &Path,
+    reference: Option<&Path>,
+    fingerprints_file: Option<&Path>,
+) -> Result<()> {
+    if !model.exists() {
+        return Err(CliError::FileNotFound(model.to_path_buf()));
+    }
+    if reference.is_none() && fingerprints_file.is_none() {
+        return Err(CliError::ValidationFailed(
+            "Must provide either --reference or --fingerprints".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn print_validate_stats_header(model: &Path, threshold: f32, strict: bool) {
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════════════════════════╗"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "║             TENSOR STATISTICS VALIDATION (PMAT-202, JAX-STAT-002)           ║"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+    println!(
+        "║ Model: {:<69} ║",
+        truncate_path(model.display().to_string(), 69)
+    );
+    println!(
+        "║ Threshold: {:.1}σ{:<60} ║",
+        threshold,
+        if strict { " (strict mode)" } else { "" }
+    );
+}
+
+fn report_anomalies(
+    anomalies: &[StatisticalAnomaly],
+    model: &Path,
+    threshold: f32,
+    strict: bool,
+    tensor_count: usize,
+    json: bool,
+) {
     if json {
-        print_validate_stats_json(model, threshold, strict, actual.len(), &anomalies);
+        print_validate_stats_json(model, threshold, strict, tensor_count, anomalies);
     } else {
-        print_validate_stats_text(&anomalies);
+        print_validate_stats_text(anomalies);
     }
+}
 
-    if !anomalies.is_empty() {
-        let critical_count = anomalies
-            .iter()
-            .filter(|a| a.deviation_sigma > 10.0)
-            .count();
-        if critical_count > 0 {
-            return Err(CliError::ValidationFailed(format!(
-                "E020: {} critical statistical anomalies detected (>{:.0}σ deviation)",
-                critical_count, threshold
-            )));
-        }
+fn check_critical_anomalies(anomalies: &[StatisticalAnomaly], threshold: f32) -> Result<()> {
+    if anomalies.is_empty() {
+        return Ok(());
     }
-
+    let critical_count = anomalies
+        .iter()
+        .filter(|a| a.deviation_sigma > 10.0)
+        .count();
+    if critical_count > 0 {
+        return Err(CliError::ValidationFailed(format!(
+            "E020: {} critical statistical anomalies detected (>{:.0}σ deviation)",
+            critical_count, threshold
+        )));
+    }
     Ok(())
 }
 
