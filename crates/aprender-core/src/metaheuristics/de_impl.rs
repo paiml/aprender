@@ -356,25 +356,7 @@ impl DifferentialEvolution {
         match &mut self.adaptation {
             AdaptationStrategy::None => {}
             AdaptationStrategy::JADE { mu_f, mu_cr, c, .. } => {
-                // Lehmer mean for F
-                let f_sum: f64 = successful_f.iter().sum();
-                let f_sq_sum: f64 = successful_f.iter().map(|f| f * f).sum();
-                if f_sum > 0.0 {
-                    let mean_f = f_sq_sum / f_sum;
-                    *mu_f = (1.0 - *c) * (*mu_f) + (*c) * mean_f;
-                }
-
-                // Arithmetic mean for CR (weighted by improvement)
-                let total_improvement: f64 = improvements.iter().sum();
-                if total_improvement > 0.0 {
-                    let mean_cr: f64 = successful_cr
-                        .iter()
-                        .zip(improvements.iter())
-                        .map(|(cr, imp)| cr * imp)
-                        .sum::<f64>()
-                        / total_improvement;
-                    *mu_cr = (1.0 - *c) * (*mu_cr) + (*c) * mean_cr;
-                }
+                Self::update_jade(mu_f, mu_cr, *c, successful_f, successful_cr, improvements);
             }
             AdaptationStrategy::SHADE {
                 memory_f,
@@ -382,27 +364,72 @@ impl DifferentialEvolution {
                 memory_index,
                 memory_size,
             } => {
-                // Lehmer mean for F
-                let f_sum: f64 = successful_f.iter().sum();
-                let f_sq_sum: f64 = successful_f.iter().map(|f| f * f).sum();
-                if f_sum > 0.0 {
-                    memory_f[*memory_index] = f_sq_sum / f_sum;
-                }
-
-                // Weighted mean for CR
-                let total_improvement: f64 = improvements.iter().sum();
-                if total_improvement > 0.0 {
-                    memory_cr[*memory_index] = successful_cr
-                        .iter()
-                        .zip(improvements.iter())
-                        .map(|(cr, imp)| cr * imp)
-                        .sum::<f64>()
-                        / total_improvement;
-                }
-
-                *memory_index = (*memory_index + 1) % *memory_size;
+                Self::update_shade(
+                    memory_f,
+                    memory_cr,
+                    memory_index,
+                    *memory_size,
+                    successful_f,
+                    successful_cr,
+                    improvements,
+                );
             }
         }
+    }
+
+    fn update_jade(
+        mu_f: &mut f64,
+        mu_cr: &mut f64,
+        c: f64,
+        successful_f: &[f64],
+        successful_cr: &[f64],
+        improvements: &[f64],
+    ) {
+        let f_sum: f64 = successful_f.iter().sum();
+        let f_sq_sum: f64 = successful_f.iter().map(|f| f * f).sum();
+        if f_sum > 0.0 {
+            let mean_f = f_sq_sum / f_sum;
+            *mu_f = (1.0 - c) * (*mu_f) + c * mean_f;
+        }
+
+        let total_improvement: f64 = improvements.iter().sum();
+        if total_improvement > 0.0 {
+            let mean_cr: f64 = successful_cr
+                .iter()
+                .zip(improvements.iter())
+                .map(|(cr, imp)| cr * imp)
+                .sum::<f64>()
+                / total_improvement;
+            *mu_cr = (1.0 - c) * (*mu_cr) + c * mean_cr;
+        }
+    }
+
+    fn update_shade(
+        memory_f: &mut [f64],
+        memory_cr: &mut [f64],
+        memory_index: &mut usize,
+        memory_size: usize,
+        successful_f: &[f64],
+        successful_cr: &[f64],
+        improvements: &[f64],
+    ) {
+        let f_sum: f64 = successful_f.iter().sum();
+        let f_sq_sum: f64 = successful_f.iter().map(|f| f * f).sum();
+        if f_sum > 0.0 {
+            memory_f[*memory_index] = f_sq_sum / f_sum;
+        }
+
+        let total_improvement: f64 = improvements.iter().sum();
+        if total_improvement > 0.0 {
+            memory_cr[*memory_index] = successful_cr
+                .iter()
+                .zip(improvements.iter())
+                .map(|(cr, imp)| cr * imp)
+                .sum::<f64>()
+                / total_improvement;
+        }
+
+        *memory_index = (*memory_index + 1) % memory_size;
     }
 }
 
