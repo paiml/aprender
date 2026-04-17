@@ -31,6 +31,16 @@ fn gemm_tflops(size: u32, time_us: f64) -> f64 {
 /// Try to get actual GEMM timing from benchmark_matrix_suite binary.
 /// Returns (time_us, gflops) if the binary exists and the size is benchmarked.
 fn get_actual_gemm_timing(size: u32) -> Option<(f64, f64)> {
+    let stdout = run_benchmark_suite()?;
+    let pattern = format!("Matrix Multiplication ({size}x{size}x{size})");
+    stdout
+        .lines()
+        .find(|line| line.contains(&pattern))
+        .and_then(parse_benchmark_line)
+}
+
+/// Locate and execute the benchmark_matrix_suite binary; returns stdout on success.
+fn run_benchmark_suite() -> Option<String> {
     let candidates = [
         "/mnt/nvme-raid0/targets/trueno/release/examples/benchmark_matrix_suite",
         "./target/release/examples/benchmark_matrix_suite",
@@ -46,26 +56,23 @@ fn get_actual_gemm_timing(size: u32) -> Option<(f64, f64)> {
     if !output.status.success() {
         return None;
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let pattern = format!("Matrix Multiplication ({}x{}x{})", size, size, size);
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
 
-    for line in stdout.lines() {
-        if line.contains(&pattern) {
-            // Format: "  Matrix Multiplication (NxNxN)...     X.XX ms  (Y.YY GFLOPS)"
-            let after_dots = line.split("...").nth(1)?;
-            let time_ms = after_dots.split("ms").next()?.trim().parse::<f64>().ok()?;
-            let gflops = after_dots
-                .split('(')
-                .nth(1)?
-                .split(" GFLOPS")
-                .next()?
-                .trim()
-                .parse::<f64>()
-                .ok()?;
-            return Some((time_ms * 1000.0, gflops));
-        }
-    }
-    None
+/// Parse a single line of the form
+/// `  Matrix Multiplication (NxNxN)...     X.XX ms  (Y.YY GFLOPS)`.
+fn parse_benchmark_line(line: &str) -> Option<(f64, f64)> {
+    let after_dots = line.split("...").nth(1)?;
+    let time_ms = after_dots.split("ms").next()?.trim().parse::<f64>().ok()?;
+    let gflops = after_dots
+        .split('(')
+        .nth(1)?
+        .split(" GFLOPS")
+        .next()?
+        .trim()
+        .parse::<f64>()
+        .ok()?;
+    Some((time_ms * 1000.0, gflops))
 }
 
 /// Estimate scalar GEMM time from measured data on Threadripper 7960X.
@@ -278,95 +285,8 @@ pub fn run_compare(kernel: &str, size: u32, backends_str: &str, json: bool) -> R
         println!("\n=== CGP Cross-Backend Comparison: {kernel} ({size}x{size}x{size}) ===\n");
     }
 
-    let mut results: Vec<BackendResult> = Vec::new();
-
-    // Try to get actual benchmark data first (runs once, cached for all CPU backends)
     let actual = get_actual_gemm_timing(size);
-
-    for backend in &backends {
-        let (time_us, available, measured) = match *backend {
-            "scalar" => (estimate_scalar_time_us(size), true, false),
-            "avx2" | "avx512" => {
-                #[cfg(target_arch = "x86_64")]
-                let avail = if *backend == "avx512" {
-                    std::arch::is_x86_feature_detected!("avx512f")
-                } else {
-                    std::arch::is_x86_feature_detected!("avx2")
-                };
-                #[cfg(not(target_arch = "x86_64"))]
-                let avail = false;
-
-                // Use actual benchmark if available (runs with best SIMD available)
-                if let Some((actual_us, _)) = actual {
-                    (actual_us, avail, true)
-                } else if *backend == "avx512" {
-                    (estimate_avx512_time_us(size), avail, false)
-                } else {
-                    (estimate_avx2_time_us(size), avail, false)
-                }
-            }
-            "neon" => {
-                let avail = cfg!(target_arch = "aarch64");
-                (estimate_scalar_time_us(size) / 4.0, avail, false)
-            }
-            "cuda" => {
-                let avail = which::which("nvidia-smi").is_ok();
-                #[cfg(feature = "cuda")]
-                if avail {
-                    if let Some((time_us, _tflops)) = measure_ptx_gemm(size) {
-                        (time_us, true, true)
-                    } else {
-                        (estimate_cuda_time_us(size), avail, false)
-                    }
-                } else {
-                    (estimate_cuda_time_us(size), avail, false)
-                }
-                #[cfg(not(feature = "cuda"))]
-                {
-                    (estimate_cuda_time_us(size), avail, false)
-                }
-            }
-            "cublas" => {
-                let avail = which::which("nvidia-smi").is_ok();
-                // CGP-DBUF: actual cuBLAS measurement when cuda feature enabled
-                #[cfg(feature = "cuda")]
-                if avail {
-                    if let Some((time_us, _tflops)) = measure_cublas_gemm(size) {
-                        (time_us, true, true)
-                    } else {
-                        (estimate_cublas_time_us(size), avail, false)
-                    }
-                } else {
-                    (estimate_cublas_time_us(size), avail, false)
-                }
-                #[cfg(not(feature = "cuda"))]
-                {
-                    (estimate_cublas_time_us(size), avail, false)
-                }
-            }
-            "wgpu" => {
-                let avail = which::which("nvidia-smi").is_ok();
-                (estimate_cuda_time_us(size) * 2.0, avail, false)
-            }
-            other => {
-                eprintln!("  Warning: unknown backend '{other}', skipping");
-                continue;
-            }
-        };
-
-        let tflops = gemm_tflops(size, time_us);
-
-        results.push(BackendResult {
-            name: backend.to_string(),
-            wall_time_us: time_us,
-            tflops,
-            bandwidth_gbps: 0.0,
-            available,
-            measured,
-        });
-    }
-
-    // Sort by performance (fastest first)
+    let mut results = collect_backend_results(&backends, size, actual);
     results.sort_by(|a, b| {
         a.wall_time_us
             .partial_cmp(&b.wall_time_us)
@@ -378,16 +298,174 @@ pub fn run_compare(kernel: &str, size: u32, backends_str: &str, json: bool) -> R
         return Ok(());
     }
 
-    let best_time = results.first().map(|r| r.wall_time_us).unwrap_or(1.0);
+    render_comparison_table(&results);
+    render_source_legend(&results);
+    render_best_summary(&results);
+    render_cpu_gpu_gap(&results);
 
-    // Table header
+    println!();
+    Ok(())
+}
+
+/// Measure each requested backend and build a `BackendResult` list.
+fn collect_backend_results(
+    backends: &[&str],
+    size: u32,
+    actual: Option<(f64, f64)>,
+) -> Vec<BackendResult> {
+    let mut results: Vec<BackendResult> = Vec::new();
+    for backend in backends {
+        let Some((time_us, available, measured)) = measure_backend(backend, size, actual) else {
+            continue;
+        };
+        results.push(BackendResult {
+            name: (*backend).to_string(),
+            wall_time_us: time_us,
+            tflops: gemm_tflops(size, time_us),
+            bandwidth_gbps: 0.0,
+            available,
+            measured,
+        });
+    }
+    results
+}
+
+/// Dispatch to the backend-specific measurement routine; None for unknown backends.
+fn measure_backend(
+    backend: &str,
+    size: u32,
+    actual: Option<(f64, f64)>,
+) -> Option<(f64, bool, bool)> {
+    match backend {
+        "scalar" => Some((estimate_scalar_time_us(size), true, false)),
+        "avx2" => Some(measure_avx_backend(size, actual, false)),
+        "avx512" => Some(measure_avx_backend(size, actual, true)),
+        "neon" => Some((
+            estimate_scalar_time_us(size) / 4.0,
+            cfg!(target_arch = "aarch64"),
+            false,
+        )),
+        "cuda" => Some(measure_cuda_backend(size)),
+        "cublas" => Some(measure_cublas_backend(size)),
+        "wgpu" => Some((
+            estimate_cuda_time_us(size) * 2.0,
+            which::which("nvidia-smi").is_ok(),
+            false,
+        )),
+        other => {
+            eprintln!("  Warning: unknown backend '{other}', skipping");
+            None
+        }
+    }
+}
+
+/// Measure AVX2/AVX512 backends: prefer actual CPU bench, else fall back to estimate.
+fn measure_avx_backend(size: u32, actual: Option<(f64, f64)>, avx512: bool) -> (f64, bool, bool) {
+    #[cfg(target_arch = "x86_64")]
+    let avail = if avx512 {
+        std::arch::is_x86_feature_detected!("avx512f")
+    } else {
+        std::arch::is_x86_feature_detected!("avx2")
+    };
+    #[cfg(not(target_arch = "x86_64"))]
+    let avail = false;
+
+    if let Some((actual_us, _)) = actual {
+        return (actual_us, avail, true);
+    }
+    if avx512 {
+        (estimate_avx512_time_us(size), avail, false)
+    } else {
+        (estimate_avx2_time_us(size), avail, false)
+    }
+}
+
+/// Measure CUDA PTX backend when available + `cuda` feature is enabled.
+fn measure_cuda_backend(size: u32) -> (f64, bool, bool) {
+    let avail = which::which("nvidia-smi").is_ok();
+    if avail {
+        if let Some((time_us, _)) = try_measure_ptx(size) {
+            return (time_us, true, true);
+        }
+    }
+    (estimate_cuda_time_us(size), avail, false)
+}
+
+/// Measure cuBLAS backend when available + `cuda` feature is enabled.
+fn measure_cublas_backend(size: u32) -> (f64, bool, bool) {
+    let avail = which::which("nvidia-smi").is_ok();
+    if avail {
+        if let Some((time_us, _)) = try_measure_cublas(size) {
+            return (time_us, true, true);
+        }
+    }
+    (estimate_cublas_time_us(size), avail, false)
+}
+
+/// Shim that returns `measure_ptx_gemm` under `cuda` feature, `None` otherwise.
+#[cfg(feature = "cuda")]
+fn try_measure_ptx(size: u32) -> Option<(f64, f64)> {
+    measure_ptx_gemm(size)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn try_measure_ptx(_size: u32) -> Option<(f64, f64)> {
+    None
+}
+
+/// Shim that returns `measure_cublas_gemm` under `cuda` feature, `None` otherwise.
+#[cfg(feature = "cuda")]
+fn try_measure_cublas(size: u32) -> Option<(f64, f64)> {
+    measure_cublas_gemm(size)
+}
+
+#[cfg(not(feature = "cuda"))]
+fn try_measure_cublas(_size: u32) -> Option<(f64, f64)> {
+    None
+}
+
+/// Render the main comparison table (header + one row per backend).
+fn render_comparison_table(results: &[BackendResult]) {
+    let best_time = results.first().map_or(1.0, |r| r.wall_time_us);
     println!(
         "  {:12} {:>12} {:>12} {:>10} {:>10} {:>8} {:>5}",
         "Backend", "Time (us)", "TFLOP/s", "Efficiency", "vs Best", "Avail", "Src"
     );
     println!("  {}", "-".repeat(75));
+    let (cpu_peak, gpu_peak) = peak_performance_limits();
+    for r in results {
+        render_comparison_row(r, best_time, cpu_peak, gpu_peak);
+    }
+}
 
-    // Get roofline for efficiency
+/// Print a single comparison row with efficiency, ratio, availability, and source tag.
+fn render_comparison_row(r: &BackendResult, best_time: f64, cpu_peak: f64, gpu_peak: f64) {
+    let peak_tflops = if r.name.contains("cuda") || r.name.contains("cublas") || r.name == "wgpu" {
+        gpu_peak / 1e12
+    } else {
+        cpu_peak / 1e12
+    };
+    let efficiency = if peak_tflops > 0.0 {
+        r.tflops / peak_tflops * 100.0
+    } else {
+        0.0
+    };
+    let ratio = format!("{:.2}x", r.wall_time_us / best_time);
+    let avail = if r.available { "yes" } else { "no" };
+    let time_str = if r.wall_time_us >= 1000.0 {
+        format!("{:.1} ms", r.wall_time_us / 1000.0)
+    } else {
+        format!("{:.1}", r.wall_time_us)
+    };
+    let src = if r.measured { "M" } else { "E" };
+    println!(
+        "  {:12} {:>12} {:>12.1} {:>9.1}% {:>10} {:>8} {:>5}",
+        r.name, time_str, r.tflops, efficiency, ratio, avail, src
+    );
+}
+
+/// Roofline-derived peak CPU/GPU FLOP/s (used to compute per-row efficiency).
+fn peak_performance_limits() -> (f64, f64) {
     let model = RooflineModel::rtx_4090();
     let gpu_peak = model
         .peak_compute
@@ -395,87 +473,70 @@ pub fn run_compare(kernel: &str, size: u32, backends_str: &str, json: bool) -> R
         .copied()
         .unwrap_or(330.0e12);
     let cores = num_cpus::get_physical();
+    #[allow(clippy::cast_precision_loss)]
     let cpu_peak = 2.0 * 8.0 * 2.0 * 3.5e9 * cores as f64; // AVX2 peak
+    (cpu_peak, gpu_peak)
+}
 
-    for r in &results {
-        let peak = if r.name.contains("cuda") || r.name.contains("cublas") || r.name == "wgpu" {
-            gpu_peak / 1e12
-        } else {
-            cpu_peak / 1e12
-        };
-        let efficiency = if peak > 0.0 {
-            r.tflops / peak * 100.0
-        } else {
-            0.0
-        };
-        let ratio = format!("{:.2}x", r.wall_time_us / best_time);
-        let avail = if r.available { "yes" } else { "no" };
-
-        let time_str = if r.wall_time_us >= 1000.0 {
-            format!("{:.1} ms", r.wall_time_us / 1000.0)
-        } else {
-            format!("{:.1}", r.wall_time_us)
-        };
-
-        let src = if r.measured { "M" } else { "E" };
-        println!(
-            "  {:12} {:>12} {:>12.1} {:>9.1}% {:>10} {:>8} {:>5}",
-            r.name, time_str, r.tflops, efficiency, ratio, avail, src
-        );
-    }
-
+/// Show the "Src: M=measured E=estimated" legend when any results were produced.
+fn render_source_legend(results: &[BackendResult]) {
     let has_measured = results.iter().any(|r| r.measured);
     let has_estimated = results.iter().any(|r| !r.measured);
-    if has_measured || has_estimated {
-        print!("  Src: ");
-        if has_measured {
-            print!("M=measured ");
-        }
-        if has_estimated {
-            print!("E=estimated ");
-        }
-        println!();
+    if !(has_measured || has_estimated) {
+        return;
     }
-
-    // Summary
-    if let Some(best) = results.first() {
-        if let Some(worst) = results.last() {
-            let speedup = worst.wall_time_us / best.wall_time_us;
-            println!(
-                "\n  Best: {} ({:.1}x faster than {})",
-                best.name, speedup, worst.name
-            );
-        }
+    print!("  Src: ");
+    if has_measured {
+        print!("M=measured ");
     }
+    if has_estimated {
+        print!("E=estimated ");
+    }
+    println!();
+}
 
-    // Show CPU vs GPU gap if both present
+/// Print the "Best: X (Ny faster than Z)" summary line when results are present.
+fn render_best_summary(results: &[BackendResult]) {
+    let Some(best) = results.first() else {
+        return;
+    };
+    let Some(worst) = results.last() else {
+        return;
+    };
+    let speedup = worst.wall_time_us / best.wall_time_us;
+    println!(
+        "\n  Best: {} ({:.1}x faster than {})",
+        best.name, speedup, worst.name
+    );
+}
+
+/// Print "CPU→GPU gap: Nx" when both CPU and GPU backends were measured.
+fn render_cpu_gpu_gap(results: &[BackendResult]) {
     let has_cpu = results
         .iter()
         .any(|r| matches!(r.name.as_str(), "scalar" | "avx2" | "avx512"));
     let has_gpu = results
         .iter()
         .any(|r| matches!(r.name.as_str(), "cuda" | "cublas" | "wgpu"));
-    if has_cpu && has_gpu {
-        let best_cpu = results
-            .iter()
-            .filter(|r| matches!(r.name.as_str(), "scalar" | "avx2" | "avx512"))
-            .map(|r| r.wall_time_us)
-            .fold(f64::INFINITY, f64::min);
-        let best_gpu = results
-            .iter()
-            .filter(|r| matches!(r.name.as_str(), "cuda" | "cublas" | "wgpu"))
-            .map(|r| r.wall_time_us)
-            .fold(f64::INFINITY, f64::min);
-        if best_gpu > 0.0 {
-            println!(
-                "  CPU→GPU gap: {:.0}x (expected for large GEMM)",
-                best_cpu / best_gpu
-            );
-        }
+    if !(has_cpu && has_gpu) {
+        return;
     }
-
-    println!();
-    Ok(())
+    let best_cpu = results
+        .iter()
+        .filter(|r| matches!(r.name.as_str(), "scalar" | "avx2" | "avx512"))
+        .map(|r| r.wall_time_us)
+        .fold(f64::INFINITY, f64::min);
+    let best_gpu = results
+        .iter()
+        .filter(|r| matches!(r.name.as_str(), "cuda" | "cublas" | "wgpu"))
+        .map(|r| r.wall_time_us)
+        .fold(f64::INFINITY, f64::min);
+    if best_gpu > 0.0 {
+        println!(
+            "  CPU→GPU gap: {:.0}x (expected for large GEMM)",
+            best_cpu / best_gpu
+        );
+    }
 }
 
 #[cfg(test)]
