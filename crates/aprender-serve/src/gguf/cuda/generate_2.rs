@@ -84,7 +84,7 @@ impl OwnedQuantizedModelCuda {
         // PAR-045: Create KV cache with GQA-aware dimensions
         // For GQA models, K/V have kv_dim = num_kv_heads * head_dim (smaller than hidden_dim)
         let num_kv_heads = self.model.config.num_kv_heads;
-        let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;
+        let head_dim = self.model.config.head_dim();
         let kv_dim = num_kv_heads * head_dim;
         let mut cache = OwnedQuantizedKVCache::new(
             self.model.config.num_layers,
@@ -167,7 +167,7 @@ impl OwnedQuantizedModelCuda {
         // PAR-045: Create KV cache with GQA-aware dimensions
         // For GQA models, K/V have kv_dim = num_kv_heads * head_dim (smaller than hidden_dim)
         let num_kv_heads = self.model.config.num_kv_heads;
-        let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;
+        let head_dim = self.model.config.head_dim();
         let kv_dim = num_kv_heads * head_dim;
         let mut cache = OwnedQuantizedKVCache::new(
             self.model.config.num_layers,
@@ -211,16 +211,6 @@ impl OwnedQuantizedModelCuda {
             // Check stop tokens
             if config.stop_tokens.contains(&next_token) {
                 break;
-            }
-
-            // PAR-050-DEBUG: Print sampled tokens
-            if tokens.len() <= 15 {
-                eprintln!(
-                    "[PAR-050] Generated token {}: {} (position {})",
-                    tokens.len() - prompt.len() + 1,
-                    next_token,
-                    position
-                );
             }
 
             tokens.push(next_token);
@@ -391,8 +381,6 @@ impl OwnedQuantizedModelCuda {
         prompt: &[u32],
         config: &QuantizedGenerateConfig,
     ) -> Result<Vec<u32>> {
-        // PMAT-450 DIAGNOSTIC
-        let _ = std::fs::write("/tmp/pmat450_status.txt", format!("ENTERED generate_gpu_resident prompt_len={}\n", prompt.len()));
         if prompt.is_empty() {
             return Ok(Vec::new());
         }
@@ -433,7 +421,7 @@ impl OwnedQuantizedModelCuda {
         // PAR-045: Create KV cache with GQA-aware dimensions
         // For GQA models, K/V have kv_dim = num_kv_heads * head_dim (smaller than hidden_dim)
         let num_kv_heads = self.model.config.num_kv_heads;
-        let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;
+        let head_dim = self.model.config.head_dim();
         let kv_dim = num_kv_heads * head_dim;
         let mut cache = OwnedQuantizedKVCache::new(
             self.model.config.num_layers,
@@ -479,10 +467,6 @@ impl OwnedQuantizedModelCuda {
         let max_decode;
 
         if let Some((cached_k, cached_v)) = prefix_hit {
-            // PMAT-450: Prefix cache hit — skip prefill, restore GPU KV cache
-            eprintln!("[PMAT-450] PREFIX CACHE HIT: {} prompt tokens, skipping prefill", prompt.len());
-            // Also write to file for diagnostics (stderr redirect unreliable in some envs)
-            let _ = std::fs::write("/tmp/pmat450_status.txt", format!("HIT {}\n", prompt.len()));
             let kv_pairs: Vec<(Vec<f32>, Vec<f32>)> = cached_k.into_iter().zip(cached_v).collect();
             let cached_len = prompt.len();
             self.executor
@@ -502,9 +486,20 @@ impl OwnedQuantizedModelCuda {
             max_decode = config.max_tokens;
         } else {
             // PMAT-083: Prefill ALL tokens and extract first token (greedy only)
+            // SPEC-MOE-APR-001: MoE models use serial prefill (batched prefill skips FFN)
+            let is_moe = self.model.layers.first().is_some_and(|l| l.moe_gate_weight.is_some());
             let greedy = config.temperature == 0.0 || config.top_k == 1;
-            let prefill_count = if greedy { prompt.len() } else { prompt.len() - 1 };
-            let prefill_first_token = self.run_prefill(prompt, &mut cache, prefill_count, config.trace, greedy)?;
+            let prefill_first_token = if is_moe {
+                // Serial prefill: process each prompt token through full MoE decode path
+                for (pos, &tok) in prompt[..prompt.len() - 1].iter().enumerate() {
+                    // forward_single_with_cache internally calls cache.advance()
+                    let _ = self.forward_gpu_resident(tok, &mut cache, pos)?;
+                }
+                None // Last token will be processed in the decode loop
+            } else {
+                let prefill_count = if greedy { prompt.len() } else { prompt.len() - 1 };
+                self.run_prefill(prompt, &mut cache, prefill_count, config.trace, greedy)?
+            };
 
             if let Some(first_tok) = prefill_first_token {
                 // PMAT-083: First token from prefill LM head
@@ -567,10 +562,14 @@ impl OwnedQuantizedModelCuda {
                 Ok(kv_snapshot) => {
                     let (k_vecs, v_vecs): (Vec<_>, Vec<_>) = kv_snapshot.into_iter().unzip();
                     self.prefix_cache.insert(prompt.to_vec(), k_vecs, v_vecs);
-                    eprintln!("[PMAT-450] PREFIX CACHE INSERT: {} prompt tokens ({} layers)", prompt.len(), num_layers);
+                    if config.trace {
+                        eprintln!("[PMAT-450] PREFIX CACHE INSERT: {} prompt tokens ({} layers)", prompt.len(), num_layers);
+                    }
                 }
                 Err(e) => {
-                    eprintln!("[PMAT-450] PREFIX CACHE SNAPSHOT ERROR: {}", e);
+                    if config.trace {
+                        eprintln!("[PMAT-450] PREFIX CACHE SNAPSHOT ERROR: {}", e);
+                    }
                 }
             }
             // Restore original KV lengths
@@ -624,7 +623,7 @@ impl OwnedQuantizedModelCuda {
         }
 
         let num_kv_heads = self.model.config.num_kv_heads;
-        let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;
+        let head_dim = self.model.config.head_dim();
         let kv_dim = num_kv_heads * head_dim;
         let mut cache = OwnedQuantizedKVCache::new(
             self.model.config.num_layers, kv_dim,
@@ -727,7 +726,7 @@ impl OwnedQuantizedModelCuda {
         }
 
         let num_kv_heads = self.model.config.num_kv_heads;
-        let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;
+        let head_dim = self.model.config.head_dim();
         let kv_dim = num_kv_heads * head_dim;
         let mut cache = OwnedQuantizedKVCache::new(
             self.model.config.num_layers, kv_dim, tokens.len(),

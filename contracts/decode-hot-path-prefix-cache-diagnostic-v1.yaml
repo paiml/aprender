@@ -1,0 +1,153 @@
+---
+contract_id: F-DECODE-HOTPATH-003
+title: "Prefix Cache Diagnostic eprintln Must Be Gated By config.trace"
+version: 1.0.0
+status: SHIPPED
+created: 2026-04-17
+shipped: 2026-04-17
+result: |
+  apr qa on Qwen2.5-Coder-1.5B-Instruct Q4_K_M (RTX 4090):
+    Throughput: 386.86 tok/s (within 1% noise of 391.8 prior)
+    Ollama parity: 1.33× → 1.36× (Grade B, +2.3% relative)
+    GPU speedup: 19.05× CPU
+    All gates PASS except Format Parity (pre-existing, unrelated SafeTensors conversion)
+  Source-level invariant: PASS — all 5 PMAT-450 eprintln sites across
+  generate_1.rs and generate_2.rs are now gated by `if config.trace { ... }`.
+author: aprender-perf
+related:
+  - F-DECODE-HOTPATH-001  # per-token fs::write removal (2.07× speedup)
+  - F-DECODE-HOTPATH-002  # realizr#198 first-N-tokens diagnostic removal (+2.6%)
+
+# ─────────────────────────────────────────────────────────────
+# FIVE WHYS
+# ─────────────────────────────────────────────────────────────
+five_whys:
+  problem: |
+    `apr qa` runs 10 throughput iterations. On iteration 1 of each prompt,
+    `generate_gpu_resident` performs a prefix cache INSERT and unconditionally
+    fires `eprintln!("[PMAT-450] PREFIX CACHE INSERT: ...")`
+    (generate_2.rs:575). An adjacent error-path eprintln at :578 fires on
+    snapshot failure. Neither is gated by `config.trace`, unlike the
+    symmetric HIT-path eprintln at :490 which IS correctly gated.
+
+  why_1: |
+    WHY does this cost throughput?
+    Each `apr qa` benchmark iteration that misses the prefix cache pays
+    one `eprintln!` (stderr lock + format + write). For short prompts this
+    amortizes to 1 call per full generation, but the cost is non-zero
+    and — more importantly — represents latent throughput pollution that
+    will fire per-request in production serving.
+
+  why_2: |
+    WHY is the diagnostic unconditional while the HIT path is gated?
+    PMAT-450 added both eprintlns during prefix-cache feature development.
+    The HIT-path gate was added later (likely F-DECODE-HOTPATH-001 sweep)
+    but the INSERT and ERROR paths were overlooked because they are
+    syntactically separated by 85 lines.
+
+  why_3: |
+    WHY is this class-of-bug recurring?
+    Because "unconditional eprintln in decode hot path" is a forest-level
+    anti-pattern, not a point bug. Each PMAT-NNN feature branch adds its
+    own diagnostic breadcrumbs and reviewers do not consistently catch
+    the un-gated ones. F-DECODE-HOTPATH-001 caught fs::write variants,
+    F-DECODE-HOTPATH-002 caught realizr#198 count-gated variants, and
+    F-DECODE-HOTPATH-003 catches config.trace-missing variants.
+
+  why_4: |
+    WHY does the existing DECODE_TIMING OnceLock not catch this?
+    Because DECODE_TIMING guards per-token timing instrumentation inside
+    the replay path. The prefix-cache INSERT happens once per generation
+    at the boundary between prefill and decode — it's a different hot
+    path with a different gating convention (`config.trace`).
+
+  why_5: |
+    WHY does `pmat analyze satd` not catch this?
+    Because `eprintln!` is not a TODO/FIXME/HACK marker — it's valid
+    Rust that happens to be production dead weight. Only contract-first
+    invariants can falsify it: "no unconditional eprintln in
+    generate_gpu_resident outside config.trace guards."
+
+# ─────────────────────────────────────────────────────────────
+# EQUATIONS / INVARIANTS
+# ─────────────────────────────────────────────────────────────
+equations:
+  - id: prefix_cache_insert_cost
+    description: |
+      INSERT-path diagnostic cost per generation must equal zero when
+      config.trace is false.
+    formula: |
+      insert_diagnostic_cost(trace) = trace ? eprintln_cost : 0
+      required: insert_diagnostic_cost(false) == 0
+    units: microseconds
+    threshold: 0
+
+  - id: invariants
+    description: |
+      generate_gpu_resident prefix-cache diagnostics invariant.
+    requirements:
+      - "zero unconditional eprintln! in generate_gpu_resident"
+      - "all PMAT-450 breadcrumb eprintlns gated by `if config.trace { ... }`"
+      - "symmetric: INSERT / HIT / ERROR paths all use same gating convention"
+
+# ─────────────────────────────────────────────────────────────
+# PROOF OBLIGATIONS
+# ─────────────────────────────────────────────────────────────
+proof_obligations:
+  - id: PO-HP3-001
+    statement: "No unconditional `eprintln!` matching \"PMAT-450\" exists in generate_2.rs"
+    verification: "pmat query --literal 'eprintln!(\"[PMAT-450]' --path crates/aprender-serve/src/gguf/cuda/generate_2.rs"
+
+  - id: PO-HP3-002
+    statement: "apr qa Throughput maintained at >=390 tok/s on 1.5B Q4_K_M"
+    verification: "apr qa --assert-tps 390"
+
+  - id: PO-HP3-003
+    statement: "Prefix cache HIT/INSERT/ERROR paths all share gating style"
+    verification: "source inspection: all three paths wrapped in `if config.trace`"
+
+# ─────────────────────────────────────────────────────────────
+# FALSIFICATION TESTS
+# ─────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-DECODE-HP3-001
+    name: "Source-level invariant: all PMAT-450 eprintlns are config.trace-gated"
+    method: |
+      pmat query --literal 'eprintln!("[PMAT-450]' --path crates/aprender-serve/src/gguf/cuda/generate_2.rs
+      # Expect each match to be preceded (within 2 lines above) by `if config.trace`.
+    expected: |
+      Every PMAT-450 eprintln is inside a `config.trace` guard block.
+    fails_if: "Any PMAT-450 eprintln fires without `config.trace`"
+
+  - id: FALSIFY-DECODE-HP3-002
+    name: "apr qa Throughput still Grade B or better"
+    method: |
+      /mnt/nvme-raid0/targets/aprender/release/apr qa \
+        ~/.cache/aprender/models/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf \
+        --assert-tps 390 --gate-ollama-parity 1.25
+    expected: |
+      Throughput >= 390 tok/s AND Ollama parity >= 1.25x.
+    fails_if: "Throughput drops below 390 or Ollama parity below 1.25x"
+
+# ─────────────────────────────────────────────────────────────
+# QA GATE
+# ─────────────────────────────────────────────────────────────
+qa_gate:
+  must_pass:
+    - FALSIFY-DECODE-HP3-001
+    - FALSIFY-DECODE-HP3-002
+  integration: "apr qa (Throughput + Golden + Ollama Parity gates)"
+  regression_protection: "Enforces F-DECODE-HOTPATH-001/002 invariant: zero unconditional diagnostics in decode/prefill boundary."
+
+# ─────────────────────────────────────────────────────────────
+# IMPLEMENTATION PLAN
+# ─────────────────────────────────────────────────────────────
+implementation:
+  files_to_modify:
+    - path: crates/aprender-serve/src/gguf/cuda/generate_2.rs
+      change: "Wrap eprintln at L575 and L578 in `if config.trace { ... }` to match L489 pattern."
+      justification: "Symmetric gating with existing HIT-path diagnostic at :490"
+
+  followup:
+    - "Sweep remaining PMAT-450 eprintlns across cuda/ for same anti-pattern"
+    - "Consider promoting the config.trace gate to a named helper (`trace_eprintln!`) to reduce repetition"

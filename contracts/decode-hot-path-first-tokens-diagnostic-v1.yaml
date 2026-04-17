@@ -1,0 +1,157 @@
+---
+contract_id: F-DECODE-HOTPATH-002
+title: "First-N-Tokens Diagnostic eprintln Must Be Removed From Decode Hot Path"
+version: 1.0.0
+status: SHIPPED
+created: 2026-04-17
+shipped: 2026-04-17
+result: |
+  apr qa on Qwen2.5-Coder-1.5B-Instruct Q4_K_M (RTX 4090):
+    Throughput: 381.7 → 391.8 tok/s (+2.6%)
+    Ollama parity: 1.30× → 1.33× (Grade B maintained)
+    GPU speedup: 19.3× CPU
+    Golden gate: PASS (2/2), ptx_parity: PASS (6/6),
+    gpu_state_isolation: PASS, performance_regression: PASS
+    Format parity: FAIL (pre-existing SafeTensors conversion issue, unrelated)
+  Source-level invariant: PASS — zero `realizr#198` matches, zero unconditional
+  eprintln/fs::write in forward_graphed_replay_to_token_id.
+  Removed two diagnostic blocks at par-062.rs:417-425 and par-062.rs:548-554.
+author: aprender-perf
+related:
+  - F-DECODE-HOTPATH-001  # precedent: per-token fs::write removal (2.07× speedup)
+  - F-PROFILE-009         # apr profile launch-overhead metric fix
+  - F-PROFILE-010         # host-overhead decomposition (pending)
+
+# ─────────────────────────────────────────────────────────────
+# FIVE WHYS
+# ─────────────────────────────────────────────────────────────
+five_whys:
+  problem: |
+    `apr qa` greedy throughput on Qwen2.5-Coder-1.5B Q4_K_M plateaus at 1.3×
+    Ollama (381.7 tok/s, Grade B). The decode hot path still emits
+    `eprintln!("[realizr#198] REPLAY: ...")` for the first 5 tokens of
+    every single generation (par-062.rs:417-425).
+
+  why_1: |
+    WHY does throughput plateau below 1.5× Ollama despite F-DECODE-HOTPATH-001?
+    Because host-side overhead per token is still non-zero. For short
+    benchmark generations (16-64 tokens), diagnostic prints that fire on
+    the first 5 tokens amortize to ~8-30% of tokens in the sample.
+
+  why_2: |
+    WHY are there still diagnostic prints in the hot path?
+    Because `realizr#198` was a race-condition investigation in the CUDA
+    graph replay path. The eprintln printed GPU pointer values to verify
+    graph param updates were taking effect. The fix shipped but the
+    diagnostic stayed.
+
+  why_3: |
+    WHY does eprintln hurt throughput meaningfully?
+    Because `eprintln!` takes a stdio lock, formats 4 varargs including
+    two hex-formatted u64 pointers, and writes synchronously to stderr.
+    Each call is ~5-40µs depending on terminal buffering. On a 2.2ms/token
+    budget, 5 calls per generation spreading across 16-token benchmarks
+    is ~1-2% tax.
+
+  why_4: |
+    WHY is the diagnostic still gated on `self.decode_token_count <= 5`
+    instead of an env var?
+    Because the PAR-083 DECODE_TIMING OnceLock pattern was established
+    AFTER realizr#198 debugging concluded. The old diagnostic was never
+    refactored to match the new pattern.
+
+  why_5: |
+    WHY did this not get caught by `pmat analyze satd`?
+    Because `eprintln!` is not a SATD marker (no TODO/FIXME/HACK). It's
+    production code that happens to be dead weight. Contract-first
+    catches this because the invariant "hot path has zero unconditional
+    diagnostics" is explicit and falsifiable.
+
+# ─────────────────────────────────────────────────────────────
+# EQUATIONS / INVARIANTS
+# ─────────────────────────────────────────────────────────────
+equations:
+  - id: hot_path_first_token_cost
+    description: |
+      Per-generation overhead from first-N-token diagnostics must be zero.
+    formula: |
+      cost_first_n_tokens = N * (eprintln_cost + format_cost + lock_cost)
+      required: cost_first_n_tokens == 0
+    units: microseconds
+    threshold: 0
+
+  - id: invariants
+    description: |
+      Decode hot path invariants after this contract ships.
+    requirements:
+      - "zero `eprintln!` unconditional in forward_graphed_replay_to_token_id"
+      - "zero `std::fs::write` in forward_graphed_replay_to_token_id"
+      - "any diagnostic gated behind OnceLock + env var (DECODE_TIMING pattern)"
+      - "decode_token_count counter removed if only used for the diagnostic"
+
+# ─────────────────────────────────────────────────────────────
+# PROOF OBLIGATIONS
+# ─────────────────────────────────────────────────────────────
+proof_obligations:
+  - id: PO-HP2-001
+    statement: "No unconditional eprintln! exists in forward_graphed_replay_to_token_id"
+    verification: "source grep via pmat query --literal"
+
+  - id: PO-HP2-002
+    statement: "apr qa Throughput ≥ 380 tok/s on 1.5B Q4_K_M (no regression from F-DECODE-HOTPATH-001)"
+    verification: "apr qa --assert-tps 380"
+
+  - id: PO-HP2-003
+    statement: "Golden output still passes after diagnostic removal"
+    verification: "apr qa golden gate"
+
+# ─────────────────────────────────────────────────────────────
+# FALSIFICATION TESTS
+# ─────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-DECODE-HP2-001
+    name: "Source-level zero-eprintln invariant"
+    method: |
+      pmat query --literal "realizr#198" --path crates/aprender-serve/src/cuda
+      pmat query --literal "REPLAY: pos=" --path crates/aprender-serve/src/cuda
+      grep -n "eprintln!" crates/aprender-serve/src/cuda/executor/layers/par-062.rs
+    expected: |
+      Zero matches for "realizr#198" and "REPLAY: pos=" in the live
+      (included) hot path. par-062.rs contains no unconditional eprintln!.
+    fails_if: "Any match found in live source"
+
+  - id: FALSIFY-DECODE-HP2-002
+    name: "apr qa Throughput maintained at Grade B or better"
+    method: |
+      /mnt/nvme-raid0/targets/aprender/release/apr qa \
+        ~/.cache/aprender/models/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf \
+        --assert-tps 380 --gate-ollama-parity 1.25
+    expected: |
+      Throughput ≥ 380 tok/s AND Ollama parity ≥ 1.25× (Grade B or better).
+    fails_if: "Throughput drops below 380 or Ollama parity below 1.25×"
+
+# ─────────────────────────────────────────────────────────────
+# QA GATE
+# ─────────────────────────────────────────────────────────────
+qa_gate:
+  must_pass:
+    - FALSIFY-DECODE-HP2-001
+    - FALSIFY-DECODE-HP2-002
+  integration: "apr qa (Throughput + Golden + Ollama Parity gates)"
+  regression_protection: "This contract enforces F-DECODE-HOTPATH-001 stays shipped."
+
+# ─────────────────────────────────────────────────────────────
+# IMPLEMENTATION PLAN
+# ─────────────────────────────────────────────────────────────
+implementation:
+  files_to_modify:
+    - path: crates/aprender-serve/src/cuda/executor/layers/par-062.rs
+      change: "Remove lines 417-425 (realizr#198 eprintln block)"
+      justification: "Diagnostic for resolved race condition — no longer needed"
+
+  files_to_audit:
+    - path: crates/aprender-serve/src/cuda/executor/layers/reduces.rs
+      note: "Contains duplicate forward_graphed_replay_to_token_id WITHOUT the diagnostic. Not included anywhere (dead code). No action required; flagged for future cleanup."
+
+  followup:
+    - "Audit self.decode_token_count usages — if only used for the removed diagnostic, remove the counter entirely."
