@@ -92,7 +92,7 @@ fn save_playbook_evidence(result: &aprender_qa_runner::ExecutionResult, output_d
 
 /// Log environment information for fail-fast diagnostics (§12.5.3)
 fn log_environment() {
-    let tag = "[ENVIRONMENT]".dimmed().cyan();
+    let tag = "[ENVIRONMENT]".dimmed().cyan().to_string();
     eprintln!("\n{tag} {}", "=== Diagnostic Context ===".dimmed());
     eprintln!(
         "{tag} {} {} {}",
@@ -106,73 +106,55 @@ fn log_environment() {
         env!("CARGO_PKG_VERSION").dimmed()
     );
 
-    // Git context
-    if let Ok(output) = std::process::Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .output()
-    {
-        if output.status.success() {
-            let commit = String::from_utf8_lossy(&output.stdout);
-            eprintln!(
-                "{tag} {} {}",
-                "Git commit:".dimmed(),
-                commit.trim().dimmed()
-            );
-        }
-    }
-
-    if let Ok(output) = std::process::Command::new("git")
-        .args(["branch", "--show-current"])
-        .output()
-    {
-        if output.status.success() {
-            let branch = String::from_utf8_lossy(&output.stdout);
-            eprintln!(
-                "{tag} {} {}",
-                "Git branch:".dimmed(),
-                branch.trim().dimmed()
-            );
-        }
-    }
-
-    // Check for dirty files
-    if let Ok(output) = std::process::Command::new("git")
-        .args(["status", "--porcelain"])
-        .output()
-    {
-        if output.status.success() {
-            let status = String::from_utf8_lossy(&output.stdout);
-            let dirty_count = status.lines().count();
-            if dirty_count > 0 {
-                eprintln!(
-                    "{tag} {} {}",
-                    "Git dirty:".dimmed(),
-                    format!("{dirty_count} file(s) modified").dimmed()
-                );
-            }
-        }
-    }
-
-    // apr CLI version
-    if let Ok(output) = std::process::Command::new("apr").arg("--version").output() {
-        if output.status.success() {
-            let version = String::from_utf8_lossy(&output.stdout);
-            eprintln!("{tag} {} {}", "apr-cli:".dimmed(), version.trim().dimmed());
-        }
-    }
-
-    // Rust version
-    if let Ok(output) = std::process::Command::new("rustc")
-        .arg("--version")
-        .output()
-    {
-        if output.status.success() {
-            let version = String::from_utf8_lossy(&output.stdout);
-            eprintln!("{tag} {}", version.trim().dimmed());
-        }
-    }
+    log_git_short_line(&tag, "Git commit:", &["rev-parse", "--short", "HEAD"]);
+    log_git_short_line(&tag, "Git branch:", &["branch", "--show-current"]);
+    log_git_dirty_count(&tag);
+    log_command_short_line(&tag, "apr-cli:", "apr", &["--version"], false);
+    log_command_short_line(&tag, "", "rustc", &["--version"], true);
 
     eprintln!("{tag} {}\n", "===========================".dimmed());
+}
+
+/// Run a command, printing its trimmed stdout as `tag label <value>` on success.
+fn log_git_short_line(tag: &str, label: &str, args: &[&str]) {
+    log_command_short_line(tag, label, "git", args, false);
+}
+
+fn log_command_short_line(tag: &str, label: &str, cmd: &str, args: &[&str], value_only: bool) {
+    let Ok(output) = std::process::Command::new(cmd).args(args).output() else {
+        return;
+    };
+    if !output.status.success() {
+        return;
+    }
+    let value = String::from_utf8_lossy(&output.stdout);
+    let trimmed = value.trim();
+    if value_only {
+        eprintln!("{tag} {}", trimmed.dimmed());
+    } else {
+        eprintln!("{tag} {} {}", label.dimmed(), trimmed.dimmed());
+    }
+}
+
+fn log_git_dirty_count(tag: &str) {
+    let Ok(output) = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+    else {
+        return;
+    };
+    if !output.status.success() {
+        return;
+    }
+    let status = String::from_utf8_lossy(&output.stdout);
+    let dirty_count = status.lines().count();
+    if dirty_count > 0 {
+        eprintln!(
+            "{tag} {} {}",
+            "Git dirty:".dimmed(),
+            format!("{dirty_count} file(s) modified").dimmed()
+        );
+    }
 }
 
 /// Generate QA scenarios for a model and print them in the requested format
