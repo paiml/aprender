@@ -13,69 +13,82 @@ use std::path::Path;
 /// Execute the coverage command
 pub fn execute_coverage(_config: &CliConfig, args: &CoverageArgs) -> CliResult<()> {
     println!("Generating coverage heatmap...");
+    let cells = load_cells(args)?;
+    let heatmap = build_heatmap(args);
 
-    let cells: Vec<Vec<CoverageCell>> = if let Some(ref input) = args.input {
-        println!("Loading coverage data from {}...", input.display());
-        load_coverage_from_json(input)?
-    } else {
+    if let Some(ref png_path) = args.png {
+        export_png(&heatmap, &cells, png_path)?;
+    }
+    if let Some(ref json_path) = args.json {
+        export_json(&cells, json_path)?;
+    }
+    if args.png.is_none() && args.json.is_none() {
+        print_summary(&cells);
+    }
+    Ok(())
+}
+
+fn load_cells(args: &CoverageArgs) -> CliResult<Vec<Vec<CoverageCell>>> {
+    let Some(ref input) = args.input else {
         println!("No input file specified, using sample data");
-        create_sample_coverage_data()
+        return Ok(create_sample_coverage_data());
     };
+    println!("Loading coverage data from {}...", input.display());
+    load_coverage_from_json(input)
+}
 
+fn build_heatmap(args: &CoverageArgs) -> PngHeatmap {
     let palette = match args.palette {
         PaletteArg::Viridis => ColorPalette::viridis(),
         PaletteArg::Magma => ColorPalette::magma(),
         PaletteArg::Heat => ColorPalette::heat(),
     };
-
     let mut heatmap = PngHeatmap::new(args.width, args.height).with_palette(palette);
-
     if args.legend {
         heatmap = heatmap.with_legend();
     }
-
     if args.gaps {
         heatmap = heatmap.with_gap_highlighting();
     }
-
     if let Some(ref title) = args.title {
         heatmap = heatmap.with_title(title);
     }
+    heatmap
+}
 
-    if let Some(ref png_path) = args.png {
-        heatmap
-            .export_to_file(&cells, png_path)
-            .map_err(|e| CliError::report_generation(e.to_string()))?;
-        println!("PNG heatmap exported to: {}", png_path.display());
-    }
-
-    if let Some(ref json_path) = args.json {
-        let report = generate_coverage_report(&cells);
-        let json = serde_json::to_string_pretty(&report)
-            .map_err(|e| CliError::report_generation(e.to_string()))?;
-        std::fs::write(json_path, json).map_err(|e| CliError::report_generation(e.to_string()))?;
-        println!("Coverage report exported to: {}", json_path.display());
-    }
-
-    if args.png.is_none() && args.json.is_none() {
-        let report = generate_coverage_report(&cells);
-        println!("\nCoverage Summary:");
-        println!(
-            "  Overall Coverage: {:.1}%",
-            report.overall_coverage * 100.0
-        );
-        println!(
-            "  Covered Cells: {}/{}",
-            report.covered_cells, report.total_cells
-        );
-        println!(
-            "  Meets Threshold: {}",
-            if report.meets_threshold { "Y" } else { "N" }
-        );
-        println!("\nUse --png <path> to export a heatmap image.");
-    }
-
+fn export_png(heatmap: &PngHeatmap, cells: &[Vec<CoverageCell>], png_path: &Path) -> CliResult<()> {
+    heatmap
+        .export_to_file(cells, png_path)
+        .map_err(|e| CliError::report_generation(e.to_string()))?;
+    println!("PNG heatmap exported to: {}", png_path.display());
     Ok(())
+}
+
+fn export_json(cells: &[Vec<CoverageCell>], json_path: &Path) -> CliResult<()> {
+    let report = generate_coverage_report(cells);
+    let json = serde_json::to_string_pretty(&report)
+        .map_err(|e| CliError::report_generation(e.to_string()))?;
+    std::fs::write(json_path, json).map_err(|e| CliError::report_generation(e.to_string()))?;
+    println!("Coverage report exported to: {}", json_path.display());
+    Ok(())
+}
+
+fn print_summary(cells: &[Vec<CoverageCell>]) {
+    let report = generate_coverage_report(cells);
+    println!("\nCoverage Summary:");
+    println!(
+        "  Overall Coverage: {:.1}%",
+        report.overall_coverage * 100.0
+    );
+    println!(
+        "  Covered Cells: {}/{}",
+        report.covered_cells, report.total_cells
+    );
+    println!(
+        "  Meets Threshold: {}",
+        if report.meets_threshold { "Y" } else { "N" }
+    );
+    println!("\nUse --png <path> to export a heatmap image.");
 }
 
 /// Load coverage data from a JSON file
