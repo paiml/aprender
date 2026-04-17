@@ -727,95 +727,127 @@ impl SafetensorsToAprConverter {
         layer: &mut AprTransformerLayer,
     ) -> Result<()> {
         let prefix = format!("{model_prefix}.layers.{layer_idx}");
+        Self::load_moe_router_gate(source, &prefix, layer);
+        Self::load_moe_expert_tensors(source, &prefix, config, hidden_dim, layer);
+        Self::load_moe_shared_expert_ffn(source, &prefix, config, layer);
+        Self::load_moe_shared_expert_gate(source, &prefix, layer);
+        Ok(())
+    }
 
-        // Router gate weight: [num_experts, hidden_dim]
-        let gate_name = format!("{prefix}.mlp.gate.weight");
-        if let Ok(gate) = source.get_tensor_auto(&gate_name) {
+    /// Router gate weight: `[num_experts, hidden_dim]`.
+    fn load_moe_router_gate<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        layer: &mut AprTransformerLayer,
+    ) {
+        if let Ok(gate) = source.get_tensor_auto(&format!("{prefix}.mlp.gate.weight")) {
             layer.moe_gate_weight = Some(gate);
         }
+    }
 
-        // Try Layout 1: packed expert tensors (no .weight suffix)
-        let gate_up_name = format!("{prefix}.mlp.experts.gate_up_proj");
-        if let Ok(gate_up) = source.get_tensor_auto(&gate_up_name) {
+    /// Expert `gate_up`/`down` tensors. Tries Layout 1 (packed `gate_up_proj` +
+    /// `down_proj`) first, then falls back to Layout 2 (per-expert weights,
+    /// Qwen3-Coder style), packing individual tensors into concatenated form.
+    fn load_moe_expert_tensors<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        config: &SafetensorsConfig,
+        hidden_dim: usize,
+        layer: &mut AprTransformerLayer,
+    ) {
+        if let Ok(gate_up) = source.get_tensor_auto(&format!("{prefix}.mlp.experts.gate_up_proj")) {
             layer.moe_expert_gate_up = Some(gate_up);
-
-            let down_name = format!("{prefix}.mlp.experts.down_proj");
-            if let Ok(down) = source.get_tensor_auto(&down_name) {
+            if let Ok(down) = source.get_tensor_auto(&format!("{prefix}.mlp.experts.down_proj")) {
                 layer.moe_expert_down = Some(down);
             }
-        } else {
-            // Layout 2: per-expert tensors (Qwen3-Coder style)
-            // Pack individual expert weights into concatenated tensors
-            let num_experts = config.num_experts.unwrap_or(0);
-            let moe_intermediate = config.moe_intermediate_size.unwrap_or(0);
-            if num_experts > 0 && moe_intermediate > 0 {
-                let mut gate_up_packed = Vec::with_capacity(
-                    num_experts * 2 * moe_intermediate * hidden_dim,
-                );
-                let mut down_packed = Vec::with_capacity(
-                    num_experts * hidden_dim * moe_intermediate,
-                );
-                let mut found_any = false;
+            return;
+        }
+        if let Some((gate_up_packed, down_packed)) =
+            Self::pack_per_expert_tensors(source, prefix, config, hidden_dim)
+        {
+            layer.moe_expert_gate_up = Some(gate_up_packed);
+            layer.moe_expert_down = Some(down_packed);
+        }
+    }
 
-                for e in 0..num_experts {
-                    let gate_name = format!("{prefix}.mlp.experts.{e}.gate_proj.weight");
-                    let up_name = format!("{prefix}.mlp.experts.{e}.up_proj.weight");
-                    let down_name = format!("{prefix}.mlp.experts.{e}.down_proj.weight");
+    /// Layout 2: walk per-expert `gate_proj`/`up_proj`/`down_proj` tensors and
+    /// concatenate them. Returns `None` when no complete expert was found.
+    /// A partial expert encountered after complete ones short-circuits the
+    /// loop (partial experts shouldn't happen, but handle gracefully).
+    fn pack_per_expert_tensors<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        config: &SafetensorsConfig,
+        hidden_dim: usize,
+    ) -> Option<(Vec<f32>, Vec<f32>)> {
+        let num_experts = config.num_experts.unwrap_or(0);
+        let moe_intermediate = config.moe_intermediate_size.unwrap_or(0);
+        if num_experts == 0 || moe_intermediate == 0 {
+            return None;
+        }
 
-                    match (
-                        source.get_tensor_auto(&gate_name),
-                        source.get_tensor_auto(&up_name),
-                        source.get_tensor_auto(&down_name),
-                    ) {
-                        (Ok(gate), Ok(up), Ok(down)) => {
-                            found_any = true;
-                            // Pack gate+up into [2*intermediate, hidden] per expert
-                            gate_up_packed.extend_from_slice(&gate);
-                            gate_up_packed.extend_from_slice(&up);
-                            down_packed.extend_from_slice(&down);
-                        }
-                        _ => {
-                            if found_any {
-                                // Partial experts — shouldn't happen, but handle gracefully
-                                break;
-                            }
-                        }
-                    }
-                }
+        let mut gate_up_packed = Vec::with_capacity(num_experts * 2 * moe_intermediate * hidden_dim);
+        let mut down_packed = Vec::with_capacity(num_experts * hidden_dim * moe_intermediate);
+        let mut found_any = false;
 
-                if found_any {
-                    layer.moe_expert_gate_up = Some(gate_up_packed);
-                    layer.moe_expert_down = Some(down_packed);
-                }
+        for e in 0..num_experts {
+            let gate = source.get_tensor_auto(&format!("{prefix}.mlp.experts.{e}.gate_proj.weight"));
+            let up = source.get_tensor_auto(&format!("{prefix}.mlp.experts.{e}.up_proj.weight"));
+            let down = source.get_tensor_auto(&format!("{prefix}.mlp.experts.{e}.down_proj.weight"));
+
+            if let (Ok(gate), Ok(up), Ok(down)) = (gate, up, down) {
+                found_any = true;
+                gate_up_packed.extend_from_slice(&gate);
+                gate_up_packed.extend_from_slice(&up);
+                down_packed.extend_from_slice(&down);
+            } else if found_any {
+                break;
             }
         }
 
-        // Shared expert FFN (only for models that have it, e.g. Qwen3.5)
-        let shared_intermediate = config.shared_expert_intermediate_size
+        found_any.then_some((gate_up_packed, down_packed))
+    }
+
+    /// Shared expert FFN (`gate_proj`/`up_proj`/`down_proj`), present on
+    /// models like Qwen3.5. Gated on a positive
+    /// `shared_expert_intermediate_size` (falling back to
+    /// `moe_intermediate_size`).
+    fn load_moe_shared_expert_ffn<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        config: &SafetensorsConfig,
+        layer: &mut AprTransformerLayer,
+    ) {
+        let shared_intermediate = config
+            .shared_expert_intermediate_size
             .or(config.moe_intermediate_size)
             .unwrap_or(0);
-        if shared_intermediate > 0 {
-            let shared_gate_name = format!("{prefix}.mlp.shared_expert.gate_proj.weight");
-            if let Ok(g) = source.get_tensor_auto(&shared_gate_name) {
-                layer.moe_shared_gate = Some(g);
-            }
-            let shared_up_name = format!("{prefix}.mlp.shared_expert.up_proj.weight");
-            if let Ok(u) = source.get_tensor_auto(&shared_up_name) {
-                layer.moe_shared_up = Some(u);
-            }
-            let shared_down_name = format!("{prefix}.mlp.shared_expert.down_proj.weight");
-            if let Ok(d) = source.get_tensor_auto(&shared_down_name) {
-                layer.moe_shared_down = Some(d);
-            }
+        if shared_intermediate == 0 {
+            return;
         }
+        if let Ok(g) = source.get_tensor_auto(&format!("{prefix}.mlp.shared_expert.gate_proj.weight"))
+        {
+            layer.moe_shared_gate = Some(g);
+        }
+        if let Ok(u) = source.get_tensor_auto(&format!("{prefix}.mlp.shared_expert.up_proj.weight"))
+        {
+            layer.moe_shared_up = Some(u);
+        }
+        if let Ok(d) = source.get_tensor_auto(&format!("{prefix}.mlp.shared_expert.down_proj.weight"))
+        {
+            layer.moe_shared_down = Some(d);
+        }
+    }
 
-        // Shared expert gate: sigmoid scaling weight [1, hidden_dim]
-        let shared_gate_name = format!("{prefix}.mlp.shared_expert_gate.weight");
-        if let Ok(sg) = source.get_tensor_auto(&shared_gate_name) {
+    /// Shared expert gate: sigmoid scaling weight `[1, hidden_dim]`.
+    fn load_moe_shared_expert_gate<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        layer: &mut AprTransformerLayer,
+    ) {
+        if let Ok(sg) = source.get_tensor_auto(&format!("{prefix}.mlp.shared_expert_gate.weight")) {
             layer.moe_shared_expert_gate_weight = Some(sg);
         }
-
-        Ok(())
     }
 
     /// Pass through weight in matvec-optimal [out_dim, in_dim] format
