@@ -64,6 +64,7 @@ impl AprMcpServer {
 
         let result = match name {
             Some(tools::version::NAME) => tools::version::call(&arguments),
+            Some(tools::validate::NAME) => tools::validate::call(&arguments),
             Some(other) => ToolCallResult::error(format!("Unknown tool: {other}")),
             None => ToolCallResult::error("Missing tool name"),
         };
@@ -77,7 +78,10 @@ impl AprMcpServer {
     /// All tool definitions registered on this server.
     #[must_use]
     pub fn tool_definitions(&self) -> Vec<ToolDefinition> {
-        vec![tools::version_tool_definition()]
+        vec![
+            tools::version_tool_definition(),
+            tools::validate_tool_definition(),
+        ]
     }
 
     /// Run the server over stdio (blocking).
@@ -143,20 +147,23 @@ mod tests {
         assert!(result["capabilities"]["tools"].is_object());
     }
 
-    /// FALSIFY-MCP-002 (M1 subset): tools/list returns exactly the M1 tools.
+    /// FALSIFY-MCP-002 (M2 slice 1): tools/list returns the currently-registered
+    /// tools (apr.version + apr.validate). Full 8-tool set lands when M2 completes.
     #[test]
-    fn tools_list_returns_m1_tool_set() {
+    fn tools_list_returns_registered_tools() {
         let mut server = AprMcpServer::new();
         let req = make_request("tools/list", serde_json::json!({}));
         let resp = server.handle_request(&req);
 
         let result = resp.result.expect("result present");
         let tools = result["tools"].as_array().expect("tools array");
-        assert_eq!(tools.len(), 1, "M1 ships only apr.version");
-        assert_eq!(tools[0]["name"], "apr.version");
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert!(names.contains(&"apr.version"), "apr.version registered");
+        assert!(names.contains(&"apr.validate"), "apr.validate registered");
 
-        let schema = &tools[0]["inputSchema"];
-        assert_eq!(schema["type"], "object");
+        for tool in tools {
+            assert_eq!(tool["inputSchema"]["type"], "object");
+        }
     }
 
     #[test]
@@ -184,6 +191,23 @@ mod tests {
         assert!(resp.result.is_none());
         let err = resp.error.expect("error present");
         assert_eq!(err.code, -32601);
+    }
+
+    /// `apr.validate` without `model_path` must return `isError: true` via
+    /// the argument-validation branch (no subprocess spawn).
+    #[test]
+    fn tools_call_validate_missing_model_path_is_error() {
+        let mut server = AprMcpServer::new();
+        let req = make_request(
+            "tools/call",
+            serde_json::json!({ "name": "apr.validate", "arguments": {} }),
+        );
+        let resp = server.handle_request(&req);
+
+        let result = resp.result.expect("result present");
+        assert_eq!(result["isError"], true);
+        let text = result["content"][0]["text"].as_str().expect("text");
+        assert!(text.contains("model_path"));
     }
 
     #[test]
