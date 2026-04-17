@@ -38,8 +38,10 @@ fn falsify_mcp_001_initialize_under_500ms() {
     assert_eq!(result["protocolVersion"], PROTOCOL_VERSION);
 }
 
-/// FALSIFY-MCP-002 (M1 subset): `tools/list` returns the M1 tool set and each
-/// schema is a valid JSON Schema object. Full 8-tool check lands in M2.
+/// FALSIFY-MCP-002 (progressive): `tools/list` must include every tool that
+/// has shipped so far (apr.version from M1, apr.validate from M2 slice 1) and
+/// every registered schema must be a valid JSON Schema object. The full
+/// 8-tool check lands when M2 completes.
 #[test]
 fn falsify_mcp_002_tools_list_schema_shape() {
     let mut server = AprMcpServer::new();
@@ -48,7 +50,10 @@ fn falsify_mcp_002_tools_list_schema_shape() {
     let result = resp.result.expect("tools/list result");
     let tools = result["tools"].as_array().expect("tools array");
 
-    assert_eq!(tools.len(), 1, "M1 registers exactly one tool");
+    let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+    assert!(names.contains(&"apr.version"), "apr.version registered");
+    assert!(names.contains(&"apr.validate"), "apr.validate registered");
+
     for tool in tools {
         assert!(tool["name"].is_string(), "name present");
         assert!(tool["description"].is_string(), "description present");
@@ -67,6 +72,29 @@ fn unknown_method_maps_to_minus_32601() {
 
     assert!(resp.result.is_none());
     assert_eq!(resp.error.expect("error").code, -32601);
+}
+
+/// FALSIFY-MCP-VALIDATE-001: calling `apr.validate` without `model_path` must
+/// surface a tool-level error (isError:true) rather than a JSON-RPC error —
+/// the MCP spec requires argument validation failures to come back as
+/// tool-call results so the LLM sees and can react to them.
+#[test]
+fn falsify_validate_missing_model_path_is_tool_error() {
+    let mut server = AprMcpServer::new();
+    let resp = server.handle_request(&request(
+        20,
+        "tools/call",
+        serde_json::json!({ "name": "apr.validate", "arguments": {} }),
+    ));
+
+    // JSON-RPC layer must succeed; the error belongs inside the result.
+    assert!(resp.error.is_none(), "JSON-RPC error should be none");
+    let result = resp.result.expect("tools/call result");
+    assert_eq!(result["isError"], true);
+    assert!(result["content"][0]["text"]
+        .as_str()
+        .expect("text")
+        .contains("model_path"));
 }
 
 /// End-to-end `initialize` → `tools/list` → `tools/call` works on one server
