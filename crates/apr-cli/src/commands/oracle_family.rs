@@ -68,6 +68,29 @@ fn run_family_mode(
 // Enhanced Sections Builder
 // ============================================================================
 
+/// Resolve `(size, constraints)` if the caller supplied enough inputs to build
+/// any enhanced section; return `None` to short-circuit otherwise.
+fn resolve_family_size_constraints<'a>(
+    family: Option<&'a dyn ModelFamily>,
+    size_name: Option<&str>,
+) -> Option<(&'a ModelSizeConfig, &'a ModelConstraints)> {
+    let family = family?;
+    let size = family.size_config(size_name?)?;
+    Some((size, family.constraints()))
+}
+
+fn maybe_build_statistical_analysis(
+    flags: OracleFlags,
+    size: &ModelSizeConfig,
+    constraints: &ModelConstraints,
+) -> Option<StatisticalAnalysis> {
+    if flags.show_stats() || flags.show_explain() || flags.show_kernels() {
+        Some(build_statistical_analysis(size, constraints))
+    } else {
+        None
+    }
+}
+
 fn build_enhanced_sections(
     family: Option<&dyn ModelFamily>,
     size_name: Option<&str>,
@@ -77,43 +100,22 @@ fn build_enhanced_sections(
     Option<ArchitectureExplanation>,
     Option<KernelCompatibility>,
 ) {
-    let Some(family) = family else {
+    let Some((size, constraints)) = resolve_family_size_constraints(family, size_name) else {
         return (None, None, None);
     };
 
-    let Some(size_name) = size_name else {
-        return (None, None, None);
-    };
+    let stats = maybe_build_statistical_analysis(flags, size, constraints);
 
-    let Some(size) = family.size_config(size_name) else {
-        return (None, None, None);
-    };
+    let explanation = flags
+        .show_explain()
+        .then(|| stats.as_ref().map(|s| build_architecture_explanation(size, constraints, s)))
+        .flatten();
 
-    let constraints = family.constraints();
+    let kernel_compat = flags
+        .show_kernels()
+        .then(|| stats.as_ref().map(|s| build_kernel_compatibility(size, constraints, s)))
+        .flatten();
 
-    let stats = if flags.show_stats() || flags.show_explain() || flags.show_kernels() {
-        Some(build_statistical_analysis(size, constraints))
-    } else {
-        None
-    };
-
-    let explanation = if flags.show_explain() {
-        stats
-            .as_ref()
-            .map(|s| build_architecture_explanation(size, constraints, s))
-    } else {
-        None
-    };
-
-    let kernel_compat = if flags.show_kernels() {
-        stats
-            .as_ref()
-            .map(|s| build_kernel_compatibility(size, constraints, s))
-    } else {
-        None
-    };
-
-    // Only return stats if explicitly requested
     let stats = if flags.show_stats() { stats } else { None };
 
     (stats, explanation, kernel_compat)
