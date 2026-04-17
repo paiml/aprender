@@ -118,35 +118,35 @@ impl DynamicPriorityScheduler {
         let max_priority = self.config.max_promoted_priority;
 
         // Check each queue except Critical (can't promote beyond Critical)
-        for queue_idx in 0..3 {
-            let current_priority = match queue_idx {
-                0 => Priority::Low,
-                1 => Priority::Normal,
-                2 => Priority::High,
-                _ => continue,
-            };
-
-            // Skip if current priority is already at max promoted level
+        const QUEUE_PRIORITIES: [(usize, Priority); 3] = [
+            (0, Priority::Low),
+            (1, Priority::Normal),
+            (2, Priority::High),
+        ];
+        for &(queue_idx, current_priority) in &QUEUE_PRIORITIES {
             if current_priority >= max_priority {
                 continue;
             }
-
-            // Find requests to promote
-            let mut to_promote = Vec::new();
-            for &request_id in &self.priority_queues[queue_idx] {
-                if let Some(request) = self.requests.get(&request_id) {
-                    let promotions_time = promotion_threshold * (request.promotions as u64 + 1);
-                    if request.wait_time_ms() >= promotions_time {
-                        to_promote.push(request_id);
-                    }
-                }
-            }
-
-            // Promote requests
+            let to_promote = self.find_promotable_in_queue(queue_idx, promotion_threshold);
             for request_id in to_promote {
                 self.promote_request(request_id);
             }
         }
+    }
+
+    /// Scan a priority queue and return the ids of requests whose wait time
+    /// has crossed the next promotion threshold.
+    fn find_promotable_in_queue(&self, queue_idx: usize, promotion_threshold: u64) -> Vec<u64> {
+        let mut to_promote = Vec::new();
+        for &request_id in &self.priority_queues[queue_idx] {
+            if let Some(request) = self.requests.get(&request_id) {
+                let promotions_time = promotion_threshold * (request.promotions as u64 + 1);
+                if request.wait_time_ms() >= promotions_time {
+                    to_promote.push(request_id);
+                }
+            }
+        }
+        to_promote
     }
 
     /// Promote a single request to next priority level
