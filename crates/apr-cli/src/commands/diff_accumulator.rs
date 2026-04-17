@@ -74,67 +74,91 @@ fn print_diff_diagnosis(
     medium: usize,
 ) {
     if critical > 0 {
-        println!(
-            "║ {} ║",
-            "DIAGNOSIS: Critical value differences detected!"
-                .red()
-                .bold()
-        );
-        println!("║ {:<75} ║", "Possible causes:".yellow());
-        println!(
-            "║ {:<75} ║",
-            "  - Different quantization/dequantization algorithms"
-        );
-        println!(
-            "║ {:<75} ║",
-            "  - Tensor layout mismatch (row-major vs column-major)"
-        );
-        println!("║ {:<75} ║", "  - Corrupted weights during conversion");
+        print_critical_diagnosis();
     } else if large > 0 {
-        println!(
-            "║ {} ║",
-            "DIAGNOSIS: Large value differences - may affect inference quality"
-                .yellow()
-                .bold()
-        );
-        let transposed_with_diffs = results
-            .iter()
-            .filter(|r| {
-                let is_t = r.shape_a.len() == 2
-                    && r.shape_b.len() == 2
-                    && r.shape_a[0] == r.shape_b[1]
-                    && r.shape_a[1] == r.shape_b[0];
-                is_t && r.status != TensorDiffStatus::Transposed
-            })
-            .count();
-        if transposed_with_diffs > 0 {
-            println!(
-                "║ {:<75} ║",
-                "NOTE: Differences in transposed tensors may be expected when".cyan()
-            );
-            println!(
-                "║ {:<75} ║",
-                "comparing GGUF (col-major) to APR (row-major) linearly.".cyan()
-            );
-        }
+        print_large_diagnosis(results);
     } else if medium > 0 {
-        println!(
-            "║ {} ║",
-            "DIAGNOSIS: Medium differences - likely acceptable quantization variance".blue()
-        );
+        print_medium_diagnosis();
     } else if transposed > 0 && identical > 0 {
-        println!(
-            "║ {} ║",
-            "DIAGNOSIS: Values identical, shapes transposed (format layout diff)"
-                .cyan()
-                .bold()
-        );
+        print_transposed_diagnosis();
     } else {
+        print_identical_diagnosis();
+    }
+}
+
+fn print_critical_diagnosis() {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Critical value differences detected!"
+            .red()
+            .bold()
+    );
+    println!("║ {:<75} ║", "Possible causes:".yellow());
+    println!(
+        "║ {:<75} ║",
+        "  - Different quantization/dequantization algorithms"
+    );
+    println!(
+        "║ {:<75} ║",
+        "  - Tensor layout mismatch (row-major vs column-major)"
+    );
+    println!("║ {:<75} ║", "  - Corrupted weights during conversion");
+}
+
+fn print_large_diagnosis(results: &[TensorValueStats]) {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Large value differences - may affect inference quality"
+            .yellow()
+            .bold()
+    );
+    let transposed_with_diffs = results
+        .iter()
+        .filter(|r| {
+            is_shape_transposed(&r.shape_a, &r.shape_b) && r.status != TensorDiffStatus::Transposed
+        })
+        .count();
+    if transposed_with_diffs > 0 {
         println!(
-            "║ {} ║",
-            "DIAGNOSIS: Tensors are nearly identical".green().bold()
+            "║ {:<75} ║",
+            "NOTE: Differences in transposed tensors may be expected when".cyan()
+        );
+        println!(
+            "║ {:<75} ║",
+            "comparing GGUF (col-major) to APR (row-major) linearly.".cyan()
         );
     }
+}
+
+fn print_medium_diagnosis() {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Medium differences - likely acceptable quantization variance".blue()
+    );
+}
+
+fn print_transposed_diagnosis() {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Values identical, shapes transposed (format layout diff)"
+            .cyan()
+            .bold()
+    );
+}
+
+fn print_identical_diagnosis() {
+    println!(
+        "║ {} ║",
+        "DIAGNOSIS: Tensors are nearly identical".green().bold()
+    );
+}
+
+/// A pair of 2D shapes is transposed iff shape_a == reverse(shape_b).
+fn is_shape_transposed(shape_a: &[usize], shape_b: &[usize]) -> bool {
+    shape_a.len() == 2
+        && shape_b.len() == 2
+        && shape_a[0] == shape_b[1]
+        && shape_a[1] == shape_b[0]
 }
 
 /// Look up element in data_b at the transposed position corresponding to index `i` in data_a.
@@ -322,78 +346,86 @@ fn compute_tensor_diff_stats(
     }
 }
 
+fn color_max_diff(status: TensorDiffStatus, value: f32) -> colored::ColoredString {
+    let s = format!("{value:.6}");
+    match status {
+        TensorDiffStatus::Identical | TensorDiffStatus::NearlyIdentical => s.green(),
+        TensorDiffStatus::SmallDiff | TensorDiffStatus::Transposed => s.cyan(),
+        TensorDiffStatus::MediumDiff => s.yellow(),
+        TensorDiffStatus::LargeDiff | TensorDiffStatus::Critical => s.red(),
+    }
+}
+
+fn color_cosine_similarity(sim: f32) -> colored::ColoredString {
+    let s = format!("{sim:.6}");
+    if sim > 0.9999 {
+        s.green()
+    } else if sim > 0.999 {
+        s.blue()
+    } else if sim > 0.99 {
+        s.yellow()
+    } else {
+        s.red()
+    }
+}
+
+fn is_2d_transpose(shape_a: &[usize], shape_b: &[usize]) -> bool {
+    shape_a.len() == 2
+        && shape_b.len() == 2
+        && shape_a[0] == shape_b[1]
+        && shape_a[1] == shape_b[0]
+}
+
+fn print_shape_mismatch_row(shape_a: &[usize], shape_b: &[usize]) {
+    if shape_a == shape_b {
+        return;
+    }
+    if is_2d_transpose(shape_a, shape_b) {
+        println!(
+            "║   {} shapes: {:?} vs {:?} {} ║",
+            "TRANSPOSED".yellow(),
+            shape_a,
+            shape_b,
+            "(row-major vs col-major)".dimmed()
+        );
+    } else {
+        println!(
+            "║   {} shapes: {:?} vs {:?} ║",
+            "SHAPE MISMATCH".red().bold(),
+            shape_a,
+            shape_b
+        );
+    }
+}
+
+fn print_distribution_row(stats: &TensorValueStats) {
+    if stats.status == TensorDiffStatus::Identical {
+        return;
+    }
+    let total = stats.element_count as f64;
+    let ident_pct = 100.0 * stats.identical_count as f64 / total;
+    let small_pct = 100.0 * stats.small_diff_count as f64 / total;
+    let med_pct = 100.0 * stats.medium_diff_count as f64 / total;
+    let large_pct = 100.0 * stats.large_diff_count as f64 / total;
+    println!(
+        "║   dist: {:.1}% ident, {:.1}% small, {:.1}% med, {:.1}% large ({} elems)  ║",
+        ident_pct, small_pct, med_pct, large_pct, stats.element_count
+    );
+}
+
 fn print_tensor_diff_row(stats: &TensorValueStats) {
     let status_str = stats.status.colored_string();
     let name_truncated = truncate_str(&stats.name, 40);
-
-    // Color max_diff based on severity
-    let max_diff_str = format!("{:.6}", stats.max_diff);
-    let max_diff_colored = match stats.status {
-        TensorDiffStatus::Identical | TensorDiffStatus::NearlyIdentical => max_diff_str.green(),
-        TensorDiffStatus::SmallDiff | TensorDiffStatus::Transposed => max_diff_str.cyan(),
-        TensorDiffStatus::MediumDiff => max_diff_str.yellow(),
-        TensorDiffStatus::LargeDiff | TensorDiffStatus::Critical => max_diff_str.red(),
-    };
-
-    // Color cosine similarity
-    let cos_str = format!("{:.6}", stats.cosine_similarity);
-    let cos_colored = if stats.cosine_similarity > 0.9999 {
-        cos_str.green()
-    } else if stats.cosine_similarity > 0.999 {
-        cos_str.blue()
-    } else if stats.cosine_similarity > 0.99 {
-        cos_str.yellow()
-    } else {
-        cos_str.red()
-    };
+    let max_diff_colored = color_max_diff(stats.status, stats.max_diff);
+    let cos_colored = color_cosine_similarity(stats.cosine_similarity);
 
     println!("║ [{}] {:<40} ║", status_str, name_truncated);
     println!(
         "║   max_diff={} mean_diff={:.6} rmse={:.6} cos_sim={} ║",
         max_diff_colored, stats.mean_diff, stats.rmse, cos_colored
     );
-
-    // Check for shape mismatch and if it's a transpose
-    let shape_match = stats.shape_a == stats.shape_b;
-    let is_transpose = !shape_match
-        && stats.shape_a.len() == 2
-        && stats.shape_b.len() == 2
-        && stats.shape_a[0] == stats.shape_b[1]
-        && stats.shape_a[1] == stats.shape_b[0];
-
-    if !shape_match {
-        if is_transpose {
-            println!(
-                "║   {} shapes: {:?} vs {:?} {} ║",
-                "TRANSPOSED".yellow(),
-                stats.shape_a,
-                stats.shape_b,
-                "(row-major vs col-major)".dimmed()
-            );
-        } else {
-            println!(
-                "║   {} shapes: {:?} vs {:?} ║",
-                "SHAPE MISMATCH".red().bold(),
-                stats.shape_a,
-                stats.shape_b
-            );
-        }
-    }
-
-    // Show distribution if there are differences
-    if stats.status != TensorDiffStatus::Identical {
-        let total = stats.element_count;
-        let ident_pct = 100.0 * stats.identical_count as f64 / total as f64;
-        let small_pct = 100.0 * stats.small_diff_count as f64 / total as f64;
-        let med_pct = 100.0 * stats.medium_diff_count as f64 / total as f64;
-        let large_pct = 100.0 * stats.large_diff_count as f64 / total as f64;
-
-        println!(
-            "║   dist: {:.1}% ident, {:.1}% small, {:.1}% med, {:.1}% large ({} elems)  ║",
-            ident_pct, small_pct, med_pct, large_pct, total
-        );
-    }
-
+    print_shape_mismatch_row(&stats.shape_a, &stats.shape_b);
+    print_distribution_row(stats);
     println!(
         "{}",
         "╠──────────────────────────────────────────────────────────────────────────────╣".dimmed()

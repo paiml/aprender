@@ -45,57 +45,79 @@ impl CommandMutator {
 
     /// Generate mutations of a command
     pub fn mutate(&self, command: &str) -> Vec<String> {
-        let mut mutations = Vec::new();
         let parts: Vec<&str> = command.split_whitespace().collect();
-
         if parts.is_empty() {
-            return mutations;
+            return Vec::new();
         }
 
-        // Mutate subcommand (second token usually)
-        if parts.len() >= 2 {
-            if let Some(subs) = self.cmd_subs.get(parts[1]) {
-                for sub in subs {
-                    let mut new_parts = parts.clone();
-                    new_parts[1] = sub;
-                    mutations.push(new_parts.join(" "));
-                }
-            }
-        }
+        let mut mutations = Vec::new();
+        self.mutate_subcommand(&parts, &mut mutations);
+        self.mutate_flags(&parts, command, &mut mutations);
+        Self::append_common_variations(command, &mut mutations);
 
-        // Mutate flags
-        for (i, part) in parts.iter().enumerate() {
-            if let Some(subs) = self.flag_subs.get(*part) {
-                for sub in subs {
-                    let mut new_parts: Vec<&str> = parts.clone();
-                    if sub.is_empty() {
-                        new_parts.remove(i);
-                    } else {
-                        new_parts[i] = sub;
-                    }
-                    let new_cmd = new_parts.join(" ");
-                    if !new_cmd.is_empty() && new_cmd != command {
-                        mutations.push(new_cmd);
-                    }
-                }
-            }
-        }
-
-        // Add common flag variations
-        if !command.contains("--") {
-            if command.starts_with("git ") {
-                mutations.push(format!("{} --verbose", command));
-            }
-            if command.starts_with("cargo ") {
-                mutations.push(format!("{} --release", command));
-                mutations.push(format!("{} --all-features", command));
-            }
-        }
-
-        // Remove duplicates
         mutations.sort();
         mutations.dedup();
         mutations
+    }
+
+    /// Substitute the second token (subcommand) with known alternatives.
+    fn mutate_subcommand(&self, parts: &[&str], mutations: &mut Vec<String>) {
+        if parts.len() < 2 {
+            return;
+        }
+        let Some(subs) = self.cmd_subs.get(parts[1]) else {
+            return;
+        };
+        for sub in subs {
+            let mut new_parts = parts.to_vec();
+            new_parts[1] = sub;
+            mutations.push(new_parts.join(" "));
+        }
+    }
+
+    /// Substitute matching flag tokens anywhere in the command.
+    fn mutate_flags(&self, parts: &[&str], command: &str, mutations: &mut Vec<String>) {
+        for (i, part) in parts.iter().enumerate() {
+            let Some(subs) = self.flag_subs.get(*part) else {
+                continue;
+            };
+            Self::push_flag_substitutions(parts, i, subs, command, mutations);
+        }
+    }
+
+    fn push_flag_substitutions(
+        parts: &[&str],
+        i: usize,
+        subs: &[&'static str],
+        command: &str,
+        mutations: &mut Vec<String>,
+    ) {
+        for sub in subs {
+            let mut new_parts: Vec<&str> = parts.to_vec();
+            if sub.is_empty() {
+                new_parts.remove(i);
+            } else {
+                new_parts[i] = sub;
+            }
+            let new_cmd = new_parts.join(" ");
+            if !new_cmd.is_empty() && new_cmd != command {
+                mutations.push(new_cmd);
+            }
+        }
+    }
+
+    /// Add well-known flag variations for git/cargo when no long flags exist.
+    fn append_common_variations(command: &str, mutations: &mut Vec<String>) {
+        if command.contains("--") {
+            return;
+        }
+        if command.starts_with("git ") {
+            mutations.push(format!("{command} --verbose"));
+        }
+        if command.starts_with("cargo ") {
+            mutations.push(format!("{command} --release"));
+            mutations.push(format!("{command} --all-features"));
+        }
     }
 
     /// Mutate a batch of commands

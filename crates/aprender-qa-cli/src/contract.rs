@@ -2,7 +2,7 @@
 /// Export evidence to schema-compliant JSON (PMAT-265)
 ///
 /// Converts test run results to the EvidenceExport format for oracle consumption.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
 fn export_evidence(
     source: &Path,
     output_dir: &Path,
@@ -12,48 +12,13 @@ fn export_evidence(
     playbook_name: &str,
     tier: &str,
 ) {
-    use aprender_qa_report::{
-        EvidenceExport, ExportSummary, GateResult, ModelMeta, MqsExport, PlaybookMeta,
-    };
-    use chrono::Utc;
-    use std::collections::HashMap;
-
     println!("Exporting evidence to schema-compliant JSON...");
     println!("  Source: {}", source.display());
     println!("  Output dir: {}", output_dir.display());
     println!("  Model: {model}");
 
-    // Read source file
-    let content = match std::fs::read_to_string(source) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: Cannot read source file: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    // Try to parse as execution result (from apr-qa run output)
-    let json_value: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Error: Invalid JSON in source file: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    // Extract evidence array — supports two source formats:
-    //   1. Plain array (certifications/*/evidence.json): [{...}, ...]
-    //   2. Execution result object (apr-qa run output): {"evidence": [...], ...}
-    let (evidence_array, meta) = if json_value.is_array() {
-        (json_value.as_array().cloned().unwrap_or_default(), None)
-    } else {
-        let arr = json_value
-            .get("evidence")
-            .and_then(|e| e.as_array())
-            .cloned()
-            .unwrap_or_default();
-        (arr, Some(&json_value))
-    };
+    let json_value = read_source_json_or_exit(source);
+    let (evidence_array, meta) = extract_evidence_and_meta(&json_value);
 
     if evidence_array.is_empty() {
         eprintln!("Error: Source file contains no evidence entries");
@@ -61,144 +26,232 @@ fn export_evidence(
         std::process::exit(1);
     }
 
-    // Count outcomes from the evidence array when no execution metadata is available
-    // (plain array format from certifications/*/evidence.json).
-    let (ev_passed, ev_failed, ev_skipped, ev_duration_ms) =
-        evidence_array.iter().fold((0usize, 0usize, 0usize, 0u64), |(p, f, s, d), ev| {
-            let outcome = ev.get("outcome").and_then(|o| o.as_str()).unwrap_or("");
-            let dur = ev
-                .get("duration_ms")
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(0);
-            match outcome {
-                "Corroborated" => (p + 1, f, s, d + dur),
-                "Falsified" | "Timeout" | "Crashed" => (p, f + 1, s, d + dur),
-                "Skipped" => (p, f, s + 1, d + dur),
-                _ => (p, f, s, d + dur),
-            }
-        });
+    let summary = build_export_summary(&evidence_array, meta);
+    let (mqs_score, gateway_passed, grade) = compute_mqs_triple(model, &evidence_array);
+    let gates = collect_gates_from_evidence(&evidence_array);
+    let export = build_evidence_export(
+        ExportIdentity { model, family, size, playbook_name, tier },
+        summary.clone(),
+        mqs_score,
+        &grade,
+        gateway_passed,
+        gates,
+        evidence_array,
+    );
 
-    #[allow(clippy::cast_possible_truncation)]
-    let total_scenarios = meta
-        .and_then(|v| v.get("total_scenarios"))
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(evidence_array.len() as u64) as usize;
-    #[allow(clippy::cast_possible_truncation)]
-    let passed = meta
-        .and_then(|v| v.get("passed"))
-        .and_then(serde_json::Value::as_u64)
-        .map_or(ev_passed, |v| v as usize);
-    #[allow(clippy::cast_possible_truncation)]
-    let failed = meta
-        .and_then(|v| v.get("failed"))
-        .and_then(serde_json::Value::as_u64)
-        .map_or(ev_failed, |v| v as usize);
-    #[allow(clippy::cast_possible_truncation)]
-    let skipped = meta
-        .and_then(|v| v.get("skipped"))
-        .and_then(serde_json::Value::as_u64)
-        .map_or(ev_skipped, |v| v as usize);
+    let output_path = write_export_file_or_exit(output_dir, model, &export);
+    print_export_summary(&output_path, model, mqs_score, &grade, &summary);
+}
+
+fn read_source_json_or_exit(source: &Path) -> serde_json::Value {
+    let content = match std::fs::read_to_string(source) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: Cannot read source file: {e}");
+            std::process::exit(1);
+        }
+    };
+    match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error: Invalid JSON in source file: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Extract evidence array and optional meta object from source JSON.
+///
+/// Supports two source formats:
+///   1. Plain array (`certifications/*/evidence.json`): `[{...}, ...]`
+///   2. Execution result object (apr-qa run output): `{"evidence": [...], ...}`
+fn extract_evidence_and_meta(
+    json_value: &serde_json::Value,
+) -> (Vec<serde_json::Value>, Option<&serde_json::Value>) {
+    if json_value.is_array() {
+        (json_value.as_array().cloned().unwrap_or_default(), None)
+    } else {
+        let arr = json_value
+            .get("evidence")
+            .and_then(|e| e.as_array())
+            .cloned()
+            .unwrap_or_default();
+        (arr, Some(json_value))
+    }
+}
+
+/// Tally evidence outcomes into (passed, failed, skipped, total_duration_ms).
+fn count_evidence_outcomes(arr: &[serde_json::Value]) -> (usize, usize, usize, u64) {
+    arr.iter().fold((0usize, 0usize, 0usize, 0u64), |(p, f, s, d), ev| {
+        let outcome = ev.get("outcome").and_then(|o| o.as_str()).unwrap_or("");
+        let dur = ev
+            .get("duration_ms")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        match outcome {
+            "Corroborated" => (p + 1, f, s, d + dur),
+            "Falsified" | "Timeout" | "Crashed" => (p, f + 1, s, d + dur),
+            "Skipped" => (p, f, s + 1, d + dur),
+            _ => (p, f, s, d + dur),
+        }
+    })
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn build_export_summary(
+    evidence_array: &[serde_json::Value],
+    meta: Option<&serde_json::Value>,
+) -> aprender_qa_report::ExportSummary {
+    use chrono::Utc;
+
+    let (ev_passed, ev_failed, ev_skipped, ev_duration_ms) =
+        count_evidence_outcomes(evidence_array);
+
+    let meta_usize = |key: &str, fallback: usize| {
+        meta.and_then(|v| v.get(key))
+            .and_then(serde_json::Value::as_u64)
+            .map_or(fallback, |v| v as usize)
+    };
+
+    let total_scenarios = meta_usize("total_scenarios", evidence_array.len());
+    let passed = meta_usize("passed", ev_passed);
+    let failed = meta_usize("failed", ev_failed);
+    let skipped = meta_usize("skipped", ev_skipped);
     let duration_ms = meta
         .and_then(|v| v.get("duration_ms"))
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(ev_duration_ms);
 
-    #[allow(clippy::cast_precision_loss)]
     let pass_rate = if total_scenarios > 0 {
         passed as f64 / total_scenarios as f64
     } else {
         0.0
     };
 
-    // Use canonical MQS calculator — consistent with `score` and `report` commands.
-    let evidence_json = serde_json::to_string(&serde_json::Value::Array(evidence_array.clone()))
-        .unwrap_or_default();
-    let (mqs_score, gateway_passed, grade) =
-        match crate::parse_evidence(&evidence_json).and_then(|ev| {
-            let collector = crate::collect_evidence(ev);
-            crate::calculate_mqs_score(model, &collector)
-        }) {
-            Ok(mqs) => {
-                let grade = mqs.grade.clone();
-                let gw = mqs.gateways_passed;
-                (mqs.raw_score, gw, grade)
-            }
-            Err(_) => (0, false, "F".to_string()),
-        };
+    aprender_qa_report::ExportSummary {
+        total_scenarios,
+        passed,
+        failed,
+        skipped,
+        pass_rate,
+        duration_ms,
+        timestamp: Utc::now(),
+    }
+}
 
-    // Extract gateway gate-level results from evidence (pessimistic: failure wins)
+/// Compute canonical (MQS score, gateway_passed, grade) triple.
+///
+/// Uses the same calculator as `score` and `report` commands for consistency.
+fn compute_mqs_triple(model: &str, evidence_array: &[serde_json::Value]) -> (u32, bool, String) {
+    let evidence_json =
+        serde_json::to_string(&serde_json::Value::Array(evidence_array.to_vec()))
+            .unwrap_or_default();
+    match crate::parse_evidence(&evidence_json).and_then(|ev| {
+        let collector = crate::collect_evidence(ev);
+        crate::calculate_mqs_score(model, &collector)
+    }) {
+        Ok(mqs) => (mqs.raw_score, mqs.gateways_passed, mqs.grade),
+        Err(_) => (0, false, "F".to_string()),
+    }
+}
+
+/// Collect gateway-level gate results from evidence using pessimistic merge
+/// (any failure overrides a prior pass — Jidoka).
+fn collect_gates_from_evidence(
+    evidence_array: &[serde_json::Value],
+) -> std::collections::HashMap<String, aprender_qa_report::GateResult> {
+    use aprender_qa_report::GateResult;
+    use std::collections::HashMap;
+
     let mut gates: HashMap<String, GateResult> = HashMap::new();
-    for ev in &evidence_array {
-        if let Some(gate_id) = ev.get("gate_id").and_then(|g| g.as_str()) {
-            if gate_id.starts_with('G') {
-                let passed = ev
-                    .get("outcome")
-                    .and_then(|o| o.as_str())
-                    .is_some_and(|o| o == "Corroborated" || o == "Skipped");
-                let reason = ev
-                    .get("reason")
-                    .and_then(|r| r.as_str())
-                    .unwrap_or("")
-                    .to_string();
+    for ev in evidence_array {
+        let Some(gate_id) = ev.get("gate_id").and_then(|g| g.as_str()) else {
+            continue;
+        };
+        if !gate_id.starts_with('G') {
+            continue;
+        }
+        let passed = ev
+            .get("outcome")
+            .and_then(|o| o.as_str())
+            .is_some_and(|o| o == "Corroborated" || o == "Skipped");
+        let reason = ev
+            .get("reason")
+            .and_then(|r| r.as_str())
+            .unwrap_or("")
+            .to_string();
 
-                // Pessimistic merge: if gate already exists and was passing,
-                // a new failure overrides it (Jidoka: any failure matters)
-                if let Some(existing) = gates.get(gate_id) {
-                    if existing.passed && !passed {
-                        gates.insert(gate_id.to_string(), GateResult { passed, reason });
-                    }
-                } else {
-                    gates.insert(gate_id.to_string(), GateResult { passed, reason });
-                }
+        if let Some(existing) = gates.get(gate_id) {
+            if existing.passed && !passed {
+                gates.insert(gate_id.to_string(), GateResult { passed, reason });
             }
+        } else {
+            gates.insert(gate_id.to_string(), GateResult { passed, reason });
         }
     }
+    gates
+}
 
-    // Build export structure
-    let export = EvidenceExport {
+struct ExportIdentity<'a> {
+    model: &'a str,
+    family: &'a str,
+    size: &'a str,
+    playbook_name: &'a str,
+    tier: &'a str,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_evidence_export(
+    identity: ExportIdentity<'_>,
+    summary: aprender_qa_report::ExportSummary,
+    mqs_score: u32,
+    grade: &str,
+    gateway_passed: bool,
+    gates: std::collections::HashMap<String, aprender_qa_report::GateResult>,
+    evidence: Vec<serde_json::Value>,
+) -> aprender_qa_report::EvidenceExport {
+    use aprender_qa_report::{EvidenceExport, ModelMeta, MqsExport, PlaybookMeta};
+    use std::collections::HashMap;
+
+    EvidenceExport {
         schema: "https://paiml.com/schemas/apr-qa-evidence.schema.json".to_string(),
         version: "1.0.0".to_string(),
         model: ModelMeta {
-            hf_repo: model.to_string(),
-            family: family.to_string(),
-            size: size.to_string(),
+            hf_repo: identity.model.to_string(),
+            family: identity.family.to_string(),
+            size: identity.size.to_string(),
             format: "safetensors".to_string(),
         },
         playbook: PlaybookMeta {
-            name: playbook_name.to_string(),
+            name: identity.playbook_name.to_string(),
             version: "1.0.0".to_string(),
-            tier: tier.to_string(),
+            tier: identity.tier.to_string(),
         },
-        summary: ExportSummary {
-            total_scenarios,
-            passed,
-            failed,
-            skipped,
-            pass_rate,
-            duration_ms,
-            timestamp: Utc::now(),
-        },
+        summary,
         mqs: MqsExport {
             score: mqs_score,
-            grade: grade.clone(),
+            grade: grade.to_string(),
             gateway_passed,
             category_scores: HashMap::new(),
         },
         gates,
-        evidence: evidence_array,
-    };
+        evidence,
+    }
+}
 
-    // Create output directory
+fn write_export_file_or_exit(
+    output_dir: &Path,
+    model: &str,
+    export: &aprender_qa_report::EvidenceExport,
+) -> std::path::PathBuf {
     if let Err(e) = std::fs::create_dir_all(output_dir) {
         eprintln!("Error: Cannot create output directory: {e}");
         std::process::exit(1);
     }
 
-    // Generate output filename from model
     let safe_name = model.replace('/', "-").to_lowercase();
     let output_path = output_dir.join(format!("{safe_name}.json"));
 
-    // Write export
     let json = match export.to_json() {
         Ok(j) => j,
         Err(e) => {
@@ -212,12 +265,22 @@ fn export_evidence(
         std::process::exit(1);
     }
 
+    output_path
+}
+
+fn print_export_summary(
+    output_path: &Path,
+    model: &str,
+    mqs_score: u32,
+    grade: &str,
+    summary: &aprender_qa_report::ExportSummary,
+) {
     println!("\nExported evidence to: {}", output_path.display());
     println!("  Model: {model}");
     println!("  MQS Score: {mqs_score}");
     println!("  Grade: {grade}");
-    println!("  Pass Rate: {:.1}%", pass_rate * 100.0);
-    println!("  Total Scenarios: {total_scenarios}");
+    println!("  Pass Rate: {:.1}%", summary.pass_rate * 100.0);
+    println!("  Total Scenarios: {}", summary.total_scenarios);
 }
 
 /// Validate a model against the tensor layout contract (Issue #4)
@@ -416,24 +479,8 @@ fn kernel_coverage_command(
 ) {
     use aprender_qa_gen::CoverageContext;
 
-    if !matches!(format, "json" | "text") {
-        eprintln!("Error: Unknown format: {format}");
-        eprintln!("  Valid formats: json, text");
-        std::process::exit(1);
-    }
-
-    // Jidoka: reject mutually exclusive flag combinations (Bug #86)
-    let mode_count = [verify, models, all, architecture.is_some()]
-        .iter()
-        .filter(|&&b| b)
-        .count();
-    if mode_count > 1 {
-        eprintln!(
-            "Error: --verify, --models, --all, and --architecture are mutually exclusive"
-        );
-        eprintln!("  Specify exactly one mode at a time.");
-        std::process::exit(1);
-    }
+    validate_format_or_exit(format);
+    validate_mode_exclusivity_or_exit(verify, models, all, architecture.is_some());
 
     let ctx = match CoverageContext::load(contracts_path, bindings_path) {
         Ok(ctx) => ctx,
@@ -446,56 +493,13 @@ fn kernel_coverage_command(
         }
     };
 
-    // --verify mode: check binding claims against source code
     if verify {
-        if let Some(report) = ctx.verify_bindings_against_source(trueno_path, realizar_path) {
-            if format == "json" {
-                match serde_json::to_string_pretty(&report) {
-                    Ok(json) => println!("{json}"),
-                    Err(e) => {
-                        eprintln!("Error serializing report: {e}");
-                        std::process::exit(1);
-                    }
-                }
-            } else {
-                print_binding_verification(&report);
-            }
-            if report.drift_count > 0 {
-                std::process::exit(1);
-            }
-        } else {
-            eprintln!("Error: Neither trueno nor realizar repos found");
-            eprintln!("  trueno:   {}", trueno_path.display());
-            eprintln!("  realizar: {}", realizar_path.display());
-            eprintln!("\nHint: Use --trueno-path and --realizar-path to specify locations");
-            std::process::exit(1);
-        }
+        run_verify_mode(&ctx, trueno_path, realizar_path, format);
         return;
     }
 
-    // --models mode: walk all registry models
     if models {
-        let summary = ctx.verify_all_registry_models();
-        if format == "json" {
-            match serde_json::to_string_pretty(&summary) {
-                Ok(json) => println!("{json}"),
-                Err(e) => {
-                    eprintln!("Error serializing summary: {e}");
-                    std::process::exit(1);
-                }
-            }
-        } else {
-            print_model_coverage_summary(&summary);
-        }
-        if file_tickets {
-            let arch_report = ctx.verify_all_architectures();
-            if !arch_report.gaps.is_empty() {
-                write_gap_tickets(&arch_report, output_dir);
-            }
-        }
-        if summary.gap_count > 0 {
-            std::process::exit(1);
-        }
+        run_models_mode(&ctx, format, file_tickets, output_dir);
         return;
     }
 
@@ -504,7 +508,116 @@ fn kernel_coverage_command(
         std::process::exit(1);
     }
 
-    let report = architecture.map_or_else(
+    run_architecture_mode(&ctx, architecture, format, file_tickets, output_dir);
+}
+
+fn validate_format_or_exit(format: &str) {
+    if !matches!(format, "json" | "text") {
+        eprintln!("Error: Unknown format: {format}");
+        eprintln!("  Valid formats: json, text");
+        std::process::exit(1);
+    }
+}
+
+fn validate_mode_exclusivity_or_exit(verify: bool, models: bool, all: bool, arch: bool) {
+    let mode_count = [verify, models, all, arch].iter().filter(|&&b| b).count();
+    if mode_count > 1 {
+        eprintln!("Error: --verify, --models, --all, and --architecture are mutually exclusive");
+        eprintln!("  Specify exactly one mode at a time.");
+        std::process::exit(1);
+    }
+}
+
+fn print_json_or_exit<T: serde::Serialize>(value: &T, context: &str) {
+    match serde_json::to_string_pretty(value) {
+        Ok(json) => println!("{json}"),
+        Err(e) => {
+            eprintln!("Error serializing {context}: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_verify_mode(
+    ctx: &aprender_qa_gen::CoverageContext,
+    trueno_path: &Path,
+    realizar_path: &Path,
+    format: &str,
+) {
+    let Some(report) = ctx.verify_bindings_against_source(trueno_path, realizar_path) else {
+        eprintln!("Error: Neither trueno nor realizar repos found");
+        eprintln!("  trueno:   {}", trueno_path.display());
+        eprintln!("  realizar: {}", realizar_path.display());
+        eprintln!("\nHint: Use --trueno-path and --realizar-path to specify locations");
+        std::process::exit(1);
+    };
+
+    if format == "json" {
+        print_json_or_exit(&report, "report");
+    } else {
+        print_binding_verification(&report);
+    }
+
+    if report.drift_count > 0 {
+        std::process::exit(1);
+    }
+}
+
+fn run_models_mode(
+    ctx: &aprender_qa_gen::CoverageContext,
+    format: &str,
+    file_tickets: bool,
+    output_dir: &Path,
+) {
+    let summary = ctx.verify_all_registry_models();
+
+    if format == "json" {
+        print_json_or_exit(&summary, "summary");
+    } else {
+        print_model_coverage_summary(&summary);
+    }
+
+    if file_tickets {
+        let arch_report = ctx.verify_all_architectures();
+        if !arch_report.gaps.is_empty() {
+            write_gap_tickets(&arch_report, output_dir);
+        }
+    }
+
+    if summary.gap_count > 0 {
+        std::process::exit(1);
+    }
+}
+
+fn run_architecture_mode(
+    ctx: &aprender_qa_gen::CoverageContext,
+    architecture: Option<&str>,
+    format: &str,
+    file_tickets: bool,
+    output_dir: &Path,
+) {
+    let report = resolve_coverage_report(ctx, architecture);
+
+    if format == "json" {
+        print_json_or_exit(&report, "report");
+    } else {
+        print_coverage_report(&report);
+    }
+
+    if file_tickets && !report.gaps.is_empty() {
+        write_gap_tickets(&report, output_dir);
+    }
+
+    if report.missing_count > 0 {
+        std::process::exit(1);
+    }
+}
+
+fn resolve_coverage_report(
+    ctx: &aprender_qa_gen::CoverageContext,
+    architecture: Option<&str>,
+) -> aprender_qa_gen::CoverageReport {
+    architecture.map_or_else(
         || ctx.verify_all_architectures(),
         |arch| {
             ctx.verify_by_name(arch).unwrap_or_else(|| {
@@ -516,28 +629,7 @@ fn kernel_coverage_command(
                 std::process::exit(1);
             })
         },
-    );
-
-    if format == "json" {
-        match serde_json::to_string_pretty(&report) {
-            Ok(json) => println!("{json}"),
-            Err(e) => {
-                eprintln!("Error serializing report: {e}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        print_coverage_report(&report);
-    }
-
-    if file_tickets && !report.gaps.is_empty() {
-        write_gap_tickets(&report, output_dir);
-    }
-
-    // Exit with failure if missing gaps found (Jidoka: stop the line)
-    if report.missing_count > 0 {
-        std::process::exit(1);
-    }
+    )
 }
 
 /// Print a human-readable kernel coverage matrix.
@@ -729,22 +821,29 @@ fn print_binding_verification(report: &aprender_qa_gen::BindingVerificationRepor
 }
 
 /// Print per-model kernel coverage summary for the full registry.
-#[allow(clippy::too_many_lines)]
 fn print_model_coverage_summary(summary: &aprender_qa_gen::ModelCoverageSummary) {
+    print_coverage_summary_header(summary);
+    print_class_summary_table(&summary.class_summary);
+    print_per_model_table(&summary.models);
+    print_coverage_verdict(summary);
+}
+
+fn print_coverage_summary_header(summary: &aprender_qa_gen::ModelCoverageSummary) {
     println!(
         "\n{} Model Kernel Coverage ({} models)",
         "===".bold().cyan(),
         summary.models.len()
     );
+    let gap_str = if summary.gap_count > 0 {
+        summary.gap_count.to_string().red().to_string()
+    } else {
+        summary.gap_count.to_string()
+    };
     println!(
         "  {} {} covered, {} with gaps",
         "Summary:".dimmed(),
         summary.covered_count.to_string().green(),
-        if summary.gap_count > 0 {
-            summary.gap_count.to_string().red().to_string()
-        } else {
-            summary.gap_count.to_string()
-        },
+        gap_str,
     );
     if summary.defaults_count > 0 {
         println!(
@@ -753,10 +852,11 @@ fn print_model_coverage_summary(summary: &aprender_qa_gen::ModelCoverageSummary)
             summary.defaults_count,
         );
     }
+}
 
-    // Class summary table
+fn print_class_summary_table(class_summary: &[aprender_qa_gen::ClassSummary]) {
     println!("\n  {}", "By Kernel Class:".bold());
-    for cs in &summary.class_summary {
+    for cs in class_summary {
         let status = if cs.fully_covered {
             "✓".green().to_string()
         } else {
@@ -766,52 +866,54 @@ fn print_model_coverage_summary(summary: &aprender_qa_gen::ModelCoverageSummary)
             "    {status} Class {} ({}) — {} model(s)",
             cs.class, cs.label, cs.model_count
         );
-        if !cs.missing_ops.is_empty() {
-            for op in &cs.missing_ops {
-                println!("      {} {op}", "└".dimmed());
-            }
+        for op in &cs.missing_ops {
+            println!("      {} {op}", "└".dimmed());
         }
     }
+}
 
-    // Per-model table
+fn print_per_model_table(models: &[aprender_qa_gen::ModelCoverage]) {
     println!("\n  {}", "Per-Model Coverage:".bold());
     let mut current_arch = String::new();
-    for model in &summary.models {
+    for model in models {
         if model.architecture != current_arch {
             current_arch.clone_from(&model.architecture);
-            let class_str = model
-                .kernel_class
-                .as_deref()
-                .unwrap_or("?");
+            let class_str = model.kernel_class.as_deref().unwrap_or("?");
             println!(
                 "\n    {} [Class {}]",
                 current_arch.bold().cyan(),
                 class_str
             );
         }
-
-        let status = if model.using_defaults {
-            "?".yellow().to_string()
-        } else if model.fully_covered {
-            "✓".green().to_string()
-        } else if model.missing_ops > 0 {
-            "✗".red().to_string()
-        } else {
-            "~".yellow().to_string()
-        };
-
-        let gap_info = if model.using_defaults {
-            " — arch not in contracts YAML (using defaults)".to_string()
-        } else if model.gap_ops.is_empty() {
-            String::new()
-        } else {
-            format!(" — {}", model.gap_ops.join(", "))
-        };
-
+        let status = model_status_symbol(model);
+        let gap_info = model_gap_info(model);
         println!("      {status} {}{gap_info}", model.model_id);
     }
+}
 
-    // Final verdict
+fn model_status_symbol(model: &aprender_qa_gen::ModelCoverage) -> String {
+    if model.using_defaults {
+        "?".yellow().to_string()
+    } else if model.fully_covered {
+        "✓".green().to_string()
+    } else if model.missing_ops > 0 {
+        "✗".red().to_string()
+    } else {
+        "~".yellow().to_string()
+    }
+}
+
+fn model_gap_info(model: &aprender_qa_gen::ModelCoverage) -> String {
+    if model.using_defaults {
+        " — arch not in contracts YAML (using defaults)".to_string()
+    } else if model.gap_ops.is_empty() {
+        String::new()
+    } else {
+        format!(" — {}", model.gap_ops.join(", "))
+    }
+}
+
+fn print_coverage_verdict(summary: &aprender_qa_gen::ModelCoverageSummary) {
     if summary.gap_count == 0 && summary.defaults_count == 0 {
         println!(
             "\n{}",
@@ -819,37 +921,41 @@ fn print_model_coverage_summary(summary: &aprender_qa_gen::ModelCoverageSummary)
                 .green()
                 .bold()
         );
-    } else {
-        if summary.gap_count > 0 {
-            println!(
-                "\n{} {}/{} models have kernel gaps",
-                "BLOCKED:".red().bold(),
-                summary.gap_count,
-                summary.models.len()
-            );
-        }
-        if summary.defaults_count > 0 {
-            println!(
-                "\n{} {}/{} models use default constraints (arch missing from contracts YAML)",
-                "UNVERIFIED:".yellow().bold(),
-                summary.defaults_count,
-                summary.models.len()
-            );
-            // Collect unique unknown architectures
-            let mut unknown_archs: Vec<&str> = summary
-                .models
-                .iter()
-                .filter(|m| m.using_defaults)
-                .map(|m| m.architecture.as_str())
-                .collect();
-            unknown_archs.sort_unstable();
-            unknown_archs.dedup();
-            println!(
-                "  Add to arch-constraints-v1.yaml: {}",
-                unknown_archs.join(", ")
-            );
-        }
+        return;
     }
+
+    if summary.gap_count > 0 {
+        println!(
+            "\n{} {}/{} models have kernel gaps",
+            "BLOCKED:".red().bold(),
+            summary.gap_count,
+            summary.models.len()
+        );
+    }
+    if summary.defaults_count > 0 {
+        print_unverified_defaults_block(summary);
+    }
+}
+
+fn print_unverified_defaults_block(summary: &aprender_qa_gen::ModelCoverageSummary) {
+    println!(
+        "\n{} {}/{} models use default constraints (arch missing from contracts YAML)",
+        "UNVERIFIED:".yellow().bold(),
+        summary.defaults_count,
+        summary.models.len()
+    );
+    let mut unknown_archs: Vec<&str> = summary
+        .models
+        .iter()
+        .filter(|m| m.using_defaults)
+        .map(|m| m.architecture.as_str())
+        .collect();
+    unknown_archs.sort_unstable();
+    unknown_archs.dedup();
+    println!(
+        "  Add to arch-constraints-v1.yaml: {}",
+        unknown_archs.join(", ")
+    );
 }
 
 /// Bootstrap an architecture-aware playbook from a family contract.

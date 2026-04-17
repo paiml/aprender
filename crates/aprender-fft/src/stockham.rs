@@ -272,45 +272,66 @@ pub fn fft_2d(
     nx: usize,
     ny: usize,
 ) -> Result<(), FftError> {
-    if input.len() != nx * ny {
-        return Err(FftError::DimensionMismatch2d {
-            len: input.len(),
-            nx,
-            ny,
-        });
-    }
-    if output.len() != nx * ny {
-        return Err(FftError::DimensionMismatch2d {
-            len: output.len(),
-            nx,
-            ny,
-        });
-    }
-
+    validate_2d_dims(input.len(), output.len(), nx, ny)?;
     let plan_x = FftPlan::new(nx)?;
     let plan_y = FftPlan::new(ny)?;
 
-    // FFT along rows
-    let mut row_buf = vec![Complex::ZERO; nx];
     let mut temp = input.to_vec();
+    fft_rows(&plan_x, &mut temp, nx, ny)?;
+    fft_columns(&plan_y, &temp, output, nx, ny)
+}
+
+fn validate_2d_dims(
+    input_len: usize,
+    output_len: usize,
+    nx: usize,
+    ny: usize,
+) -> Result<(), FftError> {
+    let expected = nx * ny;
+    if input_len != expected {
+        return Err(FftError::DimensionMismatch2d {
+            len: input_len,
+            nx,
+            ny,
+        });
+    }
+    if output_len != expected {
+        return Err(FftError::DimensionMismatch2d {
+            len: output_len,
+            nx,
+            ny,
+        });
+    }
+    Ok(())
+}
+
+fn fft_rows(plan: &FftPlan, temp: &mut [Complex], nx: usize, ny: usize) -> Result<(), FftError> {
+    let mut row_buf = vec![Complex::ZERO; nx];
     for row in 0..ny {
         let start = row * nx;
-        plan_x.forward(&temp[start..start + nx], &mut row_buf)?;
+        plan.forward(&temp[start..start + nx], &mut row_buf)?;
         temp[start..start + nx].copy_from_slice(&row_buf);
     }
+    Ok(())
+}
 
-    // FFT along columns
+fn fft_columns(
+    plan: &FftPlan,
+    temp: &[Complex],
+    output: &mut [Complex],
+    nx: usize,
+    ny: usize,
+) -> Result<(), FftError> {
     let mut col_in = vec![Complex::ZERO; ny];
     let mut col_out = vec![Complex::ZERO; ny];
     for col in 0..nx {
         for row in 0..ny {
             col_in[row] = temp[row * nx + col];
         }
-        plan_y.forward(&col_in, &mut col_out)?;
+        plan.forward(&col_in, &mut col_out)?;
         for row in 0..ny {
             output[row * nx + col] = col_out[row];
         }
     }
-
     Ok(())
 }

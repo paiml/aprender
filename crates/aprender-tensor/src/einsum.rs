@@ -295,53 +295,22 @@ fn increment_indices(indices: &mut [usize], sizes: &[usize]) {
 /// Binary einsum (the core 2-input implementation).
 fn einsum_binary(subscripts: &str, a: &Tensor, b: &Tensor) -> Result<Tensor, TensorError> {
     let plan = parse_subscripts(subscripts)?;
-
     if plan.input_labels.len() != 2 {
         return Err(TensorError::InvalidSubscript(
             "binary einsum requires exactly 2 input operands in subscript".into(),
         ));
     }
 
-    let inputs = [a, b];
-    let index_sizes = build_index_sizes(&plan, &inputs)?;
-
+    let index_sizes = build_index_sizes(&plan, &[a, b])?;
     let a_labels = &plan.input_labels[0];
     let b_labels = &plan.input_labels[1];
     let out_labels = &plan.output_labels;
 
-    // Identify contracted indices (in inputs but not in output)
-    let contracted: Vec<char> = {
-        let mut c = Vec::new();
-        for &label in a_labels {
-            if !out_labels.contains(&label) && !c.contains(&label) {
-                c.push(label);
-            }
-        }
-        for &label in b_labels {
-            if !out_labels.contains(&label) && !c.contains(&label) {
-                c.push(label);
-            }
-        }
-        c
-    };
+    let contracted = collect_contracted_indices(a_labels, b_labels, out_labels);
+    validate_contracted_in_both(&contracted, a_labels, b_labels)?;
 
-    // Validate contracted indices appear in both tensors
-    for &c in &contracted {
-        let in_a = a_labels.contains(&c);
-        let in_b = b_labels.contains(&c);
-        if !in_a || !in_b {
-            return Err(TensorError::InvalidSubscript(format!(
-                "contracted index '{c}' must appear in both inputs"
-            )));
-        }
-    }
-
-    // Compute output shape
     let out_shape: Vec<usize> = out_labels.iter().map(|l| index_sizes[l]).collect();
-
     let mut output = Tensor::zeros(out_shape);
-
-    // Compute contraction via explicit nested iteration
     contract_tensors(
         a,
         b,
@@ -352,8 +321,40 @@ fn einsum_binary(subscripts: &str, a: &Tensor, b: &Tensor) -> Result<Tensor, Ten
         &contracted,
         &index_sizes,
     );
-
     Ok(output)
+}
+
+/// Return labels appearing in either input but not in the output (input order, deduped).
+fn collect_contracted_indices(
+    a_labels: &[char],
+    b_labels: &[char],
+    out_labels: &[char],
+) -> Vec<char> {
+    let mut contracted = Vec::new();
+    for labels in [a_labels, b_labels] {
+        for &label in labels {
+            if !out_labels.contains(&label) && !contracted.contains(&label) {
+                contracted.push(label);
+            }
+        }
+    }
+    contracted
+}
+
+/// Reject subscripts where a contracted index appears in only one operand.
+fn validate_contracted_in_both(
+    contracted: &[char],
+    a_labels: &[char],
+    b_labels: &[char],
+) -> Result<(), TensorError> {
+    for &c in contracted {
+        if !a_labels.contains(&c) || !b_labels.contains(&c) {
+            return Err(TensorError::InvalidSubscript(format!(
+                "contracted index '{c}' must appear in both inputs"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Core contraction loop: iterate over all output and contracted indices.

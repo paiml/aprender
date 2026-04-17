@@ -183,79 +183,107 @@ pub fn parse_prompt(prompt: &str) -> Result<PlotSpec> {
     let mut spec = PlotSpec::default();
     let mut parts = prompt.split_whitespace().peekable();
 
-    // First token is plot type
     let plot_type =
         parts.next().ok_or_else(|| Error::Rendering("No plot type specified".into()))?;
     spec.plot_type = plot_type.to_lowercase();
 
-    // Parse remaining tokens
     while let Some(token) = parts.next() {
         if let Some((key, value)) = token.split_once('=') {
-            match key.to_lowercase().as_str() {
-                "x" => spec.x_data = Some(parse_array(value)?),
-                "y" => spec.y_data = Some(parse_array(value)?),
-                "data" => spec.data = Some(parse_array(value)?),
-                "matrix" => spec.matrix = Some(parse_matrix(value)?),
-                "groups" => spec.groups = Some(parse_matrix(value)?),
-                "width" => {
-                    spec.width =
-                        value.parse().map_err(|_| Error::Rendering("Invalid width".into()))?;
-                }
-                "height" => {
-                    spec.height =
-                        value.parse().map_err(|_| Error::Rendering("Invalid height".into()))?;
-                }
-                "size" => {
-                    spec.size =
-                        value.parse().map_err(|_| Error::Rendering("Invalid size".into()))?;
-                }
-                "color" => spec.color = parse_color(value)?,
-                "title" => {
-                    // Handle quoted strings
-                    let mut title = value.trim_matches('"').to_string();
-                    // Collect continuation if quote wasn't closed
-                    if value.starts_with('"') && !value.ends_with('"') {
-                        for next in parts.by_ref() {
-                            title.push(' ');
-                            title.push_str(next.trim_matches('"'));
-                            if next.ends_with('"') {
-                                break;
-                            }
-                        }
-                    }
-                    spec.title = Some(title);
-                }
-                _ => {} // Ignore unknown options
-            }
+            apply_option(&mut spec, &key.to_lowercase(), value, &mut parts)?;
         }
     }
 
-    // Validate required data
-    match spec.plot_type.as_str() {
-        "scatter" | "line" => {
-            if spec.x_data.is_none() || spec.y_data.is_none() {
-                return Err(Error::Rendering("scatter/line requires x=[...] and y=[...]".into()));
-            }
-        }
-        "histogram" => {
-            if spec.data.is_none() {
-                return Err(Error::Rendering("histogram requires data=[...]".into()));
-            }
-        }
-        "heatmap" => {
-            if spec.matrix.is_none() {
-                return Err(Error::Rendering("heatmap requires matrix=[[...]]".into()));
-            }
-        }
-        "boxplot" => {
-            if spec.groups.is_none() {
-                return Err(Error::Rendering("boxplot requires groups=[[...]]".into()));
-            }
-        }
-        _ => {}
-    }
-
+    validate_required_data(&spec)?;
     Ok(spec)
+}
+
+/// Apply a single `key=value` option to the plot spec, collecting extra tokens for quoted titles.
+fn apply_option<'a, I>(
+    spec: &mut PlotSpec,
+    key: &str,
+    value: &str,
+    parts: &mut I,
+) -> Result<()>
+where
+    I: Iterator<Item = &'a str>,
+{
+    if apply_data_option(spec, key, value)? {
+        return Ok(());
+    }
+    apply_style_option(spec, key, value, parts)
+}
+
+/// Apply data-series options (x, y, data, matrix, groups). Returns true if the key matched.
+fn apply_data_option(spec: &mut PlotSpec, key: &str, value: &str) -> Result<bool> {
+    match key {
+        "x" => spec.x_data = Some(parse_array(value)?),
+        "y" => spec.y_data = Some(parse_array(value)?),
+        "data" => spec.data = Some(parse_array(value)?),
+        "matrix" => spec.matrix = Some(parse_matrix(value)?),
+        "groups" => spec.groups = Some(parse_matrix(value)?),
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+/// Apply style options (width, height, size, color, title). Unknown keys are silently ignored.
+fn apply_style_option<'a, I>(
+    spec: &mut PlotSpec,
+    key: &str,
+    value: &str,
+    parts: &mut I,
+) -> Result<()>
+where
+    I: Iterator<Item = &'a str>,
+{
+    match key {
+        "width" => spec.width = parse_dimension(value, "width")?,
+        "height" => spec.height = parse_dimension(value, "height")?,
+        "size" => spec.size = parse_dimension(value, "size")?,
+        "color" => spec.color = parse_color(value)?,
+        "title" => spec.title = Some(parse_quoted_title(value, parts)),
+        _ => {} // Ignore unknown options
+    }
+    Ok(())
+}
+
+/// Parse a numeric dimension value, producing a rendering error with the field name on failure.
+fn parse_dimension<T: std::str::FromStr>(value: &str, name: &str) -> Result<T> {
+    value
+        .parse()
+        .map_err(|_| Error::Rendering(format!("Invalid {name}")))
+}
+
+/// Parse a potentially multi-token quoted title starting at `value`, consuming continuations.
+fn parse_quoted_title<'a, I: Iterator<Item = &'a str>>(value: &str, parts: &mut I) -> String {
+    let mut title = value.trim_matches('"').to_string();
+    if value.starts_with('"') && !value.ends_with('"') {
+        for next in parts.by_ref() {
+            title.push(' ');
+            title.push_str(next.trim_matches('"'));
+            if next.ends_with('"') {
+                break;
+            }
+        }
+    }
+    title
+}
+
+/// Validate that the required data fields for `spec.plot_type` are present.
+fn validate_required_data(spec: &PlotSpec) -> Result<()> {
+    let missing: Option<&str> = match spec.plot_type.as_str() {
+        "scatter" | "line" if spec.x_data.is_none() || spec.y_data.is_none() => {
+            Some("scatter/line requires x=[...] and y=[...]")
+        }
+        "histogram" if spec.data.is_none() => Some("histogram requires data=[...]"),
+        "heatmap" if spec.matrix.is_none() => Some("heatmap requires matrix=[[...]]"),
+        "boxplot" if spec.groups.is_none() => Some("boxplot requires groups=[[...]]"),
+        _ => None,
+    };
+    match missing {
+        Some(msg) => Err(Error::Rendering(msg.into())),
+        None => Ok(()),
+    }
 }
 
 /// Parse a 1D array like "[1,2,3,4]".

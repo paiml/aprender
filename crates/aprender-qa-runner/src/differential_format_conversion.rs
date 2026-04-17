@@ -18,46 +18,80 @@ pub fn convert_format_cached(
     target_path: &Path,
     cache_hash_path: &Path,
 ) -> Result<FormatConversionResult> {
-    let source_format = source_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    let target_format = target_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    // Check cache validity
+    let source_format = extension_or_unknown(source_path);
+    let target_format = extension_or_unknown(target_path);
     let current_hash = compute_file_hash(source_path)?;
 
-    if target_path.exists() && cache_hash_path.exists() {
-        if let Ok(cached_hash) = std::fs::read_to_string(cache_hash_path) {
-            if cached_hash.trim() == current_hash {
-                return Ok(FormatConversionResult {
-                    source_format,
-                    target_format,
-                    success: true,
-                    duration_ms: 0,
-                    error: None,
-                    cached: true,
-                });
-            }
-        }
+    if is_cache_valid(target_path, cache_hash_path, &current_hash) {
+        return Ok(cached_result(source_format, target_format));
     }
 
-    // Create target directory if needed
-    if let Some(parent) = target_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!("[JIDOKA] Failed to create target directory {}: {e}", parent.display());
-        }
-    }
-
+    ensure_parent_dir(target_path);
     let start = std::time::Instant::now();
+    let output = run_convert_command(apr_binary, source_path, target_path)?;
+    let duration_ms = start.elapsed().as_millis() as u64;
 
-    let output = Command::new(apr_binary)
+    Ok(build_conversion_result(
+        source_format,
+        target_format,
+        duration_ms,
+        &output,
+        cache_hash_path,
+        &current_hash,
+    ))
+}
+
+/// Path file-extension as owned String, or `"unknown"`.
+fn extension_or_unknown(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+/// Cache is valid when the target exists and stored hash matches current source hash.
+fn is_cache_valid(target_path: &Path, cache_hash_path: &Path, current_hash: &str) -> bool {
+    if !target_path.exists() || !cache_hash_path.exists() {
+        return false;
+    }
+    std::fs::read_to_string(cache_hash_path)
+        .map(|s| s.trim() == current_hash)
+        .unwrap_or(false)
+}
+
+/// Construct the cache-hit `FormatConversionResult`.
+fn cached_result(source_format: String, target_format: String) -> FormatConversionResult {
+    FormatConversionResult {
+        source_format,
+        target_format,
+        success: true,
+        duration_ms: 0,
+        error: None,
+        cached: true,
+    }
+}
+
+/// Best-effort `mkdir -p` on the parent directory; Jidoka-logs failures but
+/// does not abort (the convert command will surface any real failure).
+fn ensure_parent_dir(target_path: &Path) {
+    let Some(parent) = target_path.parent() else {
+        return;
+    };
+    if let Err(e) = std::fs::create_dir_all(parent) {
+        eprintln!(
+            "[JIDOKA] Failed to create target directory {}: {e}",
+            parent.display()
+        );
+    }
+}
+
+/// Spawn `apr rosetta convert SRC DST` and return its `Output`.
+fn run_convert_command(
+    apr_binary: &str,
+    source_path: &Path,
+    target_path: &Path,
+) -> Result<std::process::Output> {
+    Command::new(apr_binary)
         .arg("rosetta")
         .arg("convert")
         .arg(source_path)
@@ -70,34 +104,40 @@ pub fn convert_format_cached(
                 target_path.display()
             ),
             reason: e.to_string(),
-        })?;
+        })
+}
 
-    let duration_ms = start.elapsed().as_millis() as u64;
-
+/// Convert `apr rosetta convert` output into a `FormatConversionResult`,
+/// writing the cache hash on success.
+fn build_conversion_result(
+    source_format: String,
+    target_format: String,
+    duration_ms: u64,
+    output: &std::process::Output,
+    cache_hash_path: &Path,
+    current_hash: &str,
+) -> FormatConversionResult {
     if output.status.success() {
-        // Write hash for cache validation
-        if let Err(e) = std::fs::write(cache_hash_path, &current_hash) {
+        if let Err(e) = std::fs::write(cache_hash_path, current_hash) {
             eprintln!("[JIDOKA] Failed to write cache hash: {e}");
         }
-
-        Ok(FormatConversionResult {
+        return FormatConversionResult {
             source_format,
             target_format,
             success: true,
             duration_ms,
             error: None,
             cached: false,
-        })
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Ok(FormatConversionResult {
-            source_format,
-            target_format,
-            success: false,
-            duration_ms,
-            error: Some(stderr.to_string()),
-            cached: false,
-        })
+        };
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    FormatConversionResult {
+        source_format,
+        target_format,
+        success: false,
+        duration_ms,
+        error: Some(stderr.to_string()),
+        cached: false,
     }
 }
 
@@ -302,92 +342,43 @@ impl SixColumnProfile {
     }
 
     /// Check throughput against thresholds and record failures
-    #[allow(clippy::similar_names)]
     pub fn check_assertions(&mut self, min_cpu: f64, min_gpu: f64) {
-        // Check GGUF CPU
-        if let Some(tps) = self.tps_gguf_cpu {
-            let passed = tps >= min_cpu;
-            if !passed {
-                self.failed_assertions.push(ProfileAssertion {
-                    format: "gguf".to_string(),
-                    backend: "cpu".to_string(),
-                    actual_tps: tps,
-                    min_threshold: min_cpu,
-                    passed,
-                });
-            }
-        }
-
-        // Check GGUF GPU
-        if let Some(tps) = self.tps_gguf_gpu {
-            let passed = tps >= min_gpu;
-            if !passed {
-                self.failed_assertions.push(ProfileAssertion {
-                    format: "gguf".to_string(),
-                    backend: "gpu".to_string(),
-                    actual_tps: tps,
-                    min_threshold: min_gpu,
-                    passed,
-                });
-            }
-        }
-
-        // Check APR CPU (if measured)
-        if let Some(tps) = self.tps_apr_cpu {
-            let passed = tps >= min_cpu;
-            if !passed {
-                self.failed_assertions.push(ProfileAssertion {
-                    format: "apr".to_string(),
-                    backend: "cpu".to_string(),
-                    actual_tps: tps,
-                    min_threshold: min_cpu,
-                    passed,
-                });
-            }
-        }
-
-        // Check APR GPU (if measured)
-        if let Some(tps) = self.tps_apr_gpu {
-            let passed = tps >= min_gpu;
-            if !passed {
-                self.failed_assertions.push(ProfileAssertion {
-                    format: "apr".to_string(),
-                    backend: "gpu".to_string(),
-                    actual_tps: tps,
-                    min_threshold: min_gpu,
-                    passed,
-                });
-            }
-        }
-
-        // Check SafeTensors CPU (if measured)
-        if let Some(tps) = self.tps_st_cpu {
-            let passed = tps >= min_cpu;
-            if !passed {
-                self.failed_assertions.push(ProfileAssertion {
-                    format: "safetensors".to_string(),
-                    backend: "cpu".to_string(),
-                    actual_tps: tps,
-                    min_threshold: min_cpu,
-                    passed,
-                });
-            }
-        }
-
-        // Check SafeTensors GPU (if measured)
-        if let Some(tps) = self.tps_st_gpu {
-            let passed = tps >= min_gpu;
-            if !passed {
-                self.failed_assertions.push(ProfileAssertion {
-                    format: "safetensors".to_string(),
-                    backend: "gpu".to_string(),
-                    actual_tps: tps,
-                    min_threshold: min_gpu,
-                    passed,
-                });
+        const CPU: &str = "cpu";
+        const GPU: &str = "gpu";
+        let checks: [(Option<f64>, &str, &str, f64); 6] = [
+            (self.tps_gguf_cpu, "gguf", CPU, min_cpu),
+            (self.tps_gguf_gpu, "gguf", GPU, min_gpu),
+            (self.tps_apr_cpu, "apr", CPU, min_cpu),
+            (self.tps_apr_gpu, "apr", GPU, min_gpu),
+            (self.tps_st_cpu, "safetensors", CPU, min_cpu),
+            (self.tps_st_gpu, "safetensors", GPU, min_gpu),
+        ];
+        for (tps, format, backend, min) in checks {
+            if let Some(assertion) = check_one_assertion(tps, format, backend, min) {
+                self.failed_assertions.push(assertion);
             }
         }
     }
+}
+
+/// Return `Some(assertion)` when `tps` is measured and below `min`.
+fn check_one_assertion(
+    tps: Option<f64>,
+    format: &str,
+    backend: &str,
+    min: f64,
+) -> Option<ProfileAssertion> {
+    let actual_tps = tps?;
+    if actual_tps >= min {
+        return None;
+    }
+    Some(ProfileAssertion {
+        format: format.to_string(),
+        backend: backend.to_string(),
+        actual_tps,
+        min_threshold: min,
+        passed: false,
+    })
 }
 
 /// Run full 6-column profiling for a model
@@ -413,66 +404,72 @@ pub fn run_six_column_profile(
     let start = std::time::Instant::now();
     let mut profile = SixColumnProfile::default();
 
-    // Paths
     let gguf_dir = model_cache_dir.join("gguf");
     let apr_dir = model_cache_dir.join("apr");
     let st_dir = model_cache_dir.join("safetensors");
 
-    // Find GGUF source file
     let gguf_path = find_model_file(&gguf_dir)?;
 
-    // Convert GGUF → APR (with caching)
     let apr_path = apr_dir.join("model.apr");
     let apr_hash_path = apr_dir.join(".conversion_hash");
     let apr_conv = convert_format_cached(apr_binary, &gguf_path, &apr_path, &apr_hash_path)?;
     profile.conversions.push(apr_conv.clone());
 
-    // Convert GGUF → SafeTensors (with caching) - may fail due to #190
+    // Conversion may fail upstream (#190); ST benchmarks are gated on success below.
     let st_path = st_dir.join("model.safetensors");
     let st_hash_path = st_dir.join(".conversion_hash");
     let st_conv = convert_format_cached(apr_binary, &gguf_path, &st_path, &st_hash_path)?;
     profile.conversions.push(st_conv.clone());
 
-    // Benchmark GGUF CPU
-    if let Ok(result) = run_bench_throughput(apr_binary, &gguf_path, false, warmup, iterations) {
-        profile.tps_gguf_cpu = Some(result.throughput_tps);
-    }
-
-    // Benchmark GGUF GPU
-    if let Ok(result) = run_bench_throughput(apr_binary, &gguf_path, true, warmup, iterations) {
-        profile.tps_gguf_gpu = Some(result.throughput_tps);
-    }
-
-    // Benchmark APR CPU (only if conversion succeeded)
+    bench_cpu_gpu(
+        apr_binary,
+        &gguf_path,
+        warmup,
+        iterations,
+        &mut profile.tps_gguf_cpu,
+        &mut profile.tps_gguf_gpu,
+    );
     if apr_conv.success {
-        if let Ok(result) = run_bench_throughput(apr_binary, &apr_path, false, warmup, iterations) {
-            profile.tps_apr_cpu = Some(result.throughput_tps);
-        }
+        bench_cpu_gpu(
+            apr_binary,
+            &apr_path,
+            warmup,
+            iterations,
+            &mut profile.tps_apr_cpu,
+            &mut profile.tps_apr_gpu,
+        );
     }
-
-    // Benchmark APR GPU (only if conversion succeeded)
-    if apr_conv.success {
-        if let Ok(result) = run_bench_throughput(apr_binary, &apr_path, true, warmup, iterations) {
-            profile.tps_apr_gpu = Some(result.throughput_tps);
-        }
-    }
-
-    // Benchmark SafeTensors CPU (only if conversion succeeded)
     if st_conv.success {
-        if let Ok(result) = run_bench_throughput(apr_binary, &st_path, false, warmup, iterations) {
-            profile.tps_st_cpu = Some(result.throughput_tps);
-        }
-    }
-
-    // Benchmark SafeTensors GPU (only if conversion succeeded)
-    if st_conv.success {
-        if let Ok(result) = run_bench_throughput(apr_binary, &st_path, true, warmup, iterations) {
-            profile.tps_st_gpu = Some(result.throughput_tps);
-        }
+        bench_cpu_gpu(
+            apr_binary,
+            &st_path,
+            warmup,
+            iterations,
+            &mut profile.tps_st_cpu,
+            &mut profile.tps_st_gpu,
+        );
     }
 
     profile.total_duration_ms = start.elapsed().as_millis() as u64;
     Ok(profile)
+}
+
+/// Benchmark one model file on both CPU and GPU, writing measured throughput
+/// into the provided slots (left `None` on failure).
+fn bench_cpu_gpu(
+    apr_binary: &str,
+    path: &Path,
+    warmup: usize,
+    iterations: usize,
+    cpu_slot: &mut Option<f64>,
+    gpu_slot: &mut Option<f64>,
+) {
+    if let Ok(result) = run_bench_throughput(apr_binary, path, false, warmup, iterations) {
+        *cpu_slot = Some(result.throughput_tps);
+    }
+    if let Ok(result) = run_bench_throughput(apr_binary, path, true, warmup, iterations) {
+        *gpu_slot = Some(result.throughput_tps);
+    }
 }
 
 /// Find model file in a directory

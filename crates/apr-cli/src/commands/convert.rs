@@ -53,22 +53,11 @@ pub(crate) fn run(
     json_output: bool,
 ) -> Result<()> {
     contract_pre_format_conversion_roundtrip!();
-    if !file.exists() {
-        return Err(CliError::FileNotFound(file.to_path_buf()));
-    }
-
-    // F-CONV-064: Overwrite protection - refuse to overwrite without --force
-    if output.exists() && !force {
-        return Err(CliError::ValidationFailed(format!(
-            "Output file '{}' already exists. Use --force to overwrite.",
-            output.display()
-        )));
-    }
+    validate_convert_inputs(file, output, force)?;
 
     let quant_type = parse_quantization(quantize)?;
     let compress_type = parse_compression(compress)?;
 
-    // GH-503: Reject no-op conversion (neither quantize nor compress specified)
     if quant_type.is_none() && compress_type.is_none() {
         return Err(CliError::ValidationFailed(
             "At least one of --quantize or --compress must be specified".to_string(),
@@ -76,29 +65,7 @@ pub(crate) fn run(
     }
 
     if !json_output {
-        output::header("APR Convert");
-        println!(
-            "{}",
-            output::kv_table(&[
-                ("Input", file.display().to_string()),
-                ("Output", output.display().to_string()),
-            ])
-        );
-
-        let quant_str = quant_type
-            .as_ref()
-            .map_or("None (copy)".to_string(), |q| format!("{q:?}"));
-        let compress_str = compress_type
-            .as_ref()
-            .map_or(String::new(), |c| format!("{c:?}"));
-
-        let mut config_pairs: Vec<(&str, String)> = vec![("Quantization", quant_str)];
-        if !compress_str.is_empty() {
-            config_pairs.push(("Compression", compress_str));
-        }
-        println!("{}", output::kv_table(&config_pairs));
-        println!();
-        output::pipeline_stage("Converting", output::StageStatus::Running);
+        print_convert_banner(file, output, quant_type.as_ref(), compress_type.as_ref());
     }
 
     let options = ConvertOptions {
@@ -109,54 +76,7 @@ pub(crate) fn run(
 
     match apr_convert(file, output, options) {
         Ok(report) => {
-            if json_output {
-                let json = serde_json::json!({
-                    "status": "success",
-                    "input": file.display().to_string(),
-                    "output": output.display().to_string(),
-                    "original_size": report.original_size,
-                    "converted_size": report.converted_size,
-                    "tensor_count": report.tensor_count,
-                    "reduction_ratio": report.reduction_ratio,
-                    "reduction_percent": report.reduction_percent(),
-                    "quantization": quantize,
-                    "compression": compress,
-                });
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&json).unwrap_or_default()
-                );
-            } else {
-                println!();
-                output::subheader("Conversion Report");
-                println!(
-                    "{}",
-                    output::kv_table(&[
-                        ("Original size", format_size(report.original_size, BINARY)),
-                        ("Converted size", format_size(report.converted_size, BINARY)),
-                        ("Tensors", output::count_fmt(report.tensor_count)),
-                        (
-                            "Reduction",
-                            format!(
-                                "{} ({:.2}x)",
-                                report.reduction_percent(),
-                                report.reduction_ratio
-                            ),
-                        ),
-                    ])
-                );
-                println!();
-
-                if report.reduction_ratio >= 1.0 {
-                    println!("  {}", output::badge_pass("Conversion successful"));
-                } else {
-                    println!(
-                        "  {}",
-                        output::badge_warn("Conversion completed (output larger than input)")
-                    );
-                }
-            }
-
+            print_convert_success(json_output, file, output, &report, quantize, compress);
             contract_post_format_conversion_roundtrip!(&());
             Ok(())
         }
@@ -166,6 +86,103 @@ pub(crate) fn run(
                 println!("  {}", output::badge_fail("Conversion failed"));
             }
             Err(CliError::ValidationFailed(e.to_string()))
+        }
+    }
+}
+
+fn validate_convert_inputs(file: &Path, output: &Path, force: bool) -> Result<()> {
+    if !file.exists() {
+        return Err(CliError::FileNotFound(file.to_path_buf()));
+    }
+    if output.exists() && !force {
+        return Err(CliError::ValidationFailed(format!(
+            "Output file '{}' already exists. Use --force to overwrite.",
+            output.display()
+        )));
+    }
+    Ok(())
+}
+
+fn print_convert_banner(
+    file: &Path,
+    output_path: &Path,
+    quant_type: Option<&QuantizationType>,
+    compress_type: Option<&Compression>,
+) {
+    output::header("APR Convert");
+    println!(
+        "{}",
+        output::kv_table(&[
+            ("Input", file.display().to_string()),
+            ("Output", output_path.display().to_string()),
+        ])
+    );
+
+    let quant_str = quant_type.map_or("None (copy)".to_string(), |q| format!("{q:?}"));
+    let compress_str = compress_type.map_or(String::new(), |c| format!("{c:?}"));
+
+    let mut config_pairs: Vec<(&str, String)> = vec![("Quantization", quant_str)];
+    if !compress_str.is_empty() {
+        config_pairs.push(("Compression", compress_str));
+    }
+    println!("{}", output::kv_table(&config_pairs));
+    println!();
+    output::pipeline_stage("Converting", output::StageStatus::Running);
+}
+
+fn print_convert_success(
+    json_output: bool,
+    file: &Path,
+    output_path: &Path,
+    report: &aprender::format::ConvertReport,
+    quantize: Option<&str>,
+    compress: Option<&str>,
+) {
+    if json_output {
+        let json = serde_json::json!({
+            "status": "success",
+            "input": file.display().to_string(),
+            "output": output_path.display().to_string(),
+            "original_size": report.original_size,
+            "converted_size": report.converted_size,
+            "tensor_count": report.tensor_count,
+            "reduction_ratio": report.reduction_ratio,
+            "reduction_percent": report.reduction_percent(),
+            "quantization": quantize,
+            "compression": compress,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        println!();
+        output::subheader("Conversion Report");
+        println!(
+            "{}",
+            output::kv_table(&[
+                ("Original size", format_size(report.original_size, BINARY)),
+                ("Converted size", format_size(report.converted_size, BINARY)),
+                ("Tensors", output::count_fmt(report.tensor_count)),
+                (
+                    "Reduction",
+                    format!(
+                        "{} ({:.2}x)",
+                        report.reduction_percent(),
+                        report.reduction_ratio
+                    ),
+                ),
+            ])
+        );
+        println!();
+
+        if report.reduction_ratio >= 1.0 {
+            println!("  {}", output::badge_pass("Conversion successful"));
+        } else {
+            println!(
+                "  {}",
+                output::badge_warn("Conversion completed (output larger than input)")
+            );
         }
     }
 }

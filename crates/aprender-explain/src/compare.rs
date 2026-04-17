@@ -33,110 +33,102 @@ pub struct ComparisonReport {
     pub recommendation: String,
 }
 
+/// Direction that makes a metric "better" when comparing two reports.
+#[derive(Copy, Clone)]
+enum Direction {
+    LowerIsBetter,
+    HigherIsBetter,
+}
+
+fn pick_winner(value_a: f32, value_b: f32, dir: Direction) -> &'static str {
+    let (a_better, b_better) = match dir {
+        Direction::LowerIsBetter => (value_a < value_b, value_b < value_a),
+        Direction::HigherIsBetter => (value_a > value_b, value_b > value_a),
+    };
+    if a_better {
+        "A"
+    } else if b_better {
+        "B"
+    } else {
+        "Tie"
+    }
+}
+
+fn metric_comparison(
+    name: &str,
+    value_a: f32,
+    value_b: f32,
+    dir: Direction,
+    notes: &str,
+) -> MetricComparison {
+    MetricComparison {
+        name: name.to_string(),
+        value_a,
+        value_b,
+        winner: pick_winner(value_a, value_b, dir).to_string(),
+        notes: notes.to_string(),
+    }
+}
+
+fn collect_metrics(a: &AnalysisReport, b: &AnalysisReport) -> Vec<MetricComparison> {
+    vec![
+        metric_comparison(
+            "Register Count",
+            a.registers.total() as f32,
+            b.registers.total() as f32,
+            Direction::LowerIsBetter,
+            "Lower is better (higher occupancy)",
+        ),
+        metric_comparison(
+            "Instruction Count",
+            a.instruction_count as f32,
+            b.instruction_count as f32,
+            Direction::LowerIsBetter,
+            "Lower is better (less work)",
+        ),
+        metric_comparison(
+            "Estimated Occupancy",
+            a.estimated_occupancy * 100.0,
+            b.estimated_occupancy * 100.0,
+            Direction::HigherIsBetter,
+            "Higher is better (GPU utilization)",
+        ),
+        metric_comparison(
+            "Muda Warnings",
+            a.warnings.len() as f32,
+            b.warnings.len() as f32,
+            Direction::LowerIsBetter,
+            "Lower is better (less waste)",
+        ),
+        metric_comparison(
+            "Memory Coalescing",
+            a.memory.coalesced_ratio * 100.0,
+            b.memory.coalesced_ratio * 100.0,
+            Direction::HigherIsBetter,
+            "Higher is better (bandwidth efficiency)",
+        ),
+    ]
+}
+
+fn recommendation_text(
+    metrics: &[MetricComparison],
+    name_a: &str,
+    name_b: &str,
+) -> String {
+    let a_wins = metrics.iter().filter(|m| m.winner == "A").count();
+    let b_wins = metrics.iter().filter(|m| m.winner == "B").count();
+    match a_wins.cmp(&b_wins) {
+        std::cmp::Ordering::Greater => format!("{name_a} wins {a_wins} to {b_wins} metrics"),
+        std::cmp::Ordering::Less => format!("{name_b} wins {b_wins} to {a_wins} metrics"),
+        std::cmp::Ordering::Equal => "Both configurations are comparable".to_string(),
+    }
+}
+
 /// Compare two analysis reports
 #[must_use]
 pub fn compare_analyses(report_a: &AnalysisReport, report_b: &AnalysisReport) -> ComparisonReport {
-    let mut metrics = Vec::new();
-
-    // Compare register usage (lower is better)
-    let regs_a = report_a.registers.total() as f32;
-    let regs_b = report_b.registers.total() as f32;
-    metrics.push(MetricComparison {
-        name: "Register Count".to_string(),
-        value_a: regs_a,
-        value_b: regs_b,
-        winner: if regs_a < regs_b {
-            "A".to_string()
-        } else if regs_b < regs_a {
-            "B".to_string()
-        } else {
-            "Tie".to_string()
-        },
-        notes: "Lower is better (higher occupancy)".to_string(),
-    });
-
-    // Compare instruction count (lower is better for same work)
-    let inst_a = report_a.instruction_count as f32;
-    let inst_b = report_b.instruction_count as f32;
-    metrics.push(MetricComparison {
-        name: "Instruction Count".to_string(),
-        value_a: inst_a,
-        value_b: inst_b,
-        winner: if inst_a < inst_b {
-            "A".to_string()
-        } else if inst_b < inst_a {
-            "B".to_string()
-        } else {
-            "Tie".to_string()
-        },
-        notes: "Lower is better (less work)".to_string(),
-    });
-
-    // Compare occupancy (higher is better)
-    let occ_a = report_a.estimated_occupancy;
-    let occ_b = report_b.estimated_occupancy;
-    metrics.push(MetricComparison {
-        name: "Estimated Occupancy".to_string(),
-        value_a: occ_a * 100.0,
-        value_b: occ_b * 100.0,
-        winner: if occ_a > occ_b {
-            "A".to_string()
-        } else if occ_b > occ_a {
-            "B".to_string()
-        } else {
-            "Tie".to_string()
-        },
-        notes: "Higher is better (GPU utilization)".to_string(),
-    });
-
-    // Compare warning counts (lower is better)
-    let warns_a = report_a.warnings.len() as f32;
-    let warns_b = report_b.warnings.len() as f32;
-    metrics.push(MetricComparison {
-        name: "Muda Warnings".to_string(),
-        value_a: warns_a,
-        value_b: warns_b,
-        winner: if warns_a < warns_b {
-            "A".to_string()
-        } else if warns_b < warns_a {
-            "B".to_string()
-        } else {
-            "Tie".to_string()
-        },
-        notes: "Lower is better (less waste)".to_string(),
-    });
-
-    // Compare memory coalescing (higher is better)
-    let coal_a = report_a.memory.coalesced_ratio;
-    let coal_b = report_b.memory.coalesced_ratio;
-    metrics.push(MetricComparison {
-        name: "Memory Coalescing".to_string(),
-        value_a: coal_a * 100.0,
-        value_b: coal_b * 100.0,
-        winner: if coal_a > coal_b {
-            "A".to_string()
-        } else if coal_b > coal_a {
-            "B".to_string()
-        } else {
-            "Tie".to_string()
-        },
-        notes: "Higher is better (bandwidth efficiency)".to_string(),
-    });
-
-    // Count wins
-    let a_wins = metrics.iter().filter(|m| m.winner == "A").count();
-    let b_wins = metrics.iter().filter(|m| m.winner == "B").count();
-
-    let recommendation = match a_wins.cmp(&b_wins) {
-        std::cmp::Ordering::Greater => {
-            format!("{} wins {} to {} metrics", report_a.name, a_wins, b_wins)
-        }
-        std::cmp::Ordering::Less => {
-            format!("{} wins {} to {} metrics", report_b.name, b_wins, a_wins)
-        }
-        std::cmp::Ordering::Equal => "Both configurations are comparable".to_string(),
-    };
-
+    let metrics = collect_metrics(report_a, report_b);
+    let recommendation = recommendation_text(&metrics, &report_a.name, &report_b.name);
     ComparisonReport {
         report_a_name: report_a.name.clone(),
         report_b_name: report_b.name.clone(),

@@ -213,106 +213,113 @@ fn handle_special_modes(
     None
 }
 
-/// Run traced inference through the model to debug layer-by-layer outputs.
-/// This is the core functionality for debugging garbage output (BUG-GGUF-001).
-fn run_traced_inference(path: &Path) -> Result<(), CliError> {
+/// Resolve a model path: download from HuggingFace if `hf://` URI, else return unchanged.
+fn resolve_model_path(path: &Path) -> Result<std::path::PathBuf, CliError> {
     use super::run::{download_hf_model, ModelSource};
-    use colored::Colorize;
 
-    output::section("Traced Inference (APR-TRACE-001)");
-
-    // Resolve HuggingFace URLs to local paths
     let path_str = path.to_string_lossy();
-    let local_path = if path_str.starts_with("hf://") {
-        let source = ModelSource::parse(&path_str)?;
-        match source {
-            ModelSource::HuggingFace { org, repo, file } => {
-                println!(
-                    "Model: hf://{}/{}{}",
-                    org,
-                    repo,
-                    file.as_ref().map(|f| format!("/{}", f)).unwrap_or_default()
-                );
-                println!();
-                eprintln!("{}", "Downloading from HuggingFace...".yellow());
-                download_hf_model(&org, &repo, file.as_deref())?
-            }
-            _ => path.to_path_buf(),
-        }
-    } else {
+    if !path_str.starts_with("hf://") {
         println!("Model: {}", path.display());
         println!();
-        path.to_path_buf()
-    };
-
-    // PMAT-235: Pre-flight contract validation before traced inference
-    {
-        use aprender::format::rosetta::RosettaStone;
-        let rosetta = RosettaStone::new();
-        match rosetta.validate(&local_path) {
-            Ok(report) => {
-                let contract_failures: Vec<String> = report
-                    .tensors
-                    .iter()
-                    .flat_map(|t| t.failures.iter().map(move |f| format!("{}: {}", t.name, f)))
-                    .collect();
-                if contract_failures.is_empty() {
-                    println!(
-                        "{}",
-                        format!(
-                            "Contract: {} tensors pass PMAT-235 gates",
-                            report.tensor_count
-                        )
-                        .green()
-                    );
-                } else {
-                    println!(
-                        "{}",
-                        format!(
-                            "Contract: {} violations in {} tensors",
-                            contract_failures.len(),
-                            report.failed_tensor_count
-                        )
-                        .red()
-                        .bold()
-                    );
-                    for failure in contract_failures.iter().take(5) {
-                        println!("  {}", failure.red());
-                    }
-                    if contract_failures.len() > 5 {
-                        println!("  ... and {} more", contract_failures.len() - 5);
-                    }
-                    println!();
-                    println!(
-                        "{}",
-                        "WARNING: Contract violations may cause garbage output."
-                            .yellow()
-                            .bold()
-                    );
-                }
-            }
-            Err(e) => {
-                println!("{}", format!("Contract: validation skipped ({e})").yellow());
-            }
-        }
-        println!();
+        return Ok(path.to_path_buf());
     }
 
-    // Detect format from extension
+    let source = ModelSource::parse(&path_str)?;
+    match source {
+        ModelSource::HuggingFace { org, repo, file } => {
+            println!(
+                "Model: hf://{}/{}{}",
+                org,
+                repo,
+                file.as_ref().map(|f| format!("/{}", f)).unwrap_or_default()
+            );
+            println!();
+            eprintln!("{}", "Downloading from HuggingFace...".yellow());
+            download_hf_model(&org, &repo, file.as_deref())
+        }
+        _ => Ok(path.to_path_buf()),
+    }
+}
+
+/// PMAT-235: Pre-flight contract validation before traced inference.
+fn preflight_contract_check(local_path: &Path) {
+    use aprender::format::rosetta::RosettaStone;
+
+    let rosetta = RosettaStone::new();
+    match rosetta.validate(local_path) {
+        Ok(report) => {
+            let contract_failures: Vec<String> = report
+                .tensors
+                .iter()
+                .flat_map(|t| t.failures.iter().map(move |f| format!("{}: {}", t.name, f)))
+                .collect();
+            if contract_failures.is_empty() {
+                println!(
+                    "{}",
+                    format!(
+                        "Contract: {} tensors pass PMAT-235 gates",
+                        report.tensor_count
+                    )
+                    .green()
+                );
+            } else {
+                println!(
+                    "{}",
+                    format!(
+                        "Contract: {} violations in {} tensors",
+                        contract_failures.len(),
+                        report.failed_tensor_count
+                    )
+                    .red()
+                    .bold()
+                );
+                for failure in contract_failures.iter().take(5) {
+                    println!("  {}", failure.red());
+                }
+                if contract_failures.len() > 5 {
+                    println!("  ... and {} more", contract_failures.len() - 5);
+                }
+                println!();
+                println!(
+                    "{}",
+                    "WARNING: Contract violations may cause garbage output."
+                        .yellow()
+                        .bold()
+                );
+            }
+        }
+        Err(e) => {
+            println!("{}", format!("Contract: validation skipped ({e})").yellow());
+        }
+    }
+    println!();
+}
+
+/// Dispatch traced inference to the format-specific implementation based on file extension.
+fn dispatch_by_format(local_path: &Path) -> Result<(), CliError> {
     let ext = local_path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
     match ext.to_lowercase().as_str() {
-        "gguf" => run_traced_inference_gguf(&local_path),
-        "apr" => run_traced_inference_apr(&local_path),
-        "safetensors" => run_traced_inference_safetensors(&local_path),
+        "gguf" => run_traced_inference_gguf(local_path),
+        "apr" => run_traced_inference_apr(local_path),
+        "safetensors" => run_traced_inference_safetensors(local_path),
         _ => Err(CliError::InvalidFormat(format!(
             "Unknown format: {}. Supported: .gguf, .apr, .safetensors",
             ext
         ))),
     }
+}
+
+/// Run traced inference through the model to debug layer-by-layer outputs.
+/// This is the core functionality for debugging garbage output (BUG-GGUF-001).
+fn run_traced_inference(path: &Path) -> Result<(), CliError> {
+    output::section("Traced Inference (APR-TRACE-001)");
+    let local_path = resolve_model_path(path)?;
+    preflight_contract_check(&local_path);
+    dispatch_by_format(&local_path)
 }
 
 /// Traced inference for GGUF models (primary path for BUG-GGUF-001 debugging)

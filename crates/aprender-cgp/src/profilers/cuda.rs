@@ -269,6 +269,18 @@ pub fn ncu_metrics_to_profile(
 
 /// Render the profile to stdout in the spec-mandated format.
 fn render_profile(profile: &FullProfile) {
+    render_profile_header(profile);
+    render_profile_execution(profile);
+    render_profile_roofline(profile);
+    render_profile_compute(profile);
+    render_profile_memory(profile);
+    render_profile_vram(profile);
+    render_profile_system_health(profile);
+    render_profile_energy(profile);
+    println!();
+}
+
+fn render_profile_header(profile: &FullProfile) {
     let kernel = profile.kernel.as_ref().map_or("unknown", |k| &k.name);
     let dims = profile
         .kernel
@@ -281,7 +293,6 @@ fn render_profile(profile: &FullProfile) {
                 .join("x")
         })
         .unwrap_or_default();
-
     let gpu_name = profile.hardware.gpu.as_deref().unwrap_or("Unknown GPU");
     let sm = profile.hardware.gpu_sm.as_deref().unwrap_or("?");
 
@@ -290,7 +301,9 @@ fn render_profile(profile: &FullProfile) {
         "Backend: CUDA ({gpu_name}, SM {sm}, Driver {})",
         detect_driver_version().unwrap_or_else(|| "?".to_string())
     );
+}
 
+fn render_profile_execution(profile: &FullProfile) {
     let t = &profile.timing;
     let tp = &profile.throughput;
     let peak_pct = if tp.tflops > 0.0 {
@@ -302,112 +315,123 @@ fn render_profile(profile: &FullProfile) {
         "Execution: {:.1} us  |  {:.1} TFLOP/s  |  {:.1}% of peak",
         t.wall_clock_time_us, tp.tflops, peak_pct
     );
+}
 
-    // Roofline
-    if let Some(roof) = &profile.roofline {
-        println!("\n  Roofline Position:");
-        println!(
-            "    Arithmetic Intensity: {:.1} FLOP/byte",
-            tp.arithmetic_intensity
-        );
-        println!("    Ridge Point: {:.1} FLOP/byte", roof.ridge_point);
-        let status = if roof.bound == "memory" {
-            format!("MEMORY-BOUND ({:.1}x below ridge)", roof.distance_to_ridge)
-        } else {
-            format!("COMPUTE-BOUND ({:.1}% efficiency)", roof.efficiency_pct)
-        };
-        println!("    Status: {status}");
-    }
+fn render_profile_roofline(profile: &FullProfile) {
+    let Some(roof) = &profile.roofline else {
+        return;
+    };
+    let tp = &profile.throughput;
+    println!("\n  Roofline Position:");
+    println!(
+        "    Arithmetic Intensity: {:.1} FLOP/byte",
+        tp.arithmetic_intensity
+    );
+    println!("    Ridge Point: {:.1} FLOP/byte", roof.ridge_point);
+    let status = if roof.bound == "memory" {
+        format!("MEMORY-BOUND ({:.1}x below ridge)", roof.distance_to_ridge)
+    } else {
+        format!("COMPUTE-BOUND ({:.1}% efficiency)", roof.efficiency_pct)
+    };
+    println!("    Status: {status}");
+}
 
-    // Compute metrics
-    if let Some(gc) = &profile.gpu_compute {
-        println!("\n  Compute:");
-        if gc.tensor_core_utilization_pct > 0.0 {
-            println!(
-                "    Tensor core utilization: {:5.1}%   {}",
-                gc.tensor_core_utilization_pct,
-                quality_badge(gc.tensor_core_utilization_pct, 50.0)
-            );
-        }
+fn render_profile_compute(profile: &FullProfile) {
+    let Some(gc) = &profile.gpu_compute else {
+        return;
+    };
+    println!("\n  Compute:");
+    if gc.tensor_core_utilization_pct > 0.0 {
         println!(
-            "    Warp execution eff:     {:5.1}%   {}",
-            gc.warp_execution_efficiency_pct,
-            quality_badge(gc.warp_execution_efficiency_pct, 95.0)
-        );
-        println!("    SM utilization:         {:5.1}%", gc.sm_utilization_pct);
-        println!(
-            "    Achieved occupancy:     {:5.1}%",
-            gc.achieved_occupancy_pct
-        );
-        println!(
-            "    Register usage:          {:3}/255",
-            gc.register_usage_per_thread
-        );
-        if gc.shared_memory_per_block > 0 {
-            println!(
-                "    Shared memory/block:   {:5} bytes",
-                gc.shared_memory_per_block
-            );
-        }
-    }
-
-    // Memory metrics
-    if let Some(gm) = &profile.gpu_memory {
-        println!("\n  Memory:");
-        println!(
-            "    DRAM throughput:        {:5.1}% of peak ({:.1} GB/s)",
-            gm.dram_throughput_pct,
-            1008.0 * gm.dram_throughput_pct / 100.0
-        );
-        println!(
-            "    Global load coalescing: {:5.1}%   {}",
-            gm.global_load_efficiency_pct,
-            quality_badge(gm.global_load_efficiency_pct, 60.0)
-        );
-        println!(
-            "    L2 hit rate:            {:5.1}%   {}",
-            gm.l2_hit_rate_pct,
-            quality_badge(gm.l2_hit_rate_pct, 50.0)
+            "    Tensor core utilization: {:5.1}%   {}",
+            gc.tensor_core_utilization_pct,
+            quality_badge(gc.tensor_core_utilization_pct, 50.0)
         );
     }
-
-    // VRAM metrics
-    if let Some(vram) = &profile.vram {
-        println!("\n  VRAM:");
+    println!(
+        "    Warp execution eff:     {:5.1}%   {}",
+        gc.warp_execution_efficiency_pct,
+        quality_badge(gc.warp_execution_efficiency_pct, 95.0)
+    );
+    println!("    SM utilization:         {:5.1}%", gc.sm_utilization_pct);
+    println!(
+        "    Achieved occupancy:     {:5.1}%",
+        gc.achieved_occupancy_pct
+    );
+    println!(
+        "    Register usage:          {:3}/255",
+        gc.register_usage_per_thread
+    );
+    if gc.shared_memory_per_block > 0 {
         println!(
-            "    Used: {:.0} / {:.0} MB ({:.1}%)",
-            vram.vram_used_mb, vram.vram_total_mb, vram.vram_utilization_pct
+            "    Shared memory/block:   {:5} bytes",
+            gc.shared_memory_per_block
         );
     }
+}
 
-    // System health
-    if let Some(health) = &profile.system_health {
-        println!("\n  System Health:");
-        println!("    GPU temp:  {:.0}°C", health.gpu_temperature_celsius);
-        println!("    GPU power: {:.0} W", health.gpu_power_watts);
-        println!(
-            "    GPU clock: {:.0} MHz (mem: {:.0} MHz)",
-            health.gpu_clock_mhz, health.gpu_memory_clock_mhz
-        );
-        if health.cpu_frequency_mhz > 0.0 {
-            println!("    CPU freq:  {:.0} MHz", health.cpu_frequency_mhz);
-        }
+fn render_profile_memory(profile: &FullProfile) {
+    let Some(gm) = &profile.gpu_memory else {
+        return;
+    };
+    println!("\n  Memory:");
+    println!(
+        "    DRAM throughput:        {:5.1}% of peak ({:.1} GB/s)",
+        gm.dram_throughput_pct,
+        1008.0 * gm.dram_throughput_pct / 100.0
+    );
+    println!(
+        "    Global load coalescing: {:5.1}%   {}",
+        gm.global_load_efficiency_pct,
+        quality_badge(gm.global_load_efficiency_pct, 60.0)
+    );
+    println!(
+        "    L2 hit rate:            {:5.1}%   {}",
+        gm.l2_hit_rate_pct,
+        quality_badge(gm.l2_hit_rate_pct, 50.0)
+    );
+}
+
+fn render_profile_vram(profile: &FullProfile) {
+    let Some(vram) = &profile.vram else {
+        return;
+    };
+    println!("\n  VRAM:");
+    println!(
+        "    Used: {:.0} / {:.0} MB ({:.1}%)",
+        vram.vram_used_mb, vram.vram_total_mb, vram.vram_utilization_pct
+    );
+}
+
+fn render_profile_system_health(profile: &FullProfile) {
+    let Some(health) = &profile.system_health else {
+        return;
+    };
+    println!("\n  System Health:");
+    println!("    GPU temp:  {:.0}°C", health.gpu_temperature_celsius);
+    println!("    GPU power: {:.0} W", health.gpu_power_watts);
+    println!(
+        "    GPU clock: {:.0} MHz (mem: {:.0} MHz)",
+        health.gpu_clock_mhz, health.gpu_memory_clock_mhz
+    );
+    if health.cpu_frequency_mhz > 0.0 {
+        println!("    CPU freq:  {:.0} MHz", health.cpu_frequency_mhz);
     }
+}
 
-    // Energy efficiency
-    if let Some(energy) = &profile.energy {
-        println!("\n  Energy:");
-        println!(
-            "    Efficiency: {:.4} TFLOP/s per watt",
-            energy.tflops_per_watt
-        );
-        println!(
-            "    Energy:     {:.6} J per inference",
-            energy.joules_per_inference
-        );
-    }
-
-    println!();
+fn render_profile_energy(profile: &FullProfile) {
+    let Some(energy) = &profile.energy else {
+        return;
+    };
+    println!("\n  Energy:");
+    println!(
+        "    Efficiency: {:.4} TFLOP/s per watt",
+        energy.tflops_per_watt
+    );
+    println!(
+        "    Energy:     {:.6} J per inference",
+        energy.joules_per_inference
+    );
 }
 
 fn quality_badge(value: f64, threshold: f64) -> &'static str {
@@ -868,64 +892,83 @@ pub fn profile_python(args: &[String]) -> Result<()> {
 pub fn run_trace(binary: &str, duration: Option<&str>) -> Result<()> {
     println!("\n=== CGP System Trace: {binary} ===\n");
 
-    let profiler = match NsysProfiler::detect() {
-        Some(p) => p,
-        None => {
-            anyhow::bail!("nsys not found. Install NVIDIA Nsight Systems for timeline tracing.");
-        }
+    let Some(profiler) = NsysProfiler::detect() else {
+        anyhow::bail!("nsys not found. Install NVIDIA Nsight Systems for timeline tracing.");
     };
 
     let report_path = format!("/tmp/cgp-trace-{}", std::process::id());
+    let cmd = build_nsys_trace_command(&profiler.nsys_path, &report_path, duration, binary);
+    let (stdout, stderr) = run_nsys_trace_command(cmd)?;
 
-    let mut cmd = Command::new(&profiler.nsys_path);
+    print_nsys_summary(&stdout, &stderr);
+    print_nsys_report_file(&report_path);
+
+    println!();
+    Ok(())
+}
+
+fn build_nsys_trace_command(
+    nsys_path: &std::path::Path,
+    report_path: &str,
+    duration: Option<&str>,
+    binary: &str,
+) -> Command {
+    let mut cmd = Command::new(nsys_path);
     cmd.arg("profile")
         .arg("--stats=true")
         .arg("--force-overwrite=true")
         .arg("--trace=cuda,nvtx,osrt")
         .arg("-o")
-        .arg(&report_path);
-
+        .arg(report_path);
     if let Some(dur) = duration {
         cmd.arg("--duration").arg(dur);
     }
-
     cmd.arg(binary);
+    cmd
+}
 
+fn run_nsys_trace_command(mut cmd: Command) -> Result<(String, String)> {
     eprintln!("Running nsys trace (this may take a while)...");
     let output = cmd.output().with_context(|| "Failed to run nsys trace")?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    Ok((
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    ))
+}
 
-    // Print stats summary
+fn print_nsys_summary(stdout: &str, stderr: &str) {
     let combined = format!("{stdout}\n{stderr}");
     let mut in_summary = false;
     for line in combined.lines() {
-        if line.contains("CUDA API Statistics")
-            || line.contains("CUDA Kernel Statistics")
-            || line.contains("OS Runtime Statistics")
-        {
+        if is_nsys_summary_header(line) {
             in_summary = true;
             println!("  {line}");
             continue;
         }
-        if in_summary {
-            if line.trim().is_empty() {
-                in_summary = false;
-                println!();
-            } else {
-                println!("  {line}");
-            }
+        if !in_summary {
+            continue;
+        }
+        if line.trim().is_empty() {
+            in_summary = false;
+            println!();
+        } else {
+            println!("  {line}");
         }
     }
+}
 
+fn is_nsys_summary_header(line: &str) -> bool {
+    line.contains("CUDA API Statistics")
+        || line.contains("CUDA Kernel Statistics")
+        || line.contains("OS Runtime Statistics")
+}
+
+fn print_nsys_report_file(report_path: &str) {
     let report_file = format!("{report_path}.nsys-rep");
     if std::path::Path::new(&report_file).exists() {
         println!("  Report: {report_file}");
         println!("  View: nsys-ui {report_file}");
     }
-
-    println!();
-    Ok(())
 }
 
 #[cfg(test)]

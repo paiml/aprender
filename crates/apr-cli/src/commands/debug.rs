@@ -65,30 +65,39 @@ pub(crate) fn run(
 
     if let Ok(FormatType::Gguf | FormatType::SafeTensors) = detected {
         let result = run_rosetta_debug(path, drama);
-        // GH-685: verbose adds extra detail
         if verbose {
-            if let Ok(rosetta) = aprender::format::rosetta::RosettaStone::new().inspect(path) {
-                eprintln!();
-                eprintln!(
-                    "  [verbose] {} metadata keys, {} tensors, {} bytes",
-                    rosetta.metadata.len(),
-                    rosetta.tensors.len(),
-                    rosetta.file_size
-                );
-                for (k, v) in &rosetta.metadata {
-                    let display_v = if v.len() > 80 {
-                        format!("{}...", &v[..80])
-                    } else {
-                        v.clone()
-                    };
-                    eprintln!("  [verbose] {k} = {display_v}");
-                }
-            }
+            log_verbose_metadata(path);
         }
         return result;
     }
 
-    // APR path: read and parse header
+    run_apr_mode(path, drama)?;
+    contract_post_flag_integrity!(&());
+    Ok(())
+}
+
+fn log_verbose_metadata(path: &Path) {
+    let Ok(rosetta) = aprender::format::rosetta::RosettaStone::new().inspect(path) else {
+        return;
+    };
+    eprintln!();
+    eprintln!(
+        "  [verbose] {} metadata keys, {} tensors, {} bytes",
+        rosetta.metadata.len(),
+        rosetta.tensors.len(),
+        rosetta.file_size
+    );
+    for (k, v) in &rosetta.metadata {
+        let display_v = if v.len() > 80 {
+            format!("{}...", &v[..80])
+        } else {
+            v.clone()
+        };
+        eprintln!("  [verbose] {k} = {display_v}");
+    }
+}
+
+fn run_apr_mode(path: &Path, drama: bool) -> Result<(), CliError> {
     let (header_bytes, file_size) = read_header(path)?;
     let info = parse_header(&header_bytes);
 
@@ -97,8 +106,6 @@ pub(crate) fn run(
     } else {
         run_basic_mode(path, file_size, &info);
     }
-
-    contract_post_flag_integrity!(&());
     Ok(())
 }
 
@@ -422,38 +429,47 @@ fn run_hex_mode(path: &Path, limit: usize) -> Result<(), CliError> {
     println!();
 
     for (i, chunk) in buffer.chunks(16).enumerate() {
-        // Offset
-        print!("{:08x}: ", i * 16);
-
-        // Hex bytes
-        for (j, byte) in chunk.iter().enumerate() {
-            if j == 8 {
-                print!(" ");
-            }
-            print!("{byte:02x} ");
-        }
-
-        // Padding if less than 16 bytes
-        for j in chunk.len()..16 {
-            if j == 8 {
-                print!(" ");
-            }
-            print!("   ");
-        }
-
-        // ASCII representation
-        print!(" |");
-        for byte in chunk {
-            if *byte >= 0x20 && *byte < 0x7f {
-                print!("{}", *byte as char);
-            } else {
-                print!(".");
-            }
-        }
-        println!("|");
+        print_hex_row(i * 16, chunk);
     }
 
     Ok(())
+}
+
+fn print_hex_row(offset: usize, chunk: &[u8]) {
+    print!("{offset:08x}: ");
+    print_hex_bytes(chunk);
+    print_hex_padding(chunk.len());
+    print_ascii(chunk);
+}
+
+fn print_hex_bytes(chunk: &[u8]) {
+    for (j, byte) in chunk.iter().enumerate() {
+        if j == 8 {
+            print!(" ");
+        }
+        print!("{byte:02x} ");
+    }
+}
+
+fn print_hex_padding(len: usize) {
+    for j in len..16 {
+        if j == 8 {
+            print!(" ");
+        }
+        print!("   ");
+    }
+}
+
+fn print_ascii(chunk: &[u8]) {
+    print!(" |");
+    for byte in chunk {
+        if *byte >= 0x20 && *byte < 0x7f {
+            print!("{}", *byte as char);
+        } else {
+            print!(".");
+        }
+    }
+    println!("|");
 }
 
 /// Strings extraction mode

@@ -262,49 +262,14 @@ impl KMeans {
         let (n_samples, n_features) = x.shape();
         let mut centroids_data = Vec::with_capacity(self.n_clusters * n_features);
 
-        // Simple deterministic initialization based on seed
         let seed = self.random_state.unwrap_or(42);
         let first_idx = (seed as usize) % n_samples;
+        append_row(&mut centroids_data, x, first_idx, n_features);
 
-        // First centroid: chosen based on seed
-        for j in 0..n_features {
-            centroids_data.push(x.get(first_idx, j));
-        }
-
-        // Remaining centroids: k-means++ selection
         for _ in 1..self.n_clusters {
-            // Compute distances to nearest centroid for each point
-            let n_current = centroids_data.len() / n_features;
-            let mut min_distances = vec![f32::INFINITY; n_samples];
-
-            for (i, min_dist) in min_distances.iter_mut().enumerate() {
-                for c in 0..n_current {
-                    let mut dist_sq = 0.0;
-                    for j in 0..n_features {
-                        let diff = x.get(i, j) - centroids_data[c * n_features + j];
-                        dist_sq += diff * diff;
-                    }
-                    if dist_sq < *min_dist {
-                        *min_dist = dist_sq;
-                    }
-                }
-            }
-
-            // Select point with probability proportional to D²
-            // For deterministic behavior, pick the point with max distance
-            let mut max_dist = 0.0;
-            let mut max_idx = 0;
-            for (i, &dist) in min_distances.iter().enumerate() {
-                if dist > max_dist {
-                    max_dist = dist;
-                    max_idx = i;
-                }
-            }
-
-            // Add new centroid
-            for j in 0..n_features {
-                centroids_data.push(x.get(max_idx, j));
-            }
+            let min_distances = nearest_centroid_distances_sq(x, &centroids_data, n_features);
+            let max_idx = argmax(&min_distances);
+            append_row(&mut centroids_data, x, max_idx, n_features);
         }
 
         Matrix::from_vec(self.n_clusters, n_features, centroids_data)
@@ -447,4 +412,60 @@ impl UnsupervisedEstimator for KMeans {
 
         self.assign_labels(x, centroids)
     }
+}
+
+/// Append the `row`-th row of `x` to the flat centroid buffer.
+fn append_row(centroids_data: &mut Vec<f32>, x: &Matrix<f32>, row: usize, n_features: usize) {
+    for j in 0..n_features {
+        centroids_data.push(x.get(row, j));
+    }
+}
+
+/// Squared Euclidean distance from point `i` to flat centroid `c` in `centroids_data`.
+fn squared_distance_to_centroid(
+    x: &Matrix<f32>,
+    i: usize,
+    centroids_data: &[f32],
+    c: usize,
+    n_features: usize,
+) -> f32 {
+    let mut dist_sq = 0.0;
+    for j in 0..n_features {
+        let diff = x.get(i, j) - centroids_data[c * n_features + j];
+        dist_sq += diff * diff;
+    }
+    dist_sq
+}
+
+/// For each sample, the squared distance to its nearest centroid seen so far.
+fn nearest_centroid_distances_sq(
+    x: &Matrix<f32>,
+    centroids_data: &[f32],
+    n_features: usize,
+) -> Vec<f32> {
+    let n_samples = x.n_rows();
+    let n_current = centroids_data.len() / n_features;
+    let mut min_distances = vec![f32::INFINITY; n_samples];
+    for (i, min_dist) in min_distances.iter_mut().enumerate() {
+        for c in 0..n_current {
+            let dist_sq = squared_distance_to_centroid(x, i, centroids_data, c, n_features);
+            if dist_sq < *min_dist {
+                *min_dist = dist_sq;
+            }
+        }
+    }
+    min_distances
+}
+
+/// Index of the maximum element. Ties resolve to the first occurrence.
+fn argmax(values: &[f32]) -> usize {
+    let mut max_val = 0.0;
+    let mut max_idx = 0;
+    for (i, &v) in values.iter().enumerate() {
+        if v > max_val {
+            max_val = v;
+            max_idx = i;
+        }
+    }
+    max_idx
 }

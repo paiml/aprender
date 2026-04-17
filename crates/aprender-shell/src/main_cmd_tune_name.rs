@@ -188,6 +188,18 @@ fn load_inspect_model(path: &std::path::Path, password: Option<&str>) -> MarkovM
 
 /// Render a model card in text format to stdout.
 fn render_model_card_text(card: &aprender::format::model_card::ModelCard, path: &std::path::Path) {
+    print_card_header(card, path);
+    print_card_training_data(card);
+    print_card_hyperparameters(card);
+    print_card_metrics(card);
+    print_card_description(card);
+    print_card_footer();
+}
+
+fn print_card_header(
+    card: &aprender::format::model_card::ModelCard,
+    path: &std::path::Path,
+) {
     println!("📋 Model Card: {}\n", path.display());
     println!("═══════════════════════════════════════════");
     println!("           MODEL INFORMATION               ");
@@ -207,37 +219,51 @@ fn render_model_card_text(card: &aprender::format::model_card::ModelCard, path: 
         println!("  Parameters:   {}", count);
     }
     println!("───────────────────────────────────────────");
+}
 
-    if let Some(ref training) = card.training_data {
-        println!("\n📊 Training Data:");
-        println!("  Source:  {}", training.name);
-        if let Some(samples) = training.samples {
-            println!("  Samples: {}", samples);
-        }
-        if let Some(ref hash) = training.hash {
-            println!("  Hash:    {}", hash);
-        }
+fn print_card_training_data(card: &aprender::format::model_card::ModelCard) {
+    let Some(ref training) = card.training_data else {
+        return;
+    };
+    println!("\n📊 Training Data:");
+    println!("  Source:  {}", training.name);
+    if let Some(samples) = training.samples {
+        println!("  Samples: {}", samples);
     }
-
-    if !card.hyperparameters.is_empty() {
-        println!("\n⚙️  Hyperparameters:");
-        for (key, value) in &card.hyperparameters {
-            println!("  {}: {}", key, value);
-        }
+    if let Some(ref hash) = training.hash {
+        println!("  Hash:    {}", hash);
     }
+}
 
-    if !card.metrics.is_empty() {
-        println!("\n📈 Metrics:");
-        for (key, value) in &card.metrics {
-            println!("  {}: {}", key, value);
-        }
+fn print_card_hyperparameters(card: &aprender::format::model_card::ModelCard) {
+    if card.hyperparameters.is_empty() {
+        return;
     }
-
-    if let Some(ref desc) = card.description {
-        println!("\n📝 Description:");
-        println!("  {}", desc);
+    println!("\n⚙️  Hyperparameters:");
+    for (key, value) in &card.hyperparameters {
+        println!("  {}: {}", key, value);
     }
+}
 
+fn print_card_metrics(card: &aprender::format::model_card::ModelCard) {
+    if card.metrics.is_empty() {
+        return;
+    }
+    println!("\n📈 Metrics:");
+    for (key, value) in &card.metrics {
+        println!("  {}: {}", key, value);
+    }
+}
+
+fn print_card_description(card: &aprender::format::model_card::ModelCard) {
+    let Some(ref desc) = card.description else {
+        return;
+    };
+    println!("\n📝 Description:");
+    println!("  {}", desc);
+}
+
+fn print_card_footer() {
     println!("\n💡 Export formats:");
     println!("   JSON:        aprender-shell inspect --format json");
     println!("   Hugging Face: aprender-shell inspect --format huggingface");
@@ -299,32 +325,35 @@ fn chrono_lite_date() -> String {
         .unwrap_or_default()
         .as_secs();
 
-    // Days since epoch
-    let days = secs / 86400;
+    let days = (secs / 86400) as i64;
+    let (year, after_year) = year_and_day_of_year(days);
+    let (month, day) = month_and_day(after_year, is_leap_year(year));
+    format!("{year:04}{month:02}{day:02}")
+}
 
-    // Simple year/month/day calculation
-    let mut remaining = days as i64;
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
+fn days_in_year(year: i32) -> i64 {
+    if is_leap_year(year) { 366 } else { 365 }
+}
+
+fn year_and_day_of_year(mut remaining: i64) -> (i32, i64) {
     let mut year = 1970i32;
-    loop {
-        let days_in_year = if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
-            366
-        } else {
-            365
-        };
-        if remaining < days_in_year {
-            break;
-        }
-        remaining -= days_in_year;
+    while remaining >= days_in_year(year) {
+        remaining -= days_in_year(year);
         year += 1;
     }
+    (year, remaining)
+}
 
-    let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+fn month_and_day(mut remaining: i64, leap: bool) -> (u32, u32) {
     let months = if leap {
         [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     } else {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
-
     let mut month = 1u32;
     for days_in_month in months {
         if remaining < days_in_month {
@@ -333,7 +362,5 @@ fn chrono_lite_date() -> String {
         remaining -= days_in_month;
         month += 1;
     }
-
-    let day = remaining as u32 + 1;
-    format!("{year:04}{month:02}{day:02}")
+    (month, remaining as u32 + 1)
 }
