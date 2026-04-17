@@ -71,6 +71,7 @@ fn registered_commands() -> Vec<&'static str> {
         "oracle",
         "encrypt",
         "decrypt",
+        "mcp",
     ];
     // Feature-gated commands — only expected when feature is enabled
     #[cfg(feature = "code")]

@@ -43,7 +43,7 @@ one `apr` binary, 57 commands covering the full ML lifecycle:
 
 ### Numbers
 
-- **75** workspace crates (was 20 separate repos)
+- **76** workspace crates (was 20 separate repos)
 - **28,700+** tests, all passing
 - **799** provable contracts (equation-based verification)
 - **57** CLI commands with contract coverage
