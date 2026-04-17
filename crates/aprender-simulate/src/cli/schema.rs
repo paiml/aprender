@@ -21,7 +21,16 @@ pub fn validate_emc_schema(yaml: &serde_yaml::Value) -> (Vec<String>, Vec<String
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
 
-    // Required top-level fields
+    check_required_top_level_fields(yaml, &mut errors);
+    check_identity_section(yaml, &mut errors, &mut warnings);
+    check_governing_equation_section(yaml, &mut errors);
+    check_analytical_derivation_section(yaml, &mut errors);
+    check_edd_sections(yaml, &mut warnings);
+
+    (errors, warnings)
+}
+
+fn check_required_top_level_fields(yaml: &serde_yaml::Value, errors: &mut Vec<String>) {
     let required = [
         "emc_version",
         "emc_id",
@@ -30,46 +39,54 @@ pub fn validate_emc_schema(yaml: &serde_yaml::Value) -> (Vec<String>, Vec<String
         "analytical_derivation",
         "domain_of_validity",
     ];
-
     for field in required {
         if yaml.get(field).is_none() {
             errors.push(format!("Missing required field: {field}"));
         }
     }
+}
 
-    // Validate identity section
-    if let Some(identity) = yaml.get("identity") {
-        if identity.get("name").is_none() {
-            errors.push("Missing required field: identity.name".to_string());
-        }
-        if identity.get("version").is_none() {
-            warnings.push("Missing recommended field: identity.version".to_string());
-        }
+fn check_identity_section(
+    yaml: &serde_yaml::Value,
+    errors: &mut Vec<String>,
+    warnings: &mut Vec<String>,
+) {
+    let Some(identity) = yaml.get("identity") else {
+        return;
+    };
+    if identity.get("name").is_none() {
+        errors.push("Missing required field: identity.name".to_string());
     }
-
-    // Validate governing_equation section
-    if let Some(eq) = yaml.get("governing_equation") {
-        if eq.get("latex").is_none() && eq.get("plain_text").is_none() {
-            errors.push("governing_equation must have 'latex' or 'plain_text'".to_string());
-        }
+    if identity.get("version").is_none() {
+        warnings.push("Missing recommended field: identity.version".to_string());
     }
+}
 
-    // Validate analytical_derivation section
-    if let Some(deriv) = yaml.get("analytical_derivation") {
-        if deriv.get("primary_citation").is_none() {
-            errors.push("Missing: analytical_derivation.primary_citation".to_string());
-        }
+fn check_governing_equation_section(yaml: &serde_yaml::Value, errors: &mut Vec<String>) {
+    let Some(eq) = yaml.get("governing_equation") else {
+        return;
+    };
+    if eq.get("latex").is_none() && eq.get("plain_text").is_none() {
+        errors.push("governing_equation must have 'latex' or 'plain_text'".to_string());
     }
+}
 
-    // EDD-required sections (warnings only, not hard errors)
+fn check_analytical_derivation_section(yaml: &serde_yaml::Value, errors: &mut Vec<String>) {
+    let Some(deriv) = yaml.get("analytical_derivation") else {
+        return;
+    };
+    if deriv.get("primary_citation").is_none() {
+        errors.push("Missing: analytical_derivation.primary_citation".to_string());
+    }
+}
+
+fn check_edd_sections(yaml: &serde_yaml::Value, warnings: &mut Vec<String>) {
     if yaml.get("verification_tests").is_none() {
         warnings.push("Missing EDD-required section: verification_tests".to_string());
     }
     if yaml.get("falsification_criteria").is_none() {
         warnings.push("Missing EDD-required section: falsification_criteria".to_string());
     }
-
-    (errors, warnings)
 }
 
 #[cfg(test)]
