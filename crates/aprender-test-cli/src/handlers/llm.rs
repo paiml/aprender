@@ -1034,40 +1034,54 @@ fn apply_max_tokens_distribution(
     concurrency: usize,
 ) -> CliResult<Vec<jugar_probar::llm::ChatRequest>> {
     let count = concurrency * 256; // Enough for ~60s at ~4 req/s/worker
+    let (min, max) = parse_max_tokens_distribution(distribution)?;
+    Ok(build_distributed_prompts(base_prompts, count, min, max))
+}
 
-    let (min, max) = if let Some(rest) = distribution.strip_prefix("uniform:") {
-        let parts: Vec<&str> = rest.split(',').collect();
-        if parts.len() != 2 {
-            return Err(CliError::Generic(format!(
-                "Invalid distribution format: {distribution}. Expected: uniform:MIN,MAX"
-            )));
-        }
-        let min: u32 = parts[0]
-            .parse()
-            .map_err(|_| CliError::Generic(format!("Invalid min value: {}", parts[0])))?;
-        let max: u32 = parts[1]
-            .parse()
-            .map_err(|_| CliError::Generic(format!("Invalid max value: {}", parts[1])))?;
-        if min > max || min == 0 {
-            return Err(CliError::Generic(format!(
-                "Invalid range: min={min}, max={max}. Need 0 < min <= max"
-            )));
-        }
-        (min, max)
-    } else if let Some(rest) = distribution.strip_prefix("fixed:") {
+fn parse_max_tokens_distribution(distribution: &str) -> CliResult<(u32, u32)> {
+    if let Some(rest) = distribution.strip_prefix("uniform:") {
+        return parse_uniform_distribution(rest, distribution);
+    }
+    if let Some(rest) = distribution.strip_prefix("fixed:") {
         let n: u32 = rest
             .parse()
             .map_err(|_| CliError::Generic(format!("Invalid fixed value: {rest}")))?;
-        (n, n)
-    } else {
-        return Err(CliError::Generic(format!(
-            "Unknown distribution: {distribution}. Use: uniform:MIN,MAX or fixed:N"
-        )));
-    };
+        return Ok((n, n));
+    }
+    Err(CliError::Generic(format!(
+        "Unknown distribution: {distribution}. Use: uniform:MIN,MAX or fixed:N"
+    )))
+}
 
+fn parse_uniform_distribution(rest: &str, distribution: &str) -> CliResult<(u32, u32)> {
+    let parts: Vec<&str> = rest.split(',').collect();
+    if parts.len() != 2 {
+        return Err(CliError::Generic(format!(
+            "Invalid distribution format: {distribution}. Expected: uniform:MIN,MAX"
+        )));
+    }
+    let min: u32 = parts[0]
+        .parse()
+        .map_err(|_| CliError::Generic(format!("Invalid min value: {}", parts[0])))?;
+    let max: u32 = parts[1]
+        .parse()
+        .map_err(|_| CliError::Generic(format!("Invalid max value: {}", parts[1])))?;
+    if min > max || min == 0 {
+        return Err(CliError::Generic(format!(
+            "Invalid range: min={min}, max={max}. Need 0 < min <= max"
+        )));
+    }
+    Ok((min, max))
+}
+
+fn build_distributed_prompts(
+    base_prompts: &[jugar_probar::llm::ChatRequest],
+    count: usize,
+    min: u32,
+    max: u32,
+) -> Vec<jugar_probar::llm::ChatRequest> {
     let range = max - min + 1;
-    // Simple LCG for deterministic pseudo-random distribution (no rand crate needed).
-    // Multiplier and increment from Numerical Recipes.
+    // LCG for deterministic pseudo-random distribution (no rand crate needed).
     let mut state: u64 = 0x517c_c1b7_2722_0a95;
     let mut prompts = Vec::with_capacity(count);
     for i in 0..count {
@@ -1082,7 +1096,7 @@ fn apply_max_tokens_distribution(
         });
         prompts.push(prompt);
     }
-    Ok(prompts)
+    prompts
 }
 
 fn resolve_prompts(
@@ -1390,59 +1404,10 @@ fn load_dataset(
         if line.is_empty() {
             continue;
         }
-        let entry: serde_json::Value = serde_json::from_str(line).map_err(|e| {
-            CliError::Generic(format!("Dataset line {}: parse error: {e}", line_no + 1))
-        })?;
-
-        let messages = entry
-            .get("messages")
-            .and_then(|m| m.as_array())
-            .ok_or_else(|| {
-                CliError::Generic(format!(
-                    "Dataset line {}: missing 'messages' array",
-                    line_no + 1
-                ))
-            })?;
-
-        let chat_messages: Vec<jugar_probar::llm::ChatMessage> = messages
-            .iter()
-            .filter_map(|m| {
-                let role_str = m.get("role")?.as_str()?;
-                let content = m.get("content")?.as_str()?;
-                let role = match role_str {
-                    "system" => jugar_probar::llm::Role::System,
-                    "assistant" => jugar_probar::llm::Role::Assistant,
-                    _ => jugar_probar::llm::Role::User,
-                };
-                Some(jugar_probar::llm::ChatMessage {
-                    role,
-                    content: content.to_string(),
-                })
-            })
-            .collect();
-
-        let max_tokens = entry
-            .get("max_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(128) as u32;
-
-        // Estimate input tokens (words * 1.3)
-        let input_tokens: usize = chat_messages
-            .iter()
-            .map(|m| m.content.split_whitespace().count() + 4)
-            .sum();
-        let estimated_tokens = (input_tokens as f64 * 1.3) as u32;
-
+        let (prompt, estimated_tokens, max_tokens) = parse_dataset_line(line, line_no)?;
         input_lens.push(f64::from(estimated_tokens));
         max_tokens_vals.push(f64::from(max_tokens));
-
-        prompts.push(jugar_probar::llm::ChatRequest {
-            model: String::new(),
-            messages: chat_messages,
-            temperature: Some(0.0),
-            max_tokens: Some(max_tokens),
-            stream: Some(false),
-        });
+        prompts.push(prompt);
     }
 
     if prompts.is_empty() {
@@ -1468,6 +1433,66 @@ fn load_dataset(
     );
 
     Ok((prompts, stats))
+}
+
+fn parse_dataset_line(
+    line: &str,
+    line_no: usize,
+) -> CliResult<(jugar_probar::llm::ChatRequest, u32, u32)> {
+    let entry: serde_json::Value = serde_json::from_str(line).map_err(|e| {
+        CliError::Generic(format!("Dataset line {}: parse error: {e}", line_no + 1))
+    })?;
+
+    let messages = entry
+        .get("messages")
+        .and_then(|m| m.as_array())
+        .ok_or_else(|| {
+            CliError::Generic(format!(
+                "Dataset line {}: missing 'messages' array",
+                line_no + 1
+            ))
+        })?;
+
+    let chat_messages = parse_chat_messages(messages);
+    let max_tokens = entry
+        .get("max_tokens")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(128) as u32;
+
+    // Estimate input tokens (words * 1.3)
+    let input_tokens: usize = chat_messages
+        .iter()
+        .map(|m| m.content.split_whitespace().count() + 4)
+        .sum();
+    let estimated_tokens = (input_tokens as f64 * 1.3) as u32;
+
+    let prompt = jugar_probar::llm::ChatRequest {
+        model: String::new(),
+        messages: chat_messages,
+        temperature: Some(0.0),
+        max_tokens: Some(max_tokens),
+        stream: Some(false),
+    };
+    Ok((prompt, estimated_tokens, max_tokens))
+}
+
+fn parse_chat_messages(messages: &[serde_json::Value]) -> Vec<jugar_probar::llm::ChatMessage> {
+    messages
+        .iter()
+        .filter_map(|m| {
+            let role_str = m.get("role")?.as_str()?;
+            let content = m.get("content")?.as_str()?;
+            let role = match role_str {
+                "system" => jugar_probar::llm::Role::System,
+                "assistant" => jugar_probar::llm::Role::Assistant,
+                _ => jugar_probar::llm::Role::User,
+            };
+            Some(jugar_probar::llm::ChatMessage {
+                role,
+                content: content.to_string(),
+            })
+        })
+        .collect()
 }
 
 /// Compute [min, p50, p90, max] from sorted values.
