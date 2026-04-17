@@ -154,9 +154,7 @@ pub(crate) fn run(
     diff: bool,
     interactive: bool,
 ) -> Result<(), CliError> {
-    if let Some(result) =
-        handle_special_modes_with_json(path, reference, payload, diff, interactive, json_output)
-    {
+    if let Some(result) = handle_special_modes(path, reference, payload, diff, interactive) {
         return result;
     }
 

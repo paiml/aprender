@@ -81,46 +81,6 @@
     }
 
     #[test]
-    fn verify_output_rejects_qwen2_05b_observed_gibberish() {
-        // Captured from `apr run qwen2.5-coder-0.5b-instruct-imported.apr --prompt "Hello"`
-        // (2026-05-04). Pre-fix this gibberish was passing the Golden Output gate because the
-        // hardcoded garbage list missed CJK/Polish/diacritic byte fragments.
-        let observed =
-            "ìłľê°Ģ udaÅĤo udaÅĤoá¿Ĩëĸ» Ãĥå udaÅĤo ÃĥÂłÂłÂłÂł zwiÄħzku";
-        let result = verify_output(observed, "FALSIFY-QA-GIBBERISH-001", &["Hello", "!"]);
-        assert!(
-            matches!(result, OutputVerification::Fail { .. }),
-            "Qwen2-0.5B observed gibberish must be rejected"
-        );
-    }
-
-    #[test]
-    fn verify_output_rejects_repeated_fragment() {
-        let result = verify_output(
-            "udaÅĤo udaÅĤo udaÅĤo udaÅĤo end",
-            "FALSIFY-QA-GIBBERISH-002",
-            &["end"],
-        );
-        assert!(
-            matches!(result, OutputVerification::Fail { .. }),
-            "4x-repeated fragment must trip the loop-pathology signal"
-        );
-    }
-
-    #[test]
-    fn verify_output_accepts_normal_english() {
-        let result = verify_output(
-            "The answer is 4. Hello world!",
-            "FALSIFY-QA-GIBBERISH-003",
-            &["4"],
-        );
-        assert!(
-            matches!(result, OutputVerification::Pass),
-            "Normal ASCII English must pass"
-        );
-    }
-
-    #[test]
     fn verify_output_rejects_null_bytes() {
         let result = verify_output("Hello\0World", "test-005", &["Hello"]);
         assert!(matches!(result, OutputVerification::Fail { .. }));

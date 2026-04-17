@@ -129,19 +129,14 @@ jobs:
           [ "$FAIL" -eq 0 ] || exit 1
 
       - name: Every PCU page has matching contract
-        # Parse the authoritative `contract:` pointer from the page header.
-        # Header format: `<!-- PCU: <id> | contract: <path> -->`
         run: |
           FAIL=0
           for md in $(find book/src -name "*.md" -not -name "SUMMARY.md"); do
-            hdr=$(head -1 "$md")
-            if echo "$hdr" | grep -q 'PCU:'; then
-              CONTRACT=$(echo "$hdr" | grep -oE 'contract:[[:space:]]*[^ |]+' | sed 's/^contract:[[:space:]]*//')
-              if [ -z "$CONTRACT" ]; then
-                echo "::error::$md has PCU header but no contract: field"
-                FAIL=1
-              elif [ ! -f "$CONTRACT" ]; then
-                echo "::error::$md references contract $CONTRACT but file not found"
+            ID=$(head -1 "$md" | grep -oP 'PCU: \K[^ |]+' || echo "")
+            if [ -n "$ID" ]; then
+              if [ ! -f "contracts/apr-page-${ID}-v1.yaml" ] && \
+                 [ ! -f "contracts/apr-book-${ID}-v1.yaml" ]; then
+                echo "::error::Page $md references PCU $ID but no contract found"
                 FAIL=1
               fi
             fi

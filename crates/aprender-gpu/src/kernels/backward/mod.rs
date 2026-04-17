@@ -56,7 +56,7 @@ pub use cross_entropy::{FusedCausalCrossEntropyKernel, FusedCrossEntropyKernel};
 pub use gemm::{GemmBackwardAKernel, GemmBackwardBKernel};
 pub use layer_norm::LayerNormBackwardKernel;
 pub use nf4_tensor_core::Nf4TensorCoreGemmBackwardAKernel;
-pub use rms_norm::{BatchedRmsNormBackwardKernel, RmsNormBackwardKernel, RmsNormGammaReduceKernel};
+pub use rms_norm::{BatchedRmsNormBackwardKernel, RmsNormBackwardKernel};
 pub use softmax::{BatchedSoftmaxBackwardKernel, SoftmaxBackwardKernel};
 
 #[cfg(test)]

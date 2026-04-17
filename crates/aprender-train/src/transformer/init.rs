@@ -60,13 +60,6 @@ fn hash_name(name: &str) -> u64 {
 /// Defaults to 42. Set via `set_init_seed()` before `Transformer::new()`.
 static INIT_SEED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(42);
 
-/// Mutex held across a (set_init_seed, read-during-construction) critical
-/// section so parallel callers cannot clobber each other's seed between
-/// `set_init_seed` and the subsequent `rand_normal_seeded` calls inside
-/// `Transformer::new`. Required for GATE-TRAIN-006 seed reproducibility
-/// when tests run concurrently.
-static INIT_SEED_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 /// Set the global initialization seed (called from training config).
 pub fn set_init_seed(seed: u64) {
     INIT_SEED.store(seed, std::sync::atomic::Ordering::SeqCst);
@@ -75,22 +68,6 @@ pub fn set_init_seed(seed: u64) {
 /// Get the current initialization seed.
 pub fn get_init_seed() -> u64 {
     INIT_SEED.load(std::sync::atomic::Ordering::SeqCst)
-}
-
-/// Lock the init-seed critical section and set the seed atomically.
-///
-/// Returns a `MutexGuard` that MUST be held for the full lifetime of
-/// the weight-init work (i.e., the entire `Transformer::new` call).
-/// Dropping the guard before init completes reopens the race window.
-///
-/// Poisoned mutexes are recovered transparently — a poisoned seed
-/// lock does not mean the seed value is corrupt (seed is a simple
-/// `u64` atomic), only that a prior holder panicked.
-#[must_use = "the returned guard must be held until weight init finishes"]
-pub fn lock_init_seed(seed: u64) -> std::sync::MutexGuard<'static, ()> {
-    let guard = INIT_SEED_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    set_init_seed(seed);
-    guard
 }
 
 #[cfg(test)]

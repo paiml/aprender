@@ -68,15 +68,6 @@ equations:
       - sum(phases.pct) in [90.0, 100.0] (wall coverage >= 90%)
       - All numeric values finite and non-negative
       - kernel_launches_per_step > 0
-    preconditions:
-      - 'runtime in {"apr", "pytorch", "unsloth"}'
-      - 'N >= 1 (at least one step profiled)'
-    postconditions:
-      - 'JSON output is parseable as serde_json::Value'
-      - 'sum(phases.pct) in [90.0, 100.0]'
-      - 'all numeric values finite and non-negative'
-      - 'kernel_launches_per_step > 0'
-    lean_theorem: 'Theorems.Parity_profile_schema'
 
   parity_delta:
     formula: |
@@ -90,13 +81,6 @@ equations:
     invariants:
       - delta is defined only when baseline > 0
       - Parity threshold configurable (default 10%)
-    preconditions:
-      - 'apr_metric and baseline_metric finite and non-negative'
-      - 'baseline_metric > 0 (delta undefined when baseline == 0)'
-    postconditions:
-      - 'delta in [-1.0, +∞) (apr cannot be more than 100% faster than baseline)'
-      - 'delta is finite when baseline > 0'
-    lean_theorem: 'Theorems.Parity_delta'
 
   cupti_kernel_timing:
     formula: |
@@ -113,14 +97,6 @@ equations:
     invariants:
       - gpu_kernel_time <= cpu_dispatch_time (GPU work subset of CPU dispatch)
       - overhead_ratio in [0.0, 1.0]
-    preconditions:
-      - 'CUPTI Activity records present and well-formed'
-      - 'all timestamps finite and monotonic (start <= end)'
-    postconditions:
-      - 'gpu_kernel_time <= cpu_dispatch_time'
-      - 'overhead_ratio in [0.0, 1.0]'
-      - 'all output values finite and non-negative'
-    lean_theorem: 'Theorems.Cupti_kernel_timing'
 
   torch_profiler_integration:
     formula: |
@@ -144,13 +120,6 @@ equations:
     invariants:
       - Profiler overhead < 15% of step time (with_stack=False)
       - At least 5 steps profiled after warmup
-    preconditions:
-      - 'PyTorch 2.x installed with CUDA backend'
-      - 'at least 5 + warmup steps available'
-    postconditions:
-      - 'profiler overhead < 15% of step time'
-      - 'kernel-to-op mapping is total over the listed kernel name patterns'
-    lean_theorem: 'Theorems.Torch_profiler_integration'
 
 proof_obligations:
   - type: equivalence

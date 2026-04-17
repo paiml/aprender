@@ -28,7 +28,7 @@ exclude = [
 ]
 
 [lib]
-name = "aprender_rag"
+name = "trueno_rag"
 
 [dependencies]
 # Core compute

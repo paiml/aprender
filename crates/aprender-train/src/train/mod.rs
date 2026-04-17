@@ -33,19 +33,8 @@ mod batch;
 pub mod callback;
 mod config;
 mod curriculum;
-pub mod device;
-pub mod gputrain_003;
-pub mod gputrain_004;
-pub mod gputrain_005;
-pub mod gputrain_006;
-pub mod gputrain_007;
 mod loss;
 mod metrics;
-pub mod pretrain;
-pub mod pretrain_real;
-#[cfg(feature = "cuda")]
-pub mod pretrain_real_cuda;
-pub mod shard_reader;
 mod trainer;
 pub mod transformer_trainer;
 pub mod tui;
@@ -64,18 +53,11 @@ pub use curriculum::{
     efficiency_score, select_optimal_tier, AdaptiveCurriculum, CurriculumScheduler,
     LinearCurriculum, TieredCurriculum,
 };
-pub use device::{resolve_device, Device, DeviceError};
 pub use loss::{
     BCEWithLogitsLoss, CausalLMLoss, CrossEntropyLoss, HuberLoss, L1Loss, LossFn, MSELoss,
     SampleWeightedLoss, SmoothL1Loss, WeightedLoss,
 };
 pub use metrics::{Accuracy, F1Score, Metric, Precision, R2Score, Recall, MAE, RMSE};
-pub use pretrain::{
-    check_non_divergence, check_numerical_stability, CheckpointFn, EpochArtifact, EpochMetadata,
-    LinearDecaySynthetic, NanAtStepSynthetic, PretrainAbort, PretrainConfig, PretrainLoop,
-    RunStatus, ScriptedVal, StepFn, StepMetrics, TrainingRegime, ValFn, DIVERGENCE_RATIO_LIMIT,
-    EPOCH_ZERO_VAL_LOSS_LIMIT,
-};
 pub use trainer::{TrainResult, Trainer};
 pub use transformer_trainer::distributed_checkpoint::{
     checkpoint_path, hash_weights, should_save_checkpoint, verify_weight_consistency,

@@ -371,30 +371,6 @@ impl AppState {
         self.apr_transformer.is_some()
     }
 
-    /// Whether any inference-capable model is resident.
-    ///
-    /// Gates the `model_loaded` field of `HealthResponse` and the
-    /// `/health/ready` k8s readiness probe (CRUX-C-34 contract).
-    #[must_use]
-    pub fn model_loaded(&self) -> bool {
-        if self.model.is_some()
-            || self.apr_model.is_some()
-            || self.quantized_model.is_some()
-            || self.apr_transformer.is_some()
-        {
-            return true;
-        }
-        #[cfg(feature = "gpu")]
-        if self.gpu_model.is_some() || self.cached_model.is_some() {
-            return true;
-        }
-        #[cfg(feature = "cuda")]
-        if self.cuda_model.is_some() || self.safetensors_cuda_model.is_some() {
-            return true;
-        }
-        false
-    }
-
     /// Get the APR transformer for inference (PMAT-SERVE-FIX-001)
     pub fn apr_transformer(&self) -> Option<&Arc<crate::apr_transformer::AprTransformer>> {
         self.apr_transformer.as_ref()

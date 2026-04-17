@@ -110,7 +110,11 @@ fn collect_metrics(a: &AnalysisReport, b: &AnalysisReport) -> Vec<MetricComparis
     ]
 }
 
-fn recommendation_text(metrics: &[MetricComparison], name_a: &str, name_b: &str) -> String {
+fn recommendation_text(
+    metrics: &[MetricComparison],
+    name_a: &str,
+    name_b: &str,
+) -> String {
     let a_wins = metrics.iter().filter(|m| m.winner == "A").count();
     let b_wins = metrics.iter().filter(|m| m.winner == "B").count();
     match a_wins.cmp(&b_wins) {

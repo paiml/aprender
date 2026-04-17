@@ -51,7 +51,7 @@
 #[allow(unused_imports)]
 use crate::error::{AprenderError, Result};
 #[allow(unused_imports)]
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 #[allow(unused_imports)]
 use std::collections::HashMap;
 #[allow(unused_imports)]
@@ -177,12 +177,6 @@ pub mod model_family;
 // Fallback path; build.rs codegen (PMAT-250) is preferred.
 pub mod model_family_loader;
 
-// SHIP-TWO-001 AC-SHIP1-010 / FALSIFY-SHIP-010 algorithm-level PARTIAL
-// discharge: pure decision rules for the published-artifact ship gate
-// (SHA-256 byte-identity + manifest URL well-formedness).
-// See: contracts/publish-manifest-v1.yaml v1.4.0 GATE-PM-010.
-pub mod ship_010;
-
 // Special tokens registry contract falsification (FALSIFY-ST-001..006)
 #[cfg(test)]
 mod special_tokens_contract_falsify;
@@ -227,7 +221,7 @@ pub mod test_factory;
 
 // Re-export golden trace types
 pub use golden::{
-    verify_logits, GoldenTrace, GoldenTraceSet, GoldenVerifyReport, LogitStats, TraceVerifyResult,
+    GoldenTrace, GoldenTraceSet, GoldenVerifyReport, LogitStats, TraceVerifyResult, verify_logits,
 };
 
 // Re-export model card types
@@ -241,26 +235,27 @@ pub use validation::{
 // Re-export Poka-yoke types (APR-POKA-001 - Toyota Way mistake-proofing)
 #[allow(deprecated)]
 pub use validation::no_validation_result;
-pub use validation::{fail_no_validation_rules, Gate, PokaYoke, PokaYokeResult};
+pub use validation::{Gate, PokaYoke, PokaYokeResult, fail_no_validation_rules};
 
 // Re-export converter types (spec §13 - Import/Convert Pipeline)
 pub use converter::{
-    apr_convert, apr_export, apr_import, apr_merge, streaming_quantize_peak_estimate, AprConverter,
-    Architecture, ConvertOptions, ConvertReport, EvolutionaryMergeConfig, EvolutionaryMergeResult,
-    ExportFormat, ExportOptions, ExportReport, ImportError, ImportOptions, MergeOptions,
-    MergeReport, MergeStrategy, QuantizationType, Source, TensorExpectation, ValidationConfig,
+    AprConverter, Architecture, ConvertOptions, ConvertReport, EvolutionaryMergeConfig,
+    EvolutionaryMergeResult, ExportFormat, ExportOptions, ExportReport, ImportError, ImportOptions,
+    MergeOptions, MergeReport, MergeStrategy, QuantizationType, Source, TensorExpectation,
+    ValidationConfig, apr_convert, apr_export, apr_import, apr_merge,
+    streaming_quantize_peak_estimate,
 };
 
 // Re-export lint types (spec §4.11 - Best Practices & Conventions)
 pub use lint::{
-    lint_apr_file, lint_model, lint_model_file, LintCategory, LintIssue, LintLevel, LintReport,
-    ModelLintInfo, TensorLintInfo,
+    LintCategory, LintIssue, LintLevel, LintReport, ModelLintInfo, TensorLintInfo, lint_apr_file,
+    lint_model, lint_model_file,
 };
 
 // Re-export sharded import types (GH-127 - multi-tensor repos)
 pub use sharded::{
-    estimate_shard_memory, get_shard_files, is_sharded_model, CacheStats, CachedShard, ImportPhase,
-    ImportProgress, ImportReport, ShardCache, ShardIndex, ShardedImportConfig, ShardedImporter,
+    CacheStats, CachedShard, ImportPhase, ImportProgress, ImportReport, ShardCache, ShardIndex,
+    ShardedImportConfig, ShardedImporter, estimate_shard_memory, get_shard_files, is_sharded_model,
 };
 
 // Re-export Rosetta Stone types (PMAT-ROSETTA-001 - Universal Model Format Converter)
@@ -282,17 +277,17 @@ pub use rosetta_ml::{
 // Re-export tensor listing types (TOOL-APR-001 - reads actual tensor index)
 // Note: TensorListInfo used instead of TensorInfo to avoid conflict with rosetta::TensorInfo
 pub use tensors::{
-    format_size, is_valid_apr_magic, list_tensors, list_tensors_from_bytes,
-    TensorInfo as TensorListInfo, TensorListOptions, TensorListResult,
+    TensorInfo as TensorListInfo, TensorListOptions, TensorListResult, format_size,
+    is_valid_apr_magic, list_tensors, list_tensors_from_bytes,
 };
 
 // Re-export diff types (TOOL-APR-002 - format-agnostic comparison)
-pub use diff::{diff_inspections, diff_models, DiffCategory, DiffEntry, DiffOptions, DiffReport};
+pub use diff::{DiffCategory, DiffEntry, DiffOptions, DiffReport, diff_inspections, diff_models};
 
 // Re-export layout contract types (LAYOUT-CONTRACT-001 - Source of Truth)
 pub use layout_contract::{
-    block_sizes, contract, validate_ffn_shape_symmetry, validation_rules, ContractError,
-    LayoutContract, TensorContract,
+    ContractError, LayoutContract, TensorContract, block_sizes, contract,
+    validate_ffn_shape_symmetry, validation_rules,
 };
 
 // Re-export validated tensor types (PMAT-235 - Compile-Time Contract Enforcement)
@@ -311,8 +306,8 @@ pub use validated_classification::{
 // Re-export quantization types when feature is enabled
 #[cfg(feature = "format-quantize")]
 pub use quantize::{
-    dequantize, quantize as quantize_data, Q4_0Quantizer, Q8_0Quantizer, QuantType,
-    QuantizationInfo, QuantizedBlock, QuantizedTensor, Quantizer, BLOCK_SIZE,
+    BLOCK_SIZE, Q4_0Quantizer, Q8_0Quantizer, QuantType, QuantizationInfo, QuantizedBlock,
+    QuantizedTensor, Quantizer, dequantize, quantize as quantize_data,
 };
 
 // Re-export homomorphic encryption types when feature is enabled
@@ -373,184 +368,6 @@ pub const HEADER_SIZE: usize = 32;
 
 /// Maximum uncompressed size (1GB safety limit)
 pub const MAX_UNCOMPRESSED_SIZE: u32 = 1024 * 1024 * 1024;
-
-// FALSIFY-SHIP-003 / AC-SHIP1-003 — per-layer cosine similarity threshold
-// verdict fn for `apr convert --quantize q4_k_m` round-trip quality.
-// See contracts/qwen2-e2e-verification-v1.yaml FALSIFY-QW2E-SHIP-003 and
-// docs/specifications/aprender-train/ship-two-models-spec.md §4.2 AC-SHIP1-003.
-pub mod ship_003;
-
-// FALSIFY-SHIP-004 / AC-SHIP1-004 — GGUF export boundary verdict fns:
-// llama-cli exit code + GGUF magic bytes + GGUF version.
-// See contracts/qwen2-e2e-verification-v1.yaml FALSIFY-QW2E-SHIP-004 and
-// docs/specifications/aprender-train/ship-two-models-spec.md §4.2 AC-SHIP1-004.
-pub mod ship_004;
-
-// FALSIFY-SHIP-001 / AC-SHIP1-001 — safetensors load boundary verdict fns:
-// Result<Model, _> → bool, safetensors header size invariant, JSON-object
-// open-brace byte. See contracts/qwen2-e2e-verification-v1.yaml
-// FALSIFY-QW2E-SHIP-001 and docs/specifications/aprender-train/ship-two-
-// models-spec.md §4.2 AC-SHIP1-001.
-pub mod ship_001;
-
-// FALSIFY-SHIP-023 / AC-SHIP1-023 — two-day HumanEval pass@1 drift verdict:
-// pair-of-runs drift ≤ 1.2 pp with symmetric `.abs()` combinator + input
-// well-formedness guards. See contracts/qwen2-e2e-verification-v1.yaml
-// FALSIFY-QW2E-SHIP-023 and docs/specifications/aprender-train/ship-two-
-// models-spec.md §7.1 FALSIFY-SHIP-023.
-pub mod ship_023;
-
-// FALSIFY-SHIP-024 / AC-SHIP1-024 — adversarial-suite runtime-invariant
-// verdict: suite-size floor ≥ 50 AND panic_count == 0 AND nan_count == 0.
-// See contracts/qwen2-e2e-verification-v1.yaml FALSIFY-QW2E-SHIP-024 and
-// docs/specifications/aprender-train/ship-two-models-spec.md §7.1
-// FALSIFY-SHIP-024.
-pub mod ship_024;
-
-// SHIP-TWO-001 §6 Compound Ship Gates — aggregate / cross-cutting PARTIAL
-// algorithm-level discharges. Each module binds one §6 compound-gate row
-// to one pure verdict fn + mutation survey. Authoritative contract:
-// contracts/compound-ship-gates-v1.yaml v1.0.0.
-
-// FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
-pub mod apr_gguf_forward_parity;
-
-// FALSIFY-APR-DISTILL-TRAIN-005 — precompute byte-determinism gate.
-pub mod distill_train_005;
-
-// INV-DATA-006 — dataset-thestack-python disjoint train/val splits.
-pub mod data_inv_006;
-
-// FALSIFY-APR-DISTILL-TRAIN-002 — KL loss decreases over epochs gate.
-pub mod distill_train_002;
-
-// FALSIFY-QA-007 — apr-cli --json flag changes output (not a no-op).
-pub mod qa_007;
-
-// FALSIFY-QA-001 — apr-cli all 58 commands respond to --help.
-pub mod qa_001;
-
-// FALSIFY-PUB-CLI-002 + 004 — cargo install/check exit codes (shared verdict).
-pub mod pub_cli_002_004;
-
-// FALSIFY-PUB-CLI-001 — apr-cli default features contain no forbidden substrings.
-pub mod pub_cli_001;
-
-// FALSIFY-PUB-CLI-003 — apr --help line count > 50 (all 58 commands listed).
-pub mod pub_cli_003;
-
-// FALSIFY-DO-001..004 — dropout-v1 PARTIAL_ALGORITHM_LEVEL discharge.
-pub mod dropout_001_004;
-
-// FALSIFY-APR-PULL-DATASET-001 — apr pull dataset --help shows both flags + exits 0.
-pub mod pull_dataset_001;
-
-// FALSIFY-APR-PULL-DATASET-005 — apr pull <model> --dry-run backward compat.
-pub mod pull_dataset_005;
-
-// FALSIFY-APR-PULL-DATASET-003 — apr pull dataset no-match glob fails fast.
-pub mod pull_dataset_003;
-
-// FALSIFY-APR-PULL-DATASET-004 — license allowlist drops disallowed rows.
-pub mod pull_dataset_004;
-
-// FALSIFY-APR-PULL-DATASET-002 — apr pull dataset --include glob exact match count.
-pub mod pull_dataset_002;
-
-// FALSIFY-APR-DISTILL-TRAIN-009 — distill student val_loss < from-scratch baseline.
-pub mod distill_train_009;
-
-// INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
-pub mod bpe_inv_001;
-
-// INV-BPE-003 — tokenizer-bpe round-trip byte-equality on 10K held-out docs.
-pub mod bpe_inv_003;
-
-// INV-BPE-002 — tokenizer-bpe four required special tokens distinct + in range.
-pub mod bpe_inv_002;
-
-// FALSIFY-PROF10-003 — apr profile graphed vs ungraphed sanity inequality.
-pub mod prof10_003;
-
-// FALSIFY-SUB-FFN-005 — sub-FFN telemetry per-layer line count.
-pub mod sub_ffn_005;
-
-// FALSIFY-APR-TOK-PAR-002 — parallel BPE 80% efficiency floor.
-pub mod tok_par_002;
-
-// INV-DATA-004 — dataset-thestack-python train range + val floor.
-pub mod data_inv_004;
-
-// INV-DATA-007 — dataset-thestack-python UTF-8 + NFC round-trip.
-pub mod data_inv_007;
-
-// INV-DATA-001 — dataset-thestack-python license whitelist (zero-tolerance).
-pub mod data_inv_001;
-
-// INV-DATA-002 — dataset-thestack-python PII scrub zero-match invariant.
-pub mod data_inv_002;
-
-// INV-DATA-003 — dataset-thestack-python Jaccard dedup floor (< 0.85).
-pub mod data_inv_003;
-
-// INV-DATA-005 — dataset-thestack-python corpus_sha256 reproducibility.
-pub mod data_inv_005;
-
-// INV-PRETOK-003 — pretokenize-bin manifest sum=actual invariant.
-pub mod pretok_inv_003;
-
-// INV-PRETOK-002 — pretokenize-bin shard u32-alignment invariant.
-pub mod pretok_inv_002;
-
-// INV-PRETOK-001 — pretokenize-bin token id < vocab_size invariant.
-pub mod pretok_inv_001;
-
-// FALSIFY-APR-DISTILL-TRAIN-006 — stage train resumes from precompute cache.
-pub mod distill_train_006;
-
-// FALSIFY-APR-DISTILL-TRAIN-001 — real-training (not stub) tensor-diff gate.
-pub mod distill_train_001;
-
-// GATE-SHIP-001 — MODEL-1 aggregate-AND over 10 AC-SHIP1-* booleans.
-pub mod gate_ship_001;
-
-// GATE-SHIP-002 — MODEL-2 aggregate-AND over 12 AC-SHIP2-* booleans.
-pub mod gate_ship_002;
-
-// GATE-SHIP-003 — Golden Output byte-identity across quantize round-trip.
-pub mod gate_ship_003;
-
-// GATE-SHIP-004 — HumanEval bitwise-identical determinism (two seed=0 runs).
-pub mod gate_ship_004;
-
-// GATE-SHIP-005 — License metadata non-empty ASCII-printable byte-equal.
-pub mod gate_ship_005;
-
-// GATE-SHIP-006 — GGUF round-trip first-token probability delta ≤ 1e-3.
-pub mod gate_ship_006;
-
-// GATE-SHIP-007 — Zero-tolerance .unwrap() count threshold on new code.
-pub mod gate_ship_007;
-
-// GATE-SHIP-008 — Contract-density ratio threshold on new public fns.
-pub mod gate_ship_008;
-
-// GATE-SHIP-009 — CI aggregate-AND over 3 required checks (fmt / clippy / test).
-pub mod gate_ship_009;
-
-// GATE-SHIP-010 — Zero-tolerance security-advisory count threshold.
-pub mod gate_ship_010;
-
-// GATE-SHIP-011 — PMAT TDG score inclusive-floor threshold (≥ 90.0 / A-).
-pub mod gate_ship_011;
-
-// GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
-pub mod gate_ship_012;
-
-// FALSIFY-CUDA-001..004 — cuda-kernel-safety-v1 4-gate algorithm-level
-// PARTIAL discharge (kernel FFI, host transpilation, qualifier preservation,
-// keyword detection).
-pub mod cudasafety_001_004;
 
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;

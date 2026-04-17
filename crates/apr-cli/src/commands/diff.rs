@@ -239,14 +239,6 @@ pub(crate) fn run(
     validate_paths(path1, path2)?;
 
     if compare_values {
-        // SHIP-007 PR-D: APRT stage tensor diff path. When BOTH inputs are
-        // save-tensor files emitted by `apr trace --save-tensor` (12-byte
-        // APRT header + f32 LE body), skip the RosettaStone model walker
-        // and run an element-wise diff per `apr-cli-trace-save-tensor-v1`
-        // `apr_diff_values_compat` invariant.
-        if is_aprt_stage_file(path1) && is_aprt_stage_file(path2) {
-            return run_aprt_stage_diff(path1, path2, limit, json_output);
-        }
         // Run tensor value comparison
         run_tensor_value_diff(path1, path2, filter, limit, transpose_aware, json_output)
     } else {
@@ -473,4 +465,3 @@ fn print_diff_json(
 include!("diff_accumulator.rs");
 include!("diff_output_json_text.rs");
 include!("diff_04.rs");
-include!("diff_05_aprt_stage.rs");

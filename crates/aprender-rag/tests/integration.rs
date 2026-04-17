@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 //! Integration tests for trueno-rag
 
-use aprender_rag::{
+use trueno_rag::{
     chunk::{
         Chunker, ParagraphChunker, RecursiveChunker, SentenceChunker, StructuralChunker,
         TimestampChunker,

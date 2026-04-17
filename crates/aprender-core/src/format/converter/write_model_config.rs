@@ -179,8 +179,6 @@ pub(crate) fn write_apr_file_raw(
         description: Some("GGUF Q4_K model imported with native quantization".to_string()),
         author: None,
         license: None,
-        data_source: None,
-        data_license: None,
         version: Some("1.0.0".to_string()),
         source: None,
         original_format: Some("gguf".to_string()),

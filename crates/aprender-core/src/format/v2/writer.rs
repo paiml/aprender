@@ -262,19 +262,6 @@ impl AprV2Writer {
         self
     }
 
-    /// Preserve header flags from an existing APR file on round-trip.
-    ///
-    /// Used by `stamp_provenance_bytes` so that QUANTIZED / HAS_VOCAB /
-    /// HAS_MODEL_CARD / etc. set on the input are carried across — without
-    /// this, `AprV2Writer::new()` would emit an output with only
-    /// `LAYOUT_ROW_MAJOR` set and downstream consumers that branch on
-    /// `QUANTIZED` would silently see a different file. `LAYOUT_ROW_MAJOR`
-    /// is always included regardless of the passed-in value so the
-    /// LAYOUT-002 jidoka guard never disengages.
-    pub fn set_header_flags(&mut self, flags: AprV2Flags) {
-        self.header.flags = flags.with(AprV2Flags::LAYOUT_ROW_MAJOR);
-    }
-
     /// Set sharding info
     pub fn with_sharding(&mut self, shard_count: usize, shard_index: usize) -> &mut Self {
         self.header.flags = self.header.flags.with(AprV2Flags::SHARDED);

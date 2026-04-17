@@ -27,7 +27,7 @@
 //! # Quick Start
 //!
 //! ```ignore
-//! use aprender_rag::multivector::{
+//! use trueno_rag::multivector::{
 //!     WarpIndex, WarpIndexConfig, WarpSearchConfig,
 //!     MockMultiVectorEmbedder, MultiVectorEmbedder,
 //!     MultiVectorRetriever,

@@ -119,17 +119,6 @@ pub(super) fn print_help() {
         ("/cost", "Show session cost"),
         ("/clear", "Clear screen + history"),
         ("/quit", "Exit apr code"),
-        // PMAT-CODE-SLASH-PARITY-001 — 10 Claude-Code-parity commands.
-        ("/mcp", "List configured MCP servers"),
-        ("/config", "Show active config/manifest path"),
-        ("/review", "Code review mode (stub)"),
-        ("/memory", "Project memory CRUD (stub)"),
-        ("/permissions", "Permission mode (stub)"),
-        ("/hooks", "List registered hooks (stub)"),
-        ("/init", "Scaffold manifest / CLAUDE.md (stub)"),
-        ("/resume", "REPL-scope resume (stub)"),
-        ("/add-dir", "Add directory to tool allowlist (stub)"),
-        ("/agents", "List custom sub-agents (stub)"),
     ];
     println!("  {}", "Commands:".bold());
     for (cmd, desc) in cmds {

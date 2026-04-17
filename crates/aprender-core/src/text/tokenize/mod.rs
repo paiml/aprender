@@ -401,15 +401,6 @@ pub struct BpeTokenizer {
     special_tokens: SpecialTokens,
     /// End-of-word marker (used during encoding)
     end_of_word: String,
-    /// Byte-level BPE mode (GPT-2 style). When true, the pre-tokenizer maps
-    /// every byte 0..=255 to a unique printable Unicode codepoint via
-    /// `crate::text::bpe::bytes_to_unicode` before running merges, and decode
-    /// reverses that mapping. This is the only mode that satisfies
-    /// tokenizer-bpe-v1 INV-BPE-003 (byte-exact round-trip) / INV-BPE-007
-    /// (full 256-byte coverage). `train()` sets it to true; `from_vocab` keeps
-    /// the old `</w>` word-splitting mode for back-compat; `from_huggingface`
-    /// auto-detects from vocab keys (presence of `Ġ` → byte-level).
-    byte_level: bool,
 }
 
 mod bpe_impl;

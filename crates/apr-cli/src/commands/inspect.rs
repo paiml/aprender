@@ -65,12 +65,6 @@ struct MetadataInfo {
     description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     author: Option<String>,
-    // C-APR-PROVENANCE / INV-APR-PROV-002 / FM-APR-PROV-SILENT-SKIP:
-    // provenance keys MUST always serialize (null when absent) so auditors
-    // never see them silently skipped. Do NOT add skip_serializing_if here.
-    license: Option<String>,
-    data_source: Option<String>,
-    data_license: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -511,11 +505,6 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
                 name: meta.name,
                 description: meta.description,
                 author: meta.author,
-                // C-APR-PROVENANCE: these three are copied unconditionally
-                // (even if None) so inspect always emits the keys.
-                license: meta.license,
-                data_source: meta.data_source,
-                data_license: meta.data_license,
                 source: meta.source,
                 original_format: meta.original_format,
                 created_at: meta.created_at,

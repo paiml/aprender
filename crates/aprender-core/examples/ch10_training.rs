@@ -6,7 +6,7 @@
 //! Contract: contracts/apr-book-ch10-v1.yaml (v2 — api_calls enforced)
 
 use aprender::autograd::{clear_graph, Tensor};
-use aprender::nn::{loss::MSELoss, optim::SGD, Linear, Module, Sequential};
+use aprender::nn::{loss::MSELoss, optim::SGD, Linear, Module, Optimizer, Sequential};
 use aprender::prelude::Adam;
 
 fn main() {

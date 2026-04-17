@@ -269,7 +269,6 @@
             prompt: None,
             fast: false,
             brick: None,
-            percentiles: vec![50.0, 95.0, 99.0],
         }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Bench should fail with non-existent file");

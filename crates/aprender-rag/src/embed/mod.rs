@@ -441,7 +441,7 @@ impl EmbeddingModelType {
 /// # Example
 ///
 /// ```rust,ignore
-/// use aprender_rag::embed::{FastEmbedder, EmbeddingModelType, Embedder};
+/// use trueno_rag::embed::{FastEmbedder, EmbeddingModelType, Embedder};
 ///
 /// let embedder = FastEmbedder::new(EmbeddingModelType::AllMiniLmL6V2)?;
 /// let embedding = embedder.embed("Hello, world!")?;

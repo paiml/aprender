@@ -76,7 +76,6 @@ kani_harnesses:
 - id: KH-SPECS-001
   obligation: single_toc
   property: toc_covers_all_specs
-  bound: 4
 
 verification_summary:
   total_obligations: 3

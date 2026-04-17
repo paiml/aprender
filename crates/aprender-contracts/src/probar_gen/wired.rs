@@ -185,9 +185,7 @@ fn generate_wired_obligation_test(
         | ObligationType::LoopInvariant
         | ObligationType::LoopVariant
         | ObligationType::OldState
-        | ObligationType::Subcontract
-        | ObligationType::Safety
-        | ObligationType::Liveness => {
+        | ObligationType::Subcontract => {
             generate_wired_generic(out, ob);
         }
     }

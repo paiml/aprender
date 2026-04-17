@@ -192,7 +192,8 @@ pub(crate) fn prompt_search<W: Write>(stdout: &mut W) -> crate::Result<Option<St
 
 fn show_search_prompt<W: Write>(stdout: &mut W) -> crate::Result<u16> {
     use crossterm::{
-        cursor, execute,
+        cursor,
+        execute,
         style::Print,
         terminal::{self, Clear, ClearType},
     };

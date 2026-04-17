@@ -182,7 +182,7 @@ fn run_transcription_batch(
 ) -> Result<()> {
     use rayon::prelude::*;
     use std::sync::Mutex;
-    use aprender_rag::{
+    use trueno_rag::{
         DocumentLoader, TranscriptionBackend, TranscriptionConfig, TranscriptionLoader,
     };
 

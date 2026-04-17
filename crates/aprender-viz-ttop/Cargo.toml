@@ -4,7 +4,6 @@ version.workspace = true
 edition = "2021"
 rust-version = "1.75"
 authors = ["PAIML Team"]
-publish = false  # Internal system-monitor binary; ships via apr binary, not as a library dep
 description = "Terminal Top: 10X better than btop - Pure Rust system monitor with GPU support (NVIDIA/AMD/Apple), sovereign stack, zero-allocation rendering"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/paiml/trueno-viz"

@@ -2,10 +2,9 @@
 //!
 //! Demonstrates Model Context Protocol concepts for ML tool servers.
 //!
-//! The PAIML stack uses **pmcp** v2.3 — the Rust SDK for MCP servers/clients
-//! (github.com/paiml/rust-mcp-sdk) — for JSON-RPC framing, stdio/SSE/WebSocket
-//! transports, and tool registration. This example shows tool-definition
-//! patterns without taking a hard dep on pmcp itself.
+//! The PAIML stack includes:
+//! - **pmcp** v1.8.6: Rust SDK for MCP servers/clients
+//! - **pforge** v0.1.4: Declarative YAML-based MCP framework
 //!
 //! # Run
 //!
@@ -70,10 +69,10 @@ pub enum Content {
 }
 
 // ============================================================================
-// pmcp-style Tool Definitions (YAML → Rust)
+// pforge-style Tool Definitions (YAML → Rust)
 // ============================================================================
 
-/// Tool handler trait (aligned with pmcp native handlers)
+/// Tool handler trait (like pforge native handlers)
 pub trait ToolHandler: Send + Sync {
     fn call(&self, args: serde_json::Value) -> Result<ToolResult, String>;
 }
@@ -199,10 +198,10 @@ impl McpServer {
 }
 
 // ============================================================================
-// YAML Config Representation (pmcp-compatible)
+// pforge YAML Config Representation
 // ============================================================================
 
-/// YAML configuration (demonstrates declarative YAML → Rust mapping)
+/// pforge.yaml configuration (demonstrates YAML → Rust mapping)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PforgeConfig {
     pub forge: ForgeConfig,
@@ -534,9 +533,13 @@ fn main() -> anyhow::Result<()> {
     println!("  • query       → Trueno-DB (SQL analytics)");
     println!();
     println!("Usage:");
-    println!("  # Build an MCP server with pmcp v2.3");
+    println!("  # Create MCP server with pforge");
+    println!("  pforge new my-ml-server");
+    println!("  cd my-ml-server");
+    println!("  pforge serve");
+    println!();
+    println!("  # Or use pmcp directly for custom implementations");
     println!("  cargo add pmcp");
-    println!("  # github.com/paiml/rust-mcp-sdk — stdio/SSE/WebSocket transports");
 
     Ok(())
 }

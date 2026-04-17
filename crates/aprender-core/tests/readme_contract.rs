@@ -67,29 +67,33 @@ fn test_readme_no_stale_install_refs() {
     }
 }
 
-/// FALSIFY-README-005: Crate count in README matches `ls crates/`.
-///
-/// Superseded by `contracts/readme-claims-v1.yaml` + `scripts/check_readme_claims.sh`
-/// (FALSIFY-README-001). Kept as a belt-and-braces integration assertion:
-/// if the new shell-script gate and the Rust test ever disagree, both
-/// signal drift. Counts directory entries under `crates/` to match the
-/// canonical script contract — not `cargo metadata`, which returns more
-/// packages than directories (some crates define multiple [package]s).
+/// FALSIFY-README-005: Crate count in README matches workspace
 #[test]
 fn test_readme_crate_count_matches_workspace() {
     let readme = read_readme();
-    let crates_dir = workspace_root().join("crates");
+    let ws_root = workspace_root();
 
-    let crate_count = std::fs::read_dir(&crates_dir)
-        .expect("read crates/")
-        .filter_map(Result::ok)
-        .filter(|e| e.path().is_dir())
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(&ws_root)
+        .output()
+        .expect("cargo metadata failed");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let metadata: serde_json::Value =
+        serde_json::from_str(&stdout).expect("failed to parse cargo metadata");
+
+    let ws_count = metadata["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["source"].is_null())
         .count();
 
-    let count_str = format!("**{crate_count}**");
+    let count_str = format!("**{}**", ws_count);
     assert!(
         readme.contains(&count_str),
-        "FALSIFY-README-005: README lacks `**{crate_count}**` matching `ls crates/`"
+        "FALSIFY-README-005: README says crate count that doesn't match workspace ({ws_count})"
     );
 }
 
@@ -112,25 +116,29 @@ fn test_hero_svg_accessible() {
     );
 }
 
-/// FALSIFY-README-006: README cites upstream POC benchmark repos.
-///
-/// The Performance section must cite `candle-vs-apr` and
-/// `ground-truth-apr-ludwig` so readers can reproduce the performance
-/// claims. Hard-coded token/s numbers are NOT asserted here — those
-/// drift with tuning runs and should be re-derived from the POC repos
-/// at review time, not frozen into a regression test (which is how the
-/// pre-rewrite version got stuck on 369.9/3,220 long after those numbers
-/// stopped reflecting the best-known configuration).
+/// FALSIFY-README-006: Framework comparison section exists with real data
 #[test]
 fn test_readme_has_framework_comparison() {
     let readme = read_readme();
     assert!(
+        readme.contains("## Framework Comparison"),
+        "Missing Framework Comparison section"
+    );
+    assert!(
         readme.contains("candle-vs-apr"),
-        "README must cite paiml/candle-vs-apr for reproducible inference benchmarks"
+        "Missing candle-vs-apr citation"
     );
     assert!(
         readme.contains("ground-truth-apr-ludwig"),
-        "README must cite paiml/ground-truth-apr-ludwig for reproducible training benchmarks"
+        "Missing ludwig comparison citation"
+    );
+    assert!(
+        readme.contains("369.9"),
+        "Missing realizr benchmark number (369.9 tok/s)"
+    );
+    assert!(
+        readme.contains("3,220"),
+        "Missing batched throughput number (3,220 tok/s)"
     );
 }
 

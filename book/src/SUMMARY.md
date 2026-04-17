@@ -266,4 +266,3 @@
 - [Jidoka (Autonomation)](./quality-gates/jidoka.md)
 - [apr - APR Model Operations CLI](./tools/apr-cli.md)
 - [APR Complete Specification](./tools/apr-spec.md)
-- [aprender-mcp — Model Context Protocol Server](./tools/mcp-server.md)

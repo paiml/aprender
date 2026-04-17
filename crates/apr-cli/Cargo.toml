@@ -63,21 +63,11 @@ path = "src/lib.rs"
 name = "apr"
 path = "src/main.rs"
 
-# Task #91: dry-run scaffold for the SHIP-TWO-001 MODEL-2 corpus ingest.
-# Minimal, network-free. Does not depend on any apr-cli optional feature.
-[[bin]]
-name = "apr-corpus-ingest"
-path = "src/bin/apr-corpus-ingest.rs"
-
 [features]
 # crates.io install: minimal features (inspect, validate, lint, etc.)
 # Full features enabled locally via workspace Cargo.toml default-members
 default = ["hf-hub", "safetensors-compare", "inference", "training", "visualization", "zram"]
 hf-hub = ["aprender/hf-hub-integration"]
-# Xet CAS upload for files > 5 GiB (F-PUB-LFS-001, spec §12.8).
-# Off by default: `hf-xet` adds ~4 MB to the release binary. Users who ship
-# 7B+ teachers enable with `--features xet`.
-xet = ["hf-hub", "aprender/xet"]
 code = ["dep:batuta"]
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
@@ -92,17 +82,14 @@ training = ["dep:entrenar", "dep:entrenar-lora"]
 training-gpu = ["training"]
 whisper = ["whisper-apr"]
 dhat-heap = ["dep:dhat"]
-full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code", "xet"]
+full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../aprender-core", version = "0.32.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
-
-# MCP (Model Context Protocol) server — `apr mcp` subcommand
-aprender-mcp = { path = "../aprender-mcp", version = "0.32.0" }
+aprender = { path = "../aprender-core", version = "0.30.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 async-stream = "0.3"
 provable-contracts-macros = "0.3"
 
@@ -111,7 +98,7 @@ batuta-common = "0.1"
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
-batuta = { workspace = true, optional = true, default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
+batuta = { version = "0.7", optional = true, default-features = false, features = ["agents", "agents-inference", "rag"] }
 
 # Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s
@@ -125,7 +112,7 @@ whisper-apr = { version = "0.2", optional = true }
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
 # 2026-04-05 PMAT-507: bumped 0.16.0→0.17 to match aprender root Cargo.toml (was diamond dep)
-trueno = { workspace = true, optional = true }
+trueno = { version = "0.19.1", optional = true }
 
 # Async runtime for server
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"], optional = true }
@@ -147,12 +134,10 @@ colored = "2.1"
 tabled = "0.16"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
 rmp-serde = "1.3"
 
 # Error handling
 thiserror = "2.0"
-anyhow = { workspace = true }
 
 # Time formatting
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
@@ -168,13 +153,6 @@ glob = "0.3"
 dirs = "5.0"
 which = "7"
 
-# Parquet input for `apr tokenize encode-corpus` — issue #1410 follow-up.
-# Stack v1.2 / codeparrot Python corpora ship as parquet, not JSONL; this
-# enables `apr tokenize encode-corpus --corpus <path>.parquet` end-to-end
-# without a Python shim (per `feedback_stack_tool_extension_not_cli_shim.md`).
-parquet = { version = "57", default-features = false, features = ["arrow", "snap", "zstd"] }
-arrow-array = "57"
-
 # HTTP client for downloads
 ureq = "2.10"
 
@@ -187,8 +165,8 @@ presentar-terminal = { workspace = true }
 presentar-core = { workspace = true }
 
 # Visualization (syscall tracing and charts)
-renacer = { workspace = true, optional = true }
-trueno-viz = { version = "0.3", optional = true }  # Not yet in monorepo
+renacer = { version = "0.11", optional = true }
+trueno-viz = { version = "0.3", optional = true }
 
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)
 trueno-zram-core = { version = "0.3", optional = true }
@@ -200,7 +178,7 @@ pacha = { version = "0.2.4", default-features = false, features = ["remote"] }
 trueno-explain = { version = "0.2.2", optional = true }
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
-entrenar-lora = { workspace = true, optional = true }
+entrenar-lora = { version = "0.3.0", optional = true }
 # ML training engine (workspace path dep — enables cuda feature forwarding)
 entrenar = { workspace = true, optional = true }
 # Heap profiling (opt-in via --features dhat-heap)
@@ -212,13 +190,13 @@ half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 
-# Unicode normalization (NFC) for BPE corpus preprocessing (MODEL-2).
-unicode-normalization = "0.1"
+[[example]]
+name = "probar_tui_testing"
+required-features = ["inference"]
 
-# Parallelism — used by `apr tokenize encode-corpus --num-workers` (issue #1547).
-# Per-doc BPE encoding is independent across rows; rayon's chunked par_iter
-# preserves input order via Vec<Result<...>> indexed by chunk position.
-rayon = { workspace = true }
+[[example]]
+name = "federation_tui_demo"
+required-features = ["inference"]
 
 [[example]]
 name = "serve_with_tracing"
@@ -242,6 +220,4 @@ regex = "1.10"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 axum-test = "16"
 tower = "0.5"
-# FALSIFY-SHIP-012 — NFC normalization for tokenizer round-trip harness
-unicode-normalization = "0.1"
 

@@ -383,8 +383,6 @@ fn test_health_response_serde() {
         status: "ok".to_string(),
         version: "0.3.5".to_string(),
         compute_mode: "cpu".to_string(),
-        model_loaded: true,
-        uptime_sec: 1.0,
     };
     let json = serde_json::to_string(&health).expect("JSON serialization failed");
     let deserialized: crate::api::HealthResponse = serde_json::from_str(&json).expect("JSON deserialization failed");

@@ -7,10 +7,7 @@ use super::parsing::{read_gguf_string, skip_gguf_value};
 use super::types::GgufTensorInfo;
 use super::*;
 use crate::hf_pipeline::export::gguf_writer::{quantize_to_gguf_bytes, GgufQuantization};
-use aprender::format::gguf::{
-    export_tensors_to_gguf, padding_for_alignment, GgmlType, GgufTensor, GgufValue,
-    GGUF_DEFAULT_ALIGNMENT,
-};
+use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
 
 /// Helper: serialize GGUF to a Vec<u8> via aprender
 pub(super) fn write_gguf(tensors: &[GgufTensor], metadata: &[(String, GgufValue)]) -> Vec<u8> {
@@ -41,14 +38,9 @@ pub(super) fn extract_f32_tensor_data(
 
 /// Find the start of the tensor data section by scanning past header + metadata + tensor info.
 ///
-/// `aprender::format::gguf::export_tensors_to_gguf` writes alignment padding
-/// (default 32 bytes) AFTER the tensor-info section so the tensor data starts
-/// at a `GGUF_DEFAULT_ALIGNMENT`-aligned offset. The previous version of this
-/// helper claimed "NO alignment padding" — that's incorrect; tensor data is
-/// preceded by `padding_for_alignment(pos, GGUF_DEFAULT_ALIGNMENT)` zero bytes.
-/// All `test_falsify_*_roundtrip` and friends were reading f32 bytes at the
-/// padding offset (zeros) instead of the actual tensor offset, surfaced as
-/// `expected [5.0, 6.0, 7.0, 8.0]` vs `got [0.0, 5.93e-39, ...]`.
+/// Note: aprender's `export_tensors_to_gguf` places tensor data immediately after
+/// tensor info with NO alignment padding. Tensor offsets in the info entries are
+/// relative to this position.
 pub(super) fn find_data_section_start(gguf_bytes: &[u8], summary: &GgufSummary) -> usize {
     let mut pos = 24; // skip header
                       // Skip metadata
@@ -70,7 +62,5 @@ pub(super) fn find_data_section_start(gguf_bytes: &[u8], summary: &GgufSummary) 
         ) as usize;
         pos += 4 + n_dims * 8 + 4 + 8; // dims + dtype + offset
     }
-    // Skip alignment padding before tensor data (matches writer at types.rs:445).
-    pos += padding_for_alignment(pos, GGUF_DEFAULT_ALIGNMENT);
     pos
 }

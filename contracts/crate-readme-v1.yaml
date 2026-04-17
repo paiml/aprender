@@ -54,7 +54,6 @@ kani_harnesses:
 - id: KH-README-001
   obligation: readme_exists
   property: all_crates_have_readme
-  bound: 4
 
 verification_summary:
   total_obligations: 2

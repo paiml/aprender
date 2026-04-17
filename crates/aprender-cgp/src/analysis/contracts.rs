@@ -167,7 +167,10 @@ pub fn verify_contract(contract: &PerformanceContract) -> ContractVerification {
 }
 
 /// Check the contract has the required `kind` field and record `kernel` if present.
-fn validate_contract_metadata(contract: &PerformanceContract, result: &mut ContractVerification) {
+fn validate_contract_metadata(
+    contract: &PerformanceContract,
+    result: &mut ContractVerification,
+) {
     if contract.kind.is_empty() {
         result
             .failed
@@ -293,7 +296,11 @@ fn check_min_bandwidth(
 }
 
 /// No profile found: record the bound structurally and flag empty-criteria bounds.
-fn check_bound_structural(bound: &PerformanceBound, i: usize, result: &mut ContractVerification) {
+fn check_bound_structural(
+    bound: &PerformanceBound,
+    i: usize,
+    result: &mut ContractVerification,
+) {
     result
         .passed
         .push(format!("Bound {i}: size {:?}", bound.size));

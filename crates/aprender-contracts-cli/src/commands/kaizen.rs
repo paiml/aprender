@@ -181,8 +181,12 @@ fn process_repo(
     let assertions_before =
         count_assertions(&std::fs::read_to_string(&gen_path).unwrap_or_default());
 
-    let mut report =
-        build_initial_report(name, implemented_bindings, &sites_before, assertions_before);
+    let mut report = build_initial_report(
+        name,
+        implemented_bindings,
+        &sites_before,
+        assertions_before,
+    );
 
     if do_codegen || do_fix {
         apply_codegen_step(contract_dir, &gen_path, name, &mut report);
@@ -190,13 +194,7 @@ fn process_repo(
 
     if do_fix {
         apply_fix_step(
-            &src_dir,
-            &scan_dirs,
-            &gen_path,
-            repo_path,
-            &binding,
-            name,
-            &mut report,
+            &src_dir, &scan_dirs, &gen_path, repo_path, &binding, name, &mut report,
         );
     }
 
@@ -294,7 +292,12 @@ fn build_initial_report(
 }
 
 /// Run codegen, write the generated contracts module, and update report assertion counts.
-fn apply_codegen_step(contract_dir: &Path, gen_path: &Path, name: &str, report: &mut RepoReport) {
+fn apply_codegen_step(
+    contract_dir: &Path,
+    gen_path: &Path,
+    name: &str,
+    report: &mut RepoReport,
+) {
     let contracts = codegen::generate_all(contract_dir);
     if contracts.is_empty() {
         return;

@@ -17,7 +17,7 @@ use {
     crate::ingest::{chunk_and_embed, create_embedder, finish_load_report, load_documents},
     crate::PersistedChunk,
     std::path::Path,
-    aprender_rag::{
+    trueno_rag::{
         chunk::{RecursiveChunker, TimestampChunker},
         loader::LoaderRegistry,
     },
@@ -189,7 +189,7 @@ fn run_index_incremental_inner(
 
 /// Open an existing SQLite index, failing if it does not exist.
 #[cfg(feature = "sqlite")]
-fn open_existing_index(output: &str) -> Result<aprender_rag::SqliteIndex> {
+fn open_existing_index(output: &str) -> Result<trueno_rag::SqliteIndex> {
     let db_path = Path::new(output).join("index.sqlite");
     if !db_path.exists() {
         anyhow::bail!(
@@ -197,14 +197,14 @@ fn open_existing_index(output: &str) -> Result<aprender_rag::SqliteIndex> {
             db_path.display()
         );
     }
-    aprender_rag::SqliteIndex::open(&db_path)
+    trueno_rag::SqliteIndex::open(&db_path)
         .map_err(|e| anyhow::anyhow!("Failed to open SQLite index: {e}"))
 }
 
 /// Compare file hashes against stored fingerprints in the SQLite index.
 #[cfg(feature = "sqlite")]
 fn diff_against_stored(
-    sqlite_index: &aprender_rag::SqliteIndex,
+    sqlite_index: &trueno_rag::SqliteIndex,
     file_hashes: &[(PathBuf, [u8; 32])],
 ) -> Result<(Vec<(PathBuf, [u8; 32])>, Vec<String>)> {
     let stored_fps = sqlite_index
@@ -217,7 +217,7 @@ fn diff_against_stored(
 /// Remove deleted sources from the SQLite index, printing each removal.
 #[cfg(feature = "sqlite")]
 fn remove_deleted_sources(
-    sqlite_index: &aprender_rag::SqliteIndex,
+    sqlite_index: &trueno_rag::SqliteIndex,
     deleted: &[String],
 ) -> Result<()> {
     for del_path in deleted {
@@ -233,7 +233,7 @@ fn remove_deleted_sources(
 
 /// Optimize the SQLite index and print final document/chunk counts.
 #[cfg(feature = "sqlite")]
-fn optimize_and_report(sqlite_index: &aprender_rag::SqliteIndex) -> Result<()> {
+fn optimize_and_report(sqlite_index: &trueno_rag::SqliteIndex) -> Result<()> {
     sqlite_index.optimize().map_err(|e| anyhow::anyhow!("Failed to optimize: {e}"))?;
     let stats =
         sqlite_index.document_count().map_err(|e| anyhow::anyhow!("Failed to count docs: {e}"))?;
@@ -246,7 +246,7 @@ fn optimize_and_report(sqlite_index: &aprender_rag::SqliteIndex) -> Result<()> {
 /// Insert changed documents into SQLite with fingerprints.
 #[cfg(feature = "sqlite")]
 fn incremental_insert(
-    sqlite_index: &aprender_rag::SqliteIndex,
+    sqlite_index: &trueno_rag::SqliteIndex,
     chunks: &[PersistedChunk],
     changed: &[(PathBuf, [u8; 32])],
 ) -> Result<()> {

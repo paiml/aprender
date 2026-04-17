@@ -24,7 +24,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: true,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
         // llama.yaml
         "llama" | "llama3" => ArchConstraints {
@@ -37,7 +36,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
         // qwen2.yaml
         "qwen2" | "qwen2.5" | "qwen" => ArchConstraints {
@@ -50,7 +48,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-6,
-            is_moe: false,
         },
         // qwen3.yaml
         "qwen3" => ArchConstraints {
@@ -63,7 +60,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: true,
             default_eps: 1e-6,
-            is_moe: false,
         },
         // mistral.yaml
         "mistral" => ArchConstraints {
@@ -76,7 +72,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
         // phi2 (Phi-1.5/Phi-2)
         "phi2" => ArchConstraints {
@@ -89,7 +84,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
         // phi.yaml (Phi-3/Phi-3.5)
         "phi" | "phi3" => ArchConstraints {
@@ -102,7 +96,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
         // gemma.yaml
         "gemma" | "gemma2" => ArchConstraints {
@@ -115,7 +108,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: true,
             has_qk_norm: false,
             default_eps: 1e-6,
-            is_moe: false,
         },
         // deepseek.yaml — GH-323: fixed eps from 1e-5 to 1e-6 (matches YAML)
         "deepseek" | "deepseek2" => ArchConstraints {
@@ -128,7 +120,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-6,
-            is_moe: false,
         },
         // bert.yaml
         "bert" => ArchConstraints {
@@ -141,7 +132,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: true,
             has_qk_norm: false,
             default_eps: 1e-12,
-            is_moe: false,
         },
         // whisper.yaml
         "whisper" => ArchConstraints {
@@ -154,7 +144,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
         // t5.yaml — PMAT-395: T5 encoder-decoder (realizr#177)
         // T5 uses LayerNorm (not RMSNorm), GELU (DenseReluDense),
@@ -169,7 +158,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: true,
             has_qk_norm: false,
             default_eps: 1e-6,
-            is_moe: false,
         },
         // mamba.yaml
         "mamba" => ArchConstraints {
@@ -182,7 +170,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: true,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
         // qwen3_5.yaml
         "qwen3_5" | "qwen3.5" | "qwen35" => ArchConstraints {
@@ -195,21 +182,11 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-6,
-            is_moe: false,
         },
         // ALB-010: Qwen3 MoE (Qwen3-Coder-30B-A3B: 128 experts, per-head QK norm)
         // and Qwen3.5 MoE (Qwen3.5-35B-A3B: 256 experts, DeltaNet+GQA)
         // Both have per-head Q/K RMSNorm: q_norm.weight/k_norm.weight [head_dim]
-        // M-GPU-MOE-1.3 (qwen3-moe-forward-gpu-v1 v1.3.0): is_moe=true
-        // gates `CudaExecutor::build_indexed_weights` from demanding the
-        // dense FFN tensor names that don't exist in MoE GGUF.
-        //
-        // Both `qwen3_moe` (canonical, post-normalization) and `qwen3moe`
-        // (raw GGUF general.architecture string) are matched. The raw
-        // form is what reaches `ArchConstraints::from_architecture` from
-        // `ValidatedModelConfig::from_apr` (config.rs:404) without going
-        // through `normalize_architecture`.
-        "qwen3_moe" | "qwen3_5_moe" | "qwen3moe" | "qwen3_5moe" => ArchConstraints {
+        "qwen3_moe" | "qwen3_5_moe" => ArchConstraints {
             norm_type: NormType::RmsNorm,
             activation: Activation::Silu,
             positional_encoding: PositionalEncoding::Rope,
@@ -219,7 +196,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: true,
             default_eps: 1e-6,
-            is_moe: true,
         },
         // falcon_h1.yaml
         "falcon_h1" | "falcon-h1" => ArchConstraints {
@@ -232,7 +208,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-6,
-            is_moe: false,
         },
         // openelm.yaml
         "openelm" => ArchConstraints {
@@ -245,7 +220,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-6,
-            is_moe: false,
         },
         // moonshine.yaml
         "moonshine" => ArchConstraints {
@@ -258,7 +232,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: true,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
         // rwkv7.yaml
         "rwkv7" | "rwkv" => ArchConstraints {
@@ -271,7 +244,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
         // Default: LLaMA-like (most common pattern in modern LLMs)
         _ => ArchConstraints {
@@ -284,7 +256,6 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             tied_embeddings: false,
             has_qk_norm: false,
             default_eps: 1e-5,
-            is_moe: false,
         },
     }
 }

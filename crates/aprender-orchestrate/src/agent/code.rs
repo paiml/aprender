@@ -24,7 +24,6 @@ use crate::serve::backends::PrivacyTier;
 /// This is the public library API — callable from both the batuta binary
 /// and apr-cli (PMAT-162). Handles model discovery, driver selection,
 /// tool registration, and REPL launch.
-#[allow(clippy::too_many_arguments)]
 pub fn cmd_code(
     model: Option<PathBuf>,
     project: PathBuf,
@@ -33,25 +32,13 @@ pub fn cmd_code(
     print: bool,
     max_turns: u32,
     manifest_path: Option<PathBuf>,
-    emit_trace: Option<PathBuf>,
-    // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001:
-    // accepted as &str ("text" | "json") to keep this crate's public API
-    // independent of apr-cli's ValueEnum types. Unknown values fall back
-    // to "text" — the legacy behavior — under Poka-Yoke.
-    output_format: &str,
-    input_format: &str,
 ) -> anyhow::Result<()> {
     // --project: change working directory for project instructions
     if project.as_os_str() != "." && project.is_dir() {
         std::env::set_current_dir(&project)?;
     }
 
-    // Load manifest or build default. When `--manifest` is set it short-
-    // circuits the settings ladder (the manifest is treated as a complete
-    // agent specification); otherwise we fold in
-    // `~/.config/apr/settings.json` (user-global) and
-    // `<project_root>/.apr/settings.json` (project-local) as Claude-Code
-    // parity defaults (PMAT-CODE-CONFIG-LADDER-001). CLI flags always win.
+    // Load manifest or build default
     let mut manifest = match manifest_path {
         Some(ref path) => {
             let content = std::fs::read_to_string(path)
@@ -61,21 +48,10 @@ pub fn cmd_code(
             eprintln!("✓ Loaded manifest: {}", path.display());
             m
         }
-        None => {
-            let mut m = build_default_manifest();
-            // PMAT-CODE-CONFIG-LADDER-001: settings.json layered defaults.
-            // Errors are surfaced (Poka-Yoke) — a malformed settings file
-            // is reported rather than silently ignored.
-            let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            let settings = crate::agent::settings::AprSettings::load_layered(&project_root)?;
-            apply_settings_to_manifest(&mut m, &settings)?;
-            m
-        }
+        None => build_default_manifest(),
     };
 
-    // --model flag overrides manifest model_path (and therefore overrides
-    // any settings.json `model` field — CLI always wins, per the parity
-    // ladder contract).
+    // --model flag overrides manifest model_path
     if let Some(ref model_path) = model {
         manifest.model.model_path = Some(model_path.clone());
     }
@@ -100,76 +76,23 @@ pub fn cmd_code(
 
     // PMAT-160: Try AprServeDriver first (apr serve has full CUDA/GPU).
     // Falls back to embedded RealizarDriver if `apr` binary not found.
-    // PMAT-CODE-SPAWN-PARITY-001: driver stored as Arc so TaskTool can
-    // share it with the AgentPool for sub-agent execution.
-    let driver: Arc<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
+    let driver: Box<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
         match crate::agent::driver::apr_serve::AprServeDriver::launch(
             model_path,
             manifest.model.context_window,
         ) {
-            Ok(d) => Arc::new(d),
+            Ok(d) => Box::new(d),
             Err(e) => {
                 eprintln!("⚠ apr serve unavailable ({e}), using embedded inference");
-                Arc::from(build_fallback_driver(&manifest)?)
+                build_fallback_driver(&manifest)?
             }
         }
     } else {
-        Arc::from(build_fallback_driver(&manifest)?)
+        build_fallback_driver(&manifest)?
     };
 
-    // PMAT-CODE-MCP-JSON-LOADER-001: merge `<project>/.mcp.json` (Claude-Code-
-    // shape) servers into manifest.mcp_servers BEFORE tool registration. The
-    // manifest's TOML-declared servers always win on name collision (operator-
-    // declared > project-default), matching the settings-ladder semantics.
-    // Missing .mcp.json is a non-error; malformed JSON is a hard error.
-    #[cfg(feature = "agents-mcp")]
-    {
-        let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        match crate::agent::mcp_json::load_and_merge(&mut manifest, &project_root) {
-            Ok(0) => {}
-            Ok(n) => {
-                eprintln!("✓ Loaded {n} MCP server(s) from .mcp.json");
-            }
-            Err(e) => {
-                anyhow::bail!("invalid .mcp.json: {e}");
-            }
-        }
-    }
-
     // Build tool registry with coding tools
-    let mut tools = build_code_tools(&manifest);
-
-    // PMAT-CODE-MCP-CLIENT-001: register MCP client tools from manifest.mcp_servers.
-    // Synchronous wrapper over async discover_mcp_tools — a no-op when mcp_servers is
-    // empty (the default for `apr code` without a manifest).
-    register_mcp_client_tools(&mut tools, &manifest);
-
-    // PMAT-CODE-SPAWN-PARITY-001: register Task tool (Claude-Code Agent parity).
-    // `task` lets the agent delegate to typed subagents (general-purpose,
-    // explore, plan) with bounded recursion depth (Jidoka).
-    crate::agent::task_tool::register_task_tool(
-        &mut tools,
-        &manifest,
-        Arc::clone(&driver),
-        /* max_depth */ 3,
-    );
-
-    // PMAT-CODE-HOOKS-001: build hook registry from manifest and fire SessionStart.
-    // Returned Warn messages are surfaced to the user; a Block here aborts session
-    // startup (matching Claude Code's exit-code-2 semantics).
-    let hooks_reg = crate::agent::hooks::HookRegistry::from_configs(manifest.hooks.clone());
-    let hook_cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    match hooks_reg.run(crate::agent::hooks::HookEvent::SessionStart, "", &hook_cwd) {
-        crate::agent::hooks::HookDecision::Allow => {}
-        crate::agent::hooks::HookDecision::Warn(msg) => {
-            if !msg.is_empty() {
-                eprintln!("⚠ SessionStart hook: {msg}");
-            }
-        }
-        crate::agent::hooks::HookDecision::Block(reason) => {
-            anyhow::bail!("SessionStart hook blocked session: {reason}");
-        }
-    }
+    let tools = build_code_tools(&manifest);
 
     // Build memory
     let memory = crate::agent::memory::InMemorySubstrate::new();
@@ -181,27 +104,11 @@ pub fn cmd_code(
         let prompt_text = if prompt.is_empty() {
             let mut buf = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
-            // PMAT-CODE-INPUT-FORMAT-001: when --input-format=json, parse
-            // a `{"role":"user","content":"..."}` envelope and use `content`
-            // as the prompt. Empty/missing content is a hard error so the
-            // operator notices the malformed envelope.
-            if input_format.eq_ignore_ascii_case("json") {
-                parse_json_input_envelope(&buf)?
-            } else {
-                buf
-            }
+            buf
         } else {
             prompt.join(" ")
         };
-        let code = run_single_prompt(
-            &manifest,
-            driver.as_ref(),
-            &tools,
-            &memory,
-            &prompt_text,
-            emit_trace.as_deref(),
-            output_format,
-        );
+        let code = run_single_prompt(&manifest, driver.as_ref(), &tools, &memory, &prompt_text);
         drop(driver); // Kill apr serve subprocess before exit
         std::process::exit(code);
     }
@@ -230,68 +137,6 @@ pub fn cmd_code(
         f64::MAX,
         resume_session_id.as_deref(),
     )
-}
-
-/// PMAT-CODE-CONFIG-LADDER-001: fold loaded `~/.config/apr/settings.json` /
-/// `<project>/.apr/settings.json` defaults into the default manifest **before**
-/// CLI flags apply. Each `Some(_)` field on settings overrides the manifest
-/// default; `None` fields leave the manifest alone. The CLI surface is wired
-/// AFTER this so `--model` / `--max-turns` always win over settings.
-///
-/// PMAT-CODE-CONFIG-LADDER-FIELDS-001 (2026-05-07): also honors
-/// `permissionMode` (validated via [`PermissionMode::parse`]; unknown
-/// strings produce a hard error so a typo doesn't run the agent under the
-/// wrong policy) and `allowedHosts` (mapped to [`AgentManifest::allowed_hosts`];
-/// Sovereign privacy tier still wins as a Poka-Yoke).
-fn apply_settings_to_manifest(
-    manifest: &mut AgentManifest,
-    settings: &crate::agent::settings::AprSettings,
-) -> anyhow::Result<()> {
-    if let Some(ref model) = settings.model {
-        // Heuristic: a slash or starts with `hf://` / `./` / `/` → repo or
-        // path. We keep this loose because the same field accepts both
-        // `qwen3:1.7b-q4k` (apr pull alias) and `/abs/path.gguf`.
-        if std::path::Path::new(model).is_absolute()
-            || model.starts_with("./")
-            || model.starts_with("../")
-            || (!model.contains(':') && !model.starts_with("hf://"))
-        {
-            manifest.model.model_path = Some(std::path::PathBuf::from(model));
-        } else {
-            manifest.model.model_repo = Some(model.clone());
-        }
-    }
-    if let Some(extra) = settings.extra_system_prompt.as_deref() {
-        if !extra.trim().is_empty() {
-            // Append, don't replace — base prompt must keep tool-calling
-            // grammar guidance intact.
-            manifest.model.system_prompt.push_str("\n\n");
-            manifest.model.system_prompt.push_str(extra);
-        }
-    }
-    if let Some(mt) = settings.max_turns {
-        manifest.resources.max_iterations = mt;
-    }
-    if let Some(ref pm) = settings.permission_mode {
-        // Parse once at apply time so the operator sees a clear error with
-        // the bad value rather than a generic serde error. Currently only
-        // the parse + validate is enforced — the runtime per-tool verdict
-        // gate is tracked by PMAT-CODE-PERMISSIONS-RUNTIME-001.
-        if crate::agent::permission::PermissionMode::parse(pm).is_none() {
-            anyhow::bail!(
-                "settings.json permissionMode: unknown mode {pm:?} \
-                 (expected default | plan | acceptEdits | bypassPermissions)"
-            );
-        }
-    }
-    if let Some(ref hosts) = settings.allowed_hosts {
-        // Only apply if the operator hasn't already declared an explicit
-        // list via TOML manifest. Keeps manifest > settings precedence.
-        if manifest.allowed_hosts.is_empty() {
-            manifest.allowed_hosts = hosts.clone();
-        }
-    }
-    Ok(())
 }
 
 /// Build fallback driver (embedded RealizarDriver) when AprServeDriver unavailable.
@@ -471,38 +316,13 @@ fn gather_project_context() -> String {
 fn build_default_manifest() -> AgentManifest {
     let ctx_window = 4096_usize;
     let budget = instruction_budget(ctx_window);
-    // PMAT-CODE-MEMORY-PARITY-001: Use layered loader (user-global → project)
-    // with `@import` resolution. Falls through to legacy single-file load
-    // when nothing matches at either layer.
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut import_warnings = Vec::new();
-    let project_instructions =
-        crate::agent::instructions::load_layered_instructions(&cwd, budget, &mut import_warnings)
-            .or_else(|| load_project_instructions(budget));
-    for w in &import_warnings {
-        eprintln!("⚠ instructions: {w}");
-    }
+    let project_instructions = load_project_instructions(budget);
     let project_context = gather_project_context();
-
-    // PMAT-CODE-MEMORY-AUTO-001: load `*.md` files from
-    // `~/.config/apr/projects/<slug>/memory/` into the system prompt
-    // under a `## Auto-memory` section. Slug matches Claude Code's
-    // hyphenated-path convention so `~/.claude/projects/` symlinks
-    // continue to work cross-tool.
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut auto_warns: Vec<String> = Vec::new();
-    let auto_memory = crate::agent::auto_memory::load_auto_memory(&cwd, &mut auto_warns);
-    for w in &auto_warns {
-        eprintln!("⚠ {w}");
-    }
 
     let mut system_prompt = CODE_SYSTEM_PROMPT.to_string();
     system_prompt.push_str(&format!("\n\n## Project Context\n\n{project_context}"));
     if let Some(ref instructions) = project_instructions {
         system_prompt.push_str(&format!("\n## Project Instructions\n\n{instructions}"));
-    }
-    if let Some(ref mem) = auto_memory {
-        system_prompt.push_str(&format!("\n## Auto-memory\n\n{mem}"));
     }
 
     AgentManifest {
@@ -536,40 +356,6 @@ fn build_default_manifest() -> AgentManifest {
     }
 }
 
-/// PMAT-CODE-MCP-CLIENT-001 — register external MCP servers declared in
-/// `manifest.mcp_servers[]` as tools in the `apr code` registry. Mirrors
-/// Claude Code's `.mcp.json` → agent-tool-provider wiring. Synchronous
-/// wrapper because `cmd_code` is sync; opens a scoped current-thread
-/// runtime for the discovery handshake. No-op when the feature is off
-/// or the manifest has no servers.
-#[allow(unused_variables)]
-fn register_mcp_client_tools(tools: &mut ToolRegistry, manifest: &AgentManifest) {
-    #[cfg(feature = "agents-mcp")]
-    {
-        if manifest.mcp_servers.is_empty() {
-            return;
-        }
-        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-            Ok(rt) => rt,
-            Err(e) => {
-                eprintln!("⚠ failed to create MCP discovery runtime: {e}");
-                return;
-            }
-        };
-        let discovered = rt.block_on(crate::agent::tool::mcp_client::discover_mcp_tools(manifest));
-        let count = discovered.len();
-        for tool in discovered {
-            tools.register(Box::new(tool));
-        }
-        if count > 0 {
-            eprintln!(
-                "✓ Registered {count} MCP tool(s) from {} server(s)",
-                manifest.mcp_servers.len()
-            );
-        }
-    }
-}
-
 /// Register all coding tools.
 fn build_code_tools(manifest: &AgentManifest) -> ToolRegistry {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -597,35 +383,7 @@ fn build_code_tools(manifest: &AgentManifest) -> ToolRegistry {
         tools.register(Box::new(crate::agent::tool::rag::RagTool::new(oracle, 5)));
     }
 
-    // PMAT-CODE-WEB-TOOLS-001: register NetworkTool behind the privacy-tier
-    // gate. Sovereign tier always blocks (Poka-Yoke); Standard/Private
-    // tiers register iff `allowed_hosts` is non-empty (explicit opt-in).
-    register_web_tools(&mut tools, manifest);
-
     tools
-}
-
-/// Register NetworkTool (+ BrowserTool when the `agents-browser` feature is
-/// on) when the manifest declares a non-Sovereign privacy tier and a
-/// non-empty `allowed_hosts` list.
-fn register_web_tools(tools: &mut ToolRegistry, manifest: &AgentManifest) {
-    use crate::serve::backends::PrivacyTier;
-
-    if matches!(manifest.privacy, PrivacyTier::Sovereign) {
-        return;
-    }
-    if manifest.allowed_hosts.is_empty() {
-        return;
-    }
-
-    tools.register(Box::new(crate::agent::tool::network::NetworkTool::new(
-        manifest.allowed_hosts.clone(),
-    )));
-
-    #[cfg(feature = "agents-browser")]
-    {
-        tools.register(Box::new(crate::agent::tool::browser::BrowserTool::new(manifest.privacy)));
-    }
 }
 
 pub use super::code_prompts::exit_code;
@@ -637,9 +395,6 @@ fn run_single_prompt(
     tools: &ToolRegistry,
     memory: &dyn crate::agent::memory::MemorySubstrate,
     prompt: &str,
-    emit_trace: Option<&std::path::Path>,
-    // PMAT-CODE-OUTPUT-FORMAT-001: "text" (default) or "json".
-    output_format: &str,
 ) -> i32 {
     let mut single_manifest = manifest.clone();
     single_manifest.resources.max_iterations = single_manifest.resources.max_iterations.min(10);
@@ -659,8 +414,6 @@ fn run_single_prompt(
         }
     };
 
-    let started = std::time::Instant::now();
-
     // PMAT-197: Use non-nudge loop for -p mode. The nudge ("Use a tool!") forces
     // small models to make tool calls even for simple questions like "What is 2+2?"
     // which causes stuck loops. Let the model decide whether to use tools.
@@ -675,7 +428,6 @@ fn run_single_prompt(
 
     match result {
         Ok(r) => {
-            let elapsed = started.elapsed();
             if r.text.is_empty() {
                 // PMAT-190: Empty response — model may be emitting only thinking tokens
                 // that get stripped by strip_thinking_blocks(). Common with Qwen3 when
@@ -685,31 +437,9 @@ fn run_single_prompt(
                      Model may be in thinking mode — rebuild apr from source for Qwen3NoThinkTemplate fix.",
                     r.iterations, r.tool_calls
                 );
-                if output_format.eq_ignore_ascii_case("json") {
-                    println!("{}", build_json_result_envelope(&r, elapsed, /*is_error*/ true));
-                }
-            } else if output_format.eq_ignore_ascii_case("json") {
-                // PMAT-CODE-OUTPUT-FORMAT-001: structured envelope mirroring
-                // Claude Code's `claude -p --output-format json` shape.
-                println!("{}", build_json_result_envelope(&r, elapsed, /*is_error*/ false));
             } else {
                 println!("{}", r.text);
             }
-
-            // PMAT-CODE-EMIT-TRACE-001 (M28): write a ccpa-trace.jsonl
-            // describing this run. Used by `ccpa measure` to score
-            // apr code against canonical Claude Code reference fixtures.
-            if let Some(trace_path) = emit_trace {
-                let model = single_manifest
-                    .model
-                    .resolve_model_path()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "apr-code-unknown".to_owned());
-                if let Err(e) = emit_ccpa_trace(trace_path, prompt, &r, started.elapsed(), &model) {
-                    eprintln!("⚠ failed to write ccpa-trace to {}: {e}", trace_path.display());
-                }
-            }
-
             exit_code::SUCCESS
         }
         Err(e) => {
@@ -717,156 +447,6 @@ fn run_single_prompt(
             map_error_to_exit_code(&e)
         }
     }
-}
-
-/// Emit a `ccpa-trace.jsonl` (M28) describing a single apr-code run.
-///
-/// Schema mirrors `claude-code-parity-apr-v1.yaml § trace_schema`. For
-/// the M28 minimum-viable scope we emit four records:
-///
-///   1. `session_start`  with a synthetic `session_id` derived from
-///      `started`'s wall-clock ts so re-runs differ; `cwd_sha256`
-///      placeholder is normalized at compare time by the differ.
-///   2. `user_prompt`    turn 0, verbatim text.
-///   3. `assistant_turn` turn 1, single `Block::Text` carrying
-///      `result.text`. Tool dispatch + hook + skill records are
-///      M29+ enrichment follow-ups.
-///   4. `session_end`    real elapsed_ms + token counts from
-///      `result.usage`.
-fn emit_ccpa_trace(
-    path: &std::path::Path,
-    prompt: &str,
-    result: &super::result::AgentLoopResult,
-    elapsed: std::time::Duration,
-    model: &str,
-) -> std::io::Result<()> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let ts_micros =
-        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_micros()).unwrap_or(0);
-    // session_id: UUIDv7-shaped hex string of the start ts. Normalized
-    // by the differ at compare time so this only needs to be stable
-    // across teacher and student of the SAME fixture (re-running the
-    // same fixture produces a different session_id, which is fine).
-    let session_id = format!(
-        "{:08x}-{:04x}-7000-{:04x}-{:012x}",
-        (ts_micros >> 64) as u32 & 0xFFFF_FFFF,
-        ((ts_micros >> 48) & 0xFFFF) as u16,
-        ((ts_micros >> 32) & 0xFFFF) as u16,
-        (ts_micros & 0xFFFF_FFFF_FFFF) as u64
-    );
-    // ts in ISO 8601 — not strictly RFC 3339, but the differ
-    // normalizes ts at compare time.
-    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    let ts = format!("@{secs}");
-    let cwd_sha256 = "0".repeat(64);
-
-    let session_start = serde_json::json!({
-        "v": 1,
-        "kind": "session_start",
-        "session_id": session_id,
-        "ts": ts,
-        "actor": "apr-code",
-        "model": model,
-        "cwd_sha256": cwd_sha256,
-    });
-    let user_prompt = serde_json::json!({
-        "v": 1,
-        "kind": "user_prompt",
-        "turn": 0,
-        "text": prompt,
-    });
-    let assistant_turn = serde_json::json!({
-        "v": 1,
-        "kind": "assistant_turn",
-        "turn": 1,
-        "blocks": [{"type": "text", "text": result.text}],
-        "stop_reason": "end_turn",
-    });
-    let session_end = serde_json::json!({
-        "v": 1,
-        "kind": "session_end",
-        "turn": 1,
-        "stop_reason": "end_turn",
-        "elapsed_ms": elapsed.as_millis() as u64,
-        "tokens_in": result.usage.input_tokens,
-        "tokens_out": result.usage.output_tokens,
-    });
-
-    let body = format!("{}\n{}\n{}\n{}\n", session_start, user_prompt, assistant_turn, session_end);
-    std::fs::write(path, body)
-}
-
-/// PMAT-CODE-INPUT-FORMAT-001 (M-NON-INT-002): parse a `{"role":"user","content":"..."}`
-/// JSON envelope from stdin and return the prompt text. Mirrors the shape Claude
-/// Code accepts on `claude -p --input-format json`.
-///
-/// Errors are surfaced (not silently downgraded) so a malformed envelope fails
-/// loudly instead of running the agent on garbage. `role` other than `"user"`
-/// is also rejected — the non-interactive surface is single-user-turn only.
-fn parse_json_input_envelope(buf: &str) -> anyhow::Result<String> {
-    let trimmed = buf.trim();
-    if trimmed.is_empty() {
-        anyhow::bail!("--input-format=json: stdin is empty (expected JSON envelope)");
-    }
-    let v: serde_json::Value = serde_json::from_str(trimmed)
-        .map_err(|e| anyhow::anyhow!("--input-format=json: invalid JSON on stdin: {e}"))?;
-    let role = v.get("role").and_then(|r| r.as_str()).unwrap_or("user");
-    if role != "user" {
-        anyhow::bail!("--input-format=json: only role=\"user\" supported, got \"{role}\"");
-    }
-    let content = v
-        .get("content")
-        .and_then(|c| c.as_str())
-        .ok_or_else(|| anyhow::anyhow!("--input-format=json: missing string field `content`"))?;
-    Ok(content.to_owned())
-}
-
-/// PMAT-CODE-OUTPUT-FORMAT-001 (M-NON-INT-001): build a structured JSON
-/// envelope mirroring Claude Code's `claude -p --output-format json` shape:
-///
-/// ```json
-/// {
-///   "type": "result",
-///   "subtype": "success",
-///   "is_error": false,
-///   "duration_ms": 1234,
-///   "result": "the assistant text",
-///   "session_id": "<uuidv7-shaped>",
-///   "num_turns": 1,
-///   "total_cost_usd": 0
-/// }
-/// ```
-fn build_json_result_envelope(
-    result: &super::result::AgentLoopResult,
-    elapsed: std::time::Duration,
-    is_error: bool,
-) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ts_micros =
-        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_micros()).unwrap_or(0);
-    // Same UUIDv7-shaped stable-per-run session id used by emit_ccpa_trace.
-    let session_id = format!(
-        "{:08x}-{:04x}-7000-{:04x}-{:012x}",
-        (ts_micros >> 64) as u32 & 0xFFFF_FFFF,
-        ((ts_micros >> 48) & 0xFFFF) as u16,
-        ((ts_micros >> 32) & 0xFFFF) as u16,
-        (ts_micros & 0xFFFF_FFFF_FFFF) as u64
-    );
-    let envelope = serde_json::json!({
-        "type": "result",
-        "subtype": if is_error { "error" } else { "success" },
-        "is_error": is_error,
-        "duration_ms": elapsed.as_millis() as u64,
-        "result": result.text,
-        "session_id": session_id,
-        "num_turns": result.iterations,
-        "tokens_in": result.usage.input_tokens,
-        "tokens_out": result.usage.output_tokens,
-        // Local sovereign inference: cost is always zero by construction.
-        "total_cost_usd": 0,
-    });
-    envelope.to_string()
 }
 
 // Prompts and exit codes extracted to code_prompts.rs

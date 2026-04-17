@@ -6,30 +6,15 @@
 use crate::registry::ModelInfo;
 use serde::{Deserialize, Serialize};
 
-/// Health check response.
-///
-/// Schema is defined by `contracts/crux-C-34-v1.yaml` (CRUX-C-34,
-/// competitor parity: vLLM `/health`, llama.cpp server `/health`).
-///
-/// * `status ∈ {"ok", "loading", "degraded"}`
-/// * HTTP 200 iff `status == "ok"`; 503 for `loading` / `degraded`.
-/// * `model_loaded` gates `/health/ready` (k8s readiness probe).
-/// * `uptime_sec > 0` and strictly monotonic across sequential GETs.
-///
-/// `version` and `compute_mode` are aprender extensions (not forbidden
-/// by the contract) and remain for operator diagnostics.
+/// Health check response
 #[derive(Serialize, Deserialize)]
 pub struct HealthResponse {
-    /// Service status: `"ok"`, `"loading"`, or `"degraded"`.
+    /// Service status
     pub status: String,
     /// Service version
     pub version: String,
     /// Compute mode: "cpu" or "gpu"
     pub compute_mode: String,
-    /// Whether a model is resident and ready for inference.
-    pub model_loaded: bool,
-    /// Seconds since the server process first bound a router.
-    pub uptime_sec: f64,
 }
 
 /// Tokenize request

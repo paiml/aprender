@@ -223,9 +223,9 @@ fn resolve_simd_events(arch: &str) -> Result<Option<&'static [&'static str]>> {
             ];
             Ok(Some(SSE2_EVENTS))
         }
-        _ => {
-            anyhow::bail!("Unknown SIMD architecture: {arch}. Supported: avx2, avx512, neon, sse2")
-        }
+        _ => anyhow::bail!(
+            "Unknown SIMD architecture: {arch}. Supported: avx2, avx512, neon, sse2"
+        ),
     }
 }
 

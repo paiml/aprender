@@ -33,12 +33,32 @@
 //! entrenar-bench cost-performance --gpu a100-80gb
 //! ```
 //!
-//! # MCP Tooling (pmcp v2.3)
+//! # MCP Tooling (pmcp v1.8.6 + pforge v0.1.4)
 //!
-//! The stack uses PAIML's pmcp SDK (github.com/paiml/rust-mcp-sdk) for both
-//! Model Context Protocol client and server roles — full TypeScript SDK parity
-//! covering JSON-RPC framing, stdio/SSE/WebSocket transports, tool registration,
-//! and session lifecycle.
+//! The stack includes Model Context Protocol (MCP) infrastructure:
+//!
+//! ```bash
+//! # pmcp - Rust SDK for MCP servers/clients
+//! # Build MCP servers with full TypeScript SDK compatibility
+//!
+//! # pforge - Declarative MCP framework
+//! pforge new my-server              # Create new MCP server project
+//! pforge serve                       # Run MCP server
+//!
+//! # Define tools in YAML (pforge.yaml):
+//! # tools:
+//! #   - type: native
+//! #     name: train_model
+//! #     handler: { path: handlers::train }
+//! #     params:
+//! #       config: { type: string, required: true }
+//! ```
+//!
+//! **Handler Types:**
+//! - `native` - Rust functions with full type safety
+//! - `cli` - Execute shell commands
+//! - `http` - Proxy HTTP endpoints
+//! - `pipeline` - Chain multiple tools together
 //!
 //! # Features
 //! - ComputeDevice abstraction (CPU/GPU/TPU/AppleSilicon)

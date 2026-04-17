@@ -28,14 +28,6 @@ equations:
     codomain: out ∈ ℝ^{intermediate}
     constants:
       epsilon: 1.0e-5
-    preconditions:
-      - 'x.shape == [hidden]; gamma.shape == [hidden]'
-      - 'W_gate.shape == W_up.shape == [intermediate, hidden]'
-      - 'x finite; gamma finite; epsilon > 0'
-    postconditions:
-      - 'out.shape == [intermediate]; out is finite'
-      - '4 kernel launches; 3 intermediate DRAM roundtrips'
-    lean_theorem: 'Theorems.Separate_ffn'
 
   fused_rmsnorm_gate_up_swiglu_nf4:
     formula: |
@@ -63,13 +55,8 @@ equations:
     preconditions:
     - hidden divisible by 64 (NF4 block alignment)
     - intermediate divisible by warp_size
-    - 'x finite; gamma finite; epsilon > 0'
     postconditions:
     - out element-wise matches separate_ffn within tolerance
-    - 'out.shape == [intermediate]; out is finite'
-    - 'DRAM reads of x == 1 (vs 3 in separate path)'
-    - '1 kernel launch (vs 4 in separate path)'
-    lean_theorem: 'Theorems.Fused_rmsnorm_gate_up_swiglu_nf4'
 
   bandwidth_savings:
     formula: |
@@ -91,12 +78,6 @@ equations:
         Per layer = 119 KB saved
         Per forward (28 layers) = 3.3 MB saved
     domain: bytes
-    preconditions:
-      - 'hidden > 0 && intermediate > 0'
-    postconditions:
-      - 'savings == hidden * 8 + intermediate * 12 (bytes)'
-      - 'savings > 0 (fused path always saves bandwidth vs separate)'
-    lean_theorem: 'Theorems.Bandwidth_savings'
     constants:
       qwen_hidden: 1536
       qwen_intermediate: 8960

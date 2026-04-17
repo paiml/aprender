@@ -74,7 +74,7 @@ trueno = { version = "0.17" }
 
 # Machine learning for anomaly detection (Sprint 23)
 # GH-581: Use path dep to avoid trueno version skew with local workspace
-aprender = { path = "../aprender-core", version = "0.32.0", package = "aprender-core" }
+aprender = { path = "../aprender-core", version = "0.30.0", package = "aprender-core" }
 
 # Lock-free data structures for ring buffer (Sprint 40)
 crossbeam = { version = "0.8", default-features = false, features = ["crossbeam-channel", "crossbeam-queue", "std"] }
@@ -86,7 +86,7 @@ dashmap = "6.1"
 trueno-db = { version = "0.3.16" }
 
 # Graph database for causal analysis (Sprint 41)
-trueno-graph = { workspace = true }
+trueno-graph = { version = "0.1.17" }
 
 # SHA-256 hashing for state-based semantic equivalence (Sprint 42)
 sha2 = { version = "0.10", default-features = false, features = ["std"] }

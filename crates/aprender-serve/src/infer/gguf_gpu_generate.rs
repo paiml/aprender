@@ -1,59 +1,4 @@
 
-/// FALSIFY-CPU-GPU-003 jidoka tag emitted on stderr when a GPU init/parity
-/// rejection forces a fallback. Locked in by `tests::cuda_fallback_log_prefix_is_contract_tagged`
-/// to prevent regression to the verbose-only behaviour that v6 fixed.
-///
-/// See `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` and
-/// `evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v6-parity-gate-fires-but-fallback-is-silent.md`.
-pub(crate) const CUDA_FALLBACK_LOG_PREFIX: &str =
-    "[apr-cpu-vs-gpu-output-parity-v1] CUDA path rejected";
-
-/// FALSIFY-CPU-GPU-005 jidoka tag emitted on stderr when wgpu init/forward
-/// rejection forces a fallback. Locked in by
-/// `tests::wgpu_fallback_log_prefix_is_contract_tagged` to prevent the same
-/// silent-fallback regression class that #1428 closed for CUDA — the v1.2.0
-/// contract predicts this tag at `gguf_gpu_generate.rs:317`-style rejection
-/// points so users always see which backend was rejected without --verbose.
-///
-/// See `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` § FALSIFY-CPU-GPU-005.
-pub(crate) const WGPU_FALLBACK_LOG_PREFIX: &str =
-    "[apr-cpu-vs-gpu-output-parity-v1] wgpu path rejected";
-
-/// f64-accumulated cosine similarity for FALSIFY-CPU-GPU-005 part b.
-///
-/// Numerically-stable companion to `cuda::mod_parity_gate::cosine_similarity` (which
-/// lives behind `cfg(feature = "cuda")`). Lifted to this module so the future wgpu
-/// cosine gate (predicted by contract `apr-cpu-vs-gpu-output-parity-v1` v1.2.0
-/// FALSIFY-CPU-GPU-005 part b) can compare a wgpu single-step decode against a
-/// CPU reference forward at init without taking a `--features cuda` build dependency.
-///
-/// Returns 0.0 when either input is zero-norm or the inputs differ in length —
-/// this is the conservative "fail-closed" default that triggers fallback to CPU.
-///
-/// See `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` § FALSIFY-CPU-GPU-005
-/// implementation_evidence line 201 for the gate algorithm.
-pub(crate) fn cpu_vs_gpu_cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-    let mut dot: f64 = 0.0;
-    let mut norm_a: f64 = 0.0;
-    let mut norm_b: f64 = 0.0;
-    for (x, y) in a.iter().zip(b.iter()) {
-        let x = f64::from(*x);
-        let y = f64::from(*y);
-        dot += x * y;
-        norm_a += x * x;
-        norm_b += y * y;
-    }
-    let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom < 1e-12 {
-        0.0
-    } else {
-        (dot / denom) as f32
-    }
-}
-
 /// GH-559: Try wgpu (Vulkan) generation as fallback when CUDA JIT fails.
 /// Uses trueno's WgslForwardPass with dequantized F32 weights.
 /// Proven: cosine=0.999863 on Blackwell sm_121.
@@ -73,10 +18,9 @@ fn try_wgpu_generate(
     let gpu = trueno::backends::gpu::GpuDevice::new()
         .map_err(|e| RealizarError::InferenceError(format!("wgpu init: {e}")))?;
 
-    // FALSIFY-CPU-GPU-005: wgpu lifecycle visible without --verbose so users
-    // see which backend actually serves their tokens after CUDA fallback.
-    let _ = verbose;
-    eprintln!("Backend: wgpu (Vulkan)");
+    if verbose {
+        eprintln!("Backend: wgpu (Vulkan)");
+    }
 
     let config = model.config();
     let hidden_dim = config.hidden_dim;
@@ -226,34 +170,6 @@ fn run_gguf_generate(
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     config: &InferenceConfig,
 ) -> Result<(Vec<u32>, bool)> {
-    // M32c.2.1: short-circuit MoE forward attempts BEFORE any GPU/CPU
-    // dispatch. M32c.2 made `from_gguf` succeed for qwen3_moe by routing
-    // to `from_gguf_for_moe` (which leaves dense FFN tensor refs as
-    // zero-byte placeholders). Without this guard, the wgpu/CUDA forward
-    // path tries to bind those zero-byte buffers and panics deep in
-    // `wgpu_core::create_bind_group` with `Buffer with 'layer.0.up_proj'
-    // label binding size is zero`. M32c.2.2 will replace this guard with
-    // an actual MoE forward via `moe_forward_token`. See
-    // contracts/qwen3-moe-forward-v1.yaml § FALSIFY-QW3-MOE-FORWARD-003.
-    let canonical_arch =
-        crate::tensor_names::normalize_architecture(&model.config.architecture);
-    if canonical_arch == "qwen3_moe" {
-        return Err(RealizarError::UnsupportedOperation {
-            operation: "moe_forward_dispatch".to_string(),
-            reason: format!(
-                "Architecture '{}' (canonical 'qwen3_moe') uses Mixture-of-Experts FFN. \
-                 Load step succeeded via QuantizedGGUFTransformer::from_gguf_for_moe (M32c.2) \
-                 with all 4 contract-declared MoE tensors per layer present, but the \
-                 forward dispatch is not yet wired to moe_forward_token in \
-                 gpu/scheduler/moe_dispatch.rs. Tracked under contract qwen3-moe-forward-v1 \
-                 (M32 staged plan: M32a/b/c.1/c.2 SHIPPED; M32c.2.1 forward-refusal \
-                 IN PROGRESS; M32c.2.2 forward-wiring + M32d numerical parity PENDING). \
-                 See contracts/qwen3-moe-forward-v1.yaml.",
-                model.config.architecture
-            ),
-        });
-    }
-
     let has_legacy_quant = model_has_legacy_quant(&model);
 
     // GPU path: pass model by value (zero-clone) — model is returned on failure for CPU fallback
@@ -358,21 +274,16 @@ fn try_apr_wgpu_inference(
     let gpu = match GpuDevice::new() {
         Ok(g) => g,
         Err(e) => {
-            // FALSIFY-CPU-GPU-005: wgpu init failure is a backend-fallback decision —
-            // user must see why this backend was rejected without --verbose.
-            // Emit BOTH the contract-tagged prefix (greppable, locked in by
-            // `wgpu_fallback_log_prefix_is_contract_tagged` test) AND the
-            // existing [GH-559] tag (preserved for runbook continuity).
-            eprintln!("{}, attempting fallback: {}", WGPU_FALLBACK_LOG_PREFIX, e);
-            eprintln!("[GH-559] wgpu init failed: {}", e);
+            if config.verbose {
+                eprintln!("[GH-559] wgpu init failed: {}", e);
+            }
             return None;
         }
     };
 
-    // FALSIFY-CPU-GPU-005: wgpu lifecycle visible without --verbose. Symmetric to
-    // FALSIFY-CPU-GPU-003's CUDA-fallback log so users always know which backend
-    // actually serves their tokens.
-    eprintln!("Backend: wgpu (Vulkan)");
+    if config.verbose {
+        eprintln!("Backend: wgpu (Vulkan)");
+    }
 
     // Load model
     let mapped = match MappedAprModel::from_path(&config.model_path) {
@@ -437,76 +348,6 @@ fn try_apr_wgpu_inference(
     let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
         .map(|_| (vec![0.0f32; max_seq * kv_dim], vec![0.0f32; max_seq * kv_dim]))
         .collect();
-
-    // FALSIFY-CPU-GPU-005 part b: wgpu cosine parity gate.
-    //
-    // Symmetric to FALSIFY-CPU-GPU-003's CUDA parity_gate (cuda::mod_parity_gate).
-    // Run one CPU forward via OwnedQuantizedModel + one wgpu single-step decode for
-    // the same probe token (first input token, typically BOS). Cosine-compare
-    // logits. < 0.99 → emit `WGPU_FALLBACK_LOG_PREFIX` and return None so we fall
-    // back to CPU rather than ship silent wgpu gibberish.
-    //
-    // Uses a separate tiny probe_kv_caches (max_seq=2) so the real autoregressive
-    // loop's kv_caches stay zero-initialized. Cost is one extra forward pass
-    // (~2-5ms on 7B) — paid once per `apr run`, not per token.
-    //
-    // See contracts/apr-cpu-vs-gpu-output-parity-v1.yaml § FALSIFY-CPU-GPU-005
-    // implementation_evidence line 201 for the gate algorithm.
-    {
-        let probe_token = *input_tokens.first().unwrap_or(&0);
-
-        // CPU reference logits.
-        let mut cpu_cache = crate::gguf::OwnedQuantizedKVCache::from_config(cfg, 2);
-        let cpu_logits = match model.forward_single_with_cache(probe_token, &mut cpu_cache, 0) {
-            Ok(l) => l,
-            Err(e) => {
-                eprintln!(
-                    "{}, attempting fallback: CPU probe forward failed: {}",
-                    WGPU_FALLBACK_LOG_PREFIX, e
-                );
-                return None;
-            }
-        };
-
-        // wgpu single-step replay (same code path as the autoregressive loop body).
-        let mut probe_kv_caches: Vec<(Vec<f32>, Vec<f32>)> = (0..num_layers)
-            .map(|_| (vec![0.0f32; 2 * kv_dim], vec![0.0f32; 2 * kv_dim]))
-            .collect();
-        let mut hidden = model.embed(&[probe_token]);
-        for layer_idx in 0..num_layers {
-            let prefix = format!("layer.{layer_idx}");
-            let (ref mut kv_k, ref mut kv_v) = probe_kv_caches[layer_idx];
-            if let Err(e) = fwd.forward_layer(&mut hidden, &prefix, 0, kv_k, kv_v) {
-                eprintln!(
-                    "{}, attempting fallback: wgpu probe layer {} failed: {}",
-                    WGPU_FALLBACK_LOG_PREFIX, layer_idx, e
-                );
-                return None;
-            }
-        }
-        // Output norm + LM head (mirrors the loop body below).
-        let sq_sum: f32 = hidden.iter().map(|x| x * x).sum();
-        let rms = (sq_sum / hidden.len() as f32 + eps).sqrt();
-        let normed: Vec<f32> = hidden
-            .iter()
-            .zip(output_norm.iter())
-            .map(|(x, g)| (x / rms) * g)
-            .collect();
-        let mut wgpu_logits = vec![0.0_f32; vocab_size];
-        for i in 0..vocab_size {
-            let row = &lm_head_f32[i * hidden_dim..(i + 1) * hidden_dim];
-            wgpu_logits[i] = row.iter().zip(normed.iter()).map(|(w, x)| w * x).sum();
-        }
-
-        let cos = cpu_vs_gpu_cosine_similarity(&cpu_logits, &wgpu_logits);
-        if !(cos.is_finite() && cos >= 0.99) {
-            eprintln!(
-                "{}, attempting fallback: cosine vs CPU = {:.6} (< 0.99)",
-                WGPU_FALLBACK_LOG_PREFIX, cos
-            );
-            return None;
-        }
-    }
 
     let model_load_ms = load_start.elapsed().as_millis() as f64;
 
@@ -615,12 +456,8 @@ fn load_apr_cuda_model(
         hidden_dim: model.config.hidden_dim,
     };
 
-    // FALSIFY-CPU-GPU-003: CUDA init failure (e.g. parity_gate cosine < 0.99 on
-    // a broken GPU build, or ILLEGAL_ADDRESS during the gate's GPU forward) MUST
-    // be visible without --verbose. Silent fallback was the SHIP-007 jidoka gap:
-    // user saw downstream wgpu gibberish without ever knowing CUDA was rejected.
     let cuda_model = OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048).map_err(|e| {
-        eprintln!("{}, attempting fallback: {}", CUDA_FALLBACK_LOG_PREFIX, e);
+        if verbose { eprintln!("Backend: CPU (GPU unavailable: {})", e); }
     }).ok()?;
 
     Some((cuda_model, info))
@@ -991,131 +828,4 @@ fn try_safetensors_cuda_inference(
         format: "SafeTensors".to_string(),
         used_gpu: true,
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX};
-
-    /// Drift-prevention for FALSIFY-CPU-GPU-003 (PR #1428):
-    /// the user-visible eprintln tag MUST start with the contract ID so that
-    /// `apr run` users (without --verbose) see exactly which backend was rejected
-    /// rather than silent gibberish from a downstream fallback.
-    ///
-    /// If this assertion ever fails, do NOT loosen it — re-read
-    /// `evidence/ship-007-layer-0-oracle-bisection-2026-05-03/findings-v6-parity-gate-fires-but-fallback-is-silent.md`
-    /// and either keep the tag stable or bump the parity contract before changing
-    /// the wire format.
-    #[test]
-    fn cuda_fallback_log_prefix_is_contract_tagged() {
-        assert!(
-            CUDA_FALLBACK_LOG_PREFIX.starts_with("[apr-cpu-vs-gpu-output-parity-v1]"),
-            "FALSIFY-CPU-GPU-003 jidoka tag was renamed; bump contract version first. \
-             Got: {CUDA_FALLBACK_LOG_PREFIX}"
-        );
-        assert!(
-            CUDA_FALLBACK_LOG_PREFIX.contains("CUDA path rejected"),
-            "fallback message must say which backend was rejected; got: {CUDA_FALLBACK_LOG_PREFIX}"
-        );
-    }
-
-    /// Drift-prevention for FALSIFY-CPU-GPU-005 (contract v1.2.0):
-    /// symmetric to the CUDA tag above, the wgpu fallback log MUST also be
-    /// contract-tagged so `apr run` users see WHICH backend was rejected when
-    /// CUDA falls through to wgpu and wgpu itself is rejected (e.g. broken
-    /// GPU build, no Vulkan ICD, etc.).
-    ///
-    /// Same regression class as #1428→#1429: a future refactor could rename
-    /// the tag, drop the contract ID prefix, or revert to verbose-only —
-    /// each silently re-introduces the silent-gibberish loophole the
-    /// `apr-cpu-vs-gpu-output-parity-v1` chain was authored to close.
-    #[test]
-    fn wgpu_fallback_log_prefix_is_contract_tagged() {
-        assert!(
-            WGPU_FALLBACK_LOG_PREFIX.starts_with("[apr-cpu-vs-gpu-output-parity-v1]"),
-            "FALSIFY-CPU-GPU-005 jidoka tag was renamed; bump contract version first. \
-             Got: {WGPU_FALLBACK_LOG_PREFIX}"
-        );
-        assert!(
-            WGPU_FALLBACK_LOG_PREFIX.contains("wgpu path rejected"),
-            "fallback message must say which backend was rejected; got: {WGPU_FALLBACK_LOG_PREFIX}"
-        );
-    }
-
-    /// Symmetry guard: CUDA and wgpu prefixes must share the same contract
-    /// tag and structure (`[CONTRACT_ID] <backend> path rejected`). If they
-    /// diverge, the user-facing log format becomes inconsistent across
-    /// fallback hops and grep recipes break. Locks in the symmetry that
-    /// PR #1428 (CUDA) and this PR (wgpu) explicitly established.
-    #[test]
-    fn cuda_and_wgpu_fallback_log_prefixes_share_contract_tag() {
-        let contract_tag = "[apr-cpu-vs-gpu-output-parity-v1]";
-        assert!(CUDA_FALLBACK_LOG_PREFIX.starts_with(contract_tag));
-        assert!(WGPU_FALLBACK_LOG_PREFIX.starts_with(contract_tag));
-        assert!(CUDA_FALLBACK_LOG_PREFIX.ends_with("path rejected"));
-        assert!(WGPU_FALLBACK_LOG_PREFIX.ends_with("path rejected"));
-    }
-
-    /// FALSIFY-CPU-GPU-005 part b cosine helper — parallel vectors return 1.
-    ///
-    /// Locks in the gate's positive case: when wgpu produces logits identical
-    /// to CPU, the gate must NOT trigger fallback (cosine = 1.0 ≥ 0.99 floor).
-    #[test]
-    fn cpu_vs_gpu_cosine_similarity_parallel_returns_one() {
-        let a = vec![1.0_f32, 2.0, 3.0, 4.0];
-        let b = a.clone();
-        let cos = super::cpu_vs_gpu_cosine_similarity(&a, &b);
-        assert!(
-            (cos - 1.0).abs() < 1e-6,
-            "parallel vectors must yield cosine 1.0, got {cos}"
-        );
-    }
-
-    /// FALSIFY-CPU-GPU-005 part b cosine helper — orthogonal returns 0.
-    ///
-    /// Negative case: orthogonal vectors must yield cosine 0.0 which is well
-    /// below the 0.99 gate floor → fallback triggers.
-    #[test]
-    fn cpu_vs_gpu_cosine_similarity_orthogonal_returns_zero() {
-        let a = vec![1.0_f32, 0.0, 0.0, 0.0];
-        let b = vec![0.0_f32, 1.0, 0.0, 0.0];
-        let cos = super::cpu_vs_gpu_cosine_similarity(&a, &b);
-        assert!(
-            cos.abs() < 1e-6,
-            "orthogonal vectors must yield cosine 0.0, got {cos}"
-        );
-    }
-
-    /// FALSIFY-CPU-GPU-005 part b cosine helper — fail-closed on bad input.
-    ///
-    /// Zero-norm or mismatched-length inputs MUST return 0.0 so the future gate
-    /// triggers fallback rather than dividing by zero or panicking. This is the
-    /// "conservative default" that closes the silent-gibberish loophole even
-    /// when the probe forward itself emits NaN/zeros.
-    #[test]
-    fn cpu_vs_gpu_cosine_similarity_fails_closed() {
-        // Zero-norm input
-        let zero = vec![0.0_f32; 4];
-        let nonzero = vec![1.0_f32, 2.0, 3.0, 4.0];
-        assert_eq!(
-            super::cpu_vs_gpu_cosine_similarity(&zero, &nonzero),
-            0.0,
-            "zero-norm input must fail closed"
-        );
-        // Length mismatch
-        let short = vec![1.0_f32, 2.0];
-        let long = vec![1.0_f32, 2.0, 3.0, 4.0];
-        assert_eq!(
-            super::cpu_vs_gpu_cosine_similarity(&short, &long),
-            0.0,
-            "length mismatch must fail closed"
-        );
-        // Empty input
-        let empty: Vec<f32> = Vec::new();
-        assert_eq!(
-            super::cpu_vs_gpu_cosine_similarity(&empty, &empty),
-            0.0,
-            "empty input must fail closed"
-        );
-    }
 }

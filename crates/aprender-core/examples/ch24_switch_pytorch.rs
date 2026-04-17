@@ -6,7 +6,7 @@
 //! Contract: contracts/apr-book-ch24-v1.yaml
 
 use aprender::autograd::{clear_graph, Tensor};
-use aprender::nn::{loss::MSELoss, optim::SGD, Linear, Module, Sequential};
+use aprender::nn::{loss::MSELoss, optim::SGD, Linear, Module, Optimizer, Sequential};
 
 fn main() {
     println!("=== Switch From PyTorch ===");

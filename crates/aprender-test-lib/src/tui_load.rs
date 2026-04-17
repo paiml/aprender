@@ -1003,39 +1003,29 @@ mod tests {
 
     #[test]
     fn test_tui_load_test_large_dataset() {
-        // Warmup + best-of-N to kill cold-start and shared-runner jitter.
-        // Falsifier preserved: if MIN p95 across 3 warmed runs exceeds 100ms,
-        // filtering really regressed — not just a noisy neighbor.
-        let run_once = || {
-            TuiLoadTest::new()
-                .with_item_count(5000)
-                .with_timeout_ms(5000)
-                .with_frames_per_filter(3)
-                .run(|items, filter| {
-                    let filter_lower = filter.to_lowercase();
-                    let _filtered: Vec<_> = items
-                        .iter()
-                        .filter(|item| item.matches_filter_precomputed(&filter_lower))
-                        .collect();
-                    None
-                })
-        };
+        let test = TuiLoadTest::new()
+            .with_item_count(5000)
+            .with_timeout_ms(5000)
+            .with_frames_per_filter(3);
 
-        let _warmup = run_once();
+        // Simulate realistic filtering
+        let result = test.run(|items, filter| {
+            let filter_lower = filter.to_lowercase();
+            let _filtered: Vec<_> = items
+                .iter()
+                .filter(|item| item.matches_filter_precomputed(&filter_lower))
+                .collect();
+            None // Let harness measure time
+        });
 
-        let mut best_p95 = f64::INFINITY;
-        for _ in 0..3 {
-            let result = run_once();
-            assert!(result.is_ok(), "Should handle 5000 items without hang");
-            let p95 = result.unwrap().p95_frame_ms();
-            if p95 < best_p95 {
-                best_p95 = p95;
-            }
-        }
+        assert!(result.is_ok(), "Should handle 5000 items without hang");
+        let metrics = result.unwrap();
 
+        // Should complete reasonably fast (p95 under 100ms)
         assert!(
-            best_p95 < 100.0,
-            "p95 (min of 3) = {best_p95:.2}ms, should be < 100ms"
+            metrics.p95_frame_ms() < 100.0,
+            "p95 = {:.2}ms, should be < 100ms",
+            metrics.p95_frame_ms()
         );
     }
 

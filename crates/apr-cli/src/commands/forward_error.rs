@@ -296,39 +296,29 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         use realizar::format::{detect_format, ModelFormat};
         use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel};
 
-        // Peek the primary's magic bytes first (cheap — no full-file read) so that
-        // non-GGUF inputs SKIP cleanly instead of churning through SafeTensors
-        // resolution that is meaningless when the primary isn't the GGUF side of
-        // the comparison. Matches peer gates (ollama_parity / ptx_parity /
-        // capability_match) which all SKIP on non-GGUF. The P0-QA-001 "never
-        // silently skip" invariant was scoped to missing-reference failures, not
-        // to category-mismatched inputs.
-        {
-            let header = std::fs::read(path)
-                .map(|b| b.into_iter().take(8).collect::<Vec<u8>>())
-                .map_err(|e| {
-                    CliError::ValidationFailed(format!("Failed to read primary model: {e}"))
-                })?;
-            let header_format = detect_format(&header).map_err(|e| {
-                CliError::ValidationFailed(format!("Failed to detect primary format: {e}"))
-            })?;
-            if header_format != ModelFormat::Gguf {
-                return Ok(GateResult::skipped(
-                    "format_parity",
-                    "Non-GGUF format (format parity test compares GGUF vs SafeTensors forward passes)",
-                ));
-            }
-        }
-
-        // Primary is GGUF — now resolve the SafeTensors reference or FAIL with
-        // an actionable message (P0-QA-001).
+        // P0-QA-001: Never skip — auto-discover or FAIL with actionable message
         let safetensors_path = match resolve_safetensors_path(path, config, start.elapsed()) {
             Ok(p) => p,
             Err(gate_result) => return Ok(gate_result),
         };
 
+        // Verify GGUF model
         let gguf_bytes = std::fs::read(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read GGUF: {e}")))?;
+
+        let gguf_format = detect_format(&gguf_bytes[..8.min(gguf_bytes.len())]).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to detect GGUF format: {e}"))
+        })?;
+
+        if gguf_format != ModelFormat::Gguf {
+            return Ok(GateResult::failed(
+                "format_parity",
+                "Primary model must be GGUF format for cross-format parity test",
+                None,
+                None,
+                start.elapsed(),
+            ));
+        }
 
         // Verify SafeTensors model exists
         if !safetensors_path.exists() {
@@ -462,14 +452,11 @@ fn check_ollama_available() -> bool {
 /// Returns None if no known size pattern is found.
 fn detect_size_from_filename(filename_lower: &str) -> Option<&'static str> {
     // Match size patterns with boundary checks to avoid false positives from
-    // random hex in temp filenames (e.g., ".tmp97bF2a1.gguf" must NOT match "7b",
-    // ".tmp3bF2a1.gguf" must NOT match "3b").
+    // random hex in temp filenames (e.g., ".tmp3bF2a1.gguf" must NOT match "3b").
     //
-    // Rule: BOTH the char BEFORE and the char AFTER the pattern must be word
-    // boundaries (start/end of string, '-', '_', '.', or non-alphanumeric).
-    // This prevents "7b" matching in "97bF2a1" but allows it in "model7b.gguf"
-    // or "model-7b-chat.gguf". Without the BEFORE check, NamedTempFile names
-    // with random hex like ".tmp97bXXX" trip the file-size-heuristic test.
+    // Rule: the char AFTER the pattern must be a word boundary (end of string,
+    // '-', '_', '.', or non-alphanumeric). This prevents "3b" matching in "3bF2a1"
+    // but allows it in "model3b.gguf" or "model-3b-chat.gguf".
     const SIZE_PATTERNS: &[(&str, &str)] = &[
         ("0.5b", "0.5b"),
         ("0_5b", "0.5b"),
@@ -482,18 +469,11 @@ fn detect_size_from_filename(filename_lower: &str) -> Option<&'static str> {
     ];
     SIZE_PATTERNS.iter().find_map(|(pattern, label)| {
         if let Some(pos) = filename_lower.find(pattern) {
-            let bytes = filename_lower.as_bytes();
             let end = pos + pattern.len();
-            // BEFORE check: rejects random hex like "97b" / "a7b1" but allows
-            // "model3b" / "qwen3b". Rule: char before must NOT be an ASCII digit
-            // (the size patterns 3b/7b/14b/32b are digit+letter, so a preceding
-            // digit means we're inside a longer hex/numeric token, not at a
-            // size-prefix boundary).
-            let has_boundary_before = pos == 0 || !bytes[pos - 1].is_ascii_digit();
-            // AFTER check: rejects "3bF2a1" but allows "3b.gguf" / "3b-chat".
-            // Rule: char after must be end of string or non-alphanumeric.
-            let has_boundary_after = end >= bytes.len() || !bytes[end].is_ascii_alphanumeric();
-            if has_boundary_before && has_boundary_after {
+            // Require word boundary AFTER: end of string or non-alphanumeric
+            let has_boundary = end >= filename_lower.len()
+                || !filename_lower.as_bytes()[end].is_ascii_alphanumeric();
+            if has_boundary {
                 return Some(*label);
             }
         }

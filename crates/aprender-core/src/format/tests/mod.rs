@@ -15,4 +15,3 @@ mod error_proptests;
 mod integration_proptests;
 mod license_proptests;
 mod metadata_proptests;
-mod provenance_tests;

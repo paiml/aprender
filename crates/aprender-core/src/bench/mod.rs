@@ -21,7 +21,6 @@
 
 pub mod pareto;
 pub mod py2rs;
-pub mod ship_007;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

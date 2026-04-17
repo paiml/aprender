@@ -12,7 +12,7 @@
 //! # Example
 //!
 //! ```rust
-//! use aprender_rag::loader::LoaderRegistry;
+//! use trueno_rag::loader::LoaderRegistry;
 //! use std::path::Path;
 //!
 //! let registry = LoaderRegistry::new();

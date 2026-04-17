@@ -265,26 +265,11 @@ impl OwnedQuantizedModelCuda {
         // Run ONE token through both backends and compare logits.
         // If cosine similarity < 0.99, refuse to construct.
         // Skip gate if SKIP_PARITY_GATE=1 (for debugging the gate itself)
-        //
-        // M-GPU-MOE-1.3 (qwen3-moe-forward-gpu-v1 v1.3.0): Skip the
-        // parity gate for MoE architectures. The gate calls
-        // `forward_single_with_cache` (CPU dense) and
-        // `forward_gpu_resident` (GPU dense) — both dense forward
-        // paths that index `layer.ffn_up_weight` directly. For MoE
-        // those weights are `dense_ffn_placeholder` (byte_size=0)
-        // because the real expert tensors live in `moe_layers`, so
-        // the dense forward panics in `fused_matmul_f32` at the
-        // empty data slice.
-        //
-        // The MoE-specific parity gate (FALSIFY-QW3-MOE-GPU-PARITY-001)
-        // is exercised by `qwen3_moe_gpu_parity.rs` which uses the
-        // MoE forward methods directly, bypassing the dense path
-        // this gate runs.
         let skip_gate = std::env::var("SKIP_PARITY_GATE")
             .map(|v| v == "1")
             .unwrap_or(false);
 
-        if !skip_gate && !self.model.config.constraints.is_moe {
+        if !skip_gate {
             if let Err(e) = parity_gate(&mut self) {
                 return Err(CudaInitError {
                     error: e,

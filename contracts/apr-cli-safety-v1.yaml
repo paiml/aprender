@@ -67,15 +67,6 @@ kani_harnesses:
 - id: KH-CLI-001
   obligation: validate_exit_code
   property: exit_code_nonzero_on_failure
-  bound: 4
-qa_gate:
-  id: F-CLI-SAFETY-GATE
-  name: APR CLI Safety Gate
-  description: Quality gate for apr CLI safety invariants (exit codes, offline mode, no double-encrypt)
-  checks:
-  - validation
-  - falsification
-  pass_criteria: All 3 falsification tests + 4 proof obligations pass
 verification_summary:
   total_obligations: 4
   l2_property_tested: 4

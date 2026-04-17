@@ -397,14 +397,6 @@ pub fn print_explain(rule_id: &str) {
             "Either improve the contract to meet its declared enforcement_level,\n\
              or use `pv unlock <contract> --reason \"...\"` to release the lock.",
         ),
-        RuleCategory::Verify => (
-            "Verify rules cross-check contract claims against the source tree.\n\
-             A contract that cites a non-existent test function is unfalsifiable\n\
-             — operators reading it think the falsifier is bound when it isn't.",
-            "Either rename the test to match the contract, or update the contract\n\
-             `test:` field to cite the real function name. Run `pv lint\n\
-             --strict-test-binding contracts/` to see all dangling references.",
-        ),
     };
 
     println!("WHY IT MATTERS:");

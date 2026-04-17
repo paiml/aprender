@@ -18,7 +18,7 @@
 
 ## Problem
 
-The `apr` CLI has 58 subcommands (57 original + `mcp` added 2026-04-17 via PR #864) but the v1.0 dogfood only tested structural
+The `apr` CLI has 57 subcommands but the v1.0 dogfood only tested structural
 properties (help exits 0, JSON is valid, no NaN). Historical bug analysis
 (GH-336 through GH-439) shows the gaps that slipped past:
 
@@ -34,7 +34,7 @@ A 6-contract dogfood system that covers 5 dimensions beyond structural testing:
 
 | Dimension | Contract | arXiv Basis | Key Gate |
 |-----------|----------|-------------|----------|
-| Structural | apr-cli-qa-v1 | — | 58 commands respond to --help |
+| Structural | apr-cli-qa-v1 | — | 57 commands respond to --help |
 | Metamorphic | apr-qa-metamorphic-v1 | 1807.10453, 2603.23611 | Q6K≈Q4K output similarity |
 | Silent fallback | apr-qa-silent-fallback-v1 | 2505.03096 | Truncated/corrupt files fail LOUD |
 | Differential | apr-qa-differential-v1 | 2207.11976, 2406.07944 | apr≈ollama top-1 token parity |
@@ -50,7 +50,7 @@ Total: **6 contracts, 35 equations, 35 falsification tests**.
 - Verify `apr --version` matches `git rev-parse --short HEAD`
 - Contract: FALSIFY-QA-005
 
-### Phase 1: Command Grid (58 commands x 3 formats)
+### Phase 1: Command Grid (57 commands x 3 formats)
 For each of GGUF, APR, SafeTensors models:
 
 | Category | Commands | Model Required |
@@ -161,7 +161,7 @@ Contract: `apr-qa-coverage-v1.yaml`
 ### Phase 8: Report & File Issues
 - Summary table: Gate | Status | Notes
 - Protocol results: P1-P12 | PASS/FAIL
-- Command grid: 58 commands | PASS/FAIL/SKIP count
+- Command grid: 57 commands | PASS/FAIL/SKIP count
 - GO/WARN/FAIL verdict
 - Auto-file issues for FAIL items via `gh issue create`
 

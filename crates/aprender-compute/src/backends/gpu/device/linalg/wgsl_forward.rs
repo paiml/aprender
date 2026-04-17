@@ -673,7 +673,7 @@ impl WgslForwardPass {
 
     /// Apply RMSNorm on GPU: normed = rmsnorm(hidden_buf, weight) → output_buf.
     /// Contract: gpu-output-norm-v1 / gpu_resident — hidden state never leaves GPU.
-    pub fn gpu_rmsnorm(&self, weight: &wgpu::Buffer, output: &wgpu::Buffer, _seq_len: u32) {
+    pub fn gpu_rmsnorm(&self, weight: &wgpu::Buffer, output: &wgpu::Buffer, seq_len: u32) {
         let mut encoder = self.device.create_command_encoder(&Default::default());
         self.encode_rmsnorm(&mut encoder, &self.hidden_buf, weight, output, self.hidden_dim);
         self.queue.submit(Some(encoder.finish()));
@@ -1150,7 +1150,6 @@ impl WgslForwardPass {
     /// - `layer_prefix`: e.g. "model.layers.0"
     /// - `saved_norm_attn`: OUTPUT — saved pre-attention norm for backward (wgpu::Buffer, [seq×hidden])
     /// - `saved_norm_ffn`: OUTPUT — saved pre-FFN norm for backward (wgpu::Buffer, [seq×hidden])
-    ///
     /// Forward one layer into an EXISTING encoder (no submit).
     /// Caller batches multiple layers into one encoder, submits once.
     pub fn encode_forward_layer_training(
@@ -1790,7 +1789,7 @@ impl WgslForwardPass {
     fn encode_attention(&self, encoder: &mut wgpu::CommandEncoder, seq_len: u32) {
         let params = [seq_len, self.num_heads, self.num_kv_heads, self.head_dim];
         let params_buf = self.make_uniform(&params);
-        let _q_dim = self.num_heads * self.head_dim;
+        let q_dim = self.num_heads * self.head_dim;
 
         // Attention reads Q and writes to attn_out_buf.
         // Then O projection reads attn_out_buf → writes to another buffer.
@@ -1944,8 +1943,10 @@ impl WgslForwardPass {
         n: u32,
     ) {
         // C-WGPU-Q4K-001: Try Q4K GEMV first for M=1 decode (7x less VRAM)
-        if m == 1 && self.encode_q4k_gemv(encoder, input, output, layer_prefix, proj_name, n, k) {
-            return;
+        if m == 1 {
+            if self.encode_q4k_gemv(encoder, input, output, layer_prefix, proj_name, n, k) {
+                return;
+            }
         }
         let weight_key = format!("{layer_prefix}.{proj_name}");
         let weight = match self.weight_buffers.get(&weight_key) {

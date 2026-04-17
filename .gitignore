@@ -78,5 +78,3 @@ src/generated_contracts.rs
 crates/apr-cli/trace-*.json
 .pv/cache/
 **/.pv/cache/
-.claude/scheduled_tasks.lock
-contracts/.pv/

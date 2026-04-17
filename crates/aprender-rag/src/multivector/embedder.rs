@@ -15,7 +15,7 @@ use crate::Result;
 /// # Example
 ///
 /// ```ignore
-/// use aprender_rag::multivector::{MultiVectorEmbedder, MockMultiVectorEmbedder};
+/// use trueno_rag::multivector::{MultiVectorEmbedder, MockMultiVectorEmbedder};
 ///
 /// let embedder = MockMultiVectorEmbedder::new(128, 512);
 /// let embedding = embedder.embed_tokens("hello world").unwrap();
@@ -61,8 +61,8 @@ pub trait MultiVectorEmbedder: Send + Sync {
 /// # Example
 ///
 /// ```
-/// use aprender_rag::multivector::MockMultiVectorEmbedder;
-/// use aprender_rag::multivector::MultiVectorEmbedder;
+/// use trueno_rag::multivector::MockMultiVectorEmbedder;
+/// use trueno_rag::multivector::MultiVectorEmbedder;
 ///
 /// let embedder = MockMultiVectorEmbedder::new(128, 512);
 ///

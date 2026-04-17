@@ -216,23 +216,8 @@ fn run_gguf_inference(
             ..Default::default()
     };
 
-    // M32c.2.2.2.1.3: dispatch qwen3_moe to the parallel MoE inference path
-    // (M32c.2.2.2.1.2's run_qwen3_moe_generate). The dense path goes through
-    // run_gguf_generate as before. This replaces M32c.2.1's
-    // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
-    let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    let (tokens, used_gpu) = if canonical_arch == "qwen3_moe" {
-        let tokens = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
-            &mapped,
-            &model,
-            &input_tokens,
-            &gen_config,
-        )?;
-        (tokens, false) // CPU-only path; GPU MoE wiring is M32d follow-up
-    } else {
-        run_gguf_generate(model, &input_tokens, &gen_config, config)?
-    };
+    let (tokens, used_gpu) = run_gguf_generate(model, &input_tokens, &gen_config, config)?;
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
 
     let generated_tokens = &tokens[input_token_count..];

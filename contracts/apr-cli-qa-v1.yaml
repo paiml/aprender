@@ -24,7 +24,7 @@ equations:
     preconditions:
     - "apr binary is installed and on PATH"
     postconditions:
-    - "exit code 0 for all 58 commands"
+    - "exit code 0 for all 57 commands"
 
   missing_model_graceful:
     formula: |
@@ -113,7 +113,7 @@ equations:
 
 falsification_tests:
 - id: FALSIFY-QA-001
-  rule: all 58 commands respond to --help
+  rule: all 57 commands respond to --help
   prediction: "every registered command exits 0 on --help"
   test: "cargo test -p apr-cli --test cli_commands"
   if_fails: "phantom subcommand or broken dispatch"
@@ -174,7 +174,7 @@ falsification_tests:
 
 proof_obligations:
 - type: invariant
-  property: "all 58 commands exit 0 on --help"
+  property: "all 57 commands exit 0 on --help"
 - type: invariant
   property: "missing model produces non-zero exit code"
 - type: invariant
@@ -184,7 +184,6 @@ kani_harnesses:
 - id: KH-QA-001
   obligation: help_universality
   property: all_commands_respond_to_help
-  bound: 4
 
 verification_summary:
   total_obligations: 10

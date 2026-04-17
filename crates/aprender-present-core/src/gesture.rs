@@ -1217,10 +1217,7 @@ mod tests {
         let duration = point.duration();
         // Performance target: <100ms (verify via cargo bench, not wall-clock in tests)
         if duration.as_millis() >= 100 {
-            eprintln!(
-                "[PERF WARNING] touch point duration {}ms (target <100ms)",
-                duration.as_millis()
-            );
+            eprintln!("[PERF WARNING] touch point duration {}ms (target <100ms)", duration.as_millis());
         }
     }
 

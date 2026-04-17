@@ -61,7 +61,6 @@ kani_harnesses:
 - id: KH-SVG-001
   obligation: text_within_bounds
   property: no_text_overflow
-  bound: 4
 
 verification_summary:
   total_obligations: 3

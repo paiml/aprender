@@ -51,8 +51,6 @@ fn build_q4k_metadata(cfg: &InferredQ4kConfig, param_count: u64) -> AprV2Metadat
         description: Some("Q4K quantized from SafeTensors".to_string()),
         author: None,
         license: None,
-        data_source: None,
-        data_license: None,
         version: Some("1.0.0".to_string()),
         source: None,
         original_format: Some("safetensors".to_string()),

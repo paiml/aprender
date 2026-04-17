@@ -25,81 +25,51 @@ apr pull qwen2.5-coder-1.5b
 apr run qwen2.5-coder-1.5b "What is 2+2?"
 ```
 
-> **Known Issue (SHIP-007)**: For the canonical 7B Q4K teacher
-> (`paiml/qwen2.5-coder-7b-apache-q4k-v1`), use `--no-gpu` until the
-> GPU dispatch fix lands. The CPU path produces correct mathematical
-> output (`"2 + 2 equals"`); the default GPU path currently produces
-> gibberish for this specific model. Tracked in
-> [SPEC-SHIP-TWO-001 §40](docs/specifications/aprender-train/ship-two-models-spec.md)
-> and gated by
-> [`apr-cli-model-1-ship-via-cpu-v1`](contracts/apr-cli-model-1-ship-via-cpu-v1.yaml).
->
-> ```bash
-> apr run paiml/qwen2.5-coder-7b-apache-q4k-v1 "What is 2+2?" --no-gpu
-> ```
-
 ## What is Aprender?
 
-A complete ML framework in pure Rust. One `cargo install`, one `apr` binary,
-the full model lifecycle — inference, training, quantization, profiling,
-publishing — all backed by YAML provable contracts that fail CI on drift.
+Aprender is a complete ML framework built from scratch in Rust. One `cargo install`,
+one `apr` binary, 57 commands covering the full ML lifecycle:
 
-### At HEAD
+| Stage | Commands | What it does |
+|-------|----------|-------------|
+| **Inference** | `apr run`, `apr chat`, `apr serve` | Run models locally (GGUF, SafeTensors, APR) |
+| **Training** | `apr finetune`, `apr train`, `apr distill` | LoRA/QLoRA fine-tuning, knowledge distillation |
+| **Model Ops** | `apr convert`, `apr quantize`, `apr merge`, `apr export` | Format conversion, quantization, model merging |
+| **Inspection** | `apr inspect`, `apr validate`, `apr tensors`, `apr diff` | Model debugging, validation, comparison |
+| **Profiling** | `apr profile`, `apr bench`, `apr qa` | Roofline analysis, benchmarks, QA gates |
+| **Registry** | `apr pull`, `apr list`, `apr rm`, `apr publish` | HuggingFace Hub integration, model cache |
+| **GPU** | `apr gpu`, `apr parity`, `apr ptx` | GPU status, CPU/GPU parity checks, PTX analysis |
+| **Monitoring** | `apr tui`, `apr monitor`, `apr cbtop` | Terminal UI, training monitor, ComputeBrick pipeline |
 
-| Metric | Count | Source of truth |
-|-------:|------:|---|
-| Workspace crates | **80** workspace crates | `ls crates/` |
-| Provable contracts | **1105** provable contracts | `find contracts/ -name '*.yaml'` |
-| CLI commands | **80** CLI commands | `apr --help` |
+### Numbers
 
-These numbers are enforced by [`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml).
-Drift between this table and live repo state fails `bash scripts/check_readme_claims.sh`
-→ see [FALSIFY-README-001..004](contracts/readme-claims-v1.yaml).
-
-### Command surface
-
-| Stage | Commands |
-|---|---|
-| **Inference** | `apr run`, `apr chat`, `apr serve` |
-| **Training** | `apr finetune`, `apr train`, `apr pretrain`, `apr distill` |
-| **Model ops** | `apr convert`, `apr quantize`, `apr merge`, `apr export`, `apr compile` |
-| **Inspection** | `apr inspect`, `apr validate`, `apr tensors`, `apr diff`, `apr trace`, `apr lint` |
-| **Profiling** | `apr profile`, `apr bench`, `apr qa` |
-| **Registry** | `apr pull`, `apr list`, `apr rm`, `apr publish`, `apr registry` |
-| **GPU** | `apr gpu`, `apr parity`, `apr ptx` |
-| **Observability** | `apr tui`, `apr monitor`, `apr cbtop` |
-
-## Cookbook
-
-End-to-end recipes (data prep → train → quantize → publish → serve) live in
-[`paiml/apr-cookbook`](https://github.com/paiml/apr-cookbook) — 341 worked
-examples with local `book/src/` walkthroughs.
-
-```bash
-git clone https://github.com/paiml/apr-cookbook  # ../apr-cookbook
-cd ../apr-cookbook
-apr cookbook list                              # 341 recipes
-apr cookbook run train-tiny-from-scratch       # runs end-to-end
-```
+- **75** workspace crates (was 20 separate repos)
+- **28,700+** tests, all passing
+- **799** provable contracts (equation-based verification)
+- **57** CLI commands with contract coverage
+- **0** `[patch.crates-io]` — clean workspace deps
 
 ## Install
 
 ```bash
-cargo install aprender    # installs the `apr` binary
+# Install the `apr` binary
+cargo install aprender
+
+# Verify
 apr --version
 ```
 
-## CLI examples
+## CLI Examples
 
 ```bash
-# Run inference (local or HF)
+# Run inference
 apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF "Explain quicksort"
 apr chat hf://meta-llama/Llama-3-8B-Instruct-GGUF
 
-# Serve
+# Serve model as API
 apr serve model.gguf --port 8080
 
-# Inspect
+# Inspect model
 apr inspect model.gguf
 apr validate model.apr --quality --strict
 apr tensors model.gguf | head -20
@@ -116,11 +86,13 @@ apr profile model.gguf --roofline
 apr bench model.gguf --assert-tps 100
 ```
 
-## Library usage
+## Library Usage
+
+The ML library is available as `aprender` on crates.io:
 
 ```toml
 [dependencies]
-aprender = "0.31"
+aprender-core = "0.29"
 ```
 
 ```rust
@@ -133,33 +105,36 @@ let predictions = model.predict(&x_test)?;
 ```
 
 Algorithms: Linear/Logistic Regression, Decision Trees, Random Forest, GBM,
-Naive Bayes, KNN, SVM, K-Means, PCA, ARIMA, ICA, GLMs, graph algorithms,
-Bayesian inference, text + audio processing.
+Naive Bayes, KNN, SVM, K-Means, PCA, ARIMA, ICA, GLMs, Graph algorithms,
+Bayesian inference, text processing, audio processing.
 
 ## Architecture
 
-Monorepo, flat `crates/aprender-*` layout (same pattern as
-[Polars](https://github.com/pola-rs/polars),
+Monorepo with 70 crates in flat `crates/aprender-*` layout
+(same pattern as [Polars](https://github.com/pola-rs/polars),
 [Burn](https://github.com/tracel-ai/burn),
 [Nushell](https://github.com/nushell/nushell)):
 
 ```
 paiml/aprender/
-├── Cargo.toml                      # Workspace root + `cargo install aprender`
+├── Cargo.toml                    # Workspace root + `cargo install aprender`
 ├── crates/
-│   ├── aprender-core/              # ML library (use aprender::*)
-│   ├── apr-cli/                    # CLI logic (80 subcommands)
-│   ├── aprender-compute/           # SIMD/GPU compute kernels
-│   ├── aprender-gpu/               # CUDA PTX
-│   ├── aprender-serve/             # Inference server
-│   ├── aprender-train/             # Training loops
-│   ├── aprender-orchestrate/       # Agents + RAG
-│   ├── aprender-contracts/         # Provable contracts engine
-│   ├── aprender-profile/           # Profiling
-│   ├── aprender-db/ aprender-graph/ aprender-rag/
-│   └── ... (80 crates total)
-├── contracts/                      # 1105 provable YAML contracts
-└── book/                           # mdBook documentation
+│   ├── aprender-core/            # ML library (use aprender::*)
+│   ├── apr-cli/                  # CLI logic (57 commands)
+│   ├── aprender-compute/         # SIMD/GPU compute (was: trueno)
+│   ├── aprender-gpu/             # CUDA PTX kernels (was: trueno-gpu)
+│   ├── aprender-serve/           # Inference server (was: realizar)
+│   ├── aprender-train/           # Training loops (was: entrenar)
+│   ├── aprender-orchestrate/     # Agents, RAG (was: batuta)
+│   ├── aprender-contracts/       # Provable contracts (was: provable-contracts)
+│   ├── aprender-profile/         # Profiling (was: renacer)
+│   ├── aprender-present-*/       # TUI framework (was: presentar)
+│   ├── aprender-db/              # Embedded analytics DB
+│   ├── aprender-graph/           # Graph database
+│   ├── aprender-rag/             # RAG pipeline
+│   └── ... (70 crates total)
+├── contracts/                    # 405 provable YAML contracts
+└── book/                         # mdBook documentation
 ```
 
 ## Performance
@@ -170,13 +145,56 @@ paiml/aprender/
 | Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 |
 | TinyLlama 1.1B | Q4_0 | 17 tok/s | CPU (APR format) |
 
-Reproduced from [candle-vs-apr](https://github.com/paiml/candle-vs-apr) and
-[ground-truth-apr-ludwig](https://github.com/paiml/ground-truth-apr-ludwig).
+## Framework Comparison
 
-## Provable contracts
+Benchmarked against real inference engines on Qwen2.5-Coder 7B Q4_K (RTX 4090).
+Data from [candle-vs-apr](https://github.com/paiml/candle-vs-apr) proof-of-concept:
 
-Every CLI command and kernel is bound to a YAML contract with equations,
-preconditions, postconditions, and falsification tests:
+### Inference Speed (single request, decode tok/s)
+
+| Engine | tok/s | vs Candle | Architecture |
+|--------|-------|-----------|--------------|
+| llama.cpp b7746 | **443.6** | 1.95x | C++, Flash Attention |
+| **aprender (realizr)** | **369.9** | **1.63x** | Rust, CUDA graph + Flash Decoding |
+| Candle | 227.4 | 1.00x | Rust, per-op dispatch |
+
+### Batched Throughput (aprender only — Candle has no server)
+
+| Concurrency | Agg tok/s | Scaling | Method |
+|-------------|-----------|---------|--------|
+| 1 | 367 | 1.0x | Single request |
+| 8 | 954 | 2.6x | Continuous batching |
+| 32 | **3,220** | **8.8x** | Orca-style iteration scheduling |
+
+### Why Aprender Beats Candle
+
+| aprender advantage | Candle limitation | Impact |
+|---|---|---|
+| CUDA graph (647 kernels, 1 launch) | Per-op dispatch (~640 launches) | **+26%** |
+| Flash Decoding (chunked KV) | Standard SDPA | **+15%** long ctx |
+| Fused DP4A GEMV (4-bit native) | Separate dequant + matmul | **~10%** |
+| Continuous batching server | CLI only, no server | **8.8x** at c=32 |
+
+### ML Training: apr vs Ludwig
+
+From [ground-truth-apr-ludwig](https://github.com/paiml/ground-truth-apr-ludwig)
+(21 recipes, Popperian falsification methodology):
+
+| Capability | aprender | Ludwig | Notes |
+|-----------|----------|--------|-------|
+| Classification (Iris, Wine) | `apr finetune` | `ludwig train` | Both achieve >95% accuracy |
+| LoRA fine-tuning | `apr finetune --lora` | Not native | apr: rank-64 in minutes |
+| Quantization (INT8/INT4) | `apr quantize` | Not supported | apr-native capability |
+| Model merging | `apr merge --strategy ties` | Not supported | TIES/DARE/SLERP |
+| Provable contracts | 405 YAML contracts | None | Equation-based verification |
+| Single binary | `cargo install aprender` | `pip install ludwig` | Rust vs Python |
+
+*All benchmarks reproducible from linked repos with `cargo test`.*
+
+## Provable Contracts
+
+Every CLI command and kernel has a provable contract (`contracts/*.yaml`)
+with equations, preconditions, postconditions, and falsification tests:
 
 ```yaml
 equations:
@@ -189,29 +207,30 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1105 contracts across inference, training, quantization, attention, FFN,
-tokenization, model formats, CLI safety — and this README itself.
+405 contracts across inference, training, quantization, attention, FFN,
+tokenization, model formats, and CLI safety.
 
-## Migration from old crates
+## Migration from Old Crates
+
+All old crate names still work via backward-compatible shim crates:
 
 | Old | New | Status |
 |-----|-----|--------|
-| `trueno = "0.18"` | `aprender-compute = "0.31"` | Shim available |
-| `entrenar = "0.7"` | `aprender-train = "0.31"` | Shim available |
-| `realizar = "0.8"` | `aprender-serve = "0.31"` | Shim available |
-| `batuta = "0.7"` | `aprender-orchestrate = "0.31"` | Shim available |
+| `trueno = "0.18"` | `aprender-compute = "0.29"` | Shim available |
+| `entrenar = "0.7"` | `aprender-train = "0.29"` | Shim available |
+| `realizar = "0.8"` | `aprender-serve = "0.29"` | Shim available |
+| `batuta = "0.7"` | `aprender-orchestrate = "0.29"` | Shim available |
 
-Old repositories are archived. All development happens here.
+Old repositories are archived and read-only. All development happens here.
 
 ## Contributing
 
 ```bash
 git clone https://github.com/paiml/aprender
 cd aprender
-cargo test --workspace --lib
-cargo check --workspace
-apr --help
-bash scripts/check_readme_claims.sh    # README contract gate
+cargo test --workspace --lib    # 25,391 tests
+cargo check --workspace         # 70 crates
+apr --help                      # 57 commands
 ```
 
 ## License

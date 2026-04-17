@@ -124,7 +124,10 @@ fn compile_pipeline(
     finalize_output(&built_binary, output_path)
 }
 
-fn validate_compile_inputs<'a>(file: Option<&'a Path>, quantize: Option<&str>) -> Result<&'a Path> {
+fn validate_compile_inputs<'a>(
+    file: Option<&'a Path>,
+    quantize: Option<&str>,
+) -> Result<&'a Path> {
     let file = file.ok_or_else(|| {
         CliError::ValidationFailed("Input .apr file is required (unless --list-targets)".into())
     })?;

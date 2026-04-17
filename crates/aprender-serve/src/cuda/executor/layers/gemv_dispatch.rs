@@ -15,11 +15,9 @@ impl CudaExecutor {
         if nan_count > 0 {
             eprintln!("[PAR-058-L{}] {} has {} NaN", layer_idx, label, nan_count);
         } else {
-            // SHIP-007 8th-pass: extended from first 3 → first 16 to surface
-            // element-3+ divergence (CPU element 3 = 0.05, GPU = 0.10 → 110% off).
             eprintln!(
-                "[PAR-058-L{}] {} OK, first 16: {:?}",
-                layer_idx, label, &host[..16.min(host.len())]
+                "[PAR-058-L{}] {} OK, first 3: {:?}",
+                layer_idx, label, &host[..3.min(host.len())]
             );
         }
         Ok(())

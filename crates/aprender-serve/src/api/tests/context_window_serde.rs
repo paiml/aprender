@@ -6,7 +6,7 @@
 //! struct serde round-trips, GPU/batch handler routing.
 
 use crate::api::realize_handlers::*;
-use crate::api::test_helpers::{create_test_app, create_test_app_shared};
+use crate::api::test_helpers::create_test_app_shared;
 use crate::api::*;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};

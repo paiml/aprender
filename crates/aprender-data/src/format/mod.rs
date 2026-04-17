@@ -655,7 +655,8 @@ pub fn save<W: std::io::Write>(
 fn serialize_arrow_schema(schema: &arrow::datatypes::SchemaRef) -> Result<Vec<u8>> {
     use arrow::ipc::writer::StreamWriter;
     let mut schema_buf = Vec::new();
-    let mut schema_writer = StreamWriter::try_new(&mut schema_buf, schema).map_err(Error::Arrow)?;
+    let mut schema_writer =
+        StreamWriter::try_new(&mut schema_buf, schema).map_err(Error::Arrow)?;
     schema_writer.finish().map_err(Error::Arrow)?;
     Ok(schema_buf)
 }
@@ -776,10 +777,7 @@ fn append_signature_if_signing(
 }
 
 #[cfg(not(feature = "format-signing"))]
-fn append_signature_if_signing(
-    _all_data: &mut Vec<u8>,
-    _options: &SaveOptions,
-) -> Option<[u8; 96]> {
+fn append_signature_if_signing(_all_data: &mut Vec<u8>, _options: &SaveOptions) -> Option<[u8; 96]> {
     None
 }
 
@@ -1012,9 +1010,7 @@ fn decrypt_or_copy_payload(
 }
 
 /// Parse the Arrow IPC stream from the decompressed payload into a vector of `RecordBatch`es.
-fn parse_arrow_batches(
-    decompressed_payload: Vec<u8>,
-) -> Result<Vec<arrow::record_batch::RecordBatch>> {
+fn parse_arrow_batches(decompressed_payload: Vec<u8>) -> Result<Vec<arrow::record_batch::RecordBatch>> {
     use arrow::ipc::reader::StreamReader;
     let cursor = std::io::Cursor::new(decompressed_payload);
     let stream_reader = StreamReader::try_new(cursor, None).map_err(Error::Arrow)?;

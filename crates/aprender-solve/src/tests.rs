@@ -378,13 +378,6 @@ mod proptests {
             b1 in -10.0f32..10.0,
         ) {
             let a = [a00, a01, a10, a11];
-            // Skip ill-conditioned matrices: f32 loses ~log10(cond) digits of precision,
-            // so a 1e-3 relative residual bound requires cond(A) < ~1e4. For a 2x2 matrix
-            // with entries in [-10,10], cond(A) ≈ ||A||_F^2 / |det(A)|; require the ratio
-            // |det(A)| / ||A||_F^2 to exceed 1e-4 (equivalent cond < 1e4).
-            let det = a00 * a11 - a01 * a10;
-            let fro_sq = a00*a00 + a01*a01 + a10*a10 + a11*a11;
-            prop_assume!(fro_sq > 1e-6 && det.abs() / fro_sq > 1e-4);
             if let Ok(lu) = lu_factorize(&a, 2) {
                 if let Ok(x) = lu.solve(&[b0, b1]) {
                     // Verify ||Ax - b|| is small

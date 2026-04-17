@@ -360,10 +360,3 @@ include!("writer.rs");
 include!("streaming_writer.rs");
 include!("reader_impl.rs");
 include!("v2format_error.rs");
-
-// Provenance stamping — SHIP-009 full-discharge enabler (task #141).
-// Lives as a real submodule (not `include!`) so its inline tests nest
-// cleanly under `v2::stamp::tests` rather than colliding with the
-// flat-scope tests already in `v2::tests`.
-pub mod stamp;
-pub use stamp::{stamp_provenance_bytes, ProvenancePatch};

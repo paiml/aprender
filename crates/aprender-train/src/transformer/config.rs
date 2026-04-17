@@ -152,20 +152,7 @@ impl TransformerConfig {
         }
     }
 
-    /// Qwen2 0.5B configuration (good for testing).
-    ///
-    /// Empirically verified against
-    /// `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-0.5B-Instruct/.../config.json`
-    /// 2026-05-04. Pinned by
-    /// `contracts/apr-pretrain-arch-polymorphic-v1.yaml` FALSIFY-001.
-    ///
-    /// Note: `tie_word_embeddings: true` is the Qwen2.5 0.5B/1.5B convention
-    /// (the 7B variant turns this OFF; see `qwen2_7b()`). This is a Qwen
-    /// scaling-law quirk — small Qwen models reuse embedding+lm_head weights
-    /// to save params, but the larger variants pay the param cost for
-    /// untied weights. Drift-prevention: keeping this `true` is required
-    /// for SHIP-TWO-001 §49 MODEL-2 fine-tune from a Qwen2.5-Coder-0.5B
-    /// checkpoint.
+    /// Qwen2 0.5B configuration (good for testing)
     pub fn qwen2_0_5b() -> Self {
         Self {
             hidden_size: QWEN2_0_5B_HIDDEN_SIZE,
@@ -182,7 +169,7 @@ impl TransformerConfig {
             architecture: ModelArchitecture::Decoder,
             hf_architecture: None,
             hf_model_type: None,
-            tie_word_embeddings: true,
+            tie_word_embeddings: false,
         }
     }
 
@@ -666,157 +653,6 @@ mod tests {
         assert_eq!(config.num_kv_heads, 8); // Grouped-query attention
         assert_eq!(config.num_attention_heads, 32);
         // 32 / 8 = 4 query heads per KV head
-    }
-
-    /// FALSIFY-APR-PRETRAIN-ARCH-001 — `qwen2_0_5b()` constructor matches
-    /// HF config byte-for-byte.
-    ///
-    /// Empirically verified against
-    /// `~/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-0.5B-Instruct/.../config.json`
-    /// on 2026-05-04 for SHIP-TWO-001 §50.4 step 5b. If any of these 11
-    /// fields drift from HF, the §49 fine-tune path's init weights will
-    /// load into the wrong-shape optimizer and produce silent gibberish.
-    #[test]
-    fn qwen2_0_5b_matches_hf_config_2026_05_04() {
-        let config = TransformerConfig::qwen2_0_5b();
-        assert_eq!(config.hidden_size, 896, "hidden_size");
-        assert_eq!(config.num_attention_heads, 14, "num_attention_heads");
-        assert_eq!(config.num_kv_heads, 2, "num_kv_heads (GQA-7:1)");
-        assert_eq!(config.intermediate_size, 4864, "intermediate_size");
-        assert_eq!(config.num_hidden_layers, 24, "num_hidden_layers");
-        assert_eq!(config.vocab_size, 151_936, "vocab_size");
-        assert_eq!(config.max_position_embeddings, 32_768, "max_position_embeddings");
-        assert!(
-            (config.rms_norm_eps - 1e-6).abs() < f32::EPSILON,
-            "rms_norm_eps={}, want 1e-6",
-            config.rms_norm_eps
-        );
-        assert!(
-            (config.rope_theta - 1_000_000.0).abs() < f32::EPSILON,
-            "rope_theta={}, want 1_000_000.0",
-            config.rope_theta
-        );
-        assert!(config.use_bias, "use_bias must be true (Qwen2 quirk)");
-        assert!(
-            config.tie_word_embeddings,
-            "tie_word_embeddings must be true for Qwen2.5 0.5B (HF config 2026-05-04)"
-        );
-        assert_eq!(config.architecture, ModelArchitecture::Decoder);
-        // GQA ratio = 14/2 = 7, the canonical Qwen2.5-0.5B GQA-7:1.
-        assert_eq!(config.num_attention_heads / config.num_kv_heads, 7);
-    }
-
-    /// FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001 (RED-then-GREEN):
-    /// `Transformer::new(qwen2_0_5b())` MUST allocate Q/K/V projection
-    /// biases when `config.use_bias == true`. Without this invariant,
-    /// `populate_trainer_from_init_tensors` silently drops 24 layers ×
-    /// 3 biases = 72 init tensors during populate, producing a hybrid
-    /// model whose forward pass is structurally wrong.
-    ///
-    /// Discovered 2026-05-09 via the 5g.2 LIVE smoke producing
-    /// val_loss=0.0008 (implausibly low; see
-    /// `evidence/section-59-5g-2-dispatch-2026-05-09/README.md`).
-    /// Root cause: `MultiHeadAttention::new` hardcoded `b_q: None,
-    /// b_k: None, b_v: None` regardless of `config.use_bias`. The
-    /// existing FALSIFY-001 (`qwen2_0_5b_matches_hf_config_2026_05_04`)
-    /// only checked the CONFIG STRUCT FIELD VALUES; it did not
-    /// observe that `MultiHeadAttention::new(config)` ignored
-    /// `config.use_bias`. This is the gap-between-contracts class
-    /// of defect that provable-contracts can only catch when a
-    /// falsifier observes the gap.
-    ///
-    /// Methodology: we pick the canonical 290-tensor count of
-    /// Qwen2.5-Coder-0.5B-Instruct (per HF config) and assert
-    /// `Transformer::new(qwen2_0_5b()).named_parameters().len() == 290`.
-    ///   2 (embed_tokens.weight + model.norm.weight)
-    /// + 24 layers × 12 params/layer (2 norms + 4 attn weights +
-    ///                                 3 attn biases + 3 mlp weights)
-    /// = 2 + 288 = 290. Tied lm_head shares with embed_tokens, so
-    /// it does NOT appear as an extra named parameter.
-    ///
-    /// Spec: SPEC-SHIP-TWO-001 §59 (forthcoming) val_loss anomaly
-    /// → §50.4 step 5f.6 (populate-coverage cascade).
-    #[test]
-    fn falsify_qwen2_0_5b_named_parameters_count_matches_hf() {
-        use super::super::Transformer;
-        let config = TransformerConfig::qwen2_0_5b();
-        let model = Transformer::new(&config);
-        let params = model.named_parameters();
-        let actual = params.len();
-        let expected = 2 + 24 * 12; // embed + norm + 24 layers × 12 params
-        assert_eq!(
-            actual, expected,
-            "FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-001: \
-             Transformer::new(qwen2_0_5b()).named_parameters().len() = {actual}, \
-             expected {expected}. Missing params likely include Q/K/V \
-             projection biases (24 layers × 3 = 72 expected biases) — \
-             MultiHeadAttention::new must allocate them when \
-             config.use_bias == true. See evidence/section-59-5g-2-\
-             dispatch-2026-05-09/README.md for the val_loss=0.0008 \
-             anomaly that surfaced this gap.",
-        );
-    }
-
-    /// FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002 (paired with -001):
-    /// Every layer in `Transformer::new(qwen2_0_5b())` MUST expose
-    /// `q_proj.bias`, `k_proj.bias`, `v_proj.bias` in its
-    /// `named_parameters()` output when `config.use_bias == true`.
-    /// This is a stricter form of -001 — it not only counts but
-    /// names the missing tensors so the populate path's BTreeMap
-    /// lookup hits real init keys.
-    #[test]
-    fn falsify_qwen2_0_5b_layers_expose_qkv_biases_when_use_bias_true() {
-        use super::super::Transformer;
-        let config = TransformerConfig::qwen2_0_5b();
-        assert!(config.use_bias, "qwen2_0_5b config must declare use_bias=true");
-        let model = Transformer::new(&config);
-        let params = model.named_parameters();
-        let names: std::collections::BTreeSet<&str> =
-            params.iter().map(|(name, _)| name.as_str()).collect();
-
-        for layer_idx in 0..24 {
-            for proj in &["q_proj", "k_proj", "v_proj"] {
-                let key = format!("model.layers.{layer_idx}.self_attn.{proj}.bias");
-                assert!(
-                    names.contains(key.as_str()),
-                    "FALSIFY-APR-PRETRAIN-INIT-POPULATE-COVERAGE-002: \
-                     missing named parameter `{key}` despite use_bias=true. \
-                     MultiHeadAttention::new MUST allocate b_{} when \
-                     config.use_bias is true; today it hardcodes None.",
-                    proj.split('_').next().unwrap_or(proj)
-                );
-            }
-        }
-    }
-
-    /// Drift-prevention: `qwen2_1_5b()` inherits `tie_word_embeddings` from
-    /// `qwen2_0_5b()` via `..Self::qwen2_0_5b()` spread. If someone splits
-    /// the inheritance, this test catches the silent flip.
-    #[test]
-    fn qwen2_1_5b_inherits_tie_word_embeddings_from_0_5b() {
-        let parent = TransformerConfig::qwen2_0_5b();
-        let child = TransformerConfig::qwen2_1_5b();
-        assert_eq!(
-            child.tie_word_embeddings, parent.tie_word_embeddings,
-            "qwen2_1_5b must inherit tie_word_embeddings from qwen2_0_5b — both are HF tie=true"
-        );
-        assert!(
-            child.tie_word_embeddings,
-            "qwen2_1_5b tie_word_embeddings must be true (HF config 2026-05-04)"
-        );
-    }
-
-    /// Pin the Qwen scaling-law quirk: 0.5B + 1.5B tie embeddings, 7B does not.
-    /// If the 7B is ever changed to inherit from 0.5B, this test catches it
-    /// before an operator silently fine-tunes a 7B with the wrong head shape.
-    #[test]
-    fn qwen2_7b_does_not_tie_embeddings() {
-        let config = TransformerConfig::qwen2_7b();
-        assert!(
-            !config.tie_word_embeddings,
-            "qwen2_7b tie_word_embeddings MUST be false per HF config 2026-05-04 — \
-             larger Qwen variants pay param cost for untied weights"
-        );
     }
 
     #[test]

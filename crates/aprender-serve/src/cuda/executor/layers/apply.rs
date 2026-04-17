@@ -48,12 +48,10 @@ impl CudaExecutor {
                     layer_idx, nan_count
                 );
             } else {
-                // SHIP-007 8th-pass: first 3 → first 16 to surface element-3+
-                // divergence within head 0 (head_dim=128).
                 eprintln!(
-                    "[PAR-058-L{}] RMSNorm OK, first 16: {:?}",
+                    "[PAR-058-L{}] RMSNorm OK, first 3: {:?}",
                     layer_idx,
-                    &rmsnorm_out[..16.min(rmsnorm_out.len())]
+                    &rmsnorm_out[..3.min(rmsnorm_out.len())]
                 );
             }
         }
@@ -74,10 +72,9 @@ impl CudaExecutor {
                 "[CORRECTNESS-011-L0] Q4K GEMV params: n={}, k={}",
                 q_dim, hidden_dim
             );
-            // SHIP-007 8th-pass: first 5 → first 16
             eprintln!(
-                "[CORRECTNESS-011-L0] Input (hidden_buf1): first 16 = {:?}",
-                &input_check[..16.min(input_check.len())]
+                "[CORRECTNESS-011-L0] Input (hidden_buf1): first 5 = {:?}",
+                &input_check[..5.min(input_check.len())]
             );
             eprintln!(
                 "[CORRECTNESS-011-L0] Weight ptr = {:#x}, len = {}",

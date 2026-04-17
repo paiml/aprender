@@ -274,25 +274,6 @@ fn load_humaneval_tokenizer(
 }
 
 /// ALB-084: Run HumanEval with actual model inference + Python test execution.
-///
-/// PMAT-CODE-SHIP-005-H4-FIX (2026-05-11): for instruct-family models, route
-/// the prompt through ChatML auto-wrap (`InferenceConfig::with_prompt` →
-/// `prepare_tokens_apr` → ChatMLTemplate). Parse the assistant's
-/// `\`\`\`python ... \`\`\`` code block out of the response and use that as the
-/// completion. Falls back to raw-continuation when no code block is found
-/// (preserving the older PMAT-CODE-SHIP-005-FIX behaviour).
-///
-/// Why: §65 + §66 evidence. Raw-continuation produces 34.15% pass@1 on
-/// canonical 7B Qwen2.5-Coder-Instruct. Same model + same prompt via `apr run`
-/// (ChatML auto-wrap) produces correct solutions. The Qwen-Instruct teacher
-/// is trained for chat format; published pass@1 = 88.4% uses chat template.
-///
-/// Detection: a model is considered "instruct" when its file extension is
-/// `.apr` and either the architecture metadata is qwen2/qwen/llama/mistral/
-/// phi/phi3, the vocabulary contains `<|im_start|>`, or the filename
-/// contains `instruct`/`-chat`. This matches `prepare_tokens_apr`'s
-/// detection logic; we don't replicate it — `with_prompt` triggers the same
-/// auto-wrap inside `prepare_tokens`.
 #[cfg(feature = "inference")]
 fn run_humaneval_inference(
     model_path: &Path,
@@ -300,19 +281,27 @@ fn run_humaneval_inference(
     _k_values: &[usize],
     json_output: bool,
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    use realizar::{run_inference, InferenceConfig};
+    use realizar::apr_transformer::AprKVCache;
 
     if !json_output {
         println!("  {} Loading model for inference...", "→".dimmed());
     }
+    let transformer = load_humaneval_model(model_path)?;
     let tokenizer = load_humaneval_tokenizer(model_path, json_output)?;
 
     if !json_output {
-        println!("  {} Tokenizer loaded", "✓".green());
+        println!(
+            "  {} Model loaded ({} layers, vocab={})",
+            "✓".green(),
+            transformer.config.num_layers,
+            transformer.config.vocab_size
+        );
     }
 
     let mut passed = 0usize;
     let mut results = Vec::new();
+    let temperature = 0.0f32;
+    let mut rng_state: u64 = 42;
 
     for (i, problem) in problems.iter().enumerate() {
         let entry = problem
@@ -327,102 +316,45 @@ fn run_humaneval_inference(
             continue;
         }
 
-        // H4 fix: route through ChatML auto-wrap via `with_prompt`. The
-        // `prepare_tokens_apr` in realizar/aprender-serve detects the
-        // instruct architecture from APR metadata and wraps the user prompt
-        // in `<|im_start|>user\n...<|im_end|>\n<|im_start|>assistant\n` for
-        // chat-tuned models. The assistant emits a markdown-wrapped Python
-        // code block.
-        let config_chatml = InferenceConfig::new(model_path)
-            .with_prompt(problem.prompt.clone())
-            .with_max_tokens(512)
-            .with_temperature(0.0)
-            .with_top_k(1);
+        // Generate completion (greedy, max 256 tokens)
+        let mut cache = AprKVCache::new(&transformer.config);
+        let mut tokens = prompt_tokens.clone();
 
-        let result = match run_inference(&config_chatml) {
-            Ok(r) => r,
-            Err(e) => {
-                if !json_output {
-                    eprintln!(
-                        "  [FAIL] {} ({}): inference error: {e}",
-                        problem.task_id, entry
-                    );
-                }
-                results.push((problem.task_id.clone(), entry.to_string(), false));
-                continue;
-            }
-        };
-
-        // Try to extract a Python code block from the assistant response.
-        // On instruct-family models the response is wrapped in markdown;
-        // on base models the response is raw continuation — both are handled.
-        //
-        // R1+R2: pass `entry_point` so multi-block completions resolve to
-        // the block containing `def {entry_point}(` (not the first
-        // explanatory snippet the model may emit).
-        let completion =
-            if let Some(code) = extract_python_code_block_targeted(&result.text, Some(entry)) {
-                // ChatML/markdown path: assistant emitted `\`\`\`python\n…\n\`\`\``.
-                //
-                // §69 RC3 FIX: the extracted code block contains the function
-                // (signature + body) but NOT the prompt's preamble — typing
-                // imports (`from typing import List`), constants, helpers, etc.
-                // Concatenating ONLY the code block drops those, producing
-                // `NameError: List is not defined` when the function signature
-                // uses typing aliases. Prepend the prompt's preamble (everything
-                // before `def {entry_point}(`) so imports survive.
-                let preamble = extract_prompt_preamble(&problem.prompt, entry);
-                if preamble.is_empty() {
-                    code
-                } else {
-                    format!("{preamble}\n{code}")
-                }
-            } else {
-                // Raw-continuation fallback (pre-H4 path). Slice off the prompt
-                // prefix when it's verbatim in result.text; otherwise decode
-                // tokens past `input_token_count`. Apply dedent residual fix.
-                let raw = if let Some(stripped) = result.text.strip_prefix(&problem.prompt) {
-                    stripped.to_string()
-                } else {
-                    let completion_tokens = if result.tokens.len() > result.input_token_count {
-                        &result.tokens[result.input_token_count..]
-                    } else {
-                        &result.tokens[..]
-                    };
-                    tokenizer.decode(completion_tokens)
-                };
-                let truncated = truncate_at_function_boundary(&raw);
-                // The aligned form goes APPENDED to the prompt; encode that as
-                // the full continuation. We then split the prompt back off in
-                // the program-build step below.
-                format!(
-                    "{}{}",
-                    problem.prompt,
-                    align_continuation_indent(&problem.prompt, truncated)
-                )
-            };
-
-        // Build the test program. Two cases:
-        //   - ChatML path: `completion` is a complete function from the
-        //     code block (signature + body). Use it directly.
-        //   - Raw-continuation path: `completion` already includes the
-        //     prompt prefix (concatenated above).
-        let full_program = format!("{completion}\n\n{}\n\ncheck({})\n", problem.test, entry);
-
-        let exec_result = execute_python_test_with_diagnostics(&full_program, 10);
-        let ok = exec_result.success;
-
-        if std::env::var("APR_EVAL_DEBUG").is_ok() {
-            write_apr_eval_debug(
-                &problem.task_id,
-                &problem.prompt,
-                &result.text,
-                &completion,
-                &full_program,
-                &exec_result,
-            );
+        for (pos, &tok) in prompt_tokens.iter().enumerate() {
+            let _ = transformer.forward_with_cache(tok, &mut cache, pos);
         }
 
+        let max_new = 256;
+        for step in 0..max_new {
+            let pos = prompt_tokens.len() + step;
+            let last_tok = *tokens.last().expect("last(");
+            let logits = transformer
+                .forward_with_cache(last_tok, &mut cache, pos)
+                .map_err(|e| format!("Generation failed: {e}"))?;
+
+            let next = sample_token(&logits, temperature, &mut rng_state);
+            tokens.push(next);
+
+            if next == 0 {
+                break;
+            }
+            if let Some(eos) = transformer.config.eos_token_id {
+                if next == eos {
+                    break;
+                }
+            }
+        }
+
+        let completion_tokens = &tokens[prompt_tokens.len()..];
+        let completion = tokenizer.decode(completion_tokens);
+        let completion = truncate_at_function_boundary(&completion);
+
+        let full_program = format!(
+            "{}{}\n\n{}\n\ncheck({})\n",
+            problem.prompt, completion, problem.test, entry
+        );
+
+        let ok = execute_python_test(&full_program, 10);
         if ok {
             passed += 1;
         }
@@ -613,104 +545,6 @@ fn run_humaneval_inference_cuda(
     Err("CUDA not available (compile with --features cuda)".to_string())
 }
 
-/// PMAT-CODE-SHIP-005-H4-FIX: extract the first Python code block from a
-/// ChatML assistant response.
-///
-/// Instruct-family models (Qwen-Coder-Instruct, etc.) respond to a coding
-/// prompt with a markdown-wrapped solution like:
-///
-/// ```text
-/// Certainly! Here's a solution:
-/// ```python
-/// def truncate_number(number: float) -> float:
-///     import math
-///     fractional_part, _ = math.modf(number)
-///     return fractional_part
-/// ```
-/// ```
-///
-/// This helper extracts the inner code between the first ```python fence
-/// and the next ``` fence. Returns `None` when no fenced Python block is
-/// found (caller falls back to raw-continuation slicing).
-///
-/// Tolerant of variants:
-/// - ```python … ``` (preferred)
-/// - ```py … ```
-/// - ``` … ``` (untagged — still treated as Python on a code-eval path)
-pub(super) fn extract_python_code_block(text: &str) -> Option<String> {
-    extract_python_code_block_targeted(text, None)
-}
-
-/// PMAT-CODE-SHIP-005-R1-R2-REFINEMENT: function-targeted extraction.
-///
-/// When `entry_point` is supplied, scan ALL fenced Python code blocks and
-/// prefer the one whose body contains `def {entry_point}(`. This handles:
-///
-/// **R1 (multi-block completions)**: model sometimes emits an explanatory
-/// snippet (e.g., wrong/incomplete code) BEFORE the actual solution block.
-/// First-block-wins picks the snippet; function-targeted picks the solution.
-///
-/// **R2 (function-name match)**: even when only one block exists, the
-/// function-name match is an extra safety check that the extracted block
-/// is the intended solution (not just unrelated demo code).
-///
-/// Fallback: if no block contains the entry_point, return the first
-/// non-empty fenced block (preserves `extract_python_code_block` behaviour).
-pub(super) fn extract_python_code_block_targeted(
-    text: &str,
-    entry_point: Option<&str>,
-) -> Option<String> {
-    // Collect all fenced blocks (any of the accepted opening fences).
-    let mut blocks: Vec<String> = Vec::new();
-    let mut cursor = 0usize;
-    while cursor < text.len() {
-        let remainder = &text[cursor..];
-        // Find the next opening fence (any variant); pick the earliest match.
-        let mut best: Option<(usize, usize)> = None;
-        for fence in ["```python\n", "```py\n", "```\n"] {
-            if let Some(rel) = remainder.find(fence) {
-                let after_open = rel + fence.len();
-                match best {
-                    None => best = Some((rel, after_open)),
-                    Some((br, _)) if rel < br => best = Some((rel, after_open)),
-                    _ => {}
-                }
-            }
-        }
-        let (_start_rel, after_open_rel) = match best {
-            Some(p) => p,
-            None => break,
-        };
-        let after_open = cursor + after_open_rel;
-        if let Some(rel_end) = text[after_open..].find("\n```") {
-            let code = &text[after_open..after_open + rel_end];
-            if !code.trim().is_empty() {
-                blocks.push(code.to_string());
-            }
-            cursor = after_open + rel_end + "\n```".len();
-        } else {
-            break;
-        }
-    }
-
-    if blocks.is_empty() {
-        return None;
-    }
-
-    // R2: prefer block containing `def {entry_point}(`.
-    if let Some(ep) = entry_point {
-        let needle = format!("def {ep}(");
-        for block in &blocks {
-            if block.contains(&needle) {
-                return Some(block.clone());
-            }
-        }
-    }
-
-    // Fallback: first non-empty block (legacy behaviour preserved).
-    Some(blocks[0].clone())
-}
-
 /// Truncate completion at the next top-level function/class definition.
 pub(super) fn truncate_at_function_boundary(completion: &str) -> &str {
     // Find the first '\ndef ' or '\nclass ' that indicates a new top-level definition
@@ -722,613 +556,46 @@ pub(super) fn truncate_at_function_boundary(completion: &str) -> &str {
     completion
 }
 
-/// §69 RC3 FIX: extract everything in `prompt` that appears BEFORE the
-/// `def {entry_point}(` line — i.e., the imports/constants/helpers that
-/// the model assumes are in scope. Used by the ChatML/markdown path to
-/// reconstitute a valid `full_program` when the assistant's code block
-/// omits the imports (which it does for instruct models that read the
-/// imports from the user prompt's context).
-///
-/// Returns an empty string when:
-/// - `entry_point` is empty or "unknown"
-/// - `def {entry_point}(` is not found in the prompt
-/// - There's no content before `def {entry_point}(` (preamble-less prompt)
-///
-/// The returned string has trailing whitespace trimmed but leading
-/// imports/code preserved verbatim.
-pub(super) fn extract_prompt_preamble(prompt: &str, entry_point: &str) -> String {
-    if entry_point.is_empty() || entry_point == "unknown" {
-        return String::new();
-    }
-    let needle = format!("def {entry_point}(");
-    let Some(idx) = prompt.find(&needle) else {
-        return String::new();
-    };
-    prompt[..idx].trim_end().to_string()
-}
-
-/// PMAT-CODE-SHIP-005-WHITESPACE-RESIDUAL: normalise raw-continuation indent.
-///
-/// HumanEval prompts end with `    """\n` (4-space-indented docstring close);
-/// the function body should continue at 4-space indent. On `apr eval --task
-/// humaneval` raw-continuation path, the model emits 5-space leading indent
-/// (BPE tokenization artifact at the prompt-completion boundary). The
-/// resulting concatenation `    """\n     for i in...` is invalid Python
-/// (IndentationError).
-///
-/// Manual `apr run` on the same model with auto-wrap produces correct
-/// 4-space; the bug is raw-continuation-specific.
-///
-/// Fix: detect the prompt's expected continuation indent (last non-empty
-/// line's leading-space count) vs the completion's first non-empty line
-/// indent; if completion is over-indented, dedent every line by the
-/// excess. Only over-indented completions are touched (no risk to
-/// correctly-aligned outputs).
-///
-/// Lines without sufficient leading whitespace (blank lines or top-level
-/// code) are left untouched.
-pub(super) fn align_continuation_indent(prompt: &str, completion: &str) -> String {
-    let expected_indent = prompt
-        .lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .map(|l| l.chars().take_while(|c| *c == ' ').count())
-        .unwrap_or(0);
-
-    let actual_indent = completion
-        .lines()
-        .find(|l| !l.trim().is_empty())
-        .map(|l| l.chars().take_while(|c| *c == ' ').count())
-        .unwrap_or(0);
-
-    if actual_indent <= expected_indent {
-        return completion.to_string();
-    }
-
-    let excess = actual_indent - expected_indent;
-    let prefix = " ".repeat(excess);
-
-    // Dedent only the function-body chunk — stop at the first non-empty
-    // line that drops to indent 0 (signaling we've exited the function
-    // scope; e.g., `if __name__ == "__main__":` post-amble). Top-level
-    // code at indent < `excess` must be preserved as-is.
-    let mut in_body = true;
-    completion
-        .split_inclusive('\n')
-        .map(|line| {
-            let trimmed = line.trim_start_matches(' ').trim_end_matches('\n');
-            // Track scope transition: once we see a non-empty 0-indent line,
-            // we're past the function body — leave all subsequent lines alone.
-            if in_body && !trimmed.is_empty() {
-                let leading = line.chars().take_while(|c| *c == ' ').count();
-                if leading == 0 {
-                    in_body = false;
-                }
-            }
-            if in_body && line.starts_with(&prefix) {
-                line[excess..].to_string()
-            } else {
-                line.to_string()
-            }
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod extract_python_code_block_targeted_tests {
-    use super::extract_python_code_block_targeted;
-
-    /// R2 canonical: assistant emits explanatory snippet block FIRST then
-    /// the actual solution block. Without targeting, first-wins picks the
-    /// wrong block.
-    #[test]
-    fn prefers_block_containing_entry_point() {
-        let text = "First a sketch:\n```python\n# rough idea\nx = 1\n```\nNow the actual solution:\n```python\ndef separate_paren_groups(s):\n    return [s]\n```";
-        let got = extract_python_code_block_targeted(text, Some("separate_paren_groups"));
-        assert_eq!(
-            got.as_deref(),
-            Some("def separate_paren_groups(s):\n    return [s]")
-        );
-    }
-
-    /// Single block + matching entry_point still returns that block.
-    #[test]
-    fn single_block_matching_entry() {
-        let text = "```python\ndef f(x):\n    return x\n```";
-        let got = extract_python_code_block_targeted(text, Some("f"));
-        assert_eq!(got.as_deref(), Some("def f(x):\n    return x"));
-    }
-
-    /// No matching entry_point → falls back to first block (legacy behaviour).
-    #[test]
-    fn no_entry_match_falls_back_to_first() {
-        let text = "```python\nimport os\n```\n```python\ndef other():\n    pass\n```";
-        let got = extract_python_code_block_targeted(text, Some("missing_fn"));
-        assert_eq!(got.as_deref(), Some("import os"));
-    }
-
-    /// `None` entry_point → first-block-wins (identical to legacy
-    /// `extract_python_code_block` behaviour).
-    #[test]
-    fn no_entry_point_first_block_wins() {
-        let text = "```python\nfirst = 1\n```\n```python\ndef target():\n    pass\n```";
-        let got = extract_python_code_block_targeted(text, None);
-        assert_eq!(got.as_deref(), Some("first = 1"));
-    }
-
-    /// Mixed fence tags across blocks: still collects all and picks the
-    /// one with matching entry_point.
-    #[test]
-    fn mixed_fence_tags_picks_entry_block() {
-        let text = "```\n# untagged junk\n```\n```py\ndef helper(): pass\n```\n```python\ndef target():\n    return 42\n```";
-        let got = extract_python_code_block_targeted(text, Some("target"));
-        assert_eq!(got.as_deref(), Some("def target():\n    return 42"));
-    }
-
-    /// No fence at all → None.
-    #[test]
-    fn no_fence_returns_none() {
-        let text = "just text without fences";
-        let got = extract_python_code_block_targeted(text, Some("anything"));
-        assert!(got.is_none());
-    }
-
-    /// Empty-content fences are skipped; entry-point match still works on
-    /// later non-empty block.
-    #[test]
-    fn skips_empty_fences_before_match() {
-        let text = "```python\n\n```\n```python\ndef target():\n    pass\n```";
-        let got = extract_python_code_block_targeted(text, Some("target"));
-        assert_eq!(got.as_deref(), Some("def target():\n    pass"));
-    }
-}
-
-#[cfg(test)]
-mod extract_python_code_block_tests {
-    use super::extract_python_code_block;
-
-    /// SHIP-005 H4 canonical case: assistant emits a Python fenced block.
-    #[test]
-    fn extracts_python_fenced_block() {
-        let text = "Certainly!\n```python\ndef f(x):\n    return x + 1\n```\nLet me know if you need more.";
-        let got = extract_python_code_block(text);
-        assert_eq!(got.as_deref(), Some("def f(x):\n    return x + 1"));
-    }
-
-    /// Tolerates `py` shortform fence.
-    #[test]
-    fn extracts_py_short_fence() {
-        let text = "```py\ndef g():\n    pass\n```";
-        let got = extract_python_code_block(text);
-        assert_eq!(got.as_deref(), Some("def g():\n    pass"));
-    }
-
-    /// Untagged fence — accept for code-eval path.
-    #[test]
-    fn extracts_untagged_fence() {
-        let text = "```\nimport os\n```";
-        let got = extract_python_code_block(text);
-        assert_eq!(got.as_deref(), Some("import os"));
-    }
-
-    /// No fence → None (caller falls back to raw-continuation).
-    #[test]
-    fn returns_none_on_no_fence() {
-        let text = "Just plain text with no code block.";
-        let got = extract_python_code_block(text);
-        assert!(got.is_none());
-    }
-
-    /// Empty fenced block → None (not an actionable code completion).
-    #[test]
-    fn returns_none_on_empty_fence() {
-        let text = "```python\n\n```";
-        let got = extract_python_code_block(text);
-        assert!(got.is_none());
-    }
-
-    /// Multiple fenced blocks → first one wins.
-    #[test]
-    fn extracts_first_of_multiple_blocks() {
-        let text = "```python\nfirst = 1\n```\nthen:\n```python\nsecond = 2\n```";
-        let got = extract_python_code_block(text);
-        assert_eq!(got.as_deref(), Some("first = 1"));
-    }
-}
-
-#[cfg(test)]
-mod extract_prompt_preamble_tests {
-    use super::extract_prompt_preamble;
-
-    /// §69 RC3 canonical: HumanEval/1-shaped prompt with `from typing import List`
-    /// preamble must be extracted before `def {entry_point}(`.
-    #[test]
-    fn captures_typing_import_preamble() {
-        let prompt = "from typing import List\n\n\ndef separate_paren_groups(s: str) -> List[str]:\n    \"\"\"...\"\"\"\n";
-        let got = extract_prompt_preamble(prompt, "separate_paren_groups");
-        assert_eq!(got, "from typing import List");
-    }
-
-    /// Multi-import + constant preamble — preserves every line up to `def`.
-    #[test]
-    fn captures_multiline_preamble() {
-        let prompt = "from typing import List, Tuple\nimport math\n\nPI = 3.14\n\ndef f(x: List[int]) -> Tuple[int, int]:\n    pass\n";
-        let got = extract_prompt_preamble(prompt, "f");
-        assert_eq!(
-            got,
-            "from typing import List, Tuple\nimport math\n\nPI = 3.14"
-        );
-    }
-
-    /// No preamble — `def` is at byte 0 → returns empty.
-    #[test]
-    fn empty_when_def_at_start() {
-        let prompt = "def trivial():\n    pass\n";
-        let got = extract_prompt_preamble(prompt, "trivial");
-        assert_eq!(got, "");
-    }
-
-    /// `entry_point` not found in prompt → returns empty (don't guess).
-    #[test]
-    fn empty_when_entry_missing() {
-        let prompt = "from typing import List\n\ndef other_fn():\n    pass\n";
-        let got = extract_prompt_preamble(prompt, "expected_fn");
-        assert_eq!(got, "");
-    }
-
-    /// Empty entry_point string → returns empty (safety guard).
-    #[test]
-    fn empty_when_entry_empty() {
-        let prompt = "from typing import List\n\ndef f():\n    pass\n";
-        let got = extract_prompt_preamble(prompt, "");
-        assert_eq!(got, "");
-    }
-
-    /// "unknown" sentinel (fallback when extract_function_name fails) → empty.
-    #[test]
-    fn empty_when_entry_unknown() {
-        let prompt = "from typing import List\n\ndef f():\n    pass\n";
-        let got = extract_prompt_preamble(prompt, "unknown");
-        assert_eq!(got, "");
-    }
-
-    /// §69 RC3 falsifier: a composed full_program built from
-    /// `preamble + extracted_code + test + check` MUST be valid Python
-    /// when the prompt has typing imports.
-    #[test]
-    fn rc3_falsifier_composed_program_is_valid_python() {
-        let prompt = "from typing import List\n\n\ndef separate_paren_groups(s: str) -> List[str]:\n    pass\n";
-        let preamble = extract_prompt_preamble(prompt, "separate_paren_groups");
-        let extracted_code = "def separate_paren_groups(s: str) -> List[str]:\n    return [s]";
-        let full = format!("{preamble}\n{extracted_code}\n");
-        assert!(
-            full.starts_with("from typing import List"),
-            "preamble must lead with import; got: {full}"
-        );
-        assert!(
-            full.contains("def separate_paren_groups"),
-            "must contain function: {full}"
-        );
-    }
-}
-
-#[cfg(test)]
-mod align_indent_tests {
-    use super::align_continuation_indent;
-
-    /// Pre-fix HumanEval/0 reproduction: 5-space body indent should
-    /// dedent to 4-space, with relative inner nesting preserved.
-    #[test]
-    fn dedents_one_excess_space() {
-        let prompt = "def f(x: int) -> int:\n    \"\"\" doc.\n    \"\"\"\n";
-        let completion =
-            "     for i in range(x):\n         if i > 0:\n             return i\n     return 0\n";
-        let got = align_continuation_indent(prompt, completion);
-        let want =
-            "    for i in range(x):\n        if i > 0:\n            return i\n    return 0\n";
-        assert_eq!(got, want);
-    }
-
-    /// Correctly-aligned completion is left unchanged.
-    #[test]
-    fn passthrough_when_already_correct() {
-        let prompt = "def f():\n    \"\"\"doc\"\"\"\n";
-        let completion = "    return 42\n";
-        let got = align_continuation_indent(prompt, completion);
-        assert_eq!(got, completion);
-    }
-
-    /// Top-level code after the function body (e.g., `if __name__`) has 0
-    /// leading spaces and must NOT be dedented (would crash on slice).
-    #[test]
-    fn leaves_zero_indent_lines_untouched() {
-        let prompt = "def f():\n    \"\"\"doc\"\"\"\n";
-        let completion = "     return 1\n\n\nif __name__ == \"__main__\":\n    pass\n";
-        let got = align_continuation_indent(prompt, completion);
-        let want = "    return 1\n\n\nif __name__ == \"__main__\":\n    pass\n";
-        assert_eq!(got, want);
-    }
-
-    /// Multi-space excess (2+) is dedented uniformly.
-    #[test]
-    fn dedents_multi_space_excess() {
-        let prompt = "    pass\n";
-        let completion = "        x = 1\n            nested = 2\n";
-        let got = align_continuation_indent(prompt, completion);
-        // expected = 4 ('    pass' last line), actual = 8 → excess = 4
-        let want = "    x = 1\n        nested = 2\n";
-        assert_eq!(got, want);
-    }
-
-    /// Empty completion is passthrough.
-    #[test]
-    fn empty_completion() {
-        let prompt = "def f():\n    pass\n";
-        let completion = "";
-        let got = align_continuation_indent(prompt, completion);
-        assert_eq!(got, "");
-    }
-
-    /// Mutation-survey section: invariant under no-indent prompt + no-indent
-    /// completion (early-return guard).
-    #[test]
-    fn no_indent_anywhere() {
-        let prompt = "x = 1\n";
-        let completion = "y = 2\n";
-        let got = align_continuation_indent(prompt, completion);
-        assert_eq!(got, completion);
-    }
-}
-
-/// Per-problem debug dump for `APR_EVAL_DEBUG=1`. Diagnoses §69
-/// "harness bug" candidate root causes RC1-RC4 by writing the full
-/// model response, extracted completion, executed program, exit code,
-/// stderr, and timeout flag to `/tmp/apr_eval_debug_<task>.json`.
-///
-/// Used to compose a falsifier: manual `python3` execution of the
-/// dumped program vs harness `execute_python_test` result.
-pub(super) fn write_apr_eval_debug(
-    task_id: &str,
-    prompt: &str,
-    response: &str,
-    completion: &str,
-    full_program: &str,
-    exec: &PythonExecResult,
-) {
-    let safe_task = task_id.replace(['/', '\\', ' '], "_");
-    let path = std::env::temp_dir().join(format!("apr_eval_debug_{safe_task}.json"));
-    let json = serde_json::json!({
-        "task_id": task_id,
-        "prompt": prompt,
-        "response": response,
-        "response_len": response.len(),
-        "completion": completion,
-        "completion_len": completion.len(),
-        "full_program": full_program,
-        "exit_code": exec.exit_code,
-        "stderr": exec.stderr_capture,
-        "timed_out": exec.timed_out,
-        "spawn_error": exec.spawn_error,
-        "success": exec.success,
-    });
-    let _ = std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&json).unwrap_or_default(),
-    );
-}
-
 /// Execute a Python program and check if all assertions pass.
 /// Returns true if exit code is 0, false otherwise.
 /// Enforces a timeout to catch infinite loops (FALSIFY-EVAL-003).
 pub(super) fn execute_python_test(program: &str, timeout_secs: u64) -> bool {
-    execute_python_test_with_diagnostics(program, timeout_secs).success
-}
-
-/// Result of executing a Python program: success flag + diagnostics.
-/// `exit_code` is `Some(code)` when the process exited; `None` when killed
-/// by timeout or spawn failed. `stderr_capture` is captured up to 64KB.
-pub(super) struct PythonExecResult {
-    pub success: bool,
-    pub exit_code: Option<i32>,
-    pub stderr_capture: String,
-    pub timed_out: bool,
-    pub spawn_error: Option<String>,
-}
-
-/// Execute Python and return diagnostics. Drains stderr to avoid pipe-buffer
-/// deadlock (RC2 candidate from §69).
-pub(super) fn execute_python_test_with_diagnostics(
-    program: &str,
-    timeout_secs: u64,
-) -> PythonExecResult {
-    use std::io::Read;
     use std::process::Command;
     use std::time::{Duration, Instant};
 
-    let tmp = std::env::temp_dir().join(format!(
-        "apr_eval_{}_{}.py",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    if let Err(e) = std::fs::write(&tmp, program) {
-        return PythonExecResult {
-            success: false,
-            exit_code: None,
-            stderr_capture: String::new(),
-            timed_out: false,
-            spawn_error: Some(format!("tmp write: {e}")),
-        };
+    // Write program to a temp file
+    let tmp = std::env::temp_dir().join(format!("apr_eval_{}.py", std::process::id()));
+    if std::fs::write(&tmp, program).is_err() {
+        return false;
     }
 
-    let spawn_result = Command::new("python3")
+    let result = Command::new("python3")
         .arg(&tmp)
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match spawn_result {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp);
-            return PythonExecResult {
-                success: false,
-                exit_code: None,
-                stderr_capture: String::new(),
-                timed_out: false,
-                spawn_error: Some(format!("spawn: {e}")),
-            };
-        }
-    };
-
-    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-    let mut timed_out = false;
-    let exit_status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    timed_out = true;
-                    break None;
+        .spawn()
+        .and_then(|mut child| {
+            let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+            loop {
+                match child.try_wait()? {
+                    Some(status) => return Ok(status.success()),
+                    None => {
+                        if Instant::now() >= deadline {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return Ok(false);
+                        }
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
                 }
-                std::thread::sleep(Duration::from_millis(50));
             }
-            Err(_) => break None,
-        }
-    };
+        });
 
-    let mut stderr_capture = String::new();
-    if let Some(mut s) = child.stderr.take() {
-        let mut buf = vec![0u8; 65536];
-        if let Ok(n) = s.read(&mut buf) {
-            stderr_capture = String::from_utf8_lossy(&buf[..n]).to_string();
-        }
-    }
-
+    // Clean up temp file
     let _ = std::fs::remove_file(&tmp);
 
-    let exit_code = exit_status.and_then(|s| s.code());
-    let success = exit_status.map(|s| s.success()).unwrap_or(false);
-
-    PythonExecResult {
-        success,
-        exit_code,
-        stderr_capture,
-        timed_out,
-        spawn_error: None,
-    }
-}
-
-#[cfg(test)]
-mod execute_python_test_diagnostics_tests {
-    use super::execute_python_test_with_diagnostics;
-
-    /// Detect whether `python3` is available in the test environment.
-    /// The workspace-test CI container does not install python3; these
-    /// tests early-return success when python3 is missing so the lib-test
-    /// suite stays green on container CI. The same tests run on
-    /// developer machines + gx10 where python3 IS present and exercise
-    /// the full diagnostic surface.
-    fn python3_available() -> bool {
-        std::process::Command::new("python3")
-            .arg("--version")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-
-    /// Trivially-passing program reports success + exit_code 0 + empty stderr.
-    #[test]
-    fn success_program_reports_zero_exit_and_empty_stderr() {
-        if !python3_available() {
-            return;
-        }
-        let program = "print('hello')\n";
-        let r = execute_python_test_with_diagnostics(program, 5);
-        assert!(r.success, "program should succeed");
-        assert_eq!(r.exit_code, Some(0));
-        assert!(
-            r.stderr_capture.is_empty(),
-            "no stderr expected, got: {}",
-            r.stderr_capture
-        );
-        assert!(!r.timed_out);
-        assert!(r.spawn_error.is_none());
-    }
-
-    /// Assertion failure → success=false, exit_code=1, stderr captured.
-    #[test]
-    fn assertion_failure_reports_nonzero_and_traceback() {
-        if !python3_available() {
-            return;
-        }
-        let program = "assert 1 == 2\n";
-        let r = execute_python_test_with_diagnostics(program, 5);
-        assert!(!r.success);
-        assert_eq!(r.exit_code, Some(1));
-        assert!(
-            r.stderr_capture.contains("AssertionError"),
-            "expected traceback, got: {}",
-            r.stderr_capture
-        );
-        assert!(!r.timed_out);
-    }
-
-    /// Falsifier §69 harness invariant: a program that python3 PASSES manually
-    /// MUST also be reported as passing by the harness. If this test ever fails
-    /// we have an RC2 (false-negative) regression.
-    #[test]
-    fn harness_invariant_passing_program_reports_success() {
-        if !python3_available() {
-            return;
-        }
-        let program = "def f(x):\n    return x + 1\n\nassert f(1) == 2\n";
-        let r = execute_python_test_with_diagnostics(program, 5);
-        assert!(r.success, "passing program must be reported as success");
-        assert_eq!(r.exit_code, Some(0));
-    }
-
-    /// Falsifier §69 RC2-extension: programs that emit verbose stderr but pass
-    /// MUST NOT deadlock — the stderr pipe is drained.
-    #[test]
-    fn verbose_stderr_does_not_deadlock_on_success() {
-        if !python3_available() {
-            return;
-        }
-        // Emit ~10KB to stderr, then exit 0 → must report success without timeout.
-        let program =
-            "import sys\nfor _ in range(200):\n    print('x' * 50, file=sys.stderr)\nsys.exit(0)\n";
-        let r = execute_python_test_with_diagnostics(program, 10);
-        assert!(
-            r.success,
-            "10KB-stderr passing program timed_out={} exit_code={:?}",
-            r.timed_out, r.exit_code
-        );
-        assert!(!r.timed_out);
-    }
-
-    /// Falsifier: when python3 is unavailable, exec result reports
-    /// spawn_error rather than success.
-    #[test]
-    fn missing_python3_reports_spawn_error() {
-        if python3_available() {
-            return; // can't test absence when present
-        }
-        let r = execute_python_test_with_diagnostics("print('hello')\n", 5);
-        assert!(!r.success);
-        assert!(
-            r.spawn_error.is_some(),
-            "expected spawn_error when python3 absent"
-        );
-        assert_eq!(r.exit_code, None);
-    }
+    result.unwrap_or(false)
 }
 
 /// Validate a single HumanEval problem has correct structure.
@@ -1533,20 +800,7 @@ pub(crate) fn run_mbpp(
     Ok(())
 }
 
-/// ALB-085 + PMAT-CODE-MBPP-H4-FIX (2026-05-12): Run MBPP with actual model
-/// inference + Python test execution.
-///
-/// Routes through `realizar::run_inference` + `InferenceConfig::with_prompt`
-/// (ChatML auto-wrap for instruct models) — mirrors the §70 HumanEval H4 +
-/// R1+R2 cascade. MBPP prompts are natural language ("Write a python
-/// function to..."); without ChatML wrap, instruct models emit NL-prose
-/// continuations ("Example: Input: ... Output: ...") instead of code (see
-/// `evidence/section-72-mbpp-cascade-2026-05-12/findings.json` for the
-/// pre-fix MBPP/11 SyntaxError evidence).
-///
-/// Parse `\`\`\`python ... \`\`\`` markdown blocks from the response. MBPP
-/// has no Python imports in the prompt, so the §70 RC3 prompt-preamble
-/// handling does not apply — the extracted code block is the program.
+/// ALB-085: Run MBPP with actual model inference + Python test execution.
 #[cfg(feature = "inference")]
 fn run_mbpp_inference(
     model_path: &Path,
@@ -1554,20 +808,44 @@ fn run_mbpp_inference(
     _k_values: &[usize],
     json_output: bool,
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    use realizar::{run_inference, InferenceConfig};
+    use realizar::apr_transformer::{AprKVCache, AprTransformer};
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
 
     if !json_output {
         println!("  {} Loading model for inference...", "→".dimmed());
     }
+    let transformer: AprTransformer = if model_path.extension().is_some_and(|e| e == "apr")
+        || model_path.join("model-best.apr").exists()
+    {
+        let apr_path = if model_path.is_dir() {
+            model_path.join("model-best.apr")
+        } else {
+            model_path.to_path_buf()
+        };
+        AprTransformer::from_apr_file(&apr_path)
+            .map_err(|e| format!("Cannot load APR model: {e}"))?
+    } else {
+        SafetensorsToAprConverter::convert(model_path)
+            .map_err(|e| format!("Cannot load model: {e}"))?
+            .into_inner()
+    };
+
     let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
         .ok_or_else(|| "No tokenizer found".to_string())?;
 
     if !json_output {
-        println!("  {} Tokenizer loaded", "✓".green());
+        println!(
+            "  {} Model loaded ({} layers, vocab={})",
+            "✓".green(),
+            transformer.config.num_layers,
+            transformer.config.vocab_size
+        );
     }
 
     let mut passed = 0usize;
     let mut results = Vec::new();
+    let temperature = 0.0f32;
+    let mut rng_state: u64 = 42;
 
     for (i, problem) in problems.iter().enumerate() {
         let task_id = match &problem.task_id {
@@ -1576,67 +854,49 @@ fn run_mbpp_inference(
             v => format!("MBPP/{v}"),
         };
 
-        // MBPP canonical prompt format: NL description + test_list hint.
-        //
-        // Without the test_list hint, the model invents its own function name
-        // (e.g., `remove_first_last_occurrence` for MBPP/11) and fails the
-        // assertion (`remove_Occ` expected). The standard MBPP format used by
-        // Bigcode + lm-eval-harness + the canonical paper includes the first
-        // 1-3 test assertions as `Your code should pass these tests:` hints —
-        // this implicitly specifies the function name and signature.
-        let test_hints = if problem.test_list.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "\nYour code should pass these tests:\n{}\n",
-                problem.test_list.join("\n")
-            )
-        };
-        let prompt = format!("{}{}", problem.text, test_hints);
+        // MBPP prompt: natural language description -> model writes complete function
+        let prompt = format!("{}\n", problem.text);
 
-        // H4 fix: route through ChatML auto-wrap via `with_prompt` (instruct
-        // models). Raw NL → ChatML user message → assistant emits markdown
-        // code block.
-        let config_chatml = InferenceConfig::new(model_path)
-            .with_prompt(prompt.clone())
-            .with_max_tokens(512)
-            .with_temperature(0.0)
-            .with_top_k(1);
+        let prompt_tokens = tokenizer.encode(&prompt);
+        if prompt_tokens.is_empty() {
+            results.push((task_id, String::new(), false));
+            continue;
+        }
 
-        let result = match run_inference(&config_chatml) {
-            Ok(r) => r,
-            Err(e) => {
-                if !json_output {
-                    eprintln!("  [FAIL] {task_id}: inference error: {e}");
-                }
-                results.push((task_id, String::new(), false));
-                continue;
+        // Generate completion (max 512 tokens -- MBPP solutions are longer)
+        let mut cache = AprKVCache::new(&transformer.config);
+        let mut tokens = prompt_tokens.clone();
+
+        for (pos, &tok) in prompt_tokens.iter().enumerate() {
+            let _ = transformer.forward_with_cache(tok, &mut cache, pos);
+        }
+
+        let max_new = 512;
+        for step in 0..max_new {
+            let pos = prompt_tokens.len() + step;
+            let last_tok = *tokens.last().expect("last(");
+            let logits = transformer
+                .forward_with_cache(last_tok, &mut cache, pos)
+                .map_err(|e| format!("Generation failed: {e}"))?;
+
+            let next = sample_token(&logits, temperature, &mut rng_state);
+            tokens.push(next);
+
+            if next == 0 {
+                break;
             }
-        };
+            if let Some(eos) = transformer.config.eos_token_id {
+                if next == eos {
+                    break;
+                }
+            }
+        }
 
-        // R1+R2: extract Python code block. MBPP has no entry_point in the
-        // problem schema (unlike HumanEval), so we pass None — the
-        // first-non-empty-block fallback is appropriate.
-        let completion_owned =
-            if let Some(code) = extract_python_code_block_targeted(&result.text, None) {
-                // ChatML/markdown path: assistant emitted `\`\`\`python\n…\n\`\`\``.
-                code
-            } else {
-                // Raw-continuation fallback (no code block found). Slice past the
-                // prompt; truncate at next top-level def.
-                let raw = if let Some(stripped) = result.text.strip_prefix(&prompt) {
-                    stripped.to_string()
-                } else {
-                    let completion_tokens = if result.tokens.len() > result.input_token_count {
-                        &result.tokens[result.input_token_count..]
-                    } else {
-                        &result.tokens[..]
-                    };
-                    tokenizer.decode(completion_tokens)
-                };
-                truncate_at_function_boundary(&raw).to_string()
-            };
-        let completion: &str = &completion_owned;
+        let completion_tokens = &tokens[prompt_tokens.len()..];
+        let completion = tokenizer.decode(completion_tokens);
+
+        // Truncate at next top-level definition (same as HumanEval)
+        let completion = truncate_at_function_boundary(&completion);
 
         // Build test program: completion + setup_code + test assertions
         let setup = problem.test_setup_code.as_deref().unwrap_or("").trim();
@@ -1647,19 +907,7 @@ fn run_mbpp_inference(
             format!("{completion}\n{setup}\n{tests}\n")
         };
 
-        let exec_result = execute_python_test_with_diagnostics(&full_program, 10);
-        let ok = exec_result.success;
-
-        if std::env::var("APR_EVAL_DEBUG").is_ok() {
-            write_apr_eval_debug(
-                &task_id,
-                &prompt,
-                &result.text,
-                completion,
-                &full_program,
-                &exec_result,
-            );
-        }
+        let ok = execute_python_test(&full_program, 10);
 
         if ok {
             passed += 1;
@@ -1781,19 +1029,7 @@ fn run_mbpp_inference_cuda(
             format!("{completion}\n{setup}\n{tests}\n")
         };
 
-        let exec_result = execute_python_test_with_diagnostics(&full_program, 10);
-        let ok = exec_result.success;
-
-        if std::env::var("APR_EVAL_DEBUG").is_ok() {
-            write_apr_eval_debug(
-                &task_id,
-                &prompt,
-                &tokenizer.decode(&tokens),
-                completion,
-                &full_program,
-                &exec_result,
-            );
-        }
+        let ok = execute_python_test(&full_program, 10);
 
         if ok {
             passed += 1;

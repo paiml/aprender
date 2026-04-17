@@ -10,7 +10,7 @@ fn test_cmd_code_is_accessible() {
     // Verify the public API entry point exists and is callable.
     // We can't run cmd_code without a model, but we can verify it compiles.
     // Verify cmd_code exists and is callable (signature tested in agent/code_tests.rs)
-    let _ = cmd_code as fn(_, _, _, _, _, _, _, _, _, _) -> _;
+    let _ = cmd_code as fn(_, _, _, _, _, _, _) -> _;
 }
 
 #[test]

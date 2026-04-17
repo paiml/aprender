@@ -278,78 +278,26 @@ impl HfHubClient {
         }
     }
 
-    /// Abort with a precise error when the Xet transfer path is needed but
-    /// not compiled in.
-    ///
-    /// Applies only to builds WITHOUT `--features xet`. Under the default
-    /// `hf-hub-integration` feature, files > 5 GiB cannot be uploaded through
-    /// HF Hub's HTTP preupload API (HF returns `uploadMode:lfs` with empty
-    /// URLs for that size class). The dogfood path is to rebuild with
-    /// `--features xet`, which wires in `hf-xet` for the Xet CAS protocol.
-    #[cfg(all(feature = "hf-hub-integration", not(feature = "xet")))]
-    fn reject_needs_xet_feature(filename: &str, file_size: usize) -> Result<()> {
-        let gib = file_size as f64 / (1024.0 * 1024.0 * 1024.0);
-        eprintln!(
-            "[LFS] ERROR: File {filename} ({gib:.2} GiB) exceeds HF Hub's 5 GiB HTTP threshold"
-        );
-        eprintln!("[LFS] HF Hub returned uploadMode=lfs with no presigned URLs, which means");
-        eprintln!("[LFS] the file must transfer via the Xet content-addressable protocol.");
-        eprintln!("[LFS] Rebuild apr with Xet support:");
-        eprintln!("[LFS]   cargo build --release --features cuda,apr-cli/xet");
-        eprintln!("[LFS] (See contracts/apr-publish-hf-large-file-v1.yaml and");
-        eprintln!("[LFS]  docs/specifications/aprender-train/ship-two-models-spec.md §12.8.)");
+    /// Return error for files >5GB that lack upload URLs.
+    #[cfg(feature = "hf-hub-integration")]
+    fn reject_oversized_file(repo_id: &str, filename: &str, file_size: usize) -> Result<()> {
+        eprintln!("[LFS] ERROR: File {} ({:.1} GB) exceeds 5GB HuggingFace Hub limit for HTTP API uploads",
+            filename, file_size as f64 / 1_000_000_000.0);
+        eprintln!("[LFS] Files > 5GB require HuggingFace's multipart transfer agent.");
+        eprintln!("[LFS] Options:");
+        eprintln!("[LFS]   1. Split model into shards < 5GB each (recommended)");
+        eprintln!("[LFS]      Use: apr export --max-shard-size 4GB");
+        eprintln!("[LFS]   2. Use huggingface-cli with lfs-enable-largefiles:");
+        eprintln!("[LFS]      git clone https://huggingface.co/{}", repo_id);
+        eprintln!("[LFS]      cp {} ./", filename);
+        eprintln!("[LFS]      git add . && git commit -m 'Add model' && git push");
         Err(HfHubError::NetworkError(format!(
-            "File {filename} ({gib:.2} GiB) exceeds HF Hub's 5 GiB HTTP threshold; \
-             rebuild with `--features xet` to enable the Xet upload path."
-        )))
-    }
-
-    /// Upload a large file via the Xet CAS protocol (F-PUB-LFS-001).
-    ///
-    /// Writes `data` to a tempfile and hands it to `XetUploader`, which
-    /// delegates chunking, dedup, xorb/shard upload, and the LFS pointer
-    /// commit to the `hf-xet` crate (HF's reference implementation).
-    ///
-    /// The tempfile round-trip is a short-term accommodation: callers today
-    /// pass `model_data: &[u8]` already resident in memory (see
-    /// `client_impl.rs::push_to_hub`). A future refactor will thread a
-    /// `&Path` through the whole upload stack to skip this copy.
-    #[cfg(feature = "xet")]
-    fn upload_via_xet(
-        &self,
-        repo_id: &str,
-        filename: &str,
-        data: &[u8],
-        commit_msg: &str,
-        token: &str,
-    ) -> Result<()> {
-        use std::io::Write;
-
-        eprintln!(
-            "[XET] Dispatching {} ({:.2} GiB) via hf-xet (>5 GiB path)",
+            "File {} ({:.1} GB) exceeds 5GB limit. \
+             HuggingFace Hub requires multipart LFS for files > 5GB. \
+             Split into smaller shards or use huggingface-cli.",
             filename,
-            data.len() as f64 / (1024.0 * 1024.0 * 1024.0)
-        );
-
-        // Materialize bytes to a tempfile so hf-xet can stream the contents.
-        // (hf-xet's `upload_from_path_blocking` reads from disk.)
-        let mut tmp = tempfile::NamedTempFile::new()
-            .map_err(|e| HfHubError::XetUpload(format!("tempfile create failed: {e}")))?;
-        tmp.write_all(data)
-            .map_err(|e| HfHubError::XetUpload(format!("tempfile write failed: {e}")))?;
-        tmp.flush()
-            .map_err(|e| HfHubError::XetUpload(format!("tempfile flush failed: {e}")))?;
-
-        let uploader = super::super::xet::XetUploader {
-            api_base: &self.api_base,
-            repo_id,
-            revision: "main",
-            token,
-        };
-        uploader.upload_file(tmp.path(), commit_msg)?;
-
-        eprintln!("[XET] Xet upload + LFS pointer commit succeeded for {filename}");
-        Ok(())
+            file_size as f64 / 1_000_000_000.0
+        )))
     }
 
     /// Upload large file via HuggingFace Hub multipart upload (APR-PUB-001)
@@ -415,21 +363,13 @@ impl HfHubClient {
         eprintln!("[LFS] Upload URL present: {}", upload_url.is_some());
         eprintln!("[LFS] Chunk URLs present: {}", chunk_urls.is_some());
 
-        // FALSIFY-PUB-LFS-001: dispatch files > 5 GiB to the Xet path
-        // when HF Hub has responded with `uploadMode:lfs` and no URLs.
+        const FIVE_GB: usize = 5 * 1024 * 1024 * 1024;
         if upload_url.is_none()
             && chunk_urls.is_none()
             && upload_mode == "lfs"
-            && super::super::xet::should_use_xet(file_size as u64)
+            && file_size > FIVE_GB
         {
-            #[cfg(feature = "xet")]
-            {
-                return self.upload_via_xet(repo_id, filename, data, commit_msg, token);
-            }
-            #[cfg(not(feature = "xet"))]
-            {
-                return Self::reject_needs_xet_feature(filename, file_size);
-            }
+            return Self::reject_oversized_file(repo_id, filename, file_size);
         }
 
         if let Some(urls) = chunk_urls {

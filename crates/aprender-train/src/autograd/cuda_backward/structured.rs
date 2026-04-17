@@ -8,7 +8,7 @@ use trueno_gpu::driver::{CudaStream, GpuBuffer, LaunchConfig};
 #[cfg(feature = "cuda")]
 use trueno_gpu::kernels::backward::{
     BatchedRmsNormBackwardKernel, BatchedSoftmaxBackwardKernel, LayerNormBackwardKernel,
-    RmsNormGammaReduceKernel, SoftmaxBackwardKernel,
+    SoftmaxBackwardKernel,
 };
 #[cfg(feature = "cuda")]
 use trueno_gpu::kernels::BatchedVectorizedRmsNormKernel;
@@ -159,12 +159,8 @@ pub fn batched_softmax_backward(
 ///
 /// - **Precondition**: input contains original forward input, gamma has hidden_size elements,
 ///   all buffers allocated with at least batch_size * hidden_size elements
-/// - **Postcondition**: grad_input contains ∂L/∂x per the RMSNorm backward formula;
-///   `grad_gamma[i]` contains `Σ_r (∂L/∂y[r][i] · x[r][i] / rms[r])` summed in
-///   fixed iteration order over rows (FALSIFY-GPUTRAIN-006).
-/// - **Invariant**: Uses batched stride-loop kernel + deterministic per-row partial
-///   reduction; no hidden_size upper limit; bit-exactly reproducible across two
-///   cuda:0 seed=0 runs (no atomicAdd in the gamma accumulation path).
+/// - **Postcondition**: grad_input contains ∂L/∂x per the RMSNorm backward formula
+/// - **Invariant**: Uses batched stride-loop kernel; no hidden_size upper limit
 #[cfg(feature = "cuda")]
 pub fn rms_norm_backward(
     input: &GpuBuffer<f32>,
@@ -182,22 +178,6 @@ pub fn rms_norm_backward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    // FALSIFY-GPUTRAIN-006: allocate per-row partial buffer
-    // `[batch_size × hidden_size]` for the deterministic two-stage reduction. Each
-    // backward block writes EXCLUSIVELY to `grad_gamma_partial[block_idx]`, then the
-    // companion `RmsNormGammaReduceKernel` sums rows in fixed order
-    // (`r = 0, 1, …, batch_size - 1`) into the final `grad_gamma[hidden_size]`.
-    // No atomicAdd is involved — the result is bit-exact across cuda:0 seed=0 reruns.
-    let partial_elem_count = (batch_size as usize) * (hidden_size as usize);
-    let ctx = cache.ctx().clone();
-    let grad_gamma_partial: GpuBuffer<f32> =
-        GpuBuffer::new(&ctx, partial_elem_count).map_err(|e| {
-            CudaTensorError::KernelError(format!(
-                "RMSNorm backward: grad_gamma_partial alloc failed ({batch_size}×{hidden_size}): {e:?}"
-            ))
-        })?;
-
-    // ── Stage 1: per-row partial backward kernel ────────────────────────
     // Contract: dimension-independent-kernels-v1.yaml (FALSIFY-DIM-001)
     let key = "batched_rms_norm_backward";
     let module = match cache.get_cached(key) {
@@ -220,16 +200,14 @@ pub fn rms_norm_backward(
     let gamma_ptr = gamma.as_ptr();
     let grad_out_ptr = grad_output.as_ptr();
     let grad_in_ptr = grad_input.as_ptr();
-    // FALSIFY-GPUTRAIN-006: pass the per-row partial buffer (NOT the final
-    // grad_gamma) so the backward kernel writes per-row slots without atomics.
-    let grad_gamma_partial_ptr = grad_gamma_partial.as_ptr();
+    let grad_gamma_ptr = grad_gamma.as_ptr();
 
     let mut args: [*mut std::ffi::c_void; 8] = [
         &input_ptr as *const _ as *mut _,
         &gamma_ptr as *const _ as *mut _,
         &grad_out_ptr as *const _ as *mut _,
         &grad_in_ptr as *const _ as *mut _,
-        &grad_gamma_partial_ptr as *const _ as *mut _,
+        &grad_gamma_ptr as *const _ as *mut _,
         &batch_size as *const _ as *mut _,
         &hidden_size as *const _ as *mut _,
         &eps as *const _ as *mut _,
@@ -243,44 +221,6 @@ pub fn rms_norm_backward(
         )?;
     }
 
-    // ── Stage 2: deterministic fixed-order cross-row reduction ──────────
-    let reduce_key = "rms_norm_gamma_reduce";
-    let reduce_module = match cache.get_cached(reduce_key) {
-        Some(m) => m,
-        None => {
-            let kernel = RmsNormGammaReduceKernel::new(batch_size, hidden_size);
-            let ptx = kernel.emit_ptx_for_target(cache.sm_target());
-            cache.get_or_compile(reduce_key, &ptx)?
-        }
-    };
-
-    let reduce_config = LaunchConfig {
-        grid: (hidden_size.div_ceil(RmsNormGammaReduceKernel::BLOCK_SIZE), 1, 1),
-        block: (RmsNormGammaReduceKernel::BLOCK_SIZE, 1, 1),
-        shared_mem: 0,
-    };
-
-    let final_grad_gamma_ptr = grad_gamma.as_ptr();
-
-    let mut reduce_args: [*mut std::ffi::c_void; 4] = [
-        &grad_gamma_partial_ptr as *const _ as *mut _,
-        &final_grad_gamma_ptr as *const _ as *mut _,
-        &batch_size as *const _ as *mut _,
-        &hidden_size as *const _ as *mut _,
-    ];
-
-    // SAFETY: Same FFI invariants as Stage 1. Both buffers are valid GPU
-    // allocations sized batch_size*hidden_size and hidden_size respectively.
-    unsafe {
-        stream
-            .launch_kernel(reduce_module, "rms_norm_gamma_reduce", &reduce_config, &mut reduce_args)
-            .map_err(|e| {
-                CudaTensorError::KernelError(format!("RMSNorm gamma-reduce launch failed: {e:?}"))
-            })?;
-    }
-
-    // grad_gamma_partial drops here; cudaFree is implicit via GpuBuffer Drop.
-    drop(grad_gamma_partial);
     Ok(())
 }
 

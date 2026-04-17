@@ -293,12 +293,3 @@ falsification_tests:
     status: "IMPLEMENTED"
     implementation: "src/format/tokenizer_vocab_contract_falsify.rs"
     if_fails: "Family added to one contract but not the other"
-
-qa_gate:
-  id: F-TOKENIZER-VOCAB-GATE
-  name: Tokenizer Vocab Gate
-  description: Quality gate for tokenizer vocabulary invariants (size matches model, no duplicates, range constraints)
-  checks:
-  - validation
-  - falsification
-  pass_criteria: All falsification tests pass + proof obligations satisfied

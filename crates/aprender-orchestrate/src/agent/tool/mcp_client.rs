@@ -27,8 +27,8 @@ use crate::agent::driver::ToolDefinition;
 ///
 /// Separates the tool from the transport layer so that:
 /// - Tests use `MockMcpTransport`
-/// - Production uses `StdioMcpTransport` (Phase 2: `pmcp::Client` v2.3)
-/// - Future: SSE / WebSocket transports (both available in pmcp v2.3)
+/// - Production uses `StdioMcpTransport` (Phase 2: `pmcp::Client`)
+/// - Future: SSE/WebSocket transports
 #[async_trait]
 pub trait McpTransport: Send + Sync {
     /// Call a tool on the MCP server.

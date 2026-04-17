@@ -22,7 +22,7 @@
 #![allow(clippy::similar_names)]
 
 use crate::kernels::Kernel;
-use crate::ptx::builder::{PtxArithmetic, PtxComparison, PtxControl};
+use crate::ptx::builder::{PtxArithmetic, PtxAtomic, PtxComparison, PtxControl};
 use crate::ptx::{PtxKernel, PtxReg, PtxType};
 
 /// RMSNorm Backward Kernel (warp-parallel, one row per warp)
@@ -220,13 +220,7 @@ impl Kernel for RmsNormBackwardKernel {
 /// - `gamma_ptr`: Learned scale parameter (γ) [hidden_dim]
 /// - `grad_output_ptr`: Gradient from upstream (∂L/∂y) [num_rows, hidden_dim]
 /// - `grad_input_ptr`: Output gradient for input (∂L/∂x) [num_rows, hidden_dim]
-/// - `grad_gamma_ptr`: Per-row partial output for gamma gradient — see "Determinism" below.
-///   Layout `[num_rows × hidden_dim]` (NOT `[hidden_dim]`). Each block writes its
-///   row's contribution to `grad_gamma_ptr + (block_idx * hidden_dim + i) * 4` via a
-///   plain store (no atomic). The caller must run `RmsNormGammaReduceKernel` afterward
-///   to collapse the partials into the final `[hidden_dim]` gradient in fixed
-///   iteration order — this is what makes the backward pass bit-exactly reproducible
-///   across two cuda:0 seed=0 runs (FALSIFY-GPUTRAIN-006 contract: |Δloss[k]| ≤ 1e-5).
+/// - `grad_gamma_ptr`: Output gradient for gamma (∂L/∂γ) [hidden_dim] — accumulated via atomicAdd
 /// - `num_rows`: Number of rows (batch size × seq_len)
 /// - `hidden_dim`: Hidden dimension (no upper limit)
 /// - `eps`: Epsilon for numerical stability
@@ -298,13 +292,6 @@ impl Kernel for BatchedRmsNormBackwardKernel {
                 let input_row_base = ctx.add_u64(input_ptr, row_offset);
                 let grad_out_row_base = ctx.add_u64(grad_output_ptr, row_offset);
                 let grad_in_row_base = ctx.add_u64(grad_input_ptr, row_offset);
-                // FALSIFY-GPUTRAIN-006 fix: grad_gamma is now a per-row partial buffer
-                // `[num_rows][hidden_dim]`. Each block writes EXCLUSIVELY to its own row
-                // slice (block_idx == row_idx), so no atomic is needed for the per-row
-                // store. The cross-row sum is done by RmsNormGammaReduceKernel in fixed
-                // iteration order, eliminating the FP32-associativity non-determinism
-                // observed at |Δ|=1.19e-3 with the prior single-shared-buffer atomicAdd.
-                let grad_gamma_row_base = ctx.add_u64(grad_gamma_ptr, row_offset);
 
                 // === Pass 1: Compute sum(x²) and sum(x·grad_y·γ) via stride loop ===
                 let local_sum_x2 = ctx.mov_f32_imm(0.0);
@@ -408,129 +395,15 @@ impl Kernel for BatchedRmsNormBackwardKernel {
                 let grad_x = ctx.mul_f32(inv_rms, adjusted);
                 ctx.st_global_f32(gx_addr, grad_x);
 
-                // ∂L/∂γ_i = ∂L/∂y[r][i] × x[r][i] / rms — single-row partial.
-                // FALSIFY-GPUTRAIN-006: write to the EXCLUSIVE per-row slot
-                // grad_gamma_partial[row_idx][i]. No atomic — each block owns its row.
-                // The fixed-order cross-row sum is performed by RmsNormGammaReduceKernel.
-                let gg_partial_addr = ctx.add_u64(grad_gamma_row_base, offset);
+                // ∂L/∂γ_i += ∂L/∂y[r][i] × x[r][i] / rms
+                // Accumulated across rows via atomicAdd (buffer must be zeroed by caller)
+                let gg_addr = ctx.add_u64(grad_gamma_ptr, offset);
                 let grad_gamma_contrib = ctx.mul_f32(gy_val, x_val);
                 let grad_gamma_contrib = ctx.mul_f32(grad_gamma_contrib, inv_rms);
-                ctx.st_global_f32(gg_partial_addr, grad_gamma_contrib);
+                let _ = ctx.atom_add_global_f32(gg_addr, grad_gamma_contrib);
 
                 ctx.add_u32_inplace(i_pass2, 32);
                 ctx.branch("pass2_loop");
-
-                ctx.label("exit");
-                ctx.ret();
-            })
-    }
-}
-
-/// FALSIFY-GPUTRAIN-006 deterministic reduction kernel.
-///
-/// Companion to `BatchedRmsNormBackwardKernel`. Sums the per-row partial
-/// `grad_gamma` contributions produced by the backward kernel into the final
-/// `grad_gamma[hidden_dim]` accumulator, in **fixed iteration order**
-/// (`r = 0, 1, …, num_rows - 1`). Because each output index `i` is owned
-/// exclusively by one thread (no cross-thread accumulation on the same `i`),
-/// and because the per-thread accumulation visits rows in a deterministic
-/// order, the result is bit-exactly reproducible across two cuda:0 seed=0
-/// runs — eliminating the ~1.19e-3 |Δloss| drift observed previously with
-/// the prior atomicAdd-based design.
-///
-/// # Parameters
-/// - `grad_gamma_partial_ptr`: Per-row partial buffer `[num_rows × hidden_dim]`
-///   produced by `BatchedRmsNormBackwardKernel`.
-/// - `grad_gamma_ptr`: Final output `[hidden_dim]`. Caller MAY pre-zero it,
-///   but this kernel writes the sum unconditionally so prior content is
-///   overwritten (not added to).
-/// - `num_rows`: Number of rows in the partial buffer (= `BatchedRmsNormBackwardKernel.num_rows`).
-/// - `hidden_dim`: Width (= `BatchedRmsNormBackwardKernel.hidden_dim`).
-///
-/// # Launch config
-/// Grid: `(ceil(hidden_dim / 256), 1, 1)`, Block: `(256, 1, 1)`. One thread per `i`.
-#[derive(Debug, Clone)]
-pub struct RmsNormGammaReduceKernel {
-    /// Number of rows in the partial buffer.
-    pub num_rows: u32,
-    /// Hidden dimension (output width).
-    pub hidden_dim: u32,
-}
-
-impl RmsNormGammaReduceKernel {
-    /// Recommended block size — one thread per `hidden_dim` element.
-    pub const BLOCK_SIZE: u32 = 256;
-
-    /// Create a new reduction kernel sized for the matching backward kernel.
-    #[must_use]
-    pub fn new(num_rows: u32, hidden_dim: u32) -> Self {
-        Self {
-            num_rows,
-            hidden_dim,
-        }
-    }
-
-    /// Grid size for a given `hidden_dim` — one block per 256-element chunk.
-    #[must_use]
-    pub fn grid_x(&self) -> u32 {
-        self.hidden_dim.div_ceil(Self::BLOCK_SIZE)
-    }
-}
-
-impl Kernel for RmsNormGammaReduceKernel {
-    fn name(&self) -> &str {
-        "rms_norm_gamma_reduce"
-    }
-
-    fn build_ptx(&self) -> PtxKernel {
-        PtxKernel::new("rms_norm_gamma_reduce")
-            .param(PtxType::U64, "grad_gamma_partial_ptr")
-            .param(PtxType::U64, "grad_gamma_ptr")
-            .param(PtxType::U32, "num_rows")
-            .param(PtxType::U32, "hidden_dim")
-            .build(|ctx| {
-                let block_idx = ctx.special_reg(PtxReg::CtaIdX);
-                let tid = ctx.special_reg(PtxReg::TidX);
-
-                // Global thread index in [0, hidden_dim).
-                let block_size = ctx.mov_u32_imm(Self::BLOCK_SIZE);
-                let block_offset = ctx.mul_lo_u32(block_idx, block_size);
-                let i_idx = ctx.add_u32_reg(block_offset, tid);
-
-                // Bounds check: i_idx < hidden_dim.
-                let hidden_dim_reg = ctx.load_param_u32("hidden_dim");
-                let valid = ctx.setp_lt_u32(i_idx, hidden_dim_reg);
-                ctx.branch_if_not(valid, "exit");
-
-                let num_rows_reg = ctx.load_param_u32("num_rows");
-                let partial_ptr = ctx.load_param_u64("grad_gamma_partial_ptr");
-                let final_ptr = ctx.load_param_u64("grad_gamma_ptr");
-
-                let four = ctx.mov_u32_imm(4);
-                let i_byte_offset = ctx.mul_wide_u32_reg(i_idx, four);
-
-                // sum = 0; for r in 0..num_rows: sum += partial[r * hidden_dim + i_idx]
-                let sum = ctx.mov_f32_imm(0.0);
-                let r = ctx.mov_u32_imm(0);
-                ctx.label("reduce_loop");
-                let done = ctx.setp_ge_u32(r, num_rows_reg);
-                ctx.branch_if(done, "reduce_done");
-
-                // partial_addr = partial_ptr + (r * hidden_dim + i_idx) * 4
-                let r_times_hd = ctx.mul_lo_u32(r, hidden_dim_reg);
-                let r_times_hd_plus_i = ctx.add_u32_reg(r_times_hd, i_idx);
-                let r_byte_offset = ctx.mul_wide_u32_reg(r_times_hd_plus_i, four);
-                let partial_addr = ctx.add_u64(partial_ptr, r_byte_offset);
-                let partial_val = ctx.ld_global_f32(partial_addr);
-                ctx.add_f32_inplace(sum, partial_val);
-
-                ctx.add_u32_inplace(r, 1);
-                ctx.branch("reduce_loop");
-                ctx.label("reduce_done");
-
-                // Write final[i_idx] = sum
-                let final_addr = ctx.add_u64(final_ptr, i_byte_offset);
-                ctx.st_global_f32(final_addr, sum);
 
                 ctx.label("exit");
                 ctx.ret();
@@ -698,99 +571,6 @@ mod tests {
             assert!(
                 ptx.contains(".entry batched_rms_norm_backward"),
                 "Failed for rows={rows}, dim={dim}"
-            );
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    // FALSIFY-GPUTRAIN-006 — deterministic gamma reduction
-    //
-    // The atomicAdd on `grad_gamma[i]` was the singular f32 cross-block
-    // race in the training kernel set. After the fix, the backward kernel
-    // writes per-row partials to `grad_gamma_partial[block_idx][i]` (no
-    // atomic), and `RmsNormGammaReduceKernel` sums rows in fixed
-    // iteration order. These tests pin both invariants at compile time.
-    // ─────────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_batched_rms_norm_backward_no_f32_atomic() {
-        // FALSIFY-GPUTRAIN-006 root-cause guard: the backward kernel must
-        // NOT contain any `atom.global.add.f32` instruction. If a future
-        // refactor reintroduces atomicAdd on f32, this test fails before
-        // any seed-reproducibility evidence run is needed.
-        let kernel = BatchedRmsNormBackwardKernel::new(64, 128, 1e-6);
-        let ptx = kernel.emit_ptx();
-        assert!(
-            !ptx.contains("atom.global.add.f32") && !ptx.contains("atom.add.global.f32"),
-            "FALSIFY-GPUTRAIN-006 regression: backward kernel reintroduced f32 atomicAdd; \
-             grad_gamma must remain a per-row partial buffer.\nPTX:\n{ptx}"
-        );
-        // Sanity: the kernel still uses warp-shuffle for the in-row reduce.
-        assert!(
-            ptx.contains("shfl.sync"),
-            "warp-shuffle reduction must remain — only the cross-row atomic was removed"
-        );
-    }
-
-    #[test]
-    fn test_rms_norm_gamma_reduce_kernel_name() {
-        let kernel = RmsNormGammaReduceKernel::new(64, 128);
-        assert_eq!(kernel.name(), "rms_norm_gamma_reduce");
-    }
-
-    #[test]
-    fn test_rms_norm_gamma_reduce_ptx_generation() {
-        let kernel = RmsNormGammaReduceKernel::new(64, 128);
-        let ptx = kernel.emit_ptx();
-        // Entry point + parameter signature
-        assert!(ptx.contains(".entry rms_norm_gamma_reduce"));
-        assert!(ptx.contains(".param .u64 grad_gamma_partial_ptr"));
-        assert!(ptx.contains(".param .u64 grad_gamma_ptr"));
-        assert!(ptx.contains(".param .u32 num_rows"));
-        assert!(ptx.contains(".param .u32 hidden_dim"));
-        // Determinism guard: NO atomic ops anywhere — the whole point.
-        assert!(
-            !ptx.contains("atom."),
-            "RmsNormGammaReduceKernel must be atom-free — fixed iteration order is the \
-             determinism guarantee. PTX leaked an `atom.` instruction:\n{ptx}"
-        );
-    }
-
-    #[test]
-    fn test_rms_norm_gamma_reduce_grid_x_ceil_div() {
-        // Grid sizing must round UP so partial trailing chunks are still
-        // covered when hidden_dim is not a multiple of BLOCK_SIZE.
-        assert_eq!(RmsNormGammaReduceKernel::new(1, 256).grid_x(), 1);
-        assert_eq!(RmsNormGammaReduceKernel::new(1, 257).grid_x(), 2);
-        assert_eq!(RmsNormGammaReduceKernel::new(1, 512).grid_x(), 2);
-        assert_eq!(RmsNormGammaReduceKernel::new(1, 513).grid_x(), 3);
-        // Common training widths
-        assert_eq!(RmsNormGammaReduceKernel::new(2048, 512).grid_x(), 2);
-        assert_eq!(RmsNormGammaReduceKernel::new(2048, 3584).grid_x(), 14);
-    }
-
-    #[test]
-    fn test_rms_norm_gamma_reduce_clone_and_debug() {
-        let kernel = RmsNormGammaReduceKernel::new(2048, 512);
-        let cloned = kernel.clone();
-        assert_eq!(kernel.num_rows, cloned.num_rows);
-        assert_eq!(kernel.hidden_dim, cloned.hidden_dim);
-
-        let debug_str = format!("{kernel:?}");
-        assert!(debug_str.contains("RmsNormGammaReduceKernel"));
-        assert!(debug_str.contains("2048"));
-        assert!(debug_str.contains("512"));
-    }
-
-    #[test]
-    fn test_rms_norm_gamma_reduce_various_sizes() {
-        // Match BatchedRmsNormBackwardKernel size matrix.
-        for (rows, dim) in [(1, 1), (16, 16), (64, 32), (128, 64), (512, 128), (24, 896)] {
-            let kernel = RmsNormGammaReduceKernel::new(rows, dim);
-            let ptx = kernel.emit_ptx();
-            assert!(
-                ptx.contains(".entry rms_norm_gamma_reduce"),
-                "rms_norm_gamma_reduce failed for rows={rows}, dim={dim}"
             );
         }
     }

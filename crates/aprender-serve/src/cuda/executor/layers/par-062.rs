@@ -414,6 +414,16 @@ impl CudaExecutor {
             None
         };
 
+        // realizr#198 DIAGNOSTIC: Verify pointers match graph expectations
+        if self.decode_token_count <= 5 {
+            let input_dev = self.graph_input_buf.as_ref().map(|b| b.as_ptr()).unwrap_or(0);
+            let logits_dev = self.workspace.logits_buf.as_ref().map(|b| b.as_ptr()).unwrap_or(0);
+            eprintln!(
+                "[realizr#198] REPLAY: pos={}, cnt={}, input_dev={:#x}, logits_dev={:#x}",
+                position, self.decode_token_count, input_dev, logits_dev
+            );
+        }
+
         // PAR-072: Use ASYNC H2D copies to eliminate blocking overhead
         // Root cause: cuMemcpyHtoD has ~10-30µs overhead per call
         // Fix: Use cuMemcpyHtoDAsync on the same stream as graph launch
@@ -542,6 +552,14 @@ impl CudaExecutor {
             eprintln!(
                 "[GRAPH-TIMING] h2d={}µs launch={}µs wait={}µs argmax+sync={}µs total={}µs",
                 h2d_us, graph_us, wait_us, argmax_us, total_us
+            );
+        }
+
+        // realizr#198 DIAGNOSTIC: Log sampled token
+        if self.decode_token_count <= 6 {
+            eprintln!(
+                "[realizr#198] graph_argmax result: token_id={}, decode_count={}",
+                gpu_result, self.decode_token_count
             );
         }
 

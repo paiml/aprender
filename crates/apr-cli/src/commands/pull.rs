@@ -48,26 +48,10 @@ pub struct FileChecksum {
     "apr-cli-operations-v1",
     equation = "mutating_output_contract"
 )]
-pub fn run(
-    model_ref: &str,
-    force: bool,
-    dry_run: bool,
-    revision: Option<&str>,
-    offline: bool,
-) -> Result<()> {
+pub fn run(model_ref: &str, force: bool) -> Result<()> {
     contract_pre_pull_cache_integrity!();
     println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
-
-    // CRUX-A-01 FALSIFY-CRUX-A-01-001: --dry-run resolves short name to
-    // canonical URL and exits with zero network I/O.
-    // CRUX-A-03 ALGO-001..003: --dry-run echoes the revision spec the user
-    // supplied (or the default "main") and validates its local form.
-    // CRUX-A-20 ALGO-001..005: --dry-run also echoes the resolved offline
-    // mode so callers can assert CLI-flag / env-var equivalence offline.
-    if dry_run {
-        return run_dry_run(model_ref, revision, offline);
-    }
 
     // GH-213: Resolve HuggingFace URI — detect single vs sharded models
     let resolved = resolve_hf_model(model_ref)?;
@@ -543,85 +527,7 @@ fn write_shard_manifest(
     Ok(())
 }
 
-/// CRUX-A-01 FALSIFY-CRUX-A-01-001: `--dry-run` resolver.
-///
-/// Emits the resolved canonical URL on stdout and returns `Ok(())` with zero
-/// network I/O. Short names are resolved via the embedded alias map
-/// (`configs/aliases.yaml`); scheme-qualified inputs (`hf://…`,
-/// `https://…`) and bare `org/repo` inputs echo as their canonical forms.
-///
-/// CRUX-A-01 FALSIFY-CRUX-A-01-003: unknown short names (no scheme, no `/`)
-/// return an error that includes a Levenshtein ≤ 2 "did you mean …" hint.
-/// CRUX-A-03 ALGO-001..003: `--revision` is classified locally and echoed
-/// in the dry-run output. Malformed revisions (empty, whitespace, URL)
-/// fail fast without touching the network.
-///
-/// CRUX-A-20 ALGO-001..005: the effective offline signal (CLI flag OR
-/// `APR_OFFLINE` OR `HF_HUB_OFFLINE` truthy) is echoed too.
-fn run_dry_run(model_ref: &str, revision: Option<&str>, offline_flag: bool) -> Result<()> {
-    use super::aliases;
-    use super::offline;
-    use super::revision as rev;
-
-    let resolved = if let Some(url) = aliases::resolve_short_name(model_ref) {
-        url
-    } else if !model_ref.contains("://") && model_ref.contains('/') {
-        format!("hf://{model_ref}")
-    } else {
-        return Err(unknown_short_name_error(model_ref));
-    };
-
-    let rev_spec = revision.unwrap_or(rev::DEFAULT_REVISION);
-    let rev_kind = rev::classify_revision(rev_spec).map_err(|msg| {
-        CliError::ValidationFailed(format!("CRUX-A-03: invalid --revision {rev_spec:?}: {msg}"))
-    })?;
-
-    // CRUX-A-20: resolve offline signal from CLI flag + env vars.
-    let env = offline::read_offline_env();
-    let env_borrowed: Vec<(&str, &str)> =
-        env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    let is_offline = offline::is_offline(offline_flag, env_borrowed.iter().copied());
-
-    println!("Model:    {}", model_ref.cyan());
-    println!("Resolved: {}", resolved.green());
-    println!("Revision: {} ({:?})", rev_spec.green(), rev_kind);
-    println!(
-        "Offline:  {}",
-        if is_offline {
-            "true".green()
-        } else {
-            "false".yellow()
-        }
-    );
-    println!("Mode:     {} (no network I/O)", "dry-run".yellow());
-    Ok(())
-}
-
-/// CRUX-A-01 FALSIFY-CRUX-A-01-003: build an error carrying a did-you-mean
-/// hint derived from Levenshtein ≤ 2 matches against the alias map.
-fn unknown_short_name_error(name: &str) -> CliError {
-    use super::aliases;
-
-    let suggestions = aliases::did_you_mean(name, 2);
-    let hint = if suggestions.is_empty() {
-        "Run `apr registry aliases --json` to list known short names.".to_string()
-    } else {
-        format!(
-            "did you mean {}? (run `apr registry aliases --json` for the full list)",
-            suggestions
-                .iter()
-                .map(|s| format!("`{s}`"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
-    CliError::ValidationFailed(format!(
-        "CRUX-A-01: unknown short name '{name}' and not a fully-qualified URI. {hint}"
-    ))
-}
-
 include!("pull_list.rs");
 include!("pull_remove_resolve_model.rs");
 include!("pull_extract_shard.rs");
 include!("pull_04.rs");
-include!("pull_dataset.rs");

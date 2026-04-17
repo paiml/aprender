@@ -17,7 +17,6 @@ mod gates;
 mod gates_extended;
 pub mod rules;
 pub mod sarif;
-mod strict_test_binding;
 pub mod trend;
 
 use std::collections::{HashMap, HashSet};
@@ -134,8 +133,6 @@ pub struct LintConfig<'a> {
     pub crate_dir: Option<&'a Path>,
     /// Minimum enforcement level for Gate 6 (from `--min-level`).
     pub min_level: Option<crate::schema::EnforcementLevel>,
-    /// Enable Gate 9 (strict test-binding, PV-VER-002). Issue #1510.
-    pub strict_test_binding: bool,
 }
 
 impl<'a> LintConfig<'a> {
@@ -155,7 +152,6 @@ impl<'a> LintConfig<'a> {
             cache_stats: false,
             crate_dir: None,
             min_level: None,
-            strict_test_binding: false,
         }
     }
 }
@@ -256,23 +252,6 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
         all_findings.append(&mut comp_findings);
     } else {
         gates.push(skipped_gate("composition", "validation failed"));
-    }
-
-    // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
-    if config.strict_test_binding {
-        if validation_passed {
-            let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
-            let (binding_result, mut binding_findings) =
-                strict_test_binding::run_strict_test_binding_gate(
-                    &contracts,
-                    project_root,
-                    config.strict,
-                );
-            gates.push(binding_result);
-            all_findings.append(&mut binding_findings);
-        } else {
-            gates.push(skipped_gate("strict-test-binding", "validation failed"));
-        }
     }
 
     all_findings.append(&mut validate_findings);

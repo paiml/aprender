@@ -34,22 +34,18 @@ use realizar::registry::ModelInfo;
 #[test]
 fn test_health_response_serialization() {
     let response = HealthResponse {
-        status: "ok".to_string(),
+        status: "healthy".to_string(),
         version: "1.0.0".to_string(),
         compute_mode: "cpu".to_string(),
-        model_loaded: true,
-        uptime_sec: 1.0,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
-    assert!(json.contains(r#""status":"ok""#));
+    assert!(json.contains(r#""status":"healthy""#));
     assert!(json.contains(r#""version":"1.0.0""#));
-    assert!(json.contains(r#""model_loaded":true"#));
 
     let deserialized: HealthResponse = serde_json::from_str(&json).expect("should deserialize");
-    assert_eq!(deserialized.status, "ok");
+    assert_eq!(deserialized.status, "healthy");
     assert_eq!(deserialized.version, "1.0.0");
-    assert!(deserialized.model_loaded);
 }
 
 #[test]
@@ -2900,8 +2896,6 @@ fn test_health_response_custom_status() {
         status: "degraded".to_string(),
         version: "0.0.0-dev".to_string(),
         compute_mode: "cpu".to_string(),
-        model_loaded: false,
-        uptime_sec: 0.5,
     };
 
     let json = serde_json::to_string(&response).expect("should serialize");
@@ -4754,18 +4748,14 @@ fn test_dispatch_metrics_response_clone() {
 #[test]
 fn test_health_response_roundtrip() {
     let original = HealthResponse {
-        status: "ok".to_string(),
+        status: "healthy".to_string(),
         version: "1.2.3".to_string(),
         compute_mode: "cpu".to_string(),
-        model_loaded: true,
-        uptime_sec: 42.0,
     };
     let json = serde_json::to_string(&original).expect("serialize");
     let restored: HealthResponse = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(original.status, restored.status);
     assert_eq!(original.version, restored.version);
-    assert_eq!(original.model_loaded, restored.model_loaded);
-    assert!((original.uptime_sec - restored.uptime_sec).abs() < 1e-9);
 }
 
 #[test]

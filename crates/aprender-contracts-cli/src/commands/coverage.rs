@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use provable_contracts::binding::parse_binding;
-use provable_contracts::coverage::{coverage_report, overall_percentage, CoverageReport};
+use provable_contracts::coverage::{CoverageReport, coverage_report, overall_percentage};
 use provable_contracts::reverse_coverage::reverse_coverage;
-use provable_contracts::schema::{parse_contract, Contract};
+use provable_contracts::schema::{Contract, parse_contract};
 
 pub fn run(
     contract_dir: &Path,

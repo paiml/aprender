@@ -1,10 +1,10 @@
 use std::path::Path;
 
 use provable_contracts::infer::{
-    format_binding_entry, format_contract_stub, infer, ContractSuggestion, InferResult,
-    InferredBinding,
+    ContractSuggestion, InferResult, InferredBinding, format_binding_entry, format_contract_stub,
+    infer,
 };
-use provable_contracts::schema::{parse_contract, Contract};
+use provable_contracts::schema::{Contract, parse_contract};
 
 #[allow(clippy::unnecessary_wraps)]
 pub fn run(

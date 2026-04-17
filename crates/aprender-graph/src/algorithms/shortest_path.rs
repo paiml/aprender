@@ -192,8 +192,6 @@ fn reconstruct_path(predecessors: &HashMap<NodeId, NodeId>, target: NodeId) -> V
     path
 }
 
-/// Dijkstra shortest path between `source` and `target`, returning `(cost, path)` if reachable.
-#[must_use]
 pub fn dijkstra_path(
     graph: &CsrGraph,
     source: NodeId,
@@ -224,7 +222,7 @@ pub fn dijkstra_path(
             return Some((cost, path));
         }
 
-        if distances.get(&node_id).is_some_and(|&d| cost > d) {
+        if distances.get(&node_id).map_or(false, |&d| cost > d) {
             continue;
         }
 

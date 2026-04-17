@@ -362,10 +362,7 @@ fn parse_gemm_line(line: &str, pattern: &str) -> Option<(f64, f64)> {
     if !line.contains("Matrix Multiplication") || !line.contains(pattern) {
         return None;
     }
-    let ms = extract_between(line, "...", " ms")?
-        .trim()
-        .parse::<f64>()
-        .ok()?;
+    let ms = extract_between(line, "...", " ms")?.trim().parse::<f64>().ok()?;
     let gf = extract_between(line, "(", " GFLOPS)")?
         .trim()
         .parse::<f64>()

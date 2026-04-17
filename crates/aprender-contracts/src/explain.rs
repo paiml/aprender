@@ -53,8 +53,6 @@ pub fn obligation_pattern(ot: ObligationType) -> &'static str {
         ObligationType::LoopVariant => "V(state) ∈ ℕ, strictly decreasing — termination witness",
         ObligationType::OldState => "Q(old(state), new(state)) — relates pre to post state",
         ObligationType::Subcontract => "weaken(pre) ∧ strengthen(post) — behavioral subtyping",
-        ObligationType::Safety => "∀x: safe(f(x)) — memory/IO safety obligation",
-        ObligationType::Liveness => "◇ P — eventually P holds (progress obligation)",
     }
 }
 

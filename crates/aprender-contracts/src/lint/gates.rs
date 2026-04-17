@@ -52,13 +52,7 @@ fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
         let path = entry.path();
         if path.is_dir() {
             let dirname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            // `publish-manifests/` holds PublishManifest artifacts (model
-            // ship metadata keyed by `model_id:`), not Contract schemas;
-            // validating them here would fail on missing `metadata.` root.
-            if matches!(
-                dirname,
-                "kaizen" | "legacy" | "pipelines" | "publish-manifests"
-            ) {
+            if dirname == "kaizen" || dirname == "legacy" || dirname == "pipelines" {
                 continue;
             }
             collect_yaml_files(&path, out);

@@ -923,13 +923,10 @@ fn test_health_response_roundtrip_custom() {
         status: "degraded".to_string(),
         version: "0.5.0-beta".to_string(),
         compute_mode: "cpu".to_string(),
-        model_loaded: true,
-        uptime_sec: 10.0,
     };
     let json = serde_json::to_string(&response).expect("serialize");
     let rt: HealthResponse = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(rt.status, "degraded");
-    assert!(rt.model_loaded);
 }
 
 #[test]
@@ -1538,8 +1535,6 @@ fn test_empty_strings_everywhere() {
         status: String::new(),
         version: String::new(),
         compute_mode: "cpu".to_string(),
-        model_loaded: false,
-        uptime_sec: 0.0,
     };
     let json = serde_json::to_string(&response).expect("serialize");
     let rt: HealthResponse = serde_json::from_str(&json).expect("deserialize");

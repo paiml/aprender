@@ -12,7 +12,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use aprender_rag::{
+use trueno_rag::{
     chunk::{RecursiveChunker, TimestampChunker},
     embed::{Embedder, TfIdfEmbedder},
     loader::LoaderRegistry,
@@ -20,7 +20,7 @@ use aprender_rag::{
 };
 
 #[cfg(feature = "embeddings")]
-use aprender_rag::{EmbeddingModelType, FastEmbedder};
+use trueno_rag::{EmbeddingModelType, FastEmbedder};
 
 use crate::discover::{build_exclude_set, classify_files, discover_files};
 use crate::{ChunkStrategy, EmbedderType, PersistedChunk, PersistedIndex, SemanticModel};
@@ -340,7 +340,7 @@ pub(crate) fn export_sqlite(persisted: &PersistedIndex, output_path: &Path) -> R
     if db_path.exists() {
         fs::remove_file(&db_path)?;
     }
-    let sqlite_index = aprender_rag::SqliteIndex::open(&db_path)
+    let sqlite_index = trueno_rag::SqliteIndex::open(&db_path)
         .map_err(|e| anyhow::anyhow!("Failed to create SQLite index: {e}"))?;
 
     // Group chunks by source document

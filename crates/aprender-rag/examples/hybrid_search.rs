@@ -2,12 +2,12 @@
 //!
 //! Run with: cargo run --example hybrid_search
 
-use aprender_rag::{
+use trueno_rag::{
     embed::MockEmbedder, fusion::FusionStrategy, pipeline::RagPipelineBuilder,
     rerank::NoOpReranker, Document,
 };
 
-fn main() -> aprender_rag::Result<()> {
+fn main() -> trueno_rag::Result<()> {
     println!("=== Hybrid Search with Different Fusion Strategies ===\n");
 
     let documents = vec![

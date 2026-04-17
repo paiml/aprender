@@ -299,19 +299,9 @@
         let args = vec!["apr", "pull", "hf://Qwen/Qwen2.5-Coder-1.5B", "--force"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Pull {
-                model_ref,
-                repo: _,
-                force,
-                dry_run,
-                revision: _,
-                offline: _,
-                include: _,
-                output: _,
-            } => {
+            Commands::Pull { model_ref, force } => {
                 assert_eq!(model_ref, "hf://Qwen/Qwen2.5-Coder-1.5B");
                 assert!(force);
-                assert!(!dry_run);
             }
             _ => panic!("Expected Pull command"),
         }
@@ -323,43 +313,9 @@
         let args = vec!["apr", "pull", "qwen2.5-coder"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Pull {
-                model_ref,
-                repo: _,
-                force,
-                dry_run,
-                revision: _,
-                offline: _,
-                include: _,
-                output: _,
-            } => {
+            Commands::Pull { model_ref, force } => {
                 assert_eq!(model_ref, "qwen2.5-coder");
                 assert!(!force);
-                assert!(!dry_run);
-            }
-            _ => panic!("Expected Pull command"),
-        }
-    }
-
-    /// CRUX-A-01: `apr pull --dry-run` parses
-    #[test]
-    fn test_parse_pull_dry_run() {
-        let args = vec!["apr", "pull", "llama3", "--dry-run"];
-        let cli = parse_cli(args).expect("Failed to parse");
-        match *cli.command {
-            Commands::Pull {
-                model_ref,
-                repo: _,
-                force,
-                dry_run,
-                revision: _,
-                offline: _,
-                include: _,
-                output: _,
-            } => {
-                assert_eq!(model_ref, "llama3");
-                assert!(!force);
-                assert!(dry_run, "CRUX-A-01: --dry-run flag must parse");
             }
             _ => panic!("Expected Pull command"),
         }

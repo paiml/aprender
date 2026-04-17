@@ -4,7 +4,7 @@
     fn test_brick_name_case_sensitive() {
         // Brick names are case-sensitive: "RMS_NORM" != "rms_norm"
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("RMS_NORM"), false, &[]);
+        let result = run(file.path(), 1, 3, 16, None, false, Some("RMS_NORM"), false);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
         assert!(msg.contains("Unknown brick type"));
@@ -260,7 +260,7 @@
         let mut content = vec![0x47, 0x47, 0x55, 0x46]; // "GGUF"
         content.extend_from_slice(&[0; 100]); // padding
         file.write_all(&content).expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None, false, &[]);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -274,7 +274,7 @@
         content.extend_from_slice(&len);
         content.extend_from_slice(header);
         file.write_all(&content).expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None, false, &[]);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -284,7 +284,7 @@
         let mut content = vec![0x41, 0x50, 0x52, 0x32]; // "APR2"
         content.extend_from_slice(&[0; 200]);
         file.write_all(&content).expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None, false, &[]);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -305,7 +305,6 @@
             false,
             None,
             false,
-            &[],
         );
         assert!(result.is_err());
     }

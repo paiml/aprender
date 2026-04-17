@@ -326,24 +326,9 @@ impl AprTransformer {
             );
 
             // 2b. QKV projection
-            // M-FFN-GGUF-5b / SHIP-007 §22 closure: split-Q4K QKV when the
-            // q4k_layer has separate attn_q/k/v Q4K bytes (matches GGUF
-            // Q4K+Q8K matvec semantics; mirrors `forward_with_cache` ↔
-            // `project_qkv_fused`). F32 fallback otherwise.
             // Calculate qkv_dim from actual weight size (handles GQA models)
             let qkv_dim = layer.qkv_weight.len() / hidden_dim;
-            let head_dim_pre = hidden_dim / self.config.num_heads;
-            let kv_size_pre = self.config.num_kv_heads * head_dim_pre;
-            let seq_len_pre = token_ids.len();
-            let mut qkv = self.qkv_split_q4k_traced(
-                &normed,
-                q4k_layer,
-                &layer.qkv_weight,
-                seq_len_pre,
-                hidden_dim,
-                kv_size_pre,
-                qkv_dim,
-            );
+            let mut qkv = self.matmul(&normed, &layer.qkv_weight, hidden_dim, qkv_dim);
             if let Some(ref bias) = layer.qkv_bias {
                 self.add_bias(&mut qkv, bias);
             }

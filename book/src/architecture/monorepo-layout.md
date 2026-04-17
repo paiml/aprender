@@ -17,7 +17,7 @@ paiml/aprender/
 ├── src/bin/apr.rs                # Binary entry point
 ├── crates/
 │   ├── aprender-core/            # ML library (use aprender::*)
-│   ├── apr-cli/                  # CLI logic (58 commands)
+│   ├── apr-cli/                  # CLI logic (57 commands)
 │   ├── aprender-compute/         # SIMD/GPU compute
 │   ├── aprender-gpu/             # CUDA PTX kernels
 │   ├── aprender-serve/           # Inference server

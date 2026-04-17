@@ -41,7 +41,6 @@ fn run_command(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             binding,
         } => commands::explain::run(&contract, binding.as_deref(), &format),
         Commands::Validate { contract } => commands::validate::run(&contract),
-        Commands::CheckParity { contract } => commands::check_parity::run(&contract),
         Commands::Scaffold {
             contract,
             r#trait,
@@ -133,7 +132,6 @@ fn run_command(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             min_level,
             explain,
             watch,
-            strict_test_binding,
             ..
         } => {
             if let Some(ref rule_id) = explain {
@@ -162,7 +160,6 @@ fn run_command(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 crate_dir.as_deref(),
                 min_level.as_deref(),
                 watch,
-                strict_test_binding,
             )
         }
         Commands::Score {

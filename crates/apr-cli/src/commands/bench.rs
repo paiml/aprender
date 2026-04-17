@@ -164,7 +164,6 @@ pub(crate) fn run(
     fast: bool,
     brick: Option<&str>,
     json: bool,
-    percentiles: &[f64],
 ) -> Result<()> {
     // GH-512: Warn on deprecated --fast flag instead of silently ignoring
     if fast && !json {
@@ -217,7 +216,7 @@ pub(crate) fn run(
 
     // GH-254: JSON output mode — always exit 0 with results in JSON body
     if json {
-        return print_bench_json(path, &result, percentiles);
+        return print_bench_json(path, &result);
     }
 
     // Print results
@@ -239,11 +238,10 @@ pub(crate) fn run(
 
 /// Print benchmark results as JSON (machine-parseable output).
 /// GH-254→GH-601: Exit code matches `passed` field — non-zero when failed.
-/// CRUX-E-07: emits `latency_p<N>_ms` key per requested percentile point.
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
-fn print_bench_json(path: &Path, result: &BenchResult, percentiles: &[f64]) -> Result<()> {
-    let mut output = serde_json::json!({
+fn print_bench_json(path: &Path, result: &BenchResult) -> Result<()> {
+    let output = serde_json::json!({
         "model": path.display().to_string(),
         "tokens_per_second": (result.tokens_per_second * 10.0).round() / 10.0,
         "total_tokens": result.total_tokens,
@@ -255,23 +253,6 @@ fn print_bench_json(path: &Path, result: &BenchResult, percentiles: &[f64]) -> R
         "std_dev_ms": result.std_dev.as_secs_f64() * 1000.0,
         "passed": result.passed,
     });
-    if let Some(obj) = output.as_object_mut() {
-        let samples_ms: Vec<f64> = result
-            .iteration_times
-            .iter()
-            .map(|d| d.as_secs_f64() * 1000.0)
-            .collect();
-        for &p in percentiles {
-            let key = format!("latency_p{}_ms", p.round() as u64);
-            let v = match aprender::metrics::percentile::compute_percentile(&samples_ms, p) {
-                aprender::metrics::percentile::PercentileOutcome::Ok(v) => {
-                    serde_json::json!(v)
-                }
-                _ => serde_json::Value::Null,
-            };
-            obj.insert(key, v);
-        }
-    }
     println!(
         "{}",
         serde_json::to_string_pretty(&output).unwrap_or_default()

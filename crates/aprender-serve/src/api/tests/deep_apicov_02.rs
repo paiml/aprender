@@ -232,18 +232,14 @@ fn test_deep_apicov_context_window_large_system_message() {
 #[test]
 fn test_deep_apicov_health_response_structure() {
     let resp = HealthResponse {
-        status: "ok".to_string(),
+        status: "healthy".to_string(),
         version: "0.1.0".to_string(),
         compute_mode: "cpu".to_string(),
-        model_loaded: true,
-        uptime_sec: 3.14,
     };
     let json = serde_json::to_string(&resp).expect("serialize");
-    assert!(json.contains("\"ok\""));
+    assert!(json.contains("healthy"));
     assert!(json.contains("0.1.0"));
     assert!(json.contains("cpu"));
-    assert!(json.contains("model_loaded"));
-    assert!(json.contains("uptime_sec"));
 }
 
 #[test]

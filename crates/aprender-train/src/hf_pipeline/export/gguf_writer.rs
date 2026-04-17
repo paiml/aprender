@@ -24,25 +24,8 @@ pub enum GgufQuantization {
 /// For `GgufQuantization::None`, returns the f32 data as little-endian bytes with `GgmlType::F32`.
 /// For Q4_0/Q8_0, quantizes via entrenar's quant module and encodes to GGUF block format.
 pub fn quantize_to_gguf_bytes(data: &[f32], quant: GgufQuantization) -> (Vec<u8>, GgmlType) {
-    // Edge case: empty input is a valid no-op for all three quantization
-    // modes (empty tensor → empty bytes, dtype preserved). Return early so
-    // we don't trip `contract_pre_quantize!`'s `input.len() > 0` debug
-    // assertion — the contract's domain is non-empty inputs (where the
-    // precision bound is meaningful), but the function must still handle
-    // empty cleanly because callers may pass zero-length slices for
-    // skipped tensors. See `test_falsify_quantize_empty_data_*` for the
-    // documented invariant: empty input → empty output, dtype matches the
-    // requested quantization mode.
-    if data.is_empty() {
-        let dtype = match quant {
-            GgufQuantization::None => GgmlType::F32,
-            GgufQuantization::Q4_0 => GgmlType::Q4_0,
-            GgufQuantization::Q8_0 => GgmlType::Q8_0,
-        };
-        return (Vec::new(), dtype);
-    }
     contract_pre_quantize!(data);
-    let result = match quant {
+    match quant {
         GgufQuantization::None => {
             let bytes: Vec<u8> = bytemuck::cast_slice(data).to_vec();
             (bytes, GgmlType::F32)

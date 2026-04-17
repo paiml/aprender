@@ -147,11 +147,6 @@ impl RustCompiler {
             std::process::id(),
             unique_id
         ));
-        let output_file = temp_dir.join(format!(
-            "citl_output_{}_{}",
-            std::process::id(),
-            unique_id
-        ));
 
         std::fs::write(&source_file, source)?;
 
@@ -160,7 +155,7 @@ impl RustCompiler {
             .arg("--crate-type").arg("lib") // Compile as library
             .arg("--error-format=json")
             .arg("--emit=metadata") // Fast check without codegen
-            .arg("-o").arg(&output_file)
+            .arg("-o").arg(temp_dir.join("citl_output"))
             .arg(&source_file)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -181,7 +176,7 @@ impl RustCompiler {
         let duration = start.elapsed();
 
         std::fs::remove_file(&source_file).ok();
-        std::fs::remove_file(&output_file).ok();
+        std::fs::remove_file(temp_dir.join("citl_output")).ok();
 
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let (errors, warnings) = self.parse_json_diagnostics(&stderr);

@@ -283,15 +283,6 @@ pub fn load_family_registry(contracts_dir: &Path) -> Result<FamilyRegistry> {
             continue;
         }
 
-        // Skip ModelFamilyVariant contracts (start with `contract_id:`) that
-        // co-locate under model-families/ for documentation purposes.
-        let head = std::fs::read_to_string(&path).map_err(|e| AprenderError::FormatError {
-            message: format!("Failed to read {}: {e}", path.display()),
-        })?;
-        if head.lines().any(|l| l.starts_with("contract_id:")) {
-            continue;
-        }
-
         let config = load_family_yaml(&path)?;
         registry.register(Box::new(DynModelFamily::new(config)));
     }

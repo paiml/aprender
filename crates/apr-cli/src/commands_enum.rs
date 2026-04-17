@@ -1,27 +1,4 @@
 
-/// Output format for `apr code` non-interactive mode (PMAT-CODE-OUTPUT-FORMAT-001).
-/// Mirrors Claude Code's `claude -p --output-format <fmt>` parity row.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
-pub enum CodeOutputFormat {
-    /// Plain assistant text on stdout (default; existing behavior).
-    #[default]
-    Text,
-    /// Structured JSON envelope: `{type:"result", subtype:"success", result, session_id, duration_ms}`.
-    Json,
-}
-
-/// Input format for `apr code` non-interactive mode (PMAT-CODE-INPUT-FORMAT-001).
-/// `--input-format json` reads `{"role":"user","content":"..."}` from stdin instead
-/// of treating stdin as raw prompt text.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
-pub enum CodeInputFormat {
-    /// Raw prompt text from positional args or stdin (default; existing behavior).
-    #[default]
-    Text,
-    /// JSON message envelope on stdin: `{"role":"user","content":"..."}`.
-    Json,
-}
-
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Run model directly (auto-download, cache, execute)
@@ -190,23 +167,6 @@ pub enum Commands {
         #[arg(long)]
         min_score: Option<u8>,
     },
-    /// Validate a publish manifest (FALSIFY-PM-001..006).
-    ///
-    /// Contract: `contracts/publish-manifest-v1.yaml`
-    /// Spec:     SPEC-SHIP-TWO-001 §12.3 AC-EX-004
-    ValidateManifest {
-        /// Path to manifest YAML
-        #[arg(value_name = "MANIFEST")]
-        file: PathBuf,
-        /// Optional local .apr artifact to discharge FALSIFY-PM-002 (sha256 match)
-        #[arg(long, value_name = "APR_FILE")]
-        artifact: Option<PathBuf>,
-        /// Discharge FALSIFY-PM-003 via network: HTTP HEAD + streaming sha256.
-        /// Default is DEFERRED (offline-safe). Ignored when --offline is set.
-        /// Closes F-PUBLISH-EXTRA-001::dogfood_ex05 (no Python in ex-05).
-        #[arg(long)]
-        live: bool,
-    },
     /// Compare two models
     Diff {
         /// First model file
@@ -278,23 +238,6 @@ pub enum Commands {
         /// Interactive mode
         #[arg(long)]
         interactive: bool,
-        /// Save per-stage F32 tensors during trace for SHIP-007 layer-0
-        /// element-wise diff. Comma-separated stage names from
-        /// `apr-cli-trace-save-tensor-v1.yaml` (e.g.
-        /// `embedding,qkv_matmul,attention`). Pass `all` to save every
-        /// stage. Output goes to `--save-tensor-dir` if provided,
-        /// else `<file_dir>/trace-tensors/<run_id>/`.
-        #[arg(long, value_name = "STAGES")]
-        save_tensor: Option<String>,
-        /// Output directory for `--save-tensor` (default: sibling
-        /// `trace-tensors/<run_id>/`).
-        #[arg(long, value_name = "DIR")]
-        save_tensor_dir: Option<PathBuf>,
-        /// Layer-id range for `--save-tensor` (default: 0..1, i.e.
-        /// layer 0 only). Format: `START..END` (Rust range syntax,
-        /// END exclusive).
-        #[arg(long, value_name = "RANGE", default_value = "0..1")]
-        save_tensor_layers: String,
     },
     /// Check for best practices and conventions
     Lint {
@@ -393,47 +336,14 @@ pub enum Commands {
         #[arg(long)]
         allow_no_config: bool,
     },
-    /// Download and cache model OR HuggingFace dataset (Ollama-like UX)
+    /// Download and cache model from HuggingFace (Ollama-like UX)
     Pull {
-        /// Model reference (alias, hf:// URI, or org/repo) OR "dataset"
-        /// asset-type discriminator. When this value is the literal
-        /// string "dataset", the next positional `repo` is the
-        /// HuggingFace dataset repo and dataset-pull semantics apply.
-        #[arg(value_name = "MODEL_OR_ASSET_TYPE")]
+        /// Model reference (alias, hf:// URI, or org/repo)
+        #[arg(value_name = "MODEL")]
         model_ref: String,
-        /// Dataset repository (used only when model_ref == "dataset").
-        /// Per `apr-cli-pull-dataset-v1.yaml`.
-        #[arg(value_name = "REPO")]
-        repo: Option<String>,
         /// Force re-download even if cached
         #[arg(long)]
         force: bool,
-        /// CRUX-A-01: resolve short name to canonical URL and exit without
-        /// performing any network I/O.
-        #[arg(long)]
-        dry_run: bool,
-        /// CRUX-A-03: pin to a specific branch, tag, or git SHA on the remote
-        /// (HuggingFace Hub). Defaults to "main" when omitted.
-        #[arg(long, value_name = "REV")]
-        revision: Option<String>,
-        /// CRUX-A-20: offline mode — forbid any outbound network I/O.
-        /// Equivalent to APR_OFFLINE=1 or HF_HUB_OFFLINE=1 in the environment.
-        #[arg(long)]
-        offline: bool,
-        /// (dataset mode) Glob pattern for shard selection. May be passed
-        /// multiple times; matches are unioned. fnmatch-compatible
-        /// (`*`, `?`, `[a-z]`). No-match is fail-fast.
-        #[arg(long, value_name = "GLOB")]
-        include: Vec<String>,
-        /// (dataset mode) Output directory. Default:
-        /// `~/.cache/aprender/datasets/<repo>/`.
-        #[arg(short = 'o', long)]
-        output: Option<PathBuf>,
-    },
-    /// Registry operations (CRUX-A-01): inspect alias map, etc.
-    Registry {
-        #[command(subcommand)]
-        command: crate::commands::registry::RegistryCommands,
     },
     /// List cached models
     #[command(name = "list", alias = "ls")]
@@ -456,32 +366,6 @@ pub enum Commands {
         /// Compress output (none, zstd, zstd-max, lz4)
         #[arg(long)]
         compress: Option<String>,
-        /// Output file path
-        #[arg(short, long)]
-        output: PathBuf,
-        /// Force overwrite existing files
-        #[arg(short, long)]
-        force: bool,
-    },
-    /// Stamp provenance fields (license, data_source, data_license) onto an existing .apr file
-    ///
-    /// SHIP-009 full-discharge enabler — patches the three provenance fields on
-    /// a pre-built APR v2 artifact (e.g., the shipped MODEL-1 teacher whose
-    /// fields are all (missing) because it was built before GATE-APR-PROV-001..003
-    /// shipped). Tensor bytes and header flags are preserved verbatim.
-    Stamp {
-        /// Path to input .apr model file
-        #[arg(value_name = "FILE")]
-        file: PathBuf,
-        /// SPDX license identifier (e.g., Apache-2.0)
-        #[arg(long)]
-        license: Option<String>,
-        /// Training-data source (e.g., huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct)
-        #[arg(long = "data-source")]
-        data_source: Option<String>,
-        /// SPDX license for data_source (e.g., Apache-2.0)
-        #[arg(long = "data-license")]
-        data_license: Option<String>,
         /// Output file path
         #[arg(short, long)]
         output: PathBuf,
@@ -573,11 +457,6 @@ pub enum Commands {
     /// Model optimization commands (fine-tune, prune, distill)
     #[command(flatten)]
     ModelOps(ModelOpsCommands),
-    /// Start the MCP (Model Context Protocol) server over stdio
-    ///
-    /// Exposes `apr` as MCP tools for Claude Code, Cursor, Cline, and other
-    /// MCP clients. Configure via `.mcp.json` with `{"command":"apr","args":["mcp"]}`.
-    Mcp {},
     /// Interactive terminal UI
     Tui {
         /// Path to .apr model file
@@ -633,28 +512,6 @@ pub enum Commands {
         /// Max turns before stopping
         #[arg(long, default_value = "50")]
         max_turns: u32,
-
-        /// Emit a `ccpa-trace.jsonl` describing the run to this path.
-        /// Format mirrors the schema at
-        /// <https://github.com/paiml/claude-code-parity-apr/blob/main/contracts/claude-code-parity-apr-v1.yaml>
-        /// (`§ trace_schema`). Used by `ccpa measure` to score apr-code
-        /// against canonical Claude Code reference fixtures.
-        #[arg(long)]
-        emit_trace: Option<PathBuf>,
-
-        /// Output format for non-interactive (`-p`) mode (PMAT-CODE-OUTPUT-FORMAT-001).
-        /// `text` (default): plain assistant text.
-        /// `json`: structured `{type:"result", subtype:"success", result, session_id, duration_ms}`
-        /// envelope matching Claude Code's `claude -p --output-format json` shape.
-        #[arg(long, value_enum, default_value_t = CodeOutputFormat::Text)]
-        output_format: CodeOutputFormat,
-
-        /// Input format for non-interactive stdin (PMAT-CODE-INPUT-FORMAT-001).
-        /// `text` (default): treat stdin as raw prompt text.
-        /// `json`: parse `{"role":"user","content":"..."}` from stdin and use `content`
-        /// as the prompt. Matches Claude Code's `claude -p --input-format json` shape.
-        #[arg(long, value_enum, default_value_t = CodeInputFormat::Text)]
-        input_format: CodeInputFormat,
     },
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]

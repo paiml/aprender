@@ -14,7 +14,7 @@ use axum::{
 };
 use tower::util::ServiceExt;
 
-use crate::api::test_helpers::{create_test_app, create_test_app_shared};
+use crate::api::test_helpers::create_test_app_shared;
 use crate::api::AppState;
 
 // ============================================================================

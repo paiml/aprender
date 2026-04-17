@@ -45,15 +45,13 @@ impl BpeTokenizer {
             });
         }
 
-        // Byte-level BPE per tokenizer-bpe-v1 INV-BPE-003 / INV-BPE-007.
-        // No whitespace split: every byte becomes a pre-tokenization atom via
-        // `bytes_to_unicode`, so round-trip is byte-exact by construction.
-        let end_of_word = String::new();
-        let (byte_enc, _) = crate::text::bpe::bytes_to_unicode();
+        let end_of_word = "</w>".to_string();
 
+        // Initialize vocab with special tokens
         let mut vocab: HashMap<String, u32> = HashMap::new();
         let mut next_id: u32 = 0;
 
+        // Add special tokens
         vocab.insert(special_tokens.unk.clone(), next_id);
         next_id += 1;
 
@@ -70,30 +68,36 @@ impl BpeTokenizer {
             next_id += 1;
         }
 
-        // Byte-encode each document; each document is one "word" for BPE
-        // purposes (the algorithm merges any adjacent byte-chars, including
-        // across whitespace). Key by index to preserve duplicate documents.
-        let mut word_splits: HashMap<usize, (usize, Vec<String>)> =
-            HashMap::with_capacity(corpus.len());
-        for (i, doc) in corpus.iter().enumerate() {
-            let chars: Vec<String> = doc
-                .bytes()
-                .map(|b| byte_enc.get(&b).copied().unwrap_or('?').to_string())
-                .collect();
-            if !chars.is_empty() {
-                word_splits.insert(i, (1, chars));
+        // Count character frequencies and build initial word splits
+        let mut word_freqs: HashMap<String, usize> = HashMap::new();
+        for doc in corpus {
+            for word in doc.split_whitespace() {
+                *word_freqs.entry(word.to_string()).or_insert(0) += 1;
             }
         }
 
-        // Seed vocab with all 256 byte-chars so INV-BPE-007 (full coverage)
-        // holds regardless of which bytes appear in the training corpus.
-        for byte in 0u8..=255u8 {
-            let token = byte_enc.get(&byte).copied().unwrap_or('?').to_string();
-            vocab.entry(token).or_insert_with(|| {
-                let id = next_id;
-                next_id += 1;
-                id
-            });
+        // Convert words to character sequences with end-of-word marker
+        // word_splits: word -> (frequency, character sequence)
+        let mut word_splits: HashMap<String, (usize, Vec<String>)> = HashMap::new();
+        for (word, freq) in &word_freqs {
+            let mut chars: Vec<String> = word.chars().map(|c| c.to_string()).collect();
+            if !chars.is_empty() {
+                // Add end-of-word marker to last character
+                if let Some(last) = chars.last_mut() {
+                    last.push_str(&end_of_word);
+                }
+            }
+            word_splits.insert(word.clone(), (*freq, chars));
+        }
+
+        // Add all characters to vocab
+        for (_, splits) in word_splits.values() {
+            for token in splits {
+                if !vocab.contains_key(token) {
+                    vocab.insert(token.clone(), next_id);
+                    next_id += 1;
+                }
+            }
         }
 
         // Iteratively merge most frequent pairs
@@ -158,7 +162,6 @@ impl BpeTokenizer {
             merges,
             special_tokens,
             end_of_word,
-            byte_level: true,
         })
     }
 
@@ -178,7 +181,6 @@ impl BpeTokenizer {
             merges,
             special_tokens: SpecialTokens::default(),
             end_of_word: "</w>".to_string(),
-            byte_level: false,
         }
     }
 
@@ -269,17 +271,12 @@ impl BpeTokenizer {
         let inverse_vocab: HashMap<u32, String> =
             vocab.iter().map(|(k, v)| (*v, k.clone())).collect();
 
-        // Auto-detect byte-level mode: GPT-2-family vocabs use `Ġ` as the
-        // byte-encoded space and are byte-level everywhere else too.
-        let byte_level = end_of_word == "Ġ";
-
         Ok(Self {
             vocab,
             inverse_vocab,
             merges,
             special_tokens,
             end_of_word,
-            byte_level,
         })
     }
 

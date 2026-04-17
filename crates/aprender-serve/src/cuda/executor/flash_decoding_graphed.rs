@@ -99,19 +99,7 @@ impl CudaExecutor {
                     "PAR-118: flash_decode_seq_lens_buf not initialized".to_string(),
                 )
             })?;
-            // SHIP-007 Bug 2 fix: `flash_decode_seq_lens_buf` is sized for
-            // max_batch=32 (per batch.rs:444-445) so it can serve M>1 batched
-            // graph replay. For M=1 decode (like the parity-gate run), only
-            // slot 0 is used by the kernel. The previous `buf.copy_from_host(&[seq_len])`
-            // failed with `Length mismatch: host 1 vs device 32` because
-            // `copy_from_host` requires exact length match. Pad the host slice
-            // to the buffer length and write `seq_len` into slot 0; remaining
-            // slots are zero-initialized at allocation time and the kernel
-            // ignores them in single-batch mode. This unblocks `apr parity` /
-            // SKIP_CUDA_GRAPH=1 debugging on the 7B Q4_K teacher.
-            let mut seq_lens_padded = vec![0u32; buf.len()];
-            seq_lens_padded[0] = seq_len;
-            buf.copy_from_host(&seq_lens_padded)?;
+            buf.copy_from_host(&[seq_len])?;
             buf.as_ptr()
         };
 

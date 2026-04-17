@@ -44,13 +44,6 @@ equations:
       - gemm_time / layer_fwd >= 0.50 (GEMMs should dominate forward — if not, launch overhead)
       - norm_time / layer_fwd < 0.15 (RMSNorm should be < 15% of layer)
       - sum(ops) / layer_fwd >= 0.85 (per-op coverage >= 85% of layer wall time)
-    preconditions:
-      - 'all per-op times are finite and non-negative'
-      - 'layer_fwd > 0 (must have observed at least one layer pass)'
-    postconditions:
-      - 'sum(op_times) / layer_fwd in [0.85, 1.0] (per-op coverage >= 85%, not over 100%)'
-      - 'gemm_time / layer_fwd in [0.50, 1.0] (GEMMs dominate)'
-    lean_theorem: 'Theorems.Layer_forward_decomposition'
 
   layer_backward_decomposition:
     formula: |
@@ -66,13 +59,6 @@ equations:
     invariants:
       - layer_bwd >= layer_fwd * 1.5 (backward >= 1.5x forward)
       - gemm_bwd_time / layer_bwd >= 0.40 (GEMMs should dominate backward too)
-    preconditions:
-      - 'all per-op backward times are finite and non-negative'
-      - 'layer_bwd > 0 (must have observed at least one backward pass)'
-    postconditions:
-      - 'layer_bwd >= layer_fwd * 1.5 (backward >= 1.5x forward)'
-      - 'gemm_bwd_time / layer_bwd >= 0.40 (GEMMs dominate backward)'
-    lean_theorem: 'Theorems.Layer_backward_decomposition'
 
   json_profiling_output:
     formula: |
@@ -105,15 +91,6 @@ equations:
       - wall_coverage in [0.0, 1.0]
       - len(per_layer) == num_model_layers (28 for Qwen 1.5B)
       - sum(phase.pct) <= 100.0
-    preconditions:
-      - 'N >= 1 (at least one step measured)'
-      - 'num_model_layers > 0'
-    postconditions:
-      - 'wall_coverage in [0.0, 1.0]'
-      - 'len(per_layer) == num_model_layers'
-      - 'sum(phase.pct) <= 100.0'
-      - 'JSON output is valid UTF-8 and parseable as serde_json::Value'
-    lean_theorem: 'Theorems.Json_profiling_output'
 
   bottleneck_classification:
     formula: |
@@ -130,14 +107,6 @@ equations:
     domain: All percentages in [0.0, 1.0]
     invariants:
       - Exactly one bottleneck classification per measurement
-    preconditions:
-      - 'all input percentages in [0.0, 1.0]'
-      - 'launch_count >= 0'
-      - 'all values finite'
-    postconditions:
-      - 'bottleneck in {"transfer", "launch", "compute", "memory_bw"} (4-class enum)'
-      - 'classification is total (every input maps to exactly one class)'
-    lean_theorem: 'Theorems.Bottleneck_classification'
 
 falsification_tests:
   - id: F-POP-001

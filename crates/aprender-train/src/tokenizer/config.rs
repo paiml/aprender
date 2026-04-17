@@ -43,21 +43,6 @@ pub enum TokenizerType {
     Char,
 }
 
-/// Unicode normalization mode applied before byte-level encoding.
-///
-/// `tokenizer-bpe-v1.yaml` INV-TOK-003 mandates NFC for MODEL-2; without it,
-/// composed and decomposed variants of the same grapheme (e.g. `café`) hash
-/// to different byte sequences and the tokenizer drifts between training-
-/// time corpus preparation and inference-time input.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum Normalization {
-    /// No normalization (backward-compat default).
-    #[default]
-    None,
-    /// Unicode NFC (canonical composition).
-    NFC,
-}
-
 /// Tokenizer configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenizerConfig {
@@ -71,9 +56,6 @@ pub struct TokenizerConfig {
     pub lowercase: bool,
     /// Tokenizer type
     pub tokenizer_type: TokenizerType,
-    /// Unicode normalization mode
-    #[serde(default)]
-    pub normalization: Normalization,
 }
 
 impl Default for TokenizerConfig {
@@ -84,7 +66,6 @@ impl Default for TokenizerConfig {
             special_tokens: SpecialTokens::default(),
             lowercase: false,
             tokenizer_type: TokenizerType::BPE,
-            normalization: Normalization::default(),
         }
     }
 }
@@ -120,12 +101,6 @@ impl TokenizerConfig {
     /// Enable lowercase preprocessing
     pub fn with_lowercase(mut self, lowercase: bool) -> Self {
         self.lowercase = lowercase;
-        self
-    }
-
-    /// Set the Unicode normalization mode.
-    pub fn with_normalization(mut self, normalization: Normalization) -> Self {
-        self.normalization = normalization;
         self
     }
 }

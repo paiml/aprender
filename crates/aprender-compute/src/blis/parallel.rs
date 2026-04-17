@@ -146,6 +146,7 @@ pub fn gemm_blis_parallel(
         let _ = gemm_blis(m_local, n, k, a_local, b, c_local, None);
     });
 
+    contract_post_amdahl_speedup!(c);
     Ok(())
 }
 

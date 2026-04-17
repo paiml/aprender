@@ -96,21 +96,6 @@ pub enum HfHubError {
     IoError(std::io::Error),
     /// Model card generation error
     ModelCardError(String),
-    /// Xet protocol upload error (F-PUB-LFS-001). The entire upload failed
-    /// before the LFS pointer commit landed on the HF Hub repo.
-    XetUpload(String),
-    /// Xet partial-upload split-brain — CAS xorbs uploaded but the LFS
-    /// pointer commit did not succeed. The blob is addressable on the CAS
-    /// backend but invisible in the repo tree. Callers may retry by
-    /// re-issuing `commit_blocking`.
-    PartialUpload {
-        /// True if xorb/shard upload to CAS succeeded.
-        cas_success: bool,
-        /// True if the LFS pointer commit landed.
-        commit_success: bool,
-        /// Human-readable failure detail.
-        detail: String,
-    },
 }
 
 impl std::fmt::Display for HfHubError {
@@ -123,15 +108,6 @@ impl std::fmt::Display for HfHubError {
             Self::InvalidRepoId(id) => write!(f, "Invalid repo ID (expected 'org/name'): {id}"),
             Self::IoError(e) => write!(f, "IO error: {e}"),
             Self::ModelCardError(e) => write!(f, "Model card error: {e}"),
-            Self::XetUpload(detail) => write!(f, "Xet upload failed: {detail}"),
-            Self::PartialUpload {
-                cas_success,
-                commit_success,
-                detail,
-            } => write!(
-                f,
-                "Partial Xet upload (cas={cas_success}, commit={commit_success}): {detail}"
-            ),
         }
     }
 }
@@ -315,14 +291,6 @@ pub struct HfHubClient {
 
 mod client_default;
 mod client_modules;
-
-/// HF Xet large-file upload protocol (F-PUB-LFS-001, spec §12.8).
-///
-/// Always compiled so the dispatch gate (`should_use_xet`) and the
-/// token-refresh URL builder can be used by call sites even when the
-/// `xet` feature is disabled — only the `XetUploader` itself (which
-/// pulls in `hf-xet`) is feature-gated.
-pub mod xet;
 
 #[cfg(test)]
 mod tests;

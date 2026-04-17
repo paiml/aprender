@@ -46,121 +46,8 @@ fn validate_publish_inputs(
     Ok(files)
 }
 
-/// Describe which HF Hub upload path a file of `size_bytes` will take.
-///
-/// Surfaces FALSIFY-PUB-LFS-001 (file-size dispatch) observably from the
-/// CLI without needing an `HF_TOKEN`. The returned string is appended to
-/// the dry-run file listing so a reviewer can verify routing at a glance.
-///
-/// Built with `--features xet`: `>5 GiB` reports `[→ Xet CAS]`.
-/// Built without `--features xet`: `>5 GiB` reports a `FAIL` hint
-/// pointing at the required rebuild.
-#[cfg(feature = "hf-hub")]
-fn format_upload_route(size_bytes: u64) -> &'static str {
-    if aprender::hf_hub::xet::should_use_xet(size_bytes) {
-        if cfg!(feature = "xet") {
-            "[→ Xet CAS (>5 GiB)]"
-        } else {
-            "[✗ would FAIL: rebuild with --features xet]"
-        }
-    } else {
-        "[→ HTTP LFS (≤5 GiB)]"
-    }
-}
-
-/// Fallback when built without the `hf-hub` feature — dry-run only.
-#[cfg(not(feature = "hf-hub"))]
-fn format_upload_route(_size_bytes: u64) -> &'static str {
-    "[? hf-hub feature off]"
-}
-
-/// Upload model files, sidecars, and either the manifest (when provided) or an
-/// auto-generated README to HuggingFace Hub. Extends `upload_to_hub` for
-/// F-PUBLISH-EXTRA-001: iterates extra_files and uploads manifest.yaml verbatim.
-#[cfg(feature = "hf-hub")]
-#[allow(clippy::too_many_arguments)]
-fn upload_to_hub_extended(
-    client: &HfHubClient,
-    repo_id: &str,
-    files: &[std::path::PathBuf],
-    readme_content: &str,
-    manifest: Option<&Path>,
-    extra_files: &[std::path::PathBuf],
-    commit_msg: &str,
-    verbose: bool,
-) -> Result<(), CliError> {
-    let progress_callback: Arc<dyn Fn(UploadProgress) + Send + Sync> = Arc::new(move |progress| {
-        if verbose {
-            println!(
-                "  [{}/{}] {} ({:.1}%)",
-                progress.files_completed + 1,
-                progress.total_files,
-                progress.current_file,
-                progress.percentage()
-            );
-        }
-    });
-
-    let upload_one = |src: &Path, path_in_repo: &str| -> Result<(), CliError> {
-        if verbose {
-            let size = fs::metadata(src).map(|m| m.len()).unwrap_or(0);
-            println!(
-                "Uploading {} ({:.1} MB)...",
-                path_in_repo,
-                size as f64 / 1_000_000.0
-            );
-        }
-        let file_data = fs::read(src)?;
-        let options = PushOptions::new()
-            .with_filename(path_in_repo.to_string())
-            .with_commit_message(commit_msg)
-            .with_progress_callback(progress_callback.clone())
-            .with_create_repo(true);
-        client
-            .push_to_hub(repo_id, &file_data, options)
-            .map_err(|e| CliError::NetworkError(format!("Upload failed: {e}")))?;
-        Ok(())
-    };
-
-    for file in files {
-        let filename = file
-            .file_name()
-            .ok_or_else(|| CliError::ValidationFailed("Invalid file path".into()))?
-            .to_string_lossy()
-            .to_string();
-        upload_one(file, &filename)?;
-    }
-
-    for ef in extra_files {
-        let filename = ef
-            .file_name()
-            .ok_or_else(|| CliError::ValidationFailed("Invalid extra-file path".into()))?
-            .to_string_lossy()
-            .to_string();
-        upload_one(ef, &filename)?;
-    }
-
-    if let Some(manifest_path) = manifest {
-        upload_one(manifest_path, "manifest.yaml")?;
-    } else {
-        if verbose {
-            println!("Uploading README.md...");
-        }
-        let readme_options = PushOptions::new()
-            .with_filename("README.md")
-            .with_commit_message(commit_msg)
-            .with_create_repo(false);
-        client
-            .push_to_hub(repo_id, readme_content.as_bytes(), readme_options)
-            .map_err(|e| CliError::NetworkError(format!("README upload failed: {e}")))?;
-    }
-
-    Ok(())
-}
-
 /// Upload model files and README to HuggingFace Hub.
 #[cfg(feature = "hf-hub")]
-#[allow(dead_code)]
 fn upload_to_hub(
     client: &HfHubClient,
     repo_id: &str,
@@ -227,17 +114,10 @@ fn upload_to_hub(
 }
 
 /// Execute the publish command
-///
-/// F-PUBLISH-EXTRA-001 (contracts/apr-cli-publish-extra-v1.yaml):
-/// When `manifest` is `Some`, validates the publish-manifest-v1.yaml, computes
-/// sha256 of the declared local artifact, aborts before any network I/O on
-/// mismatch, then uploads the manifest itself + sidecar files. Auto-README is
-/// suppressed when the manifest carries provenance.
 #[provable_contracts_macros::contract(
     "apr-cli-command-safety-v1",
     equation = "mutating_output_contract"
 )]
-#[allow(clippy::too_many_arguments)]
 pub fn execute(
     directory: &Path,
     repo_id: &str,
@@ -249,45 +129,13 @@ pub fn execute(
     commit_message: Option<&str>,
     dry_run: bool,
     verbose: bool,
-    manifest: Option<&Path>,
-    extra_files: &[std::path::PathBuf],
 ) -> Result<(), CliError> {
-    // When --manifest is provided, the manifest declares the single artifact
-    // being shipped for this invocation. We restrict `files` to just that
-    // artifact (F-PUBLISH-EXTRA-001::manifest_upload_roundtrip step 4) so
-    // that a per-format manifest does not accidentally re-upload sibling
-    // formats sitting next to it in the staging directory.
-    let files = if let Some(manifest_path) = manifest {
-        let artifact = preflight_manifest_guard(manifest_path, directory)?;
-        vec![artifact]
-    } else {
-        validate_publish_inputs(directory, repo_id)?
-    };
-
-    // When a manifest is absent the guard above doesn't run; repo_id still
-    // needs validation and directory existence must be checked.
-    if manifest.is_some() {
-        if !repo_id.contains('/') || repo_id.split('/').count() != 2 {
-            return Err(CliError::ValidationFailed(format!(
-                "Invalid repo ID '{}'. Expected format: org/repo-name",
-                repo_id
-            )));
-        }
-        if !directory.exists() {
-            return Err(CliError::FileNotFound(directory.to_path_buf()));
-        }
-    }
+    let files = validate_publish_inputs(directory, repo_id)?;
 
     if verbose {
-        println!("Uploading {} primary artifact(s):", files.len());
+        println!("Found {} model files:", files.len());
         for f in &files {
             println!("  - {}", f.display());
-        }
-    }
-
-    for ef in extra_files {
-        if !ef.exists() {
-            return Err(CliError::FileNotFound(ef.clone()));
         }
     }
 
@@ -308,41 +156,17 @@ pub fn execute(
         println!("Files to upload:");
         for f in &files {
             let size = fs::metadata(f).map(|m| m.len()).unwrap_or(0);
-            println!(
-                "  - {} ({:.1} MB) {}",
-                f.display(),
-                size as f64 / 1_000_000.0,
-                format_upload_route(size)
-            );
+            println!("  - {} ({:.1} MB)", f.display(), size as f64 / 1_000_000.0);
         }
-        for ef in extra_files {
-            let size = fs::metadata(ef).map(|m| m.len()).unwrap_or(0);
-            println!(
-                "  - {} ({:.1} MB) [extra-file] {}",
-                ef.display(),
-                size as f64 / 1_000_000.0,
-                format_upload_route(size)
-            );
-        }
-        if let Some(m) = manifest {
-            let size = fs::metadata(m).map(|meta| meta.len()).unwrap_or(0);
-            println!(
-                "  - {} ({:.1} KB) [manifest]",
-                m.display(),
-                size as f64 / 1_000.0
-            );
-            println!("\n(README.md auto-generation suppressed: manifest provides provenance)");
-        } else {
-            println!("\nGenerated README.md:\n");
-            println!("{}", readme_content);
-        }
+        println!("\nGenerated README.md:\n");
+        println!("{}", readme_content);
         println!("\n=== DRY RUN COMPLETE ===");
         return Ok(());
     }
 
     #[cfg(not(feature = "hf-hub"))]
     {
-        let _ = (commit_message, verbose, manifest, extra_files);
+        let _ = (commit_message, verbose);
         return Err(CliError::ValidationFailed(
             "Publishing requires the 'hf-hub' feature. Rebuild with: \
              cargo install --path crates/apr-cli --features hf-hub"
@@ -365,36 +189,21 @@ pub fn execute(
         let commit_msg = commit_message.unwrap_or("Upload via apr-cli publish");
 
         println!("Publishing to https://huggingface.co/{}", repo_id);
-        let extras_size: u64 = extra_files
-            .iter()
-            .map(|f| fs::metadata(f).map(|m| m.len()).unwrap_or(0))
-            .sum();
-        let manifest_size: u64 = manifest
-            .map(|m| fs::metadata(m).map(|meta| meta.len()).unwrap_or(0))
-            .unwrap_or(0);
         let total_size: u64 = files
             .iter()
             .map(|f| fs::metadata(f).map(|m| m.len()).unwrap_or(0))
             .sum::<u64>()
-            + extras_size
-            + manifest_size
-            + if manifest.is_some() {
-                0
-            } else {
-                readme_content.len() as u64
-            };
+            + readme_content.len() as u64;
         println!(
             "Total upload size: {:.1} MB",
             total_size as f64 / 1_000_000.0
         );
 
-        upload_to_hub_extended(
+        upload_to_hub(
             &client,
             repo_id,
             &files,
             &readme_content,
-            manifest,
-            extra_files,
             commit_msg,
             verbose,
         )?;
@@ -402,94 +211,6 @@ pub fn execute(
         println!("\n✓ Published to https://huggingface.co/{}", repo_id);
         Ok(())
     }
-}
-
-/// Pre-flight manifest guard (F-PUBLISH-EXTRA-001::manifest_upload_roundtrip).
-///
-/// Parses the manifest, validates required top-level fields exist, locates the
-/// declared artifact in `directory` (by basename of `artifact_url`), computes
-/// its local sha256, and aborts on mismatch. Runs BEFORE any network I/O.
-/// On success, returns the local path of the manifest-declared artifact so the
-/// caller can restrict its upload set to exactly that one file.
-fn preflight_manifest_guard(
-    manifest_path: &Path,
-    directory: &Path,
-) -> Result<std::path::PathBuf, CliError> {
-    let manifest_src = fs::read_to_string(manifest_path).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "Cannot read manifest {}: {e}",
-            manifest_path.display()
-        ))
-    })?;
-
-    let parsed: serde_yaml::Value = serde_yaml::from_str(&manifest_src)
-        .map_err(|e| CliError::ValidationFailed(format!("Manifest YAML parse error: {e}")))?;
-
-    let declared_sha = parsed
-        .get("sha256")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            CliError::ValidationFailed("Manifest missing required field: sha256".into())
-        })?;
-    let artifact_url = parsed
-        .get("artifact_url")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            CliError::ValidationFailed("Manifest missing required field: artifact_url".into())
-        })?;
-    let declared_size = parsed.get("size_bytes").and_then(serde_yaml::Value::as_u64);
-
-    let artifact_basename = artifact_url
-        .rsplit('/')
-        .next()
-        .ok_or_else(|| CliError::ValidationFailed("artifact_url has no basename".into()))?;
-    let local_artifact = directory.join(artifact_basename);
-    if !local_artifact.exists() {
-        return Err(CliError::ValidationFailed(format!(
-            "Manifest-declared artifact not found locally: {}",
-            local_artifact.display()
-        )));
-    }
-
-    let computed_sha = stream_sha256(&local_artifact)?;
-    if computed_sha != declared_sha {
-        return Err(CliError::ValidationFailed(format!(
-            "sha256 mismatch — manifest-declared vs local artifact.\n  \
-             manifest: {declared_sha}\n  \
-             local:    {computed_sha}\n  \
-             file:     {}",
-            local_artifact.display()
-        )));
-    }
-
-    if let Some(expected) = declared_size {
-        let actual = fs::metadata(&local_artifact).map(|m| m.len()).unwrap_or(0);
-        if expected != actual {
-            return Err(CliError::ValidationFailed(format!(
-                "size_bytes mismatch — manifest {expected}, local {actual}"
-            )));
-        }
-    }
-
-    Ok(local_artifact)
-}
-
-/// Streaming SHA-256 computation (64 KiB buffer) — same implementation used by
-/// `apr validate-manifest` for the FALSIFY-PM-002 gate.
-fn stream_sha256(path: &Path) -> Result<String, CliError> {
-    use sha2::{Digest, Sha256};
-    use std::io::Read;
-    let mut f = fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 65_536];
-    loop {
-        let n = f.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Find model files in directory

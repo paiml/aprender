@@ -83,24 +83,16 @@ impl Validator for RangeValidator {
 
 #[test]
 fn test_requires_on_trait_impl() {
-    let v = RangeValidator {
-        min: 0,
-        max: 100,
-        call_count: 0,
-    };
+    let v = RangeValidator { min: 0, max: 100, call_count: 0 };
     assert!(v.validate(50));
     assert!(!v.validate(200));
 }
 
 #[test]
 fn test_ensures_on_trait_impl() {
-    let mut v = RangeValidator {
-        min: 0,
-        max: 100,
-        call_count: 0,
-    };
+    let mut v = RangeValidator { min: 0, max: 100, call_count: 0 };
     assert_eq!(v.transform(50), 50);
-    assert_eq!(v.transform(-10), 0); // clamped to min
+    assert_eq!(v.transform(-10), 0);  // clamped to min
     assert_eq!(v.transform(200), 100); // clamped to max
     assert_eq!(v.call_count, 3);
 }
@@ -108,11 +100,7 @@ fn test_ensures_on_trait_impl() {
 #[test]
 #[should_panic(expected = "Pre-condition violated")]
 fn test_requires_on_trait_impl_catches_violation() {
-    let v = RangeValidator {
-        min: 0,
-        max: 100,
-        call_count: 0,
-    };
+    let v = RangeValidator { min: 0, max: 100, call_count: 0 };
     v.validate(-1); // violates requires(x >= 0)
 }
 

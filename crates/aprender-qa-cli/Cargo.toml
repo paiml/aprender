@@ -7,7 +7,6 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-publish = false  # Internal QA harness; reached through `apr qa`, not `cargo add`
 
 [lib]
 name = "aprender_qa_cli"

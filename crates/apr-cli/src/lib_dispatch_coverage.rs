@@ -32,13 +32,7 @@
     fn test_dispatch_model_commands_pull_nonexistent() {
         let cli = make_cli(Commands::Pull {
             model_ref: "nonexistent-model-that-does-not-exist-xyz123".to_string(),
-            repo: None,
             force: false,
-            dry_run: false,
-            revision: None,
-            offline: false,
-            include: vec![],
-            output: None,
         });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Pull should be handled by dispatch_model_commands");
@@ -325,7 +319,6 @@
             prompt: None,
             fast: true,
             brick: None,
-            percentiles: vec![50.0, 95.0, 99.0],
         }));
         let result = dispatch_profiling_commands(&cli);
         assert!(result.is_some(), "Bench should be handled by profiling dispatcher");
@@ -558,9 +551,6 @@
             payload: false,
             diff: false,
             interactive: false,
-            save_tensor: None,
-            save_tensor_dir: None,
-            save_tensor_layers: "0..1".to_string(),
         });
         let result = dispatch_diagnostic_commands(&cli);
         assert!(result.is_some(), "Trace should be handled by diagnostic dispatcher");

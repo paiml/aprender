@@ -46,25 +46,21 @@ fn test_qa_011_throughput_regression_detection() {
     current_times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let current_time = current_times[2]; // Median
 
-    // Current time should not be CATASTROPHICALLY slower than baseline.
-    //
-    // This test compares two adjacent runs from the same commit, so it cannot
-    // actually detect a real perf regression — at best it detects noise-
-    // bounded throughput. A 3x threshold was previously used and observed to
-    // flake on shared self-hosted runners at 3.25x under tenant contention
-    // (qa_perf_tests.rs:59 failure, chain blocker 2026-04-20).
-    //
-    // We bump the threshold to 10x so the test only fires on catastrophic
-    // regressions (e.g., an accidental O(n^2) in LayerNorm). Sub-10x drift is
-    // scheduler/frequency-scaling jitter, NOT a regression signal, and real
-    // regression detection belongs in the benchmark suite with stored
-    // historical baselines — not a unit test.
-    let regression_threshold = 10.0;
+    // Current time should not be significantly slower than baseline
+    // Using 3x threshold to account for:
+    // - Coverage instrumentation overhead
+    // - CI system load variability
+    // - CPU frequency scaling during test
+    // per Hoefler & Belli [2] recommendations for CV-based stopping
+    // Note: Real regression detection would compare against stored historical baseline
+    let regression_threshold = 3.0;
     let ratio = current_time / baseline_time;
 
     assert!(
         ratio < regression_threshold,
-        "QA-011: Throughput regression detected: {ratio:.2}x slower (threshold: {regression_threshold}x)",
+        "QA-011: Throughput regression detected: {:.2}x slower (threshold: {}x)",
+        ratio,
+        regression_threshold
     );
 }
 
@@ -212,12 +208,9 @@ fn test_qa_018_batch_scaling() {
     // Batch=8 processing 8x data - allow high variance under coverage
     let ratio = batch_time.as_secs_f64() / single_time.as_secs_f64();
 
-    // Sanity check: ratio must be finite and positive. The 1000x upper bound
-    // catches infinity / NaN / catastrophic batch regressions while
-    // tolerating CI-runner scheduling noise (microsecond-scale measurements
-    // on 128-dim LayerNorm can spike to 100+x under load — task #133).
+    // Just verify ratio is reasonable (not infinite or negative)
     assert!(
-        ratio > 0.0 && ratio < 1000.0,
+        ratio > 0.0 && ratio < 100.0,
         "QA-018: Batch=8 ratio ({:.2}x) should be in reasonable bounds",
         ratio
     );

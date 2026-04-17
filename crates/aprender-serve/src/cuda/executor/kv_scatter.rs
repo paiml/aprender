@@ -580,7 +580,7 @@ impl CudaExecutor {
             for h in 0..3.min(num_heads) {
                 let start = h * head_dim;
                 eprintln!(
-                    "[CORRECTNESS-013-ATTN] Head {} first 16: {:?}",
+                    "[CORRECTNESS-013-ATTN] Head {} first 5: {:?}",
                     h,
                     &attn_out[start..start + 5]
                 );
@@ -616,7 +616,7 @@ impl CudaExecutor {
         if k_nan > 0 {
             eprintln!("[PAR-058-ATTN] K input has {} NaN out of {}", k_nan, k_input.len());
         } else {
-            eprintln!("[PAR-058-ATTN] K input OK, first 16: {:?}", &k_input[..16.min(k_input.len())]);
+            eprintln!("[PAR-058-ATTN] K input OK, first 5: {:?}", &k_input[..5.min(k_input.len())]);
         }
         let mut q_input = vec![0.0f32; q_gpu.len()];
         q_gpu.copy_to_host(&mut q_input)?;
@@ -624,7 +624,7 @@ impl CudaExecutor {
         if q_nan > 0 {
             eprintln!("[PAR-058-ATTN] Q input has {} NaN out of {}", q_nan, q_input.len());
         } else {
-            eprintln!("[PAR-058-ATTN] Q input OK, first 16: {:?}", &q_input[..16.min(q_input.len())]);
+            eprintln!("[PAR-058-ATTN] Q input OK, first 5: {:?}", &q_input[..5.min(q_input.len())]);
         }
         let k_cache = self.kv_cache_gpu.get(k_key).ok_or_else(|| {
             GpuError::InvalidLaunchConfig(format!("K cache not found for {k_key}"))
@@ -636,9 +636,9 @@ impl CudaExecutor {
         if k_cache_nan > 0 {
             eprintln!("[PAR-058-ATTN] K cache has {} NaN", k_cache_nan);
         } else {
-            eprintln!("[PAR-058-ATTN] K cache head0 pos0 first 16: {:?}", &k_cache_vals[..16.min(k_cache_vals.len())]);
-            if new_len >= 2 && k_cache_vals.len() >= head_dim + 16 {
-                eprintln!("[PAR-058-ATTN] K cache head0 pos1 first 16: {:?}", &k_cache_vals[head_dim..(head_dim + 16).min(k_cache_vals.len())]);
+            eprintln!("[PAR-058-ATTN] K cache head0 pos0 first 5: {:?}", &k_cache_vals[..5.min(k_cache_vals.len())]);
+            if new_len >= 2 && k_cache_vals.len() >= head_dim + 5 {
+                eprintln!("[PAR-058-ATTN] K cache head0 pos1 first 5: {:?}", &k_cache_vals[head_dim..(head_dim + 5).min(k_cache_vals.len())]);
             }
         }
         let v_cache = self.kv_cache_gpu.get(v_key).ok_or_else(|| {
@@ -650,7 +650,7 @@ impl CudaExecutor {
         if v_cache_nan > 0 {
             eprintln!("[PAR-058-ATTN] V cache has {} NaN", v_cache_nan);
         } else {
-            eprintln!("[PAR-058-ATTN] V cache head0 pos0 first 16: {:?}", &v_cache_vals[..16.min(v_cache_vals.len())]);
+            eprintln!("[PAR-058-ATTN] V cache head0 pos0 first 5: {:?}", &v_cache_vals[..5.min(v_cache_vals.len())]);
         }
         Ok(())
     }

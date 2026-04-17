@@ -339,22 +339,14 @@ impl RosettaStone {
     }
 
     fn load_tensor_f32_apr(&self, path: &Path, tensor_name: &str) -> Result<Vec<f32>> {
-        use crate::bundle::MappedFile;
-        use crate::format::v2::AprV2ReaderRef;
+        use crate::format::v2::AprV2Reader;
 
-        // PERF (PMAT-APR-DIFF-MMAP): use mmap instead of std::fs::read so callers
-        // that invoke this fn N times (e.g. `apr diff --values --limit N` walking
-        // every tensor in a 7B/8GB model) don't pay an N×file_size read cost.
-        // The peer load_tensor_f32_safetensors path already uses MappedSafeTensors;
-        // this brings APR to parity. AprV2ReaderRef borrows the mapped slice,
-        // mirroring the zero-copy contract docstring at writer.rs:393.
-        let mapped = MappedFile::open(path).map_err(|e| AprenderError::FormatError {
-            message: format!("Cannot mmap APR file: {e}"),
+        let data = std::fs::read(path).map_err(|e| AprenderError::FormatError {
+            message: format!("Cannot read APR file: {e}"),
         })?;
-        let reader =
-            AprV2ReaderRef::from_bytes(mapped.as_slice()).map_err(|e| AprenderError::FormatError {
-                message: format!("APR parse failed: {e}"),
-            })?;
+        let reader = AprV2Reader::from_bytes(&data).map_err(|e| AprenderError::FormatError {
+            message: format!("APR parse failed: {e}"),
+        })?;
         reader
             .get_tensor_as_f32(tensor_name)
             .ok_or_else(|| AprenderError::FormatError {

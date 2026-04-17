@@ -27,7 +27,7 @@ trueno-viz = { version = "0.1.4", optional = true }
 # Simular for deterministic RNG and TUI monitoring (Sovereign Stack)
 simular = { version = "0.2.0", optional = true }
 # Renacer for profiling and anomaly detection (Sovereign Stack)
-renacer = { workspace = true, optional = true }
+renacer = { version = "0.10", optional = true }
 # TUI support via presentar (optional, for stress test monitor)
 presentar-core = { version = "0.3", optional = true }
 presentar-terminal = { version = "0.3", optional = true }
@@ -48,7 +48,7 @@ bytemuck = { version = "1.21", features = ["derive"] }
 
 # renacer is Linux-only (uses ptrace syscalls)
 [target.'cfg(target_os = "linux")'.dev-dependencies]
-renacer = { workspace = true }
+renacer = "0.10"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # GPU pixel testing with TUI visualization (Sovereign Stack)

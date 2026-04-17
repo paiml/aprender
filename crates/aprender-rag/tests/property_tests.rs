@@ -2,7 +2,7 @@
 //! Property-based tests for trueno-rag
 
 use proptest::prelude::*;
-use aprender_rag::{
+use trueno_rag::{
     chunk::{Chunker, FixedSizeChunker, ParagraphChunker, RecursiveChunker, TimestampChunker},
     embed::{cosine_similarity, Embedder, MockEmbedder},
     media::{parse_subtitles, SubtitleCue, SubtitleFormat, SubtitleTrack},

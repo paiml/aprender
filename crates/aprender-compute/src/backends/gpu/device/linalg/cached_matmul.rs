@@ -264,7 +264,7 @@ impl GpuMatmulCache {
         self.ensure_staging_buffer(output_bytes);
 
         // Write input + dims to persistent buffers (just memcpy, no alloc)
-        let input_buf = self.input_buffer.as_ref().expect("ensure_input_buffer was just called");
+        let input_buf = self.input_buffer.as_ref().unwrap();
         self.queue.write_buffer(input_buf, 0, bytemuck::cast_slice(&input[..m * k]));
 
         // PMAT-346: GEMV shader expects Params { n (output dim), k, _, _ }
@@ -275,11 +275,11 @@ impl GpuMatmulCache {
         } else {
             Dimensions { m: m as u32, k: k as u32, n: n as u32, alpha_bits: 1.0_f32.to_bits() }
         };
-        let dims_buf = self.dims_buffer.as_ref().expect("ensure_dims_buffer was just called");
+        let dims_buf = self.dims_buffer.as_ref().unwrap();
         self.queue.write_buffer(dims_buf, 0, bytemuck::bytes_of(&dims));
 
         // Bind group (per-call — WGPU requires new bind group when buffer references change)
-        let output_buf = self.output_buffer.as_ref().expect("ensure_output_buffer was just called");
+        let output_buf = self.output_buffer.as_ref().unwrap();
         let weight_buf = &self
             .weight_buffers
             .get(weight_name)
@@ -298,7 +298,7 @@ impl GpuMatmulCache {
             ],
         });
 
-        let staging = self.staging_buffer.as_ref().expect("ensure_staging_buffer was just called");
+        let staging = self.staging_buffer.as_ref().unwrap();
 
         // Encode + dispatch
         let mut encoder =

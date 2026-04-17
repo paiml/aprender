@@ -63,17 +63,11 @@ fn test_f152_cached_time_precision() {
         let cached_elapsed = cached_after.saturating_sub(cached);
         let drift = elapsed_real.abs_diff(cached_elapsed);
 
-        // Tolerance raised to 50ms after observing drift > 2ms under
-        // aprender CI contention (task #136, 2026-04-21: 5 parallel
-        // uncapped workspace-test jobs → kernel sleep for 100us actually
-        // takes 5-10ms, producing drift beyond original 2ms window).
-        // 50ms still catches catastrophic breakage (cached_nanos stuck at
-        // a stale value produces drift = wall-clock, which grows without
-        // bound). Fine-grained cached-time precision belongs in a
-        // dedicated single-tenant bench, not `cargo test --lib`.
+        // Should be within 2ms (2_000_000ns)
+        // CI runners (especially macOS shared) can have scheduling jitter
         assert!(
-            drift < 50_000_000, // 50ms tolerance for CI stability
-            "Cached time drift should be < 50ms, got {}us",
+            drift < 2_000_000, // 2ms tolerance for CI stability
+            "Cached time drift should be < 2ms, got {}us",
             drift / 1000
         );
     }

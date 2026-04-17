@@ -26,20 +26,6 @@ jobs:
     uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
     with:
       repo: ${{ github.event.repository.name }}
-      # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
-      # APR-MONO monorepo: 879+ compile units, largest dep graph in the fleet.
-      # Highest expected sccache hit-rate lift; without it each PR cold-compiles
-      # in its per-PR target dir (`/mnt/nvme-raid0/targets/aprender-ci/<PR>`)
-      # for ~34min, leaving only ~4min for tests inside the 40min timeout —
-      # the entire merge queue saturates.
-      #
-      # 2026-04-19: temporarily disabled — sovereign-ci:stable container image
-      # was missing the `rustc-sccache` wrapper script. Fixed upstream in
-      # paiml/infra commit f4fccf9 (PR #66, "use exec script not symlink").
-      # 2026-05-12: re-enabled — image verified to ship `/usr/local/bin/rustc-sccache`
-      # (sccache 0.14.0), shared cache at `/home/noah/data/sccache` (warm, ~11GB).
-      enable_sccache: true
-      use_nextest: true
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
@@ -48,69 +34,16 @@ jobs:
     container:
       image: localhost:5000/sovereign-ci:stable
       volumes:
-        # Per-PR (or per-branch) cargo registry. Before ANDON 2026-04-24 (paiml/infra#77),
-        # ALL 16 intel-clean-room-* runners bind-mounted the SAME host
-        # /home/noah/.cargo/registry, which produced EACCES "couldn't read
-        # <crate>/lib.rs: Permission denied" when a concurrent job extracted,
-        # GC'd, or partially wrote the same src/ directory (root-owned crate
-        # extractions from one container were unreadable by another runner's
-        # noah:1000 reaper sweep; partial extractions left .cargo-ok markers
-        # without src/). Mirroring the target-dir isolation below removes the
-        # contention at the source — each PR owns its registry lifecycle and
-        # there is no cross-PR write concurrency.
-        - /mnt/nvme-raid0/cargo-ci/registry/${{ github.event.pull_request.number || github.ref_name }}:/usr/local/cargo/registry
-        # Per-PR (or per-branch) target dir. Before task #134, ALL concurrent PRs
-        # bind-mounted the same /workspace/target and stomped each other's
-        # incremental cache, pushing every run to the 45-min timeout. Isolating
-        # the target dir per PR number removes the contention at the source.
-        # Push-to-main uses ref_name ("main"); PRs use PR number.
-        - /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}:/workspace/target
-        # Shared sccache (Phase 3 §5.3) — content-addressable rustc-output cache
-        # keyed on (toolchain + source + flags). Shared across all 16
-        # intel-clean-room runners and all PRs, with no concurrent-write race
-        # (sccache uses per-entry atomic rename + LRU eviction internally).
-        # Without this, the per-PR target dir above forces cold compile from
-        # scratch for every new PR — ~34min build, leaving only ~6min for
-        # tests inside the 45min timeout. See PR #1632.
-        - /home/noah/data/sccache:/sccache
+        - /home/noah/.cargo/registry:/usr/local/cargo/registry
+        - /mnt/nvme-raid0/targets/aprender-ci:/workspace/target
     timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: /workspace/target
-      # Sccache rustc-wrapper. The image bakes /usr/local/bin/rustc-sccache
-      # as an exec shim that argv[0]-spoofs sccache CLI mode while still
-      # caching rustc invocations (paiml/infra commit f4fccf9). Expected
-      # hit-rate ≥80% on warm cache → cold compile ~34min → ~3-5min.
-      RUSTC_WRAPPER: rustc-sccache
-      SCCACHE_DIR: /sccache
-      # CARGO_INCREMENTAL intentionally disabled in CI: incremental compilation
-      # tracks per-function dirty state for dev-loop speed, but on PR-scale
-      # diffs that touch many files the overhead outweighs savings, and the
-      # state file is a further contention point under parallelism.
-      CARGO_INCREMENTAL: 0
-      # Self-cap parallelism to align with infra build-performance.md §4.2
-      # "build" class (J=8). The intel host has 32 cores, and the labeled
-      # runner classes (test/build/lint) that would apply cgroup slices do
-      # NOT exist yet — all 16 self-hosted runners are `clean-room` labeled
-      # and uncapped. Without this cap, N parallel PRs each spawn 32 rustc
-      # processes → N×32 on 32 cores → thrash → every run hits the 45min
-      # timeout simultaneously (observed on #991/#992/#993, 2026-04-21).
-      # J=8 means 3 parallel PRs = 24 active rustc ≤ 1.2 × 32 cores = 38 budget.
-      # Single-run wall-time regresses ~22→35min but completes reliably.
-      # Remove this cap once forjar apply lands cgroup slices on intel (PMAT-156).
-      CARGO_BUILD_JOBS: 8
-      # Reduce debug info to line-tables-only per infra spec §4.4 — keeps
-      # stack traces on test failure, strips type info, ~15-20% faster link.
-      CARGO_PROFILE_TEST_DEBUG: line-tables-only
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_INCREMENTAL: 1
     steps:
       - uses: actions/checkout@v4
-      # Removed redundant `cargo check --workspace`: the subsequent
-      # `cargo test --workspace --lib` does strictly more work (type-check +
-      # codegen + link + run), and the test profile doesn't share artifacts
-      # with the check profile, so the check was pure duplicated compilation.
-      # Loses the "fail-fast on type error in 3-5min" signal, gains ~3-5min
-      # back on every successful run. Typecheck-only fail-fast is covered
-      # by the reusable `ci / test` job upstream.
+      - name: Workspace check (all 70 crates)
+        run: cargo check --workspace
       - name: Workspace lib tests (25,300+)
         # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
         run: cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
@@ -122,11 +55,6 @@ jobs:
           cargo test -p aprender-core --test monorepo_invariants
           cargo test -p aprender-core --test readme_contract
           cargo test -p apr-cli --test cli_commands
-      - name: Build.rs crate-root escape check (v0.31.1 yank guard)
-        # Static Poka-Yoke: flags build.rs files that panic on files outside
-        # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
-        # See scripts/check_build_rs_paths.sh for the full rationale.
-        run: bash scripts/check_build_rs_paths.sh
       - name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |

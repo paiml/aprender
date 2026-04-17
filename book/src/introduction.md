@@ -17,13 +17,13 @@ apr run qwen2.5-coder-1.5b "What is 2+2?"
 ## What is Aprender?
 
 Aprender is a next-generation ML framework in pure Rust — 70 workspace crates,
-58 CLI commands, 25,391 tests, 405 provable contracts. Install once, get everything:
+57 CLI commands, 25,391 tests, 405 provable contracts. Install once, get everything:
 inference, training, serving, profiling, model operations.
 
 ## This Book
 
 - **Getting Started** — Install, run your first model, fine-tune, serve
-- **CLI Reference** — All 58 `apr` commands with `--help` output
+- **CLI Reference** — All 57 `apr` commands with `--help` output
 - **Architecture** — Monorepo layout, crate map, provable contracts
 - **Cookbook** — Recipes and workflows (separate repo: [apr-cookbook](https://github.com/paiml/apr-cookbook))
 - **EXTREME TDD** — The methodology used to build aprender (296 chapters)

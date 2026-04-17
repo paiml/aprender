@@ -120,7 +120,6 @@ kani_harnesses:
 - id: KH-HYGIENE-001
   obligation: workspace_version_inheritance
   property: all_crates_inherit_workspace_version
-  bound: 4
 
 verification_summary:
   total_obligations: 5

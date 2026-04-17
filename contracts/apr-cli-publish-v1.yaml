@@ -34,7 +34,7 @@ equations:
   all_commands_compile:
     formula: |
       cargo check -p apr-cli (with default features) exits 0
-      All 58 commands have --help (even if some say "enable feature X")
+      All 57 commands have --help (even if some say "enable feature X")
     domain: apr-cli compilation
     codomain: bool
 
@@ -60,7 +60,7 @@ falsification_tests:
 
 - id: FALSIFY-PUB-CLI-003
   rule: apr --help works with minimal features
-  prediction: "apr --help lists all 58 commands"
+  prediction: "apr --help lists all 57 commands"
   test: "apr --help | wc -l > 50"
   if_fails: "commands missing from minimal build"
 
@@ -78,7 +78,6 @@ kani_harnesses:
 - id: KH-PUB-CLI-001
   obligation: no_cyclic_resolution
   property: acyclic_dep_graph
-  bound: 4
 
 verification_summary:
   total_obligations: 4

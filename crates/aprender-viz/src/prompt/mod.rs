@@ -198,7 +198,12 @@ pub fn parse_prompt(prompt: &str) -> Result<PlotSpec> {
 }
 
 /// Apply a single `key=value` option to the plot spec, collecting extra tokens for quoted titles.
-fn apply_option<'a, I>(spec: &mut PlotSpec, key: &str, value: &str, parts: &mut I) -> Result<()>
+fn apply_option<'a, I>(
+    spec: &mut PlotSpec,
+    key: &str,
+    value: &str,
+    parts: &mut I,
+) -> Result<()>
 where
     I: Iterator<Item = &'a str>,
 {
@@ -244,7 +249,9 @@ where
 
 /// Parse a numeric dimension value, producing a rendering error with the field name on failure.
 fn parse_dimension<T: std::str::FromStr>(value: &str, name: &str) -> Result<T> {
-    value.parse().map_err(|_| Error::Rendering(format!("Invalid {name}")))
+    value
+        .parse()
+        .map_err(|_| Error::Rendering(format!("Invalid {name}")))
 }
 
 /// Parse a potentially multi-token quoted title starting at `value`, consuming continuations.

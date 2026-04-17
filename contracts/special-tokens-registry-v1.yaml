@@ -264,12 +264,3 @@ falsification_tests:
     status: "IMPLEMENTED"
     implementation: "src/format/special_tokens_contract_falsify.rs"
     if_fails: "YAML has invalid token ID (>= vocab_size)"
-
-qa_gate:
-  id: F-SPECIAL-TOKENS-GATE
-  name: Special Tokens Registry Gate
-  description: Quality gate for special-token registry invariants (BOS/EOS/PAD uniqueness, ID disjointness)
-  checks:
-  - validation
-  - falsification
-  pass_criteria: All falsification tests pass + proof obligations satisfied

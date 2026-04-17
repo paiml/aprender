@@ -15,7 +15,7 @@ The README.md and book were written for aprender-as-library (v0.27, single crate
 After the monorepo consolidation:
 
 1. **README.md** (338 lines) describes aprender as an "ML library" — it's now a
-   **full ML framework** with 70 crates, 58 CLI commands, and `cargo install aprender`
+   **full ML framework** with 70 crates, 57 CLI commands, and `cargo install aprender`
 2. **book/** (296 chapters) covers the ML library only — missing inference, training,
    serving, orchestration, GPU compute, contracts, profiling
 3. **apr-cookbook** (252 chapters) lives in a separate repo — should be merged
@@ -50,7 +50,7 @@ apr run qwen2.5-coder-1.5b "What is 2+2?"
 ## What is aprender?
 
 - 70 workspace crates (was: 20 separate repos)
-- 58 CLI commands via `apr`
+- 57 CLI commands via `apr`
 - 25,391 tests, 405 provable contracts
 - Inference + Training + Serving + Orchestration
 
@@ -114,7 +114,7 @@ book/src/
 │   ├── apr-run.md
 │   ├── apr-serve.md
 │   ├── apr-chat.md
-│   └── ... (58 commands)
+│   └── ... (57 commands)
 ├── architecture/
 │   ├── monorepo-layout.md       # 70 crates, flat layout
 │   ├── crate-map.md             # dependency graph

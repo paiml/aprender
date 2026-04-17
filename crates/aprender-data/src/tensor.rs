@@ -557,20 +557,21 @@ pub fn extract_labels_i64(batch: &RecordBatch, column: &str) -> Result<Vec<i64>>
         DataType::Int32 => cast_and_collect::<Int32Type>(array, "Int32Array", |v| i64::from(v)),
         DataType::Int64 => cast_and_collect::<Int64Type>(array, "Int64Array", |v| v),
         DataType::UInt8 => cast_and_collect::<UInt8Type>(array, "UInt8Array", |v| i64::from(v)),
-        DataType::UInt16 => cast_and_collect::<UInt16Type>(array, "UInt16Array", |v| i64::from(v)),
-        DataType::UInt32 => cast_and_collect::<UInt32Type>(array, "UInt32Array", |v| i64::from(v)),
-        DataType::UInt64 =>
-        {
+        DataType::UInt16 => {
+            cast_and_collect::<UInt16Type>(array, "UInt16Array", |v| i64::from(v))
+        }
+        DataType::UInt32 => {
+            cast_and_collect::<UInt32Type>(array, "UInt32Array", |v| i64::from(v))
+        }
+        DataType::UInt64 => {
             #[allow(clippy::cast_possible_wrap)]
             cast_and_collect::<UInt64Type>(array, "UInt64Array", |v| v as i64)
         }
-        DataType::Float32 =>
-        {
+        DataType::Float32 => {
             #[allow(clippy::cast_possible_truncation)]
             cast_and_collect::<Float32Type>(array, "Float32Array", |v| v as i64)
         }
-        DataType::Float64 =>
-        {
+        DataType::Float64 => {
             #[allow(clippy::cast_possible_truncation)]
             cast_and_collect::<Float64Type>(array, "Float64Array", |v| v as i64)
         }
@@ -593,7 +594,10 @@ where
         .as_any()
         .downcast_ref::<arrow::array::PrimitiveArray<T>>()
         .ok_or_else(|| Error::data(format!("Failed to downcast to {type_name}")))?;
-    Ok(arr.iter().map(|v| cast(v.unwrap_or_default())).collect())
+    Ok(arr
+        .iter()
+        .map(|v| cast(v.unwrap_or_default()))
+        .collect())
 }
 
 #[cfg(test)]
@@ -608,8 +612,8 @@ where
 mod tests {
     use arrow::{
         array::{
-            Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array, UInt16Array,
-            UInt32Array, UInt64Array, UInt8Array,
+            Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
+            UInt16Array, UInt32Array, UInt64Array, UInt8Array,
         },
         datatypes::{Field, Schema},
     };

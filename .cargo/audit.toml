@@ -29,11 +29,6 @@ ignore = [
     "RUSTSEC-2026-0092",
     "RUSTSEC-2026-0094",
     "RUSTSEC-2026-0096",
-    # wasmtime 43 — table allocation panic (severity 5.9 medium). Same
-    # test-only dep + same upgrade path (>=43.0.2 / >=44.0.1) as the
-    # cranelift cluster above. Availability bug, not RCE. Published
-    # 2026-04-30; surfaced first on 2026-05-01 CI runs.
-    "RUSTSEC-2026-0114",
 
     # rustls-webpki 0.101.7 — transitive via aws-smithy-http-client (rustls 0.21).
     # Direct 0.103.x path already bumped to >=0.103.12. The 0.101.7 pin lives
@@ -41,5 +36,4 @@ ignore = [
     # major-version SDK bump.
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
-    "RUSTSEC-2026-0104",
 ]

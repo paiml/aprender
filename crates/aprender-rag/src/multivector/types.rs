@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// # Example
 ///
 /// ```
-/// use aprender_rag::multivector::MultiVectorEmbedding;
+/// use trueno_rag::multivector::MultiVectorEmbedding;
 ///
 /// // Create a 3-token embedding with 128 dimensions per token
 /// let embeddings = vec![0.0f32; 3 * 128];

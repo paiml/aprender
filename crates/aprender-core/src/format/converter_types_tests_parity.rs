@@ -79,15 +79,11 @@
             // Read the YAML to get the family field
             let contents =
                 std::fs::read_to_string(entry.path()).expect("read YAML");
-            // Skip ModelFamilyVariant contracts (no top-level `family:` key).
-            let Some(family_line) = contents
+            let family_field = contents
                 .lines()
                 .find(|l| l.starts_with("family:"))
-            else {
-                continue;
-            };
-            let family_field = family_line.trim_start_matches("family:").trim().to_string();
-            let _ = family_key;
+                .map(|l| l.trim_start_matches("family:").trim().to_string())
+                .unwrap_or_else(|| family_key.to_string());
 
             if Architecture::from_model_type(&family_field).is_none() {
                 unrecognized.push(format!(

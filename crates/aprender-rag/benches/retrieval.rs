@@ -3,7 +3,7 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
-use aprender_rag::{
+use trueno_rag::{
     chunk::{Chunk, Chunker, RecursiveChunker},
     embed::MockEmbedder,
     index::{BM25Index, SparseIndex, VectorStore},
