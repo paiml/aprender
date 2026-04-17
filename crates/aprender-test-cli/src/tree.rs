@@ -180,42 +180,58 @@ fn build_tree_recursive(
     let metadata = std::fs::metadata(path)?;
 
     if metadata.is_file() {
-        // Check filter
-        if let Some(ref pattern) = config.filter {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            if !pattern.matches(&name) {
-                // Return empty node that will be filtered
-                return Ok(FileNode {
-                    name: String::new(),
-                    path: path.to_path_buf(),
-                    size: 0,
-                    mime_type: String::new(),
-                    is_dir: false,
-                    children: Vec::new(),
-                });
+        return Ok(build_file_node(path, metadata.len(), config));
+    }
+
+    let mut node = FileNode::new_dir(path.to_path_buf());
+    if at_depth_limit(config.max_depth, current_depth) {
+        return Ok(node);
+    }
+
+    let entries = sorted_dir_entries(path)?;
+    for entry in entries {
+        let child_path = entry.path();
+        if should_skip_entry(&child_path) {
+            continue;
+        }
+        if let Ok(child) = build_tree_recursive(&child_path, config, current_depth + 1) {
+            if !child.name.is_empty() {
+                node.children.push(child);
             }
         }
-
-        return Ok(FileNode::new_file(path.to_path_buf(), metadata.len()));
     }
 
-    // Directory
-    let mut node = FileNode::new_dir(path.to_path_buf());
+    Ok(node)
+}
 
-    // Check depth limit
-    if let Some(max_depth) = config.max_depth {
-        if current_depth >= max_depth {
-            return Ok(node);
+/// Build a single file node, returning an empty sentinel when filtered out.
+fn build_file_node(path: &Path, size: u64, config: &TreeConfig) -> FileNode {
+    if let Some(ref pattern) = config.filter {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if !pattern.matches(&name) {
+            return FileNode {
+                name: String::new(),
+                path: path.to_path_buf(),
+                size: 0,
+                mime_type: String::new(),
+                is_dir: false,
+                children: Vec::new(),
+            };
         }
     }
+    FileNode::new_file(path.to_path_buf(), size)
+}
 
-    // Read directory contents
+fn at_depth_limit(max_depth: Option<usize>, current_depth: usize) -> bool {
+    matches!(max_depth, Some(limit) if current_depth >= limit)
+}
+
+/// Read a directory and sort entries: directories first, then alphabetically.
+fn sorted_dir_entries(path: &Path) -> Result<Vec<std::fs::DirEntry>, std::io::Error> {
     let mut entries: Vec<_> = std::fs::read_dir(path)?.filter_map(Result::ok).collect();
-
-    // Sort: directories first, then alphabetically
     entries.sort_by(|a, b| {
         let a_is_dir = a.path().is_dir();
         let b_is_dir = b.path().is_dir();
@@ -225,32 +241,15 @@ fn build_tree_recursive(
             _ => a.file_name().cmp(&b.file_name()),
         }
     });
+    Ok(entries)
+}
 
-    for entry in entries {
-        let child_path = entry.path();
-
-        // Skip hidden files and common ignore patterns
-        let name = child_path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        if name.starts_with('.') || name == "node_modules" || name == "target" {
-            continue;
-        }
-
-        match build_tree_recursive(&child_path, config, current_depth + 1) {
-            Ok(child) => {
-                // Filter out empty nodes (filtered files)
-                if !child.name.is_empty() {
-                    node.children.push(child);
-                }
-            }
-            Err(_) => continue, // Skip unreadable entries
-        }
-    }
-
-    Ok(node)
+fn should_skip_entry(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    name.starts_with('.') || name == "node_modules" || name == "target"
 }
 
 /// Format a file size for display
