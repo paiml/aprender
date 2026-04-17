@@ -1,10 +1,39 @@
 ---
 contract_id: F-DECODE-GPU-RESIDENT-SAMPLING-001
 title: "Decode Hot Path — Eliminate Per-Token argmax Sync via GPU-Resident Token Flow"
-version: 1.0.0
-status: PROPOSED
+version: 1.1.0
+status: FALSIFIED
 created: 2026-04-17
+revised: 2026-04-17
 author: aprender-perf
+
+falsification_finding: |
+  DECODE_TIMING=1 dogfooding run on Qwen2.5-Coder-1.5B Q4_K_M / RTX 4090
+  measured per-phase split:
+
+      [DECODE-TIMING] pos=N: embed=0-1µs gpu=2250-3344µs total≈2500µs
+
+  The CPU embedding lookup is sub-microsecond — NOT the stall this
+  contract assumed. The 862µs "Non-Kernel Host Overhead" measured by
+  F-PROFILE-010 is NOT host-side sync waiting; it is graph-internal
+  dispatch overhead (862µs / 647 nodes = 1.33µs per graph node on
+  RTX 4090 Ada).
+
+  why_4 ("host cannot queue next iteration until it knows token ID")
+  is falsified: the CPU-side work between iterations is 1-2µs total,
+  dominated by argmax sync wait. GPU-resident token flow would save
+  at most those 1-2µs, not the 862µs the contract targeted.
+
+  R-GRS-004 risk anticipated this outcome. Contract-first design
+  captured the falsification cheaply (5 minutes of dogfooding) before
+  any implementation effort.
+
+  REAL LEVER (revealed by falsification): kernel fusion to reduce
+  graph node count. At 1.33µs/node dispatch, fusing 100 kernels saves
+  133µs/token (5.9% throughput). Targets:
+    - RmsNorm → QkvProjection fusion (448 calls, ~600µs dispatch)
+    - Attention kernels consolidation (flash decoding wiring)
+  This becomes the NEXT contract scope.
 related:
   - F-DECODE-HOTPATH-001  # per-token fs::write removal (SHIPPED)
   - F-DECODE-HOTPATH-002  # first-N-tokens eprintln removal (SHIPPED)
