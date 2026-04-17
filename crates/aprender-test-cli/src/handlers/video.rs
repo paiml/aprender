@@ -24,13 +24,29 @@ pub fn execute_check(config: &CliConfig, args: &VideoCheckArgs) -> CliResult<()>
     let probe = probe_video(video_path)
         .map_err(|e| CliError::test_execution(format!("Video probe failed: {e}")))?;
 
+    let expectations = build_expectations(args);
+    let report = validate_video(&probe, &expectations, &video_path.display().to_string());
+
+    emit_report(args, &report)?;
+
+    if report.verdict == VideoVerdict::Pass {
+        Ok(())
+    } else {
+        Err(CliError::test_execution(format!(
+            "Video quality check failed: {}",
+            video_path.display()
+        )))
+    }
+}
+
+/// Assemble `VideoExpectations` from CLI args.
+fn build_expectations(args: &VideoCheckArgs) -> VideoExpectations {
     let mut expectations = VideoExpectations::default();
-    if let (Some(w), Some(h)) = (args.width, args.height) {
-        expectations = expectations.with_resolution(w, h);
-    } else if let Some(w) = args.width {
-        expectations.width = Some(w);
-    } else if let Some(h) = args.height {
-        expectations.height = Some(h);
+    match (args.width, args.height) {
+        (Some(w), Some(h)) => expectations = expectations.with_resolution(w, h),
+        (Some(w), None) => expectations.width = Some(w),
+        (None, Some(h)) => expectations.height = Some(h),
+        (None, None) => {}
     }
     if let Some(fps) = args.fps {
         expectations = expectations.with_fps(fps);
@@ -47,28 +63,23 @@ pub fn execute_check(config: &CliConfig, args: &VideoCheckArgs) -> CliResult<()>
     if args.require_audio {
         expectations = expectations.with_require_audio(true);
     }
+    expectations
+}
 
-    let report = validate_video(&probe, &expectations, &video_path.display().to_string());
-
+/// Emit the quality report in the requested format.
+fn emit_report(
+    args: &VideoCheckArgs,
+    report: &jugar_probar::video_quality::VideoQualityReport,
+) -> CliResult<()> {
     match args.format {
         OutputFormat::Json => {
             let json = serde_json::to_string_pretty(&report)
                 .map_err(|e| CliError::test_execution(format!("JSON serialization failed: {e}")))?;
             println!("{json}");
         }
-        OutputFormat::Text => {
-            render_text_report(&report);
-        }
+        OutputFormat::Text => render_text_report(report),
     }
-
-    if report.verdict == VideoVerdict::Pass {
-        Ok(())
-    } else {
-        Err(CliError::test_execution(format!(
-            "Video quality check failed: {}",
-            video_path.display()
-        )))
-    }
+    Ok(())
 }
 
 fn render_text_report(report: &jugar_probar::video_quality::VideoQualityReport) {
