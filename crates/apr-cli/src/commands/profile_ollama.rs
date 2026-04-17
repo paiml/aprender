@@ -95,6 +95,60 @@ fn parse_eval_rate(stderr: &str, pred: impl Fn(&&str) -> bool) -> f64 {
         .unwrap_or(0.0)
 }
 
+/// Grade an Ollama parity ratio on the A+/A/B/C/D/F scale.
+///
+/// C = parity (1.0x), A = 2.0x, F = <0.5x.
+fn parity_grade(parity_ratio: f64) -> (&'static str, &'static str, &'static str) {
+    match parity_ratio {
+        r if r >= 2.0 => ("A+", "Excellent — 2x+ Ollama", "green"),
+        r if r >= 1.5 => ("A", "Great — 1.5x+ Ollama", "green"),
+        r if r >= 1.0 => ("B", "Good — Ollama parity achieved", "cyan"),
+        r if r >= 0.75 => ("C", "Passing — within 75% of Ollama", "yellow"),
+        r if r >= 0.5 => ("D", "Below parity — 50-75% of Ollama", "yellow"),
+        _ => ("F", "Critical — less than 50% of Ollama", "red"),
+    }
+}
+
+/// Print the decode + optional prefill throughput rows inside the parity table.
+fn print_parity_table(
+    results: &RealProfileResults,
+    baseline: &OllamaBaseline,
+    parity_ratio: f64,
+) {
+    println!("  ┌────────────┬──────────────┬──────────────┬───────────┐");
+    println!("  │ Metric     │ apr          │ Ollama       │ Ratio     │");
+    println!("  ├────────────┼──────────────┼──────────────┼───────────┤");
+
+    let decode_ratio_str = format!("{:.2}x", parity_ratio);
+    println!(
+        "  │ Decode     │ {:>8.1} t/s │ {:>8.1} t/s │ {:>9} │",
+        results.decode_tok_s, baseline.decode_tok_s, decode_ratio_str
+    );
+
+    if baseline.prefill_tok_s > 0.0 && results.prefill_tok_s > 0.0 {
+        let prefill_ratio = results.prefill_tok_s / baseline.prefill_tok_s;
+        println!(
+            "  │ Prefill    │ {:>8.1} t/s │ {:>8.1} t/s │ {:>8.2}x │",
+            results.prefill_tok_s, baseline.prefill_tok_s, prefill_ratio
+        );
+    }
+
+    println!("  └────────────┴──────────────┴──────────────┴───────────┘");
+}
+
+/// Print the methodology citations block.
+fn print_methodology_citations() {
+    println!("  {}", "Methodology:".dimmed());
+    println!(
+        "  {}",
+        "  Pope et al. (2023) 'Efficiently Scaling Transformer Inference'".dimmed()
+    );
+    println!(
+        "  {}",
+        "  Williams et al. (2009) 'Roofline: An Insightful Visual Performance Model'".dimmed()
+    );
+}
+
 /// Print Ollama comparison report
 fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseline) {
     println!();
@@ -106,22 +160,7 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
     } else {
         0.0
     };
-
-    // Grade based on Ollama parity
-    // C = parity (1.0x), A = 2.0x, F = <0.5x
-    let grade = if parity_ratio >= 2.0 {
-        ("A+", "Excellent — 2x+ Ollama", "green")
-    } else if parity_ratio >= 1.5 {
-        ("A", "Great — 1.5x+ Ollama", "green")
-    } else if parity_ratio >= 1.0 {
-        ("B", "Good — Ollama parity achieved", "cyan")
-    } else if parity_ratio >= 0.75 {
-        ("C", "Passing — within 75% of Ollama", "yellow")
-    } else if parity_ratio >= 0.5 {
-        ("D", "Below parity — 50-75% of Ollama", "yellow")
-    } else {
-        ("F", "Critical — less than 50% of Ollama", "red")
-    };
+    let grade = parity_grade(parity_ratio);
 
     println!(
         "  {} ({})",
@@ -129,27 +168,8 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
         results.backend.to_uppercase()
     );
     println!();
-    println!("  ┌────────────┬──────────────┬──────────────┬───────────┐");
-    println!("  │ Metric     │ apr          │ Ollama       │ Ratio     │");
-    println!("  ├────────────┼──────────────┼──────────────┼───────────┤");
 
-    // Decode throughput
-    let decode_ratio_str = format!("{:.2}x", parity_ratio);
-    println!(
-        "  │ Decode     │ {:>8.1} t/s │ {:>8.1} t/s │ {:>9} │",
-        results.decode_tok_s, baseline.decode_tok_s, decode_ratio_str
-    );
-
-    // Prefill throughput
-    if baseline.prefill_tok_s > 0.0 && results.prefill_tok_s > 0.0 {
-        let prefill_ratio = results.prefill_tok_s / baseline.prefill_tok_s;
-        println!(
-            "  │ Prefill    │ {:>8.1} t/s │ {:>8.1} t/s │ {:>8.2}x │",
-            results.prefill_tok_s, baseline.prefill_tok_s, prefill_ratio
-        );
-    }
-
-    println!("  └────────────┴──────────────┴──────────────┴───────────┘");
+    print_parity_table(results, baseline, parity_ratio);
     println!();
 
     println!("  Grade: {} — {}", grade.0.bold(), grade.1);
@@ -159,16 +179,7 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
     );
     println!();
 
-    // Citations for methodology
-    println!("  {}", "Methodology:".dimmed());
-    println!(
-        "  {}",
-        "  Pope et al. (2023) 'Efficiently Scaling Transformer Inference'".dimmed()
-    );
-    println!(
-        "  {}",
-        "  Williams et al. (2009) 'Roofline: An Insightful Visual Performance Model'".dimmed()
-    );
+    print_methodology_citations();
 }
 
 // ============================================================================
