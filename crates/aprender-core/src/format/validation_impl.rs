@@ -28,7 +28,15 @@ impl AprValidator {
 
     /// Validate tensor statistics (Section B)
     fn validate_tensors(&mut self) {
-        // Check 26: No NaNs
+        self.check_no_nan();
+        self.check_no_inf();
+        self.check_layernorm_weights_valid();
+        self.check_no_all_zero_tensors();
+        self.add_placeholder_checks();
+    }
+
+    /// Check 26: Tensors contain no NaN values.
+    fn check_no_nan(&mut self) {
         let nan_count: usize = self.tensor_stats.iter().map(|s| s.nan_count).sum();
         let status = if nan_count == 0 {
             CheckStatus::Pass
@@ -36,8 +44,10 @@ impl AprValidator {
             CheckStatus::Fail(format!("{nan_count} NaN values found across tensors"))
         };
         self.add_check(26, "No NaN values", Category::Physics, status);
+    }
 
-        // Check 27: No Infs
+    /// Check 27: Tensors contain no Inf values.
+    fn check_no_inf(&mut self) {
         let inf_count: usize = self.tensor_stats.iter().map(|s| s.inf_count).sum();
         let status = if inf_count == 0 {
             CheckStatus::Pass
@@ -45,8 +55,11 @@ impl AprValidator {
             CheckStatus::Fail(format!("{inf_count} Inf values found across tensors"))
         };
         self.add_check(27, "No Inf values", Category::Physics, status);
+    }
 
-        // Check 28: LayerNorm weights valid
+    /// Check 28: LayerNorm/GroupNorm weight/gamma tensors pass the
+    /// [`TensorStats::is_valid_layernorm_weight`] physics gate.
+    fn check_layernorm_weights_valid(&mut self) {
         let invalid_ln: Vec<_> = self
             .tensor_stats
             .iter()
@@ -67,8 +80,10 @@ impl AprValidator {
             CheckStatus::Fail(format!("Invalid LayerNorm weights: {}", names.join(", ")))
         };
         self.add_check(28, "LayerNorm weights valid", Category::Physics, status);
+    }
 
-        // Check 31: No all-zero tensors
+    /// Check 31: No tensor is all-zero.
+    fn check_no_all_zero_tensors(&mut self) {
         let zero_tensors: Vec<_> = self
             .tensor_stats
             .iter()
@@ -82,8 +97,11 @@ impl AprValidator {
             CheckStatus::Fail(format!("All-zero tensors: {}", names.join(", ")))
         };
         self.add_check(31, "No all-zero tensors", Category::Physics, status);
+    }
 
-        // Checks 29-30, 32-50 placeholders
+    /// Register not-yet-implemented checks 29–100 so the report has a complete
+    /// 100-row table even before each individual check ships.
+    fn add_placeholder_checks(&mut self) {
         for id in [29, 30] {
             self.add_check(
                 id,
@@ -93,28 +111,28 @@ impl AprValidator {
             );
         }
         for id in 32..=50 {
+            let category = if id <= 35 {
+                Category::Physics
+            } else {
+                Category::Tooling
+            };
             self.add_check(
                 id,
                 "Physics/Tooling check",
-                if id <= 35 {
-                    Category::Physics
-                } else {
-                    Category::Tooling
-                },
+                category,
                 CheckStatus::Skip("Not implemented".to_string()),
             );
         }
-
-        // Checks 51-100 placeholders
         for id in 51..=100 {
+            let category = if id <= 75 {
+                Category::Tooling
+            } else {
+                Category::Conversion
+            };
             self.add_check(
                 id,
                 "Advanced check",
-                if id <= 75 {
-                    Category::Tooling
-                } else {
-                    Category::Conversion
-                },
+                category,
                 CheckStatus::Skip("Not implemented".to_string()),
             );
         }
