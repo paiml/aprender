@@ -58,25 +58,30 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *simulated,
         ),
 
-        ExtendedCommands::Probar {
-            file,
-            output,
-            format,
-            golden,
-            layer,
-            assert,
-            tolerance,
-        } => crate::error::resolve_model_path(file).and_then(|r| {
-            probar::run(
-                &r,
+        ExtendedCommands::Probar(args) => match &args.command {
+            crate::ProbarCommand::Tensor {
+                file,
                 output,
-                format.parse().unwrap_or(probar::ExportFormat::Both),
-                golden.as_deref(),
-                layer.as_deref(),
-                *assert,
-                *tolerance,
-            )
-        }),
+                format,
+                golden,
+                layer,
+                assert,
+                tolerance,
+            } => crate::error::resolve_model_path(file).and_then(|r| {
+                probar::run(
+                    &r,
+                    output,
+                    format.parse().unwrap_or(probar::ExportFormat::Both),
+                    golden.as_deref(),
+                    layer.as_deref(),
+                    *assert,
+                    *tolerance,
+                )
+            }),
+            crate::ProbarCommand::Comply(comply_args) => {
+                dispatch_probar_comply(comply_args)
+            }
+        },
 
         ExtendedCommands::CompareHf {
             file,
@@ -232,6 +237,17 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         _ => return None,
     };
     Some(result)
+}
+
+/// Dispatch `apr probar comply` — delegate to probador's C001–C010 compliance checks.
+///
+/// GH-876: Post-monorepo CLI consolidation. Replaces the need to install a
+/// separate `aprender-test-cli` binary; end users get compliance checks via
+/// `apr probar comply` alongside the existing `apr probar tensor` regression.
+fn dispatch_probar_comply(args: &probador::ComplyArgs) -> Result<(), CliError> {
+    let config = probador::CliConfig::default();
+    probador::handlers::run_compliance_checks(&config, args)
+        .map_err(|e| CliError::ValidationFailed(format!("apr probar comply failed: {e}")))
 }
 
 #[cfg(feature = "training")]

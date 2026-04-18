@@ -292,6 +292,7 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-serve",
+ "aprender-test-cli",
  "aprender-train",
  "assert_cmd",
  "async-stream",

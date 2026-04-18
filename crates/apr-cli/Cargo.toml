@@ -193,6 +193,9 @@ half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 
+# Probar browser/WASM compliance (GH-876: apr probar comply)
+probador = { path = "../aprender-test-cli", package = "aprender-test-cli", default-features = false }
+
 [[example]]
 name = "probar_tui_testing"
 required-features = ["inference"]

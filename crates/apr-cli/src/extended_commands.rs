@@ -467,30 +467,12 @@ pub enum ExtendedCommands {
         #[arg(long)]
         simulated: bool,
     },
-    /// Export for probar visual regression testing (PMAT-481)
-    Probar {
-        /// Path to .apr model file
-        #[arg(value_name = "FILE")]
-        file: PathBuf,
-        /// Output directory for test artifacts
-        #[arg(short, long, default_value = "./probar-export")]
-        output: PathBuf,
-        /// Export format: json, png, or both
-        #[arg(long, default_value = "both")]
-        format: String,
-        /// Golden reference directory for comparison
-        #[arg(long)]
-        golden: Option<PathBuf>,
-        /// Filter layers by name pattern
-        #[arg(long)]
-        layer: Option<String>,
-        /// Exit non-zero on golden divergence (CI mode, PMAT-481)
-        #[arg(long)]
-        assert: bool,
-        /// Cosine similarity threshold for golden comparison (default: 0.98)
-        #[arg(long, default_value = "0.98")]
-        tolerance: f32,
-    },
+    /// Probar testing suite: model tensor regression + browser/WASM compliance
+    ///
+    /// Post-monorepo unified CLI (GH-876). `apr probar tensor` preserves the
+    /// previous `apr probar <FILE>` surface (PMAT-481). `apr probar comply`
+    /// delegates to probador's C001–C010 compliance checks.
+    Probar(ProbarArgs),
     /// Compare APR model against HuggingFace source
     #[command(name = "compare-hf")]
     CompareHf {
@@ -729,4 +711,51 @@ pub enum ExperimentCommands {
         #[arg(long)]
         json: bool,
     },
+}
+
+/// Arguments for `apr probar` — unified probar testing entrypoint (GH-876).
+#[derive(clap::Args, Debug)]
+pub struct ProbarArgs {
+    #[command(subcommand)]
+    pub command: ProbarCommand,
+}
+
+/// Subcommands for `apr probar` — unified probar testing surface (GH-876).
+///
+/// Consolidates the legacy flat `apr probar <FILE>` (model tensor regression,
+/// PMAT-481) with selected `probador` subcommands so one install of `apr-cli`
+/// covers both tensor and browser/WASM regression.
+#[derive(Subcommand, Debug)]
+pub enum ProbarCommand {
+    /// Model tensor visual regression (formerly `apr probar <FILE>`, PMAT-481)
+    Tensor {
+        /// Path to .apr model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Output directory for test artifacts
+        #[arg(short, long, default_value = "./probar-export")]
+        output: PathBuf,
+        /// Export format: json, png, or both
+        #[arg(long, default_value = "both")]
+        format: String,
+        /// Golden reference directory for comparison
+        #[arg(long)]
+        golden: Option<PathBuf>,
+        /// Filter layers by name pattern
+        #[arg(long)]
+        layer: Option<String>,
+        /// Exit non-zero on golden divergence (CI mode, PMAT-481)
+        #[arg(long)]
+        assert: bool,
+        /// Cosine similarity threshold for golden comparison (default: 0.98)
+        #[arg(long, default_value = "0.98")]
+        tolerance: f32,
+    },
+    /// Browser/WASM compliance checks C001–C010 (probador)
+    ///
+    /// Validates a built WASM site (index.html + deps) against the 10-point
+    /// compliance checklist: code-execution, console-errors, custom-elements,
+    /// threading modes, low memory, COOP/COEP headers, replay hash, cache
+    /// handling, WASM size limit, panic paths.
+    Comply(probador::ComplyArgs),
 }

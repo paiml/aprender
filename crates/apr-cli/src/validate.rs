@@ -7,8 +7,11 @@
 fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
     match command {
         // === ACTION COMMANDS (gated) ===
-        ExtendedCommands::Probar { file, .. }
-        | ExtendedCommands::CompareHf { file, .. }
+        ExtendedCommands::Probar(args) => match &args.command {
+            crate::ProbarCommand::Tensor { file, .. } => vec![file.clone()],
+            crate::ProbarCommand::Comply(_) => vec![],
+        },
+        ExtendedCommands::CompareHf { file, .. }
         | ExtendedCommands::Chat { file, .. }
         | ExtendedCommands::Bench { file, .. }
         | ExtendedCommands::Eval { file, .. }
