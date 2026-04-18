@@ -3,7 +3,7 @@ use std::path::Path;
 use provable_contracts::audit::{audit_binding, audit_contract};
 use provable_contracts::binding::parse_binding;
 use provable_contracts::error::Severity;
-use provable_contracts::schema::{Contract, parse_contract};
+use provable_contracts::schema::{parse_contract, Contract};
 
 pub fn run(path: &Path, binding_path: Option<&Path>) -> Result<(), Box<dyn std::error::Error>> {
     let contract = parse_contract(path)?;

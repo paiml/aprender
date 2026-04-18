@@ -174,16 +174,12 @@ fn run_plan(contract_path: &Path, output_dir: &Path) -> Result<()> {
 
     print_plan_summary(&contract, contract_path);
 
-    fs::create_dir_all(output_dir).with_context(|| {
-        format!(
-            "failed to create output directory {}",
-            output_dir.display()
-        )
-    })?;
+    fs::create_dir_all(output_dir)
+        .with_context(|| format!("failed to create output directory {}", output_dir.display()))?;
     let manifest_path = output_dir.join("dry-run-manifest.yaml");
     let manifest = build_dry_run_manifest(&contract, contract_path);
-    let rendered = serde_yaml::to_string(&manifest)
-        .with_context(|| "failed to serialize dry-run manifest")?;
+    let rendered =
+        serde_yaml::to_string(&manifest).with_context(|| "failed to serialize dry-run manifest")?;
     fs::write(&manifest_path, rendered)
         .with_context(|| format!("failed to write {}", manifest_path.display()))?;
 
@@ -202,8 +198,8 @@ fn validate_contract(path: &Path) -> Result<ValidationReport> {
     // First pass: assert the raw mapping has the required top-level keys.
     // Using a raw Value here means a missing REQUIRED_TOP_KEYS entry fails
     // with a more pointed error than a serde derive missing-field message.
-    let raw: Value = serde_yaml::from_str(&yaml)
-        .with_context(|| "contract YAML is not valid YAML")?;
+    let raw: Value =
+        serde_yaml::from_str(&yaml).with_context(|| "contract YAML is not valid YAML")?;
     let mapping = raw
         .as_mapping()
         .ok_or_else(|| anyhow!("contract root must be a YAML mapping"))?;
@@ -309,7 +305,10 @@ fn print_validation_report(report: &ValidationReport) {
     if let Some(status) = &report.status {
         println!("status        : {status}");
     }
-    println!("top-level     : {} keys present", report.present_top_keys.len());
+    println!(
+        "top-level     : {} keys present",
+        report.present_top_keys.len()
+    );
     for key in &report.present_top_keys {
         println!("  - {key}");
     }
@@ -451,14 +450,9 @@ mod tests {
     #[test]
     fn parses_real_contract_with_structural_invariants() {
         let path = real_contract_path();
-        assert!(
-            path.exists(),
-            "real contract missing at {}",
-            path.display()
-        );
+        assert!(path.exists(), "real contract missing at {}", path.display());
         let yaml = fs::read_to_string(&path).expect("read real contract");
-        let contract: CorpusContract =
-            serde_yaml::from_str(&yaml).expect("contract deserializes");
+        let contract: CorpusContract = serde_yaml::from_str(&yaml).expect("contract deserializes");
         assert_structural_minimums(&contract).expect("structural minimums hold");
 
         assert!(
@@ -482,7 +476,11 @@ mod tests {
 
         // IDs are non-empty and follow the documented prefixes.
         for inv in &contract.invariants {
-            assert!(inv.id.starts_with("INV-DATA-"), "bad invariant id: {}", inv.id);
+            assert!(
+                inv.id.starts_with("INV-DATA-"),
+                "bad invariant id: {}",
+                inv.id
+            );
         }
         for f in &contract.falsification {
             assert!(

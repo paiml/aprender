@@ -271,8 +271,7 @@ impl Llama370MConfig {
 
         // Sanity: max_position_embeddings is a positive multiple of 2.
         assert!(
-            Self::MAX_POSITION_EMBEDDINGS > 0
-                && Self::MAX_POSITION_EMBEDDINGS % 2 == 0,
+            Self::MAX_POSITION_EMBEDDINGS > 0 && Self::MAX_POSITION_EMBEDDINGS % 2 == 0,
             "max_position_embeddings must be a positive even integer for RoPE",
         );
     }
@@ -407,10 +406,7 @@ mod tests {
         let stored = estimated_stored_param_count();
 
         // Sanity printout for debugging drift.
-        eprintln!(
-            "albor-370m nominal param count = {p} ({} M)",
-            p / 1_000_000,
-        );
+        eprintln!("albor-370m nominal param count = {p} ({} M)", p / 1_000_000,);
         eprintln!(
             "albor-370m stored  param count = {stored} ({} M, lm_head tied)",
             stored / 1_000_000,

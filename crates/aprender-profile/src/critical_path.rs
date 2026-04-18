@@ -198,10 +198,8 @@ pub fn find_critical_path(graph: &CausalGraph) -> Result<CriticalPathResult> {
     initialize_root_distances(graph, &mut dist, &mut parent)?;
     relax_edges(graph, &topo_order, &mut dist, &mut parent)?;
 
-    let (&critical_end, &total_duration) = dist
-        .iter()
-        .max_by_key(|(_, &d)| d)
-        .context("No paths found in graph")?;
+    let (&critical_end, &total_duration) =
+        dist.iter().max_by_key(|(_, &d)| d).context("No paths found in graph")?;
 
     let (path, node_durations, span_names) = reconstruct_path(graph, critical_end, &parent);
     Ok(CriticalPathResult { path, total_duration, node_durations, span_names })

@@ -105,7 +105,7 @@ impl<'a> XetUploader<'a> {
     /// (`apr publish` → `ureq` elsewhere in this module) so there is no
     /// outer tokio runtime and we do not want to spawn one implicitly.
     pub fn upload_file(&self, local_path: &Path, _commit_msg: &str) -> Result<()> {
-        use xet::xet_session::{HeaderMap, HeaderValue, Sha256Policy, XetSessionBuilder, header};
+        use xet::xet_session::{header, HeaderMap, HeaderValue, Sha256Policy, XetSessionBuilder};
 
         // Phase 1: token refresh URL + auth header (FALSIFY-PUB-LFS-002).
         let token_refresh_url = build_token_refresh_url(self.api_base, self.repo_id, self.revision);
@@ -166,8 +166,7 @@ mod tests {
     #[test]
     fn token_refresh_url_matches_hf_protocol_shape() {
         // Exact shape the Xet protocol expects (FALSIFY-PUB-LFS-002).
-        let url =
-            build_token_refresh_url("https://huggingface.co", "paiml/my-model", "main");
+        let url = build_token_refresh_url("https://huggingface.co", "paiml/my-model", "main");
         assert_eq!(
             url,
             "https://huggingface.co/api/models/paiml/my-model/xet-write-token/main"
@@ -176,8 +175,7 @@ mod tests {
 
     #[test]
     fn token_refresh_url_strips_trailing_slash() {
-        let url =
-            build_token_refresh_url("https://huggingface.co/", "org/repo", "main");
+        let url = build_token_refresh_url("https://huggingface.co/", "org/repo", "main");
         assert!(!url.contains("co//api"));
         assert_eq!(
             url,
@@ -188,8 +186,7 @@ mod tests {
     #[test]
     fn token_refresh_url_supports_non_main_revision() {
         // Revisions other than `main` are valid (e.g. PR branches).
-        let url =
-            build_token_refresh_url("https://huggingface.co", "org/repo", "release-v1");
+        let url = build_token_refresh_url("https://huggingface.co", "org/repo", "release-v1");
         assert_eq!(
             url,
             "https://huggingface.co/api/models/org/repo/xet-write-token/release-v1"
