@@ -1,11 +1,105 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.14.0
-**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED** — EX-04/05/06/07 + FALSIFY-SHARD-003/004 all DISCHARGED; MODEL-2 contract surface now complete (Llama + BPE + pretrain + dataset); NFC gap identified in tokenizer impl
+**Version:** 2.16.0
+**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining scaffold landed; Zero-Tolerance design principle codified (§3 row #8)
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs)
+
+**v2.16.0 amendment (2026-04-18):** Codified **Zero-Tolerance** as §3 row
+#8. The operationalization, verbatim: "We never accept bugs or poor
+performance. Defects and perf regressions are both blockers, not trade-
+offs. All work improves or holds the line; never degrades it. No 'pre-
+existing' carve-outs. No `#[ignore]` as a release valve." Why now: the
+SHIP-TWO-001 compute-pool reality (lambda-labs x86_64 RTX 4090 +
+yoga x86_64 RTX 4090 Laptop + gx10 aarch64 GB10 Blackwell + jetson
+aarch64) surfaces cases where it is tempting to accept a regression
+("gx10 is Blackwell — 15.5 tok/s fused NF4 is fine") or a bug ("yoga's
+apr 0.4.11 is stale but it works for small models"). The Zero-Tolerance
+principle writes the refusal explicitly: when a host drops to a slower
+path OR runs stale software, that is a blocker on the host, not a
+baseline to ship against. Concrete application to in-flight work:
+(a) yoga stays blocked from SHIP-TWO-001 eval dispatch until apr
+binary is upgraded to 0.31.0 AND cuBLAS smoke passes (no "it works
+with the old binary" ship), (b) gx10 must run a non-fused third-party
+framework (llama.cpp / PyTorch nightly cu128 / vllm) at ≥ reference
+tok/s before counting as GPU capacity for MODEL-2 parity training —
+the 15.5 tok/s fused fallback is FORBIDDEN as a steady-state (see
+`project_pmat_587_*` memos for prior perf discipline). Ties to the
+existing Toyota Way feedback memory: "all defects are your defects;
+never 'pre-existing'" now extends to performance.
+
+**v2.15.0 amendment (2026-04-18):** MODEL-2 pretraining scaffold **LANDED**
+on `feat/pm-007-preflight-poka-yoke`. Three commits close the three
+P0 blockers identified in the v2.14.0 readiness audit:
+
+1. **Task #89 — BPE NFC patch SHIPPED (commit `b0e0a280b`):**
+   `crates/aprender-train/src/tokenizer/{config,bpe}.rs` now enforce
+   C-TOK-BPE-001 INV-TOK-003 (NFC before optional lowercase).
+   `TokenizerConfig::normalization` defaults to `None` (`#[serde(default)]`
+   for backward compat); set `Normalization::NFC` via
+   `.with_normalization()` builder. Two falsification tests locked:
+   (a) `test_bpe_nfc_composed_decomposed_parity` — composed `café`
+   U+00E9 and decomposed `cafe\u{0301}` encode to identical token IDs
+   under NFC; (b) `test_bpe_without_nfc_composed_decomposed_diverge` —
+   live falsification witness: without NFC the two forms MUST diverge.
+   If the witness test starts passing under `Normalization::None`, the
+   invariant is no longer load-bearing and the contract should be
+   revisited. `preprocess()` doc-comment records **why NFC before
+   lowercase**: `char::to_lowercase()` is not closed over non-NFC input
+   for every grapheme — normalizing first keeps the pipeline
+   deterministic for composed/decomposed variants.
+
+2. **Task #90 — `apr tokenize train` subcommand SHIPPED (commit
+   `512ea51a6`):** new `TokenizeCommands::Train { corpus, vocab_size,
+   min_frequency, output, normalization }` variant. Walks `.jsonl`
+   files (file or directory), extracts `content` field per line,
+   applies NFC via `unicode-normalization::UnicodeNormalization::nfc`
+   when `--normalization nfc` (default), calls the BPE trainer, emits
+   `vocab.json` + `merges.txt`. `--json` mode round-trips all
+   parameters. 3 unit tests pass (happy-path JSONL, directory walk,
+   unknown-normalization rejection). **Known gap** (follow-up, NOT a
+   ship blocker): `--min-frequency` is accepted for contract parity
+   but NOT threaded through — the CLI currently calls
+   `aprender::text::tokenize::BpeTokenizer::train(corpus, vocab_size)`
+   (aprender-core) which has no public `min_frequency` parameter.
+   Strategic fix: switch the CLI to
+   `aprender-train::tokenizer::BPETokenizer` (which both honors
+   `with_min_frequency()` AND has the NFC plumbing task #89 added).
+   Documented in memory `project_ship_two_001_nfc_bpe_patch.md`.
+
+3. **Task #91 — `apr-corpus-ingest` binary SHIPPED (commit
+   `512ea51a6`):** new `crates/apr-cli/src/bin/apr-corpus-ingest.rs`
+   (+517 LOC) with `plan` and `validate-contract` subcommands over
+   `C-DATA-THESTACK-PYTHON` v1.0.0. `plan` reads the contract,
+   asserts the 6 required top-level keys (source, license_whitelist,
+   pii_scrub, deduplication, split, budget), validates 7
+   `INV-DATA-*` + 5 `FALSIFY-DATA-*` + 5 `GATE-DATA-*` prefixes, and
+   emits `./output/dry-run-manifest.yaml` with TODO placeholders + UTC
+   timestamp. `validate-contract` is exit-code-only. **Hard constraints
+   honored:** NO network, NO writes outside `./output/`, deps limited
+   to workspace `serde`/`serde_yaml`/`anyhow`/`clap`. Does NOT touch
+   `aprender-train/` or `aprender-core/`. 2 unit tests pass.
+
+**MODEL-2 training readiness estimate (post-v2.15.0):** 4 contracts +
+3 scaffolding commits shipped. Remaining work to first pretraining
+loss curve:
+- Thread `--min-frequency` through CLI (switch call to aprender-train
+  BPE) — 0.5 day, follow-up ticket.
+- Actual corpus download + validated ingest into train/val split
+  honoring the 6 C-DATA-THESTACK-PYTHON gates (MinHash-LSH dedup,
+  PII scrub, license whitelist, deterministic hash-by-sha256 split,
+  corpus_sha256 merkle gate yoga vs gx10) — 2-3 days.
+- 370M Llama architecture implementation + pretraining loop wiring
+  honoring `training-loop-pretrain-v1.yaml` GATE-TRAIN-005 (val_loss
+  divergence abort) — 5-7 days.
+- First pretraining smoke run on gx10 — 1-2 days.
+
+**Total: ~10-14 days to first loss curve** (revised up from
+v2.14.0's 5-7d estimate now that the scaffold is concrete and the
+370M arch implementation is clearly the gating path). Post-v2.15.0,
+MODEL-2 moves from contract+scaffold into execution.
 
 **v2.14.0 amendment (2026-04-18):** MODEL-2 pretraining readiness audit
 closed two gaps in contract + impl surface:
@@ -348,6 +442,7 @@ the other demonstrates the stack can start AND finish without PyTorch in the loo
 | 5  | Dogfood tooling             | `apr qa`, `apr bench`, `apr trace`, `apr eval` — never bespoke scripts |
 | 6  | Binary gates                | Every GATE-SHIP-* is pass/fail; no partial credit                     |
 | 7  | Five-Whys on failure        | Any FALSIFY-* failure triggers documented Hansei (§10) before retry   |
+| 8  | Zero tolerance              | We never accept bugs or poor performance. Defects and perf regressions are both blockers, not trade-offs. All work improves or holds the line; never degrades it. No "pre-existing" carve-outs. No `#[ignore]` as a release valve. |
 
 ---
 
