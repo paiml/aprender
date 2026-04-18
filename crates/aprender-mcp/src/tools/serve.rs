@@ -41,9 +41,7 @@ pub fn serve_tool_definition() -> ToolDefinition {
     );
     ToolDefinition {
         name: NAME.to_string(),
-        description:
-            "Start an `apr serve` inference daemon in the background. Returns {pid, url}; kill the pid via OS to stop. Cancel-token lifecycle (SIGTERM) is a post-M3 follow-up; apr.run already honours notifications/cancelled."
-                .to_string(),
+        description: crate::schemas::APR_SERVE_DESCRIPTION.to_string(),
         input_schema,
     }
 }

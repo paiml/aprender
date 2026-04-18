@@ -52,9 +52,7 @@ pub fn finetune_tool_definition() -> ToolDefinition {
         );
     ToolDefinition {
         name: NAME.to_string(),
-        description:
-            "Fine-tune a base model with LoRA/QLoRA. Wraps `apr finetune <base_model> --json` and blocks until training completes. Supply `params._meta.progressToken` in the `tools/call` request to opt into per-line `notifications/progress` events streamed before the final response (FALSIFY-MCP-PROGRESS-001)."
-                .to_string(),
+        description: crate::schemas::APR_FINETUNE_DESCRIPTION.to_string(),
         input_schema,
     }
 }

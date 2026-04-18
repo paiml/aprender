@@ -33,9 +33,7 @@ pub fn validate_tool_definition() -> ToolDefinition {
         );
     ToolDefinition {
         name: NAME.to_string(),
-        description:
-            "Validate a model file's integrity and quality. Wraps `apr validate <model> --json`."
-                .to_string(),
+        description: crate::schemas::APR_VALIDATE_DESCRIPTION.to_string(),
         input_schema,
     }
 }

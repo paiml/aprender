@@ -26,9 +26,7 @@ pub fn trace_tool_definition() -> ToolDefinition {
     );
     ToolDefinition {
         name: NAME.to_string(),
-        description:
-            "Layer-by-layer tensor trace with per-layer stats. Wraps `apr trace <model> --json`."
-                .to_string(),
+        description: crate::schemas::APR_TRACE_DESCRIPTION.to_string(),
         input_schema,
     }
 }
