@@ -11,6 +11,7 @@
 - [Aprender Monorepo Consolidation](aprender-monorepo-consolidation.md)
 - [Aprender Readme Book Rewrite](aprender-readme-book-rewrite.md)
 - [Aprender Spec](aprender-spec.md)
+- [CRUX Competitive Research UX Workflows](crux-competitive-research-ux-workflows.md) — 250 user stories across 7 competitors, contract-backed, pmat-work tracked
 
 ## Compute (was trueno)
 
