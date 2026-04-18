@@ -15,13 +15,18 @@ Crate README: [`crates/aprender-mcp/README.md`](https://github.com/paiml/aprende
 |-----------|-------|-------|
 | M1 | Skeleton: `initialize` + `tools/list` + `apr.version` | Shipped |
 | M2 | 7 Phase-1 subprocess wrappers + dispatcher hardening | Shipped |
-| M3 | `apr.finetune` synchronous wrapper, `notifications/cancelled` → SIGTERM→SIGKILL, build.rs schema codegen | Shipped |
+| M3 | `apr.finetune` synchronous wrapper, `notifications/cancelled` → SIGTERM→SIGKILL, build.rs schema codegen, opt-in `notifications/progress` for `apr.finetune` | Shipped |
 | M4 | Claude Code dogfood session, contract promoted DRAFT → ENFORCED | Pending |
+| M5 | Port dispatcher to `pmcp` v2.3; add SSE / WebSocket transports | Planned |
 
 M3 ships `notifications/cancelled` handling (FALSIFY-MCP-006), the 8th
-Phase-1 tool `apr.finetune`, and full build-time schema code generation
-(FALSIFY-MCP-008) for every tool. Per-token `notifications/progress`
-streaming for `apr.run` / `apr.finetune` is a follow-up slice.
+Phase-1 tool `apr.finetune`, full build-time schema code generation
+(FALSIFY-MCP-008) for every tool, and opt-in per-line
+`notifications/progress` for `apr.finetune` when the client supplies
+`params._meta.progressToken` (FALSIFY-MCP-PROGRESS-001). Per-step
+structured progress for `apr.finetune` and progress notifications for
+`apr.run` remain follow-up slices (the CLI needs an event-channel
+prereq and an `apr run --stream` flag).
 
 ## Installation
 
