@@ -5460,7 +5460,7 @@ roadmap:
 - id: PMAT-CLAUDE-PROXY-001
   github_issue: null
   item_type: feature
-  title: 'APR-CLAUDE-PROXY: `apr serve --compat anthropic` — sovereign Messages-API drop-in backed by apr code + Qwen3-MoE'
+  title: 'APR-CLAUDE-PROXY: `apr serve anthropic` — sovereign Messages-API drop-in backed by apr code + Qwen3-MoE'
   status: planned
   priority: high
   assigned_to: null
@@ -5472,7 +5472,7 @@ roadmap:
     Drop-in local replacement for Anthropic's Messages API (POST /v1/messages).
     Clients speaking the Anthropic SDK (Claude Code, Cursor, Zed AI, anthropic-
     sdk-python, anthropic-sdk-typescript) point ANTHROPIC_BASE_URL at a local
-    `apr serve --compat anthropic` and swap in a sovereign on-device model
+    `apr serve anthropic` and swap in a sovereign on-device model
     (default: Qwen3-Coder-30B-A3B-Instruct Q4_K_M, ~18.6 GB, fits 24 GB VRAM,
     ~196 tok/s on RTX 4090) with zero client-side code change. Both the
     request shape and the response shape are pinned by
@@ -5481,10 +5481,10 @@ roadmap:
   - 'Contract committed: contracts/apr-claude-proxy-v1.yaml (DRAFT → ENFORCED when all 6 gates PASS).'
   - 'Spec section committed: docs/specifications/apr-mcp-server-spec.md § "Claude Messages-API Provable-Contract Proxy (PLANNED M6)".'
   - 'Default-model resolver implements the fallback chain: unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M → Qwen/Qwen3-30B-A3B-GGUF:Q4_K_M → APR_CODE_MODEL env → manifest.default_model.'
-  - 'HTTP surface lives in `crates/aprender-serve/src/anthropic/` (new module). CLI entry: `apr serve --compat anthropic` (extends existing `apr serve`, no new subcommand).'
+  - 'HTTP surface lives in `crates/aprender-serve/src/anthropic/` (new module). CLI entry: `apr serve anthropic` — new `ServeCommands::Anthropic` variant in `crates/apr-cli/src/serve_commands.rs` alongside existing `Plan` and `Run`.'
   - 'FALSIFY-CLAUDE-PROXY-001..006 all ENFORCED before promotion from PLANNED → ACTIVE (see contract for details).'
   - 'Sovereignty gate (FALSIFY-CLAUDE-PROXY-006): zero outbound sockets to api.anthropic.com under any combination of headers/env/config. Asserted by network-sandboxed CI container.'
-  - 'Translation semantics are a pure function of (request_body, resolved_model, server_config) — no client-identity leakage, property-tested round-trip via `apr serve --compat anthropic --dump-translation`.'
+  - 'Translation semantics are a pure function of (request_body, resolved_model, server_config) — no client-identity leakage, property-tested round-trip via `apr serve anthropic --dump-translation`.'
   - 'Streaming (SSE) event sequence validates against Anthropic v2026-02-01 schedule: message_start → (content_block_start → N × content_block_delta → content_block_stop)⁺ → message_delta → message_stop.'
   phases:
   - id: M6-alpha

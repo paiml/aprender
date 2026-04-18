@@ -216,14 +216,16 @@ cargo install aprender --features full      # apr code + inference + cuda + trai
 A sovereign, local drop-in for Anthropic's Messages API (`POST /v1/messages`) that accepts a Claude-SDK-shaped request, drives [`apr code`](../../crates/aprender-orchestrate/docs/specifications/components/apr-code.md) over a local Qwen3-MoE model, and returns a Claude-SDK-shaped response — with both the request and the response shapes pinned by a provable contract (`contracts/apr-claude-proxy-v1.yaml`). Surface extends `apr serve`:
 
 ```bash
-apr serve --compat anthropic                                  # default: bind 127.0.0.1:8080, auto-pick model
-apr serve --compat anthropic --port 8080 --model <hf-id>      # override model
-apr serve --compat anthropic --model-path /path/model.gguf    # explicit local path
+apr serve anthropic                                  # default: bind 127.0.0.1:8080, auto-pick model
+apr serve anthropic --port 8080 --model <hf-id>      # override model
+apr serve anthropic --model-path /path/model.gguf    # explicit local path
 ```
+
+Nested as a new `ServeCommands::Anthropic` variant in `crates/apr-cli/src/serve_commands.rs` alongside the existing `Plan` and `Run` variants — not a flag on `serve run`, because the Anthropic proxy carries its own default-model resolver and autoselect semantics that would bloat `Run`'s flag surface.
 
 ### Why a Messages-API proxy alongside `apr mcp`?
 
-MCP is Anthropic's **client-tool protocol** (Directions 1–3 above). The Messages API is a different shape — a **completion protocol**. Most IDE integrations (Claude Code itself, Cursor, Zed's AI pane, `anthropic-sdk-python`, `anthropic-sdk-typescript`) speak the Messages API, not MCP. Pointing `ANTHROPIC_BASE_URL=http://127.0.0.1:8080` at `apr serve --compat anthropic` lets those tools swap in a sovereign on-device model with **zero client-side code change**. The MCP surface (`apr mcp`) and the Messages-API surface (`apr serve --compat anthropic`) are orthogonal — different wire protocols, different use cases, shared agent backend (`apr code`).
+MCP is Anthropic's **client-tool protocol** (Directions 1–3 above). The Messages API is a different shape — a **completion protocol**. Most IDE integrations (Claude Code itself, Cursor, Zed's AI pane, `anthropic-sdk-python`, `anthropic-sdk-typescript`) speak the Messages API, not MCP. Pointing `ANTHROPIC_BASE_URL=http://127.0.0.1:8080` at `apr serve anthropic` lets those tools swap in a sovereign on-device model with **zero client-side code change**. The MCP surface (`apr mcp`) and the Messages-API surface (`apr serve anthropic`) are orthogonal — different wire protocols, different use cases, shared agent backend (`apr code`).
 
 ### Default model — Qwen3-Coder-30B-A3B-Instruct (Q4_K_M GGUF)
 
@@ -283,7 +285,7 @@ Response body = Anthropic Messages API response, schema version `v2026-02-01`. M
 | `temperature`, `top_p`, `top_k`, `stop_sequences` | Passed through to realizar `GenConfig` |
 | `stream: true` | Drives SSE serialization over the agent event channel; non-streaming batches content blocks into a final array |
 
-Translation is a **pure function of request shape** — no hidden state, no client-identity leakage. Property-tested round-trip via `apr serve --compat anthropic --dump-translation` against a fixture corpus of captured Anthropic SDK request bodies (see FALSIFY-CLAUDE-PROXY-002).
+Translation is a **pure function of request shape** — no hidden state, no client-identity leakage. Property-tested round-trip via `apr serve anthropic --dump-translation` against a fixture corpus of captured Anthropic SDK request bodies (see FALSIFY-CLAUDE-PROXY-002).
 
 ### Falsification Conditions
 
@@ -294,7 +296,7 @@ Defined in `contracts/apr-claude-proxy-v1.yaml` (to be added when M6-α ships):
 3. **FALSIFY-CLAUDE-PROXY-003** — Tool-use round-trip: a fixture of user→`tool_use`→`tool_result`→assistant (4 turns) exercising the `Bash` tool produces a transcript whose `stop_reason` transitions `tool_use`→`end_turn` across turns, matching the stop-reason order of an identical fixture captured from `api.anthropic.com` (captured offline — no live net in CI).
 4. **FALSIFY-CLAUDE-PROXY-004** — Streaming event parity: SSE event sequence on a short prompt is a valid prefix of the Anthropic event schedule (`message_start` → ≥1 `content_block_*` cluster → `message_delta` → `message_stop`); `event:` casing matches Anthropic; each `data:` payload parses as its declared sub-schema.
 5. **FALSIFY-CLAUDE-PROXY-005** — Default-model autoselect: on startup with no `--model` and no cached model file, the HTTP listener MUST NOT bind until `apr pull` completes; on startup with the cached file, time-to-listen is <3s (matches `apr serve`). Asserted via filesystem-state test, not HF network.
-6. **FALSIFY-CLAUDE-PROXY-006** — Sovereignty: `apr serve --compat anthropic` MUST NOT open outbound sockets to `api.anthropic.com` under any combination of request headers, env vars, or config. Asserted by blocking all outbound network in the CI test container except `127.0.0.1`.
+6. **FALSIFY-CLAUDE-PROXY-006** — Sovereignty: `apr serve anthropic` MUST NOT open outbound sockets to `api.anthropic.com` under any combination of request headers, env vars, or config. Asserted by blocking all outbound network in the CI test container except `127.0.0.1`.
 
 These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mcp-server-v1.yaml` (different protocol) and **outside** `apr-code-v1.yaml` (agent-loop semantics, not HTTP surface).
 
@@ -363,7 +365,7 @@ These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mc
 - [ ] M6-γ: SSE streaming (FALSIFY-CLAUDE-PROXY-004 event-sequence parity) PASS; throughput within ±5% of non-proxied `apr serve` decode path
 - [ ] M6-δ: default-model autoselect (FALSIFY-CLAUDE-PROXY-005, bind-after-pull + <3s cold start if cached) + sovereignty (FALSIFY-CLAUDE-PROXY-006, zero egress to api.anthropic.com) ENFORCED; contract promotes DRAFT → ENFORCED; spec section promotes PLANNED → ACTIVE
 - [ ] Default model resolver: `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M` → `Qwen/Qwen3-30B-A3B-GGUF:Q4_K_M` → `APR_CODE_MODEL` env → `manifest.default_model`
-- [ ] HTTP surface in `crates/aprender-serve/src/anthropic/`; CLI flag `apr serve --compat anthropic`
+- [ ] HTTP surface in `crates/aprender-serve/src/anthropic/`; CLI flag `apr serve anthropic`
 
 ## Success Criteria
 

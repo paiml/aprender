@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # apr-claude-proxy-v1
 #
-# SOURCE OF TRUTH for `apr serve --compat anthropic` — the Claude Messages-API
+# SOURCE OF TRUTH for `apr serve anthropic` — the Claude Messages-API
 # provable-contract proxy. This contract pins BOTH the request shape accepted
 # from Anthropic-SDK clients AND the response shape emitted back, so that
 # Claude Code, Cursor, Zed's AI pane, anthropic-sdk-python, and anthropic-sdk-
@@ -54,7 +54,7 @@ kind: AnthropicMessagesProxyContract
 name: apr-claude-proxy
 version: "1.0.0"
 status: DRAFT   # promotes to ENFORCED at M6-α when the YAML-driven parser + 6 gates ship
-scope: "every request accepted by and every response emitted from `apr serve --compat anthropic`"
+scope: "every request accepted by and every response emitted from `apr serve anthropic`"
 anthropic_schema_version: "v2026-02-01"
 spec: docs/specifications/apr-mcp-server-spec.md
 
@@ -287,7 +287,7 @@ translation:
     Translation is a pure function of (request_body, resolved_model, server_config).
     No hidden state. No client-identity leakage (no ip, no key-hash, no timestamp
     in response body). Property-tested round-trip via
-    `apr serve --compat anthropic --dump-translation` against a fixture corpus.
+    `apr serve anthropic --dump-translation` against a fixture corpus.
 
 # ── Falsification conditions ──
 # Each gate MUST be mechanically asserted in CI before this contract promotes
@@ -350,7 +350,7 @@ falsification_conditions:
     name: sovereignty
     status: PLANNED_M6_DELTA
     assertion: >
-      `apr serve --compat anthropic` MUST NOT open outbound sockets to
+      `apr serve anthropic` MUST NOT open outbound sockets to
       api.anthropic.com under any combination of request headers, env vars,
       or config. Asserted by blocking all outbound network in the CI test
       container except 127.0.0.1.
