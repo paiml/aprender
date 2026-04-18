@@ -111,8 +111,12 @@ arguments.
 Response payload:
 
 ```json
-{"server":"aprender-mcp","version":"0.31.0","protocol_version":"2024-11-05"}
+{"server":"aprender-mcp","version":"0.30.0","protocol_version":"2024-11-05"}
 ```
+
+The `version` field tracks the workspace `Cargo.toml` version (baked in at
+compile time via `env!("CARGO_PKG_VERSION")`), so it bumps with every
+aprender release. Clients should parse it for diagnostics, not pin to it.
 
 ### apr.validate
 
