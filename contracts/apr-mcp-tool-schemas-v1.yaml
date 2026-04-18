@@ -8,41 +8,46 @@
 # requires_model, side_effects}. It intentionally has no argument-level data and
 # therefore cannot drive JSON-Schema code generation.
 #
-# This contract fills that gap. In milestone M3 a `build.rs` at
-# `crates/aprender-mcp/build.rs` will read this YAML and emit Rust that produces
-# the exact same `ToolDefinition { input_schema: InputSchema { … } }` currently
-# hand-written in `crates/aprender-mcp/src/tools/*.rs`. FALSIFY-MCP-008 then
-# asserts byte-identity (after canonicalization) between the generated schemas
-# and the live `tools/list` response.
+# This contract fills that gap. `crates/aprender-mcp/build.rs` reads this YAML
+# and emits `$OUT_DIR/schemas.rs` containing `pub const APR_<TOOL>_SCHEMA: &str`
+# per tool. Each tool's `*_tool_definition()` in `crates/aprender-mcp/src/tools/`
+# parses its generated constant. FALSIFY-MCP-008 asserts byte-identity (after
+# JSON canonicalization) between the generated schemas and the live
+# `tools/list` response; this is enforced by `tests/falsify_mcp_008.rs`
+# (`migrated_tools_match_yaml_contract_byte_for_byte` +
+# `codegen_constants_parse_and_match_yaml_for_every_tool`).
 #
-# This M2 cut is RETROFIT-ONLY: all descriptions are verbatim copies of the
-# strings on `origin/main`. If this file ever disagrees with the Rust source in
-# this cut, the Rust source wins — fix the YAML, not the code. Once the M3
-# `build.rs` lands, the direction reverses and this contract becomes the single
-# source of truth.
+# Direction: THIS YAML IS AUTHORITATIVE. Rust tool sources contain no
+# hand-written schemas — they only parse the codegen constants. To change a
+# schema: edit this file and rebuild.
 #
-# Scope at author time (2026-04-18): all 8 Phase-1 tools registered —
-# 6 from PRs #864/#865/#866/#867 (apr.version, apr.validate, apr.tensors,
-# apr.bench, apr.qa, apr.trace), apr.run (#870), apr.serve (#872), and
-# apr.finetune (#881, this PR) complete the surface.
+# Scope (M3-complete, 2026-04-18): all 8 Phase-1 tools migrated to codegen —
+# apr.version (#880), apr.validate+apr.tensors+apr.bench+apr.qa+apr.trace+
+# apr.run+apr.serve+apr.finetune (#884).
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-18'
+  last_modified: '2026-04-18'
   author: PAIML Engineering
   registry: true
   description: >
     Per-tool MCP inputSchema source of truth for the aprender-mcp server.
-    Drives (in M3) `crates/aprender-mcp/build.rs` codegen; byte-identity
-    between codegen output and `tools/list` is asserted by FALSIFY-MCP-008.
+    Drives `crates/aprender-mcp/build.rs` codegen; byte-identity between
+    codegen output and `tools/list` is asserted by FALSIFY-MCP-008
+    (tests/codegen_bytes.rs). Authoritative as of M3 (2026-04-18) —
+    Rust tool sources parse codegen constants and contain no hand-written
+    schemas.
   references:
     - 'Model Context Protocol Specification v2024-11-05 (Anthropic)'
     - 'JSON-RPC 2.0 Specification (ECMA-404)'
-    - 'crates/aprender-mcp/src/tools/*.rs — hand-rolled schemas this retrofits'
+    - 'crates/aprender-mcp/build.rs — reads this YAML, emits $OUT_DIR/schemas.rs'
+    - 'crates/aprender-mcp/src/tools/*.rs — parse codegen constants from schemas.rs'
     - 'crates/aprender-mcp/src/types.rs — InputSchema / PropertySchema shape'
     - 'contracts/apr-cli-commands-v1.yaml — sibling command registry (no args)'
     - 'contracts/aprender/mcp-tool-schema-v1.yaml — MCP session/error contract'
+    - 'docs/specifications/apr-mcp-server-spec.md — FALSIFY-MCP-008 gate'
   depends_on:
     - apr-cli-commands-v1
     - mcp-tool-schema-v1

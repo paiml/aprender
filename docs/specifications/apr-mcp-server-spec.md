@@ -207,7 +207,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [ ] Extend cancellation to `apr.serve`: track daemon pid in a lifecycle registry, SIGTERM→SIGKILL on `notifications/cancelled` (today `apr.run` alone honours cancel — see `server.rs::CancelHandle`)
 - [ ] Add SSE transport (`apr mcp --transport sse --port N`) via pmcp's SSE layer — unblocks browser/container MCP clients
 - [ ] Add WebSocket transport (same surface) — unblocks long-running sessions
-- [ ] Re-run falsification suite (75 tests across `falsify_m1`, `falsify_mcp_006`, `falsify_mcp_progress_001`, `falsify_schema`, `codegen_bytes`, lib unit tests — 2026-04-18 count) and ensure every FALSIFY-MCP gate still PASS post-migration
+- [ ] Re-run falsification suite (75 tests across `falsify_m1`, `falsify_mcp_006`, `falsify_mcp_008`, `falsify_mcp_progress_001`, `falsify_schema`, lib unit tests — 2026-04-18 count) and ensure every FALSIFY-MCP gate still PASS post-migration
 
 ## Success Criteria
 
