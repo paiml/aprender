@@ -23,6 +23,10 @@ native = ["dep:anyhow"]
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true, optional = true }
+# FALSIFY-MCP-006: SIGTERM/SIGKILL for cancelling in-flight `apr.run` subprocesses.
+# nix 0.29 is already in the workspace lockfile (pulled in by other crates).
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", default-features = false, features = ["signal"] }
 
 [build-dependencies]
 # FALSIFY-MCP-008: build.rs reads contracts/apr-mcp-tool-schemas-v1.yaml at
