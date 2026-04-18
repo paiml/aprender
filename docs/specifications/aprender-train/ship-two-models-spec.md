@@ -856,8 +856,9 @@ in xet-core does this correctly; direct `hex::encode` is FORBIDDEN.
 
 #### 12.8.3 Contract and Falsification Set
 
-Contract file: `contracts/apr-publish-hf-large-file-v1.yaml` v1.0.0.
-Ten falsifiable gates:
+Contract file: `contracts/apr-publish-hf-large-file-v1.yaml` v1.1.0
+(status `IMPLEMENTED` as of 2026-04-18, commit `18fd9536e`). Ten
+falsifiable gates:
 
 | Gate                      | What it falsifies                                                              |
 |---------------------------|--------------------------------------------------------------------------------|
@@ -872,54 +873,71 @@ Ten falsifiable gates:
 | FALSIFY-PUB-LFS-009       | LFS pointer git commit uses one-pass sha256 + size from the Xet upload.       |
 | FALSIFY-PUB-LFS-010       | Three-format real dogfood (8-15 GiB each) round-trips via `apr publish` only. |
 
-#### 12.8.4 Implementation plan
+#### 12.8.4 Implementation (shipped 2026-04-18, commit `18fd9536e`)
 
-1. **Dependency surface.** Add `hf-xet = "1"` (Apache-2.0, crates.io)
-   behind a new `xet` sub-feature of `aprender-core`, which
-   `hf-hub-integration` transitively enables. This keeps the default
-   `cargo install aprender` binary size unchanged — the `xet`
-   feature pulls tokio + reqwest only when built for publishing
-   large files. `apr publish` selects the feature at build time via
-   apr-cli's `publishing` feature (default-on). Binary-size impact
-   measured empirically in PR.
-2. **Dispatch site.** Replace
-   `crates/aprender-core/src/hf_hub/upload.rs::reject_oversized_file`
-   with a `XetUploader::upload` branch gated on
-   `file_size > 5 * 1024_u64.pow(3)`. The < 5 GiB path stays on
-   the current `send_preupload_request` + chunked HTTP PUT code
-   path unchanged (reducing risk of regression for small files).
-3. **Sync↔async bridge.** xet-core is async (tokio). `apr publish`
-   today is sync (ureq). Use `tokio::runtime::Builder::new_current_thread()
-   .block_on(...)` to call the async entrypoint from the sync
-   CLI command. Single tokio runtime is spun up per `publish`
-   invocation.
-4. **Error surface.** Add `HfHubError::XetUpload(String)` and
-   `HfHubError::PartialUpload { cas_success: bool, commit_success: bool, detail: String }`.
-   The partial-upload variant distinguishes "bytes safely in CAS
-   but repo tree not updated" from "nothing happened" — critical
-   for retry UX.
-5. **Dogfood.** Re-run `scripts/ship-two-001/ex-04-upload-hf.sh`
-   against `paiml/qwen2.5-coder-7b-apache-q4k-v1` with
-   `HF_TOKEN`. Gate
-   evidence: `evidence/ship-two-001/ex-04-xet-upload.log` +
-   `evidence/ship-two-001/ex-04-xet-verify.json` (round-trip sha256
-   streams for all 3 formats).
+Actual wiring diverged from the v1.0.0 plan in two ways: (i) `hf-xet`
+1.5.1 exposes a *blocking* API (`build_blocking`,
+`upload_from_path_blocking`, `commit_blocking`), which obviates the
+planned tokio↔sync bridge (step 3 below, deleted); (ii) phases 3–7
+of the Xet protocol are fully internal to `hf-xet`, so the four-file
+`xet/` module tree anticipated in v1.0.0 collapses to a single
+178-line `xet.rs`. See
+`contracts/apr-publish-hf-large-file-v1.yaml` v1.1.0 changelog for
+the v1.0.0→v1.1.0 delta.
 
-Edit sites:
+1. **Dependency surface** — ADDED `hf-xet = "1.5.1"` (Apache-2.0) to
+   `[workspace.dependencies]` plus
+   `hf-xet = { workspace = true, optional = true }` in
+   `crates/aprender-core/Cargo.toml`. NEW `xet` sub-feature:
+   `xet = ["hf-hub-integration", "hf-xet"]`. `apr-cli` forwards it
+   via `xet = ["hf-hub", "aprender/xet"]`. Default `cargo install
+   aprender` footprint unchanged (xet off by default; adds ~4 MB
+   when enabled).
+2. **Dispatch site** — DELETED
+   `crates/aprender-core/src/hf_hub/upload.rs::reject_oversized_file`.
+   ADDED `upload_via_xet` (tempfile materialize + `XetUploader`
+   invoke) and `reject_needs_xet_feature` (clear error when built
+   without `--features xet`). Dispatch gate in `upload_via_lfs`
+   routes files > 5 GiB through `super::super::xet::should_use_xet`.
+   The < 5 GiB HTTP-LFS path is untouched.
+3. **Sync call surface** — `hf-xet` provides `*_blocking` variants,
+   so we call them directly from the sync CLI path. No tokio
+   runtime spawned in `apr publish`.
+4. **Error surface** — ADDED `HfHubError::XetUpload(String)` and
+   `HfHubError::PartialUpload { cas_success: bool,
+   commit_success: bool, detail: String }`. Partial-upload splits
+   "CAS xorbs landed but LFS pointer commit failed" from "nothing
+   happened" — consumed by retry UX.
+5. **Dogfood** — still pending `HF_TOKEN`. Gate evidence paths
+   remain: `evidence/ship-two-001/ex-04-xet-upload.log` +
+   `evidence/ship-two-001/ex-04-xet-verify.json`. Static wiring
+   proof already captured at
+   `evidence/ship-two-001/ex-04-xet-phase2-wiring.json` (commit
+   `ee6382803`).
+
+Actual edit sites (see `contracts/apr-publish-hf-large-file-v1.yaml`
+`implementation_plan.edit_sites` for the authoritative list):
 
 ```
+Cargo.toml                                      (+ hf-xet = "1.5.1")
 crates/aprender-core/
-├── Cargo.toml                                (+ xet sub-feature)
+├── Cargo.toml                                  (+ optional hf-xet dep, + xet feature)
 └── src/hf_hub/
-    ├── mod.rs                                (+ xet module, error variants)
-    ├── upload.rs                             (dispatch branch,
-    │                                          reject_oversized_file DELETED)
-    └── xet/                                  (NEW module)
-        ├── mod.rs                            (XetUploader facade)
-        ├── token.rs                          (acquire_write_token)
-        ├── uploader.rs                       (file_size_dispatch + upload)
-        └── lfs_pointer.rs                    (post-Xet git commit)
+    ├── mod.rs                                  (+ pub mod xet; + XetUpload / PartialUpload variants)
+    ├── upload.rs                               (- reject_oversized_file
+    │                                            + upload_via_xet
+    │                                            + reject_needs_xet_feature
+    │                                            ~ upload_via_lfs dispatch)
+    └── xet.rs                                  (NEW, 178 lines)
+crates/apr-cli/
+└── Cargo.toml                                  (+ xet feature forwarder; + xet in `full`)
 ```
+
+Known Phase 3 follow-up (non-blocking): `push_to_hub` still takes
+`&[u8]`, so `upload_via_xet` materializes bytes to a tempfile
+before invoking `upload_from_path_blocking`. Threading `&Path`
+through the upload stack eliminates the round-trip; tracked for a
+follow-up contract amendment.
 
 #### 12.8.5 Sovereignty position
 
@@ -932,14 +950,15 @@ public protocol, and the manifest links to an independent mirror
 whose bytes match by sha256. Loss of HF Hub availability degrades
 discovery, not operation.
 
-#### 12.8.6 What falsifies the v2.8.0 amendment
+#### 12.8.6 What falsifies the v2.8 amendment (v2.8.0 + v2.8.1)
 
 | Event                                                                                   | Falsification verdict                                                        |
 |-----------------------------------------------------------------------------------------|------------------------------------------------------------------------------|
 | EX-04 succeeds via any path **other than** `apr publish`'s Xet code (e.g., `hf upload`) | §12.8 failed: we took a workaround, not the contract-mandated path.          |
 | Any one of the 3 real 8-15 GiB artifacts does not round-trip by sha256                  | FALSIFY-PUB-LFS-010 FAIL — ship blocked; investigate CAS corruption or LFS pointer drift. |
-| `reject_oversized_file` remains reachable in production code                            | FALSIFY-PUB-LFS-001 FAIL — code delete incomplete.                           |
-| Default `cargo install aprender` binary size regresses > 20 %                           | Feature gating broken; re-architect to push xet into a separate crate.       |
+| `reject_oversized_file` remains reachable in production code                            | FALSIFY-PUB-LFS-001 FAIL — code delete incomplete. (Already verified deleted at `18fd9536e`.) |
+| Default `cargo install aprender` binary size regresses > 20 %                           | Feature gating broken; re-architect to push xet into a separate crate. (xet is off by default — `cargo install aprender` does NOT pull `hf-xet`.) |
+| `cargo test -p aprender-core --features xet --lib hf_hub` fails on any of the 4 PUB-LFS-001/002 unit tests | Regression in dispatch-gate or token-URL builder. Phase 2 static proof void. |
 
 Failure here is recoverable and distinct from §12.5/§12.7 failures:
 a bug in the Xet path can be fixed by shipping an aprender patch
