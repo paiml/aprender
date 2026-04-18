@@ -1043,6 +1043,8 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             message.as_deref(),
             *dry_run || *plan,
             cli.verbose,
+            None,
+            &[],
         ),
 
         ExtendedCommands::Tools(ToolCommands::Encrypt {
