@@ -1,10 +1,23 @@
 ---
 contract_id: F-PUBLISH-MANIFEST-001
 title: "Model artifact publish manifest — schema + verification (SHIP-TWO-001 shared)"
-version: 1.3.0
 status: DRAFT
 created: 2026-04-17
 updated: 2026-04-18
+
+metadata:
+  version: 1.3.0
+  description: |
+    Model artifact publish manifest — schema + verification protocol.
+    Binds SHA-256 identity, license chain, and provenance to every published
+    artifact. Covers safetensors (PM-007), GGUF (PM-008), and APR (PM-009)
+    format families via symmetric Poka-Yoke gates.
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md — parent spec"
+    - "AC-SHIP1-009 (license & provenance recorded)"
+    - "AC-SHIP1-010 (published artifact URL + SHA-256)"
+    - "AC-SHIP2-012 (weights + tokenizer + config with provenance)"
+
 changelog:
   - v1.3.0 (2026-04-18): Added FALSIFY-PM-009 APR magic-bytes Poka-Yoke. Closes the three-format ship symmetry (PM-007 safetensors + PM-008 gguf + PM-009 apr). v1.0 scope = verify first 4 bytes match one of `APR\0` / `APRN` / `APR1` / `APR2`. Catches the "wrong file staged under format=apr manifest" ship-blocker class (e.g., a GGUF renamed `.apr`) at publish time. Tensor-index quant validation deferred to v1.1.
   - v1.2.1 (2026-04-18): PM-008 revised — predominant GGML tensor type is now the authoritative signal (real llama.cpp quantize output has shipped with stale `general.file_type=0` despite fully Q4_K tensors; tensor dtypes are what inference engines actually use). `general.file_type` retained as fallback when tensor metadata is absent.

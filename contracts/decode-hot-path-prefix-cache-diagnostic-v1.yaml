@@ -1,10 +1,17 @@
 ---
 contract_id: F-DECODE-HOTPATH-003
 title: "Prefix Cache Diagnostic eprintln Must Be Gated By config.trace"
-version: 1.0.0
 status: SHIPPED
 created: 2026-04-17
 shipped: 2026-04-17
+
+metadata:
+  version: 1.0.0
+  description: |
+    Prefix-cache diagnostic eprintln in generate_gpu_resident must be gated
+    by config.trace. Eliminates PMAT-450 breadcrumb cost in the hot path.
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md — perf gate"
 result: |
   apr qa on Qwen2.5-Coder-1.5B-Instruct Q4_K_M (RTX 4090):
     Throughput: 386.86 tok/s (within 1% noise of 391.8 prior)

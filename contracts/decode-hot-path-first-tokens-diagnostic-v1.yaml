@@ -1,10 +1,18 @@
 ---
 contract_id: F-DECODE-HOTPATH-002
 title: "First-N-Tokens Diagnostic eprintln Must Be Removed From Decode Hot Path"
-version: 1.0.0
 status: SHIPPED
 created: 2026-04-17
 shipped: 2026-04-17
+
+metadata:
+  version: 1.0.0
+  description: |
+    First-N-tokens diagnostic eprintln must be removed from the decode hot
+    path. Enforces that realizr#198 stdout breadcrumbs are gated or removed
+    so they do not contaminate decode throughput measurements.
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md — perf gate"
 result: |
   apr qa on Qwen2.5-Coder-1.5B-Instruct Q4_K_M (RTX 4090):
     Throughput: 381.7 → 391.8 tok/s (+2.6%)

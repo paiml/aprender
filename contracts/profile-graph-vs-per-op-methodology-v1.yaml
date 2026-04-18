@@ -1,10 +1,22 @@
 ---
 contract_id: F-PROFILE-010
 title: "apr profile — Separate Graphed Throughput from Ungraphed Per-Op Hotspots"
-version: 1.0.0
 status: PROPOSED
 created: 2026-04-17
 author: aprender-perf
+
+metadata:
+  version: 1.0.0
+  description: |
+    apr profile methodology contract — enforces separation between graphed
+    (CUDA-graph captured) throughput baseline and ungraphed per-op hotspots.
+    Decomposes headline throughput reporting from actionable per-op hotspot
+    ranking so optimization decisions target the right path.
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md — perf gate"
+    - "F-PROFILE-009 (per-token normalization of launch overhead)"
+    - "F-DECODE-HOTPATH-001/002/003 (decode hot-path diagnostic removal)"
+
 related:
   - F-PROFILE-009  # per-token normalization of launch overhead (SHIPPED)
   - F-PROFILE-009-V2  # V2 normalization fix

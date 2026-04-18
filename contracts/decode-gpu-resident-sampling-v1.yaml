@@ -1,11 +1,20 @@
 ---
 contract_id: F-DECODE-GPU-RESIDENT-SAMPLING-001
 title: "Decode Hot Path — Eliminate Per-Token argmax Sync via GPU-Resident Token Flow"
-version: 1.1.0
 status: FALSIFIED
 created: 2026-04-17
 revised: 2026-04-17
 author: aprender-perf
+
+metadata:
+  version: 1.1.0
+  description: |
+    Decode hot path — eliminate per-token argmax sync via GPU-resident token
+    flow. Contract was FALSIFIED when DECODE_TIMING dogfooding on Qwen2.5-Coder
+    1.5B Q4_K_M / RTX 4090 showed no net throughput win after the GPU-resident
+    token-flow rewrite.
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md — perf gate"
 
 falsification_finding: |
   DECODE_TIMING=1 dogfooding run on Qwen2.5-Coder-1.5B Q4_K_M / RTX 4090

@@ -1,6 +1,5 @@
 contract_id: F-EVAL-SHARDING-001
 title: "Parallel eval sharding lane — SHIP-TWO-001 EX-02 multi-host accelerator"
-version: 1.1.0
 status: ACTIVE
 created: 2026-04-17
 updated: 2026-04-18
@@ -13,6 +12,14 @@ changelog:
 parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
 parent_acceptance_criteria:
   - AC-EX-007  # parallel eval lane parity + wall-time
+
+metadata:
+  version: 1.1.0
+  description: |
+    Parallel eval sharding lane — defines schema + falsification protocol for
+    running code-generation benchmarks (HumanEval, MBPP, BigCodeBench) across
+    N hosts concurrently with round-robin task stride, per-shard JSON merge,
+    and byte-exact determinism parity at temperature 0.0.
 
 # ─────────────────────────────────────────────────────────────
 # ABSTRACT

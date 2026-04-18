@@ -1,12 +1,20 @@
 ---
 contract_id: F-EVAL-HUMANEVAL-AUDIT-001
 title: "Falsifiable HumanEval pass@1 audit for distilled Qwen2.5-Coder-7B (SHIP-TWO-001 MODEL-1)"
-version: 1.1.0
 status: FALSIFIED
 created: 2026-04-17
 updated: 2026-04-17
 parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
 parent_acceptance_criterion: AC-SHIP1-005
+
+metadata:
+  version: 1.1.0
+  description: |
+    Falsifiable HumanEval pass@1 audit for the distilled Qwen2.5-Coder-7B
+    student (SHIP-TWO-001 MODEL-1). Defines the teacher-reproduces /
+    student-meets-threshold / tokenizer-parity checks that gate MODEL-1 ship.
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §5 AC-SHIP1-005"
 
 # ─────────────────────────────────────────────────────────────
 # ABSTRACT
