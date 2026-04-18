@@ -666,5 +666,4 @@ mod tests {
             assert!(mem.unwrap() > 0, "system memory should be > 0");
         }
     }
-
 }
