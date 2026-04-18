@@ -46,6 +46,8 @@ pub mod mono;
 pub(crate) mod oracle;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
+#[cfg(feature = "training")]
+pub(crate) mod pretrain;
 pub(crate) mod probar;
 pub(crate) mod profile;
 pub(crate) mod prune;
