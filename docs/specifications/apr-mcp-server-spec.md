@@ -191,7 +191,8 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [ ] **Deferred to M4**: Progress notifications for `apr.run` (needs `apr run --stream` CLI flag prereq)
 
 ### M4: End-to-end validation — IN PROGRESS
-- [ ] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions + test cross-links (PR #886 open)
+- [ ] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions (FALSIFY-MCP-001..008) + test cross-links (PR #886 open — pins exact-8 invariant via `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008`)
+- [ ] Extend the contract with a 9th row for FALSIFY-MCP-PROGRESS-001 after PR #886 merges — relax the exact-8 invariant to "FALSIFY-MCP-001..008 + PROGRESS-001, no extras"
 - [ ] Strengthen FALSIFY-MCP-003/-004 from surface tests to mock-subprocess e2e response-shape assertions (in flight)
 - [ ] Real-model FALSIFY-MCP-003: `apr.run` decodes "2" within 5s on cached qwen2.5-0.5b
 - [ ] Real-model FALSIFY-MCP-004: byte-for-byte `apr qa --json` parity
