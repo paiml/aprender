@@ -856,9 +856,9 @@ in xet-core does this correctly; direct `hex::encode` is FORBIDDEN.
 
 #### 12.8.3 Contract and Falsification Set
 
-Contract file: `contracts/apr-publish-hf-large-file-v1.yaml` v1.1.0
-(status `IMPLEMENTED` as of 2026-04-18, commit `18fd9536e`). Ten
-falsifiable gates:
+Contract file: `contracts/apr-publish-hf-large-file-v1.yaml` v1.1.1
+(status `IMPLEMENTED` as of 2026-04-18, commit `18fd9536e`; evidence
+fields added in v1.1.1 at commit `671535b44`). Ten falsifiable gates:
 
 | Gate                      | What it falsifies                                                              |
 |---------------------------|--------------------------------------------------------------------------------|
