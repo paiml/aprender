@@ -369,3 +369,25 @@ non_goals:
   - "Automatic shard retry on host death (manual re-run)."
   - "Remote-managed model cache (rsync -c on each run is <2 min)."
   - "Heterogeneous prompt format across hosts (same eval-pass-at-k.sh everywhere)."
+
+# ─────────────────────────────────────────────────────────────
+# QA GATE
+# ─────────────────────────────────────────────────────────────
+qa_gate:
+  must_pass:
+    - FALSIFY-SHARD-001  # completeness — every benchmark task appears in some shard
+    - FALSIFY-SHARD-003  # determinism parity — byte-identical completions at T=0 (discharged yoga vs gx10 2026-04-18)
+  nice_to_have:
+    - FALSIFY-SHARD-002  # disjointness — no task_id in ≥2 shards
+    - FALSIFY-SHARD-004  # merged-score identity — |merged − reference| ≤ 0.01 pp
+  integration: |
+    apr qa + apr eval on any graph-capable model with --shard-host <host>
+    orchestrated via scripts/ship-two-001/eval-shard-merge.py and
+    eval-shard-determinism-probe.sh across the host pool (yoga, gx10, lambda-*).
+  regression_protection: |
+    This contract must be re-evaluated any time:
+      - apr binary is rebuilt with a different realizar / trueno version on any host
+      - a new host joins the eval pool (must pass FALSIFY-SHARD-003 pairwise vs existing members)
+      - sampling defaults change (temperature, top_k, max_tokens)
+      - the round-robin stride logic in eval-shard-merge.py changes
+      - a benchmark dataset version bumps (HumanEval/MBPP/BigCodeBench canonical set)
