@@ -75,11 +75,11 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 3  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21) — per-row status is now the ground truth; earlier 6/6/8 was counting "any shipped capability" not "fully shipped row"
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11)
   total_rows: 21
   counts:
-    shipped: 3
-    partial: 7
+    shipped: 4
+    partial: 6
     missing: 11
   closure_criterion:
     description: >
@@ -182,19 +182,22 @@ categories:
 
   - id: mcp-client
     name: MCP client (.mcp.json loader + stdio/sse/http transports)
-    status: PARTIAL
-    detail: McpClientTool exists but not wired into build_code_tools
+    status: SHIPPED  # v4 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "PMAT-CODE-MCP-CLIENT-001 closed: register_mcp_client_tools wired into cmd_code path in agent/code.rs after build_code_tools. agents-mcp feature in apr-cli now includes discovery + registration of external MCP servers declared in manifest.mcp_servers[]. Unit test test_register_mcp_client_tools_noop_when_empty verifies the no-op path; end-to-end handshake uses discover_mcp_tools() already exercised by existing mcp_client tests." }
     evidence_paths:
+      - crates/aprender-orchestrate/src/agent/code.rs
       - crates/aprender-orchestrate/src/agent/tool/mcp_client.rs
-      - crates/aprender-orchestrate/src/cli/agent_helpers.rs
-    evidence_line: 262  # discover_mcp_tools
+      - crates/apr-cli/Cargo.toml
+    evidence_symbols: [register_mcp_client_tools, discover_mcp_tools]
+    evidence_line: 371  # register_mcp_client_tools in agent/code.rs
+    remaining_gaps:
+      - "Separate .mcp.json loader at project root (current path: manifest.mcp_servers[] in AgentManifest.toml). Tracked in PMAT-CODE-MCP-JSON-LOADER-001 (P2)."
     cross_check_command: |
-      # register_mcp_tools exists but is NOT called in build_code_tools
-      pmat query --literal "register_mcp_tools" --limit 5 --include-source \
-        | grep -c "build_code_tools"
-    expected_result_until_closed: 0   # flips to >=1 when ticket closes
-    ticket: PMAT-CODE-MCP-CLIENT-001
-    priority: P0
+      grep -c "register_mcp_client_tools" crates/aprender-orchestrate/src/agent/code.rs
+    expected_min_hits: 2   # fn definition + call site
+    ticket: null  # PMAT-CODE-MCP-CLIENT-001 closed
+    priority: null
 
   - id: permission-modes
     name: Permission modes (default/plan/acceptEdits/bypassPermissions)

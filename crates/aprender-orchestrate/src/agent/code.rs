@@ -92,7 +92,12 @@ pub fn cmd_code(
     };
 
     // Build tool registry with coding tools
-    let tools = build_code_tools(&manifest);
+    let mut tools = build_code_tools(&manifest);
+
+    // PMAT-CODE-MCP-CLIENT-001: register MCP client tools from manifest.mcp_servers.
+    // Synchronous wrapper over async discover_mcp_tools — a no-op when mcp_servers is
+    // empty (the default for `apr code` without a manifest).
+    register_mcp_client_tools(&mut tools, &manifest);
 
     // Build memory
     let memory = crate::agent::memory::InMemorySubstrate::new();
@@ -353,6 +358,38 @@ fn build_default_manifest() -> AgentManifest {
             Capability::Rag,
         ],
         ..AgentManifest::default()
+    }
+}
+
+/// PMAT-CODE-MCP-CLIENT-001 — register external MCP servers declared in
+/// `manifest.mcp_servers[]` as tools in the `apr code` registry. Mirrors
+/// Claude Code's `.mcp.json` → agent-tool-provider wiring. Synchronous
+/// wrapper because `cmd_code` is sync; opens a scoped current-thread
+/// runtime for the discovery handshake. No-op when the feature is off
+/// or the manifest has no servers.
+#[allow(unused_variables)]
+fn register_mcp_client_tools(tools: &mut ToolRegistry, manifest: &AgentManifest) {
+    #[cfg(feature = "agents-mcp")]
+    {
+        if manifest.mcp_servers.is_empty() {
+            return;
+        }
+        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("⚠ failed to create MCP discovery runtime: {e}");
+                return;
+            }
+        };
+        let discovered =
+            rt.block_on(crate::agent::tool::mcp_client::discover_mcp_tools(manifest));
+        let count = discovered.len();
+        for tool in discovered {
+            tools.register(Box::new(tool));
+        }
+        if count > 0 {
+            eprintln!("✓ Registered {count} MCP tool(s) from {} server(s)", manifest.mcp_servers.len());
+        }
     }
 }
 

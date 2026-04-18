@@ -423,6 +423,33 @@ fn test_scale_prompt_large() {
     assert!(prompt.contains("Example input"), "large model: has examples");
 }
 
+/// PMAT-CODE-MCP-CLIENT-001: `register_mcp_client_tools` must be a no-op
+/// when the manifest has no `mcp_servers[]`, leaving the built-in tool
+/// roster untouched. The falsification condition: if registration silently
+/// *added* or *removed* builtin tools when mcp_servers is empty, this test
+/// catches it. Exercised under the `agents-mcp` feature because the
+/// `mcp_servers` field itself is gated there.
+#[cfg(feature = "agents-mcp")]
+#[test]
+fn test_register_mcp_client_tools_noop_when_empty() {
+    let manifest = build_default_manifest();
+    assert!(
+        manifest.mcp_servers.is_empty(),
+        "default manifest should declare zero mcp_servers"
+    );
+    let mut tools = build_code_tools(&manifest);
+    let before = tools.len();
+    register_mcp_client_tools(&mut tools, &manifest);
+    assert_eq!(
+        tools.len(),
+        before,
+        "register_mcp_client_tools must not mutate the registry when mcp_servers is empty"
+    );
+    // Still have all default builtins.
+    assert!(tools.get("file_read").is_some(), "file_read missing after MCP noop");
+    assert!(tools.get("shell").is_some(), "shell missing after MCP noop");
+}
+
 // Popperian falsification tests extracted to code_tests_falsification.rs
 #[path = "code_tests_falsification.rs"]
 mod falsification;
