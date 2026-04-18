@@ -129,11 +129,18 @@ Schema generation: each tool's JSONSchema is derived from the entry in `contract
 }
 ```
 
-Config precedence (highest first):
+**Config loading (Phase 2 — not implemented in Phase 1).** When a server-side
+config file is wired up (timeouts, allowed model roots, tool allow-list), it
+will follow the precedence below:
+
 1. `--config <path>` flag
 2. `$APR_MCP_CONFIG` env var
 3. `~/.config/apr/mcp.toml`
 4. Built-in defaults
+
+Phase 1 today: `apr mcp` takes no CLI args and consults no env vars directly.
+Env vars set in `.mcp.json` (e.g. `APR_MODEL_DIR`) are read by the spawned
+`apr <cmd>` subprocesses themselves, not by the MCP server process.
 
 ## Falsification Conditions (for `apr-mcp-server-v1.yaml`)
 
