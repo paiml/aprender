@@ -312,8 +312,16 @@ falsification:
 # `tools[*].name` from this file — not a hard-coded list — so the gate
 # automatically tightens as new entries are appended.
 #
-# Gate surface (2026-04-18, PMAT-514 extension): inputSchema byte-identity
-# (`migrated_tools_match_yaml_contract_byte_for_byte`) AND tool-level
-# description byte-identity (`tool_descriptions_match_yaml_contract`). All
-# six assertions in the `falsification.FALSIFY-MCP-008.assertions` block
-# above are now load-bearing at test time.
+# Gate surface (2026-04-18, PMAT-514 extension) — four independent tests
+# in `tests/falsify_mcp_008.rs`:
+#   * Live layer:
+#     - `migrated_tools_match_yaml_contract_byte_for_byte` (inputSchema)
+#     - `tool_descriptions_match_yaml_contract`            (description)
+#   * Codegen layer (compile-time source of truth):
+#     - `codegen_constants_parse_and_match_yaml_for_every_tool`
+#     - `codegen_description_constants_match_yaml`
+# Plus guardrails: `codegen_constants_cover_every_tool_name` and
+# `codegen_descriptions_cover_every_tool_name` catch a new tool added to
+# YAML but missing from the test-side codegen-constant tables.
+# All six assertions in the `falsification.FALSIFY-MCP-008.assertions`
+# block above are now load-bearing at both layers.
