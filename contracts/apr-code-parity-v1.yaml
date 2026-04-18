@@ -15,7 +15,7 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v4.7): 10 SHIPPED / 3 PARTIAL / 8 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 4 more MISSING→{SHIPPED,PARTIAL} flips to close the epic.
+# Current counts (2026-04-18 v4.8): 11 SHIPPED / 3 PARTIAL / 7 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 3 more MISSING→{SHIPPED,PARTIAL} flips to close the epic.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -75,12 +75,12 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips), v4.8=PMAT-CODE-WORKTREE-001 closed → worktree-isolation NONE→SHIPPED (11/3/7 — SHIPPED cap still met; MISSING cap still needs 3 more flips)
   total_rows: 21
   counts:
-    shipped: 10
+    shipped: 11
     partial: 3
-    missing: 8
+    missing: 7
   closure_criterion:
     description: >
       Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
@@ -188,14 +188,20 @@ categories:
 
   - id: worktree-isolation
     name: Worktree isolation for subagents
-    status: NONE
-    evidence_path: null
+    status: SHIPPED  # v4.8 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-WORKTREE-001 closed: new agent/worktree.rs ships the full `git worktree`-backed isolation lifecycle — `WorktreeSession::create(repo, branch)` shells out to `git worktree add -b <branch> <.git/apr-worktrees/<sanitized>>`, `.is_dirty()` probes via `git status --porcelain`, `.auto_close_if_clean()` returns `Ok(None)` when clean (removing worktree + deleting branch) or `Ok(Some((path, branch)))` when dirty (caller keeps it — Claude-Code-parity semantic), `.auto_close()` force-removes regardless, `.keep()` returns `(path, branch)` without cleanup. Drop is intentionally a no-op (Poka-Yoke — forces explicit disposition). Branch-name sanitizer maps non-alphanumeric chars to `-` so nested branch names like `feature/x/y` become `feature-x-y` under `.git/apr-worktrees/`. 8 unit tests hit a real `git` binary against a `tempfile::tempdir()` repo with `core.hooksPath=/dev/null` to isolate from parent-repo pmat hooks. Tests gracefully skip when git isn't on PATH. Wiring into SpawnConfig (so AgentPool::spawn can opt in per-agent) is follow-up PMAT-CODE-WORKTREE-RUNTIME-001 (P2) — the primitive is ready for call sites today." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/worktree.rs
+      - crates/aprender-orchestrate/src/agent/worktree/tests.rs
+    evidence_symbols: [WorktreeSession, WorktreeError, auto_close_if_clean, keep, is_dirty]
+    remaining_gaps:
+      - "SpawnConfig.isolation field + AgentPool::spawn wiring so the primitive is consumed automatically by `apr code` subagent invocations. Tracked in PMAT-CODE-WORKTREE-RUNTIME-001 (P2)."
     cross_check_command: |
-      pmat query --literal "git worktree" --limit 5 2>/dev/null \
-        | grep -E "agent/" | wc -l
-    expected_max_hits: 0
-    ticket: PMAT-CODE-WORKTREE-001
-    priority: P1
+      grep -cE "(struct WorktreeSession|enum WorktreeError|fn auto_close_if_clean|fn is_dirty|fn keep)" crates/aprender-orchestrate/src/agent/worktree.rs
+    expected_min_hits: 5
+    ticket: null  # PMAT-CODE-WORKTREE-001 closed
+    priority: null
 
   - id: custom-agents
     name: Custom agent definitions (.apr/agents/ or .claude/agents/)
@@ -491,7 +497,7 @@ priority_buckets:
   P0: []  # all 4 P0 tickets closed 2026-04-18 (MCP-CLIENT, SLASH-PARITY, HOOKS, SPAWN-PARITY); category rows retained in `categories` for history
   P1:
     # skills: closed v4.7 (2026-04-18) — retained in `categories` for history
-    - worktree-isolation
+    # worktree-isolation: closed v4.8 (2026-04-18) — retained in `categories` for history
     # custom-agents: closed v4.5 (2026-04-18) — retained in `categories` for history
     - permission-modes
     # builtin-tools-web: closed v4.6 (2026-04-18) — retained in `categories` for history
@@ -626,6 +632,33 @@ change_log:
       skills (P1), worktree-isolation (P1), permission-modes (P1),
       then 2 of the 6 P2 deferred rows (status-line / notebook /
       monitor / plugins / ide / org-policy).
+  - date: '2026-04-18'
+    revision: '4.8'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-WORKTREE-001 closed — worktree-isolation row flipped
+      NONE → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      worktree.rs ships the full `git worktree`-backed isolation
+      lifecycle: `WorktreeSession::create(repo, branch)` shells out to
+      `git worktree add -b <branch> <.git/apr-worktrees/<sanitized>>`,
+      `.is_dirty()` probes via `git status --porcelain`,
+      `.auto_close_if_clean()` returns `Ok(None)` on clean (removing
+      worktree + deleting branch) or `Ok(Some((path, branch)))` on
+      dirty (caller keeps it — Claude-Code-parity semantic), and the
+      Drop impl is intentionally a no-op so callers must pick an
+      explicit disposition (Poka-Yoke — prevents silent discard of
+      agent work). Branch-name sanitizer maps non-alphanumeric
+      characters to `-` so `feature/x/y` becomes `feature-x-y` under
+      `.git/apr-worktrees/`. 8 unit tests shell out to a real git
+      binary against `tempfile::tempdir()` repos (with
+      `core.hooksPath=/dev/null` to isolate from parent-repo pmat
+      pre-commit hooks) and gracefully skip when git isn't on PATH.
+      **Headline 10/3/8 → 11/3/7 over 21 rows**. SHIPPED cap (≥9)
+      still MET; MISSING cap (≤4) still needs 3 more
+      MISSING→{SHIPPED,PARTIAL} flips. Remaining P1: permission-modes.
+      Then 2 of the 6 P2 deferred rows close the epic. Follow-up
+      PMAT-CODE-WORKTREE-RUNTIME-001 (P2) wires the primitive into
+      SpawnConfig + AgentPool::spawn.
   - date: '2026-04-18'
     revision: '4.7'
     author: kaizen-paiml

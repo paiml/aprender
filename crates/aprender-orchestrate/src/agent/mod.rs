@@ -50,6 +50,7 @@ pub mod skill;
 pub mod task_tool;
 pub mod tool;
 pub mod tui;
+pub mod worktree;
 
 // Re-export key types for convenience.
 pub use capability::{capability_matches, Capability};
