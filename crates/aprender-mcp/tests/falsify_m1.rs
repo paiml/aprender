@@ -58,6 +58,8 @@ fn falsify_mcp_002_tools_list_schema_shape() {
         "apr.bench",
         "apr.qa",
         "apr.trace",
+        "apr.run",
+        "apr.serve",
     ] {
         assert!(names.contains(&expected), "{expected} registered");
     }
