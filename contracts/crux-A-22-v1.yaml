@@ -1,65 +1,90 @@
 # CRUX-A-22 — Disk-quota enforcement on registry
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-A-22
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "A — Model Intake & Discovery"
+  category: "A — Model Hub & Distribution"
   competitor: ollama
-  demand_score: 2  # 1..5, low priority in pmat work
+  demand_score: 2
   intake_status: missing
   description: >
-    Disk-quota enforcement on registry. Root-cause workflow extracted from ollama UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Enforce an absolute byte quota on the local model registry. Canonical:
+    Ollama `OLLAMA_MAX_MODELS`/manual prune; docker `--storage-opt
+    size=...`. Must reject `apr pull` when aggregate manifest size +
+    incoming model > quota, and emit a machine-parseable error with
+    used/available/needed fields.
 
 equations:
-  placeholder_contract:
+  quota:
     formula: |
-      DRAFT — user workflow "Disk-quota enforcement on registry"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      used(registry) = Σ size(blob)_b for b ∈ unique blobs in manifest
+      free = quota - used
+      allow(pull) = free ≥ size(incoming)
+      # enforcement is pre-download: no bytes land on disk on reject
+    domain: "(registry: Path, quota: u64 bytes, incoming: Manifest)"
+    codomain: "{allowed: bool, used: u64, free: u64, needed: u64}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "quota never exceeded (disk usage always ≤ quota after any pull)"
+    - "rejection is pre-download (no partial blobs left on disk)"
+    - "error body is valid JSON with used/free/needed fields"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-22-001
-  rule: placeholder
-  prediction: "apr surface for 'Disk-quota enforcement on registry' matches ollama canonical behavior"
+  rule: pull rejected when it would exceed quota
+  prediction: "pull 2GB model with 1GB remaining fails with quota error"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-22" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    export APR_MODELS=/tmp/apr-quota
+    rm -rf /tmp/apr-quota && mkdir -p /tmp/apr-quota
+    apr registry set-quota 1048576  # 1 MB
+    ! apr pull hf://openai/whisper-tiny 2>/tmp/err >/dev/null
+    python3 -c "
+    import json
+    e = json.loads(open('/tmp/err').read().split('\n')[-2])
+    assert e['used'] + e['needed'] > e['used'] + e['free'], e
+    assert all(k in e for k in ('used','free','needed'))
+    "
+- id: FALSIFY-CRUX-A-22-002
+  rule: no partial blobs on disk after reject
+  prediction: "registry byte count unchanged after rejection"
+  test: |
+    set -euo pipefail
+    before=$(du -sb /tmp/apr-quota | awk '{print $1}')
+    ! apr pull hf://openai/whisper-tiny 2>/dev/null >/dev/null
+    after=$(du -sb /tmp/apr-quota | awk '{print $1}')
+    python3 -c "assert $before == $after, ($before, $after)"
+- id: FALSIFY-CRUX-A-22-003
+  rule: permitted pull succeeds and stays under quota
+  prediction: "pull within budget lands blobs; du ≤ quota"
+  test: |
+    set -euo pipefail
+    apr registry set-quota 104857600  # 100 MB
+    apr pull hf://paiml/tiny-fixture
+    quota=$(apr registry info --format json | jq -r .quota)
+    used=$(du -sb /tmp/apr-quota | awk '{print $1}')
+    python3 -c "assert $used <= $quota, ($used, $quota)"
 
 proof_obligations:
+- type: parity
+  property: "apr registry quota semantics match Ollama OLLAMA_MAX_MODELS / docker storage-opt"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "quota never exceeded"
+- type: invariant
+  property: "rejection is pre-download (atomic)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-a-22` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-a-22
-  priority: low
+  priority: medium
   auto_created: true

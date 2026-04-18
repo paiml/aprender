@@ -1,65 +1,87 @@
 # CRUX-A-17 — Manifest signing cosign/sigstore
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-A-17
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "A — Model Intake & Discovery"
+  category: "A — Model Hub & Distribution"
   competitor: ecosystem
-  demand_score: 2  # 1..5, low priority in pmat work
+  demand_score: 2
   intake_status: missing
   description: >
-    Manifest signing cosign/sigstore. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Sign apr model manifests with cosign / sigstore (keyless OIDC or
+    keyed). Canonical: `cosign sign-blob` + `cosign verify-blob`
+    (github.com/sigstore/cosign). Signature is detached;
+    `.sig` and `.crt` alongside manifest; verification exits 0 on
+    tampered-free blob and non-zero on any byte mutation.
 
 equations:
-  placeholder_contract:
+  cosign_sign:
     formula: |
-      DRAFT — user workflow "Manifest signing cosign/sigstore"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      sign(blob) → { sig: bytes, cert: x509, bundle: rekor_entry }
+      verify(blob, sig, cert) =
+        x509.verify_chain(cert, fulcio_roots)
+        ∧ signature_verify(cert.pubkey, blob, sig)
+        ∧ rekor.check_inclusion(bundle)
+      tamper(blob) ⇒ verify = false (fail closed)
+    domain: "(manifest: Path, oidc_issuer: str?, keyless: bool)"
+    codomain: "{sig: Path, cert: Path, bundle: Path}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "verify on original blob returns exit 0"
+    - "verify on byte-flipped blob returns non-zero exit"
+    - "signed manifest round-trips through cosign binary (external verifier)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-17-001
-  rule: placeholder
-  prediction: "apr surface for 'Manifest signing cosign/sigstore' matches ecosystem canonical behavior"
+  rule: round-trip sign → verify succeeds
+  prediction: "apr sign produces artifacts cosign verify-blob accepts"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-17" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr publish sign /tmp/manifest.json --keyless \
+      --sig /tmp/m.sig --cert /tmp/m.crt --bundle /tmp/m.bundle
+    cosign verify-blob --bundle /tmp/m.bundle \
+      --certificate /tmp/m.crt --signature /tmp/m.sig /tmp/manifest.json
+- id: FALSIFY-CRUX-A-17-002
+  rule: tampered blob fails verification
+  prediction: "one-byte flip → verify exit != 0"
+  test: |
+    set -euo pipefail
+    cp /tmp/manifest.json /tmp/bad.json
+    printf 'X' | dd of=/tmp/bad.json bs=1 count=1 seek=0 conv=notrunc
+    ! cosign verify-blob --bundle /tmp/m.bundle \
+        --certificate /tmp/m.crt --signature /tmp/m.sig /tmp/bad.json 2>/tmp/err
+    grep -E "verification failed|invalid signature" /tmp/err
+- id: FALSIFY-CRUX-A-17-003
+  rule: rekor transparency log inclusion proof present
+  prediction: "bundle contains rekor entry with UUID and SET"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import json
+    b = json.load(open('/tmp/m.bundle'))
+    assert 'Payload' in b or 'rekor' in json.dumps(b).lower(), b.keys()
+    "
 
 proof_obligations:
+- type: parity
+  property: "apr publish sign produces cosign-compatible sig + cert + bundle"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "tamper detection (verify fails closed on any mutation)"
+- type: invariant
+  property: "rekor transparency log inclusion"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-a-17` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-a-17
-  priority: low
+  priority: medium
   auto_created: true

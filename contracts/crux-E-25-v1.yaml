@@ -1,65 +1,90 @@
 # CRUX-E-25 — Vision-language benchmark harness
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-E-25
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "E — Training & Fine-tuning"
+  category: "E — Benchmarks & Evaluation"
   competitor: openclip
-  demand_score: 2  # 1..5, low priority in pmat work
+  demand_score: 2
   intake_status: missing
   description: >
-    Vision-language benchmark harness. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.E and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Vision-language benchmark harness: zero-shot ImageNet-1k top-1/top-5
+    + MS-COCO retrieval (image→text, text→image R@1/R@5/R@10). Canonical:
+    OpenCLIP `src/training/zero_shot.py` + LAION CLIP_benchmark
+    (github.com/LAION-AI/CLIP_benchmark). Official ViT-B/32 LAION-2B
+    baseline: ImageNet top-1 ≈ 66.5%, MSCOCO text→image R@1 ≈ 40.5%.
 
 equations:
-  placeholder_contract:
+  vlm_bench:
     formula: |
-      DRAFT — user workflow "Vision-language benchmark harness"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      zero_shot(classes) = argmax_i cos(img_emb, txt_emb(template(class_i)))
+      top_k(logits, k) includes true label ⇒ hit
+      retrieval_R_at_k(queries, gallery) = |{q : rank(q) ≤ k}| / |queries|
+      # metrics: ImageNet top-1/5, MSCOCO i2t/t2i R@{1,5,10}
+    domain: "(model: Path, task ∈ {imagenet_zs, mscoco_retr}, split: str)"
+    codomain: "JSON {task: str, metrics: {top1: f32, top5: f32, ...}}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "metrics ∈ [0, 1]"
+    - "top5 ≥ top1 (monotonicity)"
+    - "seeded eval is deterministic (same model + same seed ⇒ same metrics)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-25-001
-  rule: placeholder
-  prediction: "apr surface for 'Vision-language benchmark harness' matches openclip canonical behavior"
+  rule: top5 ≥ top1 (monotonicity)
+  prediction: "zero-shot imagenet top5 ≥ top1 across runs"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-E-25" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr eval-vlm /tmp/clip-vit-b32.apr --task imagenet_zs \
+      --split val --seed 42 --format json > /tmp/zs.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/zs.json'))
+    t1=d['metrics']['top1']; t5=d['metrics']['top5']
+    assert 0.0 <= t1 <= t5 <= 1.0, (t1, t5)
+    "
+- id: FALSIFY-CRUX-E-25-002
+  rule: retrieval recalls are nested (R@1 ≤ R@5 ≤ R@10)
+  prediction: "MSCOCO t2i R@1 ≤ R@5 ≤ R@10"
+  test: |
+    set -euo pipefail
+    apr eval-vlm /tmp/clip-vit-b32.apr --task mscoco_retr \
+      --split val --seed 42 --format json > /tmp/r.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/r.json'))
+    t2i = d['metrics']['t2i']
+    assert t2i['R@1'] <= t2i['R@5'] <= t2i['R@10'], t2i
+    "
+- id: FALSIFY-CRUX-E-25-003
+  rule: determinism under fixed seed
+  prediction: "two runs with --seed 42 produce identical metrics"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr eval-vlm /tmp/clip-vit-b32.apr --task imagenet_zs \
+        --split val --seed 42 --format json > /tmp/d$i.json
+    done
+    diff <(jq -S .metrics /tmp/d1.json) <(jq -S .metrics /tmp/d2.json)
 
 proof_obligations:
+- type: parity
+  property: "apr eval-vlm matches OpenCLIP zero_shot + LAION CLIP_benchmark metric definitions"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "top5 ≥ top1; R@1 ≤ R@5 ≤ R@10"
+- type: invariant
+  property: "determinism under fixed seed"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-e-25` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-e-25
-  priority: low
+  priority: medium
   auto_created: true

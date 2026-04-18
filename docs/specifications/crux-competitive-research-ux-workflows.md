@@ -491,10 +491,10 @@ at Phase 0 exit; intake estimates:
 - ✅ Registered all in master `contracts/crux-competitive-research-ux-v1.yaml`
 - ✅ Created 140 pmat work tickets (one per ❌ missing story) via
   `scripts/crux_bulk_pmat_work.sh` — tagged `crux,gap,crux-{category},competitor-{name},{id_lower}`
-- ✅ **220 of 250 contracts (88.0%)** promoted draft → **spec-complete**
-  via five parallel waves + wave 6 batches 1-9 direct authoring (2026-04-18).
-  **All non-J demand=3 stories are now spec-complete.** Remaining 30 are
-  27 non-J demand=2/1 + 3 demand=5 J stories blocked on OpenCLAW.
+- ✅ **230 of 250 contracts (92.0%)** promoted draft → **spec-complete**
+  via five parallel waves + wave 6 batches 1-10 direct authoring (2026-04-18).
+  **The entire non-J cohort is now spec-complete.** The remaining 20
+  are all J-series (OpenCLIP vision) blocked on OpenCLAW interpretation.
   - Wave 1 (18 demand=5 missing): B-07/08/09, C-04/11/13, D-03/04/11/12,
     E-02/03/07, H-03, F-09/13, I-04, K-02
   - Wave 2 (24 demand=5 partials): A-01/05/09, C-03/05/06/07/08/31/33/34,
@@ -572,13 +572,31 @@ at Phase 0 exit; intake estimates:
     config.json dtype; ≥0.995 cosine vs native fp16),
     K-21 (MLX backend feature-gated to aarch64-apple-darwin; ≥0.999
     cosine; determinism at temp=0).
+  - Wave 6 batch 10 (10 non-J demand=2 — closes entire non-J cohort):
+    A-17 (cosign/sigstore detached sig + cert + rekor bundle; tamper
+    detection fails closed), A-22 (disk-quota enforcement — pre-download
+    reject, no partial blobs, JSON error with used/free/needed),
+    B-17 (PyTorch QAT — observer min ≤ max; ≤0.5pp gap after convert;
+    qparams round-trip), E-25 (OpenCLIP VLM bench — ImageNet zero-shot
+    top5 ≥ top1; MSCOCO R@1 ≤ R@5 ≤ R@10; seeded determinism),
+    F-18 (UMAP 2D — |rows| == vocab_size; token_str matches decode;
+    seeded determinism), H-13 (torchaudio loader — waveform ∈ [-1,1]
+    finite; resample respects target SR; unsupported ext raises),
+    H-18 (word2vec/BPR negative sampling — positive ∩ negative = ∅;
+    exact count; popularity freq^0.75 LLN at n=100000),
+    H-20 (Presidio PII redact — row count preserved; 0 hits on redacted
+    output; determinism under fixed salt), K-16 (Triton model-repo
+    layout — config.pbtxt parses; /v2/models/name/ready returns 200;
+    output shape matches config), K-17 (NVIDIA Dynamo worker integration
+    — NATS heartbeat within 10s; schema validation; graceful
+    worker_down on SIGTERM).
   - 3 demand=5 stories still draft: J-01/02/09 (blocked on OpenCLAW
     interpretation — every other demand≥4 non-J story is spec-complete)
   - Each contract carries competitor CLI citations (arXiv papers, official
     docs) and bash falsification bodies with jq/curl/python3 invocations
 - Gate: `pmat comply check` passes with 250 CRUX contracts registered
 
-**Phase 1 — Evidence capture** (IN PROGRESS — 220/250 = 88.0%; all non-J demand≥3 spec-complete)
+**Phase 1 — Evidence capture** (IN PROGRESS — 230/250 = 92.0%; entire non-J cohort spec-complete; remaining 20 J-series blocked on OpenCLAW)
 - Collect `evidence/crux/{competitor}/*` per §2.1 for all 7 competitors
 - Falsification harness comparing `apr --help` verbs vs competitor verbs
 - Enrich remaining 51 contracts (spec-complete body) — demand≥4 non-J

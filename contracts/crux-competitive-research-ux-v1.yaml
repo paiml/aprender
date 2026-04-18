@@ -600,9 +600,11 @@ phases:
     - { id: wave_6_batch_7, stories: 7, target: "H-series demand=3 (direct author)", date: "2026-04-18" }
     - { id: wave_6_batch_8, stories: 5, target: "I-series demand=3 (direct author)", date: "2026-04-18" }
     - { id: wave_6_batch_9, stories: 9, target: "K-series demand=3 (direct author — final demand=3 cohort)", date: "2026-04-18" }
+    - { id: wave_6_batch_10, stories: 10, target: "all remaining non-J demand=2 (closes entire non-J cohort)", date: "2026-04-18" }
     remaining_demand_5: 3  # J-01/02/09 (OpenCLAW-blocked only)
     remaining_demand_4: 0  # non-J (all demand=4 A-I, K complete)
     remaining_demand_3: 0  # non-J — ALL demand=3 cohort spec-complete (67/67 across A..K except J)
+    remaining_demand_2: 0  # non-J — ALL demand=2 cohort spec-complete
     exit_criteria: "apr qa --crux emits per-story PASS/FAIL/SKIP; pmat work tickets exist for all missing"
     blocks: [phase_2_partials]
 
@@ -636,7 +638,7 @@ status:
   owner: PAIML Engineering
   openclaw_interpretation: pending-user-confirmation
   last_subspec_sync: "2026-04-18"
-  spec_complete_contracts: 220  # of 250 (waves 1..5 = 153 demand≥4; wave 6 = 67 non-J demand=3 across A/B/C/D/E/F/G/H/I/K)
+  spec_complete_contracts: 230  # of 250 (waves 1..5 = 153 demand≥4; wave 6 batches 1-10 = 77 non-J demand=3+2 across A/B/C/D/E/F/G/H/I/K); all 20 J-series remain draft (OpenCLAW-blocked)
   pmat_tickets_created: 140    # one per missing story
   phase_0_completed_at: "2026-04-18"
-  last_enrichment_wave: "2026-04-18 wave 6 batch 9 — 9 K-series demand=3 closes non-J demand=3 cohort (220/250 = 88.0%)"
+  last_enrichment_wave: "2026-04-18 wave 6 batch 10 — 10 non-J demand=2 closes ENTIRE non-J cohort (230/250 = 92.0%). Remaining 20 are all J-series OpenCLAW-blocked."

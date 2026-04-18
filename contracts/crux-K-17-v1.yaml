@@ -1,65 +1,95 @@
 # CRUX-K-17 — NVIDIA Dynamo integration
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-K-17
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "K — Ecosystem & Integration"
+  category: "K — Deployment & Integration"
   competitor: ecosystem
-  demand_score: 2  # 1..5, low priority in pmat work
+  demand_score: 2
   intake_status: missing
   description: >
-    NVIDIA Dynamo integration. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.K and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Integrate apr serve with NVIDIA Dynamo distributed inference
+    framework. Canonical: github.com/ai-dynamo/dynamo — Dynamo
+    disaggregates prefill from decode workers and expects each worker
+    to register via NATS pub-sub with a schema that declares role
+    ∈ {prefill, decode}, kv_cache_dtype, and max_seq_len. Apr must
+    emit a valid Dynamo worker manifest and pass connection round-trip.
 
 equations:
-  placeholder_contract:
+  dynamo_integration:
     formula: |
-      DRAFT — user workflow "NVIDIA Dynamo integration"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr serve --dynamo-role {prefill|decode} \
+                --dynamo-nats nats://host:4222 \
+                --dynamo-model-name <str>
+      emits heartbeat on NATS subject `dynamo.workers.{role}.{model}` with:
+        { role, worker_id, max_seq_len, kv_cache_dtype, endpoint }
+      dynamo router receives heartbeat within 10s and lists worker
+    domain: "(role ∈ {prefill, decode}, nats_url: str, model: str)"
+    codomain: "NATS heartbeat messages + HTTP endpoint"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "heartbeat published within 10s of serve startup"
+    - "heartbeat JSON validates against Dynamo worker schema"
+    - "graceful shutdown publishes worker_down within 2s"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-17-001
-  rule: placeholder
-  prediction: "apr surface for 'NVIDIA Dynamo integration' matches ecosystem canonical behavior"
+  rule: heartbeat published within 10s
+  prediction: "NATS subscriber sees first heartbeat within 10s of startup"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-17" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    docker run --rm -d --name nats-apr -p 14222:4222 nats:2.10 -js
+    trap 'docker rm -f nats-apr' EXIT
+    sleep 1
+    apr serve tests/fixtures/tiny.apr --dynamo-role decode \
+      --dynamo-nats nats://127.0.0.1:14222 --dynamo-model-name apr-test \
+      --port 0 &
+    SRV=$!; trap "kill $SRV; docker rm -f nats-apr" EXIT
+    timeout 10 nats --server=nats://127.0.0.1:14222 \
+      sub 'dynamo.workers.decode.apr-test' --count=1 > /tmp/hb.json
+    test -s /tmp/hb.json
+- id: FALSIFY-CRUX-K-17-002
+  rule: heartbeat validates against Dynamo worker schema
+  prediction: "heartbeat has role, worker_id, max_seq_len, kv_cache_dtype, endpoint"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import json; d=json.loads(open('/tmp/hb.json').read().split('\n')[-2])
+    for k in ('role','worker_id','max_seq_len','kv_cache_dtype','endpoint'):
+        assert k in d, (k, d)
+    assert d['role'] == 'decode'
+    "
+- id: FALSIFY-CRUX-K-17-003
+  rule: graceful shutdown publishes worker_down
+  prediction: "SIGTERM followed by NATS subscriber sees worker_down within 2s"
+  test: |
+    set -euo pipefail
+    nats --server=nats://127.0.0.1:14222 \
+      sub 'dynamo.workers.decode.apr-test.down' --count=1 > /tmp/down.json &
+    kill -TERM $SRV || true
+    wait
+    test -s /tmp/down.json
 
 proof_obligations:
+- type: parity
+  property: "apr serve --dynamo-role emits Dynamo-compatible worker manifest + lifecycle events"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "heartbeat within 10s of startup"
+- type: invariant
+  property: "graceful shutdown publishes worker_down"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-k-17` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-k-17
-  priority: low
+  priority: medium
   auto_created: true

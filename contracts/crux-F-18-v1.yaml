@@ -1,65 +1,86 @@
 # CRUX-F-18 — Token embedding UMAP 2D
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-F-18
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "F — Tensor Ops & Low-level"
+  category: "F — Profiling & Debugging"
   competitor: pytorch
-  demand_score: 2  # 1..5, low priority in pmat work
+  demand_score: 2
   intake_status: missing
   description: >
-    Token embedding UMAP 2D. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.F and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Project token embeddings to 2D for debugging via UMAP. Canonical:
+    `umap-learn` (arXiv:1802.03426) with n_components=2, metric='cosine',
+    n_neighbors=15. Output: CSV of (token_id, token_str, x, y) + optional
+    PNG. Seeded UMAP is deterministic; token_str decoding round-trips
+    through the tokenizer.
 
 equations:
-  placeholder_contract:
+  umap_embed:
     formula: |
-      DRAFT — user workflow "Token embedding UMAP 2D"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      E = embed_matrix(model)  ∈ R^{V × d}
+      Z = UMAP(n_components=2, metric='cosine', random_state=seed).fit_transform(E)
+      out = [ (i, decode(i), Z[i,0], Z[i,1]) for i in 0..V-1 ]
+    domain: "(model: Path, seed: u64, n_neighbors: u32, metric ∈ {cosine, euclidean})"
+    codomain: "CSV with V rows and 4 columns (token_id, token_str, x, y)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "|output_rows| == vocab_size(model)"
+    - "token_str at row i equals tokenizer.decode([i])"
+    - "seeded UMAP is deterministic (same seed ⇒ same coordinates)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-18-001
-  rule: placeholder
-  prediction: "apr surface for 'Token embedding UMAP 2D' matches pytorch canonical behavior"
+  rule: one row per vocab entry
+  prediction: "output row count == vocab_size"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-18" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr debug embed-viz tests/fixtures/tiny.apr --seed 42 -o /tmp/emb.csv
+    vs=$(apr inspect tests/fixtures/tiny.apr --format json | jq -r .vocab_size)
+    rows=$(tail -n +2 /tmp/emb.csv | wc -l)
+    python3 -c "assert $vs == $rows, ($vs, $rows)"
+- id: FALSIFY-CRUX-F-18-002
+  rule: token_str round-trips through tokenizer
+  prediction: "row i token_str decodes to tokenizer.decode([i])"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import csv, subprocess, json
+    for i, row in enumerate(list(csv.DictReader(open('/tmp/emb.csv')))[:20]):
+        r = subprocess.check_output(['apr','tokenize','decode','--model',
+            'tests/fixtures/tiny.apr','--ids',str(row['token_id']),
+            '--format','json'])
+        assert json.loads(r)['text'] == row['token_str'], (i, row, r)
+    "
+- id: FALSIFY-CRUX-F-18-003
+  rule: determinism under fixed seed
+  prediction: "two runs with --seed 42 produce byte-identical CSV"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr debug embed-viz tests/fixtures/tiny.apr --seed 42 -o /tmp/emb$i.csv
+    done
+    diff /tmp/emb1.csv /tmp/emb2.csv
 
 proof_obligations:
+- type: parity
+  property: "apr debug embed-viz matches umap-learn n_components=2 cosine fit_transform"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "|rows| == vocab_size; token_str matches tokenizer.decode"
+- type: invariant
+  property: "determinism under fixed seed"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-f-18` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-f-18
-  priority: low
+  priority: medium
   auto_created: true
