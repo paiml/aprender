@@ -4,7 +4,8 @@
 **Date**: 2026-04-18
 **Status**: ACTIVE (M1–M3 shipped; M4 dogfood pending; M5 pmcp migration planned)
 **Contracts**:
-- `contracts/mcp-tool-schema-v1.yaml` — MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
+- `contracts/mcp-tool-schema-v1.yaml` — upstream MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
+- `contracts/apr-mcp-tool-schemas-v1.yaml` — per-tool `inputSchema` + description source of truth; drives `build.rs` codegen; `status: ENFORCED` (M3, 2026-04-18)
 - `contracts/pmcp/mcp-protocol-sdk-v1.yaml` — `pmcp` crate contract (existing)
 - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — `paiml/rust-mcp-sdk` dependency contract (existing)
 - `contracts/apr-cli-commands-v1.yaml` — 58-command tool surface (57 commands + `mcp` added 2026-04-17 per PR #864)
