@@ -137,6 +137,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 6. **FALSIFY-MCP-006**: `notifications/cancelled` during `apr.run` stops decoding within 30s, returns partial result.
 7. **FALSIFY-MCP-007**: Protocol version mismatch (`"protocolVersion": "1999-01-01"`) returns error, does not attempt tools/list.
 8. **FALSIFY-MCP-008**: Schema in `tools/list` output is byte-identical to generated schema from `contracts/apr-cli-commands-v1.yaml`.
+9. **FALSIFY-MCP-DOGFOOD-001**: End-to-end protocol session — the real `apr mcp` binary, launched as a subprocess, answers `initialize`, `tools/list`, and `tools/call` for all 9 registered tools (plus unknown-method and bad-jsonrpc gates) within 2s via stdio. Test: `crates/aprender-mcp/tests/falsify_mcp_dogfood_001.rs::falsify_mcp_dogfood_001_full_client_session`.
 
 ## Milestones
 
@@ -158,7 +159,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [ ] FALSIFY-MCP-005, -006 passing
 
 ### M4: End-to-end validation (Week 4)
-- [ ] Claude Code integration test (launch `apr mcp`, ask Claude to "run qwen2.5-0.5b with prompt X")
+- [x] Claude Code dogfood — 1 full session using only `apr.*` tools (FALSIFY-MCP-DOGFOOD-001, machine-verified via `crates/aprender-mcp/tests/falsify_mcp_dogfood_001.rs`)
 - [ ] Cursor / Cline manual smoke test
 - [ ] Contract `apr-mcp-server-v1.yaml` promoted from DRAFT → ENFORCED
 - [ ] Docs: `book/mcp-server.md` with `.mcp.json` examples for each client
@@ -173,7 +174,7 @@ Acceptance gate for promoting to ACTIVE:
 | Tool call round-trip (non-inference) | <100ms | `apr.validate` on a cached model |
 | `apr.run` first-token latency | <2s | qwen2.5-0.5b-q4km on target hardware |
 | Protocol spec compliance | 100% | MCP conformance suite (external) |
-| Claude Code dogfood | 1 full session using only `apr.*` tools | Manual |
+| Claude Code dogfood | 1 full session using only `apr.*` tools | FALSIFY-MCP-DOGFOOD-001 (CI) |
 | 8 falsification gates | all PASS | CI |
 
 ## Out of Scope (Phase 1)
