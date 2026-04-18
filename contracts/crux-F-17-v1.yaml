@@ -1,12 +1,8 @@
 # CRUX-F-17 — Attention pattern visualization
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-F-17
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,77 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
   competitor: pytorch
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Attention pattern visualization. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.F and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Dump per-layer, per-head attention matrices and render HTML heatmaps.
+    Canonical: HF `model(..., output_attentions=True)` + BertViz
+    (github.com/jessevig/bertviz, McCormick 2019). Useful for diagnosing
+    attention-sink, position bias, failing induction-heads.
 
 equations:
-  placeholder_contract:
+  attention_viz:
     formula: |
-      DRAFT — user workflow "Attention pattern visualization"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      attn[l,h,i,j] = softmax(q[l,h,i] · k[l,h,j] / sqrt(d_k) + mask[i,j])[j]
+      # property: rows sum to 1 (softmax normalization)
+      sum_j attn[l,h,i,j] = 1 for every (l,h,i)
+    domain: "(model, prompt: str, layers ⊂ [0..L-1], heads ⊂ [0..H-1])"
+    codomain: "{out_dir}/attn_l{L}_h{H}.html + attn.npy (shape (L,H,seq,seq))"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "attn.npy shape == (|layers|, |heads|, seq, seq)"
+    - "every row sums to 1.0 ± 1e-5"
+    - "masked positions (where mask=-inf) yield ≤ 1e-9 after softmax"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-17-001
-  rule: placeholder
-  prediction: "apr surface for 'Attention pattern visualization' matches pytorch canonical behavior"
+  rule: attention rows are proper distributions
+  prediction: "every row in every (layer, head) slice sums to ~1.0"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-17" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr attn-viz tests/fixtures/tinyllama-hf --prompt "Hello world" \
+      --layers 0,1 --heads 0,1 --out /tmp/av
+    python3 - <<'PY'
+    import numpy as np
+    a = np.load("/tmp/av/attn.npy")
+    assert a.shape[0] == 2 and a.shape[1] == 2
+    sums = a.sum(axis=-1)
+    assert np.allclose(sums, 1.0, atol=1e-5), (sums.min(), sums.max())
+    PY
+- id: FALSIFY-CRUX-F-17-002
+  rule: causal mask zeroes future positions
+  prediction: "upper-triangular positions (j > i) are ≤ 1e-9"
+  test: |
+    set -euo pipefail
+    python3 - <<'PY'
+    import numpy as np
+    a = np.load("/tmp/av/attn.npy")
+    L, H, S, _ = a.shape
+    mask = np.triu(np.ones((S, S)), k=1).astype(bool)
+    assert (a[..., mask] <= 1e-9).all(), a[..., mask].max()
+    PY
+- id: FALSIFY-CRUX-F-17-003
+  rule: HTML output contains one heatmap per requested head
+  prediction: "html contains |layers|*|heads| canvas/svg elements"
+  test: |
+    set -euo pipefail
+    n=$(grep -o '<svg\|<canvas' /tmp/av/attn.html | wc -l)
+    python3 -c "assert $n >= 4, $n"
 
 proof_obligations:
+- type: parity
+  property: "apr attn-viz attention values match HF `output_attentions=True` to 1e-5 on same model+prompt"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "row softmax normalization preserved"
+- type: invariant
+  property: "causal mask honored (future positions ≈ 0)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-f-17` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-f-17
   priority: medium
   auto_created: true

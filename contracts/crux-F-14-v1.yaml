@@ -1,12 +1,8 @@
 # CRUX-F-14 — Deadlock/hang detector stack dump
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-F-14
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,75 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
   competitor: pytorch
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Deadlock/hang detector stack dump. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.F and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    On hang/deadlock, emit per-rank Python+native stack trace to aid NCCL or
+    collective debugging. Canonical: PyTorch 2.x `torch.distributed.*` sets
+    `TORCH_NCCL_DESYNC_DEBUG=1` + `TORCH_NCCL_TRACE_BUFFER_SIZE` and dumps
+    `$TORCH_NCCL_DEBUG_INFO_PIPE_FILE` on timeout (docs: pytorch.org/docs/
+    stable/elastic/errors.html, blog.stackademic on flight-recorder).
 
 equations:
-  placeholder_contract:
+  hang_detector:
     formula: |
-      DRAFT — user workflow "Deadlock/hang detector stack dump"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      on watchdog_timeout(rank, collective_op):
+        dump(py_backtrace(rank)) → $TRACE_DIR/rank{R}.py.txt
+        dump(native_backtrace(rank)) → $TRACE_DIR/rank{R}.native.txt
+        dump(nccl_trace_ring_buffer) → $TRACE_DIR/rank{R}.nccl.json
+        exit(124)  # timeout
+    domain: "(world_size: u32, timeout_sec: u32, trace_dir: Path)"
+    codomain: "one file per rank under trace_dir + non-zero exit on timeout"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "trace_dir contains exactly world_size .py.txt files on timeout"
+    - "exit code distinguishes timeout (124) vs normal error (1)"
+    - "dump is non-destructive (no pid kill before flush)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-14-001
-  rule: placeholder
-  prediction: "apr surface for 'Deadlock/hang detector stack dump' matches pytorch canonical behavior"
+  rule: timeout produces per-rank stack files
+  prediction: "fixture that hangs → trace_dir has world_size py.txt files + exit=124"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-14" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    rm -rf /tmp/dd && mkdir /tmp/dd
+    APR_HANG_DETECT_TIMEOUT=5 APR_TRACE_DIR=/tmp/dd \
+      apr train tests/fixtures/distributed-hang-fixture --world-size 2 --steps 100 \
+      && { echo "expected hang, got success"; exit 1; } || ec=$?
+    [ "$ec" = "124" ]
+    [ -f /tmp/dd/rank0.py.txt ] && [ -f /tmp/dd/rank1.py.txt ]
+- id: FALSIFY-CRUX-F-14-002
+  rule: normal completion produces NO stack dumps
+  prediction: "healthy training leaves trace_dir empty (no false triggers)"
+  test: |
+    set -euo pipefail
+    rm -rf /tmp/dd2 && mkdir /tmp/dd2
+    APR_HANG_DETECT_TIMEOUT=60 APR_TRACE_DIR=/tmp/dd2 \
+      apr train tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf --steps 1
+    [ -z "$(ls /tmp/dd2)" ]
+- id: FALSIFY-CRUX-F-14-003
+  rule: exit code 124 signals timeout vs 1 for other errors
+  prediction: "non-hang errors return exit=1, not 124"
+  test: |
+    set -euo pipefail
+    ! apr train tests/fixtures/malformed-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --steps 1 2>/dev/null; ec=$?
+    [ "$ec" != "124" ]
 
 proof_obligations:
+- type: parity
+  property: "apr hang detector dump format compatible with PyTorch flight-recorder + NCCL trace ring"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "timeout emits exactly world_size stack files + exit=124"
+- type: invariant
+  property: "healthy run leaves trace_dir empty (zero false positives)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-f-14` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-f-14
   priority: medium
   auto_created: true

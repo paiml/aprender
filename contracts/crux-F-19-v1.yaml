@@ -1,12 +1,8 @@
 # CRUX-F-19 — apr explain token selection
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-F-19
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,89 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
   competitor: llama_cpp
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    apr explain token selection. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.F and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    For each sampled token, dump the full candidate list with pre/post-sampler
+    probabilities and the sampler chain that fired. Canonical: llama.cpp
+    `--logit-bias`, `--logprobs N`, `llama-cli -lv` verbose sampling; HF
+    `generate(..., output_scores=True, return_dict_in_generate=True)`.
 
 equations:
-  placeholder_contract:
+  explain_token:
     formula: |
-      DRAFT — user workflow "apr explain token selection"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      for step s = 0..N-1:
+        logits_s = forward(prefix_s)
+        scored_s = softmax(logits_s / temperature)
+        after_top_k = apply_top_k(scored_s, k)
+        after_top_p = apply_top_p(after_top_k, p)
+        after_temp  = apply_temp(after_top_p, T)  # canonical HF chain order
+        sampled_s   = multinomial(after_temp)
+      dump (step, token_id, token_str, pre_prob, post_prob, rank)
+    domain: "(model, prompt: str, top_k: u32, top_p: f32, temp: f32, seed: u64)"
+    codomain: "JSONL with one record per sampled token + logprobs top-K alternatives"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "sum of post-sampler probs across candidates ≈ 1.0 (±1e-5)"
+    - "sampled token is always present in the top-K output with rank > 0"
+    - "sum of top_k probabilities before temp is ≤ 1.0 (probs, not logits)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-19-001
-  rule: placeholder
-  prediction: "apr surface for 'apr explain token selection' matches llama_cpp canonical behavior"
+  rule: post-sampler probs normalize
+  prediction: "each step's probs sum to 1.0 ± 1e-5"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-19" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr explain tests/fixtures/tinyllama-hf --prompt "The capital is" \
+      --max-tokens 3 --top-k 10 --format jsonl > /tmp/ex.jsonl
+    python3 - <<'PY'
+    import json
+    for line in open("/tmp/ex.jsonl"):
+      r = json.loads(line)
+      total = sum(c["post_prob"] for c in r["candidates"])
+      assert abs(total - 1.0) < 1e-5, (r["step"], total)
+    PY
+- id: FALSIFY-CRUX-F-19-002
+  rule: sampled token always present in candidate list
+  prediction: "for each step, sampled_token in {c.token for c in candidates}"
+  test: |
+    set -euo pipefail
+    python3 - <<'PY'
+    import json
+    for line in open("/tmp/ex.jsonl"):
+      r = json.loads(line)
+      ids = {c["token_id"] for c in r["candidates"]}
+      assert r["sampled_id"] in ids, r
+    PY
+- id: FALSIFY-CRUX-F-19-003
+  rule: temp=0 always picks rank-0 candidate
+  prediction: "--temp 0 --top-k 1 → sampled == argmax(logits)"
+  test: |
+    set -euo pipefail
+    apr explain tests/fixtures/tinyllama-hf --prompt hi --max-tokens 3 \
+      --temp 0 --top-k 1 --format jsonl > /tmp/g.jsonl
+    python3 - <<'PY'
+    import json
+    for line in open("/tmp/g.jsonl"):
+      r = json.loads(line)
+      top = max(r["candidates"], key=lambda c: c["pre_prob"])
+      assert r["sampled_id"] == top["token_id"], r
+    PY
 
 proof_obligations:
+- type: parity
+  property: "apr explain output matches HF `generate(output_scores=True)` token probabilities within 1e-5"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "post-sampler probs sum to 1.0"
+- type: invariant
+  property: "sampled token present in emitted candidate list"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-f-19` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-f-19
   priority: medium
   auto_created: true
