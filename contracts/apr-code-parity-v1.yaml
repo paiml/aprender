@@ -15,7 +15,7 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v4.9): 12 SHIPPED / 3 PARTIAL / 6 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 2 more MISSING→{SHIPPED,PARTIAL} flips to close the epic. ALL P0 + P1 TICKETS CLOSED; remaining work is P2 only.
+# Current counts (2026-04-18 v5.0): 13 SHIPPED / 3 PARTIAL / 5 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 1 more MISSING→{SHIPPED,PARTIAL} flip to close the epic. ALL P0 + P1 TICKETS CLOSED; remaining work is P2 only.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -75,12 +75,12 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips), v4.8=PMAT-CODE-WORKTREE-001 closed → worktree-isolation NONE→SHIPPED (11/3/7 — SHIPPED cap still met; MISSING cap still needs 3 more flips), v4.9=PMAT-CODE-PERMISSIONS-001 closed → permission-modes NONE→SHIPPED (12/3/6 — all P0+P1 tickets now closed; remaining 6 MISSING rows are all P2 deferred; epic still open, needs 2 more flips for MISSING cap ≤4)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips), v4.8=PMAT-CODE-WORKTREE-001 closed → worktree-isolation NONE→SHIPPED (11/3/7 — SHIPPED cap still met; MISSING cap still needs 3 more flips), v4.9=PMAT-CODE-PERMISSIONS-001 closed → permission-modes NONE→SHIPPED (12/3/6 — all P0+P1 tickets now closed; remaining 6 MISSING rows are all P2 deferred; epic still open, needs 2 more flips for MISSING cap ≤4), v5.0=PMAT-CODE-STATUS-LINE-001 closed → status-line NONE→SHIPPED (13/3/5 — SHIPPED cap still met; MISSING cap (≤4) needs 1 more flip to close the epic)
   total_rows: 21
   counts:
-    shipped: 12
+    shipped: 13
     partial: 3
-    missing: 6
+    missing: 5
   closure_criterion:
     description: >
       Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
@@ -389,13 +389,24 @@ categories:
 
   - id: status-line
     name: Status line (model / mode / cost / branch)
-    status: NONE  # v2 flip on 2026-04-18
+    status: SHIPPED  # v5.0 flip on 2026-04-18
     status_history:
       - { date: '2026-04-18', from: 'UNKNOWN', to: 'NONE', reason: "grep -rin 'status.?line|StatusLine|render_status|status_bar|statusline' crates/aprender-orchestrate/src/agent/ returned zero matches; the two codebase hits (publish_status/tests_extended.rs, bug_hunter/model_parity.rs) are unrelated to the REPL status line" }
-    evidence_path: null
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-STATUS-LINE-001 closed: new crates/aprender-orchestrate/src/agent/status_line.rs ships the Claude-Code REPL status strip as a pure data-struct + render function. `StatusLine { model, mode, cost_usd, branch, cwd_short }` captures the five fields Claude renders at the bottom of its REPL; `.render()` produces a single line in Claude's column order (`model | [mode] | $cost | branch | cwd`) with missing optionals elided (no empty cells) and cost always formatted to 2 decimals. `StatusLine::build(model, PermissionMode, cost_usd, branch, cwd_short)` accepts a `PermissionMode` directly so REPL wiring doesn't reach for `to_string()` at every call site — the canonical permission lattice from PMAT-CODE-PERMISSIONS-001 is the input. Free function `short_cwd(&Path, Option<&Path>)` collapses the `$HOME` prefix to `~/` (lone `~` when cwd==home) and falls back to path-verbatim when home is None or outside the prefix. 14 unit tests cover render-order, cost truncation to 2 decimals (incl. rounding up / round toward zero / trailing zero), build-from-PermissionMode wiring, optional-field elision, short_cwd home-prefix collapse, lone-tilde edge case, non-home passthrough, None-home fallback, trailing-separator handling, purity (render is idempotent), and Clone round-trip. REPL/TUI integration (periodic repaint, cost accumulator, branch cache, cwd hook) deferred to PMAT-CODE-STATUS-LINE-RUNTIME-001 (P2); the primitive is ready for call sites today." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/status_line.rs
+      - crates/aprender-orchestrate/src/agent/status_line/tests.rs
+      - crates/aprender-orchestrate/src/agent/mod.rs  # registers `pub mod status_line;`
+    evidence_symbols:
+      - StatusLine
+      - StatusLine::render
+      - StatusLine::build
+      - short_cwd
+    remaining_gaps:
+      - REPL / TUI wiring — periodic repaint loop + cost accumulator + git-branch cache + cwd hook (PMAT-CODE-STATUS-LINE-RUNTIME-001, P2)
     cross_check_command: |
-      grep -rlE "StatusLine|render_status_line|statusline" crates/aprender-orchestrate/src/agent/ 2>/dev/null | wc -l
-    expected_max_hits: 0
+      grep -cE "(struct StatusLine|fn render|fn build|fn short_cwd)" crates/aprender-orchestrate/src/agent/status_line.rs
+    expected_min_hits: 4
     ticket: PMAT-CODE-STATUS-LINE-001
     priority: P2
 
@@ -512,11 +523,11 @@ priority_buckets:
     - non-interactive-mode
     - keyboard-shortcuts
   P2:
+    # status-line: closed v5.0 (2026-04-18) — retained in `categories` for history
     - builtin-tool-notebook
     - builtin-tool-monitor
     - plugins-marketplace
     - ide-integrations
-    - status-line
     - managed-org-policy
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -524,6 +535,37 @@ priority_buckets:
 # ─────────────────────────────────────────────────────────────────────────────
 
 change_log:
+  - date: '2026-04-18'
+    revision: '5.0'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-STATUS-LINE-001 closed — status-line row flipped
+      NONE → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      status_line.rs ships the Claude-Code REPL status strip as a
+      pure data-struct + render function: `StatusLine { model, mode,
+      cost_usd, branch, cwd_short }` renders as a single line in
+      Claude's column order (`model | [mode] | $cost | branch | cwd`)
+      with missing optionals elided and cost always formatted to two
+      decimals. `StatusLine::build(model, PermissionMode, cost_usd,
+      branch, cwd_short)` plugs directly into the permission lattice
+      landed in v4.9 so REPL wiring shares one canonical mode
+      representation. Free helper `short_cwd(&Path, Option<&Path>)`
+      collapses `$HOME` to `~/` (with a lone `~` when cwd==home) and
+      gracefully falls back to path-verbatim when no home is supplied
+      or the prefix doesn't match. 14 unit tests cover render-order,
+      cost truncation to two decimals (round-up, round-toward-zero,
+      trailing-zero), build-from-PermissionMode wiring, optional-
+      field elision, home-prefix collapse, lone-tilde edge case, non-
+      home passthrough, None-home fallback, trailing-separator
+      handling, render purity, and Clone round-trip. REPL/TUI
+      integration (periodic repaint loop + cost accumulator + git-
+      branch cache + cwd hook) deferred to
+      PMAT-CODE-STATUS-LINE-RUNTIME-001 (P2). **Headline 12/3/6 →
+      13/3/5 over 21 rows**. SHIPPED cap (≥9) still MET; MISSING
+      cap (≤4) now needs ONLY 1 more MISSING→{SHIPPED,PARTIAL} flip
+      to close epic PMAT-CODE-PARITY-MATRIX-001. Remaining 5 MISSING
+      rows are all P2 deferred (notebook, monitor, plugins, IDE,
+      org-policy).
   - date: '2026-04-18'
     revision: 1
     author: kaizen-paiml

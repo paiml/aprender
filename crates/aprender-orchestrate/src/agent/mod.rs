@@ -48,6 +48,7 @@ mod runtime_helpers;
 pub mod session;
 pub mod signing;
 pub mod skill;
+pub mod status_line;
 pub mod task_tool;
 pub mod tool;
 pub mod tui;
