@@ -8,7 +8,7 @@
 - `contracts/pmcp/mcp-protocol-sdk-v1.yaml` — `pmcp` crate contract (existing)
 - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — `paiml/rust-mcp-sdk` dependency contract (existing)
 - `contracts/apr-cli-commands-v1.yaml` — 57-command tool surface (existing)
-- **New**: `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract
+- **Pending (PR #886)**: `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract (not yet in-tree; promotes to M4)
 **References**:
 - [Model Context Protocol Specification v2024-11-05](https://spec.modelcontextprotocol.io/specification/2024-11-05/)
 - [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
@@ -157,15 +157,15 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 
 ### M3: Streaming + cancellation + 8th tool + codegen — SHIPPED (2026-04-18)
 - [x] `apr.finetune` synchronous wrapper completes Phase-1 8-tool set (#881)
-- [x] Cancellation: `notifications/cancelled` → SIGTERM (30s grace) → SIGKILL via std::thread+mpsc worker (#874, #883)
+- [x] Cancellation: `notifications/cancelled` → SIGTERM (30s grace) → SIGKILL via std::thread+mpsc worker (#883)
 - [x] FALSIFY-MCP-008: build.rs codegen from `apr-mcp-tool-schemas-v1.yaml` — `apr.version` first (#880), then 7 remaining tools (#884)
 - [x] Progress notifications for `apr.finetune` — `NotificationSink` plumbed; `params._meta.progressToken` opt-in; FALSIFY-MCP-PROGRESS-001 (#887)
-- [x] First-class contract `contracts/apr-mcp-server-v1.yaml` (ACTIVE) with 8 falsification_conditions (#886)
-- [x] Book chapter `book/src/tools/mcp-server.md` (#885)
+- [x] Book chapter `book/src/tools/mcp-server.md` (#874 M2 creation, #885 M3 update)
 - [ ] **Deferred to M4**: Per-step structured progress for `apr.finetune` (CLI emits terminal blob today; needs CLI event channel)
 - [ ] **Deferred to M4**: Progress notifications for `apr.run` (needs `apr run --stream` CLI flag prereq)
 
 ### M4: End-to-end validation — IN PROGRESS
+- [ ] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions + test cross-links (PR #886 open)
 - [ ] Strengthen FALSIFY-MCP-003/-004 from surface tests to mock-subprocess e2e response-shape assertions (in flight)
 - [ ] Real-model FALSIFY-MCP-003: `apr.run` decodes "2" within 5s on cached qwen2.5-0.5b
 - [ ] Real-model FALSIFY-MCP-004: byte-for-byte `apr qa --json` parity
