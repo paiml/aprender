@@ -21,7 +21,7 @@ metadata:
 kind: CLICommandContract
 name: apr-cli-commands
 version: "1.0.0"
-scope: "all apr CLI subcommands (57 commands)"
+scope: "all apr CLI subcommands (58 commands — original 57 + `mcp` added 2026-04-17 via PR #864)"
 binary: "apr"
 install: "cargo install aprender"
 

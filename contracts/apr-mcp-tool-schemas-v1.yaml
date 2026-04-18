@@ -4,7 +4,7 @@
 # SOURCE OF TRUTH for every `aprender-mcp` tool's MCP inputSchema (per-arg name,
 # type, required flag, and description string). This contract exists separately
 # from `contracts/apr-cli-commands-v1.yaml` because the latter is a pure command
-# registry: each of its 57 entries carries only {name, category, description,
+# registry: each of its 58 entries carries only {name, category, description,
 # requires_model, side_effects}. It intentionally has no argument-level data and
 # therefore cannot drive JSON-Schema code generation.
 #
@@ -36,7 +36,7 @@ metadata:
     Per-tool MCP inputSchema source of truth for the aprender-mcp server.
     Drives `crates/aprender-mcp/build.rs` codegen; byte-identity between
     codegen output and `tools/list` is asserted by FALSIFY-MCP-008
-    (tests/codegen_bytes.rs). Authoritative as of M3 (2026-04-18) —
+    (crates/aprender-mcp/tests/falsify_mcp_008.rs). Authoritative as of M3 (2026-04-18) —
     Rust tool sources parse codegen constants and contain no hand-written
     schemas.
   references:
