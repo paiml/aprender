@@ -26,6 +26,9 @@ anyhow = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+# Test-only: validate every tool's inputSchema against JSON Schema Draft 7
+# (FALSIFY-MCP-002). Same major as aprender-train uses, so already in lockfile.
+jsonschema = "0.28"
 
 [lints]
 workspace = true
