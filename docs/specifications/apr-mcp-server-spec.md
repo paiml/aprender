@@ -10,6 +10,7 @@
 - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — `paiml/rust-mcp-sdk` dependency contract (existing)
 - `contracts/apr-cli-commands-v1.yaml` — 58-command tool surface (57 commands + `mcp` added 2026-04-17 per PR #864)
 - **Pending (PR #886)**: `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract (not yet in-tree; promotes to M4)
+- `contracts/apr-claude-proxy-v1.yaml` — Anthropic Messages-API proxy request/response shape + 6 falsification gates; `status: DRAFT` (PMAT-CLAUDE-PROXY-001, promotes to ENFORCED at M6-δ, 2026-04-18)
 **References**:
 - [Model Context Protocol Specification v2024-11-05](https://spec.modelcontextprotocol.io/specification/2024-11-05/)
 - [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
@@ -210,6 +211,100 @@ cargo install aprender --features full      # apr code + inference + cuda + trai
 
 `apr mcp` is **always** compiled in regardless of the `code` feature — the MCP server has no dependency on the agent runtime.
 
+## Claude Messages-API Provable-Contract Proxy (PLANNED M6)
+
+A sovereign, local drop-in for Anthropic's Messages API (`POST /v1/messages`) that accepts a Claude-SDK-shaped request, drives [`apr code`](../../crates/aprender-orchestrate/docs/specifications/components/apr-code.md) over a local Qwen3-MoE model, and returns a Claude-SDK-shaped response — with both the request and the response shapes pinned by a provable contract (`contracts/apr-claude-proxy-v1.yaml`). Surface extends `apr serve`:
+
+```bash
+apr serve --compat anthropic                                  # default: bind 127.0.0.1:8080, auto-pick model
+apr serve --compat anthropic --port 8080 --model <hf-id>      # override model
+apr serve --compat anthropic --model-path /path/model.gguf    # explicit local path
+```
+
+### Why a Messages-API proxy alongside `apr mcp`?
+
+MCP is Anthropic's **client-tool protocol** (Directions 1–3 above). The Messages API is a different shape — a **completion protocol**. Most IDE integrations (Claude Code itself, Cursor, Zed's AI pane, `anthropic-sdk-python`, `anthropic-sdk-typescript`) speak the Messages API, not MCP. Pointing `ANTHROPIC_BASE_URL=http://127.0.0.1:8080` at `apr serve --compat anthropic` lets those tools swap in a sovereign on-device model with **zero client-side code change**. The MCP surface (`apr mcp`) and the Messages-API surface (`apr serve --compat anthropic`) are orthogonal — different wire protocols, different use cases, shared agent backend (`apr code`).
+
+### Default model — Qwen3-Coder-30B-A3B-Instruct (Q4_K_M GGUF)
+
+MoE: 30.5B total / 3.3B active parameters. Apache 2.0. Released 2025-04-29 (Qwen3 family). Q4_K_M GGUF ~18.6 GB on-disk — fits 24 GB VRAM (RTX 4090) with headroom for KV cache. Measured ~196 tok/s on reference hardware (4090, realizar fused Q4K + FlashDecoding path).
+
+Rationale for **MoE over dense**: active-param count (3.3B) governs decode latency; total-param count (30.5B) governs reasoning capacity. MoE buys both cheaply. Q4_K_M is already the format that establishes aprender's 1.43× Ollama parity (on Qwen2.5-1.5B Q4_K_M) — no new kernels required. Hugging Face canonical: `Qwen/Qwen3-Coder-30B-A3B-Instruct`; pre-quantized GGUF: `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF`.
+
+**Fallback chain** (applied when `--model` is omitted and the preferred cache entry is missing):
+1. `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M` (coder-specialized)
+2. `Qwen/Qwen3-30B-A3B-GGUF:Q4_K_M` (general instruct)
+3. `apr code`'s normal model-selection chain (respects `APR_CODE_MODEL` env, then `manifest.default_model`)
+
+**Explicitly NOT a default**: Qwen3-Next-80B-A3B at Q4_K_M needs ~45 GB — does not fit a single 4090. Dual-GPU / A6000-Ada / H100-class deployments may select it via `--model`.
+
+### Input Contract (request shape)
+
+Request body = Anthropic Messages API POST body, schema version `v2026-02-01`. Mandatory fields:
+
+- `model: string` — mapped to local model selector; unknown model names fall back to default with a `x-apr-model-fallback` response header logging the substitution
+- `messages: Array<{role: "user"|"assistant", content: string | ContentBlock[]}>`
+- `max_tokens: integer`
+- `system: string | ContentBlock[]` (optional)
+- `tools: Array<ToolDefinition>` (optional) — translated into `apr code` tool-registry entries
+- `stream: boolean` (optional)
+- `temperature`, `top_p`, `top_k`, `stop_sequences` (optional)
+
+Accepted content-block types: `text`, `image`, `tool_use`, `tool_result`, `document`. `thinking` blocks are **accepted-but-ignored on input** (reasoning tokens are regenerated locally, not replayed — consistent with Anthropic's own re-derivation semantics).
+
+Full JSON Schema: `contracts/apr-claude-proxy-v1.yaml` under `inputs.messages_request`.
+
+### Output Contract (response shape)
+
+Response body = Anthropic Messages API response, schema version `v2026-02-01`. Mandatory fields:
+
+- `id: string` — local UUIDv7
+- `type: "message"` (literal)
+- `role: "assistant"` (literal)
+- `model: string` — echo of the resolved model ID (after fallback)
+- `content: Array<ContentBlock>` — ordered; each block is one of:
+  - `{type: "text", text: string}`
+  - `{type: "tool_use", id: string, name: string, input: object}`
+  - `{type: "thinking", thinking: string}` — emitted when `apr code` surfaces reasoning traces
+- `stop_reason: "end_turn" | "max_tokens" | "stop_sequence" | "tool_use"`
+- `stop_sequence: string | null`
+- `usage: {input_tokens: int, output_tokens: int, cache_creation_input_tokens: int, cache_read_input_tokens: int}`
+
+**Streaming mode (SSE):** event sequence `message_start` → (`content_block_start` → N × `content_block_delta` → `content_block_stop`)⁺ → `message_delta` → `message_stop`; with `ping` interleaved and `error` terminal. Exact per-event payload shapes in `contracts/apr-claude-proxy-v1.yaml` under `outputs.sse_events`.
+
+### Translation semantics (Anthropic ↔ `apr code`)
+
+| Anthropic request field | `apr code` mapping |
+|------|------|
+| `messages[]` | Batuta `Conversation::from_anthropic(&messages)` (role + content-block fidelity) |
+| `tools[]` | Registered as `AnthropicToolAdapter` entries alongside `build_code_tools` output (FileRead/Write/Edit, Glob, Grep, Shell, Memory, PmatQuery, Rag) |
+| `system` | Prepended as a system-role Batuta `Message` |
+| `max_tokens` | Passed through to realizar `GenConfig.max_new_tokens` |
+| `temperature`, `top_p`, `top_k`, `stop_sequences` | Passed through to realizar `GenConfig` |
+| `stream: true` | Drives SSE serialization over the agent event channel; non-streaming batches content blocks into a final array |
+
+Translation is a **pure function of request shape** — no hidden state, no client-identity leakage. Property-tested round-trip via `apr serve --compat anthropic --dump-translation` against a fixture corpus of captured Anthropic SDK request bodies (see FALSIFY-CLAUDE-PROXY-002).
+
+### Falsification Conditions
+
+Defined in `contracts/apr-claude-proxy-v1.yaml` (to be added when M6-α ships):
+
+1. **FALSIFY-CLAUDE-PROXY-001** — Input shape parity: any request that passes Anthropic's published JSON Schema MUST be accepted by the proxy; any request that fails that schema MUST return HTTP 400 with body `{"type":"error","error":{"type":"invalid_request_error","message": string}}` — same envelope shape Anthropic returns.
+2. **FALSIFY-CLAUDE-PROXY-002** — Output shape parity: every non-streaming response passes Anthropic's Messages-API response JSON Schema when parsed by `anthropic-sdk-python` v0.40+; zero extra fields (schema uses `additionalProperties: false`); `stop_reason` is drawn from the closed enum above.
+3. **FALSIFY-CLAUDE-PROXY-003** — Tool-use round-trip: a fixture of user→`tool_use`→`tool_result`→assistant (4 turns) exercising the `Bash` tool produces a transcript whose `stop_reason` transitions `tool_use`→`end_turn` across turns, matching the stop-reason order of an identical fixture captured from `api.anthropic.com` (captured offline — no live net in CI).
+4. **FALSIFY-CLAUDE-PROXY-004** — Streaming event parity: SSE event sequence on a short prompt is a valid prefix of the Anthropic event schedule (`message_start` → ≥1 `content_block_*` cluster → `message_delta` → `message_stop`); `event:` casing matches Anthropic; each `data:` payload parses as its declared sub-schema.
+5. **FALSIFY-CLAUDE-PROXY-005** — Default-model autoselect: on startup with no `--model` and no cached model file, the HTTP listener MUST NOT bind until `apr pull` completes; on startup with the cached file, time-to-listen is <3s (matches `apr serve`). Asserted via filesystem-state test, not HF network.
+6. **FALSIFY-CLAUDE-PROXY-006** — Sovereignty: `apr serve --compat anthropic` MUST NOT open outbound sockets to `api.anthropic.com` under any combination of request headers, env vars, or config. Asserted by blocking all outbound network in the CI test container except `127.0.0.1`.
+
+These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mcp-server-v1.yaml` (different protocol) and **outside** `apr-code-v1.yaml` (agent-loop semantics, not HTTP surface).
+
+### Proxy milestones (tracked as PMAT-CLAUDE-PROXY-001)
+
+- **M6-α** (planned post-M5 `pmcp` port): `contracts/apr-claude-proxy-v1.yaml` committed; request-shape parser (FALSIFY-001) PASS on fixture corpus.
+- **M6-β**: Non-streaming response generation over `apr code` (FALSIFY-002, -003) PASS.
+- **M6-γ**: SSE streaming (FALSIFY-004) PASS; `apr serve` throughput-parity benchmark vs the non-proxied path (±5%).
+- **M6-δ**: Default-model autoselect + sovereignty (FALSIFY-005, -006) ENFORCED; spec promotes from PLANNED → ACTIVE.
+
 ## Milestones
 
 ### M1: Skeleton — SHIPPED (2026-04-17)
@@ -262,6 +357,14 @@ cargo install aprender --features full      # apr code + inference + cuda + trai
 - [ ] Add WebSocket transport (same surface) — unblocks long-running sessions
 - [ ] Re-run falsification suite (78 tests across `falsify_m1`, `falsify_mcp_006`, `falsify_mcp_008`, `falsify_mcp_progress_001`, `falsify_schema`, lib unit tests — 2026-04-18 count) and ensure every FALSIFY-MCP gate still PASS post-migration
 
+### M6: Claude Messages-API proxy — PLANNED (PMAT-CLAUDE-PROXY-001)
+- [ ] M6-α: commit `contracts/apr-claude-proxy-v1.yaml`; request-shape parser (FALSIFY-CLAUDE-PROXY-001) PASS on captured `anthropic-sdk-python` fixture corpus
+- [ ] M6-β: non-streaming response generation over `apr code` (FALSIFY-CLAUDE-PROXY-002 output-shape parity + FALSIFY-CLAUDE-PROXY-003 tool_use round-trip) PASS
+- [ ] M6-γ: SSE streaming (FALSIFY-CLAUDE-PROXY-004 event-sequence parity) PASS; throughput within ±5% of non-proxied `apr serve` decode path
+- [ ] M6-δ: default-model autoselect (FALSIFY-CLAUDE-PROXY-005, bind-after-pull + <3s cold start if cached) + sovereignty (FALSIFY-CLAUDE-PROXY-006, zero egress to api.anthropic.com) ENFORCED; contract promotes DRAFT → ENFORCED; spec section promotes PLANNED → ACTIVE
+- [ ] Default model resolver: `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M` → `Qwen/Qwen3-30B-A3B-GGUF:Q4_K_M` → `APR_CODE_MODEL` env → `manifest.default_model`
+- [ ] HTTP surface in `crates/aprender-serve/src/anthropic/`; CLI flag `apr serve --compat anthropic`
+
 ## Success Criteria
 
 The spec is already ACTIVE as of M3 ship (2026-04-18). The table below is
@@ -295,6 +398,8 @@ and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
 | Subprocess overhead per tool call | Phase 2: in-process mode (`--embedded`) linking apr-cli as library |
 | Schema drift between CLI and MCP surface | `build.rs` emits both `schemas::APR_<TOOL>_SCHEMA` and `schemas::APR_<TOOL>_DESCRIPTION` from `contracts/apr-mcp-tool-schemas-v1.yaml`; hand-editing either in Rust source is impossible (PMAT-514, `tests/falsify_mcp_008.rs` guards live+codegen × schema+description at 4 layers) |
 | MCP clients expect specific error shapes | Conformance-test against Claude Code, Cursor, Cline fixtures |
+| **Anthropic Messages-API schema drift** (M6): Anthropic ships Messages-API schema revisions without deprecation; proxy clients would break on new required fields | Pin `anthropic_schema_version` in `contracts/apr-claude-proxy-v1.yaml`; FALSIFY-CLAUDE-PROXY-002 re-runs against `anthropic-sdk-python` in a weekly CI cron so any SDK bump that breaks parity fails loudly within 7 days |
+| **Accidental egress to api.anthropic.com** (M6) — the one bug that turns a "sovereign" proxy into a data-leak vector | FALSIFY-CLAUDE-PROXY-006: network-sandboxed CI container blocks all outbound except `127.0.0.1`; ANY socket open to `api.anthropic.com` fails the build. Enforced, not advisory. |
 
 ## Related Work
 
