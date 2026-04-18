@@ -5384,3 +5384,20 @@ roadmap:
   - ci
   - contracts
   notes: null
+- id: PMAT-514
+  github_issue: null
+  item_type: task
+  title: 'APR-MCP-KAIZEN: Continuous drift sweep on apr-mcp-server-spec.md'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T13:33:02Z
+  updated: 2026-04-18T13:33:05.351120919+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Ongoing kaizen sweeps on docs/specifications/apr-mcp-server-spec.md + crates/aprender-mcp + book/src/tools/mcp-server.md + contracts/apr-mcp-tool-schemas-v1.yaml. Each sweep fixes stale counts, stale roadmap tense (Mx→shipped), stale tool descriptions, and cross-spec inconsistencies. Discharges: byte-compare YAML tool descriptions with source descriptions (FALSIFY-MCP-008 only covers inputSchema).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
