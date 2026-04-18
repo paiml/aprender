@@ -1,5 +1,7 @@
 //! FALSIFY-MCP-008: tools/list output for each migrated tool must be
-//! byte-identical to the schema in `contracts/apr-mcp-tool-schemas-v1.yaml`.
+//! byte-identical to the corresponding entry in
+//! `contracts/apr-mcp-tool-schemas-v1.yaml` — covering both the
+//! `inputSchema` object and the tool-level `description` string.
 //!
 //! This gate proves the YAML contract IS the single source of truth. The
 //! harness:
@@ -8,12 +10,17 @@
 //!   3. Reconstructs the expected JSON Schema from the contract.
 //!   4. Fetches the live schema via the server's `tools/list` response.
 //!   5. Asserts `serde_json::Value` equality (order-independent object match).
+//!   6. Separately asserts `ToolDefinition.description ==
+//!      tools[*].description` as a raw string compare (PMAT-514).
 //!
-//! **Scope (M3 completion — PR #881 follow-up):** all 8 Phase-1 tools are now
-//! wired through the build.rs codegen path (`crate::schemas::APR_*_SCHEMA`).
-//! `MIGRATED_TOOLS` below is sourced from `schemas::TOOL_NAMES` (itself
-//! derived from the YAML at build time), so adding a new tool to the YAML
-//! automatically pulls it into this harness with zero test edits.
+//! **Scope (M3 shipped, extended by PMAT-514 on 2026-04-18):** all 9
+//! registered tools (`apr.version` + 8 Phase-1 wrappers) are wired through
+//! the build.rs codegen path (`crate::schemas::APR_*_SCHEMA`). `MIGRATED_TOOLS`
+//! below is sourced from `schemas::TOOL_NAMES` (itself derived from the
+//! YAML at build time), so adding a new tool to the YAML automatically
+//! pulls it into this harness with zero test edits. Adding a description
+//! field to the new tool is likewise auto-covered by
+//! `tool_descriptions_match_yaml_contract`.
 
 #![allow(clippy::disallowed_methods)] // test-only serde_json::json! / to_value expansions
 
