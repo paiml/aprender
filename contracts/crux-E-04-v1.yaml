@@ -25,37 +25,112 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  win_rate_ab_comparison:
     formula: |
-      DRAFT — user workflow "A/B compare two models win rate"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Competitor (EleutherAI lm-evaluation-harness):
+        lm_eval --model hf --model_args pretrained=A --tasks hellaswag --output out_A.json
+        lm_eval --model hf --model_args pretrained=B --tasks hellaswag --output out_B.json
+      then compare per-task accuracy deltas.
+      apr parity:
+        apr eval A B --tasks hellaswag --json
+      MUST produce per-task accuracy for both models and a win_rate:
+        win_rate_A = |{ t : acc_A[t] > acc_B[t] }| / |tasks|
+        win_rate_B = |{ t : acc_B[t] > acc_A[t] }| / |tasks|
+        ties       = |tasks| - wins_A - wins_B
+    domain: "two model paths A, B; task suite T = {t_1, ..., t_k}"
+    codomain: "per-task accuracies acc_A, acc_B in [0,1]^k; win_rate in [0,1]"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "win_rate_A + win_rate_B + tie_rate == 1.0 (±1e-9)"
+    - "both models evaluated on IDENTICAL task splits and prompts"
+    - "accuracy metric per task matches lm-eval-harness (e.g. acc, acc_norm)"
+    - "Competitor parity: per-task accuracies match lm-eval output within ±0.5%"
+
+  statistical_significance:
+    formula: |
+      For each task t, compute bootstrap CI on (acc_A[t] - acc_B[t]):
+        delta_t = acc_A[t] - acc_B[t]
+        CI_95 = bootstrap_ci(delta_t, n_resamples=1000, alpha=0.05)
+      Task is "significantly A-wins" iff CI_95.lower > 0.
+    domain: "eval predictions per task for both models"
+    codomain: "delta_t in [-1,1], CI_95 interval"
+    invariants:
+    - "bootstrap CI reported for every task"
+    - "overall win_rate accompanied by binomial CI"
+    - "tasks with tie (|delta| < 1/|eval_set|) reported as tied, not wins"
+
+  deterministic_eval:
+    formula: |
+      Re-running apr eval A B --tasks T --seed S twice produces identical
+      per-task accuracies (bitwise identical JSON minus timestamps).
+    domain: "model pair (A,B), task suite T, seed S"
+    codomain: "JSON output (excluding non-deterministic wall times)"
+    invariants:
+    - "same --seed ==> same accuracies ==> same win_rate"
+    - "prompts evaluated in fixed order across runs"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-04-001
-  rule: placeholder
-  prediction: "apr surface for 'A/B compare two models win rate' matches huggingface canonical behavior"
+  rule: "win_rate_A + win_rate_B + tie_rate == 1.0"
+  prediction: "apr eval A B emits complementary win/tie rates summing to 1"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-E-04" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    A=fixtures/crux-e-04/model-a.apr
+    B=fixtures/crux-e-04/model-b.apr
+    apr eval "$A" "$B" --tasks hellaswag,arc_easy --limit 32 --seed 42 --json \
+      > /tmp/e04-ab.json
+    python3 -c "
+    import json,sys
+    d=json.load(open('/tmp/e04-ab.json'))
+    s=d['win_rate_a']+d['win_rate_b']+d['tie_rate']
+    sys.exit(0 if abs(s-1.0) < 1e-9 else 1)"
+  if_fails: "win_rate_a + win_rate_b + tie_rate != 1.0 — comparison arithmetic broken"
+
+- id: FALSIFY-CRUX-E-04-002
+  rule: "per-task accuracy matches lm-evaluation-harness within 0.5%"
+  prediction: "apr eval accuracy agrees with lm_eval on identical task/limit/seed"
+  test: |
+    set -euo pipefail
+    GOLDEN=evidence/crux/huggingface/e-04-lm-eval-harness.json
+    A=fixtures/crux-e-04/model-a.apr
+    apr eval "$A" --tasks hellaswag --limit 64 --seed 42 --json > /tmp/e04-single.json
+    APR_ACC=$(jq -r '.per_task.hellaswag.acc' /tmp/e04-single.json)
+    HF_ACC=$(jq -r '.per_task.hellaswag.acc' "$GOLDEN")
+    python3 -c "import sys; a=float('$APR_ACC'); b=float('$HF_ACC'); sys.exit(0 if abs(a-b) < 0.005 else 1)"
+  if_fails: "apr eval accuracy diverges from lm-eval-harness by >0.5%"
+
+- id: FALSIFY-CRUX-E-04-003
+  rule: "deterministic: same seed produces same win_rate"
+  prediction: "apr eval A B --seed 42 run twice yields identical per-task accuracies"
+  test: |
+    set -euo pipefail
+    A=fixtures/crux-e-04/model-a.apr
+    B=fixtures/crux-e-04/model-b.apr
+    apr eval "$A" "$B" --tasks arc_easy --limit 16 --seed 42 --json \
+      | jq -S 'del(.wall_time_sec, .timestamp)' > /tmp/e04-run1.json
+    apr eval "$A" "$B" --tasks arc_easy --limit 16 --seed 42 --json \
+      | jq -S 'del(.wall_time_sec, .timestamp)' > /tmp/e04-run2.json
+    diff -q /tmp/e04-run1.json /tmp/e04-run2.json
+  if_fails: "apr eval is non-deterministic at fixed seed"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "win_rate_a + win_rate_b + tie_rate == 1.0 within 1e-9"
+- type: invariant
+  property: "per-task accuracies match lm-evaluation-harness within ±0.5%"
+- type: invariant
+  property: "deterministic at fixed --seed (identical JSON modulo timestamps)"
+- type: parity
+  property: "apr eval A B --tasks T matches EleutherAI lm-evaluation-harness lm_eval --model_args pretrained=A / pretrained=B on same tasks and seed"
+
+# References:
+#   https://github.com/EleutherAI/lm-evaluation-harness
+#   https://huggingface.co/docs/leaderboards/open_llm_leaderboard/about
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

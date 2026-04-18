@@ -25,37 +25,118 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  stop_sequence_truncation:
     formula: |
-      DRAFT — user workflow "Stop-sequence strings"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      Ollama canonical (HTTP /api/generate):
+        {"model":"...","prompt":"...","options":{"stop":["\n\n","###"]}}
+        Reference: https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-completion
+      OpenAI-compatible (apr serve /v1/chat/completions):
+        {"model":"...","messages":[...],"stop":["</s>","###"]}
+        Reference: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop
+      CLI parity:
+        apr run <model> --prompt "..." --stop "<s1>" --stop "<s2>"
+      Behavior:
+        If any string s ∈ stop appears as a suffix of the decoded output,
+        generation HALTS and the returned text is TRUNCATED so that s is
+        NOT included in the final content. finish_reason == "stop".
+    domain: "(model, prompt, stop: list<string> (len 0..4))"
+    codomain: "(generated_text:string, finish_reason:string)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "For every s in stop, s is NOT a substring of choices[0].message.content"
+    - "If any stop string was matched, finish_reason == 'stop'"
+    - "If no stop string matched AND tokens == max_tokens, finish_reason == 'length'"
+    - "Empty stop list (or null) is a no-op — behavior == no stop param"
+    - "Stop matching is over decoded UTF-8 text, not token IDs"
+
+  stop_parity_openai_ollama:
+    formula: |
+      Request with stop=["A"] MUST yield same truncation behavior whether sent to
+      /api/generate (Ollama shape) or /v1/chat/completions (OpenAI shape).
+    domain: (stop_param_shape, request_body)
+    codomain: truncated_text:string
+    invariants:
+    - "apr serve accepts both Ollama and OpenAI stop parameter shapes"
+    - "Truncation result is identical modulo sampling seed"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-18-001
-  rule: placeholder
-  prediction: "apr surface for 'Stop-sequence strings' matches ollama canonical behavior"
+  rule: stop string truncates output and is excluded from content
+  prediction: "When stop=['STOP_HERE'] is supplied and appears during generation, the returned content excludes 'STOP_HERE' and finish_reason == 'stop'"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-18" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # Requires apr serve running on :8080
+    # Reference: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model":"qwen2.5-coder-1.5b",
+        "messages":[{"role":"user","content":"Count: one two three STOP_HERE four five"}],
+        "stop":["STOP_HERE"],
+        "temperature":0,
+        "max_tokens":64
+      }')
+    CONTENT=$(echo "$RESP" | jq -r '.choices[0].message.content')
+    FR=$(echo "$RESP" | jq -r '.choices[0].finish_reason')
+    echo "$CONTENT" | grep -q 'STOP_HERE' \
+      && { echo "FAIL: content contains stop string: $CONTENT" >&2; exit 1; }
+    [ "$FR" = "stop" ] \
+      || { echo "FAIL: finish_reason=$FR (expected 'stop')" >&2; exit 1; }
+  if_fails: "Stop sequence not honored — content includes stop string or finish_reason != 'stop'"
+
+- id: FALSIFY-CRUX-C-18-002
+  rule: multiple stop strings — any match halts
+  prediction: "With stop=['X','Y'], generation halts on whichever appears first"
+  test: |
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model":"qwen2.5-coder-1.5b",
+        "messages":[{"role":"user","content":"Emit tokens until ALPHA or BRAVO"}],
+        "stop":["ALPHA","BRAVO"],
+        "temperature":0,
+        "max_tokens":128
+      }')
+    CONTENT=$(echo "$RESP" | jq -r '.choices[0].message.content')
+    FR=$(echo "$RESP" | jq -r '.choices[0].finish_reason')
+    if echo "$CONTENT" | grep -qE 'ALPHA|BRAVO'; then
+      echo "FAIL: content contains a stop string: $CONTENT" >&2; exit 1
+    fi
+    [ "$FR" = "stop" ] || [ "$FR" = "length" ] \
+      || { echo "FAIL: finish_reason=$FR" >&2; exit 1; }
+  if_fails: "Multi-stop array not respected"
+
+- id: FALSIFY-CRUX-C-18-003
+  rule: Ollama /api/generate stop parity
+  prediction: "Ollama-shape request with options.stop truncates identically"
+  test: |
+    # Reference: https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-completion
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/api/generate \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model":"qwen2.5-coder-1.5b",
+        "prompt":"say hello STOP_HERE world",
+        "options":{"stop":["STOP_HERE"],"temperature":0},
+        "stream":false
+      }')
+    RESPONSE=$(echo "$RESP" | jq -r '.response')
+    echo "$RESPONSE" | grep -q 'STOP_HERE' \
+      && { echo "FAIL: Ollama-shape stop not honored: $RESPONSE" >&2; exit 1; }
+  if_fails: "apr serve does not honor Ollama options.stop parameter"
 
 proof_obligations:
+- type: parity
+  property: "apr serve /v1/chat/completions stop param matches OpenAI chat.completion stop semantics on the golden prompt"
+- type: parity
+  property: "apr serve /api/generate options.stop matches Ollama ollama serve behavior"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "No stop string appears as substring of returned content"
+- type: invariant
+  property: "finish_reason == 'stop' when any stop string matched"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

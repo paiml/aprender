@@ -25,37 +25,123 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  completion_only_loss_mask:
     formula: |
-      DRAFT — user workflow "Token-level loss masking"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Competitor (HuggingFace TRL DataCollatorForCompletionOnlyLM):
+        collator = DataCollatorForCompletionOnlyLM(
+            response_template="### Response:",
+            tokenizer=tokenizer)
+      sets labels[i] = -100 for every token i BEFORE the response_template
+      so only completion tokens contribute to loss:
+        L = - (1/|C|) * sum_{t in C} log P(x_t | x_{<t}; theta)
+      where C = { t : t is in completion region }.
+      apr parity:
+        apr finetune MODEL --mask-prompt --response-template "### Response:"
+      MUST set loss mask to 0 on prompt tokens and 1 on completion tokens.
+    domain: "dataset of (prompt, completion) pairs, response_template string"
+    codomain: "per-token loss mask in {0,1}^N, masked loss scalar L"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "labels[i] == -100 (ignored) for every token i before response_template"
+    - "labels[i] == input_ids[i] for every token i in the completion region"
+    - "loss_mask_fraction in (0, 1) — some tokens masked, some not"
+    - "Competitor parity: matches TRL DataCollatorForCompletionOnlyLM semantics"
+
+  mask_disjointness_completeness:
+    formula: |
+      For every sample with prompt tokens P = [0..k) and completion C = [k..N):
+        sum(mask[P]) == 0  AND  sum(mask[C]) == N - k
+      i.e. mask partitions the sequence at the response_template boundary.
+    domain: "tokenized sample of length N, boundary index k"
+    codomain: "loss mask in {0,1}^N"
+    invariants:
+    - "Prompt region fully masked (mask value 0)"
+    - "Completion region fully unmasked (mask value 1)"
+    - "Mask boundary aligns with response_template token span"
+
+  train_loss_excludes_prompt:
+    formula: |
+      Let L_full be loss computed with no mask, and L_masked with --mask-prompt.
+      For datasets where prompt tokens dominate:
+        L_masked != L_full
+      and specifically:
+        L_masked = (sum_{t in C} l_t) / |C|
+        L_full   = (sum_{t} l_t) / N
+    domain: "SFT dataset with prompt/completion split"
+    codomain: "scalar loss L in R_{>=0}"
+    invariants:
+    - "Masked training loss differs from unmasked loss on non-trivial data"
+    - "Masked loss gradients do not propagate through prompt tokens"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-22-001
-  rule: placeholder
-  prediction: "apr surface for 'Token-level loss masking' matches huggingface canonical behavior"
+  rule: "prompt tokens fully masked, completion fully unmasked"
+  prediction: "apr --mask-prompt sets labels[i]=-100 for all i before response_template"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-22" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    BASE=fixtures/crux-d-22/tiny-base.apr
+    DATA=fixtures/crux-d-22/sft.jsonl
+    apr finetune "$BASE" --method full --data "$DATA" \
+      --mask-prompt --response-template "### Response:" \
+      --epochs 1 --seed 42 --debug-mask --json > /tmp/d22-mask.json
+    # Every sample's mask must have zero mass in the prompt region
+    jq -e '
+      .debug_mask_samples
+      | all(
+          (.prompt_mask_sum == 0) and
+          (.completion_mask_sum == .completion_token_count) and
+          (.completion_token_count > 0)
+        )
+    ' /tmp/d22-mask.json
+  if_fails: "loss mask incorrect — prompt tokens leaking into loss or completion being masked"
+
+- id: FALSIFY-CRUX-D-22-002
+  rule: "masked training loss differs from unmasked on SFT data"
+  prediction: "L(--mask-prompt) != L(no mask) when prompts are non-trivial"
+  test: |
+    set -euo pipefail
+    BASE=fixtures/crux-d-22/tiny-base.apr
+    DATA=fixtures/crux-d-22/sft.jsonl
+    L_MASKED=$(apr finetune "$BASE" --method full --data "$DATA" \
+      --mask-prompt --response-template "### Response:" \
+      --epochs 1 --seed 42 --json | jq -r '.final_loss')
+    L_FULL=$(apr finetune "$BASE" --method full --data "$DATA" \
+      --epochs 1 --seed 42 --json | jq -r '.final_loss')
+    python3 -c "import sys; a=float('$L_MASKED'); b=float('$L_FULL'); sys.exit(0 if abs(a-b)/b > 0.001 else 1)"
+  if_fails: "masked and unmasked losses identical — --mask-prompt not actually applied"
+
+- id: FALSIFY-CRUX-D-22-003
+  rule: "TRL DataCollatorForCompletionOnlyLM parity on golden fixture"
+  prediction: "apr masked loss within ±5% of TRL collator on same seed/data"
+  test: |
+    set -euo pipefail
+    GOLDEN=evidence/crux/huggingface/d-22-trl-completion-only.json
+    APR_LOSS=$(apr finetune fixtures/crux-d-22/tiny-base.apr --method full \
+      --data fixtures/crux-d-22/sft.jsonl \
+      --mask-prompt --response-template "### Response:" \
+      --epochs 1 --seed 42 --json | jq -r '.final_loss')
+    HF_LOSS=$(jq -r '.final_loss' "$GOLDEN")
+    python3 -c "import sys; a=float('$APR_LOSS'); b=float('$HF_LOSS'); sys.exit(0 if abs(a-b)/b < 0.05 else 1)"
+  if_fails: "apr diverges from TRL DataCollatorForCompletionOnlyLM final_loss by >5%"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "mask is 0 on all prompt tokens and 1 on all completion tokens"
+- type: invariant
+  property: "masked training loss differs from unmasked loss on SFT data"
+- type: invariant
+  property: "loss_mask_fraction in (0, 1) when --mask-prompt is active"
+- type: parity
+  property: "apr finetune --mask-prompt --response-template TEMPLATE matches TRL's DataCollatorForCompletionOnlyLM(response_template=TEMPLATE) on golden fixture"
+
+# References:
+#   https://huggingface.co/docs/trl/en/sft_trainer#train-on-completions-only
+#   https://github.com/huggingface/trl/blob/main/trl/trainer/utils.py  (DataCollatorForCompletionOnlyLM)
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

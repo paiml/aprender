@@ -25,37 +25,119 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  multi_file_atomic_commit:
     formula: |
-      DRAFT — user workflow "Multi-file atomic commit"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      HuggingFace canonical (CLI):
+        hf upload <repo> <file1> <file2> ... \
+                  --commit-message "release v1"
+        → single /api/models/<repo>/commit/main call with operations[]
+          containing one entry per file → single commit hash C
+      apr parity:
+        apr publish hf://<repo> <file1> <file2> ... \
+                    --commit-message "release v1"
+        → single HF commit with all N files
+      observable:
+        GET /api/models/<repo>/commits/main ↓
+          commits[0].id == C (one new commit, not N)
+        GET /api/models/<repo>/tree/main   ↓
+          contains all N files AND each file's last-commit == C
+    domain: "set of local files + target repo"
+    codomain: "HF repo state (single commit touching all files)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "All N files land in exactly ONE commit (not N commits)"
+    - "If any file fails to upload, NO files are committed (atomic rollback)"
+    - "--commit-message value appears verbatim in the HF commit message"
+    - "Post-commit /tree/main lists every file passed on the CLI"
+
+  atomic_rollback_on_failure:
+    formula: |
+      Let F = {f1..fN}. If ∃ fi where upload(fi) fails (network error,
+      token scope, size limit), THEN:
+        GET /api/models/<repo>/commits/main BEFORE vs AFTER apr publish
+          returns the SAME head commit id (no partial state)
+        apr publish exits non-zero
+    domain: "N-file publish where one file is injected-broken"
+    codomain: "HF commit log unchanged + apr exit code"
+    invariants:
+    - "apr publish is all-or-nothing — no half-landed commits"
+    - "Failure surfaces non-zero exit with the failing file path named"
 
 falsification_tests:
 - id: FALSIFY-CRUX-G-09-001
-  rule: placeholder
-  prediction: "apr surface for 'Multi-file atomic commit' matches huggingface canonical behavior"
+  rule: "apr publish of N files produces exactly one new commit on HF"
+  prediction: "after `apr publish hf://R f1 f2 f3`, exactly one commit was added to main, and all 3 files point at it"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-G-09" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    : "${HF_TOKEN:?HF_TOKEN required (per MEMORY, it IS available)}"
+    REPO="paiml/crux-g09-test-$$"
+    BEFORE=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+             "https://huggingface.co/api/models/$REPO/commits/main" 2>/dev/null | \
+             jq -r '.[0].id // ""')
+    apr publish "hf://$REPO" --create-repo \
+        tests/fixtures/tiny-q4k.apr \
+        tests/fixtures/tiny-tokenizer.json \
+        tests/fixtures/tiny-config.json \
+        --commit-message "atomic test commit"
+    AFTER=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+             "https://huggingface.co/api/models/$REPO/commits/main" | \
+             jq -r '.[0].id')
+    [ "$BEFORE" != "$AFTER" ]
+    # Depth: exactly one commit added since BEFORE (not three)
+    if [ -n "$BEFORE" ]; then
+      DEPTH=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+               "https://huggingface.co/api/models/$REPO/commits/main" | \
+               jq --arg b "$BEFORE" '[.[] | select(.id != $b)] | length')
+      [ "$DEPTH" = "1" ] || { echo "expected 1 new commit, got $DEPTH"; exit 1; }
+    fi
+    # All 3 files visible
+    TREE=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+           "https://huggingface.co/api/models/$REPO/tree/main")
+    for F in tiny-q4k.apr tiny-tokenizer.json tiny-config.json; do
+      echo "$TREE" | jq -e --arg f "$F" 'any(.[]; .path == $f)'
+    done
+    # Commit message preserved
+    curl -sH "Authorization: Bearer $HF_TOKEN" \
+         "https://huggingface.co/api/models/$REPO/commits/main" | \
+      jq -e '.[0].title == "atomic test commit" or (.[0].message // "" | contains("atomic test commit"))'
+  if_fails: "apr publish produced multiple commits for a single CLI invocation, or did not preserve --commit-message"
+
+- id: FALSIFY-CRUX-G-09-002
+  rule: "on any-file failure, no files land (atomic rollback)"
+  prediction: "if one file is missing/broken, HF head commit is unchanged and apr exits non-zero"
+  test: |
+    set -euo pipefail
+    : "${HF_TOKEN:?HF_TOKEN required}"
+    REPO="paiml/crux-g09-rollback-$$"
+    apr publish "hf://$REPO" --create-repo tests/fixtures/tiny-config.json \
+        --commit-message "seed" >/dev/null
+    BEFORE=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+             "https://huggingface.co/api/models/$REPO/commits/main" | jq -r '.[0].id')
+    set +e
+    apr publish "hf://$REPO" tests/fixtures/tiny-q4k.apr \
+        /nonexistent/broken-file.json --commit-message "should not land"
+    RC=$?
+    set -e
+    [ $RC -ne 0 ] || { echo "apr publish unexpectedly succeeded"; exit 1; }
+    AFTER=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+            "https://huggingface.co/api/models/$REPO/commits/main" | jq -r '.[0].id')
+    [ "$BEFORE" = "$AFTER" ] || { echo "rollback failed: head advanced despite error"; exit 1; }
+  if_fails: "apr publish left half-committed state after a file-level failure (not atomic)"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "a single `apr publish` CLI invocation produces exactly one HF commit covering all files"
+- type: invariant
+  property: "on any file-level failure, no files are committed (atomic all-or-nothing)"
+- type: parity
+  property: "apr publish N files --commit-message M matches hf upload repo N files --commit-message M on HF /tree and /commits state"
+  competitor: huggingface
+  reference: "https://huggingface.co/docs/huggingface_hub/main/en/guides/cli (hf upload --commit-message, create_commit atomic operations[])"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

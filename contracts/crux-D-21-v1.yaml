@@ -25,37 +25,113 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  raw_corpus_causal_lm_loss:
     formula: |
-      DRAFT — user workflow "Continue-pretraining raw corpus"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Competitor (HuggingFace transformers/examples/pytorch/language-modeling/run_clm.py):
+        python run_clm.py \
+          --model_name_or_path gpt2 \
+          --train_file corpus.txt \
+          --do_train --output_dir out/
+      applies standard causal-LM loss:
+        L = - (1/N) * sum_{t=1..N-1} log P(x_t | x_{<t}; theta)
+      over a packed, tokenized raw-text corpus (no instruction formatting).
+      apr parity:
+        apr finetune MODEL --task clm --data corpus.txt --raw-text
+      MUST compute causal-LM loss on every non-pad token of the corpus.
+    domain: "raw text corpus file (UTF-8), model token embeddings"
+    codomain: "trained model weights, loss scalar L in R_{>=0}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "All tokens contribute to loss (no instruction/response masking)"
+    - "Corpus is packed to block_size (default 1024) or model max_seq_len"
+    - "Loss computed per-token, averaged over N-1 next-token predictions"
+    - "Competitor parity: matches run_clm.py default behavior on .txt input"
+
+  corpus_packing_fidelity:
+    formula: |
+      Given corpus of T tokens and block_size B:
+        num_blocks = floor(T / B)
+        packed_tokens = num_blocks * B
+      Each training sample is exactly B tokens (no padding waste).
+    domain: "tokenized corpus of length T, block_size B in N"
+    codomain: "packed dataset of num_blocks samples, each length B"
+    invariants:
+    - "num_blocks == floor(T / B) (no off-by-one)"
+    - "samples are contiguous token chunks (no sentence splits or padding)"
+    - "throughput tokens_per_sec reflects full B tokens per sample"
+
+  base_model_preserved_on_zero_steps:
+    formula: |
+      apr finetune --task clm --max-steps 0 --output OUT
+      ==> diff(base_model, OUT) produces zero tensor differences.
+    domain: "base model checkpoint"
+    codomain: "output checkpoint"
+    invariants:
+    - "Zero-step run produces bitwise-identical output to base model"
+    - "Sanity: continue-pretraining is additive, preserves base when no steps run"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-21-001
-  rule: placeholder
-  prediction: "apr surface for 'Continue-pretraining raw corpus' matches huggingface canonical behavior"
+  rule: "causal-LM loss computed on raw corpus with no masking"
+  prediction: "apr finetune --task clm --raw-text averages NLL over all non-pad tokens"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-21" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    BASE=fixtures/crux-d-21/tiny-base.apr
+    CORPUS=fixtures/crux-d-21/corpus.txt
+    apr finetune "$BASE" --task clm --data "$CORPUS" --raw-text \
+      --block-size 128 --epochs 1 --seed 42 --json > /tmp/d21-clm.json
+    # Assert: no mask applied, loss_mask_fraction == 1.0 (every token contributes)
+    jq -e '.loss_mask_fraction == 1.0 and .final_loss > 0.0' /tmp/d21-clm.json
+  if_fails: "loss_mask_fraction != 1.0 — instruction masking leaked into continue-pretrain path"
+
+- id: FALSIFY-CRUX-D-21-002
+  rule: "corpus packed into block_size chunks without padding"
+  prediction: "num_train_samples == floor(corpus_tokens / block_size)"
+  test: |
+    set -euo pipefail
+    CORPUS=fixtures/crux-d-21/corpus.txt
+    BLOCK=128
+    apr finetune fixtures/crux-d-21/tiny-base.apr --task clm \
+      --data "$CORPUS" --raw-text --block-size $BLOCK --epochs 1 --json \
+      > /tmp/d21-pack.json
+    TOKENS=$(jq -r '.corpus_token_count' /tmp/d21-pack.json)
+    SAMPLES=$(jq -r '.num_train_samples' /tmp/d21-pack.json)
+    EXPECTED=$(( TOKENS / BLOCK ))
+    [ "$SAMPLES" -eq "$EXPECTED" ]
+  if_fails: "corpus packing produced unexpected sample count (padding or off-by-one)"
+
+- id: FALSIFY-CRUX-D-21-003
+  rule: "HF run_clm.py parity: final loss within ±5% on identical seed/corpus"
+  prediction: "apr finetune --task clm matches run_clm.py final loss"
+  test: |
+    set -euo pipefail
+    GOLDEN=evidence/crux/huggingface/d-21-run-clm-corpus.json
+    APR_LOSS=$(apr finetune fixtures/crux-d-21/tiny-base.apr --task clm \
+      --data fixtures/crux-d-21/corpus.txt --raw-text \
+      --block-size 128 --epochs 2 --seed 42 --json \
+      | jq -r '.final_loss')
+    HF_LOSS=$(jq -r '.final_loss' "$GOLDEN")
+    python3 -c "import sys; a=float('$APR_LOSS'); b=float('$HF_LOSS'); sys.exit(0 if abs(a-b)/b < 0.05 else 1)"
+  if_fails: "apr diverges from HF run_clm.py canonical final_loss by >5%"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "loss_mask_fraction == 1.0 for --task clm --raw-text (no instruction masking)"
+- type: invariant
+  property: "num_train_samples == floor(corpus_tokens / block_size)"
+- type: invariant
+  property: "zero-step run preserves base model bitwise"
+- type: parity
+  property: "apr finetune --task clm --raw-text matches HuggingFace's run_clm.py on same corpus/seed within ±5% final loss"
+
+# References:
+#   https://github.com/huggingface/transformers/blob/main/examples/pytorch/language-modeling/run_clm.py
+#   https://huggingface.co/docs/transformers/en/tasks/language_modeling
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

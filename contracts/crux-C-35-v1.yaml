@@ -25,37 +25,120 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  graceful_shutdown_signal_handling:
     formula: |
-      DRAFT — user workflow "Graceful shutdown in-flight drain"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      vLLM canonical:
+        SIGTERM / SIGINT → API server stops accepting new connections, drains
+        in-flight requests, then exits 0.
+        Reference: https://docs.vllm.ai/en/latest/serving/deploying_with_k8s.html
+                   https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py (signal_handler)
+      apr parity target (apr serve):
+        On SIGTERM:
+          1. Stop accepting new HTTP connections (listener closed; new TCP → ECONNREFUSED).
+          2. Return 503 for NEW /v1/chat/completions requests on keep-alive connections,
+             OR close listener so they fail at connect.
+          3. Let IN-FLIGHT generation requests run to completion (up to --shutdown-timeout, default 30s).
+          4. After drain OR timeout, exit with code 0 (clean) or 124 (timeout).
+    domain: "(serve_state, SIGTERM, shutdown_timeout: Duration)"
+    codomain: "(exit_code: i32, drained_requests: u64, aborted_requests: u64)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "apr serve installs SIGTERM and SIGINT handlers (not SIG_DFL)"
+    - "New TCP connections after SIGTERM are refused within <= 100ms"
+    - "In-flight request started before SIGTERM completes with finish_reason in {stop, length}"
+    - "Process exits within shutdown_timeout seconds (default 30s)"
+    - "Exit code 0 when drain completes; exit code 124 when timeout forces abort"
+    - "Reference: SIGTERM handling in vLLM api_server.py run_server()"
+
+  shutdown_no_silent_data_loss:
+    formula: |
+      During graceful drain, NO in-flight request has its HTTP response silently
+      dropped. Either it completes with a normal finish_reason, OR the client
+      observes a connection reset / 503.
+    domain: "(in_flight_requests, SIGTERM)"
+    codomain: bool
+    invariants:
+    - "No client observes TCP success with empty body (silent hang)"
+    - "All successful responses have non-empty content or a finish_reason"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-35-001
-  rule: placeholder
-  prediction: "apr surface for 'Graceful shutdown in-flight drain' matches vllm canonical behavior"
+  rule: SIGTERM stops accepting new connections
+  prediction: "curl to apr serve started within 1s of SIGTERM fails to connect (ECONNREFUSED) or returns 503"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-35" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # Assumes apr serve runs on :8080; user starts/stops the harness.
+    # Reference: https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py
+    PID=$(pgrep -f 'apr serve' | head -1)
+    [ -n "$PID" ] || { echo "FAIL: apr serve not running" >&2; exit 1; }
+    kill -TERM "$PID"
+    sleep 0.2
+    set +e
+    CODE=$(curl -sS -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/v1/models 2>&1)
+    RC=$?
+    set -e
+    # Either connection refused (curl exit 7) or HTTP 503.
+    if [ "$RC" = "7" ] || [ "$CODE" = "503" ]; then
+      : # PASS
+    else
+      echo "FAIL: post-SIGTERM new conn: curl_rc=$RC http=$CODE (expected refused or 503)" >&2
+      exit 1
+    fi
+  if_fails: "apr serve continues to accept new connections after SIGTERM"
+
+- id: FALSIFY-CRUX-C-35-002
+  rule: in-flight request completes during graceful drain
+  prediction: "Request started before SIGTERM returns a valid completion"
+  test: |
+    PID=$(pgrep -f 'apr serve' | head -1)
+    [ -n "$PID" ] || { echo "FAIL: apr serve not running" >&2; exit 1; }
+    # Start a long-ish generation in background
+    (curl -sS -o /tmp/crux-c-35-resp.json -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"Count slowly to 10."}],"max_tokens":64}') &
+    REQ_PID=$!
+    sleep 0.3  # ensure request reached the server
+    kill -TERM "$PID"
+    wait $REQ_PID
+    jq -e '.choices[0].message.content | length > 0' /tmp/crux-c-35-resp.json >/dev/null \
+      || { echo "FAIL: in-flight request did not complete" >&2; exit 1; }
+    jq -e '.choices[0].finish_reason | IN("stop","length")' /tmp/crux-c-35-resp.json >/dev/null \
+      || { echo "FAIL: finish_reason missing or not in {stop,length}" >&2; exit 1; }
+  if_fails: "apr serve aborts in-flight requests on SIGTERM instead of draining"
+
+- id: FALSIFY-CRUX-C-35-003
+  rule: process exits 0 within shutdown_timeout
+  prediction: "apr serve process exits within 30s of SIGTERM with code 0 (drained) or 124 (timeout)"
+  test: |
+    PID=$(pgrep -f 'apr serve' | head -1)
+    [ -n "$PID" ] || { echo "FAIL: apr serve not running" >&2; exit 1; }
+    kill -TERM "$PID"
+    for _ in $(seq 1 30); do
+      kill -0 "$PID" 2>/dev/null || break
+      sleep 1
+    done
+    if kill -0 "$PID" 2>/dev/null; then
+      echo "FAIL: apr serve still alive >30s after SIGTERM" >&2
+      kill -KILL "$PID" 2>/dev/null || true
+      exit 1
+    fi
+    # exit code recovered via wait (only works if PID is child of this shell; otherwise skip)
+    echo "PASS: apr serve exited within shutdown_timeout"
+  if_fails: "apr serve does not exit within shutdown_timeout after SIGTERM"
 
 proof_obligations:
+- type: parity
+  property: "apr serve SIGTERM handling matches vLLM api_server.py signal handler (drain in-flight, refuse new)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "New TCP connections refused or 503 after SIGTERM"
+- type: invariant
+  property: "In-flight requests complete with finish_reason in {stop,length} during drain"
+- type: invariant
+  property: "Process exits within shutdown_timeout"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

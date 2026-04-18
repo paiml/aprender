@@ -25,37 +25,118 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  streaming_tool_call_delta_schema:
     formula: |
-      DRAFT — user workflow "Streaming tool-call deltas"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      vLLM OpenAI-compatible server streams tool calls as SSE chunks:
+        data: { choices: [{ delta: { tool_calls: [{
+                  index: int,
+                  id?: string,           # present only in first delta
+                  type?: "function",     # present only in first delta
+                  function: {
+                    name?: string,       # present only in first delta
+                    arguments: string    # incremental JSON fragment
+                  }}]}}]}
+      apr serve --stream (OpenAI-compatible) MUST emit identically-shaped deltas
+      that reassemble to a valid JSON object for each tool_calls[index].
+    domain: "POST /v1/chat/completions with tools=[...] and stream=true"
+    codomain: "SSE stream of ChatCompletionChunk deltas containing tool_calls fragments"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "First delta per tool_call carries {index, id, type, function.name}; subsequent carry only function.arguments fragments"
+    - "Concatenation of function.arguments across all deltas for a given index parses as JSON"
+    - "Final chunk has choices[0].finish_reason == 'tool_calls' (not 'stop')"
+    - "Stream terminates with 'data: [DONE]' sentinel (OpenAI + vLLM convention)"
+    - "Reference: https://docs.vllm.ai/en/latest/features/tool_calling.html"
+
+  reassembled_tool_call_equals_nonstream:
+    formula: |
+      Let S = concat(delta.tool_calls[k].function.arguments) across SSE chunks for tool-call index k.
+      Let N = non-streaming /v1/chat/completions response for same prompt+tools+seed.
+      Then: json.loads(S) == N.choices[0].message.tool_calls[k].function.arguments (parsed)
+    domain: "(streaming response, matching non-streaming response with same seed)"
+    codomain: "parsed tool_call arguments JSON object"
+    invariants:
+    - "Streaming and non-streaming produce equivalent tool_call argument object"
+    - "Deterministic with temperature=0 / seed fixed"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-08-001
-  rule: placeholder
-  prediction: "apr surface for 'Streaming tool-call deltas' matches vllm canonical behavior"
+  rule: "SSE deltas emit OpenAI-shaped tool_calls chunks"
+  prediction: "apr serve /v1/chat/completions with tools+stream=true emits at least one delta.tool_calls fragment"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-08" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr serve --port 7810 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    FRAGS=$(curl -sS -N http://127.0.0.1:7810/v1/chat/completions \
+              -H 'Content-Type: application/json' \
+              -d '{"model":"test","stream":true,
+                   "messages":[{"role":"user","content":"Sum 2 and 3"}],
+                   "tools":[{"type":"function","function":{"name":"add",
+                     "parameters":{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}}}}}]}' \
+              | grep -c '"tool_calls"')
+    test "$FRAGS" -ge 1
+  if_fails: "stream emits no delta.tool_calls fragments (tool-calling streaming not supported)"
+
+- id: FALSIFY-CRUX-I-08-002
+  rule: "reassembled tool_call.function.arguments parses as JSON"
+  prediction: "concatenated arguments fragments are valid JSON"
+  test: |
+    set -euo pipefail
+    apr serve --port 7811 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    ARGS=$(curl -sS -N http://127.0.0.1:7811/v1/chat/completions \
+              -H 'Content-Type: application/json' \
+              -d '{"model":"test","stream":true,
+                   "messages":[{"role":"user","content":"Sum 2 and 3"}],
+                   "tools":[{"type":"function","function":{"name":"add",
+                     "parameters":{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}}}}}]}' \
+            | sed -n 's/^data: //p' \
+            | jq -r 'select(.choices[0].delta.tool_calls) | .choices[0].delta.tool_calls[0].function.arguments // empty' \
+            | tr -d '\n')
+    echo "$ARGS" | jq -e 'type == "object"'
+  if_fails: "reassembled tool_call arguments do not parse as JSON object"
+
+- id: FALSIFY-CRUX-I-08-003
+  rule: "finish_reason == tool_calls on final chunk"
+  prediction: "terminal chunk before [DONE] has choices[0].finish_reason == 'tool_calls'"
+  test: |
+    set -euo pipefail
+    apr serve --port 7812 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    REASON=$(curl -sS -N http://127.0.0.1:7812/v1/chat/completions \
+               -H 'Content-Type: application/json' \
+               -d '{"model":"test","stream":true,
+                    "messages":[{"role":"user","content":"Sum 2 and 3"}],
+                    "tools":[{"type":"function","function":{"name":"add",
+                      "parameters":{"type":"object"}}}]}' \
+             | sed -n 's/^data: //p' \
+             | grep -v '^\[DONE\]$' \
+             | jq -r 'select(.choices[0].finish_reason != null) | .choices[0].finish_reason' \
+             | tail -1)
+    test "$REASON" = "tool_calls"
+  if_fails: "stream finish_reason is not 'tool_calls' on terminal chunk"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Every delta.tool_calls element contains required index field"
+- type: invariant
+  property: "Reassembled function.arguments across deltas parses as valid JSON"
+- type: invariant
+  property: "Terminal chunk finish_reason == 'tool_calls' when stream ends via tool call"
+- type: parity
+  property: "apr serve /v1/chat/completions streaming tool_calls matches vLLM OpenAI-compatible delta schema on golden prompt 'sum 2 and 3' with add() tool"
+  reference: "https://docs.vllm.ai/en/latest/features/tool_calling.html"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

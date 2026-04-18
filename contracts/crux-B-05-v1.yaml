@@ -18,44 +18,191 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: partial
   description: >
-    Safetensors shard/merge weight-map. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Safetensors shard/merge via weight-map. Parity target is
+    HuggingFace's weight-map format defined in
+    `model.safetensors.index.json` (HF Transformers big-models docs)
+    and the conventions used by `transformers.PreTrainedModel.save_pretrained`
+    /`from_pretrained` when loading sharded safetensors. Aprender parity:
+    `apr shard model.safetensors --max-shard-size SZ -o OUT/` MUST split
+    into shards + emit a valid index.json; `apr merge OUT/ -o merged.safetensors`
+    MUST reconstruct a single safetensors file byte-equivalent to the
+    input. Round-trip (split→merge) MUST be the identity on tensor
+    values. See
+    https://huggingface.co/docs/transformers/big_models#sharded-checkpoints
+    and
+    https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_utils.py
+  references:
+  - "https://huggingface.co/docs/transformers/big_models#sharded-checkpoints"
+  - "https://github.com/huggingface/safetensors"
+  - "https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_utils.py#L3300"
 
 equations:
-  placeholder_contract:
+  weight_map_schema:
     formula: |
-      DRAFT — user workflow "Safetensors shard/merge weight-map"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      index.json := {
+        "metadata": {"total_size": u64},
+        "weight_map": Dict[tensor_name -> shard_filename]
+      }
+      Constraints:
+        set(weight_map.keys()) == set(all tensors in sharded set)
+        set(weight_map.values()) ⊆ {shard files on disk}
+        total_size == Σ (byte size of every tensor across all shards)
+    domain: "index.json file contents"
+    codomain: "{metadata, weight_map} dict"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Every tensor appears in exactly one shard (no duplication)"
+    - "weight_map values are filenames relative to index.json directory"
+    - "JSON is sorted by key (deterministic output)"
+
+  split_then_merge_identity:
+    formula: |
+      Let S = input model.safetensors (single file).
+      Let (shards, index) = split(S, max_shard_size).
+      Let M = merge(shards, index).
+      ∀ tensor t: bytes(M[t]) == bytes(S[t])
+      AND dtype(M[t]) == dtype(S[t])
+      AND shape(M[t]) == shape(S[t])
+    domain: "(single safetensors file, max_shard_size)"
+    codomain: "merged safetensors file"
+    invariants:
+    - "split ∘ merge is the identity on tensor values"
+    - "Tensor insertion order preserved"
+    - "Header JSON metadata preserved (or reconstructed deterministically)"
+
+  parity_with_transformers_loader:
+    formula: |
+      ∀ M in evidence/crux/huggingface/shard-merge-goldens.json:
+        apr shard M.safetensors --max-shard-size 5GB -o SHARDED/
+        apr merge SHARDED/ -o rebuilt.safetensors
+        transformers.AutoModel.from_pretrained(SHARDED/)
+          == transformers.AutoModel.from_pretrained(rebuilt.safetensors)
+      (equality on state_dict tensor values)
+    domain: "golden safetensors single-file models"
+    codomain: "transformers-loadable weights (equal tensor values)"
+    invariants:
+    - "Sharded layout is load-compatible with HF transformers"
+    - "Merged file is a drop-in replacement for the original"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-05-001
-  rule: placeholder
-  prediction: "apr surface for 'Safetensors shard/merge weight-map' matches huggingface canonical behavior"
+  rule: shard command emits valid weight-map
+  prediction: "apr shard produces index.json with weight_map covering all tensors"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-05" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    TMP=$(mktemp -d)
+    python3 - "$TMP" <<'PY'
+    import sys, os, torch
+    from safetensors.torch import save_file
+    d = sys.argv[1]
+    sd = {f"t.{i}": torch.randn(512, 512, dtype=torch.float32) for i in range(20)}
+    save_file(sd, os.path.join(d, "model.safetensors"))
+    PY
+    apr shard "$TMP/model.safetensors" --max-shard-size 2MB -o "$TMP/out/" >/dev/null
+    IDX="$TMP/out/model.safetensors.index.json"
+    [ -f "$IDX" ] || { echo "FAIL: no weight-map index" >&2; exit 1; }
+    python3 - "$TMP" <<'PY'
+    import sys, os, json
+    from safetensors import safe_open
+    d = sys.argv[1]
+    idx = json.load(open(os.path.join(d,"out","model.safetensors.index.json")))
+    wm = idx["weight_map"]
+    with safe_open(os.path.join(d,"model.safetensors"), framework="pt") as f:
+        orig = set(f.keys())
+    assert set(wm.keys()) == orig, f"key mismatch: {orig ^ set(wm)}"
+    for name, shard in wm.items():
+        assert os.path.isfile(os.path.join(d,"out",shard)), shard
+    PY
+  if_fails: "apr shard weight-map does not cover all tensors or references missing shards"
+
+- id: FALSIFY-CRUX-B-05-002
+  rule: split-then-merge is the identity on tensor values
+  prediction: "apr shard + apr merge restores byte-identical tensors"
+  test: |
+    TMP=$(mktemp -d)
+    python3 - "$TMP" <<'PY'
+    import sys, os, torch
+    from safetensors.torch import save_file
+    d = sys.argv[1]
+    sd = {f"layer.{i}": torch.randn(256, 256, dtype=torch.float32) for i in range(30)}
+    save_file(sd, os.path.join(d, "model.safetensors"))
+    PY
+    apr shard "$TMP/model.safetensors" --max-shard-size 1MB -o "$TMP/sharded/" >/dev/null
+    apr merge "$TMP/sharded/" -o "$TMP/rebuilt.safetensors" >/dev/null
+    python3 - "$TMP" <<'PY'
+    import sys, os, torch
+    from safetensors.torch import load_file
+    d = sys.argv[1]
+    orig = load_file(os.path.join(d,"model.safetensors"))
+    reb  = load_file(os.path.join(d,"rebuilt.safetensors"))
+    assert set(orig) == set(reb)
+    for k in orig:
+        assert torch.equal(orig[k], reb[k]), f"tensor {k} diverged after split/merge"
+    PY
+  if_fails: "split then merge did not round-trip to byte-identical tensors"
+
+- id: FALSIFY-CRUX-B-05-003
+  rule: index.json metadata.total_size equals sum of tensor bytes
+  prediction: "total_size in index.json == Σ dtype_size * numel for every tensor"
+  test: |
+    TMP=$(mktemp -d)
+    python3 - "$TMP" <<'PY'
+    import sys, os, torch
+    from safetensors.torch import save_file
+    d = sys.argv[1]
+    sd = {"a": torch.randn(100, 100, dtype=torch.float32),
+          "b": torch.randn(50, 50, dtype=torch.float16)}
+    save_file(sd, os.path.join(d, "model.safetensors"))
+    PY
+    apr shard "$TMP/model.safetensors" --max-shard-size 1MB -o "$TMP/out/" >/dev/null
+    python3 - "$TMP" <<'PY'
+    import sys, os, json
+    from safetensors import safe_open
+    d = sys.argv[1]
+    idx = json.load(open(os.path.join(d,"out","model.safetensors.index.json")))
+    declared = idx["metadata"]["total_size"]
+    actual = 0
+    with safe_open(os.path.join(d,"model.safetensors"), framework="pt") as f:
+        for k in f.keys():
+            t = f.get_tensor(k)
+            actual += t.element_size() * t.numel()
+    assert declared == actual, f"total_size {declared} != actual {actual}"
+    PY
+  if_fails: "index.json total_size disagrees with sum of tensor bytes"
+
+- id: FALSIFY-CRUX-B-05-004
+  rule: parity with HF transformers sharded loader on golden
+  prediction: "apr-sharded model loads in transformers with same state_dict as original"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/huggingface/shard-merge-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, hashlib, os, sys, pathlib
+    for c in json.load(open(sys.argv[1])):
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["apr","shard",c["input_safetensors"],
+                           "--max-shard-size",c["max_shard_size"],"-o",d], check=True)
+            idx_sha = hashlib.sha256(
+                open(pathlib.Path(d)/"model.safetensors.index.json","rb").read()).hexdigest()
+            assert idx_sha == c["expected_index_sha256"], (idx_sha, c["expected_index_sha256"])
+    PY
+  if_fails: "apr sharded index.json sha256 diverges from HF transformers reference"
 
 proof_obligations:
+- type: parity
+  property: "apr shard/merge produces index.json and layout compatible with HF transformers sharded loader on evidence/crux/huggingface/shard-merge-goldens.json"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Every tensor appears in exactly one shard (no duplication, no omission)"
+- type: invariant
+  property: "index.json total_size equals Σ(element_size × numel) across all tensors"
+- type: equation
+  property: "merge(split(S, SZ)) == S (identity on tensor values for any valid max_shard_size)"
+- type: invariant
+  property: "weight_map shard filenames are relative (no absolute paths, no ..)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

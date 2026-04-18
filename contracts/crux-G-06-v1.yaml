@@ -25,37 +25,104 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  repro_manifest_content:
     formula: |
-      DRAFT — user workflow "Reproducibility manifest env/seed"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      HuggingFace canonical:
+        from transformers import set_seed, TrainingArguments
+        set_seed(42)                           # seeds python, numpy, torch (+cuda)
+        args = TrainingArguments(seed=42, ...)
+        with open("trainer_state.json","w") as f:
+            f.write(args.to_json_string())     # seed, LR, batch size, ...
+      → a JSON payload sufficient to replay the run bit-exact
+      apr parity:
+        apr finetune --repro-manifest <M.json> ...
+        OR apr publish --repro-manifest <M.json>
+      M.json MUST contain AT LEAST:
+        seed: int (>=0)
+        git_commit: hex40           # HEAD SHA of aprender at run time
+        apr_version: semver
+        rustc_version: string
+        host: { os, arch, kernel }
+        cuda: { driver_version, runtime_version } | null
+        env_allowlist: { CUDA_VISIBLE_DEVICES, RUSTFLAGS, ... }
+        training_args: object       # full hyperparameters
+        dataset: { path, sha256 }
+    domain: "training or publish invocation"
+    codomain: "repro manifest JSON file"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "seed field present and a non-negative integer"
+    - "git_commit is a 40-char hex sha (or explicitly 'dirty' with diff_sha256)"
+    - "dataset.sha256 is 64 lowercase hex (content-addresses the training data)"
+    - "manifest covers ALL sources of nondeterminism apr controls (seed, CUDA, rayon threads)"
+
+  replay_byte_exact:
+    formula: |
+      Given M.json produced by run R1, and `apr finetune --repro-from M.json`
+      executed on the same git commit, same hardware class, same inputs,
+      the output model file sha256 matches R1's output model sha256.
+    domain: "repro manifest + identical hardware + same commit"
+    codomain: "sha256(output_model)"
+    invariants:
+    - "Two replays with the same manifest yield identical output sha256 (bit-exact)"
+    - "If any allowlist env var differs, apr refuses to replay or records the deviation"
 
 falsification_tests:
 - id: FALSIFY-CRUX-G-06-001
-  rule: placeholder
-  prediction: "apr surface for 'Reproducibility manifest env/seed' matches huggingface canonical behavior"
+  rule: "apr emits a repro manifest with the full set of required fields"
+  prediction: "apr finetune --repro-manifest M.json produces M.json with seed, git_commit, apr_version, rustc_version, host, training_args, dataset.sha256"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-G-06" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    M=$(mktemp --suffix=.json)
+    apr finetune --json --repro-manifest "$M" --seed 42 \
+                 --data tests/fixtures/tiny-train.jsonl --epochs 1 >/dev/null
+    jq -e '.seed == 42' "$M"
+    jq -e '.git_commit | test("^[0-9a-f]{40}$|^dirty-[0-9a-f]{64}$")' "$M"
+    jq -e '.apr_version | test("^[0-9]+\\.[0-9]+\\.[0-9]+")' "$M"
+    jq -e '.rustc_version | length > 0' "$M"
+    jq -e '.host.os and .host.arch' "$M"
+    jq -e '.training_args | type == "object"' "$M"
+    jq -e '.dataset.sha256 | test("^[0-9a-f]{64}$")' "$M"
+  if_fails: "repro manifest missing required fields for bit-exact replay"
+
+- id: FALSIFY-CRUX-G-06-002
+  rule: "parity with transformers.set_seed: identical seed → identical first-batch loss"
+  prediction: "two apr runs with the same seed produce the same first-epoch loss to 1e-6 (matches transformers.set_seed determinism contract)"
+  test: |
+    set -euo pipefail
+    A=$(apr finetune --json --seed 42 --data tests/fixtures/tiny-train.jsonl \
+                      --epochs 1 | jq -r '.epoch_metrics[0].train_loss')
+    B=$(apr finetune --json --seed 42 --data tests/fixtures/tiny-train.jsonl \
+                      --epochs 1 | jq -r '.epoch_metrics[0].train_loss')
+    python3 -c "import sys; a=float('$A'); b=float('$B'); sys.exit(0 if abs(a-b)<1e-6 else 1)"
+  if_fails: "same seed yields divergent first-epoch loss — apr seeding is not parity with transformers.set_seed"
+
+- id: FALSIFY-CRUX-G-06-003
+  rule: "different seeds → different first-batch loss (seed is actually plumbed)"
+  prediction: "changing seed changes the first-epoch loss (proves the seed field is not ignored)"
+  test: |
+    set -euo pipefail
+    A=$(apr finetune --json --seed 1 --data tests/fixtures/tiny-train.jsonl \
+                      --epochs 1 | jq -r '.epoch_metrics[0].train_loss')
+    B=$(apr finetune --json --seed 2 --data tests/fixtures/tiny-train.jsonl \
+                      --epochs 1 | jq -r '.epoch_metrics[0].train_loss')
+    python3 -c "import sys; a=float('$A'); b=float('$B'); sys.exit(0 if abs(a-b)>1e-9 else 1)"
+  if_fails: "different seeds yield identical loss — the --seed flag is not actually consumed"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "repro manifest carries all fields required for bit-exact replay (seed, git_commit, training_args, dataset.sha256, env_allowlist)"
+- type: invariant
+  property: "same seed yields identical first-epoch loss within 1e-6"
+- type: parity
+  property: "apr --seed / --repro-manifest matches transformers.set_seed + TrainingArguments.to_json_string on equivalent training runs"
+  competitor: huggingface
+  reference: "https://huggingface.co/docs/transformers/main/en/main_classes/trainer (TrainingArguments.to_json_string, transformers.set_seed)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

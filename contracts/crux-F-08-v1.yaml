@@ -25,37 +25,94 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  loss_curve_emission:
     formula: |
-      DRAFT — user workflow "Loss curve visualization"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      PyTorch canonical:
+        from torch.utils.tensorboard import SummaryWriter
+        writer = SummaryWriter(log_dir)
+        writer.add_scalar("loss/train", train_loss, global_step=step)
+        writer.add_scalar("loss/val",   val_loss,   global_step=step)
+      → TFEvents files under log_dir/ replayable by `tensorboard --logdir`
+      apr parity:
+        apr finetune --json --tensorboard-logdir <DIR> ... →
+          per-epoch epoch_metrics[i] = {epoch, train_loss, val_loss, ...}
+          AND DIR/ contains at least one `events.out.tfevents.*` file
+          with scalar tags {"loss/train","loss/val"} for every epoch
+    domain: "training run invocation with tensorboard output dir"
+    codomain: "TFEvents log files + JSON epoch_metrics array"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "epoch_metrics array length == total_epochs (parity with writer.add_scalar calls)"
+    - "train_loss is recorded for every epoch (no silent gaps)"
+    - "tensorboard --inspect --logdir <DIR> lists scalar tags loss/train and loss/val"
+    - "train_loss values in TFEvents match JSON epoch_metrics[i].train_loss within 1e-6"
+
+  loss_curve_monotonic_trend:
+    formula: |
+      For well-configured supervised training over N>=3 epochs:
+        epoch_metrics[N-1].train_loss <= epoch_metrics[0].train_loss * 1.05
+      (matches torch.utils.tensorboard expectation: descending loss/train curve)
+    domain: "epoch_metrics array, length >= 3"
+    codomain: bool
+    invariants:
+    - "Final epoch train_loss not more than 5% above initial epoch train_loss"
+    - "Divergent runs surface status != training_complete"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-08-001
-  rule: placeholder
-  prediction: "apr surface for 'Loss curve visualization' matches pytorch canonical behavior"
+  rule: "apr emits per-epoch loss curve parseable by a tensorboard-compatible reader"
+  prediction: "apr finetune --json --tensorboard-logdir DIR writes TFEvents scalars loss/train and loss/val for every epoch, and JSON values match TFEvents values within 1e-6"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-08" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    DIR=$(mktemp -d)
+    OUT=$(apr finetune --json --tensorboard-logdir "$DIR" \
+                       --data tests/fixtures/tiny-train.jsonl --epochs 3)
+    EPOCHS=$(echo "$OUT" | jq '.total_epochs')
+    [ "$EPOCHS" = "3" ] || { echo "wrong epoch count"; exit 1; }
+    echo "$OUT" | jq -e '.epoch_metrics | length == 3'
+    # Verify TFEvents file exists and contains loss/train scalars
+    ls "$DIR"/events.out.tfevents.* >/dev/null
+    uv run --with tensorboard python3 - "$DIR" "$OUT" <<'PY'
+    import sys, json
+    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+    logdir, out_json = sys.argv[1], sys.argv[2]
+    ea = EventAccumulator(logdir); ea.Reload()
+    tags = set(ea.Tags().get('scalars', []))
+    assert {'loss/train','loss/val'} <= tags, f"missing tags: {tags}"
+    tb_train = [e.value for e in ea.Scalars('loss/train')]
+    apr = json.loads(out_json)
+    js_train = [m['train_loss'] for m in apr['epoch_metrics']]
+    assert len(tb_train) == len(js_train) == 3
+    for a,b in zip(tb_train, js_train):
+        assert abs(a-b) < 1e-6, f"{a} vs {b}"
+    PY
+  if_fails: "apr does not emit TFEvents-compatible loss curve, or JSON/TFEvents diverge"
+
+- id: FALSIFY-CRUX-F-08-002
+  rule: "epoch_metrics array length equals total_epochs (no silent gaps)"
+  prediction: "len(epoch_metrics) == total_epochs for every completed run"
+  test: |
+    set -euo pipefail
+    OUT=$(apr finetune --json --data tests/fixtures/tiny-train.jsonl --epochs 5)
+    E=$(echo "$OUT" | jq '.total_epochs')
+    M=$(echo "$OUT" | jq '.epoch_metrics | length')
+    [ "$E" = "$M" ]
+  if_fails: "loss curve has gaps — epoch_metrics length != total_epochs"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "apr finetune emits one loss value per epoch, with no silent gaps"
+- type: invariant
+  property: "JSON epoch_metrics train_loss matches TFEvents loss/train scalar within 1e-6"
+- type: parity
+  property: "apr finetune --tensorboard-logdir matches PyTorch's torch.utils.tensorboard.SummaryWriter.add_scalar('loss/train',...) on the same training data"
+  competitor: pytorch
+  reference: "https://pytorch.org/docs/stable/tensorboard.html (torch.utils.tensorboard.SummaryWriter.add_scalar)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

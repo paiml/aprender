@@ -25,37 +25,140 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  logprobs_top_n_schema:
     formula: |
-      DRAFT — user workflow "Logprobs output"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      vLLM canonical (SamplingParams):
+        SamplingParams(logprobs=N)            # top-N alternatives per generated token
+        SamplingParams(prompt_logprobs=N)     # top-N per prompt token
+        Reference: https://docs.vllm.ai/en/latest/dev/sampling_params.html
+      OpenAI canonical (chat completions):
+        {"logprobs": true, "top_logprobs": N}  # N ∈ [0,20]
+        Reference: https://platform.openai.com/docs/api-reference/chat/create#chat-create-logprobs
+      apr parity (OpenAI-shape):
+        POST /v1/chat/completions with "logprobs": true, "top_logprobs": N
+      Response shape:
+        choices[0].logprobs.content: array, length == number of generated tokens
+          each element:
+            token:       string
+            logprob:     f32 (<= 0.0, natural log of P(token))
+            bytes:       array<u8>
+            top_logprobs: array of N alternatives, each {token, logprob, bytes}
+    domain: "(request_with_logprobs, model)"
+    codomain: "logprobs_array: JSON"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "len(choices[0].logprobs.content) == number of generated tokens"
+    - "Every logprob value is <= 0.0 (log of a probability in (0,1])"
+    - "top_logprobs array length == min(top_logprobs_requested, vocab_size)"
+    - "Selected token appears in top_logprobs when top_logprobs >= 1 AND it was among top N"
+    - "Sum of exp(logprob) over full vocab ≈ 1.0 (if all vocab is requested)"
+    - "Reference: https://platform.openai.com/docs/api-reference/chat/create#chat-create-logprobs"
+
+  logprobs_consistency_with_sampling:
+    formula: |
+      Under temperature=0 (greedy), the selected token at each step is the
+      argmax of logprobs at that step:
+        choices[0].logprobs.content[i].token
+          == argmax over top_logprobs[i] of logprob
+    domain: "(request_with_temperature_0, logprobs)"
+    codomain: bool
+    invariants:
+    - "Greedy sampling selects the highest-logprob token in top_logprobs"
+    - "For temperature > 0, this invariant may not hold (stochastic)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-25-001
-  rule: placeholder
-  prediction: "apr surface for 'Logprobs output' matches vllm canonical behavior"
+  rule: logprobs array length matches generated tokens
+  prediction: "len(logprobs.content) == completion_tokens when logprobs=true"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-25" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # Reference: https://platform.openai.com/docs/api-reference/chat/create#chat-create-logprobs
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model":"qwen2.5-coder-1.5b",
+        "messages":[{"role":"user","content":"Say exactly one word: hi"}],
+        "logprobs":true,
+        "top_logprobs":5,
+        "temperature":0,
+        "max_tokens":8
+      }')
+    N=$(echo "$RESP" | jq '.usage.completion_tokens')
+    L=$(echo "$RESP" | jq '.choices[0].logprobs.content | length')
+    [ "$N" = "$L" ] \
+      || { echo "FAIL: completion_tokens=$N logprobs.content.length=$L" >&2; exit 1; }
+  if_fails: "logprobs.content length does not match completion_tokens"
+
+- id: FALSIFY-CRUX-C-25-002
+  rule: all logprobs are <= 0
+  prediction: "Every logprob value satisfies logprob <= 0.0"
+  test: |
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"hi"}],
+           "logprobs":true,"top_logprobs":3,"temperature":0,"max_tokens":8}')
+    BAD=$(echo "$RESP" | jq '[.choices[0].logprobs.content[].logprob] | map(select(. > 0)) | length')
+    [ "$BAD" = "0" ] \
+      || { echo "FAIL: $BAD logprobs are > 0 (impossible for probabilities)" >&2; exit 1; }
+    # Also check top_logprobs nested entries
+    BAD2=$(echo "$RESP" | jq '[.choices[0].logprobs.content[].top_logprobs[].logprob] | map(select(. > 0)) | length')
+    [ "$BAD2" = "0" ] \
+      || { echo "FAIL: $BAD2 top_logprobs entries > 0" >&2; exit 1; }
+  if_fails: "logprob values include positive numbers — probability > 1 is impossible"
+
+- id: FALSIFY-CRUX-C-25-003
+  rule: top_logprobs length honors top_logprobs request
+  prediction: "Each content entry has len(top_logprobs) == requested N"
+  test: |
+    N=5
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d "{\"model\":\"qwen2.5-coder-1.5b\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],
+           \"logprobs\":true,\"top_logprobs\":$N,\"temperature\":0,\"max_tokens\":4}")
+    MISMATCH=$(echo "$RESP" | jq "[.choices[0].logprobs.content[] | (.top_logprobs | length) | select(. != $N)] | length")
+    [ "$MISMATCH" = "0" ] \
+      || { echo "FAIL: $MISMATCH entries have len(top_logprobs) != $N" >&2; exit 1; }
+  if_fails: "top_logprobs array length does not match requested N"
+
+- id: FALSIFY-CRUX-C-25-004
+  rule: greedy selected token is argmax of top_logprobs
+  prediction: "At temperature=0, selected token is the max-logprob entry"
+  test: |
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"hi"}],
+           "logprobs":true,"top_logprobs":5,"temperature":0,"max_tokens":4}')
+    # For each generated position, selected token must equal max-logprob top entry
+    python3 <<PY || exit 1
+    import json,sys
+    r = json.loads('''$RESP''')
+    content = r["choices"][0]["logprobs"]["content"]
+    for i, entry in enumerate(content):
+        selected = entry["token"]
+        top = entry["top_logprobs"]
+        if not top: continue
+        argmax = max(top, key=lambda x: x["logprob"])["token"]
+        if selected != argmax:
+            print(f"FAIL: pos {i} selected={selected!r} argmax={argmax!r}", file=sys.stderr)
+            sys.exit(1)
+    PY
+  if_fails: "Greedy selection did not pick the max-logprob token in top_logprobs"
 
 proof_obligations:
+- type: parity
+  property: "apr serve /v1/chat/completions logprobs schema matches OpenAI chat-completion logprobs on golden prompt (canonical top_logprobs=5)"
+- type: parity
+  property: "apr logprobs semantics match vLLM SamplingParams(logprobs=N) on golden prompt"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "len(logprobs.content) == completion_tokens"
+- type: invariant
+  property: "All logprob values are <= 0.0"
+- type: invariant
+  property: "Greedy selection picks argmax of top_logprobs"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

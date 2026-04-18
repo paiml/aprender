@@ -25,37 +25,133 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  general_metadata_required_keys:
     formula: |
-      DRAFT — user workflow "GGUF general.* metadata round-trip"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      llama.cpp gguf-py writer emits the following general.* metadata keys:
+        general.architecture     (string, e.g. "llama", "qwen2")
+        general.name             (string, model display name)
+        general.quantization_version (uint32)
+        general.file_type        (uint32, ftype enum — note: advisory, see MEMORY)
+      Optional but common:
+        general.license, general.author, general.description,
+        general.url, general.source.url, general.source.huggingface.repository
+      Round-trip law:
+        let M1 = llama.cpp-written GGUF file
+        let M2 = apr convert M1 --format apr -o x.apr ; apr export x.apr --format gguf -o M1'
+        forall k in general.*: gguf_metadata(M1)[k] == gguf_metadata(M1')[k]
+    domain: "GGUF file with general.* metadata block"
+    codomain: "round-tripped GGUF file with byte-equal general.* KV pairs"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "general.architecture survives APR↔GGUF round-trip bit-for-bit"
+    - "general.name survives round-trip (UTF-8 preserved)"
+    - "general.quantization_version survives round-trip (uint32 preserved)"
+    - "No general.* key is silently dropped during conversion"
+    - "Reference: https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/constants.py"
+
+  apr_inspect_parity_with_gguf_py:
+    formula: |
+      `apr inspect <gguf>` metadata section MUST list the same general.* KV pairs
+      (modulo formatting) as `python -m gguf.scripts.gguf_dump <gguf>`.
+      Formally: set(keys(apr inspect)) ⊇ set(keys(gguf_dump) ∩ general.*).
+    domain: "GGUF file path"
+    codomain: "set of general.* metadata keys"
+    invariants:
+    - "apr inspect enumerates every general.* key present in the file"
+    - "Values exposed in apr inspect match gguf_dump literal values"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-10-001
-  rule: placeholder
-  prediction: "apr surface for 'GGUF general.* metadata round-trip' matches llama_cpp canonical behavior"
+  rule: "apr inspect lists all general.* keys vs gguf_dump reference"
+  prediction: "set(apr-inspect general.* keys) ⊇ set(gguf_dump general.* keys)"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-10" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    # Use an already-downloaded GGUF model (teacher or small Q4_K_M)
+    GGUF="${GGUF_FIXTURE:-$HOME/.aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
+    if [ ! -f "$GGUF" ]; then
+      echo "skip: no GGUF fixture at $GGUF" >&2; exit 0
+    fi
+    REF=$(uv run --with gguf python3 -c "
+    import sys, gguf
+    r = gguf.GGUFReader(sys.argv[1])
+    print('\n'.join(sorted(f.name for f in r.fields.values() if f.name.startswith('general.'))))
+    " "$GGUF")
+    GOT=$(apr inspect "$GGUF" --json 2>/dev/null | jq -r '.metadata | keys[] | select(startswith("general."))' | sort)
+    # every REF key must appear in GOT
+    while read -r K; do
+      [ -z "$K" ] && continue
+      echo "$GOT" | grep -qx "$K" || { echo "apr inspect missing $K"; exit 1; }
+    done <<< "$REF"
+  if_fails: "apr inspect is missing at least one general.* key present in the source GGUF"
+
+- id: FALSIFY-CRUX-K-10-002
+  rule: "GGUF→APR→GGUF round-trip preserves general.architecture and general.name"
+  prediction: "re-exported GGUF retains exact architecture and name strings"
+  test: |
+    set -euo pipefail
+    GGUF="${GGUF_FIXTURE:-$HOME/.aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
+    if [ ! -f "$GGUF" ]; then
+      echo "skip: no GGUF fixture at $GGUF" >&2; exit 0
+    fi
+    TMP=$(mktemp -d); trap "rm -rf $TMP" EXIT
+    apr convert "$GGUF" --format apr -o "$TMP/model.apr"
+    apr export  "$TMP/model.apr" --format gguf -o "$TMP/model.gguf"
+    uv run --with gguf python3 - "$GGUF" "$TMP/model.gguf" <<'EOF'
+    import sys, gguf
+    r1 = gguf.GGUFReader(sys.argv[1]); r2 = gguf.GGUFReader(sys.argv[2])
+    def get(r, k):
+        f = r.fields.get(k)
+        if f is None: return None
+        # read one string/uint32 field via the gguf-py accessors
+        return bytes(f.parts[-1]).decode("utf-8", "replace") if f.types[0] == gguf.GGUFValueType.STRING else int(f.parts[-1][0])
+    for k in ("general.architecture","general.name"):
+        a, b = get(r1, k), get(r2, k)
+        assert a == b, f"mismatch {k}: {a!r} != {b!r}"
+    print("ok")
+    EOF
+  if_fails: "GGUF→APR→GGUF round-trip corrupts general.architecture or general.name"
+
+- id: FALSIFY-CRUX-K-10-003
+  rule: "general.quantization_version preserved in round-trip"
+  prediction: "general.quantization_version matches source GGUF"
+  test: |
+    set -euo pipefail
+    GGUF="${GGUF_FIXTURE:-$HOME/.aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
+    if [ ! -f "$GGUF" ]; then
+      echo "skip: no GGUF fixture at $GGUF" >&2; exit 0
+    fi
+    TMP=$(mktemp -d); trap "rm -rf $TMP" EXIT
+    apr convert "$GGUF" --format apr -o "$TMP/model.apr"
+    apr export  "$TMP/model.apr" --format gguf -o "$TMP/model.gguf"
+    uv run --with gguf python3 - "$GGUF" "$TMP/model.gguf" <<'EOF'
+    import sys, gguf
+    r1 = gguf.GGUFReader(sys.argv[1]); r2 = gguf.GGUFReader(sys.argv[2])
+    k = "general.quantization_version"
+    f1, f2 = r1.fields.get(k), r2.fields.get(k)
+    if f1 is None:
+        print("skip (no quantization_version in source)"); sys.exit(0)
+    assert f2 is not None, "quantization_version missing after round-trip"
+    v1, v2 = int(f1.parts[-1][0]), int(f2.parts[-1][0])
+    assert v1 == v2, f"quantization_version mismatch: {v1} != {v2}"
+    print("ok")
+    EOF
+  if_fails: "general.quantization_version is dropped or altered during APR↔GGUF round-trip"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "All general.* keys in source GGUF are exposed by apr inspect"
+- type: invariant
+  property: "general.architecture, general.name, general.quantization_version survive APR↔GGUF round-trip byte-equal"
+- type: invariant
+  property: "No silent drop of optional general.* keys (author, license, url, source.*)"
+- type: parity
+  property: "apr GGUF metadata round-trip matches llama.cpp gguf-py reader/writer preservation semantics on golden Qwen2.5-Coder-1.5B Q4_K_M fixture"
+  reference: "https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/constants.py"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

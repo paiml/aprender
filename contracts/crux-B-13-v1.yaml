@@ -18,44 +18,197 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: supported
   description: >
-    INT4 static weight-only. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    INT4 static weight-only quantization (Q4_0 family). Parity target is
+    llama.cpp's `llama-quantize` tool:
+    `llama-quantize in.gguf out.gguf Q4_0` which applies block-wise
+    symmetric int4 quantization with 32-element super-blocks and a single
+    fp16 scale per block (`Q4_0`: 4 bits × 32 elements + 1 fp16 scale =
+    18 bytes per 32-element block, giving 4.5 bits/weight average).
+    Canonical references
+    https://github.com/ggerganov/llama.cpp/blob/master/examples/quantize/quantize.cpp
+    and https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-quants.c
+    (struct `block_q4_0`). Aprender parity (already `supported`):
+    `apr quantize model.gguf --type q4_0 -o out.gguf` MUST produce
+    byte-identical GGUF blocks as `llama-quantize ... Q4_0` on golden
+    inputs, with perplexity drift ≤ 0.5 on the llama.cpp wiki.test.raw
+    reference eval.
+  references:
+  - "https://github.com/ggerganov/llama.cpp/blob/master/examples/quantize/quantize.cpp"
+  - "https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-quants.c"
+  - "https://github.com/ggerganov/llama.cpp/blob/master/README.md#quantization"
+  - "https://github.com/ggerganov/llama.cpp/wiki/Tensor-Encoding-Schemes"
 
 equations:
-  placeholder_contract:
+  q4_0_block_layout:
     formula: |
-      DRAFT — user workflow "INT4 static weight-only"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      struct block_q4_0 {
+        ggml_fp16_t d;          // 2 bytes: fp16 scale
+        uint8_t qs[QK4_0 / 2];  // 16 bytes: 32 nibbles packed, low nibble = even idx
+      };                         // total = 18 bytes per 32-element block
+      For each block of 32 weights W[i..i+31]:
+        d = max(|W[i..i+31]|) / -8   (llama.cpp signed mapping, symmetric)
+        q[j] = clamp(round(W[i+j]/d) + 8, 0, 15)  for j ∈ [0..31]
+      Packing: qs[k] = q[2k] | (q[2k+1] << 4)
+    domain: "fp32 weight tensor divided into 32-element blocks"
+    codomain: "sequence of 18-byte block_q4_0 records"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Block size = 32 elements (QK4_0), emitted byte layout is 18 bytes/block"
+    - "Scale d stored as fp16 (IEEE 754 binary16)"
+    - "Low nibble holds even index, high nibble holds odd index"
+    - "Zero-point offset of 8 (quant range [0..15], dequantized via (q-8)*d)"
+
+  dequant_identity:
+    formula: |
+      dequant_q4_0(block)[j] = (qs_nibble(j) - 8) * d
+      |W[j] - dequant_q4_0(block)[j]| ≤ |d|   (max error bounded by 1 quantization step)
+    domain: "block_q4_0 record"
+    codomain: "32 fp32 dequantized weights"
+    invariants:
+    - "Reconstruction error per weight ≤ scale d (one step)"
+    - "Dequantization matches llama.cpp ggml_dequantize_row_q4_0"
+
+  llama_quantize_byte_parity:
+    formula: |
+      ∀ M in evidence/crux/llama_cpp/q4_0-goldens.json:
+        apr quantize M.gguf --type q4_0 -o apr.gguf
+        llama-quantize M.gguf ref.gguf Q4_0
+        ∀ tensor T in both outputs:
+          sha256(block_q4_0 byte stream of T in apr.gguf) ==
+          sha256(block_q4_0 byte stream of T in ref.gguf)
+    domain: "golden GGUF fp16/fp32 inputs"
+    codomain: "per-tensor byte sha256 equality"
+    invariants:
+    - "Byte-for-byte identical blocks to llama-quantize Q4_0"
+    - "Same tensor set quantized (llama.cpp heuristics: skip 1D biases/norms)"
+
+  perplexity_preservation:
+    formula: |
+      On evidence/crux/llama_cpp/wiki-text-test-goldens.json reference eval:
+        |PPL(apr_q4_0) - PPL(llama_cpp_q4_0_reference)| ≤ 0.05
+        AND PPL(apr_q4_0) - PPL(fp16) ≤ 0.5
+    domain: "(q4_0 model, eval tokens)"
+    codomain: "perplexity scalar"
+    invariants:
+    - "Perplexity within 0.05 of llama.cpp reference Q4_0 on same eval"
+    - "Absolute perplexity rise vs fp16 baseline ≤ 0.5"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-13-001
-  rule: placeholder
-  prediction: "apr surface for 'INT4 static weight-only' matches llama_cpp canonical behavior"
+  rule: Q4_0 block layout matches llama.cpp (18 bytes, fp16 scale, packed nibbles)
+  prediction: "apr quantize --type q4_0 output has 18-byte blocks with fp16 scale"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-13" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/llama_cpp/q4_0-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    TMP=$(mktemp -d)
+    INPUT=$(python3 -c "import json,sys; print(json.load(open('$GOLD'))[0]['input'])")
+    apr quantize "$INPUT" --type q4_0 -o "$TMP/q.gguf" >/dev/null
+    # Use apr tensors to pull raw block layout metadata
+    apr tensors "$TMP/q.gguf" --json > "$TMP/meta.json"
+    python3 - "$TMP" <<'PY'
+    import sys, os, json
+    m = json.load(open(os.path.join(sys.argv[1],"meta.json")))
+    tensors = m.get("tensors", m) if isinstance(m,dict) else m
+    items = tensors if isinstance(tensors,list) else list(tensors.values())
+    q4_0 = [t for t in items if str(t.get("ggml_type","")).lower() in ("q4_0","2")]
+    assert q4_0, "no Q4_0 tensors found in apr output"
+    # Every Q4_0 tensor must have numel divisible by 32
+    for t in q4_0:
+        numel = 1
+        for dim in t["shape"]: numel *= dim
+        assert numel % 32 == 0, ("bad numel for Q4_0 block", t["name"], numel)
+    PY
+  if_fails: "apr q4_0 output lacks 32-element block alignment or missing Q4_0 type"
+
+- id: FALSIFY-CRUX-B-13-002
+  rule: byte-for-byte parity with llama-quantize Q4_0 on golden
+  prediction: "sha256 per-tensor blocks match llama-quantize reference"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/llama_cpp/q4_0-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, hashlib, os, sys, pathlib
+    for c in json.load(open(sys.argv[1])):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "q.gguf")
+            subprocess.run(["apr","quantize",c["input"],"--type","q4_0","-o",out], check=True)
+            got = hashlib.sha256(open(out,"rb").read()).hexdigest()
+            assert got == c["expected_sha256"], (c["input"], got, c["expected_sha256"])
+    PY
+  if_fails: "apr q4_0 GGUF bytes diverge from llama-quantize Q4_0 reference"
+
+- id: FALSIFY-CRUX-B-13-003
+  rule: dequantization error bounded by scale
+  prediction: "max |W_fp32 - dequant(quant(W_fp32))| ≤ scale on every block"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/llama_cpp/q4_0-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    INPUT=$(python3 -c "import json; print(json.load(open('$GOLD'))[0]['input'])")
+    TMP=$(mktemp -d)
+    apr quantize "$INPUT" --type q4_0 -o "$TMP/q.gguf" >/dev/null
+    # apr export dequantizes to fp32 for comparison
+    apr export "$TMP/q.gguf" --format safetensors --dequantize -o "$TMP/dq.safetensors" >/dev/null
+    python3 - "$INPUT" "$TMP/dq.safetensors" <<'PY'
+    import sys, torch
+    from safetensors.torch import load_file
+    orig = load_file(sys.argv[1]) if sys.argv[1].endswith(".safetensors") else None
+    if orig is None:
+        # If input was gguf, try converting via apr
+        import subprocess, tempfile, os
+        with tempfile.TemporaryDirectory() as d:
+            fp32 = os.path.join(d, "fp32.safetensors")
+            subprocess.run(["apr","export",sys.argv[1],"--format","safetensors","-o",fp32], check=True)
+            orig = load_file(fp32)
+    dq = load_file(sys.argv[2])
+    for k in dq:
+        if k not in orig: continue
+        w = orig[k].float()
+        # block-wise max abs scale
+        if w.numel() % 32 != 0: continue
+        blocks = w.flatten().reshape(-1, 32)
+        scale = blocks.abs().amax(dim=1) / 8.0 + 1e-30
+        err = (dq[k].float().flatten().reshape(-1,32) - blocks).abs().amax(dim=1)
+        assert (err <= scale * 1.01 + 1e-6).all(), (k, (err/scale).max().item())
+    PY
+  if_fails: "per-weight quantization error exceeds block scale"
+
+- id: FALSIFY-CRUX-B-13-004
+  rule: perplexity within 0.05 of llama.cpp reference on wiki.test.raw
+  prediction: "apr perplexity - llama.cpp Q4_0 perplexity ≤ 0.05"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/llama_cpp/wiki-text-test-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, os, sys
+    for c in json.load(open(sys.argv[1])):
+        with tempfile.TemporaryDirectory() as d:
+            q = os.path.join(d, "q.gguf")
+            subprocess.run(["apr","quantize",c["input"],"--type","q4_0","-o",q], check=True)
+            res = subprocess.run(["apr","eval",q,"--dataset",c["eval_dataset"],
+                                  "--metric","perplexity","--json"],
+                                 capture_output=True, text=True, check=True)
+            apr_ppl = json.loads(res.stdout)["perplexity"]
+            drift = abs(apr_ppl - c["llama_cpp_q4_0_ppl"])
+            assert drift <= 0.05, (c["input"], apr_ppl, c["llama_cpp_q4_0_ppl"], drift)
+    PY
+  if_fails: "perplexity drift vs llama.cpp reference exceeds 0.05"
 
 proof_obligations:
+- type: parity
+  property: "apr quantize --type q4_0 matches llama-quantize Q4_0 byte-for-byte on evidence/crux/llama_cpp/q4_0-goldens.json"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Q4_0 block layout = 18 bytes (fp16 scale + 16 packed nibbles) per 32-element block"
+- type: invariant
+  property: "Per-weight dequantization error ≤ block scale (one quant step)"
+- type: invariant
+  property: "Perplexity within 0.05 of llama.cpp reference on wiki.test.raw golden eval"
+- type: equation
+  property: "dequant_q4_0(q, d)[j] == (nibble(j) - 8) * d, matching ggml_dequantize_row_q4_0"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

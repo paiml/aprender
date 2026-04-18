@@ -18,44 +18,190 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: partial
   description: >
-    PyTorch .bin → Safetensors sharded. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    PyTorch pytorch_model.bin → Safetensors sharded conversion. Parity
+    target is HuggingFace's `transformers-cli` /
+    `safetensors.torch.save_model` / the Hub's "Convert to Safetensors"
+    Space (https://huggingface.co/spaces/safetensors/convert) which load
+    a pickle-based `pytorch_model.bin`, deduplicate shared tensors, split
+    the weights into shards sized ≤ `max_shard_size` (default 5GB), and
+    emit `model.safetensors` (single) or
+    `model-00001-of-0000N.safetensors` plus `model.safetensors.index.json`
+    (weight-map). Aprender parity:
+    `apr convert pytorch_model.bin --to safetensors --max-shard-size 5GB
+    -o OUT/` MUST produce byte-identical float values (per tensor), the
+    same shard layout, and a weight-map whose sha256 matches the
+    HF-Spaces reference on golden inputs. See
+    https://huggingface.co/docs/safetensors/convert-weights and
+    https://huggingface.co/docs/transformers/v4.45.0/en/big_models#sharded-checkpoints
+  references:
+  - "https://huggingface.co/docs/safetensors/convert-weights"
+  - "https://huggingface.co/docs/transformers/big_models#sharded-checkpoints"
+  - "https://huggingface.co/spaces/safetensors/convert"
+  - "https://github.com/huggingface/safetensors/blob/main/bindings/python/py_src/safetensors/torch.py"
 
 equations:
-  placeholder_contract:
+  tensor_value_preservation:
     formula: |
-      DRAFT — user workflow "PyTorch .bin → Safetensors sharded"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      For every tensor T in pytorch_model.bin:
+        dtype(safetensors[T]) == dtype(pytorch[T])
+        shape(safetensors[T]) == shape(pytorch[T])
+        bytes(safetensors[T]) == bytes(pytorch[T])  (exact byte equality for fp16/bf16/fp32/int8)
+    domain: "(tensor_name, tensor_data) in pytorch state_dict"
+    codomain: "(dtype, shape, raw bytes) written to safetensors shard"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Zero precision loss: no dtype promotion or demotion"
+    - "Shape preserved exactly (no reshape/transpose)"
+    - "Raw tensor bytes identical (endianness preserved as little-endian canonical)"
+
+  shard_sizing:
+    formula: |
+      Let T_sorted = tensors sorted by state_dict insertion order.
+      Let S = max_shard_size (default 5 GB = 5_000_000_000 bytes).
+      Greedy bin-pack: start shard_k; add tensors until adding next
+      tensor would push shard_size > S, then start shard_{k+1}.
+      Any single tensor larger than S MUST fit alone in its own shard
+      (no splitting within a tensor).
+    domain: "(tensor list, max_shard_size S)"
+    codomain: "list of shard file sizes"
+    invariants:
+    - "No shard exceeds max_shard_size unless it contains a single oversize tensor"
+    - "Tensor insertion order preserved within and across shards"
+    - "Shard names follow 'model-NNNNN-of-MMMMM.safetensors' zero-padded"
+
+  weight_map_completeness:
+    formula: |
+      model.safetensors.index.json structure:
+        {
+          "metadata": {"total_size": sum_of_tensor_bytes},
+          "weight_map": {tensor_name: shard_filename, ...}
+        }
+      ∀ tensor T in pytorch model:
+        weight_map[T] ∈ {listed shard filenames}
+        AND T is present in that shard.
+    domain: "weight-map JSON"
+    codomain: "{name: shard} mapping"
+    invariants:
+    - "Every input tensor appears in exactly one shard"
+    - "No orphan entries (no map entry lacks its file)"
+    - "total_size equals sum of all tensor byte counts"
+
+  parity_with_hf_safetensors_spaces:
+    formula: |
+      ∀ model M in evidence/crux/huggingface/pt-to-st-goldens.json:
+        apr convert M.bin --to safetensors --max-shard-size 5GB -o OUT
+        sha256(OUT/model.safetensors.index.json) == golden.index_sha256
+        AND ∀ shard s: sha256(OUT/s) == golden.shard_sha256[s]
+    domain: "golden pytorch_model.bin inputs"
+    codomain: "shard + index sha256 tuple"
+    invariants:
+    - "Byte-for-byte parity with HF Safetensors Space conversion"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-03-001
-  rule: placeholder
-  prediction: "apr surface for 'PyTorch .bin → Safetensors sharded' matches huggingface canonical behavior"
+  rule: single-shard conversion preserves tensor values
+  prediction: "apr convert small .bin → .safetensors round-trips to identical tensors"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-03" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    TMP=$(mktemp -d)
+    python3 - "$TMP" <<'PY'
+    import sys, os, torch
+    d = sys.argv[1]
+    sd = {"w": torch.randn(64, 128, dtype=torch.float32),
+          "b": torch.randn(128, dtype=torch.float32)}
+    torch.save(sd, os.path.join(d, "pytorch_model.bin"))
+    PY
+    apr convert "$TMP/pytorch_model.bin" --to safetensors -o "$TMP/out/" >/dev/null
+    [ -f "$TMP/out/model.safetensors" ] || { echo "FAIL: no safetensors output" >&2; exit 1; }
+    python3 - "$TMP" <<'PY'
+    import sys, torch, os
+    from safetensors.torch import load_file
+    d = sys.argv[1]
+    orig = torch.load(os.path.join(d,"pytorch_model.bin"))
+    got = load_file(os.path.join(d,"out","model.safetensors"))
+    for k,v in orig.items():
+        assert torch.equal(v, got[k]), f"tensor {k} diverged"
+    PY
+  if_fails: "tensor values diverged after .bin → .safetensors conversion"
+
+- id: FALSIFY-CRUX-B-03-002
+  rule: sharding honors --max-shard-size
+  prediction: "--max-shard-size 1MB on 10MB model produces >=10 shards with a weight-map"
+  test: |
+    TMP=$(mktemp -d)
+    python3 - "$TMP" <<'PY'
+    import sys, os, torch
+    d = sys.argv[1]
+    # ~10 MB of fp32: 10 tensors of 256K floats each
+    sd = {f"layer.{i}.weight": torch.randn(512, 512, dtype=torch.float32) for i in range(10)}
+    torch.save(sd, os.path.join(d, "pytorch_model.bin"))
+    PY
+    apr convert "$TMP/pytorch_model.bin" --to safetensors --max-shard-size 1MB -o "$TMP/out/" >/dev/null
+    N=$(ls "$TMP/out"/model-*-of-*.safetensors 2>/dev/null | wc -l)
+    [ "$N" -ge 10 ] || { echo "FAIL: expected >=10 shards, got $N" >&2; exit 1; }
+    [ -f "$TMP/out/model.safetensors.index.json" ] || { echo "FAIL: missing weight-map index" >&2; exit 1; }
+  if_fails: "sharding did not respect --max-shard-size or failed to emit weight-map"
+
+- id: FALSIFY-CRUX-B-03-003
+  rule: weight-map references every tensor exactly once
+  prediction: "index.json weight_map covers all input tensors with no orphan entries"
+  test: |
+    TMP=$(mktemp -d)
+    python3 - "$TMP" <<'PY'
+    import sys, os, torch
+    d = sys.argv[1]
+    sd = {f"w{i}": torch.randn(1024, dtype=torch.float32) for i in range(50)}
+    torch.save(sd, os.path.join(d, "pytorch_model.bin"))
+    PY
+    apr convert "$TMP/pytorch_model.bin" --to safetensors --max-shard-size 16KB -o "$TMP/out/" >/dev/null
+    python3 - "$TMP" <<'PY'
+    import sys, os, json, torch
+    d = sys.argv[1]
+    orig = set(torch.load(os.path.join(d,"pytorch_model.bin")).keys())
+    idx = json.load(open(os.path.join(d,"out","model.safetensors.index.json")))
+    wm = idx["weight_map"]
+    assert set(wm.keys()) == orig, f"weight_map mismatch: missing={orig-set(wm)}, extra={set(wm)-orig}"
+    for name, shard in wm.items():
+        assert os.path.isfile(os.path.join(d,"out",shard)), f"orphan shard reference: {shard}"
+    total = idx["metadata"]["total_size"]
+    actual = sum(os.path.getsize(os.path.join(d,"out",f)) for f in set(wm.values()))
+    assert 0.95*actual <= total <= actual*1.05, (total, actual)
+    PY
+  if_fails: "weight-map inconsistent with shard files or tensor set"
+
+- id: FALSIFY-CRUX-B-03-004
+  rule: parity with HF Safetensors Space on golden
+  prediction: "apr convert output shards sha256 match HF Space reference"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/huggingface/pt-to-st-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, hashlib, os, sys, pathlib
+    for c in json.load(open(sys.argv[1])):
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["apr","convert",c["input_bin"],"--to","safetensors",
+                           "--max-shard-size",c["max_shard_size"],"-o",d], check=True)
+            for shard, expected in c["shard_sha256"].items():
+                got = hashlib.sha256(open(pathlib.Path(d)/shard,"rb").read()).hexdigest()
+                assert got == expected, (shard, got, expected)
+    PY
+  if_fails: "shard sha256 diverged from HF Safetensors Space reference"
 
 proof_obligations:
+- type: parity
+  property: "apr convert .bin → .safetensors matches HF Safetensors Space on evidence/crux/huggingface/pt-to-st-goldens.json"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Tensor dtype, shape, and raw bytes preserved exactly (no precision loss)"
+- type: invariant
+  property: "No shard exceeds --max-shard-size unless it contains a single oversize tensor"
+- type: invariant
+  property: "weight_map in index.json covers all input tensors exactly once with no orphans"
+- type: equation
+  property: "sum(shard_size_i) == metadata.total_size in index.json (within rounding for padding)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

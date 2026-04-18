@@ -25,37 +25,115 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  alpaca_format_detection:
     formula: |
-      DRAFT — user workflow "Instruction auto-format alpaca/sharegpt"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Given dataset D with records {instruction, input?, output}:
+        HuggingFace TRL: SFTTrainer(dataset_text_field=None, formatting_func=alpaca_prompt)
+          → applies template "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n{output}"
+        apr finetune --data D.jsonl (auto-detect):
+          → detects alpaca shape via keys {instruction, output}
+          → applies identical alpaca template prior to tokenization
+      Parity: byte-identical rendered prompts between TRL and apr.
+    domain: "JSONL dataset with alpaca-shaped records (instruction/input/output keys)"
+    codomain: "rendered training prompt strings (UTF-8)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Auto-detect alpaca schema when >=90% records have {instruction, output} keys"
+    - "Template matches tatsu-lab/stanford_alpaca reference prompt exactly"
+    - "Empty 'input' field collapses to single-section format (no blank ### Input block)"
+    - "Reference: https://github.com/huggingface/trl/blob/main/trl/trainer/sft_trainer.py"
+
+  sharegpt_format_detection:
+    formula: |
+      Given dataset D with records {conversations: [{from, value}]}:
+        HuggingFace TRL + apply_chat_template(tokenizer, messages=...)
+          → renders per role tokens (<|im_start|>role\ncontent<|im_end|>\n)
+        apr finetune --data D.jsonl (auto-detect):
+          → detects sharegpt via 'conversations' key with list[{from, value}] elements
+          → maps from in {human, gpt, system, tool} → role in {user, assistant, system, tool}
+          → invokes same chat template engine (minijinja) with identical rendering
+      Parity: byte-identical rendered text with HF tokenizer.apply_chat_template.
+    domain: "JSONL dataset with sharegpt-shaped records (conversations list)"
+    codomain: "rendered chat prompt strings with role tokens"
+    invariants:
+    - "Auto-detect sharegpt via 'conversations' key"
+    - "Role mapping: human→user, gpt→assistant preserved exactly"
+    - "apply_chat_template parity with tokenizer.chat_template (Jinja2)"
+    - "Reference: https://huggingface.co/docs/transformers/main/en/chat_templating"
 
 falsification_tests:
 - id: FALSIFY-CRUX-H-11-001
-  rule: placeholder
-  prediction: "apr surface for 'Instruction auto-format alpaca/sharegpt' matches huggingface canonical behavior"
+  rule: "alpaca auto-detection renders TRL-identical prompt"
+  prediction: "apr finetune --data alpaca.jsonl --dry-run --print-prompt[0] == TRL alpaca_prompt(records[0])"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-H-11" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    TMP=$(mktemp -d)
+    trap "rm -rf $TMP" EXIT
+    cat > "$TMP/alpaca.jsonl" <<'EOF'
+    {"instruction":"Sum two numbers.","input":"2 and 3","output":"5"}
+    EOF
+    # TRL canonical rendering (python reference)
+    cat > "$TMP/trl_ref.py" <<'EOF'
+    import json, sys
+    rec = json.loads(open(sys.argv[1]).readline())
+    tmpl = ("### Instruction:\n{instruction}\n\n"
+            "### Input:\n{input}\n\n"
+            "### Response:\n{output}")
+    sys.stdout.write(tmpl.format(**rec))
+    EOF
+    EXPECT=$(python3 "$TMP/trl_ref.py" "$TMP/alpaca.jsonl")
+    GOT=$(apr finetune --data "$TMP/alpaca.jsonl" --dry-run --print-prompt 0 2>/dev/null || true)
+    test "$GOT" = "$EXPECT"
+  if_fails: "apr auto-format does not render byte-identical alpaca template vs TRL reference"
+
+- id: FALSIFY-CRUX-H-11-002
+  rule: "sharegpt auto-detection renders chat-template-identical prompt"
+  prediction: "apr finetune --data sharegpt.jsonl --dry-run --print-prompt[0] == tokenizer.apply_chat_template(messages)"
+  test: |
+    set -euo pipefail
+    TMP=$(mktemp -d)
+    trap "rm -rf $TMP" EXIT
+    cat > "$TMP/sg.jsonl" <<'EOF'
+    {"conversations":[{"from":"human","value":"Hi"},{"from":"gpt","value":"Hello"}]}
+    EOF
+    # HF chat-template reference
+    cat > "$TMP/hf_ref.py" <<'EOF'
+    import json, sys
+    rec = json.loads(open(sys.argv[1]).readline())
+    role_map = {"human":"user","gpt":"assistant"}
+    for turn in rec["conversations"]:
+        sys.stdout.write(f"<|im_start|>{role_map[turn['from']]}\n{turn['value']}<|im_end|>\n")
+    EOF
+    EXPECT=$(python3 "$TMP/hf_ref.py" "$TMP/sg.jsonl")
+    GOT=$(apr finetune --data "$TMP/sg.jsonl" --dry-run --print-prompt 0 2>/dev/null || true)
+    test "$GOT" = "$EXPECT"
+  if_fails: "apr sharegpt auto-format diverges from HF apply_chat_template chatml rendering"
+
+- id: FALSIFY-CRUX-H-11-003
+  rule: "format detection is reported in --json output"
+  prediction: "apr finetune --json reports detected_format in {alpaca, sharegpt, raw}"
+  test: |
+    set -euo pipefail
+    TMP=$(mktemp -d)
+    trap "rm -rf $TMP" EXIT
+    printf '{"instruction":"x","output":"y"}\n' > "$TMP/a.jsonl"
+    FMT=$(apr finetune --data "$TMP/a.jsonl" --dry-run --json 2>/dev/null | jq -r '.detected_format')
+    test "$FMT" = "alpaca"
+  if_fails: "apr finetune --json does not expose detected_format field"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Auto-detect alpaca shape with >=90% key coverage threshold"
+- type: invariant
+  property: "Role mapping human→user / gpt→assistant for sharegpt"
+- type: parity
+  property: "apr finetune auto-format matches HuggingFace TRL apply_chat_template / alpaca_prompt on golden alpaca.jsonl and sharegpt.jsonl inputs"
+  reference: "https://huggingface.co/docs/transformers/main/en/chat_templating"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

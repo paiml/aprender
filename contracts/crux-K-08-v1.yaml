@@ -25,37 +25,124 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  otlp_export_protocol:
     formula: |
-      DRAFT — user workflow "OpenTelemetry traces"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      When OTEL_EXPORTER_OTLP_ENDPOINT is set, apr serve/apr run emit spans
+      per OpenTelemetry Protocol (OTLP/HTTP or OTLP/gRPC):
+        POST {endpoint}/v1/traces with body = ExportTraceServiceRequest proto
+        (content-type: application/x-protobuf OR application/json)
+      Each inference request produces at least one span tree rooted at
+      "apr.inference" with attributes:
+        apr.model          (string, model id)
+        apr.tokens.prompt  (int64, prompt token count)
+        apr.tokens.output  (int64, completion token count)
+        apr.decode.tps     (double, tokens per second)
+        gen_ai.system      (string, "apr")
+        gen_ai.request.model (string, model name)
+      Following the OpenTelemetry GenAI semantic conventions.
+    domain: "OTEL_EXPORTER_OTLP_ENDPOINT URL + apr inference request"
+    codomain: "OTLP ExportTraceServiceRequest payload (protobuf/JSON)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Span name 'apr.inference' is present on root span"
+    - "Attributes follow gen_ai.* semantic conventions (system, request.model, usage.*)"
+    - "TraceId is 16-byte hex; SpanId is 8-byte hex; both non-zero"
+    - "Reference: https://opentelemetry.io/docs/specs/semconv/gen-ai/"
+
+  trace_context_propagation:
+    formula: |
+      apr serve MUST honor incoming W3C Trace Context headers:
+        traceparent: 00-<trace-id>-<parent-span-id>-<flags>
+        tracestate:  <vendor>=<opaque>
+      Generated spans for that request carry the same trace-id
+      (parent span id from incoming header becomes parent of apr.inference root).
+    domain: "HTTP request with W3C Trace Context headers"
+    codomain: "exported spans whose trace_id matches incoming traceparent"
+    invariants:
+    - "Incoming traceparent.trace_id == emitted span trace_id"
+    - "Incoming traceparent.span_id == emitted root span parent_span_id"
+    - "Reference: https://www.w3.org/TR/trace-context/"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-08-001
-  rule: placeholder
-  prediction: "apr surface for 'OpenTelemetry traces' matches ecosystem canonical behavior"
+  rule: "apr exports OTLP spans when OTEL endpoint is configured"
+  prediction: "OTLP collector receives >=1 span with name 'apr.inference' after an inference request"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-08" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    # Start a tiny OTLP/HTTP sink that records requests to /tmp/otlp.log
+    python3 - <<'EOF' &
+    import http.server, json, pathlib
+    LOG = pathlib.Path("/tmp/otlp.log")
+    LOG.write_bytes(b"")
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length","0"))
+            body = self.rfile.read(n)
+            with open("/tmp/otlp.log","ab") as f: f.write(body + b"\n---\n")
+            self.send_response(200); self.end_headers()
+    http.server.HTTPServer(("127.0.0.1",4318), H).serve_forever()
+    EOF
+    SINK=$!
+    trap "kill $SINK 2>/dev/null || true" EXIT
+    sleep 1
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/json \
+    OTEL_SERVICE_NAME=apr-test \
+      apr serve --port 7850 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV $SINK 2>/dev/null || true" EXIT
+    sleep 2
+    curl -sS http://127.0.0.1:7850/v1/chat/completions \
+      -H 'Content-Type: application/json' \
+      -d '{"model":"test","messages":[{"role":"user","content":"hi"}]}' >/dev/null
+    sleep 1
+    grep -q 'apr.inference' /tmp/otlp.log
+  if_fails: "apr serve does not export OTLP span named 'apr.inference' to configured endpoint"
+
+- id: FALSIFY-CRUX-K-08-002
+  rule: "GenAI semantic conventions present on inference span"
+  prediction: "exported span attributes include gen_ai.system, gen_ai.request.model, apr.tokens.prompt, apr.tokens.output"
+  test: |
+    set -euo pipefail
+    test -s /tmp/otlp.log
+    # Accept either x-protobuf or JSON encodings: fall back to grep-for-key presence.
+    for KEY in 'gen_ai.system' 'gen_ai.request.model' 'apr.tokens.prompt' 'apr.tokens.output'; do
+      grep -q "$KEY" /tmp/otlp.log || { echo "missing attribute: $KEY"; exit 1; }
+    done
+  if_fails: "OTLP span missing one of the required gen_ai.* or apr.tokens.* attributes"
+
+- id: FALSIFY-CRUX-K-08-003
+  rule: "W3C trace-context propagation: incoming traceparent reused in exported span"
+  prediction: "exported span trace_id == trace_id in incoming traceparent header"
+  test: |
+    set -euo pipefail
+    # Canonical traceparent: version 00, trace-id 0af7651916cd43dd8448eb211c80319c, parent 00f067aa0ba902b7
+    TRACE_ID=0af7651916cd43dd8448eb211c80319c
+    PARENT_ID=00f067aa0ba902b7
+    : > /tmp/otlp.log
+    curl -sS http://127.0.0.1:7850/v1/chat/completions \
+      -H 'Content-Type: application/json' \
+      -H "traceparent: 00-${TRACE_ID}-${PARENT_ID}-01" \
+      -d '{"model":"test","messages":[{"role":"user","content":"hi"}]}' >/dev/null
+    sleep 1
+    grep -q "$TRACE_ID" /tmp/otlp.log
+  if_fails: "apr serve does not honor W3C traceparent (trace-id not propagated to exported span)"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "apr inference emits OTLP span named 'apr.inference' when OTEL endpoint configured"
+- type: invariant
+  property: "Spans carry gen_ai.* semantic-convention attributes plus apr.tokens.prompt/output"
+- type: invariant
+  property: "W3C traceparent header is honored (trace_id propagated into exported spans)"
+- type: parity
+  property: "apr serve OpenTelemetry instrumentation matches GenAI semantic conventions and OTLP export protocol as implemented by opentelemetry-instrumentation reference libraries"
+  reference: "https://opentelemetry.io/docs/specs/semconv/gen-ai/"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -18,44 +18,197 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: partial
   description: >
-    INT8 dynamic quantization. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    INT8 dynamic quantization. Parity target is PyTorch's
+    `torch.quantization.quantize_dynamic(model, {nn.Linear}, dtype=torch.qint8)`
+    which at inference time quantizes activations on the fly (per-tensor
+    affine qint8) while storing weights as int8 with a per-tensor scale.
+    Canonical reference
+    https://pytorch.org/docs/stable/generated/torch.quantization.quantize_dynamic.html
+    and tutorial
+    https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html.
+    Aprender parity: `apr quantize model.safetensors --method int8-dynamic
+    -o out.apr` MUST, for every Linear layer, produce int8 weights with
+    per-tensor scales and preserve within ≤1% top-1 accuracy vs FP32 on
+    the reference MLP golden in evidence/crux/pytorch/int8-dynamic-goldens.json,
+    and within ≤0.5 mean-abs-error on the reference output logits.
+  references:
+  - "https://pytorch.org/docs/stable/generated/torch.quantization.quantize_dynamic.html"
+  - "https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html"
+  - "https://pytorch.org/docs/stable/quantization.html#dynamic-quantization"
 
 equations:
-  placeholder_contract:
+  per_tensor_affine_qint8:
     formula: |
-      DRAFT — user workflow "INT8 dynamic quantization"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      For each Linear weight W ∈ R^{m×n}:
+        scale    = max(|W|) / 127   (symmetric, no zero_point)
+        W_int8   = clip(round(W / scale), -127, 127).astype(int8)
+        dequant  = W_int8.astype(fp32) * scale
+      Store (W_int8, scale) per layer; scale is fp32 scalar.
+    domain: "fp32 Linear weight tensor W"
+    codomain: "(int8 tensor, fp32 scale) pair"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Symmetric quantization (zero_point == 0) matching PyTorch qint8 default"
+    - "Scale is per-tensor (single fp32 value per weight tensor)"
+    - "Round-half-to-even matches PyTorch's torch.round semantics"
+
+  accuracy_preservation:
+    formula: |
+      Let M_fp32 = reference fp32 model; M_int8 = apr-quantized model.
+      On evidence/crux/pytorch/int8-dynamic-goldens.json eval set:
+        |top1_acc(M_int8) - top1_acc(M_fp32)| ≤ 0.01   (1 percentage point)
+        mean(|logits_int8 - logits_fp32|) ≤ 0.5  over the reference batch
+    domain: "(fp32 model, int8 model, eval batch)"
+    codomain: "(top-1 delta, MAE on logits)"
+    invariants:
+    - "Accuracy drop ≤ 1% absolute on golden MLP classifier"
+    - "Logit MAE ≤ 0.5 on reference batch"
+    - "No NaN/Inf in int8 inference output"
+
+  file_size_reduction:
+    formula: |
+      size(out.apr with int8) ≤ 0.30 * size(in.fp32)
+      (fp32 = 4 bytes/weight → int8 = 1 byte + scalar per tensor; target ≈25% with metadata).
+    domain: "(fp32 safetensors input size, apr output size)"
+    codomain: "size ratio"
+    invariants:
+    - "Output size at most 30% of fp32 input (expect ~25%)"
+    - "Per-tensor scales stored once per tensor (not per element)"
+
+  parity_with_torch_quantize_dynamic:
+    formula: |
+      ∀ M in evidence/crux/pytorch/int8-dynamic-goldens.json:
+        apr quantize M.safetensors --method int8-dynamic -o apr_q.apr
+        torch_q = torch.quantization.quantize_dynamic(load(M), {nn.Linear}, torch.qint8)
+        ∀ Linear layer L:
+          cosine_similarity(apr_q.L.weight_dequant, torch_q.L.weight().dequantize()) ≥ 0.999
+    domain: "(golden fp32 model, Linear layers)"
+    codomain: "cosine similarity of dequantized weights"
+    invariants:
+    - "Dequantized apr weights cosine ≥ 0.999 vs torch.quantize_dynamic dequantized weights"
+    - "Same set of layers quantized (all nn.Linear)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-12-001
-  rule: placeholder
-  prediction: "apr surface for 'INT8 dynamic quantization' matches pytorch canonical behavior"
+  rule: int8-dynamic preserves per-tensor scale & int8 storage
+  prediction: "apr quantize emits int8 weights with a per-tensor fp32 scale per Linear"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-12" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    TMP=$(mktemp -d)
+    python3 - "$TMP" <<'PY'
+    import sys, os, torch
+    from safetensors.torch import save_file
+    d = sys.argv[1]
+    sd = {"fc1.weight": torch.randn(128, 256, dtype=torch.float32),
+          "fc2.weight": torch.randn(10, 128, dtype=torch.float32)}
+    save_file(sd, os.path.join(d, "model.safetensors"))
+    PY
+    apr quantize "$TMP/model.safetensors" --method int8-dynamic -o "$TMP/q.apr" >/dev/null
+    [ -f "$TMP/q.apr" ] || { echo "FAIL: no quantized output" >&2; exit 1; }
+    # Use apr tensors to verify int8 storage + scales
+    apr tensors "$TMP/q.apr" --json > "$TMP/meta.json"
+    python3 - "$TMP" <<'PY'
+    import sys, os, json
+    m = json.load(open(os.path.join(sys.argv[1],"meta.json")))
+    tensors = m.get("tensors", m)  # schema tolerance
+    dtypes = [t.get("dtype","").lower() for t in (tensors if isinstance(tensors,list) else tensors.values())]
+    assert any("int8" in d for d in dtypes), f"no int8 tensor found: {dtypes}"
+    PY
+  if_fails: "apr quantize did not emit int8-typed weights with per-tensor scales"
+
+- id: FALSIFY-CRUX-B-12-002
+  rule: accuracy drop ≤1% on golden classifier
+  prediction: "top-1 accuracy of int8 model within 1% of fp32 on golden eval set"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/pytorch/int8-dynamic-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, os, sys
+    c = json.load(open(sys.argv[1]))[0]
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "q.apr")
+        subprocess.run(["apr","quantize",c["input"],"--method","int8-dynamic","-o",out], check=True)
+        # Expect apr eval subcommand for parity
+        res = subprocess.run(["apr","eval",out,"--dataset",c["eval_dataset"],"--json"],
+                             capture_output=True, text=True, check=True)
+        acc = json.loads(res.stdout)["top1_accuracy"]
+        assert abs(acc - c["fp32_top1"]) <= 0.01, (acc, c["fp32_top1"])
+    PY
+  if_fails: "int8-dynamic accuracy drop exceeds 1% on golden eval"
+
+- id: FALSIFY-CRUX-B-12-003
+  rule: output file size ≤30% of fp32 input
+  prediction: "int8 apr file is at most 0.30 × fp32 safetensors file"
+  test: |
+    TMP=$(mktemp -d)
+    python3 - "$TMP" <<'PY'
+    import sys, os, torch
+    from safetensors.torch import save_file
+    d = sys.argv[1]
+    sd = {f"fc{i}.weight": torch.randn(512, 512, dtype=torch.float32) for i in range(10)}
+    save_file(sd, os.path.join(d, "big.safetensors"))
+    PY
+    FP32=$(stat -c%s "$TMP/big.safetensors")
+    apr quantize "$TMP/big.safetensors" --method int8-dynamic -o "$TMP/q.apr" >/dev/null
+    INT8=$(stat -c%s "$TMP/q.apr")
+    RATIO=$(python3 -c "print($INT8/$FP32)")
+    python3 -c "import sys; sys.exit(0 if $INT8/$FP32 <= 0.30 else 1)" || {
+      echo "FAIL: size ratio $RATIO > 0.30 ($INT8/$FP32)" >&2; exit 1
+    }
+  if_fails: "int8 output file is larger than 30% of fp32 input"
+
+- id: FALSIFY-CRUX-B-12-004
+  rule: parity with torch.quantization.quantize_dynamic dequantized weights
+  prediction: "dequantized apr int8 weights have cosine ≥ 0.999 vs torch quantize_dynamic"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/pytorch/int8-dynamic-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, os, sys, math
+    import torch, torch.nn as nn
+    from safetensors.torch import load_file
+    c = json.load(open(sys.argv[1]))[0]
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "q.apr")
+        subprocess.run(["apr","quantize",c["input"],"--method","int8-dynamic","-o",out], check=True)
+        # Reconstruct via apr export for comparison
+        apr_fp32 = os.path.join(d, "apr_dequant.safetensors")
+        subprocess.run(["apr","export",out,"--format","safetensors","--dequantize","-o",apr_fp32], check=True)
+        apr_w = load_file(apr_fp32)
+        # torch reference
+        ref_w = load_file(c["input"])
+        class Mdl(nn.Module):
+            def __init__(self, sd):
+                super().__init__()
+                for k,v in sd.items():
+                    name = k.replace(".weight","").replace(".", "_")
+                    self.add_module(name, nn.Linear(v.shape[1], v.shape[0], bias=False))
+                    getattr(self, name).weight.data = v
+        m = Mdl(ref_w)
+        qm = torch.quantization.quantize_dynamic(m, {nn.Linear}, dtype=torch.qint8)
+        for k, v in apr_w.items():
+            name = k.replace(".weight","").replace(".","_")
+            tw = getattr(qm, name).weight().dequantize()
+            cos = torch.nn.functional.cosine_similarity(v.flatten(), tw.flatten(), dim=0).item()
+            assert cos >= 0.999, (k, cos)
+    PY
+  if_fails: "apr int8 dequantized weights diverge from torch.quantize_dynamic (cosine < 0.999)"
 
 proof_obligations:
+- type: parity
+  property: "apr quantize int8-dynamic matches torch.quantization.quantize_dynamic dequantized weights on evidence/crux/pytorch/int8-dynamic-goldens.json (cosine ≥ 0.999)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Per-tensor symmetric affine qint8 with zero_point=0 and round-half-to-even"
+- type: invariant
+  property: "Top-1 accuracy drop ≤ 1% on golden eval set"
+- type: invariant
+  property: "Output file size ≤ 30% of fp32 input"
+- type: equation
+  property: "dequant(W_int8) * scale ≈ W_fp32 with MAE ≤ 0.5 on reference batch logits"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -18,44 +18,142 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: partial
   description: >
-    Xet-accelerated parallel download. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Xet-accelerated parallel download. Parity target is HuggingFace's
+    `hf_xet` Rust backend (opt-in via `pip install huggingface_hub[hf_xet]`
+    since huggingface_hub 0.26.0) which splits large LFS files into
+    content-addressed chunks and fetches them in parallel from Xet storage
+    (`HF_XET_*` env vars). Aprender parity: `apr pull hf://<repo>` on repos
+    backed by Xet MUST use concurrent chunked GETs (>=4 parallel) against
+    Xet CDN endpoints, resume partial chunks, and reproduce byte-identical
+    LFS file bytes vs the non-Xet path. Contract references
+    https://huggingface.co/docs/huggingface_hub/guides/hf_xet and
+    https://github.com/huggingface/xet-core.
+  references:
+  - "https://huggingface.co/docs/huggingface_hub/guides/hf_xet"
+  - "https://github.com/huggingface/xet-core"
+  - "https://huggingface.co/blog/xet-on-the-hub"
 
 equations:
-  placeholder_contract:
+  xet_chunked_download:
     formula: |
-      DRAFT — user workflow "Xet-accelerated parallel download"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Let F = an LFS file on a Xet-enabled repo with size N bytes.
+      apr partitions F into K chunks of size ≤ chunk_size_bytes (default 64 MiB)
+      and issues up to P concurrent GETs (default P = min(8, cores)).
+      download_xet(F) = concat(chunk_1, ..., chunk_K)
+      where each chunk_i is fetched from the Xet CAS endpoint reported by
+      GET https://huggingface.co/api/models/<repo>/xet-read-token.
+    domain: "(repo_id, file_path) with xet-enabled storage"
+    codomain: "local file bytes + parallel HTTP fetch graph"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Parallelism ≥ 4 concurrent requests during steady-state download"
+    - "chunk_size and concurrency tunable via APR_XET_CHUNK_SIZE / APR_XET_PARALLEL"
+    - "Partial chunks resume via HTTP Range on retry"
+
+  xet_parity_with_http_path:
+    formula: |
+      For any Xet-backed file F:
+        sha256(download_xet(F)) == sha256(download_http(F))
+      AND wall_clock(download_xet(F)) < wall_clock(download_http(F))
+      on files > 100 MiB with >=50 Mbps bandwidth.
+    domain: "large LFS file on xet-enabled repo"
+    codomain: "byte equality + wall-clock inequality"
+    invariants:
+    - "Xet path produces byte-identical output to plain HTTPS path"
+    - "Xet path is strictly faster than serial HTTPS for files > 100 MiB"
+    - "Correctness (sha256) never traded for speed"
+
+  xet_opt_out:
+    formula: |
+      APR_XET=0 or --no-xet flag:
+        apr pull falls back to plain HTTPS LFS path
+        AND downloaded bytes match Xet path byte-for-byte.
+    domain: "apr pull invocation with xet disabled"
+    codomain: "local file bytes"
+    invariants:
+    - "Xet is opt-outable via env var and CLI flag"
+    - "Fallback path is always correct (same sha256)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-07-001
-  rule: placeholder
-  prediction: "apr surface for 'Xet-accelerated parallel download' matches huggingface canonical behavior"
+  rule: xet path produces byte-identical output to http path
+  prediction: "sha256(xet pull) == sha256(no-xet pull) on same Xet-backed file"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-07" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    REPO=hf://openai-community/gpt2
+    FILE=model.safetensors
+    A=$(mktemp -d); B=$(mktemp -d)
+    APR_XET=1 apr pull "$REPO" --include "$FILE" --out "$A" >/dev/null
+    APR_XET=0 apr pull "$REPO" --include "$FILE" --out "$B" >/dev/null
+    SA=$(sha256sum "$A/$FILE" | awk '{print $1}')
+    SB=$(sha256sum "$B/$FILE" | awk '{print $1}')
+    [ "$SA" = "$SB" ] || { echo "FAIL: xet vs http bytes diverge ($SA vs $SB)" >&2; exit 1; }
+  if_fails: "xet-path bytes diverge from http-path — correctness violation"
+
+- id: FALSIFY-CRUX-A-07-002
+  rule: xet path issues concurrent range requests
+  prediction: "apr pull --verbose on >100MiB file logs >=4 concurrent chunk requests"
+  test: |
+    TMP=$(mktemp -d)
+    LOG=$(mktemp)
+    APR_XET=1 APR_XET_PARALLEL=8 apr pull hf://openai-community/gpt2 \
+      --include 'model.safetensors' --out "$TMP" --verbose 2>"$LOG" >/dev/null
+    # Count distinct chunks started within a short window
+    CONCURRENT=$(grep -cE 'xet.*(chunk|range).*(start|GET)' "$LOG" || true)
+    [ "$CONCURRENT" -ge 4 ] || {
+      echo "FAIL: observed $CONCURRENT concurrent xet requests (expected >=4)" >&2
+      exit 1
+    }
+  if_fails: "xet backend did not issue expected parallel chunk GETs"
+
+- id: FALSIFY-CRUX-A-07-003
+  rule: APR_XET=0 falls back to HTTPS path cleanly
+  prediction: "APR_XET=0 pull succeeds and does not contact xet CAS endpoints"
+  test: |
+    TMP=$(mktemp -d)
+    LOG=$(mktemp)
+    APR_XET=0 apr pull hf://openai-community/gpt2 \
+      --include 'config.json' --out "$TMP" --verbose 2>"$LOG" >/dev/null
+    [ -f "$TMP/config.json" ] || { echo "FAIL: file not downloaded" >&2; exit 1; }
+    # No xet CAS requests expected on opt-out
+    ! grep -qiE 'xet.*(cas|chunk)' "$LOG" || {
+      echo "FAIL: xet requests emitted despite APR_XET=0" >&2; exit 1
+    }
+  if_fails: "xet opt-out did not disable xet path"
+
+- id: FALSIFY-CRUX-A-07-004
+  rule: parity with huggingface-cli xet path on golden
+  prediction: "apr xet output sha256 == huggingface-cli (hf_xet enabled) output sha256"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/huggingface/xet-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, hashlib, sys, pathlib, os
+    for c in json.load(open(sys.argv[1])):
+        with tempfile.TemporaryDirectory() as d:
+            env = {**os.environ, "APR_XET": "1"}
+            subprocess.run(["apr","pull",f"hf://{c['repo']}","--include",c["filename"],"--out",d],
+                          check=True, env=env)
+            got = hashlib.sha256(open(pathlib.Path(d)/c["filename"],"rb").read()).hexdigest()
+            assert got == c["expected_sha256"], (c, got)
+    PY
+  if_fails: "apr xet bytes diverge from huggingface_hub hf_xet golden"
 
 proof_obligations:
+- type: parity
+  property: "apr pull xet path matches huggingface_hub[hf_xet] bytes on evidence/crux/huggingface/xet-goldens.json"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Xet path produces byte-identical output to HTTPS fallback for every file"
+- type: invariant
+  property: "Xet path issues >=4 concurrent chunk requests on files > 100 MiB"
+- type: invariant
+  property: "APR_XET=0 / --no-xet falls back to HTTPS and disables all xet CAS requests"
+- type: equation
+  property: "sha256(download_xet(F)) == sha256(download_http(F)) for all xet-backed F"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

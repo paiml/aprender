@@ -25,37 +25,114 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  arithmetic_intensity:
     formula: |
-      DRAFT — user workflow "Roofline profiling"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      Competitor (PyTorch torch.profiler with FLOPS and bandwidth):
+        with torch.profiler.profile(with_flops=True, ...) as p:
+            model(x)
+        # Parse p.key_averages() to derive FLOPs and bytes-moved per op
+      Roofline arithmetic intensity per op:
+        AI = FLOPs / bytes_moved   (flops/byte)
+      apr parity:
+        apr profile MODEL --roofline --json
+      MUST emit per-op (or per-layer) AI and classify each as:
+        regime = "compute_bound"  if AI > peak_flops / peak_bw
+        regime = "memory_bound"   if AI <= peak_flops / peak_bw
+    domain: "per-op FLOPs: u64, bytes: u64, peak_flops: f64, peak_bw: f64"
+    codomain: "list of {op, ai: f64, regime: 'compute_bound' | 'memory_bound'}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "AI = FLOPs / bytes (exact, no unit conversion errors)"
+    - "regime classification exact (strict comparison with ridge point)"
+    - "every op has FLOPs > 0 and bytes > 0 (else omitted)"
+    - "Competitor parity: total FLOPs matches torch.profiler.with_flops total within ±5%"
+
+  roofline_ceiling_correctness:
+    formula: |
+      For each op with achieved throughput t (flops/sec):
+        ceiling = min(peak_flops, AI * peak_bw)
+        utilization = t / ceiling in [0, 1]
+    domain: "achieved t in R_{>0}, AI in R_{>0}, device peak_flops and peak_bw"
+    codomain: "ceiling: f64, utilization in [0, 1]"
+    invariants:
+    - "utilization <= 1.0 (cannot exceed roofline)"
+    - "ceiling == peak_flops when AI > ridge_point, else AI * peak_bw"
+    - "device peak_flops and peak_bw reported in JSON header"
+
+  total_flops_conservation:
+    formula: |
+      sum_{op} op.FLOPs == model_total_flops
+      where model_total_flops is computed independently from architecture.
+    domain: "per-op FLOPs list, model architecture spec"
+    codomain: "bool (equality within 1% rounding)"
+    invariants:
+    - "per-op FLOPs sum equals whole-model FLOPs within 1%"
+    - "no double-counting across fused ops"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-05-001
-  rule: placeholder
-  prediction: "apr surface for 'Roofline profiling' matches pytorch canonical behavior"
+  rule: "arithmetic intensity = FLOPs / bytes per op"
+  prediction: "apr profile --roofline emits ai == flops/bytes for every op"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-05" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    M=fixtures/crux-f-05/tiny.apr
+    apr profile "$M" --roofline --json > /tmp/f05-rl.json
+    python3 -c "
+    import json,sys
+    ops=json.load(open('/tmp/f05-rl.json'))['per_op']
+    ok=all(abs(o['ai'] - o['flops']/o['bytes']) < 1e-9 for o in ops if o['bytes']>0)
+    sys.exit(0 if ok else 1)"
+  if_fails: "ai != flops/bytes for some op — roofline math incorrect"
+
+- id: FALSIFY-CRUX-F-05-002
+  rule: "regime classification matches ridge point comparison exactly"
+  prediction: "regime == 'compute_bound' iff ai > peak_flops/peak_bw"
+  test: |
+    set -euo pipefail
+    M=fixtures/crux-f-05/tiny.apr
+    apr profile "$M" --roofline --json > /tmp/f05-regime.json
+    python3 -c "
+    import json,sys
+    d=json.load(open('/tmp/f05-regime.json'))
+    ridge=d['device']['peak_flops']/d['device']['peak_bw']
+    ok=all(
+      (o['regime']=='compute_bound') == (o['ai']>ridge)
+      for o in d['per_op']
+    )
+    sys.exit(0 if ok else 1)"
+  if_fails: "regime classification does not match ai > ridge_point comparison"
+
+- id: FALSIFY-CRUX-F-05-003
+  rule: "PyTorch torch.profiler parity: total FLOPs within ±5%"
+  prediction: "apr total FLOPs matches torch.profiler.with_flops=True total"
+  test: |
+    set -euo pipefail
+    GOLDEN=evidence/crux/pytorch/f-05-torch-profiler.json
+    M=fixtures/crux-f-05/tiny.apr
+    APR_FLOPS=$(apr profile "$M" --roofline --json | jq -r '.total_flops')
+    PT_FLOPS=$(jq -r '.total_flops' "$GOLDEN")
+    python3 -c "import sys; a=float('$APR_FLOPS'); b=float('$PT_FLOPS'); sys.exit(0 if abs(a-b)/b < 0.05 else 1)"
+  if_fails: "apr total FLOPs diverges from torch.profiler.with_flops total by >5%"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "ai = flops / bytes exactly (within f64 rounding) for every op"
+- type: invariant
+  property: "regime classification matches ai > (peak_flops/peak_bw) strictly"
+- type: invariant
+  property: "utilization == achieved_flops / min(peak_flops, ai*peak_bw) in [0,1]"
+- type: parity
+  property: "apr profile --roofline matches PyTorch torch.profiler (with_flops=True) + bandwidth total FLOPs within ±5% on equivalent model"
+
+# References:
+#   https://pytorch.org/docs/stable/profiler.html
+#   https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html
+#   https://docs.nvidia.com/nsight-compute/ProfilingGuide/#roofline-chart
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

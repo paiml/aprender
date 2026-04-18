@@ -25,37 +25,99 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  bucketed_shuffle_contract:
     formula: |
-      DRAFT — user workflow "Shuffling DataLoader bucketed"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      PyTorch canonical:
+        from torch.utils.data import DataLoader, DistributedSampler
+        sampler = DistributedSampler(ds, shuffle=True, seed=42)
+        loader  = DataLoader(ds, batch_size=B, sampler=sampler,
+                             collate_fn=lambda b: pad_to_multiple(b, 8))
+        sampler.set_epoch(epoch)
+      Semantics:
+        - Batches are length-bucketed to reduce padding waste
+        - Shuffle is deterministic given (seed, epoch)
+        - Every sample appears exactly once per epoch (no drops unless drop_last)
+      apr parity:
+        apr finetune --shuffle --seed 42 --bucket-by-length --pad-to-multiple 8
+        → per-batch (from --json batch trace):
+            max_len_in_batch - mean_len_in_batch <= bucket_tolerance (tight buckets)
+            batch_len % 8 == 0 for every batch
+            set(sample_ids across all batches of epoch) == set(0..N-1)
+    domain: "DataLoader config (seed, bucket_by_length, pad_to_multiple)"
+    codomain: "stream of batches (per-batch sample ids, lengths)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Across one epoch, every sample id appears exactly once (no drops, no dupes, unless drop_last)"
+    - "Every batch length is a multiple of --pad-to-multiple"
+    - "Within a batch, max_len - min_len <= bucket_tolerance (tight length buckets)"
+    - "Given the same (seed, epoch), batch ordering is bit-exact reproducible"
+
+  shuffle_determinism:
+    formula: |
+      Let S(seed, epoch) = sequence of sample ids for the epoch.
+        S(42, 0) repeatable : two runs return the identical list
+        S(42, 0) != S(42, 1) : different epoch yields different order
+        S(42, 0) != S(43, 0) : different seed yields different order
+      (parity with DistributedSampler.set_epoch contract)
+    domain: "(seed, epoch) pairs"
+    codomain: "ordered list of sample ids"
+    invariants:
+    - "Same (seed, epoch) → identical sample id sequence"
+    - "Different epoch or seed → different sequence (w.h.p., not the identity map)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-H-07-001
-  rule: placeholder
-  prediction: "apr surface for 'Shuffling DataLoader bucketed' matches pytorch canonical behavior"
+  rule: "every sample appears exactly once per epoch, batches are bucketed and pad-aligned"
+  prediction: "for an N-sample dataset, one epoch yields a partition of {0..N-1}; every batch length is a multiple of 8; max-min length within a batch <= 16"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-H-07" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    TRACE=$(mktemp --suffix=.jsonl)
+    apr finetune --json --dump-batches "$TRACE" \
+        --shuffle --seed 42 --bucket-by-length --pad-to-multiple 8 \
+        --bucket-tolerance 16 \
+        --data tests/fixtures/varying-length-100.jsonl --epochs 1 >/dev/null
+    uv run python3 - <<PY
+    import json
+    batches = [json.loads(l) for l in open("$TRACE")]
+    ids = [i for b in batches for i in b["sample_ids"]]
+    assert sorted(ids) == list(range(100)), f"not a partition of 0..99: got {len(set(ids))} unique of {len(ids)}"
+    for b in batches:
+        assert b["batch_len"] % 8 == 0, f"batch_len {b['batch_len']} not multiple of 8"
+        assert max(b["lengths"]) - min(b["lengths"]) <= 16, f"bucket too loose: {b['lengths']}"
+    print("OK", len(batches), "batches")
+    PY
+  if_fails: "epoch is not a partition, or batches break pad_to_multiple, or buckets too loose"
+
+- id: FALSIFY-CRUX-H-07-002
+  rule: "(seed, epoch) determinism matches DistributedSampler.set_epoch contract"
+  prediction: "same (seed, epoch) → identical batch order; different (seed, epoch) → different order"
+  test: |
+    set -euo pipefail
+    T1=$(mktemp --suffix=.jsonl); T2=$(mktemp --suffix=.jsonl); T3=$(mktemp --suffix=.jsonl)
+    apr finetune --json --dump-batches "$T1" --shuffle --seed 42 --start-epoch 0 \
+        --data tests/fixtures/varying-length-100.jsonl --epochs 1 >/dev/null
+    apr finetune --json --dump-batches "$T2" --shuffle --seed 42 --start-epoch 0 \
+        --data tests/fixtures/varying-length-100.jsonl --epochs 1 >/dev/null
+    apr finetune --json --dump-batches "$T3" --shuffle --seed 42 --start-epoch 1 \
+        --data tests/fixtures/varying-length-100.jsonl --epochs 1 >/dev/null
+    cmp "$T1" "$T2"                            # same (seed,epoch) → byte-identical
+    ! cmp -s "$T1" "$T3"                       # different epoch → different
+  if_fails: "shuffle not deterministic on (seed, epoch), or set-epoch semantics not honored"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "one epoch is a partition of the dataset (every sample exactly once)"
+- type: invariant
+  property: "bucketed batches respect pad_to_multiple and bucket_tolerance"
+- type: parity
+  property: "apr --shuffle --seed --start-epoch matches PyTorch DistributedSampler(seed, shuffle=True) + set_epoch() determinism"
+  competitor: pytorch
+  reference: "https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler (set_epoch, shuffle, seed)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

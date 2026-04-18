@@ -25,37 +25,122 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  llama_index_provider_api:
     formula: |
-      DRAFT — user workflow "LlamaIndex LLM provider"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      LlamaIndex requires a BaseLLM subclass (or the thin OpenAILike wrapper)
+      that implements:
+        complete(prompt: str, **kwargs)    → CompletionResponse
+        stream_complete(prompt, **kwargs)  → Iterator[CompletionResponse]
+        chat(messages: List[ChatMessage])  → ChatResponse
+        stream_chat(messages)              → Iterator[ChatResponse]
+        metadata                           → LLMMetadata (context_window, num_output, model_name)
+      apr provides either:
+        (a) OpenAI-compatible endpoint consumable via llama_index.llms.openai_like.OpenAILike
+            (api_base = http://<apr-serve>/v1), OR
+        (b) first-party "llama-index-llms-apr" package with AprLLM(BaseLLM).
+    domain: "llama_index.core.llms.BaseLLM abstract interface"
+    codomain: "concrete LLM instance callable by VectorStoreIndex.as_query_engine()"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "complete() returns CompletionResponse with .text attribute (non-empty string)"
+    - "metadata.context_window matches apr model context length (integer > 0)"
+    - "metadata.model_name equals the model id reported by apr serve /v1/models"
+    - "Reference: https://docs.llamaindex.ai/en/stable/module_guides/models/llms/"
+
+  rag_query_engine_smoke:
+    formula: |
+      LlamaIndex canonical RAG smoke test:
+        docs = SimpleDirectoryReader(<dir>).load_data()
+        index = VectorStoreIndex.from_documents(docs, llm=AprLLM(...))
+        resp = index.as_query_engine().query("<q>")
+      apr-backed LLM MUST complete this without exception and return resp.response != "".
+    domain: "(document corpus, natural-language query)"
+    codomain: "llama_index.Response with non-empty .response string"
+    invariants:
+    - "as_query_engine().query() completes without raising"
+    - "Response.response is non-empty string"
+    - "Response.source_nodes is a non-empty list (RAG retrieval wired)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-04-001
-  rule: placeholder
-  prediction: "apr surface for 'LlamaIndex LLM provider' matches ecosystem canonical behavior"
+  rule: "LlamaIndex OpenAILike client connects to apr serve and returns completion"
+  prediction: "llama_index OpenAILike(api_base=apr-serve/v1).complete(...).text is non-empty"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-04" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr serve --port 7840 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    uv run --with llama-index-llms-openai-like --with llama-index python3 - <<'EOF'
+    from llama_index.llms.openai_like import OpenAILike
+    llm = OpenAILike(api_base="http://127.0.0.1:7840/v1", api_key="none",
+                     model="test", is_chat_model=True, context_window=2048)
+    r = llm.complete("Say hi.")
+    assert r.text and len(r.text.strip()) > 0, f"empty completion: {r!r}"
+    print("ok:", r.text[:40])
+    EOF
+  if_fails: "LlamaIndex OpenAILike cannot connect to apr serve or receives empty completion"
+
+- id: FALSIFY-CRUX-K-04-002
+  rule: "apr-backed LLM metadata exposes context_window and model_name"
+  prediction: "llm.metadata.context_window > 0 and .model_name equals apr model id"
+  test: |
+    set -euo pipefail
+    apr serve --port 7841 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    uv run --with llama-index-llms-openai-like --with llama-index python3 - <<'EOF'
+    from llama_index.llms.openai_like import OpenAILike
+    llm = OpenAILike(api_base="http://127.0.0.1:7841/v1", api_key="none",
+                     model="test", is_chat_model=True, context_window=4096)
+    md = llm.metadata
+    assert md.context_window > 0, f"context_window invalid: {md.context_window}"
+    assert md.model_name, f"model_name empty"
+    print("metadata ok:", md.context_window, md.model_name)
+    EOF
+  if_fails: "LLMMetadata missing context_window or model_name when backed by apr serve"
+
+- id: FALSIFY-CRUX-K-04-003
+  rule: "VectorStoreIndex RAG smoke test completes against apr-backed LLM"
+  prediction: "as_query_engine().query() returns non-empty response"
+  test: |
+    set -euo pipefail
+    apr serve --port 7842 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    TMP=$(mktemp -d)
+    echo "Aprender is a Rust ML framework." > "$TMP/doc.txt"
+    uv run --with 'llama-index' --with 'llama-index-llms-openai-like' --with 'llama-index-embeddings-huggingface' python3 - "$TMP" <<'EOF'
+    import sys
+    from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+    from llama_index.llms.openai_like import OpenAILike
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    Settings.llm = OpenAILike(api_base="http://127.0.0.1:7842/v1", api_key="none",
+                              model="test", is_chat_model=True, context_window=2048)
+    Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    docs = SimpleDirectoryReader(sys.argv[1]).load_data()
+    idx = VectorStoreIndex.from_documents(docs)
+    r = idx.as_query_engine().query("What is aprender?")
+    assert str(r).strip(), f"empty query result: {r!r}"
+    print("rag ok:", str(r)[:40])
+    EOF
+  if_fails: "LlamaIndex RAG smoke test fails when using apr serve as the LLM backend"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "apr-backed LLM conforms to llama_index BaseLLM interface (complete/chat/metadata)"
+- type: invariant
+  property: "LLMMetadata exposes valid context_window and model_name"
+- type: parity
+  property: "apr serve is drop-in usable via llama_index.llms.openai_like.OpenAILike, matching OpenAI-compat provider behavior on the canonical VectorStoreIndex RAG smoke test"
+  reference: "https://docs.llamaindex.ai/en/stable/module_guides/models/llms/"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -25,37 +25,107 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  layer_by_layer_graph_enumeration:
     formula: |
-      DRAFT — user workflow "apr trace layer-by-layer"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      Competitor (PyTorch torch.fx):
+        traced = torch.fx.symbolic_trace(model)
+        print(traced.graph)  # or traced.graph.print_tabular()
+      enumerates each module invocation in execution order as a list of nodes:
+        [ (op, target, args, kwargs, output_shape), ... ]
+      apr parity:
+        apr trace MODEL --layers --json
+      MUST emit layers[] in forward-execution order with, per layer:
+        { index: u64, name: str, op: str, input_shape: [..], output_shape: [..], params: u64 }
+    domain: "loaded model (APR/GGUF/SafeTensors)"
+    codomain: "layers: list of LayerTrace objects, length == num_layers"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "layers ordered by forward execution (index strictly increasing from 0)"
+    - "every layer emits output_shape consistent with next layer's input_shape"
+    - "sum(layers[].params) == model.total_params (no unaccounted weights)"
+    - "Competitor parity: layer count matches torch.fx.symbolic_trace(model).graph size"
+
+  shape_propagation_consistency:
+    formula: |
+      For adjacent layers i and i+1 in the trace:
+        layers[i].output_shape == layers[i+1].input_shape
+      Exceptions: residual adds and branching ops declare explicit upstream refs.
+    domain: "ordered layer trace"
+    codomain: bool
+    invariants:
+    - "adjacent shapes match OR upstream_refs explicitly declared"
+    - "first layer input_shape matches model embedding/input expectation"
+    - "last layer output_shape == [vocab_size] for LM models"
+
+  param_accounting_complete:
+    formula: |
+      sum_{l in layers} l.params == total_model_params
+      (no tensor orphaned, no double-counting).
+    domain: "layers[] + model metadata"
+    codomain: "bool"
+    invariants:
+    - "sum of per-layer params equals model.total_params (exact)"
+    - "each tensor assigned to exactly one layer (no duplicates)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-02-001
-  rule: placeholder
-  prediction: "apr surface for 'apr trace layer-by-layer' matches pytorch canonical behavior"
+  rule: "layers emitted in forward execution order with strictly increasing index"
+  prediction: "apr trace --layers index monotonically increases from 0"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-02" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    M=fixtures/crux-f-02/tiny.apr
+    apr trace "$M" --layers --json > /tmp/f02-layers.json
+    python3 -c "
+    import json,sys
+    ls=json.load(open('/tmp/f02-layers.json'))['layers']
+    ok = ls[0]['index']==0 and all(ls[i]['index']==i for i in range(len(ls)))
+    sys.exit(0 if ok else 1)"
+  if_fails: "layer index not monotonic from 0 — trace ordering broken"
+
+- id: FALSIFY-CRUX-F-02-002
+  rule: "param accounting: sum(layers[].params) == total_params"
+  prediction: "per-layer param counts sum to the model total"
+  test: |
+    set -euo pipefail
+    M=fixtures/crux-f-02/tiny.apr
+    apr trace "$M" --layers --json > /tmp/f02-params.json
+    python3 -c "
+    import json,sys
+    d=json.load(open('/tmp/f02-params.json'))
+    s=sum(l['params'] for l in d['layers'])
+    sys.exit(0 if s == d['total_params'] else 1)"
+  if_fails: "sum(layers[].params) != total_params — layer enumeration incomplete"
+
+- id: FALSIFY-CRUX-F-02-003
+  rule: "PyTorch torch.fx parity: layer count matches symbolic_trace graph"
+  prediction: "apr trace --layers count matches torch.fx.symbolic_trace node count"
+  test: |
+    set -euo pipefail
+    GOLDEN=evidence/crux/pytorch/f-02-torch-fx.json
+    M=fixtures/crux-f-02/tiny.apr
+    APR_N=$(apr trace "$M" --layers --json | jq -r '.layers | length')
+    TORCH_N=$(jq -r '.fx_layer_count' "$GOLDEN")
+    [ "$APR_N" -eq "$TORCH_N" ]
+  if_fails: "apr trace layer count differs from torch.fx symbolic_trace node count"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "layers[] index monotonically increasing from 0 to num_layers-1"
+- type: invariant
+  property: "sum of per-layer params equals model total_params exactly"
+- type: invariant
+  property: "adjacent layer shapes consistent (output_shape[i] == input_shape[i+1])"
+- type: parity
+  property: "apr trace --layers matches PyTorch torch.fx.symbolic_trace(model).graph layer enumeration on equivalent model"
+
+# References:
+#   https://pytorch.org/docs/stable/fx.html
+#   https://pytorch.org/docs/stable/fx.html#torch.fx.GraphModule
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
