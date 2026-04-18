@@ -25,37 +25,103 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  ollama_chat_response_schema:
     formula: |
-      DRAFT — user workflow "Ollama /api/chat"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      POST http://localhost:11434/api/chat
+      Request: {"model": str, "messages": [{"role": str, "content": str}, ...], "stream": bool}
+      Response (stream=false) MUST contain ALL top-level keys:
+        model           : string
+        created_at      : string (RFC3339)
+        message         : {role: "assistant", content: string}
+        done            : bool (true when complete)
+        total_duration  : u64 (nanoseconds)
+        load_duration   : u64
+        prompt_eval_count : u64
+        prompt_eval_duration : u64
+        eval_count      : u64
+        eval_duration   : u64
+      Ref: https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion
+    domain: POST /api/chat JSON request
+    codomain: JSON response body
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "response.message.role == 'assistant'"
+    - "response.done == true when stream=false"
+    - "response.eval_count >= 1 for any non-empty reply"
+    - "Schema keys are a SUPERSET of Ollama's required set (no missing keys)"
+
+  streaming_ndjson_contract:
+    formula: |
+      When stream=true, response MUST be application/x-ndjson with one
+      JSON object per line. Last line MUST have done=true. All non-final
+      lines MUST have done=false and contain message.content delta.
+    domain: POST /api/chat with stream=true
+    codomain: NDJSON byte stream
+    invariants:
+    - "Content-Type: application/x-ndjson"
+    - "Exactly one terminal frame with done=true"
+    - "Concatenation of message.content across frames == non-streamed message.content"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-04-001
-  rule: placeholder
-  prediction: "apr surface for 'Ollama /api/chat' matches ollama canonical behavior"
+  rule: schema parity with real Ollama
+  prediction: "apr serve --ollama-compat returns same top-level keys as real ollama"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-04" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    # TODO: evidence/crux/ollama/ must contain a captured real-ollama response as golden
+    APR_RESP=$(curl -s http://localhost:11434/api/chat \
+      -d '{"model":"tiny","messages":[{"role":"user","content":"hi"}],"stream":false}')
+    for k in model created_at message done total_duration load_duration \
+             prompt_eval_count prompt_eval_duration eval_count eval_duration; do
+      echo "$APR_RESP" | jq -e --arg k "$k" 'has($k)' >/dev/null || { echo "missing $k" >&2; exit 1; }
+    done
+    echo "$APR_RESP" | jq -e '.message.role == "assistant"' >/dev/null
+    echo "$APR_RESP" | jq -e '.done == true' >/dev/null
+  if_fails: "apr /api/chat response missing Ollama-required keys; client compatibility broken"
+
+- id: FALSIFY-CRUX-C-04-002
+  rule: eval_count matches message token count
+  prediction: "response.eval_count >= 1 AND eval_duration > 0 for non-empty completions"
+  test: |
+    set -euo pipefail
+    R=$(curl -s http://localhost:11434/api/chat \
+      -d '{"model":"tiny","messages":[{"role":"user","content":"say ok"}],"stream":false}')
+    python3 -c "
+    import json,sys
+    r=json.loads('''$R''')
+    assert r['eval_count']>=1, 'eval_count must be >=1'
+    assert r['eval_duration']>0, 'eval_duration must be >0'
+    "
+  if_fails: "eval_count/eval_duration zero despite non-empty reply; metrics surface wrong"
+
+- id: FALSIFY-CRUX-C-04-003
+  rule: NDJSON streaming terminal frame
+  prediction: "stream=true yields NDJSON with exactly one done=true frame at end"
+  test: |
+    set -euo pipefail
+    curl -sN http://localhost:11434/api/chat \
+      -d '{"model":"tiny","messages":[{"role":"user","content":"hi"}],"stream":true}' \
+      > /tmp/apr-stream.ndjson
+    DONE_COUNT=$(jq -s '[.[] | select(.done==true)] | length' < /tmp/apr-stream.ndjson)
+    [ "$DONE_COUNT" = "1" ]
+    # terminal frame must be last line
+    tail -n1 /tmp/apr-stream.ndjson | jq -e '.done == true' >/dev/null
+  if_fails: "Streaming NDJSON does not terminate with exactly one done=true frame"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "/api/chat non-streaming response has all 10 Ollama-required top-level keys"
+- type: invariant
+  property: "response.message.role == 'assistant' and response.done == true"
+- type: invariant
+  property: "eval_count >= 1 and eval_duration > 0 for non-empty replies"
+- type: invariant
+  property: "Streaming response is application/x-ndjson with exactly one terminal done=true frame"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

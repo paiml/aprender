@@ -5384,3 +5384,3083 @@ roadmap:
   - ci
   - contracts
   notes: null
+- id: PMAT-514
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-04 — Include/exclude file globs'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-04-v1.yaml | Competitor: huggingface | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-huggingface
+  - crux-a-04
+  notes: null
+- id: PMAT-515
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-08 — Custom mirror / HF_ENDPOINT'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-08-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-huggingface
+  - crux-a-08
+  notes: null
+- id: PMAT-516
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-10 — VRAM-aware quant auto-select'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-10-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-10
+  notes: null
+- id: PMAT-517
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-11 — apr cp copy model with new tag'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-11-v1.yaml | Competitor: ollama | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-11
+  notes: null
+- id: PMAT-518
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-12 — apr ps list running models'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-12-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-12
+  notes: null
+- id: PMAT-519
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-13 — apr stop unload model from VRAM'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-13-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-13
+  notes: null
+- id: PMAT-520
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-14 — Pull from S3/GCS/Azure URL'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-14-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ecosystem
+  - crux-a-14
+  notes: null
+- id: PMAT-521
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-16 — Modelfile recipe custom system prompt'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-16-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-16
+  notes: null
+- id: PMAT-522
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-17 — Manifest signing cosign/sigstore'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-17-v1.yaml | Competitor: ecosystem | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ecosystem
+  - crux-a-17
+  notes: null
+- id: PMAT-523
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-21 — Shared model cache across users'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-21-v1.yaml | Competitor: ollama | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-21
+  notes: null
+- id: PMAT-524
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-22 — Disk-quota enforcement on registry'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-22-v1.yaml | Competitor: ollama | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-22
+  notes: null
+- id: PMAT-525
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-23 — Model search Hub + local cache'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-23-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-huggingface
+  - crux-a-23
+  notes: null
+- id: PMAT-526
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-25 — Garbage-collect unused models'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-25-v1.yaml | Competitor: ollama | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-25
+  notes: null
+- id: PMAT-527
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-02 — GGUF → Safetensors for PEFT'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-02-v1.yaml | Competitor: llama_cpp | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-llama_cpp
+  - crux-b-02
+  notes: null
+- id: PMAT-528
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-07 — imatrix calibration'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-07-v1.yaml | Competitor: llama_cpp | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-llama_cpp
+  - crux-b-07
+  notes: null
+- id: PMAT-529
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-08 — AWQ quantization'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-08-v1.yaml | Competitor: vllm | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-vllm
+  - crux-b-08
+  notes: null
+- id: PMAT-530
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-09 — GPTQ quantization'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-09-v1.yaml | Competitor: vllm | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-vllm
+  - crux-b-09
+  notes: null
+- id: PMAT-531
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-10 — BitsAndBytes NF4 4-bit'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-10-v1.yaml | Competitor: huggingface | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-huggingface
+  - crux-b-10
+  notes: null
+- id: PMAT-532
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-11 — FP8 quantization H100+'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-11-v1.yaml | Competitor: vllm | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-vllm
+  - crux-b-11
+  notes: null
+- id: PMAT-533
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-15 — IQ-quants IQ3_XXS / IQ2_S'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-15-v1.yaml | Competitor: llama_cpp | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-llama_cpp
+  - crux-b-15
+  notes: null
+- id: PMAT-534
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-16 — Per-tensor layer-quant override'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-16-v1.yaml | Competitor: llama_cpp | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-llama_cpp
+  - crux-b-16
+  notes: null
+- id: PMAT-535
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-17 — Quantization-aware training (QAT)'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-17-v1.yaml | Competitor: pytorch | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-pytorch
+  - crux-b-17
+  notes: null
+- id: PMAT-536
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-B-18 — Calibration dataset loader'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-B-18-v1.yaml | Competitor: llama_cpp | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-B
+  - competitor-llama_cpp
+  - crux-b-18
+  notes: null
+- id: PMAT-537
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-04 — Ollama /api/chat'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-04-v1.yaml | Competitor: ollama | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-ollama
+  - crux-c-04
+  notes: null
+- id: PMAT-538
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-09 — Speculative decoding draft model'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-09-v1.yaml | Competitor: vllm | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-vllm
+  - crux-c-09
+  notes: null
+- id: PMAT-539
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-11 — OpenAI tool-use function calling'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-11-v1.yaml | Competitor: vllm | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-vllm
+  - crux-c-11
+  notes: null
+- id: PMAT-540
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-12 — Multi-modal vision input LLaVA'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-12-v1.yaml | Competitor: llama_cpp | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-llama_cpp
+  - crux-c-12
+  notes: null
+- id: PMAT-541
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-13 — /v1/embeddings endpoint'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-13-v1.yaml | Competitor: llama_cpp | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-llama_cpp
+  - crux-c-13
+  notes: null
+- id: PMAT-542
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-15 — Tensor + pipeline parallelism'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-15-v1.yaml | Competitor: vllm | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-vllm
+  - crux-c-15
+  notes: null
+- id: PMAT-543
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-16 — LoRA hotswap at runtime'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-16-v1.yaml | Competitor: vllm | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-vllm
+  - crux-c-16
+  notes: null
+- id: PMAT-544
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-17 — Multi-LoRA serving N adapters'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:17Z
+  updated: 2026-04-18T14:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-17-v1.yaml | Competitor: vllm | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-vllm
+  - crux-c-17
+  notes: null
+- id: PMAT-545
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-21 — Mirostat sampling'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-21-v1.yaml | Competitor: llama_cpp | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-llama_cpp
+  - crux-c-21
+  notes: null
+- id: PMAT-546
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-22 — Typical sampling'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-22-v1.yaml | Competitor: llama_cpp | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-llama_cpp
+  - crux-c-22
+  notes: null
+- id: PMAT-547
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-23 — DRY sampling'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-23-v1.yaml | Competitor: llama_cpp | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-llama_cpp
+  - crux-c-23
+  notes: null
+- id: PMAT-548
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-24 — Beam search decoding'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-24-v1.yaml | Competitor: pytorch | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-pytorch
+  - crux-c-24
+  notes: null
+- id: PMAT-549
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-29 — NUMA-aware memory placement'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-29-v1.yaml | Competitor: llama_cpp | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-llama_cpp
+  - crux-c-29
+  notes: null
+- id: PMAT-550
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-C-30 — KV cache quantization Q8_0/Q4_0'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-C-30-v1.yaml | Competitor: llama_cpp | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-C
+  - competitor-llama_cpp
+  - crux-c-30
+  notes: null
+- id: PMAT-551
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-03 — QLoRA 4-bit + LoRA'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-03-v1.yaml | Competitor: huggingface | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-03
+  notes: null
+- id: PMAT-552
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-04 — DPO preference training'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-04-v1.yaml | Competitor: huggingface | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-04
+  notes: null
+- id: PMAT-553
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-11 — DDP multi-GPU single node'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-11-v1.yaml | Competitor: pytorch | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-pytorch
+  - crux-d-11
+  notes: null
+- id: PMAT-554
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-12 — FSDP / ZeRO sharding'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-12-v1.yaml | Competitor: pytorch | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-pytorch
+  - crux-d-12
+  notes: null
+- id: PMAT-555
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-17 — ORPO / KTO / IPO alignment'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-17-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-17
+  notes: null
+- id: PMAT-556
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-18 — Reward-model training'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-18-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-18
+  notes: null
+- id: PMAT-557
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-19 — PPO reinforcement learning'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-19-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-19
+  notes: null
+- id: PMAT-558
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-20 — RoPE frequency scaling during SFT'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-20-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-20
+  notes: null
+- id: PMAT-559
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-24 — Activation checkpointing tags'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-24-v1.yaml | Competitor: pytorch | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-pytorch
+  - crux-d-24
+  notes: null
+- id: PMAT-560
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-26 — LR finder range test'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-26-v1.yaml | Competitor: pytorch | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-pytorch
+  - crux-d-26
+  notes: null
+- id: PMAT-561
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-27 — Hyperparameter sweep ray/optuna'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-27-v1.yaml | Competitor: pytorch | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-pytorch
+  - crux-d-27
+  notes: null
+- id: PMAT-562
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-28 — Adapter fusion combine N LoRAs'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-28-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-28
+  notes: null
+- id: PMAT-563
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-29 — Pre-compiled dataset cache'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-29-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-29
+  notes: null
+- id: PMAT-564
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-30 — Multi-task training loop'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-30-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-30
+  notes: null
+- id: PMAT-565
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-31 — TensorBoard / wandb integration'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-31-v1.yaml | Competitor: pytorch | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-pytorch
+  - crux-d-31
+  notes: null
+- id: PMAT-566
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-33 — Distributed optimizer ZeRO-1'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-33-v1.yaml | Competitor: pytorch | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-pytorch
+  - crux-d-33
+  notes: null
+- id: PMAT-567
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-34 — Deepspeed config loader'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-34-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-34
+  notes: null
+- id: PMAT-568
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-D-35 — accelerate launch wrapper'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-D-35-v1.yaml | Competitor: huggingface | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-D
+  - competitor-huggingface
+  - crux-d-35
+  notes: null
+- id: PMAT-569
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-02 — Perplexity on held-out corpus'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-02-v1.yaml | Competitor: llama_cpp | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-llama_cpp
+  - crux-e-02
+  notes: null
+- id: PMAT-570
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-03 — lm-eval-harness tasks'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-03-v1.yaml | Competitor: huggingface | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-huggingface
+  - crux-e-03
+  notes: null
+- id: PMAT-571
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-07 — Latency P50/P95/P99 under load'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-07-v1.yaml | Competitor: vllm | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-vllm
+  - crux-e-07
+  notes: null
+- id: PMAT-572
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-10 — Hallucination / drift detector'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-10-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-huggingface
+  - crux-e-10
+  notes: null
+- id: PMAT-573
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-11 — MT-Bench / arena judge eval'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-11-v1.yaml | Competitor: huggingface | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-huggingface
+  - crux-e-11
+  notes: null
+- id: PMAT-574
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-12 — BBH/MMLU/HellaSwag per-task'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-12-v1.yaml | Competitor: huggingface | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-huggingface
+  - crux-e-12
+  notes: null
+- id: PMAT-575
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-13 — RULER long-context eval'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-13-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-huggingface
+  - crux-e-13
+  notes: null
+- id: PMAT-576
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-14 — Needle-in-haystack recall'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-14-v1.yaml | Competitor: vllm | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-vllm
+  - crux-e-14
+  notes: null
+- id: PMAT-577
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-19 — Perplexity per quant bit-budget'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-19-v1.yaml | Competitor: llama_cpp | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-llama_cpp
+  - crux-e-19
+  notes: null
+- id: PMAT-578
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-20 — KL divergence vs FP16 baseline'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-20-v1.yaml | Competitor: llama_cpp | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-llama_cpp
+  - crux-e-20
+  notes: null
+- id: PMAT-579
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-21 — Bias/toxicity eval harness'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-21-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-huggingface
+  - crux-e-21
+  notes: null
+- id: PMAT-580
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-22 — Code-eval sandbox Docker runner'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-22-v1.yaml | Competitor: huggingface | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-huggingface
+  - crux-e-22
+  notes: null
+- id: PMAT-581
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-23 — Tool-use benchmark BFCL'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-23-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-ecosystem
+  - crux-e-23
+  notes: null
+- id: PMAT-582
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-24 — RAG eval RAGAS/TruLens'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-24-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-ecosystem
+  - crux-e-24
+  notes: null
+- id: PMAT-583
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-E-25 — Vision-language benchmark harness'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-E-25-v1.yaml | Competitor: openclip | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-E
+  - competitor-openclip
+  - crux-e-25
+  notes: null
+- id: PMAT-584
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-06 — KV-cache utilization timeline'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-06-v1.yaml | Competitor: vllm | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-vllm
+  - crux-f-06
+  notes: null
+- id: PMAT-585
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-07 — GPU memory timeline Chrome trace'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-07-v1.yaml | Competitor: pytorch | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-pytorch
+  - crux-f-07
+  notes: null
+- id: PMAT-586
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-09 — Gradient-norm telemetry per step'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-09-v1.yaml | Competitor: pytorch | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-pytorch
+  - crux-f-09
+  notes: null
+- id: PMAT-587
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-11 — NaN/Inf detector in activations'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-11-v1.yaml | Competitor: pytorch | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-pytorch
+  - crux-f-11
+  notes: null
+- id: PMAT-588
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-13 — CUDA OOM postmortem report'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-13-v1.yaml | Competitor: pytorch | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-pytorch
+  - crux-f-13
+  notes: null
+- id: PMAT-589
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-14 — Deadlock/hang detector stack dump'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:18Z
+  updated: 2026-04-18T14:44:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-14-v1.yaml | Competitor: pytorch | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-pytorch
+  - crux-f-14
+  notes: null
+- id: PMAT-590
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-15 — NCCL failure diagnostics'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-15-v1.yaml | Competitor: pytorch | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-pytorch
+  - crux-f-15
+  notes: null
+- id: PMAT-591
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-17 — Attention pattern visualization'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-17-v1.yaml | Competitor: pytorch | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-pytorch
+  - crux-f-17
+  notes: null
+- id: PMAT-592
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-18 — Token embedding UMAP 2D'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-18-v1.yaml | Competitor: pytorch | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-pytorch
+  - crux-f-18
+  notes: null
+- id: PMAT-593
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-F-19 — apr explain token selection'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-F-19-v1.yaml | Competitor: llama_cpp | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-F
+  - competitor-llama_cpp
+  - crux-f-19
+  notes: null
+- id: PMAT-594
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-G-04 — Auto-generate README with examples'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-G-04-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-G
+  - competitor-huggingface
+  - crux-g-04
+  notes: null
+- id: PMAT-595
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-G-07 — SemVer tag on apr publish'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-G-07-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-G
+  - competitor-huggingface
+  - crux-g-07
+  notes: null
+- id: PMAT-596
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-G-11 — Ollama push to remote registry'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-G-11-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-G
+  - competitor-ollama
+  - crux-g-11
+  notes: null
+- id: PMAT-597
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-G-14 — License metadata validator'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-G-14-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-G
+  - competitor-huggingface
+  - crux-g-14
+  notes: null
+- id: PMAT-598
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-G-15 — Duplicate-artifact detector pre-push'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-G-15-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-G
+  - competitor-huggingface
+  - crux-g-15
+  notes: null
+- id: PMAT-599
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-03 — Packing for efficient SFT'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-03-v1.yaml | Competitor: huggingface | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-huggingface
+  - crux-h-03
+  notes: null
+- id: PMAT-600
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-06 — Streaming datasets no RAM mat'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-06-v1.yaml | Competitor: huggingface | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-huggingface
+  - crux-h-06
+  notes: null
+- id: PMAT-601
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-12 — ImageFolder loader'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-12-v1.yaml | Competitor: pytorch | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-pytorch
+  - crux-h-12
+  notes: null
+- id: PMAT-602
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-13 — Audio dataset loader WAV/FLAC'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-13-v1.yaml | Competitor: pytorch | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-pytorch
+  - crux-h-13
+  notes: null
+- id: PMAT-603
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-14 — Dataset mixing per-source weights'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-14-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-huggingface
+  - crux-h-14
+  notes: null
+- id: PMAT-604
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-16 — Tokenizer-aware length bucketing'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-16-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-huggingface
+  - crux-h-16
+  notes: null
+- id: PMAT-605
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-17 — Contrastive pair sampler for CLIP'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-17-v1.yaml | Competitor: openclip | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-openclip
+  - crux-h-17
+  notes: null
+- id: PMAT-606
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-18 — Negative sampling for ranking'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-18-v1.yaml | Competitor: pytorch | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-pytorch
+  - crux-h-18
+  notes: null
+- id: PMAT-607
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-19 — Synthetic data generation via LLM'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-19-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-huggingface
+  - crux-h-19
+  notes: null
+- id: PMAT-608
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-20 — PII redaction in datasets'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-20-v1.yaml | Competitor: ecosystem | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-ecosystem
+  - crux-h-20
+  notes: null
+- id: PMAT-609
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-H-21 — Row-level dedup MinHash'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-H-21-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-H
+  - competitor-huggingface
+  - crux-h-21
+  notes: null
+- id: PMAT-610
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-I-04 — Ollama function calling'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-I-04-v1.yaml | Competitor: ollama | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-I
+  - competitor-ollama
+  - crux-i-04
+  notes: null
+- id: PMAT-611
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-I-06 — ReAct agent loop + stop conditions'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-I-06-v1.yaml | Competitor: ecosystem | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-I
+  - competitor-ecosystem
+  - crux-i-06
+  notes: null
+- id: PMAT-612
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-I-07 — Claude Agent SDK compatibility'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-I-07-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-I
+  - competitor-ecosystem
+  - crux-i-07
+  notes: null
+- id: PMAT-613
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-I-09 — Parallel tool-calls one turn'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-I-09-v1.yaml | Competitor: vllm | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-I
+  - competitor-vllm
+  - crux-i-09
+  notes: null
+- id: PMAT-614
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-I-12 — GBNF grammar from JSON-schema'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-I-12-v1.yaml | Competitor: llama_cpp | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-I
+  - competitor-llama_cpp
+  - crux-i-12
+  notes: null
+- id: PMAT-615
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-I-13 — MCP resource provider'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-I-13-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-I
+  - competitor-ecosystem
+  - crux-i-13
+  notes: null
+- id: PMAT-616
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-I-14 — MCP prompt provider'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-I-14-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-I
+  - competitor-ecosystem
+  - crux-i-14
+  notes: null
+- id: PMAT-617
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-I-15 — Agent memory plugin interface'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-I-15-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-I
+  - competitor-ecosystem
+  - crux-i-15
+  notes: null
+- id: PMAT-618
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-I-16 — Guardrails output filter pipeline'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-I-16-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-I
+  - competitor-ecosystem
+  - crux-i-16
+  notes: null
+- id: PMAT-619
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-01 — CLIP zero-shot classification'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-01-v1.yaml | Competitor: openclip | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-01
+  notes: null
+- id: PMAT-620
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-02 — Joint text+image embedding'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-02-v1.yaml | Competitor: openclip | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-02
+  notes: null
+- id: PMAT-621
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-03 — CLIP retrieval cosine search'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-03-v1.yaml | Competitor: openclip | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-03
+  notes: null
+- id: PMAT-622
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-04 — Visual feature extraction'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-04-v1.yaml | Competitor: openclip | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-04
+  notes: null
+- id: PMAT-623
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-05 — LAION WebDataset tar loading'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-05-v1.yaml | Competitor: openclip | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-05
+  notes: null
+- id: PMAT-624
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-06 — SigLIP model support'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-06-v1.yaml | Competitor: openclip | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-06
+  notes: null
+- id: PMAT-625
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-07 — EVA-CLIP model support'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-07-v1.yaml | Competitor: openclip | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-07
+  notes: null
+- id: PMAT-626
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-08 — CLIP contrastive training loop'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-08-v1.yaml | Competitor: openclip | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-08
+  notes: null
+- id: PMAT-627
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-09 — Image preprocessing resize/normalize'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-09-v1.yaml | Competitor: openclip | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-09
+  notes: null
+- id: PMAT-628
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-10 — Text tokenizer for CLIP BPE'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-10-v1.yaml | Competitor: openclip | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-10
+  notes: null
+- id: PMAT-629
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-11 — OpenCLIP checkpoint loader'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-11-v1.yaml | Competitor: openclip | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-11
+  notes: null
+- id: PMAT-630
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-12 — Image-text pair dataloader'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-12-v1.yaml | Competitor: openclip | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-12
+  notes: null
+- id: PMAT-631
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-13 — Video-CLIP temporal pooling'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:19Z
+  updated: 2026-04-18T14:44:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-13-v1.yaml | Competitor: openclip | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-13
+  notes: null
+- id: PMAT-632
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-14 — Audio-CLIP encoder'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-14-v1.yaml | Competitor: openclip | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-14
+  notes: null
+- id: PMAT-633
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-15 — CLIP fine-tune on new concept'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-15-v1.yaml | Competitor: openclip | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-15
+  notes: null
+- id: PMAT-634
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-16 — Distill large-CLIP → small-CLIP'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-16-v1.yaml | Competitor: openclip | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-16
+  notes: null
+- id: PMAT-635
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-17 — Zero-shot detection OWL-ViT'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-17-v1.yaml | Competitor: openclip | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-17
+  notes: null
+- id: PMAT-636
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-18 — Multilingual CLIP'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-18-v1.yaml | Competitor: openclip | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-18
+  notes: null
+- id: PMAT-637
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-19 — Export CLIP → ONNX / GGUF'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-19-v1.yaml | Competitor: openclip | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-19
+  notes: null
+- id: PMAT-638
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-J-20 — CLIP eval ImageNet zero-shot'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-J-20-v1.yaml | Competitor: openclip | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-J
+  - competitor-openclip
+  - crux-j-20
+  notes: null
+- id: PMAT-639
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-02 — Ollama Python SDK test suite'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-02-v1.yaml | Competitor: ecosystem | Demand: 5/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-02
+  notes: null
+- id: PMAT-640
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-05 — apr ui Gradio web UI'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-05-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-05
+  notes: null
+- id: PMAT-641
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-07 — Prometheus /metrics endpoint'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-07-v1.yaml | Competitor: vllm | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-vllm
+  - crux-k-07
+  notes: null
+- id: PMAT-642
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-08 — OpenTelemetry traces'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-08-v1.yaml | Competitor: ecosystem | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-08
+  notes: null
+- id: PMAT-643
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-11 — Modelfile DSL parser (Ollama)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-11-v1.yaml | Competitor: ollama | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ollama
+  - crux-k-11
+  notes: null
+- id: PMAT-644
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-12 — VSCode extension for apr'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-12-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-12
+  notes: null
+- id: PMAT-645
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-13 — Docker image apr-serve:latest'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-13-v1.yaml | Competitor: ecosystem | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-13
+  notes: null
+- id: PMAT-646
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-14 — systemd unit for apr serve'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-14-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-14
+  notes: null
+- id: PMAT-647
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-15 — Kubernetes Helm chart'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-15-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-15
+  notes: null
+- id: PMAT-648
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-16 — Triton Inference Server backend'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-16-v1.yaml | Competitor: ecosystem | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-16
+  notes: null
+- id: PMAT-649
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-17 — NVIDIA Dynamo integration'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-17-v1.yaml | Competitor: ecosystem | Demand: 2/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-17
+  notes: null
+- id: PMAT-650
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-18 — ONNX Runtime backend'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-18-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-18
+  notes: null
+- id: PMAT-651
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-19 — CoreML export (Apple Silicon)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-19-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-19
+  notes: null
+- id: PMAT-652
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-20 — TensorRT-LLM export'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-20-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-20
+  notes: null
+- id: PMAT-653
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-K-21 — MLX backend (Apple Silicon native)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18T14:44:20Z
+  updated: 2026-04-18T14:44:20Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-K-21-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-K
+  - competitor-ecosystem
+  - crux-k-21
+  notes: null

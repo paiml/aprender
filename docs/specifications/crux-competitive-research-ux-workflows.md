@@ -485,14 +485,22 @@ at Phase 0 exit; intake estimates:
 
 ## 7. Implementation Roadmap
 
-**Phase 0 — Contract skeletons**
-- Create 250 sub-contract YAMLs, status `draft`, from §5 registry
-- Register all in `contracts/crux-competitive-research-ux-v1.yaml`
-- Gate: `pmat comply check` passes with 250 CRUX draft contracts
+**Phase 0 — Contract skeletons** ✅ **COMPLETE (2026-04-18)**
+- ✅ Created 250 sub-contract YAMLs at `contracts/crux-{ID}-v1.yaml`
+  via deterministic generator `scripts/crux_scaffold_contracts.py`
+- ✅ Registered all in master `contracts/crux-competitive-research-ux-v1.yaml`
+- ✅ Created 140 pmat work tickets (one per ❌ missing story) via
+  `scripts/crux_bulk_pmat_work.sh` — tagged `crux,gap,crux-{category},competitor-{name},{id_lower}`
+- ✅ 18 demand=5 missing contracts promoted draft → **spec-complete**
+  (B-07/08/09, C-04/11/13, D-03/04/11/12, E-02/03/07, H-03, F-09/13, I-04, K-02)
+  via parallel sub-agent enrichment with real competitor CLI falsification bodies
+- Gate: `pmat comply check` passes with 250 CRUX contracts registered
 
-**Phase 1 — Evidence capture**
+**Phase 1 — Evidence capture** (IN PROGRESS)
 - Collect `evidence/crux/{competitor}/*` per §2.1 for all 7 competitors
 - Falsification harness comparing `apr --help` verbs vs competitor verbs
+- Enrich remaining 232 contracts (spec-complete body) — prioritize demand=5
+  and demand=4 first
 - Gate: `apr qa --crux` emits per-story PASS/FAIL/SKIP
 
 **Phase 2 — Close 🔨 partials** (priority by demand score)

@@ -18,44 +18,112 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: missing
   description: >
-    QLoRA 4-bit + LoRA. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    QLoRA 4-bit + LoRA parameter-efficient fine-tuning. Competitor canonical:
+    `peft.LoraConfig(r=16, alpha=32, target_modules=["q_proj","v_proj"])` +
+    `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16)`. Aprender surface:
+    `apr finetune model.apr --method qlora --lora-rank 16 --lora-alpha 32
+    --quant nf4 --compute-dtype bf16 --data train.jsonl`.
+    Reference: https://arxiv.org/abs/2305.14314 (Dettmers et al., QLoRA).
 
 equations:
-  placeholder_contract:
+  qlora_memory_budget:
     formula: |
-      DRAFT — user workflow "QLoRA 4-bit + LoRA"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Let M_full = peak_gpu_memory_bytes(full_precision_finetune(model, batch_size))
+      Let M_qlora = peak_gpu_memory_bytes(qlora_finetune(model, batch_size, rank=r, quant=nf4))
+      QLoRA memory contract:
+        M_qlora <= 0.3 * M_full
+      at identical (model, batch_size, seq_len). The 4-bit NF4 base weights
+      occupy 1/4 of bf16 and trainable adapter params are 2*r*(d_in+d_out)
+      per target module, typically <1% of base params.
+    domain: (model, batch_size, lora_rank, quant_type) → peak_memory_bytes
+    codomain: bool (budget respected)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "NF4 base weights are frozen; only LoRA A/B matrices receive gradients"
+    - "Optimizer state (Adam m,v) scales with trainable params, not frozen base"
+    - "Peak memory includes activations, gradients, optimizer state, and base weights"
+
+  lora_loss_trajectory:
+    formula: |
+      For i in 1..total_epochs:
+        epoch_metrics[i].val_loss <= epoch_metrics[i-1].val_loss * 1.05
+      i.e. validation loss is monotonically non-increasing with at most
+      5% per-epoch noise tolerance. W_effective = W_base + (alpha/r) * B @ A
+      where A ∈ R^(r×d_in), B ∈ R^(d_out×r), initialized A~N(0,σ²), B=0.
+    domain: (train_dataset, lora_config, num_epochs) → [val_loss_t]
+    codomain: bool (trajectory valid)
+    invariants:
+    - "val_loss[0] <= val_loss of untrained adapters (B=0 → identity at init)"
+    - "Per-epoch regression >5% indicates LR too hot or rank mismatch"
+    - "final merged checkpoint satisfies apr qa --require-golden-output"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-03-001
-  rule: placeholder
-  prediction: "apr surface for 'QLoRA 4-bit + LoRA' matches huggingface canonical behavior"
+  rule: QLoRA memory ≤ 0.3× full-precision baseline
+  prediction: "Peak VRAM with --method qlora --quant nf4 is ≤30% of full-precision finetune at same batch size"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-03" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    # TODO: implement --report-peak-memory flag in apr finetune
+    BASE_MEM=$(apr finetune model.apr --method full --data tests/fixtures/train.jsonl \
+      --epochs 1 --batch-size 4 --report-peak-memory --json 2>/dev/null | jq '.peak_vram_bytes')
+    QLORA_MEM=$(apr finetune model.apr --method qlora --lora-rank 16 --lora-alpha 32 \
+      --quant nf4 --compute-dtype bf16 --data tests/fixtures/train.jsonl \
+      --epochs 1 --batch-size 4 --report-peak-memory --json 2>/dev/null | jq '.peak_vram_bytes')
+    python3 -c "assert $QLORA_MEM <= 0.3 * $BASE_MEM, f'QLoRA used {$QLORA_MEM/$BASE_MEM:.2%} of full baseline (budget 30%)'"
+  if_fails: "QLoRA memory budget violated — quantization or adapter allocation wrong"
+
+- id: FALSIFY-CRUX-D-03-002
+  rule: val_loss monotonically non-increasing (±5% noise)
+  prediction: "Each epoch's val_loss ≤ prior epoch × 1.05"
+  test: |
+    set -euo pipefail
+    OUT=$(apr finetune model.apr --method qlora --lora-rank 16 --lora-alpha 32 \
+      --quant nf4 --compute-dtype bf16 --data tests/fixtures/train.jsonl \
+      --epochs 3 --json 2>/dev/null)
+    echo "$OUT" | jq -e '
+      [.epoch_metrics[].val_loss] as $losses
+      | [range(1; $losses|length) | select($losses[.] > $losses[.-1] * 1.05)]
+      | length == 0
+    '
+  if_fails: "val_loss increased >5% between epochs — QLoRA divergence (LR too hot or rank mismatch, see MODEL-1 QLoRA divergence)"
+
+- id: FALSIFY-CRUX-D-03-003
+  rule: merged QLoRA checkpoint passes golden-output QA
+  prediction: "apr finetune --method qlora --merge-adapter produces a checkpoint passing apr qa"
+  test: |
+    set -euo pipefail
+    apr finetune model.apr --method qlora --lora-rank 16 --lora-alpha 32 \
+      --quant nf4 --compute-dtype bf16 --data tests/fixtures/train.jsonl \
+      --epochs 1 --merge-adapter -o /tmp/qlora-merged.apr
+    apr qa /tmp/qlora-merged.apr --require-golden-output --json | jq -e '.gates.golden_output.status == "PASS"'
+  if_fails: "Merged QLoRA checkpoint emits garbage — adapter merge or dequant path broken"
+
+- id: FALSIFY-CRUX-D-03-004
+  rule: NF4 quant-type honored end-to-end
+  prediction: "--quant nf4 produces NF4-quantized base weights (not FP4, not Q4_0)"
+  test: |
+    set -euo pipefail
+    # TODO: wire once apr inspect reports per-tensor quant type for adapter checkpoints
+    apr finetune model.apr --method qlora --quant nf4 --data tests/fixtures/train.jsonl \
+      --epochs 1 -o /tmp/qlora.apr
+    apr inspect /tmp/qlora.apr --json | jq -e '.base_quant_type == "nf4"'
+  if_fails: "--quant nf4 flag ignored; base weights not NF4"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Peak GPU memory ≤ 0.3 × full-precision baseline at same batch size (QLoRA paper §3)"
+- type: invariant
+  property: "Only LoRA adapter parameters (A, B) receive gradients; base NF4 weights frozen"
+- type: invariant
+  property: "val_loss trajectory monotonically non-increasing within ±5% per-epoch noise"
+- type: invariant
+  property: "Merged adapter checkpoint passes apr qa --require-golden-output"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

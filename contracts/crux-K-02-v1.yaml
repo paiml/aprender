@@ -25,37 +25,182 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  sdk_test_pass_rate:
     formula: |
-      DRAFT — user workflow "Ollama Python SDK test suite"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      Competitor reference:
+        pip install ollama   # https://github.com/ollama/ollama-python
+        pytest ollama-python/tests/   # runs against a local `ollama serve`
+
+      Aprender equivalent:
+        apr serve --ollama-compat --port 11434   (replaces ollama serve)
+        uv run --with ollama --with pytest python -m pytest ollama-python/tests/
+
+      Test surface MUST cover:
+        ollama.chat(), ollama.generate(), ollama.embeddings(),
+        ollama.list(), ollama.show(), ollama.pull(),
+        + streaming variants of chat and generate.
+
+      Acceptance:
+        pass_rate = passed / (passed + failed)   >= 0.95
+        (excluding tests explicitly xfail-annotated for apr-known-gaps)
+    domain: upstream ollama-python test suite pointed at apr serve --ollama-compat
+    codomain: pytest JUnit XML / exit code
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "pass_rate >= 0.95 against upstream ollama-python HEAD"
+    - "All six top-level verbs (chat, generate, embeddings, list, show, pull) have at least one passing test"
+    - "Streaming tests (test_chat_stream, test_generate_stream) pass"
+
+  list_endpoint_schema:
+    formula: |
+      ollama.list() returns { "models": [ { name: string,
+                                            size: u64 > 0,
+                                            digest: string (hex),
+                                            modified_at: string (RFC3339) }, ... ] }
+
+      Equivalent HTTP: GET /api/tags → same JSON shape.
+      apr's /api/tags MUST emit this shape exactly so the Python SDK's
+      deserializer does not raise.
+    domain: GET /api/tags on apr serve --ollama-compat
+    codomain: "JSON { models: [ {name, size, digest, modified_at} ] }"
+    invariants:
+    - "Every models[i] has all of {name, size, digest, modified_at}"
+    - "size is u64 > 0"
+    - "digest matches ^[a-f0-9]{12,}$ (hex, at least 12 chars)"
+
+  streaming_chunk_validity:
+    formula: |
+      For stream=true, each wire chunk MUST be a single well-formed JSON object
+      followed by a newline (NDJSON). The Python SDK json.loads() each chunk;
+      a malformed chunk raises and fails the streaming test.
+
+        for each chunk c:  json.loads(c) succeeds
+        last chunk has done == true
+    domain: streamed responses from /api/chat and /api/generate
+    codomain: NDJSON byte stream
+    invariants:
+    - "Every emitted chunk is valid JSON (parseable by json.loads)"
+    - "Stream terminates with exactly one done=true chunk"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-02-001
-  rule: placeholder
-  prediction: "apr surface for 'Ollama Python SDK test suite' matches ecosystem canonical behavior"
+  rule: ollama-python suite passes >= 95% against apr
+  prediction: "upstream ollama-python pytest suite pointed at apr serve --ollama-compat passes at least 95%"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-02" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    # Start apr in background, wait for readiness
+    apr serve --ollama-compat --port 11434 --model evidence/crux/ollama/tiny.gguf &
+    APR_PID=$!
+    trap 'kill $APR_PID 2>/dev/null || true' EXIT
+    for _ in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
+    # Clone pinned upstream and run its suite
+    rm -rf /tmp/ollama-python && git clone --depth 1 https://github.com/ollama/ollama-python /tmp/ollama-python
+    cd /tmp/ollama-python
+    OLLAMA_HOST=http://127.0.0.1:11434 uv run --with ollama --with pytest --with pytest-json-report \
+      python -m pytest tests/ --json-report --json-report-file=/tmp/ollama-py-report.json || true
+    # pass_rate must be >= 0.95 (excluding xfails)
+    python3 - <<'PY'
+    import json, sys
+    r = json.load(open('/tmp/ollama-py-report.json'))
+    s = r['summary']
+    passed = s.get('passed', 0)
+    failed = s.get('failed', 0)
+    denom = passed + failed
+    rate = passed / denom if denom else 0.0
+    print(f"pass_rate={rate:.3f} passed={passed} failed={failed}")
+    sys.exit(0 if rate >= 0.95 else 1)
+    PY
+  if_fails: "ollama-python test suite pass rate dropped below 95% — apr serve --ollama-compat has a wire-level regression"
+
+- id: FALSIFY-CRUX-K-02-002
+  rule: /api/tags schema matches Ollama
+  prediction: "GET /api/tags returns models[] with {name, size, digest, modified_at} on every entry"
+  test: |
+    set -euo pipefail
+    RESP=$(curl -sS http://127.0.0.1:11434/api/tags)
+    echo "$RESP" | jq -e '
+      .models | type == "array" and length >= 1 and
+      all(.[]; (.name | type == "string") and
+               (.size | type == "number" and . > 0) and
+               (.digest | type == "string" and test("^[a-f0-9]{12,}$")) and
+               (.modified_at | type == "string"))
+    ' >/dev/null
+  if_fails: "/api/tags response shape diverges from Ollama — ollama.list() will raise in the SDK"
+
+- id: FALSIFY-CRUX-K-02-003
+  rule: streaming chat chunks are valid JSON
+  prediction: "every NDJSON chunk from stream=true /api/chat parses via json.loads and last has done=true"
+  test: |
+    set -euo pipefail
+    curl -sS -N http://127.0.0.1:11434/api/chat -H 'content-type: application/json' \
+      --data @evidence/crux/ollama/chat-stream-request.json > /tmp/apr-chat-stream.ndjson
+    python3 - <<'PY'
+    import json, sys
+    chunks = [ln for ln in open('/tmp/apr-chat-stream.ndjson') if ln.strip()]
+    assert chunks, "no chunks received"
+    for i, ln in enumerate(chunks):
+        try:
+            json.loads(ln)
+        except Exception as e:
+            print(f"chunk {i} not JSON: {e!r}  raw={ln!r}")
+            sys.exit(1)
+    last = json.loads(chunks[-1])
+    assert last.get('done') is True, f"last chunk done={last.get('done')}"
+    PY
+  if_fails: "streaming chunks malformed or terminator missing — ollama-python streaming tests will fail"
+
+- id: FALSIFY-CRUX-K-02-004
+  rule: six top-level verbs each have >=1 passing test
+  prediction: "chat, generate, embeddings, list, show, pull each show >= 1 passed in the pytest report"
+  test: |
+    set -euo pipefail
+    python3 - <<'PY'
+    import json, sys
+    r = json.load(open('/tmp/ollama-py-report.json'))
+    verbs = {'chat', 'generate', 'embeddings', 'list', 'show', 'pull'}
+    passed_by_verb = {v: 0 for v in verbs}
+    for t in r.get('tests', []):
+        nid = t.get('nodeid', '')
+        for v in verbs:
+            if f"test_{v}" in nid and t.get('outcome') == 'passed':
+                passed_by_verb[v] += 1
+    missing = [v for v, n in passed_by_verb.items() if n == 0]
+    if missing:
+        print(f"no passing tests for verbs: {missing}")
+        sys.exit(1)
+    PY
+  if_fails: "at least one of {chat,generate,embeddings,list,show,pull} has zero passing tests — coverage gap in Ollama wire compat"
+
+- id: FALSIFY-CRUX-K-02-005
+  rule: apr serve --ollama-compat binds port 11434 by default
+  prediction: "port 11434 matches ollama default so ollama-python requires no config change"
+  test: |
+    set -euo pipefail
+    # Fresh start, no --port flag override
+    pkill -f 'apr serve --ollama-compat' 2>/dev/null || true
+    apr serve --ollama-compat --model evidence/crux/ollama/tiny.gguf &
+    APR_PID=$!
+    trap 'kill $APR_PID 2>/dev/null || true' EXIT
+    for _ in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/tags >/dev/null && break; sleep 1; done
+    curl -sf http://127.0.0.1:11434/api/tags >/dev/null
+  if_fails: "apr serve --ollama-compat does not default to :11434 — ollama-python must be reconfigured to reach it"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "ollama-python upstream pytest suite pass_rate >= 0.95 against apr serve --ollama-compat"
+- type: invariant
+  property: "GET /api/tags returns models[] with {name, size, digest, modified_at} on every entry"
+- type: invariant
+  property: "every streaming chunk is valid JSON, terminator has done=true"
+- type: invariant
+  property: "chat, generate, embeddings, list, show, pull each have >= 1 passing SDK test"
+- type: invariant
+  property: "apr serve --ollama-compat defaults to port 11434"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

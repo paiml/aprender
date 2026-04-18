@@ -25,37 +25,114 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  # Competitor canonical CLI:
+  #   lm_eval --model hf --model_args pretrained=Llama-3-8B \
+  #           --tasks mmlu,arc_easy,hellaswag --batch_size 8
+  # Reference: https://github.com/EleutherAI/lm-evaluation-harness
+  # Aprender equivalent:
+  #   apr eval model.apr --harness lm-eval \
+  #           --tasks mmlu,arc_easy,hellaswag --batch-size 8 --json
+
+  task_accuracy:
     formula: |
-      DRAFT — user workflow "lm-eval-harness tasks"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      acc(M, T) = (1/|T|) * Σ_{(q, a_gold) ∈ T} 𝟙[argmax_a p_M(a | q) == a_gold]
+      where:
+        M = language model under test
+        T = task test set of (prompt, gold-answer) pairs
+        p_M(a|q) = model's likelihood for candidate answer a given prompt q
+    domain: (model M, task T ∈ {mmlu, arc_easy, hellaswag, ...})
+    codomain: f64 ∈ [0.0, 1.0]
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "acc ∈ [0.0, 1.0] (proportion of correct answers)"
+    - "For multiple-choice tasks, answer chosen by argmax over fixed candidate set"
+    - "Task set T matches lm-eval-harness canonical splits byte-for-byte"
+
+  harness_json_schema:
+    formula: |
+      apr eval --harness lm-eval --json output MUST contain:
+        results: { <task_name>: { acc: f64 ∈ [0.0, 1.0], acc_stderr: f64 >= 0.0, ... } }
+        versions: { <task_name>: string }  # harness task version
+        config: { model: string, batch_size: u64, seed: u64, ... }
+      for every task in --tasks flag.
+    domain: apr eval --harness lm-eval --json output
+    codomain: JSON object
+    invariants:
+    - "results.<task>.acc present for EVERY task in --tasks flag"
+    - "results.<task>.acc ∈ [0.0, 1.0]"
+    - "versions.<task> matches pinned lm-eval-harness release"
+    - "For Llama-3-8B-Instruct, results.mmlu.acc ∈ [0.60, 0.72] (reported: 0.66)"
+    - "At temp=0.0 seed=42, two runs on identical subset produce byte-identical JSON results"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-03-001
-  rule: placeholder
-  prediction: "apr surface for 'lm-eval-harness tasks' matches huggingface canonical behavior"
+  rule: JSON schema — per-task acc present
+  prediction: "results.<task>.acc exists for every requested task"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-E-03" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    OUT=$(apr eval model.apr --harness lm-eval \
+      --tasks mmlu,arc_easy,hellaswag --batch-size 8 --json)
+    for TASK in mmlu arc_easy hellaswag; do
+      echo "$OUT" | jq -e ".results.${TASK}.acc | type == \"number\"" || exit 1
+    done
+  if_fails: "apr eval --harness lm-eval JSON missing results.<task>.acc for at least one requested task"
+
+- id: FALSIFY-CRUX-E-03-002
+  rule: MMLU score in known-good band for Llama-3-8B-Instruct
+  prediction: "0.60 <= results.mmlu.acc <= 0.72 (HF reported: 0.66)"
+  test: |
+    # TODO: requires Llama-3-8B-Instruct .apr artifact.
+    OUT=$(apr eval models/llama-3-8b-instruct.apr --harness lm-eval \
+      --tasks mmlu --batch-size 8 --seed 42 --json)
+    ACC=$(echo "$OUT" | jq '.results.mmlu.acc')
+    python3 -c "import sys; acc=$ACC; sys.exit(0 if 0.60 <= acc <= 0.72 else 1)"
+  if_fails: "Llama-3-8B-Instruct MMLU outside [0.60, 0.72] — harness or model broken"
+
+- id: FALSIFY-CRUX-E-03-003
+  rule: acc in [0, 1] for every task
+  prediction: "all results.<task>.acc values are proper probabilities"
+  test: |
+    OUT=$(apr eval model.apr --harness lm-eval \
+      --tasks mmlu,arc_easy,hellaswag --batch-size 8 --json)
+    echo "$OUT" | jq -e '.results | to_entries | all(.value.acc >= 0.0 and .value.acc <= 1.0)'
+  if_fails: "At least one task reports acc outside [0.0, 1.0]"
+
+- id: FALSIFY-CRUX-E-03-004
+  rule: determinism at temp=0.0 seed=42
+  prediction: "two runs on identical subset produce byte-identical .results"
+  test: |
+    # TODO: requires small fixed subset (e.g. mmlu_subset_10).
+    R1=$(apr eval model.apr --harness lm-eval --tasks mmlu_subset_10 \
+         --batch-size 8 --seed 42 --temperature 0.0 --json | jq -S '.results')
+    R2=$(apr eval model.apr --harness lm-eval --tasks mmlu_subset_10 \
+         --batch-size 8 --seed 42 --temperature 0.0 --json | jq -S '.results')
+    [ "$R1" = "$R2" ]
+  if_fails: "Non-deterministic harness output at temp=0.0 seed=42 — sampling or batching bug"
+
+- id: FALSIFY-CRUX-E-03-005
+  rule: versions block pins harness release
+  prediction: "versions.<task> is present and non-empty for every task"
+  test: |
+    OUT=$(apr eval model.apr --harness lm-eval \
+      --tasks mmlu,arc_easy,hellaswag --batch-size 8 --json)
+    echo "$OUT" | jq -e '.versions | to_entries | all(.value | type == "string" and length > 0)'
+  if_fails: "versions block missing or empty — cannot reproduce harness results"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "results.<task>.acc present for every requested task"
+- type: invariant
+  property: "results.<task>.acc ∈ [0.0, 1.0] for every task"
+- type: invariant
+  property: "Llama-3-8B-Instruct MMLU ∈ [0.60, 0.72] (parity with HF/EleutherAI reference)"
+- type: invariant
+  property: "Deterministic at temp=0.0 seed=42 (byte-identical results on two runs)"
+- type: invariant
+  property: "versions.<task> block present and non-empty for reproducibility"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

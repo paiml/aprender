@@ -569,12 +569,22 @@ pmat_work:
 # ─────────────────────────────────────────────────────────────
 phases:
   phase_0_skeletons:
-    description: "Create 250 sub-contract YAMLs at status=draft"
-    exit_criteria: "pmat comply check passes with 250 CRUX draft contracts"
+    description: "Create 250 sub-contract YAMLs at status=draft; create pmat work tickets for all missing"
+    exit_criteria: "pmat comply check passes with 250 CRUX draft contracts; 140 pmat tickets exist"
+    status: complete
+    completed_at: "2026-04-18"
+    artifacts:
+    - scripts/crux_scaffold_contracts.py
+    - scripts/crux_bulk_pmat_work.sh
+    - scripts/crux_missing_stories.py
+    - "contracts/crux-{A..K}-{01..35}-v1.yaml (250 files)"
+    evidence: "pmat work list --count -> 437 (+140 CRUX), `yq '.stories|length' -> 250"
     blocks: [phase_1_evidence]
 
   phase_1_evidence:
-    description: "Capture competitor evidence into evidence/crux/*/"
+    description: "Capture competitor evidence into evidence/crux/*/ and enrich contracts to spec-complete"
+    status: in_progress
+    progress: "18 / 250 contracts spec-complete (demand=5 missing stories done by parallel sub-agents 2026-04-18)"
     exit_criteria: "apr qa --crux emits per-story PASS/FAIL/SKIP; pmat work tickets exist for all missing"
     blocks: [phase_2_partials]
 
@@ -604,7 +614,10 @@ phases:
 # ─────────────────────────────────────────────────────────────
 status:
   current: DRAFT
-  next_milestone: phase_0_skeletons
+  next_milestone: phase_1_evidence
   owner: PAIML Engineering
   openclaw_interpretation: pending-user-confirmation
   last_subspec_sync: "2026-04-18"
+  spec_complete_contracts: 18  # of 250
+  pmat_tickets_created: 140    # one per missing story
+  phase_0_completed_at: "2026-04-18"

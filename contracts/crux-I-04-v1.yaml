@@ -25,37 +25,140 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  tool_call_response_schema:
     formula: |
-      DRAFT — user workflow "Ollama function calling"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      Competitor reference (Ollama /api/chat with tools):
+        POST /api/chat { model, messages, tools: [ OpenAIToolSchema ] }
+        → { message: { role: "assistant",
+                       content: string,
+                       tool_calls: [ { function: { name: string,
+                                                   arguments: object } } ] },
+            done: bool, ... }
+
+      Aprender equivalent (apr serve --ollama-compat --port 11434):
+        same wire schema. Given a tools[] array containing a function
+        `get_weather` with JSON-schema parameters { location: string, unit: enum },
+        and a user turn that demands its invocation, response MUST satisfy:
+
+          response.message.tool_calls           : array, length >= 1
+          response.message.tool_calls[0].function.name      == "get_weather"
+          response.message.tool_calls[0].function.arguments : object
+          json_schema_validate(arguments, tools[0].function.parameters) == true
+    domain: HTTP POST /api/chat with `tools` param on apr serve --ollama-compat
+    codomain: JSON response body with message.tool_calls[]
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "response.message.tool_calls is an array when the model elects to call a tool"
+    - "tool_calls[i].function.name is one of the declared tool names"
+    - "tool_calls[i].function.arguments is a JSON object (not a stringified JSON)"
+    - "arguments validates against the declared tool parameter JSON schema"
+
+  streaming_tool_call_terminator:
+    formula: |
+      When stream=true, NDJSON chunks are emitted; exactly one chunk carries
+      `done: true`, and if the turn produced any tool_calls they MUST appear in
+      that final chunk under message.tool_calls[]. Earlier chunks MAY carry
+      incremental text content but MUST NOT split a single tool_call across
+      chunks.
+
+        exists exactly one k* with chunks[k*].done == true
+        for all k != k*: chunks[k].message.tool_calls is absent or empty
+        chunks[k*].message.tool_calls == final aggregated tool_calls
+    domain: streamed /api/chat response NDJSON
+    codomain: ordered sequence of chunks
+    invariants:
+    - "Exactly one chunk has done=true (terminator uniqueness)"
+    - "All tool_calls appear atomically in the terminator chunk"
+    - "Non-terminator chunks do not contain tool_calls"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-04-001
-  rule: placeholder
-  prediction: "apr surface for 'Ollama function calling' matches ollama canonical behavior"
+  rule: tool_calls produced for forcing prompt
+  prediction: "posting a weather-tool schema + a user question that demands it yields message.tool_calls[0].function.name == 'get_weather'"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-04" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    RESP=$(curl -sS http://127.0.0.1:11434/api/chat -H 'content-type: application/json' \
+      --data @evidence/crux/ollama/tool-call-weather-request.json)
+    echo "$RESP" | jq -e '.message.tool_calls[0].function.name == "get_weather"' >/dev/null
+  if_fails: "apr serve --ollama-compat did not emit tool_calls[0].function.name == get_weather"
+
+- id: FALSIFY-CRUX-I-04-002
+  rule: arguments is a JSON object matching declared schema
+  prediction: "tool_calls[0].function.arguments parses as object and validates against tools[0].function.parameters"
+  test: |
+    set -euo pipefail
+    RESP=$(curl -sS http://127.0.0.1:11434/api/chat -H 'content-type: application/json' \
+      --data @evidence/crux/ollama/tool-call-weather-request.json)
+    # arguments must be an object (NOT a stringified JSON blob)
+    echo "$RESP" | jq -e '.message.tool_calls[0].function.arguments | type == "object"' >/dev/null
+    # must contain the required `location` field per the declared schema
+    echo "$RESP" | jq -e '.message.tool_calls[0].function.arguments.location | type == "string"' >/dev/null
+    # TODO: once apr bundles a JSON-schema validator in tests, cross-check args
+    # against tools[0].function.parameters instead of spot-checking `location`.
+  if_fails: "tool call arguments not a JSON object or missing required field from declared schema"
+
+- id: FALSIFY-CRUX-I-04-003
+  rule: streamed tool_calls arrive in the done=true chunk
+  prediction: "stream=true: exactly one chunk has done=true, and that chunk carries the tool_calls"
+  test: |
+    set -euo pipefail
+    CHUNKS=$(curl -sS -N http://127.0.0.1:11434/api/chat -H 'content-type: application/json' \
+      --data @evidence/crux/ollama/tool-call-weather-request-stream.json)
+    # count terminators
+    DONE=$(echo "$CHUNKS" | jq -cr 'select(.done == true)' | wc -l)
+    [ "$DONE" -eq 1 ] || { echo "expected exactly 1 done=true chunk, got $DONE"; exit 1; }
+    # tool_calls must appear in the terminator chunk
+    echo "$CHUNKS" | jq -e 'select(.done == true) | .message.tool_calls[0].function.name == "get_weather"' >/dev/null
+    # and MUST NOT appear in any non-terminator chunk
+    NONTERM=$(echo "$CHUNKS" | jq -cr 'select(.done != true) | .message.tool_calls // empty' | wc -l)
+    [ "$NONTERM" -eq 0 ]
+  if_fails: "streamed tool_calls split across chunks or terminator did not carry tool_calls"
+
+- id: FALSIFY-CRUX-I-04-004
+  rule: wire-schema parity with Ollama
+  prediction: "apr serve --ollama-compat response is indistinguishable from upstream ollama for the same request"
+  test: |
+    set -euo pipefail
+    # golden captured with: ollama serve && curl /api/chat ... > golden.json
+    GOLDEN=evidence/crux/ollama/tool-call-weather-response.golden.json
+    RESP=$(curl -sS http://127.0.0.1:11434/api/chat -H 'content-type: application/json' \
+      --data @evidence/crux/ollama/tool-call-weather-request.json)
+    # Compare structural keys only (not generated content), to avoid flakes on sampled text
+    diff <(echo "$RESP"  | jq -S 'paths | join(".")' | sort -u) \
+         <(jq -S 'paths | join(".")' "$GOLDEN" | sort -u)
+  if_fails: "response schema diverges from Ollama golden (missing or extra fields)"
+
+- id: FALSIFY-CRUX-I-04-005
+  rule: tool name must be one of declared tools
+  prediction: "every tool_calls[i].function.name is a member of the request's tools[*].function.name set"
+  test: |
+    set -euo pipefail
+    REQ=evidence/crux/ollama/tool-call-weather-request.json
+    RESP=$(curl -sS http://127.0.0.1:11434/api/chat -H 'content-type: application/json' --data @"$REQ")
+    DECLARED=$(jq -cr '.tools[].function.name' "$REQ" | sort -u)
+    CALLED=$(echo "$RESP" | jq -cr '.message.tool_calls[]?.function.name' | sort -u)
+    # every called name must appear in declared
+    for name in $CALLED; do
+      grep -Fxq "$name" <(echo "$DECLARED") || { echo "hallucinated tool: $name"; exit 1; }
+    done
+  if_fails: "model invented a tool name not in the declared tools[] array"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "response.message.tool_calls is an array when the model elects to call a tool"
+- type: invariant
+  property: "tool_calls[i].function.name ∈ declared tools[*].function.name"
+- type: invariant
+  property: "tool_calls[i].function.arguments is a JSON object, not a string"
+- type: invariant
+  property: "arguments validate against declared tool parameter JSON schema"
+- type: invariant
+  property: "streamed tool_calls appear atomically in the unique done=true chunk"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

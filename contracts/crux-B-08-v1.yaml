@@ -25,37 +25,76 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  awq_quality_retention:
     formula: |
-      DRAFT — user workflow "AWQ quantization"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      Let P_fp16 = pass@1(M_fp16, HumanEval[0..9])
+      Let P_awq  = pass@1(quantize(M, method=AWQ, w_bit=4, q_group_size=128), HumanEval[0..9])
+      Contract: P_awq >= 0.80 * P_fp16
+      (AWQ 4-bit MUST retain >= 80% of fp16 baseline pass@1 on HumanEval/0..9)
+      Ref: Lin et al. 2023 (arXiv:2306.00978) — salient-weight-aware scaling.
+    domain: (model M, HumanEval prompts[0..9])
+    codomain: pass@1 score ∈ [0,1]
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "AWQ output MUST pass `apr qa --require-golden-output` on HumanEval/0..9"
+    - "Per-group scale is stored per 128-channel tile (q_group_size=128 default)"
+    - "AWQ runs salient-weight activation calibration before scaling"
+
+  awq_cli_parity:
+    formula: |
+      vllm   : python -m awq.quantize --model-path M --w-bit 4 --q-group-size 128 --output out
+      aprender: apr quantize M.apr --method awq --bits 4 --group-size 128 -o out.apr
+      Artifact sizes MUST agree to within 5% of the vllm AWQ reference.
+    domain: (model M, bits ∈ {3,4,8}, group_size ∈ {64,128})
+    codomain: quantized APR file
+    invariants:
+    - "apr quantize --method awq accepts --bits and --group-size flags"
+    - "Group size default = 128 (matches vllm/awq reference)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-08-001
-  rule: placeholder
-  prediction: "apr surface for 'AWQ quantization' matches vllm canonical behavior"
+  rule: AWQ retains >=80% of fp16 pass@1
+  prediction: "pass@1(AWQ, HumanEval/0..9) >= 0.80 * pass@1(fp16, HumanEval/0..9)"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-08" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr quantize model.apr --method awq --bits 4 --group-size 128 -o /tmp/model-awq.apr
+    P_FP16=$(apr qa model.apr --eval humaneval --shard 0..9 --json | jq '.pass_at_1')
+    P_AWQ=$(apr qa /tmp/model-awq.apr --eval humaneval --shard 0..9 --require-golden-output --json | jq '.pass_at_1')
+    python3 -c "import sys; sys.exit(0 if $P_AWQ >= 0.80 * $P_FP16 else 1)"
+  if_fails: "AWQ 4-bit degraded quality below 80% of fp16 baseline; salient-weight scaling ineffective"
+
+- id: FALSIFY-CRUX-B-08-002
+  rule: CLI surface matches vllm
+  prediction: "apr quantize --method awq --bits --group-size all accepted"
+  test: |
+    apr quantize --help 2>&1 | grep -qE -- '--method[[:space:]<]'
+    apr quantize --help 2>&1 | grep -qE -- '--bits[[:space:]<]'
+    apr quantize --help 2>&1 | grep -qE -- '--group-size[[:space:]<]'
+  if_fails: "apr quantize missing AWQ-equivalent flags; competitor parity broken"
+
+- id: FALSIFY-CRUX-B-08-003
+  rule: AWQ artifact size <= 0.3x fp16
+  prediction: "4-bit AWQ file <= 30% of fp16 source size"
+  test: |
+    FP16=$(stat -c%s model.apr)
+    AWQ=$(stat -c%s /tmp/model-awq.apr)
+    python3 -c "import sys; sys.exit(0 if $AWQ <= 0.30 * $FP16 else 1)"
+  if_fails: "AWQ output not compressed to ~4 bits/weight; packing bug"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "AWQ pass@1 >= 80% of fp16 pass@1 on HumanEval/0..9"
+- type: invariant
+  property: "apr quantize --method awq --bits --group-size flags present on CLI"
+- type: invariant
+  property: "AWQ 4-bit artifact <= 0.30x fp16 source bytes"
+- type: invariant
+  property: "AWQ calibration uses activation statistics (not weight-only RTN)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
