@@ -26,6 +26,11 @@ jobs:
     uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
     with:
       repo: ${{ github.event.repository.name }}
+      # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
+      # APR-MONO monorepo: 60+ crates, largest dep graph in the fleet.
+      # Highest expected sccache hit-rate lift — the signal that justifies
+      # fleet-wide rollout (or shelves it).
+      enable_sccache: true
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
