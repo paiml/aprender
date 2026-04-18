@@ -24,7 +24,7 @@ Every competitor tool with ecosystem momentum in early 2026 is addressable via M
 
 ## Goal
 
-A single subcommand — `apr mcp` — that starts an MCP server over stdio, exposing a curated subset of the 57 apr CLI commands as MCP tools. Schema is generated from `contracts/apr-cli-commands-v1.yaml`, not hand-written.
+A single subcommand — `apr mcp` — that starts an MCP server over stdio, exposing a curated subset of the 57 apr CLI commands as MCP tools. Tool schemas are generated at build time from `contracts/apr-mcp-tool-schemas-v1.yaml` (FALSIFY-MCP-008), not hand-written.
 
 Success is measured by Claude Code / Cursor / Cline being able to `.mcp.json`-configure `apr mcp` and have the LLM invoke `apr.run`, `apr.qa`, `apr.trace`, etc. on local models.
 
@@ -36,22 +36,29 @@ Location: `crates/aprender-mcp/`
 
 ```
 crates/aprender-mcp/
-├── Cargo.toml            # depends on pmcp, tokio, serde, clap, apr-cli
+├── Cargo.toml            # serde, serde_json, anyhow (native); nix (unix signals); serde_yaml (build); jsonschema (dev)
+├── build.rs              # FALSIFY-MCP-008: reads contracts/apr-mcp-tool-schemas-v1.yaml → $OUT_DIR/schemas.rs
 ├── src/
-│   ├── lib.rs            # public API: `Server::from_config().serve_stdio()`
-│   ├── server.rs         # pmcp::Server wiring
-│   ├── tools/            # one module per tool
-│   │   ├── mod.rs        # registration table
-│   │   ├── run.rs        # `apr.run` — inference
-│   │   ├── qa.rs         # `apr.qa` — quality gates
-│   │   ├── trace.rs      # `apr.trace` — layer analysis
-│   │   ├── tensors.rs    # `apr.tensors` — tensor inspection
-│   │   ├── validate.rs   # `apr.validate` — integrity
-│   │   ├── bench.rs      # `apr.bench` — perf benchmarks
-│   │   ├── finetune.rs   # `apr.finetune` — LoRA training
-│   │   └── serve.rs      # `apr.serve` — OpenAI API server lifecycle
-│   └── schema.rs         # parses contracts/apr-cli-commands-v1.yaml → MCP tool schemas
+│   ├── lib.rs            # public API: `AprMcpServer::new().run_stdio()`; `include!` of build-time schemas.rs
+│   ├── types.rs          # JSON-RPC 2.0 envelopes + MCP protocol types (mirrors aprender-orchestrate::mcp::types)
+│   ├── server.rs         # hand-rolled JSON-RPC dispatcher + worker-thread cancellation (pmcp SDK deferred)
+│   └── tools/
+│       ├── mod.rs            # registration table
+│       ├── subprocess.rs     # shared `run_apr` / `run_apr_cancellable` (M3 FALSIFY-MCP-006)
+│       ├── version.rs        # `apr.version` — M1 handshake probe
+│       ├── run.rs            # `apr.run` — inference
+│       ├── qa.rs             # `apr.qa` — quality gates
+│       ├── trace.rs          # `apr.trace` — layer analysis
+│       ├── tensors.rs        # `apr.tensors` — tensor inspection
+│       ├── validate.rs       # `apr.validate` — integrity
+│       ├── bench.rs          # `apr.bench` — perf benchmarks
+│       ├── finetune.rs       # `apr.finetune` — LoRA training
+│       └── serve.rs          # `apr.serve` — OpenAI API server lifecycle
 └── tests/                # protocol-level integration tests
+    ├── falsify_m1.rs         # FALSIFY-MCP-001 init + -002 tools/list
+    ├── falsify_mcp_006.rs    # FALSIFY-MCP-006 notifications/cancelled
+    ├── falsify_mcp_008.rs    # FALSIFY-MCP-008 codegen byte-identity
+    └── falsify_schema.rs     # JSON Schema Draft 7 meta-validation
 ```
 
 ### `apr mcp` Subcommand
@@ -60,14 +67,17 @@ Wired into `apr-cli`:
 
 ```rust
 // crates/apr-cli/src/commands/mcp.rs
-pub async fn mcp_command(args: McpArgs) -> Result<()> {
-    let server = aprender_mcp::Server::from_default_config()?;
-    match args.transport {
-        Transport::Stdio => server.serve_stdio().await,
-        Transport::Sse { port } => server.serve_sse(port).await,
-    }
+pub fn run() -> Result<(), CliError> {
+    let mut server = aprender_mcp::AprMcpServer::new();
+    server
+        .run_stdio()
+        .map_err(|e| CliError::Aprender(format!("mcp server: {e}")))
 }
 ```
+
+Blocking (not `async`) — `stdio` is read with a std-library loop and each
+tool call dispatches onto a per-request worker thread (see `server.rs`).
+No CLI args in Phase 1; transport selection is deferred to Phase 2 with SSE.
 
 ### Tool Surface (Phase 1)
 
@@ -88,7 +98,7 @@ Schema generation: each tool's JSONSchema is derived from the entry in `contract
 
 ### Protocol
 
-- **Transport**: stdio (primary), SSE (optional, gated behind `--transport sse --port N`)
+- **Transport**: stdio only in Phase 1 (SSE deferred — see Out of Scope)
 - **Version**: MCP v2024-11-05 (matches `mcp-tool-schema-v1.yaml`)
 - **Lifecycle**: initialize → initialized → tools/list → tools/call → (long-running tools stream progress) → shutdown
 - **Streaming**: `apr.run` and `apr.finetune` send `notifications/progress` for each decoded token / training step. Other tools return synchronously.
@@ -191,7 +201,8 @@ Acceptance gate for promoting to ACTIVE:
 - Prompts protocol — future phase
 - Sampling (client-side LLM calls from server) — not needed for inference use case
 - Auth / multi-tenant — local dev tool only
-- Windows — Phase 2 (stdio transport needs testing on Windows)
+- SSE transport — Phase 2 (stdio-only in Phase 1; `--transport sse --port N` flag is aspirational, no `McpArgs` struct yet)
+- Windows — Phase 2 (stdio transport needs testing on Windows; nix signal crate is unix-only today)
 
 ## Risk Register
 
