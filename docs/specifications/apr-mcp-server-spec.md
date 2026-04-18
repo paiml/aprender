@@ -77,7 +77,8 @@ pub fn run() -> Result<(), CliError> {
 
 Blocking (not `async`) — `stdio` is read with a std-library loop and each
 tool call dispatches onto a per-request worker thread (see `server.rs`).
-No CLI args in Phase 1; transport selection is deferred to Phase 2 with SSE.
+No CLI args in Phase 1; transport selection is deferred to M5, which adds
+SSE + WebSocket via `pmcp` v2.3 (see Milestones).
 
 ### Tool Surface (Phase 1)
 
@@ -101,7 +102,7 @@ Schema generation: each tool's JSONSchema is derived from the entry in `contract
 - **Transport**: stdio only in Phase 1 (SSE deferred — see Out of Scope)
 - **Version**: MCP v2024-11-05 (matches `mcp-tool-schema-v1.yaml`)
 - **Lifecycle**: initialize → initialized → tools/list → tools/call → (long-running tools stream progress) → shutdown
-- **Streaming**: `apr.run` and `apr.finetune` send `notifications/progress` for each decoded token / training step. Other tools return synchronously.
+- **Streaming**: `apr.finetune` sends one `notifications/progress` per non-empty stdout line of `apr finetune --json` when the client opts in via `params._meta.progressToken` (FALSIFY-MCP-PROGRESS-001, ENFORCED). `apr.run` progress is an M4 follow-up — it needs an `apr run --stream` CLI prereq and a per-step CLI event channel (currently `apr finetune` emits a terminal blob, not per-step structured events). All other tools return synchronously.
 - **Cancellation**: `notifications/cancelled` from client → kill the spawned `apr` subprocess with SIGTERM (30s grace) → SIGKILL.
 - **Error mapping** (per `mcp-tool-schema-v1.yaml`):
   - Parse error → `-32700`
