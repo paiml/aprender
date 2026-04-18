@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Aprender is a next-generation ML framework in pure Rust — **monorepo with 70 workspace crates**. Install: `cargo install aprender` → `apr` binary (57 subcommands). 25,300+ tests, 405 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec.
+Aprender is a next-generation ML framework in pure Rust — **monorepo with 70 workspace crates**. Install: `cargo install aprender` → `apr` binary (58 subcommands). 25,300+ tests, 405 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec.
 
 ## Git Workflow (Branch Protection)
 
@@ -266,15 +266,15 @@ Key: `unsafe_code = "forbid"`, `clippy::all + pedantic = "warn"`, ML-specific al
 - `crates/aprender-core/src/primitives/` - Vector/Matrix with Cholesky solver
 - `crates/aprender-core/src/format/` - APR format, validation, lint, converter, export
 - `crates/aprender-core/src/text/chat_template.rs` - Chat template engine
-- `crates/apr-cli/` - CLI logic (57 commands)
+- `crates/apr-cli/` - CLI logic (58 commands)
 - `src/bin/apr.rs` - Root binary entry point (`cargo install aprender`)
 - `contracts/` - 405 provable contracts (merged from all 20 repos)
 - `docs/specifications/aprender-monorepo-consolidation.md` - Monorepo spec
 
 ## APR CLI (`cargo install aprender`)
 
-57 commands across 10 categories. Contract: `contracts/apr-cli-commands-v1.yaml`.
-Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
+58 commands across 10 categories (57 + `mcp`, added PR #864 on 2026-04-17). Contract: `contracts/apr-cli-commands-v1.yaml`.
+Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `mcp`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
 
 ```bash
 apr run hf://openai/whisper-tiny --input audio.wav
