@@ -215,7 +215,7 @@ Acceptance gate for promoting to ACTIVE:
 
 | Risk | Mitigation |
 |------|-----------|
-| `pmcp` crate API instability | Pin exact version; contribute upstream if breaking changes needed |
+| `pmcp` crate API instability (dormant — Phase 1 shipped hand-rolled JSON-RPC; risk re-activates only if pmcp is adopted) | Pin exact version on adoption; contribute upstream if breaking changes needed |
 | Subprocess overhead per tool call | Phase 2: in-process mode (`--embedded`) linking apr-cli as library |
 | Schema drift between CLI and MCP surface | `build.rs` fails build if contract YAML differs from generated Rust structs |
 | MCP clients expect specific error shapes | Conformance-test against Claude Code, Cursor, Cline fixtures |
@@ -227,7 +227,7 @@ Acceptance gate for promoting to ACTIVE:
   - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — approves `paiml/rust-mcp-sdk` as dependency (currently unused; M1 chose hand-rolled JSON-RPC)
   - MCP tool surface lives in `crates/aprender-mcp/src/tools/` (not `apr-cli/src/tool_commands.rs` — that is the unrelated `apr tool` CLI group for Showcase/Rosetta)
 
-- **Aspirational follow-ons**:
+- **Aspirational follow-ons** (spec files not yet authored):
   - `apr-mcp-plugin-marketplace-v1.md` — Claude Code–style plugin marketplace for community `apr.*` tools
   - `apr-mcp-hooks-v1.md` — pre/post-inference hooks (analog to git hooks) for QA + observability
 
@@ -235,4 +235,4 @@ Acceptance gate for promoting to ACTIVE:
 
 **Owner**: TBD
 **Sponsor**: apr-cli team
-**Target**: v0.32.0 (M1–M2), v0.33.0 (M3–M4)
+**Target**: v0.32.0 (M1–M2), v0.33.0 (M3–M4). Latest released tag at spec write time is `v0.30.0`; M1–M3 are merged on `main` but unreleased, so target tags are the intended publication points, not current reality.
