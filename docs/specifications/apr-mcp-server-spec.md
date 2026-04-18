@@ -11,7 +11,7 @@
 - `contracts/apr-cli-commands-v1.yaml` — 58-command tool surface (57 commands + `mcp` added 2026-04-17 per PR #864)
 - **Pending (PR #886)**: `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract (not yet in-tree; promotes to M4)
 - `contracts/apr-claude-proxy-v1.yaml` — Anthropic Messages-API proxy request/response shape + 6 falsification gates; `status: DRAFT` (PMAT-CLAUDE-PROXY-001, promotes to ENFORCED at M6-δ, 2026-04-18)
-- `contracts/apr-code-parity-v1.yaml` — falsifiable encoding of the 20-category `apr code` ↔ Claude Code parity matrix; 5 falsification gates incl. row-by-row mechanical audit + headline aggregate invariant + prose↔YAML drift check; `status: DRAFT` (epic PMAT-CODE-PARITY-MATRIX-001, current counts 6 SHIPPED / 6 PARTIAL / 8 MISSING; promotes to ACTIVE when CI harness `scripts/validate-code-parity.sh` is green at M4-β, 2026-04-18)
+- `contracts/apr-code-parity-v1.yaml` — falsifiable encoding of the 20-category `apr code` ↔ Claude Code parity matrix; 5 falsification gates incl. row-by-row mechanical audit + headline aggregate invariant + prose↔YAML drift check; `status: DRAFT` (epic PMAT-CODE-PARITY-MATRIX-001, current counts 6 SHIPPED / 6 PARTIAL / 8 MISSING; promotes to ACTIVE when `pv validate contracts/apr-code-parity-v1.yaml` is green in CI, via the dogfooded `aprender-contracts-cli` — **NOT** a bash script, 2026-04-18)
 **References**:
 - [Model Context Protocol Specification v2024-11-05](https://spec.modelcontextprotocol.io/specification/2024-11-05/)
 - [JSON-RPC 2.0](https://www.jsonrpc.org/specification)

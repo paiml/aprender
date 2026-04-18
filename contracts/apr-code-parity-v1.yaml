@@ -39,6 +39,28 @@ metadata:
 kind: ParityMatrixContract
 status: DRAFT  # promotes to ACTIVE when CI FALSIFY-CODE-PARITY-001 is green
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Harness policy (2026-04-18)
+# ─────────────────────────────────────────────────────────────────────────────
+# ALL falsification gates in this contract MUST be enforced via `pv validate`
+# (binary from `aprender-contracts-cli`, crate `crates/aprender-contracts-cli/`).
+# `provable-contracts` was merged into aprender as APR-MONO Phase 2b and
+# lives in-tree as three crates (aprender-contracts / -macros / -cli); the
+# `pv` CLI is the dogfooded contract validator. Writing a bash/yq/python
+# script to re-run these gates is muda and is explicitly forbidden by
+# CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash".
+#
+# If `pv validate` does not yet support `kind: ParityMatrixContract`, the
+# fix is PMAT-CONTRACTS-PARITY-001 (extend aprender-contracts/src/schema/
+# to add the kind + a validator that runs each row's `cross_check_command`
+# and asserts the `expected_*` constraint). Never bypass.
+harness_policy:
+  dogfood_tool: aprender-contracts-cli
+  binary: pv
+  forbidden_alternatives: [bash, shell, yq-wrapper, python-script]
+  schema_extension_ticket: PMAT-CONTRACTS-PARITY-001
+  rationale_ref: CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash"
+
 headline:
   audit_date: '2026-04-18'
   audit_revision: 2  # v1 = initial 5/7/8, v2 = session-row falsified to SHIPPED
@@ -341,29 +363,54 @@ falsification_conditions:
       A row whose cross_check fails indicates either (a) the code changed
       and the matrix is stale, or (b) the matrix lied. Either way this
       contract must be updated before the PR can merge.
+
+      Harness: `pv validate contracts/apr-code-parity-v1.yaml` via the
+      in-tree `aprender-contracts-cli` crate. Bash/shell harnesses are
+      forbidden — see CLAUDE.md § "Contract Validation: DOGFOOD pv,
+      NEVER bash". If `pv validate` does not yet support
+      `kind: ParityMatrixContract`, the fix is PMAT-CONTRACTS-PARITY-001
+      (extend `aprender-contracts/src/schema/` to add the new kind +
+      validator rule that runs each row's cross_check_command and
+      asserts the expected_* constraint). NOT a bash wrapper.
     test_harness:
-      script: scripts/validate-code-parity.sh   # PLANNED M4-β
+      tool: aprender-contracts-cli     # in-tree dogfooded validator
+      binary: pv
+      command: pv validate contracts/apr-code-parity-v1.yaml
       expected_exit_code_on_pass: 0
       expected_exit_code_on_drift: 1
     planned_tests: PLANNED_M4_BETA
+    schema_extension_ticket: PMAT-CONTRACTS-PARITY-001
 
   - id: FALSIFY-CODE-PARITY-002
     name: Headline aggregate invariant
     status: DRAFT
     description: >
-      CI counts statuses across all 20 rows and asserts the aggregate
+      Counts statuses across all 20 rows and asserts the aggregate
       matches `headline.counts`. Adding a new category without bumping
       `audit_revision` and re-counting is rejected.
+      Harness: `pv validate` (same tool as -001; a schema rule that
+      counts status values and asserts equality with headline.counts).
+    test_harness:
+      tool: aprender-contracts-cli
+      binary: pv
+      command: pv validate contracts/apr-code-parity-v1.yaml
     planned_tests: PLANNED_M4_BETA
 
   - id: FALSIFY-CODE-PARITY-003
     name: Prose ↔ YAML drift check
     status: DRAFT
     description: >
-      CI parses the matrix table in docs/specifications/apr-mcp-server-spec.md
+      Parses the matrix table in docs/specifications/apr-mcp-server-spec.md
       and asserts row-for-row that every `(category, status, ticket)`
       tuple matches this YAML. Prevents the prose from drifting from the
       contract (or vice versa).
+      Harness: `pv validate` with a `--check-doc-drift` mode (new
+      subflag to add under PMAT-CONTRACTS-PARITY-001 scope), reading
+      the markdown table from the path named in `metadata.spec`.
+    test_harness:
+      tool: aprender-contracts-cli
+      binary: pv
+      command: pv validate contracts/apr-code-parity-v1.yaml --check-doc-drift
     planned_tests: PLANNED_M4_BETA
 
   - id: FALSIFY-CODE-PARITY-004
@@ -434,3 +481,19 @@ change_log:
       against agent/session.rs:32-201. status-line row flipped UNKNOWN →
       NONE after zero-hit grep. Aggregate now 6 SHIPPED / 6 PARTIAL /
       8 MISSING. New ticket PMAT-CODE-STATUS-LINE-001 registered (P2).
+  - date: '2026-04-18'
+    revision: 3
+    author: kaizen-paiml
+    summary: >
+      Harness retargeted from `scripts/validate-code-parity.sh` (which was
+      never written) to `pv validate` via in-tree `aprender-contracts-cli`.
+      Root cause: I was about to commit a bash harness; user correctly
+      stopped me — "why that vs aprender-contract cli???? confirm
+      ../provable-contracts merged into aprender and WE ARE DOGFOODING
+      this critical tool". Verified: APR-MONO Phase 2b merged provable-
+      contracts into aprender as 3 in-tree crates; `pv` already ships 40+
+      subcommands including `validate`. Bash would have been pure muda.
+      New `harness_policy` block added + test_harness fields retargeted
+      on FALSIFY-CODE-PARITY-001/002/003. Schema extension ticket
+      PMAT-CONTRACTS-PARITY-001 registered for the case where `pv`
+      doesn't yet support `kind: ParityMatrixContract`.

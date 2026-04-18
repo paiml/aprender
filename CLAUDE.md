@@ -303,6 +303,33 @@ pmat embed sync                 # Sync embeddings for codebase (run before query
 
 unwrap() banned via `.clippy.toml` disallowed-methods. Use `expect()` or `ok_or_else(|| ...)?`. See Issue #41.
 
+## Contract Validation: DOGFOOD `pv`, NEVER bash
+
+**`provable-contracts` is merged in-tree (APR-MONO Phase 2b).** It lives as three crates:
+- `crates/aprender-contracts/` — evaluation engine
+- `crates/aprender-contracts-macros/` — `#[contract]` derive
+- `crates/aprender-contracts-cli/` — `pv` binary
+
+**`pv` is THE dogfooded contract CLI.** When you need to validate, lint, score, scaffold, diff, audit, generate proofs, or run falsification tests on a YAML contract in `contracts/`, use `pv`. Writing a bash/yq/python script that re-implements what `pv` already does is **muda** (waste) and will be rejected.
+
+```bash
+pv validate contracts/apr-code-parity-v1.yaml    # schema + falsification gates
+pv lint contracts/                               # validate + audit + score on all
+pv status contracts/tensor-layout-v1.yaml        # equations, obligations, coverage
+pv query "tensor layout" --limit 5               # search contracts by intent
+pv diff contracts/apr-mcp-server-v1.yaml HEAD~3  # semver bump suggestion
+pv coverage                                      # cross-contract obligation coverage
+```
+
+40+ `pv` subcommands: `validate, scaffold, codegen, kani, probar, status, audit, diff, coverage, generate, graph, equations, lean, proof-status, lint, score, query, invariants, coq, fuzz, mirai, flux, tla, book, infer, roofline, pipeline, kaizen, certify, verify-structure, verify-pipeline, ...`.
+
+**If `pv validate` rejects a contract** (wrong kind, missing required fields), the fix is one of:
+1. Restructure the contract to fit the existing schema (usually `KernelContract` shape with `equations`, `proof_obligations`, `falsification_tests`).
+2. Extend `aprender-contracts/src/schema/` to add the new `kind` + validator rule (real engineering task, own PMAT ticket).
+3. If it genuinely isn't a provable contract, use a different YAML schema under a different directory and a purpose-built `apr` subcommand — not `contracts/`.
+
+**Never** work around `pv` with a shell script. The in-tree tool is the source of truth.
+
 ## CRITICAL: Code Search Policy
 
 **NEVER use grep/glob for code search. ALWAYS use pmat query.**
