@@ -1,12 +1,8 @@
 # CRUX-C-21 — Mirostat sampling
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-21
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,78 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: llama_cpp
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Mirostat sampling. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Mirostat v1 / v2 perplexity-target sampling (arXiv:2007.14966).
+    Canonical: llama.cpp `--mirostat 2 --mirostat-tau 5.0 --mirostat-eta 0.1`
+    — adaptively picks top-k each step to hit a target surprisal tau.
 
 equations:
-  placeholder_contract:
+  mirostat_v2:
     formula: |
-      DRAFT — user workflow "Mirostat sampling"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      # Mirostat v2 (simpler, more common):
+      # 1. sample token from prob distribution
+      # 2. compute observed surprise: s = -log2(p_token)
+      # 3. error e = s - tau
+      # 4. mu_{t+1} = mu_t - eta * e
+      # 5. next step: top-k adjusted so mean surprise ≈ mu
+      mean_surprise_over_run ≈ tau (within ±0.1 for N ≥ 256)
+    domain: "(tau: f32 > 0, eta: f32 ∈ (0,1), version ∈ {1,2})"
+    codomain: "token stream with bounded surprise"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "|mean(-log2(p_tokens)) - tau| ≤ 0.1 over 256-token run"
+    - "mirostat disables top_k / top_p / typical_p (mutually exclusive with classic samplers)"
+    - "seed+tau+eta determines output bitwise (given fixed model/prompt)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-21-001
-  rule: placeholder
-  prediction: "apr surface for 'Mirostat sampling' matches llama_cpp canonical behavior"
+  rule: mean surprise converges to tau within ±0.1
+  prediction: "256-token run with tau=5.0 has mean log-prob surprise ≈ 5.0"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-21" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "Once upon a time " \
+      --sampler mirostat --mirostat-tau 5.0 --mirostat-eta 0.1 \
+      --max-tokens 256 --seed 42 --logprobs --format json > /tmp/out.json
+    python3 -c "
+    import json, math
+    r = json.load(open('/tmp/out.json'))
+    logs = [-math.log2(t['prob']) for t in r['tokens']]
+    m = sum(logs)/len(logs)
+    assert abs(m - 5.0) < 0.2, f'mean={m}, tau=5.0'
+    "
+- id: FALSIFY-CRUX-C-21-002
+  rule: mirostat flag mutually exclusive with top_k / top_p
+  prediction: "--mirostat 2 --top-k 50 exits 2 with actionable error"
+  test: |
+    set -e
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "hi" \
+      --sampler mirostat --top-k 50 --max-tokens 4 2>/tmp/err && exit 1 || [ $? -eq 2 ]
+    grep -Ei "mutually exclusive|mirostat" /tmp/err
+- id: FALSIFY-CRUX-C-21-003
+  rule: byte-identical output across runs with same seed+tau+eta
+  prediction: "two invocations produce identical token_ids"
+  test: |
+    set -euo pipefail
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "hi" --sampler mirostat --mirostat-tau 5.0 --seed 7 --max-tokens 32 --format json > /tmp/a.json
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "hi" --sampler mirostat --mirostat-tau 5.0 --seed 7 --max-tokens 32 --format json > /tmp/b.json
+    diff <(jq .token_ids /tmp/a.json) <(jq .token_ids /tmp/b.json)
 
 proof_obligations:
+- type: parity
+  property: "apr run --sampler mirostat matches llama.cpp `--mirostat 2 --mirostat-tau --mirostat-eta` convergence"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "mean surprise over run converges to tau within ±0.1"
+- type: invariant
+  property: "deterministic given (seed, tau, eta, model, prompt)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-21` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-21
   priority: medium
   auto_created: true

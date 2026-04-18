@@ -1,12 +1,8 @@
 # CRUX-C-24 — Beam search decoding
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-24
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,77 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: pytorch
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Beam search decoding. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Beam search with num_beams, length_penalty, early_stopping.
+    Canonical: `model.generate(..., num_beams=4, length_penalty=0.6,
+    early_stopping=True, no_repeat_ngram_size=3)` in transformers.
 
 equations:
-  placeholder_contract:
+  beam_search:
     formula: |
-      DRAFT — user workflow "Beam search decoding"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      B_0 = [(bos, 0.0)]
+      B_t = top-k(num_beams) over {(beam ++ [tok], log_p(tok|beam) + beam_score)
+                                    for beam in B_{t-1}, tok in vocab}
+      final_score(beam) = sum(log_p) / (len(beam) ** length_penalty)
+      early_stopping: stop when best-complete-beam ≥ best-incomplete-beam
+    domain: "(num_beams: u32 ≥ 1, length_penalty: f32, early_stopping: bool, no_repeat_ngram: u32)"
+    codomain: "beam with highest length-normalized log-prob"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "num_beams=1 is greedy search (deterministic given model/prompt)"
+    - "length_penalty ∈ {0.0, 0.6, 1.0} — 0.0 favors short, >1.0 favors long"
+    - "no_repeat_ngram_size n > 0 forbids reappearance of any n-gram"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-24-001
-  rule: placeholder
-  prediction: "apr surface for 'Beam search decoding' matches pytorch canonical behavior"
+  rule: beam=1 matches greedy decode
+  prediction: "num_beams=1 produces identical output to --sampler greedy"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-24" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "2+2=" --num-beams 1 --max-tokens 16 --format json > /tmp/b1.json
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "2+2=" --sampler greedy --max-tokens 16 --format json > /tmp/g.json
+    diff <(jq .token_ids /tmp/b1.json) <(jq .token_ids /tmp/g.json)
+- id: FALSIFY-CRUX-C-24-002
+  rule: beam=4 output log-prob ≥ greedy log-prob
+  prediction: "beam search finds at least as good a sequence as greedy"
+  test: |
+    set -euo pipefail
+    p_beam=$(apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "2+2=" --num-beams 4 --max-tokens 16 --format json | jq .sequence_logprob)
+    p_greedy=$(apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "2+2=" --sampler greedy --max-tokens 16 --format json | jq .sequence_logprob)
+    python3 -c "assert $p_beam >= $p_greedy - 1e-6, 'beam=$p_beam greedy=$p_greedy'"
+- id: FALSIFY-CRUX-C-24-003
+  rule: parity with transformers.generate on small model
+  prediction: "apr num_beams=4 top-1 equals HF beam_search top-1 on same model"
+  test: |
+    set -euo pipefail
+    apr_out=$(apr run tests/fixtures/tinyllama-hf --prompt "2+2=" --num-beams 4 --length-penalty 0.6 --max-tokens 16 --format json | jq -r .text)
+    hf_out=$(python3 - <<'PY'
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    tok = AutoTokenizer.from_pretrained("tests/fixtures/tinyllama-hf")
+    m = AutoModelForCausalLM.from_pretrained("tests/fixtures/tinyllama-hf")
+    ids = tok("2+2=", return_tensors="pt").input_ids
+    out = m.generate(ids, num_beams=4, length_penalty=0.6, max_new_tokens=16, early_stopping=True, do_sample=False)
+    print(tok.decode(out[0][ids.shape[1]:], skip_special_tokens=True))
+    PY
+    )
+    [ "$apr_out" = "$hf_out" ]
 
 proof_obligations:
+- type: parity
+  property: "apr --num-beams matches HF `model.generate(num_beams=, length_penalty=, early_stopping=)` top-1"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "num_beams=1 ≡ greedy (byte-equal output)"
+- type: invariant
+  property: "beam log-prob ≥ greedy log-prob (optimality lower bound)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-24` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-24
   priority: medium
   auto_created: true

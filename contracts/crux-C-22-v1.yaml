@@ -1,12 +1,8 @@
 # CRUX-C-22 — Typical sampling
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-22
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,70 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: llama_cpp
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Typical sampling. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Typical-p (locally typical) sampling (arXiv:2202.00666).
+    Canonical: llama.cpp `--typical 0.95` or HF `typical_p=0.95` —
+    keep tokens whose information content is close to entropy.
 
 equations:
-  placeholder_contract:
+  typical_p:
     formula: |
-      DRAFT — user workflow "Typical sampling"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      H = -sum(p_i * log p_i)                      # entropy
+      c_i = |−log p_i − H|                         # distance from typicality
+      keep smallest cumulative-probability subset S s.t. sum_{i∈S} p_i ≥ p
+      sorted by c_i ASC; renormalize; sample
+    domain: "(logits: Vec<f32>, p ∈ (0,1])"
+    codomain: "filtered token distribution"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "p = 1.0 → no filtering (identity)"
+    - "tokens kept are exactly those whose |−log p − H| is smallest cumulative sum ≥ p"
+    - "matches HF `TypicalLogitsWarper` bit-for-bit on f32 logits"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-22-001
-  rule: placeholder
-  prediction: "apr surface for 'Typical sampling' matches llama_cpp canonical behavior"
+  rule: p=1.0 is identity (no change from greedy/temperature-only)
+  prediction: "typical-p=1.0 yields same token_ids as no typical filter"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-22" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "The" --typical 1.0 --seed 5 --max-tokens 16 --format json > /tmp/typ.json
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "The" --seed 5 --max-tokens 16 --format json > /tmp/base.json
+    diff <(jq .token_ids /tmp/typ.json) <(jq .token_ids /tmp/base.json)
+- id: FALSIFY-CRUX-C-22-002
+  rule: matches HF TypicalLogitsWarper on identical logits
+  prediction: "kept-token set identical to HF reference on a captured logits tensor"
+  test: |
+    set -euo pipefail
+    # apr writes the post-filter prob vector for introspection
+    apr debug sample --logits tests/fixtures/logits_row.npy --typical 0.95 --format json > /tmp/apr.json
+    python3 - <<'PY'
+    import numpy as np, json
+    from transformers import TypicalLogitsWarper
+    logits = np.load("tests/fixtures/logits_row.npy")
+    import torch; t = torch.tensor(logits)
+    w = TypicalLogitsWarper(mass=0.95)
+    hf = w(None, t.unsqueeze(0))[0].tolist()
+    apr = json.load(open("/tmp/apr.json"))["filtered_logits"]
+    diffs = [abs(a-b) for a,b in zip(apr, hf)]
+    assert max(diffs) < 1e-5, max(diffs)
+    PY
 
 proof_obligations:
+- type: parity
+  property: "apr --typical matches HF `TypicalLogitsWarper` and llama.cpp `--typical` on identical logits"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "p=1.0 is mathematically identity; verified by byte-equal tokens"
+- type: invariant
+  property: "filtered distribution renormalizes to sum=1.0 ± 1e-6"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-22` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-22
   priority: medium
   auto_created: true

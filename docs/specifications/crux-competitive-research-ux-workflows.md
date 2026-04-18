@@ -491,8 +491,8 @@ at Phase 0 exit; intake estimates:
 - ✅ Registered all in master `contracts/crux-competitive-research-ux-v1.yaml`
 - ✅ Created 140 pmat work tickets (one per ❌ missing story) via
   `scripts/crux_bulk_pmat_work.sh` — tagged `crux,gap,crux-{category},competitor-{name},{id_lower}`
-- ✅ **161 of 250 contracts (64.4%)** promoted draft → **spec-complete**
-  via five parallel waves + wave 6 batch 1 direct authoring (2026-04-18):
+- ✅ **171 of 250 contracts (68.4%)** promoted draft → **spec-complete**
+  via five parallel waves + wave 6 batches 1-2 direct authoring (2026-04-18):
   - Wave 1 (18 demand=5 missing): B-07/08/09, C-04/11/13, D-03/04/11/12,
     E-02/03/07, H-03, F-09/13, I-04, K-02
   - Wave 2 (24 demand=5 partials): A-01/05/09, C-03/05/06/07/08/31/33/34,
@@ -513,17 +513,25 @@ at Phase 0 exit; intake estimates:
     A-21 (shared APR_MODELS), A-23 (search), A-24 (create --from),
     A-25 (rm + gc refcount). Direct-authored on main conversation
     after wave 6 sub-agents hit API rate limits.
+  - Wave 6 batch 2 (10 B+C demand=3): B-11 (FP8 sm90+),
+    B-15 (IQ3_XXS / IQ2_S imatrix), B-16 (per-tensor qtype override),
+    B-19 (dequant→requant metadata preservation),
+    B-20 (quant-roundtrip RMSE diff vs llama-quantize-stats),
+    C-21 (mirostat v2 convergence), C-22 (typical-p vs HF warper),
+    C-23 (DRY sampling), C-24 (beam search vs HF top-1),
+    C-29 (NUMA-bind with numastat miss-count proof).
   - 3 demand=5 stories still draft: J-01/02/09 (blocked on OpenCLAW
     interpretation — every other demand≥4 non-J story is spec-complete)
   - Each contract carries competitor CLI citations (arXiv papers, official
     docs) and bash falsification bodies with jq/curl/python3 invocations
 - Gate: `pmat comply check` passes with 250 CRUX contracts registered
 
-**Phase 1 — Evidence capture** (IN PROGRESS — 161/250 = 64.4%)
+**Phase 1 — Evidence capture** (IN PROGRESS — 171/250 = 68.4%)
 - Collect `evidence/crux/{competitor}/*` per §2.1 for all 7 competitors
 - Falsification harness comparing `apr --help` verbs vs competitor verbs
-- Enrich remaining 89 contracts (spec-complete body) — demand≥4 non-J
-  complete + 8 demand=3 A-series done; 59 demand=3 non-J remain, then ≈42 demand≤2
+- Enrich remaining 79 contracts (spec-complete body) — demand≥4 non-J
+  complete + 18 demand=3 A/B/C done; 49 demand=3 non-J remain (D/E/F/G/H/I/K),
+  then ≈42 demand≤2
 - Gate: `apr qa --crux` emits per-story PASS/FAIL/SKIP
 
 **Phase 2 — Close 🔨 partials** (priority by demand score)

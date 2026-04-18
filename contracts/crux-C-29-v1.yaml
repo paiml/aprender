@@ -1,12 +1,8 @@
 # CRUX-C-29 — NUMA-aware memory placement
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-29
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,73 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: llama_cpp
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    NUMA-aware memory placement. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    NUMA-aware weight/activation placement on multi-socket boxes.
+    Canonical: llama.cpp `--numa distribute|isolate|numactl`, or explicit
+    `numactl --cpunodebind=0 --membind=0 ...`.
 
 equations:
-  placeholder_contract:
+  numa_binding:
     formula: |
-      DRAFT — user workflow "NUMA-aware memory placement"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      weights are mmap'd with MPOL_BIND to a single node (no interleave)
+      threads are pinned via sched_setaffinity(cpu_set_of(node))
+      cross-node memory access count ≈ 0 during decode
+      observed decode_tps(--numa isolate) ≥ 1.15 × decode_tps(no binding)
+                                             on 2-socket AMD EPYC
+    domain: "(policy ∈ {distribute, isolate, numactl}, node: u32)"
+    codomain: "bound threads + mbind'd memory regions"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "numastat shows near-zero numa_miss + numa_foreign for apr-serve PID under --numa isolate"
+    - "--numa on single-socket box is a no-op with warning, never errors"
+    - "when libnuma.so missing, --numa falls back + prints actionable install hint"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-29-001
-  rule: placeholder
-  prediction: "apr surface for 'NUMA-aware memory placement' matches llama_cpp canonical behavior"
+  rule: numastat shows ~0 cross-node misses under --numa isolate
+  prediction: "numa_miss count for apr-serve process stays < 1% of numa_hit count"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-29" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    nodes=$(numactl --hardware | grep -c 'node [0-9]* size')
+    [ "$nodes" -ge 2 ] || { echo "requires multi-node box — skipping"; exit 0; }
+    apr serve tests/fixtures/tinyllama-q4_k_m.gguf --port 18181 --numa isolate &
+    PID=$!
+    trap "kill $PID" EXIT
+    sleep 2
+    curl -s http://127.0.0.1:18181/v1/completions -d '{"prompt":"hi","max_tokens":128}' >/dev/null
+    hit=$(numastat -p "$PID" | awk '/^Total/ {print $2}')
+    miss=$(numastat -p "$PID" | awk '/^Total/ {print $3}')
+    python3 -c "assert $miss / max($hit,1) < 0.01, 'miss=$miss hit=$hit'"
+- id: FALSIFY-CRUX-C-29-002
+  rule: single-socket machine emits warning but does not error
+  prediction: "on 1-socket host, --numa isolate logs WARN and continues"
+  test: |
+    set -euo pipefail
+    nodes=$(numactl --hardware | grep -c 'node [0-9]* size')
+    [ "$nodes" -eq 1 ] || { echo "requires single-socket — skipping"; exit 0; }
+    apr serve tests/fixtures/tinyllama-q4_k_m.gguf --port 18182 --numa isolate 2>/tmp/log &
+    PID=$!
+    trap "kill $PID" EXIT
+    sleep 2
+    curl -sf http://127.0.0.1:18182/health
+    grep -E "WARN.*numa|single.*socket" /tmp/log
 
 proof_obligations:
+- type: parity
+  property: "apr serve --numa isolate matches llama.cpp `--numa isolate` thread+memory binding"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "numa_miss / numa_hit < 1% on multi-socket host"
+- type: invariant
+  property: "single-socket host: warn + continue, never exit nonzero"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-29` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-29
   priority: medium
   auto_created: true

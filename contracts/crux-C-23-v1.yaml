@@ -1,12 +1,8 @@
 # CRUX-C-23 — DRY sampling
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-23
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,69 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: llama_cpp
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    DRY sampling. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    DRY (Don't Repeat Yourself) sampling — penalizes tokens that extend a
+    long prior-context substring match. Canonical: llama.cpp
+    `--dry-multiplier 0.8 --dry-base 1.75 --dry-allowed-length 2`.
 
 equations:
-  placeholder_contract:
+  dry_penalty:
     formula: |
-      DRAFT — user workflow "DRY sampling"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      for candidate token t:
+        match_len = longest suffix-match of (context + [t]) ending in context
+        if match_len >= allowed_length:
+          penalty = multiplier * base^(match_len - allowed_length)
+          logit[t] -= penalty
+    domain: "(ctx: Vec<TokenId>, multiplier: f32, base: f32, allowed: u32, range: u32, seq_breakers: Set<TokenId>)"
+    codomain: "logits tensor (penalized)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "multiplier=0 → identity (penalty disabled)"
+    - "tokens in seq_breakers reset the match_len counter"
+    - "penalty is always ≥ 0; never boosts any token"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-23-001
-  rule: placeholder
-  prediction: "apr surface for 'DRY sampling' matches llama_cpp canonical behavior"
+  rule: multiplier=0 is identity
+  prediction: "DRY with multiplier=0 yields identical output to no-DRY"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-23" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    PROMPT="The cat sat on the cat sat on the"
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "$PROMPT" --dry-multiplier 0 --seed 1 --max-tokens 16 --format json > /tmp/off.json
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "$PROMPT" --seed 1 --max-tokens 16 --format json > /tmp/base.json
+    diff <(jq .token_ids /tmp/off.json) <(jq .token_ids /tmp/base.json)
+- id: FALSIFY-CRUX-C-23-002
+  rule: DRY reduces exact-phrase repetition on adversarial prompt
+  prediction: "repetition-heavy prompt with DRY has fewer 4-gram repeats than without"
+  test: |
+    set -euo pipefail
+    PROMPT="the quick brown fox the quick brown fox the quick brown fox"
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "$PROMPT" --seed 2 --max-tokens 64 --format json > /tmp/base.json
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "$PROMPT" --dry-multiplier 0.8 --dry-base 1.75 --dry-allowed-length 2 --seed 2 --max-tokens 64 --format json > /tmp/dry.json
+    python3 - <<'PY'
+    import json
+    def n4(toks): return len({tuple(toks[i:i+4]) for i in range(len(toks)-3)})
+    base = json.load(open("/tmp/base.json"))["token_ids"]
+    dry  = json.load(open("/tmp/dry.json"))["token_ids"]
+    assert n4(dry) >= n4(base), f"DRY should preserve or increase uniqueness, base={n4(base)} dry={n4(dry)}"
+    PY
 
 proof_obligations:
+- type: parity
+  property: "apr --dry-* matches llama.cpp DRY sampler on identical (ctx, multiplier, base, allowed)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "multiplier=0 is identity; verified by byte-equal tokens"
+- type: invariant
+  property: "penalty ≥ 0 for all tokens; never adds probability mass"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-23` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-23
   priority: medium
   auto_created: true

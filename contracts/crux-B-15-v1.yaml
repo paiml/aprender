@@ -1,12 +1,8 @@
 # CRUX-B-15 — IQ-quants IQ3_XXS / IQ2_S
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-B-15
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,70 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "B — Inspection & Debugging"
   competitor: llama_cpp
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    IQ-quants IQ3_XXS / IQ2_S. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Import-hardness-based (IQ) quants IQ3_XXS and IQ2_S (and the full family
+    IQ1_S..IQ4_NL). Canonical: `llama-quantize model.gguf out.gguf IQ3_XXS`
+    using importance-matrix from `llama-imatrix`.
 
 equations:
-  placeholder_contract:
+  imatrix_driven_quant:
     formula: |
-      DRAFT — user workflow "IQ-quants IQ3_XXS / IQ2_S"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      imat[i] = mean(|activations[i]|^2) over calibration set
+      quant_IQ3_XXS(W) uses imat to weight per-row scale selection:
+        scale[row] = optimal_scale(W[row], imat[row], bits=3.0625 avg)
+      ppl(quant_model, wikitext-2) - ppl(fp16_model, wikitext-2) ≤ 0.5
+    domain: "(W: Tensor<f16>, imat_path: PathBuf, qtype ∈ {IQ1_S, IQ2_XXS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_XS, IQ4_NL})"
+    codomain: "quantized tensor block + per-row scales + imat hash in metadata"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "imatrix file presence is required for IQ2_*, IQ3_*; absence → exit 2"
+    - "ppl drift ≤ 0.5 on wikitext-2 vs llama.cpp llama-quantize reference"
+    - "file size matches llama.cpp reference ± 1%"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-15-001
-  rule: placeholder
-  prediction: "apr surface for 'IQ-quants IQ3_XXS / IQ2_S' matches llama_cpp canonical behavior"
+  rule: IQ3_XXS file size parity with llama-quantize reference
+  prediction: "apr quantize --format iq3_xxs and llama-quantize IQ3_XXS produce bytes within 1%"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-15" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    ref=$(ls -l tests/fixtures/tinyllama-iq3_xxs.gguf | awk '{print $5}')
+    apr quantize tests/fixtures/tinyllama-fp16.gguf --format iq3_xxs \
+      --imatrix tests/fixtures/tinyllama.imatrix -o /tmp/mine.gguf
+    mine=$(ls -l /tmp/mine.gguf | awk '{print $5}')
+    diff_pct=$(python3 -c "print(abs($ref-$mine)/$ref*100)")
+    python3 -c "assert $diff_pct < 1.0, '$diff_pct%'"
+- id: FALSIFY-CRUX-B-15-002
+  rule: missing imatrix yields exit 2 with actionable msg
+  prediction: "IQ3_XXS without --imatrix exits 2; stderr mentions llama-imatrix"
+  test: |
+    set -e
+    apr quantize tests/fixtures/tinyllama-fp16.gguf --format iq3_xxs -o /tmp/fail.gguf 2>/tmp/err && exit 1 || [ $? -eq 2 ]
+    grep -Ei "imatrix|llama-imatrix" /tmp/err
+- id: FALSIFY-CRUX-B-15-003
+  rule: ppl drift ≤ 0.5 on wikitext-2
+  prediction: "perplexity(iq3_xxs) - perplexity(fp16) ≤ 0.5"
+  test: |
+    set -euo pipefail
+    p_fp16=$(apr eval tests/fixtures/tinyllama-fp16.gguf --metric perplexity --dataset wikitext-2 --limit 128 --format json | jq .ppl)
+    p_iq=$(apr eval /tmp/mine.gguf --metric perplexity --dataset wikitext-2 --limit 128 --format json | jq .ppl)
+    python3 -c "assert ($p_iq) - ($p_fp16) <= 0.5"
 
 proof_obligations:
+- type: parity
+  property: "apr quantize --format iq3_xxs matches `llama-quantize IQ3_XXS` file size ± 1% and ppl drift ≤ 0.5"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "IQ types require imatrix; absence rejected at parse time"
+- type: invariant
+  property: "imat hash persisted in metadata for reproducibility"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-b-15` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-b-15
   priority: medium
   auto_created: true

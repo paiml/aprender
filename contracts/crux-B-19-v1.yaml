@@ -1,12 +1,8 @@
 # CRUX-B-19 — Dequant + re-quant preserve metadata
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-B-19
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,62 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "B — Inspection & Debugging"
   competitor: llama_cpp
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: partial
   description: >
-    Dequant + re-quant preserve metadata. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Dequantize to fp16 and re-quantize under a different qtype, preserving
+    all `general.*` metadata (arch, name, license, tokenizer config).
+    Canonical: `llama-quantize model.q4_0.gguf out.fp16.gguf F16` then
+    `llama-quantize out.fp16.gguf out.q6_k.gguf Q6_K` preserves metadata.
 
 equations:
-  placeholder_contract:
+  metadata_preservation:
     formula: |
-      DRAFT — user workflow "Dequant + re-quant preserve metadata"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      meta(requant(dequant(M))) = meta(M) modulo {general.quantization_version, general.file_type}
+      specifically:  general.architecture, general.name, tokenizer.*, llama.*
+                     (all preserved byte-for-byte)
+    domain: "(M: GGUF, from_qtype, to_qtype)"
+    codomain: "GGUF with new qtype + preserved metadata"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "keys outside the quantization group are byte-identical before/after round-trip"
+    - "file_type field is updated to reflect new qtype, never stale"
+    - "tokenizer vocab/scores/merges preserved under all round-trips"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-19-001
-  rule: placeholder
-  prediction: "apr surface for 'Dequant + re-quant preserve metadata' matches llama_cpp canonical behavior"
+  rule: general.* metadata preserved across dequant→requant
+  prediction: "all general.* keys (except quantization_version/file_type) identical"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-19" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr dequant tests/fixtures/tinyllama-q4_0.gguf -o /tmp/fp16.gguf
+    apr quantize /tmp/fp16.gguf --format q6_k -o /tmp/q6k.gguf
+    apr inspect tests/fixtures/tinyllama-q4_0.gguf --format json | jq '.metadata | to_entries | map(select(.key|startswith("general."))) | map(select(.key|IN("general.quantization_version","general.file_type")|not))' > /tmp/before.json
+    apr inspect /tmp/q6k.gguf --format json | jq '.metadata | to_entries | map(select(.key|startswith("general."))) | map(select(.key|IN("general.quantization_version","general.file_type")|not))' > /tmp/after.json
+    diff /tmp/before.json /tmp/after.json
+- id: FALSIFY-CRUX-B-19-002
+  rule: tokenizer vocab/merges preserved byte-for-byte
+  prediction: "sha256 of tokenizer.ggml.tokens + tokenizer.ggml.merges unchanged"
+  test: |
+    set -euo pipefail
+    h_before=$(apr inspect tests/fixtures/tinyllama-q4_0.gguf --export-key tokenizer.ggml.tokens | sha256sum | cut -c1-64)
+    h_after=$(apr inspect /tmp/q6k.gguf --export-key tokenizer.ggml.tokens | sha256sum | cut -c1-64)
+    [ "$h_before" = "$h_after" ]
 
 proof_obligations:
+- type: parity
+  property: "apr dequant + apr quantize round-trip metadata matches llama-quantize semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "general.* preserved except quantization_version/file_type which reflect new qtype"
+- type: invariant
+  property: "tokenizer.* preserved byte-identical under all round-trips"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-b-19` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-b-19
   priority: medium
   auto_created: false

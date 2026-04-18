@@ -1,12 +1,8 @@
 # CRUX-B-11 — FP8 quantization H100+
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-B-11
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,66 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "B — Inspection & Debugging"
   competitor: vllm
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    FP8 quantization H100+. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    FP8 (E4M3/E5M2) quantization targeted at Hopper/Blackwell GPUs.
+    Canonical: `vllm serve --quantization fp8` dispatches TransformerEngine
+    FP8 GEMM; llama.cpp has `--type f8_e4m3` in experimental branches.
 
 equations:
-  placeholder_contract:
+  fp8_scaled_roundtrip:
     formula: |
-      DRAFT — user workflow "FP8 quantization H100+"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      W_fp8 = round(W_fp16 / scale, E4M3_ULP) with scale = max(|W|) / 448.0
+      dequant(W_fp8) = W_fp8 * scale
+      invariant: |dequant(W_fp8) - W_fp16| / |W_fp16| ≤ 0.01  (1% Frobenius relative err)
+    domain: "(W: Tensor<f16>, fmt ∈ {E4M3, E5M2})"
+    codomain: "Tensor<fp8> + scalar scale (per-tensor or per-channel)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "E4M3 range [−448, +448], 7-bit mantissa; E5M2 range [−57344, +57344]"
+    - "relative Frobenius err ≤ 1% vs fp16 on all linear weights"
+    - "on non-Hopper GPU, apr quantize --fp8 exits 2 with capability-required msg"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-11-001
-  rule: placeholder
-  prediction: "apr surface for 'FP8 quantization H100+' matches vllm canonical behavior"
+  rule: fp8 round-trip preserves within 1% Frobenius
+  prediction: "|W_fp16 - dequant(quant_fp8(W_fp16))|_F / |W_fp16|_F ≤ 0.01"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-11" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr quantize tests/fixtures/small-fp16.safetensors --format fp8-e4m3 -o /tmp/fp8.apr
+    python3 - <<'PY'
+    import numpy as np, safetensors.numpy as st
+    orig = st.load_file("tests/fixtures/small-fp16.safetensors")
+    dequant = __import__("subprocess").check_output(["apr","dequant","/tmp/fp8.apr","--format","npz","-o","/tmp/deq.npz"])
+    deq = np.load("/tmp/deq.npz")
+    for k, w in orig.items():
+      err = np.linalg.norm(w - deq[k]) / np.linalg.norm(w)
+      assert err <= 0.01, f"{k}: err={err:.4f}"
+    PY
+- id: FALSIFY-CRUX-B-11-002
+  rule: non-Hopper GPU rejected with exit 2
+  prediction: "apr quantize --fp8 on sm<90 prints 'requires Hopper/Blackwell' and exits 2"
+  test: |
+    set -e
+    # Simulate by forcing capability detection off
+    APR_CUDA_SM_OVERRIDE=80 apr quantize tests/fixtures/small-fp16.safetensors --format fp8-e4m3 -o /tmp/bad.apr 2>/tmp/err && exit 1 || [ $? -eq 2 ]
+    grep -Ei "hopper|sm_?90|capability" /tmp/err
 
 proof_obligations:
+- type: parity
+  property: "apr quantize --fp8 matches `vllm serve --quantization fp8` numerical envelope (≤1% Frobenius)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "FP8 quantize on sm<90 fails fast with actionable capability msg"
+- type: invariant
+  property: "per-tensor scale stored in metadata; dequant is exact inverse modulo FP8 ULP"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-b-11` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-b-11
   priority: medium
   auto_created: true
