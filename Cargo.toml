@@ -176,6 +176,9 @@ serde_yaml = "0.9"
 
 # HF Hub
 hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }
+# HF Xet protocol: content-addressable LFS for files > 5 GiB
+# (F-PUB-LFS-001, contracts/apr-publish-hf-large-file-v1.yaml)
+hf-xet = "1.5.1"
 
 # Workspace-internal crates (paths within the monorepo)
 aprender-compute = { path = "crates/aprender-compute", version = "0.31.0" }

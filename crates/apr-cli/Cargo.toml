@@ -68,6 +68,10 @@ path = "src/main.rs"
 # Full features enabled locally via workspace Cargo.toml default-members
 default = ["hf-hub", "safetensors-compare", "inference", "training", "visualization", "zram"]
 hf-hub = ["aprender/hf-hub-integration"]
+# Xet CAS upload for files > 5 GiB (F-PUB-LFS-001, spec §12.8).
+# Off by default: `hf-xet` adds ~4 MB to the release binary. Users who ship
+# 7B+ teachers enable with `--features xet`.
+xet = ["hf-hub", "aprender/xet"]
 code = ["dep:batuta"]
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
@@ -82,7 +86,7 @@ training = ["dep:entrenar", "dep:entrenar-lora"]
 training-gpu = ["training"]
 whisper = ["whisper-apr"]
 dhat-heap = ["dep:dhat"]
-full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code"]
+full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code", "xet"]
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -134,6 +138,7 @@ colored = "2.1"
 tabled = "0.16"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
 rmp-serde = "1.3"
 
 # Error handling

@@ -41,12 +41,12 @@
 # ─────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-18'
   updated: '2026-04-18'
   author: PAIML Engineering
   registry: true
-  status: DRAFT
+  status: IMPLEMENTED
   parent_contracts:
   - contracts/apr-cli-publish-v1.yaml
   - contracts/apr-cli-publish-extra-v1.yaml
@@ -56,11 +56,24 @@ metadata:
   - 'evidence/ship-two-001/ex-04-five-whys-lfs-5gb-blocker.md'
   - 'https://huggingface.co/docs/xet/index (Xet Protocol Specification v1.0.0)'
   - 'https://github.com/huggingface/xet-core'
+  - 'crates/aprender-core/src/hf_hub/xet.rs (implementation, v1.1.0)'
+  - 'crates/aprender-core/src/hf_hub/upload.rs:366-383 (dispatch site)'
   changelog:
   - 'v1.0.0 (2026-04-18): Initial DbPC contract. 10 falsification gates covering
     file-size dispatch, Xet token acquisition, chunk invariants, xorb size,
     shard ordering, idempotency, retry policy, hash-string encoding, LFS
     pointer git commit, and three-format dogfood end-to-end upload.'
+  - 'v1.1.0 (2026-04-18): Phase 2 implementation landed. hf-xet 1.5.1 wired
+    via new `xet` feature in crates/aprender-core and crates/apr-cli. The
+    real hf-xet blocking API (XetSessionBuilder → new_upload_commit →
+    with_token_refresh_url → build_blocking → upload_from_path_blocking →
+    commit_blocking) proved simpler than v1.0.0 anticipated: phases 3-7
+    (chunking, dedup, xorb CAS upload, shard upload, hash encoding) are
+    delegated wholesale to the Hugging Face reference implementation;
+    our wrapper (178 lines) only owns phases 1 (dispatch), 2 (token-refresh
+    URL + auth header construction), and 8 (error mapping around the final
+    LFS pointer commit). 4 unit tests discharge FALSIFY-PUB-LFS-001/002
+    deterministically; live EX-04 upload still pending HF_TOKEN.'
   description: >
     Contract for `apr publish` when the local artifact exceeds the 5 GiB
     HF Hub HTTP preupload threshold. Routes such artifacts through the
@@ -554,36 +567,58 @@ deferred:
 # ─────────────────────────────────────────────────────────────
 
 implementation_plan:
+  status: IMPLEMENTED  # v1.1.0 landed 2026-04-18
   crates:
-  - crate: hf-xet        # high-level session API
+  - crate: hf-xet
+    version: 1.5.1
     source: crates.io
     license: Apache-2.0
-    note: preferred single-dep path if its public API accepts a
-          file path + repo_id + token and performs the full upload.
-  - crate: xet-client    # HTTP client; explicit CAS endpoint control
-    source: crates.io
-    license: Apache-2.0
-    note: use if hf-xet's high-level API is too opinionated.
-  - crate: xet-data      # chunking, dedup, file-reconstruction
-    source: crates.io
-    license: Apache-2.0
-  - crate: xet-core-structures  # MerkleHash + shard format types
-    source: crates.io
-    license: Apache-2.0
+    note: |
+      Actual wiring: the Rust blocking API (XetSessionBuilder,
+      with_token_refresh_url, build_blocking, upload_from_path_blocking,
+      commit_blocking) is self-contained — it does NOT require us to
+      separately touch xet-client / xet-data / xet-core-structures. The
+      single `hf-xet` dep transitively pulls them in and hides phases 3-7
+      of the protocol behind a single `upload_from_path_blocking` call.
+      The v1.0.0 plan (four crates) overestimated the integration surface.
+  - crate: xet-client
+    status: transitive-only
+    note: pulled in by hf-xet; we do not import directly
+  - crate: xet-data
+    status: transitive-only
+  - crate: xet-core-structures
+    status: transitive-only
   edit_sites:
-  - file: crates/aprender-core/src/hf_hub/upload.rs
-    function: reject_oversized_file
-    action: DELETE (replaced by file_size_dispatch branch)
-  - file: crates/aprender-core/src/hf_hub/upload.rs
-    function: NEW — upload_via_xet
-    action: ADD (entry point for > 5 GiB artifacts)
+  - file: Cargo.toml (workspace root)
+    action: ADDED `hf-xet = "1.5.1"` to [workspace.dependencies]
+    status: DONE
+  - file: crates/aprender-core/Cargo.toml
+    action: ADDED `hf-xet = { workspace = true, optional = true }` +
+            `xet = ["hf-hub-integration", "hf-xet"]` feature
+    status: DONE
+  - file: crates/aprender-core/src/hf_hub/xet.rs (NEW, 178 lines)
+    exports: should_use_xet, HF_XET_THRESHOLD_BYTES,
+             build_token_refresh_url, XetUploader
+    tests: 4 unit tests discharge FALSIFY-PUB-LFS-001/002
+    status: DONE
   - file: crates/aprender-core/src/hf_hub/mod.rs
-    action: re-export the new XetUploader surface under the
-            `hf-hub-integration` feature flag
-  - file: Cargo.toml (workspace deps)
-    action: ADD hf-xet = "1" behind the existing
-            aprender-core `hf-hub-integration` feature
-  feature_flag: hf-hub-integration  (existing; no new flag)
+    action: ADDED `pub mod xet;`, added `HfHubError::XetUpload(String)`
+            and `HfHubError::PartialUpload { cas_success, commit_success,
+            detail }` variants + Display impls
+    status: DONE
+  - file: crates/aprender-core/src/hf_hub/upload.rs
+    action: DELETED `reject_oversized_file` (v1.0.0 stub with broken
+            `apr export --max-shard-size` recommendation). ADDED
+            `upload_via_xet` (tempfile materialize + XetUploader invoke)
+            and `reject_needs_xet_feature` (clear error when built without
+            --features xet). Dispatch gate in upload_via_lfs now routes
+            files > 5 GiB through super::super::xet::should_use_xet.
+    status: DONE
+  - file: crates/apr-cli/Cargo.toml
+    action: ADDED `xet = ["hf-hub", "aprender/xet"]` feature; appended
+            `xet` to the `full` feature list.
+    status: DONE
+  feature_flag: xet  (sub-feature of hf-hub-integration; off-by-default)
   binary_size_impact: |
     hf-xet pulls in tokio + reqwest + async machinery. Current
     apr binary is sync (ureq). Options:
