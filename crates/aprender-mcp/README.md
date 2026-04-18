@@ -45,8 +45,9 @@ apr mcp
 - **M3** (shipped 2026-04-18): `apr.finetune` synchronous wrapper
   (8th Phase-1 workflow tool — 9th registered, counting the M1
   `apr.version` scaffold), `notifications/cancelled` → SIGTERM→SIGKILL
-  for `apr.run`, build.rs schema codegen from
-  `contracts/apr-mcp-tool-schemas-v1.yaml` (all 9 registered tools),
+  for `apr.run`, build.rs schema + description codegen from
+  `contracts/apr-mcp-tool-schemas-v1.yaml` (all 9 registered tools;
+  `APR_<TOOL>_SCHEMA` and `APR_<TOOL>_DESCRIPTION` constants — PMAT-514),
   and opt-in per-line `notifications/progress` for `apr.finetune` via
   `params._meta.progressToken`.
 - **M4** (in progress): Claude Code dogfood + contract promotion to

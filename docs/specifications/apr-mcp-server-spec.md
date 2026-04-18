@@ -38,7 +38,7 @@ Location: `crates/aprender-mcp/`
 ```
 crates/aprender-mcp/
 ├── Cargo.toml            # serde, serde_json, anyhow (native); nix (unix signals); serde_yaml (build); jsonschema (dev)
-├── build.rs              # FALSIFY-MCP-008: reads contracts/apr-mcp-tool-schemas-v1.yaml → $OUT_DIR/schemas.rs
+├── build.rs              # FALSIFY-MCP-008: reads contracts/apr-mcp-tool-schemas-v1.yaml → $OUT_DIR/schemas.rs (APR_<TOOL>_SCHEMA + APR_<TOOL>_DESCRIPTION, PMAT-514)
 ├── src/
 │   ├── lib.rs            # public API: `AprMcpServer::new().run_stdio()`; `include!` of build-time schemas.rs
 │   ├── types.rs          # JSON-RPC 2.0 envelopes + MCP protocol types (mirrors aprender-orchestrate::mcp::types)
