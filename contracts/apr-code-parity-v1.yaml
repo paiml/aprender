@@ -15,7 +15,7 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v4.8): 11 SHIPPED / 3 PARTIAL / 7 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 3 more MISSING→{SHIPPED,PARTIAL} flips to close the epic.
+# Current counts (2026-04-18 v4.9): 12 SHIPPED / 3 PARTIAL / 6 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 2 more MISSING→{SHIPPED,PARTIAL} flips to close the epic. ALL P0 + P1 TICKETS CLOSED; remaining work is P2 only.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -75,12 +75,12 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips), v4.8=PMAT-CODE-WORKTREE-001 closed → worktree-isolation NONE→SHIPPED (11/3/7 — SHIPPED cap still met; MISSING cap still needs 3 more flips)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips), v4.8=PMAT-CODE-WORKTREE-001 closed → worktree-isolation NONE→SHIPPED (11/3/7 — SHIPPED cap still met; MISSING cap still needs 3 more flips), v4.9=PMAT-CODE-PERMISSIONS-001 closed → permission-modes NONE→SHIPPED (12/3/6 — all P0+P1 tickets now closed; remaining 6 MISSING rows are all P2 deferred; epic still open, needs 2 more flips for MISSING cap ≤4)
   total_rows: 21
   counts:
-    shipped: 11
+    shipped: 12
     partial: 3
-    missing: 7
+    missing: 6
   closure_criterion:
     description: >
       Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
@@ -243,14 +243,20 @@ categories:
 
   - id: permission-modes
     name: Permission modes (default/plan/acceptEdits/bypassPermissions)
-    status: NONE
-    evidence_path: null
+    status: SHIPPED  # v4.9 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-PERMISSIONS-001 closed: new agent/permission.rs ships the full Claude-Code permission-mode lattice: `PermissionMode::{Default, Plan, AcceptEdits, BypassPermissions}` with serde camelCase rename to match Claude's JSON surface + `Display` + `Default::default()=Default`. `PermissionVerdict::{Allow, Ask, Block}` carries the per-capability decision. `verdict(&Capability)` encodes the matrix: Bypass allows everything; Plan blocks writes/shell/network but allows reads + Memory + Rag; AcceptEdits auto-allows reads + writes but still asks on shell/network; Default asks on everything mutating. `parse()` accepts canonical camelCase + kebab-case + snake_case aliases with whitespace trimming. `next()` cycles in Claude's Shift+Tab order (default → plan → acceptEdits → bypassPermissions → default). `would_run_unattended()` helper for `apr code -p` batch jobs. 15 unit tests cover every mode × cap combination, parse aliases, whitespace trim, serde JSON round-trip camelCase-faithful, display, next-cycle, unattended helper. REPL wiring (Shift+Tab + `/permissions` status-line + prompt-loop integration) deferred to PMAT-CODE-PERMISSIONS-RUNTIME-001 (P2); the primitive is ready for call sites today." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/permission.rs
+      - crates/aprender-orchestrate/src/agent/permission/tests.rs
+    evidence_symbols: [PermissionMode, PermissionVerdict, verdict, next, would_run_unattended]
+    remaining_gaps:
+      - "REPL runtime wiring — Shift+Tab mode cycle, `/permissions` slash-command mode display, prompt-loop integration that actually asks/blocks based on verdict. Tracked in PMAT-CODE-PERMISSIONS-RUNTIME-001 (P2)."
     cross_check_command: |
-      pmat query --literal "PermissionMode" --limit 5 2>/dev/null \
-        | grep -E "agent/" | wc -l
-    expected_max_hits: 0
-    ticket: PMAT-CODE-PERMISSIONS-001
-    priority: P1
+      grep -cE "(enum PermissionMode|enum PermissionVerdict|fn verdict|fn next|fn would_run_unattended)" crates/aprender-orchestrate/src/agent/permission.rs
+    expected_min_hits: 5
+    ticket: null  # PMAT-CODE-PERMISSIONS-001 closed
+    priority: null
 
   - id: builtin-tools-rwegs
     name: Built-in tools (Read, Write, Edit, Glob, Grep, Shell, Memory, PmatQuery, Rag)
@@ -499,9 +505,9 @@ priority_buckets:
     # skills: closed v4.7 (2026-04-18) — retained in `categories` for history
     # worktree-isolation: closed v4.8 (2026-04-18) — retained in `categories` for history
     # custom-agents: closed v4.5 (2026-04-18) — retained in `categories` for history
-    - permission-modes
+    # permission-modes: closed v4.9 (2026-04-18) — retained in `categories` for history
     # builtin-tools-web: closed v4.6 (2026-04-18) — retained in `categories` for history
-    - session-management   # scope reduced: only --continue/--fork/--name remain
+    - session-management   # scope reduced: only --continue/--fork/--name remain (status: SHIPPED core, scope-reduced follow-up is the only remaining P1)
     - configuration-ladder
     - non-interactive-mode
     - keyboard-shortcuts
@@ -632,6 +638,39 @@ change_log:
       skills (P1), worktree-isolation (P1), permission-modes (P1),
       then 2 of the 6 P2 deferred rows (status-line / notebook /
       monitor / plugins / ide / org-policy).
+  - date: '2026-04-18'
+    revision: '4.9'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-PERMISSIONS-001 closed — permission-modes row flipped
+      NONE → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      permission.rs ships the full Claude-Code permission-mode lattice:
+      `PermissionMode::{Default, Plan, AcceptEdits, BypassPermissions}`
+      with serde `#[serde(rename_all = "camelCase")]` to match Claude's
+      JSON surface; `PermissionVerdict::{Allow, Ask, Block}` is the
+      per-capability decision. `verdict(&Capability)` encodes the
+      matrix: Bypass allows everything; Plan blocks writes/shell/
+      network but allows reads + Memory + Rag; AcceptEdits auto-allows
+      reads + writes but asks on shell/network; Default asks on
+      everything mutating. `parse()` accepts canonical camelCase +
+      kebab-case + snake_case with whitespace trimming so the
+      `--permission-mode` CLI flag, TOML manifest field, and
+      `/permissions <mode>` slash command all share one happy path.
+      `next()` cycles in Claude's Shift+Tab order (default → plan →
+      acceptEdits → bypassPermissions → default) so the REPL can wire
+      a single key handler. `would_run_unattended()` helper lets
+      `apr code -p <prompt>` batch mode short-circuit when a tool
+      would prompt. 15 unit tests cover every mode × cap combination,
+      every parse alias + whitespace, serde JSON round-trip (asserts
+      camelCase on the wire), Display, next-cycle, unattended helper.
+      **Headline 11/3/7 → 12/3/6 over 21 rows**. **ALL P0 + P1
+      TICKETS NOW CLOSED.** SHIPPED cap (≥9) still MET; MISSING cap
+      (≤4) still needs 2 more MISSING→{SHIPPED,PARTIAL} flips. All
+      6 remaining MISSING rows are P2 deferred surfaces (notebook,
+      monitor, plugins, IDE, status-line, org-policy). Follow-up
+      PMAT-CODE-PERMISSIONS-RUNTIME-001 (P2) wires Shift+Tab +
+      `/permissions` + prompt-loop runtime — the primitive is ready
+      for call sites today.
   - date: '2026-04-18'
     revision: '4.8'
     author: kaizen-paiml

@@ -37,6 +37,7 @@ pub mod guard;
 pub mod hooks;
 pub mod manifest;
 pub mod memory;
+pub mod permission;
 pub mod phase;
 pub mod pool;
 pub mod repl;
