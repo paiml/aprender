@@ -76,19 +76,21 @@ pub fn cmd_code(
 
     // PMAT-160: Try AprServeDriver first (apr serve has full CUDA/GPU).
     // Falls back to embedded RealizarDriver if `apr` binary not found.
-    let driver: Box<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
+    // PMAT-CODE-SPAWN-PARITY-001: driver stored as Arc so TaskTool can
+    // share it with the AgentPool for sub-agent execution.
+    let driver: Arc<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
         match crate::agent::driver::apr_serve::AprServeDriver::launch(
             model_path,
             manifest.model.context_window,
         ) {
-            Ok(d) => Box::new(d),
+            Ok(d) => Arc::new(d),
             Err(e) => {
                 eprintln!("⚠ apr serve unavailable ({e}), using embedded inference");
-                build_fallback_driver(&manifest)?
+                Arc::from(build_fallback_driver(&manifest)?)
             }
         }
     } else {
-        build_fallback_driver(&manifest)?
+        Arc::from(build_fallback_driver(&manifest)?)
     };
 
     // Build tool registry with coding tools
@@ -98,6 +100,16 @@ pub fn cmd_code(
     // Synchronous wrapper over async discover_mcp_tools — a no-op when mcp_servers is
     // empty (the default for `apr code` without a manifest).
     register_mcp_client_tools(&mut tools, &manifest);
+
+    // PMAT-CODE-SPAWN-PARITY-001: register Task tool (Claude-Code Agent parity).
+    // `task` lets the agent delegate to typed subagents (general-purpose,
+    // explore, plan) with bounded recursion depth (Jidoka).
+    crate::agent::task_tool::register_task_tool(
+        &mut tools,
+        &manifest,
+        Arc::clone(&driver),
+        /* max_depth */ 3,
+    );
 
     // PMAT-CODE-HOOKS-001: build hook registry from manifest and fire SessionStart.
     // Returned Warn messages are surfaced to the user; a Block here aborts session

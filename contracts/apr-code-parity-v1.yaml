@@ -15,7 +15,7 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v2): 6 SHIPPED / 6 PARTIAL / 8 MISSING.
+# Current counts (2026-04-18 v4.4): 7 SHIPPED / 4 PARTIAL / 10 MISSING.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -75,11 +75,11 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10)
   total_rows: 21
   counts:
-    shipped: 6
-    partial: 5
+    shipped: 7
+    partial: 4
     missing: 10
   closure_criterion:
     description: >
@@ -160,16 +160,23 @@ categories:
 
   - id: subagent-spawn
     name: Subagent / Task tool (Agent, TaskCreate/Get/List/Update)
-    status: PARTIAL
-    detail: SpawnTool exists but capability-gated
-    evidence_path: crates/aprender-orchestrate/src/cli/agent_helpers.rs
-    evidence_line: 179
+    status: SHIPPED  # v4.4 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "PMAT-CODE-SPAWN-PARITY-001 closed: new agent/task_tool.rs ships the Claude-Code-equivalent `Task` tool — default-registered in cmd_code (apr code) with no capability gate, matching Claude's built-in Agent tool. SubagentRegistry resolves `subagent_type` against 3 preset personalities (general-purpose, explore, plan) built via SubagentSpec::{general_purpose,explore,plan} — identical roster to Claude Code's built-ins. Depth-bounded recursion via Capability::Spawn { max_depth: 3 }. Driver is now shared as Arc<dyn LlmDriver> so the AgentPool can execute child agents without a second model load. 13 unit tests including unknown-type rejection, depth-limit blocking, TOML round-trip, registry replace-by-name, and a real spawn via MockDriver. Worktree-isolated agents tracked separately by PMAT-CODE-WORKTREE-001 (P1); async TaskCreate/Get/List surface tracked by PMAT-CODE-TASK-ASYNC-001 (P2) — Claude's built-in `task` is synchronous-blocking, which is what shipped here." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/task_tool.rs
+      - crates/aprender-orchestrate/src/agent/task_tool/tests.rs
+      - crates/aprender-orchestrate/src/agent/code.rs
+    evidence_symbols: [TaskTool, SubagentRegistry, SubagentSpec, register_task_tool, default_registry]
+    shipped_subagent_types: [general-purpose, explore, plan]
+    remaining_gaps:
+      - "Async Task lifecycle surface (TaskCreate/Get/List/Update — Claude-side Claude-for-Work API). Deferred to PMAT-CODE-TASK-ASYNC-001 (P2). `task` built-in is blocking, matching Claude Code 1:1."
+      - "Worktree-isolated child agents — tracked by PMAT-CODE-WORKTREE-001 (P1)."
     cross_check_command: |
-      pmat query --literal "register_spawn_tool" --limit 5 --include-source \
-        | grep -c "Capability::Spawn"
-    expected_min_hits: 1
-    ticket: PMAT-CODE-SPAWN-PARITY-001
-    priority: P0
+      grep -cE "(struct TaskTool|struct SubagentRegistry|struct SubagentSpec|fn register_task_tool|fn default_registry)" crates/aprender-orchestrate/src/agent/task_tool.rs
+    expected_min_hits: 5  # 5 landmark symbols live in the task_tool module
+    ticket: null  # PMAT-CODE-SPAWN-PARITY-001 closed
+    priority: null
 
   - id: worktree-isolation
     name: Worktree isolation for subagents
@@ -461,11 +468,7 @@ falsification_conditions:
 # ─────────────────────────────────────────────────────────────────────────────
 
 priority_buckets:
-  P0:
-    - mcp-client
-    - slash-commands
-    - hooks
-    - subagent-spawn
+  P0: []  # all 4 P0 tickets closed 2026-04-18 (MCP-CLIENT, SLASH-PARITY, HOOKS, SPAWN-PARITY); category rows retained in `categories` for history
   P1:
     - skills
     - worktree-isolation
@@ -540,3 +543,21 @@ change_log:
       `cross_check_command` and asserts `expected_min_hits` /
       `expected_max_hits`. Today `pv validate` guarantees SCHEMA
       correctness only, not SEMANTIC (each row still needs a run).
+  - date: '2026-04-18'
+    revision: '4.4'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-SPAWN-PARITY-001 closed — subagent-spawn row flipped
+      PARTIAL → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      task_tool.rs ships the Claude-Code-equivalent `Task` tool:
+      TaskTool (default-registered in `apr code` with no capability
+      gate), SubagentRegistry + SubagentSpec with 3 preset personalities
+      (general-purpose / explore / plan — identical roster to Claude
+      Code's built-ins), bounded recursion via Capability::Spawn
+      { max_depth: 3 }, and driver converted to Arc<dyn LlmDriver> in
+      agent/code.rs so the AgentPool can execute children without a
+      second model load. 13 unit tests. Headline 6/5/10 → 7/4/10 over
+      21 rows; that's the fourth consecutive P0 ticket (MCP-CLIENT,
+      SLASH-PARITY, HOOKS, SPAWN-PARITY) to close this cycle — all 4
+      P0 buckets are now empty, and closure threshold (≥9 SHIPPED /
+      ≤4 MISSING) is now 2 rows away.
