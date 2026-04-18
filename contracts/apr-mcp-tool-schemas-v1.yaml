@@ -296,8 +296,16 @@ falsification:
       note: "Asserts every `apr --help` command is registered. This contract extends that invariant into MCP tool-space for the subset wrapped as MCP tools."
 
 # ── Coverage note ──
-# All 8 Phase-1 tools are now registered in this contract. `apr.run` (PR #870),
-# `apr.serve` (PR #872), and `apr.finetune` (PR #881) were appended as they
-# shipped. The FALSIFY-MCP-008 harness (M3) iterates over `tools[*].name` from
-# this file — not a hard-coded list — so the gate automatically tightens as new
-# entries are appended.
+# 9 entries registered: `apr.version` (M1 scaffold) + the 8 Phase-1 workflow
+# tools (`apr.validate`, `apr.tensors`, `apr.bench`, `apr.qa`, `apr.trace`,
+# `apr.run`, `apr.serve`, `apr.finetune`). `apr.run` (PR #870), `apr.serve`
+# (PR #872), and `apr.finetune` (PR #881) were appended as they shipped. The
+# FALSIFY-MCP-008 harness (M3, `tests/falsify_mcp_008.rs`) iterates over
+# `tools[*].name` from this file — not a hard-coded list — so the gate
+# automatically tightens as new entries are appended.
+#
+# Gate surface (2026-04-18, PMAT-514 extension): inputSchema byte-identity
+# (`migrated_tools_match_yaml_contract_byte_for_byte`) AND tool-level
+# description byte-identity (`tool_descriptions_match_yaml_contract`). All
+# six assertions in the `falsification.FALSIFY-MCP-008.assertions` block
+# above are now load-bearing at test time.
