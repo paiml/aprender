@@ -1,12 +1,8 @@
 # CRUX-A-23 — Model search Hub + local cache
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-A-23
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,63 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Model search Hub + local cache. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    `apr search QUERY` returns both Hub matches and already-cached local
+    models in one unified list. Canonical: `huggingface_hub.list_models`
+    (server-side full-text search) + local `~/.cache/huggingface/hub` enum.
 
 equations:
-  placeholder_contract:
+  hybrid_search:
     formula: |
-      DRAFT — user workflow "Model search Hub + local cache"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      search(q) = merge(
+        hub_results   = GET /api/models?search={q}&limit=25,
+        local_results = [m for m in list_cache() if q.lower() in m.repo.lower()]
+      )
+      sort by (match_score DESC, downloads DESC)
+      each row tagged with source ∈ {HUB, LOCAL, BOTH}
+    domain: "(query: str, limit: u32 = 25)"
+    codomain: "JSON [{repo, downloads, likes, source, cached: bool}, ...]"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "local models always appear, even with zero Hub matches"
+    - "cached-same-as-Hub rows marked source=BOTH (not double-listed)"
+    - "offline mode (no network) returns local-only results, never errors"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-23-001
-  rule: placeholder
-  prediction: "apr surface for 'Model search Hub + local cache' matches huggingface canonical behavior"
+  rule: local cache entries appear without network
+  prediction: "apr search gpt --offline returns the cached gpt2 row with source=LOCAL"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-23" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr pull hf://gpt2 >/dev/null 2>&1 || true
+    apr search gpt --offline --format json > /tmp/res.json
+    jq -e '.[] | select(.repo=="gpt2") | .source=="LOCAL" or .source=="BOTH"' /tmp/res.json
+- id: FALSIFY-CRUX-A-23-002
+  rule: hub + local merge is deduplicated
+  prediction: "a repo cached locally AND on Hub appears once with source=BOTH"
+  test: |
+    set -euo pipefail
+    apr pull hf://bert-base-uncased >/dev/null 2>&1 || true
+    apr search bert-base-uncased --format json > /tmp/res.json
+    count=$(jq '[.[] | select(.repo=="bert-base-uncased")] | length' /tmp/res.json)
+    [ "$count" = "1" ]
 
 proof_obligations:
+- type: parity
+  property: "apr search matches `huggingface_hub.list_models(search=...)` for Hub half"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "merge dedups by repo; cached rows win (tagged BOTH)"
+- type: invariant
+  property: "--offline returns local results only; never raises NetworkError"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-a-23` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-a-23
   priority: medium
   auto_created: true

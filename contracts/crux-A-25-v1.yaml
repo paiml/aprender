@@ -1,12 +1,8 @@
 # CRUX-A-25 — Garbage-collect unused models
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-A-25
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,83 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
   competitor: ollama
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Garbage-collect unused models. Root-cause workflow extracted from ollama UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    `apr rm TAG` removes a manifest; `apr gc` deletes now-unreferenced blobs.
+    Canonical: `ollama rm` decrements a blob refcount; Ollama daemon runs
+    periodic GC. We expose it as an explicit verb plus optional `--gc` flag.
 
 equations:
-  placeholder_contract:
+  refcounted_gc:
     formula: |
-      DRAFT — user workflow "Garbage-collect unused models"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      refcount(blob) = |{ manifest in registry if blob ∈ manifest.blobs }|
+      apr rm TAG: delete manifest(TAG); no blob bytes freed yet
+      apr gc:     for blob in blobs(): if refcount(blob)==0: unlink(blob_path)
+      post-gc disk_bytes = sum(sizeof(blob) for blob with refcount ≥ 1)
+    domain: "(action: {rm, gc}, tag: Option<str>, dry_run: bool)"
+    codomain: "bytes freed + manifest of deletions (JSON when --format=json)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "no blob referenced by any live manifest is ever unlinked"
+    - "gc is idempotent — second run frees 0 bytes"
+    - "--dry-run prints the candidate list without unlinking"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-25-001
-  rule: placeholder
-  prediction: "apr surface for 'Garbage-collect unused models' matches ollama canonical behavior"
+  rule: gc frees bytes after rm of last referrer
+  prediction: "pull → rm → gc frees ≥ (blob_size - 4 KiB) bytes"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-25" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    export APR_MODELS=/tmp/apr-gc-$$
+    mkdir -p "$APR_MODELS"
+    apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF:qwen2.5-0.5b-instruct-q4_k_m.gguf
+    before=$(du -sb "$APR_MODELS" | cut -f1)
+    apr rm qwen2.5-0.5b-instruct:q4_k_m
+    apr gc
+    after=$(du -sb "$APR_MODELS" | cut -f1)
+    freed=$((before - after))
+    [ "$freed" -gt 100000000 ]
+- id: FALSIFY-CRUX-A-25-002
+  rule: gc never deletes referenced blobs
+  prediction: "gc after rm of one of two copies frees 0 bytes (blob still referenced)"
+  test: |
+    set -euo pipefail
+    apr pull hf://gpt2
+    apr cp gpt2:latest gpt2:dup
+    before=$(du -sb "$APR_MODELS" | cut -f1)
+    apr rm gpt2:latest
+    apr gc
+    after=$(du -sb "$APR_MODELS" | cut -f1)
+    delta=$((before - after))
+    [ "$delta" -lt 8192 ]
+- id: FALSIFY-CRUX-A-25-003
+  rule: --dry-run prints but does not delete
+  prediction: "apr gc --dry-run leaves disk usage unchanged"
+  test: |
+    set -euo pipefail
+    apr pull hf://gpt2
+    apr rm gpt2:latest
+    before=$(du -sb "$APR_MODELS" | cut -f1)
+    apr gc --dry-run > /tmp/plan.txt
+    after=$(du -sb "$APR_MODELS" | cut -f1)
+    [ "$before" = "$after" ]
+    grep -E "would free|candidate" /tmp/plan.txt
 
 proof_obligations:
+- type: parity
+  property: "apr rm + apr gc together match `ollama rm` refcount semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "gc is refcount-safe — no live blob is ever unlinked"
+- type: invariant
+  property: "gc --dry-run never mutates; plan exactly equals subsequent real run"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-a-25` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-a-25
   priority: medium
   auto_created: true

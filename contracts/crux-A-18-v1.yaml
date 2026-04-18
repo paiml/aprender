@@ -1,12 +1,8 @@
 # CRUX-A-18 — Gated-model interactive auth flow
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-A-18
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,69 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: partial
   description: >
-    Gated-model interactive auth flow. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    When a pull hits a gated repo (HTTP 403 with `X-Error-Code: GatedRepo`),
+    re-prompt the user to `apr login` (token paste) and retry. Canonical:
+    `huggingface-cli login` + `hf_hub_download` retry after `use_auth_token`.
 
 equations:
-  placeholder_contract:
+  gated_retry_flow:
     formula: |
-      DRAFT — user workflow "Gated-model interactive auth flow"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      pull(repo):
+        r = GET /{repo}/resolve/{rev}/{file}  (no auth)
+        if r.status == 403 and r.headers["X-Error-Code"] in {"GatedRepo", "RepoNotFound"}:
+            token = env["HF_TOKEN"] or prompt_user("hf token: ")
+            r = GET ...  with Authorization: Bearer {token}
+        return r.bytes
+    domain: "(repo: str, file: str, HF_TOKEN: Option<str>)"
+    codomain: "bytes on disk or exit 2 (still 403 after auth)"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "token is never logged (stderr/stdout scrub)"
+    - "token is stored in ~/.apr/token with mode 0600"
+    - "on still-403-after-auth, exit 2 with link to https://huggingface.co/{repo} access request"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-18-001
-  rule: placeholder
-  prediction: "apr surface for 'Gated-model interactive auth flow' matches huggingface canonical behavior"
+  rule: 403 on gated repo triggers token prompt (not silent failure)
+  prediction: "apr pull hf://meta-llama/Llama-3-8B with no token prints 'access requires auth' and exits 2"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-18" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -e
+    unset HF_TOKEN
+    printf "" | apr pull hf://meta-llama/Meta-Llama-3-8B --no-prompt 2>/tmp/err && exit 1 || [ $? -eq 2 ]
+    grep -E "gated|access|huggingface\.co/meta-llama" /tmp/err
+- id: FALSIFY-CRUX-A-18-002
+  rule: token file mode is 0600 after login
+  prediction: "stat -c %a ~/.apr/token == 600"
+  test: |
+    set -euo pipefail
+    echo "hf_dummy_token" | apr login --stdin
+    [ "$(stat -c %a ~/.apr/token)" = "600" ]
+- id: FALSIFY-CRUX-A-18-003
+  rule: token is never echoed to stderr
+  prediction: "apr pull/login stderr does NOT contain the literal token"
+  test: |
+    set -euo pipefail
+    TOK="hf_test_$(openssl rand -hex 8)"
+    echo "$TOK" | apr login --stdin 2>/tmp/err
+    ! grep -qF "$TOK" /tmp/err
 
 proof_obligations:
+- type: parity
+  property: "apr pull matches `huggingface-cli login` + `hf_hub_download` retry semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "token file is mode 0600; never logged in any code path"
+- type: invariant
+  property: "still-403-after-auth → exit 2 with actionable access-request URL"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-a-18` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-a-18
   priority: medium
   auto_created: false

@@ -491,8 +491,8 @@ at Phase 0 exit; intake estimates:
 - ✅ Registered all in master `contracts/crux-competitive-research-ux-v1.yaml`
 - ✅ Created 140 pmat work tickets (one per ❌ missing story) via
   `scripts/crux_bulk_pmat_work.sh` — tagged `crux,gap,crux-{category},competitor-{name},{id_lower}`
-- ✅ **153 of 250 contracts (61.2%)** promoted draft → **spec-complete**
-  via five waves of 4-5-way parallel sub-agent enrichment (2026-04-18):
+- ✅ **161 of 250 contracts (64.4%)** promoted draft → **spec-complete**
+  via five parallel waves + wave 6 batch 1 direct authoring (2026-04-18):
   - Wave 1 (18 demand=5 missing): B-07/08/09, C-04/11/13, D-03/04/11/12,
     E-02/03/07, H-03, F-09/13, I-04, K-02
   - Wave 2 (24 demand=5 partials): A-01/05/09, C-03/05/06/07/08/31/33/34,
@@ -508,17 +508,22 @@ at Phase 0 exit; intake estimates:
     B-03/05/12/13, C-10/18/20/25/26/32/35/36, D-08/14/21/22,
     E-04/09/15, F-02/04/05/08/12, G-03/05/06/09/12, H-07/09/11,
     I-02/08/10/11, K-04/08/10/13
+  - Wave 6 batch 1 (8 A-series demand=3): A-08 (HF_ENDPOINT),
+    A-11 (apr cp), A-14 (s3/gs/az://), A-18 (gated auth flow),
+    A-21 (shared APR_MODELS), A-23 (search), A-24 (create --from),
+    A-25 (rm + gc refcount). Direct-authored on main conversation
+    after wave 6 sub-agents hit API rate limits.
   - 3 demand=5 stories still draft: J-01/02/09 (blocked on OpenCLAW
     interpretation — every other demand≥4 non-J story is spec-complete)
   - Each contract carries competitor CLI citations (arXiv papers, official
     docs) and bash falsification bodies with jq/curl/python3 invocations
 - Gate: `pmat comply check` passes with 250 CRUX contracts registered
 
-**Phase 1 — Evidence capture** (IN PROGRESS — 153/250 = 61.2%)
+**Phase 1 — Evidence capture** (IN PROGRESS — 161/250 = 64.4%)
 - Collect `evidence/crux/{competitor}/*` per §2.1 for all 7 competitors
 - Falsification harness comparing `apr --help` verbs vs competitor verbs
-- Enrich remaining 97 contracts (spec-complete body) — demand=5 + demand=4
-  non-J tier complete; continue with demand=3 (≈55 stories) then demand≤2
+- Enrich remaining 89 contracts (spec-complete body) — demand≥4 non-J
+  complete + 8 demand=3 A-series done; 59 demand=3 non-J remain, then ≈42 demand≤2
 - Gate: `apr qa --crux` emits per-story PASS/FAIL/SKIP
 
 **Phase 2 — Close 🔨 partials** (priority by demand score)
