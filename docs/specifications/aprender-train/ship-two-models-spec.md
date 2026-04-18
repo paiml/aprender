@@ -908,12 +908,23 @@ the v1.0.0→v1.1.0 delta.
    commit_success: bool, detail: String }`. Partial-upload splits
    "CAS xorbs landed but LFS pointer commit failed" from "nothing
    happened" — consumed by retry UX.
-5. **Dogfood** — still pending `HF_TOKEN`. Gate evidence paths
-   remain: `evidence/ship-two-001/ex-04-xet-upload.log` +
-   `evidence/ship-two-001/ex-04-xet-verify.json`. Static wiring
-   proof already captured at
+5. **Dogfood** — live upload still pending `HF_TOKEN`. Gate evidence
+   paths for the live upload remain:
+   `evidence/ship-two-001/ex-04-xet-upload.log` +
+   `evidence/ship-two-001/ex-04-xet-verify.json`. Pre-live evidence
+   already captured in two files:
+   (a) Static wiring proof at
    `evidence/ship-two-001/ex-04-xet-phase2-wiring.json` (commit
-   `ee6382803`).
+   `ee6382803`) — `strings(apr)` confirms the full `hf-xet` 1.5.1
+   runtime is linked into the canonical binary.
+   (b) Live-on-teacher dry-run at
+   `evidence/ship-two-001/ex-04-xet-dryrun-teacher.{json,txt}`
+   (commit `18f8b5604`) — all three real SHIP-TWO-001 teacher
+   artifacts (.apr 8.0 GiB / .gguf 8.0 GiB / .safetensors 15.2 GiB)
+   route to the Xet CAS path under the canonical
+   `/mnt/nvme-raid0/targets/aprender/release/apr` (features
+   `cuda,xet`). This discharges FALSIFY-PUB-LFS-001 against real
+   teacher sizes, not synthetic fixtures.
 
 Actual edit sites (see `contracts/apr-publish-hf-large-file-v1.yaml`
 `implementation_plan.edit_sites` for the authoritative list):
