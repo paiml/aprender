@@ -216,7 +216,10 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 
 ## Success Criteria
 
-Acceptance gate for promoting to ACTIVE:
+The spec is already ACTIVE as of M3 ship (2026-04-18). The table below is
+the acceptance gate for **closing M4** — i.e. promoting the
+`apr-mcp-server-v1.yaml` contract from DRAFT to ENFORCED (PR #886)
+and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
 
 | Criterion | Threshold | Measurement |
 |-----------|-----------|-------------|
