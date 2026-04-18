@@ -75,16 +75,16 @@ Eight high-value tools for agentic coding + ML workflows:
 
 | Tool | Maps to CLI | Inputs | Output |
 |------|-------------|--------|--------|
-| `apr.run` | `apr run <model>` | `model_path`, `prompt`, `max_tokens`, `temperature`, `top_p` | `{tokens: [...], tok_per_sec, stop_reason}` |
+| `apr.run` | `apr run <model>` | `model_path`, `prompt`, `max_tokens`, `temperature`, `top_p` | `{model, text, tokens: [u32], tokens_generated, max_tokens, tok_per_sec, inference_time_ms, used_gpu, cached}` (CLI as of 2026-04-18; `stop_reason` not emitted) |
 | `apr.serve` | `apr serve <model>` | `model_path`, `port` | `{pid, url}` + lifecycle |
-| `apr.qa` | `apr qa <model> --json` | `model_path`, `assert_tps?` | 8 gates × `{pass, value, threshold}` |
+| `apr.qa` | `apr qa <model> --json` | `model_path`, `assert_tps?` | `{model, passed, gates: [{name, passed, message, value?, threshold?, duration_ms, skipped}], gates_executed, gates_skipped, total_duration_ms, timestamp, summary}` (CLI as of 2026-04-18; gate field is `passed` not `pass`) |
 | `apr.trace` | `apr trace <model> --prompt X` | `model_path`, `prompt`, `steps?` | per-layer tensor stats |
 | `apr.tensors` | `apr tensors <model> --json` | `model_path` | tensor list with shapes/dtypes/stats |
 | `apr.validate` | `apr validate <model> --quality` | `model_path` | integrity + quality gates |
 | `apr.bench` | `apr bench <model>` | `model_path`, `runs`, `tokens` | median tok/s, p50/p95/p99 latency |
 | `apr.finetune` | `apr finetune` | `base_model`, `dataset`, `lora_rank`, `epochs` | progress events + final checkpoint path |
 
-Schema generation: each tool's JSONSchema is derived from the entry in `contracts/apr-cli-commands-v1.yaml` at build time by `aprender-mcp`'s `build.rs` — **no hand-maintained schemas**.
+Schema generation: each tool's JSONSchema is derived from the entry in `contracts/apr-mcp-tool-schemas-v1.yaml` at build time by `aprender-mcp`'s `build.rs` — **no hand-maintained schemas**. Codegen lands `pub const APR_<TOOL>_SCHEMA: &str` per tool in `$OUT_DIR/schemas.rs`.
 
 ### Protocol
 
