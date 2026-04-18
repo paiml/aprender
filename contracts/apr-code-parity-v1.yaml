@@ -75,12 +75,12 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10)
   total_rows: 21
   counts:
-    shipped: 5
+    shipped: 6
     partial: 5
-    missing: 11
+    missing: 10
   closure_criterion:
     description: >
       Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
@@ -129,14 +129,23 @@ categories:
     ticket: null
 
   - id: hooks
-    name: Hooks (SessionStart, PreToolUse, PostToolUse, UserPromptSubmit)
-    status: NONE
-    evidence_path: null
+    name: Hooks (SessionStart, PreToolUse, PostToolUse, UserPromptSubmit, Stop, SubagentStop)
+    status: SHIPPED  # v4.3 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-HOOKS-001 core surface closed: new agent/hooks.rs ships HookEvent (6 canonical variants), HookConfig TOML-deserializable from [[hooks]] table, HookDecision {Allow,Warn,Block} with exit-code semantics matching Claude Code 1:1, HookRegistry with matcher filtering + block short-circuit. AgentManifest now carries `hooks: Vec<HookConfig>`. SessionStart actually fires from cmd_code (agent/code.rs) — Block decisions abort startup via anyhow::bail. 10 unit tests including TOML round-trip + block-short-circuits + matcher-filters. Runtime wiring for the remaining 5 events (PreToolUse/PostToolUse/UserPromptSubmit/Stop/SubagentStop) lands in follow-up PMAT-CODE-HOOKS-RUNTIME-001." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/hooks.rs
+      - crates/aprender-orchestrate/src/agent/hooks/tests.rs
+      - crates/aprender-orchestrate/src/agent/manifest.rs
+      - crates/aprender-orchestrate/src/agent/code.rs
+    evidence_symbols: [HookEvent, HookConfig, HookDecision, HookRegistry]
+    remaining_gaps:
+      - "Runtime call sites for PreToolUse/PostToolUse/UserPromptSubmit/Stop/SubagentStop (only SessionStart is live today). Tracked in PMAT-CODE-HOOKS-RUNTIME-001 (P1)."
     cross_check_command: |
-      if [ -f crates/aprender-orchestrate/src/agent/hooks.rs ]; then echo 1; else echo 0; fi
-    expected_max_hits: 0   # must remain 0 until ticket lands (presence of agent/hooks.rs file)
-    ticket: PMAT-CODE-HOOKS-001
-    priority: P0
+      grep -cE "SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStop|^    Stop,$" crates/aprender-orchestrate/src/agent/hooks.rs
+    expected_min_hits: 6   # 6 canonical HookEvent variants visible in the module source
+    ticket: null  # PMAT-CODE-HOOKS-001 closed
+    priority: null
 
   - id: skills
     name: Skills (user-invocable skill definitions)

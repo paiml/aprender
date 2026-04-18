@@ -32,6 +32,20 @@ pub struct AgentManifest {
     #[cfg(feature = "agents-mcp")]
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
+    /// Hooks fired on agent lifecycle events (Claude-Code parity). [PMAT-CODE-HOOKS-001]
+    ///
+    /// ```toml
+    /// [[hooks]]
+    /// event = "SessionStart"
+    /// command = "date >> ~/.apr/session.log"
+    ///
+    /// [[hooks]]
+    /// event = "PreToolUse"
+    /// matcher = "shell"
+    /// command = "./scripts/shell-guard.sh"
+    /// ```
+    #[serde(default)]
+    pub hooks: Vec<super::hooks::HookConfig>,
 }
 
 impl Default for AgentManifest {
@@ -46,6 +60,7 @@ impl Default for AgentManifest {
             privacy: PrivacyTier::Sovereign,
             #[cfg(feature = "agents-mcp")]
             mcp_servers: Vec::new(),
+            hooks: Vec::new(),
         }
     }
 }

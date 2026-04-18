@@ -33,6 +33,7 @@ mod code_prompts;
 pub mod contracts;
 pub mod driver;
 pub mod guard;
+pub mod hooks;
 pub mod manifest;
 pub mod memory;
 pub mod phase;

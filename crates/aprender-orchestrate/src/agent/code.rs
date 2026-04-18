@@ -99,6 +99,23 @@ pub fn cmd_code(
     // empty (the default for `apr code` without a manifest).
     register_mcp_client_tools(&mut tools, &manifest);
 
+    // PMAT-CODE-HOOKS-001: build hook registry from manifest and fire SessionStart.
+    // Returned Warn messages are surfaced to the user; a Block here aborts session
+    // startup (matching Claude Code's exit-code-2 semantics).
+    let hooks_reg = crate::agent::hooks::HookRegistry::from_configs(manifest.hooks.clone());
+    let hook_cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match hooks_reg.run(crate::agent::hooks::HookEvent::SessionStart, "", &hook_cwd) {
+        crate::agent::hooks::HookDecision::Allow => {}
+        crate::agent::hooks::HookDecision::Warn(msg) => {
+            if !msg.is_empty() {
+                eprintln!("⚠ SessionStart hook: {msg}");
+            }
+        }
+        crate::agent::hooks::HookDecision::Block(reason) => {
+            anyhow::bail!("SessionStart hook blocked session: {reason}");
+        }
+    }
+
     // Build memory
     let memory = crate::agent::memory::InMemorySubstrate::new();
 
