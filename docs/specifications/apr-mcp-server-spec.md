@@ -164,6 +164,48 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 
 - **FALSIFY-MCP-VALIDATE-001**: Tool argument validation failure (e.g. missing required `model_path`) must surface as a `tools/call` result with `isError: true` and a human-readable `content[].text`, **not** as a JSON-RPC error envelope. This is a dispatcher-level contract point (how the server shapes tool errors) rather than a per-tool behavioural promise, so it lives alongside — but outside — the `apr-mcp-server-v1.yaml` falsification set. **ENFORCED** (see `crates/aprender-mcp/tests/falsify_m1.rs::falsify_validate_missing_model_path_is_tool_error`).
 
+## Relationship to `apr code` (Sovereign Coding Assistant)
+
+`apr code` (spec: [`docs/specifications/aprender-orchestrate/components/apr-code.md`](../../crates/aprender-orchestrate/docs/specifications/components/apr-code.md); contract: `contracts/batuta/apr-code-v1.yaml`) is aprender's **open-source, sovereign-by-default equivalent of Claude Code** (PMAT-182). Humans use `apr code` interactively; external agents (Claude Code, Cursor, Cline) use `apr mcp`. The two surfaces form a bidirectional MCP relationship:
+
+### Direction 1 — `apr code` as MCP **consumer** (PARTIAL)
+
+`apr code` can load external MCP servers as tool providers, the Claude-Code-parity equivalent of `.mcp.json`. Infrastructure lives in `crates/aprender-orchestrate/src/agent/tool/mcp_client.rs` — `McpClientTool` + `StdioMcpTransport` + `discover_mcp_tools(manifest)` — and is feature-gated behind `agents-mcp`. Registration scaffolding is `register_mcp_tools` in `crates/aprender-orchestrate/src/cli/agent_helpers.rs:219`.
+
+**Parity gaps vs Claude Code** (falsified 2026-04-18 by reading `agent/code.rs:360` and grepping for `McpClientTool` call sites):
+
+| Gap | Status | Fix location |
+|-----|--------|--------------|
+| `build_code_tools` does **not** call `register_mcp_tools` — external MCP servers declared in manifest are silently ignored | OPEN | `crates/aprender-orchestrate/src/agent/code.rs:360-387` (add one call guarded by `cfg(feature = "agents-mcp")`) |
+| No `.mcp.json` loader — today only TOML `AgentManifest.mcp_servers` is read | OPEN | `crates/aprender-orchestrate/src/agent/manifest.rs` (add JSON reader at `$CWD/.mcp.json` and `~/.config/apr/mcp.json`) |
+| Transport is stdio-only; SSE/WebSocket deferred to M5 (matches `aprender-mcp`'s own surface — intentional parity) | ACCEPTED | M5 |
+
+### Direction 2 — `aprender-mcp` as MCP **producer** (PARTIAL — 9 of 58 commands exposed)
+
+Live `tools/list` returns **9 tools** (falsified 2026-04-18 via `echo '{...}' | apr mcp`): `apr.version` (M1 scaffold) + the 8 Phase-1 workflow tools. Claude Code / Cursor / Cline can invoke those 9 remotely. The other 49 `apr` commands are unreachable via MCP today — a parity gap flagged for Phase 2.
+
+| Status | Count | Commands |
+|--------|-------|----------|
+| Exposed via MCP (Phase 1) | 9 | `apr.version`, `apr.validate`, `apr.tensors`, `apr.bench`, `apr.qa`, `apr.trace`, `apr.run`, `apr.serve`, `apr.finetune` |
+| **Not yet exposed (Phase 2 targets)** | 49 | `chat`, `code`, `inspect`, `debug`, `lint`, `explain`, `diff`, `hex`, `tree`, `flow`, `export`, `import`, `convert`, `compile`, `merge`, `quantize`, `rosetta`, `pull`, `list`, `rm`, `publish`, `prune`, `distill`, `train`, `tokenize`, `tune`, `eval`, `check`, `qualify`, `canary`, `compare-hf`, `parity`, `gpu`, `profile`, `ptx`, `ptx-map`, `cbtop`, `data`, `pipeline`, `tui`, `monitor`, `runs`, `experiment`, `showcase`, `probar`, `diagnose`, `oracle`, `encrypt`, `decrypt` |
+
+Phase-2 priorities (first expansion batch after M5 dispatcher port, in rough order): `apr.inspect` (metadata probe — complements `apr.validate`), `apr.lint` (best-practice gate — complements `apr.qa`), `apr.diff` (model-vs-model comparison), `apr.convert` + `apr.export` + `apr.import` + `apr.quantize` (format pipeline — already JSON-clean), `apr.pull` (model download), `apr.profile` (roofline), `apr.explain` (natural-language model description), `apr.tokenize`, `apr.eval`, `apr.probar` (behaviour-test pipeline). Deferred indefinitely: interactive-only tools (`apr chat`, `apr tui`, `apr cbtop`, `apr monitor`) and meta-commands (`apr mcp` itself).
+
+### Direction 3 — `apr.code` as an MCP tool (PLANNED M5+)
+
+A future `apr.code` MCP tool would let external clients drive the full `apr code` agent loop (perceive → reason → act over realizar + stack tools), rather than just single CLI commands. Conceptually this is the agentic equivalent of `apr.run` (single-shot inference) — it takes `{prompt, project, max_turns}` and streams per-tool-call `notifications/progress`. **Blocked on:** multi-step structured progress events from the agent runtime (same CLI event-channel prereq that blocks `apr.run --stream` / FALSIFY-MCP-PROGRESS-002), so this is queued behind PR #891.
+
+### Feature-flag caveat (Claude-Code-parity install)
+
+`apr code` is gated behind the `code` Cargo feature (`code = ["dep:batuta"]` in `crates/apr-cli/Cargo.toml`). **`cargo install aprender` with default features does NOT include `apr code`** — falsified 2026-04-18 by running `apr code --help` on the default-feature build and getting `unrecognized subcommand 'code'`. For Claude-Code parity the install line is:
+
+```bash
+cargo install aprender --features code      # apr code only
+cargo install aprender --features full      # apr code + inference + cuda + training + visualization
+```
+
+`apr mcp` is **always** compiled in regardless of the `code` feature — the MCP server has no dependency on the agent runtime.
+
 ## Milestones
 
 ### M1: Skeleton — SHIPPED (2026-04-17)
