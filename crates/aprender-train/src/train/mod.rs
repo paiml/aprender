@@ -36,6 +36,8 @@ mod curriculum;
 mod loss;
 mod metrics;
 pub mod pretrain;
+pub mod pretrain_real;
+pub mod shard_reader;
 mod trainer;
 pub mod transformer_trainer;
 pub mod tui;
