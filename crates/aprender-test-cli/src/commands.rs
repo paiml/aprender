@@ -1422,9 +1422,13 @@ pub struct ComplyArgs {
     #[arg(default_value = ".")]
     pub path: PathBuf,
 
-    /// Specific checks to run (e.g., C001,C002)
+    /// Specific checks to run (e.g., C001,C002). Allowlist.
     #[arg(long, value_delimiter = ',')]
     pub checks: Option<Vec<String>>,
+
+    /// Checks to skip (e.g., C001,C006). Denylist. Applied after --checks.
+    #[arg(long, value_delimiter = ',')]
+    pub skip_checks: Option<Vec<String>>,
 
     /// Fail on first non-compliance
     #[arg(long)]

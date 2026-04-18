@@ -55,7 +55,11 @@ pub fn run_compliance_checks(config: &CliConfig, args: &ComplyArgs) -> CliResult
     print_banner(config);
 
     let all_checks = build_all_checks();
-    let filtered = filter_checks(all_checks, args.checks.as_ref());
+    let filtered = filter_checks(
+        all_checks,
+        args.checks.as_ref(),
+        args.skip_checks.as_ref(),
+    );
 
     if config.verbosity != Verbosity::Quiet {
         eprintln!(
@@ -149,13 +153,21 @@ fn build_all_checks() -> Vec<(&'static str, &'static str, CheckFn)> {
 fn filter_checks(
     all: Vec<(&'static str, &'static str, CheckFn)>,
     requested: Option<&Vec<String>>,
+    skip: Option<&Vec<String>>,
 ) -> Vec<(&'static str, &'static str, CheckFn)> {
-    match requested {
+    let allowlisted: Vec<(&'static str, &'static str, CheckFn)> = match requested {
         Some(req) => all
             .into_iter()
             .filter(|(id, _, _)| req.iter().any(|r| r == id))
             .collect(),
         None => all,
+    };
+    match skip {
+        Some(deny) => allowlisted
+            .into_iter()
+            .filter(|(id, _, _)| !deny.iter().any(|s| s == id))
+            .collect(),
+        None => allowlisted,
     }
 }
 
