@@ -313,10 +313,20 @@ pub struct EnforcementRule {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FalsificationTest {
     pub id: String,
+    /// What the test asserts. Alias `description` accepted for legacy
+    /// pre-APR-MONO contracts that used the `description:` field name.
+    #[serde(alias = "description")]
     pub rule: String,
+    /// The predicted outcome if the rule holds. Alias `expected` accepted
+    /// for legacy contracts (e.g. `expected: exit 0`, `expected: "PASS"`).
+    #[serde(alias = "expected")]
     pub prediction: String,
-    #[serde(default)]
+    /// How to run the test. Alias `command` accepted for legacy contracts
+    /// (e.g. shell snippets under `command: |`).
+    #[serde(default, alias = "command")]
     pub test: Option<String>,
+    /// What failure means. Alias `fails_if` accepted for legacy contracts.
+    #[serde(alias = "fails_if")]
     pub if_fails: String,
 }
 

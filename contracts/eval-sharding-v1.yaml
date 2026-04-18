@@ -5,7 +5,8 @@ status: ACTIVE
 created: 2026-04-17
 updated: 2026-04-18
 changelog:
-  - v1.1.0 (2026-04-18): FALSIFY-SHARD-003 DISCHARGED — yoga vs gx10 16/16
+  - |
+    v1.1.0 (2026-04-18): FALSIFY-SHARD-003 DISCHARGED — yoga vs gx10 16/16
     byte-identical completions on HumanEval/0..15 at temp=0.0, top-k=1.
     Evidence: evidence/ship-two-001/shard-003-determinism/probe_20260418_143041.json
     Status: DRAFT → ACTIVE

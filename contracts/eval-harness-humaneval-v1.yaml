@@ -78,7 +78,7 @@ protocol:
     student_merged:
       path: /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-distilled-merged-v2.apr
       description: Distilled student, merged pre-quantization (29G, likely FP16/FP32)
-      target_claim: >= student_primary (quantization is lossy; merged should be ceiling)
+      target_claim: ">= student_primary (quantization is lossy; merged should be ceiling)"
     teacher_baseline:
       path: /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
       description: Teacher reference (Qwen2.5-Coder-7B-Instruct, q4k)
@@ -171,7 +171,7 @@ falsification_tests:
       make eval-humaneval CHECKPOINT=checkpoints/qwen2.5-coder-7b-distilled-v2-q4k.apr
       make eval-humaneval CHECKPOINT=checkpoints/qwen2.5-coder-7b-distilled-v2-gguf-q4k.apr
       # diff the two .json results on pass_at_1
-    expected: |abs(native.pass_at_1 - gguf.pass_at_1) <= 0.6
+    expected: "abs(native.pass_at_1 - gguf.pass_at_1) <= 0.6"
     fails_if: |
       Diverges by >0.6%. Indicates LAYOUT-001 row-major transpose bug. Block ship.
 
