@@ -520,4 +520,32 @@ impl TransformerTrainer {
 
         save_model(&model, path, &config)
     }
+
+    /// Save model weights in the sovereign APR format.
+    ///
+    /// Mirror of `CudaTransformerTrainer::save_apr` for the CPU path.
+    /// APR is the row-major atomic single-file format shared across
+    /// training and inference (per aprender-train CLAUDE.md LAYOUT-002
+    /// mandate), so training checkpoints emitted by `PretrainLoop`
+    /// load directly in realizar / `apr run` with no re-transpose.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Output file path (should end in `.apr`)
+    /// * `name` - Model name for metadata
+    /// * `architecture` - Model architecture description
+    ///   (e.g., `"LlamaForCausalLM"`)
+    pub fn save_apr(
+        &self,
+        path: impl AsRef<Path>,
+        name: &str,
+        architecture: &str,
+    ) -> crate::Result<()> {
+        let params: Vec<(String, Tensor)> =
+            self.model.named_parameters().into_iter().map(|(n, t)| (n, t.clone())).collect();
+        let metadata = ModelMetadata::new(name, architecture);
+        let model = Model::new(metadata, params);
+        let config = SaveConfig::new(ModelFormat::Apr);
+        save_model(&model, path, &config)
+    }
 }

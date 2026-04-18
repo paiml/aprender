@@ -89,9 +89,7 @@ impl ShardBatchIter {
                 Ok(()) => {
                     let mut seq = Vec::with_capacity(tokens_per_seq);
                     for chunk in buf.chunks_exact(4) {
-                        seq.push(u32::from_le_bytes([
-                            chunk[0], chunk[1], chunk[2], chunk[3],
-                        ]));
+                        seq.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
                     }
                     return Ok(Some(seq));
                 }

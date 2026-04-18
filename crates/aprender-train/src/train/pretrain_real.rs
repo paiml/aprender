@@ -20,10 +20,8 @@
 //! - INV-TRAIN-003 (real optimizer-state sha256 over AdamW m/v/t buffers)
 
 use crate::models::llama_370m::Llama370MConfig;
-use crate::train::pretrain::{StepFn, ValFn};
-use crate::train::transformer_trainer::{
-    LMBatch, TransformerTrainConfig, TransformerTrainer,
-};
+use crate::train::pretrain::{CheckpointFn, EpochArtifact, StepFn, ValFn};
+use crate::train::transformer_trainer::{LMBatch, TransformerTrainConfig, TransformerTrainer};
 use crate::transformer::{ModelArchitecture, TransformerConfig};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -143,6 +141,36 @@ impl ValFn for RealValFn {
     }
 }
 
+/// `CheckpointFn` impl that writes the 370M Llama weights to
+/// `artifact.checkpoint_path` in APR format (task #111 step 7).
+///
+/// Holds the `SharedTrainer` alongside `RealStepFn` / `RealValFn` so
+/// the three hooks see the same in-memory weights.
+pub struct AprCheckpointFn {
+    trainer: SharedTrainer,
+    model_name: String,
+    architecture: String,
+}
+
+impl AprCheckpointFn {
+    pub fn new(
+        trainer: SharedTrainer,
+        model_name: impl Into<String>,
+        architecture: impl Into<String>,
+    ) -> Self {
+        Self { trainer, model_name: model_name.into(), architecture: architecture.into() }
+    }
+}
+
+impl CheckpointFn for AprCheckpointFn {
+    fn save(&mut self, _epoch: usize, artifact: &EpochArtifact) -> Result<(), String> {
+        let trainer = self.trainer.borrow();
+        trainer
+            .save_apr(&artifact.checkpoint_path, &self.model_name, &self.architecture)
+            .map_err(|e| format!("save_apr failed: {e}"))
+    }
+}
+
 /// Shared-ownership helper so the CLI can hand the same trainer to
 /// both `RealStepFn` and `RealValFn`.
 pub fn build_shared_trainer(lr: f32, seq_length: usize, seed: u64) -> SharedTrainer {
@@ -201,7 +229,7 @@ mod tests {
         tiny.vocab_size = 256;
         let cfg = TransformerTrainConfig::new(tiny);
         let trainer = Rc::new(RefCell::new(TransformerTrainer::new(cfg)));
-        let empty_iter = Box::new(std::iter::empty::<LMBatch>()) as Box<dyn Iterator<Item = LMBatch>>;
+        let empty_iter: Box<dyn Iterator<Item = LMBatch>> = Box::new(std::iter::empty::<LMBatch>());
         let mut step = RealStepFn::new(trainer, empty_iter);
         let (loss, grad_norm) = step.step(0, 1.0e-4, 128);
         assert!(loss.is_finite(), "exhausted iter must return finite loss");

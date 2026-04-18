@@ -16,10 +16,12 @@ use crate::error::{CliError, Result};
 use crate::output;
 use colored::Colorize;
 use entrenar::train::pretrain::{
-    LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus, ScriptedVal,
-    StepFn, ValFn,
+    CheckpointFn, LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus,
+    ScriptedVal, StepFn, ValFn,
 };
-use entrenar::train::pretrain_real::{build_shared_trainer, RealStepFn, RealValFn};
+use entrenar::train::pretrain_real::{
+    build_shared_trainer, AprCheckpointFn, RealStepFn, RealValFn,
+};
 use entrenar::train::shard_reader::ShardBatchIter;
 use entrenar::train::transformer_trainer::LMBatch;
 use std::path::Path;
@@ -88,7 +90,13 @@ pub(crate) fn run(
     }
 
     let status = if synthetic {
-        drive_synthetic(config.clone(), num_steps, steps_per_epoch, target_val_loss, json_output)?
+        drive_synthetic(
+            config.clone(),
+            num_steps,
+            steps_per_epoch,
+            target_val_loss,
+            json_output,
+        )?
     } else {
         drive_real(
             config.clone(),
@@ -132,7 +140,8 @@ fn drive_synthetic(
         sequence.push(target_val_loss + (start_val - target_val_loss) * (1.0 - t).max(0.0));
     }
     let val_fn = ScriptedVal { sequence };
-    run_and_report(config, step_fn, val_fn, json_output)
+    // Synthetic drive has no real weights to checkpoint.
+    run_and_report(config, step_fn, val_fn, None, json_output)
 }
 
 /// Real-corpus drive: build a shared 370M `TransformerTrainer`, split
@@ -176,20 +185,31 @@ fn drive_real(
 
     let trainer = build_shared_trainer(lr, seq_length, seed);
     let step_fn = RealStepFn::new(trainer.clone(), Box::new(iter));
-    let val_fn = RealValFn::new(trainer, held_out);
-    run_and_report(config, step_fn, val_fn, json_output)
+    let val_fn = RealValFn::new(trainer.clone(), held_out);
+    // Task #111 step 7: per-epoch APR checkpoint on GATE-TRAIN-005 pass.
+    let ckpt: Box<dyn CheckpointFn> = Box::new(AprCheckpointFn::new(
+        trainer,
+        "llama-370m-pretrain",
+        "LlamaForCausalLM",
+    ));
+    run_and_report(config, step_fn, val_fn, Some(ckpt), json_output)
 }
 
 /// Shared helper: construct the `PretrainLoop`, run it, print the
 /// terminal report, and bubble the `RunStatus` back for exit-code
-/// mapping.
+/// mapping. `checkpoint_fn` — when `Some` — writes an APR file per
+/// epoch that passes GATE-TRAIN-005.
 fn run_and_report<S: StepFn, V: ValFn>(
     config: PretrainConfig,
     step_fn: S,
     val_fn: V,
+    checkpoint_fn: Option<Box<dyn CheckpointFn>>,
     json_output: bool,
 ) -> Result<RunStatus> {
     let mut loop_ = PretrainLoop::new(config, step_fn, val_fn);
+    if let Some(ckpt) = checkpoint_fn {
+        loop_ = loop_.with_checkpoint_fn(ckpt);
+    }
     let status = loop_.run();
     report(&status, &loop_, json_output)?;
     Ok(status)

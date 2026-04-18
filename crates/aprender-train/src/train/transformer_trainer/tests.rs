@@ -437,6 +437,43 @@ fn falsify_alb038_saved_weights_differ_from_init() {
     );
 }
 
+/// Task #111 step 4: CPU `TransformerTrainer::save_apr` writes a valid
+/// APR file (row-major native format) that `AprReader` can open. This
+/// is the sovereign checkpoint path used by `apr pretrain` per
+/// aprender-train CLAUDE.md LAYOUT-002.
+#[test]
+fn save_apr_writes_readable_apr_file() {
+    use aprender::serialization::apr::AprReader;
+    use tempfile::NamedTempFile;
+
+    let config = TransformerTrainConfig::new(TransformerConfig::tiny());
+    let trainer = TransformerTrainer::new(config);
+
+    let temp = NamedTempFile::new().expect("temp file creation should succeed");
+    trainer
+        .save_apr(temp.path(), "task-111-test", "LlamaForCausalLM")
+        .expect("save_apr should succeed");
+
+    // APR magic + readable by AprReader.
+    let bytes = std::fs::read(temp.path()).expect("file read should succeed");
+    assert!(bytes.len() > 16, "APR file should not be empty");
+    let magic = &bytes[..4];
+    assert!(magic == b"APR\0" || magic == b"APRN", "APR magic bytes mismatch: got {magic:?}");
+
+    let reader = AprReader::open(temp.path()).expect("AprReader must open the file");
+    // The architecture metadata key is set by the APR save path so
+    // round-tripping it is the cheapest check that the file is valid.
+    let arch = reader
+        .get_metadata("architecture")
+        .or_else(|| reader.get_metadata("arch"))
+        .expect("APR file should carry an architecture metadata entry");
+    assert!(arch.is_string(), "architecture metadata should be a string, got {arch:?}");
+    // Read one tensor to confirm the data blob is intact.
+    let _embed = reader
+        .read_tensor_f32("model.embed_tokens.weight")
+        .expect("APR file should round-trip embed_tokens.weight");
+}
+
 // === R-084: Bitwise deterministic training (C-DETERM-001) ===
 
 #[test]

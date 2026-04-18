@@ -62,7 +62,7 @@ pub use loss::{
 };
 pub use metrics::{Accuracy, F1Score, Metric, Precision, R2Score, Recall, MAE, RMSE};
 pub use pretrain::{
-    check_non_divergence, check_numerical_stability, EpochArtifact, EpochMetadata,
+    check_non_divergence, check_numerical_stability, CheckpointFn, EpochArtifact, EpochMetadata,
     LinearDecaySynthetic, NanAtStepSynthetic, PretrainAbort, PretrainConfig, PretrainLoop,
     RunStatus, ScriptedVal, StepFn, StepMetrics, ValFn, DIVERGENCE_RATIO_LIMIT,
     EPOCH_ZERO_VAL_LOSS_LIMIT,

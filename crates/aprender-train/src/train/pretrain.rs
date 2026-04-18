@@ -398,6 +398,10 @@ pub struct PretrainLoop<S: StepFn, V: ValFn> {
     patience_counter: usize,
     step_fn: S,
     val_fn: V,
+    /// Optional per-epoch APR checkpoint writer (task #111 step 7).
+    /// When `Some`, invoked after each epoch's divergence gate passes
+    /// so the artifact on disk is known-good.
+    checkpoint_fn: Option<Box<dyn CheckpointFn>>,
 }
 
 /// Abstract per-step computation: `(tokens_seen, lr) -> (train_loss, grad_norm)`.
@@ -412,6 +416,20 @@ pub trait StepFn {
 /// Per-epoch validation: returns held-out val_loss.
 pub trait ValFn {
     fn validate(&mut self, epoch: usize) -> f32;
+}
+
+/// Per-epoch checkpoint hook (task #111 step 7).
+///
+/// Invoked by `PretrainLoop::run_epoch` **after** the divergence gate
+/// (GATE-TRAIN-005) has passed for the epoch, so aborted epochs never
+/// produce checkpoint files. The implementation must write to
+/// `artifact.checkpoint_path` (an `.apr` file per the contract's
+/// `per_epoch_artifacts.path_template`). Returning an error does not
+/// abort the loop — it records a warning to stderr and the epoch
+/// artifact is still added to history — so a slow or flaky disk does
+/// not lose training progress.
+pub trait CheckpointFn {
+    fn save(&mut self, epoch: usize, artifact: &EpochArtifact) -> Result<(), String>;
 }
 
 impl<S: StepFn, V: ValFn> PretrainLoop<S, V> {
@@ -429,7 +447,16 @@ impl<S: StepFn, V: ValFn> PretrainLoop<S, V> {
             patience_counter: 0,
             step_fn,
             val_fn,
+            checkpoint_fn: None,
         }
+    }
+
+    /// Attach a per-epoch APR checkpoint writer (task #111 step 7).
+    /// Returns `self` for builder-style chaining.
+    #[must_use]
+    pub fn with_checkpoint_fn(mut self, ckpt: Box<dyn CheckpointFn>) -> Self {
+        self.checkpoint_fn = Some(ckpt);
+        self
     }
 
     /// Warmup + cosine decay schedule, inline to avoid coupling to any
@@ -547,6 +574,38 @@ impl<S: StepFn, V: ValFn> PretrainLoop<S, V> {
             grad_norm_max: epoch_grad_norm_max,
         };
         let artifact = EpochArtifact::new(&self.config.run_dir, epoch, metadata);
+
+        // Task #111 step 7: write the APR checkpoint now that the
+        // divergence gate (GATE-TRAIN-005) has passed. Failures do not
+        // abort the loop so a flaky disk cannot lose training
+        // progress — the artifact is still recorded in history.
+        if let Some(ckpt) = self.checkpoint_fn.as_mut() {
+            if let Some(parent) = artifact.checkpoint_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = ckpt.save(epoch, &artifact) {
+                eprintln!("[pretrain] checkpoint write failed for epoch {}: {}", epoch, e);
+            } else {
+                // Also emit the companion metadata.json per contract's
+                // `per_epoch_artifacts.path_template`. Best-effort: a
+                // metadata-write failure is logged but non-fatal.
+                match serde_json::to_string_pretty(&artifact.metadata) {
+                    Ok(json) => {
+                        if let Err(e) = std::fs::write(&artifact.metadata_path, json) {
+                            eprintln!(
+                                "[pretrain] metadata write failed for epoch {}: {}",
+                                epoch, e
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!(
+                        "[pretrain] metadata serialization failed for epoch {}: {}",
+                        epoch, e
+                    ),
+                }
+            }
+        }
+
         self.epoch_artifacts.push(artifact.clone());
         Ok(artifact)
     }
@@ -672,6 +731,8 @@ impl StepFn for NanAtStepSynthetic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use tempfile::TempDir;
 
     fn test_config(tmp: &Path) -> PretrainConfig {
@@ -959,5 +1020,83 @@ mod tests {
         let art = EpochArtifact::new(&run_dir, 7, metadata);
         assert!(art.checkpoint_path.ends_with("ckpt/epoch-007.apr"));
         assert!(art.metadata_path.ends_with("ckpt/epoch-007.metadata.json"));
+    }
+
+    // ── Task #111 step 7 — CheckpointFn hook falsifiers ──
+
+    /// Mock `CheckpointFn` that records every (epoch, checkpoint_path) pair
+    /// so tests can assert the loop invokes the hook exactly once per
+    /// passing epoch and never on an aborted epoch.
+    struct RecordingCheckpointFn {
+        calls: Rc<RefCell<Vec<(usize, PathBuf)>>>,
+    }
+
+    impl CheckpointFn for RecordingCheckpointFn {
+        fn save(&mut self, epoch: usize, artifact: &EpochArtifact) -> Result<(), String> {
+            self.calls.borrow_mut().push((epoch, artifact.checkpoint_path.clone()));
+            Ok(())
+        }
+    }
+
+    /// INV-TRAIN-005 positive: one checkpoint call per epoch that
+    /// passes GATE-TRAIN-005, with metadata.json emitted alongside.
+    #[test]
+    fn pretrain_loop_calls_checkpoint_fn_once_per_passing_epoch() {
+        let tmp = TempDir::new().expect("tempdir");
+        let cfg = test_config(tmp.path());
+        let step_fn = LinearDecaySynthetic { start_loss: 3.5, decay_per_step: 0.1, grad_norm: 0.8 };
+        let val_fn = ScriptedVal { sequence: vec![3.4, 3.0, 2.6, 2.2, 2.0] };
+        let calls: Rc<RefCell<Vec<(usize, PathBuf)>>> = Rc::new(RefCell::new(Vec::new()));
+        let ckpt = RecordingCheckpointFn { calls: Rc::clone(&calls) };
+
+        let mut loop_ = PretrainLoop::new(cfg, step_fn, val_fn).with_checkpoint_fn(Box::new(ckpt));
+        let _status = loop_.run();
+
+        let recorded = calls.borrow();
+        let epoch_count = loop_.epoch_artifacts().len();
+        assert!(epoch_count >= 1, "at least one epoch should have completed");
+        assert_eq!(
+            recorded.len(),
+            epoch_count,
+            "CheckpointFn must fire exactly once per epoch that passes GATE-TRAIN-005",
+        );
+        for (i, (epoch, path)) in recorded.iter().enumerate() {
+            assert_eq!(*epoch, i, "checkpoint hook epoch indices must be monotonic from 0");
+            assert!(
+                path.to_string_lossy().contains(&format!("epoch-{:03}.apr", epoch)),
+                "checkpoint path must match contract template: {:?}",
+                path,
+            );
+            let meta_path = path.with_extension("metadata.json");
+            assert!(
+                meta_path.exists(),
+                "companion metadata.json must be written for epoch {}",
+                epoch,
+            );
+        }
+    }
+
+    /// INV-TRAIN-007 negative: NaN in train_loss aborts the loop, and
+    /// the checkpoint hook must NOT fire for the aborted epoch.
+    #[test]
+    fn pretrain_loop_skips_checkpoint_on_abort() {
+        let tmp = TempDir::new().expect("tempdir");
+        let cfg = test_config(tmp.path());
+        let step_fn = NanAtStepSynthetic { nan_step: 1 };
+        let val_fn = ScriptedVal { sequence: vec![3.0] };
+        let calls: Rc<RefCell<Vec<(usize, PathBuf)>>> = Rc::new(RefCell::new(Vec::new()));
+        let ckpt = RecordingCheckpointFn { calls: Rc::clone(&calls) };
+
+        let mut loop_ = PretrainLoop::new(cfg, step_fn, val_fn).with_checkpoint_fn(Box::new(ckpt));
+        let status = loop_.run();
+
+        assert!(
+            matches!(status, RunStatus::Aborted(PretrainAbort::NumericalInstability { .. })),
+            "NaN must abort the loop: got {status:?}",
+        );
+        assert!(
+            calls.borrow().is_empty(),
+            "CheckpointFn must NOT fire when the epoch aborts before GATE-TRAIN-005 passes",
+        );
     }
 }
