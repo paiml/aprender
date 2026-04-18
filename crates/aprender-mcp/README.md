@@ -40,8 +40,8 @@ apr mcp
 - **M1** (shipped): skeleton with `initialize` + `tools/list` + `apr.version`
 - **M2** (in progress): 8 Phase-1 tools as subprocess wrappers over
   `apr <cmd> --json`. Shipped: `apr.validate`, `apr.tensors`, `apr.bench`,
-  `apr.qa`, `apr.trace` + dispatcher hardening (jsonrpc/protocolVersion gates).
-  Remaining: `apr.run`, `apr.serve`, `apr.finetune` (streaming candidates).
+  `apr.qa`, `apr.trace`, `apr.run` + dispatcher hardening (jsonrpc/protocolVersion gates).
+  Remaining: `apr.serve`, `apr.finetune` (streaming candidates).
 - **M3**: streaming progress notifications + cancellation
 - **M4**: Claude Code dogfood + contract promotion to ENFORCED
 
