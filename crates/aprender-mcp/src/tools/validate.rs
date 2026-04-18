@@ -1,9 +1,12 @@
 //! `apr.validate` — M2 subprocess wrapper over `apr validate <model> --json`.
 //!
-//! This is the first M2 tool and exercises the subprocess pattern that the
-//! remaining 7 Phase-1 tools will follow: spawn `apr <subcommand> --json`,
+//! This was the first M2 tool shipped and established the subprocess pattern
+//! every M2/M3 `apr.*` wrapper follows: spawn `apr <subcommand> --json`,
 //! capture stdout, pass through to the MCP client as a single text content
-//! block. Non-zero exit maps to `isError: true` with stderr attached.
+//! block. Non-zero exit maps to `isError: true` with stderr attached. All 7
+//! M2 wrappers (`apr.validate`, `apr.tensors`, `apr.bench`, `apr.qa`,
+//! `apr.trace`, `apr.run`, `apr.serve`) and the M3 addition `apr.finetune`
+//! now ship on this pattern.
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
