@@ -202,9 +202,21 @@ impl TaskTool {
         parent_manifest: AgentManifest,
         max_depth: u32,
     ) -> Self {
+        Self::from_driver_with_registry(driver, parent_manifest, max_depth, default_registry())
+    }
+
+    /// Like [`from_driver`] but uses a caller-supplied registry. Used by
+    /// [`register_task_tool`] to install the tool with user-defined
+    /// subagents (from `.apr/agents/` / `.claude/agents/`) merged in on
+    /// top of the 3 canonical built-ins.
+    pub fn from_driver_with_registry(
+        driver: Arc<dyn LlmDriver>,
+        parent_manifest: AgentManifest,
+        max_depth: u32,
+        registry: SubagentRegistry,
+    ) -> Self {
         let pool = Arc::new(Mutex::new(AgentPool::new(driver, 4)));
-        let registry = Arc::new(default_registry());
-        Self::new(registry, pool, parent_manifest, 0, max_depth)
+        Self::new(Arc::new(registry), pool, parent_manifest, 0, max_depth)
     }
 
     fn build_child_manifest(&self, spec: &SubagentSpec) -> AgentManifest {
@@ -320,15 +332,27 @@ impl Tool for TaskTool {
 /// Register `TaskTool` + `Spawn { max_depth }` capability in the given
 /// registry, unless the manifest already denies `Spawn` explicitly.
 ///
-/// This is the default-registration hook used by `apr code` so the
-/// `Task` tool ships in the default toolbelt (Claude-Code parity).
+/// Also discovers user-defined subagents from the current working
+/// directory's `.apr/agents/` (or `.claude/agents/` for cross-compat)
+/// and merges them on top of the 3 canonical built-ins. This is the
+/// default-registration hook used by `apr code` so the `Task` tool
+/// ships in the default toolbelt (Claude-Code parity).
 pub fn register_task_tool(
     registry: &mut super::tool::ToolRegistry,
     manifest: &AgentManifest,
     driver: Arc<dyn LlmDriver>,
     max_depth: u32,
 ) {
-    let tool = TaskTool::from_driver(Arc::clone(&driver), manifest.clone(), max_depth);
+    let mut subagents = default_registry();
+    if let Ok(cwd) = std::env::current_dir() {
+        let _ = super::custom_agents::register_discovered_into(&mut subagents, &cwd);
+    }
+    let tool = TaskTool::from_driver_with_registry(
+        Arc::clone(&driver),
+        manifest.clone(),
+        max_depth,
+        subagents,
+    );
     registry.register(Box::new(tool));
 }
 

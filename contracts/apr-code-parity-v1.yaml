@@ -15,7 +15,7 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v4.4): 7 SHIPPED / 4 PARTIAL / 10 MISSING.
+# Current counts (2026-04-18 v4.5): 8 SHIPPED / 4 PARTIAL / 9 MISSING.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -75,12 +75,12 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9)
   total_rows: 21
   counts:
-    shipped: 7
+    shipped: 8
     partial: 4
-    missing: 10
+    missing: 9
   closure_criterion:
     description: >
       Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
@@ -191,13 +191,22 @@ categories:
 
   - id: custom-agents
     name: Custom agent definitions (.apr/agents/ or .claude/agents/)
-    status: NONE
-    evidence_path: null
+    status: SHIPPED  # v4.5 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-CUSTOM-AGENTS-001 closed: new agent/custom_agents.rs hand-parses `---`-fenced markdown frontmatter (no new deps), supports both flat `dir/<name>.md` and subdir `dir/<name>/AGENT.md` layouts, and merges .apr/agents + .claude/agents discoveries on top of the 3 canonical built-ins. register_task_tool now calls discover_standard_locations(cwd) so `apr code` auto-picks up user agents at launch. 22 unit tests cover parse_agent_md (happy path + CRLF + BOM + unknown-key tolerance + each error variant), flat/subdir layouts, silent skip of malformed files, .apr-over-.claude precedence, and register_discovered_into registry merge." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/custom_agents.rs
+      - crates/aprender-orchestrate/src/agent/custom_agents/tests.rs
+      - crates/aprender-orchestrate/src/agent/task_tool.rs
+    evidence_symbols: [parse_agent_md, load_custom_agents_from, discover_standard_locations, register_discovered_into, CustomAgentError]
+    remaining_gaps:
+      - "AGENT.md `allowed-tools` / `model` frontmatter fields parsed & ignored; per-agent tool-allowlist enforcement is deferred to PMAT-CODE-CUSTOM-AGENTS-TOOLS-001 (P2)."
+      - "User-scope `~/.config/apr/agents/` is loaded but must exist; no default scaffolding yet. Tracked in PMAT-CODE-CUSTOM-AGENTS-INIT-001 (P2)."
     cross_check_command: |
-      if [ -f crates/aprender-orchestrate/src/agent/custom_agent.rs ] || [ -d crates/aprender-orchestrate/src/agent/agents ]; then echo 1; else echo 0; fi
-    expected_max_hits: 0
-    ticket: PMAT-CODE-CUSTOM-AGENTS-001
-    priority: P1
+      grep -cE "(fn parse_agent_md|fn load_custom_agents_from|fn discover_standard_locations|fn register_discovered_into)" crates/aprender-orchestrate/src/agent/custom_agents.rs
+    expected_min_hits: 4
+    ticket: null  # PMAT-CODE-CUSTOM-AGENTS-001 closed
+    priority: null
 
   - id: mcp-client
     name: MCP client (.mcp.json loader + stdio/sse/http transports)
@@ -472,7 +481,7 @@ priority_buckets:
   P1:
     - skills
     - worktree-isolation
-    - custom-agents
+    # custom-agents: closed v4.5 (2026-04-18) — retained in `categories` for history
     - permission-modes
     - builtin-tools-web
     - session-management   # scope reduced: only --continue/--fork/--name remain
@@ -561,3 +570,25 @@ change_log:
       SLASH-PARITY, HOOKS, SPAWN-PARITY) to close this cycle — all 4
       P0 buckets are now empty, and closure threshold (≥9 SHIPPED /
       ≤4 MISSING) is now 2 rows away.
+  - date: '2026-04-18'
+    revision: '4.5'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-CUSTOM-AGENTS-001 closed — custom-agents row flipped
+      NONE → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      custom_agents.rs hand-parses markdown frontmatter (no new deps),
+      supports both flat `.apr/agents/<name>.md` and subdir
+      `.apr/agents/<name>/AGENT.md` layouts, silently skips malformed
+      files, and merges discoveries on top of the 3 canonical built-ins
+      (so user-defined agents can override `general-purpose`/`explore`/
+      `plan` if desired). register_task_tool now calls
+      discover_standard_locations(cwd) at registration so `apr code`
+      auto-picks up user agents from either `.apr/agents/` or
+      `.claude/agents/` (Claude-Code cross-compat). User scope
+      `~/.config/apr/agents/` also loaded. 22 unit tests (parse_agent_md
+      happy path + CRLF + BOM + unknown-key tolerance + each error
+      variant + flat/subdir layouts + silent skip + scope precedence).
+      Headline 7/4/10 → 8/4/9 over 21 rows. Closure threshold
+      (≥9 SHIPPED / ≤4 MISSING) is now 1 row away — any one of skills,
+      worktree-isolation, permission-modes, or any PARTIAL→SHIPPED flip
+      closes the epic.
