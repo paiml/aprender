@@ -81,7 +81,7 @@ No CLI args in Phase 1; transport selection is deferred to Phase 2 with SSE.
 
 ### Tool Surface (Phase 1)
 
-Eight high-value tools for agentic coding + ML workflows:
+Eight high-value workflow tools for agentic coding + ML. The M1 scaffold tool `apr.version` is also registered, so `tools/list` returns 9 tools total.
 
 | Tool | Maps to CLI | Inputs | Output |
 |------|-------------|--------|--------|
@@ -140,7 +140,7 @@ Config precedence (highest first):
 The server is only ACTIVE if all of these are falsifiable by CI:
 
 1. **FALSIFY-MCP-001**: `apr mcp < init.json` responds to `initialize` within 500ms with `{"protocolVersion":"2024-11-05", ...}`. **ENFORCED**.
-2. **FALSIFY-MCP-002**: `tools/list` returns exactly the 8 Phase-1 tools; schema for each validates against JSONSchema Draft 7. **ENFORCED**.
+2. **FALSIFY-MCP-002**: `tools/list` returns the 8 Phase-1 workflow tools plus the `apr.version` M1 scaffold (9 total registered); every tool's schema validates against JSONSchema Draft 7. **ENFORCED** (see `crates/aprender-mcp/tests/falsify_m1.rs::falsify_mcp_002_tools_list_schema_shape`).
 3. **FALSIFY-MCP-003**: `tools/call apr.run` on `qwen2.5-0.5b-instruct-q4km.gguf` with prompt "1+1=" decodes "2" as first token within 5s. **PARTIAL** — surface tests ENFORCED; mock-subprocess e2e in flight; real-model gate deferred to M4 dogfood.
 4. **FALSIFY-MCP-004**: `tools/call apr.qa` returns 8 gates with correct pass/fail states matching `apr qa --json` CLI output byte-for-byte. **PARTIAL** — surface tests ENFORCED; byte-for-byte parity deferred to M4 dogfood.
 5. **FALSIFY-MCP-005**: Malformed request (`"jsonrpc": "1.0"`) returns JSON-RPC error code `-32600`, does not crash server. **ENFORCED**.
@@ -217,8 +217,8 @@ Acceptance gate for promoting to ACTIVE:
 
 - **Existing infrastructure** (ready to use):
   - `contracts/mcp-tool-schema-v1.yaml` — defines JSON-RPC error codes, session lifecycle
-  - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — approves `paiml/rust-mcp-sdk` as dependency
-  - `crates/apr-cli/src/tool_commands.rs` — planned MCP tool surface (referenced but unimplemented)
+  - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — approves `paiml/rust-mcp-sdk` as dependency (currently unused; M1 chose hand-rolled JSON-RPC)
+  - MCP tool surface lives in `crates/aprender-mcp/src/tools/` (not `apr-cli/src/tool_commands.rs` — that is the unrelated `apr tool` CLI group for Showcase/Rosetta)
 
 - **Aspirational follow-ons**:
   - `apr-mcp-plugin-marketplace-v1.md` — Claude Code–style plugin marketplace for community `apr.*` tools
