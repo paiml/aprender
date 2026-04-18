@@ -1,0 +1,207 @@
+contract_id: F-EVAL-SHARDING-001
+title: "Parallel eval sharding lane — SHIP-TWO-001 EX-02 multi-host accelerator"
+version: 1.0.0
+status: DRAFT
+created: 2026-04-17
+parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
+parent_acceptance_criteria:
+  - AC-EX-007  # parallel eval lane parity + wall-time
+
+# ─────────────────────────────────────────────────────────────
+# ABSTRACT
+# ─────────────────────────────────────────────────────────────
+abstract: |
+  Defines the schema and falsification protocol for running a code-generation
+  benchmark (HumanEval, MBPP, BigCodeBench) across N hosts in parallel.
+
+  A single benchmark.jsonl is split round-robin by task index into shard files
+  shard_0.jsonl .. shard_{N-1}.jsonl. Each host runs the existing
+  eval-pass-at-k.sh harness on its shard; per-shard JSON results are merged
+  by concatenating the problems[] arrays and recomputing pass@k using the
+  Chen et al. unbiased estimator on the merged array.
+
+  The contract is satisfied when:
+    1. Every benchmark task appears in exactly one shard (completeness + disjointness).
+    2. At temperature 0.0, the same task produces byte-identical completions
+       on any two hosts in the pool (determinism parity).
+    3. Merged pass@1 matches a single-host reference run to within 0.01 pp
+       (merged-score identity).
+
+# ─────────────────────────────────────────────────────────────
+# FIVE-WHYS MOTIVATION
+# ─────────────────────────────────────────────────────────────
+five_whys:
+  - q: "Why do we need a sharding contract?"
+    a: "SHIP-TWO-001 EX-02 ran serially on yoga for ~2h while gx10 (Blackwell GB10, inference path unaffected by PMAT-587 JIT issues) sat idle. N-host shard cuts wall time by ~N× and unblocks future multi-seed re-runs."
+  - q: "Why a contract and not just a script?"
+    a: "Parallelism introduces new failure classes: missing tasks (host died mid-run), duplicated tasks (mis-split), and host-drift (different kernel or binary giving different completions). Each must be falsifiable, not manually spot-checked."
+  - q: "Why round-robin stride instead of contiguous chunks?"
+    a: "Per-task cost varies ~10× (short vs. long prompts, early termination vs. full max_tokens). Contiguous chunks create stragglers; stride-N spreads cost variance evenly across hosts."
+  - q: "Why require byte-identical completions at temp=0.0?"
+    a: "At greedy decode, same weights + same prompt + same kernel must produce the same token sequence. Any divergence indicates a real bug (floating-point indeterminism, non-deterministic sampling, different kernel version) that would invalidate the merged score."
+  - q: "Why 0.01 pp merge-parity threshold?"
+    a: "pass@1 on HumanEval (164 tasks) has a minimum delta of 100/164 ≈ 0.61 pp per task. 0.01 pp is below any single-task swing, so any merge-parity failure indicates a genuine logic bug (double-counting, missing tasks, wrong merge formula) rather than arithmetic noise."
+
+# ─────────────────────────────────────────────────────────────
+# SHARD CONFIGURATION SCHEMA
+# ─────────────────────────────────────────────────────────────
+shard_config_schema:
+  hosts:
+    type: list
+    required: true
+    description: |
+      Ordered list of host records. Order determines shard index:
+      hosts[i] receives shard_i.jsonl (tasks where line_index mod N == i).
+    items:
+      name:
+        type: string
+        required: true
+        description: "Human-readable host label (e.g., yoga, gx10, lambda-h100-1)."
+      ssh_alias:
+        type: string
+        required: true
+        description: "SSH alias or hostname. Use 'localhost' for the orchestrator's own machine."
+      workdir:
+        type: string
+        required: true
+        description: "Absolute path on the host where the shard run will execute (scratch)."
+      apr_binary:
+        type: string
+        required: false
+        default: "apr"
+        description: "Path to apr binary on the host. Defaults to PATH lookup."
+      gpu:
+        type: string
+        required: false
+        description: "Informational label for GPU (e.g., 'RTX 4090', 'GB10'). Not validated."
+
+  benchmark:
+    type: string
+    required: true
+    enum: [humaneval, mbpp, bigcodebench]
+
+  model_apr:
+    type: string
+    required: true
+    description: "Absolute local path to the .apr artifact to evaluate."
+
+  tokenizer:
+    type: string
+    required: false
+    description: "Absolute local path to tokenizer.json (sibling of .apr)."
+
+  max_tokens:
+    type: integer
+    required: false
+    default: 512
+
+  temperature:
+    type: number
+    required: true
+    description: "REQUIRED 0.0 for determinism-parity gate. Non-zero disables FALSIFY-SHARD-003."
+
+  num_samples:
+    type: integer
+    required: false
+    default: 1
+
+# ─────────────────────────────────────────────────────────────
+# FALSIFICATION TESTS
+# ─────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-SHARD-001
+    name: "Completeness — every benchmark task appears in some shard result"
+    input: "Per-shard humaneval_*.json files + original benchmark.jsonl"
+    procedure: |
+      1. Parse benchmark.jsonl to get set BENCH_IDS of all task_ids.
+      2. Parse each shard_i_humaneval_*.json to get problems[].task_id → SHARD_IDS_i.
+      3. Compute UNION = ∪ SHARD_IDS_i.
+      4. ASSERT UNION == BENCH_IDS (set equality).
+    falsifier: "Any task_id in BENCH_IDS but not in UNION → missing task, FAIL."
+    falsifier_command: |
+      python3 scripts/ship-two-001/eval-shard-merge.py \
+        --benchmark-jsonl data/benchmarks/humaneval.jsonl \
+        --shard-results evidence/ship-two-001/shard-eval/shard_*.json \
+        --check completeness
+
+  - id: FALSIFY-SHARD-002
+    name: "Disjointness — no task_id appears in two shards"
+    input: "Per-shard humaneval_*.json files"
+    procedure: |
+      1. Parse each shard_i_humaneval_*.json → SHARD_IDS_i.
+      2. For every pair (i, j) with i < j: ASSERT SHARD_IDS_i ∩ SHARD_IDS_j == ∅.
+    falsifier: "Any task_id appearing in ≥2 shards → double-count risk, FAIL."
+    falsifier_command: |
+      python3 scripts/ship-two-001/eval-shard-merge.py \
+        --shard-results evidence/ship-two-001/shard-eval/shard_*.json \
+        --check disjointness
+
+  - id: FALSIFY-SHARD-003
+    name: "Determinism parity — temp=0 same task on two hosts → byte-identical completions"
+    input: "16-task probe set (HumanEval/0..15); two hosts from the pool"
+    procedure: |
+      1. Run eval-shard.sh on probe set with hosts=[host_A, host_A] (same host twice,
+         forced via env var SHARD_DETERMINISM_PROBE=1).
+      2. Run eval-shard.sh on probe set with hosts=[host_A, host_B].
+      3. For each task_id in probe set: diff host_A_completion vs host_B_completion.
+      4. ASSERT all diffs empty.
+    falsifier: "Any byte-difference between two hosts on same task at temp=0 → hardware/kernel non-determinism, FAIL."
+    prerequisite: "temperature == 0.0 in shard_config"
+    falsifier_command: |
+      bash scripts/ship-two-001/eval-shard-determinism-probe.sh \
+        --hosts yoga,gx10 \
+        --model /path/to/model.apr \
+        --probe-tasks 0..15
+
+  - id: FALSIFY-SHARD-004
+    name: "Merged-score identity — reshard a known single-host run; merged pass@1 matches within 0.01 pp"
+    input: "Reference single-host humaneval_*.json (from prior EX-02-style run)"
+    procedure: |
+      1. Load reference humaneval_*.json; let P1_REF = results.pass_at_1.
+      2. Split reference problems[] round-robin into N=2 pseudo-shards.
+      3. Run eval-shard-merge.py on pseudo-shards.
+      4. ASSERT |merged.pass_at_1 − P1_REF| ≤ 0.01.
+    falsifier: "Merged pass@1 differs by > 0.01 pp → merge formula bug, FAIL."
+    falsifier_command: |
+      python3 scripts/ship-two-001/eval-shard-merge.py \
+        --self-test-reshard evidence/ship-two-001/humaneval/humaneval_*.json
+    discharged:
+      date: 2026-04-17
+      reference_file: evidence/ship-two-001/humaneval/humaneval_20260417_180103.json
+      ref_pass_at_1: 84.7600
+      merged_pass_at_1: 84.7561
+      delta_pp: 0.0039
+      threshold_pp: 0.01
+      verdict: PASS
+      evidence: evidence/ship-two-001/shard-004-self-test.txt
+
+# ─────────────────────────────────────────────────────────────
+# WALL-TIME EXPECTATION (informational, not falsifier)
+# ─────────────────────────────────────────────────────────────
+performance_expectation:
+  single_host_baseline_sec:
+    yoga_rtx4090_humaneval_7b_q4k: 7200  # ~2h, observed 2026-04-17
+  expected_speedup:
+    N_hosts_identical: "≥ N × 0.9  # rsync + dispatch overhead"
+    N_hosts_mixed: "bounded by slowest host (straggler)"
+  budget_falsifier:
+    condition: "wall_time_N_host > single_host_wall_time / N × 1.25"
+    action: "Investigate: rsync slow? network saturated? straggler host?"
+
+# ─────────────────────────────────────────────────────────────
+# EVIDENCE LAYOUT
+# ─────────────────────────────────────────────────────────────
+evidence_layout:
+  root: evidence/ship-two-001/shard-eval/
+  per_shard: "{root}/shard_{i}_humaneval_{timestamp}.json"
+  merged: "{root}/humaneval_merged_{timestamp}.json"
+  report: "{root}/shard_report_{timestamp}.json"
+
+# ─────────────────────────────────────────────────────────────
+# NON-GOALS
+# ─────────────────────────────────────────────────────────────
+non_goals:
+  - "Dynamic load balancing (static stride-N suffices for ≤5 hosts)."
+  - "Automatic shard retry on host death (manual re-run)."
+  - "Remote-managed model cache (rsync -c on each run is <2 min)."
+  - "Heterogeneous prompt format across hosts (same eval-pass-at-k.sh everywhere)."

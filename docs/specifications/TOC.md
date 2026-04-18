@@ -299,6 +299,7 @@
 - [Paiml Sai Vision Sync](aprender-train/paiml-sai-vision-sync.md)
 - [Real Time Audit Log Explainability Apr Format Models](aprender-train/real-time-audit-log-explainability-apr-format-models.md)
 - [Real Time Terminal Monitoring Visualization Spec](aprender-train/real-time-terminal-monitoring-visualization-spec.md)
+- [Ship Two Models](aprender-train/ship-two-models-spec.md)
 - [Simplify Entrenar](aprender-train/simplify-entrenar.md)
 - [Sub Crate Demos Spec](aprender-train/sub-crate-demos-spec.md)
 - [Training Monitoring Spec Realtime And Diagnostics](aprender-train/training-monitoring-spec-realtime-and-diagnostics.md)

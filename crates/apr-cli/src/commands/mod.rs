@@ -75,3 +75,4 @@ pub(crate) mod tui;
 #[cfg(feature = "training")]
 pub(crate) mod tune;
 pub(crate) mod validate;
+pub(crate) mod validate_manifest;

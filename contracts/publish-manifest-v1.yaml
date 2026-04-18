@@ -1,0 +1,343 @@
+---
+contract_id: F-PUBLISH-MANIFEST-001
+title: "Model artifact publish manifest — schema + verification (SHIP-TWO-001 shared)"
+version: 1.1.0
+status: DRAFT
+created: 2026-04-17
+updated: 2026-04-18
+changelog:
+  - v1.1.0 (2026-04-18): Added FALSIFY-PM-007 safetensors header dtype Poka-Yoke. Catches manifests declaring `fp16` when the exported file has `F32` weight tensors (ship-blocker per SHIP-TWO-001 §12.7.2).
+  - v1.0.0 (2026-04-17): Initial schema + FALSIFY-PM-001..006.
+parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
+parent_acceptance_criteria:
+  - AC-SHIP1-009  # License & provenance recorded
+  - AC-SHIP1-010  # Published artifact URL + SHA-256
+  - AC-SHIP2-012  # Weights + tokenizer + config with provenance
+
+# ─────────────────────────────────────────────────────────────
+# ABSTRACT
+# ─────────────────────────────────────────────────────────────
+abstract: |
+  Defines the schema and verification protocol for `manifest.yaml`, the
+  machine-readable provenance document that accompanies every published
+  model artifact (MODEL-1 distilled, MODEL-2 sovereign).
+
+  The manifest binds three irreversible facts:
+    1. The cryptographic identity of the artifact (SHA-256).
+    2. The license under which it ships (and any parent license chain).
+    3. The data, teacher, and recipe used to produce it.
+
+  Without a contract on this file, published models are indistinguishable
+  from a re-uploaded tarball — no way to prove they came from the claimed
+  pipeline, no way to detect tampering, no way to audit license
+  compliance. This contract makes each of those properties falsifiable.
+
+# ─────────────────────────────────────────────────────────────
+# FIVE-WHYS MOTIVATION
+# ─────────────────────────────────────────────────────────────
+five_whys:
+  - q: "Why do we need a publish-manifest contract?"
+    a: "AC-SHIP1-010 requires 'Published artifact URL resolves; SHA-256 matches manifest' — we cannot falsify that without a manifest schema."
+  - q: "Why not just use a README?"
+    a: "READMEs are prose and drift. Downstream tooling (`apr pull`, leaderboards, compliance audits) needs structured fields with strict types."
+  - q: "Why is SHA-256 specifically required?"
+    a: "Models ship as ~4GB binary blobs. Content-addressed storage (HF Hub, S3) can serve stale or swapped bytes; SHA-256 detects every single-bit change."
+  - q: "Why include the teacher/data license chain?"
+    a: "Qwen2.5-Coder is Apache-2.0 but distillation may chain through CC-BY-4.0 data. Downstream users must know the UNION of licenses, not just the top-level."
+  - q: "Why make this a separate contract instead of folding it into SHIP-TWO-001?"
+    a: "The manifest schema is shared across MODEL-1, MODEL-2, and any future published model. A reusable contract prevents copy-paste drift."
+
+# ─────────────────────────────────────────────────────────────
+# EQUATIONS / FORMALISATION
+# ─────────────────────────────────────────────────────────────
+equations:
+  artifact_identity:
+    formula: |
+      sha256(artifact_bytes) == manifest.sha256
+      AND stat(artifact_bytes).size == manifest.size_bytes
+    domain: (PublishedArtifact, Manifest)
+    codomain: Boolean
+    invariants:
+      - "SHA-256 is computed over the ENTIRE artifact file, not just header"
+      - "size_bytes is the on-disk byte count, not logical content size"
+      - "Any single byte flip MUST break the equality (detection property)"
+
+  license_chain_soundness:
+    formula: |
+      compatible(manifest.license, manifest.teacher_license ∪ manifest.data_license)
+      where compatible(L, S) := every license l ∈ S permits redistribution under L
+    domain: (Manifest.license, Set[UpstreamLicense])
+    codomain: Boolean
+    invariants:
+      - "GPL in upstream contaminates Apache-2.0 downstream (must flag, not hide)"
+      - "CC-BY-* in data requires attribution in README of downstream"
+      - "Unknown/missing upstream license is a HARD FAIL — no mystery licenses"
+
+  url_liveness:
+    formula: |
+      HTTP GET manifest.artifact_url → 200 OK
+      AND response.content-length == manifest.size_bytes
+    domain: Manifest.artifact_url
+    codomain: Boolean
+    invariants:
+      - "URL must resolve without auth (public artifact) or via documented token"
+      - "content-length check catches truncated uploads before SHA-256 mismatch"
+
+# ─────────────────────────────────────────────────────────────
+# SCHEMA
+# ─────────────────────────────────────────────────────────────
+schema:
+  format: YAML
+  filename: manifest.yaml
+  required_fields:
+    - model_id                     # string, e.g. "paiml/qwen2.5-coder-7b-distilled-v2-q4k"
+    - version                      # semver string, e.g. "1.0.0"
+    - architecture                 # string, must match contracts/model-families/*.yaml
+    - format                       # enum: apr | gguf | safetensors
+    - quantization                 # enum: fp32 | fp16 | bf16 | q8_0 | q4_k | q5_k | q6_k | none
+    - artifact_url                 # HTTPS URL resolving to the binary
+    - sha256                       # 64-char hex string, lowercase
+    - size_bytes                   # positive integer
+    - license                      # SPDX identifier (e.g. "Apache-2.0", "CC-BY-4.0")
+    - provenance                   # structured sub-document (see below)
+    - published_at                 # ISO-8601 UTC timestamp
+    - published_by                 # string, person/bot identifier
+  provenance_required_fields:
+    - pipeline                     # enum: distillation | pretraining | finetune | merge
+    - parent                       # for distill/finetune/merge — upstream model_id + sha256
+    - parent_license               # SPDX identifier of the parent
+    - data_source                  # human-readable data origin (or "teacher-only" for pure KD)
+    - data_license                 # SPDX identifier (CC-BY-4.0, MIT, etc.)
+    - recipe                       # path to contract/recipe YAML governing this pipeline
+    - recipe_sha256                # SHA-256 of that recipe file at publish time
+  optional_fields:
+    - eval_results                 # map of benchmark_name → {pass_at_1, timestamp, harness_version}
+    - training_cost                # {wall_clock_hours, gpu_model, gpu_count, approx_tokens}
+    - deprecates                   # model_id of any artifact this replaces
+
+# ─────────────────────────────────────────────────────────────
+# ACCEPTANCE & REJECTION
+# ─────────────────────────────────────────────────────────────
+acceptance_criteria:
+  - id: AC-PM-001
+    claim: "All required_fields present and non-null in manifest.yaml"
+    why: "Missing fields silently reduce provenance to uselessness"
+  - id: AC-PM-002
+    claim: "sha256 field matches computed SHA-256 of downloaded artifact"
+    why: "Content integrity; any tampering detected"
+  - id: AC-PM-003
+    claim: "size_bytes matches stat() of downloaded file"
+    why: "Catches truncated uploads faster than SHA-256"
+  - id: AC-PM-004
+    claim: "HTTP GET of artifact_url returns 200 with matching content-length"
+    why: "URL liveness at publish time"
+  - id: AC-PM-005
+    claim: "license and all provenance.*_license fields are valid SPDX identifiers"
+    why: "Downstream compliance tooling requires SPDX, not prose"
+  - id: AC-PM-006
+    claim: "provenance.recipe path resolves; its SHA-256 matches recipe_sha256"
+    why: "Distillation/training recipe at publish time must be reproducible"
+  - id: AC-PM-007
+    claim: "Parent chain terminates at a documented public model or dataset"
+    why: "No 'mystery weights' in the chain"
+
+rejection_criteria:
+  - id: RJ-PM-001
+    trigger: "sha256 != computed sha256"
+    action: "HARD FAIL. Block publish. Investigate: re-upload, byte corruption, manifest stale."
+  - id: RJ-PM-002
+    trigger: "Any required field missing OR null OR empty-string"
+    action: "HARD FAIL. Manifest is malformed — cannot ship."
+  - id: RJ-PM-003
+    trigger: "license or parent_license is 'unknown' / 'proprietary' / 'TBD'"
+    action: "HARD FAIL. Mystery-license artifacts NEVER ship."
+  - id: RJ-PM-004
+    trigger: "provenance.pipeline == 'distillation' AND provenance.parent is missing"
+    action: "HARD FAIL. Distillation without a teacher record is not reproducible."
+
+# ─────────────────────────────────────────────────────────────
+# FALSIFICATION TESTS
+# ─────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-PM-001
+    name: "manifest_schema_conforms"
+    description: |
+      Parse manifest.yaml and verify every required_field is present,
+      non-null, and of the declared type.
+    command: |
+      apr validate-manifest /path/to/manifest.yaml --strict
+    expected: exit 0
+    fails_if: "Any missing/null/wrong-type field — schema tool exits non-zero"
+
+  - id: FALSIFY-PM-002
+    name: "sha256_matches_artifact"
+    description: |
+      Download artifact; compute SHA-256; compare with manifest.sha256.
+    command: |
+      curl -sL "$(yq .artifact_url manifest.yaml)" -o /tmp/artifact.bin
+      COMPUTED=$(sha256sum /tmp/artifact.bin | awk '{print $1}')
+      DECLARED=$(yq -r .sha256 manifest.yaml)
+      [ "$COMPUTED" = "$DECLARED" ] && echo PASS || echo FAIL
+    expected: "PASS"
+    fails_if: "SHA-256 mismatch. Either artifact corrupted in transit or manifest stale."
+
+  - id: FALSIFY-PM-003
+    name: "url_resolves_with_matching_size"
+    description: |
+      HTTP HEAD the artifact_url; compare content-length to size_bytes.
+    command: |
+      URL=$(yq -r .artifact_url manifest.yaml)
+      SIZE=$(yq .size_bytes manifest.yaml)
+      CL=$(curl -sI "$URL" | grep -i '^content-length:' | awk '{print $2}' | tr -d '\r')
+      [ "$CL" = "$SIZE" ] && echo PASS || echo FAIL
+    expected: "PASS"
+    fails_if: "URL missing / content-length mismatch. Points to truncation or bad CDN state."
+
+  - id: FALSIFY-PM-004
+    name: "spdx_identifiers_valid"
+    description: |
+      Validate license and every provenance.*_license against SPDX license list.
+    command: |
+      apr validate-manifest /path/to/manifest.yaml --check-spdx
+    expected: exit 0
+    fails_if: "Any license string not in SPDX canonical list (case-sensitive)."
+
+  - id: FALSIFY-PM-005
+    name: "recipe_sha256_matches_checked_in_file"
+    description: |
+      For distilled/finetuned/merged artifacts, recipe_sha256 must match
+      the SHA-256 of the referenced YAML at publish time.
+    command: |
+      RECIPE=$(yq -r .provenance.recipe manifest.yaml)
+      COMPUTED=$(sha256sum "$RECIPE" | awk '{print $1}')
+      DECLARED=$(yq -r .provenance.recipe_sha256 manifest.yaml)
+      [ "$COMPUTED" = "$DECLARED" ] && echo PASS || echo FAIL
+    expected: "PASS"
+    fails_if: "Recipe modified after publish without manifest update."
+
+  - id: FALSIFY-PM-006
+    name: "parent_chain_terminates"
+    description: |
+      Follow the parent chain until hitting a documented public model/dataset
+      (e.g., Qwen/Qwen2.5-Coder-7B-Instruct on HF). Must not cycle or dead-end.
+    command: |
+      apr validate-manifest /path/to/manifest.yaml --follow-parents --depth 5
+    expected: exit 0
+    fails_if: "Parent cycle detected OR chain ends at unknown model."
+
+  - id: FALSIFY-PM-007
+    name: "safetensors_header_dtype_matches_quantization"
+    description: |
+      Poka-Yoke gate: when format == "safetensors" AND --artifact is provided,
+      parse the safetensors header (first 8 bytes LE u64 = header length, then
+      UTF-8 JSON) and verify per-tensor dtype matches manifest.quantization.
+
+      Norm/bias tensors (name contains "norm" OR ends with ".bias") may remain
+      F32 regardless of declared quant — that's the canonical fp16 export shape.
+      Weight tensors MUST match the declared dtype:
+        fp16 → F16
+        bf16 → BF16
+        fp32 → F32
+
+      Rationale: SHIP-TWO-001 §12.7.2 lists "Uploaded .safetensors header
+      declares F32 for weight tensors when manifest says fp16" as a ship-blocker.
+      This gate catches that failure at publish time instead of after a 30+ GiB
+      upload of mis-quantized weights.
+    command: |
+      apr validate-manifest /path/to/manifest.yaml --artifact /path/to/model.safetensors
+    expected: exit 0 (or the safetensors-dtype check passes with status PASS in JSON)
+    fails_if: |
+      Any weight tensor's header dtype differs from the dtype implied by
+      manifest.quantization. (E.g., fp16 manifest but tensor.dtype == "F32".)
+
+# ─────────────────────────────────────────────────────────────
+# PROOF OBLIGATIONS
+# ─────────────────────────────────────────────────────────────
+proof_obligations:
+  - id: PO-PM-001
+    theorem: "Manifest.content_addressable_identity"
+    statement: |
+      For any published artifact A with manifest M, if computed_sha256(A) ≠ M.sha256,
+      then either A or M has been modified since publish. Identity is falsified.
+    discharged_by: FALSIFY-PM-002
+
+  - id: PO-PM-002
+    theorem: "Manifest.license_chain_disclosure_completeness"
+    statement: |
+      If artifact was produced by distillation/finetune/merge, its manifest
+      MUST cite every upstream license. The contract rejects any chain
+      terminating in unknown-licensed weights.
+    discharged_by: [FALSIFY-PM-004, FALSIFY-PM-006, RJ-PM-003]
+
+  - id: PO-PM-003
+    theorem: "Manifest.recipe_reproducibility"
+    statement: |
+      For every distilled/trained artifact, the recipe YAML at publish
+      time is archived with a SHA-256 checksum. Future reproductions
+      can verify they ran the same recipe.
+    discharged_by: FALSIFY-PM-005
+
+# ─────────────────────────────────────────────────────────────
+# QA GATE
+# ─────────────────────────────────────────────────────────────
+qa_gate:
+  must_pass:
+    - FALSIFY-PM-001   # schema conforms
+    - FALSIFY-PM-002   # sha256 matches
+    - FALSIFY-PM-003   # URL resolves
+    - FALSIFY-PM-004   # SPDX valid
+  must_pass_if_distilled_or_trained:
+    - FALSIFY-PM-005   # recipe sha256 matches
+    - FALSIFY-PM-006   # parent chain terminates
+  must_pass_if_format_safetensors_and_artifact_provided:
+    - FALSIFY-PM-007   # header dtype Poka-Yoke (SHIP-TWO-001 §12.7.2)
+  regression_protection: |
+    This contract must be re-evaluated any time:
+      - manifest.yaml schema adds/removes a field
+      - apr validate-manifest implementation changes
+      - SPDX license list upstream version changes
+      - Any new publish workflow (S3 bucket, HF Hub mirror, etc.) is added
+
+# ─────────────────────────────────────────────────────────────
+# EXAMPLE (illustrative, not normative)
+# ─────────────────────────────────────────────────────────────
+example_manifest: |
+  model_id: paiml/qwen2.5-coder-7b-distilled-v2-q4k
+  version: 2.0.0
+  architecture: qwen2
+  format: apr
+  quantization: q4_k
+  artifact_url: https://paiml-public.s3.amazonaws.com/models/qwen2.5-coder-7b-distilled-v2-q4k.apr
+  sha256: 4e8b3f2a9c1d...  # 64 hex chars
+  size_bytes: 4216728832
+  license: Apache-2.0
+  provenance:
+    pipeline: distillation
+    parent: Qwen/Qwen2.5-Coder-7B-Instruct
+    parent_license: Apache-2.0
+    data_source: teacher-only (KD on code-instruction pairs)
+    data_license: Apache-2.0
+    recipe: contracts/distillation-pipeline-v1.yaml
+    recipe_sha256: a1b2c3...
+  published_at: 2026-04-18T12:00:00Z
+  published_by: paiml-bot
+  eval_results:
+    humaneval:
+      pass_at_1: 87.20
+      timestamp: 2026-04-17T17:30:00Z
+      harness_version: apr-cli-0.31.0
+  deprecates: paiml/qwen2.5-coder-7b-distilled-v1-q4k
+
+# ─────────────────────────────────────────────────────────────
+# REFERENCES
+# ─────────────────────────────────────────────────────────────
+references:
+  parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
+  related_contracts:
+    - contracts/eval-harness-humaneval-v1.yaml
+    - contracts/distillation-pipeline-v1.yaml  # NEW (sibling, TBD)
+    - contracts/model-families/qwen2.yaml
+    - contracts/model-families/llama.yaml
+  external:
+    spdx_license_list: https://spdx.org/licenses/
+    huggingface_hub: https://huggingface.co/docs/hub/model-cards
