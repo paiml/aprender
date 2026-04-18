@@ -1,12 +1,8 @@
 # CRUX-I-16 — Guardrails output filter pipeline
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-I-16
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,87 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "I — Observability & Metrics"
   competitor: ecosystem
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Guardrails output filter pipeline. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.I and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Guardrails output filter pipeline: run a configurable chain of
+    validators (PII redaction, toxicity, JSON-schema, topic restriction)
+    over model output and either rewrite, annotate, or reject. Canonical:
+    NVIDIA NeMo-Guardrails `output rails` + Guardrails AI `Guard.use()`;
+    multiple validators compose; a single hard-fail short-circuits.
 
 equations:
-  placeholder_contract:
+  guardrails_pipeline:
     formula: |
-      DRAFT — user workflow "Guardrails output filter pipeline"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      pipeline = [ v_1, v_2, ..., v_n ]  # ordered
+      output' = text
+      for v in pipeline:
+        r = v(output')
+        match r.action:
+          rewrite → output' = r.fixed
+          annotate → append(r.note)
+          reject → return { blocked: true, reason: r.reason, by: v.name } ; break
+      return { blocked: false, output: output', notes: [...] }
+    domain: "(text: str, pipeline: [Validator])"
+    codomain: "{ blocked: bool, output: str?, reason: str?, by: str? }"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "hard-fail short-circuits — no validators after reject run"
+    - "rewrite composition: pipeline = [v1,v2] and output' matches v2(v1(text))"
+    - "empty pipeline is identity (blocked=false, output=text unchanged)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-16-001
-  rule: placeholder
-  prediction: "apr surface for 'Guardrails output filter pipeline' matches ecosystem canonical behavior"
+  rule: hard-fail short-circuits — subsequent validators don't see the text
+  prediction: "reject-then-rewrite pipeline has by=toxicity, no rewrite run"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-16" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr guardrails run --pipeline toxicity,pii_redact --input "kill all humans" \
+      --format json > /tmp/g.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/g.json'))
+    assert d['blocked'] is True, d
+    assert d['by'] == 'toxicity', d
+    assert 'output' not in d or d.get('output') is None, d
+    "
+- id: FALSIFY-CRUX-I-16-002
+  rule: rewrites compose in order
+  prediction: "pipeline [pii_redact, upper] first redacts then uppercases"
+  test: |
+    set -euo pipefail
+    apr guardrails run --pipeline pii_redact,upper \
+      --input "my email is a@b.com" --format json > /tmp/g2.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/g2.json'))
+    assert d['blocked'] is False, d
+    assert '@B.COM' not in d['output']  # email was redacted first
+    assert d['output'] == d['output'].upper(), d
+    "
+- id: FALSIFY-CRUX-I-16-003
+  rule: empty pipeline is identity
+  prediction: "--pipeline '' returns blocked=false with input unchanged"
+  test: |
+    set -euo pipefail
+    apr guardrails run --pipeline "" --input "hello world" --format json > /tmp/g3.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/g3.json'))
+    assert d['blocked'] is False and d['output'] == 'hello world', d
+    "
 
 proof_obligations:
+- type: parity
+  property: "apr guardrails run matches NeMo-Guardrails + Guardrails AI ordered-validator semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "reject short-circuits (no downstream side effects)"
+- type: invariant
+  property: "empty pipeline is identity"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-i-16` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-i-16
   priority: medium
   auto_created: true

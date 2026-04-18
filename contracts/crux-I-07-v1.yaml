@@ -1,12 +1,8 @@
 # CRUX-I-07 — Claude Agent SDK compatibility
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-I-07
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,84 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "I — Observability & Metrics"
   competitor: ecosystem
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Claude Agent SDK compatibility. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.I and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Claude Agent SDK compatibility: expose apr model as a tool callable
+    from `@anthropic-ai/claude-agent-sdk` (npm) / `claude_agent_sdk`
+    (PyPI). Canonical: Anthropic Agent SDK `tool_use` block with
+    `{type, name, input}` input and `{type, tool_use_id, content}`
+    response. Tool schema must be a valid JSON Schema Draft 2020-12.
 
 equations:
-  placeholder_contract:
+  agent_sdk_tool:
     formula: |
-      DRAFT — user workflow "Claude Agent SDK compatibility"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      tool_schema = { "name": str, "description": str, "input_schema": JSONSchema }
+      invoke(tool, input) → response where:
+        response.tool_use_id == request.id
+        response.type == "tool_result"
+        response.content is JSON-serializable
+      JSONSchema(input) validates against tool.input_schema
+    domain: "(tool_name: str, input: json, api_key: str)"
+    codomain: "tool_result block forwardable to Claude messages endpoint"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "emitted input_schema is valid JSONSchema (jsonschema.validate of meta-schema passes)"
+    - "tool_use_id echoed byte-identical in tool_result"
+    - "content field is always JSON-serializable (no raw bytes / NaN)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-07-001
-  rule: placeholder
-  prediction: "apr surface for 'Claude Agent SDK compatibility' matches ecosystem canonical behavior"
+  rule: emitted tool schema validates against JSONSchema meta-schema
+  prediction: "apr agent describe-tool produces a valid JSONSchema"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-07" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr agent describe-tool apr-qa --format json > /tmp/tool.json
+    uv run --with jsonschema python3 -c "
+    import json, jsonschema
+    t = json.load(open('/tmp/tool.json'))
+    jsonschema.Draft202012Validator.check_schema(t['input_schema'])
+    assert 'name' in t and 'description' in t, t
+    "
+- id: FALSIFY-CRUX-I-07-002
+  rule: tool_use_id round-trips byte-identical; content is JSON-serializable
+  prediction: "tool_result.tool_use_id == request.id"
+  test: |
+    set -euo pipefail
+    apr agent invoke --tool apr-qa --input '{"model":"tests/fixtures/tiny.apr"}' \
+      --request-id abc-123 --format json > /tmp/resp.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/resp.json'))
+    assert d['tool_use_id'] == 'abc-123', d
+    assert d['type'] == 'tool_result', d
+    json.dumps(d['content'])  # must be serializable
+    "
+- id: FALSIFY-CRUX-I-07-003
+  rule: invalid input rejected by schema, not by tool body
+  prediction: "input violating required fields returns is_error=true before model runs"
+  test: |
+    set -euo pipefail
+    apr agent invoke --tool apr-qa --input '{}' --request-id x --format json > /tmp/err.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/err.json'))
+    assert d.get('is_error') is True, d
+    assert 'required' in d['content'].lower() or 'schema' in d['content'].lower(), d
+    "
 
 proof_obligations:
+- type: parity
+  property: "apr agent tool envelope matches Anthropic Agent SDK tool_use/tool_result block shape"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "input_schema always passes Draft 2020-12 meta-schema"
+- type: invariant
+  property: "schema validation fails closed (invalid input never reaches tool body)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-i-07` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-i-07
   priority: medium
   auto_created: true

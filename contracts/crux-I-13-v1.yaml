@@ -1,12 +1,8 @@
 # CRUX-I-13 — MCP resource provider
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-I-13
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,84 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "I — Observability & Metrics"
   competitor: ecosystem
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    MCP resource provider. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.I and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    MCP resource provider: expose apr artifacts (models, datasets, eval
+    reports) over Model Context Protocol. Canonical: MCP spec
+    (modelcontextprotocol.io) resources/list + resources/read JSON-RPC
+    2.0 verbs. Resource URIs must be stable, content returned with
+    declared mimeType.
 
 equations:
-  placeholder_contract:
+  mcp_resource:
     formula: |
-      DRAFT — user workflow "MCP resource provider"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      resources/list → [ { uri: str, name: str, description: str, mimeType: str } ]
+      resources/read { uri } → { contents: [{ uri, mimeType, text|blob }] }
+      # uri invariant: stable across restarts given same model set
+      # mimeType invariant: matches bytes (text/* vs application/octet-stream)
+    domain: "(model_dir: Path, dataset_dir: Path)"
+    codomain: "JSON-RPC 2.0 stdio transport — list + read responses"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "resources/list.uri values are stable (same set ⇒ same URIs)"
+    - "resources/read echoes the requested uri byte-identical"
+    - "declared mimeType matches returned bytes (text = UTF-8 decodable)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-13-001
-  rule: placeholder
-  prediction: "apr surface for 'MCP resource provider' matches ecosystem canonical behavior"
+  rule: list/read round-trip preserves URI
+  prediction: "resources/read of a URI from resources/list returns that URI"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-13" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr mcp serve --once --list-resources > /tmp/list.json &
+    PID=$!; sleep 0.5; kill $PID 2>/dev/null || true
+    uri=$(jq -r '.result.resources[0].uri' /tmp/list.json)
+    apr mcp call --method resources/read --params "{\"uri\":\"$uri\"}" --once > /tmp/read.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/read.json'))
+    assert d['result']['contents'][0]['uri'] == '$uri', d
+    "
+- id: FALSIFY-CRUX-I-13-002
+  rule: URI stability across restarts
+  prediction: "two serve invocations on the same dir emit identical uri list"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr mcp call --method resources/list --once \
+        --resources-dir /tmp/apr-mcp-fixture > /tmp/list$i.json
+    done
+    diff <(jq -S '.result.resources | map(.uri) | sort' /tmp/list1.json) \
+         <(jq -S '.result.resources | map(.uri) | sort' /tmp/list2.json)
+- id: FALSIFY-CRUX-I-13-003
+  rule: mimeType matches content
+  prediction: "text/plain resources decode as UTF-8 without replacement chars"
+  test: |
+    set -euo pipefail
+    apr mcp call --method resources/list --once > /tmp/l.json
+    uri=$(jq -r '.result.resources[] | select(.mimeType=="text/plain") | .uri' /tmp/l.json | head -1)
+    apr mcp call --method resources/read --params "{\"uri\":\"$uri\"}" --once > /tmp/r.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/r.json'))
+    text = d['result']['contents'][0]['text']
+    text.encode('utf-8')  # strict — no surrogate escapes
+    assert '\ufffd' not in text, 'UTF-8 replacement char present'
+    "
 
 proof_obligations:
+- type: parity
+  property: "apr mcp serve resources verbs match MCP spec JSON-RPC 2.0 shape (modelcontextprotocol.io)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "URI stability (same input ⇒ same URIs)"
+- type: invariant
+  property: "declared mimeType matches returned bytes"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-i-13` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-i-13
   priority: medium
   auto_created: true

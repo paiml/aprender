@@ -1,12 +1,8 @@
 # CRUX-I-14 — MCP prompt provider
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-I-14
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,87 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "I — Observability & Metrics"
   competitor: ecosystem
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    MCP prompt provider. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.I and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    MCP prompt provider: expose parameterized prompt templates over MCP.
+    Canonical: MCP spec prompts/list + prompts/get verbs; prompts
+    declare {name, description, arguments:[{name, required}]} and
+    `prompts/get` renders the template with provided argument values,
+    returning a list of messages.
 
 equations:
-  placeholder_contract:
+  mcp_prompt:
     formula: |
-      DRAFT — user workflow "MCP prompt provider"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      prompts/list → [ { name, description, arguments: [ {name, required} ] } ]
+      prompts/get { name, arguments } →
+        messages = [ { role, content: {type:"text", text: render(template, arguments)} } ]
+      # missing required arg → JSON-RPC error -32602 (invalid params)
+    domain: "(templates: [PromptTemplate], args: dict)"
+    codomain: "JSON-RPC 2.0 response with messages array"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "missing required arg → error code -32602 (JSON-RPC Invalid params)"
+    - "rendered text is deterministic for same (template, arguments)"
+    - "prompts/list declared arguments match prompts/get rejection set"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-14-001
-  rule: placeholder
-  prediction: "apr surface for 'MCP prompt provider' matches ecosystem canonical behavior"
+  rule: missing required argument produces JSON-RPC -32602
+  prediction: "get without required arg returns error.code == -32602"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-14" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr mcp call --method prompts/get \
+      --params '{"name":"apr-qa-summary","arguments":{}}' --once > /tmp/err.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/err.json'))
+    assert d['error']['code'] == -32602, d
+    "
+- id: FALSIFY-CRUX-I-14-002
+  rule: deterministic render for fixed arguments
+  prediction: "two prompts/get calls with same args yield identical messages"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr mcp call --method prompts/get \
+        --params '{"name":"apr-qa-summary","arguments":{"model":"tiny.apr"}}' \
+        --once > /tmp/p$i.json
+    done
+    diff <(jq -S .result.messages /tmp/p1.json) \
+         <(jq -S .result.messages /tmp/p2.json)
+- id: FALSIFY-CRUX-I-14-003
+  rule: list arguments match get validation
+  prediction: "every required arg from prompts/list is rejected when omitted in prompts/get"
+  test: |
+    set -euo pipefail
+    apr mcp call --method prompts/list --once > /tmp/pl.json
+    python3 << 'PY'
+    import json, subprocess
+    lst = json.load(open('/tmp/pl.json'))['result']['prompts']
+    for p in lst:
+        required = [a['name'] for a in p.get('arguments', []) if a.get('required')]
+        if not required: continue
+        r = subprocess.run(['apr','mcp','call','--method','prompts/get',
+          '--params', json.dumps({'name':p['name'],'arguments':{}}),'--once'],
+          capture_output=True, text=True, check=True)
+        resp = json.loads(r.stdout)
+        assert resp.get('error',{}).get('code') == -32602, (p['name'], resp)
+    PY
 
 proof_obligations:
+- type: parity
+  property: "apr mcp prompts verbs match MCP spec JSON-RPC 2.0 shape"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "missing required arg → JSON-RPC -32602 (fail closed)"
+- type: invariant
+  property: "deterministic rendering under fixed arguments"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-i-14` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-i-14
   priority: medium
   auto_created: true

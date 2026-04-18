@@ -1,12 +1,8 @@
 # CRUX-I-15 — Agent memory plugin interface
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-I-15
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,81 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "I — Observability & Metrics"
   competitor: ecosystem
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Agent memory plugin interface. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.I and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Agent memory plugin interface: pluggable KV + vector store for agent
+    short/long-term memory. Canonical: LangGraph `checkpointer` +
+    LlamaIndex `ChatMemoryBuffer`; must expose `put(key, value, ttl)`,
+    `get(key) → Option<value>`, `search(embedding, k) → [id, score]`.
+    TTL expiry is observable and monotonic.
 
 equations:
-  placeholder_contract:
+  agent_memory:
     formula: |
-      DRAFT — user workflow "Agent memory plugin interface"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      put(k, v, ttl)  : store[k] = (v, now() + ttl) ; index(embed(v))
+      get(k)           : return store[k].v if now() < store[k].expiry else None
+      search(e, k)     : return top_k { (id, cos(e, embed[id])) : id ∈ store }
+      # monotonic expiry: no resurrection after TTL
+    domain: "(backend: {sqlite, redis, qdrant}, ttl: Duration, dim: usize)"
+    codomain: "observable KV+vector store with expiry"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "put/get round-trip: get(k) = v after put(k, v, ∞)"
+    - "TTL monotonic: after ttl elapses, get(k) = None; never revives"
+    - "search(embed(v), 1) returns k such that get(k) = v (recall@1 = 1.0)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-15-001
-  rule: placeholder
-  prediction: "apr surface for 'Agent memory plugin interface' matches ecosystem canonical behavior"
+  rule: put/get round-trip
+  prediction: "put(k, v) then get(k) returns v"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-15" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr agent memory put --key hello --value world --ttl 3600
+    out=$(apr agent memory get --key hello --format json | jq -r .value)
+    test "$out" = "world"
+- id: FALSIFY-CRUX-I-15-002
+  rule: TTL expiry is monotonic (no resurrection)
+  prediction: "put with ttl=1s; after 2s get returns null; stays null"
+  test: |
+    set -euo pipefail
+    apr agent memory put --key ephem --value x --ttl 1
+    sleep 2
+    apr agent memory get --key ephem --format json > /tmp/g1.json
+    sleep 1
+    apr agent memory get --key ephem --format json > /tmp/g2.json
+    python3 -c "
+    import json
+    assert json.load(open('/tmp/g1.json'))['value'] is None
+    assert json.load(open('/tmp/g2.json'))['value'] is None
+    "
+- id: FALSIFY-CRUX-I-15-003
+  rule: self-recall at k=1 is perfect
+  prediction: "search(embed(v), k=1) returns the key that stored v"
+  test: |
+    set -euo pipefail
+    apr agent memory put --key a --value "the fox jumped" --ttl 3600
+    apr agent memory put --key b --value "python ate cython" --ttl 3600
+    apr agent memory search --query "the fox jumped" --k 1 --format json > /tmp/s.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/s.json'))
+    assert d['hits'][0]['key'] == 'a', d
+    "
 
 proof_obligations:
+- type: parity
+  property: "apr agent memory matches LangGraph checkpointer + LlamaIndex memory semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "TTL is monotonic (no key ever un-expires)"
+- type: invariant
+  property: "self-recall@1 == 1.0"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-i-15` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-i-15
   priority: medium
   auto_created: true

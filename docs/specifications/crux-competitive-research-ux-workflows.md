@@ -491,8 +491,8 @@ at Phase 0 exit; intake estimates:
 - ✅ Registered all in master `contracts/crux-competitive-research-ux-v1.yaml`
 - ✅ Created 140 pmat work tickets (one per ❌ missing story) via
   `scripts/crux_bulk_pmat_work.sh` — tagged `crux,gap,crux-{category},competitor-{name},{id_lower}`
-- ✅ **206 of 250 contracts (82.4%)** promoted draft → **spec-complete**
-  via five parallel waves + wave 6 batches 1-7 direct authoring (2026-04-18):
+- ✅ **211 of 250 contracts (84.4%)** promoted draft → **spec-complete**
+  via five parallel waves + wave 6 batches 1-8 direct authoring (2026-04-18):
   - Wave 1 (18 demand=5 missing): B-07/08/09, C-04/11/13, D-03/04/11/12,
     E-02/03/07, H-03, F-09/13, I-04, K-02
   - Wave 2 (24 demand=5 partials): A-01/05/09, C-03/05/06/07/08/31/33/34,
@@ -549,13 +549,20 @@ at Phase 0 exit; intake estimates:
     H-17 (CLIP contrastive pair sampler — positives on diagonal),
     H-19 (synthetic data gen via teacher LLM + schema validation),
     H-21 (MinHash+LSH fuzzy dedup collision-prob parity).
+  - Wave 6 batch 8 (5 I-series demand=3): I-07 (Claude Agent SDK tool
+    envelope + JSONSchema Draft-2020-12 meta-schema validation),
+    I-13 (MCP resources/list+read — stable URIs, mimeType matches bytes),
+    I-14 (MCP prompts/list+get — missing required arg → JSON-RPC -32602),
+    I-15 (agent memory plugin — put/get round-trip, monotonic TTL,
+    self-recall@1 = 1.0), I-16 (guardrails pipeline — reject
+    short-circuits, rewrites compose in order, empty = identity).
   - 3 demand=5 stories still draft: J-01/02/09 (blocked on OpenCLAW
     interpretation — every other demand≥4 non-J story is spec-complete)
   - Each contract carries competitor CLI citations (arXiv papers, official
     docs) and bash falsification bodies with jq/curl/python3 invocations
 - Gate: `pmat comply check` passes with 250 CRUX contracts registered
 
-**Phase 1 — Evidence capture** (IN PROGRESS — 206/250 = 82.4%)
+**Phase 1 — Evidence capture** (IN PROGRESS — 211/250 = 84.4%)
 - Collect `evidence/crux/{competitor}/*` per §2.1 for all 7 competitors
 - Falsification harness comparing `apr --help` verbs vs competitor verbs
 - Enrich remaining 51 contracts (spec-complete body) — demand≥4 non-J
