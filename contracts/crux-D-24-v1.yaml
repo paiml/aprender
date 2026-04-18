@@ -1,12 +1,8 @@
 # CRUX-D-24 — Activation checkpointing tags
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-D-24
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,75 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "D — Inference & Generation"
   competitor: pytorch
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Activation checkpointing tags. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Named activation-checkpoint groups that let users toggle recompute
+    granularity per layer type. Canonical: PyTorch
+    `torch.utils.checkpoint.checkpoint_sequential` + custom tag names
+    like `{"attn": True, "ffn": False}`.
 
 equations:
-  placeholder_contract:
+  ckpt_memory_vs_compute:
     formula: |
-      DRAFT — user workflow "Activation checkpointing tags"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      peak_mem(policy={tag→bool}) = sum_i sizeof(act_i) for i with tag(i).ckpt=False
+      fwd_time(policy) = T_fwd_base
+      bwd_time(policy) = T_bwd_base + sum_i T_fwd_i for i with tag(i).ckpt=True  # recompute
+    domain: "(tags_map: Map<String, bool>, model: torch.nn.Module)"
+    codomain: "training loop with per-tag checkpoint wrappers"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "all-false tags (no ckpt) == vanilla autograd (byte-equal gradients)"
+    - "all-true tags reduces peak activation memory ≥ 30% on 7B at 4k seq"
+    - "loss curve with ckpt differs from no-ckpt by ≤ 1e-5 (numerical noise only)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-24-001
-  rule: placeholder
-  prediction: "apr surface for 'Activation checkpointing tags' matches pytorch canonical behavior"
+  rule: all-false policy is byte-equal to no-ckpt baseline
+  prediction: "gradient norms identical to 1e-6 under --activation-ckpt '{}'"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-24" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr finetune tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --activation-ckpt '{}' --steps 1 --dump-gradnorm /tmp/off.txt
+    apr finetune tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --steps 1 --dump-gradnorm /tmp/base.txt
+    diff /tmp/off.txt /tmp/base.txt
+- id: FALSIFY-CRUX-D-24-002
+  rule: ckpt=attn+ffn cuts peak GPU mem > 30%
+  prediction: "measured cuMemGetInfo peak differs by ≥30% between policies"
+  test: |
+    set -euo pipefail
+    APR_DUMP_PEAK_MEM=1 apr finetune ... --activation-ckpt '{"attn":true,"ffn":true}' --steps 5 2>/tmp/mem_on
+    APR_DUMP_PEAK_MEM=1 apr finetune ... --steps 5 2>/tmp/mem_off
+    on=$(grep -oP 'peak_mem=\K[0-9]+' /tmp/mem_on)
+    off=$(grep -oP 'peak_mem=\K[0-9]+' /tmp/mem_off)
+    python3 -c "assert ($off - $on) / $off > 0.3, f'on=$on off=$off'"
+- id: FALSIFY-CRUX-D-24-003
+  rule: loss curve unchanged (numerical parity with autograd)
+  prediction: "|loss(ckpt) - loss(no-ckpt)| ≤ 1e-5 per step"
+  test: |
+    set -euo pipefail
+    apr finetune ... --activation-ckpt '{"attn":true}' --steps 5 --dump-loss /tmp/l_on.json
+    apr finetune ... --steps 5 --dump-loss /tmp/l_off.json
+    python3 -c "
+    import json; a=json.load(open('/tmp/l_on.json'))['steps']; b=json.load(open('/tmp/l_off.json'))['steps']
+    assert all(abs(x['loss']-y['loss'])<1e-5 for x,y in zip(a,b))
+    "
 
 proof_obligations:
+- type: parity
+  property: "apr --activation-ckpt matches `torch.utils.checkpoint.checkpoint_sequential` recompute semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "empty policy ≡ no ckpt (byte-equal gradients)"
+- type: invariant
+  property: "ckpt loss matches no-ckpt loss within 1e-5 per step"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-d-24` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-d-24
   priority: medium
   auto_created: true

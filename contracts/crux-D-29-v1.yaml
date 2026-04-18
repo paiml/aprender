@@ -1,12 +1,8 @@
 # CRUX-D-29 — Pre-compiled dataset cache
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-D-29
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,84 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "D — Inference & Generation"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Pre-compiled dataset cache. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Pre-tokenized, pre-packed dataset cache keyed by (dataset_fingerprint,
+    tokenizer_hash, max_seq_len, pack_mode). Canonical: HF `datasets` Arrow
+    cache (`.cache/huggingface/datasets/...`); cache hits skip tokenize+pack.
 
 equations:
-  placeholder_contract:
+  dataset_cache:
     formula: |
-      DRAFT — user workflow "Pre-compiled dataset cache"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      cache_key = sha256(dataset_fp || tokenizer_hash || max_seq_len || pack_mode)
+      if exists(cache_dir/cache_key.arrow):
+        return mmap(cache_dir/cache_key.arrow)
+      else:
+        tokenized = tokenize(dataset, tokenizer, max_seq_len, pack_mode)
+        write_atomically(cache_dir/cache_key.arrow, tokenized)
+        return tokenized
+    domain: "(dataset: Path, tokenizer: Path, max_seq_len: u32, pack_mode ∈ {none, pack, pad})"
+    codomain: "Arrow file; cache-hit/miss on second run"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "cache_key deterministic: same inputs → same 64-hex key"
+    - "second run with identical args is a cache hit (no tokenize syscalls)"
+    - "changing tokenizer or max_seq_len invalidates cache (miss → new key)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-29-001
-  rule: placeholder
-  prediction: "apr surface for 'Pre-compiled dataset cache' matches huggingface canonical behavior"
+  rule: second identical run is a cache hit
+  prediction: "second `apr prepare-dataset` run is ≥10× faster than first"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-29" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    export APR_CACHE_DIR=/tmp/apr-ds-cache && rm -rf "$APR_CACHE_DIR"
+    t1=$( { time apr prepare-dataset tests/fixtures/big.jsonl \
+              --tokenizer tests/fixtures/tokenizer.json --max-seq-len 2048 \
+              -o /tmp/ds1 ; } 2>&1 | grep real | awk '{print $2}')
+    t2=$( { time apr prepare-dataset tests/fixtures/big.jsonl \
+              --tokenizer tests/fixtures/tokenizer.json --max-seq-len 2048 \
+              -o /tmp/ds2 ; } 2>&1 | grep real | awk '{print $2}')
+    python3 -c "
+    def to_s(t): m,s = t.replace('m',' ').replace('s','').split(); return float(m)*60+float(s)
+    assert to_s('$t1') >= 10 * to_s('$t2'), f't1={$t1!s} t2={$t2!s}'
+    "
+- id: FALSIFY-CRUX-D-29-002
+  rule: changing tokenizer busts the cache
+  prediction: "different tokenizer → cache miss → fresh tokenization"
+  test: |
+    set -euo pipefail
+    apr prepare-dataset tests/fixtures/big.jsonl --tokenizer tests/fixtures/tok1.json \
+      --max-seq-len 2048 --format json > /tmp/a.json
+    apr prepare-dataset tests/fixtures/big.jsonl --tokenizer tests/fixtures/tok2.json \
+      --max-seq-len 2048 --format json > /tmp/b.json
+    key_a=$(jq -r .cache_key /tmp/a.json); key_b=$(jq -r .cache_key /tmp/b.json)
+    [ "$key_a" != "$key_b" ]
+- id: FALSIFY-CRUX-D-29-003
+  rule: cache key is deterministic (same inputs → same key)
+  prediction: "two distinct runs with identical inputs produce the same cache_key"
+  test: |
+    set -euo pipefail
+    k1=$(apr prepare-dataset tests/fixtures/big.jsonl --tokenizer tests/fixtures/tok1.json \
+         --max-seq-len 2048 --format json | jq -r .cache_key)
+    k2=$(apr prepare-dataset tests/fixtures/big.jsonl --tokenizer tests/fixtures/tok1.json \
+         --max-seq-len 2048 --format json | jq -r .cache_key)
+    [ "$k1" = "$k2" ]
 
 proof_obligations:
+- type: parity
+  property: "apr prepare-dataset cache semantics match HF `datasets` Arrow cache"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "cache_key is deterministic hash of (dataset_fp, tokenizer_hash, max_seq_len, pack_mode)"
+- type: invariant
+  property: "changing any cache-key input invalidates the entry"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-d-29` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-d-29
   priority: medium
   auto_created: true

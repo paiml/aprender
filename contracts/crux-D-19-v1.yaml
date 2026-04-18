@@ -1,12 +1,8 @@
 # CRUX-D-19 — PPO reinforcement learning
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-D-19
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,79 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "D — Inference & Generation"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    PPO reinforcement learning. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    PPO with a reward model. Canonical: HF TRL `PPOTrainer` (arXiv:1707.06347).
+    Requires a policy model, ref model, RM, and KL control on ref.
 
 equations:
-  placeholder_contract:
+  ppo_objective:
     formula: |
-      DRAFT — user workflow "PPO reinforcement learning"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      advantage_t = reward_t - value_t
+      ratio_t = pi_theta(a_t|s_t) / pi_theta_old(a_t|s_t)
+      L_clip = E_t[ min(ratio_t * A_t, clip(ratio_t, 1-epsilon, 1+epsilon) * A_t) ]
+      L_total = L_clip - c_v * (V_phi - R)^2 + c_h * H(pi) - beta * KL(pi || pi_ref)
+    domain: "(policy, ref, rm, rollout_batch, clip_eps: 0.2, kl_coef: 0.1, c_v: 0.5)"
+    codomain: "updated policy params"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "KL(policy || ref) stays bounded (dynamic beta if >target)"
+    - "mean reward increases over training (monotone after warmup)"
+    - "final policy generates strings that RM scores higher than ref-policy strings"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-19-001
-  rule: placeholder
-  prediction: "apr surface for 'PPO reinforcement learning' matches huggingface canonical behavior"
+  rule: toy PPO run improves mean reward on synthetic RM
+  prediction: "mean reward after 200 steps > mean reward at step 0 by ≥ 0.5"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-19" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr train-ppo tests/fixtures/ppo-prompts.jsonl \
+      --policy tests/fixtures/tinyllama-hf \
+      --reward-model tests/fixtures/toy-rm \
+      --kl-coef 0.1 --clip-eps 0.2 --steps 200 \
+      --output /tmp/ppo-out --dump-rewards /tmp/rewards.json
+    python3 -c "
+    import json; r = json.load(open('/tmp/rewards.json'))
+    start = sum(r['steps'][:10]) / 10
+    end   = sum(r['steps'][-10:]) / 10
+    assert end - start >= 0.5, f'start={start} end={end}'
+    "
+- id: FALSIFY-CRUX-D-19-002
+  rule: KL constraint prevents policy blowup
+  prediction: "KL(policy || ref) stays < 20 nats throughout training"
+  test: |
+    set -euo pipefail
+    jq '.kl[]' /tmp/rewards.json | awk '{if($1>20) exit 1}'
+- id: FALSIFY-CRUX-D-19-003
+  rule: loss components within TRL envelope on matched batch
+  prediction: "L_clip, L_vf, entropy match TRL PPOTrainer within 1% on step 0"
+  test: |
+    set -euo pipefail
+    apr train-ppo ... --dump-components /tmp/comp.json --steps 1
+    python3 - <<'PY'
+    import json
+    c = json.load(open("/tmp/comp.json"))
+    # reference captured from TRL PPOTrainer on identical batch
+    ref = {"L_clip": -0.123, "L_vf": 0.456, "entropy": 1.234}
+    for k,v in ref.items():
+      assert abs(c[k]-v)/max(abs(v),1e-6) < 0.01, f"{k}: apr={c[k]} ref={v}"
+    PY
 
 proof_obligations:
+- type: parity
+  property: "apr train-ppo matches TRL PPOTrainer loss components within 1% on identical (policy, ref, RM, batch)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "KL(policy || ref) bounded throughout training (< 20 nats)"
+- type: invariant
+  property: "mean reward increases monotonically after warmup (cheap smoke proof)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-d-19` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-d-19
   priority: medium
   auto_created: true

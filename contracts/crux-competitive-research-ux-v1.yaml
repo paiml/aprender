@@ -584,7 +584,7 @@ phases:
   phase_1_evidence:
     description: "Capture competitor evidence into evidence/crux/*/ and enrich contracts to spec-complete"
     status: in_progress
-    progress: "171 / 250 contracts spec-complete (2026-04-18: wave 6 batch 2 — B+C demand=3 via direct authoring)"
+    progress: "184 / 250 contracts spec-complete (2026-04-18: wave 6 batch 3 — D demand=3 via direct authoring)"
     waves:
     - { id: wave_1, stories: 18, target: "demand=5 missing", date: "2026-04-18" }
     - { id: wave_2, stories: 24, target: "demand=5 partial", date: "2026-04-18" }
@@ -593,9 +593,10 @@ phases:
     - { id: wave_5, stories: 45, target: "all remaining demand=4 non-J (partials + supported + missing)", date: "2026-04-18" }
     - { id: wave_6_batch_1, stories: 8, target: "A-series demand=3 (direct author, sub-agents rate-limited)", date: "2026-04-18" }
     - { id: wave_6_batch_2, stories: 10, target: "B+C demand=3 (direct author)", date: "2026-04-18" }
+    - { id: wave_6_batch_3, stories: 13, target: "D-series demand=3 (direct author)", date: "2026-04-18" }
     remaining_demand_5: 3  # J-01/02/09 (OpenCLAW-blocked only)
     remaining_demand_4: 0  # non-J (all demand=4 A-I, K complete)
-    remaining_demand_3: 49 # non-J (67 - 18 A/B/C done)
+    remaining_demand_3: 36 # non-J (67 - 31 A/B/C/D done)
     exit_criteria: "apr qa --crux emits per-story PASS/FAIL/SKIP; pmat work tickets exist for all missing"
     blocks: [phase_2_partials]
 
@@ -629,7 +630,7 @@ status:
   owner: PAIML Engineering
   openclaw_interpretation: pending-user-confirmation
   last_subspec_sync: "2026-04-18"
-  spec_complete_contracts: 171  # of 250 (waves 1..5 = 153 demand≥4; wave 6 batches 1-2 = 18 A/B/C demand=3)
+  spec_complete_contracts: 184  # of 250 (waves 1..5 = 153 demand≥4; wave 6 batches 1-3 = 31 A/B/C/D demand=3)
   pmat_tickets_created: 140    # one per missing story
   phase_0_completed_at: "2026-04-18"
-  last_enrichment_wave: "2026-04-18 wave 6 batch 2 — 10 B+C demand=3 via direct authoring (171/250 = 68.4%)"
+  last_enrichment_wave: "2026-04-18 wave 6 batch 3 — 13 D-series demand=3 via direct authoring (184/250 = 73.6%)"

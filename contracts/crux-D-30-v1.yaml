@@ -1,12 +1,8 @@
 # CRUX-D-30 — Multi-task training loop
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-D-30
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,77 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "D — Inference & Generation"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Multi-task training loop. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Multi-task training: interleave batches from N datasets with per-task
+    sampling weights and per-task loss reduction. Canonical: HF
+    `interleave_datasets(datasets, probabilities=[...], stopping_strategy="all_exhausted")`
+    inside a Trainer loop with task-id-aware loss.
 
 equations:
-  placeholder_contract:
+  multitask_loop:
     formula: |
-      DRAFT — user workflow "Multi-task training loop"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      task_t ~ Categorical(probabilities)     # sample task per step
+      batch_t = next(task_t.iter)
+      loss_t = sum_k w_k * L_k(batch_t | task_id == k)
+      grad_step(loss_t)
+    domain: "(datasets: [Path], probabilities: [f32] summing to 1, task_weights: [f32])"
+    codomain: "single trained model with task-id-aware loss history"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "observed task frequencies → probabilities as n_steps → inf (law of large numbers)"
+    - "N=1 multitask loop is byte-equal to single-task training (identity check)"
+    - "deterministic under --seed (same task sequence)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-30-001
-  rule: placeholder
-  prediction: "apr surface for 'Multi-task training loop' matches huggingface canonical behavior"
+  rule: single-dataset multitask run ≡ single-task baseline
+  prediction: "apr train --datasets a.jsonl --probs 1.0 == apr train a.jsonl byte-for-byte (same seed)"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-30" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr train --datasets tests/fixtures/tiny-sft.jsonl --probs 1.0 --seed 42 \
+      --model tests/fixtures/tinyllama-hf --steps 5 -o /tmp/mt.out
+    apr train tests/fixtures/tiny-sft.jsonl --seed 42 \
+      --model tests/fixtures/tinyllama-hf --steps 5 -o /tmp/st.out
+    diff <(apr inspect /tmp/mt.out/model.safetensors --format json | jq -S .) \
+         <(apr inspect /tmp/st.out/model.safetensors --format json | jq -S .)
+- id: FALSIFY-CRUX-D-30-002
+  rule: observed task frequencies track probabilities
+  prediction: "with --probs 0.7,0.3 over 1000 steps, task-0 count in [650, 750]"
+  test: |
+    set -euo pipefail
+    apr train --datasets tests/fixtures/a.jsonl,tests/fixtures/b.jsonl \
+      --probs 0.7,0.3 --seed 42 --steps 1000 --dump-task-trace /tmp/trace.json \
+      --model tests/fixtures/tinyllama-hf -o /tmp/mt2
+    c0=$(jq '[.trace[] | select(.task_id==0)] | length' /tmp/trace.json)
+    python3 -c "assert 650 <= $c0 <= 750, $c0"
+- id: FALSIFY-CRUX-D-30-003
+  rule: deterministic task sequence under fixed seed
+  prediction: "two runs with --seed 42 produce identical task-id sequences"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr train --datasets tests/fixtures/a.jsonl,tests/fixtures/b.jsonl \
+        --probs 0.5,0.5 --seed 42 --steps 50 --dump-task-trace /tmp/tr$i.json \
+        --model tests/fixtures/tinyllama-hf -o /tmp/mt$i
+    done
+    diff <(jq '[.trace[].task_id]' /tmp/tr1.json) <(jq '[.trace[].task_id]' /tmp/tr2.json)
 
 proof_obligations:
+- type: parity
+  property: "apr train --datasets matches HF `interleave_datasets(probabilities=[...])` sampling distribution"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "N=1 multitask is byte-equal to single-task"
+- type: invariant
+  property: "task sequence deterministic under fixed seed"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-d-30` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-d-30
   priority: medium
   auto_created: true

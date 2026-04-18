@@ -1,12 +1,8 @@
 # CRUX-D-27 — Hyperparameter sweep ray/optuna
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-D-27
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,71 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "D — Inference & Generation"
   competitor: pytorch
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Hyperparameter sweep ray/optuna. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    HP sweep with ASHA / TPE samplers. Canonical: Ray Tune
+    `tune.run(..., scheduler=ASHAScheduler, search_alg=OptunaSearch)`.
+    Search space as YAML/TOML, per-trial artifacts, pareto/best JSON report.
 
 equations:
-  placeholder_contract:
+  hp_sweep:
     formula: |
-      DRAFT — user workflow "Hyperparameter sweep ray/optuna"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      trial_i ~ sampler(space)
+      metric_i = objective(trial_i.config)
+      best = argmin_i metric_i   # or argmax depending on direction
+      ASHA: prune trials where rung_t metric below bottom-η quantile of rung peers
+    domain: "(space: Map<String, Distribution>, n_trials: u32, sampler ∈ {random, tpe, bo}, scheduler ∈ {none, asha})"
+    codomain: "JSON {trials: [...], best: {config, metric}, pareto: [...]}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "best.metric ≤ every trial.metric (for minimization direction)"
+    - "|trials| ≤ n_trials (ASHA may prune, so can be less)"
+    - "deterministic under --seed (same config + seed → same trial sequence)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-27-001
-  rule: placeholder
-  prediction: "apr surface for 'Hyperparameter sweep ray/optuna' matches pytorch canonical behavior"
+  rule: best metric is the minimum across all completed trials
+  prediction: "best.metric == min(t.metric for t in trials if t.status=='completed')"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-27" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr sweep config/sweep.yaml --n-trials 10 --format json > /tmp/sweep.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/sweep.json'))
+    metrics = [t['metric'] for t in d['trials'] if t['status']=='completed']
+    assert d['best']['metric'] == min(metrics), (d['best']['metric'], min(metrics))
+    "
+- id: FALSIFY-CRUX-D-27-002
+  rule: sweep is deterministic under fixed seed
+  prediction: "two runs with --seed 42 produce identical trial configs"
+  test: |
+    set -euo pipefail
+    apr sweep config/sweep.yaml --seed 42 --n-trials 5 --format json | jq '[.trials[].config]' > /tmp/a.json
+    apr sweep config/sweep.yaml --seed 42 --n-trials 5 --format json | jq '[.trials[].config]' > /tmp/b.json
+    diff /tmp/a.json /tmp/b.json
+- id: FALSIFY-CRUX-D-27-003
+  rule: ASHA scheduler actually prunes trials
+  prediction: "with --scheduler asha, count(status=='pruned') > 0 on a 20-trial sweep"
+  test: |
+    set -euo pipefail
+    apr sweep config/sweep.yaml --scheduler asha --n-trials 20 --format json > /tmp/asha.json
+    pruned=$(jq '[.trials[] | select(.status=="pruned")] | length' /tmp/asha.json)
+    python3 -c "assert $pruned > 0, 'ASHA did not prune any trials'"
 
 proof_obligations:
+- type: parity
+  property: "apr sweep matches Ray Tune / Optuna search-algo + scheduler semantics for {random, tpe, asha}"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "best.metric is the optimum across completed trials"
+- type: invariant
+  property: "deterministic under --seed"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-d-27` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-d-27
   priority: medium
   auto_created: true

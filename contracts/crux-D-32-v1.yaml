@@ -1,12 +1,8 @@
 # CRUX-D-32 — Resume from HF Hub ckpt URL
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-D-32
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,79 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "D — Inference & Generation"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: partial
   description: >
-    Resume from HF Hub ckpt URL. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Resume training from a checkpoint stored on the Hub by URL/repo:rev.
+    Canonical: HF `Trainer.train(resume_from_checkpoint="user/repo@sha")`;
+    pulls optimizer+scheduler state, tokenizer, and config atomically.
 
 equations:
-  placeholder_contract:
+  resume_from_hub:
     formula: |
-      DRAFT — user workflow "Resume from HF Hub ckpt URL"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      url = parse("hf://user/repo@rev" | "https://huggingface.co/user/repo/...")
+      ckpt_dir = hf_hub_snapshot(url, files=["model.safetensors","optimizer.pt","scheduler.pt","trainer_state.json"])
+      resume(ckpt_dir)
+    domain: "(url: String, auth_token: Option<String>)"
+    codomain: "training run that continues from saved step with restored optimizer+scheduler+rng state"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "loss trajectory after resume matches single-run trajectory from same step (within optimizer numerics, 1e-5)"
+    - "step counter resumes from trainer_state.json.global_step (+1), not from 0"
+    - "rng state restored: next random.random() matches pre-pause value"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-32-001
-  rule: placeholder
-  prediction: "apr surface for 'Resume from HF Hub ckpt URL' matches huggingface canonical behavior"
+  rule: resumed run matches single-run loss trajectory
+  prediction: "|loss(resumed, step_N+k) - loss(single, step_N+k)| ≤ 1e-5 for k in [1..5]"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-32" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    # single-run reference: train 10 steps
+    apr train tests/fixtures/tiny-sft.jsonl --seed 42 --steps 10 \
+      --model tests/fixtures/tinyllama-hf --dump-loss /tmp/single.json -o /tmp/single
+    # paused-run: train 5, push to hub, resume 5 more
+    apr train tests/fixtures/tiny-sft.jsonl --seed 42 --steps 5 \
+      --model tests/fixtures/tinyllama-hf -o /tmp/part1
+    apr push /tmp/part1 hf://testorg/tmp-ckpt@v1 --include-optimizer
+    apr train tests/fixtures/tiny-sft.jsonl --seed 42 --steps 5 \
+      --resume-from hf://testorg/tmp-ckpt@v1 --dump-loss /tmp/resumed.json -o /tmp/resumed
+    python3 -c "
+    import json
+    s = json.load(open('/tmp/single.json'))['steps']
+    r = json.load(open('/tmp/resumed.json'))['steps']
+    for k in range(5):
+      assert abs(s[5+k]['loss'] - r[k]['loss']) < 1e-5, (s[5+k], r[k])
+    "
+- id: FALSIFY-CRUX-D-32-002
+  rule: step counter resumes from saved global_step
+  prediction: "trainer_state.json.global_step after resume == pre-pause + N"
+  test: |
+    set -euo pipefail
+    gs=$(jq .global_step /tmp/resumed/trainer_state.json)
+    python3 -c "assert $gs == 10, $gs"
+- id: FALSIFY-CRUX-D-32-003
+  rule: invalid URL fails fast with actionable error
+  prediction: "apr train --resume-from hf://nonexistent/repo exits non-zero with HF error"
+  test: |
+    set -euo pipefail
+    ! apr train tests/fixtures/tiny-sft.jsonl --resume-from hf://nonexistent/repo@v1 \
+      --model tests/fixtures/tinyllama-hf --steps 1 -o /tmp/fail 2>/tmp/err
+    grep -E "not found|404|unreachable" /tmp/err
 
 proof_obligations:
+- type: parity
+  property: "apr train --resume-from hf://repo@rev matches HF Trainer `resume_from_checkpoint` semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "resumed loss trajectory matches single-run trajectory within 1e-5"
+- type: invariant
+  property: "global_step and rng state restored exactly"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-d-32` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-d-32
   priority: medium
-  auto_created: false
+  auto_created: true
