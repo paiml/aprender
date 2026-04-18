@@ -15,7 +15,7 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v4.5): 8 SHIPPED / 4 PARTIAL / 9 MISSING.
+# Current counts (2026-04-18 v4.6): 9 SHIPPED / 3 PARTIAL / 9 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 5 more MISSING→{SHIPPED,PARTIAL} flips to close the epic.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -75,11 +75,11 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed)
   total_rows: 21
   counts:
-    shipped: 8
-    partial: 4
+    shipped: 9
+    partial: 3
     missing: 9
   closure_criterion:
     description: >
@@ -251,19 +251,22 @@ categories:
 
   - id: builtin-tools-web
     name: Built-in tools — WebFetch / WebSearch
-    status: PARTIAL
-    detail: NetworkTool + BrowserTool exist, not registered in build_code_tools
+    status: SHIPPED  # v4.6 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "PMAT-CODE-WEB-TOOLS-001 closed: new `register_web_tools` helper in agent/code.rs now wires NetworkTool (+ BrowserTool under `agents-browser` feature) into the default toolbelt when privacy != Sovereign AND `allowed_hosts` is non-empty. Sovereign tier always blocks regardless of allowed_hosts (Poka-Yoke — tier wins over config). New `AgentManifest.allowed_hosts: Vec<String>` field carries the allowlist. 4 unit tests cover the full matrix: Sovereign+allowlist blocked, Standard+empty blocked, Standard+allowlist registers, Private+allowlist registers." }
     evidence_paths:
+      - crates/aprender-orchestrate/src/agent/code.rs
+      - crates/aprender-orchestrate/src/agent/manifest.rs
       - crates/aprender-orchestrate/src/agent/tool/network.rs
       - crates/aprender-orchestrate/src/agent/tool/browser.rs
+    evidence_symbols: [register_web_tools, NetworkTool, BrowserTool, allowed_hosts]
+    remaining_gaps:
+      - "Dedicated WebSearch tool (separate from WebFetch). Currently covered by NetworkTool via caller-constructed search API URLs. Deferred to PMAT-CODE-WEB-SEARCH-001 (P2)."
     cross_check_command: |
-      # Tool structs exist (count should be >=2), but registrations in
-      # build_code_tools MUST remain zero until PMAT-CODE-WEB-TOOLS-001 lands
-      pmat query --literal "pub struct NetworkTool" --limit 3 2>/dev/null \
-        | grep -c "agent/tool/network.rs"
-    expected_min_hits: 1
-    ticket: PMAT-CODE-WEB-TOOLS-001
-    priority: P1
+      grep -cE "(fn register_web_tools|NetworkTool::new|BrowserTool::new)" crates/aprender-orchestrate/src/agent/code.rs
+    expected_min_hits: 3
+    ticket: null  # PMAT-CODE-WEB-TOOLS-001 closed
+    priority: null
 
   - id: builtin-tool-notebook
     name: Built-in tools — Notebook edit
@@ -483,7 +486,7 @@ priority_buckets:
     - worktree-isolation
     # custom-agents: closed v4.5 (2026-04-18) — retained in `categories` for history
     - permission-modes
-    - builtin-tools-web
+    # builtin-tools-web: closed v4.6 (2026-04-18) — retained in `categories` for history
     - session-management   # scope reduced: only --continue/--fork/--name remain
     - configuration-ladder
     - non-interactive-mode
@@ -592,3 +595,26 @@ change_log:
       (≥9 SHIPPED / ≤4 MISSING) is now 1 row away — any one of skills,
       worktree-isolation, permission-modes, or any PARTIAL→SHIPPED flip
       closes the epic.
+  - date: '2026-04-18'
+    revision: '4.6'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-WEB-TOOLS-001 closed — builtin-tools-web row flipped
+      PARTIAL → SHIPPED. New `register_web_tools` helper in
+      agent/code.rs wires NetworkTool (+ BrowserTool under
+      `agents-browser` feature) into `build_code_tools` behind a
+      privacy-tier gate: Sovereign tier always blocks regardless of
+      config (Poka-Yoke — tier wins over allow-list), and Standard /
+      Private tiers register only when `allowed_hosts` is non-empty
+      (explicit opt-in, not silent on-by-default). New
+      `AgentManifest.allowed_hosts: Vec<String>` TOML field carries
+      the allowlist. 4 unit tests cover the matrix: Sovereign+allowlist
+      blocked, Standard+empty blocked, Standard+allowlist registers,
+      Private+allowlist registers. **Headline 8/4/9 → 9/3/9 over 21
+      rows**. SHIPPED cap (≥9) is MET; MISSING cap (≤4) still has
+      9 rows, so epic PMAT-CODE-PARITY-MATRIX-001 remains open — 5
+      more MISSING→{SHIPPED,PARTIAL} flips needed to clear the
+      MISSING half of the threshold. Priority order for those 5:
+      skills (P1), worktree-isolation (P1), permission-modes (P1),
+      then 2 of the 6 P2 deferred rows (status-line / notebook /
+      monitor / plugins / ide / org-policy).

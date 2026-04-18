@@ -449,7 +449,37 @@ fn build_code_tools(manifest: &AgentManifest) -> ToolRegistry {
         tools.register(Box::new(crate::agent::tool::rag::RagTool::new(oracle, 5)));
     }
 
+    // PMAT-CODE-WEB-TOOLS-001: register NetworkTool behind the privacy-tier
+    // gate. Sovereign tier always blocks (Poka-Yoke); Standard/Private
+    // tiers register iff `allowed_hosts` is non-empty (explicit opt-in).
+    register_web_tools(&mut tools, manifest);
+
     tools
+}
+
+/// Register NetworkTool (+ BrowserTool when the `agents-browser` feature is
+/// on) when the manifest declares a non-Sovereign privacy tier and a
+/// non-empty `allowed_hosts` list.
+fn register_web_tools(tools: &mut ToolRegistry, manifest: &AgentManifest) {
+    use crate::serve::backends::PrivacyTier;
+
+    if matches!(manifest.privacy, PrivacyTier::Sovereign) {
+        return;
+    }
+    if manifest.allowed_hosts.is_empty() {
+        return;
+    }
+
+    tools.register(Box::new(crate::agent::tool::network::NetworkTool::new(
+        manifest.allowed_hosts.clone(),
+    )));
+
+    #[cfg(feature = "agents-browser")]
+    {
+        tools.register(Box::new(crate::agent::tool::browser::BrowserTool::new(
+            manifest.privacy,
+        )));
+    }
 }
 
 pub use super::code_prompts::exit_code;
