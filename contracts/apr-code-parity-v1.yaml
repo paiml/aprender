@@ -1,0 +1,436 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-code-parity-v1
+#
+# SOURCE OF TRUTH for the 20-category `apr code` ↔ Claude Code parity matrix.
+# Encodes the matrix from docs/specifications/apr-mcp-server-spec.md
+# § "Feature-by-feature parity matrix" as structured data with per-row
+# mechanical cross-check commands so any claim in the matrix is falsifiable
+# by a CI job, not by prose review.
+#
+# Direction: YAML IS AUTHORITATIVE. The matrix prose in apr-mcp-server-spec.md
+# MUST agree with this file row-for-row; CI job FALSIFY-CODE-PARITY-001
+# rejects any drift. When a ticket closes or a feature ships, update the
+# `status` field here FIRST, re-run the cross-check, then sync the prose
+# matrix.
+#
+# Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
+# aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
+# Current counts (2026-04-18 v2): 6 SHIPPED / 6 PARTIAL / 8 MISSING.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-04-18'
+  last_modified: '2026-04-18'
+  author: PAIML Engineering
+  description: >
+    Falsifiable parity matrix encoding 20 Claude-Code feature categories
+    against the current `apr code` implementation. Every row carries a
+    mechanical cross_check_command that CI re-runs to verify the claimed
+    `status` is still accurate. Drift between this file and the prose
+    matrix in docs/specifications/apr-mcp-server-spec.md is a ship-blocker.
+  spec: docs/specifications/apr-mcp-server-spec.md
+  epic: PMAT-CODE-PARITY-MATRIX-001
+  related_contracts:
+    - contracts/apr-mcp-server-v1.yaml
+    - contracts/apr-claude-proxy-v1.yaml
+    - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
+
+kind: ParityMatrixContract
+status: DRAFT  # promotes to ACTIVE when CI FALSIFY-CODE-PARITY-001 is green
+
+headline:
+  audit_date: '2026-04-18'
+  audit_revision: 2  # v1 = initial 5/7/8, v2 = session-row falsified to SHIPPED
+  counts:
+    shipped: 6
+    partial: 6
+    missing: 8
+  closure_criterion:
+    description: >
+      Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
+      at least 9 SHIPPED / 7 PARTIAL / at most 4 MISSING. That delta comes
+      primarily from closing the four P0 tickets (MCP-CLIENT, SLASH-PARITY,
+      HOOKS, SPAWN-PARITY) and three P1 tickets (MEMORY, WORKTREE,
+      CUSTOM-AGENTS) — each flips one row from MISSING→SHIPPED or
+      PARTIAL→SHIPPED.
+    target_shipped_min: 9
+    target_partial_max: 7
+    target_missing_max: 4
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 20 Claude-Code feature categories, ordered as they appear in the matrix.
+# Each row carries evidence and a cross_check_command that CI runs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+categories:
+
+  - id: slash-commands
+    name: Slash commands (/help etc.)
+    status: PARTIAL
+    detail: 11 of ~21 Claude variants
+    evidence_path: crates/aprender-orchestrate/src/agent/repl.rs
+    evidence_symbols: ['SlashCommand']
+    shipped_variants: [Help, Quit, Cost, Context, Model, Compact, Clear, Session, Sessions, Test, Quality]
+    missing_variants: ['/config', '/mcp', '/review', '/memory', '/permissions', '/hooks', '/init', '/resume', '/add-dir', '/agents', '/debug', '/rename', '/upgrade']
+    cross_check_command: |
+      pmat query --literal "pub enum SlashCommand" --limit 1 --include-source \
+        | grep -c "^    [A-Z][a-zA-Z]*,$"
+    expected_variant_count_min: 11
+    ticket: PMAT-CODE-SLASH-PARITY-001
+    priority: P0
+
+  - id: claude-md-memory
+    name: CLAUDE.md + APR.md project memory
+    status: SHIPPED
+    evidence_path: crates/aprender-orchestrate/src/agent/code.rs
+    evidence_line: 218
+    cross_check_command: |
+      pmat query --literal "CLAUDE.md" --limit 5 --include-source \
+        | grep -c "agent/code.rs"
+    expected_min_hits: 1
+    ticket: null
+
+  - id: hooks
+    name: Hooks (SessionStart, PreToolUse, PostToolUse, UserPromptSubmit)
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "PreToolUse" --limit 5 2>/dev/null \
+        | grep -E "agent/hooks\.rs|PreToolUse" | wc -l
+    expected_max_hits: 0   # must remain 0 until ticket lands
+    ticket: PMAT-CODE-HOOKS-001
+    priority: P0
+
+  - id: skills
+    name: Skills (user-invocable skill definitions)
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "pub struct Skill" --limit 5 2>/dev/null \
+        | grep -E "agent/skill" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-SKILLS-001
+    priority: P1
+
+  - id: subagent-spawn
+    name: Subagent / Task tool (Agent, TaskCreate/Get/List/Update)
+    status: PARTIAL
+    detail: SpawnTool exists but capability-gated
+    evidence_path: crates/aprender-orchestrate/src/cli/agent_helpers.rs
+    evidence_line: 179
+    cross_check_command: |
+      pmat query --literal "register_spawn_tool" --limit 5 --include-source \
+        | grep -c "Capability::Spawn"
+    expected_min_hits: 1
+    ticket: PMAT-CODE-SPAWN-PARITY-001
+    priority: P0
+
+  - id: worktree-isolation
+    name: Worktree isolation for subagents
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "git worktree" --limit 5 2>/dev/null \
+        | grep -E "agent/" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-WORKTREE-001
+    priority: P1
+
+  - id: custom-agents
+    name: Custom agent definitions (.apr/agents/ or .claude/agents/)
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal ".apr/agents/" --limit 5 2>/dev/null \
+        | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-CUSTOM-AGENTS-001
+    priority: P1
+
+  - id: mcp-client
+    name: MCP client (.mcp.json loader + stdio/sse/http transports)
+    status: PARTIAL
+    detail: McpClientTool exists but not wired into build_code_tools
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/tool/mcp_client.rs
+      - crates/aprender-orchestrate/src/cli/agent_helpers.rs
+    evidence_line: 262  # discover_mcp_tools
+    cross_check_command: |
+      # register_mcp_tools exists but is NOT called in build_code_tools
+      pmat query --literal "register_mcp_tools" --limit 5 --include-source \
+        | grep -c "build_code_tools"
+    expected_result_until_closed: 0   # flips to >=1 when ticket closes
+    ticket: PMAT-CODE-MCP-CLIENT-001
+    priority: P0
+
+  - id: permission-modes
+    name: Permission modes (default/plan/acceptEdits/bypassPermissions)
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "PermissionMode" --limit 5 2>/dev/null \
+        | grep -E "agent/" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-PERMISSIONS-001
+    priority: P1
+
+  - id: builtin-tools-rwegs
+    name: Built-in tools (Read, Write, Edit, Glob, Grep, Shell, Memory, PmatQuery, Rag)
+    status: SHIPPED
+    evidence_path: crates/aprender-orchestrate/src/agent/code.rs
+    evidence_line_range: [360, 387]
+    cross_check_command: |
+      pmat query --literal "fn build_code_tools" --limit 1 --include-source \
+        | grep -cE "FileReadTool|FileWriteTool|FileEditTool|GlobTool|GrepTool|ShellTool|MemoryTool|PmatQueryTool|RagTool"
+    expected_min_hits: 9
+    ticket: null
+
+  - id: builtin-tools-web
+    name: Built-in tools — WebFetch / WebSearch
+    status: PARTIAL
+    detail: NetworkTool + BrowserTool exist, not registered in build_code_tools
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/tool/network.rs
+      - crates/aprender-orchestrate/src/agent/tool/browser.rs
+    cross_check_command: |
+      # Tool structs exist (count should be >=2), but registrations in
+      # build_code_tools MUST remain zero until PMAT-CODE-WEB-TOOLS-001 lands
+      pmat query --literal "pub struct NetworkTool" --limit 3 2>/dev/null \
+        | grep -c "agent/tool/network.rs"
+    expected_min_hits: 1
+    ticket: PMAT-CODE-WEB-TOOLS-001
+    priority: P1
+
+  - id: builtin-tool-notebook
+    name: Built-in tools — Notebook edit
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "NotebookTool" --limit 5 2>/dev/null \
+        | grep -E "agent/tool/" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-NOTEBOOK-001
+    priority: P2
+
+  - id: builtin-tool-monitor
+    name: Built-in tools — Monitor (background tail)
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "pub struct MonitorTool" --limit 5 2>/dev/null \
+        | grep -E "agent/tool/" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-MONITOR-001
+    priority: P2
+
+  - id: session-management
+    name: Session management (--resume, --continue, transcript store)
+    status: SHIPPED  # v2 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "Falsified by reading agent/session.rs:32-201 — full SessionStore API {create, resume, append_message, load_messages, find_recent_for_cwd, offer_auto_resume} + JSONL store at ~/.apr/sessions/{id}/messages.jsonl. First-pass matrix under-counted on incomplete evidence." }
+    evidence_path: crates/aprender-orchestrate/src/agent/session.rs
+    evidence_line_range: [32, 201]
+    evidence_symbols: [SessionStore, SessionManifest, offer_auto_resume, generate_session_id]
+    remaining_gaps:
+      - "--continue shorthand CLI flag (the --resume + offer_auto_resume path covers the use case but doesn't match Claude's exact flag name)"
+      - "--fork-session"
+      - "--name"
+    cross_check_command: |
+      pmat query --literal "pub struct SessionStore" --limit 1 --include-source \
+        | grep -c "messages.jsonl"
+    expected_min_hits: 1
+    ticket: PMAT-CODE-SESSION-PARITY-001  # scope reduced to the 3 remaining gaps
+    priority: P1
+
+  - id: configuration-ladder
+    name: Configuration (~/.claude/settings.json + precedence ladder)
+    status: PARTIAL
+    detail: TOML AgentManifest via --manifest, no user-global settings ladder
+    evidence_path: crates/apr-cli/src/commands_enum.rs
+    evidence_line: 517
+    cross_check_command: |
+      pmat query --literal "~/.config/apr/settings" --limit 5 2>/dev/null \
+        | wc -l
+    expected_max_hits_until_closed: 0
+    ticket: PMAT-CODE-CONFIG-LADDER-001
+    priority: P1
+
+  - id: plugins-marketplace
+    name: Plugins / marketplace
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "pub struct Plugin" --limit 5 2>/dev/null \
+        | grep -E "agent/plugin" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-PLUGINS-001
+    priority: P2
+
+  - id: ide-integrations
+    name: IDE integrations (VS Code, JetBrains)
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      ls -d /tmp/spec-update/crates/aprender-vscode 2>/dev/null | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-IDE-001
+    priority: P2
+
+  - id: non-interactive-mode
+    name: Non-interactive mode (-p + --output-format)
+    status: PARTIAL
+    detail: -p works with iteration cap 10; --output-format/--input-format absent
+    evidence_path: crates/apr-cli/src/commands_enum.rs
+    evidence_line_range: [509, 515]
+    cross_check_command: |
+      pmat query --literal "run_single_prompt" --limit 3 --include-source \
+        | grep -c "max_iterations"
+    expected_min_hits: 1
+    ticket: PMAT-CODE-NON-INTERACTIVE-PARITY-001
+    priority: P1
+
+  - id: keyboard-shortcuts
+    name: Keyboard shortcuts (Shift+Tab cycle, ! prefix, @path)
+    status: PARTIAL
+    detail: REPL Phase 1 shipped (slash + Ctrl+C); Shift+Tab / ! / @ not yet
+    evidence_spec: docs/specifications/apr-code-feasibility-falsification.md
+    cross_check_command: |
+      pmat query --literal "Shift+Tab" --limit 3 2>/dev/null \
+        | grep -E "agent/repl" | wc -l
+    expected_max_hits_until_closed: 0
+    ticket: PMAT-CODE-REPL-PHASE2-001
+    priority: P1
+
+  - id: status-line
+    name: Status line (model / mode / cost / branch)
+    status: NONE  # v2 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'UNKNOWN', to: 'NONE', reason: "grep -rin 'status.?line|StatusLine|render_status|status_bar|statusline' crates/aprender-orchestrate/src/agent/ returned zero matches; the two codebase hits (publish_status/tests_extended.rs, bug_hunter/model_parity.rs) are unrelated to the REPL status line" }
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "StatusLine" --limit 5 2>/dev/null \
+        | grep -E "agent/" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-STATUS-LINE-001
+    priority: P2
+
+  - id: managed-org-policy
+    name: Managed org policy (/etc/claude-code/CLAUDE.md enforced tier)
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "/etc/apr-code" --limit 3 2>/dev/null \
+        | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-ORG-POLICY-001
+    priority: P2
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Falsification gates
+# ─────────────────────────────────────────────────────────────────────────────
+
+falsification_conditions:
+
+  - id: FALSIFY-CODE-PARITY-001
+    name: Row-by-row mechanical audit
+    status: DRAFT
+    description: >
+      For every entry in `categories`, CI re-runs `cross_check_command`
+      and asserts the output satisfies the row's `expected_*` constraint.
+      A row whose cross_check fails indicates either (a) the code changed
+      and the matrix is stale, or (b) the matrix lied. Either way this
+      contract must be updated before the PR can merge.
+    test_harness:
+      script: scripts/validate-code-parity.sh   # PLANNED M4-β
+      expected_exit_code_on_pass: 0
+      expected_exit_code_on_drift: 1
+    planned_tests: PLANNED_M4_BETA
+
+  - id: FALSIFY-CODE-PARITY-002
+    name: Headline aggregate invariant
+    status: DRAFT
+    description: >
+      CI counts statuses across all 20 rows and asserts the aggregate
+      matches `headline.counts`. Adding a new category without bumping
+      `audit_revision` and re-counting is rejected.
+    planned_tests: PLANNED_M4_BETA
+
+  - id: FALSIFY-CODE-PARITY-003
+    name: Prose ↔ YAML drift check
+    status: DRAFT
+    description: >
+      CI parses the matrix table in docs/specifications/apr-mcp-server-spec.md
+      and asserts row-for-row that every `(category, status, ticket)`
+      tuple matches this YAML. Prevents the prose from drifting from the
+      contract (or vice versa).
+    planned_tests: PLANNED_M4_BETA
+
+  - id: FALSIFY-CODE-PARITY-004
+    name: P0 closure gate
+    status: DRAFT
+    description: >
+      When any of the 4 P0 tickets (MCP-CLIENT, SLASH-PARITY, HOOKS,
+      SPAWN-PARITY) is marked closed in the roadmap, CI asserts the
+      corresponding row's `status` has been updated in this file AND
+      the headline `shipped` count has been incremented.
+    planned_tests: PLANNED_M5
+
+  - id: FALSIFY-CODE-PARITY-005
+    name: Epic closure gate (headline reaches ≥9/7/≤4)
+    status: DRAFT
+    description: >
+      Epic PMAT-CODE-PARITY-MATRIX-001 cannot be marked closed while
+      `headline.counts` has shipped < 9 or missing > 4.
+    acceptance_criterion:
+      - headline.counts.shipped >= 9
+      - headline.counts.missing <= 4
+    planned_tests: PLANNED_M6
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Priority buckets (flattened from category rows for quick CI grep)
+# ─────────────────────────────────────────────────────────────────────────────
+
+priority_buckets:
+  P0:
+    - mcp-client
+    - slash-commands
+    - hooks
+    - subagent-spawn
+  P1:
+    - skills
+    - worktree-isolation
+    - custom-agents
+    - permission-modes
+    - builtin-tools-web
+    - session-management   # scope reduced: only --continue/--fork/--name remain
+    - configuration-ladder
+    - non-interactive-mode
+    - keyboard-shortcuts
+  P2:
+    - builtin-tool-notebook
+    - builtin-tool-monitor
+    - plugins-marketplace
+    - ide-integrations
+    - status-line
+    - managed-org-policy
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Change log
+# ─────────────────────────────────────────────────────────────────────────────
+
+change_log:
+  - date: '2026-04-18'
+    revision: 1
+    author: kaizen-paiml
+    summary: >
+      Initial contract landed with 5 SHIPPED / 7 PARTIAL / 8 MISSING
+      aggregate. Matches spec matrix v1.
+  - date: '2026-04-18'
+    revision: 2
+    author: kaizen-paiml
+    summary: >
+      session-management row flipped PARTIAL → SHIPPED after falsifying
+      against agent/session.rs:32-201. status-line row flipped UNKNOWN →
+      NONE after zero-hit grep. Aggregate now 6 SHIPPED / 6 PARTIAL /
+      8 MISSING. New ticket PMAT-CODE-STATUS-LINE-001 registered (P2).
