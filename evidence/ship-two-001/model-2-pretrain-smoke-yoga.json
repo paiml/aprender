@@ -1,0 +1,29 @@
+{
+  "test_id": "SMOKE-MODEL-2-PRETRAIN-YOGA-001",
+  "date": "2026-04-19T00:05Z",
+  "host": "yoga (RTX 4060 Laptop GPU, 8188 MiB)",
+  "binary": "/home/noah/src/aprender/target/release/apr",
+  "built_from": "main @ 9209383da (post-#882-merge, apr 0.31.0, cuda+training)",
+  "command": "apr pretrain --dataset /tmp/pretrain-smoke-yoga/dataset --tokenizer /tmp/pretrain-smoke-yoga/tokenizer --run-dir /tmp/pretrain-smoke-yoga/run --num-steps 20 --warmup-steps 5 --batch-size 4 --seq-length 128 --steps-per-epoch 5 --json",
+  "result": {
+    "status": "OK",
+    "detail": null,
+    "final_val_loss": 2.64,
+    "epochs_completed": 4,
+    "steps_recorded": 20,
+    "val_loss_history": [3.96, 3.52, 3.08, 2.64]
+  },
+  "cross_host_parity": {
+    "lambda_labs_history": [3.96, 3.52, 3.08, 2.64],
+    "yoga_history": [3.96, 3.52, 3.08, 2.64],
+    "byte_identical": true,
+    "discharges": "GATE-TRAIN-006 (seed=42 deterministic across hosts — x86_64 RTX 4090 ↔ x86_64 RTX 4060 Laptop)"
+  },
+  "gates_exercised": [
+    "GATE-TRAIN-005 (non-divergence — monotone decrease)",
+    "GATE-TRAIN-006 (seed=42 deterministic — cross-host parity)",
+    "INV-TRAIN-007 (numerical stability — no NaN/Inf)",
+    "GATE-TRAIN-008 (throughput in-range)"
+  ],
+  "gap": "Same synthetic drive as lambda-labs — no real 370M forward pass on the 8GB RTX 4060. Task #111 MVP will add the real forward pass; yoga will serve as the 8GB smoke-test host per model-2-pretrain-mvp-plan.md host assignment."
+}
