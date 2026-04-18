@@ -114,7 +114,7 @@ book/src/
 │   ├── apr-run.md
 │   ├── apr-serve.md
 │   ├── apr-chat.md
-│   └── ... (57 commands)
+│   └── ... (58 commands)
 ├── architecture/
 │   ├── monorepo-layout.md       # 70 crates, flat layout
 │   ├── crate-map.md             # dependency graph
