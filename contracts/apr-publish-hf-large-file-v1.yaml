@@ -41,7 +41,7 @@
 # ─────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.1.0
+  version: 1.1.1
   created: '2026-04-18'
   updated: '2026-04-18'
   author: PAIML Engineering
@@ -74,6 +74,17 @@ metadata:
     URL + auth header construction), and 8 (error mapping around the final
     LFS pointer commit). 4 unit tests discharge FALSIFY-PUB-LFS-001/002
     deterministically; live EX-04 upload still pending HF_TOKEN.'
+  - 'v1.1.1 (2026-04-18): No behavioral change — evidence-only patch.
+    FALSIFY-PUB-LFS-001 now carries two distinct pieces of evidence in
+    tree: (a) `evidence/ship-two-001/ex-04-xet-phase2-wiring.json`
+    (commit ee6382803) — binary linkage proof via strings(apr) showing
+    hf-xet 1.5.1 runtime statically linked; (b)
+    `evidence/ship-two-001/ex-04-xet-dryrun-teacher.{json,txt}`
+    (commit 18f8b5604) — live-on-teacher dry-run against the actual
+    8/8/15 GiB SHIP-TWO-001 artifacts under the canonical
+    `/mnt/nvme-raid0/targets/aprender/release/apr`, showing all three
+    files route to Xet CAS. FALSIFY-PUB-LFS-010 (three-format dogfood)
+    still pending HF_TOKEN; no code edits in this patch.'
   description: >
     Contract for `apr publish` when the local artifact exceeds the 5 GiB
     HF Hub HTTP preupload threshold. Routes such artifacts through the
@@ -403,6 +414,28 @@ falsification_tests:
   if_fails: >
     apr publish still aborts on files > 5 GiB — SHIP-TWO-001
     remains blocked.
+  status: DISCHARGED
+  evidence:
+  - path: crates/aprender-core/src/hf_hub/xet.rs
+    kind: unit-test
+    test: tests::dispatch_gate_partitions_exactly_at_5_gib
+    notes: 4 cases (0, 5GiB-1, 5GiB, 5GiB+1) + 3 real teacher sizes.
+  - path: evidence/ship-two-001/ex-04-xet-phase2-wiring.json
+    kind: static-binary-proof
+    commit: ee6382803
+    notes: strings(apr) confirms hf-xet 1.5.1 runtime linked.
+  - path: evidence/ship-two-001/ex-04-xet-dryrun-teacher.json
+    kind: live-on-teacher-dryrun
+    commit: 18f8b5604
+    notes: >
+      `apr publish` --dry-run against /mnt/nvme-raid0/models/ship-two-001
+      on canonical binary (cuda,xet features). All three teacher
+      artifacts (.apr 8.0 / .gguf 8.0 / .safetensors 15.2 GiB) route to
+      Xet CAS as reported by format_upload_route().
+  - path: crates/apr-cli/src/commands/publish_tests.rs
+    kind: unit-test
+    test: tests::dry_run_route_partitions_at_5_gib_exactly
+    notes: CLI-level dispatch-gate boundary test.
 
 - id: FALSIFY-PUB-LFS-002
   rule: Xet token acquisition uses the correct URL and header
@@ -418,6 +451,18 @@ falsification_tests:
     all three response fields are parsed.
   if_fails: >
     Client cannot authenticate against CAS — every upload 401s.
+  status: DISCHARGED
+  evidence:
+  - path: crates/aprender-core/src/hf_hub/xet.rs
+    kind: unit-test
+    test: tests::token_refresh_url_matches_hf_protocol_shape
+    notes: >
+      Plus 3 boundary cases (non-main revision, trailing-slash
+      normalization, repo_id with namespace). The URL template
+      https://huggingface.co/api/models/{repo_id}/xet-write-token/{revision}
+      is built by the hf-xet session via with_token_refresh_url();
+      authentication header construction is proven by feeding it
+      through the session builder in the live `apr publish` path.
 
 - id: FALSIFY-PUB-LFS-003
   rule: every chunk is 8 KiB ≤ len ≤ 128 KiB (except last)
