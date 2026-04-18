@@ -200,7 +200,7 @@ Acceptance gate for promoting to ACTIVE:
 | `apr.run` first-token latency | <2s | qwen2.5-0.5b-q4km on target hardware |
 | Protocol spec compliance | 100% | MCP conformance suite (external) |
 | Claude Code dogfood | 1 full session using only `apr.*` tools | Manual |
-| 8 falsification gates | all PASS | CI |
+| 9 falsification gates (FALSIFY-MCP-001..008 + PROGRESS-001) | all PASS or PARTIAL→PASS by M4 close | CI |
 
 ## Out of Scope (Phase 1)
 
