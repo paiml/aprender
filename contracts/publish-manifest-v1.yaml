@@ -1,11 +1,13 @@
 ---
 contract_id: F-PUBLISH-MANIFEST-001
 title: "Model artifact publish manifest — schema + verification (SHIP-TWO-001 shared)"
-version: 1.1.0
+version: 1.2.0
 status: DRAFT
 created: 2026-04-17
 updated: 2026-04-18
 changelog:
+  - v1.2.1 (2026-04-18): PM-008 revised — predominant GGML tensor type is now the authoritative signal (real llama.cpp quantize output has shipped with stale `general.file_type=0` despite fully Q4_K tensors; tensor dtypes are what inference engines actually use). `general.file_type` retained as fallback when tensor metadata is absent.
+  - v1.2.0 (2026-04-18): Added FALSIFY-PM-008 GGUF `general.file_type` Poka-Yoke. Parses GGUF metadata_kv and verifies the u32 file_type enum against the manifest's quantization string (q4_k_m→15, q6_k→18, etc.). Mirrors PM-007 for the third shipped format.
   - v1.1.0 (2026-04-18): Added FALSIFY-PM-007 safetensors header dtype Poka-Yoke. Catches manifests declaring `fp16` when the exported file has `F32` weight tensors (ship-blocker per SHIP-TWO-001 §12.7.2).
   - v1.0.0 (2026-04-17): Initial schema + FALSIFY-PM-001..006.
 parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
@@ -250,6 +252,47 @@ falsification_tests:
       Any weight tensor's header dtype differs from the dtype implied by
       manifest.quantization. (E.g., fp16 manifest but tensor.dtype == "F32".)
 
+  - id: FALSIFY-PM-008
+    name: "gguf_tensor_type_matches_quantization"
+    description: |
+      Poka-Yoke gate: when format == "gguf" AND --artifact is provided,
+      parse both the GGUF metadata_kv block and the tensor_metadata section,
+      and verify the **predominant non-float tensor type** matches the
+      manifest's `quantization` string per ggml-common.h `enum ggml_type`.
+
+      Authority order:
+        1. Predominant GGML tensor type (authoritative — this is what real
+           inference engines like llama.cpp consume).
+        2. `general.file_type` u32 from metadata_kv (fallback only — the
+           llama.cpp quantize tool has shipped artifacts with ftype=0 even
+           when all weights are Q4_K, so this field is advisory).
+
+      Canonical GGML tensor-type mapping (source: ggml-common.h):
+        q4_0  → 2          q4_k / q4_k_* → 12
+        q4_1  → 3          q5_k / q5_k_* → 13
+        q5_0  → 6          q6_k   → 14
+        q5_1  → 7          q8_k   → 15
+        q8_0  → 8          fp16   → 1
+        q2_k  → 10         bf16   → 30
+        q3_k* → 11         fp32   → 0
+
+      Predominant type = most common type excluding F32/F16/BF16/F64
+      (since bias/norm tensors are always kept in F32 even in quantized
+      models, the raw majority would be wrong).
+
+      Rationale: mirrors PM-007 for the third shipped format. A manifest
+      claiming `q4_k_m` against a GGUF whose predominant tensor type is
+      `Q6_K` is lying about the artifact. Catch at publish time, before
+      30+ GiB of mis-labelled bytes move across the network.
+    command: |
+      apr validate-manifest /path/to/manifest.yaml --artifact /path/to/model.gguf
+    expected: exit 0 (or the gguf tensor-type check passes with status PASS in JSON)
+    fails_if: |
+      The predominant non-float tensor type disagrees with the GGML type
+      implied by manifest.quantization. If no tensor metadata is readable
+      (synthetic / header-only fixtures), falls back to a strict
+      `general.file_type` match.
+
 # ─────────────────────────────────────────────────────────────
 # PROOF OBLIGATIONS
 # ─────────────────────────────────────────────────────────────
@@ -290,7 +333,8 @@ qa_gate:
     - FALSIFY-PM-005   # recipe sha256 matches
     - FALSIFY-PM-006   # parent chain terminates
   must_pass_if_format_safetensors_and_artifact_provided:
-    - FALSIFY-PM-007   # header dtype Poka-Yoke (SHIP-TWO-001 §12.7.2)
+    - FALSIFY-PM-007   # safetensors header dtype Poka-Yoke (SHIP-TWO-001 §12.7.2)
+    - FALSIFY-PM-008   # gguf general.file_type Poka-Yoke (SHIP-TWO-001 §12.7.2)
   regression_protection: |
     This contract must be re-evaluated any time:
       - manifest.yaml schema adds/removes a field

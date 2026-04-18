@@ -16,11 +16,18 @@
 //!   FALSIFY-PM-006       parent-chain — provenance.parent terminates at an HF model id
 //!   FALSIFY-PM-007       safetensors header dtype Poka-Yoke (only for format=safetensors
 //!                        + `--artifact`) — SHIP-TWO-001 §12.7.2 ship-blocker guard
+//!   FALSIFY-PM-008       GGUF tensor-type Poka-Yoke (only for format=gguf
+//!                        + `--artifact`) — same class of defense for the third
+//!                        shipped format. Predominant tensor type is
+//!                        authoritative; `general.file_type` is advisory (real
+//!                        llama.cpp quantize output has shipped with stale
+//!                        ftype=0 despite fully Q4_K tensors).
 
 use crate::error::CliError;
 use colored::Colorize;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -134,6 +141,9 @@ pub(crate) fn run(
     // FALSIFY-PM-007 — safetensors header dtype Poka-Yoke (SHIP-TWO-001 §12.7.2).
     // Applies only when format == "safetensors" AND --artifact is provided.
     results.push(check_safetensors_header_dtype(top, artifact));
+    // FALSIFY-PM-008 — GGUF `general.file_type` Poka-Yoke.
+    // Applies only when format == "gguf" AND --artifact is provided.
+    results.push(check_gguf_file_type(top, artifact));
 
     let any_fail = results.iter().any(|r| r.verdict == "FAIL");
     let overall = if any_fail { "FAIL" } else { "PASS" };
@@ -637,6 +647,456 @@ fn read_safetensors_header_dtypes(path: &Path) -> Result<Vec<(String, String)>, 
 }
 
 // ─────────────────────────────────────────────────────────────
+// FALSIFY-PM-008 — GGUF `general.file_type` Poka-Yoke
+// ─────────────────────────────────────────────────────────────
+// Mirrors PM-007 for the third shipped format. GGUF stores
+// `general.file_type` as a u32 whose value matches llama.cpp's
+// LLAMA_FTYPE_MOSTLY_* enum. A manifest declaring quantization=q4_k_m
+// against a file whose file_type != 15 is lying about the artifact —
+// catch it before upload.
+
+fn check_gguf_file_type(top: &serde_yaml::Mapping, artifact: Option<&Path>) -> FalsifyResult {
+    let format = get_str(top, "format").unwrap_or_default();
+    if format != "gguf" {
+        return FalsifyResult {
+            id: "FALSIFY-PM-008",
+            verdict: "DEFERRED",
+            detail: format!("format={format} — not gguf; skip file_type gate"),
+        };
+    }
+    let Some(path) = artifact else {
+        return FalsifyResult {
+            id: "FALSIFY-PM-008",
+            verdict: "DEFERRED",
+            detail: "no --artifact provided for gguf file_type check".into(),
+        };
+    };
+    let quant = get_str(top, "quantization").unwrap_or_default();
+    let expected_tensor = expected_ggml_tensor_type(&quant);
+    let expected_ftype_val = expected_gguf_ftype(&quant);
+    if expected_tensor.is_none() && expected_ftype_val.is_none() {
+        return FalsifyResult {
+            id: "FALSIFY-PM-008",
+            verdict: "DEFERRED",
+            detail: format!("unknown quantization '{quant}' — cannot check file_type"),
+        };
+    }
+
+    let sig = match read_gguf_signature(path) {
+        Ok(s) => s,
+        Err(e) => {
+            return FalsifyResult {
+                id: "FALSIFY-PM-008",
+                verdict: "FAIL",
+                detail: format!("read gguf {}: {e}", path.display()),
+            };
+        }
+    };
+
+    // Authoritative signal: predominant tensor type (what the file actually contains).
+    // `general.file_type` is advisory and frequently stale in real-world GGUFs —
+    // llama.cpp's own quantize tool has shipped artifacts with ftype=0 despite
+    // quantized tensors, so tensor types are the source of truth.
+    if let Some(observed) = predominant_quant_type(&sig.tensor_types) {
+        if let Some(exp) = expected_tensor {
+            if observed == exp {
+                let ftype_note = match sig.ftype {
+                    Some(ft) if Some(ft) == expected_ftype_val => String::new(),
+                    Some(ft) => {
+                        format!(
+                            " (note: general.file_type={ft}={} is stale)",
+                            gguf_ftype_name(ft)
+                        )
+                    }
+                    None => String::new(),
+                };
+                return FalsifyResult {
+                    id: "FALSIFY-PM-008",
+                    verdict: "PASS",
+                    detail: format!(
+                        "predominant tensor type = {observed} ({}) matches quantization '{quant}'{ftype_note}",
+                        ggml_type_name(observed)
+                    ),
+                };
+            }
+            return FalsifyResult {
+                id: "FALSIFY-PM-008",
+                verdict: "FAIL",
+                detail: format!(
+                    "manifest declares '{quant}' (ggml type {exp} = {}) but predominant tensor type is {observed} = {}",
+                    ggml_type_name(exp),
+                    ggml_type_name(observed)
+                ),
+            };
+        }
+    }
+
+    // Fallback: header-level general.file_type (used when the file has no tensor
+    // metadata, e.g. synthetic fixtures in unit tests).
+    let Some(expected_ftype) = expected_ftype_val else {
+        return FalsifyResult {
+            id: "FALSIFY-PM-008",
+            verdict: "FAIL",
+            detail: format!(
+                "no tensor types in {} and no ftype mapping for quant '{quant}'",
+                path.display()
+            ),
+        };
+    };
+    match sig.ftype {
+        None => FalsifyResult {
+            id: "FALSIFY-PM-008",
+            verdict: "FAIL",
+            detail: "general.file_type not found in GGUF metadata".into(),
+        },
+        Some(observed) if observed == expected_ftype => FalsifyResult {
+            id: "FALSIFY-PM-008",
+            verdict: "PASS",
+            detail: format!(
+                "general.file_type = {observed} ({}) matches quantization '{quant}'",
+                gguf_ftype_name(observed)
+            ),
+        },
+        Some(observed) => FalsifyResult {
+            id: "FALSIFY-PM-008",
+            verdict: "FAIL",
+            detail: format!(
+                "manifest declares '{quant}' (ftype {expected_ftype} = {}) but header has ftype {observed} = {}",
+                gguf_ftype_name(expected_ftype),
+                gguf_ftype_name(observed)
+            ),
+        },
+    }
+}
+
+/// Map manifest `quantization` strings to GGML tensor type codes
+/// (source: ggml-common.h `enum ggml_type`). Coarser than `expected_gguf_ftype`:
+/// Q4_K_M and Q4_K_S both materialize as `GGML_TYPE_Q4_K = 12` at the tensor
+/// level — the "M"/"S" distinction is about WHICH tensors get Q6_K/Q5_K/Q4_K
+/// mixed in, not the per-tensor code.
+fn expected_ggml_tensor_type(quant: &str) -> Option<u32> {
+    match quant.to_ascii_lowercase().as_str() {
+        "fp32" | "f32" => Some(0),
+        "fp16" | "f16" => Some(1),
+        "q4_0" => Some(2),
+        "q4_1" => Some(3),
+        "q5_0" => Some(6),
+        "q5_1" => Some(7),
+        "q8_0" => Some(8),
+        "q8_1" => Some(9),
+        "q2_k" | "q2_k_s" => Some(10),
+        "q3_k" | "q3_k_s" | "q3_k_m" | "q3_k_l" => Some(11),
+        "q4_k" | "q4_k_s" | "q4_k_m" => Some(12),
+        "q5_k" | "q5_k_s" | "q5_k_m" => Some(13),
+        "q6_k" => Some(14),
+        "q8_k" => Some(15),
+        "iq2_xxs" => Some(16),
+        "iq2_xs" => Some(17),
+        "iq3_xxs" | "iq3_xs" => Some(18),
+        "iq1_s" => Some(19),
+        "iq4_nl" => Some(20),
+        "iq3_s" | "iq3_m" => Some(21),
+        "iq2_s" | "iq2_m" => Some(22),
+        "iq4_xs" => Some(23),
+        "iq1_m" => Some(29),
+        "bf16" | "bfloat16" => Some(30),
+        _ => None,
+    }
+}
+
+fn ggml_type_name(t: u32) -> &'static str {
+    match t {
+        0 => "F32",
+        1 => "F16",
+        2 => "Q4_0",
+        3 => "Q4_1",
+        6 => "Q5_0",
+        7 => "Q5_1",
+        8 => "Q8_0",
+        9 => "Q8_1",
+        10 => "Q2_K",
+        11 => "Q3_K",
+        12 => "Q4_K",
+        13 => "Q5_K",
+        14 => "Q6_K",
+        15 => "Q8_K",
+        16 => "IQ2_XXS",
+        17 => "IQ2_XS",
+        18 => "IQ3_XXS",
+        19 => "IQ1_S",
+        20 => "IQ4_NL",
+        21 => "IQ3_S",
+        22 => "IQ2_S",
+        23 => "IQ4_XS",
+        24 => "I8",
+        25 => "I16",
+        26 => "I32",
+        27 => "I64",
+        28 => "F64",
+        29 => "IQ1_M",
+        30 => "BF16",
+        _ => "UNKNOWN",
+    }
+}
+
+/// Pick the "predominant" quantization type from a tensor-type histogram.
+/// Returns the most common non-float type if any weights are quantized; else the
+/// most common float type. Returns None only when the map is empty.
+///
+/// Rationale: bias/norm tensors are ALWAYS kept in F32 even in Q4_K_M models,
+/// so raw mode would always pick F32 and give the wrong answer.
+fn predominant_quant_type(counts: &HashMap<u32, usize>) -> Option<u32> {
+    const FLOAT_TYPES: &[u32] = &[0, 1, 28, 30]; // F32, F16, F64, BF16
+    let max_non_float = counts
+        .iter()
+        .filter(|(t, _)| !FLOAT_TYPES.contains(t))
+        .max_by_key(|(_, n)| *n)
+        .map(|(t, _)| *t);
+    if max_non_float.is_some() {
+        return max_non_float;
+    }
+    counts.iter().max_by_key(|(_, n)| *n).map(|(t, _)| *t)
+}
+
+struct GgufSignature {
+    ftype: Option<u32>,
+    tensor_types: HashMap<u32, usize>,
+}
+
+/// Map manifest `quantization` strings to llama.cpp `LLAMA_FTYPE_MOSTLY_*` u32s.
+/// Source of truth: llama.cpp `llama.h` enum `llama_ftype`.
+fn expected_gguf_ftype(quant: &str) -> Option<u32> {
+    match quant.to_ascii_lowercase().as_str() {
+        "fp32" | "f32" | "all_f32" => Some(0),
+        "fp16" | "f16" | "mostly_f16" => Some(1),
+        "q4_0" => Some(2),
+        "q4_1" => Some(3),
+        "q8_0" => Some(7),
+        "q5_0" => Some(8),
+        "q5_1" => Some(9),
+        "q2_k" => Some(10),
+        "q3_k_s" => Some(11),
+        "q3_k_m" => Some(12),
+        "q3_k_l" => Some(13),
+        "q4_k_s" => Some(14),
+        "q4_k_m" | "q4_k" => Some(15),
+        "q5_k_s" => Some(16),
+        "q5_k_m" | "q5_k" => Some(17),
+        "q6_k" => Some(18),
+        "iq2_xxs" => Some(19),
+        "iq2_xs" => Some(20),
+        "q2_k_s" => Some(21),
+        "iq3_xs" | "iq3_xxs" => Some(23),
+        "iq1_s" => Some(24),
+        "iq4_nl" => Some(25),
+        "iq3_s" => Some(26),
+        "iq3_m" => Some(27),
+        "iq2_s" => Some(28),
+        "iq2_m" => Some(29),
+        "iq4_xs" => Some(30),
+        "iq1_m" => Some(31),
+        "bf16" | "bfloat16" => Some(32),
+        _ => None,
+    }
+}
+
+fn gguf_ftype_name(ftype: u32) -> &'static str {
+    match ftype {
+        0 => "ALL_F32",
+        1 => "MOSTLY_F16",
+        2 => "MOSTLY_Q4_0",
+        3 => "MOSTLY_Q4_1",
+        7 => "MOSTLY_Q8_0",
+        8 => "MOSTLY_Q5_0",
+        9 => "MOSTLY_Q5_1",
+        10 => "MOSTLY_Q2_K",
+        11 => "MOSTLY_Q3_K_S",
+        12 => "MOSTLY_Q3_K_M",
+        13 => "MOSTLY_Q3_K_L",
+        14 => "MOSTLY_Q4_K_S",
+        15 => "MOSTLY_Q4_K_M",
+        16 => "MOSTLY_Q5_K_S",
+        17 => "MOSTLY_Q5_K_M",
+        18 => "MOSTLY_Q6_K",
+        19 => "MOSTLY_IQ2_XXS",
+        20 => "MOSTLY_IQ2_XS",
+        21 => "MOSTLY_Q2_K_S",
+        23 => "MOSTLY_IQ3_XXS",
+        24 => "MOSTLY_IQ1_S",
+        25 => "MOSTLY_IQ4_NL",
+        26 => "MOSTLY_IQ3_S",
+        27 => "MOSTLY_IQ3_M",
+        28 => "MOSTLY_IQ2_S",
+        29 => "MOSTLY_IQ2_M",
+        30 => "MOSTLY_IQ4_XS",
+        31 => "MOSTLY_IQ1_M",
+        32 => "MOSTLY_BF16",
+        _ => "UNKNOWN",
+    }
+}
+
+/// Read the GGUF header + tensor-metadata section, returning:
+///   - optional `general.file_type` (advisory; frequently stale in real files)
+///   - histogram of GGML tensor-type codes → counts (authoritative)
+///
+/// Format: magic(4) + version(u32) + tensor_count(u64) + kv_count(u64) +
+/// kv_entries + tensor_metadata. Each kv: key_len(u64) + key(utf-8) +
+/// value_type(u32) + value. Each tensor_metadata: name_len(u64) + name(utf-8)
+/// + n_dims(u32) + dims(n_dims*u64) + type(u32) + offset(u64).
+fn read_gguf_signature(path: &Path) -> Result<GgufSignature, String> {
+    let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut magic = [0u8; 4];
+    f.read_exact(&mut magic)
+        .map_err(|e| format!("read magic: {e}"))?;
+    if &magic != b"GGUF" {
+        return Err(format!("bad magic: {magic:?} (expected GGUF)"));
+    }
+    let mut u32buf = [0u8; 4];
+    let mut u64buf = [0u8; 8];
+    f.read_exact(&mut u32buf)
+        .map_err(|e| format!("read version: {e}"))?;
+    let version = u32::from_le_bytes(u32buf);
+    if !(1..=3).contains(&version) {
+        return Err(format!("unsupported GGUF version {version}"));
+    }
+    f.read_exact(&mut u64buf)
+        .map_err(|e| format!("read tensor_count: {e}"))?;
+    let tensor_count = u64::from_le_bytes(u64buf);
+    const MAX_TENSOR_COUNT: u64 = 100_000;
+    if tensor_count > MAX_TENSOR_COUNT {
+        return Err(format!(
+            "tensor_count {tensor_count} exceeds sane limit {MAX_TENSOR_COUNT}"
+        ));
+    }
+    f.read_exact(&mut u64buf)
+        .map_err(|e| format!("read kv_count: {e}"))?;
+    let kv_count = u64::from_le_bytes(u64buf);
+    const MAX_KV_COUNT: u64 = 10_000;
+    if kv_count > MAX_KV_COUNT {
+        return Err(format!(
+            "kv_count {kv_count} exceeds sane limit {MAX_KV_COUNT}"
+        ));
+    }
+
+    let mut ftype: Option<u32> = None;
+    for _ in 0..kv_count {
+        f.read_exact(&mut u64buf)
+            .map_err(|e| format!("read key_len: {e}"))?;
+        let key_len = u64::from_le_bytes(u64buf);
+        if key_len > 1024 {
+            return Err(format!("key_len {key_len} > 1024"));
+        }
+        let mut key_buf = vec![0u8; key_len as usize];
+        f.read_exact(&mut key_buf)
+            .map_err(|e| format!("read key: {e}"))?;
+        let key = String::from_utf8(key_buf).map_err(|e| format!("key utf8: {e}"))?;
+        f.read_exact(&mut u32buf)
+            .map_err(|e| format!("read value_type for {key}: {e}"))?;
+        let value_type = u32::from_le_bytes(u32buf);
+        if key == "general.file_type" && value_type == 4 {
+            f.read_exact(&mut u32buf)
+                .map_err(|e| format!("read file_type u32: {e}"))?;
+            ftype = Some(u32::from_le_bytes(u32buf));
+        } else {
+            skip_gguf_value(&mut f, value_type)
+                .map_err(|e| format!("skip value for key {key}: {e}"))?;
+        }
+    }
+
+    let mut tensor_types: HashMap<u32, usize> = HashMap::new();
+    for _ in 0..tensor_count {
+        f.read_exact(&mut u64buf)
+            .map_err(|e| format!("read tensor name_len: {e}"))?;
+        let name_len = u64::from_le_bytes(u64buf);
+        if name_len > 1024 {
+            return Err(format!("tensor name_len {name_len} > 1024"));
+        }
+        let mut name_buf = vec![0u8; name_len as usize];
+        f.read_exact(&mut name_buf)
+            .map_err(|e| format!("read tensor name: {e}"))?;
+        f.read_exact(&mut u32buf)
+            .map_err(|e| format!("read tensor n_dims: {e}"))?;
+        let n_dims = u32::from_le_bytes(u32buf);
+        if n_dims > 4 {
+            return Err(format!("tensor n_dims {n_dims} > 4"));
+        }
+        for _ in 0..n_dims {
+            f.read_exact(&mut u64buf)
+                .map_err(|e| format!("read tensor dim: {e}"))?;
+        }
+        f.read_exact(&mut u32buf)
+            .map_err(|e| format!("read tensor type: {e}"))?;
+        let ttype = u32::from_le_bytes(u32buf);
+        f.read_exact(&mut u64buf)
+            .map_err(|e| format!("read tensor offset: {e}"))?;
+        *tensor_types.entry(ttype).or_insert(0) += 1;
+    }
+
+    Ok(GgufSignature {
+        ftype,
+        tensor_types,
+    })
+}
+
+/// Advance `f` past one GGUF value of the given type without materializing it.
+/// Required so we can skip over metadata_kv entries we don't care about.
+fn skip_gguf_value<R: std::io::Read + std::io::Seek>(
+    f: &mut R,
+    value_type: u32,
+) -> Result<(), String> {
+    use std::io::SeekFrom;
+    match value_type {
+        // uint8, int8, bool
+        0 | 1 | 7 => {
+            f.seek(SeekFrom::Current(1)).map_err(|e| e.to_string())?;
+        }
+        // uint16, int16
+        2 | 3 => {
+            f.seek(SeekFrom::Current(2)).map_err(|e| e.to_string())?;
+        }
+        // uint32, int32, float32
+        4 | 5 | 6 => {
+            f.seek(SeekFrom::Current(4)).map_err(|e| e.to_string())?;
+        }
+        // uint64, int64, float64
+        10 | 11 | 12 => {
+            f.seek(SeekFrom::Current(8)).map_err(|e| e.to_string())?;
+        }
+        // string: u64 length + bytes
+        8 => {
+            let mut u64buf = [0u8; 8];
+            f.read_exact(&mut u64buf)
+                .map_err(|e| format!("read string len: {e}"))?;
+            let len = u64::from_le_bytes(u64buf);
+            if len > 10_000_000 {
+                return Err(format!("string len {len} absurdly large"));
+            }
+            f.seek(SeekFrom::Current(len as i64))
+                .map_err(|e| e.to_string())?;
+        }
+        // array: u32 element_type + u64 count + elements
+        9 => {
+            let mut u32buf = [0u8; 4];
+            let mut u64buf = [0u8; 8];
+            f.read_exact(&mut u32buf)
+                .map_err(|e| format!("read array elem_type: {e}"))?;
+            let elem_type = u32::from_le_bytes(u32buf);
+            f.read_exact(&mut u64buf)
+                .map_err(|e| format!("read array count: {e}"))?;
+            let count = u64::from_le_bytes(u64buf);
+            if count > 10_000_000 {
+                return Err(format!("array count {count} absurdly large"));
+            }
+            for _ in 0..count {
+                skip_gguf_value(f, elem_type).map_err(|e| format!("skip array elem: {e}"))?;
+            }
+        }
+        other => return Err(format!("unknown value_type {other}")),
+    }
+    Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
@@ -977,5 +1437,301 @@ mod tests {
         assert_eq!(expected_safetensors_dtype("bf16"), Some("BF16"));
         assert_eq!(expected_safetensors_dtype("fp32"), Some("F32"));
         assert_eq!(expected_safetensors_dtype("q4_k"), None);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FALSIFY-PM-008 (GGUF general.file_type Poka-Yoke)
+    // ─────────────────────────────────────────────────────────────
+
+    /// Write a minimal synthetic GGUF v3 header with the given kv pairs.
+    /// Each kv is (key, value_type u32, raw_value_bytes).
+    fn write_gguf(dir: &Path, name: &str, kvs: &[(&str, u32, Vec<u8>)]) -> PathBuf {
+        let p = dir.join(name);
+        let mut buf: Vec<u8> = Vec::new();
+        buf.extend_from_slice(b"GGUF");
+        buf.extend_from_slice(&3u32.to_le_bytes()); // version
+        buf.extend_from_slice(&0u64.to_le_bytes()); // tensor_count = 0
+        buf.extend_from_slice(&(kvs.len() as u64).to_le_bytes());
+        for (key, vtype, val) in kvs {
+            let kb = key.as_bytes();
+            buf.extend_from_slice(&(kb.len() as u64).to_le_bytes());
+            buf.extend_from_slice(kb);
+            buf.extend_from_slice(&vtype.to_le_bytes());
+            buf.extend_from_slice(val);
+        }
+        fs::write(&p, &buf).unwrap();
+        p
+    }
+
+    fn kv_u32(v: u32) -> Vec<u8> {
+        v.to_le_bytes().to_vec()
+    }
+
+    fn kv_string(s: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&(s.len() as u64).to_le_bytes());
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    #[test]
+    fn pm008_non_gguf_deferred() {
+        let top = top_with("safetensors", "fp16");
+        let r = check_gguf_file_type(&top, None);
+        assert_eq!(r.id, "FALSIFY-PM-008");
+        assert_eq!(r.verdict, "DEFERRED");
+        assert!(r.detail.contains("not gguf"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm008_missing_artifact_deferred() {
+        let top = top_with("gguf", "q4_k_m");
+        let r = check_gguf_file_type(&top, None);
+        assert_eq!(r.verdict, "DEFERRED");
+        assert!(r.detail.contains("--artifact"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm008_unknown_quant_deferred() {
+        let dir = tempdir().unwrap();
+        let path = write_gguf(
+            dir.path(),
+            "m.gguf",
+            &[("general.file_type", 4, kv_u32(15))],
+        );
+        let top = top_with("gguf", "some_future_quant");
+        let r = check_gguf_file_type(&top, Some(&path));
+        assert_eq!(r.verdict, "DEFERRED");
+    }
+
+    #[test]
+    fn pm008_q4_k_m_pass() {
+        let dir = tempdir().unwrap();
+        let path = write_gguf(
+            dir.path(),
+            "m.gguf",
+            &[
+                ("general.architecture", 8, kv_string("qwen2")),
+                ("general.file_type", 4, kv_u32(15)), // MOSTLY_Q4_K_M
+            ],
+        );
+        let top = top_with("gguf", "q4_k_m");
+        let r = check_gguf_file_type(&top, Some(&path));
+        assert_eq!(r.verdict, "PASS", "{}", r.detail);
+        assert!(r.detail.contains("MOSTLY_Q4_K_M"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm008_ftype_mismatch_fails() {
+        // Exact ship-blocker: manifest lies about quantization.
+        let dir = tempdir().unwrap();
+        let path = write_gguf(
+            dir.path(),
+            "m.gguf",
+            &[("general.file_type", 4, kv_u32(1))], // MOSTLY_F16, not q4_k_m
+        );
+        let top = top_with("gguf", "q4_k_m");
+        let r = check_gguf_file_type(&top, Some(&path));
+        assert_eq!(r.verdict, "FAIL", "{}", r.detail);
+        assert!(r.detail.contains("ftype 1"), "{}", r.detail);
+        assert!(r.detail.contains("ftype 15"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm008_skips_unrelated_kvs_then_finds_file_type() {
+        // Verify the skip path for strings/arrays works — file_type must be found
+        // even when it's not the first entry.
+        let dir = tempdir().unwrap();
+        let mut arr_body: Vec<u8> = Vec::new();
+        arr_body.extend_from_slice(&4u32.to_le_bytes()); // elem type: u32
+        arr_body.extend_from_slice(&3u64.to_le_bytes()); // count: 3
+        for v in [1u32, 2, 3] {
+            arr_body.extend_from_slice(&v.to_le_bytes());
+        }
+        let path = write_gguf(
+            dir.path(),
+            "m.gguf",
+            &[
+                ("general.name", 8, kv_string("qwen2.5-coder-7b")),
+                ("some.array", 9, arr_body),
+                ("general.file_type", 4, kv_u32(18)), // MOSTLY_Q6_K
+            ],
+        );
+        let top = top_with("gguf", "q6_k");
+        let r = check_gguf_file_type(&top, Some(&path));
+        assert_eq!(r.verdict, "PASS", "{}", r.detail);
+    }
+
+    #[test]
+    fn pm008_missing_file_type_kv_fails() {
+        let dir = tempdir().unwrap();
+        let path = write_gguf(
+            dir.path(),
+            "m.gguf",
+            &[("general.architecture", 8, kv_string("qwen2"))],
+        );
+        let top = top_with("gguf", "q4_k_m");
+        let r = check_gguf_file_type(&top, Some(&path));
+        assert_eq!(r.verdict, "FAIL", "{}", r.detail);
+        assert!(
+            r.detail.contains("general.file_type not found"),
+            "{}",
+            r.detail
+        );
+    }
+
+    #[test]
+    fn pm008_bad_magic_fails() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("bad.gguf");
+        fs::write(&p, b"NOPENOPE").unwrap();
+        let top = top_with("gguf", "q4_k_m");
+        let r = check_gguf_file_type(&top, Some(&p));
+        assert_eq!(r.verdict, "FAIL");
+        assert!(r.detail.contains("magic"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm008_expected_ftype_mapping() {
+        assert_eq!(expected_gguf_ftype("q4_k_m"), Some(15));
+        assert_eq!(expected_gguf_ftype("Q4_K_M"), Some(15));
+        assert_eq!(expected_gguf_ftype("q4_k"), Some(15));
+        assert_eq!(expected_gguf_ftype("q5_k_m"), Some(17));
+        assert_eq!(expected_gguf_ftype("q6_k"), Some(18));
+        assert_eq!(expected_gguf_ftype("q8_0"), Some(7));
+        assert_eq!(expected_gguf_ftype("fp16"), Some(1));
+        assert_eq!(expected_gguf_ftype("bf16"), Some(32));
+        assert_eq!(expected_gguf_ftype("nonsense"), None);
+    }
+
+    #[test]
+    fn pm008_ftype_name_mapping() {
+        assert_eq!(gguf_ftype_name(15), "MOSTLY_Q4_K_M");
+        assert_eq!(gguf_ftype_name(18), "MOSTLY_Q6_K");
+        assert_eq!(gguf_ftype_name(1), "MOSTLY_F16");
+        assert_eq!(gguf_ftype_name(32), "MOSTLY_BF16");
+        assert_eq!(gguf_ftype_name(999), "UNKNOWN");
+    }
+
+    #[test]
+    fn pm008_ggml_type_mapping() {
+        assert_eq!(expected_ggml_tensor_type("q4_k"), Some(12));
+        assert_eq!(expected_ggml_tensor_type("q4_k_m"), Some(12));
+        assert_eq!(expected_ggml_tensor_type("q4_k_s"), Some(12));
+        assert_eq!(expected_ggml_tensor_type("q6_k"), Some(14));
+        assert_eq!(expected_ggml_tensor_type("fp16"), Some(1));
+        assert_eq!(expected_ggml_tensor_type("bf16"), Some(30));
+        assert_eq!(expected_ggml_tensor_type("unknown"), None);
+        assert_eq!(ggml_type_name(12), "Q4_K");
+        assert_eq!(ggml_type_name(14), "Q6_K");
+    }
+
+    #[test]
+    fn pm008_predominant_prefers_non_float() {
+        let mut h = HashMap::new();
+        h.insert(0u32, 60); // F32 (bias/norm)
+        h.insert(12u32, 280); // Q4_K (weights)
+        assert_eq!(predominant_quant_type(&h), Some(12));
+    }
+
+    #[test]
+    fn pm008_predominant_all_float_falls_back() {
+        let mut h = HashMap::new();
+        h.insert(0u32, 10);
+        h.insert(1u32, 3);
+        assert_eq!(predominant_quant_type(&h), Some(0));
+    }
+
+    /// Write a synthetic GGUF v3 header with non-zero tensor metadata. Tensors
+    /// carry no actual data — only the metadata block matters for PM-008.
+    /// Each tensor: (name, dims, ggml_type).
+    fn write_gguf_with_tensors(
+        dir: &Path,
+        name: &str,
+        kvs: &[(&str, u32, Vec<u8>)],
+        tensors: &[(&str, &[u64], u32)],
+    ) -> PathBuf {
+        let p = dir.join(name);
+        let mut buf: Vec<u8> = Vec::new();
+        buf.extend_from_slice(b"GGUF");
+        buf.extend_from_slice(&3u32.to_le_bytes()); // version
+        buf.extend_from_slice(&(tensors.len() as u64).to_le_bytes());
+        buf.extend_from_slice(&(kvs.len() as u64).to_le_bytes());
+        for (key, vtype, val) in kvs {
+            let kb = key.as_bytes();
+            buf.extend_from_slice(&(kb.len() as u64).to_le_bytes());
+            buf.extend_from_slice(kb);
+            buf.extend_from_slice(&vtype.to_le_bytes());
+            buf.extend_from_slice(val);
+        }
+        let mut offset: u64 = 0;
+        for (tname, dims, ttype) in tensors {
+            let nb = tname.as_bytes();
+            buf.extend_from_slice(&(nb.len() as u64).to_le_bytes());
+            buf.extend_from_slice(nb);
+            buf.extend_from_slice(&(dims.len() as u32).to_le_bytes());
+            for d in *dims {
+                buf.extend_from_slice(&d.to_le_bytes());
+            }
+            buf.extend_from_slice(&ttype.to_le_bytes());
+            buf.extend_from_slice(&offset.to_le_bytes());
+            offset += 64; // dummy
+        }
+        fs::write(&p, &buf).unwrap();
+        p
+    }
+
+    /// Real-world teacher-GGUF scenario: Q4_K tensors but stale
+    /// general.file_type = 0 (ALL_F32). Tensor-type evidence must win.
+    #[test]
+    fn pm008_q4_k_tensors_override_stale_ftype_zero() {
+        let dir = tempdir().unwrap();
+        let path = write_gguf_with_tensors(
+            dir.path(),
+            "teacher.gguf",
+            &[
+                ("general.architecture", 8, kv_string("qwen2")),
+                ("general.file_type", 4, kv_u32(0)), // stale: claims ALL_F32
+            ],
+            &[
+                ("blk.0.attn_q.weight", &[3584, 3584], 12),  // Q4_K
+                ("blk.0.attn_k.weight", &[3584, 512], 12),   // Q4_K
+                ("blk.0.ffn_up.weight", &[3584, 18944], 12), // Q4_K
+                ("blk.0.attn_norm.weight", &[3584], 0),      // F32 bias/norm
+                ("blk.0.attn_q.bias", &[3584], 0),           // F32 bias
+            ],
+        );
+        let top = top_with("gguf", "q4_k");
+        let r = check_gguf_file_type(&top, Some(&path));
+        assert_eq!(r.verdict, "PASS", "{}", r.detail);
+        assert!(r.detail.contains("predominant tensor type"), "{}", r.detail);
+        assert!(r.detail.contains("Q4_K"), "{}", r.detail);
+        assert!(
+            r.detail.contains("stale"),
+            "expected stale-ftype note: {}",
+            r.detail
+        );
+    }
+
+    /// Tensor types are Q6_K but manifest says q4_k → FAIL. Catches the
+    /// "wrong file pointed at by manifest" ship-blocker class.
+    #[test]
+    fn pm008_tensor_type_mismatch_fails() {
+        let dir = tempdir().unwrap();
+        let path = write_gguf_with_tensors(
+            dir.path(),
+            "wrong.gguf",
+            &[("general.file_type", 4, kv_u32(18))], // MOSTLY_Q6_K (also wrong)
+            &[
+                ("blk.0.attn_q.weight", &[3584, 3584], 14), // Q6_K
+                ("blk.0.attn_k.weight", &[3584, 512], 14),  // Q6_K
+                ("blk.0.attn_norm.weight", &[3584], 0),
+            ],
+        );
+        let top = top_with("gguf", "q4_k");
+        let r = check_gguf_file_type(&top, Some(&path));
+        assert_eq!(r.verdict, "FAIL", "{}", r.detail);
+        assert!(r.detail.contains("Q4_K"), "{}", r.detail);
+        assert!(r.detail.contains("Q6_K"), "{}", r.detail);
     }
 }
