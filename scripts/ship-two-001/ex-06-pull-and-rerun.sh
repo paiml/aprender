@@ -15,7 +15,8 @@
 set -euo pipefail
 
 MODEL_ID="${MODEL_ID:-paiml/qwen2.5-coder-7b-apache-q4k-v1}"
-MANIFEST="${MANIFEST:-contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1.yaml}"
+MANIFEST_DIR="${MANIFEST_DIR:-contracts/publish-manifests}"
+MANIFEST_PREFIX="${MANIFEST_PREFIX:-paiml-qwen2.5-coder-7b-apache-q4k-v1}"
 EVIDENCE="evidence/ship-two-001/ex-06-pull-rerun.json"
 mkdir -p "$(dirname "$EVIDENCE")"
 
@@ -23,10 +24,38 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 echo "[EX-06] apr pull $MODEL_ID"
-apr pull "$MODEL_ID" -o "$TMPDIR/pulled.apr"
+# `apr pull` has no -o flag; it caches into ~/.cache/pacha/models/ and prints
+# the path on a `Path: <path>` line. NO_COLOR=1 strips ANSI so awk is clean.
+PULL_LOG="$TMPDIR/pull.log"
+NO_COLOR=1 apr pull "$MODEL_ID" 2>&1 | tee "$PULL_LOG"
+PULLED_PATH=$(awk '/^  *Path:/ {print $2; exit}' "$PULL_LOG")
+if [[ -z "$PULLED_PATH" || ! -f "$PULLED_PATH" ]]; then
+    echo "ABORT: could not parse pulled path from apr pull output" >&2
+    exit 3
+fi
+
+# `apr pull` caches files with a hashed stem (e.g. 7bcabb852fedb36b.gguf);
+# only the extension survives.  Derive the manifest format from extension:
+# .gguf → -gguf.yaml, .apr → -apr.yaml, .safetensors → -safetensors.yaml.
+PULLED_EXT="${PULLED_PATH##*.}"
+case "$PULLED_EXT" in
+    gguf)        MANIFEST_FORMAT=gguf ;;
+    apr)         MANIFEST_FORMAT=apr ;;
+    safetensors) MANIFEST_FORMAT=safetensors ;;
+    *)
+        echo "ABORT: unsupported pulled extension '.$PULLED_EXT' (expected .gguf/.apr/.safetensors)" >&2
+        exit 4
+        ;;
+esac
+MANIFEST="${MANIFEST:-${MANIFEST_DIR}/${MANIFEST_PREFIX}-${MANIFEST_FORMAT}.yaml}"
+echo "[EX-06] pulled format: $MANIFEST_FORMAT → manifest: $MANIFEST"
+if [[ ! -f "$MANIFEST" ]]; then
+    echo "ABORT: manifest not found: $MANIFEST" >&2
+    exit 5
+fi
 
 DECLARED_SHA=$(grep '^sha256:' "$MANIFEST" | awk '{print $2}')
-COMPUTED_SHA=$(sha256sum "$TMPDIR/pulled.apr" | awk '{print $1}')
+COMPUTED_SHA=$(sha256sum "$PULLED_PATH" | awk '{print $1}')
 
 if [[ "$DECLARED_SHA" == "$COMPUTED_SHA" ]]; then
     SHA_VERDICT=PASS
@@ -36,7 +65,7 @@ fi
 
 echo "[EX-06] apr run --prompt 'def fib(n):'"
 OUTPUT_FILE="$TMPDIR/apr_run.out"
-apr run "$TMPDIR/pulled.apr" --prompt 'def fib(n):' --max-tokens 64 --temperature 0.0 --top-k 1 > "$OUTPUT_FILE" 2>&1 || true
+apr run "$PULLED_PATH" --prompt 'def fib(n):' --max-tokens 64 --temperature 0.0 --top-k 1 > "$OUTPUT_FILE" 2>&1 || true
 
 # AC-EX-006 (spec §12.3 literal): "emits syntactically valid Python"
 # We extract the generated body between the "Output:\n" banner and the
@@ -105,6 +134,9 @@ OUTPUT_HEAD=$(head -c 500 "$OUTPUT_FILE")
 jq -n \
     --arg ts "$(date -Iseconds)" \
     --arg model "$MODEL_ID" \
+    --arg fmt "$MANIFEST_FORMAT" \
+    --arg manifest "$MANIFEST" \
+    --arg pulled "$PULLED_PATH" \
     --arg sha_v "$SHA_VERDICT" \
     --arg decl "$DECLARED_SHA" \
     --arg comp "$COMPUTED_SHA" \
@@ -114,6 +146,9 @@ jq -n \
     '{
         timestamp_utc: $ts,
         model_id: $model,
+        pulled_format: $fmt,
+        pulled_path: $pulled,
+        manifest_matched: $manifest,
         ac_ex_005_sha256: $sha_v,
         ac_ex_005_declared: $decl,
         ac_ex_005_computed: $comp,
