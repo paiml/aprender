@@ -411,6 +411,17 @@ pub struct PretrainLoop<S: StepFn, V: ValFn> {
 /// divergence / NaN paths.
 pub trait StepFn {
     fn step(&mut self, step: u64, lr: f32, batch_tokens: u64) -> (f32, f32);
+
+    /// INV-TRAIN-003 hook: sha256 over the real optimizer state bytes.
+    ///
+    /// Real-corpus `StepFn` impls that own an `AdamW` optimizer
+    /// (or any optimizer whose state is deterministic given the seed)
+    /// should override this to expose a reproducible digest.
+    /// Synthetic harness impls return `None` — the loop then falls
+    /// back to the deterministic epoch/seed/tokens fingerprint.
+    fn optimizer_state_sha256(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Per-epoch validation: returns held-out val_loss.
@@ -561,7 +572,11 @@ impl<S: StepFn, V: ValFn> PretrainLoop<S, V> {
         check_non_divergence(epoch, &self.val_loss_history)?;
 
         let wall_seconds = t0.elapsed().as_secs_f32();
-        let optimizer_state_sha = self.fake_optimizer_sha(epoch);
+        // INV-TRAIN-003: prefer the real AdamW-state digest if the
+        // StepFn exposes one; fall back to a deterministic fingerprint
+        // for synthetic harnesses that do not own an optimizer.
+        let optimizer_state_sha =
+            self.step_fn.optimizer_state_sha256().unwrap_or_else(|| self.fake_optimizer_sha(epoch));
         let metadata = EpochMetadata {
             epoch,
             train_loss: mean_train_loss,
@@ -1072,6 +1087,72 @@ mod tests {
                 meta_path.exists(),
                 "companion metadata.json must be written for epoch {}",
                 epoch,
+            );
+        }
+    }
+
+    /// INV-TRAIN-003 positive: if the StepFn overrides
+    /// `optimizer_state_sha256`, the loop uses it instead of the
+    /// synthetic-seed fallback. Asserts that the recorded epoch
+    /// metadata carries the sha from the StepFn.
+    #[test]
+    fn pretrain_loop_uses_step_fn_optimizer_sha_when_available() {
+        struct ShaOverride {
+            inner: LinearDecaySynthetic,
+            sha: String,
+        }
+        impl StepFn for ShaOverride {
+            fn step(&mut self, s: u64, lr: f32, tokens: u64) -> (f32, f32) {
+                self.inner.step(s, lr, tokens)
+            }
+            fn optimizer_state_sha256(&self) -> Option<String> {
+                Some(self.sha.clone())
+            }
+        }
+
+        let tmp = TempDir::new().expect("tempdir");
+        let cfg = test_config(tmp.path());
+        let step_fn = ShaOverride {
+            inner: LinearDecaySynthetic { start_loss: 3.5, decay_per_step: 0.1, grad_norm: 0.8 },
+            sha: "a".repeat(64),
+        };
+        let val_fn = ScriptedVal { sequence: vec![3.4, 3.0, 2.6, 2.2, 2.0] };
+        let mut loop_ = PretrainLoop::new(cfg, step_fn, val_fn);
+        let _ = loop_.run();
+
+        let arts = loop_.epoch_artifacts();
+        assert!(!arts.is_empty(), "at least one epoch should have completed");
+        for art in arts {
+            assert_eq!(
+                art.metadata.optimizer_state_sha,
+                "a".repeat(64),
+                "StepFn override must win over fake_optimizer_sha fallback",
+            );
+        }
+    }
+
+    /// INV-TRAIN-003 fallback: a synthetic StepFn that does not
+    /// override `optimizer_state_sha256` still gets a non-empty,
+    /// deterministic 64-char digest via the `fake_optimizer_sha`
+    /// fingerprint. (The default impl returns `None`.)
+    #[test]
+    fn pretrain_loop_falls_back_to_fake_optimizer_sha_for_synthetic() {
+        let tmp = TempDir::new().expect("tempdir");
+        let cfg = test_config(tmp.path());
+        let step_fn = LinearDecaySynthetic { start_loss: 3.5, decay_per_step: 0.1, grad_norm: 0.8 };
+        let val_fn = ScriptedVal { sequence: vec![3.4, 3.0, 2.6, 2.2, 2.0] };
+        let mut loop_ = PretrainLoop::new(cfg, step_fn, val_fn);
+        let _ = loop_.run();
+
+        for art in loop_.epoch_artifacts() {
+            assert_eq!(
+                art.metadata.optimizer_state_sha.len(),
+                64,
+                "fallback fingerprint must still be a 64-char hex digest",
+            );
+            assert!(
+                art.metadata.optimizer_state_sha.chars().all(|c| c.is_ascii_hexdigit()),
+                "fallback fingerprint must be lowercase hex",
             );
         }
     }

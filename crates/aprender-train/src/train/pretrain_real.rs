@@ -97,6 +97,11 @@ impl StepFn for RealStepFn {
         let grad_norm = 1.0_f32;
         (loss, grad_norm)
     }
+
+    /// INV-TRAIN-003 discharge: hash the real AdamW (t, m, v) buffers.
+    fn optimizer_state_sha256(&self) -> Option<String> {
+        Some(self.trainer.borrow().optimizer_state_sha256())
+    }
 }
 
 /// `ValFn` impl that runs forward-only across a pre-loaded set of

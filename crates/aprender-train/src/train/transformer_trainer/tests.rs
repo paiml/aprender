@@ -474,6 +474,36 @@ fn save_apr_writes_readable_apr_file() {
         .expect("APR file should round-trip embed_tokens.weight");
 }
 
+// === Task #111 step 6: INV-TRAIN-003 optimizer-state sha256 ===
+
+/// INV-TRAIN-003 shape: the sha is a deterministic 64-char hex digest
+/// even before the first training step (all AdamW buffers uninitialized).
+#[test]
+fn optimizer_state_sha256_is_hex_digest_on_fresh_trainer() {
+    let config = TransformerTrainConfig::new(TransformerConfig::tiny());
+    let trainer = TransformerTrainer::new(config);
+    let sha = trainer.optimizer_state_sha256();
+    assert_eq!(sha.len(), 64, "sha256 hex digest must be 64 chars");
+    assert!(
+        sha.chars().all(|c| c.is_ascii_hexdigit()),
+        "sha256 hex digest must be lowercase hex: {sha}",
+    );
+}
+
+/// INV-TRAIN-003 stability: two fresh trainers produced from the same
+/// config must emit identical digests (uninit AdamW state is
+/// deterministic).
+#[test]
+fn optimizer_state_sha256_is_stable_across_fresh_trainers() {
+    let a = TransformerTrainer::new(TransformerTrainConfig::new(TransformerConfig::tiny()));
+    let b = TransformerTrainer::new(TransformerTrainConfig::new(TransformerConfig::tiny()));
+    assert_eq!(
+        a.optimizer_state_sha256(),
+        b.optimizer_state_sha256(),
+        "fresh AdamW optimizer state must hash to the same digest",
+    );
+}
+
 // === R-084: Bitwise deterministic training (C-DETERM-001) ===
 
 #[test]
