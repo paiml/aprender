@@ -1,8 +1,8 @@
 # APR-MCP-SERVER: Model Context Protocol Server Specification
 
-**Version**: 1.1.0
+**Version**: 1.2.0
 **Date**: 2026-04-18
-**Status**: ACTIVE (M1–M3 shipped; M4 dogfood pending)
+**Status**: ACTIVE (M1–M3 shipped; M4 dogfood pending; M5 pmcp migration planned)
 **Contracts**:
 - `contracts/mcp-tool-schema-v1.yaml` — MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
 - `contracts/pmcp/mcp-protocol-sdk-v1.yaml` — `pmcp` crate contract (existing)
@@ -12,7 +12,7 @@
 **References**:
 - [Model Context Protocol Specification v2024-11-05](https://spec.modelcontextprotocol.io/specification/2024-11-05/)
 - [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
-- [pmcp crate](https://github.com/paiml/rust-mcp-sdk)
+- [pmcp crate](https://github.com/paiml/rust-mcp-sdk) — PAIML's Rust MCP SDK, actively maintained, v2.3.1 on crates.io (2026-04-16)
 
 ---
 
@@ -41,7 +41,7 @@ crates/aprender-mcp/
 ├── src/
 │   ├── lib.rs            # public API: `AprMcpServer::new().run_stdio()`; `include!` of build-time schemas.rs
 │   ├── types.rs          # JSON-RPC 2.0 envelopes + MCP protocol types (mirrors aprender-orchestrate::mcp::types)
-│   ├── server.rs         # hand-rolled JSON-RPC dispatcher + worker-thread cancellation (pmcp SDK deferred)
+│   ├── server.rs         # hand-rolled JSON-RPC dispatcher + worker-thread cancellation (pmcp adoption planned M5+)
 │   └── tools/
 │       ├── mod.rs            # registration table
 │       ├── subprocess.rs     # shared `run_apr` / `run_apr_cancellable` (M3 FALSIFY-MCP-006)
@@ -163,7 +163,16 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [x] Wire `apr mcp` subcommand into apr-cli (PR #864)
 - [x] Implement `initialize` + `tools/list` with `apr.version` stub (PR #864)
 - [x] FALSIFY-MCP-001 (init <500ms) and -002 (tools/list shape) passing
-- Note: `pmcp` SDK deferred — server is hand-rolled JSON-RPC, more deterministic for current scope
+- Note: `aprender-mcp` ships a hand-rolled JSON-RPC dispatcher rather than using the
+  `pmcp` SDK directly. Rationale: (a) the Phase-1 tool surface is subprocess wrappers
+  over `apr <cmd> --json` — a minimal request/response shape that the ~200-line
+  dispatcher covers without pulling transitive deps, (b) schema codegen
+  (`build.rs` → `$OUT_DIR/schemas.rs`) keeps `tools/list` byte-identical to the
+  contract YAML, and (c) FALSIFY-MCP-001/-002/-005/-007/-008 assert shape against
+  JSON-RPC wire bytes, which is easier to audit without an SDK layer. `pmcp` v2.3
+  is the planned substrate once M5+ adds SSE/WebSocket transports, the resources
+  protocol, or streaming sampling (`aprender-orchestrate` already depends on pmcp v2.3
+  for its client role — see `crates/aprender-orchestrate/Cargo.toml`).
 
 ### M2: Phase-1 tools — SHIPPED (2026-04-17/18)
 - [x] 7 subprocess wrappers around `apr <cmd> --json`: validate (#865), tensors+bench (#866), qa+trace (#867), run (#870), serve (#872)
@@ -189,6 +198,14 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [ ] Claude Code dogfood — 1 full session using only `apr.*` tools
 - [ ] Cursor / Cline manual smoke test
 
+### M5: `pmcp` SDK migration + transport expansion — PLANNED
+- [ ] Add `pmcp = "2.3"` to `crates/aprender-mcp/Cargo.toml` (already in `aprender-orchestrate`, keep versions aligned)
+- [ ] Port `server.rs` dispatcher to `pmcp::Server` with per-tool handler registration; retain `build.rs` schema codegen so `tools/list` output stays byte-identical (FALSIFY-MCP-008 unchanged)
+- [ ] Port worker-thread cancellation to pmcp's cancellation API if it ships one; otherwise keep the existing std::thread+mpsc path as a `pmcp::Server` extension
+- [ ] Add SSE transport (`apr mcp --transport sse --port N`) via pmcp's SSE layer — unblocks browser/container MCP clients
+- [ ] Add WebSocket transport (same surface) — unblocks long-running sessions
+- [ ] Re-run falsification suite (71+ tests) and ensure every FALSIFY-MCP gate still PASS post-migration
+
 ## Success Criteria
 
 Acceptance gate for promoting to ACTIVE:
@@ -208,14 +225,14 @@ Acceptance gate for promoting to ACTIVE:
 - Prompts protocol — future phase
 - Sampling (client-side LLM calls from server) — not needed for inference use case
 - Auth / multi-tenant — local dev tool only
-- SSE transport — Phase 2 (stdio-only in Phase 1; `--transport sse --port N` flag is aspirational, no `McpArgs` struct yet)
+- SSE / WebSocket transports — Phase 2, scheduled for M5 on top of `pmcp` v2.3 (stdio-only in Phase 1; `--transport sse --port N` flag is aspirational until M5, no `McpArgs` struct yet)
 - Windows — Phase 2 (stdio transport needs testing on Windows; nix signal crate is unix-only today)
 
 ## Risk Register
 
 | Risk | Mitigation |
 |------|-----------|
-| `pmcp` crate API instability (dormant — Phase 1 shipped hand-rolled JSON-RPC; risk re-activates only if pmcp is adopted) | Pin exact version on adoption; contribute upstream if breaking changes needed |
+| `pmcp` adoption-path coordination — M5+ will migrate the dispatcher to `pmcp` v2.x; workspace version must stay aligned with `aprender-orchestrate`'s client-side pmcp dep to avoid dual-version builds | Pin to `pmcp = "2.3"` across all crates; bump in one workspace-wide commit; CI `cargo tree -d` gate on duplicate deps |
 | Subprocess overhead per tool call | Phase 2: in-process mode (`--embedded`) linking apr-cli as library |
 | Schema drift between CLI and MCP surface | `build.rs` fails build if contract YAML differs from generated Rust structs |
 | MCP clients expect specific error shapes | Conformance-test against Claude Code, Cursor, Cline fixtures |
@@ -224,7 +241,7 @@ Acceptance gate for promoting to ACTIVE:
 
 - **Existing infrastructure** (ready to use):
   - `contracts/mcp-tool-schema-v1.yaml` — defines JSON-RPC error codes, session lifecycle
-  - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — approves `paiml/rust-mcp-sdk` as dependency (currently unused; M1 chose hand-rolled JSON-RPC)
+  - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — approves `paiml/rust-mcp-sdk` (pmcp v2.3) as dependency. Already linked by `aprender-orchestrate` for MCP client usage; `aprender-mcp` server-side migration is scheduled for M5+
   - MCP tool surface lives in `crates/aprender-mcp/src/tools/` (not `apr-cli/src/tool_commands.rs` — that is the unrelated `apr tool` CLI group for Showcase/Rosetta)
 
 - **Aspirational follow-ons** (spec files not yet authored):
