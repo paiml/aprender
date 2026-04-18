@@ -313,11 +313,15 @@ the single source of truth for MCP tool argument shape. Each tool's
 hand-maintained schemas in the tools source.
 
 FALSIFY-MCP-008 asserts byte-identity (after JSON canonicalization)
-between each live `tools/list` schema and the YAML contract entry, so a
-schema drift between the two breaks CI.
+between each live `tools/list` schema **and description** and the YAML
+contract entry. Both the structural schema comparison and the
+tool-level `description` string comparison break CI on drift
+(`tests/falsify_mcp_008.rs::migrated_tools_match_yaml_contract_byte_for_byte`
+and `::tool_descriptions_match_yaml_contract`).
 
-To change a tool's schema: edit the YAML, rebuild. The Rust source does
-not need editing.
+To change a tool's schema or description: edit the YAML, rebuild. The
+Rust source does not need editing for schemas, and descriptions must
+track the YAML verbatim.
 
 ## Falsification gates
 
@@ -330,7 +334,7 @@ not need editing.
 | FALSIFY-MCP-005 | Malformed request (`"jsonrpc": "1.0"`) returns JSON-RPC error `-32600`, server stays alive | ACTIVE |
 | FALSIFY-MCP-006 | `notifications/cancelled` during a long-running tool call stops the subprocess within the grace window and returns a partial result | ACTIVE |
 | FALSIFY-MCP-007 | `initialize` with `protocolVersion != "2024-11-05"` returns `-32602`, does not attempt `tools/list` | ACTIVE |
-| FALSIFY-MCP-008 | `tools/list` schema is byte-identical (after canonicalization) to `contracts/apr-mcp-tool-schemas-v1.yaml` | ACTIVE |
+| FALSIFY-MCP-008 | Each tool's `inputSchema` **and** `description` in `tools/list` are byte-identical to the entry in `contracts/apr-mcp-tool-schemas-v1.yaml` | ACTIVE |
 | FALSIFY-MCP-PROGRESS-001 | With `params._meta.progressToken`, `apr.finetune` emits one `notifications/progress` per non-empty stdout line, all flushed before the final response; without a token, zero notifications | ACTIVE |
 
 Additional invariant enforced by the dispatcher:
