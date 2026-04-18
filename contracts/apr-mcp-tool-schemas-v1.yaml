@@ -184,7 +184,7 @@ tools:
   - name: apr.run
     shipped_in: 'PR #870 (M2 slice 6)'
     source: crates/aprender-mcp/src/tools/run.rs
-    description: "Run synchronous inference on a model. Wraps `apr run <model> --json` and returns tokens + tok/s + stop reason."
+    description: "Run synchronous inference on a model. Wraps `apr run <model> --json` and returns generated text, tokens, tok/s, and timing. Cancellable via `notifications/cancelled`."
     cli_mapping: "apr run <model_path> --json [--prompt X] [--max-tokens N] [--temperature T] [--top-p P]"
     args:
       - name: model_path
