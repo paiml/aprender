@@ -975,6 +975,7 @@ name = "aprender-mcp"
 version = "0.30.0"
 dependencies = [
  "anyhow",
+ "jsonschema 0.28.3",
  "serde",
  "serde_json",
 ]
