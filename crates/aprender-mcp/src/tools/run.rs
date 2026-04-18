@@ -4,8 +4,9 @@
 //!
 //! M3 (FALSIFY-MCP-006) adds cancellation: the call accepts a cancel receiver
 //! and forwards it to [`run_apr_cancellable`], which SIGTERMs the spawned
-//! subprocess on signal and SIGKILLs after the grace window. Progress
-//! notifications (streamed per-token) are a separate M3 slice.
+//! subprocess on signal and SIGKILLs after the grace window. Per-token
+//! `notifications/progress` streaming is deferred to M4 — it needs an
+//! `apr run --stream` CLI flag prereq that doesn't yet exist.
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 

@@ -228,9 +228,9 @@ tools:
       - model_path
 
   - name: apr.finetune
-    shipped_in: 'PR #881 (M3 slice 1)'
+    shipped_in: 'PR #881 (M3 slice 1: synchronous) + PR #887 (M3 slice 2: opt-in progress)'
     source: crates/aprender-mcp/src/tools/finetune.rs
-    description: "Fine-tune a base model with LoRA/QLoRA. Wraps `apr finetune <base_model> --json` and blocks until training completes. Progress streaming lands in a follow-up M3 slice."
+    description: "Fine-tune a base model with LoRA/QLoRA. Wraps `apr finetune <base_model> --json` and blocks until training completes. Supply `params._meta.progressToken` in the `tools/call` request to opt into per-line `notifications/progress` events streamed before the final response (FALSIFY-MCP-PROGRESS-001)."
     cli_mapping: "apr finetune <base_model> --json [--data <path>] [--rank <N>] [--epochs <N>] [--method <m>] [--output <path>]"
     args:
       - name: base_model
