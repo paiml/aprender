@@ -75,11 +75,11 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11)
   total_rows: 21
   counts:
-    shipped: 4
-    partial: 6
+    shipped: 5
+    partial: 5
     missing: 11
   closure_criterion:
     description: >
@@ -102,17 +102,20 @@ categories:
 
   - id: slash-commands
     name: Slash commands (/help etc.)
-    status: PARTIAL
-    detail: 11 of ~21 Claude variants
+    status: SHIPPED  # v4.2 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "PMAT-CODE-SLASH-PARITY-001 closed: SlashCommand enum expanded 11 → 21 variants (/mcp /config /review /memory /permissions /hooks /init /resume /add-dir /agents added) in agent/repl.rs. Parser recognizes all 21; handler routes each with a deliberate message; /help advertises the new variants; unit test test_slash_command_parse_claude_code_parity locks the set. Deeper implementations of stubs tracked by per-variant follow-up tickets (PMAT-CODE-{REVIEW,MEMORY-TUI,PERMISSIONS,HOOKS,INIT,ADDDIR,CUSTOM-AGENTS}-001)." }
     evidence_path: crates/aprender-orchestrate/src/agent/repl.rs
-    evidence_symbols: ['SlashCommand']
-    shipped_variants: [Help, Quit, Cost, Context, Model, Compact, Clear, Session, Sessions, Test, Quality]
-    missing_variants: ['/config', '/mcp', '/review', '/memory', '/permissions', '/hooks', '/init', '/resume', '/add-dir', '/agents', '/debug', '/rename', '/upgrade']
+    evidence_symbols: ['SlashCommand', 'test_slash_command_parse_claude_code_parity']
+    shipped_variants: [Help, Quit, Cost, Context, Model, Compact, Clear, Session, Sessions, Test, Quality, Mcp, Config, Review, Memory, Permissions, Hooks, Init, Resume, AddDir, Agents]
+    remaining_gaps:
+      - "/debug, /rename, /upgrade (Claude-side commands with no current APR analogue — deferred to PMAT-CODE-SLASH-EXTENDED-001, P2)"
+      - "Deeper handlers for stub variants (tracked under their own tickets — not part of slash-commands row)"
     cross_check_command: |
-      grep -c "^\s\{4\}[A-Z][a-zA-Z]*,\s*$" crates/aprender-orchestrate/src/agent/repl.rs
-    expected_min_hits: 11
-    ticket: PMAT-CODE-SLASH-PARITY-001
-    priority: P0
+      grep -cE "^    [A-Z][a-zA-Z]*,$" crates/aprender-orchestrate/src/agent/repl.rs
+    expected_min_hits: 21  # 21 SlashCommand variants (+ 3 InputResult variants = 24 total)
+    ticket: null  # PMAT-CODE-SLASH-PARITY-001 closed
+    priority: null
 
   - id: claude-md-memory
     name: CLAUDE.md + APR.md project memory
