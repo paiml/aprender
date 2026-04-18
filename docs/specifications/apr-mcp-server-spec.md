@@ -137,6 +137,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 6. **FALSIFY-MCP-006**: `notifications/cancelled` during `apr.run` stops decoding within 30s, returns partial result.
 7. **FALSIFY-MCP-007**: Protocol version mismatch (`"protocolVersion": "1999-01-01"`) returns error, does not attempt tools/list.
 8. **FALSIFY-MCP-008**: Schema in `tools/list` output is byte-identical to generated schema from `contracts/apr-cli-commands-v1.yaml`.
+9. **FALSIFY-MCP-E2E-001**: Real-model end-to-end. `apr.run` on a locally-cached qwen2-0.5b GGUF (env-var `APR_MCP_E2E_MODEL`) decodes content containing the digit "2" within 30s; `apr.qa` MCP wrapper output equals `apr qa --json` direct-CLI output (modulo nondeterministic timestamp/duration/throughput fields). Env-gated — skips via `println!` + early return when the env var is unset (project policy bans `#[ignore]`). Test file: `crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs`.
 
 ## Milestones
 
@@ -158,10 +159,14 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [ ] FALSIFY-MCP-005, -006 passing
 
 ### M4: End-to-end validation (Week 4)
+- [x] Real-model FALSIFY-MCP-003 — `apr.run` decodes "2" on cached GGUF ([`crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs::falsify_mcp_e2e_001_apr_run_decodes_two`](../../crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs))
+- [x] Real-model FALSIFY-MCP-004 — `apr.qa` byte-for-byte parity with direct CLI ([`falsify_mcp_e2e_001_apr_qa_matches_cli_byte_for_byte`](../../crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs))
 - [ ] Claude Code integration test (launch `apr mcp`, ask Claude to "run qwen2.5-0.5b with prompt X")
 - [ ] Cursor / Cline manual smoke test
 - [ ] Contract `apr-mcp-server-v1.yaml` promoted from DRAFT → ENFORCED
 - [ ] Docs: `book/mcp-server.md` with `.mcp.json` examples for each client
+
+**Real-model gating:** The M4 gates above are env-gated via `APR_MCP_E2E_MODEL` (absolute path to a cached GGUF, e.g. `/path/to/qwen2-0.5b-instruct-q4_0.gguf`). Any environment claiming real-model validation MUST set this env var — when unset, both tests skip with a `println!` + early return (visible in test output), not via `#[ignore]`. Per-test documentation explains the Q4_0-vs-Q4_K_M fixture delta relative to FALSIFY-MCP-003's spec literal.
 
 ## Success Criteria
 
