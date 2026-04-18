@@ -1,11 +1,28 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.8.0
-**Status:** LARGE-FILE UPLOAD CONTRACT DRAFTED — IMPLEMENTATION PENDING
+**Version:** 2.8.1
+**Status:** XET UPLOAD PATH IMPLEMENTED — AWAITING LIVE EX-04 DOGFOOD
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed)
+
+**v2.8.1 amendment (2026-04-18):** Phase 2 of F-PUB-LFS-001 shipped in
+commit `18fd9536e` (PR #882). The `xet` sub-feature wires `hf-xet`
+1.5.1 (HF's Apache-2.0 reference impl) into `apr publish`. The
+`reject_oversized_file` hard-abort is deleted; files > 5 GiB now
+dispatch through `crates/aprender-core/src/hf_hub/xet.rs::XetUploader`,
+which uses the `hf-xet` blocking API (`XetSessionBuilder` → token-
+refresh URL → `upload_from_path_blocking` → `commit_blocking`). The
+client-side surface is 178 lines because phases 3–7 of the Xet
+protocol (chunking, dedup, xorb/shard CAS upload, hash encoding) are
+delegated wholesale to the reference impl. **FALSIFY-PUB-LFS-001**
+(file-size dispatch) and **-002** (token-refresh URL shape) are
+deterministically discharged by 4 unit tests; **-003..-009** are
+inherited from `hf-xet`; **-010** (three-format dogfood) still
+pending HF_TOKEN in the ship environment. Contract
+`contracts/apr-publish-hf-large-file-v1.yaml` bumped to v1.1.0 with
+status `IMPLEMENTED`.
 
 **v2.8.0 amendment (2026-04-18):** EX-04 discovered that `apr publish`
 aborts on every SHIP-TWO-001 teacher artifact because all three formats
