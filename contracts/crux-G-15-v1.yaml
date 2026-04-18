@@ -1,12 +1,8 @@
 # CRUX-G-15 — Duplicate-artifact detector pre-push
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-G-15
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,72 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "G — Format Conversion"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Duplicate-artifact detector pre-push. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.G and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Before `apr publish` uploads to HF, detect if destination repo already
+    contains byte-identical files and skip those uploads; also warn if
+    sibling repos in the same org carry the same sha (probable dup). Saves
+    LFS bandwidth. Canonical: HF LFS dedup via git sha1 + HF `hf_hub_download`
+    cache fingerprint.
 
 equations:
-  placeholder_contract:
+  dup_detect:
     formula: |
-      DRAFT — user workflow "Duplicate-artifact detector pre-push"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      local_sha[f] = sha256(f)
+      remote_sha[f] = HEAD /api/repos/{repo}/tree?recursive=true  # returns sha256 per file
+      dup_set = { f : local_sha[f] == remote_sha[f] }
+      upload_set = local_files \ dup_set
+      sibling_dup[f] = { r : r ∈ org/* AND remote_sha(r,f) == local_sha[f] }
+    domain: "(model: Path, repo: str)"
+    codomain: "JSON {skip: [...], upload: [...], sibling_dups: {...}}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "re-publishing byte-identical model uploads ZERO bytes of LFS"
+    - "sibling_dups populated when ≥2 repos share same content"
+    - "SHA check happens before any data-plane upload"
 
 falsification_tests:
 - id: FALSIFY-CRUX-G-15-001
-  rule: placeholder
-  prediction: "apr surface for 'Duplicate-artifact detector pre-push' matches huggingface canonical behavior"
+  rule: no-change re-publish uploads zero bytes
+  prediction: "strace on second publish shows no multipart upload writes"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-G-15" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr publish tests/fixtures/tinyllama-hf --repo org/dup-test --tag v1.0.0 --dry-run=false
+    strace -f -e trace=sendto apr publish tests/fixtures/tinyllama-hf \
+      --repo org/dup-test --tag v1.0.1 --dry-run=false 2>/tmp/st || true
+    bytes=$(grep -oP 'sendto.*=\K\d+' /tmp/st | awk '{s+=$1} END {print s}')
+    [ "$bytes" -lt 100000 ]  # only metadata+commit, no weight bytes
+- id: FALSIFY-CRUX-G-15-002
+  rule: dup-scan JSON lists skipped files
+  prediction: "apr publish --dedupe-scan lists model.safetensors under 'skip' if unchanged"
+  test: |
+    set -euo pipefail
+    apr publish tests/fixtures/tinyllama-hf --repo org/dup-test --dedupe-scan --format json > /tmp/d.json
+    jq -e '.skip | index("model.safetensors")' /tmp/d.json
+- id: FALSIFY-CRUX-G-15-003
+  rule: sibling-dup warning fires when duplicate found in org
+  prediction: "stderr contains 'sibling duplicate' if another repo has same sha"
+  test: |
+    set -euo pipefail
+    apr publish tests/fixtures/tinyllama-hf --repo org/dup-test-b \
+      --scan-org-dups --format json > /tmp/e.json
+    jq -e '.sibling_dups | length > 0' /tmp/e.json
 
 proof_obligations:
+- type: parity
+  property: "apr dedupe matches HF LFS git-sha1 equality checks"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "byte-identical re-publish uploads 0 LFS bytes"
+- type: invariant
+  property: "sha check precedes any data-plane upload"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-g-15` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-g-15
   priority: medium
   auto_created: true

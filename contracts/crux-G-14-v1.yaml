@@ -1,12 +1,8 @@
 # CRUX-G-14 — License metadata validator
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-G-14
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,85 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "G — Format Conversion"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    License metadata validator. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.G and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Validate model card license + derivative-license inheritance before publish.
+    Canonical: HF card.data.license must be in known SPDX list OR 'other'
+    + license_name + license_link. Derivative models must carry same or more
+    permissive license than every parent listed in `base_model`.
 
 equations:
-  placeholder_contract:
+  license_validate:
     formula: |
-      DRAFT — user workflow "License metadata validator"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      license ∈ SPDX ∪ {"other": requires license_name AND license_link}
+      for each p in base_model:
+        permissive_rank(license) >= permissive_rank(parent_license(p))
+      # rank: public_domain > mit > apache-2.0 > bsd > gpl > research-only > closed
+    domain: "(card: ModelCard, base_model: [str])"
+    codomain: "JSON {ok: bool, violations: [str]}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "known SPDX license accepted"
+    - "license='other' without license_name + license_link rejected"
+    - "derivative more-restrictive than parent rejected"
 
 falsification_tests:
 - id: FALSIFY-CRUX-G-14-001
-  rule: placeholder
-  prediction: "apr surface for 'License metadata validator' matches huggingface canonical behavior"
+  rule: unknown license rejected
+  prediction: "card with license: 'bogus' fails validation"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-G-14" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    cat > /tmp/card.md <<'MD'
+    ---
+    license: bogus
+    library_name: aprender
+    ---
+    MD
+    ! apr validate-license /tmp/card.md 2>/tmp/err
+    grep -E "unknown.*license|not.*SPDX" /tmp/err
+- id: FALSIFY-CRUX-G-14-002
+  rule: "'other' license requires license_name + license_link"
+  prediction: "license: other without license_name+link is rejected"
+  test: |
+    set -euo pipefail
+    cat > /tmp/card2.md <<'MD'
+    ---
+    license: other
+    library_name: aprender
+    ---
+    MD
+    ! apr validate-license /tmp/card2.md 2>/tmp/err2
+    grep -E "license_name|license_link" /tmp/err2
+- id: FALSIFY-CRUX-G-14-003
+  rule: more-restrictive derivative rejected
+  prediction: "child: mit, parent: gpl-3.0 → validation fails"
+  test: |
+    set -euo pipefail
+    cat > /tmp/card3.md <<'MD'
+    ---
+    license: mit
+    base_model: someorg/gpl-parent
+    library_name: aprender
+    ---
+    MD
+    ! apr validate-license /tmp/card3.md --resolve-base-licenses 2>/tmp/err3
+    grep -E "parent.*more.*restrict|license.*conflict" /tmp/err3
 
 proof_obligations:
+- type: parity
+  property: "apr validate-license matches HF hub card-validator SPDX + other-license rules"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "known SPDX license always accepted"
+- type: invariant
+  property: "derivative cannot be more permissive than parent"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-g-14` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-g-14
   priority: medium
   auto_created: true

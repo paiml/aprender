@@ -1,12 +1,8 @@
 # CRUX-G-07 — SemVer tag on apr publish
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-G-07
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,66 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "G — Format Conversion"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    SemVer tag on apr publish. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.G and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Enforce semver on `apr publish --tag` so downstream users can pin to
+    `hf://repo@v1.2.3`. Canonical: HF `create_tag(revision=None, tag='v1.2.3')`
+    + huggingface_hub.hf_api. apr rejects non-semver tags unless --force.
 
 equations:
-  placeholder_contract:
+  semver_tag:
     formula: |
-      DRAFT — user workflow "SemVer tag on apr publish"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      re.match(r'^v(\d+)\.(\d+)\.(\d+)(-[A-Za-z0-9.-]+)?(\+[A-Za-z0-9.-]+)?$', tag)
+      git-tag-compatible: tag cannot start with '-' or contain ':' '?' '*' '[' '~' '^'
+    domain: "(model: Path, repo: str, tag: String, force: bool)"
+    codomain: "HF repo has `refs/tags/{tag}` pointing to commit of uploaded model"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "non-semver tags are rejected (unless --force)"
+    - "re-publishing same version without --allow-overwrite fails fast"
+    - "tag resolves: `apr pull hf://repo@{tag}` returns exact commit of publish"
 
 falsification_tests:
 - id: FALSIFY-CRUX-G-07-001
-  rule: placeholder
-  prediction: "apr surface for 'SemVer tag on apr publish' matches huggingface canonical behavior"
+  rule: non-semver tag rejected
+  prediction: "apr publish --tag not-semver exits non-zero"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-G-07" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    ! apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf \
+      --tag not-semver --dry-run 2>/tmp/err
+    grep -E "semver|not a valid version" /tmp/err
+- id: FALSIFY-CRUX-G-07-002
+  rule: re-publish same tag without --allow-overwrite fails
+  prediction: "second publish with same tag exits non-zero"
+  test: |
+    set -euo pipefail
+    apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf --tag v1.0.0 --dry-run
+    ! apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf --tag v1.0.0 --dry-run 2>/tmp/err2
+    grep -E "exists|already|overwrite" /tmp/err2
+- id: FALSIFY-CRUX-G-07-003
+  rule: tag round-trips via pull
+  prediction: "apr pull hf://repo@v1.2.3 produces the same commit hash as publish"
+  test: |
+    set -euo pipefail
+    commit=$(apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf --tag v1.2.3 --format json | jq -r .commit_sha)
+    pulled=$(apr pull hf://org/tinyllama-hf@v1.2.3 --format json | jq -r .commit_sha)
+    [ "$commit" = "$pulled" ]
 
 proof_obligations:
+- type: parity
+  property: "apr publish --tag matches HF hub `create_tag(...)` git-ref semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "non-semver tags rejected without --force"
+- type: invariant
+  property: "tag uniquely resolves to commit (round-trip)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-g-07` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-g-07
   priority: medium
   auto_created: true

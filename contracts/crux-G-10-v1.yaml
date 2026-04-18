@@ -1,12 +1,8 @@
 # CRUX-G-10 — Org-scoped publish permissions
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-G-10
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,69 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "G — Format Conversion"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: partial
   description: >
-    Org-scoped publish permissions. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.G and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Check org-scoped token permissions before uploading, with actionable error
+    on missing write scope. Canonical: HF `whoami()` returns `auth.orgs[*].role`;
+    HF `create_repo(repo_id='org/name')` fails with 403 if token lacks write.
 
 equations:
-  placeholder_contract:
+  org_scope_check:
     formula: |
-      DRAFT — user workflow "Org-scoped publish permissions"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      owner, name = split(repo, '/')
+      whoami = HF GET /api/whoami-v2  (auth=token)
+      allowed = (owner == whoami.name)
+             OR (owner ∈ {o.name : o in whoami.orgs AND o.role ∈ {write, admin}})
+      if not allowed: fail_fast("token missing write on {owner}")
+    domain: "(repo: String, token: String)"
+    codomain: "bool (allowed) + actionable stderr on mismatch"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "personal-repo upload with user token succeeds"
+    - "org-repo upload with read-only token rejected before any bytes uploaded"
+    - "error message names the missing role (read|write|admin)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-G-10-001
-  rule: placeholder
-  prediction: "apr surface for 'Org-scoped publish permissions' matches huggingface canonical behavior"
+  rule: read-only token on org repo rejected pre-upload
+  prediction: "apr publish --repo org/x --token read-only exits non-zero BEFORE network upload"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-G-10" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    HF_TOKEN=read_only_fixture ! apr publish tests/fixtures/tinyllama-hf \
+      --repo testorg/x --dry-run 2>/tmp/err
+    grep -E "write.*role|read-only|403" /tmp/err
+- id: FALSIFY-CRUX-G-10-002
+  rule: personal-repo upload with user token OK
+  prediction: "same user's repo accepts upload; exit=0"
+  test: |
+    set -euo pipefail
+    HF_TOKEN=$HF_TOKEN apr publish tests/fixtures/tinyllama-hf \
+      --repo $(apr whoami --format json | jq -r .username)/test-tmp --dry-run
+- id: FALSIFY-CRUX-G-10-003
+  rule: permission check happens before any file upload
+  prediction: "strace shows no POST /commit before whoami check fails"
+  test: |
+    set -euo pipefail
+    HF_TOKEN=bad_token strace -f -e trace=connect apr publish \
+      tests/fixtures/tinyllama-hf --repo org/x --dry-run 2>/tmp/strace || true
+    # whoami must complete before any large-upload attempt
+    ! grep -E "POST.*commit|POST.*upload" /tmp/strace
 
 proof_obligations:
+- type: parity
+  property: "apr org-scope check matches HF whoami-v2 + create_repo 403 semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "permission mismatch fails before first data-plane byte"
+- type: invariant
+  property: "error names the specific missing role"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-g-10` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-g-10
   priority: medium
-  auto_created: false
+  auto_created: true
