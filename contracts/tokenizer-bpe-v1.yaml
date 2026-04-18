@@ -45,6 +45,11 @@ metadata:
   version: "1.0.0"
   created: "2026-04-18"
   author: PAIML Engineering
+  description: >
+    Concrete BPE tokenizer contract for SHIP-TWO-001 MODEL-2 (albor
+    sovereign 370M). Freezes vocab size, required special tokens,
+    byte-exact round-trip (INV-BPE-003), merge-rules count invariant,
+    and NFC Unicode normalization (INV-BPE-005).
   registry: true
   kind: tokenizer
   parent_contracts:

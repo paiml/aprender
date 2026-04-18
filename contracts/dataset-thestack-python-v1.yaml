@@ -39,6 +39,12 @@ metadata:
   version: "1.0.0"
   created: "2026-04-18"
   author: PAIML Engineering
+  description: >
+    Python-code pretraining corpus contract for SHIP-TWO-001 MODEL-2.
+    Fixes upstream source revision, permissive-license whitelist,
+    PII-scrub rule set, near-duplicate removal strategy, token budget,
+    and deterministic train/val split. Every downstream consumer reads
+    THIS contract — not ad-hoc filesystem paths — for dataset identity.
   registry: true
   kind: pretraining-corpus
   peer_contracts:
