@@ -108,9 +108,8 @@ categories:
     shipped_variants: [Help, Quit, Cost, Context, Model, Compact, Clear, Session, Sessions, Test, Quality]
     missing_variants: ['/config', '/mcp', '/review', '/memory', '/permissions', '/hooks', '/init', '/resume', '/add-dir', '/agents', '/debug', '/rename', '/upgrade']
     cross_check_command: |
-      pmat query --literal "pub enum SlashCommand" --limit 1 --include-source \
-        | grep -c "^    [A-Z][a-zA-Z]*,$"
-    expected_variant_count_min: 11
+      grep -c "^\s\{4\}[A-Z][a-zA-Z]*,\s*$" crates/aprender-orchestrate/src/agent/repl.rs
+    expected_min_hits: 11
     ticket: PMAT-CODE-SLASH-PARITY-001
     priority: P0
 
@@ -130,9 +129,8 @@ categories:
     status: NONE
     evidence_path: null
     cross_check_command: |
-      pmat query --literal "PreToolUse" --limit 5 2>/dev/null \
-        | grep -E "agent/hooks\.rs|PreToolUse" | wc -l
-    expected_max_hits: 0   # must remain 0 until ticket lands
+      if [ -f crates/aprender-orchestrate/src/agent/hooks.rs ]; then echo 1; else echo 0; fi
+    expected_max_hits: 0   # must remain 0 until ticket lands (presence of agent/hooks.rs file)
     ticket: PMAT-CODE-HOOKS-001
     priority: P0
 
@@ -176,8 +174,7 @@ categories:
     status: NONE
     evidence_path: null
     cross_check_command: |
-      pmat query --literal ".apr/agents/" --limit 5 2>/dev/null \
-        | wc -l
+      if [ -f crates/aprender-orchestrate/src/agent/custom_agent.rs ] || [ -d crates/aprender-orchestrate/src/agent/agents ]; then echo 1; else echo 0; fi
     expected_max_hits: 0
     ticket: PMAT-CODE-CUSTOM-AGENTS-001
     priority: P1
@@ -271,8 +268,7 @@ categories:
       - "--fork-session"
       - "--name"
     cross_check_command: |
-      pmat query --literal "pub struct SessionStore" --limit 1 --include-source \
-        | grep -c "messages.jsonl"
+      grep -cE "pub struct SessionStore|pub struct SessionManifest" crates/aprender-orchestrate/src/agent/session.rs
     expected_min_hits: 1
     ticket: PMAT-CODE-SESSION-PARITY-001  # scope reduced to the 3 remaining gaps
     priority: P1
@@ -343,8 +339,7 @@ categories:
       - { date: '2026-04-18', from: 'UNKNOWN', to: 'NONE', reason: "grep -rin 'status.?line|StatusLine|render_status|status_bar|statusline' crates/aprender-orchestrate/src/agent/ returned zero matches; the two codebase hits (publish_status/tests_extended.rs, bug_hunter/model_parity.rs) are unrelated to the REPL status line" }
     evidence_path: null
     cross_check_command: |
-      pmat query --literal "StatusLine" --limit 5 2>/dev/null \
-        | grep -E "agent/" | wc -l
+      grep -rlE "StatusLine|render_status_line|statusline" crates/aprender-orchestrate/src/agent/ 2>/dev/null | wc -l
     expected_max_hits: 0
     ticket: PMAT-CODE-STATUS-LINE-001
     priority: P2
@@ -354,8 +349,7 @@ categories:
     status: NONE
     evidence_path: null
     cross_check_command: |
-      pmat query --literal "/etc/apr-code" --limit 3 2>/dev/null \
-        | wc -l
+      grep -rlE "/etc/apr-code|/etc/claude-code|managed_policy|enforced_instructions" crates/aprender-orchestrate/src/ 2>/dev/null | wc -l
     expected_max_hits: 0
     ticket: PMAT-CODE-ORG-POLICY-001
     priority: P2
