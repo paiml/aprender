@@ -155,19 +155,18 @@ fn falsify_ship_012_tokenizer_roundtrip_byte_exact() {
         "INV-BPE-005: NFC must be idempotent"
     );
 
-    // INV-BPE-003 (byte-exact round-trip) is the flagship falsification for
-    // MODEL-2 ship. Current aprender-core::text::tokenize::BpeTokenizer fails
-    // 19/20 on Python-like inputs — likely drops whitespace/indentation during
-    // a pretokenize→join boundary. Fix tracked as a separate P0 task; until
-    // then this test emits evidence but does not panic so main CI stays green
-    // per the monorepo Andon rule. Flip to hard assertion once the round-trip
-    // bug closes.
-    if evidence.docs_failed > 0 {
-        eprintln!(
-            "FALSIFY-SHIP-012 OPEN: {}/{} holdout docs fail round-trip (known defect, indices={:?})",
-            evidence.docs_failed, evidence.holdout_corpus_size, evidence.failing_doc_indices
-        );
-    }
+    // INV-BPE-003 (byte-exact round-trip) DISCHARGED by task #99:
+    // aprender::text::tokenize::BpeTokenizer now runs byte-level GPT-2-style
+    // BPE (see `bytes_to_unicode` in crate::text::bpe) so every byte is
+    // recoverable via the inverse byte-encoder — no whitespace/indent loss.
+    // Hard assertion from here on; if a regression reintroduces whitespace
+    // splitting or drops the byte encoder, this will panic instead of
+    // emitting a soft warning.
+    assert_eq!(
+        evidence.docs_failed, 0,
+        "INV-BPE-003: byte-exact round-trip failed on {}/{} docs (indices={:?})",
+        evidence.docs_failed, evidence.holdout_corpus_size, evidence.failing_doc_indices
+    );
 }
 
 #[test]
