@@ -19,78 +19,32 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::tools::subprocess::run_apr;
-use crate::types::{InputSchema, PropertySchema, ToolCallResult, ToolDefinition};
-use std::collections::HashMap;
+use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 
 /// Tool name registered with MCP clients.
 pub const NAME: &str = "apr.finetune";
 
 /// Return the MCP tool definition for `apr.finetune`.
+///
+/// FALSIFY-MCP-008: the `inputSchema` is parsed from the build-time codegen
+/// constant `crate::schemas::APR_FINETUNE_SCHEMA`, which `build.rs` emits from
+/// `contracts/apr-mcp-tool-schemas-v1.yaml`. The contract is the single
+/// source of truth — the live `tools/list` response and the YAML must agree
+/// byte-for-byte after JSON canonicalization (asserted by
+/// `tests/falsify_mcp_008.rs`).
 #[must_use]
 pub fn finetune_tool_definition() -> ToolDefinition {
-    let mut properties = HashMap::new();
-    properties.insert(
-        "base_model".to_string(),
-        PropertySchema {
-            prop_type: "string".to_string(),
-            description:
-                "Path to the base model file (.apr, .gguf, or .safetensors) or hf://org/repo"
-                    .to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "dataset".to_string(),
-        PropertySchema {
-            prop_type: "string".to_string(),
-            description: "Path to training data (JSONL). Mapped to `apr finetune --data <path>`."
-                .to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "lora_rank".to_string(),
-        PropertySchema {
-            prop_type: "integer".to_string(),
-            description: "LoRA rank. Mapped to `apr finetune --rank <N>`. Omit for auto."
-                .to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "epochs".to_string(),
-        PropertySchema {
-            prop_type: "integer".to_string(),
-            description: "Training epochs (default 3)".to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "method".to_string(),
-        PropertySchema {
-            prop_type: "string".to_string(),
-            description: "Fine-tuning method: auto, full, lora, qlora (default auto)".to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "output".to_string(),
-        PropertySchema {
-            prop_type: "string".to_string(),
-            description: "Output path (adapter directory or merged model)".to_string(),
-            r#enum: None,
-        },
-    );
+    let input_schema: InputSchema = serde_json::from_str(crate::schemas::APR_FINETUNE_SCHEMA)
+        .expect(
+            "FALSIFY-MCP-008: apr.finetune codegen constant must parse as InputSchema; \
+             regenerate by editing contracts/apr-mcp-tool-schemas-v1.yaml and rebuilding",
+        );
     ToolDefinition {
         name: NAME.to_string(),
         description:
             "Fine-tune a base model with LoRA/QLoRA. Wraps `apr finetune <base_model> --json` and blocks until training completes. Progress streaming lands in a follow-up M3 slice."
                 .to_string(),
-        input_schema: InputSchema {
-            schema_type: "object".to_string(),
-            properties,
-            required: vec!["base_model".to_string()],
-        },
+        input_schema,
     }
 }
 

@@ -12,8 +12,7 @@
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
-use crate::types::{ContentBlock, InputSchema, PropertySchema, ToolCallResult, ToolDefinition};
-use std::collections::HashMap;
+use crate::types::{ContentBlock, InputSchema, ToolCallResult, ToolDefinition};
 use std::process::{Command, Stdio};
 
 /// Tool name registered with MCP clients.
@@ -23,36 +22,25 @@ pub const NAME: &str = "apr.serve";
 const DEFAULT_PORT: u16 = 8080;
 
 /// Return the MCP tool definition for `apr.serve`.
+///
+/// FALSIFY-MCP-008: the `inputSchema` is parsed from the build-time codegen
+/// constant `crate::schemas::APR_SERVE_SCHEMA`, which `build.rs` emits from
+/// `contracts/apr-mcp-tool-schemas-v1.yaml`. The contract is the single
+/// source of truth — the live `tools/list` response and the YAML must agree
+/// byte-for-byte after JSON canonicalization (asserted by
+/// `tests/falsify_mcp_008.rs`).
 #[must_use]
 pub fn serve_tool_definition() -> ToolDefinition {
-    let mut properties = HashMap::new();
-    properties.insert(
-        "model_path".to_string(),
-        PropertySchema {
-            prop_type: "string".to_string(),
-            description: "Path to the model file (.apr, .gguf, or .safetensors) or hf://org/repo"
-                .to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "port".to_string(),
-        PropertySchema {
-            prop_type: "integer".to_string(),
-            description: "TCP port to bind the HTTP server on (default 8080)".to_string(),
-            r#enum: None,
-        },
+    let input_schema: InputSchema = serde_json::from_str(crate::schemas::APR_SERVE_SCHEMA).expect(
+        "FALSIFY-MCP-008: apr.serve codegen constant must parse as InputSchema; \
+             regenerate by editing contracts/apr-mcp-tool-schemas-v1.yaml and rebuilding",
     );
     ToolDefinition {
         name: NAME.to_string(),
         description:
             "Start an `apr serve` inference daemon in the background. Returns {pid, url}; kill the pid via OS to stop. Full lifecycle (cancel/SIGTERM) lands in M3."
                 .to_string(),
-        input_schema: InputSchema {
-            schema_type: "object".to_string(),
-            properties,
-            required: vec!["model_path".to_string()],
-        },
+        input_schema,
     }
 }
 
