@@ -1,0 +1,224 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-mcp-tool-schemas-v1
+#
+# SOURCE OF TRUTH for every `aprender-mcp` tool's MCP inputSchema (per-arg name,
+# type, required flag, and description string). This contract exists separately
+# from `contracts/apr-cli-commands-v1.yaml` because the latter is a pure command
+# registry: each of its 57 entries carries only {name, category, description,
+# requires_model, side_effects}. It intentionally has no argument-level data and
+# therefore cannot drive JSON-Schema code generation.
+#
+# This contract fills that gap. In milestone M3 a `build.rs` at
+# `crates/aprender-mcp/build.rs` will read this YAML and emit Rust that produces
+# the exact same `ToolDefinition { input_schema: InputSchema { … } }` currently
+# hand-written in `crates/aprender-mcp/src/tools/*.rs`. FALSIFY-MCP-008 then
+# asserts byte-identity (after canonicalization) between the generated schemas
+# and the live `tools/list` response.
+#
+# This M2 cut is RETROFIT-ONLY: all descriptions are verbatim copies of the
+# strings on `origin/main`. If this file ever disagrees with the Rust source in
+# this cut, the Rust source wins — fix the YAML, not the code. Once the M3
+# `build.rs` lands, the direction reverses and this contract becomes the single
+# source of truth.
+#
+# Scope at author time (2026-04-18): 6 Phase-1 tools shipped on main via
+# PRs #864/#865/#866/#867. `apr.run` (#870), `apr.serve`, and `apr.finetune`
+# are NOT yet merged — they will be appended in a follow-up PR matching their
+# merge order so this contract remains byte-identical to `main` at every step.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-04-18'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    Per-tool MCP inputSchema source of truth for the aprender-mcp server.
+    Drives (in M3) `crates/aprender-mcp/build.rs` codegen; byte-identity
+    between codegen output and `tools/list` is asserted by FALSIFY-MCP-008.
+  references:
+    - 'Model Context Protocol Specification v2024-11-05 (Anthropic)'
+    - 'JSON-RPC 2.0 Specification (ECMA-404)'
+    - 'crates/aprender-mcp/src/tools/*.rs — hand-rolled schemas this retrofits'
+    - 'crates/aprender-mcp/src/types.rs — InputSchema / PropertySchema shape'
+    - 'contracts/apr-cli-commands-v1.yaml — sibling command registry (no args)'
+    - 'contracts/aprender/mcp-tool-schema-v1.yaml — MCP session/error contract'
+  depends_on:
+    - apr-cli-commands-v1
+    - mcp-tool-schema-v1
+
+kind: McpToolSchemaContract
+name: apr-mcp-tool-schemas
+version: "1.0.0"
+status: DRAFT   # promoted to ENFORCED in M3 once build.rs + falsify harness land
+scope: "every tool returned by the aprender-mcp server's tools/list response"
+protocol_version: '2024-11-05'
+spec: docs/specifications/apr-mcp-server-spec.md
+
+# ── Tool registry ──
+# Each entry encodes: MCP tool name, human description (verbatim from Rust),
+# the `apr` subcommand it wraps (null for server-synthesized tools), and the
+# full `inputSchema.properties` + `inputSchema.required` contents. The M3
+# codegen walks this list and emits one `fn <tool>_tool_definition() ->
+# ToolDefinition` per entry.
+
+tools:
+  - name: apr.version
+    shipped_in: 'PR #864 (M1)'
+    source: crates/aprender-mcp/src/tools/version.rs
+    description: "Return the aprender-mcp server version. Takes no arguments."
+    cli_mapping: null   # server-synthesized; no subprocess
+    args: []
+    required: []
+
+  - name: apr.validate
+    shipped_in: 'PR #865 (M2 slice 1)'
+    source: crates/aprender-mcp/src/tools/validate.rs
+    description: "Validate a model file's integrity and quality. Wraps `apr validate <model> --json`."
+    cli_mapping: "apr validate <model_path> --json"
+    args:
+      - name: model_path
+        type: string
+        required: true
+        description: "Path to the model file (.apr, .gguf, or .safetensors)"
+    required:
+      - model_path
+
+  - name: apr.tensors
+    shipped_in: 'PR #866 (M2 slice 2)'
+    source: crates/aprender-mcp/src/tools/tensors.rs
+    description: "List tensors in a model with shapes and dtypes. Wraps `apr tensors <model> --json`."
+    cli_mapping: "apr tensors <model_path> --json [--stats] [--filter <pat>]"
+    args:
+      - name: model_path
+        type: string
+        required: true
+        description: "Path to the model file (.apr, .gguf, or .safetensors)"
+      - name: stats
+        type: boolean
+        required: false
+        description: "Include tensor statistics (mean, std, min, max)"
+      - name: filter
+        type: string
+        required: false
+        description: "Filter tensors by name pattern (substring match)"
+    required:
+      - model_path
+
+  - name: apr.bench
+    shipped_in: 'PR #866 (M2 slice 3)'
+    source: crates/aprender-mcp/src/tools/bench.rs
+    description: "Benchmark model throughput and latency. Wraps `apr bench <model> --json`."
+    cli_mapping: "apr bench <model_path> --json [--iterations N] [--max-tokens N] [--prompt X]"
+    args:
+      - name: model_path
+        type: string
+        required: true
+        description: "Path to the model file (.apr, .gguf, or .safetensors)"
+      - name: iterations
+        type: integer
+        required: false
+        description: "Measurement iterations (default 5)"
+      - name: max_tokens
+        type: integer
+        required: false
+        description: "Max tokens to generate per iteration (default 32)"
+      - name: prompt
+        type: string
+        required: false
+        description: "Test prompt (default: model-specific)"
+    required:
+      - model_path
+
+  - name: apr.qa
+    shipped_in: 'PR #867 (M2 slice 4)'
+    source: crates/aprender-mcp/src/tools/qa.rs
+    description: "Run the 8-gate falsifiable QA checklist on a model. Wraps `apr qa <model> --json`."
+    cli_mapping: "apr qa <model_path> --json [--assert-tps N] [--max-tokens N] [--iterations N]"
+    args:
+      - name: model_path
+        type: string
+        required: true
+        description: "Path to the model file (.apr, .gguf, or .safetensors)"
+      - name: assert_tps
+        type: number
+        required: false
+        description: "Minimum throughput threshold in tok/s — gate fails below this"
+      - name: max_tokens
+        type: integer
+        required: false
+        description: "Maximum tokens to generate per iteration (default 32)"
+      - name: iterations
+        type: integer
+        required: false
+        description: "Benchmark iterations (default 10)"
+    required:
+      - model_path
+
+  - name: apr.trace
+    shipped_in: 'PR #867 (M2 slice 5)'
+    source: crates/aprender-mcp/src/tools/trace.rs
+    description: "Layer-by-layer tensor trace with per-layer stats. Wraps `apr trace <model> --json`."
+    cli_mapping: "apr trace <model_path> --json [--layer <pat>] [--reference <path>]"
+    args:
+      - name: model_path
+        type: string
+        required: true
+        description: "Path to the model file (.apr, .gguf, or .safetensors)"
+      - name: layer
+        type: string
+        required: false
+        description: "Filter layers by name pattern (substring match)"
+      - name: reference
+        type: string
+        required: false
+        description: "Reference model to diff against (path)"
+    required:
+      - model_path
+
+# ── Falsification gates ──
+# FALSIFY-MCP-008 is the flagship gate this contract unblocks. It is DRAFT here
+# and becomes ENFORCED in M3 once `build.rs` and the harness land. The other
+# gates listed are existing MCP gates this contract interacts with — they are
+# not owned by this file.
+
+falsification:
+  FALSIFY-MCP-008:
+    status: DRAFT
+    owned_by: apr-mcp-tool-schemas-v1
+    condition: |
+      For every entry `t` in the aprender-mcp server's `tools/list` response,
+      the emitted JSON Schema is byte-identical, after JSON canonicalization
+      (RFC 8785 JCS or equivalent: keys sorted, no trailing whitespace, UTF-8,
+      no insignificant whitespace), to the JSON Schema derived from the
+      corresponding entry in `contracts/apr-mcp-tool-schemas-v1.yaml` via
+      the M3 build-time code generator at `crates/aprender-mcp/build.rs`.
+    assertions:
+      - "tools/list returns exactly the tool names listed in `tools[].name`"
+      - "each tool's `description` matches `tools[*].description` byte-for-byte"
+      - "each tool's `inputSchema.type` is the literal string 'object'"
+      - "each tool's `inputSchema.properties.<arg>.type` matches `tools[*].args[*].type`"
+      - "each tool's `inputSchema.properties.<arg>.description` matches `tools[*].args[*].description` byte-for-byte"
+      - "each tool's `inputSchema.required` equals `tools[*].required` as a sorted set"
+    test_harness: "crates/aprender-mcp/tests/falsify_schema_codegen.rs (to be added in M3)"
+    codegen_consumer: "crates/aprender-mcp/build.rs (to be added in M3)"
+
+  related_gates:
+    FALSIFY-MCP-002:
+      owned_by: apr-mcp-server-v1
+      note: "Already ENFORCED — asserts every tool has a valid object-typed schema. FALSIFY-MCP-008 strengthens this from 'valid' to 'byte-identical to this contract'."
+    FALSIFY-CLI-002:
+      owned_by: apr-cli-commands-v1
+      note: "Asserts every `apr --help` command is registered. This contract extends that invariant into MCP tool-space for the subset wrapped as MCP tools."
+
+# ── Coverage note ──
+# Tools intentionally omitted from this 1.0.0 cut (to be appended as they ship
+# on main; each addition is a semver-minor bump and a separate PR so `main`
+# and this contract stay in lockstep):
+#   - apr.run       — PR #870 (in flight at author time, not yet merged)
+#   - apr.serve     — not yet implemented (M2 streaming candidate)
+#   - apr.finetune  — not yet implemented (M2 streaming candidate)
+#
+# The FALSIFY-MCP-008 harness (M3) MUST iterate over `tools[*].name` from this
+# file — not a hard-coded list — so the gate automatically tightens as new
+# entries are appended.
