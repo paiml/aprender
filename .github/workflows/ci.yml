@@ -31,6 +31,7 @@ jobs:
       # Highest expected sccache hit-rate lift — the signal that justifies
       # fleet-wide rollout (or shelves it).
       enable_sccache: true
+      use_nextest: true
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
