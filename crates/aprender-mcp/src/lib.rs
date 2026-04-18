@@ -28,6 +28,15 @@ pub mod server;
 pub mod tools;
 pub mod types;
 
+/// FALSIFY-MCP-008: per-tool JSON Schema constants codegen'd at build time
+/// from `contracts/apr-mcp-tool-schemas-v1.yaml` by `build.rs`.
+///
+/// Each `<TOOL>_SCHEMA` constant is a JSON string whose parsed body is the
+/// tool's MCP `inputSchema`. Consume via `serde_json::from_str`.
+pub mod schemas {
+    include!(concat!(env!("OUT_DIR"), "/schemas.rs"));
+}
+
 pub use server::AprMcpServer;
 pub use types::{
     ContentBlock, InputSchema, JsonRpcError, JsonRpcRequest, JsonRpcResponse, PropertySchema,
