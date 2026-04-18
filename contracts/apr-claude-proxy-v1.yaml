@@ -26,6 +26,17 @@ metadata:
   created: '2026-04-18'
   last_modified: '2026-04-18'
   author: PAIML Engineering
+  # kind is declared under metadata.kind per aprender-contracts schema
+  # (see crates/aprender-contracts/src/schema/kind.rs::ContractKind).
+  # The domain kind `AnthropicMessagesProxyContract` is preserved as
+  # metadata.claude_proxy_kind for semantic documentation, but the
+  # schema-dispatch kind (what `pv validate` uses to pick rule sets) is
+  # `pattern` — this is a cross-cutting Messages-API parity contract, not
+  # a mathematical kernel, so the Kernel provability invariant (requires
+  # equations, proof_obligations, falsification_tests, kani_harnesses) is
+  # not applicable. Follows the same approach as apr-code-parity-v1.yaml.
+  kind: pattern
+  claude_proxy_kind: AnthropicMessagesProxyContract
   description: >
     Anthropic Messages API request/response contract for `apr serve --compat
     anthropic`. Pins input shape, output shape, SSE event sequence, default
@@ -50,7 +61,9 @@ metadata:
     - apr-mcp-server-v1      # sibling protocol surface (MCP, not Messages API)
     - apr-mcp-tool-schemas-v1
 
-kind: AnthropicMessagesProxyContract
+# Top-level `kind:` removed — `AnthropicMessagesProxyContract` is now captured
+# under metadata.claude_proxy_kind. `pv validate` reads ContractKind from
+# metadata.kind only (Contract::kind() in schema/types.rs).
 name: apr-claude-proxy
 version: "1.0.0"
 status: DRAFT   # promotes to ENFORCED at M6-α when the YAML-driven parser + 6 gates ship
