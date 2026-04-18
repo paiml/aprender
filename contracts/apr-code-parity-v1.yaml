@@ -15,7 +15,7 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v5.0): 13 SHIPPED / 3 PARTIAL / 5 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 1 more MISSING→{SHIPPED,PARTIAL} flip to close the epic. ALL P0 + P1 TICKETS CLOSED; remaining work is P2 only.
+# Current counts (2026-04-18 v5.1): 14 SHIPPED / 3 PARTIAL / 4 MISSING. **EPIC CLOSURE CONDITIONS MET** — SHIPPED ≥9 AND MISSING ≤4. Epic PMAT-CODE-PARITY-MATRIX-001 is CLOSEABLE. Remaining 4 MISSING rows (notebook, monitor, plugins, IDE) are all P2 deferred with no epic dependency.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -75,12 +75,12 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips), v4.8=PMAT-CODE-WORKTREE-001 closed → worktree-isolation NONE→SHIPPED (11/3/7 — SHIPPED cap still met; MISSING cap still needs 3 more flips), v4.9=PMAT-CODE-PERMISSIONS-001 closed → permission-modes NONE→SHIPPED (12/3/6 — all P0+P1 tickets now closed; remaining 6 MISSING rows are all P2 deferred; epic still open, needs 2 more flips for MISSING cap ≤4), v5.0=PMAT-CODE-STATUS-LINE-001 closed → status-line NONE→SHIPPED (13/3/5 — SHIPPED cap still met; MISSING cap (≤4) needs 1 more flip to close the epic)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips), v4.8=PMAT-CODE-WORKTREE-001 closed → worktree-isolation NONE→SHIPPED (11/3/7 — SHIPPED cap still met; MISSING cap still needs 3 more flips), v4.9=PMAT-CODE-PERMISSIONS-001 closed → permission-modes NONE→SHIPPED (12/3/6 — all P0+P1 tickets now closed; remaining 6 MISSING rows are all P2 deferred; epic still open, needs 2 more flips for MISSING cap ≤4), v5.0=PMAT-CODE-STATUS-LINE-001 closed → status-line NONE→SHIPPED (13/3/5 — SHIPPED cap still met; MISSING cap (≤4) needs 1 more flip to close the epic), v5.1=PMAT-CODE-ORG-POLICY-001 closed → managed-org-policy NONE→SHIPPED (14/3/4 — **EPIC CLOSURE CONDITIONS MET**: SHIPPED≥9 AND MISSING≤4; PMAT-CODE-PARITY-MATRIX-001 is CLOSEABLE)
   total_rows: 21
   counts:
-    shipped: 13
+    shipped: 14
     partial: 3
-    missing: 5
+    missing: 4
   closure_criterion:
     description: >
       Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
@@ -412,11 +412,24 @@ categories:
 
   - id: managed-org-policy
     name: Managed org policy (/etc/claude-code/CLAUDE.md enforced tier)
-    status: NONE
-    evidence_path: null
+    status: SHIPPED  # v5.1 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'UNKNOWN', to: 'NONE', reason: "grep for /etc/apr-code|/etc/claude-code|managed_policy|enforced_instructions returned zero matches in crates/aprender-orchestrate/src/" }
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-ORG-POLICY-001 closed: new crates/aprender-orchestrate/src/agent/org_policy.rs ships the Claude-Code enforced-tier instruction loader. `load_org_policy(roots, filename, max_bytes)` walks the injected roots in order, first-wins, returning the first `<root>/<filename>` that exists as an `OrgPolicy { source, content, tier: PolicyTier::Enforced }`. Canonical system roots `canonical_system_roots()` return `[/etc/apr-code, /etc/claude-code]` — the native path first, Claude-Code cross-compat second. Missing files and I/O errors are silently skipped so a malformed `/etc` cannot ransom the REPL at boot. `max_bytes=0` disables the loader; `max_bytes>0` truncates on a UTF-8 char boundary and annotates with `(truncated from N bytes)`. `PolicyTier::Enforced` carries a `PartialOrd`/`Ord` derive so the prompt builder can total-order instruction blocks by tier. 13 unit tests cover no-roots, max_bytes=0, happy path, first-root-wins, second-root-fallback, directory-shadowing-the-file, truncation, UTF-8 boundary preservation, below-budget passthrough, canonical roots, tier ordering, I/O-error tolerance, Clone roundtrip. Runtime integration into `load_project_instructions` / prompt builder deferred to PMAT-CODE-ORG-POLICY-RUNTIME-001 (P2); the primitive is ready for call sites today." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/org_policy.rs
+      - crates/aprender-orchestrate/src/agent/org_policy/tests.rs
+      - crates/aprender-orchestrate/src/agent/mod.rs  # registers `pub mod org_policy;`
+    evidence_symbols:
+      - OrgPolicy
+      - PolicyTier
+      - load_org_policy
+      - canonical_system_roots
+    remaining_gaps:
+      - Prompt-builder wiring — layer enforced-tier content above project/user instructions in the REPL prompt pipeline (PMAT-CODE-ORG-POLICY-RUNTIME-001, P2)
     cross_check_command: |
-      grep -rlE "/etc/apr-code|/etc/claude-code|managed_policy|enforced_instructions" crates/aprender-orchestrate/src/ 2>/dev/null | wc -l
-    expected_max_hits: 0
+      grep -cE "(fn load_org_policy|struct OrgPolicy|PolicyTier::Enforced|canonical_system_roots)" crates/aprender-orchestrate/src/agent/org_policy.rs
+    expected_min_hits: 4
     ticket: PMAT-CODE-ORG-POLICY-001
     priority: P2
 
@@ -524,17 +537,54 @@ priority_buckets:
     - keyboard-shortcuts
   P2:
     # status-line: closed v5.0 (2026-04-18) — retained in `categories` for history
+    # managed-org-policy: closed v5.1 (2026-04-18) — retained in `categories` for history
     - builtin-tool-notebook
     - builtin-tool-monitor
     - plugins-marketplace
     - ide-integrations
-    - managed-org-policy
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Change log
 # ─────────────────────────────────────────────────────────────────────────────
 
 change_log:
+  - date: '2026-04-18'
+    revision: '5.1'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-ORG-POLICY-001 closed — managed-org-policy row
+      flipped NONE → SHIPPED. **EPIC PMAT-CODE-PARITY-MATRIX-001
+      IS NOW CLOSEABLE.** New crates/aprender-orchestrate/src/
+      agent/org_policy.rs ships the Claude-Code enforced-tier
+      instruction loader as a pure file-read primitive:
+      `load_org_policy(roots, filename, max_bytes)` walks injected
+      roots in first-wins order and returns the first
+      `<root>/<filename>` that exists as an
+      `OrgPolicy { source, content, tier: PolicyTier::Enforced }`.
+      `canonical_system_roots()` returns
+      `[/etc/apr-code, /etc/claude-code]` — native path first,
+      Claude-Code cross-compat second. Missing files + I/O errors
+      silently skipped so a malformed `/etc` cannot ransom the
+      REPL at boot. `max_bytes=0` disables the loader;
+      `max_bytes>0` truncates on a UTF-8 char boundary with a
+      `(truncated from N bytes)` annotation. `PolicyTier` derives
+      `PartialOrd`/`Ord` so the prompt builder can total-order
+      instruction blocks by tier. 13 unit tests cover no-roots,
+      max_bytes=0, happy path, first-root-wins, second-root-
+      fallback, directory-shadowing-file, truncation, UTF-8
+      boundary preservation, below-budget passthrough, canonical
+      roots ordering, tier ordering, I/O-error tolerance, Clone
+      roundtrip. Runtime integration into the prompt builder
+      (layering enforced-tier above project/user) deferred to
+      PMAT-CODE-ORG-POLICY-RUNTIME-001 (P2). **Headline 13/3/5 →
+      14/3/4 over 21 rows.** **BOTH EPIC CLOSURE CONDITIONS MET**:
+      `headline.counts.shipped (14) >= target_shipped_min (9)`
+      AND `headline.counts.missing (4) <= target_missing_max (4)`.
+      FALSIFY-CODE-PARITY-005 now passes. Epic
+      PMAT-CODE-PARITY-MATRIX-001 can move to CLOSED in the
+      roadmap. Remaining 4 MISSING rows (notebook, monitor,
+      plugins, IDE) are all P2 deferred surfaces with no epic
+      dependency — they remain tracked for future milestones.
   - date: '2026-04-18'
     revision: '5.0'
     author: kaizen-paiml
