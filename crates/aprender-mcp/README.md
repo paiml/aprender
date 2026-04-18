@@ -38,12 +38,13 @@ apr mcp
 ## Milestones
 
 - **M1** (shipped): skeleton with `initialize` + `tools/list` + `apr.version`
-- **M2** (in progress): 8 Phase-1 tools as subprocess wrappers over
-  `apr <cmd> --json`. Shipped: `apr.validate`, `apr.tensors`, `apr.bench`,
+- **M2** (shipped): 7 Phase-1 tools as subprocess wrappers over
+  `apr <cmd> --json`: `apr.validate`, `apr.tensors`, `apr.bench`,
   `apr.qa`, `apr.trace`, `apr.run`, `apr.serve` (fire-and-forget; full
   lifecycle in M3) + dispatcher hardening (jsonrpc/protocolVersion gates).
-  Remaining: `apr.finetune` (streaming candidate, likely M3).
-- **M3**: streaming progress notifications + cancellation
+- **M3** (in progress): `apr.finetune` synchronous subprocess wrapper
+  (shipped — completes the 8-tool Phase-1 surface); streaming progress
+  notifications + cancellation are separate follow-up slices.
 - **M4**: Claude Code dogfood + contract promotion to ENFORCED
 
 ## Falsification gates
