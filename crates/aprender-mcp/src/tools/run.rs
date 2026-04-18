@@ -10,68 +10,32 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::tools::subprocess::{run_apr_cancellable, CANCEL_GRACE_MS};
-use crate::types::{InputSchema, PropertySchema, ToolCallResult, ToolDefinition};
-use std::collections::HashMap;
+use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
 use std::sync::mpsc::Receiver;
 
 /// Tool name registered with MCP clients.
 pub const NAME: &str = "apr.run";
 
 /// Return the MCP tool definition for `apr.run`.
+///
+/// FALSIFY-MCP-008: the `inputSchema` is parsed from the build-time codegen
+/// constant `crate::schemas::APR_RUN_SCHEMA`, which `build.rs` emits from
+/// `contracts/apr-mcp-tool-schemas-v1.yaml`. The contract is the single
+/// source of truth — the live `tools/list` response and the YAML must agree
+/// byte-for-byte after JSON canonicalization (asserted by
+/// `tests/falsify_mcp_008.rs`).
 #[must_use]
 pub fn run_tool_definition() -> ToolDefinition {
-    let mut properties = HashMap::new();
-    properties.insert(
-        "model_path".to_string(),
-        PropertySchema {
-            prop_type: "string".to_string(),
-            description: "Path to the model file (.apr, .gguf, or .safetensors) or hf://org/repo"
-                .to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "prompt".to_string(),
-        PropertySchema {
-            prop_type: "string".to_string(),
-            description: "Text prompt to generate from".to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "max_tokens".to_string(),
-        PropertySchema {
-            prop_type: "integer".to_string(),
-            description: "Maximum tokens to generate (default 32)".to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "temperature".to_string(),
-        PropertySchema {
-            prop_type: "number".to_string(),
-            description: "Sampling temperature (0.0 = greedy argmax, >0 = stochastic)".to_string(),
-            r#enum: None,
-        },
-    );
-    properties.insert(
-        "top_p".to_string(),
-        PropertySchema {
-            prop_type: "number".to_string(),
-            description: "Top-p nucleus sampling threshold (omit to disable)".to_string(),
-            r#enum: None,
-        },
+    let input_schema: InputSchema = serde_json::from_str(crate::schemas::APR_RUN_SCHEMA).expect(
+        "FALSIFY-MCP-008: apr.run codegen constant must parse as InputSchema; \
+             regenerate by editing contracts/apr-mcp-tool-schemas-v1.yaml and rebuilding",
     );
     ToolDefinition {
         name: NAME.to_string(),
         description:
             "Run synchronous inference on a model. Wraps `apr run <model> --json` and returns tokens + tok/s + stop reason."
                 .to_string(),
-        input_schema: InputSchema {
-            schema_type: "object".to_string(),
-            properties,
-            required: vec!["model_path".to_string()],
-        },
+        input_schema,
     }
 }
 
