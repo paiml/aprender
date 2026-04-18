@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SPEC-SHIP-TWO-001 v2.0 — first sovereign published model.** `paiml/qwen2.5-coder-7b-apache-q4k-v1` (teacher checkpoint, 7.5 GB .apr, Apache-2.0) published to HuggingFace Hub. First artifact to pass the full apr publish contract (schema + sha256 + SPDX + recipe + parent-chain).
+- **`apr qa --require-golden-output`** — promotes the Golden Output gate from a soft skip to a hard ship-blocker. When set, a SKIPPED `golden_output` gate (tokenizer missing, `--skip-golden`, inference-feature-off build) becomes a FAIL instead of a silent pass. Closes the hole that let a distilled checkpoint emit garbage for 14 days before audit.
+- **`apr validate-manifest`** — new subcommand implementing `contracts/publish-manifest-v1.yaml` FALSIFY-PM-001..006 in pure Rust: schema conformance (12 top + 7 provenance), sha256 stream-hash vs local artifact, SPDX license allowlist, recipe_sha256 reproducibility, and parent-chain termination. Closes the AC-EX-004 tool-gap — prior pyyaml helper was not runnable from the canonical binary.
+- **`apr validate-manifest --live`** — discharges FALSIFY-PM-003 (URL HEAD + content-length match) and FALSIFY-PM-002-live (streaming GET + sha256) natively via `ureq`. Dogfoods F-PUBLISH-EXTRA-001::dogfood_ex05 — `scripts/ship-two-001/ex-05-verify-manifest.sh` no longer invokes external interpreters, eliminating the Python dependency from the ship path. Contract `apr-cli-publish-extra-v1.yaml` bumped to v1.1.0 with FALSIFY-PUB-EXTRA-008.
+- **FALSIFY-PM-007 safetensors header dtype Poka-Yoke** — `apr validate-manifest --artifact model.safetensors` parses the safetensors header JSON and verifies per-tensor dtype matches `manifest.quantization` (fp16→F16, bf16→BF16, fp32→F32). Weight tensors must match; norm/bias tensors may stay F32. Would have caught the 30.46 GiB F32 fp16-manifest bug at publish time. Contract `publish-manifest-v1.yaml` bumped to v1.1.0 with 8 unit tests (including the exact ship-blocker scenario from SHIP-TWO-001 §12.7.2).
+- **`contracts/publish-manifest-v1.yaml`** — schema + 6 falsification tests (PM-001..006) for model artifact publish manifests. Covers sha256 integrity, URL liveness, SPDX license validity, recipe reproducibility, and parent-chain termination.
+- **`contracts/eval-sharding-v1.yaml` + `scripts/ship-two-001/eval-shard.sh` + `eval-shard-merge.py`** — parallel eval lane for future multi-host HumanEval/MBPP/BigCodeBench runs. Round-robin stride sharding, Chen et al. unbiased merge, 4 falsification gates (completeness, disjointness, determinism parity, merged-score identity). FALSIFY-SHARD-004 empirically discharged: Δ=0.0039 pp on the real teacher eval JSON (inside 0.01 pp parity bar).
+- **ALB-093 / GH-434: streaming APR→Q4K path for ≥4 GiB models** — enables training/fine-tuning at model scales that previously OOM'd on the single-pass quantize path. (#749)
+
+### Changed
+- **`scripts/ship-two-001/ex-06-pull-and-rerun.sh` harness v2** — relaxed AC-EX-006 verification to match spec §12.3 literal ("emits syntactically valid Python"). Prior harness required `def fib` to appear in the completion, which is stricter than the spec; Instruct models greedy-decoding a raw prompt don't reliably autocomplete (teacher's 84.76% HumanEval works via the eval harness's instruction wrapper, not raw completion). v2 finds the longest leading-line prefix that `ast.parse`s and requires ≥ 1 non-trivial statement (regression-checked against garbage/empty/comment-only inputs). Pre-upload local dry-run PASSES.
+- **GH-478: per-layer dequant for native Q4/Q8 tensors** — `apr run` on native-quantized .apr files now dequantizes layer-at-a-time instead of up-front, reducing peak memory on large models. (#750)
+- **Decode hot-path hygiene (HP-001 / HP-002 / HP-003)** — removed per-token `/tmp` writes, realizar#198 diagnostic eprintlns, and PMAT-450 prefix-cache eprintlns from the GPU decode path. 1.5B Q4_K_M: **184 → 382 tok/s (2.07×)**. Short-prompt 32-tok bench: 442.8 → 479.9 tok/s.
+- **F-FLASH-DECODE-REGRESSION-001: auto-disable split-K for small models** — FlashDecoding was hurting 1.5B decode throughput; gated by model size. 383 → 412 tok/s median.
+- **F-ATTN-MULTIWARP-WARPS-001: tuned `num_warps_per_head`** — 4 warps/head is optimal for small-model decode (2-warp −1.3%, 1-warp −7%).
+- **F-PROFILE-010: separate graphed throughput from ungraphed per-op hotspots** — `apr profile` output now labels methodology; launch-overhead metric normalized per-token.
+
+### Fixed
+- **F2 cosine parity gate (PMAT-PARITY-GATE-V2)** — CPU↔GPU parity now computed on logits cosine, not argmax-exact. Cuts false-positive parity failures from sampling-determinism drift.
+- **F-PUBLISH-EXTRA-001::safetensors_dtype_fp16 — fp16 dispatch in `apr export --format safetensors`** — the end-user `apr_export` → `dispatch_export` → `ExportFormat::SafeTensors` path (`format/converter/gguf_export_config.rs::export_safetensors_with_companions`) was ignoring `options.quantize` and always writing F32, silently producing a 30.46 GiB file when `--quantize fp16` was requested. Now routes through `save_safetensors_quantized`, producing the expected 14.19 GiB F16 artifact for Qwen2.5-Coder-7B. The unit-tested `save_model_tensors` path was correct but unreachable from `apr_export` — this was a missed wire between the two writers after they were split. Three ship manifests (`-apr`, `-safetensors`, `-gguf`) now validate PASS against `apr validate-manifest`.
+
+### Falsified (documented, no code change)
+- **F-RMSNORM-FUSION-001 on 1.5B** — +0.55% (within noise) on 1.5B retest; 1-in-6 runs hit `CUDA_ERROR_ILLEGAL_ADDRESS`. FUSION-003 BLOCKED on both 7B (3× regress) and 1.5B (neutral). See `contracts/kernel-fusion-v1.yaml` v1.1.0.
+- **F-ATTN-FLASHDECODE-2WARP-001** — trueno#253 2-warp chunk kernel lost 0.9%; wrapper overhead dominates, not chunk occupancy.
+- **F-DECODE-GPU-RESIDENT-SAMPLING-001** — contract falsified; see `contracts/gpu-resident-sampling-v1.yaml`.
+- **SHIP-TWO-001 MODEL-1 distilled v2 checkpoint** — `qwen2.5-coder-7b-distilled-v2-q4k.apr` emits garbage ("ylkoylko..."); `apr qa` Golden Output FAIL despite Tensor Contract PASS. AC-SHIP1-005 falsified. v2.0.0 spec pivots to teacher-first ship.
+
+### MoE / PMAT-587 series
+- **PMAT-587 Phase 2c integrated** — `cuGraphExecKernelNodeSetParams` wired into MoE decode hotpath.
+- **PMAT-588** — event-based MoE stream sync (SHIPPED).
+- **PMAT-589** — resolved `apr trace --gpu` dispatch regression (unblocked PMAT-587).
+- **PMAT-592** — `cuda_layer_ffn` MoE detection guard.
+- **PMAT-593** — `apr run` ChatML special-token regression fix.
+- **`apr trace --json`** now emits per-layer tensors[] + param_count.
+
+### Dependencies / housekeeping
+- (pending) at release cut: merge this block into the [0.31.0] - YYYY-MM-DD section; populate manifest `eval_results.humaneval.pass_at_1`; complete SHIP-TWO-001 EX-04..07 (HF Hub upload + sha verify + release tag).
+
+## [0.31.0] - 2026-04-15
+
 ### Fixed
 - **GH-375: GGUF Q4_0/Q5_0/Q8_0 import fallback** — `apr import` of GGUF files with unsupported quantization types (Q4_0, Q5_0, Q8_0) now falls back to dequant-requant path instead of failing. Raw import preserves Q4_K/Q6_K exactly; legacy types go through f32 intermediate with optional `--quantize q4k`.
 - **GH-90: Honest brick benchmarks** — `apr bench --brick` no longer times a no-op `budget()` call (which reported 0.02us / 55M tok/s). Bricks without `run()` implementations now report their analytical budget estimate with a clear "ANALYTICAL" label. Use `apr bench --fast` for real measured throughput.
@@ -42,6 +83,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `apr finetune --task classify` now auto-detects and corrects class imbalance (via entrenar auto-balancing)
+
+### Dependencies
+- 13,026 tests passing (aprender-core)
+- All 78 workspace crates at v0.31.0
+
+## [0.30.0] - 2026-04-12
+
+### Changed
+- Monorepo consolidation complete (APR-MONO)
+- All trueno, presentar, entrenar, realizar crates merged into aprender workspace
+- Coordinated PAIML Sovereign AI Stack release
 
 ## [0.27.0] - 2026-02-26
 

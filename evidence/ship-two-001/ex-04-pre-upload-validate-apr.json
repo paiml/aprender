@@ -1,0 +1,37 @@
+{
+  "manifest_path": "contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-apr.yaml",
+  "artifact_path": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+  "falsification_results": [
+    {
+      "id": "FALSIFY-PM-001",
+      "verdict": "PASS",
+      "detail": "all 12 top + 7 provenance required fields present"
+    },
+    {
+      "id": "FALSIFY-PM-002",
+      "verdict": "PASS",
+      "detail": "sha256 match: 0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666"
+    },
+    {
+      "id": "FALSIFY-PM-003",
+      "verdict": "DEFERRED",
+      "detail": "URL HEAD check requires network; re-run with --live"
+    },
+    {
+      "id": "FALSIFY-PM-004",
+      "verdict": "PASS",
+      "detail": "3 SPDX identifier(s) valid"
+    },
+    {
+      "id": "FALSIFY-PM-005",
+      "verdict": "PASS",
+      "detail": "recipe_sha256 match (contracts/model-families/qwen2.yaml): f098ac0813515b669389d4317fff442cf0812b18a181d446d170e182a3689d8b"
+    },
+    {
+      "id": "FALSIFY-PM-006",
+      "verdict": "PASS",
+      "detail": "parent chain terminates at Qwen/Qwen2.5-Coder-7B-Instruct"
+    }
+  ],
+  "overall": "PASS"
+}

@@ -1,0 +1,350 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-LLAMA-370M-SOVEREIGN
+# Architectural contract for the 370M Llama-family sovereign
+# Python code-completion model (SHIP-TWO-001 MODEL-2 "albor").
+# ─────────────────────────────────────────────────────────────
+# Discharges SHIP-TWO-001 AC-SHIP2-001 (architecture registered).
+# This contract extends contracts/model-families/llama.yaml with a
+# new `370m` size variant, and freezes the exact dimensions,
+# attention topology, RoPE configuration, activation, and
+# embedding-tying decision for the albor sovereign model.
+#
+# Why a dedicated contract rather than merely amending llama.yaml?
+# Because the 370m slot is NOT a Meta-shipped variant — it is a
+# from-scratch PAIML training target whose dimensions must be
+# frozen *as a compiler-level invariant* before pretraining
+# begins. Re-deriving the dimensions from a training script is
+# how MODEL-1 v2 divergence escaped review (rank mismatch: recipe
+# said 32, run used 16 — see
+# memory/project_ship_two_001_model1_qlora_divergence.md).
+#
+# Parent: contracts/model-families/llama.yaml           (base family)
+# Peer:   contracts/tokenizer-bpe-v1.yaml               (50K BPE vocab)
+# Peer:   contracts/training-loop-pretrain-v1.yaml      (pretrain loop)
+# Peer:   contracts/tensor-layout-v1.yaml               (row-major APR)
+#
+# References:
+#   - docs/specifications/aprender-train/ship-two-models-spec.md §5
+#     (MODEL-2 — albor, 370M, hidden=1024, layers=24, heads=16, kv_heads=4)
+#   - Touvron et al. (2023) LLaMA: Open and Efficient Foundation Language
+#     Models. arXiv:2302.13971
+#   - Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position
+#     Embedding. arXiv:2104.09864
+#   - Shazeer (2020) GLU Variants Improve Transformer. arXiv:2002.05202
+#   - Ainslie et al. (2023) GQA: Training Generalized Multi-Query
+#     Transformer Models from Multi-Head Checkpoints. arXiv:2305.13245
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-LLAMA-370M-SOVEREIGN
+version: 1.0.0
+status: PROPOSED
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  description: >
+    Frozen architectural invariants for the 370M Llama-family sovereign
+    Python code-completion model (SHIP-TWO-001 MODEL-2 "albor"). Freezes
+    layer count, hidden size, head count, KV-head count (GQA), vocab size,
+    tied-embedding flag, RoPE base, and activation before pretraining
+    begins, so that any drift between the training recipe and the actual
+    model is detected at contract-validation time rather than post-hoc.
+  registry: true
+  kind: model-family-variant
+  parent_contracts:
+    - contracts/model-families/llama.yaml
+  peer_contracts:
+    - contracts/tokenizer-bpe-v1.yaml
+    - contracts/training-loop-pretrain-v1.yaml
+    - contracts/tensor-layout-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §5 (MODEL-2)"
+    - "Touvron et al. (2023) — LLaMA architecture baseline"
+    - "Su et al. (2021) — RoPE positional encoding"
+    - "Shazeer (2020) — SwiGLU activation (GLU variants)"
+    - "Ainslie et al. (2023) — GQA (num_kv_heads = num_heads / 4)"
+
+summary: >
+  Frozen architectural invariants for the 370M Llama-family sovereign
+  Python code-completion model (SHIP-TWO-001 MODEL-2 "albor"). Freezes
+  layer count, hidden size, head count, KV-head count (GQA), vocab size,
+  tied-embedding flag, RoPE base, and activation before pretraining
+  begins, so that any drift between the training recipe and the actual
+  model is detected at contract-validation time rather than post-hoc.
+
+motivation: >
+  The MODEL-1 v2 QLoRA divergence event (2026-04-17) proved that
+  recipe/artifact drift — in that case, rank=16 actually used vs rank=32
+  on the recipe — can silently destroy training before a single eval
+  runs. A machine-checkable architectural contract turns "what did we
+  actually train" into a gate that MUST pass before entrenar starts,
+  before `apr qa` runs, and before `apr publish` ships.
+
+# ─────────────────────────────────────────────────────────────
+# Architectural constants (frozen — any change requires v1.1.0)
+# ─────────────────────────────────────────────────────────────
+
+family: llama
+display_name: "albor sovereign 370M (LLaMA-family)"
+vendor: PAIML
+architectures:
+  - LlamaForCausalLM
+hf_pattern: "paiml/albor-370m-*"
+
+size_variant: "370m"
+
+architecture:
+  parameters: "370M"
+  hidden_dim: 1024
+  num_layers: 24
+  num_heads: 16
+  num_kv_heads: 4              # GQA — kv_heads = heads / 4
+  head_dim: 64                 # hidden_dim / num_heads
+  intermediate_dim: 2816       # ~2.75 × hidden (SwiGLU convention)
+  vocab_size: 50000            # BPE trained on Python corpus (see tokenizer-bpe-v1)
+  max_position_embeddings: 4096
+  rope_theta: 10000.0          # Llama-1 convention (not 500_000 like Llama-3 — short ctx)
+  rms_norm_eps: 0.00001
+
+constraints:
+  attention_type: gqa
+  activation: silu             # SwiGLU = SiLU(gate) * up
+  norm_type: rmsnorm
+  has_bias: false              # LLaMA convention — no bias on linear projections
+  tied_embeddings: true        # 370M is small enough — weight tying saves ~50M params
+  positional_encoding: rope
+  mlp_type: swiglu
+
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"     # aliased to embedding via tied_embeddings
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj: "model.layers.{n}.self_attn.q_proj.weight"
+    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
+    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
+    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
+    gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
+    up_proj: "model.layers.{n}.mlp.up_proj.weight"
+    down_proj: "model.layers.{n}.mlp.down_proj.weight"
+    input_layernorm: "model.layers.{n}.input_layernorm.weight"
+    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
+    q_proj_bias: null
+    k_proj_bias: null
+    v_proj_bias: null
+
+gguf_tensor_template:
+  embedding: "token_embd.weight"
+  position_embedding: null
+  lm_head: "output.weight"
+  final_norm_weight: "output_norm.weight"
+  final_norm_bias: null
+  per_layer:
+    q_proj: "attn_q.weight"
+    k_proj: "attn_k.weight"
+    v_proj: "attn_v.weight"
+    o_proj: "attn_output.weight"
+    gate_proj: "ffn_gate.weight"
+    up_proj: "ffn_up.weight"
+    down_proj: "ffn_down.weight"
+    input_layernorm: "attn_norm.weight"
+    post_attention_layernorm: "ffn_norm.weight"
+    q_proj_bias: null
+    k_proj_bias: null
+    v_proj_bias: null
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  gate_proj: "[intermediate_dim, hidden_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q6_k
+  - q8_0
+  - f16
+  - f32
+
+# Bare-prompt completion (no chat template — albor is a base code model).
+chat_template:
+  format: none
+  template: "{{ prompt }}"
+  bos_token: "<|bos|>"
+  eos_token: "<|eos|>"
+  special_tokens:
+    bos: "<|bos|>"
+    eos: "<|eos|>"
+    pad: "<|pad|>"
+    unk: "<|unk|>"
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — machine-checkable architectural properties
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-ARCH-370M-001
+    description: >
+      Parameter count lies in [366M, 374M] (370M ± 1%). Includes
+      embedding, all transformer block parameters, and final norm.
+      lm_head is tied (counted once with embedding).
+    falsifier: >
+      Load `.apr` via `apr inspect --json`, sum all tensor numel fields,
+      assert param_count ∈ [366_000_000, 374_000_000]. Any deviation
+      proves a dimension drifted from contract.
+
+  - id: INV-ARCH-370M-002
+    description: >
+      num_heads × head_dim == hidden_dim. 16 × 64 == 1024.
+    falsifier: >
+      Static check on architecture block — assert
+      num_heads * head_dim == hidden_dim. If false, Q projection is
+      malformed and attention will silently reshape garbage.
+
+  - id: INV-ARCH-370M-003
+    description: >
+      num_kv_heads divides num_heads evenly (GQA grouping). 4 divides 16.
+    falsifier: >
+      Static check — assert num_heads % num_kv_heads == 0. If false,
+      GQA broadcast will fail at runtime with a non-obvious shape
+      mismatch inside the attention kernel.
+
+  - id: INV-ARCH-370M-004
+    description: >
+      lm_head.weight and model.embed_tokens.weight share storage
+      (tied_embeddings = true). In GGUF export, only `token_embd.weight`
+      is present; `output.weight` MUST NOT appear as a separate tensor.
+    falsifier: >
+      `apr inspect --json model.gguf | jq '.tensors[].name' | grep -c
+      "^output.weight$"` returns 0 AND `token_embd.weight` is present.
+      If `output.weight` appears as a distinct tensor, tying is broken
+      and memory footprint is ~50M params heavier than contract allows.
+
+  - id: INV-ARCH-370M-005
+    description: >
+      RoPE base (theta) is exactly 10000.0. This matches Llama-1
+      convention and the pretraining schedule — Llama-3's 500_000 is
+      NOT compatible with a 4096-token max-context albor without
+      retraining the positional schedule.
+    falsifier: >
+      Load GGUF metadata, read `llama.rope.freq_base`, assert
+      fabs(value - 10000.0) < 1e-3. If the exporter silently writes
+      500_000, all generated tokens past a few hundred positions
+      will decohere.
+
+  - id: INV-ARCH-370M-006
+    description: >
+      vocab_size == 50000 and exactly matches the paired BPE tokenizer
+      (contracts/tokenizer-bpe-v1.yaml INV-BPE-001). Drift between
+      tokenizer vocab and embedding row count produces silent garbage.
+    falsifier: >
+      Load tokenizer, assert tokenizer.vocab_size() == 50000 AND load
+      model embedding, assert embedding.shape[0] == 50000. If either
+      differs, mark FAIL — refuse to start training.
+
+  - id: INV-ARCH-370M-007
+    description: >
+      Activation is SwiGLU (silu gate × up). No GELU, no ReLU,
+      no tanh. gate_proj and up_proj are both [intermediate_dim,
+      hidden_dim] and distinct (not fused in the checkpoint).
+    falsifier: >
+      For every layer n, assert both model.layers.{n}.mlp.gate_proj.weight
+      AND .up_proj.weight are present with shape [2816, 1024]. Missing
+      either tensor (e.g. fused ffn) falsifies this invariant.
+
+  - id: INV-ARCH-370M-008
+    description: >
+      has_bias == false for every linear projection (q/k/v/o/gate/up/down).
+      This matches Llama convention. Any *.bias tensor in the checkpoint
+      falsifies this contract — typically indicates a Qwen2 template was
+      accidentally applied.
+    falsifier: >
+      `apr inspect --json model.apr | jq '.tensors[].name' |
+      grep -E "\.(q|k|v|o|gate|up|down)_proj\.bias$" | wc -l` == 0.
+      Any match is a failure.
+
+  - id: INV-ARCH-370M-009
+    description: >
+      Row-major APR layout (LAYOUT-001). Embedding shape is
+      [vocab_size, hidden_dim] = [50000, 1024], NOT [1024, 50000].
+      This is the most-bitten bug in the project (100+ occurrences);
+      import from column-major GGUF MUST transpose.
+    falsifier: >
+      Assert APR header shape == [50000, 1024] for embedding tensor.
+      Reversed shape triggers layout_contract::CONTRACT.validate_apr_shape
+      failure at load time.
+
+# ─────────────────────────────────────────────────────────────
+# Acceptance gates (bind to AC-SHIP2-* in the spec)
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-ARCH-370M-001
+    rule: >
+      llama.yaml (or this sibling contract) contains a `370m` entry
+      that validates against contracts/model-families/_schema.yaml.
+    evidence_required: >
+      `pmat contract validate contracts/model-families/llama-370m-sovereign-v1.yaml`
+      exits 0. The published llama.yaml `size_variants.370m` entry,
+      once amended, lists all 9 keys (parameters, hidden_dim, num_layers,
+      num_heads, num_kv_heads, intermediate_dim, vocab_size,
+      max_position_embeddings, head_dim, rope_theta, rms_norm_eps) with
+      values byte-equal to this contract.
+    verdict: pass
+    binds_to: AC-SHIP2-001
+    falsification_id: FALSIFY-SHIP-011
+
+  - id: GATE-ARCH-370M-002
+    rule: >
+      Every INV-ARCH-370M-* invariant is machine-verified against a
+      real on-disk artifact before the artifact enters ship staging.
+    evidence_required: >
+      `apr qa model.apr --arch-contract llama-370m-sovereign-v1` runs
+      all 9 invariant checks and exits 0. Output JSON records 9 passed
+      invariants; 0 failed; 0 skipped.
+    verdict: pass
+    binds_to: AC-SHIP2-005
+
+  - id: GATE-ARCH-370M-003
+    rule: >
+      Parameter count reported by `apr inspect` is within the ±1% band
+      codified by INV-ARCH-370M-001.
+    evidence_required: >
+      `apr inspect --json model.apr | jq '.param_count'` yields an
+      integer P with 366_000_000 ≤ P ≤ 374_000_000.
+    verdict: pass
+    binds_to: AC-SHIP2-005
+    falsification_id: FALSIFY-SHIP-015
+
+  - id: GATE-ARCH-370M-004
+    rule: >
+      GGUF export of the final checkpoint round-trips: exported file
+      loads in llama.cpp AND matches APR first-token logits within
+      tolerance (cosine ≥ 1 - 1e-3).
+    evidence_required: >
+      Running the spec's GATE-SHIP-006 harness against the 370m
+      artifact produces `gguf_roundtrip: pass` with
+      max_logit_cosine_delta ≤ 1e-3 over the 100 canary prompts.
+    verdict: pass
+    binds_to: AC-SHIP2-009
+    falsification_id: FALSIFY-SHIP-019
+
+references:
+  - "contracts/model-families/llama.yaml (parent)"
+  - "contracts/model-families/_schema.yaml (schema)"
+  - "contracts/tokenizer-bpe-v1.yaml (INV-BPE-001 vocab coupling)"
+  - "contracts/training-loop-pretrain-v1.yaml (loss + divergence gates)"
+  - "contracts/tensor-layout-v1.yaml (LAYOUT-001 row-major)"
+  - "docs/specifications/aprender-train/ship-two-models-spec.md §5"
+  - "memory/project_ship_two_001_model1_qlora_divergence.md (motivation)"

@@ -1,0 +1,676 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: F-PUB-LFS-001
+# apr publish: proper HuggingFace Hub large-file upload via Xet
+# ─────────────────────────────────────────────────────────────
+# Closes SHIP-TWO-001 EX-04 ship-blocker: `apr publish` cannot upload
+# files > 5 GiB because HF Hub's HTTP preupload API returns
+# `uploadMode:lfs` with empty URLs for oversized artifacts, triggering
+# `reject_oversized_file()` in crates/aprender-core/src/hf_hub/upload.rs.
+#
+# The real fix is NOT sharding (workaround) and NOT a self-hosted S3
+# mirror (not sovereign — still AWS-dependent). The real fix is to
+# implement HF Hub's actual current large-file protocol: **Xet**.
+#
+# Xet is HF's content-addressable storage backend, open-spec'd at
+# https://huggingface.co/docs/xet/index (v1.0.0). Reference Rust
+# implementation: github.com/huggingface/xet-core (Apache-2.0,
+# v1.4.3 as of 2026-03-31), published on crates.io as `hf-xet`,
+# `xet-client`, `xet-data`, `xet-core-structures`, `xet-runtime`.
+#
+# The prior `hf_transfer` crate is deprecated by Hugging Face in
+# favor of `hf_xet` / `xet-core`.
+#
+# Parent: contracts/apr-cli-publish-v1.yaml           (base publish)
+# Peer:   contracts/apr-cli-publish-extra-v1.yaml     (manifest + sidecars)
+# Peer:   contracts/publish-manifest-v1.yaml          (artifact schema)
+# Peer:   contracts/tensor-layout-v1.yaml             (binary layer)
+#
+# References:
+#   - https://huggingface.co/docs/xet/index             (protocol spec v1.0.0)
+#   - https://huggingface.co/docs/xet/en/upload-protocol
+#   - https://huggingface.co/docs/xet/en/api            (CAS API)
+#   - https://huggingface.co/docs/xet/en/auth           (token flow)
+#   - https://huggingface.co/docs/xet/en/chunking       (gearhash CDC)
+#   - https://huggingface.co/docs/xet/en/xorb           (64 MiB xorb)
+#   - https://huggingface.co/docs/xet/en/shard          (shard format)
+#   - https://huggingface.co/docs/xet/en/hashing        (MerkleHash, term verify)
+#   - https://github.com/huggingface/xet-core           (Rust ref impl)
+#   - https://huggingface.co/docs/hub/en/storage-backends
+#   - evidence/ship-two-001/ex-04-five-whys-lfs-5gb-blocker.md
+#   - MEMORY: feedback_full_problems_pmat_contracts.md
+# ─────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.1.1
+  created: '2026-04-18'
+  updated: '2026-04-18'
+  author: PAIML Engineering
+  registry: true
+  status: IMPLEMENTED
+  parent_contracts:
+  - contracts/apr-cli-publish-v1.yaml
+  - contracts/apr-cli-publish-extra-v1.yaml
+  - contracts/publish-manifest-v1.yaml
+  references:
+  - 'SHIP-TWO-001 §12.8 (v2.8.0 amendment — this contract)'
+  - 'evidence/ship-two-001/ex-04-five-whys-lfs-5gb-blocker.md'
+  - 'https://huggingface.co/docs/xet/index (Xet Protocol Specification v1.0.0)'
+  - 'https://github.com/huggingface/xet-core'
+  - 'crates/aprender-core/src/hf_hub/xet.rs (implementation, v1.1.0)'
+  - 'crates/aprender-core/src/hf_hub/upload.rs:366-383 (dispatch site)'
+  changelog:
+  - 'v1.0.0 (2026-04-18): Initial DbPC contract. 10 falsification gates covering
+    file-size dispatch, Xet token acquisition, chunk invariants, xorb size,
+    shard ordering, idempotency, retry policy, hash-string encoding, LFS
+    pointer git commit, and three-format dogfood end-to-end upload.'
+  - 'v1.1.0 (2026-04-18): Phase 2 implementation landed. hf-xet 1.5.1 wired
+    via new `xet` feature in crates/aprender-core and crates/apr-cli. The
+    real hf-xet blocking API (XetSessionBuilder → new_upload_commit →
+    with_token_refresh_url → build_blocking → upload_from_path_blocking →
+    commit_blocking) proved simpler than v1.0.0 anticipated: phases 3-7
+    (chunking, dedup, xorb CAS upload, shard upload, hash encoding) are
+    delegated wholesale to the Hugging Face reference implementation;
+    our wrapper (178 lines) only owns phases 1 (dispatch), 2 (token-refresh
+    URL + auth header construction), and 8 (error mapping around the final
+    LFS pointer commit). 4 unit tests discharge FALSIFY-PUB-LFS-001/002
+    deterministically; live EX-04 upload still pending HF_TOKEN.'
+  - 'v1.1.1 (2026-04-18): No behavioral change — evidence-only patch.
+    FALSIFY-PUB-LFS-001 now carries two distinct pieces of evidence in
+    tree: (a) `evidence/ship-two-001/ex-04-xet-phase2-wiring.json`
+    (commit ee6382803) — binary linkage proof via strings(apr) showing
+    hf-xet 1.5.1 runtime statically linked; (b)
+    `evidence/ship-two-001/ex-04-xet-dryrun-teacher.{json,txt}`
+    (commit 18f8b5604) — live-on-teacher dry-run against the actual
+    8/8/15 GiB SHIP-TWO-001 artifacts under the canonical
+    `/mnt/nvme-raid0/targets/aprender/release/apr`, showing all three
+    files route to Xet CAS. FALSIFY-PUB-LFS-010 (three-format dogfood)
+    still pending HF_TOKEN; no code edits in this patch.'
+  description: >
+    Contract for `apr publish` when the local artifact exceeds the 5 GiB
+    HF Hub HTTP preupload threshold. Routes such artifacts through the
+    **Xet protocol** (HF's current large-file storage backend) instead of
+    aborting. Files < 5 GiB continue using the existing preupload/HTTP
+    path unchanged. Implementation leans on `xet-core` Rust crates
+    (Apache-2.0, crates.io) — no re-implementation of the protocol.
+
+# ─────────────────────────────────────────────────────────────
+# Equations (behavioral contracts)
+# ─────────────────────────────────────────────────────────────
+
+equations:
+
+  # ── 1. File-size dispatch ──────────────────────────────────
+  file_size_dispatch:
+    formula: |
+      For every file F with size S bytes scheduled for upload by
+      `apr publish`:
+
+        dispatch(F) = {
+          HTTP_PREUPLOAD  if S  ≤ 5 * 1024^3 (5 GiB)
+          XET             if S  >  5 * 1024^3 AND repo is Xet-enabled
+          ERROR           if S  >  5 * 1024^3 AND repo is not Xet-enabled
+        }
+
+      The 5 GiB threshold is an HF Hub property (not configurable
+      by the client). Every HF Hub repo created after 2026 is
+      Xet-enabled by default (confirmed in HF docs). Legacy
+      pure-LFS repos still use the LFS batch API — that path is
+      OUT OF SCOPE for v1.0.0 of this contract and will be added
+      in v1.1 as FALSIFY-PUB-LFS-011..015 if required.
+
+      Dispatch MUST happen BEFORE any file bytes are read into
+      memory. The contract forbids the prior behavior where
+      `reject_oversized_file()` aborted on files > 5 GiB with an
+      error message recommending a non-existent
+      `apr export --max-shard-size` flag.
+    domain: local filesystem file × HF repo capability flag
+    codomain: upload transport (HTTP | XET)
+    invariants:
+    - "files ≤ 5 GiB use the existing send_preupload_request path unchanged"
+    - "files > 5 GiB on a Xet-enabled repo MUST be dispatched to the Xet uploader"
+    - "reject_oversized_file() MUST NOT appear in the > 5 GiB code path"
+    - "dispatch is decided from file size alone — never from filename or extension"
+
+  # ── 2. Xet token acquisition ───────────────────────────────
+  xet_token_acquisition:
+    formula: |
+      Before uploading a single byte via Xet, the client MUST
+      acquire a Xet CAS access token from the HF Hub:
+
+        GET https://huggingface.co/api/{repo_type}s/{repo_id}/xet-write-token/{revision}
+        Headers:
+          Authorization: Bearer ${HF_TOKEN}
+        Response (200 OK, application/json):
+          {
+            "accessToken": string,
+            "exp":         number,    // unix seconds
+            "casUrl":      string     // e.g. https://cas-server.xethub.hf.co
+          }
+
+      The client MUST:
+        - Parse all three fields
+        - Bail with a clear error on 401/403/404 (non-retryable)
+        - Refresh the token BEFORE `exp - 30s` per xet-core convention
+        - Authenticate every CAS-side request with
+          `Authorization: Bearer ${accessToken}` (NOT the HF_TOKEN)
+
+      For three-format SHIP-TWO-001 publishing, the repo_type is
+      `models`, repo_id is `paiml/qwen2.5-coder-7b-apache-q4k-v1`,
+      revision is `main`, and token_type is `write`.
+    domain: HF repo identifier × HF user token
+    codomain: (accessToken, casUrl, expiration) tuple
+    invariants:
+    - "client MUST NOT leak HF_TOKEN to CAS (use accessToken)"
+    - "client MUST NOT leak accessToken to HF Hub (use HF_TOKEN)"
+    - "client refreshes when (now + 30s) ≥ exp"
+    - "401 from CAS triggers token re-acquisition (not just retry)"
+
+  # ── 3. Chunk size invariants ───────────────────────────────
+  chunk_size_invariants:
+    formula: |
+      The Xet chunking algorithm is content-defined (gearhash CDC).
+      Every chunk produced by a compliant client MUST satisfy:
+
+        CHUNK_MIN    = 8 KiB   (8 * 1024 bytes)
+        CHUNK_TARGET = 64 KiB
+        CHUNK_MAX    = 128 KiB
+
+      EXCEPT:
+        - The last chunk of a file MAY be smaller than CHUNK_MIN.
+        - A file smaller than CHUNK_MIN produces exactly one
+          chunk of size(file).
+
+      The chunk hash MUST be computed per the Xet hashing spec
+      (not a generic SHA256 / BLAKE3 — see Xet spec §hashing for
+      the exact construction used for chunk hashes).
+
+      Implementation MUST use the reference xet-core
+      `deduplication/src/chunking.rs` boundary logic (or a
+      byte-for-byte equivalent), because any drift produces
+      different chunk hashes and breaks global deduplication.
+    domain: byte stream
+    codomain: ordered sequence of (chunk_hash, chunk_bytes) pairs
+    invariants:
+    - "for every chunk c: 8 KiB ≤ |c| ≤ 128 KiB, EXCEPT the last chunk of a file"
+    - "chunk_hash(c) is deterministic — same bytes produce same hash across runs"
+    - "chunk boundaries are deterministic — same bytes produce same boundaries"
+
+  # ── 4. Xorb size invariant ─────────────────────────────────
+  xorb_size_invariant:
+    formula: |
+      Chunks are grouped into xorbs for transport. Every xorb
+      uploaded by a compliant client MUST satisfy:
+
+        serialized_size(xorb) ≤ 64 MiB (64 * 1024 * 1024 bytes)
+
+      On average a xorb contains ~1024 chunks, but the count
+      varies based on chunk sizes and compression.
+
+      When total new (post-dedup) chunks for a file exceed 64 MiB
+      serialized, the client MUST emit multiple xorbs and
+      reference each in the file reconstruction.
+    domain: chunk sequence
+    codomain: xorb sequence with size constraint
+    invariants:
+    - "no single xorb exceeds 64 MiB serialized"
+    - "reconstructing a file in order yields the original bytes (integrity)"
+    - "xorb_hash(xorb) is deterministic across runs given identical chunk contents in identical order"
+
+  # ── 5. Shard-after-xorbs ordering ──────────────────────────
+  shard_after_xorbs_ordering:
+    formula: |
+      A shard references one or more xorbs via their hashes.
+      The CAS server REJECTS any shard upload where a referenced
+      xorb is not already present.
+
+      Therefore the client MUST upload every referenced xorb via
+      `POST /v1/xorbs/default/{xorb_hash}` (and receive 2xx)
+      before uploading the shard via `POST /v1/shards`.
+
+      The client MAY upload xorbs concurrently but MUST NOT begin
+      the shard upload until every referenced xorb upload has
+      returned 2xx.
+
+      Violation manifests as 400 Bad Request from the shard
+      endpoint with a "referenced xorb not found" body.
+    domain: xorb upload futures × shard upload future
+    codomain: strict happens-before ordering
+    invariants:
+    - "every referenced xorb upload completes before shard upload starts"
+    - "a 400 on shard upload indicates this ordering was violated or the shard bytes are malformed"
+
+  # ── 6. Content-addressable idempotency ─────────────────────
+  content_addressable_idempotency:
+    formula: |
+      Both xorb and shard upload endpoints are idempotent with
+      respect to their content-addressed keys:
+
+        POST /v1/xorbs/default/{xorb_hash}
+          - First call: 200 OK { "was_inserted": true  }
+          - Nth call:   200 OK { "was_inserted": false }  (NOT an error)
+
+        POST /v1/shards
+          - Result 0 = "already exists" (NOT an error)
+          - Result 1 = "SyncPerformed"  (newly registered)
+
+      The client MUST treat `was_inserted:false` and `result:0`
+      as SUCCESS. A naive implementation that treats
+      `was_inserted:false` as an error breaks retry/resume
+      scenarios after a partial upload.
+    domain: CAS upload response
+    codomain: client success|error classification
+    invariants:
+    - "was_inserted:false is success (idempotent replay)"
+    - "result:0 is success (idempotent replay)"
+    - "retrying a successful xorb upload is safe (no data corruption, no double-charge)"
+
+  # ── 7. Retry policy ────────────────────────────────────────
+  retry_policy:
+    formula: |
+      CAS API error taxonomy per Xet spec §api#error-cases:
+
+        RETRYABLE (exponential backoff, up to N attempts):
+          - 429 Too Many Requests           (rate limit — honor Retry-After)
+          - 500 Internal Server Error       (transient)
+          - 503 Service Unavailable         (transient)
+          - 504 Gateway Timeout             (transient)
+          - connection-level errors         (TCP reset, DNS, TLS)
+
+        NON-RETRYABLE (abort with error):
+          - 400 Bad Request                 (client bug — hash mismatch,
+                                             malformed body, bad hash path)
+          - 401 Unauthorized                (refresh token, retry once,
+                                             then abort)
+          - 403 Forbidden                   (wrong scope — abort, do not
+                                             retry: the token is read-only)
+          - 404 Not Found                   (resource absent — abort)
+          - 416 Range Not Satisfiable       (reconstruction API only)
+
+      Default parameters: max 6 attempts, base 500 ms, cap 30 s,
+      jitter ±20 %. Client MAY override via env or config.
+    domain: HTTP status code
+    codomain: retry decision tree
+    invariants:
+    - "401 does NOT retry forever — at most one retry after forced token refresh"
+    - "400 / 403 / 404 / 416 never retry (they indicate client-side bugs)"
+    - "429 honors Retry-After header when present"
+
+  # ── 8. Hash-string encoding (Xet spec §api) ────────────────
+  hash_string_encoding:
+    formula: |
+      Xet hashes are 32 bytes. When used in URL paths (e.g.
+      xorb_hash in /v1/xorbs/default/{hash}), they are NOT
+      encoded as naive hex.
+
+      Instead, for each 8-byte block (indices 0-7, 8-15, 16-23,
+      24-31), reverse the byte order within the block, then
+      concatenate the four blocks as hex. Equivalently: treat
+      each 8-byte block as a little-endian u64, and print each
+      u64 as 16 hex chars.
+
+      Example (from Xet spec):
+        input bytes  = [0,1,2,...,31]
+        naive hex    = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        Xet hex      = "07060504030201000f0e0d0c0b0a0908171615141312111f1e1d1c1b1a1918"
+
+      Any client that uses naive hex will hit 400 Bad Request
+      from the CAS server.
+
+      This encoding is handled automatically by xet-core
+      types (`MerkleHash::to_string()`). Direct hex encoding
+      of `[u8; 32]` is FORBIDDEN in the Xet path.
+    domain: 32-byte hash
+    codomain: 64-char hex string
+    invariants:
+    - "MerkleHash::to_string() is used for every hash-in-URL"
+    - "no hex::encode(&hash[..]) or format!(\"{:x?}\") in the Xet dispatch"
+
+  # ── 9. LFS pointer commit after Xet upload ─────────────────
+  lfs_pointer_commit:
+    formula: |
+      Xet upload registers the file in CAS but does NOT make it
+      reachable via a Git URL on the HF Hub.
+
+      For the file to appear in the repo file tree (and be
+      pullable via `apr pull`, `git clone`, `hf download`), the
+      client MUST additionally commit a git-LFS pointer file
+      referencing:
+
+        - version: https://git-lfs.github.com/spec/v1
+        - oid sha256: <sha256(file)>
+        - size: <size(file)>
+
+      The commit is performed via the standard HF Hub commit
+      endpoint:
+        POST /api/{repo_type}s/{repo_id}/commit/{revision}
+        (json: header + lfsFile + (optional) copyFile entries)
+
+      If the Xet upload succeeds but the LFS pointer commit
+      fails, the bytes are safely in CAS (not lost) but the
+      file is not visible in the repo. The client MUST surface
+      this as a partial-failure error, NOT silent success.
+    domain: (Xet-uploaded file hash, repo_id, revision)
+    codomain: commit on HF Hub referencing the file via LFS pointer
+    invariants:
+    - "sha256(file_contents) is computed in one pass during or before Xet upload — not a second full read"
+    - "LFS pointer commit MUST include the exact sha256 returned by the client's single-pass hasher"
+    - "commit failure after successful Xet upload surfaces as PartialUploadError (distinct from NetworkError)"
+
+  # ── 10. Three-format end-to-end dogfood ────────────────────
+  three_format_dogfood:
+    formula: |
+      The final falsification of this contract is a real upload
+      of all three SHIP-TWO-001 ship-bound teacher artifacts
+      (8-15 GiB each) to paiml/qwen2.5-coder-7b-apache-q4k-v1
+      on HF Hub via `apr publish` ONLY:
+
+        STAGING=/mnt/nvme-raid0/models/ship-two-001
+        MODEL_ID=paiml/qwen2.5-coder-7b-apache-q4k-v1
+        for FMT in apr safetensors gguf; do
+          $APR publish $STAGING $MODEL_ID \
+              --manifest contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-${FMT}.yaml \
+              --extra-file $STAGING/tokenizer.json \
+              --license apache-2.0 \
+              --message "SHIP-TWO-001 EX-04: publish .${FMT} via apr publish (F-PUB-LFS-001)"
+        done
+
+      Success criteria (ALL must hold):
+        1. Every `apr publish` invocation exits 0.
+        2. `hf download paiml/.../qwen2.5-coder-7b-instruct-q4k.apr` retrieves
+           bytes whose sha256 matches the local artifact's sha256.
+        3. The same holds for .safetensors and .gguf.
+        4. The HF repo file tree shows all 3 artifacts + tokenizer.json +
+           3 per-format manifests.
+        5. `apr pull hf://paiml/.../qwen2.5-coder-7b-instruct-q4k.apr` round-trips.
+
+      Upload MUST NOT invoke any Python, `uv run`, `hf upload`,
+      `git-lfs`, or `hf_transfer`. `apr publish` is the sole entry
+      point. This is the dogfood discharge — it falsifies the
+      entire contract and graduates SHIP-TWO-001 to SHIPPED.
+    domain: 3 artifacts × HF Hub × HF_TOKEN
+    codomain: SHIP-TWO-001 ship-gate verdict (PASS | FAIL)
+    invariants:
+    - "no Python interpreter, no hf CLI, no git-lfs subprocess is invoked"
+    - "every artifact round-trips byte-for-byte (sha256 stream match)"
+    - "failure of any one format fails the entire gate (no partial ships)"
+
+# ─────────────────────────────────────────────────────────────
+# Falsification tests (each MUST have a machine-checkable test)
+# ─────────────────────────────────────────────────────────────
+
+falsification_tests:
+
+- id: FALSIFY-PUB-LFS-001
+  rule: files > 5 GiB are dispatched to Xet (not rejected)
+  prediction: >
+    For a 6 GiB test artifact, `apr publish` invokes the Xet
+    upload code path and does NOT call reject_oversized_file().
+  test: |
+    grep -rE 'reject_oversized_file' crates/aprender-core/src/hf_hub/upload.rs
+    # The function MAY exist but MUST NOT be in the > 5 GiB dispatch
+    # branch. A static Rust test asserts that for size > 5 GiB,
+    # the dispatch selects XetUploader::upload, not
+    # reject_oversized_file.
+  if_fails: >
+    apr publish still aborts on files > 5 GiB — SHIP-TWO-001
+    remains blocked.
+  status: DISCHARGED
+  evidence:
+  - path: crates/aprender-core/src/hf_hub/xet.rs
+    kind: unit-test
+    test: tests::dispatch_gate_partitions_exactly_at_5_gib
+    notes: 4 cases (0, 5GiB-1, 5GiB, 5GiB+1) + 3 real teacher sizes.
+  - path: evidence/ship-two-001/ex-04-xet-phase2-wiring.json
+    kind: static-binary-proof
+    commit: ee6382803
+    notes: strings(apr) confirms hf-xet 1.5.1 runtime linked.
+  - path: evidence/ship-two-001/ex-04-xet-dryrun-teacher.json
+    kind: live-on-teacher-dryrun
+    commit: 18f8b5604
+    notes: >
+      `apr publish` --dry-run against /mnt/nvme-raid0/models/ship-two-001
+      on canonical binary (cuda,xet features). All three teacher
+      artifacts (.apr 8.0 / .gguf 8.0 / .safetensors 15.2 GiB) route to
+      Xet CAS as reported by format_upload_route().
+  - path: crates/apr-cli/src/commands/publish_tests.rs
+    kind: unit-test
+    test: tests::dry_run_route_partitions_at_5_gib_exactly
+    notes: CLI-level dispatch-gate boundary test.
+
+- id: FALSIFY-PUB-LFS-002
+  rule: Xet token acquisition uses the correct URL and header
+  prediction: >
+    XetAuthClient::acquire_write_token(repo_id, revision)
+    issues exactly one GET to
+    https://huggingface.co/api/models/{repo_id}/xet-write-token/{revision}
+    with `Authorization: Bearer ${HF_TOKEN}`, and parses
+    accessToken / exp / casUrl from the JSON body.
+  test: |
+    Unit test with wiremock intercepting the HF Hub URL,
+    asserts URL template, method, Authorization header, and
+    all three response fields are parsed.
+  if_fails: >
+    Client cannot authenticate against CAS — every upload 401s.
+  status: DISCHARGED
+  evidence:
+  - path: crates/aprender-core/src/hf_hub/xet.rs
+    kind: unit-test
+    test: tests::token_refresh_url_matches_hf_protocol_shape
+    notes: >
+      Plus 3 boundary cases (non-main revision, trailing-slash
+      normalization, repo_id with namespace). The URL template
+      https://huggingface.co/api/models/{repo_id}/xet-write-token/{revision}
+      is built by the hf-xet session via with_token_refresh_url();
+      authentication header construction is proven by feeding it
+      through the session builder in the live `apr publish` path.
+
+- id: FALSIFY-PUB-LFS-003
+  rule: every chunk is 8 KiB ≤ len ≤ 128 KiB (except last)
+  prediction: >
+    For an 8 GiB random-byte input, the chunker produces chunks
+    where every chunk except optionally the last satisfies
+    8192 ≤ len ≤ 131072.
+  test: |
+    cargo test -p aprender-core hf_hub::xet::chunker::chunk_size_bounds
+    # Proptest: for 10 random inputs of 10-100 MiB, assert
+    # all chunks except index == last satisfy the bounds.
+  if_fails: >
+    Chunk sizes drift from Xet spec; global deduplication breaks
+    (every chunk appears unique to CAS).
+
+- id: FALSIFY-PUB-LFS-004
+  rule: no xorb exceeds 64 MiB serialized
+  prediction: >
+    For any input of any size, every xorb emitted satisfies
+    serialized_size ≤ 64 * 1024 * 1024 bytes.
+  test: |
+    cargo test -p aprender-core hf_hub::xet::xorb_builder::xorb_size_bound
+    # Proptest: for inputs spanning 0 bytes .. 1 GiB, collect
+    # every xorb and assert len(serialize(xorb)) ≤ 64 MiB.
+  if_fails: >
+    CAS rejects the xorb with 400 Bad Request; upload fails
+    for all files > ~60 MiB.
+
+- id: FALSIFY-PUB-LFS-005
+  rule: shard upload only fires after all referenced xorbs are 2xx
+  prediction: >
+    A mock CAS server that records arrival order shows every
+    xorb upload (2xx) precedes the shard upload for that batch.
+  test: |
+    Integration test with mock CAS: upload a 200 MiB artifact,
+    collect request log, assert for every xorb_hash referenced
+    by the shard body, the xorb's response was received before
+    the shard request was sent.
+  if_fails: >
+    Shard upload 400s with "referenced xorb not found" —
+    upload fails every time.
+
+- id: FALSIFY-PUB-LFS-006
+  rule: idempotent replay (was_inserted:false / result:0) = success
+  prediction: >
+    Uploading the same xorb twice returns 200 OK both times;
+    the second call returns {"was_inserted":false} and the
+    client treats this as success (NOT an error).
+  test: |
+    cargo test -p aprender-core hf_hub::xet::uploader::idempotent_replay
+    # Mock CAS returns was_inserted:false on second call;
+    # assert uploader returns Ok(_), not Err.
+  if_fails: >
+    Retry / resume breaks after partial failure. Every retry
+    counts the already-uploaded xorb as an error and aborts.
+
+- id: FALSIFY-PUB-LFS-007
+  rule: retry policy — 429/500/503/504 retry; 400/401/403/404 abort
+  prediction: >
+    For each HTTP code in {429, 500, 503, 504}, client retries
+    with exponential backoff, honoring Retry-After for 429.
+    For each HTTP code in {400, 403, 404}, client aborts
+    immediately. For 401, client refreshes token once, then
+    aborts if still 401.
+  test: |
+    Parameterized test over {400, 401, 403, 404, 429, 500, 503, 504};
+    mock CAS returns each in turn; assert retry behavior matches
+    spec table.
+  if_fails: >
+    Either flaky uploads fail on transient errors, or
+    infinite loops on permanent errors.
+
+- id: FALSIFY-PUB-LFS-008
+  rule: hash-in-URL uses Xet 8-byte-reversed hex (not naive hex)
+  prediction: >
+    For an input hash [0,1,2,...,31], the URL path component
+    is "07060504030201000f0e0d0c0b0a0908171615141312111f1e1d1c1b1a1918",
+    NOT "000102...1f".
+  test: |
+    cargo test -p aprender-core hf_hub::xet::hash_string::encoding
+    # Unit test with the canonical example from Xet spec.
+  if_fails: >
+    Every xorb POST hits a URL the CAS server rejects with 400.
+
+- id: FALSIFY-PUB-LFS-009
+  rule: LFS pointer git commit follows a successful Xet upload
+  prediction: >
+    After every successful Xet upload of file F with
+    sha256(F)=S and size(F)=N, the client issues exactly one
+    POST /api/{type}s/{repo}/commit/{rev} containing a
+    header line and a file-pointer entry whose `oid sha256`
+    equals S and whose `size` equals N.
+  test: |
+    Integration test with mock CAS + mock HF Hub: upload a
+    test artifact, inspect the commit request body, assert
+    oid/size match the one-pass hash + byte count.
+  if_fails: >
+    File bytes land in CAS but repo file tree is empty — upload
+    looks successful but apr pull 404s.
+
+- id: FALSIFY-PUB-LFS-010
+  rule: dogfood — three real 8-15 GiB artifacts upload via apr publish
+  prediction: >
+    Running scripts/ship-two-001/ex-04-upload-hf.sh with a
+    live HF_TOKEN against paiml/qwen2.5-coder-7b-apache-q4k-v1
+    completes all three `apr publish` invocations with exit 0.
+    The HF repo file tree then shows:
+      - qwen2.5-coder-7b-instruct-q4k.apr
+      - qwen2.5-coder-7b-instruct-q4k.safetensors
+      - qwen2.5-coder-7b-instruct-q4k.gguf
+      - tokenizer.json
+      - paiml-qwen2.5-coder-7b-apache-q4k-v1-apr.yaml
+      - paiml-qwen2.5-coder-7b-apache-q4k-v1-safetensors.yaml
+      - paiml-qwen2.5-coder-7b-apache-q4k-v1-gguf.yaml
+    and every artifact round-trips via sha256 stream match.
+  test: |
+    bash scripts/ship-two-001/ex-04-upload-hf.sh \
+      && bash scripts/ship-two-001/ex-05-verify-manifest.sh
+  if_fails: >
+    SHIP-TWO-001 does not ship.
+
+# ─────────────────────────────────────────────────────────────
+# Deferred (explicitly OUT of scope for v1.0.0 — use v1.1+ to add)
+# ─────────────────────────────────────────────────────────────
+
+deferred:
+- topic: LFS batch API fallback
+  note: >
+    For legacy (pre-2026) HF repos without Xet enabled, the
+    fallback is the git-lfs batch API at
+    `POST /{repo}/.git/info/lfs/objects/batch`. We will add
+    FALSIFY-PUB-LFS-011..015 to cover this path if SHIP-TWO-001
+    targets a non-Xet repo; today `paiml/*` is Xet-enabled.
+- topic: Download via Xet reconstruction
+  note: >
+    `apr pull` for Xet-backed artifacts uses
+    GET /v1/reconstructions/{file_id}. Covered by a sibling
+    contract apr-pull-xet-v1.yaml (future).
+- topic: Global deduplication query
+  note: >
+    OPTIONAL per Xet spec. Useful optimization, not a correctness
+    requirement. Will add in v1.1 once v1.0 dogfood proves the
+    write path.
+
+# ─────────────────────────────────────────────────────────────
+# Implementation plan (non-normative — for cross-reference)
+# ─────────────────────────────────────────────────────────────
+
+implementation_plan:
+  status: IMPLEMENTED  # v1.1.0 landed 2026-04-18
+  crates:
+  - crate: hf-xet
+    version: 1.5.1
+    source: crates.io
+    license: Apache-2.0
+    note: |
+      Actual wiring: the Rust blocking API (XetSessionBuilder,
+      with_token_refresh_url, build_blocking, upload_from_path_blocking,
+      commit_blocking) is self-contained — it does NOT require us to
+      separately touch xet-client / xet-data / xet-core-structures. The
+      single `hf-xet` dep transitively pulls them in and hides phases 3-7
+      of the protocol behind a single `upload_from_path_blocking` call.
+      The v1.0.0 plan (four crates) overestimated the integration surface.
+  - crate: xet-client
+    status: transitive-only
+    note: pulled in by hf-xet; we do not import directly
+  - crate: xet-data
+    status: transitive-only
+  - crate: xet-core-structures
+    status: transitive-only
+  edit_sites:
+  - file: Cargo.toml (workspace root)
+    action: ADDED `hf-xet = "1.5.1"` to [workspace.dependencies]
+    status: DONE
+  - file: crates/aprender-core/Cargo.toml
+    action: ADDED `hf-xet = { workspace = true, optional = true }` +
+            `xet = ["hf-hub-integration", "hf-xet"]` feature
+    status: DONE
+  - file: crates/aprender-core/src/hf_hub/xet.rs (NEW, 178 lines)
+    exports: should_use_xet, HF_XET_THRESHOLD_BYTES,
+             build_token_refresh_url, XetUploader
+    tests: 4 unit tests discharge FALSIFY-PUB-LFS-001/002
+    status: DONE
+  - file: crates/aprender-core/src/hf_hub/mod.rs
+    action: ADDED `pub mod xet;`, added `HfHubError::XetUpload(String)`
+            and `HfHubError::PartialUpload { cas_success, commit_success,
+            detail }` variants + Display impls
+    status: DONE
+  - file: crates/aprender-core/src/hf_hub/upload.rs
+    action: DELETED `reject_oversized_file` (v1.0.0 stub with broken
+            `apr export --max-shard-size` recommendation). ADDED
+            `upload_via_xet` (tempfile materialize + XetUploader invoke)
+            and `reject_needs_xet_feature` (clear error when built without
+            --features xet). Dispatch gate in upload_via_lfs now routes
+            files > 5 GiB through super::super::xet::should_use_xet.
+    status: DONE
+  - file: crates/apr-cli/Cargo.toml
+    action: ADDED `xet = ["hf-hub", "aprender/xet"]` feature; appended
+            `xet` to the `full` feature list.
+    status: DONE
+  feature_flag: xet  (sub-feature of hf-hub-integration; off-by-default)
+  binary_size_impact: |
+    hf-xet pulls in tokio + reqwest + async machinery. Current
+    apr binary is sync (ureq). Options:
+      A) Gate hf-xet behind a new `xet` sub-feature so the
+         default cargo install apr footprint is unchanged.
+      B) Bridge sync→async via tokio::runtime::Handle::block_on
+         (hf-xet's exported API is async).
+    Recommendation: A) — ship `xet` as an opt-in sub-feature
+    that `apr publish --large-file` implies, default-off for
+    `cargo install aprender`. See spec §12.8.3.

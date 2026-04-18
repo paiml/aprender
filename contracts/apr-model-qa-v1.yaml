@@ -1,19 +1,32 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-04'
+  updated: '2026-04-17'
   author: PAIML Engineering
   registry: true
   description: >
     Model quality assurance contract — check, validate, qa, lint, probar
     commands that verify model integrity, detect regressions, and enforce
     quality gates before deployment. The defensive layer of apr-cli.
+
+    v1.1.0 (SPEC-SHIP-TWO-001 §12.1): Adds Golden Output ship-blocker
+    semantics — when `--require-golden-output` is set, a SKIPPED
+    golden_output gate (tokenizer missing, feature off, etc.) is promoted
+    to FAIL instead of counting as pass. Motivated by the MODEL-1
+    falsification event 2026-04-17 where a distilled checkpoint emitting
+    garbage ("ylkoylko...") passed Tensor Contract but failed Golden
+    Output — a silent-skip path could have let it ship for 14 days.
   references:
   - 'apr-cli/src/commands/check.rs — run_check(), aggregate_results()'
   - 'apr-cli/src/commands/validate.rs — validate_model()'
-  - 'apr-cli/src/commands/qa.rs — run_qa_pipeline(), QaReport'
+  - 'apr-cli/src/commands/qa.rs — run_qa_pipeline(), QaReport,
+    QaConfig.require_golden_output'
+  - 'apr-cli/src/commands/qa_gguf.rs — promote_golden_output_to_blocker()'
   - 'apr-cli/src/commands/lint.rs — lint_model()'
   - 'apr-cli/src/commands/probar.rs — run_property_tests()'
   - 'apr-cli/src/commands/canary.rs — canary_test(), canary_report()'
+  - 'docs/specifications/aprender-train/ship-two-models-spec.md §12.1,
+    §12.5 FALSIFY-EX-001'
   depends_on:
   - apr-cli-v1
   - apr-cli-operations-v1
@@ -59,6 +72,35 @@ equations:
     - report.score == passed_count / enabled_count
     - report.pass == (report.score == 1.0)
     lean_theorem: Theorems.QaGateComposition
+
+  golden_output_ship_blocker:
+    formula: |
+      promote_golden_output_to_blocker(gates, config):
+        (Vec<GateResult>, QaConfig) -> ()
+        When config.require_golden_output is true AND a gate named
+        "golden_output" is present with skipped=true, the gate is
+        mutated in-place:
+            gate.passed   := false
+            gate.skipped  := false
+            gate.message  := "FAIL: golden_output skipped while
+                              --require-golden-output set (<reason>)"
+        Other gates are never mutated. Passed and already-failed
+        golden_output gates are never mutated (idempotent).
+    domain: (Mutable gate list, QA configuration)
+    codomain: ()
+    invariants:
+    - If config.require_golden_output == false, no gate is mutated
+    - Only the gate named "golden_output" may be mutated
+    - A passed (passed=true, skipped=false) gate is never demoted
+    - A failed (passed=false, skipped=false) gate remains failed
+    - Function is idempotent — applying it twice yields the same state
+    preconditions:
+    - gates contains at most one entry with name == "golden_output"
+    postconditions:
+    - If config.require_golden_output && golden_output.skipped (before)
+      then golden_output.passed == false (after)
+    - All non-golden_output gates are pointwise unchanged
+    lean_theorem: Theorems.GoldenOutputShipBlocker
 
   canary_regression_detection:
     formula: |
@@ -175,6 +217,32 @@ proof_obligations:
   lean:
     theorem: Theorems.ProbarPropertyTests
     status: sorry
+- type: postcondition
+  property: Golden Output ship-blocker promotes skipped to failed
+  formal: |
+    forall g in gates: g.name == "golden_output" && g.skipped (before)
+      && config.require_golden_output
+      => !g.passed && !g.skipped (after)
+  applies_to: golden_output_ship_blocker
+  lean:
+    theorem: Theorems.GoldenOutputShipBlocker
+    status: sorry
+- type: invariant
+  property: Golden Output ship-blocker is scope-limited
+  formal: |
+    forall g in gates: g.name != "golden_output"
+      => g (after) == g (before)
+  applies_to: golden_output_ship_blocker
+  lean:
+    theorem: Theorems.GoldenOutputShipBlockerScope
+    status: sorry
+- type: idempotency
+  property: Golden Output ship-blocker is idempotent
+  formal: promote(promote(gates, c), c) == promote(gates, c)
+  applies_to: golden_output_ship_blocker
+  lean:
+    theorem: Theorems.GoldenOutputShipBlockerIdempotent
+    status: sorry
 
 falsification_tests:
 - id: FALSIFY-QA-001
@@ -207,6 +275,33 @@ falsification_tests:
   prediction: Running check twice on same model produces identical reports
   test: Run check twice, diff JSON outputs
   if_fails: Non-deterministic metadata or timestamp in report
+- id: FALSIFY-EX-001
+  rule: Golden Output is a hard ship-blocker under --require-golden-output
+  prediction: |
+    `apr qa --require-golden-output <bad-model>` exits non-zero when the
+    model produces garbage output, even if all other gates pass. A
+    SKIPPED golden_output gate (tokenizer missing, feature off) also
+    produces a non-zero exit — it cannot silently pass.
+  test: |
+    1. Given a model that emits garbage tokens, run
+       `apr qa --require-golden-output model.apr` and assert exit != 0.
+    2. Given any model, run `apr qa --require-golden-output
+       --skip-golden model.apr` and assert the golden_output gate is
+       not skipped (override behavior) and the command fails if the
+       gate would skip silently.
+    3. Given a passing model, same command exits 0.
+    Regression harnesses: promote_golden_output_skipped_becomes_failed_when_required,
+    promote_golden_output_noop_when_flag_off,
+    promote_golden_output_already_failed_stays_failed,
+    promote_golden_output_passed_stays_passed,
+    promote_golden_output_does_not_touch_other_gates
+    (qa_tests_report_pass_fail.rs).
+  if_fails: |
+    A garbage checkpoint can ship — the MODEL-1 2026-04-17 falsification
+    (qwen2.5-coder-7b-distilled-v2-q4k.apr emitting "ylkoylko...") is
+    repeatable. Forbid merging any release-blocking PR until fixed.
+  spec_reference: ship-two-models-spec.md §12.1, §12.5
+  ship_blocking: true
 
 kani_harnesses:
 - id: KANI-QA-001
@@ -245,6 +340,20 @@ kani_harnesses:
   bound: 8
   strategy: exhaustive
   harness: verify_probar_completeness
+- id: KANI-EX-001
+  obligation: Golden Output ship-blocker promotes skipped to failed
+  property: |
+    require_golden_output && golden_output.skipped (before)
+      => !golden_output.passed && !golden_output.skipped (after)
+  bound: 4
+  strategy: exhaustive
+  harness: verify_golden_output_ship_blocker
+- id: KANI-EX-002
+  obligation: Golden Output ship-blocker is scope-limited
+  property: non-golden-output gates are unchanged
+  bound: 4
+  strategy: exhaustive
+  harness: verify_golden_output_ship_blocker_scope
 
 qa_gate:
   id: F-QA-GATE
@@ -253,4 +362,4 @@ qa_gate:
   checks:
   - validation
   - falsification
-  pass_criteria: All 5 falsification tests pass
+  pass_criteria: All 7 falsification tests pass (including FALSIFY-EX-001)

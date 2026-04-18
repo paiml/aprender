@@ -54,7 +54,7 @@ mod traits;
 // Re-export all public types for API compatibility
 pub use bpe::BPETokenizer;
 pub use char::CharTokenizer;
-pub use config::{SpecialTokens, TokenizerConfig, TokenizerType};
+pub use config::{Normalization, SpecialTokens, TokenizerConfig, TokenizerType};
 pub use error::{Result, TokenizerError};
 pub use hf::{
     bytes_to_unicode, load_hf_from_files, load_hf_from_json, HfBpeConfig, HfBpeTokenizer,

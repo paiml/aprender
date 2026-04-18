@@ -230,10 +230,7 @@ fn print_multi_sample_regression(baseline: &FullProfile, current: &FullProfile) 
         baseline.timing.wall_clock_time_us,
         baseline.timing.stddev_us,
     );
-    let c_samples = synth_samples(
-        current.timing.wall_clock_time_us,
-        current.timing.stddev_us,
-    );
+    let c_samples = synth_samples(current.timing.wall_clock_time_us, current.timing.stddev_us);
     let result = detector.compare(&b_samples, &c_samples);
     println!(
         "  Statistical: {} (change {:.1}%, Cohen's d = {:.2})",

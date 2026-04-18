@@ -1,0 +1,67 @@
+# ─────────────────────────────────────────────────────────────
+# Publish Manifest (SafeTensors fp16) — paiml/qwen2.5-coder-7b-apache-q4k-v1
+# ─────────────────────────────────────────────────────────────
+# Conforms to: contracts/publish-manifest-v1.yaml (F-PUBLISH-MANIFEST-001)
+# Peer:        contracts/apr-cli-publish-extra-v1.yaml (F-PUBLISH-EXTRA-001)
+# Parent spec: docs/specifications/aprender-train/ship-two-models-spec.md §12.7
+# ─────────────────────────────────────────────────────────────
+# Three-format ship (SPEC-SHIP-TWO-001 §12.7 / F-PUBLISH-EXTRA-001
+# three_format_preference): this manifest declares the .safetensors variant of
+# paiml/qwen2.5-coder-7b-apache-q4k-v1. Pairs with *-apr.yaml (native)
+# and *-gguf.yaml (llama.cpp / ollama).
+#
+# Consumer ecosystem: HuggingFace transformers, candle.
+# Dtype: F16 (per F-PUBLISH-EXTRA-001::safetensors_dtype_fp16).
+# ─────────────────────────────────────────────────────────────
+
+model_id: paiml/qwen2.5-coder-7b-apache-q4k-v1
+version: 1.0.0
+architecture: qwen2
+format: safetensors
+quantization: fp16
+
+artifact_url: https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1/resolve/main/qwen2.5-coder-7b-instruct-q4k.safetensors
+
+# SHA-256 computed 2026-04-18 on local source artifact at
+# /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors
+# produced by:
+#   apr export <source.apr> --format safetensors --quantize fp16 \
+#              --output <out.safetensors>
+# Original F32 path produced 29 GiB (doubling storage with no fidelity gain);
+# F-PUBLISH-EXTRA-001::safetensors_dtype_fp16 enforces the F16 cast at write time.
+sha256: c1058ce763fe47fa7d18a89a8b854d2cd8ebdb87127441304146ab8618dd8954
+size_bytes: 15231938404
+
+license: Apache-2.0
+
+provenance:
+  pipeline: finetune
+  parent: Qwen/Qwen2.5-Coder-7B-Instruct
+  parent_license: Apache-2.0
+
+  data_source: teacher-only (upstream Qwen2.5-Coder-7B-Instruct training corpus)
+  data_license: Apache-2.0
+
+  recipe: contracts/model-families/qwen2.yaml
+  recipe_sha256: f098ac0813515b669389d4317fff442cf0812b18a181d446d170e182a3689d8b
+
+  # This .safetensors is derived from the canonical .apr by dequantizing Q4K
+  # super-blocks to F32 in-memory, then casting per-tensor to F16 on write.
+  # DOUBLE-QUANT-001 was narrowed on 2026-04-18 to permit the F32→F16 cast
+  # (it is a dtype conversion, not a codebook re-quantization).
+  derived_from: paiml/qwen2.5-coder-7b-apache-q4k-v1/qwen2.5-coder-7b-instruct-q4k.apr
+  derivation_command: apr export <source.apr> --format safetensors --quantize fp16 --output <out.safetensors>
+
+published_at: 2026-04-18T00:00:00Z
+published_by: paiml-bot (noah@paiml.com)
+
+eval_results:
+  humaneval:
+    # Eval was run on the .apr source; F2 cosine parity ≥ 0.9999 between the
+    # three formats is the published invariant, so the pass@1 applies to all
+    # three in the ship.
+    pass_at_1: 84.76
+    timestamp: 2026-04-17T20:17:42+02:00
+    harness_version: apr-cli-0.31.0
+    baseline_reference: results/humaneval_20260328_121327.json (pass@1=85.98)
+    parity_source: paiml/qwen2.5-coder-7b-apache-q4k-v1/qwen2.5-coder-7b-instruct-q4k.apr

@@ -1,0 +1,12 @@
+{
+  "falsification_id": "FALSIFY-SHARD-003",
+  "host_a": "yoga",
+  "host_b": "gx10",
+  "total_tasks": 16,
+  "identical": 16,
+  "divergent": 0,
+  "only_a": [],
+  "only_b": [],
+  "verdict": "PASS",
+  "divergences": []
+}
