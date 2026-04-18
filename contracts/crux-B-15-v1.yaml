@@ -1,0 +1,65 @@
+# CRUX-B-15 — IQ-quants IQ3_XXS / IQ2_S
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-B-15
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: llama_cpp
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  description: >
+    IQ-quants IQ3_XXS / IQ2_S. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.B and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+equations:
+  placeholder_contract:
+    formula: |
+      DRAFT — user workflow "IQ-quants IQ3_XXS / IQ2_S"
+      must produce observable parity with llama_cpp's canonical verb
+      on the golden input defined in evidence/crux/llama_cpp/.
+    domain: user invocation
+    codomain: apr CLI output
+    invariants:
+    - "TBD — replace with actual competitor parity invariants"
+    - "TBD — replace with falsifiable output contract"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-15-001
+  rule: placeholder
+  prediction: "apr surface for 'IQ-quants IQ3_XXS / IQ2_S' matches llama_cpp canonical behavior"
+  test: |
+    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
+    # and write a shell test that compares apr output to the golden.
+    echo "TODO: falsification body for CRUX-B-15" >&2
+    exit 2  # non-zero = placeholder not yet implemented
+  if_fails: "draft contract — falsification body not yet authored"
+
+proof_obligations:
+- type: invariant
+  property: "TBD placeholder — replace with concrete obligation before promotion"
+
+verification_summary:
+  total_obligations: 1
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-b-15` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-b-15
+  priority: medium
+  auto_created: true

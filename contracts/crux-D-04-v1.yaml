@@ -1,0 +1,65 @@
+# CRUX-D-04 — DPO preference training
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-04
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    DPO preference training. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.D and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+equations:
+  placeholder_contract:
+    formula: |
+      DRAFT — user workflow "DPO preference training"
+      must produce observable parity with huggingface's canonical verb
+      on the golden input defined in evidence/crux/huggingface/.
+    domain: user invocation
+    codomain: apr CLI output
+    invariants:
+    - "TBD — replace with actual competitor parity invariants"
+    - "TBD — replace with falsifiable output contract"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-04-001
+  rule: placeholder
+  prediction: "apr surface for 'DPO preference training' matches huggingface canonical behavior"
+  test: |
+    # TBD — collect huggingface transcript in evidence/crux/huggingface/
+    # and write a shell test that compares apr output to the golden.
+    echo "TODO: falsification body for CRUX-D-04" >&2
+    exit 2  # non-zero = placeholder not yet implemented
+  if_fails: "draft contract — falsification body not yet authored"
+
+proof_obligations:
+- type: invariant
+  property: "TBD placeholder — replace with concrete obligation before promotion"
+
+verification_summary:
+  total_obligations: 1
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-04` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-04
+  priority: critical
+  auto_created: true

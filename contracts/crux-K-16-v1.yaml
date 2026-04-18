@@ -1,0 +1,65 @@
+# CRUX-K-16 — Triton Inference Server backend
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-K-16
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Ecosystem & Integration"
+  competitor: ecosystem
+  demand_score: 2  # 1..5, low priority in pmat work
+  intake_status: missing
+  description: >
+    Triton Inference Server backend. Root-cause workflow extracted from ecosystem UX — see master
+    subspec §5.K and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+equations:
+  placeholder_contract:
+    formula: |
+      DRAFT — user workflow "Triton Inference Server backend"
+      must produce observable parity with ecosystem's canonical verb
+      on the golden input defined in evidence/crux/ecosystem/.
+    domain: user invocation
+    codomain: apr CLI output
+    invariants:
+    - "TBD — replace with actual competitor parity invariants"
+    - "TBD — replace with falsifiable output contract"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-16-001
+  rule: placeholder
+  prediction: "apr surface for 'Triton Inference Server backend' matches ecosystem canonical behavior"
+  test: |
+    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
+    # and write a shell test that compares apr output to the golden.
+    echo "TODO: falsification body for CRUX-K-16" >&2
+    exit 2  # non-zero = placeholder not yet implemented
+  if_fails: "draft contract — falsification body not yet authored"
+
+proof_obligations:
+- type: invariant
+  property: "TBD placeholder — replace with concrete obligation before promotion"
+
+verification_summary:
+  total_obligations: 1
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-k-16` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-k-16
+  priority: low
+  auto_created: true
