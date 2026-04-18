@@ -21,10 +21,10 @@
 # `build.rs` lands, the direction reverses and this contract becomes the single
 # source of truth.
 #
-# Scope at author time (2026-04-18): 6 Phase-1 tools shipped on main via
-# PRs #864/#865/#866/#867. `apr.run` (#870), `apr.serve`, and `apr.finetune`
-# are NOT yet merged — they will be appended in a follow-up PR matching their
-# merge order so this contract remains byte-identical to `main` at every step.
+# Scope at author time (2026-04-18): all 8 Phase-1 tools registered —
+# 6 from PRs #864/#865/#866/#867 (apr.version, apr.validate, apr.tensors,
+# apr.bench, apr.qa, apr.trace), apr.run (#870), apr.serve (#872), and
+# apr.finetune (#881, this PR) complete the surface.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -176,6 +176,85 @@ tools:
     required:
       - model_path
 
+  - name: apr.run
+    shipped_in: 'PR #870 (M2 slice 6)'
+    source: crates/aprender-mcp/src/tools/run.rs
+    description: "Run synchronous inference on a model. Wraps `apr run <model> --json` and returns tokens + tok/s + stop reason."
+    cli_mapping: "apr run <model_path> --json [--prompt X] [--max-tokens N] [--temperature T] [--top-p P]"
+    args:
+      - name: model_path
+        type: string
+        required: true
+        description: "Path to the model file (.apr, .gguf, or .safetensors) or hf://org/repo"
+      - name: prompt
+        type: string
+        required: false
+        description: "Text prompt to generate from"
+      - name: max_tokens
+        type: integer
+        required: false
+        description: "Maximum tokens to generate (default 32)"
+      - name: temperature
+        type: number
+        required: false
+        description: "Sampling temperature (0.0 = greedy argmax, >0 = stochastic)"
+      - name: top_p
+        type: number
+        required: false
+        description: "Top-p nucleus sampling threshold (omit to disable)"
+    required:
+      - model_path
+
+  - name: apr.serve
+    shipped_in: 'PR #872 (M2 slice 7)'
+    source: crates/aprender-mcp/src/tools/serve.rs
+    description: "Start an `apr serve` inference daemon in the background. Returns {pid, url}; kill the pid via OS to stop. Full lifecycle (cancel/SIGTERM) lands in M3."
+    cli_mapping: "apr serve <model_path> --port <port>"
+    args:
+      - name: model_path
+        type: string
+        required: true
+        description: "Path to the model file (.apr, .gguf, or .safetensors) or hf://org/repo"
+      - name: port
+        type: integer
+        required: false
+        description: "TCP port to bind the HTTP server on (default 8080)"
+    required:
+      - model_path
+
+  - name: apr.finetune
+    shipped_in: 'PR #881 (M3 slice 1)'
+    source: crates/aprender-mcp/src/tools/finetune.rs
+    description: "Fine-tune a base model with LoRA/QLoRA. Wraps `apr finetune <base_model> --json` and blocks until training completes. Progress streaming lands in a follow-up M3 slice."
+    cli_mapping: "apr finetune <base_model> --json [--data <path>] [--rank <N>] [--epochs <N>] [--method <m>] [--output <path>]"
+    args:
+      - name: base_model
+        type: string
+        required: true
+        description: "Path to the base model file (.apr, .gguf, or .safetensors) or hf://org/repo"
+      - name: dataset
+        type: string
+        required: false
+        description: "Path to training data (JSONL). Mapped to `apr finetune --data <path>`."
+      - name: lora_rank
+        type: integer
+        required: false
+        description: "LoRA rank. Mapped to `apr finetune --rank <N>`. Omit for auto."
+      - name: epochs
+        type: integer
+        required: false
+        description: "Training epochs (default 3)"
+      - name: method
+        type: string
+        required: false
+        description: "Fine-tuning method: auto, full, lora, qlora (default auto)"
+      - name: output
+        type: string
+        required: false
+        description: "Output path (adapter directory or merged model)"
+    required:
+      - base_model
+
 # ── Falsification gates ──
 # FALSIFY-MCP-008 is the flagship gate this contract unblocks. It is DRAFT here
 # and becomes ENFORCED in M3 once `build.rs` and the harness land. The other
@@ -212,13 +291,8 @@ falsification:
       note: "Asserts every `apr --help` command is registered. This contract extends that invariant into MCP tool-space for the subset wrapped as MCP tools."
 
 # ── Coverage note ──
-# Tools intentionally omitted from this 1.0.0 cut (to be appended as they ship
-# on main; each addition is a semver-minor bump and a separate PR so `main`
-# and this contract stay in lockstep):
-#   - apr.run       — PR #870 (in flight at author time, not yet merged)
-#   - apr.serve     — not yet implemented (M2 streaming candidate)
-#   - apr.finetune  — not yet implemented (M2 streaming candidate)
-#
-# The FALSIFY-MCP-008 harness (M3) MUST iterate over `tools[*].name` from this
-# file — not a hard-coded list — so the gate automatically tightens as new
+# All 8 Phase-1 tools are now registered in this contract. `apr.run` (PR #870),
+# `apr.serve` (PR #872), and `apr.finetune` (PR #881) were appended as they
+# shipped. The FALSIFY-MCP-008 harness (M3) iterates over `tools[*].name` from
+# this file — not a hard-coded list — so the gate automatically tightens as new
 # entries are appended.

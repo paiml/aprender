@@ -109,6 +109,7 @@ impl AprMcpServer {
             Some(tools::trace::NAME) => tools::trace::call(&arguments),
             Some(tools::run::NAME) => tools::run::call(&arguments),
             Some(tools::serve::NAME) => tools::serve::call(&arguments),
+            Some(tools::finetune::NAME) => tools::finetune::call(&arguments),
             Some(other) => ToolCallResult::error(format!("Unknown tool: {other}")),
             None => ToolCallResult::error("Missing tool name"),
         };
@@ -131,6 +132,7 @@ impl AprMcpServer {
             tools::trace_tool_definition(),
             tools::run_tool_definition(),
             tools::serve_tool_definition(),
+            tools::finetune_tool_definition(),
         ]
     }
 
@@ -217,6 +219,7 @@ mod tests {
             "apr.trace",
             "apr.run",
             "apr.serve",
+            "apr.finetune",
         ] {
             assert!(names.contains(&expected), "{expected} registered");
         }
