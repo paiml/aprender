@@ -241,8 +241,16 @@ Response payload:
 
 Wraps `apr finetune <base_model> --json [--data <path>] [--rank <N>] [--epochs <N>] [--method <m>] [--output <path>]`.
 Synchronous: blocks until training completes, then returns the final JSON
-payload from the CLI. Per-step `notifications/progress` streaming is a
-follow-up M3 slice.
+payload from the CLI.
+
+Opt-in progress: when the client's `tools/call` sets
+`params._meta.progressToken`, the server emits one `notifications/progress`
+per non-empty stdout line from `apr finetune --json`
+(FALSIFY-MCP-PROGRESS-001). Without a token, zero notifications are
+emitted. Note this is per-stdout-line, not per-training-step —
+`apr finetune --json` currently writes a terminal blob on completion, so
+most clients will see only a small number of progress events. A per-step
+CLI event channel is an M4 follow-up.
 
 The MCP argument names (`base_model`, `dataset`, `lora_rank`) differ from
 the underlying CLI flags (positional base-model path, `--data`, `--rank`);
