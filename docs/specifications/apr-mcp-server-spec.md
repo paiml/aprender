@@ -54,11 +54,12 @@ crates/aprender-mcp/
 │       ├── bench.rs          # `apr.bench` — perf benchmarks
 │       ├── finetune.rs       # `apr.finetune` — LoRA training
 │       └── serve.rs          # `apr.serve` — OpenAI API server lifecycle
-└── tests/                # protocol-level integration tests
-    ├── falsify_m1.rs         # FALSIFY-MCP-001 init + -002 tools/list
-    ├── falsify_mcp_006.rs    # FALSIFY-MCP-006 notifications/cancelled
-    ├── falsify_mcp_008.rs    # FALSIFY-MCP-008 codegen byte-identity
-    └── falsify_schema.rs     # JSON Schema Draft 7 meta-validation
+└── tests/                        # protocol-level integration tests
+    ├── falsify_m1.rs                 # FALSIFY-MCP-001 init, -002 tools/list, -005 jsonrpc, -007 protocolVersion, -VALIDATE-001 tool-error shape
+    ├── falsify_mcp_006.rs            # FALSIFY-MCP-006 notifications/cancelled → SIGTERM→SIGKILL
+    ├── falsify_mcp_008.rs            # FALSIFY-MCP-008 YAML-vs-live schema byte-identity + codegen coverage guardrails
+    ├── falsify_mcp_progress_001.rs   # FALSIFY-MCP-PROGRESS-001 apr.finetune opt-in per-line progress
+    └── falsify_schema.rs             # FALSIFY-MCP-002 strict slice — JSON Schema Draft 7 meta-validation per tool
 ```
 
 ### `apr mcp` Subcommand
@@ -193,15 +194,15 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [x] Progress notifications for `apr.finetune` — `NotificationSink` plumbed; `params._meta.progressToken` opt-in; FALSIFY-MCP-PROGRESS-001 (#887)
 - [x] Book chapter `book/src/tools/mcp-server.md` (#874 M2 creation, #885 M3 update)
 - [ ] **Deferred to M4**: Per-step structured progress for `apr.finetune` (CLI emits terminal blob today; needs CLI event channel)
-- [ ] **Deferred to M4**: Progress notifications for `apr.run` (needs `apr run --stream` CLI flag prereq)
+- [ ] **Deferred to M4**: Progress notifications for `apr.run` — work in flight on branch `feat/apr-run-stream-progress` (PR #891), pending an `apr run --stream` CLI flag prereq
 
 ### M4: End-to-end validation — IN PROGRESS
 - [ ] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions (FALSIFY-MCP-001..008) + test cross-links (PR #886 open — pins exact-8 invariant via `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008`)
 - [ ] Extend the contract with a 9th row for FALSIFY-MCP-PROGRESS-001 after PR #886 merges — relax the exact-8 invariant to "FALSIFY-MCP-001..008 + PROGRESS-001, no extras"
-- [ ] Strengthen FALSIFY-MCP-003/-004 from surface tests to mock-subprocess e2e response-shape assertions (in flight)
-- [ ] Real-model FALSIFY-MCP-003: `apr.run` decodes "2" within 5s on cached qwen2.5-0.5b
-- [ ] Real-model FALSIFY-MCP-004: byte-for-byte `apr qa --json` parity
-- [ ] Claude Code dogfood — 1 full session using only `apr.*` tools
+- [ ] Strengthen FALSIFY-MCP-003/-004 from surface tests to mock-subprocess e2e response-shape assertions (PR #889 open — `feat/mcp-strengthen-003-004`)
+- [ ] Real-model FALSIFY-MCP-003: `apr.run` decodes "2" within 5s on cached qwen2.5-0.5b (covered by PR #892 — `feat/mcp-real-model-e2e`, new gate FALSIFY-MCP-E2E-001)
+- [ ] Real-model FALSIFY-MCP-004: byte-for-byte `apr qa --json` parity (also covered by PR #892)
+- [ ] Claude Code dogfood — 1 full session using only `apr.*` tools (PR #890 open — `feat/mcp-dogfood-conformance`, new gate FALSIFY-MCP-DOGFOOD-001)
 - [ ] Cursor / Cline manual smoke test
 
 ### M5: `pmcp` SDK migration + transport expansion — PLANNED
