@@ -1,65 +1,90 @@
 # CRUX-K-19 — CoreML export (Apple Silicon)
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-K-19
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "K — Ecosystem & Integration"
+  category: "K — Deployment & Integration"
   competitor: ecosystem
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    CoreML export (Apple Silicon). Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.K and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    CoreML export for Apple Silicon: produce a `.mlpackage` consumable
+    by `coremltools.models.MLModel` on macOS 13+. Canonical:
+    `coremltools.convert(...)` from PyTorch / ONNX. Parity: on CPU
+    compute unit, logits cosine ≥0.999 vs apr native fp32. fp16 weight
+    storage is acceptable provided the cosine gate holds.
 
 equations:
-  placeholder_contract:
+  coreml_export:
     formula: |
-      DRAFT — user workflow "CoreML export (Apple Silicon)"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr export --format coreml --compute-precision fp16 model.apr \
+         -o model.mlpackage
+      MLModel(model.mlpackage).predict({"input_ids": x}) → logits
+      cos_sim(coreml_logits, native_logits) ≥ 0.999 (CPU compute unit)
+    domain: "(model: Path, compute_precision ∈ {fp32, fp16}, minimum_deployment_target ≥ iOS 16)"
+    codomain: "mlpackage directory conforming to CoreML spec"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "output directory is a valid .mlpackage (has Manifest.json + Data/)"
+    - "MLModel.load succeeds; logit cosine ≥ 0.999 vs native"
+    - "minimum_deployment_target metadata present in Manifest"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-19-001
-  rule: placeholder
-  prediction: "apr surface for 'CoreML export (Apple Silicon)' matches ecosystem canonical behavior"
+  rule: mlpackage structure is valid
+  prediction: "Manifest.json + Data/com.apple.CoreML/model.mlmodel present"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-19" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr export tests/fixtures/tiny.apr --format coreml \
+      --compute-precision fp16 -o /tmp/t.mlpackage
+    test -f /tmp/t.mlpackage/Manifest.json
+    test -f /tmp/t.mlpackage/Data/com.apple.CoreML/model.mlmodel
+- id: FALSIFY-CRUX-K-19-002
+  rule: coremltools.MLModel.load succeeds
+  prediction: "MLModel('/tmp/t.mlpackage') does not raise"
+  test: |
+    set -euo pipefail
+    uv run --with coremltools python3 -c "
+    import coremltools as ct
+    m = ct.models.MLModel('/tmp/t.mlpackage', compute_units=ct.ComputeUnit.CPU_ONLY)
+    assert m is not None
+    "
+- id: FALSIFY-CRUX-K-19-003
+  rule: parity vs native ≥0.999 cosine
+  prediction: "coreml logits vs native within cosine gate"
+  test: |
+    set -euo pipefail
+    apr trace tests/fixtures/tiny.apr --input hello --dump-logits /tmp/native.npy
+    uv run --with coremltools --with numpy python3 -c "
+    import coremltools as ct, numpy as np
+    m = ct.models.MLModel('/tmp/t.mlpackage', compute_units=ct.ComputeUnit.CPU_ONLY)
+    x = np.load('/tmp/input_ids.npy')
+    y = m.predict({'input_ids': x})['logits']
+    n = np.load('/tmp/native.npy')
+    cos = float((y.flatten() @ n.flatten()) / (np.linalg.norm(y)*np.linalg.norm(n) + 1e-12))
+    assert cos >= 0.999, cos
+    "
 
 proof_obligations:
+- type: parity
+  property: "apr export --format coreml produces CoreML-spec-compliant .mlpackage with ≥0.999 cosine vs native"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "MLModel.load succeeds on CPU_ONLY compute unit"
+- type: invariant
+  property: "Manifest.json + model.mlmodel present under Data/com.apple.CoreML/"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-k-19` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-k-19
   priority: medium
   auto_created: true

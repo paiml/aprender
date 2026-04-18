@@ -1,65 +1,91 @@
 # CRUX-K-20 — TensorRT-LLM export
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-K-20
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "K — Ecosystem & Integration"
+  category: "K — Deployment & Integration"
   competitor: ecosystem
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    TensorRT-LLM export. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.K and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    TensorRT-LLM export: build a GPU-optimized engine plan from an apr
+    checkpoint. Canonical: NVIDIA TensorRT-LLM (github.com/NVIDIA/
+    TensorRT-LLM) `trtllm-build`. Output is a `.engine` per tensor-
+    parallel rank plus a `config.json`. Logit parity with apr native
+    must hold under fp16 within cosine ≥0.995 (looser than ONNX CPU
+    because fp16 kernel fusion introduces small numerical drift).
 
 equations:
-  placeholder_contract:
+  trtllm_export:
     formula: |
-      DRAFT — user workflow "TensorRT-LLM export"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr export --format trtllm --dtype fp16 --tp-size 1 model.apr -o engine_dir/
+      engine_dir/
+        rank0.engine            # one per TP rank
+        config.json             # has {builder, plugin_config, pretrained_config}
+      run_engine(x) produces logits with cos_sim ≥ 0.995 vs native fp16
+    domain: "(model: Path, tp_size: u32 ≥ 1, dtype ∈ {fp16, bf16, int8})"
+    codomain: "engine plan directory"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "config.json parses and lists builder.dtype == requested dtype"
+    - "exactly tp_size `.engine` files emitted"
+    - "logit cosine vs native fp16 ≥ 0.995"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-20-001
-  rule: placeholder
-  prediction: "apr surface for 'TensorRT-LLM export' matches ecosystem canonical behavior"
+  rule: engine count equals tp_size
+  prediction: "--tp-size 2 emits rank0.engine and rank1.engine"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-20" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr export tests/fixtures/tiny.apr --format trtllm --dtype fp16 \
+      --tp-size 2 -o /tmp/engine
+    test -f /tmp/engine/rank0.engine
+    test -f /tmp/engine/rank1.engine
+    test ! -f /tmp/engine/rank2.engine
+- id: FALSIFY-CRUX-K-20-002
+  rule: config.json records requested dtype
+  prediction: "builder.dtype == fp16"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import json; c = json.load(open('/tmp/engine/config.json'))
+    assert c['builder']['dtype'] == 'fp16', c['builder']
+    "
+- id: FALSIFY-CRUX-K-20-003
+  rule: logit parity vs native fp16
+  prediction: "cos_sim(trtllm_logits, native_fp16_logits) ≥ 0.995"
+  test: |
+    set -euo pipefail
+    apr trace tests/fixtures/tiny.apr --dtype fp16 --input hello \
+      --dump-logits /tmp/native_fp16.npy
+    apr run-trtllm /tmp/engine --input hello --dump-logits /tmp/trt.npy
+    uv run --with numpy python3 -c "
+    import numpy as np
+    y = np.load('/tmp/trt.npy'); n = np.load('/tmp/native_fp16.npy')
+    cos = float((y.flatten() @ n.flatten()) / (np.linalg.norm(y)*np.linalg.norm(n) + 1e-12))
+    assert cos >= 0.995, cos
+    "
 
 proof_obligations:
+- type: parity
+  property: "apr export --format trtllm emits TensorRT-LLM runner-compatible engine dir"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "engine count == tp_size"
+- type: invariant
+  property: "logit cosine ≥ 0.995 vs native fp16"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-k-20` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-k-20
   priority: medium
   auto_created: true

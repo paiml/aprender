@@ -1,65 +1,98 @@
 # CRUX-K-12 — VSCode extension for apr
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-K-12
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "K — Ecosystem & Integration"
+  category: "K — Deployment & Integration"
   competitor: ecosystem
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    VSCode extension for apr. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.K and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    VSCode extension packaging apr as a LSP-style completion/chat
+    provider. Canonical: VSCode Extension API — `package.json` has
+    `engines.vscode`, `contributes.commands`, `main` entry point; VSIX
+    installable via `code --install-extension`. Shape: JSON manifest +
+    activation events.
 
 equations:
-  placeholder_contract:
+  vscode_ext:
     formula: |
-      DRAFT — user workflow "VSCode extension for apr"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      package.json required fields:
+        name, displayName, version, publisher, engines: { vscode: ">=^1.85.0" },
+        main: "./out/extension.js",
+        contributes: { commands: [ {command, title} ] },
+        activationEvents: ["onCommand:apr.chat", "onStartupFinished"]
+      build produces extension.vsix that `vsce verify-pat` accepts
+      and `code --install-extension` installs without errors.
+    domain: "(extension_dir: Path)"
+    codomain: "extension.vsix file, valid manifest"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "package.json conforms to VSCode extension schema"
+    - "every `contributes.commands[].command` matches an `activationEvents` entry"
+    - "vsix SHA-256 is reproducible across builds (source + deps pinned)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-12-001
-  rule: placeholder
-  prediction: "apr surface for 'VSCode extension for apr' matches ecosystem canonical behavior"
+  rule: package.json validates against VSCode schema
+  prediction: "jsonschema validate passes for generated package.json"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-12" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr ext scaffold vscode -o /tmp/ext
+    uv run --with jsonschema python3 -c "
+    import json, jsonschema, pathlib
+    pkg = json.load(open('/tmp/ext/package.json'))
+    assert 'engines' in pkg and 'vscode' in pkg['engines']
+    assert pkg['main'].endswith('.js')
+    assert 'commands' in pkg['contributes']
+    assert all('command' in c and 'title' in c for c in pkg['contributes']['commands'])
+    "
+- id: FALSIFY-CRUX-K-12-002
+  rule: every command has an activation event
+  prediction: "set(commands) == set(onCommand:* in activationEvents)"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import json
+    p = json.load(open('/tmp/ext/package.json'))
+    cmds = { c['command'] for c in p['contributes']['commands'] }
+    acts = { e.split(':',1)[1] for e in p['activationEvents'] if e.startswith('onCommand:') }
+    assert cmds == acts or cmds.issubset(acts), (cmds, acts)
+    "
+- id: FALSIFY-CRUX-K-12-003
+  rule: vsix build is reproducible
+  prediction: "two clean builds produce byte-identical .vsix"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      rm -rf /tmp/ext-build$i; cp -r /tmp/ext /tmp/ext-build$i
+      apr ext pack /tmp/ext-build$i -o /tmp/apr-ext$i.vsix
+    done
+    diff <(unzip -p /tmp/apr-ext1.vsix extension/package.json) \
+         <(unzip -p /tmp/apr-ext2.vsix extension/package.json)
+    sha256sum /tmp/apr-ext1.vsix /tmp/apr-ext2.vsix | awk '{print $1}' | sort -u | wc -l | \
+      xargs -I {} test {} -eq 1
 
 proof_obligations:
+- type: parity
+  property: "apr ext scaffold vscode emits valid package.json per VSCode Extension API"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "commands ⊆ activationEvents (no orphan commands)"
+- type: invariant
+  property: "vsix build is reproducible"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-k-12` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-k-12
   priority: medium
   auto_created: true

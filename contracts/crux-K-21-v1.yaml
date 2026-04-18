@@ -1,65 +1,100 @@
 # CRUX-K-21 — MLX backend (Apple Silicon native)
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-K-21
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "K — Ecosystem & Integration"
+  category: "K — Deployment & Integration"
   competitor: ecosystem
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    MLX backend (Apple Silicon native). Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.K and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    MLX backend: run apr inference on Apple Silicon GPU via
+    ml-explore/mlx. Canonical: `mlx_lm.load(model_path).generate(...)`
+    over npz/safetensors weights. Shipped as a build-time feature
+    gate — absent on non-Darwin arm64 builds. Parity vs apr native
+    fp16 CPU: logit cosine ≥0.999 on the same prompt.
 
 equations:
-  placeholder_contract:
+  mlx_backend:
     formula: |
-      DRAFT — user workflow "MLX backend (Apple Silicon native)"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      build target: aarch64-apple-darwin only
+      apr run --backend mlx model.apr --prompt p →
+         { logits, tokens, tps } where:
+           cos_sim(logits_mlx, logits_native_fp16) ≥ 0.999
+           tps_mlx ≥ 1.5 × tps_native_cpu (M3 Pro baseline)
+    domain: "(model: Path, prompt: str, dtype ∈ {fp16, bf16})"
+    codomain: "apr inference output over MLX GPU kernels"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "feature gate: `apr --features mlx` only builds on aarch64-apple-darwin"
+    - "logit cosine ≥ 0.999 vs native fp16 CPU"
+    - "determinism at temp=0 + seed=fixed (byte-identical token stream)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-21-001
-  rule: placeholder
-  prediction: "apr surface for 'MLX backend (Apple Silicon native)' matches ecosystem canonical behavior"
+  rule: MLX feature absent on non-Darwin targets
+  prediction: "`apr --features mlx` build fails on x86_64-unknown-linux-gnu"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-21" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if [[ "$(uname -sm)" == "Darwin arm64" ]]; then
+      echo "skip: this FALSIFY only runs on non-darwin"
+      exit 0
+    fi
+    ! cargo build --features mlx -p apr-cli 2>/tmp/err
+    grep -E "mlx|darwin|feature" /tmp/err
+- id: FALSIFY-CRUX-K-21-002
+  rule: parity with native fp16 ≥0.999 cosine
+  prediction: "mlx logits match native within cosine gate (Darwin arm64 only)"
+  test: |
+    set -euo pipefail
+    if [[ "$(uname -sm)" != "Darwin arm64" ]]; then
+      echo "skip: mlx path requires Apple Silicon"
+      exit 0
+    fi
+    apr trace tests/fixtures/tiny.apr --dtype fp16 --input hello \
+      --dump-logits /tmp/native.npy
+    apr trace tests/fixtures/tiny.apr --backend mlx --input hello \
+      --dump-logits /tmp/mlx.npy
+    uv run --with numpy python3 -c "
+    import numpy as np
+    a=np.load('/tmp/mlx.npy'); b=np.load('/tmp/native.npy')
+    cos=float((a.flatten() @ b.flatten()) / (np.linalg.norm(a)*np.linalg.norm(b)+1e-12))
+    assert cos >= 0.999, cos
+    "
+- id: FALSIFY-CRUX-K-21-003
+  rule: determinism at temp=0 on MLX
+  prediction: "two runs with temp=0, seed=42 produce identical tokens"
+  test: |
+    set -euo pipefail
+    if [[ "$(uname -sm)" != "Darwin arm64" ]]; then
+      echo "skip"; exit 0
+    fi
+    for i in 1 2; do
+      apr run tests/fixtures/tiny.apr --backend mlx --prompt "2+2=?" \
+        --temperature 0 --seed 42 --max-tokens 8 --format json > /tmp/m$i.json
+    done
+    diff <(jq -S .tokens /tmp/m1.json) <(jq -S .tokens /tmp/m2.json)
 
 proof_obligations:
+- type: parity
+  property: "apr --backend mlx matches mlx_lm generate interface and yields ≥0.999 cosine vs native"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "feature flag gated to Darwin arm64"
+- type: invariant
+  property: "determinism at temp=0"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-k-21` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-k-21
   priority: medium
   auto_created: true
