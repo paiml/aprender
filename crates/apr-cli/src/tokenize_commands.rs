@@ -53,4 +53,31 @@ pub enum TokenizeCommands {
         #[arg(long, default_value = "0")]
         max_lines: usize,
     },
+
+    /// Train BPE on a JSONL corpus per contracts/tokenizer-bpe-v1.yaml (MODEL-2).
+    ///
+    /// Walks `--corpus` (file or directory of `.jsonl` files), extracting the
+    /// `content` field from each line, applies `--normalization` (NFC default),
+    /// and trains a BPE tokenizer with the target vocab size. Writes
+    /// `vocab.json` (token→id) and `merges.txt` (one `a b` pair per line, in
+    /// merge order) to `--output`.
+    Train {
+        /// Path to corpus: a `.jsonl` file or a directory containing `.jsonl` files.
+        /// Each line must be a JSON object with a `content` field.
+        #[arg(long, value_name = "PATH")]
+        corpus: PathBuf,
+        /// Target vocabulary size
+        #[arg(long, default_value = "50000")]
+        vocab_size: usize,
+        /// Minimum pair frequency (accepted for contract parity; threading to
+        /// the underlying trainer is owned by task #89).
+        #[arg(long, default_value = "2")]
+        min_frequency: usize,
+        /// Output directory; will contain vocab.json and merges.txt.
+        #[arg(long, default_value = "./tokenizer-output")]
+        output: PathBuf,
+        /// Unicode normalization form applied to each document before training.
+        #[arg(long, default_value = "nfc")]
+        normalization: String,
+    },
 }

@@ -418,3 +418,299 @@ fn format_duration(minutes: f64) -> String {
         format!("{:.1} hours", minutes / 60.0)
     }
 }
+
+// ─── `apr tokenize train` — BPE for MODEL-2 (contracts/tokenizer-bpe-v1.yaml) ──
+
+#[derive(serde::Serialize)]
+struct TokenizeTrainResult {
+    algorithm: String,
+    vocab_size: usize,
+    corpus_lines: usize,
+    corpus_files: usize,
+    min_frequency: usize,
+    normalization: String,
+    training_seconds: f64,
+    output_dir: String,
+}
+
+/// Run `apr tokenize train` — train BPE from a JSONL corpus with NFC normalization.
+pub(crate) fn run_train(
+    corpus: &Path,
+    vocab_size: usize,
+    min_frequency: usize,
+    output_dir: &Path,
+    normalization: &str,
+    json_output: bool,
+) -> Result<()> {
+    validate_vocab_size(vocab_size)?;
+    validate_normalization(normalization)?;
+
+    if !corpus.exists() {
+        return Err(CliError::FileNotFound(corpus.to_path_buf()));
+    }
+
+    let files = collect_jsonl_files(corpus)?;
+    if files.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "No .jsonl files found under {}",
+            corpus.display()
+        )));
+    }
+
+    let normalizer = build_normalizer(normalization);
+    let mut lines: Vec<String> = Vec::new();
+    for file in &files {
+        read_jsonl_content(file, &normalizer, &mut lines)?;
+    }
+
+    if lines.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "Corpus contained no `content` fields — nothing to train on".to_string(),
+        ));
+    }
+
+    if !json_output {
+        print_train_header(corpus, vocab_size, output_dir, files.len(), lines.len());
+    }
+
+    let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let start = Instant::now();
+    let tokenizer = aprender::text::tokenize::BpeTokenizer::train(&refs, vocab_size)
+        .map_err(|e| CliError::ValidationFailed(format!("BPE training failed: {e}")))?;
+    let elapsed = start.elapsed();
+
+    std::fs::create_dir_all(output_dir).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "Cannot create output directory {}: {e}",
+            output_dir.display()
+        ))
+    })?;
+
+    let trained = TrainedTokenizer {
+        vocab: tokenizer.vocab().clone(),
+        merges: tokenizer.merges().to_vec(),
+    };
+    write_vocab_json(output_dir, &trained)?;
+    write_merges_txt(output_dir, &trained)?;
+
+    let result = TokenizeTrainResult {
+        algorithm: "bpe".to_string(),
+        vocab_size: trained.vocab_size(),
+        corpus_lines: lines.len(),
+        corpus_files: files.len(),
+        min_frequency,
+        normalization: normalization.to_string(),
+        training_seconds: elapsed.as_secs_f64(),
+        output_dir: output_dir.display().to_string(),
+    };
+
+    if json_output {
+        let json = serde_json::to_string_pretty(&result)
+            .map_err(|e| CliError::InvalidFormat(e.to_string()))?;
+        println!("{json}");
+    } else {
+        print_train_result(&result);
+    }
+
+    Ok(())
+}
+
+fn validate_normalization(norm: &str) -> Result<()> {
+    match norm {
+        "none" | "nfc" => Ok(()),
+        other => Err(CliError::ValidationFailed(format!(
+            "Unknown normalization: {other}. Supported: none, nfc"
+        ))),
+    }
+}
+
+/// Build the normalizer closure. Threaded locally per task #90 since the
+/// upstream TokenizerConfig doesn't yet carry a normalization field (task #89).
+fn build_normalizer(normalization: &str) -> Box<dyn Fn(&str) -> String> {
+    match normalization {
+        "nfc" => Box::new(|s: &str| {
+            use unicode_normalization::UnicodeNormalization;
+            s.nfc().collect::<String>()
+        }),
+        _ => Box::new(|s: &str| s.to_string()),
+    }
+}
+
+fn collect_jsonl_files(path: &Path) -> Result<Vec<std::path::PathBuf>> {
+    let meta = std::fs::metadata(path).map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot stat {}: {e}", path.display()))
+    })?;
+
+    if meta.is_file() {
+        if is_jsonl(path) {
+            return Ok(vec![path.to_path_buf()]);
+        }
+        return Err(CliError::ValidationFailed(format!(
+            "Corpus file {} is not a .jsonl file",
+            path.display()
+        )));
+    }
+
+    let mut out = Vec::new();
+    let entries = std::fs::read_dir(path).map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot read directory {}: {e}", path.display()))
+    })?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|e| CliError::ValidationFailed(format!("Directory entry error: {e}")))?;
+        let p = entry.path();
+        if p.is_file() && is_jsonl(&p) {
+            out.push(p);
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn is_jsonl(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()) == Some("jsonl")
+}
+
+fn read_jsonl_content(
+    path: &Path,
+    normalizer: &dyn Fn(&str) -> String,
+    out: &mut Vec<String>,
+) -> Result<()> {
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display()))
+    })?;
+    for (line_idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "Invalid JSON in {} line {}: {e}",
+                path.display(),
+                line_idx + 1
+            ))
+        })?;
+        if let Some(text) = value.get("content").and_then(|v| v.as_str()) {
+            out.push(normalizer(text));
+        }
+    }
+    Ok(())
+}
+
+fn print_train_header(
+    corpus: &Path,
+    vocab_size: usize,
+    output_dir: &Path,
+    files: usize,
+    lines: usize,
+) {
+    output::header("apr tokenize train — Training BPE Tokenizer");
+    println!();
+    output::kv("  Algorithm", "bpe");
+    output::kv("  Vocab size", format_number(vocab_size));
+    output::kv("  Corpus", corpus.display().to_string());
+    output::kv("  Files", format_number(files));
+    output::kv("  Lines", format_number(lines));
+    output::kv("  Output", output_dir.display().to_string());
+    println!();
+}
+
+fn print_train_result(result: &TokenizeTrainResult) {
+    output::section("Result");
+    println!("  {} BPE tokenizer trained successfully", "OK".green().bold());
+    output::kv("  Final vocab size", format_number(result.vocab_size));
+    output::kv("  Normalization", &result.normalization);
+    output::kv(
+        "  Training time",
+        format!("{:.1}s", result.training_seconds),
+    );
+    output::kv("  vocab.json", format!("{}/vocab.json", result.output_dir));
+    output::kv("  merges.txt", format!("{}/merges.txt", result.output_dir));
+    println!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn write_corpus_file(dir: &Path, name: &str, lines: &[&str]) -> std::path::PathBuf {
+        let p = dir.join(name);
+        let body = lines.join("\n");
+        std::fs::write(&p, body).expect("write corpus");
+        p
+    }
+
+    #[test]
+    fn run_train_happy_path_jsonl_file() {
+        let tmp = TempDir::new().expect("tempdir");
+        let corpus = write_corpus_file(
+            tmp.path(),
+            "corpus.jsonl",
+            &[
+                r#"{"content": "hello world hello"}"#,
+                r#"{"content": "hello there world"}"#,
+            ],
+        );
+        let out = tmp.path().join("tok");
+
+        run_train(&corpus, 300, 1, &out, "nfc", true).expect("train");
+
+        assert!(out.join("vocab.json").exists());
+        assert!(out.join("merges.txt").exists());
+        let vocab = std::fs::read_to_string(out.join("vocab.json")).expect("read vocab");
+        assert!(
+            vocab.contains("\"<unk>\""),
+            "vocab.json missing <unk>: {}",
+            vocab
+        );
+        let merges = std::fs::read_to_string(out.join("merges.txt")).expect("read merges");
+        assert!(
+            merges.starts_with("#version: 0.2"),
+            "merges.txt missing header: {}",
+            merges
+        );
+    }
+
+    #[test]
+    fn run_train_directory_corpus_walks_jsonl() {
+        let tmp = TempDir::new().expect("tempdir");
+        let corpus_dir = tmp.path().join("corpus");
+        std::fs::create_dir_all(&corpus_dir).expect("mkdir");
+        write_corpus_file(
+            &corpus_dir,
+            "a.jsonl",
+            &[r#"{"content": "alpha beta alpha"}"#],
+        );
+        write_corpus_file(
+            &corpus_dir,
+            "b.jsonl",
+            &[r#"{"content": "gamma delta gamma"}"#],
+        );
+        // Non-jsonl file must be ignored.
+        std::fs::write(corpus_dir.join("notes.txt"), "ignore me").expect("write ignored");
+
+        let out = tmp.path().join("tok");
+        run_train(&corpus_dir, 300, 2, &out, "nfc", true).expect("train");
+
+        assert!(out.join("vocab.json").exists());
+        assert!(out.join("merges.txt").exists());
+    }
+
+    #[test]
+    fn run_train_rejects_unknown_normalization() {
+        let tmp = TempDir::new().expect("tempdir");
+        let corpus = write_corpus_file(
+            tmp.path(),
+            "corpus.jsonl",
+            &[r#"{"content": "x y"}"#],
+        );
+        let err = run_train(&corpus, 300, 1, tmp.path(), "nfkd", true)
+            .expect_err("should reject unsupported normalization");
+        match err {
+            CliError::ValidationFailed(msg) => assert!(msg.contains("nfkd")),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+}

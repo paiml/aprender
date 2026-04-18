@@ -506,6 +506,20 @@ fn dispatch_tokenize_command(
             output,
             max_lines,
         } => tokenize::run_apply(data, *vocab_size, algorithm, output, *max_lines, cli.json),
+        TokenizeCommands::Train {
+            corpus,
+            vocab_size,
+            min_frequency,
+            output,
+            normalization,
+        } => tokenize::run_train(
+            corpus,
+            *vocab_size,
+            *min_frequency,
+            output,
+            normalization,
+            cli.json,
+        ),
     }
 }
 
