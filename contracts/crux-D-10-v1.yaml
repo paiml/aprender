@@ -25,37 +25,164 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  autocast_dtype_selection:
     formula: |
-      DRAFT — user workflow "Mixed precision bf16/fp16"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      With --precision ∈ {bf16, fp16, fp32}, each op op ∈ autocast_whitelist runs as:
+        dtype_op = --precision     (matmul, conv)
+        dtype_op = fp32            (layer_norm, softmax, loss_scale, reductions)
+      Master weights and optimizer states retained in fp32.
+      bf16:  1 sign + 8 exp + 7 mant  — dynamic range ≈ fp32, low precision
+      fp16:  1 sign + 5 exp + 10 mant — low dynamic range, needs loss scaler
+    domain: (precision setting, per-op dtype policy)
+    codomain: forward/backward dtype assignment
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Autocast enabled for matmul/conv; disabled for norms/reductions/loss"
+    - "Master weights and optimizer moments stay fp32 (mixed-precision invariant)"
+    - "Competitor parity: torch.autocast(device_type='cuda', dtype=torch.bfloat16)"
+
+  peak_memory_ratio:
+    formula: |
+      peak_mem(bf16) / peak_mem(fp32)  ≤  0.60
+      peak_mem(fp16) / peak_mem(fp32)  ≤  0.60
+      at identical batch_size, seq_len, model shape.
+    domain: GPU peak allocation measurement at steady state
+    codomain: ratio ∈ (0, 1]
+    invariants:
+    - "Mixed precision reduces peak allocation ≥ 40% vs fp32"
+    - "Reduction comes from activations + gradients, not master weights"
+
+  throughput_speedup:
+    formula: |
+      tps(bf16) / tps(fp32)  ≥  1.4   on Ampere+ (sm_80+)
+      tps(fp16) / tps(fp32)  ≥  1.4   on Volta+  (sm_70+)
+    domain: tokens_per_sec measured over ≥ 100 training steps
+    codomain: ratio ∈ ℝ_{>0}
+    invariants:
+    - "≥ 1.4× throughput on supported GPU architectures"
+    - "Speedup realized via tensor cores; requires dim divisible by 8"
+
+  loss_fidelity_and_nan_guard:
+    formula: |
+      |final_loss(bf16) - final_loss(fp32)| / final_loss(fp32)  ≤  0.02
+      count( isnan(grad_t) OR isinf(grad_t) ) == 0  for t ∈ [0, 99]
+    domain: training trajectory over 100 steps on Llama-class architecture
+    codomain: bool
+    invariants:
+    - "Final loss within ±2% of fp32 reference on same seed/data"
+    - "Zero nan/inf gradients across 100 consecutive steps (bf16 numerical stability)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-10-001
-  rule: placeholder
-  prediction: "apr surface for 'Mixed precision bf16/fp16' matches pytorch canonical behavior"
+  rule: "bf16/fp16 peak memory ≤ 0.6× fp32"
+  prediction: "mixed precision reduces peak GPU memory by ≥40%"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-10" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: requires CUDA runner (yoga/gx10); skip on CPU-only
+    command -v nvidia-smi >/dev/null || { echo "skipped: no GPU"; exit 0; }
+    for P in fp32 bf16 fp16; do
+      apr finetune fixtures/crux-d-10/llama-small.apr --precision $P \
+        --data fixtures/crux-d-10/train.jsonl --epochs 1 \
+        --batch-size 4 --max-length 2048 --seed 42 --json \
+        --report-peak-memory > /tmp/d10-$P.json
+    done
+    python3 -c "
+    import json
+    fp32 = json.load(open('/tmp/d10-fp32.json'))['peak_memory_bytes']
+    for p in ('bf16','fp16'):
+        m = json.load(open(f'/tmp/d10-{p}.json'))['peak_memory_bytes']
+        r = m/fp32
+        assert r <= 0.60, f'{p} peak memory ratio {r:.3f} > 0.60'
+    "
+  if_fails: "Mixed precision did not reduce peak memory ≥40% — autocast not reaching activations"
+
+- id: FALSIFY-CRUX-D-10-002
+  rule: "≥1.4× throughput on Ampere+ for bf16"
+  prediction: "bf16 tokens_per_sec ≥ 1.4 × fp32 on sm_80+"
+  test: |
+    command -v nvidia-smi >/dev/null || { echo "skipped: no GPU"; exit 0; }
+    CC=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '.')
+    [ "$CC" -ge 80 ] || { echo "skipped: pre-Ampere"; exit 0; }
+    for P in fp32 bf16; do
+      apr finetune fixtures/crux-d-10/llama-small.apr --precision $P \
+        --data fixtures/crux-d-10/train.jsonl --epochs 1 --max-steps 100 \
+        --batch-size 4 --seed 42 --json > /tmp/d10-$P.json
+    done
+    python3 -c "
+    import json
+    a = json.load(open('/tmp/d10-fp32.json'))['tokens_per_sec']
+    b = json.load(open('/tmp/d10-bf16.json'))['tokens_per_sec']
+    assert b/a >= 1.4, f'bf16 speedup {b/a:.2f} < 1.4'
+    "
+  if_fails: "bf16 speedup < 1.4× on Ampere+ — tensor cores not engaged"
+
+- id: FALSIFY-CRUX-D-10-003
+  rule: "final loss within ±2% of fp32"
+  prediction: "mixed precision does not degrade convergence beyond 2%"
+  test: |
+    for P in fp32 bf16 fp16; do
+      apr finetune fixtures/crux-d-10/llama-small.apr --precision $P \
+        --data fixtures/crux-d-10/train.jsonl --epochs 2 --seed 42 --json \
+        > /tmp/d10-$P.json
+    done
+    python3 -c "
+    import json
+    fp32 = json.load(open('/tmp/d10-fp32.json'))['final_loss']
+    for p in ('bf16','fp16'):
+        l = json.load(open(f'/tmp/d10-{p}.json'))['final_loss']
+        d = abs(l-fp32)/fp32
+        assert d <= 0.02, f'{p} loss drift {d:.4f} > 0.02'
+    "
+  if_fails: "Mixed-precision final loss drifted >2% from fp32 — numerics or autocast policy broken"
+
+- id: FALSIFY-CRUX-D-10-004
+  rule: "zero nan/inf gradients over 100 bf16 steps"
+  prediction: "bf16 has no nan gradients for 100 consecutive steps"
+  test: |
+    apr finetune fixtures/crux-d-10/llama-small.apr --precision bf16 \
+      --data fixtures/crux-d-10/train.jsonl --max-steps 100 --seed 42 \
+      --grad-stats --json > /tmp/d10-bf16-grads.json
+    jq -e '.grad_nan_count == 0 and .grad_inf_count == 0' /tmp/d10-bf16-grads.json
+  if_fails: "bf16 produced nan/inf gradients — numerical instability in forward or loss"
+
+- id: FALSIFY-CRUX-D-10-005
+  rule: "torch.autocast parity on loss trajectory"
+  prediction: "apr --precision bf16 matches torch.autocast(bfloat16) first-100-step loss within 2%"
+  test: |
+    # TODO: golden at evidence/crux/pytorch/d-10-autocast-bf16-losses.json
+    GOLDEN=evidence/crux/pytorch/d-10-autocast-bf16-losses.json
+    apr finetune fixtures/crux-d-10/llama-small.apr --precision bf16 \
+      --data fixtures/crux-d-10/train.jsonl --max-steps 100 --seed 42 --json \
+      > /tmp/d10-bf16.json
+    python3 -c "
+    import json
+    apr=json.load(open('/tmp/d10-bf16.json'))['step_losses']
+    ref=json.load(open('$GOLDEN'))['step_losses']
+    mape = sum(abs(a-r)/r for a,r in zip(apr,ref))/len(ref)
+    assert mape <= 0.02, f'MAPE {mape:.4f} > 2%'
+    "
+  if_fails: "apr mixed precision diverges from torch.autocast reference trajectory"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "peak_mem(bf16|fp16) / peak_mem(fp32) ≤ 0.60 at fixed batch/seq"
+- type: invariant
+  property: "tokens_per_sec(bf16) / tokens_per_sec(fp32) ≥ 1.4 on Ampere+"
+- type: invariant
+  property: "|final_loss(mixed) - final_loss(fp32)| / final_loss(fp32) ≤ 0.02"
+- type: invariant
+  property: "zero nan/inf gradients over 100 consecutive bf16 steps"
+- type: parity
+  property: "apr --precision bf16 ≡ torch.autocast(dtype=torch.bfloat16) step-loss trajectory within 2%"
+
+# References:
+#   PyTorch AMP: https://pytorch.org/docs/stable/amp.html
+#   Mixed Precision Training (Micikevicius et al.): https://arxiv.org/abs/1710.03740
+#   BF16 numerics (Kalamkar et al.): https://arxiv.org/abs/1905.12322
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

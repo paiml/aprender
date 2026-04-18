@@ -25,37 +25,168 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  adamw_update_rule:
     formula: |
-      DRAFT — user workflow "AdamW + 8-bit AdamW"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      At step t, given gradient g_t, learning rate η, weight decay λ,
+      betas (β1, β2), and epsilon ε:
+        m_t = β1 · m_{t-1} + (1 - β1) · g_t
+        v_t = β2 · v_{t-1} + (1 - β2) · g_t²
+        m̂_t = m_t / (1 - β1^t)
+        v̂_t = v_t / (1 - β2^t)
+        θ_t = θ_{t-1} − η · m̂_t / (√v̂_t + ε) − η · λ · θ_{t-1}
+      Note: weight decay is DECOUPLED (Loshchilov & Hutter, 2017), applied
+      directly to θ rather than folded into g_t.
+    domain: (θ_{t-1}, g_t, m_{t-1}, v_{t-1}, η, λ, β1, β2, ε) at step t ≥ 1
+    codomain: (θ_t, m_t, v_t)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Decoupled weight decay: θ − η·λ·θ term is NOT inside m/v statistics"
+    - "Bias-corrected m̂, v̂ used in update (not raw m, v)"
+    - "Competitor parity: torch.optim.AdamW(params, lr, betas, eps, weight_decay)"
+    - "Emitted to debug log when --debug-optimizer flag set"
+
+  adamw_8bit_state_compression:
+    formula: |
+      Standard AdamW state memory per parameter:
+        S_fp32 = 8 bytes  (fp32 m + fp32 v)
+      8-bit AdamW state memory per parameter:
+        S_8bit = 2 · (1 byte index + quant_block_overhead)  ≈  2.5 bytes / param
+      Ratio:
+        S_8bit / S_fp32  ≤  0.30
+      Quantization uses dynamic blockwise 8-bit (Dettmers et al., 2021)
+      with block_size = 2048 and per-block absmax scale.
+    domain: (trainable parameter count P, optimizer choice)
+    codomain: optimizer state bytes
+    invariants:
+    - "8-bit AdamW state ≤ 0.30 × fp32 AdamW state memory"
+    - "Dequantization error bounded by per-block absmax quantization"
+    - "Competitor parity: bitsandbytes.optim.AdamW8bit"
+
+  loss_fidelity_8bit:
+    formula: |
+      |final_loss(adamw-8bit) - final_loss(adamw-fp32)| / final_loss(adamw-fp32) ≤ 0.02
+      on identical (seed, data, model, lr, schedule).
+    domain: training trajectory
+    codomain: bool
+    invariants:
+    - "8-bit optimizer state does not degrade convergence by more than 2%"
+    - "Same random seed → same data order → only optimizer precision differs"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-16-001
-  rule: placeholder
-  prediction: "apr surface for 'AdamW + 8-bit AdamW' matches huggingface canonical behavior"
+  rule: "8-bit optimizer state ≤ 0.30× fp32 state"
+  prediction: "--optimizer adamw-8bit reduces optimizer state memory ≥70%"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-16" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    for OPT in adamw adamw-8bit; do
+      apr finetune fixtures/crux-d-16/small.apr --optimizer $OPT \
+        --data fixtures/crux-d-16/train.jsonl --epochs 1 --max-steps 10 \
+        --seed 42 --report-optimizer-memory --json > /tmp/d16-$OPT.json
+    done
+    python3 -c "
+    import json
+    fp32 = json.load(open('/tmp/d16-adamw.json'))['optimizer_state_bytes']
+    q8   = json.load(open('/tmp/d16-adamw-8bit.json'))['optimizer_state_bytes']
+    r = q8 / fp32
+    assert r <= 0.30, f'8-bit ratio {r:.3f} > 0.30'
+    "
+  if_fails: "8-bit AdamW state not compressed ≥70% — blockwise quantization not applied"
+
+- id: FALSIFY-CRUX-D-16-002
+  rule: "final loss within ±2% of fp32 AdamW"
+  prediction: "8-bit AdamW converges within 2% of fp32 AdamW on same seed/data"
+  test: |
+    for OPT in adamw adamw-8bit; do
+      apr finetune fixtures/crux-d-16/small.apr --optimizer $OPT \
+        --data fixtures/crux-d-16/train.jsonl --epochs 2 --seed 42 --json \
+        > /tmp/d16-$OPT.json
+    done
+    python3 -c "
+    import json
+    a = json.load(open('/tmp/d16-adamw.json'))['final_loss']
+    b = json.load(open('/tmp/d16-adamw-8bit.json'))['final_loss']
+    d = abs(a-b)/a
+    assert d <= 0.02, f'loss drift {d:.4f} > 0.02'
+    "
+  if_fails: "8-bit AdamW final loss drifts >2% from fp32 — quantization error too large or block_size wrong"
+
+- id: FALSIFY-CRUX-D-16-003
+  rule: "--debug-optimizer emits the update formula components"
+  prediction: "debug log contains m_t, v_t, m_hat, v_hat, update for step 1"
+  test: |
+    apr finetune fixtures/crux-d-16/small.apr --optimizer adamw \
+      --data fixtures/crux-d-16/train.jsonl --max-steps 2 --seed 42 \
+      --debug-optimizer --json > /tmp/d16-debug.json
+    jq -e '
+      .optimizer_trace[0]
+      | has("m") and has("v") and has("m_hat") and has("v_hat")
+        and has("update") and has("weight_decay_term")
+    ' /tmp/d16-debug.json
+  if_fails: "--debug-optimizer did not emit AdamW update components — observability gap"
+
+- id: FALSIFY-CRUX-D-16-004
+  rule: "decoupled weight decay (AdamW, not Adam+L2)"
+  prediction: "with --weight-decay 0.1, update includes -η·λ·θ term not folded into gradient"
+  test: |
+    # Compare: (a) --optimizer adamw --weight-decay 0.1
+    #         (b) --optimizer adam + explicit L2 penalty in data (equivalent fold-in)
+    # AdamW trajectory MUST differ (decoupled ≠ L2 fold-in when v_t is adaptive).
+    apr finetune fixtures/crux-d-16/small.apr --optimizer adamw \
+      --weight-decay 0.1 --data fixtures/crux-d-16/train.jsonl \
+      --max-steps 50 --seed 42 --json > /tmp/d16-wd.json
+    apr finetune fixtures/crux-d-16/small.apr --optimizer adam \
+      --weight-decay 0.1 --data fixtures/crux-d-16/train.jsonl \
+      --max-steps 50 --seed 42 --json > /tmp/d16-l2.json
+    python3 -c "
+    import json
+    a = json.load(open('/tmp/d16-wd.json'))['final_loss']
+    b = json.load(open('/tmp/d16-l2.json'))['final_loss']
+    # They MUST differ — if equal, decoupling is not implemented.
+    assert abs(a-b)/b > 1e-4, 'AdamW indistinguishable from Adam+L2 — decoupling missing'
+    "
+  if_fails: "AdamW collapses to Adam+L2 — decoupled weight decay not implemented"
+
+- id: FALSIFY-CRUX-D-16-005
+  rule: "torch.optim.AdamW parity on step-1 update"
+  prediction: "apr adamw step-1 θ_1 matches torch.optim.AdamW within 1e-5 relative"
+  test: |
+    # TODO: golden at evidence/crux/huggingface/d-16-adamw-step1.json
+    # captured via torch.optim.AdamW(..., lr=1e-3, betas=(0.9,0.999), eps=1e-8, weight_decay=0.01)
+    GOLDEN=evidence/crux/huggingface/d-16-adamw-step1.json
+    apr finetune fixtures/crux-d-16/small.apr --optimizer adamw \
+      --lr 1e-3 --weight-decay 0.01 --data fixtures/crux-d-16/train.jsonl \
+      --max-steps 1 --seed 42 --debug-optimizer --json > /tmp/d16-step1.json
+    python3 -c "
+    import json
+    apr = json.load(open('/tmp/d16-step1.json'))['optimizer_trace'][0]['theta_after']
+    ref = json.load(open('$GOLDEN'))['theta_after']
+    import statistics
+    drift = statistics.mean(abs(a-r)/(abs(r)+1e-12) for a,r in zip(apr,ref))
+    assert drift < 1e-5, f'drift {drift:.2e}'
+    "
+  if_fails: "apr AdamW step-1 diverges from torch.optim.AdamW — bias correction or update formula bug"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "AdamW update: m_t=β1·m+(1-β1)g, v_t=β2·v+(1-β2)g², θ_t=θ-η·m̂/(√v̂+ε)-η·λ·θ"
+- type: invariant
+  property: "8-bit AdamW state ≤ 0.30× fp32 AdamW state memory"
+- type: invariant
+  property: "|final_loss(adamw-8bit) - final_loss(adamw)| / final_loss(adamw) ≤ 0.02"
+- type: invariant
+  property: "--debug-optimizer emits (m, v, m_hat, v_hat, update, weight_decay_term) per step"
+- type: parity
+  property: "apr --optimizer adamw ≡ torch.optim.AdamW step-1 θ within 1e-5 relative"
+
+# References:
+#   AdamW (Loshchilov & Hutter): https://arxiv.org/abs/1711.05101
+#   8-bit optimizers (Dettmers et al.): https://arxiv.org/abs/2110.02861
+#   bitsandbytes: https://github.com/TimDettmers/bitsandbytes
+#   torch.optim.AdamW: https://pytorch.org/docs/stable/generated/torch.optim.AdamW.html
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -25,37 +25,123 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  full_parameter_update:
     formula: |
-      DRAFT — user workflow "Full-parameter fine-tune single cmd"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      For every trainable parameter θ_i in the base model,
+      full-parameter fine-tune MUST apply an update:
+        θ_i^{(t+1)} = θ_i^{(t)} - η · ∇_{θ_i} L(θ^{(t)}; batch_t)
+      such that after N epochs:
+        |{ i : θ_i^{(N)} ≠ θ_i^{(0)} }| / |θ|  ≥  0.99
+    domain: model parameters θ ∈ ℝ^P (P ≈ 10^8–10^10)
+    codomain: updated parameter tensor θ' ∈ ℝ^P
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "At least 99% of parameters changed vs pre-train checkpoint"
+    - "No frozen layers (contrasts with LoRA / adapter methods)"
+    - "Competitor parity: transformers.Trainer(model, args, train_dataset).train() updates ALL params"
+
+  loss_monotonic_descent:
+    formula: |
+      val_loss[e+1] ≤ val_loss[e] · (1 + ε)   for ε = 0.02
+      across all epoch boundaries e ∈ [0, N-2]
+    domain: epoch_metrics[i].val_loss for i ∈ [0, total_epochs-1]
+    codomain: bool
+    invariants:
+    - "Validation loss non-increasing (±2% noise tolerance)"
+    - "If val_loss diverges, training MUST emit a warning status"
+
+  checkpoint_resumable:
+    formula: |
+      ∀ epoch e ∈ [0, N-1]:
+        resume(checkpoint(e)) produces state S_e such that
+        train(S_e, remaining_data) ≡ train_from_scratch[epoch e+1 onward]
+      up to numerical tolerance 1e-4.
+    domain: checkpoint directory + remaining training schedule
+    codomain: resumed training trajectory
+    invariants:
+    - "Checkpoint written at every epoch boundary"
+    - "Resume reproduces continuation within 1e-4 loss tolerance"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-01-001
-  rule: placeholder
-  prediction: "apr surface for 'Full-parameter fine-tune single cmd' matches huggingface canonical behavior"
+  rule: "≥99% of params changed after full fine-tune"
+  prediction: "apr finetune --method full updates every trainable tensor"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-01" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: wire fixtures/crux-d-01/tiny-base.apr + train.jsonl (100 lines)
+    BASE=fixtures/crux-d-01/tiny-base.apr
+    OUT=/tmp/crux-d-01-full.apr
+    apr finetune "$BASE" --method full --data fixtures/crux-d-01/train.jsonl \
+      --epochs 2 --output "$OUT" --json > /tmp/d01-metrics.json
+    apr diff "$BASE" "$OUT" --json | \
+      jq -e '(.tensors_changed_count / .tensors_total) >= 0.99'
+  if_fails: "Full fine-tune did not update ≥99% of parameters — method is not actually 'full'"
+
+- id: FALSIFY-CRUX-D-01-002
+  rule: "val_loss monotonically decreasing across epochs (±2%)"
+  prediction: "val_loss[i+1] ≤ val_loss[i] * 1.02 for all epoch boundaries"
+  test: |
+    OUT=$(apr finetune fixtures/crux-d-01/tiny-base.apr --method full \
+      --data fixtures/crux-d-01/train.jsonl --val-data fixtures/crux-d-01/val.jsonl \
+      --epochs 3 --json)
+    echo "$OUT" | jq -e '
+      .epoch_metrics
+      | [range(1; length) as $i | (.[$i].val_loss <= .[$i-1].val_loss * 1.02)]
+      | all'
+  if_fails: "Validation loss did not descend monotonically — LR or data pipeline bug"
+
+- id: FALSIFY-CRUX-D-01-003
+  rule: "checkpoint resumable at every epoch boundary"
+  prediction: "apr finetune --resume-from ckpt-e1 continues training with matching loss"
+  test: |
+    CKPT_DIR=/tmp/crux-d-01-ckpt
+    apr finetune fixtures/crux-d-01/tiny-base.apr --method full \
+      --data fixtures/crux-d-01/train.jsonl --epochs 3 --checkpoint-dir "$CKPT_DIR" --json \
+      > /tmp/d01-full.json
+    # TODO: expose checkpoint-dir/epoch-1 subdir convention in apr finetune
+    apr finetune "$CKPT_DIR/epoch-1" --resume --data fixtures/crux-d-01/train.jsonl \
+      --epochs 3 --json > /tmp/d01-resume.json
+    python3 -c "
+    import json
+    a=json.load(open('/tmp/d01-full.json'))['epoch_metrics'][2]['train_loss']
+    b=json.load(open('/tmp/d01-resume.json'))['epoch_metrics'][-1]['train_loss']
+    assert abs(a-b) < 1e-4, f'resume drift {abs(a-b)}'
+    "
+  if_fails: "Resume did not reproduce from-scratch trajectory — checkpoint missing optimizer state"
+
+- id: FALSIFY-CRUX-D-01-004
+  rule: "huggingface Trainer parity on canonical invocation"
+  prediction: "apr finetune --method full produces final loss within ±5% of transformers.Trainer"
+  test: |
+    # TODO: golden transcript at evidence/crux/huggingface/d-01-trainer-full.json
+    # captured via: Trainer(model, TrainingArguments(num_train_epochs=2), train_dataset).train()
+    GOLDEN=evidence/crux/huggingface/d-01-trainer-full.json
+    APR_LOSS=$(apr finetune fixtures/crux-d-01/tiny-base.apr --method full \
+      --data fixtures/crux-d-01/train.jsonl --epochs 2 --seed 42 --json \
+      | jq -r '.final_loss')
+    HF_LOSS=$(jq -r '.final_loss' "$GOLDEN")
+    python3 -c "assert abs($APR_LOSS - $HF_LOSS) / $HF_LOSS < 0.05"
+  if_fails: "apr diverges from HF Trainer canonical final_loss by >5%"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "≥99% of trainable parameters changed post-train vs base checkpoint"
+- type: invariant
+  property: "val_loss non-increasing across epoch boundaries (±2% tolerance)"
+- type: invariant
+  property: "checkpoint written at every epoch boundary and resumable"
+- type: invariant
+  property: "final_loss within ±5% of transformers.Trainer reference on same seed/data"
+- type: parity
+  property: "apr finetune --method full ≡ Trainer(model, args, train_dataset).train()"
+
+# References:
+#   https://huggingface.co/docs/transformers/en/main_classes/trainer
+#   https://huggingface.co/docs/transformers/en/training
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

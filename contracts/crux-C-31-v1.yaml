@@ -25,37 +25,175 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  attention_memory_bound:
     formula: |
-      DRAFT — user workflow "FlashAttention-2 enabled path"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      Naïve attention materializes the [seq_len, seq_len] attention matrix:
+        vram_naive(L) = L² × num_heads × dtype_bytes
+      FlashAttention-2 uses online softmax + tiling (no full matrix):
+        vram_flash(L) = O(L × head_dim) per block  (tile-resident only)
+      Prediction: peak_vram(flash) / peak_vram(naive)  ≤  0.5   for L >= 8192
+    domain: forward-pass peak VRAM for attention block, context length L
+    codomain: ℝ (ratio)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "FlashAttention-2 never materializes the full L×L attention matrix"
+    - "Memory is linear in L (not quadratic) for the attention block"
+    - "Reference: Dao 2023 https://github.com/Dao-AILab/flash-attention §3 (tiling + recomputation)"
+
+  wall_time_speedup:
+    formula: |
+      t_per_token(flash) / t_per_token(naive) ≤ 0.85
+      (measured on decode phase, RTX 4090 or better, SM >= 80)
+    domain: per-token decode latency at L=2048+
+    codomain: ℝ (ratio)
+    invariants:
+    - "FlashAttention-2 per-token latency ≤ 0.85× naïve baseline"
+    - "Gate: Ampere+ (SM 80+) required; pre-Ampere falls back to naïve"
+
+  numeric_parity:
+    formula: |
+      cos(logits_flash, logits_naive) ≥ 0.9999
+      |logits_flash - logits_naive|_∞ ≤ 1e-2   (fp16)
+      (same input, same model weights, temperature=0)
+    domain: token logit vectors for identical input
+    codomain: ℝ ∈ [-1, 1] (cosine)
+    invariants:
+    - "FlashAttention-2 output numerically equivalent to naïve attention"
+    - "No degradation in argmax token selection on deterministic sampling"
+
+  enable_gate:
+    formula: |
+      APR_ATTN=flash2  ⇒  force flash-attn-2 path (error if SM<80)
+      APR_ATTN=auto    ⇒  flash-attn-2 if SM>=80 else naïve (default)
+      APR_ATTN=naive   ⇒  force naïve path
+    domain: env var + hardware capability
+    codomain: attention kernel selection
+    invariants:
+    - "APR_ATTN env var controls kernel selection"
+    - "Auto mode selects flash-attn-2 on Ampere+ (sm_80, sm_86, sm_89, sm_90)"
+    - "Selected kernel observable via /metrics (apr_attn_kernel label)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-31-001
-  rule: placeholder
-  prediction: "apr surface for 'FlashAttention-2 enabled path' matches vllm canonical behavior"
+  rule: peak attention VRAM <= 0.5x naive at L=8k
+  prediction: "FlashAttention-2 uses <= 50% of naive attention peak VRAM at 8k context"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-31" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # Reference: https://github.com/Dao-AILab/flash-attention
+    # Requires a baseline naive-attention build (APR_ATTN=naive) vs flash2
+    PROMPT=$(python3 -c "print('tok '*4000)")  # ~8k tokens
+    BODY=$(python3 -c 'import json,sys; print(json.dumps({"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":sys.argv[1]}],"stream":False,"max_tokens":4,"temperature":0}))' "$PROMPT")
+    # Measure with naive
+    APR_ATTN=naive nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits > /tmp/mem_pre_naive.txt
+    APR_ATTN=naive timeout 120 curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" -d "$BODY" >/dev/null &
+    NPID=$!
+    NAIVE_PEAK=0
+    while kill -0 $NPID 2>/dev/null; do
+      V=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+      if [ "$V" -gt "$NAIVE_PEAK" ]; then NAIVE_PEAK=$V; fi
+      sleep 0.05
+    done
+    wait
+    # Measure with flash2
+    APR_ATTN=flash2 timeout 120 curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" -d "$BODY" >/dev/null &
+    FPID=$!
+    FLASH_PEAK=0
+    while kill -0 $FPID 2>/dev/null; do
+      V=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+      if [ "$V" -gt "$FLASH_PEAK" ]; then FLASH_PEAK=$V; fi
+      sleep 0.05
+    done
+    wait
+    python3 -c "n=$NAIVE_PEAK; f=$FLASH_PEAK; print(f'peak_vram naive={n} MiB flash={f} MiB ratio={f/n:.2f}'); assert f <= 0.5 * n, f'flash peak {f} > 0.5 * naive {n}'"
+  if_fails: "FlashAttention-2 peak VRAM > 0.5x naive at 8k context (materializing full matrix?)"
+
+- id: FALSIFY-CRUX-C-31-002
+  rule: per-token decode wall time <= 0.85x naive
+  prediction: "flash2 per-token latency ≤ 0.85 × naive at L=2048+"
+  test: |
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    PROMPT=$(python3 -c "print('ctx '*1000)")  # ~2k tokens
+    BODY=$(python3 -c 'import json,sys; print(json.dumps({"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":sys.argv[1]}],"stream":False,"max_tokens":64,"temperature":0}))' "$PROMPT")
+    # Naive
+    T0=$(date +%s.%N)
+    APR_ATTN=naive curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$BODY" > /tmp/naive_resp.json
+    T1=$(date +%s.%N)
+    N_TOK=$(jq '.usage.completion_tokens' /tmp/naive_resp.json)
+    NAIVE_TPT=$(python3 -c "print(($T1-$T0)/$N_TOK)")
+    # Flash2
+    T2=$(date +%s.%N)
+    APR_ATTN=flash2 curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$BODY" > /tmp/flash_resp.json
+    T3=$(date +%s.%N)
+    F_TOK=$(jq '.usage.completion_tokens' /tmp/flash_resp.json)
+    FLASH_TPT=$(python3 -c "print(($T3-$T2)/$F_TOK)")
+    python3 -c "n=$NAIVE_TPT; f=$FLASH_TPT; print(f'naive={n*1000:.2f}ms/tok flash={f*1000:.2f}ms/tok ratio={f/n:.2f}'); assert f <= 0.85 * n, f'flash {f:.4f}s/tok > 0.85 * naive {n:.4f}s/tok'"
+  if_fails: "FlashAttention-2 per-token latency > 0.85x naive (not faster)"
+
+- id: FALSIFY-CRUX-C-31-003
+  rule: numeric parity (cos(logits) >= 0.9999)
+  prediction: "Flash and naive produce numerically equivalent logits on same input"
+  test: |
+    # TODO: requires `apr trace --dump-logits <path>` to capture top-K logits per token
+    # for the same prompt under APR_ATTN=naive and APR_ATTN=flash2, then compare.
+    if ! apr trace --help 2>&1 | grep -q -- '--dump-logits'; then
+      echo "SKIP: apr trace --dump-logits not implemented; parity falsification pending" >&2
+      exit 2
+    fi
+    MODEL=qwen2.5-coder-1.5b
+    PROMPT="Compute: 2 + 2 ="
+    APR_ATTN=naive  apr trace run "$MODEL" --prompt "$PROMPT" --max-tokens 8 --temperature 0 --dump-logits /tmp/logits_naive.npy
+    APR_ATTN=flash2 apr trace run "$MODEL" --prompt "$PROMPT" --max-tokens 8 --temperature 0 --dump-logits /tmp/logits_flash.npy
+    python3 -c "import numpy as np; a=np.load('/tmp/logits_naive.npy').astype(np.float32).flatten(); b=np.load('/tmp/logits_flash.npy').astype(np.float32).flatten(); cos=float(np.dot(a,b)/(np.linalg.norm(a)*np.linalg.norm(b))); inf=float(np.max(np.abs(a-b))); print(f'cos={cos:.6f}  inf_norm={inf:.4f}'); assert cos >= 0.9999, f'cos {cos:.6f} < 0.9999'; assert inf <= 1e-2, f'inf_norm {inf:.4f} > 1e-2'"
+  if_fails: "Flash vs naive cos(logits) < 0.9999 (numeric divergence)"
+
+- id: FALSIFY-CRUX-C-31-004
+  rule: APR_ATTN env var selects kernel and is observable
+  prediction: "APR_ATTN ∈ {flash2,auto,naive} honored; /metrics exposes apr_attn_kernel"
+  test: |
+    METRICS=http://127.0.0.1:8080/metrics
+    # auto on Ampere+ should select flash2
+    K_AUTO=$(APR_ATTN=auto curl -sS "$METRICS" | awk -F'[{}]' '/^apr_attn_kernel/ {print; exit}')
+    echo "$K_AUTO" | grep -qE 'kernel="flash2"' \
+      || { echo "FAIL: APR_ATTN=auto did not select flash2 on current GPU: $K_AUTO" >&2; exit 1; }
+    K_NAIVE=$(APR_ATTN=naive curl -sS "$METRICS" | awk -F'[{}]' '/^apr_attn_kernel/ {print; exit}')
+    echo "$K_NAIVE" | grep -qE 'kernel="naive"' \
+      || { echo "FAIL: APR_ATTN=naive not honored: $K_NAIVE" >&2; exit 1; }
+  if_fails: "APR_ATTN env var not honored or /metrics lacks apr_attn_kernel label"
+
+- id: FALSIFY-CRUX-C-31-005
+  rule: pre-Ampere rejection when APR_ATTN=flash2 forced
+  prediction: "On SM<80, APR_ATTN=flash2 exits non-zero at startup with a clear diagnostic"
+  test: |
+    # TODO: requires access to a pre-Ampere GPU (or CPU-only build) for discharge.
+    SM=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '.')
+    if [ "$SM" -ge "80" ]; then
+      echo "SKIP: Ampere+ detected (sm_$SM); pre-Ampere gate not exercisable here" >&2
+      exit 2
+    fi
+    OUT=$(APR_ATTN=flash2 apr serve --model qwen2.5-coder-1.5b 2>&1) && RC=0 || RC=$?
+    [ "$RC" -ne 0 ] \
+      || { echo "FAIL: APR_ATTN=flash2 on sm_$SM should have failed" >&2; exit 1; }
+    echo "$OUT" | grep -qiE 'flashattention|sm 80|ampere' \
+      || { echo "FAIL: diagnostic does not mention FA2/SM requirement: $OUT" >&2; exit 1; }
+  if_fails: "APR_ATTN=flash2 silently succeeds (or fails without diagnostic) on pre-Ampere hardware"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "FlashAttention-2 peak VRAM <= 0.5 × naive at L=8k"
+- type: invariant
+  property: "FlashAttention-2 per-token latency <= 0.85 × naive at L>=2k"
+- type: invariant
+  property: "cos(logits_flash, logits_naive) >= 0.9999 on deterministic sampling"
+- type: invariant
+  property: "APR_ATTN ∈ {flash2, auto, naive} honored; auto selects flash2 on SM>=80"
+- type: invariant
+  property: "APR_ATTN=flash2 fails loudly on pre-Ampere hardware"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

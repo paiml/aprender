@@ -25,37 +25,136 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  chat_template_render:
     formula: |
-      DRAFT — user workflow "SFT chat-template conversations"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Given a conversation C = [(role_i, content_i)]_{i=0..n-1} and template T:
+        prompt_str = T(C) = apply_chat_template(tokenizer, C, add_generation_prompt=false)
+        token_ids  = tokenizer.encode(prompt_str)
+      For canonical templates T ∈ {chatml, llama3, mistral, qwen2}:
+        token_ids_apr(C) == token_ids_hf(C)   (element-wise equal)
+    domain: "(C, T) where C is list of {role ∈ {system,user,assistant}, content: str}"
+    codomain: list[int] token ids
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Template selection matches model family (detected from tokenizer config)"
+    - "Token IDs byte-for-byte equal to transformers tokenizer.apply_chat_template"
+    - "add_special_tokens handling matches HF convention"
+
+  assistant_loss_masking:
+    formula: |
+      For rendered sequence s = [t_0, t_1, ..., t_{L-1}]:
+        mask_i = 1  if t_i ∈ assistant_turn_span
+                 0  otherwise (system, user, BOS/EOS outside assistant)
+      Per-sample loss:
+        L = (Σ_i mask_i · CE(logits_i, t_{i+1})) / max(Σ_i mask_i, 1)
+    domain: tokenized conversation + per-token role mask
+    codomain: scalar loss
+    invariants:
+    - "Only assistant-turn tokens contribute to loss gradient"
+    - "User/system prompt tokens have zero gradient (masked)"
+    - "TRL SFTTrainer parity when DataCollatorForCompletionOnlyLM-equivalent is used"
+
+  dry_run_visibility:
+    formula: |
+      apr finetune --dry-run --print-first-example emits, to stdout:
+        { "raw": C_0, "templated": T(C_0), "token_ids": ids, "loss_mask": m }
+      without modifying any training state.
+    domain: first record of --data JSONL
+    codomain: JSON diagnostic object
+    invariants:
+    - "Exit code 0, no checkpoint or metric files created"
+    - "User can visually verify template rendering before committing to train run"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-05-001
-  rule: placeholder
-  prediction: "apr surface for 'SFT chat-template conversations' matches huggingface canonical behavior"
+  rule: "chat template tokenization byte-equal to HF reference"
+  prediction: "apr --chat-template chatml produces identical token_ids to transformers.apply_chat_template"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-05" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: golden ids at evidence/crux/huggingface/d-05-chatml-ids.json
+    # captured via: tokenizer.apply_chat_template(conv, tokenize=True, add_generation_prompt=False)
+    GOLDEN=evidence/crux/huggingface/d-05-chatml-ids.json
+    apr finetune fixtures/crux-d-05/qwen-base.apr --chat-template chatml \
+      --data fixtures/crux-d-05/conversations.jsonl \
+      --dry-run --print-first-example --json > /tmp/d05-first.json
+    python3 -c "
+    import json
+    apr = json.load(open('/tmp/d05-first.json'))['token_ids']
+    ref = json.load(open('$GOLDEN'))['token_ids']
+    assert apr == ref, f'token_ids differ: apr[:10]={apr[:10]} ref[:10]={ref[:10]}'
+    "
+  if_fails: "Chat template tokenization diverges from HF reference — special-token handling or role marker bug"
+
+- id: FALSIFY-CRUX-D-05-002
+  rule: "loss masked on non-assistant tokens"
+  prediction: "user/system tokens have loss_mask=0; assistant tokens have loss_mask=1"
+  test: |
+    apr finetune fixtures/crux-d-05/qwen-base.apr --chat-template chatml \
+      --data fixtures/crux-d-05/conversations.jsonl \
+      --dry-run --print-first-example --json > /tmp/d05-first.json
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/d05-first.json'))
+    ids, mask, roles = d['token_ids'], d['loss_mask'], d['role_per_token']
+    assert len(ids) == len(mask) == len(roles)
+    for i,(r,m) in enumerate(zip(roles,mask)):
+        if r == 'assistant':
+            assert m == 1, f'assistant token {i} unmasked'
+        else:
+            assert m == 0, f'non-assistant token {i} contributes to loss (role={r})'
+    "
+  if_fails: "Loss mask does not restrict to assistant turns — will train on user prompts (data leakage)"
+
+- id: FALSIFY-CRUX-D-05-003
+  rule: "template auto-detection matches model family"
+  prediction: "--chat-template auto picks chatml for Qwen2, llama3 for Llama-3, mistral for Mistral-v0.3"
+  test: |
+    for FAM in qwen2 llama3 mistral; do
+      # TODO: fixtures/crux-d-05/$FAM-base.apr for each family
+      DETECTED=$(apr finetune "fixtures/crux-d-05/$FAM-base.apr" --chat-template auto \
+        --data fixtures/crux-d-05/conversations.jsonl --dry-run --print-first-example --json \
+        | jq -r '.template_name')
+      case "$FAM" in
+        qwen2)   [ "$DETECTED" = "chatml" ]   || exit 1 ;;
+        llama3)  [ "$DETECTED" = "llama3" ]   || exit 1 ;;
+        mistral) [ "$DETECTED" = "mistral" ]  || exit 1 ;;
+      esac
+    done
+  if_fails: "Auto template detection picked wrong template for known model family"
+
+- id: FALSIFY-CRUX-D-05-004
+  rule: "--dry-run is side-effect free"
+  prediction: "--dry-run exits 0, writes no checkpoint, writes no metrics file"
+  test: |
+    OUT=/tmp/crux-d-05-out.apr
+    CKPT=/tmp/crux-d-05-ckpt
+    rm -rf "$OUT" "$CKPT"
+    apr finetune fixtures/crux-d-05/qwen-base.apr --chat-template chatml \
+      --data fixtures/crux-d-05/conversations.jsonl \
+      --dry-run --print-first-example --output "$OUT" --checkpoint-dir "$CKPT"
+    [ ! -e "$OUT" ] && [ ! -e "$CKPT" ]
+  if_fails: "--dry-run created artifacts — violates side-effect-free contract"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "token_ids from apr --chat-template equal HF tokenizer.apply_chat_template"
+- type: invariant
+  property: "loss mask = 1 iff token ∈ assistant turn; 0 otherwise"
+- type: invariant
+  property: "--chat-template auto selects correct family template from tokenizer config"
+- type: invariant
+  property: "--dry-run --print-first-example emits diagnostic JSON with no side effects"
+- type: parity
+  property: "apr finetune + --chat-template ≡ TRL SFTTrainer with apply_chat_template formatting"
+
+# References:
+#   TRL SFTTrainer: https://huggingface.co/docs/trl/main/en/sft_trainer#format-your-input-prompts
+#   HF chat templates: https://huggingface.co/docs/transformers/main/en/chat_templating
+#   DataCollatorForCompletionOnlyLM: https://huggingface.co/docs/trl/main/en/sft_trainer#using-token_ids-for-completion-only
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

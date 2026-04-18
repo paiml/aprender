@@ -18,44 +18,112 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: partial
   description: >
-    TTFT time to first token latency. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.E and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    TTFT time to first token latency — the interval from request arrival
+    to emission of the first output token. Dominated by prefill compute
+    (O(prompt_len × hidden_dim × layers)) on the first forward pass.
+    Competitor: vLLM benchmarks (`benchmarks/benchmark_serving.py`) report
+    TTFT p50/p95/p99; OpenAI publishes TTFT SLOs.
+    Aprender surface: `apr bench --ttft --concurrent N --prompt-len P --json`
+    emits {ttft_p50_ms, ttft_p95_ms, ttft_p99_ms, prompt_len, concurrent}.
+    Source: https://docs.vllm.ai/en/latest/performance/benchmarks.html
 
 equations:
-  placeholder_contract:
+  ttft_definition:
     formula: |
-      DRAFT — user workflow "TTFT time to first token latency"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      TTFT(req) = t_first_token_out - t_request_arrival
+      TTFT_p50 = 50th percentile of {TTFT(req) : req ∈ sample}
+      TTFT_p95 = 95th percentile
+      TTFT_p99 = 99th percentile
+    domain: stream of requests with fixed (prompt_len, concurrent)
+    codomain: ℝ⁺ (milliseconds, strictly positive)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "TTFT > 0 (time cannot be zero)"
+    - "p50 <= p95 <= p99 (ordered percentiles)"
+    - "TTFT measured after request enqueue, before any output token"
+
+  ttft_prompt_length_scaling:
+    formula: |
+      In prefill-bound regime (typical):
+        TTFT(P) ≈ α + β · P
+      where P = prompt_len, α = fixed overhead (tokenize, queue), β = per-token prefill cost.
+      Doubling P doubles TTFT to first-order.
+    domain: prompt_len P ∈ [1, context_window]
+    codomain: TTFT in milliseconds
+    invariants:
+    - "TTFT scales approximately linearly with prompt_len for fixed concurrent"
+    - "TTFT(2P) / TTFT(P) ∈ [1.5, 3.0] (prefill-bound sanity check)"
+
+  ttft_upper_bound:
+    formula: |
+      TTFT <= decode_latency_ms × prompt_len × 1.5
+      Sanity: prefill-per-token must not exceed 1.5× decode-per-token.
+    domain: all requests
+    codomain: bool
+    invariants:
+    - "Prefill is not slower than decode by more than 1.5×/token"
+    - "If violated, prefill kernel fusion/batching is broken"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-16-001
-  rule: placeholder
-  prediction: "apr surface for 'TTFT time to first token latency' matches vllm canonical behavior"
+  rule: JSON exposes p50/p95/p99
+  prediction: "apr bench --ttft --json output has ttft_p50_ms, ttft_p95_ms, ttft_p99_ms"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-E-16" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr bench --ttft --concurrent 4 --prompt-len 128 --num-requests 100 --json > out.json
+    jq -e '.ttft_p50_ms and .ttft_p95_ms and .ttft_p99_ms' out.json
+  if_fails: "TTFT percentile fields missing from --json output"
+
+- id: FALSIFY-CRUX-E-16-002
+  rule: Percentile ordering
+  prediction: "p50 <= p95 <= p99"
+  test: |
+    apr bench --ttft --concurrent 4 --prompt-len 128 --num-requests 100 --json > out.json
+    jq -e '.ttft_p50_ms <= .ttft_p95_ms and .ttft_p95_ms <= .ttft_p99_ms' out.json
+  if_fails: "Percentile ordering violated (statistics bug)"
+
+- id: FALSIFY-CRUX-E-16-003
+  rule: TTFT scales linearly with prompt_len
+  prediction: "TTFT(2P) / TTFT(P) ∈ [1.5, 3.0]"
+  test: |
+    T1=$(apr bench --ttft --concurrent 1 --prompt-len 128 --num-requests 50 --json | jq '.ttft_p50_ms')
+    T2=$(apr bench --ttft --concurrent 1 --prompt-len 256 --num-requests 50 --json | jq '.ttft_p50_ms')
+    python3 -c "r = $T2 / $T1; assert 1.5 <= r <= 3.0, f'ratio {r} out of band'"
+  if_fails: "TTFT does not scale linearly with prompt_len (prefill not working)"
+
+- id: FALSIFY-CRUX-E-16-004
+  rule: TTFT upper bound vs decode
+  prediction: "TTFT <= decode_latency × prompt_len × 1.5"
+  test: |
+    OUT=$(apr bench --ttft --decode-latency --concurrent 1 --prompt-len 128 --json)
+    TTFT=$(echo "$OUT" | jq '.ttft_p50_ms')
+    DECODE=$(echo "$OUT" | jq '.decode_latency_ms_p50')
+    python3 -c "assert $TTFT <= $DECODE * 128 * 1.5, f'TTFT {$TTFT} > bound'"
+  if_fails: "Prefill slower than 1.5× decode per token (kernel fusion broken)"
+
+- id: FALSIFY-CRUX-E-16-005
+  rule: TTFT strictly positive
+  prediction: "All TTFT values > 0"
+  test: |
+    apr bench --ttft --concurrent 1 --prompt-len 64 --num-requests 10 --json | \
+      jq -e '.ttft_p50_ms > 0 and .ttft_p95_ms > 0 and .ttft_p99_ms > 0'
+  if_fails: "TTFT <= 0 (measurement clock bug)"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "JSON output contains ttft_p50_ms, ttft_p95_ms, ttft_p99_ms"
+- type: invariant
+  property: "p50 <= p95 <= p99 (percentile ordering)"
+- type: invariant
+  property: "TTFT scales ~linearly with prompt_len in prefill-bound regime"
+- type: invariant
+  property: "TTFT <= decode_latency × prompt_len × 1.5"
+- type: invariant
+  property: "TTFT > 0 for all measurements"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

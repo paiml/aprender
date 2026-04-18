@@ -18,44 +18,185 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: partial
   description: >
-    OpenAI Python SDK test suite. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.K and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    OpenAI Python SDK test suite. The `openai` Python package is the de facto
+    integration standard; any OpenAI-compatible server is judged by whether
+    `openai.OpenAI(base_url=...)` client calls Just Work. Aprender parity:
+    `apr serve` MUST pass a canonical smoke-test harness exercising
+    `client.chat.completions.create` (sync + async + stream),
+    `client.embeddings.create`, and a tool-use round-trip, with tool+HTTP
+    status triage surfaced on any failure. Refs:
+    https://github.com/openai/openai-python ;
+    https://platform.openai.com/docs/api-reference/chat ;
+    https://platform.openai.com/docs/guides/function-calling
 
 equations:
-  placeholder_contract:
+  smoke_script_exit_zero:
     formula: |
-      DRAFT — user workflow "OpenAI Python SDK test suite"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      uv run --with openai python scripts/openai_smoke.py http://localhost:<port>/v1
+        exits 0 iff ALL of:
+          - sync chat.completions.create returns choices[0].message.content (non-empty string)
+          - async chat.completions.create returns analogous result
+          - streaming chat.completions.create yields >=1 delta with .choices[0].delta.content
+          - embeddings.create returns data[0].embedding (list of floats, length > 0)
+          - tool-use round-trip: first call returns tool_calls, second call (with tool result) returns content
+        exit != 0 on any failure, with stderr including:
+          - probe name (e.g. "sync-chat", "stream-chat", "tool-round-trip")
+          - HTTP status code observed
+    domain: apr serve listening on <port>
+    codomain: (exit_code, stderr triage text)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Smoke script is committed at scripts/openai_smoke.py"
+    - "Script uses openai>=1.0 (modern client, not legacy openai.ChatCompletion)"
+    - "Failures emit {probe_name, http_status} to stderr before exiting"
+
+  tool_call_round_trip:
+    formula: |
+      Step 1: client.chat.completions.create(messages=[user_msg], tools=[T])
+        → response.choices[0].message.tool_calls is non-empty list
+        → response.choices[0].finish_reason == "tool_calls"
+      Step 2: client.chat.completions.create(messages=[
+        user_msg, assistant_tool_call_msg, tool_result_msg
+      ], tools=[T])
+        → response.choices[0].message.content is non-empty string
+        → response.choices[0].finish_reason == "stop"
+    domain: two sequential OpenAI API calls with tool schema T
+    codomain: (tool_calls list, final content)
+    invariants:
+    - "First response includes tool_calls with valid JSON arguments"
+    - "Second response closes the loop with content, not another tool_call"
+    - "finish_reason transitions tool_calls → stop"
+
+  stream_delta_schema:
+    formula: |
+      For streaming chat.completions.create(..., stream=True):
+        iter_count >= 1
+        ∀ chunk in iterator:
+          chunk.choices[0].delta is present
+          chunk.choices[0].delta.content is str or None
+        final chunk has choices[0].finish_reason ∈ {"stop","length","tool_calls"}
+        concatenated content == non-streaming equivalent (within tokenizer rounding)
+    domain: streaming chat response
+    codomain: concatenated content string + terminal finish_reason
+    invariants:
+    - "Stream yields at least one chunk with delta.content"
+    - "Terminal chunk has a valid finish_reason"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-01-001
-  rule: placeholder
-  prediction: "apr surface for 'OpenAI Python SDK test suite' matches ecosystem canonical behavior"
+  rule: canonical smoke script exits zero
+  prediction: "uv run --with openai python scripts/openai_smoke.py returns 0"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-01" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    PORT="${APR_SERVE_PORT:-8000}"
+    [ -f scripts/openai_smoke.py ] || { echo "FAIL: scripts/openai_smoke.py missing" >&2; exit 1; }
+    uv run --with "openai>=1.30" python scripts/openai_smoke.py "http://localhost:$PORT/v1"
+
+- id: FALSIFY-CRUX-K-01-002
+  rule: sync + async + streaming chat.completions all pass
+  prediction: "smoke script's chat-mode probes all return non-empty content"
+  test: |
+    # TODO: once scripts/openai_smoke.py exists, re-scope each probe individually
+    PORT="${APR_SERVE_PORT:-8000}"
+    uv run --with "openai>=1.30" python - <<PYEOF
+    import asyncio, sys
+    from openai import OpenAI, AsyncOpenAI
+    base = "http://localhost:$PORT/v1"
+    c = OpenAI(base_url=base, api_key="sk-apr-test")
+    r = c.chat.completions.create(model=c.models.list().data[0].id,
+        messages=[{"role":"user","content":"say hi"}], max_tokens=4)
+    assert r.choices[0].message.content, f"sync-chat empty: {r}"
+    async def _a():
+        ac = AsyncOpenAI(base_url=base, api_key="sk-apr-test")
+        r = await ac.chat.completions.create(model=(await ac.models.list()).data[0].id,
+            messages=[{"role":"user","content":"hi"}], max_tokens=4)
+        assert r.choices[0].message.content, f"async-chat empty: {r}"
+    asyncio.run(_a())
+    mid = c.models.list().data[0].id
+    acc = ""
+    got_chunk = False
+    for ch in c.chat.completions.create(model=mid,
+        messages=[{"role":"user","content":"hi"}], max_tokens=4, stream=True):
+        got_chunk = True
+        if ch.choices and ch.choices[0].delta and ch.choices[0].delta.content:
+            acc += ch.choices[0].delta.content
+    assert got_chunk, "stream-chat: zero chunks"
+    print("OK sync/async/stream")
+    PYEOF
+
+- id: FALSIFY-CRUX-K-01-003
+  rule: embeddings.create returns valid embedding vector
+  prediction: "client.embeddings.create returns data[0].embedding list with len>0"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    uv run --with "openai>=1.30" python - <<PYEOF
+    from openai import OpenAI
+    c = OpenAI(base_url="http://localhost:$PORT/v1", api_key="sk-apr-test")
+    # TODO: gate on embeddings model availability once /v1/models advertises
+    ids = [m.id for m in c.models.list().data]
+    emb_model = next((i for i in ids if "embed" in i.lower()), ids[0])
+    r = c.embeddings.create(model=emb_model, input="hello world")
+    vec = r.data[0].embedding
+    assert isinstance(vec, list) and len(vec) > 0 and all(isinstance(x,(int,float)) for x in vec), \
+        f"bad embedding: type={type(vec)} len={len(vec) if hasattr(vec,'__len__') else '?'}"
+    print(f"OK embedding dim={len(vec)}")
+    PYEOF
+
+- id: FALSIFY-CRUX-K-01-004
+  rule: tool-use round-trip closes the loop
+  prediction: "first call returns tool_calls, second call with tool result returns content"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    uv run --with "openai>=1.30" python - <<PYEOF
+    import json
+    from openai import OpenAI
+    c = OpenAI(base_url="http://localhost:$PORT/v1", api_key="sk-apr-test")
+    mid = c.models.list().data[0].id
+    tools = [{"type":"function","function":{"name":"get_time","description":"current time",
+        "parameters":{"type":"object","properties":{},"required":[]}}}]
+    msgs = [{"role":"user","content":"what time is it?"}]
+    r1 = c.chat.completions.create(model=mid, messages=msgs, tools=tools, max_tokens=64)
+    tc = r1.choices[0].message.tool_calls
+    assert tc, f"first call returned no tool_calls: {r1}"
+    msgs.append(r1.choices[0].message.model_dump(exclude_none=True))
+    msgs.append({"role":"tool","tool_call_id":tc[0].id,"content":"12:00 UTC"})
+    r2 = c.chat.completions.create(model=mid, messages=msgs, tools=tools, max_tokens=32)
+    assert r2.choices[0].message.content, f"second call returned no content: {r2}"
+    assert r2.choices[0].finish_reason in ("stop","length"), r2.choices[0].finish_reason
+    print("OK tool round-trip")
+    PYEOF
+
+- id: FALSIFY-CRUX-K-01-005
+  rule: failures emit probe name + HTTP status for triage
+  prediction: "smoke script failures include probe name and http_status in stderr"
+  test: |
+    # TODO: when scripts/openai_smoke.py lands, induce a deliberate failure
+    # (e.g. unknown model id) and assert stderr contains both fields.
+    [ -f scripts/openai_smoke.py ] || { echo "SKIP: smoke script not yet authored" >&2; exit 77; }
+    PORT="${APR_SERVE_PORT:-8000}"
+    OUT=$(uv run --with "openai>=1.30" python scripts/openai_smoke.py \
+      "http://localhost:$PORT/v1" --force-model=__nonexistent__ 2>&1 || true)
+    echo "$OUT" | grep -iE 'probe|http[_ ]?status|status[_ ]?code' || {
+      echo "FAIL: triage fields missing from error output" >&2
+      echo "$OUT" >&2
+      exit 1
+    }
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "scripts/openai_smoke.py exists and exits 0 against a ready apr serve"
+- type: invariant
+  property: "Sync, async, and streaming chat.completions.create all return non-empty content"
+- type: invariant
+  property: "client.embeddings.create returns a list-of-numbers embedding with length > 0"
+- type: invariant
+  property: "Tool-use round-trip: first call tool_calls (finish_reason=tool_calls), second call content (finish_reason=stop)"
+- type: invariant
+  property: "Smoke-script failures emit {probe_name, http_status} to stderr before non-zero exit"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

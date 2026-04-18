@@ -18,44 +18,112 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: partial
   description: >
-    Tokens/sec vs concurrency curve. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.E and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Tokens/sec vs concurrency curve. Sweep concurrent client count
+    C ∈ {1, 2, 4, 8, 16, 32} and measure aggregate throughput.
+    Competitor: vLLM `benchmarks/benchmark_throughput.py` emits the same
+    curve for continuous batching analysis.
+    Aprender surface: `apr bench --sweep-concurrency 1,2,4,8,16,32 --json`
+    emits sweep[] = [{concurrent, throughput_tok_s, avg_latency_ms}, ...].
+    Source: https://docs.vllm.ai/en/latest/performance/benchmarks.html
 
 equations:
-  placeholder_contract:
+  throughput_definition:
     formula: |
-      DRAFT — user workflow "Tokens/sec vs concurrency curve"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      throughput(C) = (total_output_tokens) / (wall_clock_duration_sec)
+      where C = concurrent clients, each streaming requests during the window.
+    domain: C ∈ {1, 2, 4, 8, 16, 32}
+    codomain: ℝ⁺ (tokens/sec)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "throughput(C) > 0 for C >= 1"
+    - "Aggregate across all C clients over same wall-clock window"
+
+  non_decreasing_until_saturation:
+    formula: |
+      ∃ C_sat ∈ sweep such that:
+        ∀ C_i < C_j <= C_sat : throughput(C_i) <= throughput(C_j) × (1 + ε)
+      where ε = 0.05 (5% noise band).
+      Beyond C_sat, throughput may plateau or decrease (contention).
+    domain: sweep array
+    codomain: bool
+    invariants:
+    - "Throughput non-decreasing up to saturation point"
+    - "Saturation plateau exists within or at the edge of swept range"
+
+  sweep_array_length:
+    formula: |
+      len(sweep) == |concurrency_values|
+      Each entry has {concurrent, throughput_tok_s, avg_latency_ms}.
+    domain: requested sweep list
+    codomain: JSON array
+    invariants:
+    - "Exactly N entries for N requested concurrency values"
+    - "concurrent values match request in order"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-17-001
-  rule: placeholder
-  prediction: "apr surface for 'Tokens/sec vs concurrency curve' matches vllm canonical behavior"
+  rule: Sweep array length matches request
+  prediction: "len(sweep) == 6 for --sweep-concurrency 1,2,4,8,16,32"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-E-17" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr bench --sweep-concurrency 1,2,4,8,16,32 --prompt-len 128 --json > out.json
+    jq -e '.sweep | length == 6' out.json
+  if_fails: "Sweep array length mismatch with requested values"
+
+- id: FALSIFY-CRUX-E-17-002
+  rule: Each sweep entry has required fields
+  prediction: "Every sweep[i] has concurrent, throughput_tok_s, avg_latency_ms"
+  test: |
+    apr bench --sweep-concurrency 1,2,4,8,16,32 --json > out.json
+    jq -e '.sweep | all(.concurrent != null and .throughput_tok_s != null and .avg_latency_ms != null)' out.json
+  if_fails: "Sweep entry missing required fields"
+
+- id: FALSIFY-CRUX-E-17-003
+  rule: Non-decreasing throughput up to saturation
+  prediction: "throughput(2) >= throughput(1) × 0.95 (at minimum parallelism helps)"
+  test: |
+    apr bench --sweep-concurrency 1,2,4,8,16,32 --json > out.json
+    T1=$(jq '.sweep[0].throughput_tok_s' out.json)
+    T2=$(jq '.sweep[1].throughput_tok_s' out.json)
+    python3 -c "assert $T2 >= $T1 * 0.95, f'C=2 slower than C=1 ({$T2} < {$T1})'"
+  if_fails: "Doubling concurrency reduced throughput — batching broken"
+
+- id: FALSIFY-CRUX-E-17-004
+  rule: Saturation plateau exists
+  prediction: "At least one adjacent pair (C_i, C_{i+1}) has throughput ratio in [0.95, 1.10]"
+  test: |
+    apr bench --sweep-concurrency 1,2,4,8,16,32 --json > out.json
+    python3 <<'PY'
+    import json
+    s = json.load(open('out.json'))['sweep']
+    ratios = [s[i+1]['throughput_tok_s'] / s[i]['throughput_tok_s'] for i in range(len(s)-1)]
+    assert any(0.95 <= r <= 1.10 for r in ratios), f"No plateau: {ratios}"
+    PY
+  if_fails: "No saturation plateau in swept range (need larger sweep or model too small)"
+
+- id: FALSIFY-CRUX-E-17-005
+  rule: concurrent values match request order
+  prediction: "sweep[i].concurrent equals i-th value of --sweep-concurrency"
+  test: |
+    apr bench --sweep-concurrency 1,2,4,8,16,32 --json > out.json
+    jq -e '.sweep | map(.concurrent) == [1,2,4,8,16,32]' out.json
+  if_fails: "Sweep concurrent values reordered or missing"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "sweep array length == number of requested concurrency values"
+- type: invariant
+  property: "Every entry contains {concurrent, throughput_tok_s, avg_latency_ms}"
+- type: invariant
+  property: "Throughput non-decreasing up to saturation (within 5% noise)"
+- type: invariant
+  property: "Saturation plateau detectable within swept range"
+- type: invariant
+  property: "concurrent values in sweep match request order"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
