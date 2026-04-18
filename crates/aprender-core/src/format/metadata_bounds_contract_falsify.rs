@@ -186,6 +186,13 @@ mod metadata_bounds_contract {
                 continue;
             }
 
+            // Skip ModelFamilyVariant contracts (start with `contract_id:`).
+            let head = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+            if head.lines().any(|l| l.starts_with("contract_id:")) {
+                continue;
+            }
+
             let config = load_family_yaml(&path)
                 .unwrap_or_else(|e| panic!("Failed to load {}: {e}", path.display()));
             let name = file_name
