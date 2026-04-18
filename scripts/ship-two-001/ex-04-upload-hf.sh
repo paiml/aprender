@@ -116,7 +116,7 @@ publish_format() {
         --manifest "$manifest" \
         --extra-file "$TOKENIZER" \
         --license apache-2.0 \
-        --commit-message "SHIP-TWO-001 EX-04: publish .${fmt} via apr publish (F-PUBLISH-EXTRA-001)"
+        --message "SHIP-TWO-001 EX-04: publish .${fmt} via apr publish (F-PUBLISH-EXTRA-001)"
 }
 
 # .apr first (native), then .safetensors (fp16), then .gguf.
