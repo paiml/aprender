@@ -976,6 +976,7 @@ version = "0.30.0"
 dependencies = [
  "anyhow",
  "jsonschema 0.28.3",
+ "nix 0.29.0",
  "serde",
  "serde_json",
  "serde_yaml",

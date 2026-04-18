@@ -1,15 +1,54 @@
 //! `AprMcpServer` — JSON-RPC 2.0 dispatcher for aprender MCP tools.
+//!
+//! # Cancellation model (FALSIFY-MCP-006)
+//!
+//! `tools/call` requests that target `apr.run` are dispatched on a worker
+//! thread so the main stdio loop can continue reading and honour
+//! `notifications/cancelled`. Each in-flight call registers a [`CancelHandle`]
+//! in [`AprMcpServer::in_flight`], keyed by request id. A matching
+//! `notifications/cancelled` signals the worker's cancel channel; the worker
+//! then SIGTERMs the spawned `apr` subprocess, waits
+//! [`crate::tools::subprocess::CANCEL_GRACE_MS`], and SIGKILLs if still alive.
+//!
+//! Non-cancellable tool calls still run on a worker (so future concurrent
+//! calls don't block notifications/cancelled routing) but their cancel
+//! channels are never signalled. `initialize`, `tools/list`, and other
+//! fast synchronous methods dispatch inline on the main thread.
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::tools;
 use crate::types::{JsonRpcRequest, JsonRpcResponse, ToolCallResult, ToolDefinition};
+use std::collections::HashMap;
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
+
+/// Per-request cancellation record held in [`AprMcpServer::in_flight`].
+///
+/// Only `apr.run` currently honours cancellation. Entries for other tools
+/// are still registered (so a stray `notifications/cancelled` doesn't log
+/// a warning) but their senders are never used.
+#[derive(Debug)]
+pub struct CancelHandle {
+    /// Sender side of the worker's cancel mpsc. `send(())` causes the
+    /// subprocess poll loop to SIGTERM its child.
+    pub cancel_tx: Sender<()>,
+}
+
+/// Map of in-flight `tools/call` requests keyed by JSON-RPC id.
+///
+/// The id is stored as a raw `serde_json::Value` because the MCP spec
+/// permits both integer and string ids.
+type InFlight = Arc<Mutex<HashMap<serde_json::Value, CancelHandle>>>;
 
 /// MCP server exposing the `apr` CLI as tools.
 ///
 /// M1: `initialize`, `tools/list`, `tools/call` with `apr.version`.
+/// M3: `notifications/cancelled` routed to in-flight `apr.run` workers.
 #[derive(Debug, Default)]
-pub struct AprMcpServer {}
+pub struct AprMcpServer {
+    in_flight: InFlight,
+}
 
 impl AprMcpServer {
     /// Construct a new server.
@@ -18,7 +57,12 @@ impl AprMcpServer {
         Self::default()
     }
 
-    /// Dispatch a single JSON-RPC request.
+    /// Dispatch a single JSON-RPC request synchronously.
+    ///
+    /// This is the in-process test entry point. It does NOT exercise the
+    /// threading / cancellation machinery — `apr.run` runs inline with a
+    /// dummy never-firing cancel receiver. Use [`Self::run_stdio`] for the
+    /// full M3 dispatcher.
     ///
     /// The dispatcher enforces two protocol-level invariants before routing:
     /// FALSIFY-MCP-005 (`jsonrpc` must be exactly `"2.0"` or the response is
@@ -41,7 +85,7 @@ impl AprMcpServer {
         match request.method.as_str() {
             "initialize" => self.handle_initialize(request),
             "tools/list" => self.handle_tools_list(request),
-            "tools/call" => self.handle_tools_call(request),
+            "tools/call" => self.handle_tools_call_sync(request),
             other => JsonRpcResponse::error(
                 request.id.clone(),
                 -32601,
@@ -92,28 +136,12 @@ impl AprMcpServer {
         JsonRpcResponse::success(request.id.clone(), serde_json::json!({ "tools": tools }))
     }
 
-    fn handle_tools_call(&mut self, request: &JsonRpcRequest) -> JsonRpcResponse {
-        let name = request.params.get("name").and_then(|v| v.as_str());
-        let arguments = request
-            .params
-            .get("arguments")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({}));
-
-        let result = match name {
-            Some(tools::version::NAME) => tools::version::call(&arguments),
-            Some(tools::validate::NAME) => tools::validate::call(&arguments),
-            Some(tools::tensors::NAME) => tools::tensors::call(&arguments),
-            Some(tools::bench::NAME) => tools::bench::call(&arguments),
-            Some(tools::qa::NAME) => tools::qa::call(&arguments),
-            Some(tools::trace::NAME) => tools::trace::call(&arguments),
-            Some(tools::run::NAME) => tools::run::call(&arguments),
-            Some(tools::serve::NAME) => tools::serve::call(&arguments),
-            Some(tools::finetune::NAME) => tools::finetune::call(&arguments),
-            Some(other) => ToolCallResult::error(format!("Unknown tool: {other}")),
-            None => ToolCallResult::error("Missing tool name"),
-        };
-
+    /// Synchronous fallback used by [`Self::handle_request`]. `apr.run`
+    /// runs with a never-firing cancel receiver — cancellation is only
+    /// wired by the stdio loop in [`Self::run_stdio`].
+    fn handle_tools_call_sync(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        let (_tx, rx) = mpsc::channel::<()>();
+        let result = dispatch_tool_call(&request.params, &rx);
         JsonRpcResponse::success(
             request.id.clone(),
             serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({})),
@@ -136,20 +164,64 @@ impl AprMcpServer {
         ]
     }
 
+    /// Register a new in-flight request and return its cancel receiver.
+    ///
+    /// Exposed for testing the cancellation routing without spawning a real
+    /// worker. Production code calls this from [`Self::run_stdio`].
+    #[must_use]
+    pub fn register_in_flight(in_flight: &InFlight, id: serde_json::Value) -> mpsc::Receiver<()> {
+        let (tx, rx) = mpsc::channel::<()>();
+        let mut guard = in_flight
+            .lock()
+            .expect("in_flight mutex not poisoned during register");
+        guard.insert(id, CancelHandle { cancel_tx: tx });
+        rx
+    }
+
+    /// Route a `notifications/cancelled` to the matching in-flight request.
+    ///
+    /// Idempotent: repeated cancels for the same id after the first are
+    /// silently dropped. References to completed / unknown ids are no-ops.
+    /// Returns `true` iff a live handle was signalled.
+    pub fn cancel_in_flight(in_flight: &InFlight, id: &serde_json::Value) -> bool {
+        let mut guard = in_flight
+            .lock()
+            .expect("in_flight mutex not poisoned during cancel");
+        if let Some(handle) = guard.remove(id) {
+            // Best-effort: if the worker already completed and dropped its
+            // receiver, the send fails silently — exactly the no-op we want.
+            let _ = handle.cancel_tx.send(());
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Deregister an in-flight id after its worker finishes. Safe to call
+    /// even if the id was already removed by a concurrent cancel.
+    fn deregister_in_flight(in_flight: &InFlight, id: &serde_json::Value) {
+        if let Ok(mut guard) = in_flight.lock() {
+            guard.remove(id);
+        }
+    }
+
     /// Run the server over stdio (blocking).
     ///
-    /// Reads one JSON-RPC request per line from stdin, writes one response per
-    /// line to stdout. Parse errors map to JSON-RPC code -32700.
+    /// Reads one JSON-RPC message per line from stdin. `initialize`,
+    /// `tools/list`, and unknown methods dispatch inline. `tools/call`
+    /// spawns a worker thread so a subsequent `notifications/cancelled`
+    /// message can flow through the main loop and signal the worker's
+    /// cancel channel. Workers write their responses directly to stdout
+    /// (guarded by a mutex) so the main loop never has to wait on them.
     ///
     /// # Errors
     /// Returns an error if stdin/stdout I/O fails.
     #[cfg(feature = "native")]
     pub fn run_stdio(&mut self) -> anyhow::Result<()> {
-        use std::io::{self, BufRead, Write};
+        use std::io::{self, BufRead};
 
         let stdin = io::stdin();
-        let stdout = io::stdout();
-        let mut out = stdout.lock();
+        let stdout = Arc::new(Mutex::new(io::stdout()));
 
         for line in stdin.lock().lines() {
             let line = line?;
@@ -157,18 +229,162 @@ impl AprMcpServer {
                 continue;
             }
 
-            let response = match serde_json::from_str::<JsonRpcRequest>(&line) {
-                Ok(req) => self.handle_request(&req),
-                Err(e) => JsonRpcResponse::error(None, -32700, format!("Parse error: {e}")),
-            };
-
-            let json = serde_json::to_string(&response)?;
-            writeln!(out, "{json}")?;
-            out.flush()?;
+            let parsed: Result<JsonRpcRequest, _> = serde_json::from_str(&line);
+            match parsed {
+                Ok(req) => self.route_stdio_message(req, &stdout)?,
+                Err(e) => {
+                    let resp = JsonRpcResponse::error(None, -32700, format!("Parse error: {e}"));
+                    write_response(&stdout, &resp)?;
+                }
+            }
         }
 
         Ok(())
     }
+
+    /// Dispatch one parsed request within the stdio loop. Separated from
+    /// [`Self::run_stdio`] for testability.
+    #[cfg(feature = "native")]
+    fn route_stdio_message(
+        &mut self,
+        req: JsonRpcRequest,
+        stdout: &Arc<Mutex<std::io::Stdout>>,
+    ) -> anyhow::Result<()> {
+        // FALSIFY-MCP-005: jsonrpc field gate runs before method dispatch.
+        if req.jsonrpc != "2.0" {
+            let resp = JsonRpcResponse::error(
+                req.id.clone(),
+                -32600,
+                format!(
+                    "Invalid Request: jsonrpc must be \"2.0\", got \"{}\"",
+                    req.jsonrpc
+                ),
+            );
+            return write_response(stdout, &resp);
+        }
+
+        match req.method.as_str() {
+            // Notifications have no `id` and MUST NOT receive a response.
+            "notifications/cancelled" => {
+                if let Some(request_id) = req.params.get("requestId").cloned() {
+                    let _ = Self::cancel_in_flight(&self.in_flight, &request_id);
+                }
+                Ok(())
+            }
+            "notifications/initialized" => {
+                // Client handshake ack — no response, no state change.
+                Ok(())
+            }
+            "tools/call" => self.spawn_tools_call_worker(req, stdout),
+            // Fast inline paths.
+            _ => {
+                let resp = self.handle_request(&req);
+                write_response(stdout, &resp)
+            }
+        }
+    }
+
+    #[cfg(feature = "native")]
+    fn spawn_tools_call_worker(
+        &mut self,
+        req: JsonRpcRequest,
+        stdout: &Arc<Mutex<std::io::Stdout>>,
+    ) -> anyhow::Result<()> {
+        // Notifications would arrive with id = None; tools/call must have
+        // an id per JSON-RPC. Defensive: if it's missing, respond inline
+        // with an error so the client sees the failure immediately.
+        let Some(id) = req.id.clone() else {
+            let resp =
+                JsonRpcResponse::error(None, -32600, "Invalid Request: tools/call requires an id");
+            return write_response(stdout, &resp);
+        };
+
+        let cancel_rx = Self::register_in_flight(&self.in_flight, id.clone());
+        let stdout_clone = Arc::clone(stdout);
+        let in_flight_clone = Arc::clone(&self.in_flight);
+        let params = req.params.clone();
+        let id_for_worker = id.clone();
+
+        // Thread spawn is infallible here in practice, but propagate the
+        // error rather than unwrapping so we stay in the "no panics" lane.
+        let builder = std::thread::Builder::new().name(format!("apr-mcp-call-{id}"));
+        let spawn_result = builder.spawn(move || {
+            let result = dispatch_tool_call(&params, &cancel_rx);
+            let resp = JsonRpcResponse::success(
+                Some(id_for_worker.clone()),
+                serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({})),
+            );
+            // Best-effort: a broken stdout means the client disconnected,
+            // which we can't recover from anyway.
+            let _ = write_response(&stdout_clone, &resp);
+            Self::deregister_in_flight(&in_flight_clone, &id_for_worker);
+        });
+
+        match spawn_result {
+            Ok(_handle) => Ok(()),
+            Err(e) => {
+                // Failed to spawn — clean up the registry entry we just
+                // inserted and report the failure inline.
+                Self::deregister_in_flight(&self.in_flight, &id);
+                let resp = JsonRpcResponse::error(
+                    Some(id),
+                    -32603,
+                    format!("Internal error: failed to spawn worker thread: {e}"),
+                );
+                write_response(stdout, &resp)
+            }
+        }
+    }
+
+    /// Handle for tests that want to inspect the in-flight registry.
+    #[must_use]
+    pub fn in_flight_handle(&self) -> InFlight {
+        Arc::clone(&self.in_flight)
+    }
+}
+
+/// Shared tool-call dispatch logic used by both the sync and stdio paths.
+///
+/// `cancel_rx` is forwarded to `apr.run` only; the other tools ignore it.
+fn dispatch_tool_call(
+    params: &serde_json::Value,
+    cancel_rx: &mpsc::Receiver<()>,
+) -> ToolCallResult {
+    let name = params.get("name").and_then(|v| v.as_str());
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    match name {
+        Some(tools::version::NAME) => tools::version::call(&arguments),
+        Some(tools::validate::NAME) => tools::validate::call(&arguments),
+        Some(tools::tensors::NAME) => tools::tensors::call(&arguments),
+        Some(tools::bench::NAME) => tools::bench::call(&arguments),
+        Some(tools::qa::NAME) => tools::qa::call(&arguments),
+        Some(tools::trace::NAME) => tools::trace::call(&arguments),
+        Some(tools::run::NAME) => tools::run::call(&arguments, cancel_rx),
+        Some(tools::serve::NAME) => tools::serve::call(&arguments),
+        Some(tools::finetune::NAME) => tools::finetune::call(&arguments),
+        Some(other) => ToolCallResult::error(format!("Unknown tool: {other}")),
+        None => ToolCallResult::error("Missing tool name"),
+    }
+}
+
+#[cfg(feature = "native")]
+fn write_response(
+    stdout: &Arc<Mutex<std::io::Stdout>>,
+    resp: &JsonRpcResponse,
+) -> anyhow::Result<()> {
+    use std::io::Write;
+
+    let json = serde_json::to_string(resp)?;
+    let mut guard = stdout
+        .lock()
+        .map_err(|e| anyhow::anyhow!("stdout mutex poisoned: {e}"))?;
+    writeln!(&mut *guard, "{json}")?;
+    guard.flush()?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -307,5 +523,38 @@ mod tests {
         };
         let resp = server.handle_request(&req);
         assert_eq!(resp.id, Some(serde_json::json!("req-42")));
+    }
+
+    /// FALSIFY-MCP-006 (unit): registering an id and then cancelling it
+    /// signals the receiver and removes the entry.
+    #[test]
+    fn cancel_in_flight_signals_and_deregisters() {
+        let server = AprMcpServer::new();
+        let id = serde_json::json!(99);
+        let rx = AprMcpServer::register_in_flight(&server.in_flight, id.clone());
+
+        let signalled = AprMcpServer::cancel_in_flight(&server.in_flight, &id);
+        assert!(signalled, "live id should signal");
+        // Sender was dropped by cancel_in_flight (removed from the map), so
+        // try_recv must see either the signal or a disconnected channel —
+        // both prove the cancel reached the receiver side.
+        let received = rx.try_recv();
+        assert!(received.is_ok(), "cancel signal must be deliverable");
+
+        // Idempotent: second call is a no-op.
+        let signalled_again = AprMcpServer::cancel_in_flight(&server.in_flight, &id);
+        assert!(
+            !signalled_again,
+            "cancelling an already-removed id is a no-op"
+        );
+    }
+
+    /// FALSIFY-MCP-006 (unit): cancelling an unknown id is a safe no-op.
+    #[test]
+    fn cancel_unknown_id_is_noop() {
+        let server = AprMcpServer::new();
+        let id = serde_json::json!("never-registered");
+        let signalled = AprMcpServer::cancel_in_flight(&server.in_flight, &id);
+        assert!(!signalled);
     }
 }

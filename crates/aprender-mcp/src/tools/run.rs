@@ -2,16 +2,17 @@
 //!
 //! Wraps `apr run <model> --json [--prompt X] [--max-tokens N] [--temperature T] [--top-p P]`.
 //!
-//! M3 will extend this wrapper to stream `notifications/progress` per decoded
-//! token (spec `docs/specifications/apr-mcp-server-spec.md` line 156). Until
-//! then, the call blocks until decode completes and returns a single content
-//! block of the subprocess stdout.
+//! M3 (FALSIFY-MCP-006) adds cancellation: the call accepts a cancel receiver
+//! and forwards it to [`run_apr_cancellable`], which SIGTERMs the spawned
+//! subprocess on signal and SIGKILLs after the grace window. Progress
+//! notifications (streamed per-token) are a separate M3 slice.
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
-use crate::tools::subprocess::run_apr;
+use crate::tools::subprocess::{run_apr_cancellable, CANCEL_GRACE_MS};
 use crate::types::{InputSchema, PropertySchema, ToolCallResult, ToolDefinition};
 use std::collections::HashMap;
+use std::sync::mpsc::Receiver;
 
 /// Tool name registered with MCP clients.
 pub const NAME: &str = "apr.run";
@@ -75,8 +76,12 @@ pub fn run_tool_definition() -> ToolDefinition {
 }
 
 /// Execute `apr.run` by spawning `apr run <model> --json [...flags]`.
+///
+/// `cancel_rx` is signalled by the MCP dispatcher when a matching
+/// `notifications/cancelled` arrives on the same request id (FALSIFY-MCP-006).
+/// Pass a never-firing channel for tests or direct non-MCP callers.
 #[must_use]
-pub fn call(args: &serde_json::Value) -> ToolCallResult {
+pub fn call(args: &serde_json::Value, cancel_rx: &Receiver<()>) -> ToolCallResult {
     let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
         return ToolCallResult::error("Missing required argument: model_path");
     };
@@ -107,7 +112,7 @@ pub fn call(args: &serde_json::Value) -> ToolCallResult {
     }
 
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
-    run_apr(&argv)
+    run_apr_cancellable(&argv, cancel_rx, CANCEL_GRACE_MS)
 }
 
 #[cfg(test)]
@@ -131,7 +136,8 @@ mod tests {
 
     #[test]
     fn missing_model_path_returns_error() {
-        let result = call(&serde_json::json!({}));
+        let (_tx, rx) = std::sync::mpsc::channel::<()>();
+        let result = call(&serde_json::json!({}), &rx);
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("model_path"));
     }
