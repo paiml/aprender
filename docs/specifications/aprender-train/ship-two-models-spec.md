@@ -1,21 +1,33 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.6.0
+**Version:** 2.7.0
 **Status:** PRE-UPLOAD GATES COMPLETE — HF_TOKEN REQUIRED FOR UPLOAD
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke)
 
-**v2.6.0 amendment (2026-04-18):** the pre-flight gate set grows from seven
+**v2.7.0 amendment (2026-04-18):** the pre-flight gate set grows to nine.
+**FALSIFY-PM-009** (APR magic-bytes Poka-Yoke, contract
+`publish-manifest-v1.yaml` v1.3.0) closes the three-format ship symmetry
+— every shipped format (`.safetensors`, `.gguf`, `.apr`) now has a
+pre-flight gate that aborts BEFORE any network I/O when the staged file
+disagrees with the manifest. v1.0 scope for PM-009 is magic-bytes only:
+first 4 bytes must be one of `APR\0`, `APRN`, `APR1`, `APR2`. The exact
+class it catches is "wrong file staged under format=apr manifest" (e.g.
+a GGUF renamed `.apr`, or a stray `.safetensors`). Tensor-index quant
+validation deferred to v1.1. 45 unit tests on every push; real-artifact
+dogfood evidence in §12.7.
+
+**v2.6.0 amendment (2026-04-18):** the pre-flight gate set grew from seven
 to eight. **FALSIFY-PM-008** (GGUF tensor-type Poka-Yoke, contract
 `publish-manifest-v1.yaml` v1.2.1) closes the same ship-blocker class as
 PM-007 but for the `.gguf` format. Evidence surfaced during the discharge
 run that `general.file_type` is advisory: our own 8 GiB teacher GGUF ships
 with stale `file_type = 0` (ALL_F32) despite fully Q4_K tensors, so PM-008
 treats the **predominant GGML tensor type** as authoritative and the
-metadata field as a fallback. 36 unit tests on every push; real-artifact
-verification at `evidence/ship-two-001/ex-04-preflight-gate-smoketest.json`.
+metadata field as a fallback. Real-artifact verification at
+`evidence/ship-two-001/ex-04-preflight-gate-smoketest.json`.
 
 **v2.5.0 amendment (2026-04-18):** all seven ship manifest gates (PM-001..007)
 now run inside `scripts/ship-two-001/ex-04-upload-hf.sh` as a pre-flight
@@ -672,7 +684,20 @@ absent, e.g. for synthetic fixtures). 15 unit tests, including the real-teacher
 scenario (`pm008_q4_k_tensors_override_stale_ftype_zero`) and the "wrong file
 pointed at" scenario (`pm008_tensor_type_mismatch_fails`).
 
-The unit test matrix (`cargo test -p apr-cli validate_manifest`) runs 36 tests on
+**FALSIFY-PM-009** (APR magic-bytes Poka-Yoke, contract `publish-manifest-v1.yaml`
+v1.3.0, added 2026-04-18) closes the three-format ship symmetry. With PM-007
+covering `.safetensors` and PM-008 covering `.gguf`, PM-009 ensures `.apr` ships
+can't pass pre-flight with a mis-staged artifact. v1.0 scope = first 4 bytes
+match one of `APR\0` / `APRN` / `APR1` / `APR2` (the four APR magic variants
+recognised by `crates/aprender-registry/src/format.rs::parse_apr_header`). The
+exact ship-blocker this catches is "GGUF file renamed `.apr` and staged under
+format=apr manifest" — covered explicitly by
+`pm009_gguf_magic_staged_as_apr_fails`. Dogfooded against the real 8 GiB
+teacher APR: verdict PASS (`apr magic = APR\0 (v2) (valid)`). Expansion to
+tensor-index quant validation is deferred to v1.1 until a real-world FAIL
+demonstrates need.
+
+The unit test matrix (`cargo test -p apr-cli validate_manifest`) runs 45 tests on
 every push; the end-to-end pre-flight gate runs against real 15 GiB artifacts
 only at ship time (evidence at `evidence/ship-two-001/ex-04-preflight-gate-smoketest.json`).
 
@@ -701,6 +726,7 @@ artifact + tokenizer + manifest.yaml.
 | HF repo missing any of `.apr` / `.safetensors` / `.gguf` after EX-04                        | FALSIFY-PUB-EXTRA-007 FAIL — re-upload missing format    |
 | Staged `.safetensors` header declares F32 for weight tensors when manifest says fp16        | **FALSIFY-PM-007 FAIL — pre-flight gate aborts with exit 2 BEFORE any network I/O; re-export with `--quantize fp16`** |
 | Staged `.gguf`'s predominant GGML tensor type disagrees with manifest quantization (e.g. manifest says `q4_k` but tensors are predominantly `Q6_K`) | **FALSIFY-PM-008 FAIL — pre-flight gate aborts with exit 2 BEFORE any network I/O; correct the manifest or re-quantize.** (Note: stale `general.file_type=0` does NOT trigger FAIL — it is surfaced as a diagnostic note.) |
+| Staged `.apr` file's first 4 magic bytes are not one of `APR\0` / `APRN` / `APR1` / `APR2` (e.g. a GGUF file renamed `.apr`, or a stray `.safetensors`) | **FALSIFY-PM-009 FAIL — pre-flight gate aborts with exit 2 BEFORE any network I/O; restage the correct `.apr` artifact.** |
 | Staged artifact's local sha256 ≠ per-format manifest sha256 at ship time                    | **FALSIFY-PUB-EXTRA-009 FAIL — pre-flight gate aborts with exit 5 BEFORE any network I/O** |
 | `preflight_validate_manifest` removed or reordered after `publish_format`                   | FALSIFY-PUB-EXTRA-010 FAIL — Poka-Yoke bypassed; re-sequence |
 | Any uploaded artifact's CDN-served sha256 ≠ per-format manifest sha256                      | FALSIFY-PUB-EXTRA-006 FAIL (post-upload) — investigate transit corruption |
@@ -793,7 +819,7 @@ with divergent bytes exits non-zero before the first HTTP connection opens.
 - `contracts/tensor-layout-v1.yaml` — row-major APR invariant (LAYOUT-001/002)
 - `contracts/chat-templates-v1.yaml` — chat-template engine spec
 - `contracts/apr-cli-commands-v1.yaml` — 57-command CLI contract
-- `contracts/publish-manifest-v1.yaml` v1.2.1 — artifact-shipping schema (sha256, provenance, license) + **FALSIFY-PM-007** safetensors header dtype Poka-Yoke + **FALSIFY-PM-008** GGUF tensor-type Poka-Yoke (tensor-authoritative; `general.file_type` is advisory fallback)
+- `contracts/publish-manifest-v1.yaml` v1.3.0 — artifact-shipping schema (sha256, provenance, license) + **FALSIFY-PM-007** safetensors header dtype Poka-Yoke + **FALSIFY-PM-008** GGUF tensor-type Poka-Yoke (tensor-authoritative; `general.file_type` is advisory fallback) + **FALSIFY-PM-009** APR magic-bytes Poka-Yoke (three-format ship symmetry)
 - `contracts/apr-cli-publish-extra-v1.yaml` v1.2.0 — **F-PUBLISH-EXTRA-001** (§12.7): manifest consumption, `--extra-file` passthrough, three-format ship, safetensors fp16 dtype, **preflight_validate_manifest** (FALSIFY-PUB-EXTRA-009/-010)
 - `contracts/eval-harness-humaneval-v1.yaml` — pass@1 harness / AC-EX-003 floor
 - `contracts/apr-model-qa-v1.yaml` — `apr qa` gate matrix / AC-EX-001/-002 (Golden Output hard-block)

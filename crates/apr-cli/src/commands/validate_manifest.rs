@@ -22,6 +22,13 @@
 //!                        authoritative; `general.file_type` is advisory (real
 //!                        llama.cpp quantize output has shipped with stale
 //!                        ftype=0 despite fully Q4_K tensors).
+//!   FALSIFY-PM-009       APR magic-bytes Poka-Yoke (only for format=apr
+//!                        + `--artifact`) — closes the three-format ship
+//!                        symmetry (PM-007 safetensors + PM-008 gguf + PM-009
+//!                        apr). Catches "wrong file staged" (e.g. manifest
+//!                        declares format=apr but .gguf is attached) BEFORE
+//!                        network upload. v1.0 scope is magic-only; tensor
+//!                        index quant validation deferred to v1.1.
 
 use crate::error::CliError;
 use colored::Colorize;
@@ -144,6 +151,9 @@ pub(crate) fn run(
     // FALSIFY-PM-008 — GGUF `general.file_type` Poka-Yoke.
     // Applies only when format == "gguf" AND --artifact is provided.
     results.push(check_gguf_file_type(top, artifact));
+    // FALSIFY-PM-009 — APR magic-bytes Poka-Yoke.
+    // Applies only when format == "apr" AND --artifact is provided.
+    results.push(check_apr_magic(top, artifact));
 
     let any_fail = results.iter().any(|r| r.verdict == "FAIL");
     let overall = if any_fail { "FAIL" } else { "PASS" };
@@ -1097,6 +1107,94 @@ fn skip_gguf_value<R: std::io::Read + std::io::Seek>(
 }
 
 // ─────────────────────────────────────────────────────────────
+// FALSIFY-PM-009 — APR magic-bytes Poka-Yoke
+// ─────────────────────────────────────────────────────────────
+// Closes the three-format ship symmetry (PM-007 safetensors + PM-008 gguf +
+// PM-009 apr). v1.0 scope: verify the first 4 bytes match one of the APR
+// magic variants (`APR\0`, `APRN`, `APR1`, `APR2`). Catches the "wrong file
+// staged under manifest format=apr" ship-blocker class without the complexity
+// of parsing the APR v2 tensor index.
+//
+// Expansion path (deferred to v1.1): use `aprender::format::v2::AprV2Reader`
+// to parse the tensor index and compute predominant per-tensor dtype, then
+// compare to manifest `quantization` (symmetric to PM-008's tensor-authority
+// path). v1.0 unblocks the same ship-blocker class at the magic layer.
+
+const APR_MAGICS: &[&[u8; 4]] = &[b"APR\0", b"APRN", b"APR1", b"APR2"];
+
+fn check_apr_magic(top: &serde_yaml::Mapping, artifact: Option<&Path>) -> FalsifyResult {
+    let format = get_str(top, "format").unwrap_or_default();
+    if format != "apr" {
+        return FalsifyResult {
+            id: "FALSIFY-PM-009",
+            verdict: "DEFERRED",
+            detail: format!("format={format} — not apr; skip magic gate"),
+        };
+    }
+    let Some(path) = artifact else {
+        return FalsifyResult {
+            id: "FALSIFY-PM-009",
+            verdict: "DEFERRED",
+            detail: "no --artifact provided for apr magic check".into(),
+        };
+    };
+    match read_apr_magic(path) {
+        Err(e) => FalsifyResult {
+            id: "FALSIFY-PM-009",
+            verdict: "FAIL",
+            detail: format!("read apr magic {}: {e}", path.display()),
+        },
+        Ok(magic) => {
+            if APR_MAGICS.iter().any(|m| *m == &magic) {
+                FalsifyResult {
+                    id: "FALSIFY-PM-009",
+                    verdict: "PASS",
+                    detail: format!("apr magic = {} (valid)", apr_magic_name(&magic)),
+                }
+            } else {
+                FalsifyResult {
+                    id: "FALSIFY-PM-009",
+                    verdict: "FAIL",
+                    detail: format!(
+                        "manifest declares format=apr but file magic is {} {magic:?} (expected one of APR\\0, APRN, APR1, APR2)",
+                        ascii_or_hex(&magic),
+                    ),
+                }
+            }
+        }
+    }
+}
+
+fn read_apr_magic(path: &Path) -> Result<[u8; 4], String> {
+    let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut magic = [0u8; 4];
+    f.read_exact(&mut magic)
+        .map_err(|e| format!("read magic: {e}"))?;
+    Ok(magic)
+}
+
+fn apr_magic_name(magic: &[u8; 4]) -> &'static str {
+    match magic {
+        b"APR\0" => "APR\\0 (v2)",
+        b"APRN" => "APRN (v1)",
+        b"APR1" => "APR1",
+        b"APR2" => "APR2",
+        _ => "UNKNOWN",
+    }
+}
+
+/// Render magic bytes as a readable string when all bytes are printable ASCII,
+/// otherwise fall back to the decimal debug form. Used in FAIL details so
+/// `"GGUF"` shows up instead of `[71, 71, 85, 70]`.
+fn ascii_or_hex(bytes: &[u8; 4]) -> String {
+    if bytes.iter().all(|b| (0x20..0x7f).contains(b)) {
+        format!("\"{}\"", String::from_utf8_lossy(bytes))
+    } else {
+        String::new()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
@@ -1733,5 +1831,107 @@ mod tests {
         assert_eq!(r.verdict, "FAIL", "{}", r.detail);
         assert!(r.detail.contains("Q4_K"), "{}", r.detail);
         assert!(r.detail.contains("Q6_K"), "{}", r.detail);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FALSIFY-PM-009 — APR magic-bytes Poka-Yoke
+    // ─────────────────────────────────────────────────────────────
+
+    fn write_apr_magic(dir: &Path, name: &str, magic: &[u8]) -> PathBuf {
+        let p = dir.join(name);
+        let mut f = fs::File::create(&p).unwrap();
+        f.write_all(magic).unwrap();
+        // Pad with zero bytes so the file has a plausible header size.
+        f.write_all(&[0u8; 32]).unwrap();
+        p
+    }
+
+    #[test]
+    fn pm009_non_apr_deferred() {
+        let top = top_with("safetensors", "fp16");
+        let r = check_apr_magic(&top, None);
+        assert_eq!(r.verdict, "DEFERRED", "{}", r.detail);
+        assert!(r.detail.contains("not apr"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm009_missing_artifact_deferred() {
+        let top = top_with("apr", "q4_k");
+        let r = check_apr_magic(&top, None);
+        assert_eq!(r.verdict, "DEFERRED", "{}", r.detail);
+        assert!(r.detail.contains("no --artifact"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm009_apr_null_magic_passes() {
+        let dir = tempdir().unwrap();
+        let p = write_apr_magic(dir.path(), "m.apr", b"APR\0");
+        let top = top_with("apr", "q4_k");
+        let r = check_apr_magic(&top, Some(&p));
+        assert_eq!(r.verdict, "PASS", "{}", r.detail);
+        assert!(r.detail.contains("APR"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm009_aprn_magic_passes() {
+        let dir = tempdir().unwrap();
+        let p = write_apr_magic(dir.path(), "m.apr", b"APRN");
+        let top = top_with("apr", "q4_k");
+        let r = check_apr_magic(&top, Some(&p));
+        assert_eq!(r.verdict, "PASS", "{}", r.detail);
+        assert!(r.detail.contains("APRN"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm009_apr2_magic_passes() {
+        let dir = tempdir().unwrap();
+        let p = write_apr_magic(dir.path(), "m.apr", b"APR2");
+        let top = top_with("apr", "q4_k");
+        let r = check_apr_magic(&top, Some(&p));
+        assert_eq!(r.verdict, "PASS", "{}", r.detail);
+        assert!(r.detail.contains("APR2"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm009_gguf_magic_staged_as_apr_fails() {
+        // The exact ship-blocker this gate exists to catch: a .gguf file
+        // renamed to .apr or staged under a format=apr manifest.
+        let dir = tempdir().unwrap();
+        let p = write_apr_magic(dir.path(), "wrong.apr", b"GGUF");
+        let top = top_with("apr", "q4_k");
+        let r = check_apr_magic(&top, Some(&p));
+        assert_eq!(r.verdict, "FAIL", "{}", r.detail);
+        assert!(r.detail.contains("GGUF"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm009_safetensors_magic_staged_as_apr_fails() {
+        // safetensors has no fixed 4-byte magic (starts with u64 header-length
+        // LE), but 8 random-ish bytes will almost never match an APR magic.
+        let dir = tempdir().unwrap();
+        let p = write_apr_magic(dir.path(), "wrong.apr", b"\x80\x00\x00\x00");
+        let top = top_with("apr", "q4_k");
+        let r = check_apr_magic(&top, Some(&p));
+        assert_eq!(r.verdict, "FAIL", "{}", r.detail);
+    }
+
+    #[test]
+    fn pm009_empty_file_fails() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("empty.apr");
+        fs::File::create(&p).unwrap(); // 0 bytes
+        let top = top_with("apr", "q4_k");
+        let r = check_apr_magic(&top, Some(&p));
+        assert_eq!(r.verdict, "FAIL", "{}", r.detail);
+        assert!(r.detail.contains("read"), "{}", r.detail);
+    }
+
+    #[test]
+    fn pm009_magic_name_table() {
+        assert_eq!(apr_magic_name(b"APR\0"), "APR\\0 (v2)");
+        assert_eq!(apr_magic_name(b"APRN"), "APRN (v1)");
+        assert_eq!(apr_magic_name(b"APR1"), "APR1");
+        assert_eq!(apr_magic_name(b"APR2"), "APR2");
+        assert_eq!(apr_magic_name(b"XXXX"), "UNKNOWN");
     }
 }

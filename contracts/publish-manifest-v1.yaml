@@ -1,11 +1,12 @@
 ---
 contract_id: F-PUBLISH-MANIFEST-001
 title: "Model artifact publish manifest — schema + verification (SHIP-TWO-001 shared)"
-version: 1.2.0
+version: 1.3.0
 status: DRAFT
 created: 2026-04-17
 updated: 2026-04-18
 changelog:
+  - v1.3.0 (2026-04-18): Added FALSIFY-PM-009 APR magic-bytes Poka-Yoke. Closes the three-format ship symmetry (PM-007 safetensors + PM-008 gguf + PM-009 apr). v1.0 scope = verify first 4 bytes match one of `APR\0` / `APRN` / `APR1` / `APR2`. Catches the "wrong file staged under format=apr manifest" ship-blocker class (e.g., a GGUF renamed `.apr`) at publish time. Tensor-index quant validation deferred to v1.1.
   - v1.2.1 (2026-04-18): PM-008 revised — predominant GGML tensor type is now the authoritative signal (real llama.cpp quantize output has shipped with stale `general.file_type=0` despite fully Q4_K tensors; tensor dtypes are what inference engines actually use). `general.file_type` retained as fallback when tensor metadata is absent.
   - v1.2.0 (2026-04-18): Added FALSIFY-PM-008 GGUF `general.file_type` Poka-Yoke. Parses GGUF metadata_kv and verifies the u32 file_type enum against the manifest's quantization string (q4_k_m→15, q6_k→18, etc.). Mirrors PM-007 for the third shipped format.
   - v1.1.0 (2026-04-18): Added FALSIFY-PM-007 safetensors header dtype Poka-Yoke. Catches manifests declaring `fp16` when the exported file has `F32` weight tensors (ship-blocker per SHIP-TWO-001 §12.7.2).
@@ -292,6 +293,37 @@ falsification_tests:
       implied by manifest.quantization. If no tensor metadata is readable
       (synthetic / header-only fixtures), falls back to a strict
       `general.file_type` match.
+
+  - id: FALSIFY-PM-009
+    name: "apr_magic_matches_format"
+    description: |
+      Poka-Yoke gate: when format == "apr" AND --artifact is provided,
+      verify the first 4 bytes of the staged artifact match one of the
+      APR magic variants:
+        - `APR\0` — APR v2 (current ship format)
+        - `APRN`  — APR v1 (legacy)
+        - `APR1`, `APR2` — reserved variants per
+          crates/aprender-registry/src/format.rs::parse_apr_header
+
+      Scope (v1.0): magic-bytes check only. This catches the "wrong file
+      staged under format=apr" ship-blocker class (e.g. a `.gguf` file
+      renamed `.apr`, or a stray `.safetensors` under the APR manifest)
+      before any network I/O. Symmetric to PM-007 (safetensors) and
+      PM-008 (gguf) so all three shipped formats are covered.
+
+      Expansion path (v1.1): parse the APR v2 tensor index via
+      `aprender::format::v2::AprV2Reader`, compute predominant
+      non-float dtype over 2D weight tensors, compare to
+      manifest.quantization. Defer until a real-world FAIL justifies
+      the complexity (same discipline as PM-008's initial ftype-only
+      scope).
+    command: |
+      apr validate-manifest /path/to/manifest.yaml --artifact /path/to/model.apr
+    expected: exit 0 (or the apr-magic check passes with status PASS in JSON)
+    fails_if: |
+      The staged file's first 4 bytes are not one of `APR\0`, `APRN`,
+      `APR1`, or `APR2`. Unit tests cover the GGUF-staged-as-APR scenario
+      (`pm009_gguf_magic_staged_as_apr_fails`) and the empty-file scenario.
 
 # ─────────────────────────────────────────────────────────────
 # PROOF OBLIGATIONS
