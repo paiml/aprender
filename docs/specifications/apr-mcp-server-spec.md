@@ -230,7 +230,7 @@ and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
 | `apr.run` first-token latency | <2s | qwen2.5-0.5b-q4km on target hardware |
 | Protocol spec compliance | 100% | MCP conformance suite (external) |
 | Claude Code dogfood | 1 full session using only `apr.*` tools | Manual |
-| 9 falsification gates (FALSIFY-MCP-001..008 + PROGRESS-001) | all PASS or PARTIAL→PASS by M4 close | CI |
+| 10 falsification gates (FALSIFY-MCP-001..008 + PROGRESS-001 + VALIDATE-001) | all PASS or PARTIAL→PASS by M4 close | CI |
 
 ## Out of Scope (Phase 1)
 
@@ -247,7 +247,7 @@ and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
 |------|-----------|
 | `pmcp` adoption-path coordination — M5+ will migrate the dispatcher to `pmcp` v2.x; workspace version must stay aligned with `aprender-orchestrate`'s client-side pmcp dep to avoid dual-version builds | Pin to `pmcp = "2.3"` across all crates; bump in one workspace-wide commit; CI `cargo tree -d` gate on duplicate deps |
 | Subprocess overhead per tool call | Phase 2: in-process mode (`--embedded`) linking apr-cli as library |
-| Schema drift between CLI and MCP surface | `build.rs` fails build if contract YAML differs from generated Rust structs |
+| Schema drift between CLI and MCP surface | `build.rs` emits both `schemas::APR_<TOOL>_SCHEMA` and `schemas::APR_<TOOL>_DESCRIPTION` from `contracts/apr-mcp-tool-schemas-v1.yaml`; hand-editing either in Rust source is impossible (PMAT-514, `tests/falsify_mcp_008.rs` guards live+codegen × schema+description at 4 layers) |
 | MCP clients expect specific error shapes | Conformance-test against Claude Code, Cursor, Cline fixtures |
 
 ## Related Work
