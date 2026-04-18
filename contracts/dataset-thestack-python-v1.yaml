@@ -1,0 +1,342 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-DATA-THESTACK-PYTHON
+# Python-code pretraining corpus contract for SHIP-TWO-001 MODEL-2
+# (albor sovereign 370M Llama-style code model).
+# ─────────────────────────────────────────────────────────────
+# Closes the P0 blocker identified by the 2026-04-18 MODEL-2 training-
+# readiness audit: training-loop-pretrain-v1.yaml references this peer
+# contract (line 22) but the file did not exist, leaving the pretraining
+# data path undefined. This contract fixes the provenance, filters, and
+# splits so that MODEL-2 pretraining is contract-complete and
+# reproducible byte-for-byte across hosts.
+#
+# Design principle: sovereign + permissive-license only. SHIP-TWO-001
+# (teacher Apache-2.0, MODEL-2 albor sovereign) must not ship artifacts
+# derived from copyleft or non-permissive source files. License
+# filtering is enforced at ingest, NOT at ship — ingest is the right
+# gate because downstream gradients implicitly encode training data.
+#
+# Peers:
+#   - contracts/training-loop-pretrain-v1.yaml   (consumer)
+#   - contracts/tokenizer-bpe-v1.yaml            (tokenizer trained on this corpus)
+#   - contracts/model-families/llama-370m-sovereign-v1.yaml (target model)
+#
+# References:
+#   - Kocetkov et al. (2022). "The Stack: 3 TB of permissively licensed
+#     source code." arXiv:2211.15533
+#   - Lee et al. (2022). "Deduplicating Training Data Makes Language
+#     Models Better." arXiv:2107.06499
+#   - SPDX License List 3.24 (https://spdx.org/licenses/)
+#   - docs/specifications/aprender-train/ship-two-models-spec.md §5
+#     (AC-SHIP2-002 dataset provenance, FALSIFY-SHIP-012)
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-DATA-THESTACK-PYTHON
+version: 1.0.0
+status: PROPOSED
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  kind: pretraining-corpus
+  peer_contracts:
+    - contracts/training-loop-pretrain-v1.yaml
+    - contracts/tokenizer-bpe-v1.yaml
+    - contracts/model-families/llama-370m-sovereign-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §5"
+    - "Kocetkov et al. (2022) — arXiv:2211.15533"
+    - "Lee et al. (2022) — arXiv:2107.06499"
+    - "https://spdx.org/licenses/"
+
+summary: >
+  Python-code pretraining corpus contract: fixes the upstream source
+  revision, the permissive-license whitelist, the PII-scrub rule set,
+  the near-duplicate removal strategy, the token budget, and the
+  deterministic train/val split. Every downstream consumer (tokenizer
+  trainer, pretraining loop) reads THIS contract — not ad-hoc
+  filesystem paths — for dataset identity.
+
+motivation: >
+  Without a dataset contract, pretraining runs diverge across hosts on
+  subtle differences (dedup seed, license filter drift, PII regex
+  version). MODEL-2 sovereignty depends on the corpus having a single
+  sha256, a single license whitelist, and a single PII scrub. This
+  contract is the authoritative answer to "what exactly is in the
+  training set".
+
+# ─────────────────────────────────────────────────────────────
+# Upstream source — pinned for reproducibility
+# ─────────────────────────────────────────────────────────────
+
+source:
+  hub: huggingface
+  repo: bigcode/the-stack-dedup
+  revision_sha: "REQUIRED — commit sha of the HF dataset repo at ingest time"
+  subset: python
+  raw_tar_sha256: "REQUIRED — sha256 of the concatenated *.parquet shards downloaded"
+  ingest_date_utc: "REQUIRED — ISO-8601 timestamp of ingest run"
+
+# ─────────────────────────────────────────────────────────────
+# License filter — permissive-only whitelist (SPDX identifiers)
+# ─────────────────────────────────────────────────────────────
+
+license_whitelist:
+  spdx_allow:
+    - Apache-2.0
+    - MIT
+    - BSD-2-Clause
+    - BSD-3-Clause
+    - ISC
+    - Unlicense
+    - CC0-1.0
+    - 0BSD
+  spdx_deny_sample:    # non-exhaustive — anything NOT in allow is denied
+    - GPL-3.0-only
+    - GPL-3.0-or-later
+    - GPL-2.0-only
+    - GPL-2.0-or-later
+    - AGPL-3.0-only
+    - AGPL-3.0-or-later
+    - LGPL-3.0-only
+    - LGPL-2.1-only
+    - MPL-2.0             # copyleft semantics — exclude to stay conservative
+    - CC-BY-SA-4.0
+    - CC-BY-NC-4.0
+  unknown_license_policy: reject  # files with no detected SPDX → reject
+  detection: go-license-detector  # source of truth; alternatives REJECTED
+
+# ─────────────────────────────────────────────────────────────
+# PII / secret scrub — applied after license filter, before dedup
+# ─────────────────────────────────────────────────────────────
+
+pii_scrub:
+  enabled: true
+  reject_file_on_match: true   # file-level rejection, not redaction
+  patterns:
+    - id: AWS_ACCESS_KEY
+      regex: 'AKIA[0-9A-Z]{16}'
+    - id: PRIVATE_KEY_PEM
+      regex: '-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----'
+    - id: GITHUB_PAT
+      regex: 'gh[pousr]_[A-Za-z0-9]{36}'
+    - id: SLACK_TOKEN
+      regex: 'xox[baprs]-[A-Za-z0-9-]+'
+    - id: GOOGLE_API_KEY
+      regex: 'AIza[0-9A-Za-z\-_]{35}'
+  reject_manifest_path: "{ingest_dir}/pii_rejected.ndjson"
+
+# ─────────────────────────────────────────────────────────────
+# Near-duplicate removal (MinHash + LSH)
+# ─────────────────────────────────────────────────────────────
+
+deduplication:
+  method: minhash-lsh
+  shingle_size: 5             # 5-line shingles (code-aware)
+  num_permutations: 128
+  jaccard_threshold: 0.85     # >= 0.85 Jaccard → drop duplicate
+  seed: 42                    # REQUIRED deterministic — must match across hosts
+  survivor_selection: first-seen-by-path-sort
+
+# ─────────────────────────────────────────────────────────────
+# Size budget + deterministic split
+# ─────────────────────────────────────────────────────────────
+
+budget:
+  min_train_tokens: 2_000_000_000    # 2B tokens minimum for 370M model
+  max_train_tokens: 8_000_000_000    # 8B tokens ceiling (cost/time guard)
+  min_files: 500_000
+  max_files: 5_000_000
+
+split:
+  method: hash-by-file-sha256       # deterministic, no train/val leakage by repo
+  train_fraction: 0.98
+  val_fraction: 0.02
+  val_min_files: 10_000
+  seed: 42
+  assertion: "Same corpus + same seed → byte-identical split on every host."
+
+# ─────────────────────────────────────────────────────────────
+# Output artifacts
+# ─────────────────────────────────────────────────────────────
+
+artifacts:
+  root: "{ingest_dir}"
+  train_shards: "{ingest_dir}/train/shard-{id:05d}.jsonl.zst"
+  val_shards:   "{ingest_dir}/val/shard-{id:05d}.jsonl.zst"
+  manifest:     "{ingest_dir}/manifest.yaml"
+  provenance:   "{ingest_dir}/provenance.json"
+  reject_log:   "{ingest_dir}/rejected.ndjson"
+
+manifest_required_fields:
+  - source.revision_sha
+  - source.raw_tar_sha256
+  - source.ingest_date_utc
+  - train_token_count
+  - val_token_count
+  - train_file_count
+  - val_file_count
+  - pii_rejected_count
+  - license_rejected_count
+  - dedup_rejected_count
+  - corpus_sha256           # sha256 over concatenated shard sha256s (merkle-like)
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — machine-checkable properties of the corpus
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-DATA-001
+    description: >
+      Every file in every output shard has an SPDX license identifier
+      present in `license_whitelist.spdx_allow`. No file with an
+      unknown or disallowed license reaches a shard.
+    falsifier: >
+      Stream-scan all shards; for each record, check `metadata.license`
+      against the whitelist. Any non-whitelist license → FAIL.
+
+  - id: INV-DATA-002
+    description: >
+      No file in any output shard matches any `pii_scrub.patterns`
+      regex (applied to full file content, not just header).
+    falsifier: >
+      Stream-scan all shards; regex-match every record content against
+      every pattern. Any match → FAIL.
+
+  - id: INV-DATA-003
+    description: >
+      No two files in the corpus have Jaccard similarity on 5-line
+      shingles ≥ 0.85 (dedup survived its own rule).
+    falsifier: >
+      Sample 10,000 random file pairs; compute MinHash Jaccard; if any
+      pair ≥ 0.85 → FAIL.
+
+  - id: INV-DATA-004
+    description: >
+      train_token_count ≥ budget.min_train_tokens AND ≤
+      budget.max_train_tokens. val_token_count ≥ 2% of train_token_count.
+    falsifier: >
+      Read manifest.yaml; assert inequalities. Out-of-band → FAIL.
+
+  - id: INV-DATA-005
+    description: >
+      corpus_sha256 declared in manifest matches the recomputed
+      merkle-style sha256 over sorted shard sha256s. Anyone re-ingesting
+      the same source.revision_sha with the same seed gets the same
+      corpus_sha256.
+    falsifier: >
+      On a second host, re-run ingest with the same revision_sha and
+      same seed; compare corpus_sha256. Mismatch → FAIL.
+
+  - id: INV-DATA-006
+    description: >
+      Train and val splits are DISJOINT by file sha256. No file appears
+      in both train and val shards.
+    falsifier: >
+      Collect sha256 set from train shards and val shards; assert
+      intersection == ∅. Non-empty → FAIL.
+
+  - id: INV-DATA-007
+    description: >
+      For every file content byte in every shard, decoding as UTF-8
+      succeeds AND the decoded string survives NFC normalization
+      round-trip (nfc(bytes) == nfc(nfc(bytes))).
+    falsifier: >
+      Stream-scan all shards; attempt UTF-8 decode + NFC round-trip.
+      Any failure → FAIL. Reason: MODEL-2 tokenizer (C-TOK-BPE-001
+      INV-TOK-003) mandates NFC; feeding non-NFC bytes at pretrain
+      produces drift between training and inference-time tokenization.
+
+# ─────────────────────────────────────────────────────────────
+# Falsification gates — compound ship-blockers
+# ─────────────────────────────────────────────────────────────
+
+falsification:
+
+  - id: FALSIFY-DATA-001
+    name: "Revision pin reproducibility"
+    input: "manifest.source.revision_sha + manifest.source.raw_tar_sha256"
+    procedure: |
+      1. From a clean host, re-run ingest pinning to declared revision_sha.
+      2. Compare raw_tar_sha256 of the new download to the declared value.
+      3. ASSERT equal.
+    falsifier: "raw_tar_sha256 differs → upstream is not pinned, reproducibility broken."
+
+  - id: FALSIFY-DATA-002
+    name: "License-filter false positive scan"
+    input: "1,000 random files drawn from rejected.ndjson with reason=license"
+    procedure: |
+      1. For each rejected file, manually resolve SPDX via go-license-detector.
+      2. Assert NONE resolve to a whitelisted SPDX id.
+    falsifier: "Any rejected file actually carries a permissive license → filter is over-filtering; too narrow a corpus."
+
+  - id: FALSIFY-DATA-003
+    name: "Corpus hash parity across hosts"
+    input: "Two hosts (yoga + gx10), same revision_sha, same seed"
+    procedure: |
+      1. Run ingest on yoga; record corpus_sha256_A.
+      2. Run ingest on gx10; record corpus_sha256_B.
+      3. ASSERT corpus_sha256_A == corpus_sha256_B.
+    falsifier: "Mismatch → non-determinism in dedup / split → training data drift."
+
+  - id: FALSIFY-DATA-004
+    name: "Train/val disjointness"
+    input: "Full train + val shard set"
+    procedure: |
+      1. Stream file sha256 from all train shards into a set T.
+      2. Stream file sha256 from all val shards into a set V.
+      3. ASSERT T ∩ V == ∅.
+    falsifier: "Any file appears in both → val loss is contaminated → AC-SHIP2-003 target is meaningless."
+
+  - id: FALSIFY-DATA-005
+    name: "PII scrub regression probe"
+    input: "Synthetic file containing AWS_ACCESS_KEY pattern"
+    procedure: |
+      1. Inject a file `test_aws.py` containing `AKIAIOSFODNN7EXAMPLE` into a fresh ingest.
+      2. Re-run ingest.
+      3. ASSERT the synthetic file appears in rejected.ndjson with reason=pii.
+      4. ASSERT the synthetic file does NOT appear in any train or val shard.
+    falsifier: "Synthetic PII file leaks into shards → scrub regressed, contract is bypassed."
+
+# ─────────────────────────────────────────────────────────────
+# Compound gates — ship-blocking before pretraining can start
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-DATA-001
+    name: "License hygiene"
+    condition: "INV-DATA-001 PASS AND FALSIFY-DATA-002 PASS"
+    consequence_if_violated: "ingest output REJECTED; pretraining cannot start"
+    blocks_ac: "AC-SHIP2-002"
+
+  - id: GATE-DATA-002
+    name: "PII hygiene"
+    condition: "INV-DATA-002 PASS AND FALSIFY-DATA-005 PASS"
+    consequence_if_violated: "ingest output REJECTED; pretraining cannot start"
+    blocks_ac: "AC-SHIP2-002"
+
+  - id: GATE-DATA-003
+    name: "Reproducibility"
+    condition: "INV-DATA-005 PASS AND FALSIFY-DATA-001 PASS AND FALSIFY-DATA-003 PASS"
+    consequence_if_violated: >
+      ingest output REJECTED; sovereign pretraining claim is invalid if
+      the corpus cannot be regenerated byte-for-byte.
+    blocks_ac: "AC-SHIP2-002 + AC-SHIP2-011"
+
+  - id: GATE-DATA-004
+    name: "Disjointness"
+    condition: "INV-DATA-006 PASS AND FALSIFY-DATA-004 PASS"
+    consequence_if_violated: "train/val contaminated; val metrics cannot be trusted; AC-SHIP2-003 convergence target is meaningless."
+    blocks_ac: "AC-SHIP2-003"
+
+  - id: GATE-DATA-005
+    name: "Encoding hygiene"
+    condition: "INV-DATA-007 PASS"
+    consequence_if_violated: >
+      non-NFC bytes in corpus → tokenizer drift between train and
+      inference → MODEL-2 generates garbage at inference.
+    blocks_ac: "AC-SHIP2-003 + AC-SHIP2-010 (Golden Output)"

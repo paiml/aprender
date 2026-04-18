@@ -1,11 +1,48 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.13.0
-**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED** — EX-04/05/06/07 + FALSIFY-SHARD-003/004 all DISCHARGED; parallel-eval lane LIVE (yoga+gx10)
+**Version:** 2.14.0
+**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED** — EX-04/05/06/07 + FALSIFY-SHARD-003/004 all DISCHARGED; MODEL-2 contract surface now complete (Llama + BPE + pretrain + dataset); NFC gap identified in tokenizer impl
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified)
+
+**v2.14.0 amendment (2026-04-18):** MODEL-2 pretraining readiness audit
+closed two gaps in contract + impl surface:
+
+1. **Dataset contract drafted:** `contracts/dataset-thestack-python-v1.yaml`
+   (C-DATA-THESTACK-PYTHON v1.0.0 PROPOSED). 7 invariants + 5
+   falsification tests + 5 compound gates covering (a) upstream
+   revision pin + raw_tar_sha256 reproducibility, (b) permissive-
+   license whitelist (Apache/MIT/BSD/ISC/Unlicense/CC0/0BSD) with
+   unknown→reject policy, (c) PII scrub (AWS/PEM/GH PAT/Slack/Google),
+   (d) MinHash-LSH near-duplicate removal (seed=42, Jaccard ≥0.85 →
+   drop), (e) deterministic hash-by-file-sha256 split (train=0.98,
+   val=0.02, assertion: same seed → byte-identical split across
+   hosts), (f) corpus_sha256 merkle-style parity gate (FALSIFY-DATA-003
+   yoga vs gx10), (g) UTF-8 + NFC round-trip encoding hygiene
+   (INV-DATA-007). Closes the P0 blocker identified by the 2026-04-18
+   MODEL-2 training-readiness audit: `training-loop-pretrain-v1.yaml`
+   line 22 referenced this peer contract, but the file did not exist.
+
+2. **BPE NFC gap identified (IMPLEMENTATION BLOCKER):** The BPE
+   tokenizer at `crates/aprender-train/src/tokenizer/bpe.rs` does NOT
+   implement NFC normalization, despite `contracts/tokenizer-bpe-v1.yaml`
+   INV-TOK-003 / `dataset-thestack-python-v1.yaml` INV-DATA-007
+   requiring it. No HF `tokenizers` dep to defer to.
+   `TokenizerConfig`/`BpeConfig` have no normalizer field. Fix surface:
+   (a) add `normalization: Option<Normalization>` to BpeConfig, (b)
+   apply `unicode_normalization::nfc()` at `encode()` entry, (c) add a
+   round-trip property test on `café` (composed vs decomposed) + emoji.
+   Without this, MODEL-2 tokenizer will drift between train-time and
+   inference-time on non-ASCII code and GATE-DATA-005 will ship-block.
+
+**MODEL-2 training readiness estimate (post-v2.14.0):** contract surface
+is complete (4 contracts: llama arch, BPE tokenizer, pretrain loop,
+dataset). Remaining code work: BPE NFC patch (~1 day), tokenizer
+trainer CLI wiring (~3 days), corpus ingest harness honoring the
+dataset contract (~2 days). **5-7 days to first pretraining run**
+modulo Blackwell JIT warm-up and corpus download time.
 
 **v2.13.0 amendment (2026-04-18):** FALSIFY-SHARD-003 DISCHARGED. Live
 probe run yoga (RTX 4090, x86_64) vs gx10 (GB10 aarch64) on the released
