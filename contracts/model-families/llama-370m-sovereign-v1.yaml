@@ -43,6 +43,13 @@ metadata:
   version: "1.0.0"
   created: "2026-04-18"
   author: PAIML Engineering
+  description: >
+    Frozen architectural invariants for the 370M Llama-family sovereign
+    Python code-completion model (SHIP-TWO-001 MODEL-2 "albor"). Freezes
+    layer count, hidden size, head count, KV-head count (GQA), vocab size,
+    tied-embedding flag, RoPE base, and activation before pretraining
+    begins, so that any drift between the training recipe and the actual
+    model is detected at contract-validation time rather than post-hoc.
   registry: true
   kind: model-family-variant
   parent_contracts:

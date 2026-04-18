@@ -42,6 +42,12 @@ metadata:
   version: "1.0.0"
   created: "2026-04-18"
   author: PAIML Engineering
+  description: >
+    Pretraining loop contract: required per-step metrics, required
+    per-epoch artifacts, convergence gates, and — most importantly —
+    an explicit NON-DIVERGENCE gate that ABORTS training if val_loss
+    doubles between epochs. Encodes the MODEL-1 v2 QLoRA divergence
+    lesson as a machine-checked invariant.
   registry: true
   kind: training-loop
   peer_contracts:
