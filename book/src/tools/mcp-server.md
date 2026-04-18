@@ -327,6 +327,7 @@ not need editing.
 | FALSIFY-MCP-006 | `notifications/cancelled` during a long-running tool call stops the subprocess within the grace window and returns a partial result | ACTIVE |
 | FALSIFY-MCP-007 | `initialize` with `protocolVersion != "2024-11-05"` returns `-32602`, does not attempt `tools/list` | ACTIVE |
 | FALSIFY-MCP-008 | `tools/list` schema is byte-identical (after canonicalization) to `contracts/apr-mcp-tool-schemas-v1.yaml` | ACTIVE |
+| FALSIFY-MCP-PROGRESS-001 | With `params._meta.progressToken`, `apr.finetune` emits one `notifications/progress` per non-empty stdout line, all flushed before the final response; without a token, zero notifications | ACTIVE |
 
 Additional invariant enforced by the dispatcher:
 
