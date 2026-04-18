@@ -7,7 +7,7 @@
 - `contracts/mcp-tool-schema-v1.yaml` — MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
 - `contracts/pmcp/mcp-protocol-sdk-v1.yaml` — `pmcp` crate contract (existing)
 - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — `paiml/rust-mcp-sdk` dependency contract (existing)
-- `contracts/apr-cli-commands-v1.yaml` — 57-command tool surface (existing)
+- `contracts/apr-cli-commands-v1.yaml` — 58-command tool surface (57 commands + `mcp` added 2026-04-17 per PR #864)
 - **Pending (PR #886)**: `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract (not yet in-tree; promotes to M4)
 **References**:
 - [Model Context Protocol Specification v2024-11-05](https://spec.modelcontextprotocol.io/specification/2024-11-05/)
@@ -18,13 +18,13 @@
 
 ## Problem
 
-Aprender ships a 57-subcommand CLI (`apr`) with structured `--json` output on most commands. It achieves 1.43× Ollama decode perf at 128 tokens. But no agentic tool (Claude Code, Cursor, Cline, Aider, Continue) can invoke it, because aprender does not speak MCP.
+Aprender ships a 58-subcommand CLI (`apr`) with structured `--json` output on most commands (57 commands pre-MCP plus `apr mcp` itself, added 2026-04-17 per PR #864). It achieves 1.43× Ollama decode perf at 128 tokens. But no agentic tool (Claude Code, Cursor, Cline, Aider, Continue) can invoke it without MCP.
 
 Every competitor tool with ecosystem momentum in early 2026 is addressable via MCP — except the local-inference tier. Ollama, llama.cpp, and Unsloth all lack first-party MCP servers. Shipping `apr mcp` first occupies that slot.
 
 ## Goal
 
-A single subcommand — `apr mcp` — that starts an MCP server over stdio, exposing a curated subset of the 57 apr CLI commands as MCP tools. Tool schemas are generated at build time from `contracts/apr-mcp-tool-schemas-v1.yaml` (FALSIFY-MCP-008), not hand-written.
+A single subcommand — `apr mcp` — that starts an MCP server over stdio, exposing a curated subset of the 58 apr CLI commands as MCP tools. Tool schemas are generated at build time from `contracts/apr-mcp-tool-schemas-v1.yaml` (FALSIFY-MCP-008), not hand-written.
 
 Success is measured by Claude Code / Cursor / Cline being able to `.mcp.json`-configure `apr mcp` and have the LLM invoke `apr.run`, `apr.qa`, `apr.trace`, etc. on local models.
 
