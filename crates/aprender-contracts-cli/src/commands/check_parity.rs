@@ -45,15 +45,69 @@ pub fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     print_report(&results);
 
+    let headline_errors = check_headline(&doc, rows);
+    for e in &headline_errors {
+        println!("  FAIL  [HEADLINE] {e}");
+    }
+
     let failures = results
         .iter()
         .filter(|r| matches!(r.verdict, Verdict::Fail { .. }))
         .count();
-    if failures == 0 {
+    let total_failures = failures + headline_errors.len();
+    if total_failures == 0 {
         Ok(())
     } else {
-        Err(format!("{failures} parity row(s) failed").into())
+        Err(format!("{total_failures} parity check(s) failed").into())
     }
+}
+
+/// FALSIFY-CODE-PARITY-002: aggregate invariant — the `headline.counts`
+/// block must match the actual status distribution across `categories[]`.
+fn check_headline(doc: &Value, rows: &[Value]) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    let (mut shipped, mut partial, mut missing) = (0u64, 0u64, 0u64);
+    for row in rows {
+        match row.get("status").and_then(Value::as_str) {
+            Some("SHIPPED") => shipped += 1,
+            Some("PARTIAL") => partial += 1,
+            Some("NONE") | Some("MISSING") => missing += 1,
+            _ => {}
+        }
+    }
+    let actual_total = rows.len() as u64;
+
+    let Some(headline) = doc.get("headline") else {
+        return errors;
+    };
+
+    if let Some(declared) = headline.get("total_rows").and_then(Value::as_u64) {
+        if declared != actual_total {
+            errors.push(format!(
+                "headline.total_rows {declared} ≠ actual {actual_total}"
+            ));
+        }
+    }
+
+    let Some(counts) = headline.get("counts") else {
+        return errors;
+    };
+    for (name, actual) in &[
+        ("shipped", shipped),
+        ("partial", partial),
+        ("missing", missing),
+    ] {
+        if let Some(declared) = counts.get(*name).and_then(Value::as_u64) {
+            if declared != *actual {
+                errors.push(format!(
+                    "headline.counts.{name} {declared} ≠ actual {actual}"
+                ));
+            }
+        }
+    }
+
+    errors
 }
 
 fn check_row(row: &Value) -> RowResult {

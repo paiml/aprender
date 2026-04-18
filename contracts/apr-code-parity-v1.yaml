@@ -75,11 +75,12 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 2  # v1 = initial 5/7/8, v2 = session-row falsified to SHIPPED
+  audit_revision: 3  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21) — per-row status is now the ground truth; earlier 6/6/8 was counting "any shipped capability" not "fully shipped row"
+  total_rows: 21
   counts:
-    shipped: 6
-    partial: 6
-    missing: 8
+    shipped: 3
+    partial: 7
+    missing: 11
   closure_criterion:
     description: >
       Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
