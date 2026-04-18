@@ -12,7 +12,7 @@
 //! thin wrapper for tools that don't support cancellation yet.
 
 use crate::types::ToolCallResult;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
@@ -236,6 +236,104 @@ fn send_sigterm(_pid: u32) {
     // (`child.kill()`) in the escalation path above.
 }
 
+/// Spawn `apr <args...>` and stream stdout line-by-line to `on_line`.
+///
+/// FALSIFY-MCP-PROGRESS-001: this is the streaming variant used by tools that
+/// emit `notifications/progress` (currently `apr.finetune`). Each line of
+/// stdout (as written by `apr <cmd> --json`) is passed to `on_line`
+/// synchronously before the next `read_line` — the caller is responsible for
+/// emitting the notification.
+///
+/// Returns a `ToolCallResult` whose body is the concatenated stdout (the same
+/// shape as [`run_apr`] would have produced), so callers can keep the
+/// existing "final payload" semantics while layering progress on top.
+#[must_use]
+pub fn run_apr_streaming<F>(args: &[&str], on_line: F) -> ToolCallResult
+where
+    F: FnMut(&str),
+{
+    spawn_streaming("apr", args, on_line)
+}
+
+/// Generic-over-program variant of [`run_apr_streaming`] used by tests that
+/// need to inject a mock subprocess.
+#[must_use]
+pub fn spawn_streaming<F>(program: &str, args: &[&str], mut on_line: F) -> ToolCallResult
+where
+    F: FnMut(&str),
+{
+    let cmd_display = format!("{program} {}", args.join(" "));
+
+    let mut child = match Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return ToolCallResult::error(format!("Failed to spawn `{cmd_display}`: {e}"));
+        }
+    };
+
+    // Take stdout so we can wrap it in a BufReader. Leaving stderr attached
+    // to the child means we can drain it after wait() for the error path.
+    let stdout_pipe = match child.stdout.take() {
+        Some(p) => p,
+        None => {
+            let _ = child.wait();
+            return ToolCallResult::error(format!("Failed to capture stdout of `{cmd_display}`"));
+        }
+    };
+
+    let mut accumulated = String::new();
+    let reader = BufReader::new(stdout_pipe);
+    for line in reader.lines() {
+        match line {
+            Ok(text) => {
+                on_line(&text);
+                accumulated.push_str(&text);
+                accumulated.push('\n');
+            }
+            Err(e) => {
+                // Best-effort: surface the read error but still try to reap
+                // the child so we don't leak a zombie.
+                let _ = child.wait();
+                return ToolCallResult::error(format!(
+                    "Failed to read stdout of `{cmd_display}`: {e}"
+                ));
+            }
+        }
+    }
+
+    // stdout closed → subprocess is either exited or about to. Wait for the
+    // exit status so we can map success/failure correctly.
+    let status = match child.wait() {
+        Ok(s) => s,
+        Err(e) => {
+            return ToolCallResult::error(format!("Failed to reap `{cmd_display}`: {e}"));
+        }
+    };
+
+    let stderr = drain(&mut child.stderr.take());
+
+    if status.success() {
+        if accumulated.trim().is_empty() {
+            ToolCallResult::error(format!("`{cmd_display}` produced no output"))
+        } else {
+            ToolCallResult::success(accumulated)
+        }
+    } else {
+        let code = status.code().unwrap_or(-1);
+        let detail = if stderr.trim().is_empty() {
+            accumulated
+        } else {
+            stderr
+        };
+        ToolCallResult::error(format!("`{cmd_display}` failed (exit {code}): {detail}"))
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::disallowed_methods)] // test helpers
 mod tests {
@@ -285,6 +383,55 @@ mod tests {
         );
         assert_eq!(result.is_error, Some(true));
         assert!(result.content[0].text.contains("Failed to spawn"));
+    }
+
+    /// FALSIFY-MCP-PROGRESS-001 (unit): `spawn_streaming` fires the callback
+    /// once per stdout line before returning the aggregated payload.
+    #[test]
+    fn streaming_invokes_callback_per_line() {
+        let lines = std::sync::Mutex::new(Vec::<String>::new());
+        let result = spawn_streaming("printf", &["line1\nline2\nline3\n"], |line| {
+            lines
+                .lock()
+                .expect("test mutex not poisoned")
+                .push(line.to_string());
+        });
+        assert!(result.is_error.is_none(), "printf should succeed");
+
+        let captured = lines.lock().expect("mutex").clone();
+        assert_eq!(captured, vec!["line1", "line2", "line3"]);
+        assert!(result.content[0].text.contains("line1"));
+        assert!(result.content[0].text.contains("line3"));
+    }
+
+    /// Spawn failure in the streaming path returns a tool error without
+    /// invoking the callback.
+    #[test]
+    fn streaming_spawn_failure_does_not_call_callback() {
+        let called = std::sync::Mutex::new(false);
+        let result = spawn_streaming(
+            "/this/binary/does/not/exist/apr-mcp-streaming-test",
+            &[],
+            |_| {
+                *called.lock().expect("mutex") = true;
+            },
+        );
+        assert_eq!(result.is_error, Some(true));
+        assert!(!*called.lock().expect("mutex"));
+        assert!(result.content[0].text.contains("Failed to spawn"));
+    }
+
+    /// Streaming path: non-zero exit surfaces as a tool error.
+    #[test]
+    #[cfg(unix)]
+    fn streaming_nonzero_exit_is_error() {
+        let result = spawn_streaming("sh", &["-c", "echo partial; exit 3"], |_| {});
+        assert_eq!(result.is_error, Some(true));
+        assert!(
+            result.content[0].text.contains("exit 3"),
+            "message should include exit code: {}",
+            result.content[0].text
+        );
     }
 
     /// FALSIFY-MCP-006 (unit-level): sending a cancel signal to a
