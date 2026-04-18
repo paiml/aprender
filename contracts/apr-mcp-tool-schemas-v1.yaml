@@ -1,80 +1,66 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # apr-mcp-tool-schemas-v1
 #
-# SOURCE OF TRUTH for every `aprender-mcp` tool's MCP `inputSchema` (per-arg
-# name, type, required flag, description) AND its tool-level `description`
-# string. This contract exists separately from `contracts/apr-cli-commands-v1.yaml`
-# because the latter is a pure command registry: each of its 58 entries carries
-# only {name, category, description, requires_model, side_effects}. It
-# intentionally has no argument-level data and therefore cannot drive
-# JSON-Schema code generation.
+# SOURCE OF TRUTH for every `aprender-mcp` tool's MCP inputSchema (per-arg name,
+# type, required flag, and description string). This contract exists separately
+# from `contracts/apr-cli-commands-v1.yaml` because the latter is a pure command
+# registry: each of its 57 entries carries only {name, category, description,
+# requires_model, side_effects}. It intentionally has no argument-level data and
+# therefore cannot drive JSON-Schema code generation.
 #
-# This contract fills that gap. `crates/aprender-mcp/build.rs` reads this YAML
-# and emits `$OUT_DIR/schemas.rs` containing, per tool, two constants:
-#   `pub const APR_<TOOL>_SCHEMA:      &str`  — serialized JSON Schema body
-#   `pub const APR_<TOOL>_DESCRIPTION: &str`  — tool-level description (PMAT-514)
-# Each tool's `*_tool_definition()` in `crates/aprender-mcp/src/tools/` parses
-# `APR_<TOOL>_SCHEMA` via `serde_json::from_str` and pulls in
-# `APR_<TOOL>_DESCRIPTION` via `.to_string()`. FALSIFY-MCP-008 asserts
-# byte-identity (after JSON canonicalization for the schema, raw-string
-# compare for the description) between the YAML, the codegen constants,
-# and the live `tools/list` response; enforced at 4 layers by
-# `tests/falsify_mcp_008.rs` (see the Gate-surface coverage note at end of
-# file for the full list).
+# This contract fills that gap. In milestone M3 a `build.rs` at
+# `crates/aprender-mcp/build.rs` will read this YAML and emit Rust that produces
+# the exact same `ToolDefinition { input_schema: InputSchema { … } }` currently
+# hand-written in `crates/aprender-mcp/src/tools/*.rs`. FALSIFY-MCP-008 then
+# asserts byte-identity (after canonicalization) between the generated schemas
+# and the live `tools/list` response.
 #
-# Direction: THIS YAML IS AUTHORITATIVE. Rust tool sources contain no
-# hand-written schemas OR descriptions — they only consume the codegen
-# constants. To change a schema or description: edit this file and rebuild.
+# This M2 cut is RETROFIT-ONLY: all descriptions are verbatim copies of the
+# strings on `origin/main`. If this file ever disagrees with the Rust source in
+# this cut, the Rust source wins — fix the YAML, not the code. Once the M3
+# `build.rs` lands, the direction reverses and this contract becomes the single
+# source of truth.
 #
-# Scope (M3-complete, 2026-04-18): all 9 registered tools (`apr.version` +
-# 8 Phase-1 wrappers) migrated to full codegen for both `inputSchema` and
-# `description`. Related PRs: #880 (apr.version first), #881 (apr.finetune
-# + batch codegen), #884 (remaining 7 tools).
+# Scope at author time (2026-04-18): 6 Phase-1 tools shipped on main via
+# PRs #864/#865/#866/#867. `apr.run` (#870), `apr.serve`, and `apr.finetune`
+# are NOT yet merged — they will be appended in a follow-up PR matching their
+# merge order so this contract remains byte-identical to `main` at every step.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: 1.1.0
+  version: 1.0.0
   created: '2026-04-18'
-  last_modified: '2026-04-18'
   author: PAIML Engineering
   registry: true
   description: >
-    Per-tool MCP `inputSchema` and `description` source of truth for the
-    aprender-mcp server. Drives `crates/aprender-mcp/build.rs` codegen of
-    `APR_<TOOL>_SCHEMA` and `APR_<TOOL>_DESCRIPTION` constants; byte-identity
-    between codegen output and `tools/list` is asserted by FALSIFY-MCP-008
-    at 4 layers (crates/aprender-mcp/tests/falsify_mcp_008.rs). Authoritative
-    as of M3 (2026-04-18, PMAT-514) — Rust tool sources consume codegen
-    constants and contain no hand-written schemas or descriptions.
+    Per-tool MCP inputSchema source of truth for the aprender-mcp server.
+    Drives (in M3) `crates/aprender-mcp/build.rs` codegen; byte-identity
+    between codegen output and `tools/list` is asserted by FALSIFY-MCP-008.
   references:
     - 'Model Context Protocol Specification v2024-11-05 (Anthropic)'
     - 'JSON-RPC 2.0 Specification (ECMA-404)'
-    - 'crates/aprender-mcp/build.rs — reads this YAML, emits $OUT_DIR/schemas.rs (APR_<TOOL>_SCHEMA + APR_<TOOL>_DESCRIPTION)'
-    - 'crates/aprender-mcp/src/tools/*.rs — consume codegen constants from schemas.rs'
+    - 'crates/aprender-mcp/src/tools/*.rs — hand-rolled schemas this retrofits'
     - 'crates/aprender-mcp/src/types.rs — InputSchema / PropertySchema shape'
     - 'contracts/apr-cli-commands-v1.yaml — sibling command registry (no args)'
     - 'contracts/aprender/mcp-tool-schema-v1.yaml — MCP session/error contract'
-    - 'docs/specifications/apr-mcp-server-spec.md — FALSIFY-MCP-008 gate'
   depends_on:
     - apr-cli-commands-v1
     - mcp-tool-schema-v1
 
 kind: McpToolSchemaContract
 name: apr-mcp-tool-schemas
-version: "1.1.0"
-status: ENFORCED   # promoted in M3: build.rs + falsify_mcp_008.rs both landed 2026-04-18
+version: "1.0.0"
+status: DRAFT   # promoted to ENFORCED in M3 once build.rs + falsify harness land
 scope: "every tool returned by the aprender-mcp server's tools/list response"
 protocol_version: '2024-11-05'
 spec: docs/specifications/apr-mcp-server-spec.md
 
 # ── Tool registry ──
-# Each entry encodes: MCP tool name, human description, the `apr`
-# subcommand it wraps (null for server-synthesized tools), and the full
-# `inputSchema.properties` + `inputSchema.required` contents. The M3
-# build.rs codegen walks this list and emits, per tool, a
-# `schemas::APR_<TOOL>_SCHEMA` constant (serialized JSON Schema) and a
-# `schemas::APR_<TOOL>_DESCRIPTION` constant (raw description string) —
-# this YAML is the single source of truth for both fields.
+# Each entry encodes: MCP tool name, human description (verbatim from Rust),
+# the `apr` subcommand it wraps (null for server-synthesized tools), and the
+# full `inputSchema.properties` + `inputSchema.required` contents. The M3
+# codegen walks this list and emits one `fn <tool>_tool_definition() ->
+# ToolDefinition` per entry.
 
 tools:
   - name: apr.version
@@ -190,108 +176,23 @@ tools:
     required:
       - model_path
 
-  - name: apr.run
-    shipped_in: 'PR #870 (M2 slice 6)'
-    source: crates/aprender-mcp/src/tools/run.rs
-    description: "Run synchronous inference on a model. Wraps `apr run <model> --json` and returns generated text, tokens, tok/s, and timing. Cancellable via `notifications/cancelled`."
-    cli_mapping: "apr run <model_path> --json [--prompt X] [--max-tokens N] [--temperature T] [--top-p P]"
-    args:
-      - name: model_path
-        type: string
-        required: true
-        description: "Path to the model file (.apr, .gguf, or .safetensors) or hf://org/repo"
-      - name: prompt
-        type: string
-        required: false
-        description: "Text prompt to generate from"
-      - name: max_tokens
-        type: integer
-        required: false
-        description: "Maximum tokens to generate (default 32)"
-      - name: temperature
-        type: number
-        required: false
-        description: "Sampling temperature (0.0 = greedy argmax, >0 = stochastic)"
-      - name: top_p
-        type: number
-        required: false
-        description: "Top-p nucleus sampling threshold (omit to disable)"
-    required:
-      - model_path
-
-  - name: apr.serve
-    shipped_in: 'PR #872 (M2 slice 7)'
-    source: crates/aprender-mcp/src/tools/serve.rs
-    description: "Start an `apr serve` inference daemon in the background. Returns {pid, url}; kill the pid via OS to stop. Cancel-token lifecycle (SIGTERM) is a post-M3 follow-up; apr.run already honours notifications/cancelled."
-    cli_mapping: "apr serve <model_path> --port <port>"
-    args:
-      - name: model_path
-        type: string
-        required: true
-        description: "Path to the model file (.apr, .gguf, or .safetensors) or hf://org/repo"
-      - name: port
-        type: integer
-        required: false
-        description: "TCP port to bind the HTTP server on (default 8080)"
-    required:
-      - model_path
-
-  - name: apr.finetune
-    shipped_in: 'PR #881 (M3 slice 1: synchronous) + PR #887 (M3 slice 2: opt-in progress)'
-    source: crates/aprender-mcp/src/tools/finetune.rs
-    description: "Fine-tune a base model with LoRA/QLoRA. Wraps `apr finetune <base_model> --json` and blocks until training completes. Supply `params._meta.progressToken` in the `tools/call` request to opt into per-line `notifications/progress` events streamed before the final response (FALSIFY-MCP-PROGRESS-001)."
-    cli_mapping: "apr finetune <base_model> --json [--data <path>] [--rank <N>] [--epochs <N>] [--method <m>] [--output <path>]"
-    args:
-      - name: base_model
-        type: string
-        required: true
-        description: "Path to the base model file (.apr, .gguf, or .safetensors) or hf://org/repo"
-      - name: dataset
-        type: string
-        required: false
-        description: "Path to training data (JSONL). Mapped to `apr finetune --data <path>`."
-      - name: lora_rank
-        type: integer
-        required: false
-        description: "LoRA rank. Mapped to `apr finetune --rank <N>`. Omit for auto."
-      - name: epochs
-        type: integer
-        required: false
-        description: "Training epochs (default 3)"
-      - name: method
-        type: string
-        required: false
-        description: "Fine-tuning method: auto, full, lora, qlora (default auto)"
-      - name: output
-        type: string
-        required: false
-        description: "Output path (adapter directory or merged model)"
-    required:
-      - base_model
-
 # ── Falsification gates ──
-# FALSIFY-MCP-008 is the flagship gate this contract unblocks. It landed in M3
-# (2026-04-18) alongside `build.rs` + `tests/falsify_mcp_008.rs` and is now
-# ENFORCED. The other gates listed are existing MCP gates this contract
-# interacts with — they are not owned by this file.
+# FALSIFY-MCP-008 is the flagship gate this contract unblocks. It is DRAFT here
+# and becomes ENFORCED in M3 once `build.rs` and the harness land. The other
+# gates listed are existing MCP gates this contract interacts with — they are
+# not owned by this file.
 
 falsification:
   FALSIFY-MCP-008:
-    status: ENFORCED
+    status: DRAFT
     owned_by: apr-mcp-tool-schemas-v1
     condition: |
       For every entry `t` in the aprender-mcp server's `tools/list` response,
-      both the emitted `inputSchema` **and** the tool-level `description`
-      are byte-identical, after JSON canonicalization (RFC 8785 JCS or
-      equivalent: keys sorted, no trailing whitespace, UTF-8, no
-      insignificant whitespace), to the corresponding fields derived from
-      `contracts/apr-mcp-tool-schemas-v1.yaml`. Both fields flow through
-      the build-time code generator at `crates/aprender-mcp/build.rs`:
-      `inputSchema` is emitted as `schemas::APR_<TOOL>_SCHEMA` (a
-      serialized JSON Schema) and `description` as
-      `schemas::APR_<TOOL>_DESCRIPTION` (PMAT-514 extension, 2026-04-18).
-      Tool source files consume these constants directly; neither field
-      can be hand-coded in Rust source.
+      the emitted JSON Schema is byte-identical, after JSON canonicalization
+      (RFC 8785 JCS or equivalent: keys sorted, no trailing whitespace, UTF-8,
+      no insignificant whitespace), to the JSON Schema derived from the
+      corresponding entry in `contracts/apr-mcp-tool-schemas-v1.yaml` via
+      the M3 build-time code generator at `crates/aprender-mcp/build.rs`.
     assertions:
       - "tools/list returns exactly the tool names listed in `tools[].name`"
       - "each tool's `description` matches `tools[*].description` byte-for-byte"
@@ -299,8 +200,8 @@ falsification:
       - "each tool's `inputSchema.properties.<arg>.type` matches `tools[*].args[*].type`"
       - "each tool's `inputSchema.properties.<arg>.description` matches `tools[*].args[*].description` byte-for-byte"
       - "each tool's `inputSchema.required` equals `tools[*].required` as a sorted set"
-    test_harness: "crates/aprender-mcp/tests/falsify_mcp_008.rs (landed in M3, PR #881; extended 2026-04-18 with `tool_descriptions_match_yaml_contract` for the live wiring and `codegen_description_constants_match_yaml` for the codegen constants — PMAT-514)"
-    codegen_consumer: "crates/aprender-mcp/build.rs (landed in M3, PR #881; extended 2026-04-18 to emit `APR_<TOOL>_DESCRIPTION` constants alongside `APR_<TOOL>_SCHEMA` — PMAT-514)"
+    test_harness: "crates/aprender-mcp/tests/falsify_schema_codegen.rs (to be added in M3)"
+    codegen_consumer: "crates/aprender-mcp/build.rs (to be added in M3)"
 
   related_gates:
     FALSIFY-MCP-002:
@@ -311,24 +212,13 @@ falsification:
       note: "Asserts every `apr --help` command is registered. This contract extends that invariant into MCP tool-space for the subset wrapped as MCP tools."
 
 # ── Coverage note ──
-# 9 entries registered: `apr.version` (M1 scaffold) + the 8 Phase-1 workflow
-# tools (`apr.validate`, `apr.tensors`, `apr.bench`, `apr.qa`, `apr.trace`,
-# `apr.run`, `apr.serve`, `apr.finetune`). `apr.run` (PR #870), `apr.serve`
-# (PR #872), and `apr.finetune` (PR #881) were appended as they shipped. The
-# FALSIFY-MCP-008 harness (M3, `tests/falsify_mcp_008.rs`) iterates over
-# `tools[*].name` from this file — not a hard-coded list — so the gate
-# automatically tightens as new entries are appended.
+# Tools intentionally omitted from this 1.0.0 cut (to be appended as they ship
+# on main; each addition is a semver-minor bump and a separate PR so `main`
+# and this contract stay in lockstep):
+#   - apr.run       — PR #870 (in flight at author time, not yet merged)
+#   - apr.serve     — not yet implemented (M2 streaming candidate)
+#   - apr.finetune  — not yet implemented (M2 streaming candidate)
 #
-# Gate surface (2026-04-18, PMAT-514 extension) — four independent tests
-# in `tests/falsify_mcp_008.rs`:
-#   * Live layer:
-#     - `migrated_tools_match_yaml_contract_byte_for_byte` (inputSchema)
-#     - `tool_descriptions_match_yaml_contract`            (description)
-#   * Codegen layer (compile-time source of truth):
-#     - `codegen_constants_parse_and_match_yaml_for_every_tool`
-#     - `codegen_description_constants_match_yaml`
-# Plus guardrails: `codegen_constants_cover_every_tool_name` and
-# `codegen_descriptions_cover_every_tool_name` catch a new tool added to
-# YAML but missing from the test-side codegen-constant tables.
-# All six assertions in the `falsification.FALSIFY-MCP-008.assertions`
-# block above are now load-bearing at both layers.
+# The FALSIFY-MCP-008 harness (M3) MUST iterate over `tools[*].name` from this
+# file — not a hard-coded list — so the gate automatically tightens as new
+# entries are appended.
