@@ -57,7 +57,7 @@ crates/aprender-mcp/
 └── tests/                        # protocol-level integration tests
     ├── falsify_m1.rs                 # FALSIFY-MCP-001 init, -002 tools/list, -005 jsonrpc, -007 protocolVersion, -VALIDATE-001 tool-error shape
     ├── falsify_mcp_006.rs            # FALSIFY-MCP-006 notifications/cancelled → SIGTERM→SIGKILL
-    ├── falsify_mcp_008.rs            # FALSIFY-MCP-008 YAML-vs-live schema byte-identity + codegen coverage guardrails
+    ├── falsify_mcp_008.rs            # FALSIFY-MCP-008 YAML-vs-live schema + description byte-identity + codegen coverage guardrails
     ├── falsify_mcp_progress_001.rs   # FALSIFY-MCP-PROGRESS-001 apr.finetune opt-in per-line progress
     └── falsify_schema.rs             # FALSIFY-MCP-002 strict slice — JSON Schema Draft 7 meta-validation per tool
 ```
@@ -155,7 +155,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 5. **FALSIFY-MCP-005**: Malformed request (`"jsonrpc": "1.0"`) returns JSON-RPC error code `-32600`, does not crash server. **ENFORCED**.
 6. **FALSIFY-MCP-006**: `notifications/cancelled` during `apr.run` stops decoding within 30s, returns partial result. **ENFORCED**.
 7. **FALSIFY-MCP-007**: Protocol version mismatch (`"protocolVersion": "1999-01-01"`) returns error, does not attempt tools/list. **ENFORCED**.
-8. **FALSIFY-MCP-008**: Schema in `tools/list` output is byte-identical to generated schema from `contracts/apr-mcp-tool-schemas-v1.yaml`. **ENFORCED**.
+8. **FALSIFY-MCP-008**: Schema + description in `tools/list` output are byte-identical to the entry from `contracts/apr-mcp-tool-schemas-v1.yaml`. **ENFORCED** — `inputSchema` equality via `migrated_tools_match_yaml_contract_byte_for_byte`, tool-level `description` equality via `tool_descriptions_match_yaml_contract` (both in `tests/falsify_mcp_008.rs`).
 9. **FALSIFY-MCP-PROGRESS-001** (M3 addition): When client supplies `params._meta.progressToken`, `apr.finetune` emits one `notifications/progress` per non-empty stdout line of `apr finetune --json`, all flushed before the final `tools/call` response. Without a token, zero notifications. **ENFORCED**.
 
 ### Additional dispatcher invariant (not in `apr-mcp-server-v1.yaml`)
@@ -212,7 +212,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [ ] Extend cancellation to `apr.serve`: track daemon pid in a lifecycle registry, SIGTERM→SIGKILL on `notifications/cancelled` (today `apr.run` alone honours cancel — see `server.rs::CancelHandle`)
 - [ ] Add SSE transport (`apr mcp --transport sse --port N`) via pmcp's SSE layer — unblocks browser/container MCP clients
 - [ ] Add WebSocket transport (same surface) — unblocks long-running sessions
-- [ ] Re-run falsification suite (75 tests across `falsify_m1`, `falsify_mcp_006`, `falsify_mcp_008`, `falsify_mcp_progress_001`, `falsify_schema`, lib unit tests — 2026-04-18 count) and ensure every FALSIFY-MCP gate still PASS post-migration
+- [ ] Re-run falsification suite (76 tests across `falsify_m1`, `falsify_mcp_006`, `falsify_mcp_008`, `falsify_mcp_progress_001`, `falsify_schema`, lib unit tests — 2026-04-18 count) and ensure every FALSIFY-MCP gate still PASS post-migration
 
 ## Success Criteria
 
