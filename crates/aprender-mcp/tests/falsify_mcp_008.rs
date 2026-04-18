@@ -240,3 +240,42 @@ fn migrated_tools_are_all_in_contract() {
         );
     }
 }
+
+/// FALSIFY-MCP-008 (extended): live `ToolDefinition.description` must be
+/// byte-identical to `tools[*].description` in the YAML contract.
+///
+/// The base gate above compares only `inputSchema` — letting tool-level
+/// descriptions silently drift out of the contract (observed twice in
+/// 2026-04-18: apr.serve commit 715781df5 and apr.run commit 91a613968). This
+/// test closes that class of bug by making the contract's own assertion —
+/// "each tool's `description` matches `tools[*].description` byte-for-byte"
+/// (apr-mcp-tool-schemas-v1.yaml line 282) — actually enforced at test time.
+#[test]
+fn tool_descriptions_match_yaml_contract() {
+    let server = AprMcpServer::new();
+    let contract_tools = load_contract_tools();
+    let defs = server.tool_definitions();
+
+    for tool_name in migrated_tools() {
+        let entry = contract_tools
+            .iter()
+            .find(|t| t.get("name").and_then(|v| v.as_str()) == Some(tool_name))
+            .unwrap_or_else(|| panic!("contract has no entry for {tool_name}"));
+        let expected = entry
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("contract entry for {tool_name} missing `description`"));
+        let def = defs
+            .iter()
+            .find(|d| d.name == tool_name)
+            .unwrap_or_else(|| panic!("tool {tool_name} not registered on the server"));
+
+        assert_eq!(
+            def.description, expected,
+            "FALSIFY-MCP-008 FAIL: description for {tool_name} drifted from YAML contract\n\
+             expected (contracts/apr-mcp-tool-schemas-v1.yaml):\n{expected}\n\
+             actual (ToolDefinition.description):\n{}",
+            def.description,
+        );
+    }
+}
