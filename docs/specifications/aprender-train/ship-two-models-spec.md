@@ -1,11 +1,27 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.12.0
-**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED** — EX-04/05/06/07 DISCHARGED (teacher-only per v2.10.0); post-ship artifacts staged for MODEL-1 retry + MODEL-2 + eval-shard
+**Version:** 2.13.0
+**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED** — EX-04/05/06/07 + FALSIFY-SHARD-003/004 all DISCHARGED; parallel-eval lane LIVE (yoga+gx10)
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10)
+
+**v2.13.0 amendment (2026-04-18):** FALSIFY-SHARD-003 DISCHARGED. Live
+probe run yoga (RTX 4090, x86_64) vs gx10 (GB10 aarch64) on the released
+teacher GGUF (`paiml/qwen2.5-coder-7b-apache-q4k-v1`, sha
+`e6cac5d6…7981`) returned **16/16 byte-identical completions** on
+HumanEval/0..15 at temperature=0.0, top-k=1, max_tokens=512. Evidence:
+`evidence/ship-two-001/shard-003-determinism/probe_20260418_143041.json`.
+Contract `contracts/eval-sharding-v1.yaml` bumped 1.0.0 → 1.1.0 and
+flipped **DRAFT → ACTIVE**; `discharged:` block recorded on
+FALSIFY-SHARD-003 mirroring the SHARD-004 pattern. Combined with the
+prior SHARD-004 discharge (Δ=0.0039 pp merged-score identity), both
+correctness gates for AC-EX-007 are green. The parallel eval-shard lane
+(yoga+gx10) is now a legitimate accelerator for any future SHIP-TWO-001
+re-audit that respects the contract prerequisites (temp=0.0, top-k=1).
+Task #79 closed.
+
 
 **v2.12.0 amendment (2026-04-18):** Post-ship artifacts landed (commit
 `cc52e7bfc`) while the teacher is live on HF. All of these are
