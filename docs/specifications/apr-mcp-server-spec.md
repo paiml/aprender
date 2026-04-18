@@ -153,7 +153,8 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [ ] FALSIFY-MCP-003, -004, -008 passing
 
 ### M3: Streaming + cancellation (Week 3)
-- [ ] Progress notifications for `apr.run` / `apr.finetune`
+- [x] Progress notifications for `apr.finetune` (FALSIFY-MCP-PROGRESS-001)
+- [x] Progress notifications for `apr.run` (FALSIFY-MCP-PROGRESS-002, `apr run --stream` NDJSON)
 - [ ] Cancellation handling (SIGTERM→SIGKILL chain)
 - [ ] FALSIFY-MCP-005, -006 passing
 
