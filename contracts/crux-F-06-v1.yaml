@@ -1,8 +1,6 @@
 # CRUX-F-06 — KV-cache utilization timeline
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (spec-complete).
+# Evidence must land before ACTIVE promotion — see master §12.
 
 metadata:
   id: CRUX-F-06
@@ -18,44 +16,123 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    KV-cache utilization timeline. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.F and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    KV-cache utilization timeline. Root-cause workflow from vllm PagedAttention
+    metrics (`gpu_cache_usage_perc`, `num_tokens_per_block`, preemptions) — emits
+    a per-step time series of KV-cache block usage, fragmentation, and preemption
+    events. Needed to tune `max_num_seqs`, `block_size`, `gpu_memory_utilization`.
+    aprender equivalent: `apr profile --kv-timeline --prompt FILE --json`.
+  references:
+  - "https://github.com/vllm-project/vllm/blob/main/vllm/core/block_manager_v2.py"
+  - "https://docs.vllm.ai/en/latest/serving/metrics.html"
+  - "https://arxiv.org/abs/2309.06180  # PagedAttention"
 
 equations:
-  placeholder_contract:
+  kv_timeline_schema:
     formula: |
-      DRAFT — user workflow "KV-cache utilization timeline"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr profile --kv-timeline --json emits:
+        timeline: list of {step: u64, t_ms: f64, used_blocks: u64, free_blocks: u64,
+                           used_pct: f64, active_seqs: u64, preempted_seqs: u64}
+        block_size_tokens: u64 > 0
+        total_blocks: u64 > 0
+        peak_used_pct: f64 ∈ [0.0, 1.0]
+        preemption_count: u64 >= 0
+    domain: (model, prompt_batch, decode_steps)
+    codomain: JSON timeline
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "used_blocks + free_blocks == total_blocks for every step"
+    - "used_pct == used_blocks / total_blocks ± 1e-9"
+    - "peak_used_pct == max(timeline[*].used_pct)"
+    - "preemption_count == sum(timeline[*].preempted_seqs)"
+
+  block_accounting_conservation:
+    formula: |
+      No block is both free and used; no block is allocated twice:
+        used_blocks(t) <= total_blocks for all t
+        allocations(t) − frees(t) == used_blocks(t) − used_blocks(t-1)
+    domain: (step t, block pool)
+    codomain: bool
+    invariants:
+    - "No double-count; no leaked blocks"
+    - "Allocation delta matches alloc−free flux each step"
+
+  preemption_triggers_on_saturation:
+    formula: |
+      preempted_seqs(t) > 0 IMPLIES used_pct(t) >= preempt_threshold
+      (default 0.95 in vllm).
+    domain: step t
+    codomain: bool
+    invariants:
+    - "Preemptions only occur when cache is near-saturated"
+    - "Preemption without saturation indicates scheduler bug"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-06-001
-  rule: placeholder
-  prediction: "apr surface for 'KV-cache utilization timeline' matches vllm canonical behavior"
+  rule: timeline schema complete
+  prediction: "apr profile --kv-timeline --json emits block accounting at every step"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-06" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: implement after `apr profile --kv-timeline` lands (crux-crux-f-06)
+    apr profile --kv-timeline --prompt test.txt --max-tokens 64 --json > /tmp/kv.json
+    jq '.timeline | map(has("used_blocks") and has("free_blocks") and has("used_pct")) | all' /tmp/kv.json \
+      | grep -q true
+  if_fails: "timeline entries missing block accounting fields"
+
+- id: FALSIFY-CRUX-F-06-002
+  rule: block conservation
+  prediction: "used + free == total for every step"
+  test: |
+    apr profile --kv-timeline --prompt test.txt --json > /tmp/kv.json
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/kv.json'))
+    T = d['total_blocks']
+    for s in d['timeline']:
+        assert s['used_blocks'] + s['free_blocks'] == T, f'{s}'
+    "
+  if_fails: "block conservation broken — used + free != total"
+
+- id: FALSIFY-CRUX-F-06-003
+  rule: preemption occurs only near saturation
+  prediction: "preempted_seqs > 0 implies used_pct >= 0.95"
+  test: |
+    # TODO: requires controlled saturation test
+    apr profile --kv-timeline --prompt saturating.txt --max-num-seqs 64 --json > /tmp/kv.json
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/kv.json'))
+    for s in d['timeline']:
+        if s['preempted_seqs'] > 0:
+            assert s['used_pct'] >= 0.95, f'preempt without saturation: {s}'
+    "
+  if_fails: "preemption triggered below 95% cache utilization"
+
+- id: FALSIFY-CRUX-F-06-004
+  rule: peak_used_pct == max(timeline.used_pct)
+  prediction: "peak matches timeline max"
+  test: |
+    apr profile --kv-timeline --prompt test.txt --json > /tmp/kv.json
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/kv.json'))
+    peak = max(s['used_pct'] for s in d['timeline'])
+    assert abs(d['peak_used_pct'] - peak) < 1e-9
+    "
+  if_fails: "peak_used_pct does not equal timeline max"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "timeline schema includes used/free blocks, used_pct, preemptions per step"
+- type: invariant
+  property: "block conservation: used + free == total at every step"
+- type: parity
+  property: "apr KV-timeline matches vllm gpu_cache_usage_perc metric within ±1% on identical workload"
+- type: invariant
+  property: "preemption only fires when used_pct >= preempt_threshold (default 0.95)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

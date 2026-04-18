@@ -18,44 +18,109 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    apr ps list running models. Root-cause workflow extracted from ollama UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    `apr ps` — list running / VRAM-resident models. Parity target is
+    `ollama ps` (https://github.com/ollama/ollama/blob/main/docs/api.md#list-running-models
+    and CLI `ollama ps`), which reports NAME, ID, SIZE, PROCESSOR, and UNTIL
+    (idle-eviction timestamp) for each model currently loaded by the serve
+    daemon. aprender equivalent: `apr ps` queries the `apr serve` control socket
+    (or HTTP GET /api/ps) and emits the same fields plus `--json` for scripts.
+  references:
+  - "https://github.com/ollama/ollama/blob/main/docs/api.md#list-running-models"
+  - "https://github.com/ollama/ollama/blob/main/cmd/cmd.go"  # ListRunningHandler
 
 equations:
-  placeholder_contract:
+  ps_row_schema:
     formula: |
-      DRAFT — user workflow "apr ps list running models"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      Each row in `apr ps --json` output is a JSON object with fields:
+        name:        string          (e.g. "qwen2.5-coder:7b-q4_k_m")
+        id:          string          (sha256 prefix, ≥12 hex chars)
+        size_bytes:  u64 > 0
+        processor:   string ∈ {"100% GPU", "NN%/MM% CPU/GPU", "100% CPU"}
+        until:       RFC3339 string  (idle-eviction deadline, monotonic ≥ now)
+    domain: "`apr serve` loaded-model registry"
+    codomain: array of RunningModel JSON objects
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Every required field present and typed correctly"
+    - "until ≥ now (no already-evicted entries shown)"
+    - "size_bytes matches the file on disk (not quant-name estimate)"
+
+  ps_reflects_runtime_state:
+    formula: |
+      Let L = set of models currently mmap'd/resident in `apr serve` at time t.
+      `apr ps` at time t ≥ t₀ returns exactly L, modulo models evicted in
+      the [t₀, t] window.
+    domain: (serve_state_t0, elapsed)
+    codomain: Set[RunningModel]
+    invariants:
+    - "A model not currently loaded MUST NOT appear in apr ps"
+    - "A model loaded in the last ≤5s MUST appear"
+
+  ollama_ps_parity:
+    formula: |
+      Same-model-loaded state: `apr ps --json` and `ollama ps --format json`
+      yield the same (name_normalized, processor_pct_gpu) tuple up to name
+      prefix mapping; field set is a superset of ollama's.
+    domain: identical load state
+    codomain: JSON ps listing
+    invariants:
+    - "apr ps columns are a superset of ollama ps columns (NAME, SIZE, PROCESSOR)"
+    - "processor_pct_gpu parses identically from both tools"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-12-001
-  rule: placeholder
-  prediction: "apr surface for 'apr ps list running models' matches ollama canonical behavior"
+  rule: empty ps when nothing loaded
+  prediction: "`apr ps --json` returns [] when serve has no model loaded"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-12" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr serve --daemon --idle-timeout 0 &
+    PID=$!; sleep 1
+    apr ps --json | jq 'length == 0'
+    kill $PID
+  if_fails: "apr ps reports phantom entries for unloaded models"
+
+- id: FALSIFY-CRUX-A-12-002
+  rule: load is visible in ps
+  prediction: "running a short completion makes that model appear in apr ps"
+  test: |
+    apr serve --daemon &
+    PID=$!; sleep 1
+    apr run hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF --prompt "hi" --max-tokens 4 >/dev/null
+    apr ps --json | jq -e '.[] | select(.name | contains("Qwen2.5-Coder-7B"))' >/dev/null
+    kill $PID
+  if_fails: "apr ps does not show a model that was just loaded"
+
+- id: FALSIFY-CRUX-A-12-003
+  rule: row schema complete
+  prediction: "every row has {name,id,size_bytes,processor,until}"
+  test: |
+    apr ps --json | jq -e 'all(.[]; (.name and .id and .size_bytes and .processor and .until))'
+  if_fails: "apr ps row missing required fields (schema drift)"
+
+- id: FALSIFY-CRUX-A-12-004
+  rule: parity with ollama ps column set
+  prediction: "apr ps columns ⊇ {NAME, SIZE, PROCESSOR}"
+  test: |
+    # TODO: capture `ollama ps` text transcript in evidence/crux/ollama/ps-golden.txt
+    HDR=$(apr ps | head -1)
+    for col in NAME SIZE PROCESSOR; do
+      echo "$HDR" | grep -qw "$col" || { echo "missing column $col"; exit 1; }
+    done
+  if_fails: "apr ps header lacks one or more ollama-parity columns"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "apr ps rows reflect the currently-loaded model set in apr serve"
+- type: invariant
+  property: "Every apr ps row satisfies the RunningModel JSON schema"
+- type: invariant
+  property: "until timestamp ≥ wall-clock now for every row"
+- type: parity
+  property: "apr ps columns ⊇ {NAME, SIZE, PROCESSOR} from ollama ps"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

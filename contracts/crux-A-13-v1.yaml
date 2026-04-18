@@ -18,44 +18,128 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    apr stop unload model from VRAM. Root-cause workflow extracted from ollama UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    `apr stop <model>` — explicitly unload a model from VRAM/RAM without
+    shutting down the `apr serve` daemon. Parity target is `ollama stop MODEL`
+    (see https://github.com/ollama/ollama/blob/main/docs/api.md and
+    `POST /api/generate {"model": M, "keep_alive": 0}` which forces immediate
+    eviction). aprender equivalent: `apr stop <model>` sets keep_alive=0 via
+    the serve control socket and confirms the model is absent from `apr ps`
+    afterward. Idempotent when the model is already unloaded.
+  references:
+  - "https://github.com/ollama/ollama/blob/main/docs/api.md"
+  - "https://github.com/ollama/ollama/pull/6987"  # `ollama stop` CLI verb
 
 equations:
-  placeholder_contract:
+  stop_postcondition:
     formula: |
-      DRAFT — user workflow "apr stop unload model from VRAM"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      Let L(t) = set of resident models in `apr serve` at time t.
+      For any m ∈ L(t₀), after `apr stop m` returns with exit_code == 0,
+      there exists t₁ ≤ t₀ + grace_ms such that m ∉ L(t) for all t ≥ t₁.
+    domain: (resident_set, target_model)
+    codomain: resident_set'
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "exit_code == 0 implies m evicted within grace_ms (default 5000)"
+    - "VRAM used by m's weights is reclaimed (observable via nvidia-smi)"
+    - "Subsequent `apr run m ...` must cold-load (no cached warm context)"
+
+  stop_idempotent:
+    formula: |
+      apply(stop, m) ∘ apply(stop, m) ≡ apply(stop, m)
+      Stopping an already-stopped or never-loaded model returns exit_code 0
+      with a clear message; it does NOT raise "model not found".
+    domain: apr stop invocation
+    codomain: exit_code
+    invariants:
+    - "Second `apr stop m` also exits 0"
+    - "stderr says 'already stopped' or 'not loaded', never ERROR"
+
+  ollama_stop_parity:
+    formula: |
+      `apr stop m` ↔ `ollama stop m` produce the same observable end state:
+        - ps listing no longer contains m
+        - freed VRAM ≥ 95% of pre-stop model footprint
+        - exit_code == 0 on both tools
+    domain: identical load state
+    codomain: (ps_delta, vram_delta, exit_code)
+    invariants:
+    - "Column-for-column identical post-stop ps listing"
+    - "VRAM delta within 5% of ollama's reclaim size"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-13-001
-  rule: placeholder
-  prediction: "apr surface for 'apr stop unload model from VRAM' matches ollama canonical behavior"
+  rule: stop removes model from ps
+  prediction: "model absent from `apr ps` after `apr stop`"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-13" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr serve --daemon & PID=$!; sleep 1
+    apr run hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF --prompt "hi" --max-tokens 2 >/dev/null
+    apr ps --json | jq -e '.[] | select(.name|contains("Qwen2.5-Coder-7B"))' >/dev/null
+    apr stop "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
+    sleep 1
+    ! apr ps --json | jq -e '.[] | select(.name|contains("Qwen2.5-Coder-7B"))' >/dev/null
+    kill $PID
+  if_fails: "apr stop did NOT evict the target model from apr ps"
+
+- id: FALSIFY-CRUX-A-13-002
+  rule: idempotent
+  prediction: "second apr stop on same model also exits 0"
+  test: |
+    apr serve --daemon & PID=$!; sleep 1
+    apr stop some-never-loaded-model
+    apr stop some-never-loaded-model  # second call
+    kill $PID
+  if_fails: "apr stop is not idempotent (second call failed)"
+
+- id: FALSIFY-CRUX-A-13-003
+  rule: VRAM reclaimed
+  prediction: "nvidia-smi reports ≥95% of model footprint freed after stop"
+  test: |
+    # TODO: gate on CUDA availability; record baseline without model
+    command -v nvidia-smi >/dev/null || { echo "no nvidia-smi"; exit 2; }
+    apr serve --daemon & PID=$!; sleep 1
+    BEFORE=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+    apr run hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF --prompt "hi" --max-tokens 2 >/dev/null
+    LOADED=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+    apr stop "Qwen2.5-Coder-7B-Instruct-Q4_K_M"; sleep 2
+    AFTER=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+    python3 -c "b=$BEFORE; l=$LOADED; a=$AFTER; assert (l-a) >= 0.95*(l-b), (b,l,a)"
+    kill $PID
+  if_fails: "apr stop left ≥5% of model weights resident in VRAM"
+
+- id: FALSIFY-CRUX-A-13-004
+  rule: parity with ollama stop
+  prediction: "apr stop and ollama stop yield the same post-state"
+  test: |
+    # TODO: record evidence/crux/ollama/stop-golden.json with (pre,post) ps+vram
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/ollama/stop-golden.json
+    [ -f "$GOLD" ] || { echo "golden absent"; exit 2; }
+    apr serve --daemon & PID=$!; sleep 1
+    apr run hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF --prompt "hi" --max-tokens 2 >/dev/null
+    apr stop "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
+    APR_PS=$(apr ps --json)
+    python3 - <<PY
+    import json
+    gold=json.load(open("$GOLD"))
+    apr=json.loads('''$APR_PS''')
+    assert apr == gold["post_apr_ps"], (apr, gold["post_apr_ps"])
+    PY
+    kill $PID
+  if_fails: "apr stop post-state diverges from ollama stop golden"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "After apr stop m (exit 0), m ∉ resident_set within grace_ms"
+- type: invariant
+  property: "apr stop is idempotent (second call on same target exits 0)"
+- type: invariant
+  property: "VRAM freed ≥ 95% of pre-stop model footprint"
+- type: parity
+  property: "apr stop end-state ≡ ollama stop end-state on golden"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

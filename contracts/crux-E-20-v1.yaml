@@ -1,8 +1,6 @@
 # CRUX-E-20 — KL divergence vs FP16 baseline
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (spec-complete).
+# Evidence must land before ACTIVE promotion — see master §12.
 
 metadata:
   id: CRUX-E-20
@@ -18,44 +16,110 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    KL divergence vs FP16 baseline. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.E and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    KL divergence vs FP16 baseline. Root-cause workflow from llama.cpp's
+    `llama-perplexity --kl-divergence` tool — for every token, compute KL(P_fp16 || P_quant)
+    where P is the softmax over vocab. Emits mean/median/p99 plus "top-token flip" rate.
+    Much tighter signal than perplexity for detecting quant damage. aprender equivalent:
+    `apr diff model.q4km.apr --baseline model.fp16.apr --metric kl --json`.
+  references:
+  - "https://github.com/ggerganov/llama.cpp/pull/5076  # --kl-divergence flag"
+  - "https://github.com/ggerganov/llama.cpp/blob/master/examples/perplexity/perplexity.cpp"
 
 equations:
-  placeholder_contract:
+  kl_divergence_schema:
     formula: |
-      DRAFT — user workflow "KL divergence vs FP16 baseline"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr diff --metric kl --json emits:
+        kl_mean, kl_median, kl_p99, kl_max: f64 >= 0.0
+        top_token_flip_rate: f64 ∈ [0.0, 1.0]
+        num_tokens: u64 > 0
+        baseline: string (sha256 of FP16 model)
+        candidate: string (sha256 of quantized model)
+    domain: (candidate_model, baseline_fp16_model, dataset)
+    codomain: JSON object
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "kl_mean <= kl_median <= kl_p99 <= kl_max ordering not required but all >= 0"
+    - "KL is non-negative (Gibbs inequality); never NaN"
+    - "top_token_flip_rate ∈ [0, 1]"
+
+  kl_positivity:
+    formula: |
+      KL(P || Q) = Σ P(x) log(P(x) / Q(x)) >= 0 (Gibbs)
+      with equality iff P == Q almost everywhere.
+    domain: (P, Q) discrete distributions over vocab
+    codomain: non-negative f64
+    invariants:
+    - "Per-token KL >= 0 for every token"
+    - "KL == 0 iff baseline == candidate (same weights)"
+
+  quant_quality_gates:
+    formula: |
+      Acceptance thresholds (llama.cpp empirical):
+        Q4_K_M: kl_mean < 0.02
+        Q5_K_M: kl_mean < 0.01
+        Q8_0:   kl_mean < 0.002
+        top_token_flip_rate(Q4_K_M) < 0.05
+    domain: quant_type
+    codomain: bool
+    invariants:
+    - "Q4_K_M mean KL below 0.02 for Apache-family 7B models"
+    - "Top-token flip rate below 5% for Q4_K_M"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-20-001
-  rule: placeholder
-  prediction: "apr surface for 'KL divergence vs FP16 baseline' matches llama_cpp canonical behavior"
+  rule: KL schema complete
+  prediction: "apr diff --metric kl --json emits kl_mean/median/p99/max and flip rate"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-E-20" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: implement after `apr diff --metric kl` lands (crux-crux-e-20)
+    apr diff cand.q4km.apr --baseline baseline.fp16.apr --metric kl --json > /tmp/kl.json
+    jq 'has("kl_mean") and has("kl_median") and has("kl_p99") and has("kl_max") and \
+        has("top_token_flip_rate") and has("num_tokens")' /tmp/kl.json | grep -q true
+  if_fails: "KL JSON missing required fields"
+
+- id: FALSIFY-CRUX-E-20-002
+  rule: KL non-negative (Gibbs)
+  prediction: "all KL statistics >= 0"
+  test: |
+    apr diff cand.apr --baseline baseline.fp16.apr --metric kl --json > /tmp/kl.json
+    jq '[.kl_mean, .kl_median, .kl_p99, .kl_max] | map(select(. < 0)) | length == 0' /tmp/kl.json \
+      | grep -q true
+  if_fails: "Gibbs inequality violated — KL negative (numerical bug)"
+
+- id: FALSIFY-CRUX-E-20-003
+  rule: KL(M || M) == 0 self-identity
+  prediction: "comparing model against itself yields kl_mean ≈ 0"
+  test: |
+    apr diff same.fp16.apr --baseline same.fp16.apr --metric kl --json > /tmp/kl.json
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/kl.json'))
+    assert d['kl_mean'] < 1e-6 and d['top_token_flip_rate'] < 1e-6, d
+    "
+  if_fails: "KL(M || M) != 0 — identity broken"
+
+- id: FALSIFY-CRUX-E-20-004
+  rule: Q4_K_M quality gate
+  prediction: "Q4_K_M kl_mean < 0.02 on Apache-family 7B reference"
+  test: |
+    # TODO: requires canonical 7B Apache baseline
+    apr diff teacher.q4km.apr --baseline teacher.fp16.apr --metric kl --json > /tmp/kl.json
+    jq '.kl_mean < 0.02 and .top_token_flip_rate < 0.05' /tmp/kl.json | grep -q true
+  if_fails: "Q4_K_M exceeds quality gate (KL >= 0.02 or flip >= 5%)"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "KL stats schema complete (mean/median/p99/max/flip/num_tokens)"
+- type: invariant
+  property: "KL >= 0 (Gibbs inequality) — never NaN, never negative"
+- type: parity
+  property: "apr KL mean matches llama.cpp --kl-divergence within ±5% on identical GGUF + dataset"
+- type: invariant
+  property: "KL(M || M) == 0 within 1e-6 (self-identity)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

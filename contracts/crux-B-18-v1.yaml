@@ -18,44 +18,117 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    Calibration dataset loader. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Calibration dataset loader for importance-matrix (imatrix) and GPTQ/AWQ-style
+    quantization. Parity target is llama.cpp's `llama-imatrix` tool
+    (https://github.com/ggerganov/llama.cpp/tree/master/examples/imatrix),
+    which consumes a raw text file (e.g. wikitext-2-raw-v1) and emits
+    imatrix.dat containing per-tensor activation importance. aprender
+    equivalent: `apr calibrate model.apr --dataset <path-or-hf-ref> --samples N
+    --seq-len S -o imatrix.apr` loads text, tokenizes, forwards through the
+    model, and accumulates per-tensor activation statistics.
+  references:
+  - "https://github.com/ggerganov/llama.cpp/tree/master/examples/imatrix"
+  - "https://github.com/ggerganov/llama.cpp/pull/4861"  # imatrix origin PR
+  - "https://arxiv.org/abs/2210.17323"  # GPTQ paper (activation-aware)
 
 equations:
-  placeholder_contract:
+  dataset_source_resolution:
     formula: |
-      DRAFT — user workflow "Calibration dataset loader"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      --dataset accepts:
+        (1) local file path      → read raw text, split by double-newline
+        (2) hf://<repo>/<split>  → pull via `apr pull`, auto-detect format
+        (3) wikitext-2|c4|pile   → named shortcut to a curated HF dataset
+      Sample set S = first N samples after shuffling with --seed (default 42).
+    domain: --dataset argument string
+    codomain: Vec<String> of length N
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Deterministic given (dataset_ref, seed, samples) — reproducible calibration"
+    - "Empty samples after filtering → fatal error (not silent success)"
+    - "Samples shorter than --min-len are rejected and replenished"
+
+  imatrix_accumulation:
+    formula: |
+      For each tensor T in the forward graph and each calibration sample x:
+        a_T(x) = activation vector into T during forward(model, x)
+        importance_T += sum(a_T(x)^2, axis=batch)
+      Final:
+        importance_T /= (N * seq_len)
+    domain: (model, calibration_samples)
+    codomain: Dict[tensor_name, f32 vector]
+    invariants:
+    - "Accumulation is sum-of-squares (matches llama.cpp imatrix formula)"
+    - "Normalization divisor = total tokens processed (N * effective_seq_len)"
+    - "Zero-variance tensors produce warnings, not NaN"
+
+  parity_with_llama_imatrix:
+    formula: |
+      For the same (model_gguf, dataset_file, N, seed, seq_len), cosine
+      similarity between apr-computed importance vectors and llama.cpp's
+      imatrix.dat vectors is ≥ 0.99 per tensor.
+    domain: (model, dataset, N, seed, seq_len)
+    codomain: cosine similarity per tensor
+    invariants:
+    - "cos_sim ≥ 0.99 on every tensor (not just mean)"
+    - "Token count and sample count match llama-imatrix report line"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-18-001
-  rule: placeholder
-  prediction: "apr surface for 'Calibration dataset loader' matches llama_cpp canonical behavior"
+  rule: dataset resolution deterministic
+  prediction: "same --seed on same dataset yields byte-identical samples file"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-18" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr calibrate test-data/tinyllama-q4km.apr --dataset wikitext-2 --samples 32 --seed 42 --dry-run -o /tmp/a.jsonl
+    apr calibrate test-data/tinyllama-q4km.apr --dataset wikitext-2 --samples 32 --seed 42 --dry-run -o /tmp/b.jsonl
+    cmp /tmp/a.jsonl /tmp/b.jsonl
+  if_fails: "calibration sample selection is non-deterministic given fixed seed"
+
+- id: FALSIFY-CRUX-B-18-002
+  rule: imatrix file contains every linear tensor
+  prediction: "imatrix covers q_proj/k_proj/v_proj/o_proj/gate/up/down for all layers"
+  test: |
+    apr calibrate test-data/tinyllama-q4km.apr --dataset wikitext-2 --samples 16 --seq-len 256 -o /tmp/im.apr
+    apr inspect /tmp/im.apr --json | jq -e '
+      .tensors | map(.name) | any(test("q_proj"))
+        and any(test("k_proj")) and any(test("v_proj"))
+        and any(test("o_proj")) and any(test("gate_proj"))
+        and any(test("up_proj")) and any(test("down_proj"))'
+  if_fails: "imatrix missing required linear-layer importance vectors"
+
+- id: FALSIFY-CRUX-B-18-003
+  rule: no NaN or negative importance
+  prediction: "all importance values are finite and ≥ 0"
+  test: |
+    apr calibrate test-data/tinyllama-q4km.apr --dataset wikitext-2 --samples 16 --seq-len 256 -o /tmp/im.apr
+    apr tensors /tmp/im.apr --json | jq -e '
+      all(.tensors[]; (.min >= 0) and (.has_nan == false) and (.has_inf == false))'
+  if_fails: "imatrix contains NaN, Inf, or negative importance values"
+
+- id: FALSIFY-CRUX-B-18-004
+  rule: parity with llama.cpp imatrix on wikitext-2
+  prediction: "cos_sim(apr_imatrix, llama_imatrix) ≥ 0.99 per tensor"
+  test: |
+    # TODO: check in reference imatrix.dat from llama.cpp in evidence/crux/llama_cpp/
+    REF=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/llama_cpp/imatrix-wikitext2-tinyllama.dat
+    [ -f "$REF" ] || { echo "reference imatrix absent"; exit 2; }
+    apr calibrate test-data/tinyllama-q4km.apr --dataset wikitext-2 --samples 128 --seq-len 512 --seed 42 -o /tmp/apr-im.apr
+    apr diff /tmp/apr-im.apr "$REF" --metric cosine --json > /tmp/cmp.json
+    python3 -c "import json; d=json.load(open('/tmp/cmp.json')); [exec('assert t[\"cosine\"] >= 0.99, t') for t in d['tensors']]"
+  if_fails: "apr imatrix diverges from llama.cpp imatrix (cos < 0.99 on some tensor)"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Calibration sampling is deterministic given (dataset_ref, seed, samples)"
+- type: invariant
+  property: "imatrix covers every linear tensor in the model graph"
+- type: invariant
+  property: "No NaN/Inf/negative importance values emitted"
+- type: parity
+  property: "apr imatrix cosine_sim ≥ 0.99 vs llama.cpp imatrix per tensor"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

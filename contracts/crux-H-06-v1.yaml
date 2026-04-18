@@ -18,44 +18,120 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    Streaming datasets no RAM mat. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.H and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Streaming datasets no RAM materialization. Competitor
+    `datasets.load_dataset("c4", "en", streaming=True)` returns an
+    `IterableDataset` that yields rows via HTTP range requests without
+    downloading or materializing the full split (see
+    https://huggingface.co/docs/datasets/stream and
+    https://huggingface.co/docs/datasets/v2.14.0/package_reference/main_classes#datasets.IterableDataset).
+    Parity: `apr finetune --data hf://c4:en --streaming` (or equivalent
+    `apr dataset stream hf://<repo>:<config>`) MUST pull rows lazily,
+    keep resident RSS within a bounded envelope independent of total
+    dataset size, support `--take N` / `--skip N` / `--shuffle-buffer B`,
+    and be fully restartable from an epoch-stable shard cursor.
 
 equations:
-  placeholder_contract:
+  bounded_rss_invariant:
     formula: |
-      DRAFT — user workflow "Streaming datasets no RAM mat"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      For dataset D with total on-disk size S and streaming buffer B (rows):
+        peak_RSS(apr dataset stream ... --shuffle-buffer B)
+        ≤ base_RSS + B × avg_row_bytes + network_buffer  (independent of S)
+      i.e. RSS does NOT scale linearly with S.
+    domain: (dataset size S, buffer B) pair
+    codomain: peak resident set size (bytes)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Peak RSS is O(B), not O(S)"
+    - "Streaming a 1 TB dataset with --shuffle-buffer 1000 fits in < 4 GiB RSS"
+    - "No intermediate .cache/huggingface/datasets full-materialization is written"
+
+  iterator_semantics:
+    formula: |
+      apr dataset stream hf://X -o - | head -n N   produces exactly N rows
+      apr dataset stream hf://X --skip K --take N  emits rows [K, K+N)
+      Rows are NDJSON (one JSON object per line) on stdout.
+    domain: (dataset url, skip K, take N)
+    codomain: NDJSON stream of exactly N rows
+    invariants:
+    - "stdout is strict NDJSON (each line is valid JSON, newline-terminated)"
+    - "--take N emits exactly N rows then EOFs cleanly"
+    - "--skip K skips rows in stream order (not shuffled) unless --shuffle-buffer > 0"
+
+  resumable_cursor:
+    formula: |
+      apr dataset stream hf://X --checkpoint cursor.json
+      emits rows and persists cursor = {shard_idx, row_offset, epoch}.
+      On restart:
+        apr dataset stream hf://X --checkpoint cursor.json --resume
+      resumes from exactly (shard_idx, row_offset) — no row is emitted
+      twice, no row is skipped.
+    domain: (dataset url, checkpoint path, interrupt)
+    codomain: resumed stream with no duplicates or gaps
+    invariants:
+    - "Cursor is epoch-stable: same shard ordering across runs for a fixed seed"
+    - "Resume fetches only the required shard (not the full dataset)"
+    - "Row stream before and after resume is identical to an uninterrupted run"
 
 falsification_tests:
 - id: FALSIFY-CRUX-H-06-001
-  rule: placeholder
-  prediction: "apr surface for 'Streaming datasets no RAM mat' matches huggingface canonical behavior"
+  rule: RSS does not scale with dataset size
+  prediction: "streaming 1M rows keeps RSS bounded by --shuffle-buffer"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-H-06" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: wire /usr/bin/time -v or cgroup memory.peak sampling
+    OUT=/tmp/apr-stream-rss.txt
+    /usr/bin/time -v apr dataset stream hf://c4:en --take 1000000 --shuffle-buffer 1000 \
+      > /dev/null 2> "$OUT" || true
+    PEAK_KB=$(grep 'Maximum resident set size' "$OUT" | awk '{print $NF}')
+    # 1000 rows × ~4KB/row + 500MB base envelope = ~510MB; cap at 4GiB to be safe
+    [ "$PEAK_KB" -lt 4194304 ] || { echo "FAIL: peak RSS ${PEAK_KB}KB > 4GiB" >&2; exit 1; }
+
+- id: FALSIFY-CRUX-H-06-002
+  rule: --take N emits exactly N NDJSON rows
+  prediction: "apr dataset stream ... --take 100 | wc -l == 100"
+  test: |
+    N=$(apr dataset stream hf://c4:en --take 100 2>/dev/null | wc -l)
+    [ "$N" -eq 100 ] || { echo "FAIL: --take 100 yielded $N rows" >&2; exit 1; }
+    apr dataset stream hf://c4:en --take 10 2>/dev/null | \
+      python3 -c "import sys,json; [json.loads(l) for l in sys.stdin]" \
+      || { echo "FAIL: output not strict NDJSON" >&2; exit 1; }
+
+- id: FALSIFY-CRUX-H-06-003
+  rule: resumable cursor emits identical row sequence
+  prediction: "uninterrupted run == interrupted+resumed run (row-by-row)"
+  test: |
+    apr dataset stream hf://c4:en --take 500 --seed 42 > /tmp/stream-full.ndjson
+    apr dataset stream hf://c4:en --take 200 --seed 42 --checkpoint /tmp/cur.json > /tmp/stream-pt1.ndjson
+    apr dataset stream hf://c4:en --take 300 --seed 42 --checkpoint /tmp/cur.json --resume > /tmp/stream-pt2.ndjson
+    cat /tmp/stream-pt1.ndjson /tmp/stream-pt2.ndjson > /tmp/stream-joined.ndjson
+    diff /tmp/stream-full.ndjson /tmp/stream-joined.ndjson \
+      || { echo "FAIL: resumed stream differs from uninterrupted" >&2; exit 1; }
+
+- id: FALSIFY-CRUX-H-06-004
+  rule: parity with datasets.load_dataset(streaming=True) row count
+  prediction: "first 1000 rows of apr stream == first 1000 rows of hf datasets streaming"
+  test: |
+    # TODO: reference harness at evidence/crux/huggingface/hf_stream_parity.py
+    apr dataset stream hf://c4:en --take 1000 --seed 0 | jq -c '.text // .url' \
+      > /tmp/apr-rows.txt
+    python3 evidence/crux/huggingface/hf_stream_parity.py --repo c4:en --take 1000 --seed 0 \
+      > /tmp/hf-rows.txt
+    diff /tmp/apr-rows.txt /tmp/hf-rows.txt \
+      || { echo "FAIL: row sequences diverge from hf datasets streaming" >&2; exit 1; }
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Peak RSS is O(--shuffle-buffer), independent of total dataset size"
+- type: invariant
+  property: "--take N emits exactly N NDJSON-formatted rows then EOFs"
+- type: invariant
+  property: "Resumable cursor guarantees no duplicate and no skipped rows across restart"
+- type: parity
+  property: "First N rows (deterministic seed) match datasets.load_dataset(..., streaming=True) row-for-row"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

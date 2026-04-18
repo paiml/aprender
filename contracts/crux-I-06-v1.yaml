@@ -18,44 +18,145 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    ReAct agent loop + stop conditions. Root-cause workflow extracted from ecosystem UX — see master
-    subspec §5.I and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    ReAct agent loop + stop conditions. Competitor
+    `langchain.agents.create_react_agent` (see
+    https://python.langchain.com/docs/modules/agents/agent_types/react and
+    Yao et al. 2022 "ReAct: Synergizing Reasoning and Acting in Language
+    Models" https://arxiv.org/abs/2210.03629) drives a Thought→Action→
+    Observation loop, parsing `Action:` / `Action Input:` blocks, executing
+    tools, feeding Observations back, and stopping on `Final Answer:` or a
+    max-iterations/time budget. Parity: `apr agent --tools tools.json
+    --prompt "..." --max-iterations N` MUST run the same loop, parse the
+    same Thought/Action/Observation/Final-Answer grammar, and enforce
+    stop conditions deterministically.
 
 equations:
-  placeholder_contract:
+  react_loop_step:
     formula: |
-      DRAFT — user workflow "ReAct agent loop + stop conditions"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      At iteration i, model produces text T_i.
+      Parser extracts { thought_i, action_i, action_input_i }  OR  { final_answer }.
+      If final_answer present → HALT with exit 0, emit { "answer": final_answer, "iterations": i }
+      Else:
+        obs_i = tool_call(action_i, action_input_i)
+        scratchpad := scratchpad + "\nThought: " + thought_i
+                               + "\nAction: " + action_i
+                               + "\nAction Input: " + action_input_i
+                               + "\nObservation: " + obs_i
+        iteration i+1 begins
+    domain: (prompt, tool set, iteration i)
+    codomain: next scratchpad state or final answer
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Scratchpad is monotonically appended (never rewritten or truncated mid-loop)"
+    - "Observation i is the literal string output of tool_call; no mutation"
+    - "Final Answer halts before executing another Action"
+
+  stop_conditions:
+    formula: |
+      Loop terminates when ANY of:
+        (a) parsed output contains 'Final Answer:' → exit 0
+        (b) iterations_done >= max_iterations   → exit 2, reason="max_iterations"
+        (c) elapsed_wall_sec >= max_time        → exit 2, reason="timeout"
+        (d) tool_call raises non-recoverable error → exit 3, reason="tool_error"
+        (e) parser fails to extract Action for 2 consecutive iterations → exit 4, reason="parse_fail"
+    domain: (iteration count, wall time, tool error state, parse state)
+    codomain: (exit_code, structured reason JSON)
+    invariants:
+    - "Exactly one stop condition fires per run (no undefined behavior)"
+    - "Non-zero exit code carries a machine-readable reason in stderr JSON"
+    - "Final structured output is always emitted on stdout, even on early termination"
+
+  deterministic_replay:
+    formula: |
+      For seed S, tool set T, prompt P, temperature 0.0:
+        run1 = apr agent --seed S --temperature 0 --tools T --prompt P
+        run2 = apr agent --seed S --temperature 0 --tools T --prompt P
+        run1.trace == run2.trace (same scratchpad, same exit, same answer)
+    domain: identical invocations at temperature=0
+    codomain: bool (trace equality)
+    invariants:
+    - "Agent loop is deterministic at temperature=0 given identical tools"
+    - "Tool call ordering is observable via --trace=out.json"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-06-001
-  rule: placeholder
-  prediction: "apr surface for 'ReAct agent loop + stop conditions' matches ecosystem canonical behavior"
+  rule: ReAct loop halts on 'Final Answer:' before next Action
+  prediction: "parser halts immediately on Final Answer, never invokes next tool"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-06" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # Tool `count_calls` records each call; after Final Answer no further calls should occur
+    cat > /tmp/tools.json <<'EOF'
+    [{"name":"count_calls","description":"echo arg","cmd":"echo"}]
+    EOF
+    OUT=$(apr agent --tools /tmp/tools.json --prompt "what is 2+2? reply Final Answer: 4" \
+          --max-iterations 5 --trace /tmp/agent-trace.json 2>/dev/null)
+    ITERS=$(jq '.iterations' /tmp/agent-trace.json)
+    [ "$ITERS" -le 1 ] || { echo "FAIL: extra iterations past Final Answer ($ITERS)" >&2; exit 1; }
+    jq -e '.answer == "4"' /tmp/agent-trace.json \
+      || { echo "FAIL: answer not extracted from Final Answer: line" >&2; exit 1; }
+
+- id: FALSIFY-CRUX-I-06-002
+  rule: max-iterations fires with structured reason
+  prediction: "loop without Final Answer halts at max_iterations with reason JSON"
+  test: |
+    cat > /tmp/tools.json <<'EOF'
+    [{"name":"echo","description":"echoes","cmd":"echo"}]
+    EOF
+    # Prompt that never yields Final Answer — must hit max_iterations
+    OUT=$(apr agent --tools /tmp/tools.json \
+          --prompt "keep calling echo forever, never give a Final Answer" \
+          --max-iterations 3 2>&1 >/dev/null || true)
+    echo "$OUT" | jq -e '.reason == "max_iterations" and .iterations == 3' \
+      || { echo "FAIL: expected structured max_iterations reason: $OUT" >&2; exit 1; }
+
+- id: FALSIFY-CRUX-I-06-003
+  rule: deterministic replay at temperature=0
+  prediction: "two runs with same seed and temp=0 produce identical traces"
+  test: |
+    cat > /tmp/tools.json <<'EOF'
+    [{"name":"clock","description":"unix time","cmd":"date +%s"}]
+    EOF
+    apr agent --tools /tmp/tools.json --seed 1 --temperature 0 \
+      --prompt "what time is it?" --max-iterations 3 --trace /tmp/run1.json 2>/dev/null
+    apr agent --tools /tmp/tools.json --seed 1 --temperature 0 \
+      --prompt "what time is it?" --max-iterations 3 --trace /tmp/run2.json 2>/dev/null
+    # scratchpad and answer should be identical (tool output may differ; assert model trace only)
+    jq '{scratchpad, answer, iterations}' /tmp/run1.json > /tmp/r1.json
+    jq '{scratchpad, answer, iterations}' /tmp/run2.json > /tmp/r2.json
+    diff /tmp/r1.json /tmp/r2.json \
+      || { echo "FAIL: non-deterministic trace at temp=0" >&2; exit 1; }
+
+- id: FALSIFY-CRUX-I-06-004
+  rule: parity with LangChain ReAct grammar parser
+  prediction: "same LLM output parses to identical (action, action_input, final_answer) as LangChain"
+  test: |
+    # TODO: reference harness evidence/crux/ecosystem/langchain_react_parser.py
+    TRACE=/tmp/apr-react-golden.txt
+    cat > "$TRACE" <<'EOF'
+    Thought: I should compute 2+2.
+    Action: calculator
+    Action Input: 2+2
+    Observation: 4
+    Final Answer: The answer is 4.
+    EOF
+    APR_PARSE=$(apr agent --parse-only "$TRACE" --format json)
+    LC_PARSE=$(python3 evidence/crux/ecosystem/langchain_react_parser.py "$TRACE")
+    [ "$APR_PARSE" = "$LC_PARSE" ] \
+      || { echo "FAIL: parser diverges from LangChain: apr=$APR_PARSE lc=$LC_PARSE" >&2; exit 1; }
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Loop halts on first 'Final Answer:' before executing next Action"
+- type: invariant
+  property: "Exactly one stop condition fires per run with a structured reason JSON"
+- type: invariant
+  property: "At temperature=0 with fixed seed, trace is byte-identical across runs"
+- type: parity
+  property: "ReAct grammar parser output matches langchain.agents.output_parsers.ReActOutputParser on shared golden traces"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

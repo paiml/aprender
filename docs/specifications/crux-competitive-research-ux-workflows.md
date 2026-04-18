@@ -491,26 +491,30 @@ at Phase 0 exit; intake estimates:
 - ✅ Registered all in master `contracts/crux-competitive-research-ux-v1.yaml`
 - ✅ Created 140 pmat work tickets (one per ❌ missing story) via
   `scripts/crux_bulk_pmat_work.sh` — tagged `crux,gap,crux-{category},competitor-{name},{id_lower}`
-- ✅ **71 demand=5 contracts** promoted draft → **spec-complete**
-  via three waves of 4-way parallel sub-agent enrichment (2026-04-18):
-  - Wave 1 (18 missing): B-07/08/09, C-04/11/13, D-03/04/11/12,
+- ✅ **108 of 250 contracts (43.2%)** promoted draft → **spec-complete**
+  via four waves of 4-way parallel sub-agent enrichment (2026-04-18):
+  - Wave 1 (18 demand=5 missing): B-07/08/09, C-04/11/13, D-03/04/11/12,
     E-02/03/07, H-03, F-09/13, I-04, K-02
-  - Wave 2 (24 partials): A-01/05/09, C-03/05/06/07/08/31/33/34,
+  - Wave 2 (24 demand=5 partials): A-01/05/09, C-03/05/06/07/08/31/33/34,
     D-01/02/05/06/10/16, E-01/06/16/17/18, H-01, K-01
-  - Wave 3 (29 supported — parity verification): A-02/06, B-01/04/06/14,
-    C-01/02/19/27/28, D-07/09/13, E-05/08, F-01/03/20/21, G-01/02/08,
-    H-02/05/08/10, I-01, K-09
-  - 8 demand=5 stories still draft: J-01/02/09 (blocked on OpenCLAW
-    interpretation) + D-15, D-23, G-13, I-03, K-03 (scheduled for wave 4)
+  - Wave 3 (29 demand=5 supported — parity verification): A-02/06,
+    B-01/04/06/14, C-01/02/19/27/28, D-07/09/13, E-05/08, F-01/03/20/21,
+    G-01/02/08, H-02/05/08/10, I-01, K-09
+  - Wave 4 (5 demand=5 partials + 32 demand=4 missing):
+    D-15, D-23, G-13, I-03, K-03, A-04/10/12/13/16, B-02/10/18,
+    C-09/12/15/16/17/30, D-31/33/35, E-11/12/14/19/20/22,
+    F-06/07/11, G-11, H-06, I-06/09/12, K-07
+  - 3 demand=5 stories still draft: J-01/02/09 (blocked on OpenCLAW
+    interpretation — all other demand=5 stories are spec-complete)
   - Each contract carries competitor CLI citations (arXiv papers, official
     docs) and bash falsification bodies with jq/curl/python3 invocations
 - Gate: `pmat comply check` passes with 250 CRUX contracts registered
 
-**Phase 1 — Evidence capture** (IN PROGRESS)
+**Phase 1 — Evidence capture** (IN PROGRESS — 108/250 = 43.2%)
 - Collect `evidence/crux/{competitor}/*` per §2.1 for all 7 competitors
 - Falsification harness comparing `apr --help` verbs vs competitor verbs
-- Enrich remaining 232 contracts (spec-complete body) — prioritize demand=5
-  and demand=4 first
+- Enrich remaining 142 contracts (spec-complete body) — demand=5 non-J
+  complete; continue demand=4 (≈13 remaining) then demand=3
 - Gate: `apr qa --crux` emits per-story PASS/FAIL/SKIP
 
 **Phase 2 — Close 🔨 partials** (priority by demand score)

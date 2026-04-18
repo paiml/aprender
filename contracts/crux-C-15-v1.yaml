@@ -18,44 +18,112 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    Tensor + pipeline parallelism. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Tensor parallelism (shard attention/MLP across N GPUs) + pipeline
+    parallelism (shard layers across M stages). vLLM exposes as
+    `--tensor-parallel-size TP --pipeline-parallel-size PP` with total
+    world_size = TP * PP. Map to `apr serve --tp TP --pp PP` producing
+    identical output to single-GPU at temp=0 and delivering scaling
+    throughput (near-linear in TP for attention/FFN-bound workloads).
+  references:
+  - "https://docs.vllm.ai/en/latest/serving/distributed_serving.html"
+  - "Shoeybi et al. 2020 — 'Megatron-LM' tensor parallelism"
+  - "Huang et al. 2019 — 'GPipe' pipeline parallelism"
 
 equations:
-  placeholder_contract:
+  tp_pp_parity_at_greedy:
     formula: |
-      DRAFT — user workflow "Tensor + pipeline parallelism"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      ∀ prompt p, TP ∈ {1,2,4,8}, PP ∈ {1,2,4}, temperature=0.0, top_k=1:
+        decode(model, p, TP=1, PP=1) ≡ decode(model, p, TP, PP)
+      (within numerical noise: cosine(logits_ref, logits_parallel) >= 0.9999)
+    domain: (model, prompt, TP, PP)
+    codomain: token sequence
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "temp=0 top_k=1: token IDs byte-identical across TP/PP configs"
+    - "model.num_heads % TP == 0 (required divisibility)"
+    - "model.num_layers % PP == 0"
+    - "world_size = TP * PP <= available GPUs"
+
+  scaling_throughput:
+    formula: |
+      tok/s(TP=N) >= 0.7 * N * tok/s(TP=1)
+      (70% scaling efficiency floor for attention-heavy decode)
+    domain: (model, TP)
+    codomain: scaling efficiency ratio
+    invariants:
+    - "TP=2 achieves >=1.4× single-GPU throughput"
+    - "TP=4 achieves >=2.8× single-GPU throughput"
+    - "scaling efficiency reported in --json output"
+
+  divisibility_fail_fast:
+    formula: |
+      num_heads % TP != 0 OR num_layers % PP != 0 ⇒ exit non-zero
+    domain: (model_config, TP, PP)
+    codomain: exit_code ∈ {0, non-zero}
+    invariants:
+    - "invalid TP rejected at startup, not first decode step"
+    - "error message cites num_heads / num_layers and suggests valid values"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-15-001
-  rule: placeholder
-  prediction: "apr surface for 'Tensor + pipeline parallelism' matches vllm canonical behavior"
+  rule: TP parity at greedy sampling
+  prediction: "TP=2 produces byte-identical tokens to TP=1 at temp=0"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-15" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: blocked until apr serve --tp flag wired; requires 2+ GPUs
+    REF=$(apr run model.gguf --prompt "The capital of France is" \
+      --max-tokens 32 --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
+    TP2=$(apr run model.gguf --tp 2 --prompt "The capital of France is" \
+      --max-tokens 32 --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
+    [ "$REF" = "$TP2" ]
+  if_fails: "tensor-parallel output diverges from single-GPU — allreduce bug or numerical precision"
+
+- id: FALSIFY-CRUX-C-15-002
+  rule: scaling efficiency floor
+  prediction: "TP=2 delivers >=1.4× single-GPU tok/s"
+  test: |
+    # TODO: blocked until --tp flag; requires 2 GPUs
+    BASE=$(apr bench model.gguf --max-tokens 128 --json | jq '.tokens_per_sec')
+    TP2=$(apr bench model.gguf --tp 2 --max-tokens 128 --json | jq '.tokens_per_sec')
+    python3 -c "import sys; sys.exit(0 if $TP2 / $BASE >= 1.4 else 1)"
+  if_fails: "TP=2 scaling efficiency below 70% (<1.4× single-GPU throughput)"
+
+- id: FALSIFY-CRUX-C-15-003
+  rule: invalid TP divisibility fails fast
+  prediction: "num_heads=32, --tp 3 exits non-zero with actionable error before decode"
+  test: |
+    # TODO: blocked until --tp flag
+    set +e
+    apr serve model-32head.gguf --tp 3 --port 18080 2>err.log &
+    sleep 3
+    rc=$?
+    set -e
+    kill %1 2>/dev/null || true
+    grep -qiE "num_heads|divisib|tensor.?parallel" err.log
+  if_fails: "invalid TP=3 with 32-head model silently accepted (will segfault at runtime)"
+
+- id: FALSIFY-CRUX-C-15-004
+  rule: world_size metadata reported
+  prediction: "--json output includes .distributed.{tp, pp, world_size}"
+  test: |
+    # TODO: blocked until --tp/--pp flags
+    apr run model.gguf --tp 2 --pp 2 --prompt "hi" --max-tokens 1 --json | \
+      jq -e '.distributed.tp == 2 and .distributed.pp == 2 and .distributed.world_size == 4'
+  if_fails: "distributed metadata missing from --json output"
 
 proof_obligations:
+- type: parity
+  property: "TP=N, PP=M output ≡ TP=1, PP=1 at temp=0 top_k=1 (byte-identical tokens)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "num_heads % TP == 0 AND num_layers % PP == 0 enforced at startup"
+- type: performance
+  property: "TP scaling efficiency >= 70% (TP=2 >= 1.4×, TP=4 >= 2.8×)"
+- type: schema
+  property: "--json output reports .distributed.{tp, pp, world_size}"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

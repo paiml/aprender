@@ -18,44 +18,113 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    KV cache quantization Q8_0/Q4_0. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    KV cache quantization to Q8_0 or Q4_0 shrinks KV memory footprint
+    2×/4× and enables longer contexts on same VRAM. llama.cpp exposes via
+    `--cache-type-k q8_0 --cache-type-v q8_0` (or q4_0) on llama-server
+    and llama-cli. Map to `apr serve --kv-quant q8_0|q4_0|f16` with
+    quality parity (perplexity within 1% vs f16) and measurable VRAM
+    savings.
+  references:
+  - "https://github.com/ggml-org/llama.cpp/pull/7527 — KV cache quantization"
+  - "https://github.com/ggml-org/llama.cpp/blob/master/examples/server/README.md"
 
 equations:
-  placeholder_contract:
+  kv_quant_memory_savings:
     formula: |
-      DRAFT — user workflow "KV cache quantization Q8_0/Q4_0"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      footprint_kv(dtype) = 2 * num_layers * num_kv_heads * head_dim * context_len * bytes_per_elem(dtype)
+      bytes_per_elem(f16)  = 2.0
+      bytes_per_elem(q8_0) = 1.0625   # 1 byte + scale overhead
+      bytes_per_elem(q4_0) = 0.5625   # 0.5 byte + scale overhead
+    domain: (model_config, context_len, kv_dtype)
+    codomain: KV cache footprint in bytes
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "footprint_kv(q8_0) ≈ 0.53 * footprint_kv(f16) (within 5%)"
+    - "footprint_kv(q4_0) ≈ 0.28 * footprint_kv(f16) (within 5%)"
+    - "reported VRAM in --json output matches formula to within 2%"
+
+  perplexity_parity:
+    formula: |
+      PPL(model, dataset, kv=q8_0) <= PPL(model, dataset, kv=f16) * 1.01
+      PPL(model, dataset, kv=q4_0) <= PPL(model, dataset, kv=f16) * 1.05
+      on wikitext-2-raw-v1 test split
+    domain: (model, dataset, kv_dtype)
+    codomain: perplexity ratio
+    invariants:
+    - "q8_0 KV quant: PPL degradation <= 1%"
+    - "q4_0 KV quant: PPL degradation <= 5%"
+    - "f16 (baseline) PPL reported for reference"
+
+  greedy_determinism_preserved:
+    formula: |
+      ∀ prompt p, temperature=0.0, top_k=1:
+        token_count(decode(model, p, kv=q8_0)) == token_count(decode(model, p, kv=f16))
+      (token-count invariant: quantization must not cause premature EOS)
+    domain: (model, prompt, kv_dtype)
+    codomain: bool
+    invariants:
+    - "q8_0/q4_0 MUST NOT cause premature EOS vs f16 at temp=0"
+    - "first-token ID at temp=0 identical across kv_dtype ∈ {f16, q8_0}"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-30-001
-  rule: placeholder
-  prediction: "apr surface for 'KV cache quantization Q8_0/Q4_0' matches llama_cpp canonical behavior"
+  rule: VRAM savings match formula
+  prediction: "--kv-quant q4_0 uses ~28% of f16 KV footprint at ctx=8192"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-30" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: blocked until apr serve --kv-quant flag wired
+    F16=$(apr serve model.gguf --kv-quant f16 --ctx 8192 --dry-run --json | jq '.kv_cache_bytes')
+    Q4=$(apr serve model.gguf --kv-quant q4_0 --ctx 8192 --dry-run --json | jq '.kv_cache_bytes')
+    python3 -c "r = $Q4 / $F16; assert 0.25 <= r <= 0.32, f'ratio={r:.3f}'"
+  if_fails: "q4_0 KV footprint outside expected 28% ± 3% range"
+
+- id: FALSIFY-CRUX-C-30-002
+  rule: q8_0 perplexity parity
+  prediction: "q8_0 KV quant degrades PPL by <=1% vs f16"
+  test: |
+    # TODO: blocked until apr eval --kv-quant flag
+    F16_PPL=$(apr eval model.gguf --dataset wikitext-2-raw-v1 --kv-quant f16 --json | jq '.perplexity')
+    Q8_PPL=$(apr eval model.gguf --dataset wikitext-2-raw-v1 --kv-quant q8_0 --json | jq '.perplexity')
+    python3 -c "import sys; sys.exit(0 if $Q8_PPL <= $F16_PPL * 1.01 else 1)"
+  if_fails: "q8_0 KV quant exceeded 1% PPL degradation budget"
+
+- id: FALSIFY-CRUX-C-30-003
+  rule: no premature EOS at temp=0 with q8_0
+  prediction: "q8_0 decode produces same token count as f16 at temp=0, max_tokens=128"
+  test: |
+    # TODO: blocked until --kv-quant flag
+    F16_CNT=$(apr run model.gguf --prompt "Write a paragraph:" --max-tokens 128 \
+      --temperature 0.0 --top-k 1 --kv-quant f16 --json | jq '.tokens | length')
+    Q8_CNT=$(apr run model.gguf --prompt "Write a paragraph:" --max-tokens 128 \
+      --temperature 0.0 --top-k 1 --kv-quant q8_0 --json | jq '.tokens | length')
+    [ "$F16_CNT" = "$Q8_CNT" ]
+  if_fails: "q8_0 KV quant caused premature EOS (token count mismatch vs f16)"
+
+- id: FALSIFY-CRUX-C-30-004
+  rule: invalid kv-quant rejected
+  prediction: "--kv-quant q2_k returns non-zero with valid options list"
+  test: |
+    # TODO: blocked until --kv-quant flag
+    set +e
+    apr run model.gguf --kv-quant q2_k --prompt "hi" 2>err.log
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] && grep -qiE "kv.?quant|q8_0|q4_0|f16" err.log
+  if_fails: "unsupported KV quantization silently accepted"
 
 proof_obligations:
+- type: parity
+  property: "q8_0 KV decode first-token ID ≡ f16 at temp=0 top_k=1 (greedy determinism preserved)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "KV footprint formula holds within 2%: q8_0 ≈ 0.53×, q4_0 ≈ 0.28× f16 footprint"
+- type: quality
+  property: "q8_0 PPL <= f16 PPL * 1.01; q4_0 PPL <= f16 PPL * 1.05 on wikitext-2"
+- type: schema
+  property: "--json output includes .kv_cache.{dtype, bytes, ctx_len}"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -18,44 +18,114 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    Include/exclude file globs. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Include/exclude file globs for selective repository download. Parity target
+    is `huggingface-cli download REPO_ID --include PATTERN --exclude PATTERN`
+    (see https://huggingface.co/docs/huggingface_hub/guides/download#download-files-from-the-hub
+    and `huggingface_hub.snapshot_download(allow_patterns=..., ignore_patterns=...)`).
+    aprender equivalent: `apr pull hf://<repo> --include <glob> --exclude <glob>` which
+    must resolve the same file subset and skip everything else in a single pass.
+  references:
+  - "https://huggingface.co/docs/huggingface_hub/guides/download"
+  - "https://huggingface.co/docs/huggingface_hub/v0.24.0/en/package_reference/file_download#huggingface_hub.snapshot_download"
 
 equations:
-  placeholder_contract:
+  glob_selection_set:
     formula: |
-      DRAFT — user workflow "Include/exclude file globs"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Let R = set of files in the remote repo.
+      Let I = union of files matching any --include glob (∅ means "all files").
+      Let X = union of files matching any --exclude glob.
+      Selected(R, I, X) = (if I == ∅ then R else R ∩ I) \ X
+    domain: (repo_file_list, include_globs, exclude_globs)
+    codomain: Set[file_path]
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "--exclude wins over --include for overlapping matches"
+    - "Empty --include means 'take everything'; empty --exclude means 'drop nothing'"
+    - "Glob semantics match fnmatch / gitignore style (*, ?, **) used by huggingface_hub"
+
+  download_idempotence:
+    formula: |
+      For identical (repo_id, include_globs, exclude_globs, revision),
+      two consecutive `apr pull` invocations SHALL produce byte-identical
+      local trees and the second invocation MUST be a cache hit (no redownload).
+    domain: apr pull invocation
+    codomain: local filesystem tree
+    invariants:
+    - "File set is a pure function of the four inputs above"
+    - "Second run wall-clock < 10% of first (cache hit)"
+    - "sha256 of every downloaded file stable across runs"
+
+  parity_with_huggingface_cli:
+    formula: |
+      Selected_apr(R, I, X) == Selected_hfcli(R, I, X)
+      for every (R, I, X) tuple in evidence/crux/huggingface/glob-goldens.json
+    domain: (repo, include, exclude) tuples
+    codomain: file set equality
+    invariants:
+    - "apr pull selects the SAME files as huggingface-cli download on goldens"
+    - "No extra files, no missing files"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-04-001
-  rule: placeholder
-  prediction: "apr surface for 'Include/exclude file globs' matches huggingface canonical behavior"
+  rule: include glob restricts download to matching files
+  prediction: "--include '*.safetensors' downloads ONLY safetensors files"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-04" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    TMP=$(mktemp -d)
+    apr pull hf://openai-community/gpt2 --include '*.safetensors' --out "$TMP" >/dev/null
+    # Any non-safetensors file present is a falsification
+    find "$TMP" -type f ! -name '*.safetensors' | grep -q . && exit 1 || exit 0
+  if_fails: "apr pull downloaded files NOT matching any --include glob"
+
+- id: FALSIFY-CRUX-A-04-002
+  rule: exclude glob removes matching files
+  prediction: "--exclude '*.bin' produces zero .bin files locally"
+  test: |
+    TMP=$(mktemp -d)
+    apr pull hf://openai-community/gpt2 --exclude '*.bin' --out "$TMP" >/dev/null
+    [ "$(find "$TMP" -type f -name '*.bin' | wc -l)" -eq 0 ]
+  if_fails: "apr pull kept files matching --exclude"
+
+- id: FALSIFY-CRUX-A-04-003
+  rule: exclude wins over include
+  prediction: "--include '*.json' --exclude 'config.json' excludes config.json"
+  test: |
+    TMP=$(mktemp -d)
+    apr pull hf://openai-community/gpt2 --include '*.json' --exclude 'config.json' --out "$TMP" >/dev/null
+    [ ! -f "$TMP/config.json" ] && ls "$TMP"/*.json >/dev/null 2>&1
+  if_fails: "precedence rule violated — exclude did not override include"
+
+- id: FALSIFY-CRUX-A-04-004
+  rule: parity with huggingface-cli on golden set
+  prediction: "apr file set == huggingface-cli file set for same globs"
+  test: |
+    # TODO: implement once evidence/crux/huggingface/glob-goldens.json exists
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/huggingface/glob-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - <<'PY'
+    import json, subprocess, os, tempfile, pathlib
+    cases = json.load(open(os.environ["GOLD"]))
+    for c in cases:
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["apr","pull",c["repo"],"--include",*c["include"],"--exclude",*c["exclude"],"--out",d], check=True)
+            got = sorted(str(p.relative_to(d)) for p in pathlib.Path(d).rglob("*") if p.is_file())
+            assert got == c["expected_files"], (c["repo"], got, c["expected_files"])
+    PY
+  if_fails: "apr pull file selection diverges from huggingface-cli"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Selected(R, I, X) = (R ∩ I) \\ X with I=∅ ⇒ R"
+- type: invariant
+  property: "Second identical pull is cache hit (no network I/O)"
+- type: parity
+  property: "apr pull globs ≡ huggingface-cli download globs on evidence goldens"
+- type: invariant
+  property: "Glob syntax matches huggingface_hub fnmatch semantics"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

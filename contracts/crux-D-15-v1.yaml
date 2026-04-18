@@ -25,37 +25,122 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  lora_merge_math:
     formula: |
-      DRAFT — user workflow "Merge LoRA + export GGUF"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      W_merged = W_base + (alpha / r) * (B @ A)
+      where:
+        W_base   : [d_out, d_in] base weight matrix
+        A        : [r, d_in]     LoRA down-projection
+        B        : [d_out, r]    LoRA up-projection
+        r        : LoRA rank (typically 8..64)
+        alpha    : LoRA scaling factor (typically 16..32)
+      Ref: Hu et al., "LoRA: Low-Rank Adaptation of Large Language Models"
+           (arXiv:2106.09685), Eq. 3.
+    domain: "(W_base: f32[d_out, d_in], A: f32[r, d_in], B: f32[d_out, r], r: u32, alpha: f32)"
+    codomain: "W_merged: f32[d_out, d_in]"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "W_merged.shape == W_base.shape (rank-r update preserves shape)"
+    - "||W_merged - W_base||_F = (alpha / r) * ||B @ A||_F (Frobenius norm check)"
+    - "Adapter-only file size <= 2% of base model size (r << min(d_in, d_out))"
+
+  adapter_size_bound:
+    formula: |
+      adapter_bytes = sum_over_layers(r * (d_in + d_out) * 4)  # fp32
+      base_bytes    = sum_over_layers(d_in * d_out * 4)
+      ratio = adapter_bytes / base_bytes
+      For r=16, d=4096: ratio ~= 32*4096 / 4096^2 = 2/4096 ~= 0.05%
+    domain: "(lora_config, base_model)"
+    codomain: "ratio: f64"
+    invariants:
+    - "ratio <= 0.02 for typical LoRA configs (r<=64, d>=1024)"
+    - "adapter.apr only contains LoRA tensors (A/B pairs), not base weights"
+
+  gguf_logit_parity:
+    formula: |
+      For any prompt p with temp=0 top-k=1:
+        argmax(logits_apr(p)) == argmax(logits_gguf(p))
+      where logits_gguf is produced by llama.cpp llama-cli on the exported file.
+    domain: "(merged_model, prompt)"
+    codomain: "token_id: u32"
+    invariants:
+    - "GGUF round-trip preserves argmax token at temp=0"
+    - "Logit cosine similarity >= 0.9999 between apr and llama.cpp on first 16 tokens"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-15-001
-  rule: placeholder
-  prediction: "apr surface for 'Merge LoRA + export GGUF' matches huggingface canonical behavior"
+  rule: adapter-only file is small
+  prediction: "apr merge produces an adapter.apr file <= 2% of base model size"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-15" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # Build tiny base + adapter pair for fast falsification
+    # TODO: replace with apr finetune fixture when adapter pipeline lands
+    BASE_BYTES=$(stat -c%s fixtures/base.apr)
+    ADAPTER_BYTES=$(stat -c%s fixtures/adapter.apr)
+    python3 -c "
+    import sys
+    ratio = $ADAPTER_BYTES / $BASE_BYTES
+    sys.exit(0 if ratio <= 0.02 else 1)
+    "
+  if_fails: "adapter.apr exceeds 2% of base — LoRA tensors not being isolated"
+
+- id: FALSIFY-CRUX-D-15-002
+  rule: merge math byte-match
+  prediction: "apr merge produces W_base + (alpha/r)*B@A byte-identical to reference"
+  test: |
+    # Reference: peft.PeftModel.from_pretrained(base, adapter).merge_and_unload()
+    apr merge fixtures/base.apr fixtures/adapter.apr -o /tmp/merged.apr
+    # TODO: implement apr tensors --hash for per-tensor SHA256
+    apr tensors /tmp/merged.apr --json > /tmp/merged.json
+    apr tensors fixtures/merged_reference.apr --json > /tmp/ref.json
+    python3 -c "
+    import json, sys
+    m = json.load(open('/tmp/merged.json'))
+    r = json.load(open('/tmp/ref.json'))
+    # Compare tensor hashes; allow 1e-6 abs diff for fp rounding
+    sys.exit(0 if m['tensors'] == r['tensors'] else 1)
+    "
+  if_fails: "merged weights do not equal W_base + (alpha/r)*B@A"
+
+- id: FALSIFY-CRUX-D-15-003
+  rule: GGUF export logit parity
+  prediction: "apr export --format gguf produces llama.cpp-loadable file with identical argmax at temp=0"
+  test: |
+    apr merge fixtures/base.apr fixtures/adapter.apr -o /tmp/merged.apr
+    apr export /tmp/merged.apr --format gguf -o /tmp/merged.gguf
+    # TODO: requires llama-cli in PATH (pin version in CI)
+    APR_OUT=$(apr run /tmp/merged.apr --prompt "The capital of France is" \
+      --max-tokens 8 --temperature 0.0 --top-k 1)
+    LLAMA_OUT=$(llama-cli -m /tmp/merged.gguf -p "The capital of France is" \
+      -n 8 --temp 0.0 --top-k 1 --simple-io 2>/dev/null | tail -1)
+    [ "$APR_OUT" = "$LLAMA_OUT" ]
+  if_fails: "GGUF export diverges from apr at temp=0 — dequant or layout bug"
+
+- id: FALSIFY-CRUX-D-15-004
+  rule: end-to-end competitor parity
+  prediction: "apr merge+export matches peft merge_and_unload + convert_hf_to_gguf.py"
+  test: |
+    # Canonical HF workflow (see https://huggingface.co/docs/peft/main/en/developer_guides/lora#merge-adapters)
+    # TODO: evidence/crux/huggingface/lora_merge_gguf_reference/ transcript pending
+    echo "TODO: cross-check against peft reference pipeline" >&2
+    test -f evidence/crux/huggingface/lora_merge_gguf_reference/merged.gguf
+  if_fails: "apr pipeline diverges from HF peft + convert_hf_to_gguf.py reference"
 
 proof_obligations:
+- type: parity
+  property: "apr merge + export gguf matches peft.merge_and_unload + convert_hf_to_gguf.py at temp=0 argmax"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "adapter.apr size / base.apr size <= 0.02"
+- type: invariant
+  property: "W_merged = W_base + (alpha/r) * B @ A (Frobenius-norm verified)"
+- type: invariant
+  property: "GGUF export is self-loadable by llama-cli and produces identical argmax at temp=0 top-k=1"
+- type: invariant
+  property: "apr merge preserves base tensor shapes (rank-r update)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

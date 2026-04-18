@@ -18,44 +18,139 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    GBNF grammar from JSON-schema. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.I and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    GBNF grammar from JSON schema. Competitor llama.cpp ships
+    `examples/json_schema_to_grammar.py` (see
+    https://github.com/ggerganov/llama.cpp/blob/master/examples/json_schema_to_grammar.py
+    and https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md)
+    that converts a JSON Schema into a GBNF (GGML BNF) grammar file, then
+    the sampler uses `--grammar-file` to constrain token selection so
+    every completion token keeps the partial output valid per the
+    grammar. Parity: `apr run --json-schema schema.json` (or `apr serve`
+    with `response_format={"type":"json_schema", ...}`) MUST compile the
+    schema to an equivalent GBNF grammar and constrain sampling so that
+    generated output parses against the original schema with 100% rate.
 
 equations:
-  placeholder_contract:
+  schema_to_gbnf_compilation:
     formula: |
-      DRAFT — user workflow "GBNF grammar from JSON-schema"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      Let S be a JSON schema conforming to draft-07+.
+      compile_gbnf(S) = G such that:
+        ∀ token string T accepted by G, json_parse(T) is defined AND
+        validate(json_parse(T), S) == true
+      Conversely, ∀ instance I with validate(I, S) == true,
+        there exists an accepting trace for canonical_json(I) in G.
+    domain: JSON Schema S
+    codomain: GBNF grammar G
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Grammar accepts only valid JSON (balanced braces, quoted keys, valid primitives)"
+    - "For every key in schema.required, grammar requires a production (not optional)"
+    - "Enum values map to GBNF alternation over literal string tokens"
+    - "type:integer forbids '.' and 'e'; type:number allows both"
+
+  constrained_sampling_validity:
+    formula: |
+      For prompt P, schema S, seed s:
+        output O = apr run --json-schema S --prompt P --seed s
+        json_parse(O) is defined (100% of runs)
+        validate(json_parse(O), S) == true (100% of runs)
+      regardless of how the underlying model would have sampled freely.
+    domain: (prompt, schema, seed) tuple, N runs with varying seed
+    codomain: bool (pass rate == 100%)
+    invariants:
+    - "Free-form model tokens are masked to the grammar-legal set at each step"
+    - "100% of outputs parse as JSON and validate against S (not 99%)"
+    - "No post-hoc repair pass: sampling-time enforcement"
+
+  parity_with_llama_cpp_grammar:
+    formula: |
+      For a schema S provided to both:
+        G_apr    = apr convert-schema --format gbnf S
+        G_llama  = python json_schema_to_grammar.py S   (llama.cpp upstream)
+      normalize_gbnf(G_apr) == normalize_gbnf(G_llama)
+      where normalize strips whitespace, reorders alternations deterministically,
+      and canonicalizes rule names.
+    domain: JSON Schema S
+    codomain: GBNF grammar string (normalized)
+    invariants:
+    - "apr's compiler produces the same accepting language as llama.cpp's script"
+    - "Differences MUST be semantic-preserving (alpha-renaming or rule inlining)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-12-001
-  rule: placeholder
-  prediction: "apr surface for 'GBNF grammar from JSON-schema' matches llama_cpp canonical behavior"
+  rule: grammar compiles for a required-keys schema
+  prediction: "schema with required fields produces a non-empty GBNF"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-12" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    cat > /tmp/schema.json <<'EOF'
+    {"type":"object","required":["name","age"],
+     "properties":{"name":{"type":"string"},"age":{"type":"integer"}}}
+    EOF
+    G=$(apr convert-schema --format gbnf /tmp/schema.json)
+    [ -n "$G" ] || { echo "FAIL: empty grammar" >&2; exit 1; }
+    echo "$G" | grep -q '"name"' || { echo "FAIL: required key 'name' absent" >&2; exit 1; }
+    echo "$G" | grep -q '"age"'  || { echo "FAIL: required key 'age' absent"  >&2; exit 1; }
+
+- id: FALSIFY-CRUX-I-12-002
+  rule: 100% validity of constrained outputs across seeds
+  prediction: "50 runs with varying seeds all produce schema-valid JSON"
+  test: |
+    SCHEMA=/tmp/schema.json
+    MODEL=/mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr
+    FAIL=0
+    for s in $(seq 1 50); do
+      OUT=$(apr run "$MODEL" --json-schema "$SCHEMA" \
+        --prompt "Generate a person JSON." --seed "$s" --max-tokens 64 2>/dev/null)
+      python3 - "$SCHEMA" <<PY || FAIL=$((FAIL+1))
+    import json, sys, jsonschema
+    schema = json.load(open(sys.argv[1]))
+    instance = json.loads('''$OUT''')
+    jsonschema.validate(instance, schema)
+    PY
+    done
+    [ "$FAIL" -eq 0 ] || { echo "FAIL: $FAIL/50 runs invalid" >&2; exit 1; }
+
+- id: FALSIFY-CRUX-I-12-003
+  rule: enum restriction is honored at sampling time
+  prediction: "enum:['red','green','blue'] never emits any other string"
+  test: |
+    cat > /tmp/enum.json <<'EOF'
+    {"type":"object","required":["color"],
+     "properties":{"color":{"type":"string","enum":["red","green","blue"]}}}
+    EOF
+    MODEL=/mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr
+    for s in $(seq 1 20); do
+      OUT=$(apr run "$MODEL" --json-schema /tmp/enum.json \
+        --prompt "Pick a color." --seed "$s" --max-tokens 32 2>/dev/null)
+      COLOR=$(echo "$OUT" | jq -r '.color')
+      case "$COLOR" in red|green|blue) ;; *) echo "FAIL: enum violation '$COLOR'" >&2; exit 1;; esac
+    done
+
+- id: FALSIFY-CRUX-I-12-004
+  rule: parity with llama.cpp json_schema_to_grammar.py
+  prediction: "grammar accepts the same language as upstream's script output"
+  test: |
+    # TODO: vendor json_schema_to_grammar.py under evidence/crux/llama_cpp/
+    SCHEMA=/tmp/schema.json
+    apr convert-schema --format gbnf "$SCHEMA"      > /tmp/g-apr.gbnf
+    python3 evidence/crux/llama_cpp/json_schema_to_grammar.py "$SCHEMA" > /tmp/g-llama.gbnf
+    # Fuzz a few hundred JSON strings; grammars must agree on accept/reject
+    python3 evidence/crux/llama_cpp/gbnf_fuzz_parity.py /tmp/g-apr.gbnf /tmp/g-llama.gbnf \
+      || { echo "FAIL: accept-set divergence vs llama.cpp" >&2; exit 1; }
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "compile_gbnf(S) produces a grammar that accepts only instances satisfying S"
+- type: invariant
+  property: "Constrained sampling yields JSON-valid, schema-valid output with 100% rate (50+ seeds)"
+- type: invariant
+  property: "Enum and required-key schema clauses are enforced at sampling time, not post-hoc repair"
+- type: parity
+  property: "Grammar accepts the same JSON language as llama.cpp's json_schema_to_grammar.py on fuzzed inputs"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -25,37 +25,164 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  chatopenai_invoke_contract:
     formula: |
-      DRAFT — user workflow "Langchain ChatOpenAI backend"
-      must produce observable parity with ecosystem's canonical verb
-      on the golden input defined in evidence/crux/ecosystem/.
-    domain: user invocation
-    codomain: apr CLI output
+      langchain_openai.ChatOpenAI(
+          base_url="http://localhost:8000/v1",
+          api_key="<any>",
+          model="<apr-model-name>"
+      ).invoke(prompt: str) -> AIMessage
+      where AIMessage.content is a non-empty string on success.
+      Ref: https://python.langchain.com/docs/integrations/chat/openai
+      The Langchain ChatOpenAI wrapper issues POST /v1/chat/completions and
+      expects the OpenAI streaming + non-streaming response envelope.
+    domain: (apr_serve_url, model_name, prompt)
+    codomain: "ai_message: AIMessage"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "response.content is a non-empty string"
+    - "response has .response_metadata with token_usage (prompt_tokens, completion_tokens)"
+    - "POST /v1/chat/completions returns HTTP 200 with OpenAI envelope"
+
+  streaming_chunk_shape:
+    formula: |
+      ChatOpenAI(...).stream(prompt) yields AIMessageChunk objects.
+      SSE events on the wire:
+        data: {"choices":[{"delta":{"content":"..."}}], ...}\n\n
+        ...
+        data: [DONE]\n\n
+      Aggregate invariant: concat(chunk.content for chunk in stream) == invoke(prompt).content
+      (modulo sampling determinism at temp=0).
+    domain: (stream_iterator)
+    codomain: "chunks: list[AIMessageChunk]"
+    invariants:
+    - "At least 1 chunk yielded for prompts with non-empty output"
+    - "Final SSE event is 'data: [DONE]'"
+    - "At temp=0: concatenated stream content == single-shot invoke content"
+
+  bind_tools_contract:
+    formula: |
+      ChatOpenAI(...).bind_tools([tool_fn]).invoke(prompt) returns AIMessage with:
+        .tool_calls: list[{name: str, args: dict, id: str}]
+      when model chooses to invoke a bound tool.
+      Ref: https://python.langchain.com/docs/how_to/tool_calling/
+    domain: (tool_list, prompt)
+    codomain: "tool_calls: list[dict]"
+    invariants:
+    - "bind_tools converts Python functions to OpenAI tool schemas via pydantic"
+    - "tool_calls list items each have 'name', 'args' (dict), 'id' keys"
+    - "args dict validates against the bound tool's inferred schema"
 
 falsification_tests:
 - id: FALSIFY-CRUX-K-03-001
-  rule: placeholder
-  prediction: "apr surface for 'Langchain ChatOpenAI backend' matches ecosystem canonical behavior"
+  rule: ChatOpenAI.invoke returns non-empty content
+  prediction: "langchain-openai ChatOpenAI pointed at apr serve returns non-empty content"
   test: |
-    # TBD — collect ecosystem transcript in evidence/crux/ecosystem/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-K-03" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # Assumes apr serve running on :8000 (CI starts it in background)
+    uv run --with langchain --with langchain-openai python3 -c "
+    from langchain_openai import ChatOpenAI
+    llm = ChatOpenAI(
+        base_url='http://localhost:8000/v1',
+        api_key='none',
+        model='apr',
+        temperature=0.0,
+    )
+    resp = llm.invoke('Hello')
+    assert resp.content, f'empty content: {resp}'
+    assert isinstance(resp.content, str)
+    print('OK', len(resp.content))
+    "
+  if_fails: "Langchain ChatOpenAI.invoke() returned empty or non-string content"
+
+- id: FALSIFY-CRUX-K-03-002
+  rule: streaming yields incremental chunks
+  prediction: ".stream() yields >=1 chunk and final concatenation is non-empty"
+  test: |
+    uv run --with langchain --with langchain-openai python3 -c "
+    from langchain_openai import ChatOpenAI
+    llm = ChatOpenAI(
+        base_url='http://localhost:8000/v1',
+        api_key='none',
+        model='apr',
+        temperature=0.0,
+        streaming=True,
+    )
+    chunks = list(llm.stream('Count to three.'))
+    assert len(chunks) >= 1, f'no chunks yielded'
+    content = ''.join(c.content for c in chunks if c.content)
+    assert content, f'concat empty: {chunks}'
+    print('chunks=', len(chunks))
+    "
+  if_fails: "ChatOpenAI.stream() did not yield chunks or concatenation was empty"
+
+- id: FALSIFY-CRUX-K-03-003
+  rule: bind_tools flow works
+  prediction: ".bind_tools([fn]).invoke(prompt) returns AIMessage with tool_calls when prompted"
+  test: |
+    uv run --with langchain --with langchain-openai --with pydantic python3 -c "
+    from langchain_openai import ChatOpenAI
+    from langchain_core.tools import tool
+
+    @tool
+    def add(a: int, b: int) -> int:
+        '''Add two integers.'''
+        return a + b
+
+    llm = ChatOpenAI(
+        base_url='http://localhost:8000/v1',
+        api_key='none',
+        model='apr',
+        temperature=0.0,
+    ).bind_tools([add])
+    resp = llm.invoke('What is 17 plus 25?')
+    assert resp.tool_calls, f'no tool_calls: {resp}'
+    tc = resp.tool_calls[0]
+    assert tc['name'] == 'add', tc
+    assert set(tc['args'].keys()) == {'a','b'}, tc
+    print('tool_call', tc)
+    "
+  if_fails: "bind_tools()/invoke() did not produce tool_calls against apr serve"
+
+- id: FALSIFY-CRUX-K-03-004
+  rule: temp=0 invoke vs streaming equivalence
+  prediction: "at temp=0, concat(stream) == invoke() content"
+  test: |
+    uv run --with langchain --with langchain-openai python3 -c "
+    from langchain_openai import ChatOpenAI
+    kw = dict(base_url='http://localhost:8000/v1', api_key='none', model='apr', temperature=0.0)
+    one = ChatOpenAI(**kw).invoke('The capital of France is')
+    stream = ChatOpenAI(**kw, streaming=True).stream('The capital of France is')
+    streamed = ''.join(c.content for c in stream if c.content)
+    assert one.content == streamed, f'diverge: {one.content!r} vs {streamed!r}'
+    print('EQUAL')
+    "
+  if_fails: "streaming and non-streaming produce different text at temp=0 — sampling-path divergence"
+
+- id: FALSIFY-CRUX-K-03-005
+  rule: competitor parity against openai-python
+  prediction: "apr serve behavior via Langchain matches openai-python 1.x reference"
+  test: |
+    # TODO: evidence/crux/ecosystem/langchain_chatopenai_reference/ transcript pending
+    echo "TODO: langchain + openai-python reference transcript" >&2
+    test -d evidence/crux/ecosystem/langchain_chatopenai_reference/
+  if_fails: "apr serve diverges from openai-python 1.x baseline under Langchain ChatOpenAI"
 
 proof_obligations:
+- type: parity
+  property: "Langchain ChatOpenAI.invoke/.stream/.bind_tools against apr serve matches openai-python 1.x reference"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "ChatOpenAI.invoke() returns AIMessage with non-empty string content"
+- type: invariant
+  property: "ChatOpenAI.stream() yields >=1 chunk and concatenation is non-empty"
+- type: invariant
+  property: "ChatOpenAI(...).bind_tools([fn]).invoke() produces AIMessage.tool_calls for appropriate prompts"
+- type: invariant
+  property: "temp=0 stream concat == invoke content (sampling determinism)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

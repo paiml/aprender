@@ -25,37 +25,163 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  tool_call_response_schema:
     formula: |
-      DRAFT — user workflow "OpenAI tool calls JSON-schema"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      Request:
+        tools: [{ "type": "function",
+                  "function": { "name": string,
+                                "description": string,
+                                "parameters": <JSON-Schema-Draft-2020-12> } }]
+
+      Response (when tool invoked):
+        choices[0].finish_reason == "tool_calls"
+        choices[0].message.tool_calls[*] = {
+          "id": string,
+          "type": "function",
+          "function": { "name": string, "arguments": string (JSON) }
+        }
+
+      Constraint:
+        for each tc in tool_calls:
+          validate(json.loads(tc.function.arguments), tools[i].function.parameters)
+          == VALID
+      Refs: https://platform.openai.com/docs/guides/function-calling
+            https://json-schema.org/draft/2020-12/schema
+    domain: (request, response)
+    codomain: "schema_valid: bool"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "choices[0].message.tool_calls is a non-empty array when a tool is called"
+    - "Every tool_call's arguments MUST be valid JSON"
+    - "Every tool_call's arguments MUST validate against declared parameters schema"
+
+  finish_reason_dichotomy:
+    formula: |
+      finish_reason ∈ {"stop", "tool_calls", "length", "content_filter"}
+      Dichotomy:
+        tool_calls non-empty <=> finish_reason == "tool_calls"
+        tool_calls empty     => finish_reason ∈ {"stop", "length", "content_filter"}
+    domain: response
+    codomain: "finish_reason: string"
+    invariants:
+    - "finish_reason == 'tool_calls' IFF tool_calls array is non-empty"
+    - "tools passed but model chooses not to call => finish_reason == 'stop'"
+    - "No mixed state: cannot have both .content AND tool_calls in same choice (OpenAI semantics)"
+
+  required_fields_enforced:
+    formula: |
+      For any tool.parameters with "required": [f1, f2, ...]:
+        for each tc in tool_calls where tc.function.name == tool.name:
+          args = json.loads(tc.function.arguments)
+          forall f in required: f in args.keys()
+    domain: (tool_schema, tool_call)
+    codomain: "required_ok: bool"
+    invariants:
+    - "Required fields never omitted from tool_calls.arguments"
+    - "Type constraints (integer, string, boolean) honored per JSON-Schema"
 
 falsification_tests:
 - id: FALSIFY-CRUX-I-03-001
-  rule: placeholder
-  prediction: "apr surface for 'OpenAI tool calls JSON-schema' matches vllm canonical behavior"
+  rule: simple schema args validate
+  prediction: "simple tool (name:string, age:int) returns args that validate against its schema"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-I-03" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # Start apr serve in background (assume already running on :8000)
+    RESP=$(curl -sSfL http://localhost:8000/v1/chat/completions \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "model": "apr",
+        "messages": [{"role":"user","content":"Register Alice age 30"}],
+        "tools": [{
+          "type":"function",
+          "function": {
+            "name":"register",
+            "description":"register a user",
+            "parameters": {
+              "type":"object",
+              "properties": {"name":{"type":"string"},"age":{"type":"integer"}},
+              "required":["name","age"]
+            }
+          }
+        }],
+        "tool_choice":"auto"
+      }')
+    ARGS=$(echo "$RESP" | jq -r '.choices[0].message.tool_calls[0].function.arguments')
+    uv run --with jsonschema python3 -c "
+    import json, jsonschema
+    schema = {'type':'object','properties':{'name':{'type':'string'},'age':{'type':'integer'}},'required':['name','age']}
+    jsonschema.validate(json.loads('''$ARGS'''), schema)
+    print('VALID')
+    "
+  if_fails: "tool_call arguments failed JSON-Schema validation"
+
+- id: FALSIFY-CRUX-I-03-002
+  rule: required fields never missing
+  prediction: "all declared 'required' fields present in tool_calls.arguments"
+  test: |
+    RESP=$(curl -sSfL http://localhost:8000/v1/chat/completions \
+      -H 'Content-Type: application/json' \
+      -d @fixtures/tool_call_required.json)
+    ARGS=$(echo "$RESP" | jq -r '.choices[0].message.tool_calls[0].function.arguments')
+    REQ=$(jq -r '.tools[0].function.parameters.required[]' fixtures/tool_call_required.json)
+    for field in $REQ; do
+      echo "$ARGS" | jq -e ". | has(\"$field\")" >/dev/null || exit 1
+    done
+  if_fails: "required tool-call field missing from arguments"
+
+- id: FALSIFY-CRUX-I-03-003
+  rule: finish_reason == tool_calls when tool invoked
+  prediction: "finish_reason is exactly 'tool_calls' when a tool is called"
+  test: |
+    RESP=$(curl -sSfL http://localhost:8000/v1/chat/completions \
+      -H 'Content-Type: application/json' \
+      -d @fixtures/tool_call_simple.json)
+    FR=$(echo "$RESP" | jq -r '.choices[0].finish_reason')
+    N=$(echo "$RESP" | jq '.choices[0].message.tool_calls | length')
+    [ "$FR" = "tool_calls" ] && [ "$N" -gt 0 ]
+  if_fails: "finish_reason != 'tool_calls' despite non-empty tool_calls array"
+
+- id: FALSIFY-CRUX-I-03-004
+  rule: finish_reason == stop when model declines tool
+  prediction: "tools declared but not invoked => finish_reason is 'stop'"
+  test: |
+    # Ask a question the model should answer directly (not via tool)
+    RESP=$(curl -sSfL http://localhost:8000/v1/chat/completions \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "model":"apr",
+        "messages":[{"role":"user","content":"What is 2+2?"}],
+        "tools":[{"type":"function","function":{"name":"send_email","parameters":{"type":"object","properties":{"to":{"type":"string"}}}}}]
+      }')
+    FR=$(echo "$RESP" | jq -r '.choices[0].finish_reason')
+    N=$(echo "$RESP" | jq '.choices[0].message.tool_calls // [] | length')
+    [ "$FR" = "stop" ] && [ "$N" -eq 0 ]
+  if_fails: "finish_reason != 'stop' when model declined tool invocation"
+
+- id: FALSIFY-CRUX-I-03-005
+  rule: vllm parity
+  prediction: "apr serve response shape matches vllm OpenAI-compatible tool_calls response"
+  test: |
+    # TODO: capture vllm response under same prompt/tool schema; compare JSON shapes
+    echo "TODO: evidence/crux/vllm/tool_calls_reference/ transcript pending" >&2
+    test -f evidence/crux/vllm/tool_calls_reference/response.json
+  if_fails: "apr tool_calls response shape diverges from vllm reference"
 
 proof_obligations:
+- type: parity
+  property: "apr serve tool_calls response shape matches OpenAI spec and vllm reference"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "tool_call arguments validate against declared JSON-Schema (Draft 2020-12)"
+- type: invariant
+  property: "all 'required' fields present in tool_calls.arguments"
+- type: invariant
+  property: "finish_reason == 'tool_calls' IFF tool_calls array non-empty"
+- type: invariant
+  property: "tools passed but not invoked => finish_reason == 'stop'"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

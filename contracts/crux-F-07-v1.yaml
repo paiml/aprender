@@ -18,44 +18,136 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    GPU memory timeline Chrome trace. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.F and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    GPU memory timeline Chrome trace. Competitor
+    `torch.cuda.memory._record_memory_history(max_entries=100_000)` +
+    `torch.cuda.memory._dump_snapshot("mem.pickle")` (see
+    https://pytorch.org/docs/stable/torch_cuda_memory.html and
+    https://pytorch.org/blog/understanding-gpu-memory-1/) emits a pickle
+    that pytorch.org/memory_viz renders as an interactive allocator
+    timeline. Parity: `apr profile --gpu-memory-trace=out.json` MUST emit
+    a Chrome Trace Event Format JSON (https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU)
+    enumerating per-allocation events with timestamps, sizes, stream
+    handles, and allocation stacks, loadable in chrome://tracing or
+    https://ui.perfetto.dev.
 
 equations:
-  placeholder_contract:
+  chrome_trace_schema:
     formula: |
-      DRAFT — user workflow "GPU memory timeline Chrome trace"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      out.json = { "traceEvents": [ E_0, E_1, ..., E_{n-1} ], "displayTimeUnit": "ns" }
+      each E_i ∈ {
+        { "ph": "B"|"E"|"i"|"X", "pid": gpu_id, "tid": stream_id,
+          "ts": microseconds_since_run_start, "name": "alloc"|"free"|"kernel",
+          "args": { "bytes": u64, "addr": hex_str, "stack": [frame...] } }
+      }
+    domain: apr profile --gpu-memory-trace invocation on a real inference run
+    codomain: Chrome Trace Event Format v0.4 JSON document
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "File parses as JSON with top-level traceEvents array (perfetto.dev requirement)"
+    - "Every alloc event has a matching free event with the same addr"
+    - "Σ alloc.bytes − Σ free.bytes (ending) ≤ peak resident GPU bytes reported by nvidia-smi"
+
+  monotonic_timestamps:
+    formula: |
+      For all events E_i, E_j with i < j on the same (pid, tid):
+        E_i.ts ≤ E_j.ts
+      AND first event has ts = 0 (trace is relative to run start)
+    domain: traceEvents array ordered by array index
+    codomain: bool
+    invariants:
+    - "Timestamps are monotone per-stream (CUDA stream ordering preserved)"
+    - "First event ts == 0 (perfetto.dev relative-time convention)"
+
+  peak_memory_matches_nvml:
+    formula: |
+      peak_from_trace = max over prefixes of (Σ alloc.bytes − Σ free.bytes)
+      peak_from_nvml  = nvmlDeviceGetMemoryInfo().used  at same wall-clock instant
+      |peak_from_trace − peak_from_nvml| / peak_from_nvml < 0.10   (within 10%)
+    domain: (trace, nvml snapshot) at peak allocation
+    codomain: bool
+    invariants:
+    - "Trace-derived peak agrees with NVML-reported peak within 10%"
+    - "Guards against silent accounting drift (e.g. missed free or double-count)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-07-001
-  rule: placeholder
-  prediction: "apr surface for 'GPU memory timeline Chrome trace' matches pytorch canonical behavior"
+  rule: Chrome Trace JSON schema is valid and loadable
+  prediction: "apr profile --gpu-memory-trace emits JSON parsed by perfetto.dev schema"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-07" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    OUT=/tmp/apr-memtrace.json
+    rm -f "$OUT"
+    apr profile --gpu-memory-trace "$OUT" --prompt "hi" --max-tokens 8 \
+      /mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr 2>/dev/null
+    [ -s "$OUT" ] || { echo "FAIL: no trace written" >&2; exit 1; }
+    jq -e '.traceEvents | type == "array" and length > 0' "$OUT" \
+      || { echo "FAIL: traceEvents missing or empty" >&2; exit 1; }
+    jq -e '.traceEvents | all(.ph? != null and .ts? != null and .name? != null)' "$OUT" \
+      || { echo "FAIL: required Chrome Trace fields missing" >&2; exit 1; }
+
+- id: FALSIFY-CRUX-F-07-002
+  rule: alloc/free events pair by address
+  prediction: "every alloc event has a matching free with identical addr"
+  test: |
+    OUT=/tmp/apr-memtrace.json
+    python3 - "$OUT" <<'PY'
+    import json, sys
+    d = json.load(open(sys.argv[1]))
+    allocs = {e['args']['addr'] for e in d['traceEvents'] if e.get('name') == 'alloc'}
+    frees  = {e['args']['addr'] for e in d['traceEvents'] if e.get('name') == 'free'}
+    orphans = allocs - frees
+    assert not orphans, f"FAIL: {len(orphans)} unfreed addrs"
+    PY
+
+- id: FALSIFY-CRUX-F-07-003
+  rule: timestamps monotone per stream
+  prediction: "per-(pid,tid) timestamps are non-decreasing"
+  test: |
+    OUT=/tmp/apr-memtrace.json
+    python3 - "$OUT" <<'PY'
+    import json, sys
+    from collections import defaultdict
+    d = json.load(open(sys.argv[1]))
+    last = defaultdict(lambda: -1)
+    for e in d['traceEvents']:
+        k = (e.get('pid'), e.get('tid'))
+        assert e['ts'] >= last[k], f"FAIL: non-monotone ts on {k}: {e['ts']} < {last[k]}"
+        last[k] = e['ts']
+    PY
+
+- id: FALSIFY-CRUX-F-07-004
+  rule: trace-derived peak agrees with NVML within 10%
+  prediction: "|peak_trace − peak_nvml| / peak_nvml < 0.10"
+  test: |
+    # TODO: capture nvidia-smi --query-gpu=memory.used samples in parallel
+    OUT=/tmp/apr-memtrace.json
+    NVML_PEAK_MB=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+    python3 - "$OUT" "$NVML_PEAK_MB" <<'PY'
+    import json, sys
+    d = json.load(open(sys.argv[1]))
+    nvml = int(sys.argv[2]) * 1024 * 1024
+    running, peak = 0, 0
+    for e in d['traceEvents']:
+        if e.get('name') == 'alloc': running += e['args']['bytes']
+        elif e.get('name') == 'free': running -= e['args']['bytes']
+        peak = max(peak, running)
+    drift = abs(peak - nvml) / max(nvml, 1)
+    assert drift < 0.10, f"FAIL: peak drift {drift:.2%} > 10%"
+    PY
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Output file is valid Chrome Trace Event Format JSON (perfetto.dev loadable)"
+- type: invariant
+  property: "Every alloc event pairs with exactly one free event of identical addr"
+- type: invariant
+  property: "Timestamps are monotone non-decreasing per (pid, tid) stream"
+- type: parity
+  property: "Trace-derived peak memory agrees with NVML nvmlDeviceGetMemoryInfo() within 10%"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

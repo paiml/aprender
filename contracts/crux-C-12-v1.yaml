@@ -18,44 +18,116 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    Multi-modal vision input LLaVA. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Multi-modal vision input via LLaVA-style vision encoder (CLIP/SigLIP) +
+    language model. llama.cpp exposes this via `llama-llava-cli` with
+    `--mmproj <vision.gguf> --image <path>` flags; the vision projector
+    produces embeddings spliced into the prompt via the <image> token.
+    Map to `apr run model.gguf --mmproj vision.gguf --image photo.jpg
+    --prompt "Describe:"` with deterministic caption output at temp=0.
+  references:
+  - "https://github.com/ggml-org/llama.cpp/tree/master/examples/llava"
+  - "Liu et al. 2023 — 'Visual Instruction Tuning' (LLaVA)"
 
 equations:
-  placeholder_contract:
+  image_embedding_splice:
     formula: |
-      DRAFT — user workflow "Multi-modal vision input LLaVA"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      prompt_embeds = concat(
+        text_embed(prefix_tokens),
+        vision_proj(CLIP(image)),  # shape [N_img_tokens, D]
+        text_embed(suffix_tokens)
+      )
+      where N_img_tokens ∈ {576, 729} for LLaVA-1.5 / SigLIP respectively.
+    domain: (text_prompt, image_path, mmproj_model)
+    codomain: embedding tensor [seq_len, D]
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "N_img_tokens matches mmproj metadata clip.vision.image_grid"
+    - "vision_proj output dim D == language model hidden_size"
+    - "<image> sentinel token replaced exactly once per image"
+
+  greedy_caption_determinism:
+    formula: |
+      ∀ image I, temperature=0.0, top_k=1:
+        apr run(model, mmproj, I, prompt) == llama-llava-cli(model, mmproj, I, prompt)
+      on the golden image set evidence/crux/llama_cpp/llava/.
+    domain: (model, mmproj, image, prompt)
+    codomain: caption string
+    invariants:
+    - "temp=0.0 captions byte-identical to llama-llava-cli golden"
+    - "image format ∈ {jpg, jpeg, png, bmp}; other formats rejected"
+    - "mmproj sha256 recorded in --json output for reproducibility"
+
+  mmproj_compatibility:
+    formula: |
+      mmproj.metadata["general.architecture"] ∈ {"clip", "siglip"} AND
+      mmproj.metadata["clip.vision.projection_dim"] == model.hidden_size
+    domain: (mmproj_model, language_model)
+    codomain: bool
+    invariants:
+    - "incompatible projection_dim MUST fail fast with actionable error"
+    - "mmproj magic bytes validated at load time (not first inference)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-12-001
-  rule: placeholder
-  prediction: "apr surface for 'Multi-modal vision input LLaVA' matches llama_cpp canonical behavior"
+  rule: image splice produces N_img_tokens embeddings
+  prediction: "vision embeddings occupy exactly 576 (LLaVA-1.5) or 729 (SigLIP) tokens"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-12" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: blocked until --mmproj flag implemented
+    apr run llava-7b.gguf --mmproj llava-vision.gguf --image cat.jpg \
+      --prompt "<image>\nDescribe:" --max-tokens 1 --json | \
+      jq -e '.prompt_tokens.image_token_count == 576'
+  if_fails: "vision token count mismatch — projector output shape incorrect"
+
+- id: FALSIFY-CRUX-C-12-002
+  rule: temp=0 caption parity with llama-llava-cli
+  prediction: "apr caption at temp=0 matches llama-llava-cli golden byte-for-byte"
+  test: |
+    # TODO: capture golden via: llama-llava-cli -m llava-7b.gguf --mmproj llava-vision.gguf --image cat.jpg -p "Describe:" --temp 0 > golden.txt
+    APR_OUT=$(apr run llava-7b.gguf --mmproj llava-vision.gguf --image cat.jpg \
+      --prompt "Describe:" --temperature 0.0 --top-k 1 --max-tokens 64)
+    diff <(echo "$APR_OUT") evidence/crux/llama_cpp/llava/cat-golden.txt
+  if_fails: "caption diverges from llama-llava-cli golden at temp=0"
+
+- id: FALSIFY-CRUX-C-12-003
+  rule: incompatible mmproj rejected
+  prediction: "mmproj with mismatched projection_dim MUST exit non-zero"
+  test: |
+    # TODO: blocked until --mmproj flag; requires deliberately-mismatched test mmproj
+    set +e
+    apr run qwen2-1.5b.gguf --mmproj llava-vision.gguf --image cat.jpg \
+      --prompt "Describe:" 2>err.log
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] && grep -qiE "projection_dim|hidden_size|incompatib" err.log
+  if_fails: "mismatched mmproj silently accepted — will produce garbage output"
+
+- id: FALSIFY-CRUX-C-12-004
+  rule: unsupported image format rejected
+  prediction: "non-image input (e.g. .txt, .mp4) exits non-zero with actionable error"
+  test: |
+    # TODO: blocked until --image flag implemented
+    set +e
+    apr run llava-7b.gguf --mmproj llava-vision.gguf --image README.md \
+      --prompt "?" 2>err.log
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] && grep -qiE "image|format|decode" err.log
+  if_fails: "non-image input silently accepted — likely segfault or garbage"
 
 proof_obligations:
+- type: parity
+  property: "temp=0.0 caption byte-identical to llama-llava-cli on golden image set"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "N_img_tokens ∈ {576, 729}; projection_dim == hidden_size enforced at load"
+- type: invariant
+  property: "image format validated; unsupported formats rejected before inference"
+- type: schema
+  property: "--json output includes .prompt_tokens.image_token_count and .mmproj.sha256"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

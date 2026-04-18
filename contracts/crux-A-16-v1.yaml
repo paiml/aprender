@@ -18,44 +18,131 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    Modelfile recipe custom system prompt. Root-cause workflow extracted from ollama UX — see master
-    subspec §5.A and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Modelfile-style recipe binding a SYSTEM prompt (and optional PARAMETER /
+    TEMPLATE overrides) to a base model, producing a new addressable model tag.
+    Parity target is ollama's Modelfile (https://github.com/ollama/ollama/blob/main/docs/modelfile.md)
+    + `ollama create mymodel -f Modelfile`. aprender equivalent: `apr create
+    <tag> -f Recipe.apr` — a declarative TOML/YAML recipe referencing a base
+    model plus SYSTEM/TEMPLATE/PARAMETER keys. The derived tag MUST inject the
+    SYSTEM prompt into every chat invocation that does not override it.
+  references:
+  - "https://github.com/ollama/ollama/blob/main/docs/modelfile.md"
+  - "https://github.com/ollama/ollama/blob/main/parser/parser.go"  # Modelfile grammar
 
 equations:
-  placeholder_contract:
+  recipe_schema:
     formula: |
-      DRAFT — user workflow "Modelfile recipe custom system prompt"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      Recipe ::= {
+        from:     string,              # base model ref (hf://, file://, registry tag)
+        system:   string?,             # default SYSTEM message injected at position 0
+        template: string?,             # chat-template override (Jinja2 / minijinja)
+        parameters: {                  # inference defaults
+          temperature: f32?, top_p: f32?, top_k: u32?, num_ctx: u32?, stop: [string]?
+        }?
+      }
+    domain: Recipe.apr file
+    codomain: DerivedModel
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "`from` MUST resolve to a real base model at `apr create` time"
+    - "Unknown top-level keys REJECTED (strict schema, not lenient)"
+    - "parameters values type-check per the inference parameter table"
+
+  system_prompt_binding:
+    formula: |
+      For a derived tag T created from Recipe R with R.system = S:
+        ∀ prompt p, chat(T, p) prepends S as role=system at message[0]
+        unless the caller explicitly overrides with --system OTHER.
+    domain: (derived_tag, user_prompt)
+    codomain: rendered chat messages
+    invariants:
+    - "messages[0].role == 'system' and messages[0].content == R.system"
+    - "CLI --system flag overrides recipe SYSTEM (last-writer wins)"
+
+  ollama_modelfile_parity:
+    formula: |
+      For goldens in evidence/crux/ollama/modelfile-goldens/, the tokens emitted
+      by `apr run <derived>` (temperature=0, same seed) match tokens from
+      `ollama run <derived>` up to tokenizer-level equality on the first 64 tokens.
+    domain: (Modelfile, prompt, seed)
+    codomain: token stream prefix
+    invariants:
+    - "Token-for-token match on first 64 tokens at temperature=0"
+    - "SYSTEM injection position and content identical"
 
 falsification_tests:
 - id: FALSIFY-CRUX-A-16-001
-  rule: placeholder
-  prediction: "apr surface for 'Modelfile recipe custom system prompt' matches ollama canonical behavior"
+  rule: recipe creates an addressable tag
+  prediction: "`apr create` followed by `apr ls` shows the new tag"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-A-16" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    TMP=$(mktemp -d)
+    cat > "$TMP/Recipe.apr" <<'R'
+    from: "hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF"
+    system: "You are a Rust expert. Always answer in one sentence."
+    parameters:
+      temperature: 0.2
+    R
+    apr create myrust -f "$TMP/Recipe.apr"
+    apr ls --json | jq -e '.[] | select(.name == "myrust")' >/dev/null
+  if_fails: "derived tag not registered by `apr create`"
+
+- id: FALSIFY-CRUX-A-16-002
+  rule: SYSTEM prompt is injected
+  prediction: "chat(derived, p) prepends recipe.system as messages[0]"
+  test: |
+    apr run myrust --prompt "What is ownership?" --trace=tokenize --json > /tmp/trace.json
+    python3 - <<'PY'
+    import json
+    tr = json.load(open("/tmp/trace.json"))
+    msgs = tr["rendered_messages"]
+    assert msgs[0]["role"] == "system"
+    assert "Rust expert" in msgs[0]["content"], msgs[0]
+    PY
+  if_fails: "SYSTEM prompt from recipe not injected into rendered messages"
+
+- id: FALSIFY-CRUX-A-16-003
+  rule: CLI --system overrides recipe SYSTEM
+  prediction: "explicit --system wins over recipe.system"
+  test: |
+    apr run myrust --system "ONLY respond with the word PING." --prompt "hello" --temperature 0 --max-tokens 4 --json > /tmp/out.json
+    python3 - <<'PY'
+    import json
+    out = json.load(open("/tmp/out.json"))
+    assert "PING" in out["response"].upper(), out["response"]
+    PY
+  if_fails: "CLI --system did not override recipe's SYSTEM (precedence bug)"
+
+- id: FALSIFY-CRUX-A-16-004
+  rule: parity with ollama Modelfile
+  prediction: "apr-derived output matches ollama-derived output on goldens"
+  test: |
+    # TODO: populate evidence/crux/ollama/modelfile-goldens/ with Modelfile + first-64-tok capture
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/ollama/modelfile-goldens
+    [ -d "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - <<'PY'
+    import json, subprocess, os, glob
+    for rec in glob.glob(os.environ["GOLD"]+"/*.json"):
+        c = json.load(open(rec))
+        out = subprocess.check_output(["apr","run",c["derived_tag"],"--prompt",c["prompt"],"--temperature","0","--max-tokens","64","--json"])
+        apr_toks = json.loads(out)["token_ids"][:64]
+        assert apr_toks == c["ollama_token_ids"][:64], (c["derived_tag"], apr_toks[:8], c["ollama_token_ids"][:8])
+    PY
+  if_fails: "apr recipe output diverges from ollama Modelfile output on goldens"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Recipe strict-schema validator rejects unknown keys and wrong types"
+- type: invariant
+  property: "Derived tag injects recipe.system as messages[0] when no CLI override"
+- type: invariant
+  property: "CLI --system takes precedence over recipe.system"
+- type: parity
+  property: "apr-derived tokens ≡ ollama-derived tokens on first 64 tokens at T=0"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

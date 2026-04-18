@@ -1,8 +1,6 @@
 # CRUX-E-12 — BBH/MMLU/HellaSwag per-task
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (spec-complete).
+# Evidence must land before ACTIVE promotion — see master §12.
 
 metadata:
   id: CRUX-E-12
@@ -18,44 +16,109 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    BBH/MMLU/HellaSwag per-task. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.E and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    BBH/MMLU/HellaSwag per-task reporting. Root-cause workflow from huggingface
+    `lm-evaluation-harness` — emits accuracy per sub-task (BBH has 23, MMLU has 57)
+    plus macro average. aprender equivalent:
+    `apr eval --benchmark {mmlu,bbh,hellaswag} --per-task --json`.
+  references:
+  - "https://github.com/EleutherAI/lm-evaluation-harness"
+  - "https://arxiv.org/abs/2210.09261  # BBH"
+  - "https://arxiv.org/abs/2009.03300  # MMLU"
+  - "https://arxiv.org/abs/1905.07830  # HellaSwag"
 
 equations:
-  placeholder_contract:
+  per_task_schema:
     formula: |
-      DRAFT — user workflow "BBH/MMLU/HellaSwag per-task"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr eval --benchmark mmlu --per-task --json emits:
+        overall_acc: f64 ∈ [0.0, 1.0]
+        per_task: map<task_name, {acc: f64, acc_stderr: f64, n: u64}>
+        num_tasks: u64  # 57 for MMLU, 23 for BBH-hard, 1 for HellaSwag
+        total_examples: u64 == sum(per_task[*].n)
+    domain: (model, benchmark_name)
+    codomain: JSON object
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "num_tasks == 57 for MMLU, 23 for BBH-hard, 1 for HellaSwag"
+    - "overall_acc == weighted_mean(per_task.acc, weights=per_task.n) ± 1e-6"
+    - "acc_stderr == sqrt(acc * (1-acc) / n) within 1%"
+
+  harness_prompt_parity:
+    formula: |
+      For each task, the exact prompt string used MUST match
+      lm-evaluation-harness v0.4+ reference (few-shot examples, instruction format).
+    domain: task name ∈ benchmark
+    codomain: prompt string (sha256)
+    invariants:
+    - "Prompt sha256 matches harness golden for default n-shot setting"
+    - "MMLU: 5-shot, BBH: 3-shot CoT, HellaSwag: 0-shot"
+
+  acc_range_guard:
+    formula: |
+      For every task, per_task[task].acc ∈ [random_baseline(task), 1.0]
+      where random_baseline(mmlu) = 0.25, random_baseline(hellaswag) = 0.25,
+      random_baseline(bbh) varies per task (typically 0.25-0.5).
+    domain: task accuracy
+    codomain: bool
+    invariants:
+    - "No task should score below its random baseline − 2σ"
+    - "Accuracy in [0, 1] (never NaN, never negative)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-12-001
-  rule: placeholder
-  prediction: "apr surface for 'BBH/MMLU/HellaSwag per-task' matches huggingface canonical behavior"
+  rule: per-task schema emitted
+  prediction: "apr eval --benchmark mmlu --per-task --json has all 57 tasks"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-E-12" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: requires lm-eval-harness integration (crux-crux-e-12)
+    apr eval --benchmark mmlu --per-task --json --model teacher.apr > /tmp/mmlu.json
+    jq '.num_tasks == 57 and (.per_task | length == 57)' /tmp/mmlu.json | grep -q true
+  if_fails: "MMLU sub-task count != 57 — schema incomplete"
+
+- id: FALSIFY-CRUX-E-12-002
+  rule: overall_acc = weighted mean
+  prediction: "overall_acc equals sample-weighted mean of per_task.acc"
+  test: |
+    apr eval --benchmark mmlu --per-task --json > /tmp/mmlu.json
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/mmlu.json'))
+    w = sum(t['acc']*t['n'] for t in d['per_task'].values())
+    n = sum(t['n'] for t in d['per_task'].values())
+    assert abs(d['overall_acc'] - w/n) < 1e-6, f'{d[\"overall_acc\"]} vs {w/n}'
+    "
+  if_fails: "overall_acc not consistent with per_task weighted mean"
+
+- id: FALSIFY-CRUX-E-12-003
+  rule: harness prompt parity (MMLU 5-shot)
+  prediction: "apr-emitted MMLU prompt sha256 matches lm-eval-harness reference"
+  test: |
+    # TODO: requires --emit-prompt-hashes flag and golden sha256 table
+    apr eval --benchmark mmlu --emit-prompt-hashes --json > /tmp/hashes.json
+    diff <(jq -S '.prompt_hashes' /tmp/hashes.json) \
+         <(jq -S . evidence/crux/huggingface/mmlu_prompt_hashes.json)
+  if_fails: "apr prompts diverge from lm-eval-harness reference"
+
+- id: FALSIFY-CRUX-E-12-004
+  rule: accuracy above random baseline
+  prediction: "every MMLU sub-task scores >= 0.20 (random 0.25 − 2σ)"
+  test: |
+    apr eval --benchmark mmlu --per-task --json > /tmp/mmlu.json
+    jq '.per_task | to_entries | map(select(.value.acc < 0.20)) | length == 0' /tmp/mmlu.json | grep -q true
+  if_fails: "at least one task scores below random − 2σ (suggests harness bug)"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "per-task JSON contains correct num_tasks per benchmark (57/23/1)"
+- type: invariant
+  property: "overall_acc = sample-weighted mean of per_task.acc"
+- type: parity
+  property: "apr eval accuracy matches lm-evaluation-harness within ±0.5pp on a golden checkpoint"
+- type: invariant
+  property: "prompt hashes match upstream harness golden for documented n-shot"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

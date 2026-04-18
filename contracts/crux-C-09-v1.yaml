@@ -18,44 +18,114 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    Speculative decoding draft model. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Speculative decoding with a small draft model to accelerate decoding of
+    a larger target model. vLLM exposes this via `--speculative-model` and
+    `--num-speculative-tokens` flags (SpecDecodeWorker, see vLLM docs
+    "Speculative Decoding"). Map to `apr serve --draft-model <path>
+    --spec-tokens N` producing identical token output as the non-spec path
+    (within sampling noise at temp=0) with measurable tok/s uplift.
+  references:
+  - "https://docs.vllm.ai/en/latest/models/spec_decode.html"
+  - "Leviathan et al. 2022 — 'Fast Inference from Transformers via Speculative Decoding'"
 
 equations:
-  placeholder_contract:
+  speculative_decoding_parity:
     formula: |
-      DRAFT — user workflow "Speculative decoding draft model"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      ∀ prompt p, temperature=0.0:
+        decode(target, p) ≡ decode(target + draft, p)
+      i.e. speculative path MUST produce byte-identical tokens to
+      target-only path at greedy sampling.
+    domain: (target_model, draft_model, prompt, temp=0.0)
+    codomain: token sequence
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "temp=0.0 top_k=1: speculative output == non-speculative output (exact match)"
+    - "draft model vocab MUST be subset of target vocab"
+    - "spec_tokens ∈ [1, 16]; K=5 is vllm default"
+
+  speculative_throughput_uplift:
+    formula: |
+      tok/s(target + draft, K) >= tok/s(target) * (1 + alpha)
+      where alpha >= 0.3 for code/math workloads, K=5
+    domain: (prompt_workload, K)
+    codomain: tok/s ratio
+    invariants:
+    - "uplift alpha >= 0.3 on deterministic workloads"
+    - "acceptance_rate ∈ [0.0, 1.0] reported in --json output"
+    - "no uplift allowed to be a regression (alpha >= 0 floor)"
+
+  draft_model_compatibility:
+    formula: |
+      draft.tokenizer.sha256 == target.tokenizer.sha256 AND
+      draft.vocab_size == target.vocab_size
+    domain: (draft_model, target_model)
+    codomain: bool
+    invariants:
+    - "mismatched tokenizers MUST fail fast with actionable error"
+    - "vocab mismatch MUST be rejected before first decode step"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-09-001
-  rule: placeholder
-  prediction: "apr surface for 'Speculative decoding draft model' matches vllm canonical behavior"
+  rule: speculative parity at temp=0
+  prediction: "apr serve --draft-model produces identical tokens to non-spec path"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-09" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: requires apr --draft-model flag (not yet implemented)
+    BASE=$(apr run target.gguf --prompt "def fibonacci(n):" --max-tokens 64 \
+      --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
+    SPEC=$(apr run target.gguf --draft-model draft.gguf --spec-tokens 5 \
+      --prompt "def fibonacci(n):" --max-tokens 64 --temperature 0.0 --top-k 1 \
+      --json | jq -r '.tokens | join(",")')
+    [ "$BASE" = "$SPEC" ]
+  if_fails: "speculative path diverges from target-only at temp=0 — sampling bug"
+
+- id: FALSIFY-CRUX-C-09-002
+  rule: throughput uplift
+  prediction: "K=5 spec decoding delivers >=30% tok/s uplift on code workload"
+  test: |
+    # TODO: blocked until --draft-model wired; smoke via external harness
+    BASE_TPS=$(apr bench target.gguf --prompt-file code-bench.txt \
+      --max-tokens 128 --json | jq '.tokens_per_sec')
+    SPEC_TPS=$(apr bench target.gguf --draft-model draft.gguf --spec-tokens 5 \
+      --prompt-file code-bench.txt --max-tokens 128 --json | jq '.tokens_per_sec')
+    python3 -c "import sys; sys.exit(0 if $SPEC_TPS / $BASE_TPS >= 1.30 else 1)"
+  if_fails: "speculative decoding failed to deliver >=30% tok/s uplift vs baseline"
+
+- id: FALSIFY-CRUX-C-09-003
+  rule: tokenizer mismatch rejected
+  prediction: "draft+target with different tokenizers MUST exit non-zero with clear error"
+  test: |
+    # TODO: blocked until --draft-model flag implemented
+    set +e
+    apr run target-qwen.gguf --draft-model draft-llama.gguf --prompt "hi" 2>err.log
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] && grep -qi "tokenizer" err.log
+  if_fails: "tokenizer mismatch silently accepted — will produce garbage tokens"
+
+- id: FALSIFY-CRUX-C-09-004
+  rule: acceptance_rate reported
+  prediction: "--json output includes speculative.acceptance_rate ∈ [0,1]"
+  test: |
+    # TODO: blocked until --draft-model + --json schema extended
+    apr run target.gguf --draft-model draft.gguf --spec-tokens 5 \
+      --prompt "hello" --max-tokens 32 --json | \
+      jq -e '.speculative.acceptance_rate >= 0 and .speculative.acceptance_rate <= 1'
+  if_fails: "acceptance_rate missing or out of [0,1] range in JSON schema"
 
 proof_obligations:
+- type: parity
+  property: "temp=0.0 top_k=1 speculative output ≡ non-speculative output (byte-identical token IDs)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "spec_tokens ∈ [1,16]; tokenizer+vocab match enforced before decode"
+- type: performance
+  property: "K=5 delivers tok/s uplift alpha >= 0.3 on code/math workloads"
+- type: schema
+  property: "--json output includes speculative.{acceptance_rate, num_accepted, num_proposed}"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

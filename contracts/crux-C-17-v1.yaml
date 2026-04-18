@@ -18,44 +18,129 @@ metadata:
   demand_score: 4  # 1..5, high priority in pmat work
   intake_status: missing
   description: >
-    Multi-LoRA serving N adapters. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Multi-LoRA serving — batched inference where concurrent requests each
+    select one of N loaded adapters, served efficiently via Segmented
+    Gather Matrix-Vector (S-LoRA / Punica). vLLM via `--enable-lora
+    --max-loras N --max-lora-rank R --lora-modules name=path ...` supports
+    up to N=128 simultaneously loaded adapters. Map to `apr serve
+    --enable-lora --lora name=path ...` with per-request
+    X-LoRA-Adapter selection and correct batched output.
+  references:
+  - "https://docs.vllm.ai/en/latest/models/lora.html#serving-with-multiple-loras"
+  - "Sheng et al. 2023 — 'S-LoRA: Serving Thousands of Concurrent LoRA Adapters'"
 
 equations:
-  placeholder_contract:
+  batched_multi_lora_correctness:
     formula: |
-      DRAFT — user workflow "Multi-LoRA serving N adapters"
-      must produce observable parity with vllm's canonical verb
-      on the golden input defined in evidence/crux/vllm/.
-    domain: user invocation
-    codomain: apr CLI output
+      For a batch B = [(p_i, adapter_i)] with N distinct adapters:
+        ∀ i: output_batched[i] ≡ output_serial(p_i, adapter_i) at temp=0
+      (Punica S-LoRA kernel must produce identical per-request outputs
+       to single-adapter serial decoding.)
+    domain: (base_model, {A_1..A_N}, batch)
+    codomain: per-request token sequences
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "batched output per request ≡ serial single-adapter output"
+    - "requests with adapter=None use base model (no LoRA applied)"
+    - "adapter ordering within batch MUST NOT affect per-request output"
+
+  multi_lora_throughput:
+    formula: |
+      tok/s(N adapters, batch=B) >= 0.8 * tok/s(base, batch=B)
+      for N <= max_loras, R <= 64
+    domain: (base_model, N, batch_size, rank)
+    codomain: throughput ratio
+    invariants:
+    - "N=8 adapters in concurrent batch: throughput >= 80% of base-only batch"
+    - "throughput degradation MUST be sublinear in N (not O(N))"
+
+  max_loras_bound:
+    formula: |
+      0 <= len(loaded_adapters) <= max_loras
+      AND requesting unloaded adapter ⇒ HTTP 404 with adapter_name in error
+    domain: (server_state, request)
+    codomain: "(state_valid: bool, response)"
+    invariants:
+    - "load request beyond max_loras returns HTTP 429 or 503"
+    - "unknown adapter name returns HTTP 404 with actionable error"
+    - "total GPU memory used <= base_footprint + N * adapter_footprint"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-17-001
-  rule: placeholder
-  prediction: "apr surface for 'Multi-LoRA serving N adapters' matches vllm canonical behavior"
+  rule: batched output ≡ serial output per request
+  prediction: "batch with {A1,A2,A3} produces per-request outputs matching serial"
   test: |
-    # TBD — collect vllm transcript in evidence/crux/vllm/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-17" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    # TODO: blocked until apr serve --enable-lora + batched multi-LoRA
+    apr serve base.gguf --enable-lora --lora a1=ad1.gguf --lora a2=ad2.gguf --lora a3=ad3.gguf --port 18080 &
+    sleep 5
+    # Serial baseline
+    S1=$(curl -sX POST localhost:18080/v1/completions -H 'X-LoRA-Adapter: a1' -d '{"prompt":"q1","max_tokens":16,"temperature":0.0,"top_k":1}' | jq -r '.choices[0].token_ids | join(",")')
+    S2=$(curl -sX POST localhost:18080/v1/completions -H 'X-LoRA-Adapter: a2' -d '{"prompt":"q2","max_tokens":16,"temperature":0.0,"top_k":1}' | jq -r '.choices[0].token_ids | join(",")')
+    S3=$(curl -sX POST localhost:18080/v1/completions -H 'X-LoRA-Adapter: a3' -d '{"prompt":"q3","max_tokens":16,"temperature":0.0,"top_k":1}' | jq -r '.choices[0].token_ids | join(",")')
+    # Concurrent batch (all 3 hit in flight)
+    (curl -sX POST localhost:18080/v1/completions -H 'X-LoRA-Adapter: a1' -d '{"prompt":"q1","max_tokens":16,"temperature":0.0,"top_k":1}' > r1.json) &
+    (curl -sX POST localhost:18080/v1/completions -H 'X-LoRA-Adapter: a2' -d '{"prompt":"q2","max_tokens":16,"temperature":0.0,"top_k":1}' > r2.json) &
+    (curl -sX POST localhost:18080/v1/completions -H 'X-LoRA-Adapter: a3' -d '{"prompt":"q3","max_tokens":16,"temperature":0.0,"top_k":1}' > r3.json) &
+    wait
+    kill %1
+    B1=$(jq -r '.choices[0].token_ids | join(",")' r1.json)
+    B2=$(jq -r '.choices[0].token_ids | join(",")' r2.json)
+    B3=$(jq -r '.choices[0].token_ids | join(",")' r3.json)
+    [ "$S1" = "$B1" ] && [ "$S2" = "$B2" ] && [ "$S3" = "$B3" ]
+  if_fails: "batched multi-LoRA cross-contamination — S-LoRA/Punica kernel bug"
+
+- id: FALSIFY-CRUX-C-17-002
+  rule: throughput degradation sublinear in N
+  prediction: "N=8 concurrent LoRA batch >= 80% of base-only batch throughput"
+  test: |
+    # TODO: blocked until multi-LoRA batching
+    BASE_TPS=$(apr bench base.gguf --batch-size 8 --json | jq '.tokens_per_sec')
+    MULTI_TPS=$(apr bench base.gguf --enable-lora --loras 8 --batch-size 8 --json | jq '.tokens_per_sec')
+    python3 -c "import sys; sys.exit(0 if $MULTI_TPS / $BASE_TPS >= 0.8 else 1)"
+  if_fails: "multi-LoRA throughput degradation exceeds 20%"
+
+- id: FALSIFY-CRUX-C-17-003
+  rule: unknown adapter returns HTTP 404
+  prediction: "request with X-LoRA-Adapter: missing returns HTTP 404"
+  test: |
+    # TODO: blocked until multi-LoRA endpoints
+    apr serve base.gguf --enable-lora --lora a1=ad1.gguf --port 18080 &
+    sleep 5
+    STATUS=$(curl -sw "%{http_code}" -o /dev/null -X POST localhost:18080/v1/completions \
+      -H 'X-LoRA-Adapter: nonexistent' -d '{"prompt":"hi"}')
+    kill %1
+    [ "$STATUS" = "404" ]
+  if_fails: "unknown LoRA adapter accepted (silently falls back to base or 500)"
+
+- id: FALSIFY-CRUX-C-17-004
+  rule: max_loras bound enforced
+  prediction: "loading adapter N+1 when max_loras=N returns HTTP 429/503"
+  test: |
+    # TODO: blocked until /v1/lora/load + max_loras flag
+    apr serve base.gguf --enable-lora --max-loras 2 --port 18080 &
+    sleep 5
+    curl -sX POST localhost:18080/v1/lora/load -d '{"adapter_name":"a1","lora_path":"ad.gguf"}'
+    curl -sX POST localhost:18080/v1/lora/load -d '{"adapter_name":"a2","lora_path":"ad.gguf"}'
+    STATUS=$(curl -sw "%{http_code}" -o /dev/null -X POST localhost:18080/v1/lora/load \
+      -d '{"adapter_name":"a3","lora_path":"ad.gguf"}')
+    kill %1
+    [ "$STATUS" = "429" ] || [ "$STATUS" = "503" ]
+  if_fails: "max_loras bound not enforced — OOM risk when capacity exceeded"
 
 proof_obligations:
+- type: parity
+  property: "batched multi-LoRA per-request output ≡ serial single-adapter output at temp=0"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "max_loras bound enforced; unknown adapter → HTTP 404"
+- type: performance
+  property: "N=8 multi-LoRA throughput >= 80% of base-only batched throughput"
+- type: isolation
+  property: "adapter ordering within batch MUST NOT affect per-request output (no cross-contamination)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
