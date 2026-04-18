@@ -53,42 +53,39 @@ pub fn enforce_import_contract(
     _hidden_dim: usize,
 ) -> (Vec<usize>, bool) {
     let layout = contract();
-
-    // Check if tensor is in contract - try BOTH GGUF and APR name patterns
-    // This handles cases where names have already been mapped by Architecture::map_name()
     let tc = layout
         .get_gguf_contract(tensor_name)
         .or_else(|| layout.get_apr_contract(tensor_name));
 
-    if let Some(tc) = tc {
-        // Validate shape dimensions
-        let apr_shape = if tc.should_transpose && input_shape.len() == 2 {
-            // SHAPE REVERSAL ONLY - no data transpose needed
-            // GGUF [ne0, ne1] → APR [ne1, ne0]
-            vec![input_shape[1], input_shape[0]]
-        } else {
-            input_shape.to_vec()
-        };
+    let apr_shape = match tc {
+        Some(tc) => known_tensor_apr_shape(input_shape, tc.should_transpose),
+        None => unknown_tensor_apr_shape(input_shape),
+    };
 
-        // CRITICAL: Data transpose is NEVER needed for GGUF import
-        // GGUF data layout data[i0 + i1*ne0] for shape [ne0, ne1] is:
-        //   - i0 is the contiguous (inner) dimension
-        //   - i1 is the strided (outer) dimension
-        // This is IDENTICAL to row-major [ne1, ne0] layout.
-        // Data transpose is never correct here — the layout is already row-major.
-        let needs_data_transpose = false;
+    // CRITICAL: Data transpose is NEVER needed for GGUF import.
+    // GGUF data[i0 + i1*ne0] for [ne0, ne1] IS row-major [ne1, ne0].
+    (apr_shape, false)
+}
 
-        (apr_shape, needs_data_transpose)
+/// Shape rule for tensors present in the layout contract. For 2D tensors
+/// whose contract entry requests transpose, reverse `[ne0, ne1]` to
+/// `[ne1, ne0]` (metadata only — the data bytes are already row-major).
+fn known_tensor_apr_shape(input_shape: &[usize], should_transpose: bool) -> Vec<usize> {
+    if should_transpose && input_shape.len() == 2 {
+        vec![input_shape[1], input_shape[0]]
     } else {
-        // Unknown tensor - could be a bias or model-specific tensor
-        // For 2D tensors, still apply shape reversal for consistency
-        // (GGML shape convention → standard row-major)
-        let apr_shape = if input_shape.len() == 2 {
-            vec![input_shape[1], input_shape[0]]
-        } else {
-            input_shape.to_vec()
-        };
-        (apr_shape, false)
+        input_shape.to_vec()
+    }
+}
+
+/// Shape rule for tensors absent from the contract (biases, model-specific
+/// tensors). 2D tensors still get shape reversal to match GGML → row-major
+/// convention; 1D tensors pass through unchanged.
+fn unknown_tensor_apr_shape(input_shape: &[usize]) -> Vec<usize> {
+    if input_shape.len() == 2 {
+        vec![input_shape[1], input_shape[0]]
+    } else {
+        input_shape.to_vec()
     }
 }
 

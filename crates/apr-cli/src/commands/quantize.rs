@@ -15,8 +15,10 @@
 
 use crate::error::{CliError, Result};
 use crate::output;
-use aprender::format::{apr_convert, ConvertOptions, QuantizationType};
-use humansize::{format_size, BINARY};
+use aprender::format::{
+    ConvertOptions, QuantizationType, apr_convert, streaming_quantize_peak_estimate,
+};
+use humansize::{BINARY, format_size};
 use std::path::Path;
 
 /// Quantization scheme selection
@@ -264,6 +266,20 @@ fn run_plan(
     let (input_size, output_size, reduction) = estimate_memory(file_size, scheme);
     let output_format = format.unwrap_or("apr");
 
+    // GH-434 / ALB-093: Large APR+Q4K uses the streaming path — peak is bounded
+    // by the largest tensor (F32 dequant + Q4K output), not input + output.
+    let streaming_peak = if matches!(scheme, QuantScheme::Q4K) {
+        streaming_quantize_peak_estimate(file)
+    } else {
+        None
+    };
+    let peak_memory = streaming_peak.unwrap_or(input_size + output_size);
+    let path_mode = if streaming_peak.is_some() {
+        "streaming"
+    } else {
+        "full-load"
+    };
+
     if json_output {
         let json = serde_json::json!({
             "plan": true,
@@ -273,7 +289,8 @@ fn run_plan(
             "reduction_ratio": reduction,
             "scheme": format!("{scheme:?}"),
             "output_format": output_format,
-            "peak_memory_estimate": input_size + output_size,
+            "peak_memory_estimate": peak_memory,
+            "path": path_mode,
         });
         println!(
             "{}",
@@ -290,7 +307,8 @@ fn run_plan(
                 ("Output format", output_format.to_string()),
                 ("Estimated output", format_size(output_size, BINARY)),
                 ("Reduction", format!("{reduction:.2}x")),
-                ("Peak memory", format_size(input_size + output_size, BINARY),),
+                ("Peak memory", format_size(peak_memory, BINARY)),
+                ("Path", path_mode.to_string()),
             ])
         );
         println!();
@@ -524,7 +542,7 @@ fn quantize_to_gguf(
     json_output: bool,
 ) -> Result<()> {
     // GGUF export uses the export pipeline with quantization
-    use aprender::format::{apr_export, ExportFormat, ExportOptions};
+    use aprender::format::{ExportFormat, ExportOptions, apr_export};
 
     if !json_output {
         output::pipeline_stage("Quantizing to GGUF", output::StageStatus::Running);

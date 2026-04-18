@@ -1,0 +1,49 @@
+[package]
+name = "aprender-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Model Context Protocol (MCP) server for aprender — exposes apr CLI as MCP tools"
+keywords = ["mcp", "llm", "inference", "aprender", "claude"]
+categories = ["command-line-utilities", "science"]
+readme = "README.md"
+
+[lib]
+name = "aprender_mcp"
+path = "src/lib.rs"
+
+[features]
+default = ["native"]
+native = ["dep:anyhow"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true, optional = true }
+# FALSIFY-MCP-006: SIGTERM/SIGKILL for cancelling in-flight `apr.run` subprocesses.
+# nix 0.29 is already in the workspace lockfile (pulled in by other crates).
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", default-features = false, features = ["signal"] }
+
+[build-dependencies]
+# FALSIFY-MCP-008: build.rs reads contracts/apr-mcp-tool-schemas-v1.yaml at
+# compile time and codegens per-tool JSON Schema string constants. Using the
+# same workspace serde_yaml 0.9 the contracts crate uses (already in lockfile).
+serde_yaml = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+# Test-only: validate every tool's inputSchema against JSON Schema Draft 7
+# (FALSIFY-MCP-002). Same major as aprender-train uses, so already in lockfile.
+jsonschema = "0.28"
+# FALSIFY-MCP-008 harness reads the YAML contract directly to assert byte
+# identity between codegen output and live tools/list schemas.
+serde_yaml = { workspace = true }
+
+[lints]
+workspace = true

@@ -156,8 +156,21 @@ pub fn verify_contract(contract: &PerformanceContract) -> ContractVerification {
         failed: Vec::new(),
         skipped: Vec::new(),
     };
+    validate_contract_metadata(contract, &mut result);
+    for (i, bound) in contract.bounds.iter().enumerate() {
+        verify_single_bound(contract, bound, i, &mut result);
+    }
+    for check in &contract.falsification {
+        verify_single_falsification(contract, check, &mut result);
+    }
+    result
+}
 
-    // Validate structure
+/// Check the contract has the required `kind` field and record `kernel` if present.
+fn validate_contract_metadata(
+    contract: &PerformanceContract,
+    result: &mut ContractVerification,
+) {
     if contract.kind.is_empty() {
         result
             .failed
@@ -165,7 +178,6 @@ pub fn verify_contract(contract: &PerformanceContract) -> ContractVerification {
     } else {
         result.passed.push(format!("kind: {}", contract.kind));
     }
-
     if contract.kernel.is_empty() {
         result
             .skipped
@@ -173,131 +185,173 @@ pub fn verify_contract(contract: &PerformanceContract) -> ContractVerification {
     } else {
         result.passed.push(format!("kernel: {}", contract.kernel));
     }
+}
 
-    // Check bounds against saved profiles
-    for (i, bound) in contract.bounds.iter().enumerate() {
-        if bound.size.is_empty() {
-            // Domain-specific bounds without size — structural pass
-            result
-                .passed
-                .push(format!("Bound {i}: structural (no size)"));
-            continue;
-        }
-
-        let size = bound.size[0];
-        let profile_path = format!("/tmp/cgp-{}-{size}.json", contract.kernel);
-        let profile = std::path::Path::new(&profile_path)
-            .exists()
-            .then(|| crate::metrics::export::load_json(std::path::Path::new(&profile_path)).ok())
-            .flatten();
-
-        match profile {
-            Some(p) => {
-                // Check max_time_us
-                if let Some(max_time) = bound.max_time_us {
-                    if p.timing.wall_clock_time_us <= max_time {
-                        result.passed.push(format!(
-                            "Bound {i}: time {:.1}us <= {max_time:.1}us",
-                            p.timing.wall_clock_time_us
-                        ));
-                    } else {
-                        result.failed.push(format!(
-                            "Bound {i}: time {:.1}us > {max_time:.1}us EXCEEDED",
-                            p.timing.wall_clock_time_us
-                        ));
-                    }
-                }
-                // Check min_tflops
-                if let Some(min_tflops) = bound.min_tflops {
-                    if p.throughput.tflops >= min_tflops {
-                        result.passed.push(format!(
-                            "Bound {i}: {:.1} TFLOP/s >= {min_tflops:.1}",
-                            p.throughput.tflops
-                        ));
-                    } else {
-                        result.failed.push(format!(
-                            "Bound {i}: {:.1} TFLOP/s < {min_tflops:.1} BELOW MINIMUM",
-                            p.throughput.tflops
-                        ));
-                    }
-                }
-                // Check min_bandwidth_gbps
-                if let Some(min_bw) = bound.min_bandwidth_gbps {
-                    if p.throughput.bandwidth_gbps >= min_bw {
-                        result.passed.push(format!(
-                            "Bound {i}: {:.1} GB/s >= {min_bw:.1}",
-                            p.throughput.bandwidth_gbps
-                        ));
-                    } else {
-                        result.failed.push(format!(
-                            "Bound {i}: {:.1} GB/s < {min_bw:.1} BELOW MINIMUM",
-                            p.throughput.bandwidth_gbps
-                        ));
-                    }
-                }
-            }
-            None => {
-                // No profile available — validate structure only
-                result
-                    .passed
-                    .push(format!("Bound {i}: size {:?}", bound.size));
-                if bound.max_time_us.is_none()
-                    && bound.min_tflops.is_none()
-                    && bound.min_bandwidth_gbps.is_none()
-                {
-                    result
-                        .skipped
-                        .push(format!("Bound {i}: no criteria specified"));
-                }
-            }
-        }
+/// Verify one `PerformanceBound`: structural pass if no size, else compare to profile data.
+fn verify_single_bound(
+    contract: &PerformanceContract,
+    bound: &PerformanceBound,
+    i: usize,
+    result: &mut ContractVerification,
+) {
+    if bound.size.is_empty() {
+        result
+            .passed
+            .push(format!("Bound {i}: structural (no size)"));
+        return;
     }
+    let size = bound.size[0];
+    match load_kernel_profile(&contract.kernel, size) {
+        Some(p) => check_bound_thresholds(bound, i, &p, result),
+        None => check_bound_structural(bound, i, result),
+    }
+}
 
-    // Evaluate falsification checks against profile data
-    for check in &contract.falsification {
-        if check.name.is_empty() || check.check.is_empty() {
-            result.failed.push(format!(
-                "Falsification '{}': missing name or check",
-                check.name
-            ));
-            continue;
-        }
+/// Load `/tmp/cgp-{kernel}-{size}.json` profile if present and parseable.
+fn load_kernel_profile(kernel: &str, size: u32) -> Option<crate::metrics::catalog::FullProfile> {
+    let profile_path = format!("/tmp/cgp-{kernel}-{size}.json");
+    let path = std::path::Path::new(&profile_path);
+    if !path.exists() {
+        return None;
+    }
+    crate::metrics::export::load_json(path).ok()
+}
 
-        // Try to find a profile and evaluate the check expression
-        let size = contract
-            .bounds
-            .first()
-            .and_then(|b| b.size.first())
-            .copied()
-            .unwrap_or(512);
-        let profile_path = format!("/tmp/cgp-{}-{size}.json", contract.kernel);
-        let profile = std::path::Path::new(&profile_path)
-            .exists()
-            .then(|| crate::metrics::export::load_json(std::path::Path::new(&profile_path)).ok())
-            .flatten();
+/// Run each individual threshold check present on the bound.
+fn check_bound_thresholds(
+    bound: &PerformanceBound,
+    i: usize,
+    p: &crate::metrics::catalog::FullProfile,
+    result: &mut ContractVerification,
+) {
+    check_max_time(bound, i, p, result);
+    check_min_tflops(bound, i, p, result);
+    check_min_bandwidth(bound, i, p, result);
+}
 
-        match profile {
-            Some(p) => {
-                let pass = evaluate_check(&check.check, &p);
-                if pass {
-                    result.passed.push(format!("FALSIFY {}: PASS", check.name));
-                } else {
-                    result.failed.push(format!(
-                        "FALSIFY {}: FAIL ({})",
-                        check.name, check.description
-                    ));
-                }
-            }
-            None => {
-                result.skipped.push(format!(
-                    "FALSIFY {}: {} (no profile at {profile_path})",
+/// Compare `wall_clock_time_us` to `bound.max_time_us` (lower is better).
+fn check_max_time(
+    bound: &PerformanceBound,
+    i: usize,
+    p: &crate::metrics::catalog::FullProfile,
+    result: &mut ContractVerification,
+) {
+    let Some(max_time) = bound.max_time_us else {
+        return;
+    };
+    let actual = p.timing.wall_clock_time_us;
+    if actual <= max_time {
+        result
+            .passed
+            .push(format!("Bound {i}: time {actual:.1}us <= {max_time:.1}us"));
+    } else {
+        result.failed.push(format!(
+            "Bound {i}: time {actual:.1}us > {max_time:.1}us EXCEEDED"
+        ));
+    }
+}
+
+/// Compare measured TFLOP/s to `bound.min_tflops` (higher is better).
+fn check_min_tflops(
+    bound: &PerformanceBound,
+    i: usize,
+    p: &crate::metrics::catalog::FullProfile,
+    result: &mut ContractVerification,
+) {
+    let Some(min_tflops) = bound.min_tflops else {
+        return;
+    };
+    let actual = p.throughput.tflops;
+    if actual >= min_tflops {
+        result
+            .passed
+            .push(format!("Bound {i}: {actual:.1} TFLOP/s >= {min_tflops:.1}"));
+    } else {
+        result.failed.push(format!(
+            "Bound {i}: {actual:.1} TFLOP/s < {min_tflops:.1} BELOW MINIMUM"
+        ));
+    }
+}
+
+/// Compare measured GB/s to `bound.min_bandwidth_gbps` (higher is better).
+fn check_min_bandwidth(
+    bound: &PerformanceBound,
+    i: usize,
+    p: &crate::metrics::catalog::FullProfile,
+    result: &mut ContractVerification,
+) {
+    let Some(min_bw) = bound.min_bandwidth_gbps else {
+        return;
+    };
+    let actual = p.throughput.bandwidth_gbps;
+    if actual >= min_bw {
+        result
+            .passed
+            .push(format!("Bound {i}: {actual:.1} GB/s >= {min_bw:.1}"));
+    } else {
+        result.failed.push(format!(
+            "Bound {i}: {actual:.1} GB/s < {min_bw:.1} BELOW MINIMUM"
+        ));
+    }
+}
+
+/// No profile found: record the bound structurally and flag empty-criteria bounds.
+fn check_bound_structural(
+    bound: &PerformanceBound,
+    i: usize,
+    result: &mut ContractVerification,
+) {
+    result
+        .passed
+        .push(format!("Bound {i}: size {:?}", bound.size));
+    if bound.max_time_us.is_none()
+        && bound.min_tflops.is_none()
+        && bound.min_bandwidth_gbps.is_none()
+    {
+        result
+            .skipped
+            .push(format!("Bound {i}: no criteria specified"));
+    }
+}
+
+/// Verify one falsification clause: validate fields, then evaluate against a profile.
+fn verify_single_falsification(
+    contract: &PerformanceContract,
+    check: &FalsificationCheck,
+    result: &mut ContractVerification,
+) {
+    if check.name.is_empty() || check.check.is_empty() {
+        result.failed.push(format!(
+            "Falsification '{}': missing name or check",
+            check.name
+        ));
+        return;
+    }
+    let size = contract
+        .bounds
+        .first()
+        .and_then(|b| b.size.first())
+        .copied()
+        .unwrap_or(512);
+    let profile_path = format!("/tmp/cgp-{}-{size}.json", contract.kernel);
+    match load_kernel_profile(&contract.kernel, size) {
+        Some(p) => {
+            if evaluate_check(&check.check, &p) {
+                result.passed.push(format!("FALSIFY {}: PASS", check.name));
+            } else {
+                result.failed.push(format!(
+                    "FALSIFY {}: FAIL ({})",
                     check.name, check.description
                 ));
             }
         }
+        None => {
+            result.skipped.push(format!(
+                "FALSIFY {}: {} (no profile at {profile_path})",
+                check.name, check.description
+            ));
+        }
     }
-
-    result
 }
 
 /// Evaluate a simple check expression against a profile.
@@ -351,53 +405,82 @@ pub fn run_verify(
     self_verify: bool,
     fail_on_regression: bool,
 ) -> Result<()> {
-    let contracts = if let Some(dir) = contracts_dir {
-        load_contracts_dir(Path::new(dir))?
-    } else if let Some(file) = contract_file {
-        vec![load_contract(Path::new(file))?]
-    } else if self_verify {
-        let dir = Path::new("contracts/cgp");
-        if dir.exists() {
-            load_contracts_dir(dir)?
-        } else {
-            println!("No contracts found at contracts/cgp/");
-            return Ok(());
-        }
-    } else {
-        anyhow::bail!("Specify --contracts-dir, --contract, or --self");
+    let Some(contracts) = resolve_contracts_input(contracts_dir, contract_file, self_verify)?
+    else {
+        return Ok(());
     };
 
     println!("\n=== cgp Contract Verification ===\n");
-    let mut total_pass = 0;
-    let mut total_fail = 0;
-    let mut total_skip = 0;
-
-    for c in &contracts {
-        let result = verify_contract(c);
-        let status = if result.is_pass() {
-            "\x1b[32mPASS\x1b[0m"
-        } else {
-            "\x1b[31mFAIL\x1b[0m"
-        };
-        println!(
-            "  {} {} ({} pass, {} fail, {} skip)",
-            status,
-            c.name,
-            result.passed.len(),
-            result.failed.len(),
-            result.skipped.len()
-        );
-        total_pass += result.passed.len();
-        total_fail += result.failed.len();
-        total_skip += result.skipped.len();
-    }
-
-    println!("\n  Total: {total_pass} pass, {total_fail} fail, {total_skip} skip");
-    if total_fail > 0 && fail_on_regression {
-        anyhow::bail!("{total_fail} contract verification(s) failed");
+    let totals = run_verify_all(&contracts);
+    println!(
+        "\n  Total: {} pass, {} fail, {} skip",
+        totals.pass, totals.fail, totals.skip
+    );
+    if totals.fail > 0 && fail_on_regression {
+        anyhow::bail!("{} contract verification(s) failed", totals.fail);
     }
     println!();
     Ok(())
+}
+
+/// Resolve the set of contracts to verify from CLI flags. Returns `None` when the
+/// self-verify directory is absent (early-exit signal for `run_verify`).
+fn resolve_contracts_input(
+    contracts_dir: Option<&str>,
+    contract_file: Option<&str>,
+    self_verify: bool,
+) -> Result<Option<Vec<PerformanceContract>>> {
+    if let Some(dir) = contracts_dir {
+        return Ok(Some(load_contracts_dir(Path::new(dir))?));
+    }
+    if let Some(file) = contract_file {
+        return Ok(Some(vec![load_contract(Path::new(file))?]));
+    }
+    if self_verify {
+        let dir = Path::new("contracts/cgp");
+        if !dir.exists() {
+            println!("No contracts found at contracts/cgp/");
+            return Ok(None);
+        }
+        return Ok(Some(load_contracts_dir(dir)?));
+    }
+    anyhow::bail!("Specify --contracts-dir, --contract, or --self");
+}
+
+#[derive(Default)]
+struct VerifyTotals {
+    pass: usize,
+    fail: usize,
+    skip: usize,
+}
+
+/// Verify every contract and print per-contract status; return aggregate counts.
+fn run_verify_all(contracts: &[PerformanceContract]) -> VerifyTotals {
+    let mut totals = VerifyTotals::default();
+    for c in contracts {
+        let result = verify_contract(c);
+        print_contract_status(c, &result);
+        totals.pass += result.passed.len();
+        totals.fail += result.failed.len();
+        totals.skip += result.skipped.len();
+    }
+    totals
+}
+
+fn print_contract_status(c: &PerformanceContract, result: &ContractVerification) {
+    let status = if result.is_pass() {
+        "\x1b[32mPASS\x1b[0m"
+    } else {
+        "\x1b[31mFAIL\x1b[0m"
+    };
+    println!(
+        "  {} {} ({} pass, {} fail, {} skip)",
+        status,
+        c.name,
+        result.passed.len(),
+        result.failed.len(),
+        result.skipped.len()
+    );
 }
 
 /// Generate a performance contract YAML from a profile or estimated values.

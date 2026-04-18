@@ -474,6 +474,11 @@ pub enum Commands {
     /// Model optimization commands (fine-tune, prune, distill)
     #[command(flatten)]
     ModelOps(ModelOpsCommands),
+    /// Start the MCP (Model Context Protocol) server over stdio
+    ///
+    /// Exposes `apr` as MCP tools for Claude Code, Cursor, Cline, and other
+    /// MCP clients. Configure via `.mcp.json` with `{"command":"apr","args":["mcp"]}`.
+    Mcp {},
     /// Interactive terminal UI
     Tui {
         /// Path to .apr model file

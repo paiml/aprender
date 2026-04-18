@@ -66,92 +66,117 @@ pub(crate) fn cmd_quality_check(
     format: &str,
 ) -> crate::Result<()> {
     let dataset = load_dataset(path)?;
+    warn_duplicate_threshold(duplicate_threshold);
+    let checker = build_quality_checker(detect_outliers);
+    let report = checker.check(&dataset)?;
 
-    // GH-38: --duplicate-threshold is not yet used by QualityChecker
+    if format == "json" {
+        print_quality_json(&report, path, null_threshold)
+    } else {
+        print_quality_text(&report, path, null_threshold);
+        Ok(())
+    }
+}
+
+fn warn_duplicate_threshold(duplicate_threshold: f64) {
     if (duplicate_threshold - 0.05_f64).abs() > f64::EPSILON {
         eprintln!(
             "Warning: --duplicate-threshold {duplicate_threshold} is not yet implemented. Using default behavior."
         );
     }
-    let _ = duplicate_threshold;
-    let mut checker = QualityChecker::new();
+}
 
+fn build_quality_checker(detect_outliers: bool) -> QualityChecker {
+    let mut checker = QualityChecker::new();
     if !detect_outliers {
         checker = checker.with_outlier_check(false);
     }
+    checker
+}
 
-    let report = checker.check(&dataset)?;
-
-    if format == "json" {
-        let json = serde_json::json!({
-            "path": path.display().to_string(),
-            "rows": report.row_count,
-            "columns": report.column_count,
-            "has_issues": !report.issues.is_empty(),
-            "score": report.score,
-            "issues": report.issues.iter().map(|i| format!("{:?}", i)).collect::<Vec<_>>(),
-            "column_qualities": report.columns.iter().map(|(name, c)| {
-                serde_json::json!({
-                    "column": name,
-                    "null_ratio": c.null_ratio,
-                    "unique_count": c.unique_count,
-                    "is_constant": c.is_constant(),
-                    "is_mostly_null": c.null_ratio > null_threshold,
-                })
-            }).collect::<Vec<_>>()
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json).map_err(|e| crate::Error::Format(e.to_string()))?
-        );
-    } else {
-        println!("Data Quality Report");
-        println!("===================");
-        println!("File: {}", path.display());
-        println!("Rows: {}", report.row_count);
-        println!("Columns: {}", report.column_count);
-        println!();
-
-        println!("Quality Score: {:.1}%", report.score);
-        println!();
-
-        if report.issues.is_empty() {
-            println!("\u{2713} No quality issues found\n");
-        } else {
-            println!("Issues Found:");
-            println!("-------------");
-            for issue in &report.issues {
-                println!("  - {:?}", issue);
-            }
-            println!();
-        }
-
-        println!(
-            "{:<20} {:<12} {:<12} {:<10}",
-            "COLUMN", "NULL %", "UNIQUE", "STATUS"
-        );
-        println!("{}", "-".repeat(60));
-
-        for (name, col) in &report.columns {
-            let status = if col.is_constant() {
-                "CONSTANT"
-            } else if col.null_ratio > null_threshold {
-                "HIGH NULL"
-            } else {
-                "OK"
-            };
-
-            println!(
-                "{:<20} {:<12.2} {:<12} {:<10}",
-                name,
-                col.null_ratio * 100.0,
-                col.unique_count,
-                status
-            );
-        }
-    }
-
+fn print_quality_json(
+    report: &crate::quality::QualityReport,
+    path: &Path,
+    null_threshold: f64,
+) -> crate::Result<()> {
+    let json = serde_json::json!({
+        "path": path.display().to_string(),
+        "rows": report.row_count,
+        "columns": report.column_count,
+        "has_issues": !report.issues.is_empty(),
+        "score": report.score,
+        "issues": report.issues.iter().map(|i| format!("{:?}", i)).collect::<Vec<_>>(),
+        "column_qualities": report.columns.iter().map(|(name, c)| {
+            serde_json::json!({
+                "column": name,
+                "null_ratio": c.null_ratio,
+                "unique_count": c.unique_count,
+                "is_constant": c.is_constant(),
+                "is_mostly_null": c.null_ratio > null_threshold,
+            })
+        }).collect::<Vec<_>>()
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).map_err(|e| crate::Error::Format(e.to_string()))?
+    );
     Ok(())
+}
+
+fn print_quality_text(report: &crate::quality::QualityReport, path: &Path, null_threshold: f64) {
+    println!("Data Quality Report");
+    println!("===================");
+    println!("File: {}", path.display());
+    println!("Rows: {}", report.row_count);
+    println!("Columns: {}", report.column_count);
+    println!();
+
+    println!("Quality Score: {:.1}%", report.score);
+    println!();
+
+    print_quality_issues(report);
+    print_column_table(report, null_threshold);
+}
+
+fn print_quality_issues(report: &crate::quality::QualityReport) {
+    if report.issues.is_empty() {
+        println!("\u{2713} No quality issues found\n");
+    } else {
+        println!("Issues Found:");
+        println!("-------------");
+        for issue in &report.issues {
+            println!("  - {:?}", issue);
+        }
+        println!();
+    }
+}
+
+fn print_column_table(report: &crate::quality::QualityReport, null_threshold: f64) {
+    println!(
+        "{:<20} {:<12} {:<12} {:<10}",
+        "COLUMN", "NULL %", "UNIQUE", "STATUS"
+    );
+    println!("{}", "-".repeat(60));
+
+    for (name, col) in &report.columns {
+        println!(
+            "{:<20} {:<12.2} {:<12} {:<10}",
+            name,
+            col.null_ratio * 100.0,
+            col.unique_count,
+            column_status(col, null_threshold)
+        );
+    }
+}
+
+fn column_status(col: &ColumnQuality, null_threshold: f64) -> &'static str {
+    if col.is_constant() {
+        "CONSTANT"
+    } else if col.null_ratio > null_threshold {
+        "HIGH NULL"
+    } else {
+        "OK"
+    }
 }
 
 /// Generate a quality report.

@@ -396,6 +396,12 @@ commands:
     requires_model: true
     side_effects: [filesystem]
 
+  - name: mcp
+    category: misc
+    description: "Run MCP (Model Context Protocol) server over stdio"
+    requires_model: false
+    side_effects: [stdio]
+
 # ── Falsification Conditions ──
 
 falsification:

@@ -32,13 +32,17 @@ pub fn build_executable_pygmy_apr() -> Vec<u8> {
         "num_kv_heads": {num_kv_heads},
         "vocab_size": {vocab_size},
         "intermediate_size": {intermediate_size},
+        "max_position_embeddings": 512,
         "rms_norm_eps": 1e-6
     }}"#
     );
     let metadata_bytes = metadata.as_bytes();
     let metadata_padded_size = metadata_bytes.len().div_ceil(64) * 64;
 
-    // Tensors needed for forward pass (all F32):
+    // GH-317/GH-479: Contract-compliant HF tensor names (model.layers.N. prefix).
+    // The OwnedQuantizedModel::from_apr loader (gguf/loading.rs::load_apr_layer)
+    // looks up HF ("model.layers.N.*") then GGUF ("blk.N.*") — bare "layers.N.*"
+    // is NOT a supported naming convention.
     let tensor_defs: Vec<(&str, Vec<u64>, usize)> = vec![
         (
             "model.embed_tokens.weight",
@@ -46,51 +50,55 @@ pub fn build_executable_pygmy_apr() -> Vec<u8> {
             vocab_size * hidden_size * 4,
         ),
         (
-            "layers.0.input_layernorm.weight",
+            "model.layers.0.input_layernorm.weight",
             vec![hidden_size as u64],
             hidden_size * 4,
         ),
         (
-            "layers.0.self_attn.q_proj.weight",
+            "model.layers.0.self_attn.q_proj.weight",
             vec![hidden_size as u64, hidden_size as u64],
             hidden_size * hidden_size * 4,
         ),
         (
-            "layers.0.self_attn.k_proj.weight",
+            "model.layers.0.self_attn.k_proj.weight",
             vec![hidden_size as u64, hidden_size as u64],
             hidden_size * hidden_size * 4,
         ),
         (
-            "layers.0.self_attn.v_proj.weight",
+            "model.layers.0.self_attn.v_proj.weight",
             vec![hidden_size as u64, hidden_size as u64],
             hidden_size * hidden_size * 4,
         ),
         (
-            "layers.0.self_attn.o_proj.weight",
+            "model.layers.0.self_attn.o_proj.weight",
             vec![hidden_size as u64, hidden_size as u64],
             hidden_size * hidden_size * 4,
         ),
         (
-            "layers.0.post_attention_layernorm.weight",
+            "model.layers.0.post_attention_layernorm.weight",
             vec![hidden_size as u64],
             hidden_size * 4,
         ),
         (
-            "layers.0.mlp.gate_proj.weight",
+            "model.layers.0.mlp.gate_proj.weight",
             vec![intermediate_size as u64, hidden_size as u64],
             hidden_size * intermediate_size * 4,
         ),
         (
-            "layers.0.mlp.up_proj.weight",
+            "model.layers.0.mlp.up_proj.weight",
             vec![intermediate_size as u64, hidden_size as u64],
             hidden_size * intermediate_size * 4,
         ),
         (
-            "layers.0.mlp.down_proj.weight",
+            "model.layers.0.mlp.down_proj.weight",
             vec![hidden_size as u64, intermediate_size as u64],
             hidden_size * intermediate_size * 4,
         ),
-        ("norm.weight", vec![hidden_size as u64], hidden_size * 4),
+        (
+            "model.norm.weight",
+            vec![hidden_size as u64],
+            hidden_size * 4,
+        ),
         (
             "lm_head.weight",
             vec![vocab_size as u64, hidden_size as u64],
@@ -212,6 +220,7 @@ pub fn build_executable_pygmy_apr_gguf_names() -> Vec<u8> {
         "num_kv_heads": {num_kv_heads},
         "vocab_size": {vocab_size},
         "intermediate_size": {intermediate_size},
+        "max_position_embeddings": 512,
         "rms_norm_eps": 1e-6
     }}"#
     );
@@ -306,6 +315,7 @@ pub fn build_executable_pygmy_apr_embed_tied() -> Vec<u8> {
         "num_kv_heads": {num_kv_heads},
         "vocab_size": {vocab_size},
         "intermediate_size": {intermediate_size},
+        "max_position_embeddings": 512,
         "rms_norm_eps": 1e-6,
         "tie_word_embeddings": true
     }}"#
@@ -313,59 +323,63 @@ pub fn build_executable_pygmy_apr_embed_tied() -> Vec<u8> {
     let metadata_bytes = metadata.as_bytes();
     let metadata_padded_size = metadata_bytes.len().div_ceil(64) * 64;
 
-    // HuggingFace naming but with weight tying (no lm_head)
+    // GH-317/GH-479: HF-compliant names (model.layers.N. prefix) with weight tying
     let tensor_defs: Vec<(&str, Vec<u64>, usize)> = vec![
         (
-            "embed_tokens.weight",
+            "model.embed_tokens.weight",
             vec![vocab_size as u64, hidden_size as u64],
             vocab_size * hidden_size * 4,
         ),
         (
-            "layers.0.input_layernorm.weight",
+            "model.layers.0.input_layernorm.weight",
             vec![hidden_size as u64],
             hidden_size * 4,
         ),
         (
-            "layers.0.self_attn.q_proj.weight",
+            "model.layers.0.self_attn.q_proj.weight",
             vec![hidden_size as u64, hidden_size as u64],
             hidden_size * hidden_size * 4,
         ),
         (
-            "layers.0.self_attn.k_proj.weight",
+            "model.layers.0.self_attn.k_proj.weight",
             vec![hidden_size as u64, hidden_size as u64],
             hidden_size * hidden_size * 4,
         ),
         (
-            "layers.0.self_attn.v_proj.weight",
+            "model.layers.0.self_attn.v_proj.weight",
             vec![hidden_size as u64, hidden_size as u64],
             hidden_size * hidden_size * 4,
         ),
         (
-            "layers.0.self_attn.o_proj.weight",
+            "model.layers.0.self_attn.o_proj.weight",
             vec![hidden_size as u64, hidden_size as u64],
             hidden_size * hidden_size * 4,
         ),
         (
-            "layers.0.post_attention_layernorm.weight",
+            "model.layers.0.post_attention_layernorm.weight",
             vec![hidden_size as u64],
             hidden_size * 4,
         ),
         (
-            "layers.0.mlp.gate_proj.weight",
+            "model.layers.0.mlp.gate_proj.weight",
             vec![intermediate_size as u64, hidden_size as u64],
             hidden_size * intermediate_size * 4,
         ),
         (
-            "layers.0.mlp.up_proj.weight",
+            "model.layers.0.mlp.up_proj.weight",
             vec![intermediate_size as u64, hidden_size as u64],
             hidden_size * intermediate_size * 4,
         ),
         (
-            "layers.0.mlp.down_proj.weight",
+            "model.layers.0.mlp.down_proj.weight",
             vec![hidden_size as u64, intermediate_size as u64],
             hidden_size * intermediate_size * 4,
         ),
-        ("norm.weight", vec![hidden_size as u64], hidden_size * 4),
+        (
+            "model.norm.weight",
+            vec![hidden_size as u64],
+            hidden_size * 4,
+        ),
         // NO lm_head.weight - uses embed_tokens.weight (tied)
     ];
 

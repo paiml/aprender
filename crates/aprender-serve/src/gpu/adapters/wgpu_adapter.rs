@@ -226,6 +226,7 @@ pub fn dequant_tensor_public(tensor: &crate::gguf::OwnedQuantizedTensor) -> Resu
     const GGUF_TYPE_Q5_K: u32 = 13;
     const GGUF_TYPE_F32: u32 = 0;
     const GGUF_TYPE_F16: u32 = 1;
+    use crate::gguf::{APR_TYPE_Q4, APR_TYPE_Q8};
 
     match tensor.qtype {
         GGUF_TYPE_Q4_K => dequantize_q4_k(&tensor.data),
@@ -244,6 +245,15 @@ pub fn dequant_tensor_public(tensor: &crate::gguf::OwnedQuantizedTensor) -> Resu
                 half::f16::from_bits(bits).to_f32()
             })
             .collect()),
+        // GH-478: Native APR q4/q8 — per-tensor scratch dequant
+        APR_TYPE_Q4 => Ok(crate::apr::dequant::dequantize_apr_q4(
+            &tensor.data,
+            tensor.in_dim * tensor.out_dim,
+        )),
+        APR_TYPE_Q8 => Ok(crate::apr::dequant::dequantize_apr_q8(
+            &tensor.data,
+            tensor.in_dim * tensor.out_dim,
+        )),
         other => Err(RealizarError::FormatError {
             reason: format!("Unsupported quantization type {} for WGPU dequant", other),
         }),

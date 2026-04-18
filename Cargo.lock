@@ -289,6 +289,7 @@ dependencies = [
  "alimentar",
  "anyhow",
  "aprender-core 0.31.0",
+ "aprender-mcp",
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-serve",
@@ -974,6 +975,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-mcp"
+version = "0.31.0"
+dependencies = [
+ "anyhow",
+ "jsonschema 0.28.3",
+ "nix 0.29.0",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "aprender-monte-carlo"
 version = "0.31.0"
 dependencies = [
@@ -1492,7 +1505,6 @@ dependencies = [
  "anyhow",
  "approx",
  "aprender-core 0.31.0",
- "aprender-gpu",
  "arc-swap",
  "arrow 57.3.0",
  "assert_cmd",
@@ -1544,6 +1556,7 @@ dependencies = [
  "trueno 0.17.5",
  "trueno-cuda-edge",
  "trueno-db",
+ "trueno-gpu",
  "trueno-quant",
  "trueno-viz 0.2.4",
  "ureq 2.12.1",
@@ -13169,7 +13182,7 @@ dependencies = [
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.10",
+ "rustls-webpki 0.103.12",
  "subtle",
  "zeroize",
 ]
@@ -13228,7 +13241,7 @@ dependencies = [
  "rustls 0.23.37",
  "rustls-native-certs",
  "rustls-platform-verifier-android",
- "rustls-webpki 0.103.10",
+ "rustls-webpki 0.103.12",
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
@@ -13253,9 +13266,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.10"
+version = "0.103.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
+checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
 dependencies = [
  "aws-lc-rs",
  "ring",

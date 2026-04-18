@@ -45,6 +45,8 @@ members = [
     # "crates/aprender-train-canary",  # Excluded: sqlite3 link conflict with burn dep
     # --- APR-MONO Phase 2e: was batuta (orchestration) ---
     "crates/aprender-orchestrate",
+    # --- MCP server (Model Context Protocol) ---
+    "crates/aprender-mcp",
     # --- APR-MONO Phase 2f: satellite repos (main crates) ---
     "crates/aprender-profile",
     "crates/aprender-profile-core",

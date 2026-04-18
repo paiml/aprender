@@ -65,6 +65,23 @@ pub const GGUF_TYPE_Q6_K: u32 = 14;
 /// GGUF quantization type: BF16 (bfloat16, GGML type 30)
 pub const GGUF_TYPE_BF16: u32 = 30;
 
+/// APR-native quantization type: Q4 (4-bit, block size 32, f16 scale per block).
+///
+/// GH-478: Distinct from `GGUF_TYPE_Q4_0` because the byte layout differs
+/// (APR Q4 has the `i % 2 == 0 → low nibble, i % 2 == 1 → high nibble` split,
+/// not the GGML "first 16 in low, last 16 in high" arrangement). Stored in
+/// `OwnedQuantizedTensor.qtype` so `fused_matmul` can dispatch to the per-tensor
+/// scratch dequant path instead of expanding all weights to F32 at load.
+///
+/// Matches `aprender::format::TensorDType::Q4 = 128` (file-format value).
+pub const APR_TYPE_Q4: u32 = 128;
+
+/// APR-native quantization type: Q8 (8-bit, block size 32, f16 scale per block).
+///
+/// GH-478: Same role as `APR_TYPE_Q4` for the 8-bit native format.
+/// Matches `aprender::format::TensorDType::Q8 = 129` (file-format value).
+pub const APR_TYPE_Q8: u32 = 129;
+
 // ============================================================================
 // GH-321: Unified GGML Quantization Type Enum
 // ============================================================================

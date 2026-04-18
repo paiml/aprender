@@ -225,21 +225,31 @@ impl DegradationManager {
     }
 
     fn update_mode(&mut self) {
-        self.mode = if !self.gpu_available {
-            DegradationMode::CpuFallback
-        } else if self.latency_priority {
-            DegradationMode::LowLatency
-        } else if self.memory_pressure > 0.8 {
-            DegradationMode::MemoryPressure
-        } else if let Some(load) = &self.system_load {
-            if load.cpu_percent > 90.0 || load.memory_percent > 80.0 {
-                DegradationMode::MemoryPressure
-            } else {
-                DegradationMode::Normal
-            }
-        } else {
-            DegradationMode::Normal
-        };
+        self.mode = self.compute_mode();
+    }
+
+    /// Compute the degradation mode from current telemetry (priority order).
+    fn compute_mode(&self) -> DegradationMode {
+        if !self.gpu_available {
+            return DegradationMode::CpuFallback;
+        }
+        if self.latency_priority {
+            return DegradationMode::LowLatency;
+        }
+        if self.memory_pressure > 0.8 {
+            return DegradationMode::MemoryPressure;
+        }
+        if self.system_load_saturated() {
+            return DegradationMode::MemoryPressure;
+        }
+        DegradationMode::Normal
+    }
+
+    /// True iff observed system load exceeds the CPU/memory saturation thresholds.
+    fn system_load_saturated(&self) -> bool {
+        self.system_load
+            .as_ref()
+            .is_some_and(|load| load.cpu_percent > 90.0 || load.memory_percent > 80.0)
     }
 }
 

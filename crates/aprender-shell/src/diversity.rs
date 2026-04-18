@@ -235,32 +235,51 @@ fn cmd_augment(
 }
 
 fn cmd_analyze(history_path: Option<PathBuf>, top: usize) {
-    use aprender::synthetic::code_features::{CodeFeatureExtractor, CommitDiff};
     use std::collections::HashMap;
 
     println!("📊 aprender-shell: Command Analysis (with CodeFeatureExtractor)\n");
 
-    // Find and parse history with graceful error handling (QA 2.4, 8.3)
     let history_file = find_history_file_graceful(history_path);
     println!("📂 History file: {}", history_file.display());
 
     let commands = parse_history_graceful(&history_file);
     println!("📊 Total commands: {}\n", commands.len());
 
-    // Use CodeFeatureExtractor to classify commands
-    let extractor = CodeFeatureExtractor::new();
+    let (category_counts, base_command_counts) = classify_commands(&commands);
+    print_category_counts(&category_counts, commands.len());
+    print_top_bases(&base_command_counts, commands.len(), top);
+    print_category_samples(&category_counts);
+    print_complexity(&commands, &base_command_counts);
+    print_workflow_profile(&base_command_counts);
 
-    // Count categories
+    println!("\n💡 Tip: Use 'aprender-shell augment --use-code-eda' for code-aware augmentation");
+}
+
+const CATEGORY_NAMES: [&str; 5] = [
+    "General",     // 0
+    "Fix/Debug",   // 1
+    "Security",    // 2
+    "Performance", // 3
+    "Refactor",    // 4
+];
+
+fn classify_commands(
+    commands: &[String],
+) -> (
+    std::collections::HashMap<u8, Vec<String>>,
+    std::collections::HashMap<String, usize>,
+) {
+    use aprender::synthetic::code_features::{CodeFeatureExtractor, CommitDiff};
+    use std::collections::HashMap;
+
+    let extractor = CodeFeatureExtractor::new();
     let mut category_counts: HashMap<u8, Vec<String>> = HashMap::new();
     let mut base_command_counts: HashMap<String, usize> = HashMap::new();
 
-    for cmd in &commands {
-        // Extract first word as base command
+    for cmd in commands {
         let base = cmd.split_whitespace().next().unwrap_or("").to_string();
         *base_command_counts.entry(base).or_insert(0) += 1;
 
-        // Create a "diff" from the command for classification
-        // This is creative use of the feature extractor for shell commands
         let diff = CommitDiff::new()
             .with_message(cmd.clone())
             .with_lines_added(cmd.len() as u32)
@@ -273,49 +292,55 @@ fn cmd_analyze(history_path: Option<PathBuf>, top: usize) {
             .push(cmd.clone());
     }
 
-    // Category names
-    let category_names = [
-        "General",     // 0
-        "Fix/Debug",   // 1
-        "Security",    // 2
-        "Performance", // 3
-        "Refactor",    // 4
-    ];
+    (category_counts, base_command_counts)
+}
 
+fn category_name(cat: u8) -> &'static str {
+    CATEGORY_NAMES.get(cat as usize).copied().unwrap_or("Unknown")
+}
+
+fn print_category_counts(
+    category_counts: &std::collections::HashMap<u8, Vec<String>>,
+    total: usize,
+) {
     println!("🏷️  Command Categories (based on keywords):");
     println!("   ─────────────────────────────────────────");
-    for (cat, cmds) in &category_counts {
-        let name = category_names.get(*cat as usize).unwrap_or(&"Unknown");
+    for (cat, cmds) in category_counts {
         println!(
             "   {:12} {:>5} commands ({:.1}%)",
-            name,
+            category_name(*cat),
             cmds.len(),
-            cmds.len() as f32 / commands.len() as f32 * 100.0
+            cmds.len() as f32 / total as f32 * 100.0
         );
     }
+}
 
-    // Show top base commands
+fn print_top_bases(
+    base_command_counts: &std::collections::HashMap<String, usize>,
+    total: usize,
+    top: usize,
+) {
     println!("\n🔝 Top {} Base Commands:", top);
     println!("   ─────────────────────────────────────────");
     let mut sorted_bases: Vec<_> = base_command_counts.iter().collect();
     sorted_bases.sort_by(|a, b| b.1.cmp(a.1));
 
     for (base, count) in sorted_bases.iter().take(top) {
-        let pct = **count as f32 / commands.len() as f32 * 100.0;
+        let pct = **count as f32 / total as f32 * 100.0;
         let bar_len = (pct / 2.0) as usize;
         let bar = "█".repeat(bar_len.min(25));
         println!("   {:12} {:>5} ({:>5.1}%) {}", base, count, pct, bar);
     }
+}
 
-    // Show sample commands from each category
+fn print_category_samples(category_counts: &std::collections::HashMap<u8, Vec<String>>) {
     println!("\n📋 Sample Commands by Category:");
     println!("   ─────────────────────────────────────────");
-    for (cat, cmds) in &category_counts {
+    for (cat, cmds) in category_counts {
         if cmds.is_empty() {
             continue;
         }
-        let name = category_names.get(*cat as usize).unwrap_or(&"Unknown");
-        println!("\n   [{}]:", name);
+        println!("\n   [{}]:", category_name(*cat));
         for cmd in cmds.iter().take(3) {
             let truncated = if cmd.len() > 60 {
                 format!("{}...", &cmd[..57])
@@ -325,8 +350,12 @@ fn cmd_analyze(history_path: Option<PathBuf>, top: usize) {
             println!("     • {}", truncated);
         }
     }
+}
 
-    // Command complexity analysis
+fn print_complexity(
+    commands: &[String],
+    base_command_counts: &std::collections::HashMap<String, usize>,
+) {
     let avg_tokens: f32 = commands
         .iter()
         .map(|c| c.split_whitespace().count() as f32)
@@ -344,27 +373,20 @@ fn cmd_analyze(history_path: Option<PathBuf>, top: usize) {
     println!("   Average tokens per command: {:.1}", avg_tokens);
     println!("   Maximum tokens: {}", max_tokens);
     println!("   Unique base commands: {}", base_command_counts.len());
+}
 
-    // Developer workflow insights
-    let git_count = base_command_counts.get("git").copied().unwrap_or(0);
-    let cargo_count = base_command_counts.get("cargo").copied().unwrap_or(0);
-    let docker_count = base_command_counts.get("docker").copied().unwrap_or(0);
-    let kubectl_count = base_command_counts.get("kubectl").copied().unwrap_or(0);
-
+fn print_workflow_profile(base_command_counts: &std::collections::HashMap<String, usize>) {
     println!("\n🛠️  Developer Workflow Profile:");
     println!("   ─────────────────────────────────────────");
-    if git_count > 0 {
-        println!("   ✓ Version Control:  {} git commands", git_count);
+    for (cmd, line) in [
+        ("git", "✓ Version Control:  {n} git commands"),
+        ("cargo", "✓ Rust Development: {n} cargo commands"),
+        ("docker", "✓ Containers:       {n} docker commands"),
+        ("kubectl", "✓ Kubernetes:       {n} kubectl commands"),
+    ] {
+        let count = base_command_counts.get(cmd).copied().unwrap_or(0);
+        if count > 0 {
+            println!("   {}", line.replace("{n}", &count.to_string()));
+        }
     }
-    if cargo_count > 0 {
-        println!("   ✓ Rust Development: {} cargo commands", cargo_count);
-    }
-    if docker_count > 0 {
-        println!("   ✓ Containers:       {} docker commands", docker_count);
-    }
-    if kubectl_count > 0 {
-        println!("   ✓ Kubernetes:       {} kubectl commands", kubectl_count);
-    }
-
-    println!("\n💡 Tip: Use 'aprender-shell augment --use-code-eda' for code-aware augmentation");
 }
