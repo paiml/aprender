@@ -272,11 +272,15 @@ falsification:
     owned_by: apr-mcp-tool-schemas-v1
     condition: |
       For every entry `t` in the aprender-mcp server's `tools/list` response,
-      the emitted JSON Schema is byte-identical, after JSON canonicalization
-      (RFC 8785 JCS or equivalent: keys sorted, no trailing whitespace, UTF-8,
-      no insignificant whitespace), to the JSON Schema derived from the
-      corresponding entry in `contracts/apr-mcp-tool-schemas-v1.yaml` via
-      the M3 build-time code generator at `crates/aprender-mcp/build.rs`.
+      both the emitted `inputSchema` **and** the tool-level `description`
+      are byte-identical, after JSON canonicalization (RFC 8785 JCS or
+      equivalent: keys sorted, no trailing whitespace, UTF-8, no
+      insignificant whitespace), to the corresponding fields derived from
+      `contracts/apr-mcp-tool-schemas-v1.yaml`. The `inputSchema` side
+      flows through the M3 build-time code generator at
+      `crates/aprender-mcp/build.rs`; the `description` side is compared
+      directly at test time against the `ToolDefinition.description` field
+      (PMAT-514 extension, 2026-04-18).
     assertions:
       - "tools/list returns exactly the tool names listed in `tools[].name`"
       - "each tool's `description` matches `tools[*].description` byte-for-byte"
