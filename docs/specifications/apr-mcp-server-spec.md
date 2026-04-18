@@ -86,18 +86,19 @@ SSE + WebSocket via `pmcp` v2.3 (see Milestones).
 
 Eight high-value workflow tools for agentic coding + ML. The M1 scaffold tool `apr.version` is also registered, so `tools/list` returns 9 tools total.
 
-| Tool | Maps to CLI | Inputs | Output |
-|------|-------------|--------|--------|
-| `apr.run` | `apr run <model>` | `model_path`, `prompt`, `max_tokens`, `temperature`, `top_p` | `{model, text, tokens: [u32], tokens_generated, max_tokens, tok_per_sec, inference_time_ms, used_gpu, cached}` (CLI as of 2026-04-18; `stop_reason` not emitted) |
-| `apr.serve` | `apr serve <model>` | `model_path`, `port` | `{pid, url}` + lifecycle |
-| `apr.qa` | `apr qa <model> --json` | `model_path`, `assert_tps?` | `{model, passed, gates: [{name, passed, message, value?, threshold?, duration_ms, skipped}], gates_executed, gates_skipped, total_duration_ms, timestamp, summary}` (CLI as of 2026-04-18; gate field is `passed` not `pass`) |
-| `apr.trace` | `apr trace <model> --prompt X` | `model_path`, `prompt`, `steps?` | per-layer tensor stats |
-| `apr.tensors` | `apr tensors <model> --json` | `model_path` | tensor list with shapes/dtypes/stats |
-| `apr.validate` | `apr validate <model> --quality` | `model_path` | integrity + quality gates |
-| `apr.bench` | `apr bench <model>` | `model_path`, `runs`, `tokens` | median tok/s, p50/p95/p99 latency |
-| `apr.finetune` | `apr finetune` | `base_model`, `dataset`, `lora_rank`, `epochs` | progress events + final checkpoint path |
+| Tool | Maps to CLI | Inputs (required **bold**) | Output |
+|------|-------------|----------------------------|--------|
+| `apr.run` | `apr run <model>` | **`model_path`**, `prompt`, `max_tokens`, `temperature`, `top_p` | `{model, text, tokens: [u32], tokens_generated, max_tokens, tok_per_sec, inference_time_ms, used_gpu, cached}` (CLI as of 2026-04-18; `stop_reason` not emitted) |
+| `apr.serve` | `apr serve <model>` | **`model_path`**, `port` | `{pid, url}` + lifecycle |
+| `apr.qa` | `apr qa <model> --json` | **`model_path`**, `assert_tps`, `max_tokens`, `iterations` | `{model, passed, gates: [{name, passed, message, value?, threshold?, duration_ms, skipped}], gates_executed, gates_skipped, total_duration_ms, timestamp, summary}` (CLI as of 2026-04-18; gate field is `passed` not `pass`) |
+| `apr.trace` | `apr trace <model> --json` | **`model_path`**, `layer`, `reference` | per-layer tensor stats (`layer` filters by substring; `reference` diffs against a second model) |
+| `apr.tensors` | `apr tensors <model> --json` | **`model_path`**, `stats`, `filter` | tensor list with shapes/dtypes (+ stats when `stats: true`; `filter` substring-matches tensor names) |
+| `apr.validate` | `apr validate <model> --json` | **`model_path`** | integrity + quality gates |
+| `apr.bench` | `apr bench <model> --json` | **`model_path`**, `iterations`, `max_tokens`, `prompt` | median tok/s, p50/p95/p99 latency |
+| `apr.finetune` | `apr finetune <base_model> --json` | **`base_model`**, `dataset`, `lora_rank`, `epochs`, `method`, `output` | progress events + final checkpoint path |
+| `apr.version` (M1 scaffold) | — (server-synthesized, no subprocess) | _(none)_ | `{server, version, protocol_version}` |
 
-Schema generation: each tool's JSONSchema is derived from the entry in `contracts/apr-mcp-tool-schemas-v1.yaml` at build time by `aprender-mcp`'s `build.rs` — **no hand-maintained schemas**. Codegen lands `pub const APR_<TOOL>_SCHEMA: &str` per tool in `$OUT_DIR/schemas.rs`.
+Schema + description generation: each tool's `inputSchema` and tool-level `description` are emitted from `contracts/apr-mcp-tool-schemas-v1.yaml` at build time by `aprender-mcp`'s `build.rs` — **no hand-maintained schemas or descriptions**. Codegen lands two constants per tool in `$OUT_DIR/schemas.rs`: `pub const APR_<TOOL>_SCHEMA: &str` (serialized JSON Schema, consumed via `serde_json::from_str`) and `pub const APR_<TOOL>_DESCRIPTION: &str` (consumed via `.to_string()`, PMAT-514).
 
 ### Protocol
 
