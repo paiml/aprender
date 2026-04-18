@@ -39,14 +39,20 @@ apr mcp
 
 - **M1** (shipped): skeleton with `initialize` + `tools/list` + `apr.version`
 - **M2** (in progress): 8 Phase-1 tools as subprocess wrappers over
-  `apr <cmd> --json`. Shipped so far: `apr.validate`. Remaining: `apr.run`,
-  `apr.serve`, `apr.qa`, `apr.trace`, `apr.tensors`, `apr.bench`, `apr.finetune`
+  `apr <cmd> --json`. Shipped: `apr.validate`, `apr.tensors`, `apr.bench`,
+  `apr.qa`, `apr.trace` + dispatcher hardening (jsonrpc/protocolVersion gates).
+  Remaining: `apr.run`, `apr.serve`, `apr.finetune` (streaming candidates).
 - **M3**: streaming progress notifications + cancellation
 - **M4**: Claude Code dogfood + contract promotion to ENFORCED
 
 ## Falsification gates
 
-See [`contracts/apr-mcp-server-v1.yaml`](../../contracts/apr-mcp-server-v1.yaml)
-for the full set. Currently enforced: FALSIFY-MCP-001 (initialize latency),
-FALSIFY-MCP-002 (progressive — every registered tool has a valid schema),
-and FALSIFY-MCP-VALIDATE-001 (argument validation surfaces as tool error).
+Currently enforced (see [`docs/specifications/apr-mcp-server-spec.md`](../../docs/specifications/apr-mcp-server-spec.md#falsification-conditions-for-apr-mcp-server-v1yaml)):
+
+| Gate | What it asserts |
+|------|-----------------|
+| FALSIFY-MCP-001 | `initialize` round-trip under 50ms (spec budget 500ms) |
+| FALSIFY-MCP-002 | every registered tool exposes a valid object-typed schema |
+| FALSIFY-MCP-005 | `jsonrpc != "2.0"` is rejected with `-32600 Invalid Request` |
+| FALSIFY-MCP-007 | `initialize.params.protocolVersion` mismatch returns `-32602 Invalid Params` (positive case verifies happy path) |
+| FALSIFY-MCP-VALIDATE-001 | tool argument validation surfaces as `isError:true`, not as a JSON-RPC error |

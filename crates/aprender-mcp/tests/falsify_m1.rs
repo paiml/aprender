@@ -105,6 +105,74 @@ fn falsify_validate_missing_model_path_is_tool_error() {
         .contains("model_path"));
 }
 
+/// FALSIFY-MCP-005: a request whose `jsonrpc` field is not exactly `"2.0"` must
+/// be rejected with code `-32600 Invalid Request` BEFORE method dispatch — the
+/// server must not crash and must not attempt to route to `initialize` /
+/// `tools/list` / `tools/call`.
+#[test]
+fn falsify_mcp_005_invalid_jsonrpc_version_is_minus_32600() {
+    let mut server = AprMcpServer::new();
+    let req = JsonRpcRequest {
+        jsonrpc: "1.0".to_string(),
+        id: Some(serde_json::json!(40)),
+        method: "initialize".to_string(),
+        params: serde_json::json!({}),
+    };
+
+    let resp = server.handle_request(&req);
+
+    assert!(resp.result.is_none(), "must not produce a success result");
+    let err = resp.error.expect("error present");
+    assert_eq!(err.code, -32600, "JSON-RPC code must be Invalid Request");
+    assert!(
+        err.message.contains("jsonrpc"),
+        "message should mention jsonrpc field, got: {}",
+        err.message
+    );
+    assert_eq!(resp.id, Some(serde_json::json!(40)), "id echoed back");
+}
+
+/// FALSIFY-MCP-007: an `initialize` whose `params.protocolVersion` does not
+/// match the server's supported version must be rejected with `-32602 Invalid
+/// Params`. The server must not advance the connection — subsequent
+/// `tools/list` from the same client would also need to fail until a compatible
+/// version is negotiated, but here we only assert the negotiation-phase error.
+#[test]
+fn falsify_mcp_007_protocol_version_mismatch_is_minus_32602() {
+    let mut server = AprMcpServer::new();
+    let resp = server.handle_request(&request(
+        50,
+        "initialize",
+        serde_json::json!({ "protocolVersion": "1999-01-01" }),
+    ));
+
+    assert!(resp.result.is_none(), "must not return success");
+    let err = resp.error.expect("error present");
+    assert_eq!(err.code, -32602, "must be Invalid Params");
+    assert!(
+        err.message.contains("protocolVersion"),
+        "message should mention protocolVersion, got: {}",
+        err.message
+    );
+}
+
+/// FALSIFY-MCP-007 (negative): an `initialize` whose `params.protocolVersion`
+/// matches the server's version must succeed. Belt-and-braces against the
+/// guard above falsely tripping on the happy path.
+#[test]
+fn falsify_mcp_007_matching_protocol_version_succeeds() {
+    let mut server = AprMcpServer::new();
+    let resp = server.handle_request(&request(
+        51,
+        "initialize",
+        serde_json::json!({ "protocolVersion": PROTOCOL_VERSION }),
+    ));
+
+    assert!(resp.error.is_none(), "happy path must not error");
+    let result = resp.result.expect("result");
+    assert_eq!(result["protocolVersion"], PROTOCOL_VERSION);
+}
+
 /// End-to-end `initialize` → `tools/list` → `tools/call` works on one server
 /// instance without state leaking between requests.
 #[test]

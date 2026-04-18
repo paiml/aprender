@@ -19,8 +19,25 @@ impl AprMcpServer {
     }
 
     /// Dispatch a single JSON-RPC request.
+    ///
+    /// The dispatcher enforces two protocol-level invariants before routing:
+    /// FALSIFY-MCP-005 (`jsonrpc` must be exactly `"2.0"` or the response is
+    /// `-32600 Invalid Request`) and FALSIFY-MCP-007 (an `initialize` whose
+    /// `params.protocolVersion` mismatches ours returns `-32602 Invalid Params`
+    /// instead of advancing to tools/list).
     #[must_use]
     pub fn handle_request(&mut self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        if request.jsonrpc != "2.0" {
+            return JsonRpcResponse::error(
+                request.id.clone(),
+                -32600,
+                format!(
+                    "Invalid Request: jsonrpc must be \"2.0\", got \"{}\"",
+                    request.jsonrpc
+                ),
+            );
+        }
+
         match request.method.as_str() {
             "initialize" => self.handle_initialize(request),
             "tools/list" => self.handle_tools_list(request),
@@ -34,6 +51,27 @@ impl AprMcpServer {
     }
 
     fn handle_initialize(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
+        // FALSIFY-MCP-007: if the client advertises a protocolVersion, it must
+        // match ours. Missing field is permitted (some clients omit it on the
+        // very first handshake); only a *mismatch* is rejected.
+        if let Some(client_version) = request
+            .params
+            .get("protocolVersion")
+            .and_then(|v| v.as_str())
+        {
+            if client_version != crate::PROTOCOL_VERSION {
+                return JsonRpcResponse::error(
+                    request.id.clone(),
+                    -32602,
+                    format!(
+                        "Unsupported protocolVersion: client requested \"{}\", server speaks \"{}\"",
+                        client_version,
+                        crate::PROTOCOL_VERSION
+                    ),
+                );
+            }
+        }
+
         JsonRpcResponse::success(
             request.id.clone(),
             serde_json::json!({
