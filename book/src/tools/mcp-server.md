@@ -214,8 +214,13 @@ returns. Cancellation via `notifications/cancelled` is wired (see
 
 Wraps `apr serve <model_path> --port <port>`. Fire-and-forget: the tool
 spawns the daemon, captures its pid, and returns `{pid, url, note}`. The
-caller is responsible for killing the pid out-of-band. Full
-cancel → SIGTERM lifecycle lands in a follow-up M3 slice.
+caller is responsible for killing the pid out-of-band.
+
+M3 shipped `notifications/cancelled` for `apr.run` only — `apr.serve` is
+still fire-and-forget because it returns `{pid, url}` synchronously and
+leaves the daemon detached. A lifecycle-tracked registry (cancel token →
+SIGTERM the captured pid with 30s grace → SIGKILL) is a post-M3
+follow-up, targeted at M5 alongside the pmcp dispatcher port.
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|

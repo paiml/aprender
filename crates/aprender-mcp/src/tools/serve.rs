@@ -1,14 +1,18 @@
-//! `apr.serve` — M2 fire-and-forget subprocess wrapper over `apr serve`.
+//! `apr.serve` — fire-and-forget subprocess wrapper over `apr serve`.
 //!
-//! Unlike every other M2 tool, this one does NOT wait for the subprocess to
-//! exit: `apr serve` is a long-running HTTP daemon. We spawn it, capture the
-//! OS pid, and return `{pid, url}` so the MCP client can reach the daemon.
+//! Unlike every other Phase-1 tool, this one does NOT wait for the subprocess
+//! to exit: `apr serve` is a long-running HTTP daemon. We spawn it, capture
+//! the OS pid, and return `{pid, url}` so the MCP client can reach the daemon.
 //! The caller is responsible for killing the pid out-of-band.
 //!
-//! M3 will extend this with proper lifecycle tracking — `notifications/cancelled`
-//! → SIGTERM → SIGKILL — per spec `docs/specifications/apr-mcp-server-spec.md`
-//! lines 154-156. Until then, dropping the `Child` leaves a zombie on Unix
-//! until the OS parent reaps it; that's acceptable for an M2 increment.
+//! M3 shipped `notifications/cancelled` → SIGTERM → SIGKILL for `apr.run`
+//! only (see `server.rs::CancelHandle` docs: "Only `apr.run` currently
+//! honours cancellation"). A lifecycle-tracked registry for `apr.serve` —
+//! cancel token → SIGTERM the captured pid with 30s grace → SIGKILL — is a
+//! post-M3 follow-up targeted at M5 alongside the pmcp dispatcher port (see
+//! `docs/specifications/apr-mcp-server-spec.md` § Milestones → M5).
+//! Until then, dropping the `Child` leaves a zombie on Unix until the OS
+//! parent reaps it.
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
@@ -38,7 +42,7 @@ pub fn serve_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: NAME.to_string(),
         description:
-            "Start an `apr serve` inference daemon in the background. Returns {pid, url}; kill the pid via OS to stop. Full lifecycle (cancel/SIGTERM) lands in M3."
+            "Start an `apr serve` inference daemon in the background. Returns {pid, url}; kill the pid via OS to stop. Cancel-token lifecycle (SIGTERM) is a post-M3 follow-up; apr.run already honours notifications/cancelled."
                 .to_string(),
         input_schema,
     }
@@ -47,8 +51,9 @@ pub fn serve_tool_definition() -> ToolDefinition {
 /// Execute `apr.serve` by spawning `apr serve <model_path> --port <port>`.
 ///
 /// Fire-and-forget: the `Child` handle is dropped and the subprocess continues
-/// running. On Unix this leaves a zombie until the OS parent reaps it. M3 will
-/// replace this with a lifecycle-tracked registry.
+/// running. On Unix this leaves a zombie until the OS parent reaps it. A
+/// lifecycle-tracked registry is a post-M3 follow-up (M5 alongside the pmcp
+/// dispatcher port); see this module's header for context.
 #[must_use]
 pub fn call(args: &serde_json::Value) -> ToolCallResult {
     let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
