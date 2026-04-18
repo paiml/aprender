@@ -1,29 +1,35 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # apr-mcp-tool-schemas-v1
 #
-# SOURCE OF TRUTH for every `aprender-mcp` tool's MCP inputSchema (per-arg name,
-# type, required flag, and description string). This contract exists separately
-# from `contracts/apr-cli-commands-v1.yaml` because the latter is a pure command
-# registry: each of its 58 entries carries only {name, category, description,
-# requires_model, side_effects}. It intentionally has no argument-level data and
-# therefore cannot drive JSON-Schema code generation.
+# SOURCE OF TRUTH for every `aprender-mcp` tool's MCP `inputSchema` (per-arg
+# name, type, required flag, description) AND its tool-level `description`
+# string. This contract exists separately from `contracts/apr-cli-commands-v1.yaml`
+# because the latter is a pure command registry: each of its 58 entries carries
+# only {name, category, description, requires_model, side_effects}. It
+# intentionally has no argument-level data and therefore cannot drive
+# JSON-Schema code generation.
 #
 # This contract fills that gap. `crates/aprender-mcp/build.rs` reads this YAML
-# and emits `$OUT_DIR/schemas.rs` containing `pub const APR_<TOOL>_SCHEMA: &str`
-# per tool. Each tool's `*_tool_definition()` in `crates/aprender-mcp/src/tools/`
-# parses its generated constant. FALSIFY-MCP-008 asserts byte-identity (after
-# JSON canonicalization) between the generated schemas and the live
-# `tools/list` response; this is enforced by `tests/falsify_mcp_008.rs`
-# (`migrated_tools_match_yaml_contract_byte_for_byte` +
-# `codegen_constants_parse_and_match_yaml_for_every_tool`).
+# and emits `$OUT_DIR/schemas.rs` containing, per tool, two constants:
+#   `pub const APR_<TOOL>_SCHEMA:      &str`  — serialized JSON Schema body
+#   `pub const APR_<TOOL>_DESCRIPTION: &str`  — tool-level description (PMAT-514)
+# Each tool's `*_tool_definition()` in `crates/aprender-mcp/src/tools/` parses
+# `APR_<TOOL>_SCHEMA` via `serde_json::from_str` and pulls in
+# `APR_<TOOL>_DESCRIPTION` via `.to_string()`. FALSIFY-MCP-008 asserts
+# byte-identity (after JSON canonicalization for the schema, raw-string
+# compare for the description) between the YAML, the codegen constants,
+# and the live `tools/list` response; enforced at 4 layers by
+# `tests/falsify_mcp_008.rs` (see the Gate-surface coverage note at end of
+# file for the full list).
 #
 # Direction: THIS YAML IS AUTHORITATIVE. Rust tool sources contain no
-# hand-written schemas — they only parse the codegen constants. To change a
-# schema: edit this file and rebuild.
+# hand-written schemas OR descriptions — they only consume the codegen
+# constants. To change a schema or description: edit this file and rebuild.
 #
-# Scope (M3-complete, 2026-04-18): all 8 Phase-1 tools migrated to codegen —
-# apr.version (#880), apr.validate+apr.tensors+apr.bench+apr.qa+apr.trace+
-# apr.run+apr.serve+apr.finetune (#884).
+# Scope (M3-complete, 2026-04-18): all 9 registered tools (`apr.version` +
+# 8 Phase-1 wrappers) migrated to full codegen for both `inputSchema` and
+# `description`. Related PRs: #880 (apr.version first), #881 (apr.finetune
+# + batch codegen), #884 (remaining 7 tools).
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -33,17 +39,18 @@ metadata:
   author: PAIML Engineering
   registry: true
   description: >
-    Per-tool MCP inputSchema source of truth for the aprender-mcp server.
-    Drives `crates/aprender-mcp/build.rs` codegen; byte-identity between
-    codegen output and `tools/list` is asserted by FALSIFY-MCP-008
-    (crates/aprender-mcp/tests/falsify_mcp_008.rs). Authoritative as of M3 (2026-04-18) —
-    Rust tool sources parse codegen constants and contain no hand-written
-    schemas.
+    Per-tool MCP `inputSchema` and `description` source of truth for the
+    aprender-mcp server. Drives `crates/aprender-mcp/build.rs` codegen of
+    `APR_<TOOL>_SCHEMA` and `APR_<TOOL>_DESCRIPTION` constants; byte-identity
+    between codegen output and `tools/list` is asserted by FALSIFY-MCP-008
+    at 4 layers (crates/aprender-mcp/tests/falsify_mcp_008.rs). Authoritative
+    as of M3 (2026-04-18, PMAT-514) — Rust tool sources consume codegen
+    constants and contain no hand-written schemas or descriptions.
   references:
     - 'Model Context Protocol Specification v2024-11-05 (Anthropic)'
     - 'JSON-RPC 2.0 Specification (ECMA-404)'
-    - 'crates/aprender-mcp/build.rs — reads this YAML, emits $OUT_DIR/schemas.rs'
-    - 'crates/aprender-mcp/src/tools/*.rs — parse codegen constants from schemas.rs'
+    - 'crates/aprender-mcp/build.rs — reads this YAML, emits $OUT_DIR/schemas.rs (APR_<TOOL>_SCHEMA + APR_<TOOL>_DESCRIPTION)'
+    - 'crates/aprender-mcp/src/tools/*.rs — consume codegen constants from schemas.rs'
     - 'crates/aprender-mcp/src/types.rs — InputSchema / PropertySchema shape'
     - 'contracts/apr-cli-commands-v1.yaml — sibling command registry (no args)'
     - 'contracts/aprender/mcp-tool-schema-v1.yaml — MCP session/error contract'
