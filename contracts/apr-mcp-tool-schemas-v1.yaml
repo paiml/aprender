@@ -61,11 +61,13 @@ protocol_version: '2024-11-05'
 spec: docs/specifications/apr-mcp-server-spec.md
 
 # ── Tool registry ──
-# Each entry encodes: MCP tool name, human description (verbatim from Rust),
-# the `apr` subcommand it wraps (null for server-synthesized tools), and the
-# full `inputSchema.properties` + `inputSchema.required` contents. The M3
-# codegen walks this list and emits one `fn <tool>_tool_definition() ->
-# ToolDefinition` per entry.
+# Each entry encodes: MCP tool name, human description, the `apr`
+# subcommand it wraps (null for server-synthesized tools), and the full
+# `inputSchema.properties` + `inputSchema.required` contents. The M3
+# build.rs codegen walks this list and emits, per tool, a
+# `schemas::APR_<TOOL>_SCHEMA` constant (serialized JSON Schema) and a
+# `schemas::APR_<TOOL>_DESCRIPTION` constant (raw description string) —
+# this YAML is the single source of truth for both fields.
 
 tools:
   - name: apr.version
@@ -276,11 +278,13 @@ falsification:
       are byte-identical, after JSON canonicalization (RFC 8785 JCS or
       equivalent: keys sorted, no trailing whitespace, UTF-8, no
       insignificant whitespace), to the corresponding fields derived from
-      `contracts/apr-mcp-tool-schemas-v1.yaml`. The `inputSchema` side
-      flows through the M3 build-time code generator at
-      `crates/aprender-mcp/build.rs`; the `description` side is compared
-      directly at test time against the `ToolDefinition.description` field
-      (PMAT-514 extension, 2026-04-18).
+      `contracts/apr-mcp-tool-schemas-v1.yaml`. Both fields flow through
+      the build-time code generator at `crates/aprender-mcp/build.rs`:
+      `inputSchema` is emitted as `schemas::APR_<TOOL>_SCHEMA` (a
+      serialized JSON Schema) and `description` as
+      `schemas::APR_<TOOL>_DESCRIPTION` (PMAT-514 extension, 2026-04-18).
+      Tool source files consume these constants directly; neither field
+      can be hand-coded in Rust source.
     assertions:
       - "tools/list returns exactly the tool names listed in `tools[].name`"
       - "each tool's `description` matches `tools[*].description` byte-for-byte"
@@ -288,8 +292,8 @@ falsification:
       - "each tool's `inputSchema.properties.<arg>.type` matches `tools[*].args[*].type`"
       - "each tool's `inputSchema.properties.<arg>.description` matches `tools[*].args[*].description` byte-for-byte"
       - "each tool's `inputSchema.required` equals `tools[*].required` as a sorted set"
-    test_harness: "crates/aprender-mcp/tests/falsify_mcp_008.rs (landed in M3, PR #881; extended with tool_descriptions_match_yaml_contract in 2026-04-18 follow-up)"
-    codegen_consumer: "crates/aprender-mcp/build.rs (landed in M3, PR #881)"
+    test_harness: "crates/aprender-mcp/tests/falsify_mcp_008.rs (landed in M3, PR #881; extended 2026-04-18 with `tool_descriptions_match_yaml_contract` for the live wiring and `codegen_description_constants_match_yaml` for the codegen constants — PMAT-514)"
+    codegen_consumer: "crates/aprender-mcp/build.rs (landed in M3, PR #881; extended 2026-04-18 to emit `APR_<TOOL>_DESCRIPTION` constants alongside `APR_<TOOL>_SCHEMA` — PMAT-514)"
 
   related_gates:
     FALSIFY-MCP-002:

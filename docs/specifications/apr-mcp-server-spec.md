@@ -156,7 +156,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 5. **FALSIFY-MCP-005**: Malformed request (`"jsonrpc": "1.0"`) returns JSON-RPC error code `-32600`, does not crash server. **ENFORCED**.
 6. **FALSIFY-MCP-006**: `notifications/cancelled` during `apr.run` stops decoding within 30s, returns partial result. **ENFORCED**.
 7. **FALSIFY-MCP-007**: Protocol version mismatch (`"protocolVersion": "1999-01-01"`) returns error, does not attempt tools/list. **ENFORCED**.
-8. **FALSIFY-MCP-008**: Schema + description in `tools/list` output are byte-identical to the entry from `contracts/apr-mcp-tool-schemas-v1.yaml`. **ENFORCED** — `inputSchema` equality via `migrated_tools_match_yaml_contract_byte_for_byte`, tool-level `description` equality via `tool_descriptions_match_yaml_contract` (both in `tests/falsify_mcp_008.rs`).
+8. **FALSIFY-MCP-008**: Schema + description in `tools/list` output are byte-identical to the entry from `contracts/apr-mcp-tool-schemas-v1.yaml`. **ENFORCED** — `inputSchema` equality via `migrated_tools_match_yaml_contract_byte_for_byte`, tool-level `description` equality at two layers: live `ToolDefinition.description` via `tool_descriptions_match_yaml_contract`, and the `build.rs`-emitted `schemas::APR_<TOOL>_DESCRIPTION` codegen constants via `codegen_description_constants_match_yaml` (all in `tests/falsify_mcp_008.rs`). Both `inputSchema` and `description` are emitted by `build.rs` from the YAML — hand-editing them in Rust source is not possible.
 9. **FALSIFY-MCP-PROGRESS-001** (M3 addition): When client supplies `params._meta.progressToken`, `apr.finetune` emits one `notifications/progress` per non-empty stdout line of `apr finetune --json`, all flushed before the final `tools/call` response. Without a token, zero notifications. **ENFORCED**.
 
 ### Additional dispatcher invariant (not in `apr-mcp-server-v1.yaml`)
@@ -191,7 +191,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 ### M3: Streaming + cancellation + 8th tool + codegen — SHIPPED (2026-04-18)
 - [x] `apr.finetune` synchronous wrapper completes Phase-1 8-tool set (#881)
 - [x] Cancellation: `notifications/cancelled` → SIGTERM (30s grace) → SIGKILL via std::thread+mpsc worker (#883)
-- [x] FALSIFY-MCP-008: build.rs codegen from `apr-mcp-tool-schemas-v1.yaml` — `apr.version` first (#880), then 7 remaining tools (#884)
+- [x] FALSIFY-MCP-008: build.rs codegen from `apr-mcp-tool-schemas-v1.yaml` — `apr.version` first (#880), then 7 remaining tools (#884); PMAT-514 extended codegen to tool-level `description` strings so neither `inputSchema` nor `description` can be hand-edited in Rust source (2026-04-18)
 - [x] Progress notifications for `apr.finetune` — `NotificationSink` plumbed; `params._meta.progressToken` opt-in; FALSIFY-MCP-PROGRESS-001 (#887)
 - [x] Book chapter `book/src/tools/mcp-server.md` (#874 M2 creation, #885 M3 update)
 - [ ] **Deferred to M4**: Per-step structured progress for `apr.finetune` (CLI emits terminal blob today; needs CLI event channel)
@@ -213,7 +213,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 - [ ] Extend cancellation to `apr.serve`: track daemon pid in a lifecycle registry, SIGTERM→SIGKILL on `notifications/cancelled` (today `apr.run` alone honours cancel — see `server.rs::CancelHandle`)
 - [ ] Add SSE transport (`apr mcp --transport sse --port N`) via pmcp's SSE layer — unblocks browser/container MCP clients
 - [ ] Add WebSocket transport (same surface) — unblocks long-running sessions
-- [ ] Re-run falsification suite (76 tests across `falsify_m1`, `falsify_mcp_006`, `falsify_mcp_008`, `falsify_mcp_progress_001`, `falsify_schema`, lib unit tests — 2026-04-18 count) and ensure every FALSIFY-MCP gate still PASS post-migration
+- [ ] Re-run falsification suite (78 tests across `falsify_m1`, `falsify_mcp_006`, `falsify_mcp_008`, `falsify_mcp_progress_001`, `falsify_schema`, lib unit tests — 2026-04-18 count) and ensure every FALSIFY-MCP gate still PASS post-migration
 
 ## Success Criteria
 

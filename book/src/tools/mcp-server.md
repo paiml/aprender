@@ -314,17 +314,24 @@ hand-maintained schemas in the tools source.
 
 FALSIFY-MCP-008 asserts byte-identity (after JSON canonicalization)
 between each live `tools/list` schema **and description** and the YAML
-contract entry. Both the structural schema comparison and the
-tool-level `description` string comparison break CI on drift
-(`tests/falsify_mcp_008.rs::migrated_tools_match_yaml_contract_byte_for_byte`
-and `::tool_descriptions_match_yaml_contract`).
+contract entry. The gate is enforced at two layers:
 
-To change a tool's schema: edit the YAML only — rebuild regenerates
-the codegen constant, no Rust edit needed. To change a tool's
-description: edit **both** the YAML entry and the matching string in
-`crates/aprender-mcp/src/tools/<tool>.rs` — descriptions are not yet
-codegen'd (they're hand-mirrored), and
-`tool_descriptions_match_yaml_contract` will fail CI if they diverge.
+* **Live wiring** — `tests/falsify_mcp_008.rs` compares
+  `ToolDefinition.inputSchema` (`migrated_tools_match_yaml_contract_byte_for_byte`)
+  and `ToolDefinition.description` (`tool_descriptions_match_yaml_contract`)
+  against the YAML contract.
+* **Codegen constants** — the same file compares each
+  `schemas::APR_<TOOL>_SCHEMA` (`codegen_constants_parse_and_match_yaml_for_every_tool`)
+  and each `schemas::APR_<TOOL>_DESCRIPTION` (`codegen_description_constants_match_yaml`)
+  against the YAML contract directly — this catches the case where a
+  future refactor replaces the codegen consumer with a hand-coded literal.
+
+To change a tool's schema *or* description: edit the YAML only — the
+next `cargo build` regenerates both `APR_<TOOL>_SCHEMA` and
+`APR_<TOOL>_DESCRIPTION` from `contracts/apr-mcp-tool-schemas-v1.yaml`
+and the tool modules pick them up automatically. No Rust edit is
+needed, and hand-editing the tool source will fail
+`codegen_description_constants_match_yaml` before reaching CI.
 
 ## Falsification gates
 
