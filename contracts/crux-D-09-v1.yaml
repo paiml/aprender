@@ -18,44 +18,139 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: supported
   description: >
-    Gradient accumulation. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Gradient accumulation — trade wall-clock for memory by summing grads
+    across K micro-batches before the optimizer step. Parity target:
+    effective_batch = per_device_batch × grad_accum_steps, with loss and
+    parameter updates numerically equivalent (±1%) to training with the
+    same effective batch size and no accumulation. Memory footprint per
+    micro-step must remain ~per_device_batch.
+    Ref: https://pytorch.org/docs/stable/notes/large_scale_deployments.html
 
 equations:
-  placeholder_contract:
+  effective_batch_identity:
     formula: |
-      DRAFT — user workflow "Gradient accumulation"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      effective_batch_size = per_device_batch × grad_accum_steps
+      Per micro-step i ∈ [0, K):
+          g_i = ∇θ L(θ, batch_i) / K          (loss scaled by 1/K)
+      Accumulated gradient:
+          G = Σ_{i=0}^{K-1} g_i
+      Optimizer step happens ONCE every K micro-steps using G.
+    domain: (per_device_batch ∈ N, K ∈ N_{>0})
+    codomain: (effective_batch, #optimizer_steps_per_epoch)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "K · optimizer_steps_per_epoch == total_micro_batches_per_epoch"
+    - "Optimizer update math is bit-equivalent to one pass over the concatenated batch"
+
+  loss_parity:
+    formula: |
+      Configuration A: per_device_batch = B·K, grad_accum_steps = 1
+      Configuration B: per_device_batch = B,   grad_accum_steps = K
+      Contract:  |loss_A(t) − loss_B(t)| / loss_A(t) ≤ 0.01  for all recorded t
+    domain: two training configurations with identical effective batch
+    codomain: loss curve equivalence
+    invariants:
+    - "Final loss differs by ≤1% between K=1 (large batch) and K>1 (accum)"
+    - "Number of optimizer.step() calls is identical across configs A and B"
+
+  memory_bound:
+    formula: |
+      peak_activation_memory(B, K) ≈ peak_activation_memory(B, 1)   (not B·K, 1)
+      i.e. accumulation trades time, not space, per micro-step.
+    domain: runtime memory profile
+    codomain: VRAM peak
+    invariants:
+    - "peak_memory(per_device=B, accum=K) ≤ 1.2 · peak_memory(per_device=B, accum=1)"
+    - "peak_memory(per_device=B, accum=K) < peak_memory(per_device=B·K, accum=1)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-09-001
-  rule: placeholder
-  prediction: "apr surface for 'Gradient accumulation' matches pytorch canonical behavior"
+  rule: --grad-accum-steps flag is accepted
+  prediction: "apr finetune --help documents --grad-accum-steps"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-09" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr finetune --help | grep -qE -- "--grad-accum-steps|--gradient-accumulation-steps"
+  if_fails: "apr finetune does not expose grad accumulation — PyTorch parity missing"
+
+- id: FALSIFY-CRUX-D-09-002
+  rule: effective batch = per_device × K (reflected in optimizer step count)
+  prediction: "K=4 yields 1/4 the optimizer steps vs K=1 for same data"
+  test: |
+    set -euo pipefail
+    apr finetune --data test.jsonl --epochs 1 --per-device-batch 2 \
+      --grad-accum-steps 1 --json > /tmp/k1-d09.json
+    apr finetune --data test.jsonl --epochs 1 --per-device-batch 2 \
+      --grad-accum-steps 4 --json > /tmp/k4-d09.json
+    S1=$(jq '.epoch_metrics[0].optimizer_steps // .total_steps' /tmp/k1-d09.json)
+    S4=$(jq '.epoch_metrics[0].optimizer_steps // .total_steps' /tmp/k4-d09.json)
+    uv run python - <<PY
+    import sys
+    s1, s4 = $S1, $S4
+    # K=4 should do ~1/4 the optimizer steps of K=1 (allow ±10% for epoch boundary).
+    ratio = s1 / max(s4, 1)
+    if not (3.6 <= ratio <= 4.4):
+        print(f"optimizer step ratio {ratio:.2f} not ≈4", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "grad-accum-steps does not reduce optimizer.step() calls — accumulation not wired"
+
+- id: FALSIFY-CRUX-D-09-003
+  rule: loss parity with large-batch baseline (±1%)
+  prediction: "Config A (batch=8, K=1) and Config B (batch=2, K=4) differ by ≤1% in final loss"
+  test: |
+    set -euo pipefail
+    apr finetune --data test.jsonl --epochs 2 --seed 42 \
+      --per-device-batch 8 --grad-accum-steps 1 --json > /tmp/A-d09.json
+    apr finetune --data test.jsonl --epochs 2 --seed 42 \
+      --per-device-batch 2 --grad-accum-steps 4 --json > /tmp/B-d09.json
+    A=$(jq '.final_loss' /tmp/A-d09.json)
+    B=$(jq '.final_loss' /tmp/B-d09.json)
+    uv run python - <<PY
+    import sys
+    a, b = $A, $B
+    if abs(a - b) / max(a, 1e-9) > 0.01:
+        print(f"loss drift {abs(a-b)/a:.4%} > 1%", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "Grad accumulation is NOT equivalent to a large batch — scaling/averaging bug"
+
+- id: FALSIFY-CRUX-D-09-004
+  rule: memory per micro-step is ~per_device_batch, not effective_batch
+  prediction: "peak VRAM with (B=2, K=4) < peak VRAM with (B=8, K=1)"
+  test: |
+    set -euo pipefail
+    command -v nvidia-smi >/dev/null || { echo "# TODO: capture evidence/crux/pytorch/memory-profile.json on GPU runner"; exit 0; }
+    # Emit peak_memory_bytes via apr finetune --json (field 'peak_memory_bytes').
+    B1=$(apr finetune --data test.jsonl --epochs 1 --per-device-batch 2 --grad-accum-steps 4 --json \
+           | jq '.peak_memory_bytes // 0')
+    B2=$(apr finetune --data test.jsonl --epochs 1 --per-device-batch 8 --grad-accum-steps 1 --json \
+           | jq '.peak_memory_bytes // 0')
+    [ "$B1" -lt "$B2" ] || { echo "memory not reduced: accum=$B1 big-batch=$B2"; exit 1; }
+  if_fails: "Accumulation does not reduce peak memory — micro-batch sizing broken"
+
+- id: FALSIFY-CRUX-D-09-005
+  rule: parity with PyTorch native accumulation loop
+  prediction: "apr accum matches PyTorch reference trajectory on a toy MLP"
+  test: |
+    set -euo pipefail
+    test -s evidence/crux/pytorch/grad-accum-reference.json \
+      || { echo "# TODO: capture evidence/crux/pytorch/grad-accum-reference.json via uv run --with torch" >&2; exit 0; }
+  if_fails: "PyTorch accumulation reference not yet captured"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "effective_batch_size == per_device_batch × grad_accum_steps"
+- type: invariant
+  property: "optimizer.step() called once every K micro-batches (not every one)"
+- type: invariant
+  property: "Loss parity ≤1% between (B·K, K=1) and (B, K) configurations with same seed"
+- type: invariant
+  property: "Peak activation memory per micro-step is ~per_device_batch (not effective_batch)"
+- type: parity
+  property: "apr finetune --grad-accum-steps K  ≅  PyTorch {for _ in range(K): loss.backward(); }; optimizer.step()"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

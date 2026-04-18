@@ -25,37 +25,119 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  seed_determinism:
     formula: |
-      DRAFT — user workflow "Train/val/test split deterministic"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      For any dataset D and seed s:
+        split_1 = apr data split D --train r_t --val r_v --test r_e --seed s
+        split_2 = apr data split D --train r_t --val r_v --test r_e --seed s
+        hash(split_1.train) == hash(split_2.train)
+        hash(split_1.val)   == hash(split_2.val)
+        hash(split_1.test)  == hash(split_2.test)
+    domain: (dataset D, ratios (r_t, r_v, r_e), seed s ∈ ℕ)
+    codomain: (train, val, test) record sets
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Same (D, seed) => byte-identical splits across runs"
+    - "Ordering within each split is also deterministic"
+    - "Reference: https://huggingface.co/docs/datasets/loading#splits"
+
+  partition_totality_and_disjointness:
+    formula: |
+      Let N = |D|. Ratios r_t + r_v + r_e = 1.0 (within FP tolerance).
+        train ∪ val ∪ test == D                (totality)
+        train ∩ val == train ∩ test == val ∩ test == ∅  (disjoint)
+        | |train| - N*r_t | / N <= 0.01       (size tolerance ±1%)
+        | |val|   - N*r_v | / N <= 0.01
+        | |test|  - N*r_e | / N <= 0.01
+    domain: (dataset D of size N, ratios summing to 1.0)
+    codomain: partition (train, val, test)
+    invariants:
+    - "Union of splits equals full dataset (no records lost)"
+    - "Splits are pairwise disjoint (no leakage)"
+    - "Each split size within ±1% of requested ratio"
 
 falsification_tests:
 - id: FALSIFY-CRUX-H-05-001
-  rule: placeholder
-  prediction: "apr surface for 'Train/val/test split deterministic' matches huggingface canonical behavior"
+  rule: "seed determinism"
+  prediction: "seed=42 produces byte-identical splits across two runs"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-H-05" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr data split dataset.jsonl --train 0.8 --val 0.1 --test 0.1 --seed 42 -o /tmp/crux-h-05-a
+    apr data split dataset.jsonl --train 0.8 --val 0.1 --test 0.1 --seed 42 -o /tmp/crux-h-05-b
+    diff -q /tmp/crux-h-05-a/train.jsonl /tmp/crux-h-05-b/train.jsonl
+    diff -q /tmp/crux-h-05-a/val.jsonl   /tmp/crux-h-05-b/val.jsonl
+    diff -q /tmp/crux-h-05-a/test.jsonl  /tmp/crux-h-05-b/test.jsonl
+  if_fails: "split is non-deterministic for fixed --seed (PRNG not seeded or unstable sort)"
+
+- id: FALSIFY-CRUX-H-05-002
+  rule: "size ratios within ±1% tolerance"
+  prediction: "|split_size - N*ratio| / N <= 0.01"
+  test: |
+    apr data split dataset.jsonl --train 0.8 --val 0.1 --test 0.1 --seed 42 -o /tmp/crux-h-05-sz
+    N=$(wc -l < dataset.jsonl)
+    TR=$(wc -l < /tmp/crux-h-05-sz/train.jsonl)
+    VL=$(wc -l < /tmp/crux-h-05-sz/val.jsonl)
+    TE=$(wc -l < /tmp/crux-h-05-sz/test.jsonl)
+    python3 -c "
+    N, TR, VL, TE = $N, $TR, $VL, $TE
+    assert abs(TR - 0.8*N)/N <= 0.01, f'train {TR}/{N}'
+    assert abs(VL - 0.1*N)/N <= 0.01, f'val {VL}/{N}'
+    assert abs(TE - 0.1*N)/N <= 0.01, f'test {TE}/{N}'
+    "
+  if_fails: "split sizes deviate from requested ratios by more than ±1%"
+
+- id: FALSIFY-CRUX-H-05-003
+  rule: "totality: union equals full dataset"
+  prediction: "sort(train ∪ val ∪ test) == sort(D)"
+  test: |
+    apr data split dataset.jsonl --train 0.8 --val 0.1 --test 0.1 --seed 42 -o /tmp/crux-h-05-tot
+    cat /tmp/crux-h-05-tot/train.jsonl /tmp/crux-h-05-tot/val.jsonl /tmp/crux-h-05-tot/test.jsonl | \
+      sort > /tmp/crux-h-05-tot/union.sorted
+    sort dataset.jsonl > /tmp/crux-h-05-tot/full.sorted
+    diff -q /tmp/crux-h-05-tot/union.sorted /tmp/crux-h-05-tot/full.sorted
+  if_fails: "records missing or duplicated across splits (totality violated)"
+
+- id: FALSIFY-CRUX-H-05-004
+  rule: "pairwise disjoint splits"
+  prediction: "intersection of any two splits is empty"
+  test: |
+    apr data split dataset.jsonl --train 0.8 --val 0.1 --test 0.1 --seed 42 -o /tmp/crux-h-05-dj
+    comm -12 <(sort /tmp/crux-h-05-dj/train.jsonl) <(sort /tmp/crux-h-05-dj/val.jsonl)  | wc -l | grep -qx 0
+    comm -12 <(sort /tmp/crux-h-05-dj/train.jsonl) <(sort /tmp/crux-h-05-dj/test.jsonl) | wc -l | grep -qx 0
+    comm -12 <(sort /tmp/crux-h-05-dj/val.jsonl)   <(sort /tmp/crux-h-05-dj/test.jsonl) | wc -l | grep -qx 0
+  if_fails: "a record appears in >1 split (leakage => invalid evaluation)"
+
+- id: FALSIFY-CRUX-H-05-005
+  rule: "huggingface datasets parity"
+  prediction: "apr split matches Dataset.train_test_split seed-for-seed (same size + disjoint + stable hash)"
+  test: |
+    # TODO: collect reference datasets.Dataset.train_test_split transcript in evidence/crux/huggingface/h-05/
+    uv run --with datasets python3 - <<'PY'
+    from datasets import load_dataset
+    ds = load_dataset("json", data_files="dataset.jsonl")["train"]
+    s1 = ds.train_test_split(test_size=0.2, seed=42)
+    s2 = ds.train_test_split(test_size=0.2, seed=42)
+    assert s1["train"].to_json() == s2["train"].to_json(), "HF non-deterministic with seed"
+    print("HF seed-determinism OK")
+    PY
+  if_fails: "reference (transformers datasets) itself not seed-deterministic — recheck env"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Fixed --seed produces byte-identical splits across runs"
+- type: invariant
+  property: "Union of splits equals full dataset (totality)"
+- type: invariant
+  property: "Splits are pairwise disjoint (no leakage)"
+- type: invariant
+  property: "Split sizes within ±1% of requested ratios"
+- type: parity
+  property: "Seed-determinism semantics match huggingface datasets.Dataset.train_test_split"
+  reference: "https://huggingface.co/docs/datasets/loading#splits"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

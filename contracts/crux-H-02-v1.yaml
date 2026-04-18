@@ -25,37 +25,112 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  truncation_length_bound:
     formula: |
-      DRAFT — user workflow "Tokenize with truncation policy"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      For any input text T and max_length N:
+        tokens = apr tokenize --input T --max-length N --truncation-side {left,right}
+        len(tokens) <= N
+    domain: (text, max_length ∈ ℕ, side ∈ {left, right})
+    codomain: token_ids ∈ ℕ^k where k <= max_length
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "len(token_ids) <= max_length ALWAYS (strict upper bound)"
+    - "If raw tokenization length L <= N, len == L (no truncation)"
+    - "If raw tokenization length L > N, len == N (exact clamp)"
+    - "Reference: https://huggingface.co/docs/transformers/main_classes/tokenizer#transformers.PreTrainedTokenizerBase.__call__"
+
+  truncation_side_semantics:
+    formula: |
+      Let raw = tokenize(T) with len(raw) = L > N.
+        side=right => output = raw[0..N]       (drops tail, keeps head)
+        side=left  => output = raw[L-N..L]     (drops head, keeps tail)
+    domain: (raw_tokens, max_length N, side)
+    codomain: truncated token_ids
+    invariants:
+    - "truncation_side=right preserves prefix, drops suffix"
+    - "truncation_side=left preserves suffix, drops prefix"
+    - "Matches transformers.PreTrainedTokenizerBase truncation_side parameter"
+
+  huggingface_parity:
+    formula: |
+      apr tokenize --input T --max-length N --truncation-side S
+        == AutoTokenizer.from_pretrained(M).encode(T, truncation=True,
+             max_length=N, truncation_side=S)
+      for all (T, N, S), tokenizer-model M
+    domain: (text, max_length, side, model)
+    codomain: List[int] (token ids)
+    invariants:
+    - "Token-for-token identity with transformers reference"
+    - "BOS/EOS special token handling identical to transformers"
 
 falsification_tests:
 - id: FALSIFY-CRUX-H-02-001
-  rule: placeholder
-  prediction: "apr surface for 'Tokenize with truncation policy' matches huggingface canonical behavior"
+  rule: "len(token_ids) <= max_length"
+  prediction: "apr tokenize output never exceeds --max-length"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-H-02" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    echo "The quick brown fox jumps over the lazy dog. $(yes word | head -5000 | tr '\n' ' ')" > /tmp/crux-h-02-long.txt
+    LEN=$(apr tokenize model.apr --input /tmp/crux-h-02-long.txt \
+            --max-length 2048 --truncation-side right --json | \
+          jq '.token_ids | length')
+    test "$LEN" -le 2048
+  if_fails: "apr tokenize emits more tokens than --max-length (bound violation)"
+
+- id: FALSIFY-CRUX-H-02-002
+  rule: "truncation-side=right drops tail"
+  prediction: "With side=right, first N tokens equal first N of untruncated sequence"
+  test: |
+    FULL=$(apr tokenize model.apr --input /tmp/crux-h-02-long.txt --json | jq -c '.token_ids[0:2048]')
+    HEAD=$(apr tokenize model.apr --input /tmp/crux-h-02-long.txt \
+             --max-length 2048 --truncation-side right --json | jq -c '.token_ids')
+    test "$FULL" = "$HEAD"
+  if_fails: "truncation_side=right does not preserve head tokens"
+
+- id: FALSIFY-CRUX-H-02-003
+  rule: "truncation-side=left drops head"
+  prediction: "With side=left, last N tokens equal tail of untruncated sequence"
+  test: |
+    FULL_LEN=$(apr tokenize model.apr --input /tmp/crux-h-02-long.txt --json | jq '.token_ids | length')
+    START=$((FULL_LEN - 2048))
+    TAIL=$(apr tokenize model.apr --input /tmp/crux-h-02-long.txt --json | \
+             jq -c ".token_ids[$START:$FULL_LEN]")
+    LEFT=$(apr tokenize model.apr --input /tmp/crux-h-02-long.txt \
+             --max-length 2048 --truncation-side left --json | jq -c '.token_ids')
+    test "$TAIL" = "$LEFT"
+  if_fails: "truncation_side=left does not preserve tail tokens"
+
+- id: FALSIFY-CRUX-H-02-004
+  rule: "huggingface transformers parity"
+  prediction: "apr tokens are byte-identical to AutoTokenizer.encode(truncation=True, max_length=2048)"
+  test: |
+    # TODO: collect reference model path & apr-compatible tokenizer into evidence/crux/huggingface/h-02/
+    APR_IDS=$(apr tokenize model.apr --input /tmp/crux-h-02-long.txt \
+                --max-length 2048 --truncation-side right --json | jq -c '.token_ids')
+    HF_IDS=$(uv run --with transformers python3 -c "
+    from transformers import AutoTokenizer
+    import json, sys
+    tok = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-Coder-1.5B', truncation_side='right')
+    with open('/tmp/crux-h-02-long.txt') as f: text = f.read()
+    ids = tok.encode(text, truncation=True, max_length=2048, add_special_tokens=True)
+    print(json.dumps(ids))
+    ")
+    test "$APR_IDS" = "$HF_IDS"
+  if_fails: "apr tokenize diverges from transformers AutoTokenizer reference"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "len(token_ids) <= max_length for all inputs"
+- type: invariant
+  property: "truncation_side=right keeps prefix raw[0..N]"
+- type: invariant
+  property: "truncation_side=left keeps suffix raw[L-N..L]"
+- type: parity
+  property: "Byte-identical to transformers.AutoTokenizer.encode(truncation=True, max_length=N, truncation_side=S)"
+  reference: "https://huggingface.co/docs/transformers/main_classes/tokenizer"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

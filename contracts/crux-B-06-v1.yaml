@@ -25,37 +25,132 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  kquant_coverage:
     formula: |
-      DRAFT — user workflow "All K-quants Q2..Q8 + perplexity Δ"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr quantize --method M produces a parseable file for
+        M ∈ {q2k, q3k, q4k, q5k, q6k, q8k}
+      Matches the llama.cpp K-quant series introduced in
+      https://github.com/ggerganov/llama.cpp/pull/1684.
+    domain: K-quant method name
+    codomain: output file (GGUF or APR) loadable by apr inspect
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Each of Q2..Q8 K-quant methods produces a non-empty, parseable file"
+    - "File size strictly increases with bit width: Q2 < Q3 < Q4 < Q5 < Q6 < Q8"
+
+  ppl_monotonicity:
+    formula: |
+      Let PPL(q) = perplexity on wikitext-2-raw-test of quantization q.
+      PPL(q8k) <= PPL(q6k) <= PPL(q5k) <= PPL(q4k) <= PPL(q3k) <= PPL(q2k)
+      (within +/-1% tolerance per step; strict monotonicity at larger gaps).
+      Ref: https://github.com/ggerganov/llama.cpp/pull/1684 (K-quant PPL tables)
+    domain: (model, wikitext-2 test set)
+    codomain: monotonic non-increasing sequence of PPL as bits ↑
+    invariants:
+    - "Higher-bit K-quants MUST NOT have worse PPL than lower-bit by more than 1%"
+    - "Q2K ≥ Q4K ≥ Q8K PPL ordering must hold strictly"
+
+  ppl_absolute_bound:
+    formula: |
+      PPL(q4k) <= 1.10 * PPL(fp16)
+      (Q4K should stay within ~10% of FP16 baseline per llama.cpp evidence)
+    domain: apr quantize outputs vs fp16 baseline
+    codomain: bool
+    invariants:
+    - "Q4K PPL within 10% of fp16 baseline on wikitext-2"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-06-001
-  rule: placeholder
-  prediction: "apr surface for 'All K-quants Q2..Q8 + perplexity Δ' matches llama_cpp canonical behavior"
+  rule: all K-quants produce parseable output
+  prediction: "apr quantize --method {q2k,q3k,q4k,q5k,q6k,q8k} produces loadable files"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-06" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    SRC=$(mktemp -d)
+    apr pull hf://hf-internal-testing/tiny-random-llama -o "$SRC"
+    INPUT="${SRC}/model.safetensors"
+    [ -f "$INPUT" ] || INPUT="${SRC}/pytorch_model.bin"
+    for M in q2k q3k q4k q5k q6k q8k; do
+      OUT="${SRC}/model-${M}.apr"
+      apr quantize "$INPUT" --method "$M" -o "$OUT"
+      apr inspect "$OUT" >/dev/null || { echo "$M unparseable"; exit 1; }
+    done
+  if_fails: "one or more K-quant methods produced an unparseable file"
+
+- id: FALSIFY-CRUX-B-06-002
+  rule: file-size monotonic with bit width
+  prediction: "size(Q2) < size(Q3) < size(Q4) < size(Q5) < size(Q6) < size(Q8)"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://hf-internal-testing/tiny-random-llama -o "$SRC"
+    INPUT="${SRC}/model.safetensors"
+    declare -A SIZE
+    for M in q2k q3k q4k q5k q6k q8k; do
+      OUT="${SRC}/model-${M}.apr"
+      apr quantize "$INPUT" --method "$M" -o "$OUT"
+      SIZE[$M]=$(stat -c%s "$OUT")
+    done
+    python3 -c "
+    import sys
+    s = [${SIZE[q2k]}, ${SIZE[q3k]}, ${SIZE[q4k]}, ${SIZE[q5k]}, ${SIZE[q6k]}, ${SIZE[q8k]}]
+    assert all(a < b for a, b in zip(s, s[1:])), s
+    "
+  if_fails: "file size not strictly monotonic in bit width"
+
+- id: FALSIFY-CRUX-B-06-003
+  rule: "PPL monotonic: Q8 <= Q6 <= Q4 <= Q2 (within 1% step tolerance)"
+  prediction: "PPL on wikitext-2 decreases (or stays equal) as bit width increases"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0 -o "$SRC"
+    INPUT="${SRC}/model.safetensors"
+    declare -A PPL
+    for M in q2k q4k q6k q8k; do
+      OUT="${SRC}/m-${M}.gguf"
+      apr quantize "$INPUT" --method "$M" --format gguf -o "$OUT"
+      # Use apr eval --metric ppl on wikitext-2-raw-test
+      PPL[$M]=$(apr eval "$OUT" --dataset wikitext-2-raw --metric ppl --json | jq '.ppl')
+    done
+    python3 -c "
+    p = {'q2k': ${PPL[q2k]}, 'q4k': ${PPL[q4k]}, 'q6k': ${PPL[q6k]}, 'q8k': ${PPL[q8k]}}
+    order = ['q8k','q6k','q4k','q2k']
+    for a,b in zip(order, order[1:]):
+        assert p[a] <= p[b] * 1.01, (a,b,p[a],p[b])
+    "
+  if_fails: "PPL non-monotonic: higher-bit K-quant has worse perplexity than lower-bit"
+
+- id: FALSIFY-CRUX-B-06-004
+  rule: Q4K PPL within 10% of fp16 baseline
+  prediction: "PPL(Q4K) <= 1.10 * PPL(fp16)"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0 -o "$SRC"
+    INPUT="${SRC}/model.safetensors"
+    FP16="${SRC}/fp16.gguf"
+    Q4K="${SRC}/q4k.gguf"
+    apr export "$INPUT" --format gguf --dtype f16 -o "$FP16"
+    apr quantize "$INPUT" --method q4k --format gguf -o "$Q4K"
+    P_FP16=$(apr eval "$FP16" --dataset wikitext-2-raw --metric ppl --json | jq '.ppl')
+    P_Q4K=$(apr eval "$Q4K" --dataset wikitext-2-raw --metric ppl --json | jq '.ppl')
+    python3 -c "assert $P_Q4K <= 1.10 * $P_FP16, ($P_Q4K, $P_FP16)"
+  if_fails: "Q4K degrades PPL by more than 10% vs fp16 baseline"
 
 proof_obligations:
+- type: parity
+  property: "K-quant series matches llama.cpp K-quant definitions and PPL ranking from PR #1684"
+  competitor_function: "llama_model_quantize (ggml Q2_K..Q8_K)"
+  reference: "https://github.com/ggerganov/llama.cpp/pull/1684"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "All K-quants Q2..Q8 produce parseable files"
+- type: invariant
+  property: "File size strictly increases with bit width"
+- type: invariant
+  property: "PPL monotonic non-increasing from Q2K to Q8K (within 1% step tolerance)"
+- type: invariant
+  property: "Q4K PPL within 10% of fp16 baseline on wikitext-2"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

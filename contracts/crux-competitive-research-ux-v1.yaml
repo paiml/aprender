@@ -584,7 +584,12 @@ phases:
   phase_1_evidence:
     description: "Capture competitor evidence into evidence/crux/*/ and enrich contracts to spec-complete"
     status: in_progress
-    progress: "42 / 250 contracts spec-complete (2026-04-18: wave 1 = 18 missing, wave 2 = 24 partials, all demand=5)"
+    progress: "71 / 250 contracts spec-complete (2026-04-18: waves 1+2+3 covered 71 of 79 demand=5 stories)"
+    waves:
+    - { id: wave_1, stories: 18, target: "demand=5 missing", date: "2026-04-18" }
+    - { id: wave_2, stories: 24, target: "demand=5 partial", date: "2026-04-18" }
+    - { id: wave_3, stories: 29, target: "demand=5 supported (parity verification)", date: "2026-04-18" }
+    remaining_demand_5: 8  # D-15, D-23, G-13, I-03, K-03 + J-01/02/09 (OpenCLAW-blocked)
     exit_criteria: "apr qa --crux emits per-story PASS/FAIL/SKIP; pmat work tickets exist for all missing"
     blocks: [phase_2_partials]
 
@@ -618,7 +623,7 @@ status:
   owner: PAIML Engineering
   openclaw_interpretation: pending-user-confirmation
   last_subspec_sync: "2026-04-18"
-  spec_complete_contracts: 42  # of 250 (wave 1: 18 demand=5 missing; wave 2: 24 demand=5 partials)
+  spec_complete_contracts: 71  # of 250 (waves 1+2+3 = 18 missing + 24 partials + 29 supported, all demand=5)
   pmat_tickets_created: 140    # one per missing story
   phase_0_completed_at: "2026-04-18"
-  last_enrichment_wave: "2026-04-18 wave 2 — 24 demand=5 partial contracts (A/C/D/E/H/K)"
+  last_enrichment_wave: "2026-04-18 wave 3 — 29 demand=5 supported contracts (parity verification)"

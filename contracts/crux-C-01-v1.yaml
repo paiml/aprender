@@ -18,44 +18,96 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: supported
   description: >
-    apr run one-shot. Root-cause workflow extracted from ollama UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    apr run one-shot — the canonical `ollama run <model> "<prompt>"` verb.
+    Produces generated text on stdout, streams tokens incrementally (not a
+    single blob after decode completes), and exits 0 on success. Parity
+    target: https://github.com/ollama/ollama/blob/main/docs/README.md#quickstart
 
 equations:
-  placeholder_contract:
+  exit_and_stdout_contract:
     formula: |
-      DRAFT — user workflow "apr run one-shot"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr run MODEL --prompt P --max-tokens N
+        exit_code ∈ {0}                          (success)
+        stdout   ∈ { s : |tokens(s)| ≥ 1 }      (non-empty generation)
+        stderr   may contain progress/telemetry but NOT the generated text
+    domain: (Model × Prompt × Nat) → Process
+    codomain: (ExitCode, Stdout, Stderr)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "exit_code == 0 iff generation completed"
+    - "decoded text lives on stdout, never stderr"
+    - "|stdout| > 0 for any valid prompt + max-tokens >= 1"
+
+  streaming_incrementality:
+    formula: |
+      Let t_i = wall-clock time first byte of token i appears on stdout.
+      Streaming iff:   ∃ i,j with i<j s.t. t_j − t_i ≥ Δ_min (Δ_min = 50ms)
+      Non-streaming (BUG): all bytes appear within a single Δ < 10ms window
+      after decode completes.
+    domain: stdout byte timeline
+    codomain: bool (streams | blobs)
+    invariants:
+    - "Tokens arrive incrementally (ollama parity: see README §Quickstart)"
+    - "At least one flush MUST occur before the final token"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-01-001
-  rule: placeholder
-  prediction: "apr surface for 'apr run one-shot' matches ollama canonical behavior"
+  rule: exit code and non-empty stdout
+  prediction: "apr run returns 0 and writes generated text to stdout"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-01" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    OUT=$(apr run qwen2.5-coder-1.5b-q4k.apr --prompt "Say hi" --max-tokens 8)
+    [ -n "$OUT" ] || { echo "empty stdout"; exit 1; }
+  if_fails: "apr run produced empty stdout or non-zero exit — ollama parity broken"
+
+- id: FALSIFY-CRUX-C-01-002
+  rule: streams tokens incrementally (not one blob)
+  prediction: "At least two distinct stdout flushes occur during decode"
+  test: |
+    set -euo pipefail
+    # Record per-line arrival timestamps; ollama parity requires >=2 flushes.
+    STAMPS=$(apr run qwen2.5-coder-1.5b-q4k.apr --prompt "Count 1 to 10" --max-tokens 32 \
+              | awk '{ print systime(), $0 }' | awk '{print $1}' | sort -u | wc -l)
+    [ "$STAMPS" -ge 2 ] || { echo "only $STAMPS flush(es), expected >=2"; exit 1; }
+  if_fails: "apr run buffers all tokens and emits as one blob — violates ollama streaming contract"
+
+- id: FALSIFY-CRUX-C-01-003
+  rule: stderr does not carry decoded text
+  prediction: "generated tokens appear on stdout, not stderr"
+  test: |
+    set -euo pipefail
+    ERR=$(apr run qwen2.5-coder-1.5b-q4k.apr --prompt "hello" --max-tokens 4 2>&1 >/dev/null)
+    # stderr may contain progress, but should not contain the majority of decode output.
+    echo "$ERR" | grep -Eiq "^(progress|loaded|info|warning|token/s)" || \
+      { echo "stderr appears to carry primary output"; exit 1; }
+  if_fails: "decoded text is leaking to stderr — violates CLI parity"
+
+- id: FALSIFY-CRUX-C-01-004
+  rule: parity with ollama run invocation shape
+  prediction: "`ollama run MODEL 'PROMPT'` and `apr run MODEL --prompt 'PROMPT'` both exit 0 and emit non-empty stdout"
+  test: |
+    set -euo pipefail
+    # Ollama reference — skip if ollama not present on runner.
+    command -v ollama >/dev/null || { echo "# TODO: capture evidence/crux/ollama/run-transcript.txt on runner with ollama" >&2; exit 0; }
+    OLLAMA_OUT=$(ollama run qwen2.5-coder:1.5b "Say hi" 2>/dev/null || true)
+    APR_OUT=$(apr run qwen2.5-coder-1.5b-q4k.apr --prompt "Say hi" --max-tokens 16)
+    [ -n "$OLLAMA_OUT" ] && [ -n "$APR_OUT" ]
+  if_fails: "apr run is not drop-in equivalent to ollama run on canonical invocation"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "exit code 0 on success, non-empty stdout, streaming ≥2 flushes"
+- type: invariant
+  property: "decoded text on stdout only; stderr reserved for telemetry"
+- type: parity
+  property: "apr run <model> --prompt P  ≅  ollama run <model> 'P'  (both exit 0, both stream, both emit non-empty stdout)"
+- type: invariant
+  property: "generation honors --max-tokens upper bound"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -25,37 +25,120 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  metadata_key_coverage:
     formula: |
-      DRAFT — user workflow "GGUF metadata dump"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      keys(apr inspect --json .metadata) ⊇ keys(gguf_reader.fields)
+      for every GGUF file, where canonical keys include:
+        general.*             (name, architecture, quantization_version, file_type, ...)
+        tokenizer.ggml.*      (model, tokens, scores, token_type, bos_token_id, ...)
+        <arch>.attention.head_count
+        <arch>.attention.head_count_kv
+        <arch>.block_count
+        <arch>.context_length
+        <arch>.embedding_length
+        <arch>.feed_forward_length
+        <arch>.rope.freq_base (if applicable)
+    domain: apr inspect model.gguf --json
+    codomain: JSON object (metadata block)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Every GGUF key observed by gguf-py is present in apr output"
+    - "No apr-specific keys are injected into the GGUF metadata block"
+    - "Key ordering is deterministic (sorted or file-order)"
+
+  value_byte_identity:
+    formula: |
+      For every k ∈ keys(gguf_reader.fields):
+        apr_inspect[k] == gguf_reader[k]
+      with value-preserving types:
+        u32/u64 → JSON number
+        f32/f64 → JSON number (full precision)
+        string  → JSON string (UTF-8)
+        array   → JSON array (same length, same element order)
+    domain: metadata values
+    codomain: JSON values
+    invariants:
+    - "Scalar metadata values are byte-identical to gguf-py GGUFReader output"
+    - "Array metadata values preserve length and element order"
+    - "No lossy truncation of float metadata"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-20-001
-  rule: placeholder
-  prediction: "apr surface for 'GGUF metadata dump' matches llama_cpp canonical behavior"
+  rule: required GGUF keys present
+  prediction: "apr inspect --json surfaces general.*, tokenizer.*, and arch.* keys"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-20" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr inspect tests/fixtures/tinyllama-q4k.gguf --json | \
+      jq -e '.metadata
+        | has("general.architecture")
+        and has("general.name")
+        and has("tokenizer.ggml.model")
+        and (to_entries | any(.key | test("\\.attention\\.head_count$")))
+        and (to_entries | any(.key | test("\\.block_count$")))'
+  if_fails: "required GGUF metadata keys missing from apr inspect output"
+
+- id: FALSIFY-CRUX-F-20-002
+  rule: key-set parity with gguf-py
+  prediction: "apr inspect .metadata keys ⊇ gguf_reader.fields keys"
+  test: |
+    APR_KEYS=$(apr inspect tests/fixtures/tinyllama-q4k.gguf --json | \
+                jq -r '.metadata | keys[]' | sort)
+    GGUF_KEYS=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    for k in sorted(r.fields.keys()):
+        print(k)
+    ")
+    # Every gguf-py key must appear in apr output
+    MISSING=$(comm -23 <(echo "$GGUF_KEYS") <(echo "$APR_KEYS"))
+    [ -z "$MISSING" ]
+  if_fails: "apr inspect missing metadata keys that gguf-py reports"
+
+- id: FALSIFY-CRUX-F-20-003
+  rule: scalar value byte-identity
+  prediction: "scalar metadata values match gguf-py on the same file"
+  test: |
+    APR_ARCH=$(apr inspect tests/fixtures/tinyllama-q4k.gguf --json | \
+                jq -r '.metadata["general.architecture"]')
+    GGUF_ARCH=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    f = r.fields['general.architecture']
+    print(bytes(f.parts[f.data[0]]).decode('utf-8'))
+    ")
+    [ "$APR_ARCH" = "$GGUF_ARCH" ]
+  if_fails: "general.architecture value diverges from gguf-py"
+
+- id: FALSIFY-CRUX-F-20-004
+  rule: tokenizer array length parity
+  prediction: "len(tokenizer.ggml.tokens) matches gguf-py"
+  test: |
+    APR_LEN=$(apr inspect tests/fixtures/tinyllama-q4k.gguf --json | \
+               jq '.metadata["tokenizer.ggml.tokens"] | length')
+    GGUF_LEN=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    f = r.fields['tokenizer.ggml.tokens']
+    print(len(f.data))
+    ")
+    [ "$APR_LEN" = "$GGUF_LEN" ]
+  if_fails: "tokenizer vocab length diverges from gguf-py"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "apr inspect --json contains all general.*, tokenizer.*, and <arch>.* keys"
+- type: invariant
+  property: "scalar metadata values round-trip byte-identically to gguf-py"
+- type: invariant
+  property: "array metadata values preserve length and element order"
+- type: parity
+  property: "apr inspect metadata is a superset of gguf-py GGUFReader.fields on the golden GGUF fixture"
+  competitor: llama_cpp
+  reference: "https://github.com/ggerganov/llama.cpp/tree/master/gguf-py (gguf.gguf_reader.GGUFReader)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

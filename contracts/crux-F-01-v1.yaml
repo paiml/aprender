@@ -25,37 +25,105 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  per_tensor_schema:
     formula: |
-      DRAFT — user workflow "apr tensors shape/dtype/stats"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr tensors model.apr --json emits an array of TensorInfo objects, where
+      each object contains:
+        name:         string (non-empty)
+        shape:        array<u64> (len >= 1, all dims > 0)
+        dtype:        string ∈ {F32, F16, BF16, Q4K, Q5K, Q6K, Q8K, Q8_0, I32, I8}
+        num_elements: u64 = prod(shape)
+        min:          f64 (finite for numeric dtypes)
+        max:          f64 (finite; max >= min)
+        mean:         f64 (finite; min <= mean <= max)
+        std:          f64 >= 0.0
+    domain: apr tensors --json output
+    codomain: JSON array
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "num_elements == prod(shape) for every tensor"
+    - "dtype string belongs to canonical set (no ggml_type integers leaked)"
+    - "min <= mean <= max for every tensor"
+    - "std >= 0.0 for every tensor"
+
+  total_param_conservation:
+    formula: |
+      Σ tensor.num_elements == total_parameters_in_model
+      where total_parameters_in_model is independently reported by
+      gguf-py (llama.cpp) on the same file.
+    domain: set of tensors in a model
+    codomain: u64
+    invariants:
+    - "apr tensors param count equals gguf_reader.GGUFReader().total_params"
+    - "No tensor is dropped or duplicated in the dump"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-01-001
-  rule: placeholder
-  prediction: "apr surface for 'apr tensors shape/dtype/stats' matches llama_cpp canonical behavior"
+  rule: per-tensor schema complete
+  prediction: "apr tensors --json emits name/shape/dtype/num_elements/min/max/mean/std for every tensor"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-01" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr tensors tests/fixtures/tinyllama-q4k.gguf --json | \
+      jq -e 'all(.[]; has("name") and has("shape") and has("dtype")
+              and has("num_elements") and has("min") and has("max")
+              and has("mean") and has("std"))'
+  if_fails: "per-tensor JSON schema missing required fields"
+
+- id: FALSIFY-CRUX-F-01-002
+  rule: num_elements = prod(shape)
+  prediction: "for every tensor, num_elements == product of shape dims"
+  test: |
+    apr tensors tests/fixtures/tinyllama-q4k.gguf --json | \
+      jq -e 'all(.[]; .num_elements == (.shape | reduce .[] as $d (1; . * $d)))'
+  if_fails: "num_elements != prod(shape) for at least one tensor"
+
+- id: FALSIFY-CRUX-F-01-003
+  rule: dtype canonical
+  prediction: "dtype strings are from the canonical set, not raw ggml_type ints"
+  test: |
+    apr tensors tests/fixtures/tinyllama-q4k.gguf --json | \
+      jq -e 'all(.[]; .dtype | test("^(F32|F16|BF16|Q4K|Q5K|Q6K|Q8K|Q8_0|I32|I8)$"))'
+  if_fails: "non-canonical dtype string leaked into output"
+
+- id: FALSIFY-CRUX-F-01-004
+  rule: parity with gguf-py total params
+  prediction: "sum(apr.num_elements) == gguf_reader total tensor element count"
+  test: |
+    APR_SUM=$(apr tensors tests/fixtures/tinyllama-q4k.gguf --json | \
+               jq '[.[].num_elements] | add')
+    GGUF_SUM=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    print(sum(int(t.n_elements) for t in r.tensors))
+    ")
+    [ "$APR_SUM" = "$GGUF_SUM" ]
+  if_fails: "apr total param count diverges from gguf-py ground truth"
+
+- id: FALSIFY-CRUX-F-01-005
+  rule: stats monotonicity
+  prediction: "min <= mean <= max and std >= 0 for every tensor"
+  test: |
+    apr tensors tests/fixtures/tinyllama-q4k.gguf --json | \
+      jq -e 'all(.[]; (.min <= .mean) and (.mean <= .max) and (.std >= 0))'
+  if_fails: "stats violate min <= mean <= max or negative std"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "per-tensor JSON schema has name/shape/dtype/num_elements/min/max/mean/std"
+- type: invariant
+  property: "num_elements == prod(shape) for every tensor"
+- type: invariant
+  property: "dtype string is from canonical set {F32,F16,BF16,Q4K,Q5K,Q6K,Q8K,Q8_0,I32,I8}"
+- type: invariant
+  property: "min <= mean <= max and std >= 0 for every tensor"
+- type: parity
+  property: "sum(apr.num_elements) == gguf-py GGUFReader total element count (byte-identical on golden GGUF fixture)"
+  competitor: llama_cpp
+  reference: "https://github.com/ggerganov/llama.cpp/tree/master/gguf-py (GGUFReader.tensors[].n_elements)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

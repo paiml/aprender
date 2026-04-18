@@ -25,37 +25,129 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  row_major_output:
     formula: |
-      DRAFT — user workflow "HF → APR native with LAYOUT check"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      ∀ tensor T ∈ apr_convert(safetensors_source):
+        layout(T) == RowMajor
+      Equivalent to safetensors_load(...) which is natively row-major (numpy default).
+      Ref: contracts/tensor-layout-v1.yaml (LAYOUT-001/002)
+    domain: tensors in produced .apr file
+    codomain: {RowMajor, ColMajor}
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Every 2D weight tensor in the .apr output is RowMajor"
+    - "LayoutContract.validate_apr_shape(name, shape, rows, cols) returns Ok for every tensor"
+
+  layout_001_shape_contract:
+    formula: |
+      ∀ (name, shape) in apr_tensors:
+        CONTRACT.validate_apr_shape(name, shape, expected_rows, expected_cols).is_ok()
+      Per tensor-layout-v1.yaml rule LAYOUT-001, lm_head/output shape is [vocab, hidden] row-major.
+    domain: APR tensor shape map
+    codomain: bool
+    invariants:
+    - "lm_head.weight shape == [vocab_size, hidden_size], NOT [hidden_size, vocab_size]"
+    - "embed_tokens.weight shape == [vocab_size, hidden_size]"
+    - "attn qkv_proj shapes row-major per contract"
+
+  cosine_parity:
+    formula: |
+      ∀ prompt p ∈ eval_set:
+        cos_sim(HF_forward(p), APR_forward(p)) >= 0.99
+      HF_forward via transformers.AutoModel, APR_forward via realizar.
+      Ref: https://huggingface.co/docs/transformers/main/model_doc/auto
+    domain: last-layer logits (or hidden states) on 10 eval prompts
+    codomain: bool
+    invariants:
+    - "Cosine similarity between HF reference and APR forward pass >= 0.99 for 10/10 prompts"
+    - "Divergence > 1% indicates layout/quantization regression — BLOCK merge"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-04-001
-  rule: placeholder
-  prediction: "apr surface for 'HF → APR native with LAYOUT check' matches huggingface canonical behavior"
+  rule: row-major layout
+  prediction: "apr convert output is row-major for all 2D tensors"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-04" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    SRC=$(mktemp -d)
+    uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import snapshot_download
+    snapshot_download('hf-internal-testing/tiny-random-gpt2', local_dir='${SRC}')
+    "
+    OUT="${SRC}/model.apr"
+    apr convert "${SRC}/model.safetensors" -o "$OUT" --quantize q4k
+    # Use apr lint to confirm LAYOUT-001/002 pass
+    apr lint "$OUT" | grep -Ei 'layout.*pass|row.?major' >/dev/null
+    apr validate "$OUT" --quality
+  if_fails: "produced .apr fails layout lint or validate --quality"
+
+- id: FALSIFY-CRUX-B-04-002
+  rule: LAYOUT-001 shape contract satisfied
+  prediction: "lm_head.weight and embed shapes match [vocab, hidden]"
+  test: |
+    SRC=$(mktemp -d)
+    uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import snapshot_download
+    snapshot_download('hf-internal-testing/tiny-random-gpt2', local_dir='${SRC}')
+    "
+    OUT="${SRC}/model.apr"
+    apr convert "${SRC}" -o "$OUT" --quantize q4k
+    JSON=$(apr tensors "$OUT" --json)
+    V=$(echo "$JSON" | jq '.config.vocab_size')
+    H=$(echo "$JSON" | jq '.config.hidden_size')
+    LMH=$(echo "$JSON" | jq '[.tensors[] | select(.name | test("lm_head|output.weight"))][0].shape')
+    echo "$LMH" | jq -e ". == [${V}, ${H}]"
+  if_fails: "lm_head shape is not [vocab, hidden] — LAYOUT-001 violation"
+
+- id: FALSIFY-CRUX-B-04-003
+  rule: cosine parity with HF reference on 10 prompts
+  prediction: "cos_sim(HF, APR) >= 0.99 on 10/10 prompts"
+  test: |
+    SRC=$(mktemp -d)
+    uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import snapshot_download
+    snapshot_download('hf-internal-testing/tiny-random-gpt2', local_dir='${SRC}')
+    "
+    OUT="${SRC}/model.apr"
+    apr convert "${SRC}" -o "$OUT" --quantize q4k
+    PROMPTS='Hello\nWorld\nHow are you\n2+2=\nThe quick brown\nfn main\nimport torch\nSELECT *\nonce upon\nHello world'
+    PASS=0; TOTAL=10
+    while IFS= read -r p; do
+      HF=$(uv run --with 'torch' --with 'transformers' python -c "
+    from transformers import AutoModel, AutoTokenizer
+    import torch, sys
+    t = AutoTokenizer.from_pretrained('${SRC}')
+    m = AutoModel.from_pretrained('${SRC}')
+    ids = t('$p', return_tensors='pt').input_ids
+    with torch.no_grad():
+        h = m(ids).last_hidden_state[0,-1]
+    print(','.join(f'{x:.6f}' for x in h.tolist()))
+    ")
+      APR=$(apr debug "$OUT" --prompt "$p" --last-hidden --json | jq -r '.last_hidden | map(tostring) | join(",")')
+      COS=$(python3 -c "
+    import numpy as np
+    a = np.array([float(x) for x in '$HF'.split(',')])
+    b = np.array([float(x) for x in '$APR'.split(',')])
+    print(float(np.dot(a,b)/(np.linalg.norm(a)*np.linalg.norm(b))))")
+      python3 -c "import sys; sys.exit(0 if $COS >= 0.99 else 1)" && PASS=$((PASS+1))
+    done <<< "$(printf "$PROMPTS")"
+    [ "$PASS" -eq "$TOTAL" ]
+  if_fails: "one or more prompts below 0.99 cosine similarity — quantization/layout regression"
 
 proof_obligations:
+- type: parity
+  property: "apr convert output forward-passes within 0.99 cosine of transformers.AutoModel reference"
+  competitor_function: "transformers.AutoModel.from_pretrained"
+  reference: "https://huggingface.co/docs/transformers/main/model_doc/auto"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "All 2D tensors row-major; LAYOUT-001/002 shape contract satisfied"
+- type: invariant
+  property: "lm_head.weight shape == [vocab, hidden], not transposed"
+- type: invariant
+  property: "Cosine similarity >= 0.99 on 10/10 eval prompts"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

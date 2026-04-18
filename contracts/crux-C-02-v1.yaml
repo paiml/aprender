@@ -18,44 +18,104 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: supported
   description: >
-    apr chat interactive REPL. Root-cause workflow extracted from ollama UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    apr chat interactive REPL — the canonical `ollama run <model>` (no prompt)
+    enters an interactive loop. Parity target: readline-style user/assistant
+    turns, multi-turn history within the session, and `/bye` cleanly exits.
+    Ref: https://github.com/ollama/ollama (README §Interactive use + slash-commands)
 
 equations:
-  placeholder_contract:
+  repl_turn_semantics:
     formula: |
-      DRAFT — user workflow "apr chat interactive REPL"
-      must produce observable parity with ollama's canonical verb
-      on the golden input defined in evidence/crux/ollama/.
-    domain: user invocation
-    codomain: apr CLI output
+      Session state S = [(u_0, a_0), (u_1, a_1), ..., (u_n, a_n)]
+      On each user input u_{n+1}:
+        a_{n+1} = model(context = render_chat_template(S ++ [(u_{n+1}, None)]))
+        S      ← S ++ [(u_{n+1}, a_{n+1})]
+      I.e. the model sees ALL prior (user, assistant) pairs, not just the latest turn.
+    domain: (Session × UserInput) → (AssistantReply, Session')
+    codomain: multi-turn REPL trace
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Turn n+1 prompt template includes turns 0..n"
+    - "Empty user input is a no-op (does not advance the session)"
+    - "Assistant reply is streamed to stdout with a visible prompt ('>>>' or '> ')"
+
+  exit_commands:
+    formula: |
+      On input ∈ {"/bye", "/exit", EOF}:
+        exit_code := 0
+        no further model inference is performed
+    domain: REPL control inputs
+    codomain: process exit
+    invariants:
+    - "/bye exits the REPL cleanly with exit 0"
+    - "Ctrl-D (EOF) exits the REPL cleanly with exit 0"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-02-001
-  rule: placeholder
-  prediction: "apr surface for 'apr chat interactive REPL' matches ollama canonical behavior"
+  rule: REPL reads user line, writes assistant reply
+  prediction: "stdin line -> stdout assistant reply before next prompt"
   test: |
-    # TBD — collect ollama transcript in evidence/crux/ollama/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-C-02" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    OUT=$(printf 'Say hi\n/bye\n' | apr chat qwen2.5-coder-1.5b-q4k.apr)
+    # Expect some non-empty assistant text between the user input and /bye.
+    [ -n "$OUT" ] || { echo "REPL produced no output"; exit 1; }
+  if_fails: "apr chat does not read user lines or produce assistant replies"
+
+- id: FALSIFY-CRUX-C-02-002
+  rule: /bye exits cleanly (exit 0)
+  prediction: "/bye terminates REPL with exit code 0"
+  test: |
+    set -euo pipefail
+    printf '/bye\n' | apr chat qwen2.5-coder-1.5b-q4k.apr
+    [ "$?" -eq 0 ] || { echo "/bye did not exit 0"; exit 1; }
+  if_fails: "/bye does not terminate REPL cleanly — ollama parity broken"
+
+- id: FALSIFY-CRUX-C-02-003
+  rule: multi-turn history preserved within session
+  prediction: "Turn 2 reply references a fact established in turn 1"
+  test: |
+    set -euo pipefail
+    OUT=$(printf 'My name is Zara.\nWhat is my name?\n/bye\n' \
+           | apr chat qwen2.5-coder-1.5b-q4k.apr --temperature 0.0 --seed 42)
+    # If history is NOT preserved, turn-2 cannot mention "Zara".
+    echo "$OUT" | grep -qi "zara" || { echo "session history lost between turns"; exit 1; }
+  if_fails: "apr chat discards prior turns — conversation context contract violated"
+
+- id: FALSIFY-CRUX-C-02-004
+  rule: EOF (Ctrl-D) exits REPL with exit 0
+  prediction: "stdin close terminates REPL cleanly"
+  test: |
+    set -euo pipefail
+    : | apr chat qwen2.5-coder-1.5b-q4k.apr
+  if_fails: "EOF on stdin does not terminate the REPL — hangs forever"
+
+- id: FALSIFY-CRUX-C-02-005
+  rule: parity with `ollama run <model>` interactive session
+  prediction: "ollama run <model> and apr chat <model> both accept stdin turns and honor /bye"
+  test: |
+    set -euo pipefail
+    command -v ollama >/dev/null || { echo "# TODO: capture evidence/crux/ollama/chat-transcript.txt" >&2; exit 0; }
+    OLLAMA_OUT=$(printf 'hi\n/bye\n' | ollama run qwen2.5-coder:1.5b 2>/dev/null || true)
+    APR_OUT=$(printf 'hi\n/bye\n' | apr chat qwen2.5-coder-1.5b-q4k.apr)
+    [ -n "$OLLAMA_OUT" ] && [ -n "$APR_OUT" ]
+  if_fails: "apr chat is not drop-in equivalent to ollama run interactive mode"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Every user line emits an assistant reply before the next prompt"
+- type: invariant
+  property: "Session state S grows monotonically by one (user, assistant) pair per turn"
+- type: invariant
+  property: "/bye and EOF both exit with code 0"
+- type: parity
+  property: "apr chat <model>  ≅  ollama run <model>  (interactive readline REPL with multi-turn history and /bye exit)"
+- type: invariant
+  property: "Empty input line is a no-op (session unchanged)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -25,37 +25,105 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  line_record_bijection:
     formula: |
-      DRAFT — user workflow "JSONL dataset loader"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Let L = { non-empty lines in file F }, M = { malformed lines in L }.
+        records(apr data load F) == { json_parse(l) : l ∈ L \ M }
+        |records| == |L| - |M|
+    domain: JSONL file F (one JSON value per line, UTF-8)
+    codomain: dataset records (parsed JSON objects)
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Every well-formed non-empty line produces exactly one record"
+    - "Empty lines (length 0 or whitespace-only) are skipped silently"
+    - "Malformed lines are counted but not emitted; first malformed line printed to stderr"
+    - "Reference: https://jsonlines.org (format spec), https://huggingface.co/docs/datasets/loading#json"
+
+  error_locality:
+    formula: |
+      On malformed line at 1-indexed position k:
+        stderr contains "line <k>" AND error excerpt
+        exit_code != 0 (if --strict) OR exit_code == 0 with record skip (default)
+    domain: JSONL file with at least one malformed line
+    codomain: (exit_code, stderr message)
+    invariants:
+    - "Error message cites the 1-indexed line number of first malformed line"
+    - "Error halts strict-mode loading; lenient-mode skips and continues"
 
 falsification_tests:
 - id: FALSIFY-CRUX-H-10-001
-  rule: placeholder
-  prediction: "apr surface for 'JSONL dataset loader' matches huggingface canonical behavior"
+  rule: "line-count bijection"
+  prediction: "record_count == non-empty-non-malformed line count"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-H-10" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    cat > /tmp/crux-h-10-mixed.jsonl <<'JSONL'
+    {"text":"one"}
+
+    {"text":"two"}
+
+    {"text":"three"}
+    JSONL
+    apr data load /tmp/crux-h-10-mixed.jsonl -o /tmp/crux-h-10-mixed.apr
+    COUNT=$(apr inspect /tmp/crux-h-10-mixed.apr --json | jq '.record_count')
+    test "$COUNT" -eq 3
+  if_fails: "record_count != 3 (empty/whitespace lines not skipped correctly)"
+
+- id: FALSIFY-CRUX-H-10-002
+  rule: "malformed line locator"
+  prediction: "first malformed line number is printed to stderr"
+  test: |
+    cat > /tmp/crux-h-10-bad.jsonl <<'JSONL'
+    {"text":"ok"}
+    {not valid json
+    {"text":"trailing-ok"}
+    JSONL
+    ERR=$(apr data load /tmp/crux-h-10-bad.jsonl -o /tmp/crux-h-10-bad.apr 2>&1 1>/dev/null || true)
+    echo "$ERR" | grep -E 'line[[:space:]]*2' -q
+  if_fails: "malformed-line error does not name line 2"
+
+- id: FALSIFY-CRUX-H-10-003
+  rule: "well-formed record preservation"
+  prediction: "every well-formed line round-trips through load => dataset"
+  test: |
+    cat > /tmp/crux-h-10-rt.jsonl <<'JSONL'
+    {"id":1,"text":"a"}
+    {"id":2,"text":"b"}
+    {"id":3,"text":"c"}
+    JSONL
+    apr data load /tmp/crux-h-10-rt.jsonl -o /tmp/crux-h-10-rt.apr
+    apr data export /tmp/crux-h-10-rt.apr --format jsonl -o /tmp/crux-h-10-rt.out.jsonl
+    diff <(jq -S -c . /tmp/crux-h-10-rt.jsonl) <(jq -S -c . /tmp/crux-h-10-rt.out.jsonl)
+  if_fails: "round-trip JSONL => dataset => JSONL is lossy"
+
+- id: FALSIFY-CRUX-H-10-004
+  rule: "huggingface datasets load_dataset('json') parity"
+  prediction: "apr record set equals datasets.load_dataset('json', data_files=F) records"
+  test: |
+    # TODO: evidence/crux/huggingface/h-10/
+    apr data load /tmp/crux-h-10-rt.jsonl -o /tmp/crux-h-10-rt.apr
+    APR_COUNT=$(apr inspect /tmp/crux-h-10-rt.apr --json | jq '.record_count')
+    HF_COUNT=$(uv run --with datasets python3 -c "
+    from datasets import load_dataset
+    ds = load_dataset('json', data_files='/tmp/crux-h-10-rt.jsonl')['train']
+    print(len(ds))
+    ")
+    test "$APR_COUNT" = "$HF_COUNT"
+  if_fails: "apr record count diverges from datasets.load_dataset('json') reference"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "record_count == non-empty-non-malformed line count"
+- type: invariant
+  property: "malformed line error names the 1-indexed line number"
+- type: invariant
+  property: "empty/whitespace-only lines are skipped silently"
+- type: parity
+  property: "Record set matches datasets.load_dataset('json', data_files=F)['train'] in count and content"
+  reference: "https://jsonlines.org and https://huggingface.co/docs/datasets/loading#json"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 4
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

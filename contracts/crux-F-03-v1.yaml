@@ -25,37 +25,112 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  gguf_to_apr_shape_transpose:
     formula: |
-      DRAFT — user workflow "LAYOUT shape validation pre-load"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      For every 2D tensor T in GGUF col-major source:
+        shape_gguf(T) = [K, N]   # col-major K x N
+        shape_apr(T)  = [N, K]   # row-major N x K (transposed)
+      For every 1D tensor (bias/norm) T:
+        shape_apr(T)  = shape_gguf(T)  # no transpose (per tensor-layout-v1.yaml)
+    domain: GGUF tensor on disk
+    codomain: APR tensor post-import
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "2D tensors have shape axes reversed via enforce_import_contract()"
+    - "1D tensors (norms, biases) keep their shape identically"
+    - "Total element count is preserved: prod(shape_gguf) == prod(shape_apr)"
+
+  layout_fail_closed:
+    formula: |
+      load(gguf_file) →
+        if layout_contract.validate(tensor_name, shape) == Err(LayoutError)
+        then return Err(LayoutError) [NOT panic, NOT garbage inference]
+        else proceed with row-major APR tensors
+    domain: apr load / apr run entry
+    codomain: Result<Model, LayoutError>
+    invariants:
+    - "Malformed GGUF produces an explicit LayoutError, never silently wrong output"
+    - "Error message names the offending tensor and the expected/actual shape"
+    - "No inference runs if LAYOUT validation fails"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-03-001
-  rule: placeholder
-  prediction: "apr surface for 'LAYOUT shape validation pre-load' matches llama_cpp canonical behavior"
+  rule: good GGUF loads cleanly
+  prediction: "a well-formed GGUF passes layout validation and inference succeeds"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-F-03" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr validate tests/fixtures/tinyllama-q4k.gguf --quality 2>&1 | \
+      grep -E "LAYOUT.*PASS|layout.*ok"
+  if_fails: "known-good GGUF fails LAYOUT validation — false positive"
+
+- id: FALSIFY-CRUX-F-03-002
+  rule: 2D tensor axes reversed post-import
+  prediction: "GGUF [K,N] becomes APR [N,K] for every 2D tensor"
+  test: |
+    GGUF_SHAPE=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    t = next(x for x in r.tensors if x.name == 'output.weight')
+    print(' '.join(str(d) for d in t.shape))
+    ")
+    # Convert GGUF → APR
+    apr convert tests/fixtures/tinyllama-q4k.gguf -o /tmp/t.apr
+    APR_SHAPE=$(apr tensors /tmp/t.apr --json | \
+                 jq -r '.[] | select(.name=="output.weight") | .shape | @tsv')
+    # GGUF col-major [K,N], APR row-major [N,K] => reversed
+    python3 -c "
+    gguf='$GGUF_SHAPE'.split()
+    apr='$APR_SHAPE'.split()
+    assert apr == list(reversed(gguf)), f'expected reversal, got gguf={gguf} apr={apr}'
+    "
+  if_fails: "2D tensor shape not transposed at GGUF import boundary"
+
+- id: FALSIFY-CRUX-F-03-003
+  rule: malformed GGUF fails closed
+  prediction: "a GGUF with a deliberately corrupted shape triggers LAYOUT error, not garbage"
+  test: |
+    # Synthesize a GGUF whose output.weight claims shape [1,1] but holds full payload
+    python3 scripts/make_malformed_gguf.py --out /tmp/bad.gguf \
+        --corrupt-tensor output.weight --wrong-shape 1,1
+    if apr validate /tmp/bad.gguf --quality 2>&1 | grep -qE "LAYOUT.*FAIL|LayoutError"; then
+      exit 0
+    else
+      echo "expected LAYOUT error, got clean load — fail-open regression" >&2
+      exit 1
+    fi
+  if_fails: "malformed GGUF was accepted — LAYOUT validation bypass"
+
+- id: FALSIFY-CRUX-F-03-004
+  rule: element count preserved
+  prediction: "prod(shape_gguf) == prod(shape_apr) for every tensor"
+  test: |
+    apr convert tests/fixtures/tinyllama-q4k.gguf -o /tmp/t.apr
+    GGUF_TOTAL=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    print(sum(int(t.n_elements) for t in r.tensors))
+    ")
+    APR_TOTAL=$(apr tensors /tmp/t.apr --json | jq '[.[].num_elements] | add')
+    [ "$GGUF_TOTAL" = "$APR_TOTAL" ]
+  if_fails: "element count drifted across GGUF → APR import (tensor dropped or mis-shaped)"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "2D GGUF tensors have their shape axes reversed at import per tensor-layout-v1.yaml"
+- type: invariant
+  property: "1D tensors (norms, biases) preserve shape identically across GGUF → APR"
+- type: invariant
+  property: "total element count is preserved across the import boundary"
+- type: invariant
+  property: "malformed GGUF fails with an explicit LayoutError, never silent garbage"
+- type: parity
+  property: "post-import APR shape equals reversed gguf-py GGUFReader shape for every 2D tensor"
+  competitor: llama_cpp
+  reference: "contracts/tensor-layout-v1.yaml (SOURCE OF TRUTH); https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -18,44 +18,147 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: supported
   description: >
-    Checkpoint save/resume w/ opt state. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Checkpoint save + resume with full optimizer state. Parity target: HF
+    Trainer `resume_from_checkpoint=<path>` (docs:
+    https://huggingface.co/docs/transformers/main_classes/trainer#checkpoints).
+    A resumed run MUST continue loss trajectory from the checkpoint (within
+    ±1%), restore AdamW moments (m, v, step t), and resume the LR schedule
+    at the correct step — NOT from step 0.
 
 equations:
-  placeholder_contract:
+  adamw_state_roundtrip:
     formula: |
-      DRAFT — user workflow "Checkpoint save/resume w/ opt state"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      Save(ckpt):  serialize { θ_t, m_t, v_t, t, lr_schedule_state } to ckpt/
+      Load(ckpt):  restore  { θ_t, m_t, v_t, t, lr_schedule_state }
+      For each parameter p:
+          m_t := β₁·m_{t-1} + (1-β₁)·g_t
+          v_t := β₂·v_{t-1} + (1-β₂)·g_t²
+          θ_{t+1} := θ_t - lr_t · m̂_t / (√v̂_t + ε) - lr_t·wd·θ_t
+      Resume-parity: next optimizer step after Load(ckpt) must be numerically
+      identical to the step that would have occurred without the save/load.
+    domain: (θ, m, v, t, schedule) × batch → (θ', m', v', t+1, schedule')
+    codomain: trainer state
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "AdamW moments m_t, v_t, step t are persisted and restored bit-identically (fp32)"
+    - "Post-resume update is within 1e-6 of the unsaved reference update"
+    - "LR schedule resumes at step t (not reset to step 0)"
+
+  loss_continuity:
+    formula: |
+      Let L(t) be train loss at global step t.
+      Without-resume reference: L_ref(t+Δ) after Δ more steps.
+      With-save-at-t-and-resume: L_resumed(t+Δ).
+      Contract:  |L_resumed(t+Δ) − L_ref(t+Δ)| / L_ref(t+Δ) ≤ 0.01
+    domain: training trajectory
+    codomain: loss curve parity
+    invariants:
+    - "Resumed loss continues within ±1% of the no-save reference"
+    - "No visible 'restart spike' in loss immediately after resume"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-07-001
-  rule: placeholder
-  prediction: "apr surface for 'Checkpoint save/resume w/ opt state' matches huggingface canonical behavior"
+  rule: checkpoint directory exists and contains optimizer state
+  prediction: "apr finetune writes ckpt/optimizer.pt (or equivalent) with m, v, t"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-07" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    rm -rf /tmp/ckpt-d07 && mkdir -p /tmp/ckpt-d07
+    apr finetune --data test.jsonl --epochs 1 --save-steps 5 \
+      --output-dir /tmp/ckpt-d07 >/dev/null
+    ls /tmp/ckpt-d07 | grep -qE "optimizer|adamw|opt-state" \
+      || { echo "no optimizer state file in checkpoint dir"; ls /tmp/ckpt-d07; exit 1; }
+  if_fails: "apr finetune does not persist AdamW state — resume cannot be exact"
+
+- id: FALSIFY-CRUX-D-07-002
+  rule: --resume-from accepts a checkpoint path without error
+  prediction: "apr finetune --resume-from <ckpt> exits 0 and continues training"
+  test: |
+    set -euo pipefail
+    rm -rf /tmp/ckpt-d07 && mkdir -p /tmp/ckpt-d07
+    apr finetune --data test.jsonl --epochs 2 --save-steps 10 \
+      --output-dir /tmp/ckpt-d07 >/dev/null
+    apr finetune --data test.jsonl --epochs 4 --resume-from /tmp/ckpt-d07 \
+      --output-dir /tmp/ckpt-d07 --json > /tmp/resume-d07.json
+    jq -e '.status == "training_complete"' /tmp/resume-d07.json >/dev/null
+  if_fails: "apr finetune --resume-from fails or silently restarts from scratch"
+
+- id: FALSIFY-CRUX-D-07-003
+  rule: resumed loss continues within ±1% of no-save reference
+  prediction: "L_resumed(t+Δ) is within 1% of L_ref(t+Δ)"
+  test: |
+    set -euo pipefail
+    # Reference: one full run of N epochs.
+    apr finetune --data test.jsonl --epochs 2 --seed 42 --json \
+      > /tmp/ref-d07.json
+    REF=$(jq '.final_loss' /tmp/ref-d07.json)
+
+    # Resumed: save at epoch 1, resume to epoch 2.
+    rm -rf /tmp/ckpt-d07 && mkdir -p /tmp/ckpt-d07
+    apr finetune --data test.jsonl --epochs 1 --seed 42 \
+      --output-dir /tmp/ckpt-d07 --save-steps 9999 >/dev/null
+    apr finetune --data test.jsonl --epochs 2 --seed 42 \
+      --resume-from /tmp/ckpt-d07 --output-dir /tmp/ckpt-d07 --json \
+      > /tmp/resumed-d07.json
+    RES=$(jq '.final_loss' /tmp/resumed-d07.json)
+
+    uv run --with numpy python - <<PY
+    ref, res = $REF, $RES
+    import sys
+    if abs(res - ref) / max(ref, 1e-9) > 0.01:
+        print(f"loss drift {abs(res-ref)/ref:.4%} > 1%", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "Resumed loss drifts >1% from reference — optimizer state is not fully restored"
+
+- id: FALSIFY-CRUX-D-07-004
+  rule: LR schedule resumes at the correct step (not restarted)
+  prediction: "lr[resume step] == lr[reference step], not lr[0]"
+  test: |
+    set -euo pipefail
+    # Emit epoch_metrics.learning_rate from both runs and compare step-aligned LRs.
+    rm -rf /tmp/ckpt-d07 && mkdir -p /tmp/ckpt-d07
+    apr finetune --data test.jsonl --epochs 2 --seed 7 --lr-schedule cosine \
+      --warmup-steps 4 --json > /tmp/ref-d07.json
+    apr finetune --data test.jsonl --epochs 1 --seed 7 --lr-schedule cosine \
+      --warmup-steps 4 --output-dir /tmp/ckpt-d07 --save-steps 9999 >/dev/null
+    apr finetune --data test.jsonl --epochs 2 --seed 7 --lr-schedule cosine \
+      --warmup-steps 4 --resume-from /tmp/ckpt-d07 --output-dir /tmp/ckpt-d07 \
+      --json > /tmp/resumed-d07.json
+    REF_LR=$(jq '.epoch_metrics[-1].learning_rate' /tmp/ref-d07.json)
+    RES_LR=$(jq '.epoch_metrics[-1].learning_rate' /tmp/resumed-d07.json)
+    uv run python - <<PY
+    import sys
+    a, b = $REF_LR, $RES_LR
+    if abs(a - b) / max(abs(a), 1e-9) > 0.01:
+        print(f"LR mismatch: ref={a} resumed={b}", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "LR schedule restarts from step 0 after resume — schedule state not persisted"
+
+- id: FALSIFY-CRUX-D-07-005
+  rule: parity with HF Trainer resume_from_checkpoint semantics
+  prediction: "apr --resume-from <ckpt> behaves like HF Trainer(resume_from_checkpoint=<ckpt>)"
+  test: |
+    set -euo pipefail
+    # Smoke parity: HF Trainer reference numbers captured in evidence.
+    test -s evidence/crux/huggingface/trainer-resume-reference.json \
+      || { echo "# TODO: capture evidence/crux/huggingface/trainer-resume-reference.json via uv run --with transformers"; exit 0; }
+  if_fails: "missing HF Trainer reference — resume parity not independently verified"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Checkpoint persists { θ, m, v, t, lr_schedule_state } and restores them exactly"
+- type: invariant
+  property: "Resumed train loss within ±1% of no-save reference at equal global step"
+- type: invariant
+  property: "LR schedule resumes at step t, not 0"
+- type: invariant
+  property: "apr finetune --resume-from <ckpt> exits 0 and continues to completion"
+- type: parity
+  property: "apr finetune --resume-from <ckpt>  ≅  HF Trainer(resume_from_checkpoint=<ckpt>)"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

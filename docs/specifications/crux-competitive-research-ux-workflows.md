@@ -491,14 +491,19 @@ at Phase 0 exit; intake estimates:
 - ✅ Registered all in master `contracts/crux-competitive-research-ux-v1.yaml`
 - ✅ Created 140 pmat work tickets (one per ❌ missing story) via
   `scripts/crux_bulk_pmat_work.sh` — tagged `crux,gap,crux-{category},competitor-{name},{id_lower}`
-- ✅ **42 demand=5 contracts** promoted draft → **spec-complete**
-  via two waves of 4-way parallel sub-agent enrichment (2026-04-18):
+- ✅ **71 demand=5 contracts** promoted draft → **spec-complete**
+  via three waves of 4-way parallel sub-agent enrichment (2026-04-18):
   - Wave 1 (18 missing): B-07/08/09, C-04/11/13, D-03/04/11/12,
     E-02/03/07, H-03, F-09/13, I-04, K-02
   - Wave 2 (24 partials): A-01/05/09, C-03/05/06/07/08/31/33/34,
     D-01/02/05/06/10/16, E-01/06/16/17/18, H-01, K-01
-  - Each contract carries real competitor CLI citations (arXiv papers,
-    official docs) and bash falsification bodies with jq/curl/python3
+  - Wave 3 (29 supported — parity verification): A-02/06, B-01/04/06/14,
+    C-01/02/19/27/28, D-07/09/13, E-05/08, F-01/03/20/21, G-01/02/08,
+    H-02/05/08/10, I-01, K-09
+  - 8 demand=5 stories still draft: J-01/02/09 (blocked on OpenCLAW
+    interpretation) + D-15, D-23, G-13, I-03, K-03 (scheduled for wave 4)
+  - Each contract carries competitor CLI citations (arXiv papers, official
+    docs) and bash falsification bodies with jq/curl/python3 invocations
 - Gate: `pmat comply check` passes with 250 CRUX contracts registered
 
 **Phase 1 — Evidence capture** (IN PROGRESS)

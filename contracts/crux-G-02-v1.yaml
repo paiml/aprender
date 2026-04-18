@@ -25,37 +25,142 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  ndjson_commit_contract:
     formula: |
-      DRAFT — user workflow "Publish large model via Xet/LFS"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      For file F with size_bytes(F) > 5 * 1024^3 (5 GiB):
+        apr publish hf://user/repo F →
+          POST /api/models/user/repo/commit/main
+            Content-Type: application/x-ndjson   # NOT application/json
+            body = newline-delimited JSON lines:
+              {"key":"header", "value":{"summary":"..."}}
+              {"key":"lfsFile","value":{"path":basename(F),
+                                        "algo":"sha256",
+                                        "oid":"<sha256>",
+                                        "size":<bytes>}}
+          200 OK with {"success": true, "commitUrl": ...}
+      per MEMORY: HF commit endpoint silently no-ops application/json
+      requests with operations[]; MUST use application/x-ndjson + "lfsFile"
+      key. Always verify /tree — never trust HTTP 200 + success:true alone.
+    domain: local large model file
+    codomain: HF repository state
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "Content-Type MUST be application/x-ndjson for LFS/Xet commits"
+    - "Each operation is a standalone JSON line (not wrapped in an array)"
+    - "Large files use the lfsFile key (not plain file)"
+    - "Post-upload /tree verification is REQUIRED — HTTP 200 alone is not trustworthy"
+
+  lfs_pointer_integrity:
+    formula: |
+      After apr publish large F:
+        GET /resolve/main/F → HTTP 302 to LFS/Xet storage URL
+        HEAD that URL → Content-Length == size_bytes(F)
+        sha256(downloaded F) == sha256(local F)
+    domain: post-upload remote state
+    codomain: {lfs_pointer_valid: bool, payload_matches: bool}
+    invariants:
+    - "LFS pointer resolves to downloadable storage URL"
+    - "Downloaded payload byte-identical to local file"
+    - "oid in lfsFile equals sha256 of actual payload"
 
 falsification_tests:
 - id: FALSIFY-CRUX-G-02-001
-  rule: placeholder
-  prediction: "apr surface for 'Publish large model via Xet/LFS' matches huggingface canonical behavior"
+  rule: NDJSON content-type enforced
+  prediction: ">5 GiB publish uses application/x-ndjson, not application/json"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-G-02" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    apr publish hf://paiml/crux-g02-test tests/fixtures/large-7b-q4k.apr \
+        --dry-run --json | \
+      jq -e '.content_type == "application/x-ndjson"
+             and .operations_key == "lfsFile"
+             and .transport == "lfs-ndjson"'
+  if_fails: "large-file publish used application/json + operations[] — silent no-op risk"
+
+- id: FALSIFY-CRUX-G-02-002
+  rule: /tree verification post-upload
+  prediction: "apr publish verifies /tree state before reporting success"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required — per MEMORY IS available}"
+    REPO="paiml/crux-g02-test-$$"
+    apr publish "hf://$REPO" tests/fixtures/large-7b-q4k.apr --create-repo --json > /tmp/pub.json
+    # apr's own output must record the /tree verification step
+    jq -e '.verification.tree_main_listed == true
+           and .verification.remote_sha256 != null' /tmp/pub.json
+    # And independently: actually check /tree
+    curl -sH "Authorization: Bearer $HF_TOKEN" \
+         "https://huggingface.co/api/models/$REPO/tree/main" | \
+      jq -e 'any(.[]; .path == "large-7b-q4k.apr" and .lfs != null)'
+  if_fails: "apr reported success without /tree confirmation (load-bearing NDJSON lesson violated)"
+
+- id: FALSIFY-CRUX-G-02-003
+  rule: LFS pointer resolves to real payload
+  prediction: "remote /resolve URL returns file with matching sha256"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required}"
+    REPO="paiml/crux-g02-resolve-$$"
+    LOCAL_SHA=$(sha256sum tests/fixtures/large-7b-q4k.apr | awk '{print $1}')
+    apr publish "hf://$REPO" tests/fixtures/large-7b-q4k.apr --create-repo
+    curl -sLH "Authorization: Bearer $HF_TOKEN" \
+         "https://huggingface.co/$REPO/resolve/main/large-7b-q4k.apr" \
+         -o /tmp/remote.apr
+    REMOTE_SHA=$(sha256sum /tmp/remote.apr | awk '{print $1}')
+    [ "$LOCAL_SHA" = "$REMOTE_SHA" ]
+  if_fails: "LFS payload does not match local — upload corrupted or pointer dangling"
+
+- id: FALSIFY-CRUX-G-02-004
+  rule: parity with huggingface_hub large upload
+  prediction: "apr publish large-file uses same LFS pointer structure as huggingface_hub.upload_file"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required}"
+    REPO_APR="paiml/crux-g02-apr-$$"
+    REPO_HF="paiml/crux-g02-hf-$$"
+    apr publish "hf://$REPO_APR" tests/fixtures/large-7b-q4k.apr --create-repo
+    uv run --with huggingface_hub python3 -c "
+    from huggingface_hub import HfApi
+    api = HfApi()
+    api.create_repo('$REPO_HF', exist_ok=True)
+    api.upload_file(path_or_fileobj='tests/fixtures/large-7b-q4k.apr',
+                    path_in_repo='large-7b-q4k.apr',
+                    repo_id='$REPO_HF')
+    "
+    APR_OID=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+      "https://huggingface.co/api/models/$REPO_APR/tree/main" | \
+      jq -r '.[] | select(.path=="large-7b-q4k.apr") | .lfs.oid')
+    HF_OID=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+      "https://huggingface.co/api/models/$REPO_HF/tree/main" | \
+      jq -r '.[] | select(.path=="large-7b-q4k.apr") | .lfs.oid')
+    [ "$APR_OID" = "$HF_OID" ]
+  if_fails: "apr LFS oid diverges from huggingface_hub reference upload"
+
+- id: FALSIFY-CRUX-G-02-005
+  rule: json transport rejected for large files
+  prediction: "apr refuses application/json + operations[] path for >5 GiB payloads"
+  test: |
+    apr publish hf://paiml/x tests/fixtures/large-7b-q4k.apr \
+        --transport json --dry-run 2>&1 | \
+      grep -iE "large file|lfs|ndjson required|transport=json forbidden"
+    apr publish hf://paiml/x tests/fixtures/large-7b-q4k.apr \
+        --transport json --dry-run
+    [ $? -ne 0 ]
+  if_fails: "large-file publish accepted application/json — regression of load-bearing rule"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "Content-Type is application/x-ndjson for >5 GiB publish"
+- type: invariant
+  property: "commit payload uses 'lfsFile' operation key, one JSON per line"
+- type: invariant
+  property: "post-upload /tree/main verification is mandatory (never trust HTTP 200 alone)"
+- type: invariant
+  property: "remote sha256/oid == local sha256 after LFS/Xet resolve"
+- type: parity
+  property: "apr publish LFS oid matches huggingface_hub.HfApi.upload_file on identical input bytes"
+  competitor: huggingface
+  reference: "contracts/apr-publish-hf-large-file-v1.yaml (v1.1.3); https://huggingface.co/docs/hub/api-commit; MEMORY: HF_COMMIT_NDJSON_LOAD_BEARING"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

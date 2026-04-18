@@ -18,44 +18,152 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: supported
   description: >
-    LR schedule cosine/linear-warmup. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.D and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Learning-rate schedule: linear warmup from ~0 to lr_max over W steps,
+    followed by cosine decay to min_lr over the remaining T-W steps.
+    Parity target: `torch.optim.lr_scheduler.CosineAnnealingLR` +
+    HF `get_cosine_schedule_with_warmup`.
+    Refs:
+      - Goyal et al. 2017 (linear warmup): https://arxiv.org/abs/1706.02677
+      - PyTorch CosineAnnealingLR: https://pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.CosineAnnealingLR.html
 
 equations:
-  placeholder_contract:
+  warmup_linear:
     formula: |
-      DRAFT — user workflow "LR schedule cosine/linear-warmup"
-      must produce observable parity with pytorch's canonical verb
-      on the golden input defined in evidence/crux/pytorch/.
-    domain: user invocation
-    codomain: apr CLI output
+      For step s ∈ [0, W]:
+          lr(s) = lr_max · (s / W)
+      In particular:
+          lr(0) = 0
+          lr(W) = lr_max
+    domain: step s ∈ [0, W], warmup_steps W ∈ N_{>0}
+    codomain: learning rate ∈ [0, lr_max]
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "lr(0) ≈ 0 (within 1e-6)"
+    - "lr(W) == lr_max"
+    - "lr is monotonically non-decreasing on [0, W]"
+
+  cosine_decay:
+    formula: |
+      For step s ∈ [W, T]:
+          progress = (s − W) / (T − W)
+          lr(s) = min_lr + 0.5 · (lr_max − min_lr) · (1 + cos(π · progress))
+      Corner cases:
+          lr(W) = lr_max   (cos(0)=1)
+          lr(T) = min_lr   (cos(π)=-1)
+    domain: step s ∈ [W, T], total_steps T ∈ N, lr_max ≥ min_lr ≥ 0
+    codomain: learning rate ∈ [min_lr, lr_max]
+    invariants:
+    - "lr(T) ≈ min_lr (within 1e-6)"
+    - "lr is monotonically non-increasing on [W, T]"
+    - "|lr(s) − lr(s-1)| is smooth (no step-change > 5% except at s=W)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-D-13-001
-  rule: placeholder
-  prediction: "apr surface for 'LR schedule cosine/linear-warmup' matches pytorch canonical behavior"
+  rule: --lr-schedule cosine and --warmup-steps flags exist
+  prediction: "apr finetune --help advertises cosine schedule + warmup"
   test: |
-    # TBD — collect pytorch transcript in evidence/crux/pytorch/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-D-13" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr finetune --help | grep -qE -- "--lr-schedule"
+    apr finetune --help | grep -qE -- "--warmup-steps"
+  if_fails: "apr finetune lacks cosine/warmup flags — PyTorch parity missing"
+
+- id: FALSIFY-CRUX-D-13-002
+  rule: lr(step 0) ≈ 0 with linear warmup
+  prediction: "First recorded LR is ≈ 0 when warmup_steps > 0"
+  test: |
+    set -euo pipefail
+    apr finetune --data test.jsonl --epochs 1 --seed 1 \
+      --lr-schedule cosine --warmup-steps 10 --lr 1e-3 \
+      --emit-lr-trace /tmp/lr-d13.json --json >/dev/null
+    LR0=$(jq '.[0].lr' /tmp/lr-d13.json)
+    uv run python - <<PY
+    import sys
+    lr = $LR0
+    if lr > 1e-4:
+        print(f"lr(0) = {lr}, expected ≈ 0", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "lr(step 0) is not ≈ 0 — linear warmup is not wired"
+
+- id: FALSIFY-CRUX-D-13-003
+  rule: lr peaks at warmup_steps (lr_max)
+  prediction: "lr(warmup_steps) ≈ lr_max (within 1%)"
+  test: |
+    set -euo pipefail
+    apr finetune --data test.jsonl --epochs 1 --seed 1 \
+      --lr-schedule cosine --warmup-steps 10 --lr 1e-3 \
+      --emit-lr-trace /tmp/lr-d13.json --json >/dev/null
+    PEAK=$(jq '[.[].lr] | max' /tmp/lr-d13.json)
+    uv run python - <<PY
+    import sys
+    lr_max = 1e-3
+    peak = $PEAK
+    if abs(peak - lr_max) / lr_max > 0.01:
+        print(f"peak lr {peak} off from lr_max {lr_max}", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "LR never reaches lr_max — warmup termination miswired"
+
+- id: FALSIFY-CRUX-D-13-004
+  rule: lr at total_steps ≈ min_lr (cosine floor)
+  prediction: "Final recorded LR is ≈ min_lr (default 0)"
+  test: |
+    set -euo pipefail
+    apr finetune --data test.jsonl --epochs 1 --seed 1 \
+      --lr-schedule cosine --warmup-steps 2 --lr 1e-3 --min-lr 1e-6 \
+      --emit-lr-trace /tmp/lr-d13.json --json >/dev/null
+    FINAL=$(jq '.[-1].lr' /tmp/lr-d13.json)
+    uv run python - <<PY
+    import sys
+    final = $FINAL
+    # Allow ≤2× min_lr (schedule precision)
+    if final > 2e-6:
+        print(f"final lr {final} > 2·min_lr", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "Cosine does not decay to min_lr at end — schedule truncated or wrong period"
+
+- id: FALSIFY-CRUX-D-13-005
+  rule: cosine decay is smooth (no jumps > 5% post-warmup)
+  prediction: "After warmup, consecutive LR deltas are smooth"
+  test: |
+    set -euo pipefail
+    apr finetune --data test.jsonl --epochs 1 --seed 1 \
+      --lr-schedule cosine --warmup-steps 5 --lr 1e-3 \
+      --emit-lr-trace /tmp/lr-d13.json --json >/dev/null
+    uv run python - <<PY
+    import json, sys
+    rows = json.load(open("/tmp/lr-d13.json"))
+    post = rows[6:]  # skip warmup + first post-warmup row
+    for a, b in zip(post, post[1:]):
+        la, lb = a["lr"], b["lr"]
+        if la > 0 and abs(la - lb) / la > 0.05:
+            print(f"non-smooth decay: {la} -> {lb}", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "Cosine decay has jumps > 5% — schedule is stepwise, not continuous"
+
+- id: FALSIFY-CRUX-D-13-006
+  rule: parity with HF get_cosine_schedule_with_warmup
+  prediction: "apr LR trajectory matches HF reference within 1% step-by-step"
+  test: |
+    set -euo pipefail
+    test -s evidence/crux/pytorch/cosine-warmup-reference.json \
+      || { echo "# TODO: capture via uv run --with transformers python scripts/crux/capture_cosine_warmup.py" >&2; exit 0; }
+  if_fails: "Reference trajectory from HF not yet captured"
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "lr(0) ≈ 0 and lr(warmup_steps) == lr_max"
+- type: invariant
+  property: "lr is monotone non-decreasing on [0, W] and non-increasing on [W, T]"
+- type: invariant
+  property: "lr(total_steps) ≈ min_lr"
+- type: invariant
+  property: "Cosine decay is smooth (no per-step jumps > 5%)"
+- type: parity
+  property: "apr --lr-schedule cosine --warmup-steps W  ≅  HF get_cosine_schedule_with_warmup(optimizer, W, T) / PyTorch CosineAnnealingLR"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -25,37 +25,145 @@ metadata:
     replaced with the competitor's canonical CLI transcript before promotion.
 
 equations:
-  placeholder_contract:
+  ftype_mapping:
     formula: |
-      DRAFT — user workflow "Q4_K_M / Q5_K_M / Q6_K variants"
-      must produce observable parity with llama_cpp's canonical verb
-      on the golden input defined in evidence/crux/llama_cpp/.
-    domain: user invocation
-    codomain: apr CLI output
+      apr quantize --method M -o out.gguf ⇒ gguf.general.file_type == ftype(M)
+      where:
+        ftype(q4_k_s) = 14   # LLAMA_FTYPE_MOSTLY_Q4_K_S
+        ftype(q4_k_m) = 15   # LLAMA_FTYPE_MOSTLY_Q4_K_M
+        ftype(q5_k_s) = 16   # LLAMA_FTYPE_MOSTLY_Q5_K_S
+        ftype(q5_k_m) = 17   # LLAMA_FTYPE_MOSTLY_Q5_K_M
+        ftype(q6_k)   = 18   # LLAMA_FTYPE_MOSTLY_Q6_K
+      Per llama.cpp llama_ftype enum; file_type field is advisory but must
+      match. Authoritative signal is per-tensor ggml_type histogram.
+      Ref: https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/constants.py
+    domain: apr quantize method
+    codomain: GGUF general.file_type field
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "general.file_type must equal the canonical LLAMA_FTYPE for the chosen method"
+
+  tensor_histogram_matches_reference:
+    formula: |
+      histogram(ggml_type, apr_q4_k_m.gguf) == histogram(ggml_type, llama_cpp_q4_k_m.gguf)
+      for the same source model.
+      Q4_K_M per llama.cpp: attention.wv and feed_forward.w2 use Q6_K; rest use Q4_K.
+      Ref: llama.cpp llama_model_quantize_internal (llama.cpp:llama-quant.cpp)
+    domain: per-tensor ggml_type
+    codomain: histogram map {ggml_type → count}
+    invariants:
+    - "Q4_K_M: attn_v and ffn_down tensors are Q6_K, all other weight tensors Q4_K"
+    - "Q5_K_M: attn_v and ffn_down are Q6_K, rest Q5_K"
+    - "Q6_K: all weight tensors are Q6_K"
+
+  variant_size_ordering:
+    formula: |
+      size(Q4_K_S) < size(Q4_K_M) < size(Q5_K_S) < size(Q5_K_M) < size(Q6_K)
+    domain: GGUF file sizes
+    codomain: strict ordering
+    invariants:
+    - "File sizes follow llama.cpp published ordering for _S/_M/_K variants"
 
 falsification_tests:
 - id: FALSIFY-CRUX-B-14-001
-  rule: placeholder
-  prediction: "apr surface for 'Q4_K_M / Q5_K_M / Q6_K variants' matches llama_cpp canonical behavior"
+  rule: general.file_type == LLAMA_FTYPE for each variant
+  prediction: "apr Q4_K_M → ftype 15; Q5_K_M → 17; Q6_K → 18"
   test: |
-    # TBD — collect llama_cpp transcript in evidence/crux/llama_cpp/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-B-14" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    SRC=$(mktemp -d)
+    apr pull hf://hf-internal-testing/tiny-random-llama -o "$SRC"
+    INPUT="${SRC}/model.safetensors"
+    declare -A FT=( [q4_k_m]=15 [q5_k_m]=17 [q6_k]=18 )
+    for M in q4_k_m q5_k_m q6_k; do
+      OUT="${SRC}/${M}.gguf"
+      apr quantize "$INPUT" --method "$M" --format gguf -o "$OUT"
+      ACTUAL=$(uv run --with 'gguf' python -c "
+    from gguf import GGUFReader
+    r = GGUFReader('${OUT}')
+    f = next(x for x in r.fields.values() if x.name == 'general.file_type')
+    print(int(f.parts[f.data[0]][0]))")
+      [ "$ACTUAL" -eq "${FT[$M]}" ] || { echo "ftype mismatch $M: $ACTUAL != ${FT[$M]}"; exit 1; }
+    done
+  if_fails: "general.file_type does not match canonical LLAMA_FTYPE for the variant"
+
+- id: FALSIFY-CRUX-B-14-002
+  rule: per-tensor ggml_type histogram matches llama.cpp reference
+  prediction: "Q4_K_M histogram: attn_v + ffn_down are Q6_K; rest Q4_K"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://hf-internal-testing/tiny-random-llama -o "$SRC"
+    INPUT="${SRC}/model.safetensors"
+    APR_GGUF="${SRC}/apr_q4km.gguf"
+    REF_GGUF="${SRC}/ref_q4km.gguf"
+    apr quantize "$INPUT" --method q4_k_m --format gguf -o "$APR_GGUF"
+    # Reference: llama.cpp llama-quantize binary
+    FP16="${SRC}/fp16.gguf"
+    apr export "$INPUT" --format gguf --dtype f16 -o "$FP16"
+    llama-quantize "$FP16" "$REF_GGUF" Q4_K_M
+    uv run --with 'gguf' python -c "
+    from gguf import GGUFReader
+    def hist(p):
+        r = GGUFReader(p)
+        h = {}
+        for t in r.tensors:
+            h[str(t.tensor_type)] = h.get(str(t.tensor_type), 0) + 1
+        return h
+    a, b = hist('${APR_GGUF}'), hist('${REF_GGUF}')
+    assert a == b, (a, b)
+    "
+  if_fails: "apr Q4_K_M per-tensor ggml_type histogram differs from llama-quantize reference"
+
+- id: FALSIFY-CRUX-B-14-003
+  rule: variant file sizes ordered correctly
+  prediction: "size(Q4_K_M) < size(Q5_K_M) < size(Q6_K)"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://hf-internal-testing/tiny-random-llama -o "$SRC"
+    INPUT="${SRC}/model.safetensors"
+    for M in q4_k_m q5_k_m q6_k; do
+      apr quantize "$INPUT" --method "$M" --format gguf -o "${SRC}/${M}.gguf"
+    done
+    S4=$(stat -c%s "${SRC}/q4_k_m.gguf")
+    S5=$(stat -c%s "${SRC}/q5_k_m.gguf")
+    S6=$(stat -c%s "${SRC}/q6_k.gguf")
+    python3 -c "assert $S4 < $S5 < $S6, ($S4, $S5, $S6)"
+  if_fails: "variant size ordering violated"
+
+- id: FALSIFY-CRUX-B-14-004
+  rule: Q4_K_M greedy parity with llama-quantize reference
+  prediction: "apr Q4_K_M and llama-quantize Q4_K_M emit identical tokens at temp=0"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://hf-internal-testing/tiny-random-llama -o "$SRC"
+    INPUT="${SRC}/model.safetensors"
+    FP16="${SRC}/fp16.gguf"
+    APR_GGUF="${SRC}/apr.gguf"
+    REF_GGUF="${SRC}/ref.gguf"
+    apr export "$INPUT" --format gguf --dtype f16 -o "$FP16"
+    apr quantize "$INPUT" --method q4_k_m --format gguf -o "$APR_GGUF"
+    llama-quantize "$FP16" "$REF_GGUF" Q4_K_M
+    A=$(llama-cli -m "$APR_GGUF" --temp 0 --seed 0 -n 16 -p "The" --no-display-prompt 2>/dev/null | tr -d '\n')
+    B=$(llama-cli -m "$REF_GGUF" --temp 0 --seed 0 -n 16 -p "The" --no-display-prompt 2>/dev/null | tr -d '\n')
+    [ "$A" = "$B" ]
+  if_fails: "greedy decode diverges between apr-Q4_K_M and llama-quantize Q4_K_M"
 
 proof_obligations:
+- type: parity
+  property: "apr quantize --method q*_k_* per-tensor histogram matches llama-quantize"
+  competitor_function: "llama-quantize (llama_model_quantize_internal)"
+  reference: "https://github.com/ggerganov/llama.cpp/blob/master/src/llama-quant.cpp"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "general.file_type equals canonical LLAMA_FTYPE for each variant (Q4_K_M=15, Q5_K_M=17, Q6_K=18)"
+- type: invariant
+  property: "Q4_K_M: attn_v + ffn_down are Q6_K; rest Q4_K"
+- type: invariant
+  property: "File size order: Q4_K_M < Q5_K_M < Q6_K"
+- type: invariant
+  property: "Greedy parity at temp=0 between apr-Q4_K_M and llama-quantize Q4_K_M"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 5
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
