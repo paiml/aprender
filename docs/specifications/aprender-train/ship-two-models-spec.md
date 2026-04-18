@@ -1,11 +1,42 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.11.0
-**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED** — EX-04/05/06/07 DISCHARGED (teacher-only per v2.10.0)
+**Version:** 2.12.0
+**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED** — EX-04/05/06/07 DISCHARGED (teacher-only per v2.10.0); post-ship artifacts staged for MODEL-1 retry + MODEL-2 + eval-shard
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe)
+
+**v2.12.0 amendment (2026-04-18):** Post-ship artifacts landed (commit
+`cc52e7bfc`) while the teacher is live on HF. All of these are
+**out-of-scope for the current ship** but advance the next-wave deliverables:
+
+1. **MODEL-2 Phase 1-B contracts** (task #81) — three new YAMLs:
+   - `contracts/model-families/llama-370m-sovereign-v1.yaml` (9 invariants,
+     4 gates, sovereign 370M arch with frozen intermediate_dim=2816)
+   - `contracts/tokenizer-bpe-v1.yaml` (7 inv, 7 gates; vocab bounds,
+     special tokens, byte-exact round-trip, NFC normalization)
+   - `contracts/training-loop-pretrain-v1.yaml` (8 inv, 8 gates;
+     GATE-TRAIN-005 ship-blocking: `val_loss[N] > 2.0 × val_loss[N-1]`
+     → ABORT — encodes the MODEL-1 v2 divergence lesson)
+2. **MODEL-1 QLoRA retry plan** (task #86) —
+   `docs/specifications/aprender-train/model-1-qlora-retry-plan.md`,
+   6 falsification gates, hyperparameter deltas from v2 (LR 2e-4 →
+   5e-5, rank 16 → 32, temperature 4.0 → 2.0).
+3. **FALSIFY-SHARD-003 determinism probe** (task #88) —
+   `scripts/ship-two-001/eval-shard-determinism-probe.sh` (239 lines).
+   Closes the one blocking gap for AC-EX-007 found by the eval-shard
+   audit (contract `eval-sharding-v1.yaml` line 151 referenced a script
+   that did not exist). DRY_RUN=1 validates the JSONL builder without
+   dispatch. Full `--hosts yoga,gx10 --model <gguf> --probe-tasks 0-15`
+   run requires teacher GGUF pre-cached on both hosts.
+
+**Compute-pool reality check (2026-04-18):** yoga RTX 4090 + gx10 GB10
+aarch64 are today's effective parallel pool. Jetson remains blocked by
+the 5 blockers documented in memory `project_ship_two_001_jetson_blocked.md`.
+Lambda-labs is referenced in spec docs but **not provisioned** — no SSH
+alias, no memory file, no credentials surfaced; treat as aspirational
+until provisioning is in place.
 
 **v2.11.0 amendment (2026-04-18):** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**.
 EX-05, EX-06, EX-07 all DISCHARGED on the teacher artifact (`paiml/qwen2.5-coder-7b-apache-q4k-v1`):
