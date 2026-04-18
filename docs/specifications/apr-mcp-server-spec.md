@@ -157,6 +157,10 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 8. **FALSIFY-MCP-008**: Schema in `tools/list` output is byte-identical to generated schema from `contracts/apr-mcp-tool-schemas-v1.yaml`. **ENFORCED**.
 9. **FALSIFY-MCP-PROGRESS-001** (M3 addition): When client supplies `params._meta.progressToken`, `apr.finetune` emits one `notifications/progress` per non-empty stdout line of `apr finetune --json`, all flushed before the final `tools/call` response. Without a token, zero notifications. **ENFORCED**.
 
+### Additional dispatcher invariant (not in `apr-mcp-server-v1.yaml`)
+
+- **FALSIFY-MCP-VALIDATE-001**: Tool argument validation failure (e.g. missing required `model_path`) must surface as a `tools/call` result with `isError: true` and a human-readable `content[].text`, **not** as a JSON-RPC error envelope. This is a dispatcher-level contract point (how the server shapes tool errors) rather than a per-tool behavioural promise, so it lives alongside — but outside — the `apr-mcp-server-v1.yaml` falsification set. **ENFORCED** (see `crates/aprender-mcp/tests/falsify_m1.rs::falsify_validate_missing_model_path_is_tool_error`).
+
 ## Milestones
 
 ### M1: Skeleton — SHIPPED (2026-04-17)
