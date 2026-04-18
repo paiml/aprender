@@ -5397,8 +5397,62 @@ roadmap:
   acceptance_criteria:
   - 'Ongoing kaizen sweeps on docs/specifications/apr-mcp-server-spec.md + crates/aprender-mcp + book/src/tools/mcp-server.md + contracts/apr-mcp-tool-schemas-v1.yaml. Each sweep fixes stale counts, stale roadmap tense (Mx→shipped), stale tool descriptions, and cross-spec inconsistencies.'
   - 'DISCHARGED 2026-04-18: FALSIFY-MCP-008 extended to cover tool-level `description` at both the live-wiring layer (`tool_descriptions_match_yaml_contract`) and the codegen-constant layer (`codegen_description_constants_match_yaml`); build.rs now emits `APR_<TOOL>_DESCRIPTION` alongside `APR_<TOOL>_SCHEMA`. Neither field can be hand-edited in Rust source.'
+  - 'DISCHARGED 2026-04-18: Spec §"Relationship to `apr code`" added — bidirectional MCP scope (consumer + producer + future apr.code tool) + feature-flag caveat + 9-of-58 coverage table + Phase-2 priority batch. Closes the gap where the spec treated Claude Code as an external-client-only concern and never referenced the sibling `apr code` agent (PMAT-182).'
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
+
+- id: PMAT-MCP-PARITY-001
+  github_issue: null
+  item_type: task
+  title: 'APR-MCP-PARITY: Expand aprender-mcp coverage from 9 → full 58-command apr surface'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T15:00:00Z
+  updated: 2026-04-18T15:00:00Z
+  spec: docs/specifications/apr-mcp-server-spec.md
+  acceptance_criteria:
+  - 'Wave 1 (JSON-clean, model-triage analogues): add apr.inspect, apr.lint, apr.diff — all have existing --json output and complement the M1-M3 apr.validate/apr.qa/apr.trace workflow-triage surface.'
+  - 'Wave 2 (format pipeline): apr.convert, apr.export, apr.import, apr.quantize — already JSON-clean; needed for external agents doing model-format work remotely.'
+  - 'Wave 3 (model-management + analysis): apr.pull (download), apr.profile (roofline), apr.explain (nat-lang description), apr.tokenize (debug tokenization).'
+  - 'Wave 4 (evaluation): apr.eval, apr.probar (behaviour-test pipeline).'
+  - 'Each wave: extend contracts/apr-mcp-tool-schemas-v1.yaml, update build.rs codegen coverage tests, extend FALSIFY-MCP-008 CODEGEN_CONSTANTS + CODEGEN_DESCRIPTIONS arrays, add integration tests mirroring each tool.'
+  - 'Interactive-only commands (apr chat, apr tui, apr cbtop, apr monitor) and meta-commands (apr mcp itself) are EXPLICITLY out of scope — MCP tools must be one-shot request/response.'
+  - 'Falsification gate FALSIFY-MCP-COVERAGE-001: `apr-cli-commands-v1.yaml` commands with `side_effects: none` OR `category: readonly`/`analysis` MUST appear in the MCP tool set or be explicitly listed as deferred — enforced by a new test that diffs the two contracts.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - mcp
+  - parity
+  - claude-code
+  notes: null
+
+- id: PMAT-CODE-MCP-CLIENT-001
+  github_issue: null
+  item_type: task
+  title: 'APR-CODE-MCP-CLIENT: Wire apr code to load external MCP servers via .mcp.json'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T15:00:00Z
+  updated: 2026-04-18T15:00:00Z
+  spec: docs/specifications/aprender-orchestrate/components/apr-code.md
+  acceptance_criteria:
+  - 'Add .mcp.json loader at `$CWD/.mcp.json` and `~/.config/apr/mcp.json` — mirrors Claude Code / Cursor / Cline precedence. Existing TOML AgentManifest.mcp_servers path remains supported.'
+  - 'Wire `register_mcp_tools` (today in crates/aprender-orchestrate/src/cli/agent_helpers.rs:219, feature-gated behind `agents-mcp`) into `build_code_tools` at crates/aprender-orchestrate/src/agent/code.rs:360. Today the call site is missing — external MCP servers declared in manifest are silently ignored by `apr code`.'
+  - 'Falsification: spawn a stdio MCP server (e.g. the aprender-mcp binary itself), declare it in `.mcp.json`, launch `apr code --print`, prompt it to call one of the exposed tools (e.g. apr.version), assert the tool appears in agent logs and the returned content is in the final transcript.'
+  - 'Privacy-tier guard: Sovereign tier must allow only stdio transport (McpTransport::Stdio); SSE/HTTP rejected with user-visible error. Existing PrivacyTier logic in mcp_client.rs already expresses this — verify at wire-up.'
+  - 'Feature flag: keep behind `agents-mcp`. No changes to default install story (apr code only appears with `--features code`).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - mcp
+  - parity
+  - claude-code
+  - apr-code
   notes: null
