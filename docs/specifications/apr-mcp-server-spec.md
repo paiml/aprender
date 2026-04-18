@@ -255,4 +255,4 @@ Acceptance gate for promoting to ACTIVE:
 
 **Owner**: TBD
 **Sponsor**: apr-cli team
-**Target**: v0.32.0 (M1–M2), v0.33.0 (M3–M4). Latest released tag at spec write time is `v0.30.0`; M1–M3 are merged on `main` but unreleased, so target tags are the intended publication points, not current reality.
+**Target tags**: M1–M3 planned for v0.32.0 publication, M4–M5 for v0.33.0+. Latest released tag is `v0.30.0` (workspace `Cargo.toml` version also 0.30.0 as of 2026-04-18); M1–M3 are merged on `main` but unreleased, so these targets are intended publication points, not shipped tags. Historical reference: earlier revisions of this spec targeted v0.32.0 for M1–M2 and v0.33.0 for M3–M4; M3 landing in the same week as M2 collapsed that plan — M1–M3 will now publish together.
