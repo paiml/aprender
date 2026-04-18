@@ -1,3 +1,4 @@
+#![allow(clippy::doc_overindented_list_items)]
 //! # Llama 370M Sovereign (albor) — Architectural Scaffold
 //!
 //! Compile-time-frozen configuration for the SHIP-TWO-001 MODEL-2 "albor"
