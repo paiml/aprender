@@ -1,12 +1,8 @@
 # CRUX-H-14 — Dataset mixing per-source weights
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-H-14
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,74 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "H — Data & Datasets"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Dataset mixing per-source weights. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.H and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Mix N datasets with per-source sampling weights. Canonical: HF
+    `datasets.interleave_datasets([d1,d2,d3], probabilities=[0.6,0.3,0.1])`
+    with `stopping_strategy ∈ {first_exhausted, all_exhausted}`.
 
 equations:
-  placeholder_contract:
+  dataset_mix:
     formula: |
-      DRAFT — user workflow "Dataset mixing per-source weights"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      source_i ~ Categorical(probabilities)
+      yield next(dataset[source_i])
+      # stopping: first_exhausted ends when ANY dataset runs out;
+      # all_exhausted ends when ALL do.
+    domain: "(datasets: [Path], probabilities: [f32] ≥ 0 summing to 1, stopping ∈ {first, all})"
+    codomain: "mixed iterator; length depends on stopping strategy"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "observed source frequency → probabilities (LLN; ±2σ at n=10000)"
+    - "first_exhausted length ≤ all_exhausted length"
+    - "deterministic under --seed (same source sequence)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-H-14-001
-  rule: placeholder
-  prediction: "apr surface for 'Dataset mixing per-source weights' matches huggingface canonical behavior"
+  rule: source frequencies match probabilities (n=10000)
+  prediction: "with --probs 0.7,0.3, source-0 count is in [6700, 7300]"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-H-14" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr dataset mix tests/fixtures/a.jsonl,tests/fixtures/b.jsonl \
+      --probs 0.7,0.3 --seed 42 --take 10000 --dump-source-ids /tmp/ids.txt >/dev/null
+    c0=$(grep -c '^0$' /tmp/ids.txt)
+    python3 -c "assert 6700 <= $c0 <= 7300, $c0"
+- id: FALSIFY-CRUX-H-14-002
+  rule: stopping=first terminates when any dataset exhausts
+  prediction: "first_exhausted on (small, big) yields at most ~|small|/p_small samples"
+  test: |
+    set -euo pipefail
+    apr dataset mix tests/fixtures/small.jsonl,tests/fixtures/big.jsonl \
+      --probs 0.5,0.5 --stopping first --format json > /tmp/m.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/m.json'))
+    assert d['count'] <= 2 * d['size_of']['small.jsonl'] + 5, d
+    "
+- id: FALSIFY-CRUX-H-14-003
+  rule: deterministic source sequence under fixed seed
+  prediction: "two runs with --seed 42 yield identical source id sequences"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr dataset mix tests/fixtures/a.jsonl,tests/fixtures/b.jsonl \
+        --probs 0.5,0.5 --seed 42 --take 200 --dump-source-ids /tmp/ids$i.txt >/dev/null
+    done
+    diff /tmp/ids1.txt /tmp/ids2.txt
 
 proof_obligations:
+- type: parity
+  property: "apr dataset mix matches HF `interleave_datasets` probabilities + stopping semantics"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "observed source freq converges to probabilities (LLN)"
+- type: invariant
+  property: "deterministic under fixed seed"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-h-14` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-h-14
   priority: medium
   auto_created: true

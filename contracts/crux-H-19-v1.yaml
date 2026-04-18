@@ -1,12 +1,8 @@
 # CRUX-H-19 — Synthetic data generation via LLM
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-H-19
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,78 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "H — Data & Datasets"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Synthetic data generation via LLM. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.H and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Synthetic data generation via LLM: prompt a teacher model over a seed
+    set of instructions to produce new (prompt, response) rows. Canonical:
+    HF `distilabel` (Self-Instruct / EvolInstruct) + SFTTrainer input
+    format. Output rows must validate against an emitted JSON schema and
+    pass exact-duplicate dedup against the seed.
 
 equations:
-  placeholder_contract:
+  synthgen:
     formula: |
-      DRAFT — user workflow "Synthetic data generation via LLM"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      for seed_i in seed_set:
+        response_i = LLM(prompt_template(seed_i), temperature=T, seed=S_i)
+        row_i = { "prompt": prompt_i, "response": response_i }
+        if row_i ∉ emitted ∧ len(response_i) ≥ min_tokens:
+          emit row_i
+    domain: "(seed: [str], teacher: Model, n: int, temperature: f32, seed: u64)"
+    codomain: "jsonl rows with schema {prompt: str, response: str, meta: {model, temp, seed_idx}}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "every row validates against --schema /tmp/schema.json"
+    - "no byte-identical duplicates within the emitted set"
+    - "--seed S produces byte-identical jsonl across runs"
 
 falsification_tests:
 - id: FALSIFY-CRUX-H-19-001
-  rule: placeholder
-  prediction: "apr surface for 'Synthetic data generation via LLM' matches huggingface canonical behavior"
+  rule: every emitted row validates against schema
+  prediction: "jsonschema validates 100% of rows"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-H-19" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    apr synth generate tests/fixtures/seeds.txt \
+      --teacher hf://Qwen/Qwen2.5-0.5B-Instruct --n 20 --seed 7 \
+      --schema /tmp/schema.json -o /tmp/syn.jsonl
+    uv run --with jsonschema python3 -c "
+    import json, jsonschema
+    schema = json.load(open('/tmp/schema.json'))
+    for line in open('/tmp/syn.jsonl'):
+        jsonschema.validate(json.loads(line), schema)
+    "
+- id: FALSIFY-CRUX-H-19-002
+  rule: no within-set duplicates
+  prediction: "count(unique lines) == count(lines)"
+  test: |
+    set -euo pipefail
+    n=$(wc -l < /tmp/syn.jsonl)
+    u=$(sort -u /tmp/syn.jsonl | wc -l)
+    python3 -c "assert $n == $u, ($n, $u)"
+- id: FALSIFY-CRUX-H-19-003
+  rule: determinism under fixed seed
+  prediction: "two runs with --seed 7 are byte-identical"
+  test: |
+    set -euo pipefail
+    apr synth generate tests/fixtures/seeds.txt \
+      --teacher hf://Qwen/Qwen2.5-0.5B-Instruct --n 20 --seed 7 \
+      -o /tmp/syn2.jsonl
+    diff /tmp/syn.jsonl /tmp/syn2.jsonl
 
 proof_obligations:
+- type: parity
+  property: "apr synth generate output format matches distilabel + SFTTrainer jsonl schema"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "schema validation always passes on emitted rows"
+- type: invariant
+  property: "determinism under fixed seed + fixed teacher"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-h-19` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-h-19
   priority: medium
   auto_created: true

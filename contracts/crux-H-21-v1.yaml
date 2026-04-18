@@ -1,12 +1,8 @@
 # CRUX-H-21 — Row-level dedup MinHash
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-H-21
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,93 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "H — Data & Datasets"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Row-level dedup MinHash. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.H and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Row-level fuzzy dedup via MinHash + LSH. Canonical: HF
+    `datasets` + `datasketch.MinHashLSH`; widely used in the-stack / C4
+    cleaning. Two rows whose Jaccard similarity of shingle sets ≥
+    threshold are considered duplicates; LSH buckets collide
+    probabilistically so the false-negative rate at the threshold is
+    bounded by (1 - threshold^r)^b.
 
 equations:
-  placeholder_contract:
+  minhash_dedup:
     formula: |
-      DRAFT — user workflow "Row-level dedup MinHash"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      shingles(x, k) = { x[i:i+k] : 0 ≤ i ≤ len(x)-k }
+      J(a, b) = |shingles(a) ∩ shingles(b)| / |shingles(a) ∪ shingles(b)|
+      minhash(x, P) ≈ J as estimator with |P|=num_perm permutations
+      lsh(threshold=t, bands=b, rows_per_band=r) collides (a,b) iff
+        any band has identical minhash slice; collision_prob ≈ 1 - (1 - J^r)^b
+    domain: "(dataset: jsonl, field: str, threshold ∈ [0,1], num_perm: int, shingle_k: int)"
+    codomain: "deduped jsonl with |output| ≤ |input|; report {kept, dropped, clusters}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "J(a,a) == 1 ⇒ identical rows always collide"
+    - "|output| ≤ |input|"
+    - "deterministic under fixed --seed (same permutation set)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-H-21-001
-  rule: placeholder
-  prediction: "apr surface for 'Row-level dedup MinHash' matches huggingface canonical behavior"
+  rule: exact duplicates are always dropped
+  prediction: "10 exact copies of the same row reduce to 1"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-H-21" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    python3 -c "
+    for _ in range(10):
+        print('{\"text\":\"the quick brown fox jumps over the lazy dog\"}')
+    print('{\"text\":\"completely different sentence about cats\"}')
+    " > /tmp/in.jsonl
+    apr dataset dedup /tmp/in.jsonl --field text --threshold 0.9 \
+      --num-perm 128 --seed 42 -o /tmp/out.jsonl --format json > /tmp/r.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/r.json'))
+    assert d['kept'] == 2 and d['dropped'] == 9, d
+    "
+- id: FALSIFY-CRUX-H-21-002
+  rule: disjoint rows all survive (no false positives at t=0.9)
+  prediction: "100 unrelated short sentences → kept == 100"
+  test: |
+    set -euo pipefail
+    uv run --with faker python3 -c "
+    import json
+    from faker import Faker
+    f = Faker(); f.seed_instance(0)
+    with open('/tmp/disj.jsonl','w') as w:
+      for _ in range(100):
+        w.write(json.dumps({'text': f.unique.sentence(nb_words=12)}) + '\n')
+    "
+    apr dataset dedup /tmp/disj.jsonl --field text --threshold 0.9 \
+      --num-perm 128 --seed 42 --format json > /tmp/r2.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/r2.json'))
+    assert d['kept'] == 100, d
+    "
+- id: FALSIFY-CRUX-H-21-003
+  rule: deterministic under fixed seed
+  prediction: "two runs with --seed 42 produce byte-identical output jsonl"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr dataset dedup /tmp/in.jsonl --field text --threshold 0.9 \
+        --num-perm 128 --seed 42 -o /tmp/out$i.jsonl >/dev/null
+    done
+    diff /tmp/out1.jsonl /tmp/out2.jsonl
 
 proof_obligations:
+- type: parity
+  property: "apr dataset dedup matches datasketch.MinHashLSH threshold semantics (±1% collision rate)"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "identical rows always collide (J=1)"
+- type: invariant
+  property: "determinism under fixed --seed + fixed --num-perm"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-h-21` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-h-21
   priority: medium
   auto_created: true
