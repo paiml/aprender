@@ -1507,7 +1507,7 @@ pub struct ComplyMigrateArgs {
     pub path: PathBuf,
 
     /// Target version to migrate to
-    #[arg(long)]
+    #[arg(id = "to-version", long = "to-version")]
     pub version: Option<String>,
 
     /// Preview changes without applying
