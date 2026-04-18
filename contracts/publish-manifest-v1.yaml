@@ -366,6 +366,47 @@ proof_obligations:
     discharged_by: FALSIFY-PM-005
 
 # ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KH-PM-001
+    obligation: PO-PM-001
+    property: |
+      ∀ artifact A with manifest M:
+          computed_sha256(A) == M.sha256
+          OR publish_is_rejected(A, M)
+    bound: 4
+    strategy: exhaustive
+    harness: verify_manifest_sha256_identity
+  - id: KH-PM-002
+    obligation: PO-PM-002
+    property: |
+      ∀ manifest M with non-empty parent chain:
+          spdx_compatible(M.license, ⋃ parent_licenses)
+          AND no license in chain equals "unknown" / "proprietary" / "TBD"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_license_chain_disclosure
+  - id: KH-PM-003
+    obligation: PO-PM-003
+    property: |
+      ∀ distilled or trained artifact with recipe path R:
+          sha256(file_at_path(R)) == M.provenance.recipe_sha256
+    bound: 4
+    strategy: exhaustive
+    harness: verify_recipe_sha256_reproducibility
+  - id: KH-PM-004
+    obligation: "Poka-Yoke format-magic validation (FALSIFY-PM-007/008/009)"
+    property: |
+      ∀ manifest M with --artifact provided:
+          (M.format == "safetensors" → header.dtype matches M.quantization)
+          AND (M.format == "gguf"   → predominant_ggml_type matches M.quantization)
+          AND (M.format == "apr"    → first_4_bytes ∈ {APR\\0, APRN, APR1, APR2})
+    bound: 8
+    strategy: exhaustive
+    harness: verify_format_magic_and_dtype_parity
+
+# ─────────────────────────────────────────────────────────────
 # QA GATE
 # ─────────────────────────────────────────────────────────────
 qa_gate:

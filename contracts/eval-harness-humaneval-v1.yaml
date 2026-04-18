@@ -256,6 +256,36 @@ proof_obligations:
     discharged_by: FALSIFY-HE-002 PASSING
 
 # ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KH-EVAL-HE-001
+    obligation: PO-EVAL-HE-001
+    property: |
+      ∀ run₁, run₂ at temperature 0.0, same model weights, same tokenizer,
+        same chat_template, same harness:
+          pass_at_1(run₁) == pass_at_1(run₂)
+    bound: 4
+    strategy: exhaustive
+    harness: verify_pass_at_1_deterministic
+  - id: KH-EVAL-HE-002
+    obligation: PO-EVAL-HE-002
+    property: |
+      ∀ model family M:
+        pass_at_1(M, fp16) >= pass_at_1(M, q8_0) - quant_noise
+        AND pass_at_1(M, q8_0) >= pass_at_1(M, q4_k) - quant_noise
+    bound: 8
+    strategy: exhaustive
+    harness: verify_quantization_monotonicity
+  - id: KH-EVAL-HE-003
+    obligation: PO-EVAL-HE-003
+    property: |
+      pass_at_1(student_primary) >= 86.0 OR status == FALSIFIED
+    bound: 4
+    strategy: exhaustive
+    harness: verify_ship_threshold_satisfied_or_falsified
+
+# ─────────────────────────────────────────────────────────────
 # QA GATE
 # ─────────────────────────────────────────────────────────────
 qa_gate:

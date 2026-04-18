@@ -91,6 +91,10 @@ equations:
   - id: invariants
     description: |
       Decode hot path invariants after this contract ships.
+    formula: |
+      count(unconditional eprintln!, forward_graphed_replay_to_token_id) == 0
+      AND count(std::fs::write, forward_graphed_replay_to_token_id)     == 0
+      AND every remaining diagnostic is gated by OnceLock<bool> cached from env
     requirements:
       - "zero `eprintln!` unconditional in forward_graphed_replay_to_token_id"
       - "zero `std::fs::write` in forward_graphed_replay_to_token_id"
@@ -137,6 +141,37 @@ falsification_tests:
     expected: |
       Throughput ≥ 380 tok/s AND Ollama parity ≥ 1.25× (Grade B or better).
     fails_if: "Throughput drops below 380 or Ollama parity below 1.25×"
+
+  - id: FALSIFY-DECODE-HP2-003
+    name: "Golden output unchanged after diagnostic removal"
+    method: |
+      /mnt/nvme-raid0/targets/aprender/release/apr qa \
+        ~/.cache/aprender/models/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf \
+        | grep -E "Golden Output.*PASS"
+    expected: |
+      Golden Output gate reports PASS (2/2) after removing the
+      first-N-tokens eprintln. Removing diagnostic must not perturb
+      decode semantics — only eliminate side-effectful I/O.
+    fails_if: |
+      Golden Output downgrades to FAIL/SKIP. Indicates the diagnostic
+      removal inadvertently touched control flow or kernel launches.
+
+# ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KH-HP2-001
+    obligation: PO-HP2-001
+    property: "unconditional_eprintln_count(forward_graphed_replay_to_token_id) == 0"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_no_unconditional_eprintln_in_hot_path
+  - id: KH-HP2-002
+    obligation: PO-HP2-003
+    property: "golden_output(pre_removal) == golden_output(post_removal)"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_golden_output_invariant_under_diagnostic_removal
 
 # ─────────────────────────────────────────────────────────────
 # QA GATE

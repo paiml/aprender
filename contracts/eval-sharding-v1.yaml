@@ -20,6 +20,10 @@ metadata:
     running code-generation benchmarks (HumanEval, MBPP, BigCodeBench) across
     N hosts concurrently with round-robin task stride, per-shard JSON merge,
     and byte-exact determinism parity at temperature 0.0.
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §5 AC-EX-007"
+    - "contracts/eval-harness-humaneval-v1.yaml — single-host reference harness"
+    - "Chen et al., 'Evaluating Large Language Models Trained on Code' (arXiv:2107.03374, 2021) — unbiased pass@k estimator"
 
 # ─────────────────────────────────────────────────────────────
 # ABSTRACT
@@ -55,6 +59,104 @@ five_whys:
     a: "At greedy decode, same weights + same prompt + same kernel must produce the same token sequence. Any divergence indicates a real bug (floating-point indeterminism, non-deterministic sampling, different kernel version) that would invalidate the merged score."
   - q: "Why 0.01 pp merge-parity threshold?"
     a: "pass@1 on HumanEval (164 tasks) has a minimum delta of 100/164 ≈ 0.61 pp per task. 0.01 pp is below any single-task swing, so any merge-parity failure indicates a genuine logic bug (double-counting, missing tasks, wrong merge formula) rather than arithmetic noise."
+
+# ─────────────────────────────────────────────────────────────
+# EQUATIONS / INVARIANTS
+# ─────────────────────────────────────────────────────────────
+equations:
+  shard_merge_identity:
+    formula: |
+      ∀ benchmark B, hosts h₁, ..., hₙ with round-robin stride shards:
+          merge(eval(h₁, shard₁), ..., eval(hₙ, shardₙ)).pass_at_k
+              == eval(single_host, B).pass_at_k ± ε
+      where ε ≤ 0.01 pp
+    domain: "(Benchmark, [Host]) × {temperature=0.0, top_k=1}"
+    codomain: "pass_at_k ∈ [0.0, 1.0]"
+    invariants:
+      - "Completeness: ∪ᵢ SHARD_IDSᵢ == BENCH_IDS (every task run somewhere)"
+      - "Disjointness: ∀ i ≠ j: SHARD_IDSᵢ ∩ SHARD_IDSⱼ == ∅ (no double-count)"
+      - "Determinism: ∀ task t, hosts hₐ, h_b at T=0: completion(hₐ, t) == completion(h_b, t)"
+      - "Merge-parity: |merged.pass_at_k − reference.pass_at_k| ≤ 0.01 pp"
+    preconditions:
+      - "temperature == 0.0"
+      - "num_samples == 1"
+      - "same .apr artifact (matching sha256) on every host"
+    lean_theorem: Theorems.EvalShardMergeIdentity
+
+  completion_bytewise_determinism:
+    formula: |
+      ∀ task t, host pair (hₐ, h_b) sharing model sha256 and apr binary:
+          sha256(completion(hₐ, t, T=0, top_k=1))
+              == sha256(completion(h_b, t, T=0, top_k=1))
+    domain: "(Task, Host, Host)"
+    codomain: "Boolean"
+    invariants:
+      - "Byte equality required; tokenizer, kernel, and model must all agree"
+      - "Any divergence invalidates merged pass@k (must be ε)"
+    preconditions:
+      - "Both hosts resolve model_apr to the same sha256"
+      - "Both hosts run apr binary built from the same git SHA"
+
+# ─────────────────────────────────────────────────────────────
+# PROOF OBLIGATIONS
+# ─────────────────────────────────────────────────────────────
+proof_obligations:
+  - id: PO-SHARD-001
+    type: invariant
+    property: "Completeness — union of shard task_ids equals the benchmark task_id set"
+    formal: |
+      ∀ benchmark B: ⋃ᵢ shard_result_ids(i) == benchmark_task_ids(B)
+    applies_to: all
+
+  - id: PO-SHARD-002
+    type: invariant
+    property: "Disjointness — no task_id appears in two shards"
+    formal: |
+      ∀ i ≠ j: shard_result_ids(i) ∩ shard_result_ids(j) == ∅
+    applies_to: all
+
+  - id: PO-SHARD-003
+    type: invariant
+    property: "Host determinism — at T=0, completions on two hosts are byte-identical per task"
+    formal: |
+      ∀ hₐ, h_b, task t: completion(hₐ, t, T=0) == completion(h_b, t, T=0)
+    applies_to: all
+
+  - id: PO-SHARD-004
+    type: invariant
+    property: "Merged-score identity — merged pass@k matches single-host reference within 0.01 pp"
+    formal: |
+      |merge(shard_results).pass_at_k − reference_single_host.pass_at_k| ≤ 0.01
+    applies_to: all
+
+# ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KH-SHARD-001
+    obligation: PO-SHARD-001
+    property: "completeness: union of shards covers every benchmark task_id"
+    bound: 16
+    strategy: exhaustive
+    harness: verify_shard_completeness
+  - id: KH-SHARD-002
+    obligation: PO-SHARD-002
+    property: "disjointness: shard task_id sets are pairwise disjoint"
+    bound: 16
+    strategy: exhaustive
+    harness: verify_shard_disjointness
+  - id: KH-SHARD-003
+    obligation: PO-SHARD-003
+    property: "determinism: completion byte sequence is identical across hosts at T=0"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_shard_determinism_parity
+  - id: KH-SHARD-004
+    obligation: PO-SHARD-004
+    property: "merge identity: |merged − reference| ≤ 0.01 pp"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_shard_merge_identity
 
 # ─────────────────────────────────────────────────────────────
 # SHARD CONFIGURATION SCHEMA
@@ -131,7 +233,13 @@ falsification_tests:
       2. Parse each shard_i_humaneval_*.json to get problems[].task_id → SHARD_IDS_i.
       3. Compute UNION = ∪ SHARD_IDS_i.
       4. ASSERT UNION == BENCH_IDS (set equality).
+    prediction: |
+      The union of per-shard task_ids is set-equal to the benchmark
+      task_ids. |⋃ SHARD_IDS_i| == |BENCH_IDS| == 164 for HumanEval.
     falsifier: "Any task_id in BENCH_IDS but not in UNION → missing task, FAIL."
+    if_fails: |
+      A host died mid-run, dropped its shard file, or round-robin stride
+      was misconfigured. Re-dispatch the missing shard and re-merge.
     falsifier_command: |
       python3 scripts/ship-two-001/eval-shard-merge.py \
         --benchmark-jsonl data/benchmarks/humaneval.jsonl \
@@ -144,7 +252,16 @@ falsification_tests:
     procedure: |
       1. Parse each shard_i_humaneval_*.json → SHARD_IDS_i.
       2. For every pair (i, j) with i < j: ASSERT SHARD_IDS_i ∩ SHARD_IDS_j == ∅.
+    prediction: |
+      Per-shard task_id sets are pairwise disjoint. For all i < j,
+      SHARD_IDS_i ∩ SHARD_IDS_j == ∅. Sum of |SHARD_IDS_i| equals
+      |BENCH_IDS| (no task counted twice).
     falsifier: "Any task_id appearing in ≥2 shards → double-count risk, FAIL."
+    if_fails: |
+      Round-robin stride calculation is broken, OR a host re-ran someone
+      else's shard. Merged pass@k would double-count passing tasks and
+      inflate the score. Regenerate shard_*.jsonl from scratch before
+      merging.
     falsifier_command: |
       python3 scripts/ship-two-001/eval-shard-merge.py \
         --shard-results evidence/ship-two-001/shard-eval/shard_*.json \
@@ -159,7 +276,17 @@ falsification_tests:
       2. Run eval-shard.sh on probe set with hosts=[host_A, host_B].
       3. For each task_id in probe set: diff host_A_completion vs host_B_completion.
       4. ASSERT all diffs empty.
+    prediction: |
+      Byte-identical completions across hosts at temperature=0.0, top_k=1.
+      For all 16 probe tasks, sha256(host_A_completion) == sha256(host_B_completion).
+      Discharged 2026-04-18 on yoga vs gx10: 16/16 identical, 0 divergent.
     falsifier: "Any byte-difference between two hosts on same task at temp=0 → hardware/kernel non-determinism, FAIL."
+    if_fails: |
+      Hosts differ in apr binary git SHA, CUDA kernel version, driver
+      version, or floating-point mode. Parallel sharding is unsound
+      until convergence. Re-sync hosts to a single model sha256 + apr
+      git SHA; if divergence persists, investigate kernel-level
+      non-determinism before trusting merged pass@k.
     prerequisite: "temperature == 0.0 in shard_config"
     falsifier_command: |
       bash scripts/ship-two-001/eval-shard-determinism-probe.sh \
@@ -189,7 +316,16 @@ falsification_tests:
       2. Split reference problems[] round-robin into N=2 pseudo-shards.
       3. Run eval-shard-merge.py on pseudo-shards.
       4. ASSERT |merged.pass_at_1 − P1_REF| ≤ 0.01.
+    prediction: |
+      Merged pass@1 matches single-host reference to within 0.01 pp.
+      Discharged 2026-04-17 against humaneval_20260417_180103.json:
+      ref=84.7600, merged=84.7561, delta=0.0039 pp (below 0.01 threshold).
     falsifier: "Merged pass@1 differs by > 0.01 pp → merge formula bug, FAIL."
+    if_fails: |
+      The unbiased pass@k estimator (Chen et al. 2021) is being applied
+      incorrectly — likely double-counting, missing tasks, or recomputing
+      per-shard instead of on the concatenated problems[] array. Review
+      eval-shard-merge.py's merge step before trusting any parallel run.
     falsifier_command: |
       python3 scripts/ship-two-001/eval-shard-merge.py \
         --self-test-reshard evidence/ship-two-001/humaneval/humaneval_*.json

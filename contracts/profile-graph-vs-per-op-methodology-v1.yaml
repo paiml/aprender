@@ -103,6 +103,13 @@ equations:
     description: |
       Report MUST distinguish graphed throughput (production-relevant)
       from ungraphed per-op cost (fusion-target triage only).
+    formula: |
+      headline_tps := graphed_decode_tps   (production-path measurement)
+      hotspot_table := ungraphed_per_kernel_us (triage measurement, labeled SKIP_CUDA_GRAPH)
+      graph_dispatch_per_node_us := (graphed_decode_us_per_token
+                                     - sum_kernel_compute_us_per_token)
+                                    / num_graph_nodes
+      REQUIRE: render(headline_tps) != render(hotspot_table) AND label(hotspot_table) contains "ungraphed"
     requirements:
       - 'Hotspot table header explicitly says "ungraphed" or "SKIP_CUDA_GRAPH=1"'
       - "Graphed replay dispatch cost per kernel is computed as (graphed_decode_us - sum_kernel_compute_us) / num_nodes"
@@ -184,6 +191,35 @@ falsification_tests:
       sum_kernel_us_per_token <= graphed_decode_us_per_token
       (would indicate profiler is missing kernels or graphed path is
       running something else).
+
+# ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KH-PROF10-001
+    obligation: PO-PROF10-001
+    property: "rendered_hotspot_header contains 'ungraphed' OR 'SKIP_CUDA_GRAPH'"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_hotspot_header_labeling
+  - id: KH-PROF10-002
+    obligation: PO-PROF10-002
+    property: |
+      graph_dispatch_per_node_us
+        == (graphed_decode_us - sum_kernel_compute_us) / num_graph_nodes
+      AND graph_dispatch_per_node_us ∈ [0.1, 2.0]  (µs, RTX 4090 bound)
+    bound: 8
+    strategy: exhaustive
+    harness: verify_graph_dispatch_cost_derivation
+  - id: KH-PROF10-003
+    obligation: PO-PROF10-003
+    property: |
+      fusion_savings_us_per_token(n)
+        == n * graph_dispatch_per_node_us
+      (NEVER n * kernel_launch_overhead_us)
+    bound: 8
+    strategy: exhaustive
+    harness: verify_fusion_roi_uses_graph_cost
 
 # ─────────────────────────────────────────────────────────────
 # IMPLEMENTATION PLAN

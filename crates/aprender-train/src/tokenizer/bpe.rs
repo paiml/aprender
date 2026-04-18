@@ -133,6 +133,25 @@ impl BPETokenizer {
         tokens
     }
 
+    /// Borrow the learned `token → id` vocabulary map.
+    ///
+    /// Exposed so callers (e.g. `apr tokenize train`) can emit the HuggingFace
+    /// `vocab.json` artifact mandated by `contracts/tokenizer-bpe-v1.yaml` without
+    /// serializing the whole `BPETokenizer` struct. Read-only by design — training
+    /// and encoding continue to own the `HashMap`.
+    pub fn vocab(&self) -> &HashMap<String, TokenId> {
+        &self.vocab
+    }
+
+    /// Borrow the ordered list of learned merge rules (`(left, right)` pairs in
+    /// merge order).
+    ///
+    /// Exposed so callers can write the HuggingFace `merges.txt` artifact. The
+    /// order is load-bearing: `merges.txt` consumers apply pairs top-to-bottom.
+    pub fn merges(&self) -> &[(String, String)] {
+        &self.merges
+    }
+
     /// Save tokenizer to file
     pub fn save(&self, path: &str) -> Result<()> {
         let json = serde_json::to_string_pretty(self)

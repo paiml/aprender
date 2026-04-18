@@ -136,6 +136,10 @@ equations:
     description: |
       The observable token sequence MUST be bit-identical to the
       pre-change greedy decode for the same model, prompt, and seed.
+    formula: |
+      ∀ model, prompt, seed: greedy_decode(gpu_resident=true,  model, prompt, seed).tokens
+                           == greedy_decode(gpu_resident=false, model, prompt, seed).tokens
+      AND stop_latency(gpu_resident=true) ≤ STOP_CHECK_EVERY_N
     requirements:
       - "Token sequence equality: gpu_resident_tokens == pre_change_tokens"
       - "Stop-token detection latency ≤ STOP_CHECK_EVERY_N tokens of actual stop"
@@ -236,6 +240,36 @@ falsification_tests:
     fails_if: |
       generated_tokens > stop_position + STOP_CHECK_EVERY_N. Indicates
       stop-token check is not actually firing at N-token intervals.
+
+  - id: FALSIFY-GRS-004
+    name: "Non-Kernel Host Overhead drops to ≤20%"
+    method: |
+      apr profile <model> --granular 2>&1 |
+        grep -E "Non-Kernel Host Overhead.*[0-9]+\.[0-9]+%"
+    expected: |
+      Parsed percentage ≤ 20.0% after GPU-resident token flow is enabled.
+      Matches PO-GRS-002 obligation: Non-Kernel Host Overhead ≤ 20%.
+    fails_if: |
+      Reported overhead remains >20%. Indicates the 862µs budget was
+      not dominated by host-side sync-wait and the lever ROI was
+      overestimated (supports existing FALSIFIED status).
+
+# ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KH-GRS-001
+    obligation: PO-GRS-001
+    property: "greedy_decode_token_parity(gpu_resident, cpu_resident) == equal"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_greedy_token_parity
+  - id: KH-GRS-002
+    obligation: PO-GRS-004
+    property: "generated_tokens ≤ stop_position + STOP_CHECK_EVERY_N"
+    bound: 16
+    strategy: exhaustive
+    harness: verify_stop_latency_bound
 
 # ─────────────────────────────────────────────────────────────
 # IMPLEMENTATION PLAN

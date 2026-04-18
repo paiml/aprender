@@ -69,8 +69,10 @@ pub enum TokenizeCommands {
         /// Target vocabulary size
         #[arg(long, default_value = "50000")]
         vocab_size: usize,
-        /// Minimum pair frequency (accepted for contract parity; threading to
-        /// the underlying trainer is owned by task #89).
+        /// Minimum frequency a byte-pair must reach before BPE merges it into
+        /// a new vocabulary token (honored by `entrenar::tokenizer::BPETokenizer`
+        /// per task #103). Pairs below this threshold are left unmerged —
+        /// contract INV-TOK-002 of `contracts/tokenizer-bpe-v1.yaml`.
         #[arg(long, default_value = "2")]
         min_frequency: usize,
         /// Output directory; will contain vocab.json and merges.txt.

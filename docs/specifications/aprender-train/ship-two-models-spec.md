@@ -1,11 +1,93 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.16.0
-**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining scaffold landed; Zero-Tolerance design principle codified (§3 row #8)
+**Version:** 2.18.0
+**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining scaffold landed; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED)
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS)
+
+**v2.17.0 amendment (2026-04-18):** Task #101 contracts schema
+harmonization **SHIPPED** on `feat/pm-007-preflight-poka-yoke` at commit
+`4fc453d57`. Closes the last parser barrier preventing `pv validate`
+from serving as the canonical dogfooded gate across all SHIP-TWO-001
+contract work. `crates/aprender-contracts/src/schema/types.rs` now
+(a) accepts legacy ProofObligation field spellings (`statement`/
+`verification`) via `#[serde(alias)]`, (b) accepts both map
+`{id: Equation}` and list `[{id, ...}]` equation forms via a custom
+polymorphic `deserialize_equations`, (c) adds `Safety` + `Liveness` to
+`ObligationType` (28 variants now, up from 26), (d) uplifts 6 legacy
+contracts (decode-gpu-resident-sampling, decode-hot-path-*,
+eval-harness-humaneval, eval-sharding, profile-graph-vs-per-op-
+methodology, publish-manifest) to the metadata-block form. Target
+tests `load_contracts_real` + `parse_missing_metadata_returns_error`
+both green; 1368/1371 aprender-contracts lib tests pass. Remaining
+3 failures (lint_passes_on_real_contracts, validate_gate_passes,
+lint_findings_on_failure) are downstream content checks — empty
+`formula:` bodies, missing `kani_harnesses`, falsifications <
+proof_obligations on the same 6 legacy contracts — dispatched as
+task #102 follow-up content-authoring lane. This amendment ties the
+"pv not bash for contracts" MEMORY.md policy (2026-04-18) to
+concrete unblocked state: no more adhoc bash/grep workarounds when
+the dogfood tool covers the workflow.
+
+**v2.18.0 amendment (2026-04-18):** Parallel dispatch lanes #102/#103/#104
+**ALL CLOSED** in a single concurrent compute window against
+non-overlapping surfaces, demonstrating the monorepo's sub-agent
+workflow scales. Results:
+(a) **#102 contract backfill CLOSED** — 8 legacy contracts
+(`decode-gpu-resident-sampling`, `decode-hot-path-{first-tokens,
+prefix-cache,zero-syscalls}`, `eval-harness-humaneval`, `eval-sharding`,
+`profile-graph-vs-per-op-methodology`, `publish-manifest`) received
+metadata references, formula bodies, kani_harnesses, and falsification
+parity. 22 ERROR findings → 0, `lint_passes_on_real_contracts` green.
+Verified live via `pv validate` dogfood: 8/8 contracts parse clean
+(1 advisory SCHEMA-013 qa_gate-missing on eval-sharding kept as
+forward work). No bash/grep workaround needed.
+(b) **#103 MODEL-2 `--min-frequency` plumbing CLOSED** — `apr-cli`
+tokenize call-site swapped from `aprender::text::tokenize::BpeTokenizer`
+→ `entrenar::tokenizer::BPETokenizer::train` via `train_bpe_via_entrenar`
+helper; `TokenizerConfig::bpe().with_min_frequency(..).with_normalization(..)`
+now threads user-provided `--min-frequency` + `--normalization` into
+merge pruning. Public read-only `vocab()`/`merges()` accessors added to
+`aprender-train::tokenizer::BPETokenizer`. 17 `apr-cli` tokenize tests
+pass including new `run_train_honors_min_frequency_pruning` which
+asserts singleton byte-pairs ("xyz" single occurrence) are pruned
+from `merges.txt`/`vocab.json` at threshold 2. Closes v2.15.0 §1
+"Known gap". Redundant `build_normalizer()` call-site removed since
+`aprender-train`'s BPE applies NFC internally (no double-normalization).
+(c) **#104 gx10 capacity gate PASS** — llama.cpp (b1-b0f0dd3 CUDA)
+on teacher GGUF (sha256 `e6cac5d6…7981`) measured **38.0 tok/s decode**
+(prompt eval 509.0 tok/s, 7.7 GiB VRAM, 5 s wall) vs 30 tok/s gate
+threshold = PASS 26.7% margin. 2.45× the forbidden 15.5 tok/s fused
+NF4 steady-state fallback — Zero-Tolerance §3 row #8 "no perf
+regression" clause preserved. Two follow-ups flagged: (1) decode drift
+from memory's 46 tok/s → 38.0 tok/s on current build; (2) gx10 disk
+95% full (44 GB free) needs cleanup before MODEL-2 7B training lands.
+Evidence: `evidence/ship-two-001/gx10-capacity-baseline-20260418-213928.json`.
+
+With #102+#103 closed, **task #105** (370M MODEL-2 pretraining loop
+wiring per `training-loop-pretrain-v1` GATE-TRAIN-005) is now the sole
+long-pole item. Expected surface: `aprender-train/src/train/pretrain.rs`
+loop driver calling the `llama_370m` forward pass with AdamW optimizer
+and gradient accumulation, gated by the dataset ingest binary shipped
+in v2.15.0.
+
+**Parallel dispatch state (2026-04-18 post-v2.17.0 — preserved for audit
+trail):** three lanes ran concurrently against non-overlapping surfaces —
+(a) task #102 contract backfill (content-authoring, contracts/*.yaml),
+(b) task #103 MODEL-2 CLI `--min-frequency` plumbing (swap apr-cli
+tokenize call-site from aprender-core BPE to aprender-train BPE;
+closes v2.15.0 §1 "Known gap" — 0.5 day), (c) task #104 gx10
+third-party framework capacity gate (llama.cpp on teacher GGUF,
+enforces Zero-Tolerance §3 row #8). Tasks #105 (370M pretraining
+loop wiring per training-loop-pretrain-v1 GATE-TRAIN-005) remains
+the long-pole item awaiting #102+#103 closure. Compute pool utilization
+is deliberately heterogeneous: lambda-labs (x86_64 RTX 4090) does
+contract+code surgery, gx10 (aarch64 GB10 Blackwell) does remote
+bench, yoga (x86_64 RTX 4060 Laptop) stays idle pending apr 0.31.0
+upgrade per Zero-Tolerance §3 row #8. Jetson remains blocked per
+`project_ship_two_001_jetson_blocked.md`.
 
 **v2.16.0 amendment (2026-04-18):** Codified **Zero-Tolerance** as §3 row
 #8. The operationalization, verbatim: "We never accept bugs or poor

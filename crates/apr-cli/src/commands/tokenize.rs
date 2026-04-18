@@ -255,6 +255,68 @@ impl TrainedTokenizer {
     }
 }
 
+/// Task #103: Train a BPE tokenizer via aprender-train's `BPETokenizer`, which
+/// honors `--min-frequency` (config.min_frequency pair-pruning) and
+/// `--normalization nfc` (INV-TOK-003) — two knobs the legacy
+/// `aprender::text::tokenize::BpeTokenizer::train(corpus, vocab_size)` path
+/// silently ignored.
+///
+/// Requires the `training` feature (default-on for `cargo install aprender`).
+/// Without it the `entrenar` dep isn't linked, so fall back to the legacy
+/// path for minimal builds — but the user's `--min-frequency` choice is lost
+/// in that configuration (pre-existing behavior preserved).
+#[cfg(feature = "training")]
+fn train_bpe_via_entrenar(
+    corpus: &[&str],
+    vocab_size: usize,
+    min_frequency: usize,
+    normalization: &str,
+) -> Result<TrainedTokenizer> {
+    use entrenar::tokenizer::{BPETokenizer, Normalization, Tokenizer, TokenizerConfig};
+
+    let norm = match normalization {
+        "nfc" => Normalization::NFC,
+        "none" => Normalization::None,
+        other => {
+            return Err(CliError::ValidationFailed(format!(
+                "Unknown normalization: {other}. Supported: none, nfc"
+            )));
+        }
+    };
+
+    let config = TokenizerConfig::bpe()
+        .with_vocab_size(vocab_size)
+        .with_min_frequency(min_frequency)
+        .with_normalization(norm);
+    let mut tokenizer = BPETokenizer::new(config);
+    tokenizer
+        .train(corpus)
+        .map_err(|e| CliError::ValidationFailed(format!("BPE training failed: {e}")))?;
+
+    Ok(TrainedTokenizer {
+        vocab: tokenizer.vocab().clone(),
+        merges: tokenizer.merges().to_vec(),
+    })
+}
+
+/// Fallback path when built without the `training` feature. Calls the legacy
+/// `aprender::text::tokenize::BpeTokenizer::train(corpus, vocab_size)` surface,
+/// which ignores `min_frequency` and `normalization` (pre-task-#103 behavior).
+#[cfg(not(feature = "training"))]
+fn train_bpe_via_entrenar(
+    corpus: &[&str],
+    vocab_size: usize,
+    _min_frequency: usize,
+    _normalization: &str,
+) -> Result<TrainedTokenizer> {
+    let tokenizer = aprender::text::tokenize::BpeTokenizer::train(corpus, vocab_size)
+        .map_err(|e| CliError::ValidationFailed(format!("BPE training failed: {e}")))?;
+    Ok(TrainedTokenizer {
+        vocab: tokenizer.vocab().clone(),
+        merges: tokenizer.merges().to_vec(),
+    })
+}
+
 fn train_tokenizer(
     corpus: &[&str],
     vocab_size: usize,
@@ -457,10 +519,14 @@ pub(crate) fn run_train(
         )));
     }
 
-    let normalizer = build_normalizer(normalization);
+    // Task #103: aprender-train's BPETokenizer applies the configured
+    // normalization internally in `preprocess()`, so we pass raw `content`
+    // strings here and let the trainer honor `--normalization`. Applying NFC
+    // in the CLI reader would be redundant (NFC is idempotent) and would
+    // hide bugs in the trainer's own normalization plumbing.
     let mut lines: Vec<String> = Vec::new();
     for file in &files {
-        read_jsonl_content(file, &normalizer, &mut lines)?;
+        read_jsonl_content(file, &mut lines)?;
     }
 
     if lines.is_empty() {
@@ -475,8 +541,12 @@ pub(crate) fn run_train(
 
     let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
     let start = Instant::now();
-    let tokenizer = aprender::text::tokenize::BpeTokenizer::train(&refs, vocab_size)
-        .map_err(|e| CliError::ValidationFailed(format!("BPE training failed: {e}")))?;
+    // Task #103: route `apr tokenize train` through aprender-train's BPE so
+    // `--min-frequency` and `--normalization nfc` are actually honored
+    // (contracts/tokenizer-bpe-v1.yaml INV-TOK-002, INV-TOK-003). The
+    // aprender-core `BpeTokenizer::train(corpus, vocab_size)` legacy path had
+    // no `min_frequency` knob and no NFC plumbing.
+    let trained = train_bpe_via_entrenar(&refs, vocab_size, min_frequency, normalization)?;
     let elapsed = start.elapsed();
 
     std::fs::create_dir_all(output_dir).map_err(|e| {
@@ -486,10 +556,6 @@ pub(crate) fn run_train(
         ))
     })?;
 
-    let trained = TrainedTokenizer {
-        vocab: tokenizer.vocab().clone(),
-        merges: tokenizer.merges().to_vec(),
-    };
     write_vocab_json(output_dir, &trained)?;
     write_merges_txt(output_dir, &trained)?;
 
@@ -524,22 +590,13 @@ fn validate_normalization(norm: &str) -> Result<()> {
     }
 }
 
-/// Build the normalizer closure. Threaded locally per task #90 since the
-/// upstream TokenizerConfig doesn't yet carry a normalization field (task #89).
-fn build_normalizer(normalization: &str) -> Box<dyn Fn(&str) -> String> {
-    match normalization {
-        "nfc" => Box::new(|s: &str| {
-            use unicode_normalization::UnicodeNormalization;
-            s.nfc().collect::<String>()
-        }),
-        _ => Box::new(|s: &str| s.to_string()),
-    }
-}
+// Task #103: removed `build_normalizer` — aprender-train's BPETokenizer now
+// applies normalization internally via `TokenizerConfig::with_normalization`
+// (commit b0e0a280b). The local NFC pass threaded by task #90 is obsolete.
 
 fn collect_jsonl_files(path: &Path) -> Result<Vec<std::path::PathBuf>> {
-    let meta = std::fs::metadata(path).map_err(|e| {
-        CliError::ValidationFailed(format!("Cannot stat {}: {e}", path.display()))
-    })?;
+    let meta = std::fs::metadata(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot stat {}: {e}", path.display())))?;
 
     if meta.is_file() {
         if is_jsonl(path) {
@@ -571,14 +628,9 @@ fn is_jsonl(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("jsonl")
 }
 
-fn read_jsonl_content(
-    path: &Path,
-    normalizer: &dyn Fn(&str) -> String,
-    out: &mut Vec<String>,
-) -> Result<()> {
-    let content = std::fs::read_to_string(path).map_err(|e| {
-        CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display()))
-    })?;
+fn read_jsonl_content(path: &Path, out: &mut Vec<String>) -> Result<()> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display())))?;
     for (line_idx, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -592,7 +644,9 @@ fn read_jsonl_content(
             ))
         })?;
         if let Some(text) = value.get("content").and_then(|v| v.as_str()) {
-            out.push(normalizer(text));
+            // Raw content — aprender-train's `BPETokenizer::preprocess` applies
+            // the user-selected normalization during `train`.
+            out.push(text.to_string());
         }
     }
     Ok(())
@@ -618,7 +672,10 @@ fn print_train_header(
 
 fn print_train_result(result: &TokenizeTrainResult) {
     output::section("Result");
-    println!("  {} BPE tokenizer trained successfully", "OK".green().bold());
+    println!(
+        "  {} BPE tokenizer trained successfully",
+        "OK".green().bold()
+    );
     output::kv("  Final vocab size", format_number(result.vocab_size));
     output::kv("  Normalization", &result.normalization);
     output::kv(
@@ -698,14 +755,61 @@ mod tests {
         assert!(out.join("merges.txt").exists());
     }
 
+    // Task #103: `--min-frequency` must actually prune low-frequency pairs.
+    // Corpus has "abc" 5× (pairs 61-62 and 62-63 appear 5×) and "xyz" 1×
+    // (pairs 78-79 and 79-7a appear once). With `--min-frequency 2`, only the
+    // frequent pairs get merged; the singleton "xyz" pairs are left as base
+    // bytes. This is the whole point of the knob — proves the CLI now honors
+    // it after switching to `entrenar::tokenizer::BPETokenizer`.
+    #[cfg(feature = "training")]
+    #[test]
+    fn run_train_honors_min_frequency_pruning() {
+        let tmp = TempDir::new().expect("tempdir");
+        let lines: Vec<String> = std::iter::repeat_n(r#"{"content": "abc"}"#.to_string(), 5)
+            .chain(std::iter::once(r#"{"content": "xyz"}"#.to_string()))
+            .collect();
+        let body = lines.join("\n");
+        let corpus = tmp.path().join("corpus.jsonl");
+        std::fs::write(&corpus, body).expect("write corpus");
+        let out = tmp.path().join("tok");
+
+        // `vocab_size=300` leaves room for merges beyond the 256 base bytes +
+        // 5 special tokens, so only `min_frequency` gates which pairs merge.
+        run_train(&corpus, 300, 2, &out, "nfc", true).expect("train");
+
+        let merges = std::fs::read_to_string(out.join("merges.txt")).expect("read merges.txt");
+        // "abc" pair bytes: 61 (a), 62 (b), 63 (c). Hex representation in merges.
+        assert!(
+            merges.contains("61 62") || merges.contains("62 63"),
+            "Expected a merge from the frequent 'abc' pair, got: {}",
+            merges
+        );
+        // "xyz" byte pairs MUST NOT appear as merges under min_frequency=2.
+        assert!(
+            !merges.contains("78 79"),
+            "min_frequency=2 failed to prune singleton 'xy' pair: {}",
+            merges
+        );
+        assert!(
+            !merges.contains("79 7a"),
+            "min_frequency=2 failed to prune singleton 'yz' pair: {}",
+            merges
+        );
+
+        // Belt-and-suspenders: confirm no merged token whose hex spells "xyz"
+        // made it into the vocabulary.
+        let vocab = std::fs::read_to_string(out.join("vocab.json")).expect("read vocab");
+        assert!(
+            !vocab.contains("\"78797a\""),
+            "min_frequency=2 failed to prune merged 'xyz' token from vocab: {}",
+            vocab
+        );
+    }
+
     #[test]
     fn run_train_rejects_unknown_normalization() {
         let tmp = TempDir::new().expect("tempdir");
-        let corpus = write_corpus_file(
-            tmp.path(),
-            "corpus.jsonl",
-            &[r#"{"content": "x y"}"#],
-        );
+        let corpus = write_corpus_file(tmp.path(), "corpus.jsonl", &[r#"{"content": "x y"}"#]);
         let err = run_train(&corpus, 300, 1, tmp.path(), "nfkd", true)
             .expect_err("should reject unsupported normalization");
         match err {

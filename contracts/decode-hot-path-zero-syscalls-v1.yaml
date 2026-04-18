@@ -95,6 +95,23 @@ falsification_tests:
   if_fails: File write was not the dominant overhead — investigate
     other syscall sites (spawn, ioctl, getenv).
 
+kani_harnesses:
+- id: KH-DECODE-HP1-001
+  obligation: zero per-token fs writes in greedy graphed decode
+  property: |
+    count(std::fs::write, forward_gpu_resident_to_token_id)
+      + count(std::fs::write, forward_graphed_replay_to_token_id) == 0
+  bound: 8
+  strategy: exhaustive
+  harness: verify_zero_fs_writes_in_decode_path
+- id: KH-DECODE-HP1-002
+  obligation: is_moe computed once per model (not per token)
+  property: |
+    evaluations_of_is_moe_per_generation == 1
+  bound: 4
+  strategy: exhaustive
+  harness: verify_is_moe_cached_at_model_level
+
 qa_gate:
   id: F-DECODE-HOTPATH-V1
   name: Decode Hot Path Zero Syscalls

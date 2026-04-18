@@ -92,6 +92,11 @@ equations:
   - id: invariants
     description: |
       generate_gpu_resident prefix-cache diagnostics invariant.
+    formula: |
+      count(unconditional "[PMAT-450]" eprintln!, generate_gpu_resident) == 0
+      AND ∀ breadcrumb ∈ INSERT ∪ HIT ∪ ERROR:
+            breadcrumb is wrapped in `if config.trace { ... }`
+      AND insert_diagnostic_cost(config.trace=false) == 0
     requirements:
       - "zero unconditional eprintln! in generate_gpu_resident"
       - "all PMAT-450 breadcrumb eprintlns gated by `if config.trace { ... }`"
@@ -135,6 +140,39 @@ falsification_tests:
     expected: |
       Throughput >= 390 tok/s AND Ollama parity >= 1.25x.
     fails_if: "Throughput drops below 390 or Ollama parity below 1.25x"
+
+  - id: FALSIFY-DECODE-HP3-003
+    name: "Symmetric gating across INSERT / HIT / ERROR paths"
+    method: |
+      pmat query --literal 'eprintln!("[PMAT-450]' --path crates/aprender-serve/src/gguf/cuda/generate_2.rs -B 2
+      # Each of the 3 PMAT-450 sites (HIT at :490, INSERT at :575, ERROR at :578)
+      # must be preceded (within 2 lines above) by `if config.trace`.
+    expected: |
+      All three paths share the `if config.trace { ... }` wrapping.
+      None fall through unconditionally.
+    fails_if: |
+      Any path fires an eprintln without the config.trace guard.
+      Breaks the symmetric-gating invariant and reintroduces the
+      throughput tax this contract was authored to prevent.
+
+# ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KH-HP3-001
+    obligation: PO-HP3-001
+    property: "unconditional_pmat450_eprintln_count(generate_gpu_resident) == 0"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_no_unconditional_pmat450_eprintln
+  - id: KH-HP3-002
+    obligation: PO-HP3-003
+    property: |
+      ∀ path ∈ {INSERT, HIT, ERROR}:
+          gating_style(path) == "if config.trace"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_symmetric_prefix_cache_gating
 
 # ─────────────────────────────────────────────────────────────
 # QA GATE
