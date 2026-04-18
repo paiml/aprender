@@ -23,11 +23,15 @@ Aprender ships a 58-subcommand CLI (`apr`) with structured `--json` output on mo
 
 Every competitor tool with ecosystem momentum in early 2026 is addressable via MCP — except the local-inference tier. Ollama, llama.cpp, and Unsloth all lack first-party MCP servers. Shipping `apr mcp` first occupies that slot.
 
+Separately, aprender already ships [`apr code`](../../crates/aprender-orchestrate/docs/specifications/components/apr-code.md) (PMAT-182) — our sovereign Claude-Code equivalent. For full parity, `apr code` must also be able to *consume* external MCP servers (the client direction of `.mcp.json`), not just be consumable. `aprender-mcp` covers the server side; wiring `apr code` to load `.mcp.json` is tracked as PMAT-CODE-MCP-CLIENT-001. See § "Relationship to `apr code`" below.
+
 ## Goal
 
 A single subcommand — `apr mcp` — that starts an MCP server over stdio, exposing a curated subset of the 58 apr CLI commands as MCP tools. Tool schemas are generated at build time from `contracts/apr-mcp-tool-schemas-v1.yaml` (FALSIFY-MCP-008), not hand-written.
 
-Success is measured by Claude Code / Cursor / Cline being able to `.mcp.json`-configure `apr mcp` and have the LLM invoke `apr.run`, `apr.qa`, `apr.trace`, etc. on local models.
+Success is measured by **bidirectional** Claude-Code parity:
+- **Server direction (M1-M5, active):** Claude Code / Cursor / Cline can `.mcp.json`-configure `apr mcp` and invoke `apr.run`, `apr.qa`, `apr.trace`, etc. on local models. Coverage expanding from 9 → full 58-command surface (PMAT-MCP-PARITY-001).
+- **Client direction (PMAT-CODE-MCP-CLIENT-001, planned):** Our own `apr code` agent can load external MCP servers as tool providers via `.mcp.json` and the existing `McpClientTool`, mirroring Claude Code's own MCP-client capability.
 
 ## Architecture
 
