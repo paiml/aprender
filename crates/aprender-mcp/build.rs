@@ -1,23 +1,14 @@
-// FALSIFY-MCP-008 build-time schema codegen (PMAT-514 extension).
+// FALSIFY-MCP-008 build-time schema codegen.
 //
 // Reads `contracts/apr-mcp-tool-schemas-v1.yaml` and emits a Rust module
-// containing, for each tool:
-//   * `pub const <TOOL>_SCHEMA: &str`      — JSON Schema body for `inputSchema`
-//     (canonicalized by serde_json::to_string — keys emitted in insertion
-//     order via serde_json::Map).
-//   * `pub const <TOOL>_DESCRIPTION: &str` — tool-level human-readable
-//     description, raw-string-escaped for embedding in a Rust literal.
+// containing one `pub const <TOOL>_SCHEMA: &str` per tool. Each constant is
+// the JSON Schema body (canonicalized by serde_json::to_string — keys emitted
+// in insertion order via serde_json::Map) for that tool's `inputSchema`.
 //
 // The generated file is `$OUT_DIR/schemas.rs` and is `include!`d from
 // `src/lib.rs` inside a `pub mod schemas { ... }`. Tools consume the
-// constants via `serde_json::from_str` (schema) and direct `.to_string()`
-// (description), making the YAML contract the single source of truth.
-//
-// Before the PMAT-514 extension the description was hand-mirrored in the
-// Rust source file and drifted silently twice in a 24h window (apr.serve in
-// commit 715781df5, apr.run in 91a613968). Codegen closes that class at
-// compile time; the test-layer `tool_descriptions_match_yaml_contract`
-// remains as a defence-in-depth safety net.
+// constants via `serde_json::from_str` to reconstruct their live
+// `InputSchema`, making the YAML contract the single source of truth.
 //
 // NO unwrap() in build.rs — every failure path uses `expect(...)` with a
 // context message so a broken contract surfaces as a clear cargo error.
@@ -35,7 +26,6 @@ struct ContractRoot {
 #[derive(Debug, Deserialize)]
 struct ToolEntry {
     name: String,
-    description: String,
     #[serde(default)]
     args: Vec<ArgEntry>,
     #[serde(default)]
@@ -85,20 +75,14 @@ fn main() {
     });
 }
 
-/// Resolve `apr-mcp-tool-schemas-v1.yaml` relative to this crate's
-/// manifest dir.
-///
-/// Single source of truth per-crate: `CARGO_MANIFEST_DIR/contracts/…`.
-/// Shipping the YAML inside the crate (via `Cargo.toml` `include`) is what
-/// makes `cargo install aprender` work — the workspace-root
-/// `contracts/apr-mcp-tool-schemas-v1.yaml` is outside the published
-/// package and would panic this build.rs at install time (v0.31.1 bug).
-/// A drift-guard test in `tests/falsify_mcp_008.rs` asserts the in-crate
-/// copy stays byte-identical to the workspace-root copy in-tree.
+/// Resolve `contracts/apr-mcp-tool-schemas-v1.yaml` relative to this crate's
+/// manifest dir. Works for both in-tree builds and worktree copies.
 fn locate_contract() -> PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .expect("FALSIFY-MCP-008: CARGO_MANIFEST_DIR unset in build.rs");
     Path::new(&manifest_dir)
+        .join("..")
+        .join("..")
         .join("contracts")
         .join("apr-mcp-tool-schemas-v1.yaml")
 }
@@ -126,21 +110,11 @@ fn render_module(tools: &[ToolEntry]) -> String {
 
     for tool in tools {
         let schema_json = render_schema_json(tool);
-        let escaped_schema = escape_rust_str(&schema_json);
-        let schema_const = tool_schema_const_name(&tool.name);
+        let escaped = escape_rust_str(&schema_json);
+        let const_name = tool_const_name(&tool.name);
         out.push_str(&format!("/// JSON Schema body for `{}`.\n", tool.name));
         out.push_str(&format!(
-            "pub const {schema_const}: &str = \"{escaped_schema}\";\n\n"
-        ));
-
-        let escaped_desc = escape_rust_str(&tool.description);
-        let desc_const = tool_description_const_name(&tool.name);
-        out.push_str(&format!(
-            "/// Tool-level description for `{}` (PMAT-514).\n",
-            tool.name
-        ));
-        out.push_str(&format!(
-            "pub const {desc_const}: &str = \"{escaped_desc}\";\n\n"
+            "pub const {const_name}: &str = \"{escaped}\";\n\n"
         ));
     }
     out
@@ -195,16 +169,9 @@ fn render_schema_json(tool: &ToolEntry) -> String {
 }
 
 /// Convert `apr.version` → `APR_VERSION_SCHEMA`.
-fn tool_schema_const_name(tool_name: &str) -> String {
+fn tool_const_name(tool_name: &str) -> String {
     let mut out = tool_name.replace(['.', '-'], "_").to_uppercase();
     out.push_str("_SCHEMA");
-    out
-}
-
-/// Convert `apr.version` → `APR_VERSION_DESCRIPTION`.
-fn tool_description_const_name(tool_name: &str) -> String {
-    let mut out = tool_name.replace(['.', '-'], "_").to_uppercase();
-    out.push_str("_DESCRIPTION");
     out
 }
 
