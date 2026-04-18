@@ -142,9 +142,9 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 ## Milestones
 
 ### M1: Skeleton — SHIPPED (2026-04-17)
-- [x] Create `crates/aprender-mcp/` crate (PR #862)
-- [x] Wire `apr mcp` subcommand into apr-cli (PR #862)
-- [x] Implement `initialize` + `tools/list` with `apr.version` stub (PR #862)
+- [x] Create `crates/aprender-mcp/` crate (PR #864)
+- [x] Wire `apr mcp` subcommand into apr-cli (PR #864)
+- [x] Implement `initialize` + `tools/list` with `apr.version` stub (PR #864)
 - [x] FALSIFY-MCP-001 (init <500ms) and -002 (tools/list shape) passing
 - Note: `pmcp` SDK deferred — server is hand-rolled JSON-RPC, more deterministic for current scope
 
