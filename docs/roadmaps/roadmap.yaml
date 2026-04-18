@@ -5526,3 +5526,70 @@ roadmap:
     anthropic exposes the full agent loop via Anthropic's Messages API.
     PMAT-CLAUDE-PROXY-001 unlocks the largest category of IDE integrations
     (everything speaking `anthropic-sdk-*`) without any MCP dependency.
+
+- id: PMAT-CODE-PARITY-MATRIX-001
+  github_issue: null
+  item_type: epic
+  title: 'APR-CODE-PARITY: close the 20-feature gap vs Claude Code surfaced by the 2026-04-18 audit'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18T17:00:00Z
+  updated: 2026-04-18T17:00:00Z
+  spec: docs/specifications/apr-mcp-server-spec.md
+  summary: >
+    Parent epic for the Claude-Code-feature parity matrix in
+    docs/specifications/apr-mcp-server-spec.md § "Feature-by-feature parity
+    matrix — apr code vs Claude Code (2026-04-18 audit)". The audit falsified
+    each Claude Code feature category against the actual
+    crates/aprender-orchestrate/src/ implementation. Of 20 categories:
+    5 SHIPPED, 7 PARTIAL, 8 missing. This epic groups the partial + missing
+    gaps and prioritises the four that unblock the most downstream parity
+    work.
+  headline_audit_result: '5 SHIPPED / 7 PARTIAL / 8 MISSING across 20 categories'
+  p0_near_term_work:
+  - id: PMAT-CODE-MCP-CLIENT-001
+    status: already-registered
+    note: '.mcp.json loader + register_mcp_tools wire-up. Unblocks all external-MCP IDE integrations.'
+  - id: PMAT-CODE-SLASH-PARITY-001
+    status: new
+    note: 'Expand SlashCommand enum from 11 to ~20 variants. Missing: /config, /mcp, /review, /memory, /permissions, /hooks, /init, /resume, /add-dir, /agents.'
+  - id: PMAT-CODE-HOOKS-001
+    status: new
+    note: 'New agent/hooks.rs module + manifest [[hooks]] table + SessionStart/PreToolUse/PostToolUse/UserPromptSubmit events with exit-code→block/warn/allow semantics.'
+  - id: PMAT-CODE-SPAWN-PARITY-001
+    status: new
+    note: 'Lift SpawnTool from capability-gated to default registry; add TaskCreate/Get/List/Update surface. Prereq for worktree isolation (PMAT-CODE-WORKTREE-001) and subagent-style Claude Code Agent tool.'
+  p1_follow_ons_filed_by_audit:
+  - PMAT-CODE-MEMORY-PARITY-001 (CLAUDE.md @imports + user-level + auto-memory directory)
+  - PMAT-CODE-SKILLS-001 (skill discovery + /name invocation + SKILL.md frontmatter)
+  - PMAT-CODE-WORKTREE-001 (EnterWorktree/ExitWorktree tools + --worktree flag)
+  - PMAT-CODE-CUSTOM-AGENTS-001 (.apr/agents/*/AGENT.md discovery)
+  - PMAT-CODE-PERMISSIONS-001 (default/plan/acceptEdits/auto/bypass modes + --permission-mode flag)
+  - PMAT-CODE-WEB-TOOLS-001 (wire NetworkTool + BrowserTool into default registry behind privacy-tier gate)
+  - PMAT-CODE-SESSION-PARITY-001 (--continue shorthand, durable JSONL transcripts, --fork-session, --name)
+  - PMAT-CODE-CONFIG-LADDER-001 (~/.config/apr/settings.json + managed-org → user → project → local precedence)
+  - PMAT-CODE-REPL-PHASE2-001 (Shift+Tab permission cycling, ! bash inline, @ path file-mention)
+  - PMAT-CODE-NON-INTERACTIVE-PARITY-001 (--output-format json|text|stream-json, --input-format stream-json, --max-budget-usd)
+  p2_deferred_filed_by_audit:
+  - PMAT-CODE-NOTEBOOK-001
+  - PMAT-CODE-MONITOR-001
+  - PMAT-CODE-PLUGINS-001
+  - PMAT-CODE-IDE-001
+  - PMAT-CODE-ORG-POLICY-001
+  acceptance_criteria:
+  - 'P0 tickets (PMAT-CODE-{MCP-CLIENT,SLASH-PARITY,HOOKS,SPAWN-PARITY}-001) each promote from planned to in-progress with first acceptance criterion landed.'
+  - 'Audit re-runs after P0 completion (via the six pmat query / grep cross-checks listed in the spec matrix) and each of the four P0 rows flips from PARTIAL/NONE to SHIPPED with updated evidence path.'
+  - 'Headline count rebalances from 5/7/8 to at minimum 9/7/4 before this epic closes.'
+  labels:
+  - apr-code
+  - parity
+  - claude-code
+  - epic
+  notes: >
+    The matrix is falsifiable, not aspirational — every row cites a specific
+    file path or a specific zero-hit grep, and can be re-run to verify the
+    gap has closed. This is the key advantage of the audit approach: parity
+    progress is mechanically checkable, not "does it feel like Claude Code".
+    Re-run the six falsification cross-checks listed at the bottom of the
+    spec matrix section after each ticket closes.
