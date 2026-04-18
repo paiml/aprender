@@ -1,3 +1,5 @@
+<!-- PCU: tools-mcp-server | contract: contracts/apr-page-tools-mcp-server-v1.yaml -->
+
 # aprender-mcp — Model Context Protocol Server
 
 `aprender-mcp` is a Model Context Protocol (MCP) server that exposes the `apr`
