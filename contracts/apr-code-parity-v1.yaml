@@ -15,7 +15,7 @@
 #
 # Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
 # aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
-# Current counts (2026-04-18 v4.6): 9 SHIPPED / 3 PARTIAL / 9 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 5 more MISSING→{SHIPPED,PARTIAL} flips to close the epic.
+# Current counts (2026-04-18 v4.7): 10 SHIPPED / 3 PARTIAL / 8 MISSING. SHIPPED cap (≥9) MET; MISSING cap (≤4) still needs 4 more MISSING→{SHIPPED,PARTIAL} flips to close the epic.
 # ─────────────────────────────────────────────────────────────────────────────
 
 metadata:
@@ -75,12 +75,12 @@ harness_policy:
 
 headline:
   audit_date: '2026-04-18'
-  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed)
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips)
   total_rows: 21
   counts:
-    shipped: 9
+    shipped: 10
     partial: 3
-    missing: 9
+    missing: 8
   closure_criterion:
     description: >
       Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
@@ -148,15 +148,23 @@ categories:
     priority: null
 
   - id: skills
-    name: Skills (user-invocable skill definitions)
-    status: NONE
-    evidence_path: null
+    name: Skills (user-invocable + auto-loadable skill definitions)
+    status: SHIPPED  # v4.7 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-SKILLS-001 closed: new agent/skill.rs mirrors the custom-agents pattern — hand-parses `---`-fenced markdown frontmatter (no serde_yaml dep), supports both flat `dir/<name>.md` and subdir `dir/<name>/SKILL.md` layouts (Claude default), and discovers skills from user scope (~/.config/apr/skills/) → project scope (.apr/skills/ or .claude/skills/ fallback). SkillRegistry exposes register/resolve/names and an `auto_match` heuristic that fires when ≥2 length-≥4 tokens of a skill's `when_to_use` appear (case-insensitive) in the active turn — prevents single-word false positives. Optional `when_to_use` + `allowed-tools` frontmatter fields parsed; unknown keys (e.g. Claude-compat `context: fork`) silently tolerated. 25 unit tests cover parse (happy path + CRLF + BOM + alias keys + each error variant), flat/subdir layouts, silent skip of malformed files, .apr-over-.claude precedence, registry CRUD, auto_match positive/negative/case-insensitive, and register_discovered_skills_into counting." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/skill.rs
+      - crates/aprender-orchestrate/src/agent/skill/tests.rs
+      - crates/aprender-orchestrate/src/agent/mod.rs
+    evidence_symbols: [parse_skill_md, load_skills_from, discover_skills, register_discovered_skills_into, SkillRegistry, Skill]
+    remaining_gaps:
+      - "`allowed-tools` frontmatter parsed & stored but not yet enforced at tool-invocation time. Deferred to PMAT-CODE-SKILLS-TOOLS-001 (P2)."
+      - "Slash-command integration — Skill.instructions is ready to inject into the active system prompt, but the `/<skill-name>` REPL dispatch is tracked separately by PMAT-CODE-SLASH-SKILLS-001 (P2)."
     cross_check_command: |
-      pmat query --literal "pub struct Skill" --limit 5 2>/dev/null \
-        | grep -E "agent/skill" | wc -l
-    expected_max_hits: 0
-    ticket: PMAT-CODE-SKILLS-001
-    priority: P1
+      grep -cE "(fn parse_skill_md|fn load_skills_from|fn discover_skills|fn register_discovered_skills_into|pub struct Skill )" crates/aprender-orchestrate/src/agent/skill.rs
+    expected_min_hits: 5
+    ticket: null  # PMAT-CODE-SKILLS-001 closed
+    priority: null
 
   - id: subagent-spawn
     name: Subagent / Task tool (Agent, TaskCreate/Get/List/Update)
@@ -482,7 +490,7 @@ falsification_conditions:
 priority_buckets:
   P0: []  # all 4 P0 tickets closed 2026-04-18 (MCP-CLIENT, SLASH-PARITY, HOOKS, SPAWN-PARITY); category rows retained in `categories` for history
   P1:
-    - skills
+    # skills: closed v4.7 (2026-04-18) — retained in `categories` for history
     - worktree-isolation
     # custom-agents: closed v4.5 (2026-04-18) — retained in `categories` for history
     - permission-modes
@@ -618,3 +626,27 @@ change_log:
       skills (P1), worktree-isolation (P1), permission-modes (P1),
       then 2 of the 6 P2 deferred rows (status-line / notebook /
       monitor / plugins / ide / org-policy).
+  - date: '2026-04-18'
+    revision: '4.7'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-SKILLS-001 closed — skills row flipped NONE → SHIPPED.
+      New crates/aprender-orchestrate/src/agent/skill.rs mirrors the
+      custom-agents pattern: hand-parses `---`-fenced markdown
+      frontmatter (no new deps), supports both flat
+      `.apr/skills/<name>.md` and subdir `.apr/skills/<name>/SKILL.md`
+      (Claude default) layouts, and discovers skills from user scope
+      (`~/.config/apr/skills/`) → project scope (`.apr/skills/` or
+      `.claude/skills/` fallback) with `.apr/` winning on name collision.
+      SkillRegistry exposes `register`/`resolve`/`names` plus an
+      `auto_match` heuristic that fires when ≥2 length-≥4 tokens from
+      a skill's `when_to_use` appear (case-insensitive) in the active
+      turn — two-token threshold prevents single-word false positives
+      (e.g. "about", "tests"). Optional `when_to_use` + `allowed-tools`
+      frontmatter fields parsed; unknown keys (e.g. Claude-compat
+      `context: fork`) silently tolerated. 25 unit tests. **Headline
+      9/3/9 → 10/3/8 over 21 rows**. SHIPPED cap (≥9) still MET;
+      MISSING cap (≤4) still needs 4 more MISSING→{SHIPPED,PARTIAL}
+      flips. Priority order for those 4: worktree-isolation (P1),
+      permission-modes (P1), then 2 of the 6 P2 deferred rows
+      (status-line / notebook / monitor / plugins / ide / org-policy).
