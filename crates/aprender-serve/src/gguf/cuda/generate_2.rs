@@ -486,8 +486,10 @@ impl OwnedQuantizedModelCuda {
             max_decode = config.max_tokens;
         } else {
             // PMAT-083: Prefill ALL tokens and extract first token (greedy only)
-            // SPEC-MOE-APR-001: MoE models use serial prefill (batched prefill skips FFN)
-            let is_moe = self.model.layers.first().is_some_and(|l| l.moe_gate_weight.is_some());
+            // SPEC-MOE-APR-001: MoE models use serial prefill (batched prefill skips FFN).
+            // OwnedQuantizedLayer is the GGUF-dense path and never holds MoE experts —
+            // MoE dispatch goes through `apr_transformer::AprTransformerLayer` instead.
+            let is_moe = false;
             let greedy = config.temperature == 0.0 || config.top_k == 1;
             let prefill_first_token = if is_moe {
                 // Serial prefill: process each prompt token through full MoE decode path
