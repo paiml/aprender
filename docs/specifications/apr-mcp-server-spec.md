@@ -236,7 +236,7 @@ Beyond the three directions above, Claude Code ships a dense feature surface (sl
 - `grep -rn "Hook\|pre_tool\|post_tool\|UserPromptSubmit" crates/aprender-orchestrate/src/agent/` returned zero hits
 - `grep -n "pub enum SlashCommand\|^\s*\w\+," crates/aprender-orchestrate/src/agent/repl.rs` enumerated 11 variants
 - `agent/code.rs:218` confirms CLAUDE.md + APR.md are already loaded as project instructions
-- `cli/agent_helpers.rs:179` confirms `register_spawn_tool` is capability-gated, not default
+- `cli/agent_helpers.rs:179` confirms `register_spawn_tool` is capability-gated (as before); `agent/code.rs:104` adds `register_task_tool` unconditionally (default-registered Task tool per PMAT-CODE-SPAWN-PARITY-001)
 - `crates/apr-cli/src/commands_enum.rs:492-520` confirms the `Code` subcommand flag surface
 - **2026-04-18 correction**: `pmat query "SessionStore|session_id|session.rs|offer_auto_resume" --include-source` returned `SessionStore` at `agent/session.rs:32` + `generate_session_id` at `:189-195`; direct file read confirmed full `{create, resume, append_message, load_messages, find_recent_for_cwd, offer_auto_resume}` API. First-pass matrix had marked this PARTIAL on incomplete evidence — flipped to SHIPPED.
 - **2026-04-18 correction**: `grep -rin "status.?line\|StatusLine\|render_status\|status_bar\|statusline" crates/aprender-orchestrate/src/agent/` returned zero matches. Two hits elsewhere (`stack/publish_status`, `bug_hunter/model_parity`) are unrelated. Status line row flipped UNKNOWN → NONE.
