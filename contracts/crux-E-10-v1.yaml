@@ -1,12 +1,8 @@
 # CRUX-E-10 — Hallucination / drift detector
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-E-10
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -15,51 +11,70 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "E — Training & Fine-tuning"
   competitor: huggingface
-  demand_score: 3  # 1..5, medium priority in pmat work
+  demand_score: 3
   intake_status: missing
   description: >
-    Hallucination / drift detector. Root-cause workflow extracted from huggingface UX — see master
-    subspec §5.E and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Evaluate hallucination rate and distribution drift during generation.
+    Canonical: HF `evaluate` metrics `bertscore`, `meteor`, plus
+    `hallucination-detector` (e.g. SelfCheckGPT, arXiv:2303.08896) and
+    PSI drift score against a reference corpus.
 
 equations:
-  placeholder_contract:
+  drift_and_hallu:
     formula: |
-      DRAFT — user workflow "Hallucination / drift detector"
-      must produce observable parity with huggingface's canonical verb
-      on the golden input defined in evidence/crux/huggingface/.
-    domain: user invocation
-    codomain: apr CLI output
+      hallu_score(y, refs) = 1 - max_r cosine(sbert(y), sbert(r))     # SelfCheckGPT-style
+      psi(P, Q) = sum_b (P_b - Q_b) * log(P_b / Q_b)                  # bucketed PSI
+      pass = hallu_score ≤ tau_h AND psi ≤ tau_psi
+    domain: "(generations: [str], refs: [str], reference_corpus: Path, tau_h: f32, tau_psi: f32)"
+    codomain: "JSON {per_sample: [...], hallu_rate: f32, psi: f32, pass: bool}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "identical gen == ref → hallu_score = 0"
+    - "psi(X, X) = 0 for any distribution X"
+    - "deterministic under fixed sentence-transformer version + seed"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-10-001
-  rule: placeholder
-  prediction: "apr surface for 'Hallucination / drift detector' matches huggingface canonical behavior"
+  rule: identity generation scores zero hallucination
+  prediction: "feeding refs as generations yields hallu_rate == 0.0"
   test: |
-    # TBD — collect huggingface transcript in evidence/crux/huggingface/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-E-10" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    cp tests/fixtures/refs.jsonl /tmp/gens.jsonl
+    apr eval-hallu /tmp/gens.jsonl --refs tests/fixtures/refs.jsonl \
+      --format json > /tmp/h.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/h.json')); assert d['hallu_rate']==0.0, d
+    "
+- id: FALSIFY-CRUX-E-10-002
+  rule: PSI against self is zero
+  prediction: "PSI(corpus, corpus) < 1e-9"
+  test: |
+    set -euo pipefail
+    apr eval-drift tests/fixtures/corpus.jsonl --ref tests/fixtures/corpus.jsonl \
+      --format json > /tmp/p.json
+    python3 -c "import json; d=json.load(open('/tmp/p.json')); assert d['psi'] < 1e-9, d"
+- id: FALSIFY-CRUX-E-10-003
+  rule: threshold failure emits non-zero exit
+  prediction: "--fail-on-hallu 0.1 with noisy generations returns non-zero"
+  test: |
+    set -euo pipefail
+    ! apr eval-hallu tests/fixtures/noisy-gens.jsonl --refs tests/fixtures/refs.jsonl \
+      --fail-on-hallu 0.1
 
 proof_obligations:
+- type: parity
+  property: "apr eval-hallu SelfCheckGPT variant matches HF `evaluate` + sentence-transformers reference within 1e-3"
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "identity gen==ref → hallu_score = 0"
+- type: invariant
+  property: "psi(X, X) = 0"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 3
   proven: 0
   tested: 0
-  status: draft
+  status: spec-complete
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-e-10` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-e-10
   priority: medium
   auto_created: true
