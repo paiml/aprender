@@ -1,39 +1,18 @@
-<!-- PCU: tools-mcp-server | contract: contracts/apr-page-tools-mcp-server-v1.yaml -->
-
 # aprender-mcp — Model Context Protocol Server
 
 `aprender-mcp` is a Model Context Protocol (MCP) server that exposes the `apr`
-CLI as MCP tools over JSON-RPC 2.0 stdio transport. MCP clients — Claude Code,
-Cursor, Cline, Aider, Continue — connect to it via `.mcp.json` and invoke
-`apr.run`, `apr.qa`, `apr.trace`, etc. on local models. The server speaks MCP
-protocol `2024-11-05` and is launched via the `apr mcp` subcommand.
+CLI as MCP tools over JSON-RPC 2.0 stdio transport. It lets MCP clients —
+Claude Code, Cursor, Cline, Aider, Continue — invoke `apr.validate`,
+`apr.tensors`, `apr.bench`, `apr.qa`, `apr.trace`, and `apr.version` on local
+models. The server speaks MCP protocol `2024-11-05` and is launched via the
+`apr mcp` subcommand.
 
-Authoritative spec: [`docs/specifications/apr-mcp-server-spec.md`](https://github.com/paiml/aprender/blob/main/docs/specifications/apr-mcp-server-spec.md).
+Spec: [`docs/specifications/apr-mcp-server-spec.md`](https://github.com/paiml/aprender/blob/main/docs/specifications/apr-mcp-server-spec.md).
 Crate README: [`crates/aprender-mcp/README.md`](https://github.com/paiml/aprender/blob/main/crates/aprender-mcp/README.md).
 
-## Status
+## Quick start
 
-| Milestone | Scope | State |
-|-----------|-------|-------|
-| M1 | Skeleton: `initialize` + `tools/list` + `apr.version` | Shipped |
-| M2 | 7 Phase-1 subprocess wrappers + dispatcher hardening | Shipped |
-| M3 | `apr.finetune` synchronous wrapper, `notifications/cancelled` → SIGTERM→SIGKILL, build.rs schema codegen, opt-in `notifications/progress` for `apr.finetune` | Shipped |
-| M4 | Claude Code dogfood session, contract promoted DRAFT → ENFORCED | Pending |
-| M5 | Port dispatcher to `pmcp` v2.3; add SSE / WebSocket transports | Planned |
-
-M3 ships `notifications/cancelled` handling (FALSIFY-MCP-006), the 8th
-Phase-1 tool `apr.finetune`, full build-time schema code generation
-(FALSIFY-MCP-008) for every tool, and opt-in per-line
-`notifications/progress` for `apr.finetune` when the client supplies
-`params._meta.progressToken` (FALSIFY-MCP-PROGRESS-001). Per-step
-structured progress for `apr.finetune` and progress notifications for
-`apr.run` remain follow-up slices (the CLI needs an event-channel
-prereq and an `apr run --stream` flag).
-
-## Installation
-
-`aprender-mcp` ships as part of the main `aprender` crate; no separate install
-step is required:
+Install aprender and confirm the `apr mcp` subcommand is present.
 
 ```bash
 cargo install aprender
@@ -41,20 +20,23 @@ apr --version
 apr mcp --help
 ```
 
-The server is invoked as the `apr mcp` subcommand. To smoke-test stdio
-framing manually (press Ctrl-D to exit):
+Run the server directly to smoke-test stdio framing (press Ctrl-D to exit):
 
 ```bash
 apr mcp
 ```
 
+Wire it into an MCP client with an `.mcp.json` file (see next section), then
+ask the client to list tools — you should see `apr.version`, `apr.validate`,
+`apr.tensors`, `apr.bench`, `apr.qa`, and `apr.trace`.
+
 ## Client configuration
 
-The `.mcp.json` file lives at the root of the project directory opened in the
-client. Claude Code, Cursor, and Cline all look there; none search parent
-directories.
+The `.mcp.json` file lives at the root of your project (Claude Code, Cursor,
+Cline all look there). Two variants are supported: `apr` resolved from
+`PATH`, or an absolute binary path.
 
-### `apr` resolved from PATH
+### `apr` on PATH
 
 ```json
 {
@@ -67,10 +49,10 @@ directories.
 }
 ```
 
-### Absolute path (GUI-launched clients)
+### Absolute path
 
-Clients launched from macOS Dock / Windows Start menu do not inherit the
-shell `PATH`. Use the absolute-path variant plus any env vars you need:
+Useful when the client doesn't inherit your shell `PATH` (common on macOS
+GUI launches):
 
 ```json
 {
@@ -87,291 +69,132 @@ shell `PATH`. Use the absolute-path variant plus any env vars you need:
 ```
 
 Both snippets work as-is for Claude Code, Cursor, and Cline — the
-`mcpServers` schema is shared across those clients.
+`mcpServers` schema is shared across those three clients.
 
 ## Tool catalog
 
-Nine tools are registered: `apr.version` (in-process) plus 8 subprocess
-wrappers. Each wrapper spawns `apr <subcommand> --json` and returns stdout
-verbatim as a single text content block. Non-zero exit is mapped to
-`isError: true` with stderr attached.
-
-Every tool's `inputSchema` is generated at build time from
-`contracts/apr-mcp-tool-schemas-v1.yaml` — see *Schema codegen* below.
+Each tool is a thin subprocess wrapper around `apr <subcommand> --json`. The
+descriptions below match what MCP clients see in `tools/list`.
 
 ### apr.version
 
-In-process tool. Returns the server version and protocol version. No
-arguments.
+*Return the aprender-mcp server version. Takes no arguments.*
 
-```json
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"apr.version","arguments":{}}}
+- Wraps: none (in-process)
+- Arguments: (none)
+- Returns: `{server, version, protocol_version}`
+
+```text
+apr.version()
 ```
-
-Response payload:
-
-```json
-{"server":"aprender-mcp","version":"0.30.0","protocol_version":"2024-11-05"}
-```
-
-The `version` field tracks the workspace `Cargo.toml` version (baked in at
-compile time via `env!("CARGO_PKG_VERSION")`), so it bumps with every
-aprender release. Clients should parse it for diagnostics, not pin to it.
 
 ### apr.validate
 
-Wraps `apr validate <model_path> --json`. Validates model integrity and
-quality gates.
+*Validate a model file's integrity and quality. Wraps `apr validate <model> --json`.*
 
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `model_path` | string | yes | Path to `.apr`, `.gguf`, or `.safetensors` file |
+- Wraps: `apr validate <model_path> --json`
+- Arguments: `model_path` (string, required)
 
-```json
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"apr.validate","arguments":{"model_path":"./qwen2.5-0.5b-instruct-q4km.gguf"}}}
+```text
+apr.validate(model_path="./qwen2.5-0.5b-instruct-q4km.gguf")
 ```
-
-Returns `apr validate --json` stdout verbatim.
 
 ### apr.tensors
 
-Wraps `apr tensors <model_path> --json [--stats] [--filter <pat>]`. Lists
-tensor names, shapes, and (optionally) summary statistics.
+*List tensors in a model with shapes and dtypes. Wraps `apr tensors <model> --json`.*
 
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `model_path` | string | yes | Path to the model file |
-| `stats` | boolean | no | Include mean/std/min/max per tensor |
-| `filter` | string | no | Substring filter on tensor name |
+- Wraps: `apr tensors <model_path> --json [--stats] [--filter <pat>]`
+- Arguments:
+  - `model_path` (string, required)
+  - `stats` (boolean) — include mean/std/min/max
+  - `filter` (string) — substring match on tensor name
 
-```json
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"apr.tensors","arguments":{"model_path":"./model.apr","stats":true,"filter":"attn"}}}
+```text
+apr.tensors(model_path="./model.apr", stats=true, filter="attn")
 ```
 
 ### apr.bench
 
-Wraps `apr bench <model_path> --json [--iterations N] [--max-tokens N] [--prompt X]`.
-Reports throughput and latency percentiles.
+*Benchmark model throughput and latency. Wraps `apr bench <model> --json`.*
 
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `model_path` | string | yes | Path to the model file |
-| `iterations` | integer | no | Measurement iterations (default 5) |
-| `max_tokens` | integer | no | Tokens generated per iteration (default 32) |
-| `prompt` | string | no | Test prompt (default is model-specific) |
+- Wraps: `apr bench <model_path> --json [--iterations N] [--max-tokens N] [--prompt X]`
+- Arguments:
+  - `model_path` (string, required)
+  - `iterations` (integer, default 5)
+  - `max_tokens` (integer, default 32)
+  - `prompt` (string, default model-specific)
 
-```json
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"apr.bench","arguments":{"model_path":"./model.gguf","iterations":10,"max_tokens":128}}}
+```text
+apr.bench(model_path="./model.gguf", iterations=10, max_tokens=128)
 ```
 
 ### apr.qa
 
-Wraps `apr qa <model_path> --json [--assert-tps N] [--max-tokens N] [--iterations N]`.
-Runs the 8-gate falsifiable QA checklist.
+*Run the 8-gate falsifiable QA checklist on a model. Wraps `apr qa <model> --json`.*
 
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `model_path` | string | yes | Path to the model file |
-| `assert_tps` | number | no | Minimum throughput gate in tok/s |
-| `max_tokens` | integer | no | Tokens per iteration (default 32) |
-| `iterations` | integer | no | Benchmark iterations (default 10) |
+- Wraps: `apr qa <model_path> --json [--assert-tps N] [--max-tokens N] [--iterations N]`
+- Arguments:
+  - `model_path` (string, required)
+  - `assert_tps` (number) — minimum throughput gate in tok/s
+  - `max_tokens` (integer, default 32)
+  - `iterations` (integer, default 10)
 
-```json
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"apr.qa","arguments":{"model_path":"./model.gguf","assert_tps":100}}}
+```text
+apr.qa(model_path="./model.gguf", assert_tps=100)
 ```
 
 ### apr.trace
 
-Wraps `apr trace <model_path> --json [--layer <pat>] [--reference <path>]`.
-Layer-by-layer tensor trace; supports diffing against a reference model.
+*Layer-by-layer tensor trace with per-layer stats. Wraps `apr trace <model> --json`.*
 
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `model_path` | string | yes | Path to the model file |
-| `layer` | string | no | Substring filter on layer name |
-| `reference` | string | no | Reference model to diff against |
+- Wraps: `apr trace <model_path> --json [--layer <pat>] [--reference <path>]`
+- Arguments:
+  - `model_path` (string, required)
+  - `layer` (string) — substring filter on layer name
+  - `reference` (string) — reference model to diff against
 
-```json
-{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"apr.trace","arguments":{"model_path":"./model.apr","layer":"layer_0","reference":"./ref.gguf"}}}
+```text
+apr.trace(model_path="./model.apr", layer="layer_0", reference="./ref.gguf")
 ```
 
-### apr.run
+## Falsifiers
 
-Wraps `apr run <model_path> --json [--prompt X] [--max-tokens N] [--temperature T] [--top-p P]`.
-Synchronous inference; the entire generation completes before the tool
-returns. Cancellation via `notifications/cancelled` is wired (see
-*Cancellation* below).
+The currently enforced gates (subset of the full 1..8 in the spec):
 
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `model_path` | string | yes | Path to file or `hf://org/repo` |
-| `prompt` | string | no | Text prompt to generate from |
-| `max_tokens` | integer | no | Maximum tokens (default 32) |
-| `temperature` | number | no | Sampling temperature; `0.0` is greedy argmax |
-| `top_p` | number | no | Top-p nucleus sampling threshold |
+| Gate | What it asserts |
+|------|-----------------|
+| FALSIFY-MCP-001 | `initialize` round-trip under 50ms (spec budget 500ms) |
+| FALSIFY-MCP-002 | every registered tool exposes a valid object-typed schema |
+| FALSIFY-MCP-005 | `jsonrpc != "2.0"` is rejected with `-32600 Invalid Request` |
+| FALSIFY-MCP-007 | `initialize.params.protocolVersion` mismatch returns `-32602 Invalid Params` |
+| FALSIFY-MCP-VALIDATE-001 | tool argument validation surfaces as `isError:true`, not as a JSON-RPC error |
 
-```json
-{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"apr.run","arguments":{"model_path":"./qwen2.5-0.5b-instruct-q4km.gguf","prompt":"1+1=","max_tokens":16}}}
-```
+The full 1..8 list lives in [`docs/specifications/apr-mcp-server-spec.md#falsification-conditions-for-apr-mcp-server-v1yaml`](https://github.com/paiml/aprender/blob/main/docs/specifications/apr-mcp-server-spec.md#falsification-conditions-for-apr-mcp-server-v1yaml).
+FALSIFY-MCP-003/-004/-006/-008 land with M3 (streaming) and M4 (end-to-end).
 
-### apr.serve
+## Roadmap
 
-Wraps `apr serve <model_path> --port <port>`. Fire-and-forget: the tool
-spawns the daemon, captures its pid, and returns `{pid, url, note}`. The
-caller is responsible for killing the pid out-of-band.
-
-M3 shipped `notifications/cancelled` for `apr.run` only — `apr.serve` is
-still fire-and-forget because it returns `{pid, url}` synchronously and
-leaves the daemon detached. A lifecycle-tracked registry (cancel token →
-SIGTERM the captured pid with 30s grace → SIGKILL) is a post-M3
-follow-up, targeted at M5 alongside the pmcp dispatcher port.
-
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `model_path` | string | yes | Path to file or `hf://org/repo` |
-| `port` | integer | no | TCP port (default 8080) |
-
-```json
-{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"apr.serve","arguments":{"model_path":"./model.gguf","port":8080}}}
-```
-
-Response payload:
-
-```json
-{"pid":12345,"url":"http://localhost:8080","note":"fire-and-forget: kill pid via OS to stop"}
-```
-
-### apr.finetune
-
-Wraps `apr finetune <base_model> --json [--data <path>] [--rank <N>] [--epochs <N>] [--method <m>] [--output <path>]`.
-Synchronous: blocks until training completes, then returns the final JSON
-payload from the CLI.
-
-Opt-in progress: when the client's `tools/call` sets
-`params._meta.progressToken`, the server emits one `notifications/progress`
-per non-empty stdout line from `apr finetune --json`
-(FALSIFY-MCP-PROGRESS-001). Without a token, zero notifications are
-emitted. Note this is per-stdout-line, not per-training-step —
-`apr finetune --json` currently writes a terminal blob on completion, so
-most clients will see only a small number of progress events. A per-step
-CLI event channel is an M4 follow-up.
-
-The MCP argument names (`base_model`, `dataset`, `lora_rank`) differ from
-the underlying CLI flags (positional base-model path, `--data`, `--rank`);
-the wrapper maps them at dispatch time.
-
-| Argument | Type | Required | Description |
-|----------|------|----------|-------------|
-| `base_model` | string | yes | Base model path or `hf://org/repo` |
-| `dataset` | string | no | JSONL training-data path (→ `--data`) |
-| `lora_rank` | integer | no | LoRA rank (→ `--rank`); omit for auto |
-| `epochs` | integer | no | Training epochs (default 3) |
-| `method` | string | no | `auto`, `full`, `lora`, or `qlora` (default `auto`) |
-| `output` | string | no | Output adapter/checkpoint path |
-
-```json
-{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"apr.finetune","arguments":{"base_model":"./base.gguf","dataset":"./train.jsonl","lora_rank":8,"epochs":3}}}
-```
-
-## Cancellation
-
-M3 wires `notifications/cancelled` end-to-end. Each `tools/call` is handled
-on a dedicated worker thread registered in an in-flight table keyed by
-JSON-RPC request id. A `notifications/cancelled` whose `params.requestId`
-matches a registered id signals that worker's cancel channel.
-
-The worker's subprocess poll loop (see `crates/aprender-mcp/src/tools/subprocess.rs`)
-checks the cancel channel between `try_wait` probes. On signal it sends
-`SIGTERM` to the spawned `apr` subprocess, waits up to
-`CANCEL_GRACE_MS` (30 s, per spec), then escalates to `SIGKILL` if the
-child has not exited. Captured partial stdout is returned in the
-`ToolCallResult` with `isError: true` and a message prefixed `Cancelled:`.
-
-Example cancel notification (targets the in-flight `apr.run` id):
-
-```json
-{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":7,"reason":"user aborted"}}
-```
-
-Notes:
-
-- Notifications have no `id` and MUST NOT receive a response.
-- Cancelling an id that is not currently in-flight is a silent no-op.
-- On non-Unix targets `SIGTERM` is unavailable; the implementation falls
-  back to `child.kill()` (equivalent to `SIGKILL`).
-- `apr.serve` is fire-and-forget and is not cancellable through this
-  path; the caller must kill the returned `pid` directly.
-
-## Schema codegen
-
-Every tool's `inputSchema` is emitted at build time by
-`crates/aprender-mcp/build.rs` from
-[`contracts/apr-mcp-tool-schemas-v1.yaml`](https://github.com/paiml/aprender/blob/main/contracts/apr-mcp-tool-schemas-v1.yaml),
-the single source of truth for MCP tool argument shape. Each tool's
-`*_tool_definition()` parses the generated constant
-`crate::schemas::APR_<TOOL>_SCHEMA` into an `InputSchema`. There are no
-hand-maintained schemas in the tools source.
-
-FALSIFY-MCP-008 asserts byte-identity (after JSON canonicalization)
-between each live `tools/list` schema **and description** and the YAML
-contract entry. The gate is enforced at two layers:
-
-* **Live wiring** — `tests/falsify_mcp_008.rs` compares
-  `ToolDefinition.inputSchema` (`migrated_tools_match_yaml_contract_byte_for_byte`)
-  and `ToolDefinition.description` (`tool_descriptions_match_yaml_contract`)
-  against the YAML contract.
-* **Codegen constants** — the same file compares each
-  `schemas::APR_<TOOL>_SCHEMA` (`codegen_constants_parse_and_match_yaml_for_every_tool`)
-  and each `schemas::APR_<TOOL>_DESCRIPTION` (`codegen_description_constants_match_yaml`)
-  against the YAML contract directly — this catches the case where a
-  future refactor replaces the codegen consumer with a hand-coded literal.
-
-To change a tool's schema *or* description: edit the YAML only — the
-next `cargo build` regenerates both `APR_<TOOL>_SCHEMA` and
-`APR_<TOOL>_DESCRIPTION` from `contracts/apr-mcp-tool-schemas-v1.yaml`
-and the tool modules pick them up automatically. No Rust edit is
-needed, and hand-editing the tool source will fail
-`codegen_description_constants_match_yaml` before reaching CI.
-
-## Falsification gates
-
-| Gate | Assertion | Status |
-|------|-----------|--------|
-| FALSIFY-MCP-001 | `initialize` responds within 500 ms (CI threshold: 50 ms) with `{"protocolVersion":"2024-11-05", ...}` | ACTIVE |
-| FALSIFY-MCP-002 | `tools/list` returns every registered tool with a valid object-typed JSON Schema Draft 7 | ACTIVE |
-| FALSIFY-MCP-003 | `tools/call apr.run` on `qwen2.5-0.5b-instruct-q4km.gguf` with prompt `"1+1="` decodes `"2"` as first token within 5 s | Deferred to M4 |
-| FALSIFY-MCP-004 | `tools/call apr.qa` returns 8 gates byte-identical to `apr qa --json` CLI output | Deferred to M4 |
-| FALSIFY-MCP-005 | Malformed request (`"jsonrpc": "1.0"`) returns JSON-RPC error `-32600`, server stays alive | ACTIVE |
-| FALSIFY-MCP-006 | `notifications/cancelled` during a long-running tool call stops the subprocess within the grace window and returns a partial result | ACTIVE |
-| FALSIFY-MCP-007 | `initialize` with `protocolVersion != "2024-11-05"` returns `-32602`, does not attempt `tools/list` | ACTIVE |
-| FALSIFY-MCP-008 | Each tool's `inputSchema` **and** `description` in `tools/list` are byte-identical to the entry in `contracts/apr-mcp-tool-schemas-v1.yaml` | ACTIVE |
-| FALSIFY-MCP-PROGRESS-001 | With `params._meta.progressToken`, `apr.finetune` emits one `notifications/progress` per non-empty stdout line, all flushed before the final response; without a token, zero notifications | ACTIVE |
-
-Additional invariant enforced by the dispatcher:
-
-| Gate | Assertion | Status |
-|------|-----------|--------|
-| FALSIFY-MCP-VALIDATE-001 | Tool argument validation failure surfaces as `isError: true`, not as a JSON-RPC error | ACTIVE |
-
-The full definitions live in
-[`docs/specifications/apr-mcp-server-spec.md#falsification-conditions-for-apr-mcp-server-v1yaml`](https://github.com/paiml/aprender/blob/main/docs/specifications/apr-mcp-server-spec.md#falsification-conditions-for-apr-mcp-server-v1yaml).
+Per the spec milestones: **M3** adds `notifications/progress` streaming for
+long-running tools (`apr.run`, `apr.finetune`) plus cancellation wired
+through `notifications/cancelled` → SIGTERM/SIGKILL of the spawned `apr`
+subprocess. **M4** adds a Claude Code dogfood session using only `apr.*`
+tools and promotes `contracts/apr-mcp-server-v1.yaml` from DRAFT to
+ENFORCED. See `docs/specifications/apr-mcp-server-spec.md` sections *M3*
+and *M4* for the full acceptance criteria.
 
 ## Troubleshooting
 
-**`apr: command not found` from an MCP client.** The client was launched
-from a GUI (macOS Dock, Windows Start menu) and did not inherit the shell
-`PATH`. Use the absolute-path `.mcp.json` variant above, or symlink
+**`apr: command not found` from an MCP client.** The client launched from a
+GUI (macOS Dock, Windows Start menu) does not inherit your shell `PATH`.
+Use the absolute-path variant of `.mcp.json` above, or symlink
 `/usr/local/bin/apr` to `~/.cargo/bin/apr`.
 
 **`.mcp.json` not picked up.** The file must live at the repository root of
-the workspace opened in the client. None of the supported clients search
-parent directories.
+the workspace you opened in the client. Claude Code, Cursor, and Cline do
+not search parent directories. `ls -l .mcp.json` at the project root; if it
+is absent or in a subdirectory the server will not start.
 
-**`protocolVersion mismatch` / `-32602 Invalid Params`.** The client
-requested a protocol version other than `2024-11-05`. Upgrade the client
+**`protocolVersion mismatch` or `-32602 Invalid Params`.** The client
+requested a protocol version other than `2024-11-05`. Upgrade the client,
 or pin it to a release that speaks `2024-11-05`. FALSIFY-MCP-007 enforces
-this — there is no compatibility shim.
-
-**In-flight cancel seems to do nothing.** Check `params.requestId`: it
-must match the JSON-RPC `id` of the `tools/call` exactly (string vs
-integer matters). Cancelling an unknown id is a silent no-op by design.
+this — no partial compatibility shim is offered.
