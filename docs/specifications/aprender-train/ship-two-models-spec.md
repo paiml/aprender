@@ -698,8 +698,12 @@ tensor-index quant validation is deferred to v1.1 until a real-world FAIL
 demonstrates need.
 
 The unit test matrix (`cargo test -p apr-cli validate_manifest`) runs 45 tests on
-every push; the end-to-end pre-flight gate runs against real 15 GiB artifacts
-only at ship time (evidence at `evidence/ship-two-001/ex-04-preflight-gate-smoketest.json`).
+every push; the end-to-end pre-flight gate runs against real 8–15 GiB artifacts
+only at ship time. All three staged teacher artifacts (`.apr` 8.0 GiB,
+`.safetensors` 15.2 GiB, `.gguf` 8.0 GiB) discharged every applicable gate on
+2026-04-18, with overall verdict **PASS** per format. Evidence:
+`evidence/ship-two-001/ex-04-preflight-gate-smoketest-v2.json` (9-gate
+coverage; supersedes v1 which only captured PM-001..007).
 
 #### 12.7.1 Revised EX-04 invocation
 

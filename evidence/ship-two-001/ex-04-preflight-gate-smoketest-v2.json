@@ -1,0 +1,109 @@
+{
+  "timestamp_utc": "2026-04-18T12:05:00Z",
+  "tool": "apr validate-manifest --artifact --json",
+  "gate_coverage": "FALSIFY-PM-001..009 (9 gates)",
+  "parent_contract": "contracts/publish-manifest-v1.yaml v1.3.0",
+  "parent_spec": "docs/specifications/aprender-train/ship-two-models-spec.md v2.7.0 §12.7",
+  "revision_notes": "Supersedes ex-04-preflight-gate-smoketest.json (2026-04-18T08:21:30Z). That earlier run captured 7 gates (PM-001..007). This v2 run adds FALSIFY-PM-008 GGUF tensor-type authority + FALSIFY-PM-009 APR magic-bytes — closing the three-format ship symmetry (every shipped format has a pre-flight Poka-Yoke gate).",
+  "binary": {
+    "path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "features": "cuda",
+    "git_sha_commit": "ec60b5c9e",
+    "branch": "feat/pm-007-preflight-poka-yoke"
+  },
+  "artifacts": [
+    {
+      "format": "apr",
+      "path": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr",
+      "size_bytes": 8035635524,
+      "sha256": "0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666"
+    },
+    {
+      "format": "safetensors",
+      "path": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors",
+      "size_bytes": 15231938404,
+      "sha256": "c1058ce763fe47fa7d18a89a8b854d2cd8ebdb87127441304146ab8618dd8954"
+    },
+    {
+      "format": "gguf",
+      "path": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf",
+      "size_bytes": 8037129408,
+      "sha256": "e6cac5d642b042641b308a3ea5d3fa1eb48aa80c48dea5877a7b4efa886e7981"
+    }
+  ],
+  "per_format_results": {
+    "apr": {
+      "overall": "PASS",
+      "active_gates": {
+        "FALSIFY-PM-001": {"verdict": "PASS", "detail": "all 12 top + 7 provenance required fields present"},
+        "FALSIFY-PM-002": {"verdict": "PASS", "detail": "sha256 match"},
+        "FALSIFY-PM-004": {"verdict": "PASS", "detail": "3 SPDX identifier(s) valid"},
+        "FALSIFY-PM-005": {"verdict": "PASS", "detail": "recipe_sha256 match (contracts/model-families/qwen2.yaml)"},
+        "FALSIFY-PM-006": {"verdict": "PASS", "detail": "parent chain terminates at Qwen/Qwen2.5-Coder-7B-Instruct"},
+        "FALSIFY-PM-009": {"verdict": "PASS", "detail": "apr magic = APR\\0 (v2) (valid)"}
+      },
+      "deferred_gates": {
+        "FALSIFY-PM-003": "URL HEAD check requires network; re-run with --live",
+        "FALSIFY-PM-007": "format=apr — not safetensors; skip dtype gate",
+        "FALSIFY-PM-008": "format=apr — not gguf; skip file_type gate"
+      }
+    },
+    "safetensors": {
+      "overall": "PASS",
+      "active_gates": {
+        "FALSIFY-PM-001": {"verdict": "PASS", "detail": "all 12 top + 7 provenance required fields present"},
+        "FALSIFY-PM-002": {"verdict": "PASS", "detail": "sha256 match"},
+        "FALSIFY-PM-004": {"verdict": "PASS", "detail": "3 SPDX identifier(s) valid"},
+        "FALSIFY-PM-005": {"verdict": "PASS", "detail": "recipe_sha256 match"},
+        "FALSIFY-PM-006": {"verdict": "PASS", "detail": "parent chain terminates at Qwen/Qwen2.5-Coder-7B-Instruct"},
+        "FALSIFY-PM-007": {"verdict": "PASS", "detail": "198 weight tensor(s) == F16; 141 norm/bias exempt"}
+      },
+      "deferred_gates": {
+        "FALSIFY-PM-003": "URL HEAD check requires network; re-run with --live",
+        "FALSIFY-PM-008": "format=safetensors — not gguf; skip file_type gate",
+        "FALSIFY-PM-009": "format=safetensors — not apr; skip magic gate"
+      }
+    },
+    "gguf": {
+      "overall": "PASS",
+      "active_gates": {
+        "FALSIFY-PM-001": {"verdict": "PASS", "detail": "all 12 top + 7 provenance required fields present"},
+        "FALSIFY-PM-002": {"verdict": "PASS", "detail": "sha256 match"},
+        "FALSIFY-PM-004": {"verdict": "PASS", "detail": "3 SPDX identifier(s) valid"},
+        "FALSIFY-PM-005": {"verdict": "PASS", "detail": "recipe_sha256 match"},
+        "FALSIFY-PM-006": {"verdict": "PASS", "detail": "parent chain terminates at Qwen/Qwen2.5-Coder-7B-Instruct"},
+        "FALSIFY-PM-008": {
+          "verdict": "PASS",
+          "detail": "predominant tensor type = 12 (Q4_K) matches quantization 'q4_k' (note: general.file_type=0=ALL_F32 is stale)",
+          "note": "Tensor-authoritative design in action: llama.cpp's quantize tool left general.file_type=0 (ALL_F32) stale despite every weight being Q4_K. PM-008 trusts the per-tensor ggml_type histogram per feedback_gguf_file_type_stale.md (2026-04-18)."
+        }
+      },
+      "deferred_gates": {
+        "FALSIFY-PM-003": "URL HEAD check requires network; re-run with --live",
+        "FALSIFY-PM-007": "format=gguf — not safetensors; skip dtype gate",
+        "FALSIFY-PM-009": "format=gguf — not apr; skip magic gate"
+      }
+    }
+  },
+  "three_format_ship_symmetry": {
+    "status": "COMPLETE",
+    "gates": {
+      ".apr":         "FALSIFY-PM-009 (magic bytes)",
+      ".safetensors": "FALSIFY-PM-007 (header dtype)",
+      ".gguf":        "FALSIFY-PM-008 (per-tensor ggml_type histogram)"
+    },
+    "guarantee": "Every SHIP-TWO-001 release format aborts BEFORE any network I/O when the staged artifact's binary layer disagrees with its manifest.quantization."
+  },
+  "pm_008_tensor_authority_demonstration": {
+    "artifact": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf",
+    "header_general_file_type": 0,
+    "header_file_type_label": "ALL_F32 (stale)",
+    "per_tensor_predominant_ggml_type": 12,
+    "per_tensor_label": "Q4_K",
+    "manifest_quantization": "q4_k",
+    "verdict": "PASS (tensor authority)",
+    "note_without_pm_008_this_would_have": "falsely ship-blocked the teacher under an ftype-only design (feedback_gguf_file_type_stale.md)"
+  },
+  "overall": "PASS",
+  "next_step": "EX-04..07 (task #59, #63) — blocked on HF_TOKEN for actual upload. All local pre-flight gates discharged on real 8+ GiB teacher artefacts."
+}
