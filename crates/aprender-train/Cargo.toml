@@ -118,6 +118,7 @@ arrow = { version = "57", default-features = false, optional = true }  # Arrow a
 nvml-wrapper = { version = "0.10", optional = true }  # NVIDIA NVML bindings for GPU monitoring
 hostname = "0.4.2"
 ctrlc = "3.4"  # Signal handling for graceful shutdown (R-008)
+unicode-normalization = "0.1"  # NFC normalization for BPE tokenizer (C-TOK-BPE-001 INV-TOK-003)
 dhat = { version = "0.3", optional = true }  # Heap profiling
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

@@ -287,6 +287,7 @@ name = "apr-cli"
 version = "0.31.0"
 dependencies = [
  "alimentar",
+ "anyhow",
  "aprender-core 0.31.0",
  "aprender-present-core",
  "aprender-present-terminal",
@@ -333,6 +334,7 @@ dependencies = [
  "trueno-explain",
  "trueno-viz 0.3.0",
  "trueno-zram-core",
+ "unicode-normalization",
  "ureq 2.12.1",
  "which 7.0.3",
  "whisper-apr",
@@ -1807,6 +1809,7 @@ dependencies = [
  "trueno-gpu",
  "trueno-rag",
  "trueno-viz 0.2.4",
+ "unicode-normalization",
  "uuid",
  "validator",
  "wasm-bindgen",
@@ -16079,6 +16082,15 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-normalization-alignments"

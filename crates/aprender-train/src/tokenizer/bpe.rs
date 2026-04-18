@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use unicode_normalization::UnicodeNormalization;
 
-use super::config::TokenizerConfig;
+use super::config::{Normalization, TokenizerConfig};
 use super::error::{Result, TokenizerError};
 use super::traits::{TokenId, Tokenizer};
 
@@ -92,6 +93,24 @@ impl BPETokenizer {
         }
     }
 
+    /// Apply the configured Unicode normalization, then optional lowercasing.
+    ///
+    /// NFC is applied BEFORE lowercasing because `char::to_lowercase()` is not
+    /// closed over non-NFC input for every grapheme — normalizing first makes
+    /// the pipeline deterministic for composed/decomposed variants of the
+    /// same visible text.
+    fn preprocess(&self, text: &str) -> String {
+        let normalized = match self.config.normalization {
+            Normalization::None => text.to_string(),
+            Normalization::NFC => text.nfc().collect(),
+        };
+        if self.config.lowercase {
+            normalized.to_lowercase()
+        } else {
+            normalized
+        }
+    }
+
     /// Tokenize text to bytes (initial tokenization)
     fn to_bytes(&self, text: &str) -> Vec<String> {
         text.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
@@ -134,13 +153,8 @@ impl Tokenizer for BPETokenizer {
         self.init_vocab();
 
         // Tokenize corpus to bytes
-        let mut tokenized: Vec<Vec<String>> = corpus
-            .iter()
-            .map(|text| {
-                let t = if self.config.lowercase { text.to_lowercase() } else { text.to_string() };
-                self.to_bytes(&t)
-            })
-            .collect();
+        let mut tokenized: Vec<Vec<String>> =
+            corpus.iter().map(|text| self.to_bytes(&self.preprocess(text))).collect();
 
         // Learn merges until we reach target vocab size
         let target = self.config.vocab_size;
@@ -181,9 +195,7 @@ impl Tokenizer for BPETokenizer {
             return Err(TokenizerError::NotTrained);
         }
 
-        let processed = if self.config.lowercase { text.to_lowercase() } else { text.to_string() };
-
-        let tokens = self.to_bytes(&processed);
+        let tokens = self.to_bytes(&self.preprocess(text));
         let tokens = self.apply_merges(tokens);
 
         let unk_id = *self
@@ -329,6 +341,56 @@ mod tests {
         tokenizer.train(&corpus).expect("operation should succeed");
 
         assert_eq!(tokenizer.token_to_id("<unk>"), Some(0));
+    }
+
+    // C-TOK-BPE-001 INV-TOK-003: NFC normalization makes composed and decomposed
+    // variants of the same grapheme hash to identical byte sequences, so a
+    // tokenizer trained on one form encodes the other form identically.
+    #[test]
+    fn test_bpe_nfc_composed_decomposed_parity() {
+        let composed = "café"; // U+00E9
+        let decomposed = "cafe\u{0301}"; // e + combining acute
+
+        let config = TokenizerConfig::bpe()
+            .with_vocab_size(300)
+            .with_min_frequency(1)
+            .with_normalization(Normalization::NFC);
+        let mut tokenizer = BPETokenizer::new(config);
+        tokenizer.train(&[composed]).expect("operation should succeed");
+
+        let ids_composed = tokenizer.encode(composed).expect("encoding should succeed");
+        let ids_decomposed = tokenizer.encode(decomposed).expect("encoding should succeed");
+
+        assert_eq!(
+            ids_composed, ids_decomposed,
+            "NFC must map composed and decomposed café to identical token IDs"
+        );
+
+        let decoded = tokenizer.decode(&ids_composed).expect("decoding should succeed");
+        assert_eq!(decoded, composed, "NFC round-trip must recover composed form");
+    }
+
+    // Without NFC, composed and decomposed café MUST diverge — this is the
+    // exact drift INV-TOK-003 is defending against at training/inference boundary.
+    #[test]
+    fn test_bpe_without_nfc_composed_decomposed_diverge() {
+        let composed = "café";
+        let decomposed = "cafe\u{0301}";
+
+        let config = TokenizerConfig::bpe()
+            .with_vocab_size(300)
+            .with_min_frequency(1)
+            .with_normalization(Normalization::None);
+        let mut tokenizer = BPETokenizer::new(config);
+        tokenizer.train(&[composed]).expect("operation should succeed");
+
+        let ids_composed = tokenizer.encode(composed).expect("encoding should succeed");
+        let ids_decomposed = tokenizer.encode(decomposed).expect("encoding should succeed");
+
+        assert_ne!(
+            ids_composed, ids_decomposed,
+            "Without NFC, composed and decomposed café MUST diverge (falsification witness for INV-TOK-003)"
+        );
     }
 }
 
