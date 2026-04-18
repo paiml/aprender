@@ -37,10 +37,10 @@ pub mod schemas {
     include!(concat!(env!("OUT_DIR"), "/schemas.rs"));
 }
 
-pub use server::AprMcpServer;
+pub use server::{AprMcpServer, NotificationSink};
 pub use types::{
-    ContentBlock, InputSchema, JsonRpcError, JsonRpcRequest, JsonRpcResponse, PropertySchema,
-    ServerCapabilities, ToolCallResult, ToolDefinition, ToolsCapability,
+    ContentBlock, InputSchema, JsonRpcError, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+    PropertySchema, ServerCapabilities, ToolCallResult, ToolDefinition, ToolsCapability,
 };
 
 /// MCP protocol version this server implements.
