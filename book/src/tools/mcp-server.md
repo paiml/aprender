@@ -319,9 +319,12 @@ tool-level `description` string comparison break CI on drift
 (`tests/falsify_mcp_008.rs::migrated_tools_match_yaml_contract_byte_for_byte`
 and `::tool_descriptions_match_yaml_contract`).
 
-To change a tool's schema or description: edit the YAML, rebuild. The
-Rust source does not need editing for schemas, and descriptions must
-track the YAML verbatim.
+To change a tool's schema: edit the YAML only — rebuild regenerates
+the codegen constant, no Rust edit needed. To change a tool's
+description: edit **both** the YAML entry and the matching string in
+`crates/aprender-mcp/src/tools/<tool>.rs` — descriptions are not yet
+codegen'd (they're hand-mirrored), and
+`tool_descriptions_match_yaml_contract` will fail CI if they diverge.
 
 ## Falsification gates
 
