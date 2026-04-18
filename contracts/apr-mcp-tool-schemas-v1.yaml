@@ -54,8 +54,8 @@ metadata:
 
 kind: McpToolSchemaContract
 name: apr-mcp-tool-schemas
-version: "1.0.0"
-status: DRAFT   # promoted to ENFORCED in M3 once build.rs + falsify harness land
+version: "1.1.0"
+status: ENFORCED   # promoted in M3: build.rs + falsify_mcp_008.rs both landed 2026-04-18
 scope: "every tool returned by the aprender-mcp server's tools/list response"
 protocol_version: '2024-11-05'
 spec: docs/specifications/apr-mcp-server-spec.md
@@ -261,14 +261,14 @@ tools:
       - base_model
 
 # ── Falsification gates ──
-# FALSIFY-MCP-008 is the flagship gate this contract unblocks. It is DRAFT here
-# and becomes ENFORCED in M3 once `build.rs` and the harness land. The other
-# gates listed are existing MCP gates this contract interacts with — they are
-# not owned by this file.
+# FALSIFY-MCP-008 is the flagship gate this contract unblocks. It landed in M3
+# (2026-04-18) alongside `build.rs` + `tests/falsify_mcp_008.rs` and is now
+# ENFORCED. The other gates listed are existing MCP gates this contract
+# interacts with — they are not owned by this file.
 
 falsification:
   FALSIFY-MCP-008:
-    status: DRAFT
+    status: ENFORCED
     owned_by: apr-mcp-tool-schemas-v1
     condition: |
       For every entry `t` in the aprender-mcp server's `tools/list` response,
@@ -284,8 +284,8 @@ falsification:
       - "each tool's `inputSchema.properties.<arg>.type` matches `tools[*].args[*].type`"
       - "each tool's `inputSchema.properties.<arg>.description` matches `tools[*].args[*].description` byte-for-byte"
       - "each tool's `inputSchema.required` equals `tools[*].required` as a sorted set"
-    test_harness: "crates/aprender-mcp/tests/falsify_schema_codegen.rs (to be added in M3)"
-    codegen_consumer: "crates/aprender-mcp/build.rs (to be added in M3)"
+    test_harness: "crates/aprender-mcp/tests/falsify_mcp_008.rs (landed in M3, PR #881; extended with tool_descriptions_match_yaml_contract in 2026-04-18 follow-up)"
+    codegen_consumer: "crates/aprender-mcp/build.rs (landed in M3, PR #881)"
 
   related_gates:
     FALSIFY-MCP-002:
