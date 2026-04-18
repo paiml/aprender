@@ -43,10 +43,11 @@ apr mcp
   `apr.qa`, `apr.trace`, `apr.run`, `apr.serve` + dispatcher hardening
   (jsonrpc/protocolVersion gates).
 - **M3** (shipped 2026-04-18): `apr.finetune` synchronous wrapper
-  (8th Phase-1 tool), `notifications/cancelled` → SIGTERM→SIGKILL for
-  `apr.run`, build.rs schema codegen from
-  `contracts/apr-mcp-tool-schemas-v1.yaml` (all 8 tools), and opt-in
-  per-line `notifications/progress` for `apr.finetune` via
+  (8th Phase-1 workflow tool — 9th registered, counting the M1
+  `apr.version` scaffold), `notifications/cancelled` → SIGTERM→SIGKILL
+  for `apr.run`, build.rs schema codegen from
+  `contracts/apr-mcp-tool-schemas-v1.yaml` (all 9 registered tools),
+  and opt-in per-line `notifications/progress` for `apr.finetune` via
   `params._meta.progressToken`.
 - **M4** (in progress): Claude Code dogfood + contract promotion to
   ENFORCED + real-model FALSIFY-MCP-003/-004.
