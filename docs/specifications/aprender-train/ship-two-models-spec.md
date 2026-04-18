@@ -1,11 +1,11 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.18.0
-**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining scaffold landed; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED)
+**Version:** 2.19.0
+**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures)
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108)
 
 **v2.17.0 amendment (2026-04-18):** Task #101 contracts schema
 harmonization **SHIPPED** on `feat/pm-007-preflight-poka-yoke` at commit
@@ -72,6 +72,53 @@ long-pole item. Expected surface: `aprender-train/src/train/pretrain.rs`
 loop driver calling the `llama_370m` forward pass with AdamW optimizer
 and gradient accumulation, gated by the dataset ingest binary shipped
 in v2.15.0.
+
+**v2.19.0 amendment (2026-04-18):** Task #105 **CLOSED** via background
+sub-agent `ac479445bcd722bf7` — commit `9a5af3ac2` on
+`feat/pm-007-preflight-poka-yoke`. Surface landed (6 files, +1379 LOC):
+(a) `crates/aprender-train/src/train/pretrain.rs` (963 LOC) — PretrainConfig
+with `model_2_defaults()` baking LR=5e-5 + rank=32 + seed=42 remedies
+from MODEL-1 v2 QLoRA divergence post-mortem;
+(b) `crates/apr-cli/src/commands/pretrain.rs` (332 LOC) — CLI entrypoint
+gated behind `training` cargo feature;
+(c) extended_commands.rs + dispatch_analysis.rs — wired `apr pretrain`
+into the apr-cli dispatch table.
+Contract compliance verified: `contracts/training-loop-pretrain-v1.yaml`
+passes `pv validate` with 0 errors; GATE-TRAIN-005 (val_loss[N] ≤ 2.0×
+val_loss[N-1]) wired in `check_non_divergence`; INV-TRAIN-007 NaN/Inf
+guard wired in `check_numerical_stability` before metric logging;
+GATE-TRAIN-008 throughput bounds wired via `PretrainAbort::ThroughputOutOfRange`.
+`per_step_metrics.required` and `per_epoch_artifacts.required_fields`
+enforced as struct invariants. Checkpoint path template
+`{run_dir}/ckpt/epoch-{N:03d}.apr` frozen in `EpochArtifact::new`.
+Synthetic drive via injected `StepFn`/`ValFn` traits allows exercising
+the full gate surface today while the real 370M forward pass wiring
+(llama_370m.rs) completes. Test verification: 15/15 pretrain unit tests
+pass, 3/3 CLI tests pass, 947/947 aprender-train lib tests no
+regressions. Abort errors map 1:1 to contract gate IDs so operators
+see the tripped gate via shell `$?`.
+
+Concurrent with #105, **task #108** closed the 32-way workspace-test
+regression discovered by CI run 24614757928. Root cause: five directory
+iterators in `aprender-core/src/format/` were treating
+`contracts/model-families/llama-370m-sovereign-v1.yaml` (a
+ModelFamilyVariant CONTRACT starting with `contract_id:`) as a
+ModelFamily REGISTRY entry. Fix (commit `21d43bd7a`): all iterators
+now skip files whose first top-level key is `contract_id:` (family
+registry YAMLs all begin with `metadata:` — a clean discriminator,
+verified by corpus scan). `cargo test -p aprender-core --lib format::`
+re-green at 13031 passed / 0 failed.
+
+The ci/lint workspace package-ambiguity blocker (`aprender@0.27.8` vs
+`aprender@0.31.0` — caused by transitive deps on published
+`realizar ^0.7/^0.8`, `renacer ^0.9/^0.10`, `trueno ^0.15/^0.16/^0.17`,
+`entrenar ^0.7`, `bashrs ^6.35/^6.65`, `pacha ^0.2` that all re-export
+old `aprender@0.27`) was split into task #109 for a separate
+path-dependency migration pass. This is orthogonal to SHIP-TWO-001 and
+pre-dated the branch; the monorepo's `[patch.crates-io]` block was
+removed during RC4 cc-cleanup and was never restored for the
+aprender/realizar/renacer/trueno/trueno-gpu chain documented in
+CLAUDE.md.
 
 **Parallel dispatch state (2026-04-18 post-v2.17.0 — preserved for audit
 trail):** three lanes ran concurrently against non-overlapping surfaces —
