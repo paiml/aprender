@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0.0",
+  "contract_ref": "SHIP-TWO-001 spec v2.16.0 Zero-Tolerance §3 row #8",
+  "task_id": "task #104",
+  "host_id": "gx10-a5b5",
+  "timestamp_utc": "2026-04-18T21:39:28Z",
+  "host_info": {
+    "uname": "Linux gx10-a5b5 6.17.0-1014-nvidia #14-Ubuntu SMP PREEMPT_DYNAMIC Tue Mar 17 19:01:40 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux",
+    "arch": "aarch64",
+    "gpu_name": "NVIDIA GB10",
+    "gpu_driver": "590.48.01",
+    "cuda_compute_capability": "12.1",
+    "cuda_runtime": "CUDA 13 (libcudart.so.13)",
+    "cublas": "13 (libcublas.so.13)",
+    "gpu_vram_mib_total": 122502,
+    "disk_used_pct": 95,
+    "disk_avail_gb": 44,
+    "apr_version_installed": "0.4.11 (4b030b0c)",
+    "apr_note": "stale; spec expects >= 0.31.0 per task #85 — NOT USED in this probe (third-party framework gate)"
+  },
+  "framework": "llama.cpp",
+  "framework_version": "b1-b0f0dd3",
+  "framework_build_path": "/home/noah/src/llama.cpp/build/bin/llama-cli",
+  "framework_build_date": "2026-03-28 (mtime of llama-cli binary)",
+  "teacher_artifact": {
+    "hf_repo": "paiml/qwen2.5-coder-7b-apache-q4k-v1",
+    "format": "GGUF",
+    "local_path_on_gx10": "/home/noah/.cache/pacha/models/7bcabb852fedb36b.gguf",
+    "size_bytes": 8037129408,
+    "size_gib": 7.49,
+    "sha256_expected": "e6cac5d642b042641b308a3ea5d3fa1eb48aa80c48dea5877a7b4efa886e7981",
+    "sha256_actual": "e6cac5d642b042641b308a3ea5d3fa1eb48aa80c48dea5877a7b4efa886e7981",
+    "sha256_match": true
+  },
+  "probe_invocation": {
+    "command": "llama-cli -m <teacher.gguf> -p 'def fibonacci(n):' -n 128 -t 16 -ngl 999 -no-cnv --no-warmup --single-turn </dev/null",
+    "prompt": "def fibonacci(n):",
+    "max_tokens": 128,
+    "cpu_threads": 16,
+    "gpu_layers": 999,
+    "warmup_disabled": true,
+    "wall_time_seconds_approx": 5
+  },
+  "probe_result": {
+    "decode_tps": 38.0,
+    "prompt_eval_tps": 509.0,
+    "gpu_mem_total_mib": 122502,
+    "gpu_mem_free_mib": 109719,
+    "gpu_mem_used_mib": 7754,
+    "gpu_mem_used_breakdown_mib": {
+      "model": 5580,
+      "context": 1792,
+      "compute": 382
+    },
+    "gpu_mem_used_gib": 7.57,
+    "host_mem_used_mib": 2157,
+    "output_sample": "```python\ndef fibonacci(n):\n    if n <= 0:\n        return 0\n    elif n == 1:\n        return 1\n    else:\n        a, b = 0, 1\n        for _ in range(2, n + 1):\n            a, b = b, a + b\n        return b\n```",
+    "output_is_syntactically_valid_python": true
+  },
+  "gate_evaluation": {
+    "threshold_decode_tps": 30.0,
+    "threshold_source": "spec v2.16.0 — 'reference tok/s on 7B Q4_K_M', calibrated to llama.cpp baseline (30-50 tok/s on RTX 4090 class; 46 tok/s claimed in project_ship_two_001_gx10_third_party_capability.md)",
+    "measured_decode_tps": 38.0,
+    "margin_tps": 8.0,
+    "margin_pct": 26.67,
+    "pass_fail": "PASS",
+    "forbidden_fallback_check": {
+      "fused_nf4_fallback_15_5_tps_used": false,
+      "note": "Third-party framework (llama.cpp CUDA) ran at 38 tok/s — 2.45x the forbidden 15.5 tok/s NF4 fallback. Capacity gate clears without relying on forbidden path."
+    }
+  },
+  "probe_log_path": "/home/noah/src/aprender/evidence/ship-two-001/gx10-llama-cli-probe-20260418.log",
+  "constraints_honored": {
+    "no_aprender_code_ran_on_gx10": true,
+    "no_gx10_state_modified": "true (no installs; removed only own /tmp log)",
+    "no_hf_upload": true,
+    "wall_time_under_2min": true
+  },
+  "notes": [
+    "First probe attempt hit a REPL bug: without --single-turn, llama-cli printed empty '> ' prompts indefinitely, growing log to 4.5 GiB before being killed. Cleaned up; disk recovered from 830G used to 826G used (95% → 95%).",
+    "Second probe with '--single-turn </dev/null' exited cleanly.",
+    "This build shows 'b1-b0f0dd3' tag; note message 'llama-cli deprecated, use llama-completion'. Acceptable for this one-off gate.",
+    "Memory prior claim: 46 tok/s. Measured: 38.0 tok/s — 17% lower but still well above 30 tok/s threshold. Possible drift: different llama.cpp commit (b0f0dd3 vs whatever was measured before), different quant variant, or thermal state.",
+    "apr version on gx10 is 0.4.11 — does NOT satisfy task #85 expectation of >= 0.31.0. Note: per recent release (commit 071e60926) aprender is at 0.31.0, so the gx10 apr binary is stale. This is orthogonal to this capacity gate (third-party framework), but blocks other tasks.",
+    "Disk pressure on gx10 is high: 95% used, only 44G free. Not enough slack for a 7B finetune. Needs cleanup before MODEL-2 training lands here."
+  ],
+  "memory_update_recommendation": {
+    "file": "project_ship_two_001_gx10_third_party_capability.md",
+    "fields_to_update": [
+      "decode_tps: 46 → 38.0 (measured 2026-04-18, llama.cpp b0f0dd3)",
+      "add: 'capacity gate PASS at 38 tok/s vs 30 tok/s threshold (task #104)'",
+      "add: 'apr on gx10 is 0.4.11 — STALE. Needs upgrade to >= 0.31.0 before any apr-driven task (task #85).'",
+      "add: 'disk 95% full — 44G free. Cleanup needed before MODEL-2 training.'",
+      "add: 'evidence: evidence/ship-two-001/gx10-capacity-baseline-20260418-213928.json'"
+    ],
+    "do_not_write_directly": true
+  }
+}

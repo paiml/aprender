@@ -1,10 +1,13 @@
 //! MCP tool implementations for aprender.
 //!
-//! M1 shipped `apr.version`. M2 adds 7 Phase-1 tools as subprocess wrappers
-//! around `apr <cmd> --json`. Shipped: `apr.validate`, `apr.tensors`,
-//! `apr.bench`, `apr.qa`, `apr.trace`, `apr.run`, `apr.serve`. M3 adds
-//! `apr.finetune` (synchronous initial slice; streaming is a follow-up),
-//! completing the 8-tool Phase-1 surface.
+//! Phase-1 surface (shipped M1–M3):
+//! - M1 scaffold: `apr.version`.
+//! - M2 subprocess wrappers around `apr <cmd> --json`: `apr.validate`,
+//!   `apr.tensors`, `apr.bench`, `apr.qa`, `apr.trace`, `apr.run`, `apr.serve`.
+//! - M3 streaming slice: `apr.finetune` (opt-in `notifications/progress`
+//!   per non-empty stdout line when `params._meta.progressToken` is set —
+//!   see FALSIFY-MCP-PROGRESS-001) + `notifications/cancelled` →
+//!   SIGTERM→SIGKILL for `apr.run` (FALSIFY-MCP-006).
 
 pub mod bench;
 pub mod finetune;

@@ -212,6 +212,35 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         #[cfg(feature = "training")]
         ExtendedCommands::Train { command } => dispatch_train_command(command, cli),
+        #[cfg(feature = "training")]
+        ExtendedCommands::Pretrain {
+            dataset,
+            tokenizer,
+            run_dir,
+            lr,
+            num_steps,
+            warmup_steps,
+            batch_size,
+            seq_length,
+            steps_per_epoch,
+            seed,
+            target_val_loss,
+            synthetic,
+        } => commands::pretrain::run(
+            dataset,
+            tokenizer,
+            run_dir,
+            *lr,
+            *num_steps,
+            *warmup_steps,
+            *batch_size,
+            *seq_length,
+            *steps_per_epoch,
+            *seed,
+            *target_val_loss,
+            *synthetic,
+            cli.json,
+        ),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
         ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
         ExtendedCommands::Pipeline { command } => dispatch_pipeline_command(command, cli),
@@ -506,6 +535,20 @@ fn dispatch_tokenize_command(
             output,
             max_lines,
         } => tokenize::run_apply(data, *vocab_size, algorithm, output, *max_lines, cli.json),
+        TokenizeCommands::Train {
+            corpus,
+            vocab_size,
+            min_frequency,
+            output,
+            normalization,
+        } => tokenize::run_train(
+            corpus,
+            *vocab_size,
+            *min_frequency,
+            output,
+            normalization,
+            cli.json,
+        ),
     }
 }
 
@@ -1029,6 +1072,8 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             message.as_deref(),
             *dry_run || *plan,
             cli.verbose,
+            None,
+            &[],
         ),
 
         ExtendedCommands::Tools(ToolCommands::Encrypt {

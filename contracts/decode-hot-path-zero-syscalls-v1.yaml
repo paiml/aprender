@@ -1,0 +1,123 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-17'
+  author: PAIML Engineering
+  description: >
+    GPU decode hot path (forward_gpu_resident_to_token_id and its graphed
+    replay equivalent) must not perform per-token syscalls. Diagnostic
+    file writes left over from PMAT/PAR debugging tickets (is_moe check,
+    pmat450_status, moe_cpu_dispatch, moe_cuda_gen) are now defects: they
+    add 50–200µs of syscall overhead per token at 2.2–3.4ms/token decode
+    budget — 1.5–9% throughput tax for zero operational value.
+  pmat: [F-DECODE-HOTPATH-001]
+  references:
+  - crates/aprender-serve/src/gguf/cuda/uses.rs
+    (forward_gpu_resident_to_token_id — per-token /tmp write)
+  - crates/aprender-serve/src/gguf/cuda/generate_2.rs (per-call writes)
+  - crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs
+  - crates/aprender-serve/src/api/batch_processing.rs
+
+five_whys:
+  why_1: >
+    `apr run --gpu` decode on Qwen2.5-Coder-1.5B Q4_K_M hits 420 tok/s
+    steady state but apr qa / apr profile measures 184–193 tok/s. Gap
+    is larger than prefill amortization alone explains.
+  why_2: >
+    `forward_gpu_resident_to_token_id` (the greedy graph-replay path)
+    performs an unconditional `std::fs::write("/tmp/moe_is_moe_check
+    .txt", ...)` on every call. Every decode token = 1 file open + 1
+    write + 1 close syscall burst.
+  why_3: >
+    The write was added as a debugging breadcrumb during PMAT-589 /
+    PMAT-592 MoE dispatch triage; the bug was fixed but the diagnostic
+    stayed in the hot path.
+  why_4: >
+    No contract existed asserting "decode hot path has zero syscalls
+    beyond CUDA driver calls." Diagnostics tend to accumulate without
+    this kind of guardrail.
+  why_5: >
+    Similar diagnostic writes exist in other once-per-request paths
+    (generate_2.rs:395, 485; batch_processing.rs:410, 414) and a once-
+    per-layer MoE dispatch path (ffn_block.rs:25, 30). None of them
+    should ship.
+
+equations:
+  hot_path_syscall_cost:
+    formula: |
+      throughput_loss_pct = 100 * write_us_per_token /
+                            (gpu_decode_us_per_token + write_us_per_token)
+      at write_us=100, gpu=2300 → loss ≈ 4.2%
+    domain: All greedy GPU decode paths on CUDA.
+    invariants:
+    - No `std::fs::write` reachable from the per-token decode body.
+    - No `println!`/`eprintln!` except when gated by an env var read at
+      session start (OnceLock).
+    preconditions:
+    - Model uses `forward_gpu_resident_to_token_id` (greedy) or
+      `forward_gpu_resident` → argmax (sampled) path.
+
+proof_obligations:
+- type: invariant
+  property: zero per-token fs writes in greedy graphed decode
+  formal: |
+    count(std::fs::write) inside forward_gpu_resident_to_token_id
+    and forward_graphed_replay_to_token_id is 0
+  applies_to: all
+- type: invariant
+  property: is_moe computed once per model (not per token)
+  formal: |
+    the is_moe predicate is evaluated ≤ once per Model lifetime, not
+    once per forward_gpu_resident_to_token_id call
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-DECODE-HP-001
+  rule: no per-token fs writes
+  prediction: |
+    grep -rn 'std::fs::write' crates/aprender-serve/src/gguf/cuda/
+      crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs
+    returns 0 matches after the fix.
+  test: |
+    cargo test -p apr-cli --features "cuda inference" --lib
+      decode_hot_path_has_zero_fs_writes
+  if_fails: A new diagnostic write was reintroduced — revert or gate it
+    behind an env var cached in OnceLock.
+
+- id: FALSIFY-DECODE-HP-002
+  rule: throughput improvement must be measurable on 1.5B Q4_K_M
+  prediction: |
+    Before fix: steady-state decode ~420 tok/s (from DECODE_TIMING).
+    After fix: steady-state decode ≥ 440 tok/s (≥ 4% improvement).
+  test: |
+    DECODE_TIMING=1 apr run qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
+      --prompt "..." --max-tokens 50 2>&1 \
+    | grep DECODE-TIMING | awk '{print $NF}' | avg ≥ 440
+  if_fails: File write was not the dominant overhead — investigate
+    other syscall sites (spawn, ioctl, getenv).
+
+kani_harnesses:
+- id: KH-DECODE-HP1-001
+  obligation: zero per-token fs writes in greedy graphed decode
+  property: |
+    count(std::fs::write, forward_gpu_resident_to_token_id)
+      + count(std::fs::write, forward_graphed_replay_to_token_id) == 0
+  bound: 8
+  strategy: exhaustive
+  harness: verify_zero_fs_writes_in_decode_path
+- id: KH-DECODE-HP1-002
+  obligation: is_moe computed once per model (not per token)
+  property: |
+    evaluations_of_is_moe_per_generation == 1
+  bound: 4
+  strategy: exhaustive
+  harness: verify_is_moe_cached_at_model_level
+
+qa_gate:
+  id: F-DECODE-HOTPATH-V1
+  name: Decode Hot Path Zero Syscalls
+  description: Greedy GPU decode has no fs writes per token
+  checks:
+  - zero_fs_writes_in_greedy_decode_path
+  - is_moe_cached_at_model_level
+  pass_criteria: both falsifications pass
+  falsification: Hot-path audit + measured throughput delta

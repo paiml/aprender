@@ -1,0 +1,46 @@
+{
+  "timestamp_utc": "2026-04-18T08:21:30Z",
+  "tool": "apr validate-manifest --artifact (via ex-04 pre-flight gate)",
+  "gate": "FALSIFY-PUB-EXTRA-009 + FALSIFY-PUB-EXTRA-010",
+  "parent_contract": "contracts/apr-cli-publish-extra-v1.yaml v1.2.0",
+  "parent_spec": "docs/specifications/aprender-train/ship-two-models-spec.md §12.7.2",
+  "smoke_test_happy_path": {
+    "description": "Three per-format artifacts staged locally; pre-flight gate invoked per format",
+    "per_format": [
+      {"format": "apr",         "artifact": "qwen2.5-coder-7b-instruct-q4k.apr",         "verdict": "PASS"},
+      {"format": "safetensors", "artifact": "qwen2.5-coder-7b-instruct-q4k.safetensors", "verdict": "PASS"},
+      {"format": "gguf",        "artifact": "qwen2.5-coder-7b-instruct-q4k.gguf",        "verdict": "PASS"}
+    ]
+  },
+  "falsification_tests": [
+    {
+      "id": "FALSIFY-PUB-EXTRA-009",
+      "scenario": "Corrupt manifest.sha256 (zeros), run validate-manifest --artifact",
+      "expected_exit_code": "non-zero",
+      "observed_exit_code": 5,
+      "observed_failing_gate": "FALSIFY-PM-002 (sha256 match)",
+      "verdict": "DISCHARGED"
+    },
+    {
+      "id": "FALSIFY-PUB-EXTRA-010",
+      "scenario": "preflight_validate_manifest defined + called 3x before any publish_format",
+      "preflight_token_count": 4,
+      "preflight_first_line": 93,
+      "publish_format_first_line": 98,
+      "ordering_holds": true,
+      "verdict": "DISCHARGED"
+    }
+  ],
+  "pm_007_coverage": {
+    "safetensors_artifact_weight_tensors_F16": 198,
+    "safetensors_artifact_norm_bias_exempt_F32": 141,
+    "verdict": "PASS",
+    "ship_blocker_prevented": "SHIP-TWO-001 §12.7.2 — F32 weight tensors with fp16 manifest"
+  },
+  "bashrs_lint": {
+    "errors": 0,
+    "warnings": 0,
+    "infos": 3
+  },
+  "overall": "PASS"
+}

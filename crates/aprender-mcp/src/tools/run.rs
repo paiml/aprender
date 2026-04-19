@@ -40,9 +40,7 @@ pub fn run_tool_definition() -> ToolDefinition {
     );
     ToolDefinition {
         name: NAME.to_string(),
-        description:
-            "Run synchronous inference on a model. Wraps `apr run <model> --json` and returns tokens + tok/s + stop reason."
-                .to_string(),
+        description: crate::schemas::APR_RUN_DESCRIPTION.to_string(),
         input_schema,
     }
 }

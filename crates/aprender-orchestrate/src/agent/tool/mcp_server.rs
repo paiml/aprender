@@ -4,7 +4,7 @@
 //! so external LLM clients (Claude Code, other agents) can call
 //! the agent's tools over MCP protocol.
 //!
-//! Uses a trait-based handler abstraction compatible with pforge.
+//! Uses a trait-based handler abstraction aligned with pmcp (v2.3).
 //! Refs: arXiv:2505.02279, arXiv:2503.23278
 
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ use crate::agent::memory::MemorySubstrate;
 
 /// Handler for a single MCP tool endpoint.
 ///
-/// Mirrors pforge `Handler` trait pattern for forward compatibility.
+/// Mirrors pmcp `Handler` trait pattern for forward compatibility.
 #[async_trait]
 pub trait McpHandler: Send + Sync {
     /// Tool name as exposed via MCP (e.g., `memory_store`).
