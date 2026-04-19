@@ -395,8 +395,8 @@ These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mc
 - [ ] Claude Code integration test (launch `apr mcp`, ask Claude to "run qwen2.5-0.5b with prompt X")
 - [ ] Cursor / Cline manual smoke test
 
-### M5: `pmcp` SDK migration + transport expansion — PLANNED
-- [ ] Add `pmcp = "2.3"` to `crates/aprender-mcp/Cargo.toml` (already in `aprender-orchestrate`, keep versions aligned)
+### M5: `pmcp` SDK migration + transport expansion — IN PROGRESS
+- [x] Add `pmcp = "2.3"` to `crates/aprender-mcp/Cargo.toml` (PR 1 — optional dep behind `pmcp-dispatcher` feature flag, zero behaviour change; matches `aprender-orchestrate`'s version pin for workspace coherence; `cargo tree -d` stays clean)
 - [ ] Port `server.rs` dispatcher to `pmcp::Server` with per-tool handler registration; retain `build.rs` schema codegen so `tools/list` output stays byte-identical (FALSIFY-MCP-008 unchanged)
 - [ ] Port worker-thread cancellation to pmcp's cancellation API if it ships one; otherwise keep the existing std::thread+mpsc path as a `pmcp::Server` extension
 - [ ] Extend cancellation to `apr.serve`: track daemon pid in a lifecycle registry, SIGTERM→SIGKILL on `notifications/cancelled` (today `apr.run` alone honours cancel — see `server.rs::CancelHandle`)

@@ -982,6 +982,7 @@ dependencies = [
  "assert_cmd",
  "jsonschema 0.28.3",
  "nix 0.29.0",
+ "pmcp 2.3.0",
  "serde",
  "serde_json",
  "serde_yaml",
