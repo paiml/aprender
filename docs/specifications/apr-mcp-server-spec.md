@@ -15,7 +15,7 @@
 **References**:
 - [Model Context Protocol Specification v2024-11-05](https://spec.modelcontextprotocol.io/specification/2024-11-05/)
 - [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
-- [pmcp crate](https://github.com/paiml/rust-mcp-sdk) — PAIML's Rust MCP SDK, actively maintained, v2.3.1 on crates.io (2026-04-16)
+- [pmcp crate](https://github.com/paiml/rust-mcp-sdk) — PAIML's Rust MCP SDK, actively maintained, v2.3.0 on crates.io (verified 2026-04-19 via `cargo search pmcp` — top entry)
 
 ---
 
