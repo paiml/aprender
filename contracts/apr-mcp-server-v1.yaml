@@ -103,21 +103,30 @@ falsification_conditions:
 
   - id: FALSIFY-MCP-003
     description: >
-      The `apr.run` tool exposes the correct MCP surface — name "apr.run",
-      object-typed schema, `model_path` required, and all optional inference
-      knobs (prompt/max_tokens/temperature/top_p) present in properties.
-    test_file: crates/aprender-mcp/src/tools/run.rs
-    test_name: tools::run::tests::definition_has_correct_name_and_required_field
+      `apr.run` end-to-end MCP response shape: wraps `apr run <model> --json`
+      and the returned ToolCallResult text payload parses as JSON carrying
+      the exact CLI schema (model, text, tokens[], tokens_generated,
+      max_tokens, tok_per_sec, inference_time_ms, used_gpu, cached). Driven
+      via a mock `apr` binary on PATH so no real model is needed — real-model
+      coverage is M4 dogfood scope. Supersedes the prior surface-only test
+      `tools::run::tests::definition_has_correct_name_and_required_field`,
+      which remains in run.rs as a cheaper first-line check.
+    test_file: crates/aprender-mcp/tests/falsify_mcp_003.rs
+    test_name: falsify_mcp_003_apr_run_returns_tokens_array
     status: ENFORCED
 
   - id: FALSIFY-MCP-004
     description: >
-      The `apr.qa` tool exposes the correct MCP surface — name "apr.qa",
-      object-typed schema, `model_path` required, and QA knobs
-      (assert_tps/max_tokens/iterations) present in properties. Wraps
-      `apr qa --json` byte-for-byte.
-    test_file: crates/aprender-mcp/src/tools/qa.rs
-    test_name: tools::qa::tests::definition_has_correct_name_and_required_field
+      `apr.qa` end-to-end MCP response shape: wraps `apr qa <model> --json`
+      and the returned ToolCallResult text payload parses as the QaReport
+      schema (model, passed, gates[], gates_executed, gates_skipped,
+      total_duration_ms, timestamp, summary) with exactly 8 gate entries,
+      each carrying {name, passed, message, value?, threshold?, duration_ms,
+      skipped}. Driven via a mock `apr` binary on PATH. Supersedes the prior
+      surface-only test `tools::qa::tests::definition_has_correct_name_and_required_field`,
+      which remains in qa.rs as a cheaper first-line check.
+    test_file: crates/aprender-mcp/tests/falsify_mcp_004.rs
+    test_name: falsify_mcp_004_apr_qa_returns_eight_gates_with_pass_value_threshold
     status: ENFORCED
 
   - id: FALSIFY-MCP-005
