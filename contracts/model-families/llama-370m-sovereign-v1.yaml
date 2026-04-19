@@ -36,12 +36,44 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-LLAMA-370M-SOVEREIGN
-version: 1.0.0
-status: PROPOSED
+version: 1.3.0
+status: ACTIVE
 
 metadata:
-  version: "1.0.0"
+  version: "1.3.0"
   created: "2026-04-18"
+  updated: "2026-04-19"
+  changelog:
+    - "1.0.0 (2026-04-18): Initial contract drafted as PROPOSED — froze
+       albor 370M architectural constants before pretraining begins."
+    - "1.1.0 (2026-04-19): Promoted to ACTIVE. FALSIFY-SHIP-011
+       discharged by falsify_ship_011_rust_scaffold_matches_yaml_contract
+       in crates/aprender-train/src/models/llama_370m.rs — Rust scaffold
+       constants bind byte-equally to this YAML contract; any drift in
+       either fails `cargo test -p aprender-train --lib llama_370m`
+       before a single step of compute runs. Scaffold-level compile-time
+       `validate()` already enforces INV-ARCH-370M-002..008 as `const _`
+       assertions."
+    - "1.2.0 (2026-04-19): Algorithm-level PARTIAL discharge of
+       FALSIFY-SHIP-015 (GATE-ARCH-370M-003). Wired
+       estimated_param_count_within_contract_band +
+       estimated_param_count const-fn as the algorithm proof of
+       INV-ARCH-370M-001 (param count in [366M, 374M]). On-disk
+       `apr inspect --json` discharge remains PENDING on real 370M
+       .apr checkpoint materialization from compute-dispatch — no
+       harness rewrite required at that point, only artifact swap.
+       Sovereign contract stays ACTIVE (FALSIFY-SHIP-011 is the
+       ACTIVE-gating condition, not SHIP-015)."
+    - "1.3.0 (2026-04-19): Algorithm-level PARTIAL discharge of
+       FALSIFY-SHIP-019 (GATE-ARCH-370M-004). Wired three algorithm
+       proofs: coverage (every 219 370M tensors resolve to a
+       TensorContract entry), row-major ordering (every 2D shape is
+       [out_dim, in_dim], INV-ARCH-370M-009), and critical-tensor
+       enforcement (validate_apr_shape rejects reversed lm_head,
+       GH-202 regression gate). Spec §9 Risk #2 named this exact
+       mitigation path. Full discharge (GGUF cosine-parity on
+       trained 370M) remains PENDING on compute-dispatch. Contract
+       stays ACTIVE."
   author: PAIML Engineering
   description: >
     Frozen architectural invariants for the 370M Llama-family sovereign
@@ -293,17 +325,31 @@ gates:
   - id: GATE-ARCH-370M-001
     rule: >
       llama.yaml (or this sibling contract) contains a `370m` entry
-      that validates against contracts/model-families/_schema.yaml.
+      that validates against contracts/model-families/_schema.yaml AND
+      binds byte-equally to the compile-time Rust scaffold that
+      aprender-train will actually consume.
     evidence_required: >
-      `pmat contract validate contracts/model-families/llama-370m-sovereign-v1.yaml`
-      exits 0. The published llama.yaml `size_variants.370m` entry,
-      once amended, lists all 9 keys (parameters, hidden_dim, num_layers,
-      num_heads, num_kv_heads, intermediate_dim, vocab_size,
-      max_position_embeddings, head_dim, rope_theta, rms_norm_eps) with
-      values byte-equal to this contract.
+      `pv validate contracts/model-families/llama-370m-sovereign-v1.yaml`
+      exits 0 (schema OK) AND `cargo test -p aprender-train --lib
+      llama_370m` exits 0. The Rust-side test
+      `falsify_ship_011_rust_scaffold_matches_yaml_contract` asserts
+      byte-equality between every architectural constant in
+      `Llama370MConfig` and this YAML's `architecture.*` /
+      `constraints.*` keys; the companion test
+      `falsify_ship_011_sovereign_contract_is_active` asserts this
+      contract's `status` is ACTIVE (a PROPOSED contract cannot gate a
+      ship). Together, any drift between YAML and Rust fails `cargo test`
+      before a single step of pretraining compute runs — catching the
+      MODEL-1 QLoRA class of recipe/artifact drift at contract-time.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_011_rust_scaffold_matches_yaml_contract"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_011_sovereign_contract_is_active"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::config_matches_contract_values"
+      - "crates/aprender-train/src/models/llama_370m.rs (const _: () = Llama370MConfig::validate();)"
     verdict: pass
     binds_to: AC-SHIP2-001
     falsification_id: FALSIFY-SHIP-011
+    ship_blocking: true
 
   - id: GATE-ARCH-370M-002
     rule: >
@@ -323,9 +369,28 @@ gates:
     evidence_required: >
       `apr inspect --json model.apr | jq '.param_count'` yields an
       integer P with 366_000_000 ≤ P ≤ 374_000_000.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::estimated_param_count_within_contract_band"
+      - "crates/aprender-train/src/models/llama_370m.rs::estimated_param_count (const fn)"
+      - "crates/aprender-train/src/models/llama_370m.rs::estimated_stored_param_count (const fn)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Algorithm level proven at compile time + unit test:
+      estimated_param_count() is a const fn over Llama370MConfig::*;
+      the test asserts the nominal count lies in
+      [PARAMETERS_MIN=366M, PARAMETERS_MAX=374M], within ±5% of
+      PARAMETERS_NOMINAL=370M, and that embedding tying (tied_embeddings=true)
+      reduces stored params by exactly VOCAB_SIZE * HIDDEN_DIM. Any change
+      to Llama370MConfig architectural constants that moves the count
+      out of the INV-ARCH-370M-001 band fails `cargo test -p aprender-train
+      --lib llama_370m` before a checkpoint exists. Full discharge
+      (`apr inspect --json <real 370M checkpoint>.apr`) remains PENDING
+      on 370M pretraining compute-dispatch; fixture swap is data-only.
+    full_discharge_blocks_on: "real 370M .apr checkpoint from pretraining compute-dispatch (AC-SHIP2-003/004)"
     verdict: pass
     binds_to: AC-SHIP2-005
     falsification_id: FALSIFY-SHIP-015
+    ship_blocking: true
 
   - id: GATE-ARCH-370M-004
     rule: >
@@ -336,9 +401,47 @@ gates:
       Running the spec's GATE-SHIP-006 harness against the 370m
       artifact produces `gguf_roundtrip: pass` with
       max_logit_cosine_delta ≤ 1e-3 over the 100 canary prompts.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_019_layout_contract_covers_every_370m_tensor"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_019_gate_arch_370m_004_has_partial_discharge_marker"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::enumerate_370m_apr_tensors"
+      - "crates/aprender-core/src/format/layout_contract.rs::LayoutContract"
+      - "crates/aprender-core/src/format/layout_contract_specs.rs::LayoutContract::validate_apr_shape"
+      - "contracts/tensor-layout-v1.yaml (SOURCE-OF-TRUTH for LAYOUT-001)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Algorithm level proven via three unit-test invariants asserted
+      without training:
+        (1) **Coverage** — every tensor enumerated from Llama370MConfig
+        (1 embedding + 1 lm_head + 9 per-layer × 24 layers + 1 final
+        norm = 219 tensors) resolves to a TensorContract entry in
+        `aprender::format::layout_contract::LayoutContract::new()`.
+        Pattern-normalisation collapses per-layer names; any
+        uncovered tensor would be silently skipped by GGUF export
+        and is therefore a ship-blocker gap.
+        (2) **Row-major ordering (INV-ARCH-370M-009)** — every 2D
+        tensor's enumerated shape is `[out_dim, in_dim]`. Pinned
+        assertions verify lm_head = [vocab, hidden], embed_tokens =
+        [vocab, hidden], q_proj = [heads*head_dim, hidden], k_proj =
+        [kv_heads*head_dim, hidden] (GQA 4× smaller). Reversed
+        `[hidden, vocab]` is the GH-202 root cause; this test binds
+        the 370M architecture to the GH-202-regression-proof layout.
+        (3) **Critical-tensor enforcement** — `validate_apr_shape`
+        is actively asserted to accept `[vocab, hidden]` AND reject
+        `[hidden, vocab]` on lm_head.weight — proves the validator
+        catches layout bugs, not just silently passes.
+      Full discharge (`gguf_roundtrip: pass` with
+      max_logit_cosine_delta ≤ 1e-3 on 100 canary prompts against a
+      trained 370M .apr) remains PENDING on 370M pretraining
+      compute-dispatch. Fixture swap is data-only once a trained
+      artifact exists — no harness rewrite required. Spec §9 Risk #2
+      names this exact mitigation path ("FALSIFY-SHIP-019 parity
+      check; reuse layout_contract.rs validator").
+    full_discharge_blocks_on: "real 370M .apr checkpoint from pretraining compute-dispatch (AC-SHIP2-003/004) + harness invocation of GATE-SHIP-006 cosine-parity runner"
     verdict: pass
     binds_to: AC-SHIP2-009
     falsification_id: FALSIFY-SHIP-019
+    ship_blocking: true
 
 references:
   - "contracts/model-families/llama.yaml (parent)"

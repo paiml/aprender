@@ -38,12 +38,27 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-TOK-BPE
-version: 1.0.0
+version: 1.1.0
 status: PROPOSED
 
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-04-19"
+  changelog:
+    - "1.0.0 (2026-04-18): Initial contract drafted as PROPOSED — froze
+       albor 370M tokenizer choices (vocab=50K, 4 special tokens,
+       NFC normalization, byte-level pre-tokenizer, byte-exact round-trip
+       gate)."
+    - "1.1.0 (2026-04-19): Algorithm-level PARTIAL discharge of
+       FALSIFY-SHIP-012 (GATE-BPE-003). 3 harness tests in
+       crates/apr-cli/tests/falsify_ship_012_tokenizer_roundtrip.rs prove
+       byte-exact round-trip and NFC idempotence (INV-BPE-003, INV-BPE-005)
+       on a 20-doc synthetic Python-like holdout. Full discharge remains
+       PENDING on task #91 (10K-doc The Stack v2 Python holdout
+       materialization) — when that data lands, the fixture swap is
+       data-only, no harness rewrite. Status intentionally kept PROPOSED
+       until the 10K corpus runs clean."
   author: PAIML Engineering
   description: >
     Concrete BPE tokenizer contract for SHIP-TWO-001 MODEL-2 (albor
@@ -217,9 +232,25 @@ gates:
       `apr tokenize --roundtrip holdout-10k.jsonl tokenizer.json` exits
       0 with a JSON report showing {docs: 10000, diffs: 0}. Any nonzero
       `diffs` field fails the gate.
+    evidence_discharged_by:
+      - "crates/apr-cli/tests/falsify_ship_012_tokenizer_roundtrip.rs::falsify_ship_012_tokenizer_roundtrip_byte_exact"
+      - "crates/apr-cli/tests/falsify_ship_012_tokenizer_roundtrip.rs::falsify_ship_012_nfc_idempotence_only"
+      - "crates/apr-cli/tests/falsify_ship_012_tokenizer_roundtrip.rs::falsify_ship_012_train_corpus_sanity"
+      - "evidence/ship-two-001/model-2/falsify-ship-012-tokenizer-roundtrip.json"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Algorithm level proven on 20-doc synthetic Python-like holdout:
+      byte-exact round-trip via byte-level GPT-2-style BPE
+      (aprender::text::tokenize::BpeTokenizer, task #99), NFC
+      idempotence (INV-BPE-005), and train/holdout disjointness.
+      Full discharge PENDING on task #91 — The Stack v2 Python 10K
+      holdout materialization. Fixture swap is a data-only change;
+      no harness rewrite required (see harness module doc-comment).
+    full_discharge_blocks_on: "task #91 (10K The Stack v2 Python holdout)"
     verdict: pass
     binds_to: AC-SHIP2-002
     falsification_id: FALSIFY-SHIP-012
+    ship_blocking: true
 
   - id: GATE-BPE-004
     rule: >

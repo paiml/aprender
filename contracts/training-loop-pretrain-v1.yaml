@@ -35,12 +35,17 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-TRAIN-PRETRAIN
-version: 1.0.0
-status: PROPOSED
+version: 1.1.0
+status: ACTIVE
 
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-04-19"
+  changelog:
+    - "1.1.0 (2026-04-19): GATE-TRAIN-006 / INV-TRAIN-006 discharged via
+       falsify_ship_021_* Rust tests; seed-plumbing race fixed by
+       lock_init_seed mutex in transformer/init.rs; status PROPOSED → ACTIVE"
   author: PAIML Engineering
   description: >
     Pretraining loop contract: required per-step metrics, required
@@ -229,6 +234,19 @@ invariants:
       Spec AC-SHIP2-011 / FALSIFY-SHIP-021. Run twice with seed
       fixed; diff per-step JSONL; assert abs diff ≤ 1e-6 for floats,
       exact for integers, over 0..=99. Any larger delta fails.
+    harness:
+      - name: falsify_ship_021_seed_0_100_step_reproducibility
+        kind: rust-test
+        path: crates/aprender-train/src/train/transformer_trainer/tests.rs
+        asserts:
+          - "loss_a[k] and loss_b[k] both finite for k in 0..100"
+          - "|loss_a[k] - loss_b[k]| ≤ 1e-6 for all k in 0..100"
+          - "trainer_a.optimizer_state_sha256() == trainer_b.optimizer_state_sha256() after 100 steps"
+      - name: falsify_ship_021_different_seeds_do_diverge
+        kind: rust-test
+        path: crates/aprender-train/src/train/transformer_trainer/tests.rs
+        asserts:
+          - "seed=0 and seed=1 trainers produce |loss_a[k] - loss_b[k]| > 1e-4 for at least one k in 0..10 (counter-test: seed plumbing not a no-op)"
 
   - id: INV-TRAIN-007
     description: >
@@ -319,6 +337,9 @@ gates:
       CI harness runs entrenar twice with seed=42, diffs steps 0..99
       of train.jsonl, asserts abs(delta) ≤ 1e-6 for floats, exact
       equality for integer fields.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/train/transformer_trainer/tests.rs::falsify_ship_021_seed_0_100_step_reproducibility"
+      - "crates/aprender-train/src/train/transformer_trainer/tests.rs::falsify_ship_021_different_seeds_do_diverge"
     verdict: pass
     binds_to: AC-SHIP2-011
     falsification_id: FALSIFY-SHIP-021

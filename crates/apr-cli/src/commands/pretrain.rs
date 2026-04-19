@@ -16,9 +16,21 @@ use crate::error::{CliError, Result};
 use crate::output;
 use colored::Colorize;
 use entrenar::train::pretrain::{
-    LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus, ScriptedVal,
+    CheckpointFn, LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus,
+    ScriptedVal, StepFn, ValFn,
 };
+use entrenar::train::pretrain_real::{
+    build_shared_trainer, AprCheckpointFn, RealStepFn, RealValFn,
+};
+use entrenar::train::shard_reader::ShardBatchIter;
+use entrenar::train::transformer_trainer::LMBatch;
 use std::path::Path;
+
+/// Number of LMBatches pulled off the head of the shard stream and
+/// reserved as the held-out validation set. Chosen as a small constant
+/// for MVP; follow-up ticket will plumb an explicit `--val-shards`
+/// flag so training and validation can target disjoint shard files.
+const HELD_OUT_BATCHES: usize = 2;
 
 /// Execute `apr pretrain`.
 #[allow(clippy::too_many_arguments)]
@@ -54,17 +66,6 @@ pub(crate) fn run(
         ));
     }
 
-    // Contract: only synthetic drive is wired today. Real compute is a
-    // downstream ticket that needs the 370M forward pass.
-    if !synthetic {
-        return Err(CliError::ValidationFailed(
-            "Only --synthetic drive is implemented. Real 370M compute depends on \
-             crates/aprender-train/src/models/llama_370m.rs forward pass \
-             (follow-up to PMAT-SHIP-TWO-001 #105)."
-                .to_string(),
-        ));
-    }
-
     let config = PretrainConfig {
         dataset_path: dataset.to_path_buf(),
         tokenizer_dir: tokenizer.to_path_buf(),
@@ -88,16 +89,49 @@ pub(crate) fn run(
         print_header(&config);
     }
 
-    // Synthetic drive: a deterministic linear-decay step function and a
-    // scripted val-loss trace so the loop's full gate surface is
-    // exercised even without 370M compute.
+    let status = if synthetic {
+        drive_synthetic(
+            config.clone(),
+            num_steps,
+            steps_per_epoch,
+            target_val_loss,
+            json_output,
+        )?
+    } else {
+        drive_real(
+            config.clone(),
+            dataset,
+            lr,
+            seq_length,
+            batch_size,
+            seed,
+            json_output,
+        )?
+    };
+
+    // Contract: non-OK terminal statuses map to non-zero exit codes so
+    // operators can recognize divergence / NaN from shell `$?`.
+    match status {
+        RunStatus::Aborted(abort) => Err(abort_to_err(&abort)),
+        RunStatus::Ok { .. } | RunStatus::EarlyStop { .. } => Ok(()),
+    }
+}
+
+/// Synthetic drive: deterministic linear-decay `StepFn` and a scripted
+/// val-loss sequence so the full gate surface (GATE-TRAIN-005/007/008)
+/// is exercised end-to-end with no corpus I/O.
+fn drive_synthetic(
+    config: PretrainConfig,
+    num_steps: usize,
+    steps_per_epoch: usize,
+    target_val_loss: f32,
+    json_output: bool,
+) -> Result<RunStatus> {
     let step_fn = LinearDecaySynthetic {
         start_loss: (target_val_loss * 2.0).max(1.5),
         decay_per_step: (target_val_loss * 0.01).max(1.0e-4),
         grad_norm: 0.8,
     };
-    // Scripted val-loss: start above target and decrease monotonically
-    // until at target. Length large enough for any num_epochs.
     let num_epochs = num_steps.div_ceil(steps_per_epoch);
     let mut sequence = Vec::with_capacity(num_epochs + 2);
     let start_val = (target_val_loss * 1.8).max(3.0);
@@ -106,18 +140,79 @@ pub(crate) fn run(
         sequence.push(target_val_loss + (start_val - target_val_loss) * (1.0 - t).max(0.0));
     }
     let val_fn = ScriptedVal { sequence };
+    // Synthetic drive has no real weights to checkpoint.
+    run_and_report(config, step_fn, val_fn, None, json_output)
+}
 
-    let mut loop_ = PretrainLoop::new(config.clone(), step_fn, val_fn);
-    let status = loop_.run();
+/// Real-corpus drive: build a shared 370M `TransformerTrainer`, split
+/// the shard stream head-off into a held-out validation set, and run a
+/// full forward + backward + AdamW step per training batch.
+fn drive_real(
+    config: PretrainConfig,
+    dataset: &Path,
+    lr: f32,
+    seq_length: usize,
+    batch_size: usize,
+    seed: u64,
+    json_output: bool,
+) -> Result<RunStatus> {
+    // MVP: pad_id/eos_id both 0. All sequences are uniform length
+    // (seq_length + 1) so LMBatch::from_sequences takes the shared
+    // layout path and pad_id is never used for padding. The real
+    // tokenizer's special-token ids will plumb through in a follow-up.
+    let mut iter = ShardBatchIter::new(dataset, batch_size, seq_length, 0, 0).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "dataset shard iterator init failed: {e} (path={})",
+            dataset.display()
+        ))
+    })?;
 
-    report(&status, &loop_, json_output)?;
-
-    // Contract: non-OK terminal statuses map to non-zero exit codes so
-    // operators can recognize divergence / NaN from shell `$?`.
-    match status {
-        RunStatus::Aborted(abort) => Err(abort_to_err(&abort)),
-        RunStatus::Ok { .. } | RunStatus::EarlyStop { .. } => Ok(()),
+    // Reserve the first `HELD_OUT_BATCHES` batches as the held-out val
+    // set; the remainder feeds RealStepFn.
+    let mut held_out: Vec<LMBatch> = Vec::with_capacity(HELD_OUT_BATCHES);
+    for _ in 0..HELD_OUT_BATCHES {
+        match iter.next() {
+            Some(b) => held_out.push(b),
+            None => break,
+        }
     }
+    if held_out.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "dataset {} is too small to reserve any held-out batches",
+            dataset.display()
+        )));
+    }
+
+    let trainer = build_shared_trainer(lr, seq_length, seed);
+    let step_fn = RealStepFn::new(trainer.clone(), Box::new(iter));
+    let val_fn = RealValFn::new(trainer.clone(), held_out);
+    // Task #111 step 7: per-epoch APR checkpoint on GATE-TRAIN-005 pass.
+    let ckpt: Box<dyn CheckpointFn> = Box::new(AprCheckpointFn::new(
+        trainer,
+        "llama-370m-pretrain",
+        "LlamaForCausalLM",
+    ));
+    run_and_report(config, step_fn, val_fn, Some(ckpt), json_output)
+}
+
+/// Shared helper: construct the `PretrainLoop`, run it, print the
+/// terminal report, and bubble the `RunStatus` back for exit-code
+/// mapping. `checkpoint_fn` — when `Some` — writes an APR file per
+/// epoch that passes GATE-TRAIN-005.
+fn run_and_report<S: StepFn, V: ValFn>(
+    config: PretrainConfig,
+    step_fn: S,
+    val_fn: V,
+    checkpoint_fn: Option<Box<dyn CheckpointFn>>,
+    json_output: bool,
+) -> Result<RunStatus> {
+    let mut loop_ = PretrainLoop::new(config, step_fn, val_fn);
+    if let Some(ckpt) = checkpoint_fn {
+        loop_ = loop_.with_checkpoint_fn(ckpt);
+    }
+    let status = loop_.run();
+    report(&status, &loop_, json_output)?;
+    Ok(status)
 }
 
 fn abort_to_err(abort: &PretrainAbort) -> CliError {
@@ -282,7 +377,10 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_mode_false_rejected() {
+    fn real_mode_empty_dataset_dir_errors() {
+        // When --synthetic is off, the real-corpus branch must surface a
+        // clear error if the dataset directory has no .bin shards. This
+        // supersedes the old "non-synthetic is not implemented" guard.
         let tmp = TempDir::new().expect("tempdir");
         let err = run(
             tmp.path(),
@@ -299,10 +397,13 @@ mod tests {
             false,
             true,
         )
-        .expect_err("non-synthetic mode is not implemented yet");
+        .expect_err("empty dataset dir must fail to initialise the shard iterator");
         match err {
             CliError::ValidationFailed(msg) => {
-                assert!(msg.contains("synthetic"), "unexpected message: {msg}");
+                assert!(
+                    msg.contains("shard iterator init failed"),
+                    "unexpected message: {msg}"
+                );
             }
             other => panic!("unexpected error: {other:?}"),
         }
