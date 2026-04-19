@@ -5,7 +5,56 @@
 **Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures)
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence)
+
+**v2.20.0 amendment (2026-04-19):** Two MODEL-2 ship gates **DISCHARGED**
+in the post-v2.19 evidence window on branch `chore/post-v2.19-evidence`:
+
+1. **FALSIFY-SHIP-021 (AC-SHIP2-011) — DISCHARGED** at commit `0b8ca8c84`
+   (task #112). `falsify_ship_021_seed_0_100_step_reproducibility` proves
+   two seed=0 × 100-step training runs produce |Δloss| ≤ 1e-6 at every
+   step and bit-identical AdamW-state sha256; a counter-test
+   `falsify_ship_021_different_seeds_do_diverge` proves seed=0 vs seed=1
+   diverge > 1e-4 within 10 steps. Root cause of the original green-run
+   flake (step-0 6.854 vs 6.928 under parallel cargo test) was a sibling
+   test racing on the global `INIT_SEED` atomic; fix landed as
+   `transformer::init::lock_init_seed(seed) -> MutexGuard` which any
+   future caller doing concurrent weight init under a set-before-read
+   global MUST hold across the full init work. Contract
+   `training-loop-pretrain-v1.yaml` bumped 1.0.0 → 1.1.0,
+   status PROPOSED → ACTIVE, INV-TRAIN-006 + GATE-TRAIN-006 got
+   harness/evidence_discharged_by blocks.
+
+2. **FALSIFY-SHIP-022 (AC-SHIP2-012) — DISCHARGED** at commit `8f0607d42`
+   (task #113). `apr inspect` now surfaces the three provenance keys —
+   `license`, `data_source`, `data_license` — from every .apr binary,
+   rendering absent values as the literal `(missing)` in text mode and
+   `null` in JSON mode. Key design: `AprV2Metadata` gained
+   `data_source` + `data_license` as NAMED Option<String> fields (not
+   buried in `custom: HashMap`); no `skip_serializing_if` is allowed on
+   any provenance field on either `AprV2Metadata` or `MetadataInfo`,
+   because silent-skip via serde is the exact failure mode
+   (`FM-APR-PROV-SILENT-SKIP`) the contract guards against. Text
+   rendering goes through a pure helper `format_provenance_block()` so
+   tests assert on a returned `String` rather than capturing stdout
+   (`gag::BufferRedirect` is NOT parallel-test-safe — recorded as a
+   reusable pattern). New schema contract `apr-provenance-v1.yaml`
+   (C-APR-PROVENANCE v1.0.0 ACTIVE, `kind: schema`) declares 3
+   invariants (round-trip, always-emit, publish-gate-rejects), 3 gates,
+   and 3 failure modes, all bound to AC-SHIP2-012. `pv validate` PASS
+   (0 errors). Live smoke test on
+   `qwen2.5-coder-1.5b-instruct-q4k.apr` (no provenance stored)
+   correctly prints the Provenance block with `(missing)` on all three
+   rows. Together with PM-003/PM-008/PM-009/PM-007 pre-flight gates,
+   any operator can now answer "what data trained this, under what
+   license?" from a `.apr` alone — the sidecar-manifest dependency is
+   severed.
+
+Combined MODEL-2 ship-gate status after v2.20.0: 2/12 AC-SHIP2 gates
+DISCHARGED (011, 012). The remaining 10 (001–010) all block on the
+actual 370M checkpoint, which is the compute-dispatch long-pole; the
+pretrain loop driver from v2.19.0 is ready to exercise them once
+compute-dispatch for real weights lands.
 
 **v2.17.0 amendment (2026-04-18):** Task #101 contracts schema
 harmonization **SHIPPED** on `feat/pm-007-preflight-poka-yoke` at commit
