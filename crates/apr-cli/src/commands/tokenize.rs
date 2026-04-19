@@ -590,6 +590,233 @@ fn validate_normalization(norm: &str) -> Result<()> {
     }
 }
 
+/// Run `apr tokenize encode-corpus` — pretokenize a JSONL corpus into `.bin`
+/// shards per contracts/pretokenize-bin-v1.yaml. Emits flat little-endian u32
+/// streams (the exact format ShardBatchIter expects at MODEL-2 pretrain time).
+///
+/// Requires the `training` feature so `entrenar::tokenizer::BPETokenizer`
+/// is linked; without it, encode-corpus is unavailable (matching `run_train`).
+#[cfg(feature = "training")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_encode_corpus(
+    corpus: &Path,
+    tokenizer_dir: &Path,
+    output_dir: &Path,
+    shard_tokens: usize,
+    content_field: &str,
+    normalization: &str,
+    eos_policy: &str,
+    json_output: bool,
+) -> Result<()> {
+    use entrenar::tokenizer::{BPETokenizer, Normalization, Tokenizer, TokenizerConfig};
+    use std::io::Write as IoWrite;
+
+    validate_normalization(normalization)?;
+    match eos_policy {
+        "none" | "between" | "after" => {}
+        other => {
+            return Err(CliError::ValidationFailed(format!(
+                "Unknown eos_policy: {other}. Supported: none, between, after"
+            )));
+        }
+    }
+    if shard_tokens == 0 {
+        return Err(CliError::ValidationFailed(
+            "shard_tokens must be > 0".to_string(),
+        ));
+    }
+    if !corpus.exists() {
+        return Err(CliError::FileNotFound(corpus.to_path_buf()));
+    }
+    let vocab_path = tokenizer_dir.join("vocab.json");
+    let merges_path = tokenizer_dir.join("merges.txt");
+    if !vocab_path.exists() {
+        return Err(CliError::FileNotFound(vocab_path));
+    }
+    if !merges_path.exists() {
+        return Err(CliError::FileNotFound(merges_path));
+    }
+
+    let norm = match normalization {
+        "nfc" => Normalization::NFC,
+        "none" => Normalization::None,
+        _ => unreachable!("validated above"),
+    };
+    let config = TokenizerConfig::bpe().with_normalization(norm);
+    let tokenizer = BPETokenizer::from_vocab_merges(
+        vocab_path.to_str().ok_or_else(|| {
+            CliError::ValidationFailed("vocab.json path has non-utf8 bytes".to_string())
+        })?,
+        merges_path.to_str().ok_or_else(|| {
+            CliError::ValidationFailed("merges.txt path has non-utf8 bytes".to_string())
+        })?,
+        config,
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("Cannot load tokenizer: {e}")))?;
+    let vocab_size = tokenizer.vocab_size();
+    let eos_id = ["</s>", "<|endoftext|>", "<eos>", "<|eos|>"]
+        .iter()
+        .find_map(|name| tokenizer.token_to_id(name));
+
+    let files = collect_jsonl_files(corpus)?;
+    if files.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "No .jsonl files found under {}",
+            corpus.display()
+        )));
+    }
+
+    std::fs::create_dir_all(output_dir).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "Cannot create output directory {}: {e}",
+            output_dir.display()
+        ))
+    })?;
+
+    let start = Instant::now();
+    let mut shard_idx: usize = 0;
+    let mut tokens_in_shard: usize = 0;
+    let mut total_tokens: u64 = 0;
+    let mut total_docs: u64 = 0;
+    let mut eos_count: u64 = 0;
+    let mut writer = open_shard(output_dir, shard_idx)?;
+    let mut doc_iter_count: u64 = 0;
+
+    for file in &files {
+        let content = std::fs::read_to_string(file).map_err(|e| {
+            CliError::ValidationFailed(format!("Cannot read {}: {e}", file.display()))
+        })?;
+        for (line_idx, line) in content.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let value: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
+                CliError::ValidationFailed(format!(
+                    "Invalid JSON in {} line {}: {e}",
+                    file.display(),
+                    line_idx + 1
+                ))
+            })?;
+            let Some(text) = value.get(content_field).and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let ids = tokenizer.encode(text).map_err(|e| {
+                CliError::ValidationFailed(format!(
+                    "Encoding failed at {} line {}: {e}",
+                    file.display(),
+                    line_idx + 1
+                ))
+            })?;
+
+            if eos_policy == "between" && doc_iter_count > 0 {
+                if let Some(eos) = eos_id {
+                    writer.write_all(&eos.to_le_bytes()).map_err(|e| {
+                        CliError::ValidationFailed(format!("Shard write failed: {e}"))
+                    })?;
+                    tokens_in_shard += 1;
+                    total_tokens += 1;
+                    eos_count += 1;
+                }
+            }
+
+            for id in &ids {
+                if (*id as usize) >= vocab_size {
+                    return Err(CliError::ValidationFailed(format!(
+                        "Token id {id} >= vocab_size {vocab_size} at {} line {} \
+                         (INV-PRETOK-001 violation)",
+                        file.display(),
+                        line_idx + 1
+                    )));
+                }
+                writer
+                    .write_all(&id.to_le_bytes())
+                    .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
+                tokens_in_shard += 1;
+                total_tokens += 1;
+            }
+
+            if eos_policy == "after" {
+                if let Some(eos) = eos_id {
+                    writer.write_all(&eos.to_le_bytes()).map_err(|e| {
+                        CliError::ValidationFailed(format!("Shard write failed: {e}"))
+                    })?;
+                    tokens_in_shard += 1;
+                    total_tokens += 1;
+                    eos_count += 1;
+                }
+            }
+
+            doc_iter_count += 1;
+            total_docs += 1;
+
+            if tokens_in_shard >= shard_tokens {
+                writer
+                    .flush()
+                    .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
+                shard_idx += 1;
+                tokens_in_shard = 0;
+                writer = open_shard(output_dir, shard_idx)?;
+            }
+        }
+    }
+    writer
+        .flush()
+        .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
+    let shard_count = shard_idx + 1;
+    let elapsed = start.elapsed();
+
+    let manifest = serde_json::json!({
+        "schema": "pretokenize-bin-v1",
+        "tokenizer_dir": tokenizer_dir.display().to_string(),
+        "vocab_size": vocab_size,
+        "eos_policy": eos_policy,
+        "eos_token_id": eos_id,
+        "eos_token_count": eos_count,
+        "shard_count": shard_count,
+        "total_tokens": total_tokens,
+        "total_documents": total_docs,
+        "content_field": content_field,
+        "normalization": normalization,
+        "input_files": files.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+        "elapsed_seconds": elapsed.as_secs_f64(),
+    });
+    let manifest_path = output_dir.join("manifest.json");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest)
+            .map_err(|e| CliError::InvalidFormat(e.to_string()))?,
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("Cannot write manifest: {e}")))?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&manifest)
+                .map_err(|e| CliError::InvalidFormat(e.to_string()))?
+        );
+    } else {
+        output::header("apr tokenize encode-corpus — Pretokenization Result");
+        output::kv("  Shards", format_number(shard_count));
+        output::kv("  Total tokens", format_number(total_tokens as usize));
+        output::kv("  Total documents", format_number(total_docs as usize));
+        output::kv("  Vocab size", format_number(vocab_size));
+        output::kv("  Elapsed", format!("{:.1}s", elapsed.as_secs_f64()));
+        output::kv("  Manifest", manifest_path.display().to_string());
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "training")]
+fn open_shard(output_dir: &Path, shard_idx: usize) -> Result<std::io::BufWriter<std::fs::File>> {
+    let path = output_dir.join(format!("shard-{shard_idx:05}.bin"));
+    let file = std::fs::File::create(&path).map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot create shard {}: {e}", path.display()))
+    })?;
+    Ok(std::io::BufWriter::new(file))
+}
+
 // Task #103: removed `build_normalizer` — aprender-train's BPETokenizer now
 // applies normalization internally via `TokenizerConfig::with_normalization`
 // (commit b0e0a280b). The local NFC pass threaded by task #90 is obsolete.

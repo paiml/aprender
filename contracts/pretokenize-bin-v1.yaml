@@ -1,0 +1,395 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-PRETOK-BIN
+# Pretokenize-to-binary-shard contract for SHIP-TWO-001 MODEL-2
+# (albor sovereign 370M Llama-style code model).
+# ─────────────────────────────────────────────────────────────
+# Closes the pretokenize-to-.bin gap discovered during task #119
+# MODEL-2 real-compute pretrain readiness audit. The source-of-truth
+# discovery is in ShardBatchIter::new (crates/aprender-train/src/
+# train/shard_reader.rs): it reads a DIRECTORY of `.bin` files, each
+# a flat stream of little-endian u32 tokens, (seq_length+1) u32s per
+# sequence, batch_size sequences per LMBatch.
+#
+# Prior to this contract, the pretokenize step was not contract-bound,
+# and the tool that produces `.bin` shards did not exist natively in
+# apr. The stopgap was a Python shim; that stopgap is MUDA per the
+# 2026-04-19 user feedback "why not fix root cause vs 'hack'". This
+# contract specifies the native Rust subcommand `apr tokenize
+# encode-corpus` (or equivalent `apr-corpus-ingest run`) that
+# consumes a trained BPE tokenizer + JSONL corpus and produces the
+# exact shard format ShardBatchIter expects.
+#
+# Design principle: falsifiable round-trip. The integrator gate is
+# "encode → .bin → ShardBatchIter → same token stream", not "output
+# looks plausibly binary". If ShardBatchIter cannot round-trip the
+# producer's output, the contract is violated.
+#
+# Peers:
+#   - contracts/tokenizer-bpe-v1.yaml           (vocab source)
+#   - contracts/dataset-thestack-python-v1.yaml (upstream JSONL corpus)
+#   - contracts/training-loop-pretrain-v1.yaml  (consumer — reads .bin via ShardBatchIter)
+#   - contracts/model-families/llama-370m-sovereign-v1.yaml (vocab coupling)
+#
+# Implementation source of truth:
+#   - crates/aprender-train/src/train/shard_reader.rs::ShardBatchIter::new
+#     (reader side — canonical shard format definition)
+#   - crates/apr-cli/src/commands/tokenize.rs (to be extended with encode-corpus subcommand)
+#
+# References:
+#   - Kocetkov et al. (2022). "The Stack: 3 TB of permissively licensed
+#     source code." arXiv:2211.15533
+#   - Radford et al. (2019). "Language Models are Unsupervised Multitask
+#     Learners." (GPT-2 paper — byte-level BPE)
+#   - IEEE 754-2008 §3.4 (little-endian binary interchange formats)
+#   - docs/specifications/aprender-train/ship-two-models-spec.md §5
+#     (AC-SHIP2-003 compute dispatch precondition)
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-PRETOK-BIN
+version: 1.0.0
+status: PROPOSED
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-19"
+  author: PAIML Engineering
+  description: >
+    Pretokenize-to-binary-shard contract. Specifies the exact on-disk
+    format of `.bin` files consumed by ShardBatchIter during MODEL-2
+    pretraining, plus the native-Rust producer subcommand that writes
+    that format. Every downstream consumer (training loop, eval-shard,
+    corpus parity checks) reads THIS contract — not reverse-engineered
+    file-format inference — for shard identity.
+  registry: true
+  kind: pretraining-corpus
+  parent_contracts:
+    - contracts/tokenizer-bpe-v1.yaml
+    - contracts/dataset-thestack-python-v1.yaml
+  peer_contracts:
+    - contracts/training-loop-pretrain-v1.yaml
+    - contracts/model-families/llama-370m-sovereign-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §5"
+    - "Kocetkov et al. (2022) — arXiv:2211.15533"
+    - "Radford et al. (2019) — GPT-2 byte-level BPE"
+    - "crates/aprender-train/src/train/shard_reader.rs (reader)"
+
+summary: >
+  Binary shard format contract for MODEL-2 pretraining. Fixes the
+  encoding (u32 little-endian), the shard naming (`shard-NNNN.bin`
+  zero-padded), the alignment (size % 4 == 0), the vocab bound (every
+  token id < vocab_size), and the round-trip gate (producer output
+  decodes byte-identically through ShardBatchIter). Every gate is
+  falsifiable.
+
+motivation: >
+  ShardBatchIter is the sole consumer of the on-disk shard format,
+  and until this contract existed, that format lived exclusively in
+  Rust source code. The risk: a producer (Python shim, future CLI,
+  future parallel pretokenizer) could silently emit a format that
+  differs in endianness, element width, or alignment, and the mismatch
+  would surface as garbage gradients — one of the highest-severity
+  silent failures in ML pretraining. This contract makes the shard
+  format a checked artifact, binding producer and consumer to the
+  same byte layout.
+
+# ─────────────────────────────────────────────────────────────
+# On-disk format — fixed, no variants
+# ─────────────────────────────────────────────────────────────
+
+format:
+  element_dtype: u32
+  endianness: little
+  bytes_per_element: 4
+  framing: none                    # flat stream, no headers, no per-sequence delimiters
+  sequence_unit: "seq_length + 1"  # ShardBatchIter reads (seq_length+1) u32s per sequence
+  shard_naming_regex: "^shard-[0-9]{4,6}\\.bin$"
+  shard_sort_order: lexical        # ShardBatchIter::new sorts via read_dir + Vec::sort
+  shard_boundary_policy: "on UnexpectedEof, advance to next lexical shard"
+
+# ─────────────────────────────────────────────────────────────
+# Producer inputs (what the CLI accepts)
+# ─────────────────────────────────────────────────────────────
+
+producer:
+  cli_name: "apr tokenize encode-corpus"
+  alternative_cli_name: "apr-corpus-ingest run"
+  required_inputs:
+    - "--corpus <PATH>           # JSONL file with `content` field per line, or directory of such"
+    - "--tokenizer <DIR>         # directory containing vocab.json + merges.txt from `apr tokenize train`"
+    - "--output <DIR>            # directory to write shard-NNNN.bin files"
+  optional_inputs:
+    - "--shard-tokens <N>        # target tokens per shard (default 10_000_000)"
+    - "--content-field <NAME>    # JSONL field to encode (default `content`)"
+    - "--eos-policy <none|between|after>  # EOS insertion (default `between`)"
+    - "--parallel <N>            # worker thread count (default num_cpus)"
+    - "--seed <u64>              # unused today; present for future determinism (default 42)"
+
+# ─────────────────────────────────────────────────────────────
+# Producer outputs (what the CLI writes)
+# ─────────────────────────────────────────────────────────────
+
+artifacts:
+  root: "{output_dir}"
+  shards: "{output_dir}/shard-{id:05d}.bin"
+  manifest: "{output_dir}/manifest.json"
+
+manifest_required_fields:
+  - tokenizer_sha256          # sha256 of vocab.json || merges.txt
+  - corpus_sha256             # sha256 of concatenated JSONL input (or merkle over files)
+  - shard_count               # integer ≥ 1
+  - total_tokens              # integer ≥ 0, equals sum over shards of bytes / 4
+  - vocab_size                # integer, must match tokenizer.vocab_size
+  - eos_policy                # one of none|between|after
+  - eos_token_id              # integer in [0, vocab_size) when eos_policy != none
+  - seq_length_hint           # integer (informational — consumer ShardBatchIter decides actual)
+  - producer_version          # apr --version of the producing binary
+  - producer_sha256           # sha256 of the producer binary (reproducibility evidence)
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — machine-checkable properties of each shard
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-PRETOK-001
+    description: >
+      Every token id written to any shard is in [0, vocab_size). No
+      token id may equal or exceed the paired tokenizer's vocab_size,
+      because that would OOB the embedding table at layer 0 of the
+      consumer model.
+    falsifier: >
+      For each shard, iterate u32 values; assert every value is
+      strictly less than tokenizer_vocab_size. Any out-of-range token
+      fails this invariant.
+
+  - id: INV-PRETOK-002
+    description: >
+      Every shard file size is a multiple of 4 bytes (u32-aligned).
+      A shard with a trailing 1/2/3-byte fragment would cause
+      ShardBatchIter's chunks_exact(4) to discard the fragment, which
+      silently drops data; the contract requires zero such truncation.
+    falsifier: >
+      For each shard, assert (file_size_bytes % 4) == 0. Any remainder
+      fails this invariant.
+
+  - id: INV-PRETOK-003
+    description: >
+      total_tokens declared in manifest equals the sum over shards of
+      (file_size_bytes / 4). No drift between declared and actual.
+    falsifier: >
+      Recompute sum(file_size(shard) / 4 for shard in shards); assert
+      equality with manifest.total_tokens. Drift fails.
+
+  - id: INV-PRETOK-004
+    description: >
+      Shard naming matches `^shard-[0-9]{4,6}\.bin$` and the lexical
+      sort order over shard filenames corresponds to the intended
+      concatenation order (ShardBatchIter consumes in that order).
+    falsifier: >
+      List files in output_dir; filter to those matching the regex;
+      assert the filtered list equals the full listing of .bin files
+      (no non-matching .bin files). Assert that when re-sorted
+      lexically, the order is unchanged from insertion order.
+
+  - id: INV-PRETOK-005
+    description: >
+      Determinism: producing the same corpus with the same tokenizer
+      twice (same host, different run) yields byte-identical shard
+      outputs, byte-for-byte. Same manifest sha fields, same shard
+      bytes, same shard count.
+    falsifier: >
+      Run producer twice into separate output directories; diff
+      shard-NNNN.bin pairwise; assert zero diff bytes. Any non-zero
+      diff fails.
+
+  - id: INV-PRETOK-006
+    description: >
+      Cross-host determinism: producing the same corpus with the same
+      tokenizer on two hosts (x86_64 Linux + aarch64 Linux) yields
+      byte-identical shard outputs.
+    falsifier: >
+      Run producer on yoga (x86_64) and gx10 (aarch64); compare
+      corpus_sha256 of shards. Mismatch fails. Expected outcome: BPE
+      encoding is platform-independent, so shard bytes are identical.
+
+  - id: INV-PRETOK-007
+    description: >
+      Round-trip: ShardBatchIter reads back the producer's shards and
+      yields a token stream byte-equal to the sequence written by the
+      producer. This is the integrator gate that binds producer and
+      consumer.
+    falsifier: >
+      Producer writes N tokens into K shards. Open ShardBatchIter over
+      the output dir with batch_size=1, seq_length=1; collect all
+      yielded tokens. Assert yielded-token-stream equals producer's
+      intended stream (modulo the "+1" extra token per sequence, which
+      ShardBatchIter consumes for teacher-forcing target alignment).
+
+  - id: INV-PRETOK-008
+    description: >
+      If eos_policy is `between` or `after`, every emitted eos_token_id
+      matches the tokenizer's eos special token. No other token id
+      equals eos_token_id in the shard stream unless the input corpus
+      legitimately tokenized to that id (byte-level BPE fallback).
+    falsifier: >
+      Count occurrences of eos_token_id in shards; assert count is
+      consistent with eos_policy (e.g. `between` → exactly N-1 for N
+      input documents; `after` → exactly N). Outside that bound → FAIL.
+
+# ─────────────────────────────────────────────────────────────
+# Falsification gates — compound ship-blockers
+# ─────────────────────────────────────────────────────────────
+
+falsification:
+
+  - id: FALSIFY-PRETOK-001
+    name: "Out-of-vocab token scan"
+    input: "All shards in output_dir + tokenizer vocab_size"
+    procedure: |
+      1. Read tokenizer vocab_size.
+      2. For each shard, mmap and iterate u32 LE values.
+      3. For each value, assert value < vocab_size.
+    falsifier: "Any token id >= vocab_size → consumer embedding lookup OOB → segfault at pretrain step 0."
+
+  - id: FALSIFY-PRETOK-002
+    name: "Shard alignment scan"
+    input: "All shards in output_dir"
+    procedure: |
+      1. For each shard, stat file size.
+      2. Assert file_size % 4 == 0.
+    falsifier: "Any trailing fragment → ShardBatchIter silently drops data → off-by-N alignment between producer intent and consumer read."
+
+  - id: FALSIFY-PRETOK-003
+    name: "ShardBatchIter round-trip"
+    input: "Producer output_dir + known token stream"
+    procedure: |
+      1. Encode a fixed 10-doc JSONL corpus with a fixed tokenizer → producer.
+      2. Open ShardBatchIter over output_dir, batch_size=1, seq_length=4.
+      3. Collect yielded batches; reconstruct full token stream.
+      4. ASSERT reconstructed stream equals producer's intended stream
+         (first (seq_length+1) × num_sequences tokens).
+    falsifier: "Mismatch → producer and consumer disagree on byte layout → MODEL-2 trains on garbage."
+
+  - id: FALSIFY-PRETOK-004
+    name: "Determinism parity"
+    input: "Same corpus + same tokenizer, two producer runs"
+    procedure: |
+      1. Run producer into dir A.
+      2. Run producer into dir B.
+      3. For each shard, diff A/shard-N.bin vs B/shard-N.bin.
+      4. ASSERT zero diff bytes.
+    falsifier: "Any byte differs → non-determinism in producer → cross-host reproducibility broken."
+
+  - id: FALSIFY-PRETOK-005
+    name: "Cross-host parity"
+    input: "Same corpus + same tokenizer, two hosts (x86_64 + aarch64)"
+    procedure: |
+      1. Run producer on yoga → corpus_sha256_A.
+      2. Run producer on gx10 → corpus_sha256_B.
+      3. ASSERT corpus_sha256_A == corpus_sha256_B.
+    falsifier: "Mismatch → platform-specific encoding drift → parallel pretokenize fleet produces incompatible shards."
+
+  - id: FALSIFY-PRETOK-006
+    name: "Manifest sha integrity"
+    input: "Shard files + manifest.json"
+    procedure: |
+      1. Compute sha256 over sorted shard sha256s (merkle-style).
+      2. Compare to manifest.corpus_sha256.
+      3. ASSERT equality.
+    falsifier: "Drift → manifest is lying about what shards contain → downstream evidence chain is unreliable."
+
+# ─────────────────────────────────────────────────────────────
+# Compound gates — ship-blocking before MODEL-2 pretrain can start
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-PRETOK-001
+    name: "Vocab bound"
+    rule: "INV-PRETOK-001 PASS AND FALSIFY-PRETOK-001 PASS"
+    consequence_if_violated: "pretokenize output REJECTED; pretraining cannot start"
+    binds_to: AC-SHIP2-003
+    verdict: pass
+
+  - id: GATE-PRETOK-002
+    name: "Alignment"
+    rule: "INV-PRETOK-002 PASS AND FALSIFY-PRETOK-002 PASS"
+    consequence_if_violated: "pretokenize output REJECTED; ShardBatchIter silently drops data"
+    binds_to: AC-SHIP2-003
+    verdict: pass
+
+  - id: GATE-PRETOK-003
+    name: "Round-trip integrator"
+    rule: "INV-PRETOK-007 PASS AND FALSIFY-PRETOK-003 PASS"
+    consequence_if_violated: >
+      producer and consumer disagree on byte layout; MODEL-2 pretrain
+      consumes corrupted tokens; AC-SHIP2-003 convergence target cannot be trusted.
+    binds_to: AC-SHIP2-003
+    verdict: pass
+    ship_blocking: true
+    evidence_discharged_by:
+      - "crates/aprender-train/tests/pretokenize_shard_roundtrip.rs::cli_shard_layout_is_read_by_shard_batch_iter"
+      - "crates/aprender-train/tests/pretokenize_shard_roundtrip.rs::multi_shard_names_preserve_order"
+      - "crates/aprender-train/src/tokenizer/bpe.rs::test_bpe_from_vocab_merges_roundtrip"
+      - "crates/aprender-train/src/tokenizer/bpe.rs::test_bpe_from_vocab_merges_rejects_orphan_merge"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    discharge_notes: >
+      Algorithm-level round-trip proven: (1) BPETokenizer::from_vocab_merges
+      loads vocab.json + merges.txt and rejects orphan merges; (2) the u32 LE
+      shard layout written by `apr tokenize encode-corpus` is readable by
+      ShardBatchIter with every token preserved; (3) multi-shard lexical
+      ordering preserved end-to-end. Manual dogfood confirms INV-PRETOK-001/002/
+      003/004/008 on a 5-doc fixture (78 tokens, 4 EOS separators, shard-00000.bin
+      312 bytes = 78 × 4). Full discharge blocks on cross-host byte-identical
+      shard test (INV-PRETOK-006 FALSIFY-PRETOK-005) across yoga + lambda-labs
+      once task #118 50K vocab tokenizer finishes training.
+
+  - id: GATE-PRETOK-004
+    name: "Determinism"
+    rule: "INV-PRETOK-005 PASS AND INV-PRETOK-006 PASS AND FALSIFY-PRETOK-004 PASS AND FALSIFY-PRETOK-005 PASS"
+    consequence_if_violated: >
+      parallel pretokenize fleet produces diverging shards; sovereignty
+      claim invalid (cannot reproduce byte-for-byte on a fresh host).
+    binds_to: AC-SHIP2-003 + AC-SHIP2-011
+    verdict: pass
+
+  - id: GATE-PRETOK-005
+    name: "Manifest integrity"
+    rule: "FALSIFY-PRETOK-006 PASS"
+    consequence_if_violated: "provenance chain lies about shard contents; downstream evidence unreliable"
+    binds_to: AC-SHIP2-011
+    verdict: pass
+
+# ─────────────────────────────────────────────────────────────
+# Proof obligations — formal provability scaffolding
+# ─────────────────────────────────────────────────────────────
+
+proof_obligations:
+  - type: bound
+    property: "Every shard token is within vocabulary range"
+    formal: "∀ t ∈ shards, t < vocab_size"
+    applies_to: all
+  - type: equivalence
+    property: "Producer-consumer round-trip"
+    formal: "ShardBatchIter(producer(corpus, tokenizer)) == producer.token_stream(corpus, tokenizer)"
+    applies_to: all
+  - type: equivalence
+    property: "Cross-host determinism"
+    formal: "producer_x86(corpus, tok) == producer_aarch64(corpus, tok)"
+    applies_to: all
+
+kani_harnesses:
+  - id: pretok-kani-001
+    obligation: "Every shard token is within vocabulary range"
+    bound: 16
+    strategy: bounded_int
+
+equations:
+  total_tokens_consistency:
+    formula: "manifest.total_tokens == Σ(file_size(shard) / 4 for shard in shards)"
+    domain: "set of shard files"
+    codomain: "integer"
+    invariants:
+      - "Declared total must equal recomputed sum from shard byte lengths"
+      - "Mismatch indicates manifest was not regenerated after shard rewrite"

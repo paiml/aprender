@@ -82,4 +82,40 @@ pub enum TokenizeCommands {
         #[arg(long, default_value = "nfc")]
         normalization: String,
     },
+
+    /// Encode a JSONL corpus into `.bin` shards per contracts/pretokenize-bin-v1.yaml.
+    ///
+    /// Loads a trained BPE tokenizer (vocab.json + merges.txt) from `--tokenizer`,
+    /// reads `--corpus` (file or directory of `.jsonl` files), encodes the
+    /// `--content-field` of each line to u32 tokens, and writes
+    /// `shard-NNNN.bin` files (flat little-endian u32 streams) into `--output`.
+    /// The output format is precisely what `ShardBatchIter` (aprender-train)
+    /// expects at MODEL-2 pretrain read time.
+    ///
+    /// Root-cause fix for the pretokenize-to-bin gap documented in
+    /// memory/project_shard_reader_bin_format.md — replaces a Python shim
+    /// that was flagged as MUDA on 2026-04-19.
+    EncodeCorpus {
+        /// Path to JSONL corpus file or directory of `.jsonl` files.
+        #[arg(long, value_name = "PATH")]
+        corpus: PathBuf,
+        /// Directory containing vocab.json + merges.txt from `apr tokenize train`.
+        #[arg(long, value_name = "DIR")]
+        tokenizer: PathBuf,
+        /// Output directory for shard-NNNN.bin + manifest.json.
+        #[arg(long, value_name = "DIR")]
+        output: PathBuf,
+        /// Target tokens per shard (shard closes once this limit is reached).
+        #[arg(long, default_value = "10000000")]
+        shard_tokens: usize,
+        /// JSONL field to encode (default: `content`).
+        #[arg(long, default_value = "content")]
+        content_field: String,
+        /// Unicode normalization (must match tokenizer training).
+        #[arg(long, default_value = "nfc")]
+        normalization: String,
+        /// EOS insertion policy: none|between|after.
+        #[arg(long, default_value = "between")]
+        eos_policy: String,
+    },
 }

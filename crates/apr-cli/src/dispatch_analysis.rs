@@ -549,6 +549,24 @@ fn dispatch_tokenize_command(
             normalization,
             cli.json,
         ),
+        TokenizeCommands::EncodeCorpus {
+            corpus,
+            tokenizer,
+            output,
+            shard_tokens,
+            content_field,
+            normalization,
+            eos_policy,
+        } => tokenize::run_encode_corpus(
+            corpus,
+            tokenizer,
+            output,
+            *shard_tokens,
+            content_field,
+            normalization,
+            eos_policy,
+            cli.json,
+        ),
     }
 }
 
