@@ -196,23 +196,30 @@ CONTRACT.validate_apr_shape("lm_head.weight", &[vocab, hidden], vocab, hidden)?;
 - `src/models/qwen2/mod.rs::generate()` / `forward()` - DELETE
 - `examples/qwen_inference.rs` - REWRITE to use apr CLI
 
-## Publishing Safety (CB-510 Lesson)
+## Publishing Safety (CB-510 + v0.31.1 Lessons)
 
 **CRITICAL: `.gitignore` and `Cargo.toml` exclude patterns must use root-anchored paths.**
 
 The `models/` pattern silently matches `src/models/` — hiding source code from git and crates.io. Always use `/models/` (root-anchored).
 
+**CRITICAL: `build.rs` must never panic on files outside `CARGO_MANIFEST_DIR`.**
+
+A `build.rs` that joins `".."` onto `CARGO_MANIFEST_DIR` and panics on missing file will fail at `cargo install` time for every external user — the file exists in the monorepo tree but NOT in the published tarball. v0.31.1 was yanked for this exact class (`crates/aprender-mcp/build.rs` → `contracts/apr-mcp-tool-schemas-v1.yaml`). Fix: bundle the file inside the crate (via `include` in `Cargo.toml`), or add a `.exists()` graceful fallback, or annotate `// ALLOW_ESCAPE: <reason>` if dev-only.
+
 ```bash
 # Pre-publish checks (also in make tier3)
 bash scripts/check_include_files.sh     # All 562 include!() files tracked by git
 bash scripts/check_package_includes.sh  # All 319 src/ include!() files in cargo package
+bash scripts/check_build_rs_paths.sh    # Static Poka-Yoke: v0.31.1 yank guard
 
 # After creating new include!() files, verify they're not gitignored:
 git ls-files --others --exclude-standard src/
 git check-ignore -v src/path/to/new_file.rs  # Should return exit 1 (not ignored)
 ```
 
-**After any `.gitignore` or `Cargo.toml` exclude change:** re-run both scripts.
+**After any `.gitignore`, `Cargo.toml` exclude, or `build.rs` change:** re-run all three scripts.
+
+**After every successful crates.io publish:** run `cargo install aprender --version X.Y.Z --force` to verify the published tarball actually builds, then `/dogfood` for a GO verdict. v0.31.1 was tagged "complete" without this cycle and had to be yanked.
 
 ## Shell Scripts: Use bashrs (NOT shellcheck)
 

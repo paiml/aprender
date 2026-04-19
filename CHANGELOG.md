@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.2] - 2026-04-19
+
+### Fixed
+
+- **`cargo install aprender` install-time panic** (#910) — `crates/aprender-mcp/build.rs` previously resolved `CARGO_MANIFEST_DIR/../../contracts/apr-mcp-tool-schemas-v1.yaml`, which lives in the monorepo tree but NOT in the published package tarball. External installs of v0.31.1 panicked at build time with "failed to read" before a single byte of apr code compiled. v0.31.1 was yanked from crates.io. Fix: bundle the contract YAML inside the `aprender-mcp` crate (`include` in `Cargo.toml`), resolve from `CARGO_MANIFEST_DIR/contracts/…`, and keep a drift-guard test that asserts byte-equality with the workspace-root copy.
+
+### Added
+
+- **`scripts/check_build_rs_paths.sh` (static Poka-Yoke)** — CI gate that flags any `build.rs` which joins `".."` onto `CARGO_MANIFEST_DIR` AND panics on read failure without a `.exists()` fallback. Wired into `.github/workflows/ci.yml` `workspace-test` job. Prevents the class that caused the v0.31.1 yank from shipping again. Acceptable patterns (not flagged): `ALLOW_ESCAPE:` annotation, `.exists()` graceful fallback, or `#[cfg(test)]`-scoped escape.
+
 ## [0.31.1] - 2026-04-19
 
 ### Fixed
