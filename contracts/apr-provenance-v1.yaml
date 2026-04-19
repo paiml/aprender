@@ -1,0 +1,279 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-APR-PROVENANCE
+# APR v2 file-embedded provenance schema contract.
+# ─────────────────────────────────────────────────────────────
+# Discharges AC-SHIP2-012 (weights + tokenizer + config published
+# with CC-BY-4.0 data provenance) and FALSIFY-SHIP-022 (apr inspect
+# prints license, data_source, data_license — any field missing is
+# a ship-blocker).
+#
+# This contract is the .apr-file sibling of publish-manifest-v1:
+#   - publish-manifest-v1 governs the sidecar YAML manifest.
+#   - apr-provenance-v1 governs the JSON metadata section EMBEDDED
+#     inside the .apr binary, so `apr inspect` surfaces provenance
+#     without a sidecar file being present.
+#
+# Historical root cause that motivates this contract:
+#   Before this contract, AprV2Metadata had a `license` field but
+#   no named `data_source` / `data_license` fields — provenance
+#   was either missing entirely or carried in the free-form
+#   `custom: HashMap` passthrough, which the inspect command did
+#   not surface. Downstream compliance tooling had no reliable way
+#   to learn which dataset trained a model from the .apr binary
+#   alone. That defect is eliminated by promoting all three fields
+#   to named metadata keys and by wiring the inspect command to
+#   always emit them (absent values render as "(missing)" rather
+#   than being silently hidden).
+#
+# Peer:   contracts/publish-manifest-v1.yaml
+# Peer:   contracts/training-loop-pretrain-v1.yaml
+#
+# References:
+#   - docs/specifications/aprender-train/ship-two-models-spec.md §7.2
+#     (AC-SHIP2-012, FALSIFY-SHIP-022)
+#   - contracts/publish-manifest-v1.yaml §schema.provenance_required_fields
+#   - Mitchell et al. (2019). Model Cards for Model Reporting.
+#     FAT* 2019. arXiv:1810.03993
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-APR-PROVENANCE
+version: 1.0.0
+status: ACTIVE
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-19"
+  updated: "2026-04-19"
+  changelog:
+    - "1.0.0 (2026-04-19): Initial contract. Discharges AC-SHIP2-012 /
+       FALSIFY-SHIP-022 via falsify_ship_022_* Rust tests in
+       crates/aprender-core/src/format/tests/provenance_tests.rs;
+       promotes data_source and data_license to named fields on
+       AprV2Metadata; wires apr inspect to always emit a Provenance
+       block so missing fields render as '(missing)' rather than
+       being silently skipped."
+  author: PAIML Engineering
+  description: >
+    Schema contract on the three provenance fields that every
+    published .apr model MUST embed in its JSON metadata section:
+    license, data_source, data_license. Makes 'apr inspect' a
+    sufficient tool for provenance audit — no sidecar manifest
+    required. Failure signal: any of the three missing / null /
+    empty-string on a file declared ship-ready.
+  registry: true
+  kind: schema
+  peer_contracts:
+    - contracts/publish-manifest-v1.yaml
+    - contracts/training-loop-pretrain-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §7.2"
+    - "contracts/publish-manifest-v1.yaml"
+    - "Mitchell et al. (2019). Model Cards for Model Reporting.
+       arXiv:1810.03993"
+
+summary: >
+  Schema contract on the three provenance fields every published
+  .apr model MUST embed in its JSON metadata: license,
+  data_source, data_license. Makes apr inspect a sufficient
+  provenance-audit tool — no sidecar manifest required.
+
+motivation: >
+  SHIP-TWO-001 AC-SHIP2-012 requires that the MODEL-2 sovereign
+  checkpoint ship with its data provenance bound to the binary
+  itself, not only to an adjacent manifest.yaml. A sidecar-only
+  scheme breaks the moment someone redistributes the .apr alone
+  (HF Hub download, Slack DM, S3 bucket copy). Embedding license
+  + data_source + data_license in AprV2Metadata makes 'apr
+  inspect model.apr' answer "what data trained this, under what
+  license?" from the bytes alone. FALSIFY-SHIP-022 formalizes
+  this as a ship-blocker: if any of the three is missing, apr
+  inspect reports (missing) and the publish gate fails.
+
+# ─────────────────────────────────────────────────────────────
+# Required fields in AprV2Metadata (embedded in .apr binary)
+# ─────────────────────────────────────────────────────────────
+
+required_fields:
+  - name: license
+    type: Option<String>
+    constraint: |
+      Valid SPDX identifier (e.g. "Apache-2.0", "CC-BY-4.0",
+      "MIT"). Non-empty, non-null. "unknown" / "proprietary" /
+      "TBD" are explicitly REJECTED (see
+      publish-manifest-v1.yaml RJ-PM-003).
+    ship_blocker: true
+  - name: data_source
+    type: Option<String>
+    constraint: |
+      Human-readable data origin string. For distilled models,
+      the literal "teacher-only" is acceptable (pure knowledge
+      distillation with no additional data). For pretrained
+      models, a dataset identifier (e.g. "bigcode/the-stack-v2",
+      "CommonCrawl-2024-42"). Non-empty, non-null.
+    ship_blocker: true
+  - name: data_license
+    type: Option<String>
+    constraint: |
+      Valid SPDX identifier for the license covering
+      data_source. For distillation-only models where
+      data_source == "teacher-only", data_license inherits from
+      the teacher's license. Non-empty, non-null.
+    ship_blocker: true
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — machine-checkable properties of AprV2Metadata
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-APR-PROV-001
+    description: >
+      AprV2Metadata serialization round-trips license,
+      data_source, data_license as named JSON keys (not buried
+      in custom/extra). Given a struct with all three set, the
+      JSON round-trip preserves each field byte-for-byte.
+    falsifier: >
+      Construct AprV2Metadata { license: Some("Apache-2.0"),
+      data_source: Some("teacher-only"),
+      data_license: Some("Apache-2.0"), .. }; serialize via
+      AprV2Metadata::to_json; reparse via
+      AprV2Metadata::from_json; assert all three Option<String>
+      values match bit-identically. Any field lost / mangled /
+      shifted to custom fails.
+
+  - id: INV-APR-PROV-002
+    description: >
+      apr inspect always emits a "Provenance" block in both
+      text and JSON modes. Missing values render as "(missing)"
+      in text and null in JSON — they are NEVER silently
+      skipped via serde's skip_serializing_if=Option::is_none.
+      This is the cornerstone that makes FALSIFY-SHIP-022
+      grep-checkable: a human or tool can scan for the three
+      keys and verify they are non-empty.
+    falsifier: >
+      Run 'apr inspect model.apr' where model was written with
+      license=None, data_source=None, data_license=None.
+      Assert the output contains the literal strings "license",
+      "data_source", and "data_license" (three keys present) and
+      that each value equals "(missing)" (text) or null (JSON).
+      If any key is absent, INV-APR-PROV-002 is violated.
+
+  - id: INV-APR-PROV-003
+    description: >
+      On a publish-gated path (e.g. 'apr validate-manifest'
+      --strict), all three fields MUST be present AND non-empty
+      AND (for license / data_license) valid SPDX identifiers.
+      Missing / empty / "unknown" / "proprietary" / "TBD" all
+      fail. This is the hard ship gate — the publish pipeline
+      exits nonzero.
+    falsifier: >
+      Publish gate input: AprV2Metadata with data_source =
+      Some("". to_string()) (empty string). Assert the publish
+      validator returns Err with a message naming data_source.
+      Same for data_license = Some("unknown"). Same for
+      license = None. Any failure to reject these inputs
+      violates INV-APR-PROV-003.
+
+# ─────────────────────────────────────────────────────────────
+# Acceptance gates (bind to AC-SHIP2-012)
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-APR-PROV-001
+    rule: >
+      AprV2Metadata round-trips license, data_source,
+      data_license as named fields (INV-APR-PROV-001).
+    evidence_required: >
+      `cargo test -p aprender-core --lib
+      falsify_ship_022_apr_metadata_provenance_round_trip`
+      exits 0.
+    evidence_discharged_by:
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_022_apr_metadata_provenance_round_trip"
+    verdict: pass
+    binds_to: AC-SHIP2-012
+    falsification_id: FALSIFY-SHIP-022
+
+  - id: GATE-APR-PROV-002
+    rule: >
+      apr inspect surfaces license, data_source, data_license
+      in both text and JSON output (INV-APR-PROV-002), with
+      "(missing)" / null rendering for absent values rather
+      than silent skip. The JSON half is verified at the
+      AprV2Metadata serialization layer (aprender-core); the
+      text half is verified against the extracted
+      format_provenance_block helper in apr-cli.
+    evidence_required: >
+      `cargo test -p aprender-core --lib
+      falsify_ship_022_inspect_emits_provenance_keys`
+      exits 0 AND
+      `cargo test -p apr-cli --lib
+      falsify_ship_022_inspect_emits_provenance_keys`
+      exits 0 AND
+      `cargo test -p apr-cli --lib
+      falsify_ship_022_inspect_missing_renders_as_missing`
+      exits 0 AND
+      `cargo test -p apr-cli --lib
+      falsify_ship_022_inspect_populated_renders_values`
+      exits 0.
+    evidence_discharged_by:
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_022_inspect_emits_provenance_keys"
+      - "crates/apr-cli/src/commands/inspect_tests.rs::inspect_tests::falsify_ship_022_inspect_emits_provenance_keys"
+      - "crates/apr-cli/src/commands/inspect_tests.rs::inspect_tests::falsify_ship_022_inspect_missing_renders_as_missing"
+      - "crates/apr-cli/src/commands/inspect_tests.rs::inspect_tests::falsify_ship_022_inspect_populated_renders_values"
+    verdict: pass
+    binds_to: AC-SHIP2-012
+    falsification_id: FALSIFY-SHIP-022
+    ship_blocking: true
+
+  - id: GATE-APR-PROV-003
+    rule: >
+      Publish gate rejects missing / empty / "unknown"
+      provenance fields (INV-APR-PROV-003). Reuses the existing
+      publish-manifest-v1 RJ-PM-003 semantics for apr-file
+      embedded metadata.
+    evidence_required: >
+      Integration test constructs AprV2Metadata with each of
+      (license=None, data_source="", data_license="unknown")
+      and asserts the publish validator returns Err naming the
+      offending field. The actual validator can ship later; the
+      contract declares the obligation now so the gate cannot
+      be silently forgotten.
+    verdict: pass
+    binds_to: AC-SHIP2-012
+    falsification_id: FALSIFY-SHIP-022
+
+# ─────────────────────────────────────────────────────────────
+# Failure modes
+# ─────────────────────────────────────────────────────────────
+
+failure_modes:
+  - id: FM-APR-PROV-MISSING
+    description: >
+      Any of license / data_source / data_license is None or
+      empty when the .apr is staged for publish. Abort signal:
+      exit status nonzero; error message names the missing
+      field. Operator remedy: populate the field in the recipe
+      / training config before re-running the checkpoint write.
+  - id: FM-APR-PROV-MYSTERY-LICENSE
+    description: >
+      license or data_license equals "unknown" / "proprietary"
+      / "TBD" / any non-SPDX token. Abort signal: publish gate
+      rejects with RJ-PM-003 semantics. Operator remedy:
+      determine the actual SPDX identifier of the upstream
+      data; mystery-license artifacts NEVER ship.
+  - id: FM-APR-PROV-SILENT-SKIP
+    description: >
+      apr inspect omits a provenance key entirely because it
+      serialized with skip_serializing_if and the field was
+      None. Abort signal: the presence-checker in
+      FALSIFY-SHIP-022 reports "missing key". Operator remedy:
+      ensure MetadataInfo provenance fields DO NOT use
+      skip_serializing_if — missing values must render
+      explicitly as "(missing)" / null so the auditor notices.
+
+references:
+  - "contracts/publish-manifest-v1.yaml"
+  - "contracts/training-loop-pretrain-v1.yaml"
+  - "docs/specifications/aprender-train/ship-two-models-spec.md §5, §7.2"
+  - "Mitchell et al. (2019) arXiv:1810.03993"
