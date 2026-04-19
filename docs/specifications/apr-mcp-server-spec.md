@@ -1,8 +1,8 @@
 # APR-MCP-SERVER: Model Context Protocol Server Specification
 
 **Version**: 1.2.0
-**Date**: 2026-04-19 (M1–M3 shipped in v0.31.0; M4 in flight)
-**Status**: ACTIVE — `aprender-mcp` ships 9 tools over stdio JSON-RPC 2.0; FALSIFY-MCP-008 ENFORCED at 4 layers (schema+description × live+codegen); FALSIFY-MCP-003/-004 response-shape layer ENFORCED (PR #889); real-model FALSIFY-MCP-E2E-001 ENFORCED (PR #892); end-to-end dogfood FALSIFY-MCP-DOGFOOD-001 ENFORCED (PR #890); contract `apr-mcp-server-v1.yaml` ACTIVE with 9-gate invariant pinned (PR #886). M4 one-line remaining: PR #891 (`apr.run` progress notifications, workspace-test flake cycling on rerun). **4 of 5 M4 PRs merged 2026-04-19**.
+**Date**: 2026-04-19 (M1–M3 shipped in v0.31.0; M4 code complete — all 5 PRs merged same day)
+**Status**: ACTIVE — `aprender-mcp` ships 9 tools over stdio JSON-RPC 2.0; FALSIFY-MCP-008 ENFORCED at 4 layers (schema+description × live+codegen); FALSIFY-MCP-003/-004 response-shape layer ENFORCED (PR #889); real-model FALSIFY-MCP-E2E-001 ENFORCED (PR #892); end-to-end dogfood FALSIFY-MCP-DOGFOOD-001 ENFORCED (PR #890); contract `apr-mcp-server-v1.yaml` ACTIVE with exact-8 `FALSIFY-MCP-001..008` invariant pinned (PR #886); `apr.run` progress notifications via `apr run --stream` NDJSON + `NotificationSink` forwarding ENFORCED (PR #891 / FALSIFY-MCP-PROGRESS-002). **All 5 M4 PRs merged 2026-04-19**; M4 code-complete, manual Cursor/Cline smoke tests remain.
 **Contracts**:
 - `contracts/mcp-tool-schema-v1.yaml` — upstream MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
 - `contracts/apr-mcp-tool-schemas-v1.yaml` — per-tool `inputSchema` + description source of truth; drives `build.rs` codegen; `status: ENFORCED` (M3, 2026-04-18)
@@ -201,7 +201,7 @@ Phase-2 priorities (first expansion batch after M5 dispatcher port, in rough ord
 
 ### Direction 3 — `apr.code` as an MCP tool (PLANNED M5+)
 
-A future `apr.code` MCP tool would let external clients drive the full `apr code` agent loop (perceive → reason → act over realizar + stack tools), rather than just single CLI commands. Conceptually this is the agentic equivalent of `apr.run` (single-shot inference) — it takes `{prompt, project, max_turns}` and streams per-tool-call `notifications/progress`. **Blocked on:** multi-step structured progress events from the agent runtime (same CLI event-channel prereq that blocks `apr.run --stream` / FALSIFY-MCP-PROGRESS-002), so this is queued behind PR #891.
+A future `apr.code` MCP tool would let external clients drive the full `apr code` agent loop (perceive → reason → act over realizar + stack tools), rather than just single CLI commands. Conceptually this is the agentic equivalent of `apr.run` (single-shot inference) — it takes `{prompt, project, max_turns}` and streams per-tool-call `notifications/progress`. **CLI wire shape now exists** — `apr run --stream` NDJSON + `NotificationSink` forwarding landed via PR #891 (FALSIFY-MCP-PROGRESS-002, 2026-04-19), so the MCP progress-forwarding pattern is proven on `apr.run`. Remaining prereq: threading per-decoded-token callbacks through realizar's inference loops (today's `apr run --stream` emits NDJSON *post-decode*, not *per-token*); the same callback mechanism will front-load agent-loop events for `apr.code`.
 
 ### Feature-by-feature parity matrix — `apr code` vs Claude Code (2026-04-18 audit)
 
@@ -384,7 +384,7 @@ These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mc
 - [x] Book chapter `book/src/tools/mcp-server.md` (#874 M2 creation, #885 M3 update)
 - [ ] **Deferred to M4**: Per-step structured progress for `apr.finetune` (CLI emits terminal blob today; needs CLI event channel)
 
-### M4: End-to-end validation — IN PROGRESS
+### M4: End-to-end validation — CODE COMPLETE (all 5 PRs merged 2026-04-19; manual client smoke tests remain)
 - [x] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions (FALSIFY-MCP-001..008) + test cross-links — PR #886 merged 2026-04-19 (pins exact-8 invariant via `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008` in `crates/aprender-contracts/tests/apr_mcp_server_contract.rs`)
 - [ ] Extend the contract with a 9th row for FALSIFY-MCP-PROGRESS-001 — relax the exact-8 invariant to "FALSIFY-MCP-001..008 + PROGRESS-001, no extras"
 - [x] Strengthen FALSIFY-MCP-003/-004 from surface tests to mock-subprocess e2e response-shape assertions — PR #889 merged 2026-04-19 (`crates/aprender-mcp/tests/falsify_mcp_003.rs` + `falsify_mcp_004.rs`, 5 tests total; response-shape now byte-verified against mock-subprocess capture)
@@ -470,5 +470,5 @@ closes:
 **Sponsor**: apr-cli team
 **Delivery**:
 - **v0.31.0** (2026-04-19, tag 62893da32): M1–M3 SHIPPED — 9 tools (`apr.run`, `apr.serve`, `apr.qa`, `apr.trace`, `apr.tensors`, `apr.validate`, `apr.bench`, `apr.finetune`, and dispatch infrastructure), `build.rs` schema+description codegen from `contracts/apr-mcp-tool-schemas-v1.yaml`, `notifications/progress` for `apr.finetune`, `notifications/cancelled` SIGTERM→SIGKILL, JSON Schema Draft 7 meta-validation on every tool input schema in CI, MCP book chapter documenting `.mcp.json` client config.
-- **M4** (4 of 5 PRs merged 2026-04-19): PR #886 (`contracts/apr-mcp-server-v1.yaml` ACTIVE with exact-8 `FALSIFY-MCP-001..008` pin); PR #889 (FALSIFY-MCP-003/-004 response-shape e2e gates live, `falsify_mcp_003.rs` + `falsify_mcp_004.rs` = 5 tests); PR #892 (real-model FALSIFY-MCP-E2E-001 ENFORCED, qwen2.5-0.5b decodes "2" within 5s + `apr qa --json` byte-for-byte parity via `falsify_mcp_e2e_001.rs`); PR #890 (FALSIFY-MCP-DOGFOOD-001 ENFORCED — real `apr mcp` binary launched as subprocess answers `initialize`+`tools/list`+`tools/call` for all 9 tools within 2s via stdio, `falsify_mcp_dogfood_001.rs`). Remaining: PR #891 (progress notifications for `apr.run` — `workspace-test` workflow flaking on unrelated `test_f203_simd_faster_than_scalar_q4_0` timing check, auto-merge armed SQUASH).
+- **M4** (all 5 PRs merged 2026-04-19 — code complete): PR #886 (`contracts/apr-mcp-server-v1.yaml` ACTIVE with exact-8 `FALSIFY-MCP-001..008` pin); PR #889 (FALSIFY-MCP-003/-004 response-shape e2e gates live, `falsify_mcp_003.rs` + `falsify_mcp_004.rs` = 5 tests); PR #892 (real-model FALSIFY-MCP-E2E-001 ENFORCED, qwen2.5-0.5b decodes "2" within 5s + `apr qa --json` byte-for-byte parity via `falsify_mcp_e2e_001.rs`); PR #890 (FALSIFY-MCP-DOGFOOD-001 ENFORCED — real `apr mcp` binary launched as subprocess answers `initialize`+`tools/list`+`tools/call` for all 9 tools within 2s via stdio, `falsify_mcp_dogfood_001.rs`); PR #891 (FALSIFY-MCP-PROGRESS-002 — `apr run --stream` NDJSON CLI prereq + `apr.run` per-token `notifications/progress` forwarding via `NotificationSink`, 4 tests in `falsify_mcp_progress_002.rs`). Remaining M4 scope is manual: Cursor / Cline smoke test + free-form Claude-Code integration session.
 - **M5+** (planned): per spec v1.2.0 roadmap — plugin marketplace, pre/post-inference hooks.
