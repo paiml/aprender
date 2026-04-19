@@ -1,0 +1,10 @@
+{
+  "timestamp_utc": "2026-04-18T13:25:26Z",
+  "tool": "apr validate-manifest --live",
+  "manifests": [
+    {"manifest":"contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-apr.yaml","report_file":"evidence/ship-two-001/ex-05-manifest-verify-paiml-qwen2.5-coder-7b-apache-q4k-v1-apr.json"},
+    {"manifest":"contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-safetensors.yaml","report_file":"evidence/ship-two-001/ex-05-manifest-verify-paiml-qwen2.5-coder-7b-apache-q4k-v1-safetensors.json"},
+    {"manifest":"contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-gguf.yaml","report_file":"evidence/ship-two-001/ex-05-manifest-verify-paiml-qwen2.5-coder-7b-apache-q4k-v1-gguf.json"}
+  ],
+  "overall": "PASS"
+}

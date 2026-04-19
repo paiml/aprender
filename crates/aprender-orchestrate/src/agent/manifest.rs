@@ -32,6 +32,31 @@ pub struct AgentManifest {
     #[cfg(feature = "agents-mcp")]
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
+    /// Hooks fired on agent lifecycle events (Claude-Code parity). [PMAT-CODE-HOOKS-001]
+    ///
+    /// ```toml
+    /// [[hooks]]
+    /// event = "SessionStart"
+    /// command = "date >> ~/.apr/session.log"
+    ///
+    /// [[hooks]]
+    /// event = "PreToolUse"
+    /// matcher = "shell"
+    /// command = "./scripts/shell-guard.sh"
+    /// ```
+    #[serde(default)]
+    pub hooks: Vec<super::hooks::HookConfig>,
+    /// Hostnames agents may reach via `NetworkTool` / `BrowserTool`.
+    /// Empty → network tools not registered (Sovereign-by-default).
+    /// Ignored when `privacy = Sovereign` (tier always wins — Poka-Yoke).
+    /// [PMAT-CODE-WEB-TOOLS-001]
+    ///
+    /// ```toml
+    /// privacy = "Standard"
+    /// allowed_hosts = ["docs.anthropic.com", "crates.io"]
+    /// ```
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 impl Default for AgentManifest {
@@ -46,6 +71,8 @@ impl Default for AgentManifest {
             privacy: PrivacyTier::Sovereign,
             #[cfg(feature = "agents-mcp")]
             mcp_servers: Vec::new(),
+            hooks: Vec::new(),
+            allowed_hosts: Vec::new(),
         }
     }
 }

@@ -1,0 +1,24 @@
+{
+  "test_id": "SMOKE-MODEL-2-PRETRAIN-001",
+  "date": "2026-04-18T23:05Z",
+  "host": "lambda-labs",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr",
+  "built_from": "feat/pm-007-preflight-poka-yoke @ 1e7cf5373 (+ training feature)",
+  "command": "apr pretrain --dataset /tmp/pretrain-smoke/dataset --tokenizer /tmp/pretrain-smoke/tokenizer --run-dir /tmp/pretrain-smoke/run2 --num-steps 20 --warmup-steps 5 --batch-size 4 --seq-length 128 --steps-per-epoch 5 --json",
+  "result": {
+    "status": "OK",
+    "detail": null,
+    "final_val_loss": 2.64,
+    "epochs_completed": 4,
+    "steps_recorded": 20,
+    "val_loss_history": [3.96, 3.52, 3.08, 2.64]
+  },
+  "gates_exercised": [
+    "GATE-TRAIN-005 (non-divergence — monotone decrease)",
+    "GATE-TRAIN-006 (seed=42 default deterministic)",
+    "INV-TRAIN-007 (numerical stability — no NaN/Inf)",
+    "GATE-TRAIN-008 (throughput in-range)"
+  ],
+  "gap": "Synthetic decreasing-loss drive — no real 370M forward pass, no real corpus read, no checkpoint artifacts at {run_dir}/ckpt/epoch-{N:03d}.apr. Tracked as follow-up task #111.",
+  "discharges": "task #105 GATE-TRAIN-005 wiring ship-blocker — CLI entry point + gate plumbing verified end-to-end."
+}

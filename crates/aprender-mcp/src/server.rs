@@ -18,10 +18,24 @@
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
 use crate::tools;
-use crate::types::{JsonRpcRequest, JsonRpcResponse, ToolCallResult, ToolDefinition};
+use crate::types::{
+    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, ToolCallResult, ToolDefinition,
+};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
+
+/// Callback used by tools to emit `notifications/progress` messages back to
+/// the MCP client while a long-running `tools/call` is still in flight.
+///
+/// FALSIFY-MCP-PROGRESS-001: in stdio mode the dispatcher passes a sink that
+/// writes each notification as one JSON line to the shared stdout handle
+/// (guarded by the same mutex as final responses). In-process tests use an
+/// `Arc<Mutex<Vec<_>>>`-backed sink to assert the outgoing wire format.
+///
+/// Must be `Send` because the sink is moved into the worker thread that
+/// `run_stdio` spawns for every `tools/call`.
+pub type NotificationSink = Box<dyn Fn(JsonRpcNotification) + Send + Sync>;
 
 /// Per-request cancellation record held in [`AprMcpServer::in_flight`].
 ///
@@ -61,8 +75,12 @@ impl AprMcpServer {
     ///
     /// This is the in-process test entry point. It does NOT exercise the
     /// threading / cancellation machinery — `apr.run` runs inline with a
-    /// dummy never-firing cancel receiver. Use [`Self::run_stdio`] for the
-    /// full M3 dispatcher.
+    /// dummy never-firing cancel receiver and NO notification sink is
+    /// attached, so `apr.finetune` silently falls back to its synchronous
+    /// path even if the request carries `params._meta.progressToken`. Use
+    /// [`Self::run_stdio`] for the full M3 dispatcher or
+    /// [`Self::handle_request_with_sink`] to drive FALSIFY-MCP-PROGRESS-001
+    /// in tests.
     ///
     /// The dispatcher enforces two protocol-level invariants before routing:
     /// FALSIFY-MCP-005 (`jsonrpc` must be exactly `"2.0"` or the response is
@@ -138,14 +156,63 @@ impl AprMcpServer {
 
     /// Synchronous fallback used by [`Self::handle_request`]. `apr.run`
     /// runs with a never-firing cancel receiver — cancellation is only
-    /// wired by the stdio loop in [`Self::run_stdio`].
+    /// wired by the stdio loop in [`Self::run_stdio`]. No notifications are
+    /// emitted from this path.
     fn handle_tools_call_sync(&self, request: &JsonRpcRequest) -> JsonRpcResponse {
         let (_tx, rx) = mpsc::channel::<()>();
-        let result = dispatch_tool_call(&request.params, &rx);
+        let result = dispatch_tool_call(&request.params, &rx, None);
         JsonRpcResponse::success(
             request.id.clone(),
             serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({})),
         )
+    }
+
+    /// Dispatch one request with an explicit notification sink (test entry
+    /// point for FALSIFY-MCP-PROGRESS-001).
+    ///
+    /// The sink is only exercised for `tools/call` dispatches where
+    /// (a) the client supplied `params._meta.progressToken` on the original
+    /// request AND (b) the target tool supports progress streaming
+    /// (currently only `apr.finetune`). Other methods ignore the sink.
+    ///
+    /// `handle_request_with_sink` returns `None` for notifications (methods
+    /// prefixed with `notifications/`) because notifications have no id and
+    /// MUST NOT receive a response per JSON-RPC 2.0. All other methods
+    /// return `Some(response)`.
+    #[must_use]
+    pub fn handle_request_with_sink(
+        &mut self,
+        request: &JsonRpcRequest,
+        sink: &NotificationSink,
+    ) -> Option<JsonRpcResponse> {
+        if request.jsonrpc != "2.0" {
+            return Some(JsonRpcResponse::error(
+                request.id.clone(),
+                -32600,
+                format!(
+                    "Invalid Request: jsonrpc must be \"2.0\", got \"{}\"",
+                    request.jsonrpc
+                ),
+            ));
+        }
+
+        if request.method.starts_with("notifications/") {
+            return None;
+        }
+
+        if request.method != "tools/call" {
+            return Some(self.handle_request(request));
+        }
+
+        let progress_token = extract_progress_token(&request.params);
+        let (_tx, rx) = mpsc::channel::<()>();
+        let sink_for_dispatch = progress_token.as_ref().map(|_| sink);
+        let result =
+            dispatch_tool_call_with_sink(&request.params, &rx, sink_for_dispatch, progress_token);
+        Some(JsonRpcResponse::success(
+            request.id.clone(),
+            serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({})),
+        ))
     }
 
     /// All tool definitions registered on this server.
@@ -304,12 +371,25 @@ impl AprMcpServer {
         let in_flight_clone = Arc::clone(&self.in_flight);
         let params = req.params.clone();
         let id_for_worker = id.clone();
+        let progress_token = extract_progress_token(&params);
+
+        // Build a stdout-backed notification sink for this worker. The sink
+        // shares the response stdout mutex so progress lines and the final
+        // response can never interleave. Per MCP spec the sink is only
+        // wired when the client advertised a progressToken.
+        let sink_stdout = Arc::clone(stdout);
+        let sink: NotificationSink = Box::new(move |notif| {
+            // Best-effort: a broken stdout means the client disconnected.
+            let _ = write_notification(&sink_stdout, &notif);
+        });
 
         // Thread spawn is infallible here in practice, but propagate the
         // error rather than unwrapping so we stay in the "no panics" lane.
         let builder = std::thread::Builder::new().name(format!("apr-mcp-call-{id}"));
         let spawn_result = builder.spawn(move || {
-            let result = dispatch_tool_call(&params, &cancel_rx);
+            let sink_ref = progress_token.as_ref().map(|_| &sink);
+            let result =
+                dispatch_tool_call_with_sink(&params, &cancel_rx, sink_ref, progress_token);
             let resp = JsonRpcResponse::success(
                 Some(id_for_worker.clone()),
                 serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({})),
@@ -346,9 +426,29 @@ impl AprMcpServer {
 /// Shared tool-call dispatch logic used by both the sync and stdio paths.
 ///
 /// `cancel_rx` is forwarded to `apr.run` only; the other tools ignore it.
+/// Callers that never need progress streaming can keep using this wrapper;
+/// the [`dispatch_tool_call_with_sink`] variant exposes the
+/// FALSIFY-MCP-PROGRESS-001 path.
 fn dispatch_tool_call(
     params: &serde_json::Value,
     cancel_rx: &mpsc::Receiver<()>,
+    sink: Option<&NotificationSink>,
+) -> ToolCallResult {
+    dispatch_tool_call_with_sink(params, cancel_rx, sink, None)
+}
+
+/// Full dispatch variant with optional `NotificationSink` + `progressToken`.
+///
+/// FALSIFY-MCP-PROGRESS-001: when `sink` and `progress_token` are both
+/// `Some`, tools that support streaming (currently `apr.finetune`) forward
+/// each stdout line as a `notifications/progress` message via `sink` before
+/// returning the final `ToolCallResult`. Tools that don't support streaming
+/// ignore the sink and run synchronously.
+fn dispatch_tool_call_with_sink(
+    params: &serde_json::Value,
+    cancel_rx: &mpsc::Receiver<()>,
+    sink: Option<&NotificationSink>,
+    progress_token: Option<serde_json::Value>,
 ) -> ToolCallResult {
     let name = params.get("name").and_then(|v| v.as_str());
     let arguments = params
@@ -365,10 +465,22 @@ fn dispatch_tool_call(
         Some(tools::trace::NAME) => tools::trace::call(&arguments),
         Some(tools::run::NAME) => tools::run::call(&arguments, cancel_rx),
         Some(tools::serve::NAME) => tools::serve::call(&arguments),
-        Some(tools::finetune::NAME) => tools::finetune::call(&arguments),
+        Some(tools::finetune::NAME) => {
+            tools::finetune::call_with_sink(&arguments, sink, progress_token)
+        }
         Some(other) => ToolCallResult::error(format!("Unknown tool: {other}")),
         None => ToolCallResult::error("Missing tool name"),
     }
+}
+
+/// Pull `params._meta.progressToken` out of a `tools/call` request. Returns
+/// `None` when the field is absent — per MCP 2024-11-05 the server MUST NOT
+/// emit progress notifications in that case.
+fn extract_progress_token(params: &serde_json::Value) -> Option<serde_json::Value> {
+    params
+        .get("_meta")
+        .and_then(|m| m.get("progressToken"))
+        .cloned()
 }
 
 #[cfg(feature = "native")]
@@ -379,6 +491,26 @@ fn write_response(
     use std::io::Write;
 
     let json = serde_json::to_string(resp)?;
+    let mut guard = stdout
+        .lock()
+        .map_err(|e| anyhow::anyhow!("stdout mutex poisoned: {e}"))?;
+    writeln!(&mut *guard, "{json}")?;
+    guard.flush()?;
+    Ok(())
+}
+
+/// FALSIFY-MCP-PROGRESS-001: write one `notifications/progress` line to
+/// stdout under the same mutex used for final responses. Called from the
+/// worker-local `NotificationSink` built in
+/// [`AprMcpServer::spawn_tools_call_worker`].
+#[cfg(feature = "native")]
+fn write_notification(
+    stdout: &Arc<Mutex<std::io::Stdout>>,
+    notif: &JsonRpcNotification,
+) -> anyhow::Result<()> {
+    use std::io::Write;
+
+    let json = notif.to_json_line()?;
     let mut guard = stdout
         .lock()
         .map_err(|e| anyhow::anyhow!("stdout mutex poisoned: {e}"))?;
@@ -415,8 +547,11 @@ mod tests {
         assert!(result["capabilities"]["tools"].is_object());
     }
 
-    /// FALSIFY-MCP-002 (progressive): tools/list returns every tool that has
-    /// shipped so far. Full 8-tool set lands when M2 completes.
+    /// FALSIFY-MCP-002: tools/list returns every registered tool. The
+    /// Phase-1 8-tool set (M2 subprocess wrappers + M3 `apr.finetune`) plus
+    /// the `apr.version` M1 scaffold is what a conforming dispatcher now
+    /// advertises; adding a new tool should fail this test until the contract
+    /// YAML and codegen are updated in lockstep.
     #[test]
     fn tools_list_returns_registered_tools() {
         let mut server = AprMcpServer::new();

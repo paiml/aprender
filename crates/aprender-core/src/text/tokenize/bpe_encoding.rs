@@ -1,5 +1,4 @@
 impl BpeTokenizer {
-
     /// Encode text into token IDs.
     ///
     /// # Arguments
@@ -23,6 +22,10 @@ impl BpeTokenizer {
     /// assert!(!ids.is_empty());
     /// ```
     pub fn encode(&self, text: &str) -> Result<Vec<u32>, AprenderError> {
+        if self.byte_level {
+            return self.encode_byte_level(text);
+        }
+
         let mut token_ids = Vec::new();
 
         for word in text.split_whitespace() {
@@ -62,6 +65,40 @@ impl BpeTokenizer {
         }
 
         Ok(token_ids)
+    }
+
+    /// Byte-level encode path (tokenizer-bpe-v1 INV-BPE-003 / INV-BPE-007).
+    fn encode_byte_level(&self, text: &str) -> Result<Vec<u32>, AprenderError> {
+        let (byte_enc, _) = crate::text::bpe::bytes_to_unicode();
+        let mut tokens: Vec<String> = text
+            .bytes()
+            .map(|b| byte_enc.get(&b).copied().unwrap_or('?').to_string())
+            .collect();
+
+        for (left, right) in &self.merges {
+            let merged = format!("{left}{right}");
+            let mut i = 0;
+            while i < tokens.len().saturating_sub(1) {
+                if &tokens[i] == left && &tokens[i + 1] == right {
+                    merged.clone_into(&mut tokens[i]);
+                    tokens.remove(i + 1);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+
+        let unk_id = self
+            .vocab
+            .get(&self.special_tokens.unk)
+            .copied()
+            .unwrap_or(0);
+
+        let ids = tokens
+            .into_iter()
+            .map(|tok| self.vocab.get(&tok).copied().unwrap_or(unk_id))
+            .collect();
+        Ok(ids)
     }
 
     /// Encode text and add special tokens (BOS/EOS).
@@ -124,6 +161,10 @@ impl BpeTokenizer {
     /// assert_eq!(text, "hello");
     /// ```
     pub fn decode(&self, ids: &[u32]) -> Result<String, AprenderError> {
+        if self.byte_level {
+            return self.decode_byte_level(ids);
+        }
+
         let mut result = String::new();
         let mut need_space = false;
 
@@ -169,6 +210,48 @@ impl BpeTokenizer {
         }
 
         Ok(result)
+    }
+
+    /// Byte-level decode path: invert `bytes_to_unicode`, rebuild bytes, then
+    /// UTF-8-decode. Unknown tokens are skipped (their byte contribution is
+    /// already captured by UNK in the id stream).
+    fn decode_byte_level(&self, ids: &[u32]) -> Result<String, AprenderError> {
+        let (_, byte_dec) = crate::text::bpe::bytes_to_unicode();
+        let mut bytes: Vec<u8> = Vec::with_capacity(ids.len());
+
+        let unk_id = self.vocab.get(&self.special_tokens.unk).copied();
+
+        for &id in ids {
+            if let Some(ref bos) = self.special_tokens.bos {
+                if self.vocab.get(bos) == Some(&id) {
+                    continue;
+                }
+            }
+            if let Some(ref eos) = self.special_tokens.eos {
+                if self.vocab.get(eos) == Some(&id) {
+                    continue;
+                }
+            }
+            if let Some(ref pad) = self.special_tokens.pad {
+                if self.vocab.get(pad) == Some(&id) {
+                    continue;
+                }
+            }
+            if Some(id) == unk_id {
+                continue;
+            }
+
+            let Some(token) = self.inverse_vocab.get(&id) else {
+                continue;
+            };
+            for ch in token.chars() {
+                if let Some(&b) = byte_dec.get(&ch) {
+                    bytes.push(b);
+                }
+            }
+        }
+
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
     /// Get the vocabulary size.

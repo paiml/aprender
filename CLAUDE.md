@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Aprender is a next-generation ML framework in pure Rust — **monorepo with 70 workspace crates**. Install: `cargo install aprender` → `apr` binary (57 subcommands). 25,300+ tests, 405 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec.
+Aprender is a next-generation ML framework in pure Rust — **monorepo with 70 workspace crates**. Install: `cargo install aprender` → `apr` binary (58 subcommands). 25,300+ tests, 405 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec.
 
 ## Git Workflow (Branch Protection)
 
@@ -266,15 +266,15 @@ Key: `unsafe_code = "forbid"`, `clippy::all + pedantic = "warn"`, ML-specific al
 - `crates/aprender-core/src/primitives/` - Vector/Matrix with Cholesky solver
 - `crates/aprender-core/src/format/` - APR format, validation, lint, converter, export
 - `crates/aprender-core/src/text/chat_template.rs` - Chat template engine
-- `crates/apr-cli/` - CLI logic (57 commands)
+- `crates/apr-cli/` - CLI logic (58 commands)
 - `src/bin/apr.rs` - Root binary entry point (`cargo install aprender`)
 - `contracts/` - 405 provable contracts (merged from all 20 repos)
 - `docs/specifications/aprender-monorepo-consolidation.md` - Monorepo spec
 
 ## APR CLI (`cargo install aprender`)
 
-57 commands across 10 categories. Contract: `contracts/apr-cli-commands-v1.yaml`.
-Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
+58 commands across 10 categories (57 + `mcp`, added PR #864 on 2026-04-17). Contract: `contracts/apr-cli-commands-v1.yaml`.
+Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `mcp`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
 
 ```bash
 apr run hf://openai/whisper-tiny --input audio.wav
@@ -302,6 +302,33 @@ pmat embed sync                 # Sync embeddings for codebase (run before query
 ```
 
 unwrap() banned via `.clippy.toml` disallowed-methods. Use `expect()` or `ok_or_else(|| ...)?`. See Issue #41.
+
+## Contract Validation: DOGFOOD `pv`, NEVER bash
+
+**`provable-contracts` is merged in-tree (APR-MONO Phase 2b).** It lives as three crates:
+- `crates/aprender-contracts/` — evaluation engine
+- `crates/aprender-contracts-macros/` — `#[contract]` derive
+- `crates/aprender-contracts-cli/` — `pv` binary
+
+**`pv` is THE dogfooded contract CLI.** When you need to validate, lint, score, scaffold, diff, audit, generate proofs, or run falsification tests on a YAML contract in `contracts/`, use `pv`. Writing a bash/yq/python script that re-implements what `pv` already does is **muda** (waste) and will be rejected.
+
+```bash
+pv validate contracts/apr-code-parity-v1.yaml    # schema + falsification gates
+pv lint contracts/                               # validate + audit + score on all
+pv status contracts/tensor-layout-v1.yaml        # equations, obligations, coverage
+pv query "tensor layout" --limit 5               # search contracts by intent
+pv diff contracts/apr-mcp-server-v1.yaml HEAD~3  # semver bump suggestion
+pv coverage                                      # cross-contract obligation coverage
+```
+
+40+ `pv` subcommands: `validate, scaffold, codegen, kani, probar, status, audit, diff, coverage, generate, graph, equations, lean, proof-status, lint, score, query, invariants, coq, fuzz, mirai, flux, tla, book, infer, roofline, pipeline, kaizen, certify, verify-structure, verify-pipeline, ...`.
+
+**If `pv validate` rejects a contract** (wrong kind, missing required fields), the fix is one of:
+1. Restructure the contract to fit the existing schema (usually `KernelContract` shape with `equations`, `proof_obligations`, `falsification_tests`).
+2. Extend `aprender-contracts/src/schema/` to add the new `kind` + validator rule (real engineering task, own PMAT ticket).
+3. If it genuinely isn't a provable contract, use a different YAML schema under a different directory and a purpose-built `apr` subcommand — not `contracts/`.
+
+**Never** work around `pv` with a shell script. The in-tree tool is the source of truth.
 
 ## CRITICAL: Code Search Policy
 

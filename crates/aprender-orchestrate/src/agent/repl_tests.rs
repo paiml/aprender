@@ -34,6 +34,30 @@ fn test_slash_command_parse_with_args() {
     assert_eq!(SlashCommand::parse("/model gpt-4"), Some(SlashCommand::Model));
 }
 
+/// PMAT-CODE-SLASH-PARITY-001: the 10 Claude-Code-parity variants must
+/// all be recognized by the parser (not routed to `Unknown`). Falsification
+/// condition: if any of these regress to `Unknown` the test fails loudly,
+/// forcing the parity-matrix row back to PARTIAL.
+#[test]
+fn test_slash_command_parse_claude_code_parity() {
+    assert_eq!(SlashCommand::parse("/mcp"), Some(SlashCommand::Mcp));
+    assert_eq!(SlashCommand::parse("/config"), Some(SlashCommand::Config));
+    assert_eq!(SlashCommand::parse("/cfg"), Some(SlashCommand::Config));
+    assert_eq!(SlashCommand::parse("/review"), Some(SlashCommand::Review));
+    assert_eq!(SlashCommand::parse("/memory"), Some(SlashCommand::Memory));
+    assert_eq!(SlashCommand::parse("/permissions"), Some(SlashCommand::Permissions));
+    assert_eq!(SlashCommand::parse("/perms"), Some(SlashCommand::Permissions));
+    assert_eq!(SlashCommand::parse("/hooks"), Some(SlashCommand::Hooks));
+    assert_eq!(SlashCommand::parse("/init"), Some(SlashCommand::Init));
+    assert_eq!(SlashCommand::parse("/resume"), Some(SlashCommand::Resume));
+    assert_eq!(SlashCommand::parse("/add-dir"), Some(SlashCommand::AddDir));
+    assert_eq!(SlashCommand::parse("/adddir"), Some(SlashCommand::AddDir));
+    assert_eq!(SlashCommand::parse("/agents"), Some(SlashCommand::Agents));
+    // With trailing args, still routes correctly.
+    assert_eq!(SlashCommand::parse("/mcp list"), Some(SlashCommand::Mcp));
+    assert_eq!(SlashCommand::parse("/config edit"), Some(SlashCommand::Config));
+}
+
 #[test]
 fn test_repl_session_new() {
     let session = ReplSession::new("test", 4096);

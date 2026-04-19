@@ -20,6 +20,8 @@ fn test_execute_invalid_repo_id_no_slash() {
         None,
         true,
         false,
+        None,
+        &[],
     );
 
     assert!(result.is_err());
@@ -50,6 +52,8 @@ fn test_execute_invalid_repo_id_too_many_slashes() {
         None,
         true,
         false,
+        None,
+        &[],
     );
 
     assert!(result.is_err());
@@ -76,6 +80,8 @@ fn test_execute_directory_not_found() {
         None,
         true,
         false,
+        None,
+        &[],
     );
 
     assert!(result.is_err());
@@ -104,6 +110,8 @@ fn test_execute_no_model_files() {
         None,
         true,
         false,
+        None,
+        &[],
     );
 
     assert!(result.is_err());
@@ -137,9 +145,124 @@ fn test_execute_dry_run_success() {
         Some("Test commit"),
         true, // dry_run
         true, // verbose
+        None,
+        &[],
     );
 
     assert!(result.is_ok());
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+// =========================================================================
+// F-PUBLISH-EXTRA-001 falsification tests
+// (contracts/apr-cli-publish-extra-v1.yaml)
+// =========================================================================
+
+/// FALSIFY-PUB-EXTRA-002: sha256 mismatch must abort BEFORE any network I/O.
+/// Guard runs ahead of the dry_run branch, so dry_run=true still trips it.
+#[test]
+fn test_falsify_pub_extra_002_sha_mismatch_aborts() {
+    let temp_dir = std::env::temp_dir().join("apr_pub_falsify_sha_mismatch");
+    let _ = fs::remove_dir_all(&temp_dir);
+    let _ = fs::create_dir_all(&temp_dir);
+
+    let model_file = temp_dir.join("model.apr");
+    fs::write(&model_file, b"APR2mismatch").expect("write model");
+
+    // Deliberately wrong sha256 (64 hex zeros).
+    let manifest_path = temp_dir.join("manifest.yaml");
+    let manifest_yaml = format!(
+        "schema_version: \"1.0.0\"\n\
+         name: \"paiml/test-model\"\n\
+         artifact_url: \"https://example.com/model.apr\"\n\
+         sha256: \"{}\"\n",
+        "0".repeat(64)
+    );
+    fs::write(&manifest_path, manifest_yaml).expect("write manifest");
+
+    let result = execute(
+        &temp_dir,
+        "paiml/test-model",
+        None,
+        "apache-2.0",
+        "text-generation",
+        None,
+        &[],
+        None,
+        true,  // dry_run — proves guard runs before network path
+        false, // verbose
+        Some(&manifest_path),
+        &[],
+    );
+
+    match result {
+        Err(CliError::ValidationFailed(msg)) => {
+            assert!(
+                msg.contains("sha256 mismatch"),
+                "Expected sha256 mismatch error, got: {msg}"
+            );
+        }
+        other => panic!("Expected ValidationFailed(sha256 mismatch), got {other:?}"),
+    }
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+/// FALSIFY-PUB-EXTRA-003: extra-files and a valid manifest propagate through
+/// dry-run without error. Proves the `--extra-file` + `--manifest` paths are
+/// reachable and the pre-flight guard accepts a correctly-hashed artifact.
+#[test]
+fn test_falsify_pub_extra_003_extra_file_passthrough() {
+    let temp_dir = std::env::temp_dir().join("apr_pub_falsify_extra_passthrough");
+    let _ = fs::remove_dir_all(&temp_dir);
+    let _ = fs::create_dir_all(&temp_dir);
+
+    let model_file = temp_dir.join("model.apr");
+    let artifact_bytes = b"APR2three-format-ship";
+    fs::write(&model_file, artifact_bytes).expect("write model");
+
+    // Compute the REAL sha256 so the manifest matches.
+    let artifact_sha = {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(artifact_bytes);
+        format!("{:x}", h.finalize())
+    };
+
+    let manifest_path = temp_dir.join("manifest.yaml");
+    let manifest_yaml = format!(
+        "schema_version: \"1.0.0\"\n\
+         name: \"paiml/test-model\"\n\
+         artifact_url: \"https://example.com/model.apr\"\n\
+         sha256: \"{artifact_sha}\"\n\
+         size_bytes: {}\n",
+        artifact_bytes.len()
+    );
+    fs::write(&manifest_path, manifest_yaml).expect("write manifest");
+
+    let extra_file = temp_dir.join("tokenizer.json");
+    fs::write(&extra_file, br#"{"version":"1.0"}"#).expect("write extra");
+
+    let result = execute(
+        &temp_dir,
+        "paiml/test-model",
+        None,
+        "apache-2.0",
+        "text-generation",
+        None,
+        &[],
+        None,
+        true, // dry_run — avoids network
+        true, // verbose
+        Some(&manifest_path),
+        std::slice::from_ref(&extra_file),
+    );
+
+    assert!(
+        result.is_ok(),
+        "Expected Ok from manifest + extra-file dry-run, got {result:?}"
+    );
 
     let _ = fs::remove_dir_all(&temp_dir);
 }
@@ -530,4 +653,47 @@ fn test_model_card_extended_empty_files_fallback() {
 
     // Empty file list should show fallback
     assert!(output.contains("model.apr"));
+}
+
+// =========================================================================
+// FALSIFY-PUB-LFS-001: format_upload_route dry-run surfacing
+// =========================================================================
+//
+// The dry-run reporter classifies each file by the HF upload path its size
+// will take. These tests pin the exact strings the CLI emits so both the
+// partitioning AND the user-facing message are tracked for regressions.
+
+#[test]
+fn dry_run_route_partitions_at_5_gib_exactly() {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    // <= 5 GiB MUST route to HTTP LFS
+    assert_eq!(format_upload_route(0), "[→ HTTP LFS (≤5 GiB)]");
+    assert_eq!(format_upload_route(5 * GIB - 1), "[→ HTTP LFS (≤5 GiB)]");
+    assert_eq!(format_upload_route(5 * GIB), "[→ HTTP LFS (≤5 GiB)]");
+    // > 5 GiB MUST NOT route to HTTP LFS (same boundary as should_use_xet)
+    assert_ne!(format_upload_route(5 * GIB + 1), "[→ HTTP LFS (≤5 GiB)]");
+}
+
+#[cfg(feature = "xet")]
+#[test]
+fn dry_run_route_above_5_gib_reports_xet_when_enabled() {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    assert_eq!(format_upload_route(5 * GIB + 1), "[→ Xet CAS (>5 GiB)]");
+    // Real SHIP-TWO-001 teacher sizes
+    assert_eq!(format_upload_route(8_035_635_524), "[→ Xet CAS (>5 GiB)]");
+    assert_eq!(format_upload_route(15_231_938_404), "[→ Xet CAS (>5 GiB)]");
+}
+
+#[cfg(all(feature = "hf-hub", not(feature = "xet")))]
+#[test]
+fn dry_run_route_above_5_gib_flags_missing_xet_feature() {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    assert_eq!(
+        format_upload_route(5 * GIB + 1),
+        "[✗ would FAIL: rebuild with --features xet]"
+    );
+    assert_eq!(
+        format_upload_route(8_035_635_524),
+        "[✗ would FAIL: rebuild with --features xet]"
+    );
 }
