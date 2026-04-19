@@ -1098,7 +1098,7 @@ cargo workspaces publish --from-git
 | New contributor setup | Clone 5+ repos | Clone 1 repo [1] |
 | Cross-crate refactoring | 5+ PRs, coordinated merge | 1 PR [1] |
 | Crate namespace | 4 prefixes (trueno/aprender/entrenar/realizar) | 1 prefix (aprender-*) |
-| crates.io names | 32+ names, version sync hell | 75 names, workspace-locked |
+| crates.io names | 32+ names, version sync hell | 76 names, workspace-locked, selective publish |
 | Documentation | 5+ separate books | 1 unified book |
 | Old repos | Active, diverging | Archived read-only, redirect READMEs |
 
@@ -1320,15 +1320,53 @@ Contract: `cgp-monorepo-consolidation-v1.yaml` FALSIFY-MONO-010.
 | 59 | `aprender-zram-cli` | `crates/aprender-zram-cli/` | `trueno-zram-cli` | trueno-zram-cli 0.4 |
 | 60 | `aprender-ublk` | `crates/aprender-ublk/` | `trueno-ublk` | trueno-ublk 0.4 |
 
-### A.12 Benchmarks (internal, not published)
+### A.12 Internal crates (`publish = false`)
 
-| # | Crate Name | Workspace Path | Old Name | Published? |
-|---|-----------|---------------|----------|-----------|
-| 61 | `aprender-bench-tokenizer` | `crates/aprender-bench-tokenizer/` | (same) | No |
-| 62 | `aprender-bench-compute` | `crates/aprender-bench-compute/` | (same) | No |
-| 63 | `aprender-train-bench` | `crates/aprender-train-bench/` | `entrenar-bench` | No |
+Crates that ship inside the monorepo but are NEVER published to crates.io.
+These are test harnesses, benchmarks, and dev tooling — their outputs ship
+via CI artifacts or the `apr` binary, not as a library dependency.
 
-**Total: 63 workspace crates (49 published + 14 internal)**
+| Crate Name | Workspace Path | Reason |
+|-----------|---------------|--------|
+| `aprender-bench-compute` | `crates/aprender-bench-compute/` | Head-to-head benchmarks (aprender vs ndarray) |
+| `aprender-bench-tokenizer` | `crates/aprender-bench-tokenizer/` | Head-to-head benchmarks (aprender vs HuggingFace) |
+| `aprender-train-canary` | `crates/aprender-train-canary/` | Training canary harness (CI-only) |
+| `aprender-compute-xtask` | `crates/aprender-compute-xtask/` | xtask build helper |
+
+Sub-crates that inherit `publish = false` from their parent (not counted
+in the 80-crate workspace): `*/fuzz/` fuzzers × 4, `*/wasm-pkg/` WASM
+bundles × 2.
+
+### A.12.1 Publishing policy
+
+**Total: 80 workspace crates.** `publish = false` is the _default stance_
+for three categories:
+
+1. **Benchmarks** (`*-bench-*`) — head-to-head perf comparators. Output:
+   numbers in a commit message, not a `cargo add` target.
+2. **xtask / dev tooling** — build helpers invoked by the workspace
+   itself. Output: CI work, not a downstream dependency.
+3. **QA harness** (`aprender-qa-*`) — internal model qualification
+   plumbing. Output: evidence JSON + reports, consumed through `apr qa`
+   (the user-facing binary), not through `cargo add aprender-qa-runner`.
+
+A v0.31.0-style release does NOT require `cargo publish` across all 80
+crates. The release sequence is:
+
+- **Tag + GitHub Release**: workspace-wide, on every version bump.
+- **crates.io publish**: selective, driven by _changed public surface_,
+  not by the count of workspace crates. Tools: `cargo workspaces
+  publish --from-git` (changed-only), or `cargo publish -p <name>`
+  (single crate). The root `aprender` facade binary is the only crate
+  that MUST publish to keep `cargo install aprender` working.
+- **Shim crates** (paiml/trueno/etc.): one-time publish for namespace
+  reservation, no per-release work.
+
+Candidates to migrate to `publish = false` in a follow-up pass (evidence:
+never published to crates.io as of 2026-04-19): `aprender-qa-cli`,
+`aprender-qa-report`, `aprender-qa-runner`, `aprender-qa-gen`,
+`aprender-qa-certify`. These are reached through `apr qa`, not through
+`cargo add`.
 
 ### A.13 Shim Crate Count
 
