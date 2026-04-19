@@ -1,8 +1,8 @@
 # APR-MCP-SERVER: Model Context Protocol Server Specification
 
 **Version**: 1.2.0
-**Date**: 2026-04-18
-**Status**: ACTIVE (M1–M3 shipped; M4 dogfood pending; M5 pmcp migration planned)
+**Date**: 2026-04-19 (M1–M3 shipped in v0.31.0; M4 in flight)
+**Status**: ACTIVE — `aprender-mcp` ships 9 tools over stdio JSON-RPC 2.0; FALSIFY-MCP-008 ENFORCED at 4 layers (schema+description × live+codegen). M4 open (PRs #886/#889/#890/#891/#892).
 **Contracts**:
 - `contracts/mcp-tool-schema-v1.yaml` — upstream MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
 - `contracts/apr-mcp-tool-schemas-v1.yaml` — per-tool `inputSchema` + description source of truth; drives `build.rs` codegen; `status: ENFORCED` (M3, 2026-04-18)
@@ -457,6 +457,9 @@ and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
 
 ---
 
-**Owner**: TBD
+**Owner**: apr-cli team
 **Sponsor**: apr-cli team
-**Target tags**: M1–M3 planned for v0.32.0 publication, M4–M5 for v0.33.0+. Latest released tag is `v0.30.0` (workspace `Cargo.toml` version also 0.30.0 as of 2026-04-18); M1–M3 are merged on `main` but unreleased, so these targets are intended publication points, not shipped tags. Historical reference: earlier revisions of this spec targeted v0.32.0 for M1–M2 and v0.33.0 for M3–M4; M3 landing in the same week as M2 collapsed that plan — M1–M3 will now publish together.
+**Delivery**:
+- **v0.31.0** (2026-04-19, tag 62893da32): M1–M3 SHIPPED — 9 tools (`apr.run`, `apr.serve`, `apr.qa`, `apr.trace`, `apr.tensors`, `apr.validate`, `apr.bench`, `apr.finetune`, and dispatch infrastructure), `build.rs` schema+description codegen from `contracts/apr-mcp-tool-schemas-v1.yaml`, `notifications/progress` for `apr.finetune`, `notifications/cancelled` SIGTERM→SIGKILL, JSON Schema Draft 7 meta-validation on every tool input schema in CI, MCP book chapter documenting `.mcp.json` client config.
+- **M4** (in flight): PRs #886/#889/#890/#891/#892 — additional tool coverage + conformance hardening.
+- **M5+** (planned): per spec v1.2.0 roadmap — plugin marketplace, pre/post-inference hooks.
