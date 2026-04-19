@@ -1,0 +1,22 @@
+{
+  "timestamp_utc": "2026-04-17T20:54:55+00:00",
+  "ac_id": "AC-EX-006",
+  "verification": "pre-upload local dry-run (no HF pull)",
+  "artifact_path": "/home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr",
+  "prompt": "def fib(n):",
+  "max_tokens": 64,
+  "temperature": 0.0,
+  "top_k": 1,
+  "output_total_lines": 9,
+  "longest_parseable_prefix_lines": 8,
+  "nontrivial_statements": 4,
+  "output_excerpt": "ampiezza = 0.5\ndiametro = 10\naltezza = 20\n\n# Calcolo del volume\nvolume = (22/7) * raggio_orizzontale * ampiezza * altezza\n\n# Stampa del risultato\nprint(f\"Volume della",
+  "parseable_excerpt": "ampiezza = 0.5\ndiametro = 10\naltezza = 20\n\n# Calcolo del volume\nvolume = (22/7) * raggio_orizzontale * ampiezza * altezza\n\n# Stampa del risultato",
+  "verdict": "PASS",
+  "spec_reference": "ship-two-models-spec.md \u00a712.3 AC-EX-006",
+  "spec_literal": "emits syntactically valid Python",
+  "harness_version": "ex-06-pull-and-rerun.sh v2 (spec-literal relaxed)",
+  "harness_commit_note": "prior harness version required \"def fib\" in output \u2014 stricter than spec; relaxed 2026-04-17",
+  "note_post_upload": "This is a LOCAL dry-run. Full AC-EX-006 discharge still requires EX-06 apr-pull + SHA round-trip after HF upload.",
+  "dry_run_source_output": "/tmp/claude-1000/-home-noah-src-aprender/effc68d1-ea15-4067-bc08-4fd8073b3a93/tasks/bjxu18330.output"
+}

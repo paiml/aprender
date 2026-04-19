@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use provable_contracts::binding::{BindingRegistry, parse_binding};
-use provable_contracts::generate::{GeneratedFiles, generate_all};
+use provable_contracts::binding::{parse_binding, BindingRegistry};
+use provable_contracts::generate::{generate_all, GeneratedFiles};
 use provable_contracts::readme_gen::{generate_ci_workflow, generate_readme};
-use provable_contracts::schema::{Contract, parse_contract};
+use provable_contracts::schema::{parse_contract, Contract};
 
 pub fn run(
     contract: &Path,

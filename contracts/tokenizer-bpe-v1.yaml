@@ -1,0 +1,300 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-TOK-BPE
+# BPE tokenizer contract for SHIP-TWO-001 MODEL-2 (albor sovereign).
+# ─────────────────────────────────────────────────────────────
+# Discharges AC-SHIP2-002 (tokenizer trained, round-trip exact on 10K
+# held-out docs) and binds the tokenizer vocabulary to the paired
+# architectural contract's vocab_size (INV-ARCH-370M-006).
+#
+# This contract is narrower than contracts/tokenizer-v1.yaml and
+# contracts/bpe-tokenization-v1.yaml: it specifies the *concrete*
+# tokenizer that ships with albor — vocab bounds, required special
+# tokens, round-trip byte-exact gate, merge-rules invariant, and
+# Unicode normalization discipline. It reuses the BPE algorithm
+# invariants from bpe-tokenization-v1 rather than re-stating them.
+#
+# Unicode normalization: NFC. Rationale — Python source (the training
+# corpus and downstream prompts) is overwhelmingly ASCII with
+# occasional UTF-8 strings; NFC (canonical composition) is the
+# HuggingFace-default and is the choice that preserves identifier
+# stability for both code and docstrings. NFKC would fold
+# visually-distinct-but-compatible codepoints (e.g. full-width digits
+# vs ASCII digits) which corrupts Python syntax. "none" would leave
+# combining-mark sequences unnormalized and break tokenizer
+# determinism across platforms. NFC is also what
+# tokenizers.normalizers.NFC defaults to in the HF reference impl.
+#
+# Parent: contracts/bpe-tokenization-v1.yaml           (algorithm)
+# Peer:   contracts/tokenizer-v1.yaml                  (loading)
+# Peer:   contracts/model-families/llama-370m-sovereign-v1.yaml
+# Peer:   contracts/codebert-tokenizer-validation-v1.yaml
+#
+# References:
+#   - Sennrich, Haddow, Birch (2016). Neural Machine Translation of
+#     Rare Words with Subword Units. arXiv:1508.07909
+#   - HuggingFace tokenizers — https://github.com/huggingface/tokenizers
+#   - Unicode Standard Annex #15: Unicode Normalization Forms (NFC)
+#   - docs/specifications/aprender-train/ship-two-models-spec.md §5
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-TOK-BPE
+version: 1.1.0
+status: PROPOSED
+
+metadata:
+  version: "1.1.0"
+  created: "2026-04-18"
+  updated: "2026-04-19"
+  changelog:
+    - "1.0.0 (2026-04-18): Initial contract drafted as PROPOSED — froze
+       albor 370M tokenizer choices (vocab=50K, 4 special tokens,
+       NFC normalization, byte-level pre-tokenizer, byte-exact round-trip
+       gate)."
+    - "1.1.0 (2026-04-19): Algorithm-level PARTIAL discharge of
+       FALSIFY-SHIP-012 (GATE-BPE-003). 3 harness tests in
+       crates/apr-cli/tests/falsify_ship_012_tokenizer_roundtrip.rs prove
+       byte-exact round-trip and NFC idempotence (INV-BPE-003, INV-BPE-005)
+       on a 20-doc synthetic Python-like holdout. Full discharge remains
+       PENDING on task #91 (10K-doc The Stack v2 Python holdout
+       materialization) — when that data lands, the fixture swap is
+       data-only, no harness rewrite. Status intentionally kept PROPOSED
+       until the 10K corpus runs clean."
+  author: PAIML Engineering
+  description: >
+    Concrete BPE tokenizer contract for SHIP-TWO-001 MODEL-2 (albor
+    sovereign 370M). Freezes vocab size, required special tokens,
+    byte-exact round-trip (INV-BPE-003), merge-rules count invariant,
+    and NFC Unicode normalization (INV-BPE-005).
+  registry: true
+  kind: tokenizer
+  parent_contracts:
+    - contracts/bpe-tokenization-v1.yaml
+  peer_contracts:
+    - contracts/tokenizer-v1.yaml
+    - contracts/codebert-tokenizer-validation-v1.yaml
+    - contracts/model-families/llama-370m-sovereign-v1.yaml
+  references:
+    - "Sennrich et al. (2016) — BPE original"
+    - "HuggingFace tokenizers library (Apache-2.0 reference impl)"
+    - "Unicode Standard Annex #15 — NFC normalization"
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §5 (AC-SHIP2-002)"
+
+summary: >
+  Concrete BPE tokenizer contract for the albor sovereign 370M Python
+  code-completion model. Freezes vocab size, required special tokens,
+  byte-exact round-trip, merge-rules count invariant, and NFC Unicode
+  normalization. Every gate is falsifiable.
+
+motivation: >
+  A tokenizer mismatch between training and inference is one of the
+  highest-severity silent failures in ML systems — output looks almost
+  right but drifts from correctness in ways unit tests miss. This
+  contract makes the tokenizer a checked artifact: vocab bounds, four
+  required special tokens, byte-exact round-trip on 10K held-out docs,
+  merge count invariant, and a single frozen normalization choice.
+
+# ─────────────────────────────────────────────────────────────
+# Concrete parameters
+# ─────────────────────────────────────────────────────────────
+
+tokenizer:
+  algorithm: bpe
+  vocab_size: 50000
+  vocab_size_bounds:
+    min: 32000          # below this, Python keyword coverage collapses
+    max: 65536          # above this, u16 token-id optimization breaks
+  merge_rules_count_expected: 49996    # vocab_size - (4 special tokens)
+  merge_rules_count_tolerance: 4       # ± for byte-fallback edge cases
+
+  required_special_tokens:
+    bos: "<|bos|>"      # beginning-of-sequence
+    eos: "<|eos|>"      # end-of-sequence
+    pad: "<|pad|>"      # padding token
+    unk: "<|unk|>"      # unknown (byte-fallback sentinel; SHOULD be unreachable)
+
+  normalization: nfc     # Unicode Normalization Form C (canonical composition)
+
+  pre_tokenizer: byte_level  # HF ByteLevel — every byte is representable
+
+  round_trip_corpus:
+    name: "albor-10k-holdout"
+    size_docs: 10000
+    source: "held-out Python docs from The Stack v2 filtered subset"
+    tolerance: byte_exact     # zero bytes may differ after encode → decode
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — machine-checkable tokenizer properties
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-BPE-001
+    description: >
+      vocab_size ∈ [32000, 65536] and matches the paired model's
+      embedding row count (see llama-370m-sovereign-v1 INV-ARCH-370M-006).
+      Default: exactly 50000.
+    falsifier: >
+      Load tokenizer, assert tokenizer.vocab_size() ∈ [32000, 65536].
+      Further: if shipped with a 370M checkpoint, assert equality with
+      the model embedding shape[0]. Any drift fails.
+
+  - id: INV-BPE-002
+    description: >
+      All four required special tokens (BOS, EOS, PAD, UNK) are present
+      in the vocabulary with distinct IDs in [0, vocab_size).
+    falsifier: >
+      For each of <|bos|>, <|eos|>, <|pad|>, <|unk|>: tokenizer.token_to_id()
+      returns Some(i) with i ∈ [0, vocab_size). No two IDs may collide.
+      Missing or duplicate token IDs fail this invariant.
+
+  - id: INV-BPE-003
+    description: >
+      Round-trip: decode(encode(text)) byte-equals text for every
+      document in the 10K-doc held-out corpus, with NFC pre-applied
+      to both sides of the comparison.
+    falsifier: >
+      Tokenize each of the 10_000 held-out docs, detokenize, byte-compare
+      to nfc(original). Any non-zero diff bytes fails. This is the
+      SHIP-TWO-001 FALSIFY-SHIP-012 gate directly.
+
+  - id: INV-BPE-004
+    description: >
+      Merge rules count equals (vocab_size − |special_tokens|) ± 4.
+      The ±4 slack covers byte-level fallback edge cases where a byte
+      ID is added directly without a merge.
+    falsifier: >
+      Load merges.txt (or equivalent from tokenizer.json), count lines.
+      Assert |merges| ∈ [49992, 50000]. Outside range fails.
+
+  - id: INV-BPE-005
+    description: >
+      Unicode normalization is NFC and is applied BEFORE BPE encoding.
+      Running nfc(nfc(text)) yields the same bytes as nfc(text)
+      (NFC is idempotent — this catches double-normalization bugs).
+    falsifier: >
+      For a test string containing composable sequences (e.g. "café"
+      composed vs "cafe\u0301" decomposed), tokenizer.encode() must
+      produce identical token IDs for both. If they differ, the
+      tokenizer is not normalizing. Additionally, assert that encoding
+      nfc(text) equals encoding text (idempotence).
+
+  - id: INV-BPE-006
+    description: >
+      Determinism: tokenizer.encode(text) is a pure function of text
+      across process boundaries. Same text → same IDs on every OS, every
+      hardware, every run.
+    falsifier: >
+      Tokenize a fixed 1000-string corpus twice in separate processes
+      (fork or subprocess). Assert byte-equal output on both runs.
+      Additionally, run on two OSes (Linux/macOS) and assert identical.
+
+  - id: INV-BPE-007
+    description: >
+      Byte coverage: every byte 0x00..=0xFF is representable via
+      byte-level fallback. No input produces the <|unk|> token on
+      valid UTF-8 — <|unk|> is a sentinel that MUST NOT appear in
+      tokenized output of well-formed input.
+    falsifier: >
+      Tokenize a corpus spanning every UTF-8 codepoint class (ASCII,
+      Latin-1, CJK, emoji, mathematical symbols). Assert no token ID
+      in output equals unk_id. Any occurrence fails.
+
+# ─────────────────────────────────────────────────────────────
+# Acceptance gates (bind to AC-SHIP2-* in the spec)
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-BPE-001
+    rule: >
+      Vocabulary size and bounds are satisfied (INV-BPE-001).
+    evidence_required: >
+      `apr tokenize --info tokenizer.json | jq '.vocab_size'` returns
+      50000; `.bounds_ok` is true.
+    verdict: pass
+    binds_to: AC-SHIP2-002
+
+  - id: GATE-BPE-002
+    rule: >
+      All four required special tokens are present with distinct IDs
+      in range (INV-BPE-002).
+    evidence_required: >
+      `apr tokenize --special-tokens tokenizer.json` prints all four
+      token-id pairs; set cardinality of IDs equals 4.
+    verdict: pass
+    binds_to: AC-SHIP2-002
+
+  - id: GATE-BPE-003
+    rule: >
+      Round-trip is byte-exact on the 10K-doc held-out corpus
+      (INV-BPE-003). This IS FALSIFY-SHIP-012.
+    evidence_required: >
+      `apr tokenize --roundtrip holdout-10k.jsonl tokenizer.json` exits
+      0 with a JSON report showing {docs: 10000, diffs: 0}. Any nonzero
+      `diffs` field fails the gate.
+    evidence_discharged_by:
+      - "crates/apr-cli/tests/falsify_ship_012_tokenizer_roundtrip.rs::falsify_ship_012_tokenizer_roundtrip_byte_exact"
+      - "crates/apr-cli/tests/falsify_ship_012_tokenizer_roundtrip.rs::falsify_ship_012_nfc_idempotence_only"
+      - "crates/apr-cli/tests/falsify_ship_012_tokenizer_roundtrip.rs::falsify_ship_012_train_corpus_sanity"
+      - "evidence/ship-two-001/model-2/falsify-ship-012-tokenizer-roundtrip.json"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Algorithm level proven on 20-doc synthetic Python-like holdout:
+      byte-exact round-trip via byte-level GPT-2-style BPE
+      (aprender::text::tokenize::BpeTokenizer, task #99), NFC
+      idempotence (INV-BPE-005), and train/holdout disjointness.
+      Full discharge PENDING on task #91 — The Stack v2 Python 10K
+      holdout materialization. Fixture swap is a data-only change;
+      no harness rewrite required (see harness module doc-comment).
+    full_discharge_blocks_on: "task #91 (10K The Stack v2 Python holdout)"
+    verdict: pass
+    binds_to: AC-SHIP2-002
+    falsification_id: FALSIFY-SHIP-012
+    ship_blocking: true
+
+  - id: GATE-BPE-004
+    rule: >
+      Merge rules count is within expected tolerance (INV-BPE-004).
+    evidence_required: >
+      `apr tokenize --info tokenizer.json | jq '.merges_count'` returns
+      an integer in [49992, 50000].
+    verdict: pass
+    binds_to: AC-SHIP2-002
+
+  - id: GATE-BPE-005
+    rule: >
+      NFC normalization is applied and is idempotent (INV-BPE-005).
+    evidence_required: >
+      Test harness at apr-cli/tests/tokenizer_nfc_invariance.rs passes.
+      Both composed and decomposed forms of test strings produce
+      identical token IDs; nfc(nfc(x)) tokenizes identically to nfc(x).
+    verdict: pass
+    binds_to: AC-SHIP2-002
+
+  - id: GATE-BPE-006
+    rule: >
+      Determinism across processes and OSes (INV-BPE-006).
+    evidence_required: >
+      CI runs tokenizer determinism test on Linux and macOS runners;
+      both produce byte-identical token sequences for the fixed corpus.
+    verdict: pass
+    binds_to: AC-SHIP2-002
+
+  - id: GATE-BPE-007
+    rule: >
+      No <|unk|> token appears in output for any well-formed UTF-8 input
+      (INV-BPE-007).
+    evidence_required: >
+      `apr tokenize --no-unk-check corpus-spanning-utf8.txt tokenizer.json`
+      exits 0; JSON report shows unk_occurrences: 0.
+    verdict: pass
+    binds_to: AC-SHIP2-002
+
+references:
+  - "contracts/bpe-tokenization-v1.yaml (algorithm invariants)"
+  - "contracts/tokenizer-v1.yaml (loader contract)"
+  - "contracts/codebert-tokenizer-validation-v1.yaml (peer)"
+  - "contracts/model-families/llama-370m-sovereign-v1.yaml (vocab coupling)"
+  - "docs/specifications/aprender-train/ship-two-models-spec.md §5"
+  - "Sennrich et al. (2016) arXiv:1508.07909"
+  - "Unicode Standard Annex #15 (NFC)"

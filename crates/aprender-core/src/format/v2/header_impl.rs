@@ -134,9 +134,19 @@ pub struct AprV2Metadata {
     #[serde(default)]
     pub author: Option<String>,
 
-    /// Model license
+    /// Model license (SPDX identifier; governed by C-APR-PROVENANCE)
     #[serde(default)]
     pub license: Option<String>,
+
+    /// Training-data source (dataset identifier or "teacher-only";
+    /// governed by C-APR-PROVENANCE / AC-SHIP2-012 / FALSIFY-SHIP-022).
+    #[serde(default)]
+    pub data_source: Option<String>,
+
+    /// SPDX license for `data_source` (governed by C-APR-PROVENANCE /
+    /// AC-SHIP2-012 / FALSIFY-SHIP-022).
+    #[serde(default)]
+    pub data_license: Option<String>,
 
     /// Model version string
     #[serde(default)]

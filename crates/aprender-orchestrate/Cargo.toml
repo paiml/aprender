@@ -113,7 +113,7 @@ pacha = { version = "0.2", optional = true }
 realizar = { version = "0.8", optional = true, features = ["cuda"] }
 
 # ML algorithms and training (native-only)
-aprender = { path = "../aprender-core", version = "0.30.0", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.31.0", package = "aprender-core", optional = true }
 entrenar = { version = "0.7", optional = true }
 alimentar = { version = "0.2", optional = true }
 
@@ -148,9 +148,12 @@ tokio-stream = { version = "0.1", optional = true }
 jugar-probar = { version = "1.0", features = ["browser"], optional = true }
 base64 = { version = "0.22", optional = true }
 
-# MCP protocol: client (consume external tools) + server (expose agent tools)
-pmcp = { version = "1.10", optional = true }
-pforge-runtime = { version = "0.1", optional = true }
+# MCP protocol: client (consume external tools) + server (expose agent tools).
+# pmcp 2.3 = PAIML's Rust MCP SDK (github.com/paiml/rust-mcp-sdk) — actively maintained,
+# covers both client + server roles. pforge-runtime was previously listed here but
+# dropped: (1) nothing imports it, (2) it still pins pmcp 1.x, forcing a dual-version
+# build. Framework-style MCP helpers can live behind a separate feature if wanted later.
+pmcp = { version = "2.3", optional = true }
 
 # Provable design-by-contract (compile-time contract binding)
 provable-contracts = { version = "0.2", optional = true }
@@ -259,7 +262,7 @@ agents-rag = ["agents", "rag"]
 # Agent with headless browser (jugar-probar)
 agents-browser = ["agents", "jugar-probar", "base64"]
 # MCP integration: client (consume external tools) + server (expose agent tools)
-agents-mcp = ["agents", "pmcp", "pforge-runtime"]
+agents-mcp = ["agents", "pmcp"]
 # Provable design-by-contract (compile-time contract binding)
 agents-contracts = ["agents", "provable-contracts", "provable-contracts-macros"]
 # WASM visualization for agent dashboards in wos

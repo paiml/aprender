@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────
+# Publish Manifest (GGUF variant) — paiml/qwen2.5-coder-7b-apache-q4k-v1
+# ─────────────────────────────────────────────────────────────
+# Conforms to: contracts/publish-manifest-v1.yaml (F-PUBLISH-MANIFEST-001)
+# Peer:        contracts/apr-cli-publish-extra-v1.yaml (F-PUBLISH-EXTRA-001)
+# Parent spec: docs/specifications/aprender-train/ship-two-models-spec.md §12.7
+# ─────────────────────────────────────────────────────────────
+# Three-format ship (SPEC-SHIP-TWO-001 §12.7 / F-PUBLISH-EXTRA-001
+# three_format_preference): this manifest declares the .gguf variant of
+# paiml/qwen2.5-coder-7b-apache-q4k-v1. Pairs with *-apr.yaml (native)
+# and *-safetensors.yaml (fp16 for transformers/candle).
+#
+# Consumer ecosystem: llama.cpp / ollama.
+# ─────────────────────────────────────────────────────────────
+
+model_id: paiml/qwen2.5-coder-7b-apache-q4k-v1
+version: 1.0.0
+architecture: qwen2
+format: gguf
+quantization: q4_k
+
+artifact_url: https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1/resolve/main/qwen2.5-coder-7b-instruct-q4k.gguf
+
+# SHA-256 computed 2026-04-18 on local source artifact at
+# /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf
+# produced by `apr export --format gguf` from the canonical .apr.
+sha256: e6cac5d642b042641b308a3ea5d3fa1eb48aa80c48dea5877a7b4efa886e7981
+size_bytes: 8037129408
+
+license: Apache-2.0
+
+provenance:
+  pipeline: finetune
+  parent: Qwen/Qwen2.5-Coder-7B-Instruct
+  parent_license: Apache-2.0
+
+  data_source: teacher-only (upstream Qwen2.5-Coder-7B-Instruct training corpus)
+  data_license: Apache-2.0
+
+  recipe: contracts/model-families/qwen2.yaml
+  recipe_sha256: f098ac0813515b669389d4317fff442cf0812b18a181d446d170e182a3689d8b
+
+  # This .gguf is a lossless-to-within-contract conversion of the canonical
+  # .apr (per DOUBLE-QUANT-001: GGUF export bypasses pre-quantization; the
+  # matrix-aware GGUF encoder re-uses Q4K super-blocks from the APR source).
+  derived_from: paiml/qwen2.5-coder-7b-apache-q4k-v1/qwen2.5-coder-7b-instruct-q4k.apr
+  derivation_command: apr export <source.apr> --format gguf --output <out.gguf>
+
+published_at: 2026-04-18T00:00:00Z
+published_by: paiml-bot (noah@paiml.com)
+
+eval_results:
+  humaneval:
+    # Eval was run on the .apr source; F2 cosine parity ≥ 0.9999 between the
+    # three formats is the published invariant, so the pass@1 applies to all
+    # three in the ship.
+    pass_at_1: 84.76
+    timestamp: 2026-04-17T20:17:42+02:00
+    harness_version: apr-cli-0.31.0
+    baseline_reference: results/humaneval_20260328_121327.json (pass@1=85.98)
+    parity_source: paiml/qwen2.5-coder-7b-apache-q4k-v1/qwen2.5-coder-7b-instruct-q4k.apr

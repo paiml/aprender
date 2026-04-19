@@ -221,11 +221,36 @@ fn output_metadata_text(metadata: &MetadataInfo) {
         }
     }
 
+    // C-APR-PROVENANCE / AC-SHIP2-012 / FALSIFY-SHIP-022:
+    // always emit the three provenance keys so auditors never see a
+    // silent skip (INV-APR-PROV-002 / FM-APR-PROV-SILENT-SKIP).
+    print!("{}", format_provenance_block(metadata));
+
     output_chat_template_info(metadata);
 
     if let Some(source_meta) = &metadata.source_metadata {
         print_json_object("\n  Source Metadata (PMAT-223):", source_meta, "    ");
     }
+}
+
+/// Render the provenance block for `apr inspect` text output.
+///
+/// C-APR-PROVENANCE / INV-APR-PROV-002: always emits a "Provenance:" header
+/// followed by `license`, `data_source`, `data_license`, each as either the
+/// stored value or the literal `(missing)` — NEVER silently skipped.
+fn format_provenance_block(metadata: &MetadataInfo) -> String {
+    let mut out = String::new();
+    out.push('\n');
+    out.push_str("  Provenance:\n");
+    for (label, value) in [
+        ("license", &metadata.license),
+        ("data_source", &metadata.data_source),
+        ("data_license", &metadata.data_license),
+    ] {
+        let display = value.as_deref().unwrap_or("(missing)");
+        out.push_str(&format!("    {label}: {display}\n"));
+    }
+    out
 }
 
 fn format_param_count(count: u64) -> String {

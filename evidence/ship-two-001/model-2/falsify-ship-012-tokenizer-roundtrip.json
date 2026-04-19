@@ -1,0 +1,16 @@
+{
+  "contract": "C-TOK-BPE",
+  "gate": "GATE-BPE-003",
+  "falsification": "FALSIFY-SHIP-012",
+  "tokenizer_algorithm": "bpe",
+  "train_corpus_size": 20,
+  "holdout_corpus_size": 20,
+  "vocab_size_trained": 489,
+  "vocab_size_requested": 512,
+  "total_bytes": 814,
+  "docs_passed": 20,
+  "docs_failed": 0,
+  "failing_doc_indices": [],
+  "nfc_idempotent": true,
+  "passed": true
+}
