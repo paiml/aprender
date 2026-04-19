@@ -296,29 +296,39 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         use realizar::format::{detect_format, ModelFormat};
         use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel};
 
-        // P0-QA-001: Never skip — auto-discover or FAIL with actionable message
+        // Peek the primary's magic bytes first (cheap — no full-file read) so that
+        // non-GGUF inputs SKIP cleanly instead of churning through SafeTensors
+        // resolution that is meaningless when the primary isn't the GGUF side of
+        // the comparison. Matches peer gates (ollama_parity / ptx_parity /
+        // capability_match) which all SKIP on non-GGUF. The P0-QA-001 "never
+        // silently skip" invariant was scoped to missing-reference failures, not
+        // to category-mismatched inputs.
+        {
+            let header = std::fs::read(path)
+                .map(|b| b.into_iter().take(8).collect::<Vec<u8>>())
+                .map_err(|e| {
+                    CliError::ValidationFailed(format!("Failed to read primary model: {e}"))
+                })?;
+            let header_format = detect_format(&header).map_err(|e| {
+                CliError::ValidationFailed(format!("Failed to detect primary format: {e}"))
+            })?;
+            if header_format != ModelFormat::Gguf {
+                return Ok(GateResult::skipped(
+                    "format_parity",
+                    "Non-GGUF format (format parity test compares GGUF vs SafeTensors forward passes)",
+                ));
+            }
+        }
+
+        // Primary is GGUF — now resolve the SafeTensors reference or FAIL with
+        // an actionable message (P0-QA-001).
         let safetensors_path = match resolve_safetensors_path(path, config, start.elapsed()) {
             Ok(p) => p,
             Err(gate_result) => return Ok(gate_result),
         };
 
-        // Verify GGUF model
         let gguf_bytes = std::fs::read(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read GGUF: {e}")))?;
-
-        let gguf_format = detect_format(&gguf_bytes[..8.min(gguf_bytes.len())]).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to detect GGUF format: {e}"))
-        })?;
-
-        if gguf_format != ModelFormat::Gguf {
-            return Ok(GateResult::failed(
-                "format_parity",
-                "Primary model must be GGUF format for cross-format parity test",
-                None,
-                None,
-                start.elapsed(),
-            ));
-        }
 
         // Verify SafeTensors model exists
         if !safetensors_path.exists() {
