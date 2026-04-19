@@ -380,9 +380,9 @@ These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mc
 - [x] Cancellation: `notifications/cancelled` → SIGTERM (30s grace) → SIGKILL via std::thread+mpsc worker (#883)
 - [x] FALSIFY-MCP-008: build.rs codegen from `apr-mcp-tool-schemas-v1.yaml` — `apr.version` first (#880), then 7 remaining tools (#884); PMAT-514 extended codegen to tool-level `description` strings so neither `inputSchema` nor `description` can be hand-edited in Rust source (2026-04-18)
 - [x] Progress notifications for `apr.finetune` — `NotificationSink` plumbed; `params._meta.progressToken` opt-in; FALSIFY-MCP-PROGRESS-001 (#887)
+- [x] Progress notifications for `apr.run` — `apr run --stream` NDJSON CLI prereq + `NotificationSink` forwarding; FALSIFY-MCP-PROGRESS-002 (this PR)
 - [x] Book chapter `book/src/tools/mcp-server.md` (#874 M2 creation, #885 M3 update)
 - [ ] **Deferred to M4**: Per-step structured progress for `apr.finetune` (CLI emits terminal blob today; needs CLI event channel)
-- [ ] **Deferred to M4**: Progress notifications for `apr.run` — work in flight on branch `feat/apr-run-stream-progress` (PR #891), pending an `apr run --stream` CLI flag prereq
 
 ### M4: End-to-end validation — IN PROGRESS
 - [ ] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions (FALSIFY-MCP-001..008) + test cross-links (PR #886 open — pins exact-8 invariant via `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008`)

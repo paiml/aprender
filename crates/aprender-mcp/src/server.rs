@@ -173,7 +173,8 @@ impl AprMcpServer {
     /// The sink is only exercised for `tools/call` dispatches where
     /// (a) the client supplied `params._meta.progressToken` on the original
     /// request AND (b) the target tool supports progress streaming
-    /// (currently only `apr.finetune`). Other methods ignore the sink.
+    /// (currently `apr.finetune` and `apr.run`). Other methods ignore the
+    /// sink.
     ///
     /// `handle_request_with_sink` returns `None` for notifications (methods
     /// prefixed with `notifications/`) because notifications have no id and
@@ -439,11 +440,12 @@ fn dispatch_tool_call(
 
 /// Full dispatch variant with optional `NotificationSink` + `progressToken`.
 ///
-/// FALSIFY-MCP-PROGRESS-001: when `sink` and `progress_token` are both
-/// `Some`, tools that support streaming (currently `apr.finetune`) forward
-/// each stdout line as a `notifications/progress` message via `sink` before
-/// returning the final `ToolCallResult`. Tools that don't support streaming
-/// ignore the sink and run synchronously.
+/// FALSIFY-MCP-PROGRESS-001 / FALSIFY-MCP-PROGRESS-002: when `sink` and
+/// `progress_token` are both `Some`, tools that support streaming
+/// (`apr.finetune` and `apr.run`) forward each stdout line as a
+/// `notifications/progress` message via `sink` before returning the final
+/// `ToolCallResult`. Tools that don't support streaming ignore the sink and
+/// run synchronously.
 fn dispatch_tool_call_with_sink(
     params: &serde_json::Value,
     cancel_rx: &mpsc::Receiver<()>,
@@ -463,7 +465,14 @@ fn dispatch_tool_call_with_sink(
         Some(tools::bench::NAME) => tools::bench::call(&arguments),
         Some(tools::qa::NAME) => tools::qa::call(&arguments),
         Some(tools::trace::NAME) => tools::trace::call(&arguments),
-        Some(tools::run::NAME) => tools::run::call(&arguments, cancel_rx),
+        Some(tools::run::NAME) => {
+            // FALSIFY-MCP-PROGRESS-002: pass sink + progressToken so that
+            // when the client requested progress, apr.run streams via
+            // `apr run --stream` and forwards each NDJSON line as
+            // notifications/progress. Without a progressToken the call
+            // falls back to the cancellable sync path.
+            tools::run::call_with_sink(&arguments, cancel_rx, sink, progress_token)
+        }
         Some(tools::serve::NAME) => tools::serve::call(&arguments),
         Some(tools::finetune::NAME) => {
             tools::finetune::call_with_sink(&arguments, sink, progress_token)
