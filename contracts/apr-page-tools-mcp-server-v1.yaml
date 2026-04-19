@@ -1,0 +1,70 @@
+contract: apr-page-tools-mcp-server
+metadata:
+  kind: schema
+  version: "1.0.0"
+  description: "Apr Page Tools Mcp Server contract"
+  references:
+  - "docs/specifications/apr-mcp-server-spec.md"
+version: 1
+status: enforced
+date: 2026-04-18
+
+page:
+  id: "tools-mcp-server"
+  title: "aprender-mcp — Model Context Protocol Server"
+  part: "reference"
+  category: "tool"
+  path: "book/src/tools/mcp-server.md"
+  example: ""
+  arxiv: []
+
+sections:
+  - heading: "Status"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Installation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Client configuration"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Tool catalog"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Cancellation"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Schema codegen"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Falsification gates"
+    has_code: true
+    has_assertion: false
+    citation: null
+  - heading: "Troubleshooting"
+    has_code: true
+    has_assertion: false
+    citation: null
+
+falsification:
+  - condition: "Page .md file does not exist at declared path"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Section in .md not listed in contract"
+    severity: P0
+    action: delete_section
+  - condition: "Tool documented here not present in contracts/apr-mcp-tool-schemas-v1.yaml"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Milestone row in overview table conflicts with docs/specifications/apr-mcp-server-spec.md"
+    severity: P0
+    action: delete_from_summary
+  - condition: "Client config snippet missing required MCP v2024-11-05 fields"
+    severity: P0
+    action: delete_from_summary

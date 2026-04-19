@@ -111,7 +111,7 @@ batuta-common = "0.1"
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
-batuta = { version = "0.7", optional = true, default-features = false, features = ["agents", "agents-inference", "rag"] }
+batuta = { version = "0.7", optional = true, default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
 
 # Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s

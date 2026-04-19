@@ -547,8 +547,11 @@ mod tests {
         assert!(result["capabilities"]["tools"].is_object());
     }
 
-    /// FALSIFY-MCP-002 (progressive): tools/list returns every tool that has
-    /// shipped so far. Full 8-tool set lands when M2 completes.
+    /// FALSIFY-MCP-002: tools/list returns every registered tool. The
+    /// Phase-1 8-tool set (M2 subprocess wrappers + M3 `apr.finetune`) plus
+    /// the `apr.version` M1 scaffold is what a conforming dispatcher now
+    /// advertises; adding a new tool should fail this test until the contract
+    /// YAML and codegen are updated in lockstep.
     #[test]
     fn tools_list_returns_registered_tools() {
         let mut server = AprMcpServer::new();

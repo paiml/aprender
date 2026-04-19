@@ -1,3 +1,5 @@
+<!-- PCU: tools-mcp-server | contract: contracts/apr-page-tools-mcp-server-v1.yaml -->
+
 # aprender-mcp — Model Context Protocol Server
 
 `aprender-mcp` is a Model Context Protocol (MCP) server that exposes the `apr`
@@ -15,13 +17,18 @@ Crate README: [`crates/aprender-mcp/README.md`](https://github.com/paiml/aprende
 |-----------|-------|-------|
 | M1 | Skeleton: `initialize` + `tools/list` + `apr.version` | Shipped |
 | M2 | 7 Phase-1 subprocess wrappers + dispatcher hardening | Shipped |
-| M3 | `apr.finetune` synchronous wrapper, `notifications/cancelled` → SIGTERM→SIGKILL, build.rs schema codegen | Shipped |
+| M3 | `apr.finetune` synchronous wrapper, `notifications/cancelled` → SIGTERM→SIGKILL, build.rs schema codegen, opt-in `notifications/progress` for `apr.finetune` | Shipped |
 | M4 | Claude Code dogfood session, contract promoted DRAFT → ENFORCED | Pending |
+| M5 | Port dispatcher to `pmcp` v2.3; add SSE / WebSocket transports | Planned |
 
 M3 ships `notifications/cancelled` handling (FALSIFY-MCP-006), the 8th
-Phase-1 tool `apr.finetune`, and full build-time schema code generation
-(FALSIFY-MCP-008) for every tool. Per-token `notifications/progress`
-streaming for `apr.run` / `apr.finetune` is a follow-up slice.
+Phase-1 tool `apr.finetune`, full build-time schema code generation
+(FALSIFY-MCP-008) for every tool, and opt-in per-line
+`notifications/progress` for `apr.finetune` when the client supplies
+`params._meta.progressToken` (FALSIFY-MCP-PROGRESS-001). Per-step
+structured progress for `apr.finetune` and progress notifications for
+`apr.run` remain follow-up slices (the CLI needs an event-channel
+prereq and an `apr run --stream` flag).
 
 ## Installation
 
@@ -104,8 +111,12 @@ arguments.
 Response payload:
 
 ```json
-{"server":"aprender-mcp","version":"0.31.0","protocol_version":"2024-11-05"}
+{"server":"aprender-mcp","version":"0.30.0","protocol_version":"2024-11-05"}
 ```
+
+The `version` field tracks the workspace `Cargo.toml` version (baked in at
+compile time via `env!("CARGO_PKG_VERSION")`), so it bumps with every
+aprender release. Clients should parse it for diagnostics, not pin to it.
 
 ### apr.validate
 
@@ -207,8 +218,13 @@ returns. Cancellation via `notifications/cancelled` is wired (see
 
 Wraps `apr serve <model_path> --port <port>`. Fire-and-forget: the tool
 spawns the daemon, captures its pid, and returns `{pid, url, note}`. The
-caller is responsible for killing the pid out-of-band. Full
-cancel → SIGTERM lifecycle lands in a follow-up M3 slice.
+caller is responsible for killing the pid out-of-band.
+
+M3 shipped `notifications/cancelled` for `apr.run` only — `apr.serve` is
+still fire-and-forget because it returns `{pid, url}` synchronously and
+leaves the daemon detached. A lifecycle-tracked registry (cancel token →
+SIGTERM the captured pid with 30s grace → SIGKILL) is a post-M3
+follow-up, targeted at M5 alongside the pmcp dispatcher port.
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
@@ -229,8 +245,16 @@ Response payload:
 
 Wraps `apr finetune <base_model> --json [--data <path>] [--rank <N>] [--epochs <N>] [--method <m>] [--output <path>]`.
 Synchronous: blocks until training completes, then returns the final JSON
-payload from the CLI. Per-step `notifications/progress` streaming is a
-follow-up M3 slice.
+payload from the CLI.
+
+Opt-in progress: when the client's `tools/call` sets
+`params._meta.progressToken`, the server emits one `notifications/progress`
+per non-empty stdout line from `apr finetune --json`
+(FALSIFY-MCP-PROGRESS-001). Without a token, zero notifications are
+emitted. Note this is per-stdout-line, not per-training-step —
+`apr finetune --json` currently writes a terminal blob on completion, so
+most clients will see only a small number of progress events. A per-step
+CLI event channel is an M4 follow-up.
 
 The MCP argument names (`base_model`, `dataset`, `lora_rank`) differ from
 the underlying CLI flags (positional base-model path, `--data`, `--rank`);
@@ -289,11 +313,25 @@ the single source of truth for MCP tool argument shape. Each tool's
 hand-maintained schemas in the tools source.
 
 FALSIFY-MCP-008 asserts byte-identity (after JSON canonicalization)
-between each live `tools/list` schema and the YAML contract entry, so a
-schema drift between the two breaks CI.
+between each live `tools/list` schema **and description** and the YAML
+contract entry. The gate is enforced at two layers:
 
-To change a tool's schema: edit the YAML, rebuild. The Rust source does
-not need editing.
+* **Live wiring** — `tests/falsify_mcp_008.rs` compares
+  `ToolDefinition.inputSchema` (`migrated_tools_match_yaml_contract_byte_for_byte`)
+  and `ToolDefinition.description` (`tool_descriptions_match_yaml_contract`)
+  against the YAML contract.
+* **Codegen constants** — the same file compares each
+  `schemas::APR_<TOOL>_SCHEMA` (`codegen_constants_parse_and_match_yaml_for_every_tool`)
+  and each `schemas::APR_<TOOL>_DESCRIPTION` (`codegen_description_constants_match_yaml`)
+  against the YAML contract directly — this catches the case where a
+  future refactor replaces the codegen consumer with a hand-coded literal.
+
+To change a tool's schema *or* description: edit the YAML only — the
+next `cargo build` regenerates both `APR_<TOOL>_SCHEMA` and
+`APR_<TOOL>_DESCRIPTION` from `contracts/apr-mcp-tool-schemas-v1.yaml`
+and the tool modules pick them up automatically. No Rust edit is
+needed, and hand-editing the tool source will fail
+`codegen_description_constants_match_yaml` before reaching CI.
 
 ## Falsification gates
 
@@ -306,7 +344,8 @@ not need editing.
 | FALSIFY-MCP-005 | Malformed request (`"jsonrpc": "1.0"`) returns JSON-RPC error `-32600`, server stays alive | ACTIVE |
 | FALSIFY-MCP-006 | `notifications/cancelled` during a long-running tool call stops the subprocess within the grace window and returns a partial result | ACTIVE |
 | FALSIFY-MCP-007 | `initialize` with `protocolVersion != "2024-11-05"` returns `-32602`, does not attempt `tools/list` | ACTIVE |
-| FALSIFY-MCP-008 | `tools/list` schema is byte-identical (after canonicalization) to `contracts/apr-mcp-tool-schemas-v1.yaml` | ACTIVE |
+| FALSIFY-MCP-008 | Each tool's `inputSchema` **and** `description` in `tools/list` are byte-identical to the entry in `contracts/apr-mcp-tool-schemas-v1.yaml` | ACTIVE |
+| FALSIFY-MCP-PROGRESS-001 | With `params._meta.progressToken`, `apr.finetune` emits one `notifications/progress` per non-empty stdout line, all flushed before the final response; without a token, zero notifications | ACTIVE |
 
 Additional invariant enforced by the dispatcher:
 

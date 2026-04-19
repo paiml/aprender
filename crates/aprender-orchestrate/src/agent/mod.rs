@@ -31,10 +31,14 @@ pub mod capability;
 pub mod code;
 mod code_prompts;
 pub mod contracts;
+pub mod custom_agents;
 pub mod driver;
 pub mod guard;
+pub mod hooks;
 pub mod manifest;
 pub mod memory;
+pub mod org_policy;
+pub mod permission;
 pub mod phase;
 pub mod pool;
 pub mod repl;
@@ -44,8 +48,12 @@ pub mod runtime;
 mod runtime_helpers;
 pub mod session;
 pub mod signing;
+pub mod skill;
+pub mod status_line;
+pub mod task_tool;
 pub mod tool;
 pub mod tui;
+pub mod worktree;
 
 // Re-export key types for convenience.
 pub use capability::{capability_matches, Capability};

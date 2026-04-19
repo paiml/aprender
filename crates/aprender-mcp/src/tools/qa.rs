@@ -26,9 +26,7 @@ pub fn qa_tool_definition() -> ToolDefinition {
     );
     ToolDefinition {
         name: NAME.to_string(),
-        description:
-            "Run the 8-gate falsifiable QA checklist on a model. Wraps `apr qa <model> --json`."
-                .to_string(),
+        description: crate::schemas::APR_QA_DESCRIPTION.to_string(),
         input_schema,
     }
 }

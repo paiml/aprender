@@ -15,6 +15,9 @@ pub enum Commands {
     },
     /// Validate a YAML kernel contract
     Validate { contract: PathBuf },
+    /// Execute cross_check_command per row of a parity-matrix contract (SEMANTIC gate)
+    #[command(name = "check-parity")]
+    CheckParity { contract: PathBuf },
     /// Generate Rust trait + test scaffolding from a contract
     Scaffold {
         contract: PathBuf,

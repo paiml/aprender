@@ -411,7 +411,7 @@ done < /tmp/subcommands.txt
 **Every `apr` subcommand MUST work after `cargo install aprender`. No exceptions.**
 
 Users NEVER pass `--features`. The default feature set MUST include everything
-needed for all 57 commands to function. This is the Ollama/PyTorch model:
+needed for all 58 commands to function. This is the Ollama/PyTorch model:
 `pip install torch` gives you CPU+CUDA — you don't `pip install torch[cuda]`.
 
 | Principle | Requirement |
