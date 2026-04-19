@@ -87,10 +87,51 @@ const CODEGEN_DESCRIPTIONS: &[(&str, &str)] = &[
 
 fn contract_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("contracts")
+        .join("apr-mcp-tool-schemas-v1.yaml")
+}
+
+/// Workspace-root copy of the contract. Exists in-tree (monorepo) but NOT in
+/// the published tarball. Used only by the drift-guard test.
+fn workspace_contract_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("contracts")
         .join("apr-mcp-tool-schemas-v1.yaml")
+}
+
+/// Drift guard: the in-crate copy (what build.rs + published tarball read)
+/// must stay byte-identical to the workspace-root copy (what `pv` and other
+/// workspace-level tooling reads). Silent divergence was the failure mode
+/// that sank v0.31.1 — catch it at CI, not at `cargo install` time.
+///
+/// Skips gracefully when the workspace-root file is absent (e.g., the test is
+/// executing against an unpacked tarball or a sparse checkout).
+#[test]
+fn contract_copy_matches_workspace_root() {
+    let local = contract_path();
+    let root = workspace_contract_path();
+    if !root.exists() {
+        eprintln!(
+            "SKIP: workspace-root contract not present at {} (published-tarball mode)",
+            root.display()
+        );
+        return;
+    }
+    let local_bytes =
+        std::fs::read(&local).unwrap_or_else(|e| panic!("read local {}: {e}", local.display()));
+    let root_bytes = std::fs::read(&root)
+        .unwrap_or_else(|e| panic!("read workspace-root {}: {e}", root.display()));
+    assert_eq!(
+        local_bytes,
+        root_bytes,
+        "drift between in-crate {} and workspace-root {}: \
+         these must stay byte-identical — re-run `cp contracts/apr-mcp-tool-schemas-v1.yaml \
+         crates/aprender-mcp/contracts/` after any contract edit",
+        local.display(),
+        root.display()
+    );
 }
 
 /// Parse the YAML contract and return the `tools` list as a `serde_yaml::Value`.
