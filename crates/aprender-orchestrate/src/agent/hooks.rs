@@ -161,18 +161,10 @@ impl HookRegistry {
 }
 
 fn run_single(cfg: &HookConfig, cwd: &Path) -> HookDecision {
-    let output = match Command::new("sh")
-        .arg("-c")
-        .arg(&cfg.command)
-        .current_dir(cwd)
-        .output()
-    {
+    let output = match Command::new("sh").arg("-c").arg(&cfg.command).current_dir(cwd).output() {
         Ok(o) => o,
         Err(e) => {
-            return HookDecision::Warn(format!(
-                "hook '{}' failed to spawn: {e}",
-                cfg.command
-            ));
+            return HookDecision::Warn(format!("hook '{}' failed to spawn: {e}", cfg.command));
         }
     };
     let code = output.status.code().unwrap_or(0);

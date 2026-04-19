@@ -103,7 +103,9 @@ impl WorktreeSession {
             .map_err(|e| WorktreeError::SpawnFailed(e.to_string()))?;
 
         if !output.status.success() {
-            return Err(WorktreeError::CreateFailed(String::from_utf8_lossy(&output.stderr).into()));
+            return Err(WorktreeError::CreateFailed(
+                String::from_utf8_lossy(&output.stderr).into(),
+            ));
         }
 
         Ok(Self {
@@ -141,7 +143,9 @@ impl WorktreeSession {
             .map_err(|e| WorktreeError::SpawnFailed(e.to_string()))?;
 
         if !output.status.success() {
-            return Err(WorktreeError::StatusFailed(String::from_utf8_lossy(&output.stderr).into()));
+            return Err(WorktreeError::StatusFailed(
+                String::from_utf8_lossy(&output.stderr).into(),
+            ));
         }
 
         Ok(!output.stdout.is_empty())

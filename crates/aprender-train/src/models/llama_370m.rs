@@ -605,39 +605,15 @@ mod tests {
         out.push(("model.embed_tokens.weight".into(), vec![v, h]));
         out.push(("lm_head.weight".into(), vec![v, h]));
         for n in 0..layers {
-            out.push((
-                format!("model.layers.{n}.self_attn.q_proj.weight"),
-                vec![nh * hd, h],
-            ));
-            out.push((
-                format!("model.layers.{n}.self_attn.k_proj.weight"),
-                vec![nkv * hd, h],
-            ));
-            out.push((
-                format!("model.layers.{n}.self_attn.v_proj.weight"),
-                vec![nkv * hd, h],
-            ));
-            out.push((
-                format!("model.layers.{n}.self_attn.o_proj.weight"),
-                vec![h, nh * hd],
-            ));
-            out.push((
-                format!("model.layers.{n}.mlp.gate_proj.weight"),
-                vec![i, h],
-            ));
+            out.push((format!("model.layers.{n}.self_attn.q_proj.weight"), vec![nh * hd, h]));
+            out.push((format!("model.layers.{n}.self_attn.k_proj.weight"), vec![nkv * hd, h]));
+            out.push((format!("model.layers.{n}.self_attn.v_proj.weight"), vec![nkv * hd, h]));
+            out.push((format!("model.layers.{n}.self_attn.o_proj.weight"), vec![h, nh * hd]));
+            out.push((format!("model.layers.{n}.mlp.gate_proj.weight"), vec![i, h]));
             out.push((format!("model.layers.{n}.mlp.up_proj.weight"), vec![i, h]));
-            out.push((
-                format!("model.layers.{n}.mlp.down_proj.weight"),
-                vec![h, i],
-            ));
-            out.push((
-                format!("model.layers.{n}.input_layernorm.weight"),
-                vec![h],
-            ));
-            out.push((
-                format!("model.layers.{n}.post_attention_layernorm.weight"),
-                vec![h],
-            ));
+            out.push((format!("model.layers.{n}.mlp.down_proj.weight"), vec![h, i]));
+            out.push((format!("model.layers.{n}.input_layernorm.weight"), vec![h]));
+            out.push((format!("model.layers.{n}.post_attention_layernorm.weight"), vec![h]));
         }
         out.push(("model.norm.weight".into(), vec![h]));
         out
@@ -779,9 +755,8 @@ mod tests {
     fn falsify_ship_019_gate_arch_370m_004_has_partial_discharge_marker() {
         let doc: serde_yaml::Value =
             serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
-        let gates = doc["gates"]
-            .as_sequence()
-            .expect("gates must be a sequence in sovereign contract");
+        let gates =
+            doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
         let gate = gates
             .iter()
             .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-004"))

@@ -94,9 +94,7 @@ async fn task_tool_missing_prompt_errors() {
     let pool = make_pool("x");
     let registry = Arc::new(default_registry());
     let tool = TaskTool::new(registry, pool, AgentManifest::default(), 0, 3);
-    let result = tool
-        .execute(serde_json::json!({ "subagent_type": "explore" }))
-        .await;
+    let result = tool.execute(serde_json::json!({ "subagent_type": "explore" })).await;
     assert!(result.is_error);
     assert!(result.content.contains("prompt"));
 }
@@ -163,11 +161,7 @@ async fn register_task_tool_adds_to_registry() {
 
 #[test]
 fn subagent_spec_presets_have_nonempty_system_prompts() {
-    for spec in [
-        SubagentSpec::general_purpose(),
-        SubagentSpec::explore(),
-        SubagentSpec::plan(),
-    ] {
+    for spec in [SubagentSpec::general_purpose(), SubagentSpec::explore(), SubagentSpec::plan()] {
         assert!(!spec.system_prompt.trim().is_empty(), "{}: system_prompt empty", spec.name);
         assert!(!spec.description.trim().is_empty(), "{}: description empty", spec.name);
         assert!(spec.max_iterations > 0);

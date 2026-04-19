@@ -56,17 +56,15 @@ impl SubagentSpec {
     pub fn general_purpose() -> Self {
         Self {
             name: "general-purpose".into(),
-            description:
-                "General-purpose agent for researching questions, searching for code, \
+            description: "General-purpose agent for researching questions, searching for code, \
                  and executing multi-step tasks. Use when the target is not known \
                  and you are not confident you will find the right match in the \
                  first few tries."
-                    .into(),
-            system_prompt:
-                "You are a general-purpose research subagent. Your job is to answer \
+                .into(),
+            system_prompt: "You are a general-purpose research subagent. Your job is to answer \
                  the user's question by gathering evidence from the codebase. Return \
                  a concise summary of findings, not running commentary."
-                    .into(),
+                .into(),
             max_iterations: 10,
         }
     }
@@ -75,16 +73,14 @@ impl SubagentSpec {
     pub fn explore() -> Self {
         Self {
             name: "explore".into(),
-            description:
-                "Fast agent specialized for exploring codebases. Use to find files \
+            description: "Fast agent specialized for exploring codebases. Use to find files \
                  by pattern, search code for keywords, or answer questions about \
                  structure. Returns a digest of findings."
-                    .into(),
-            system_prompt:
-                "You are a codebase exploration subagent. Prefer pmat_query over \
+                .into(),
+            system_prompt: "You are a codebase exploration subagent. Prefer pmat_query over \
                  raw grep. Never edit files. Return a short digest of what you found \
                  with file:line citations."
-                    .into(),
+                .into(),
             max_iterations: 8,
         }
     }
@@ -93,16 +89,14 @@ impl SubagentSpec {
     pub fn plan() -> Self {
         Self {
             name: "plan".into(),
-            description:
-                "Software architect subagent for designing implementation plans. \
+            description: "Software architect subagent for designing implementation plans. \
                  Use when you need a step-by-step plan, critical-file list, or \
                  architectural trade-offs before implementing."
-                    .into(),
-            system_prompt:
-                "You are a planning subagent. Read the relevant code, then return a \
+                .into(),
+            system_prompt: "You are a planning subagent. Read the relevant code, then return a \
                  numbered plan with (a) files to change, (b) order of changes, and \
                  (c) the key trade-off. Do not write code."
-                    .into(),
+                .into(),
             max_iterations: 6,
         }
     }

@@ -410,14 +410,16 @@ fn register_mcp_client_tools(tools: &mut ToolRegistry, manifest: &AgentManifest)
                 return;
             }
         };
-        let discovered =
-            rt.block_on(crate::agent::tool::mcp_client::discover_mcp_tools(manifest));
+        let discovered = rt.block_on(crate::agent::tool::mcp_client::discover_mcp_tools(manifest));
         let count = discovered.len();
         for tool in discovered {
             tools.register(Box::new(tool));
         }
         if count > 0 {
-            eprintln!("✓ Registered {count} MCP tool(s) from {} server(s)", manifest.mcp_servers.len());
+            eprintln!(
+                "✓ Registered {count} MCP tool(s) from {} server(s)",
+                manifest.mcp_servers.len()
+            );
         }
     }
 }
@@ -476,9 +478,7 @@ fn register_web_tools(tools: &mut ToolRegistry, manifest: &AgentManifest) {
 
     #[cfg(feature = "agents-browser")]
     {
-        tools.register(Box::new(crate::agent::tool::browser::BrowserTool::new(
-            manifest.privacy,
-        )));
+        tools.register(Box::new(crate::agent::tool::browser::BrowserTool::new(manifest.privacy)));
     }
 }
 
