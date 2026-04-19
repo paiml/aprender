@@ -67,6 +67,11 @@ jobs:
           cargo test -p aprender-core --test monorepo_invariants
           cargo test -p aprender-core --test readme_contract
           cargo test -p apr-cli --test cli_commands
+      - name: Build.rs crate-root escape check (v0.31.1 yank guard)
+        # Static Poka-Yoke: flags build.rs files that panic on files outside
+        # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
+        # See scripts/check_build_rs_paths.sh for the full rationale.
+        run: bash scripts/check_build_rs_paths.sh
       - name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |

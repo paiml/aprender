@@ -10,6 +10,19 @@ description = "Model Context Protocol (MCP) server for aprender — exposes apr 
 keywords = ["mcp", "llm", "inference", "aprender", "claude"]
 categories = ["command-line-utilities", "science"]
 readme = "README.md"
+# FALSIFY-PUBLISH-001 (v0.31.2): bundle the contract YAML read by build.rs so
+# `cargo install aprender` works from a crates.io tarball. v0.31.1 build read
+# `../../contracts/apr-mcp-tool-schemas-v1.yaml` (outside the package) and
+# panicked at install time. In-crate copy is drift-guarded by
+# tests/falsify_mcp_008.rs (`contract_copy_matches_workspace_root`).
+include = [
+    "src/**/*",
+    "tests/**/*",
+    "build.rs",
+    "Cargo.toml",
+    "README.md",
+    "contracts/*.yaml",
+]
 
 [lib]
 name = "aprender_mcp"
