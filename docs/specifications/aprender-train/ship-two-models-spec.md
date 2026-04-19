@@ -1,11 +1,11 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.21.0
+**Version:** 2.22.0
 **Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures)
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched)
 
 **v2.21.0 amendment (2026-04-19):** Three MODEL-2 architecture + tokenizer
 gates landed in the same post-v2.19 evidence window, on branch
@@ -92,13 +92,56 @@ auditors must treat `evidence_discharged_by` alone (without checking
 `discharge_status`) as **not** sufficient green — the two fields
 together are the authoritative read.
 
-Combined MODEL-2 ship-gate status after v2.21.0: **3/12 AC-SHIP2 gates
-fully ACTIVE** (001, 011, 012) + **2/12 PARTIAL_ALGORITHM_LEVEL** (002
-via SHIP-012, 005 via SHIP-015) = **5/12 touched** (~42%). The remaining
-7 (003/004/006/007/008/009/010) all require either real 370M training
-compute, a trained on-disk `.apr`, or a wall-clock benchmark on RTX
-4090, and will remain untouched until compute-dispatch lands — the
-pretrain loop driver + CLI from v2.19.0 are ready for them.
+**v2.22.0 amendment (2026-04-19):** One additional MODEL-2 ship gate
+attained PARTIAL_ALGORITHM_LEVEL in the same post-v2.19 evidence window,
+on branch `chore/post-v2.19-evidence`:
+
+4. **FALSIFY-SHIP-019 (AC-SHIP2-009) — PARTIAL_ALGORITHM_LEVEL** at
+   commit `846cc1dbb` (task #117). Sovereign contract v1.2.0 → v1.3.0,
+   stays ACTIVE. GATE-ARCH-370M-004 gains `evidence_discharged_by`
+   pointing at two new harness tests + an enumerator helper in
+   `crates/aprender-train/src/models/llama_370m.rs` plus three
+   cross-referenced assets (`LayoutContract`, `validate_apr_shape`,
+   `contracts/tensor-layout-v1.yaml`). The gate's `evidence_required`
+   asks for GGUF-exported 370M first-token cosine similarity ≤ 1e-3 vs
+   APR on 100 canary prompts — that runner is blocked on
+   AC-SHIP2-003/004 pretraining compute plus GATE-SHIP-006 harness
+   invocation, so the gate lands with `discharge_status:
+   PARTIAL_ALGORITHM_LEVEL` + `full_discharge_blocks_on: "real 370M .apr
+   checkpoint from pretraining compute-dispatch (AC-SHIP2-003/004) +
+   harness invocation of GATE-SHIP-006 cosine-parity runner"`. The
+   algorithm-level proofs collectively establish the conditional: *if*
+   GGUF export invokes `LayoutContract::validate_apr_shape` on every
+   tensor, *then* row-major layout and GH-202 regression rejection are
+   mathematically enforced. The enumerator counts
+   **3 + 9 × NUM_LAYERS = 219** tensors and cross-checks each with
+   `LayoutContract::get_apr_contract`; adding a tensor to
+   `Llama370MConfig` without a matching entry in
+   `layout_contract_specs.rs` now fails
+   `cargo test -p aprender-train --lib llama_370m` before any compute
+   runs. Spec §9 Risk #2's explicit instruction to "reuse
+   `layout_contract.rs` validator" was the load-bearing hint that
+   pointed at a non-compute, algorithm-level asset.
+
+**Pattern lesson codified by v2.22.0 (counter-example hunting):** the
+v2.21.0 cycle declared all non-compute PARTIAL levers for MODEL-2
+"exhausted". Re-running the 7-gate FALSIFY-SHIP survey (013/014/016/017/
+018/019/020) with explicit counter-example hunting found exactly one
+genuine lever (SHIP-019); SHIP-017/018/020 truly need compute,
+SHIP-013/014/016 collapse into SHIP-011's wiring. Prior verdict was ~86%
+correct. **Rule: before declaring a search space exhausted, re-run the
+survey with explicit counter-example hunting — the spec's own Risk
+mitigations are the highest-leverage hint source.**
+
+Combined MODEL-2 ship-gate status after v2.22.0: **3/12 AC-SHIP2 gates
+fully ACTIVE** (001, 011, 012) + **3/12 PARTIAL_ALGORITHM_LEVEL** (002
+via SHIP-012, 005 via SHIP-015, 009 via SHIP-019) = **6/12 touched**
+(50%). The remaining 6 (003/004/006/007/008/010) all require either
+real 370M training compute, a trained on-disk `.apr` with evaluation
+harness, or a wall-clock benchmark on RTX 4090, and will remain
+untouched until compute-dispatch lands — the pretrain loop driver + CLI
+from v2.19.0 are ready for them. Genuine algorithm-level PARTIAL
+harvesting is now exhausted for MODEL-2.
 
 **v2.20.0 amendment (2026-04-19):** Two MODEL-2 ship gates **DISCHARGED**
 in the post-v2.19 evidence window on branch `chore/post-v2.19-evidence`:
