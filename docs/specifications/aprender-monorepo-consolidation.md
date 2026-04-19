@@ -1323,8 +1323,9 @@ Contract: `cgp-monorepo-consolidation-v1.yaml` FALSIFY-MONO-010.
 ### A.12 Internal crates (`publish = false`)
 
 Crates that ship inside the monorepo but are NEVER published to crates.io.
-These are test harnesses, benchmarks, and dev tooling — their outputs ship
-via CI artifacts or the `apr` binary, not as a library dependency.
+These are test harnesses, benchmarks, dev tooling, and bundled binaries —
+their outputs ship via CI artifacts or the `apr` binary, not as a library
+dependency.
 
 | Crate Name | Workspace Path | Reason |
 |-----------|---------------|--------|
@@ -1332,6 +1333,12 @@ via CI artifacts or the `apr` binary, not as a library dependency.
 | `aprender-bench-tokenizer` | `crates/aprender-bench-tokenizer/` | Head-to-head benchmarks (aprender vs HuggingFace) |
 | `aprender-train-canary` | `crates/aprender-train-canary/` | Training canary harness (CI-only) |
 | `aprender-compute-xtask` | `crates/aprender-compute-xtask/` | xtask build helper |
+| `aprender-qa-cli` | `crates/aprender-qa-cli/` | QA harness; reached through `apr qa`, not `cargo add` |
+| `aprender-qa-gen` | `crates/aprender-qa-gen/` | QA scenario generator |
+| `aprender-qa-runner` | `crates/aprender-qa-runner/` | QA playbook executor |
+| `aprender-qa-report` | `crates/aprender-qa-report/` | QA Popperian report generator |
+| `aprender-qa-certify` | `crates/aprender-qa-certify/` | QA model certification |
+| `aprender-viz-ttop` | `crates/aprender-viz-ttop/` | System-monitor binary; ships via the `apr` binary, not as a library dep |
 
 Sub-crates that inherit `publish = false` from their parent (not counted
 in the 80-crate workspace): `*/fuzz/` fuzzers × 4, `*/wasm-pkg/` WASM
@@ -1339,8 +1346,8 @@ bundles × 2.
 
 ### A.12.1 Publishing policy
 
-**Total: 80 workspace crates.** `publish = false` is the _default stance_
-for three categories:
+**Total: 80 workspace crates — 10 opted out of crates.io via `publish = false`, 70 publishable.**
+`publish = false` is the _default stance_ for four categories:
 
 1. **Benchmarks** (`*-bench-*`) — head-to-head perf comparators. Output:
    numbers in a commit message, not a `cargo add` target.
@@ -1349,6 +1356,9 @@ for three categories:
 3. **QA harness** (`aprender-qa-*`) — internal model qualification
    plumbing. Output: evidence JSON + reports, consumed through `apr qa`
    (the user-facing binary), not through `cargo add aprender-qa-runner`.
+4. **Bundled binaries** — tools shipped inside the `apr` binary (e.g.,
+   `aprender-viz-ttop` for terminal system monitoring). Output: terminal
+   UI via the `apr` binary, not a library dep.
 
 A v0.31.0-style release does NOT require `cargo publish` across all 80
 crates. The release sequence is:
@@ -1361,12 +1371,6 @@ crates. The release sequence is:
   that MUST publish to keep `cargo install aprender` working.
 - **Shim crates** (paiml/trueno/etc.): one-time publish for namespace
   reservation, no per-release work.
-
-Candidates to migrate to `publish = false` in a follow-up pass (evidence:
-never published to crates.io as of 2026-04-19): `aprender-qa-cli`,
-`aprender-qa-report`, `aprender-qa-runner`, `aprender-qa-gen`,
-`aprender-qa-certify`. These are reached through `apr qa`, not through
-`cargo add`.
 
 ### A.13 Shim Crate Count
 
