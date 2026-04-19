@@ -174,16 +174,16 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 
 `apr code` (spec: [`docs/specifications/aprender-orchestrate/components/apr-code.md`](../../crates/aprender-orchestrate/docs/specifications/components/apr-code.md); contract: `contracts/batuta/apr-code-v1.yaml`) is aprender's **open-source, sovereign-by-default equivalent of Claude Code** (PMAT-182). Humans use `apr code` interactively; external agents (Claude Code, Cursor, Cline) use `apr mcp`. The two surfaces form a bidirectional MCP relationship:
 
-### Direction 1 — `apr code` as MCP **consumer** (PARTIAL)
+### Direction 1 — `apr code` as MCP **consumer** (CLOSED — PMAT-CODE-MCP-CLIENT-001, 2026-04-18)
 
-`apr code` can load external MCP servers as tool providers, the Claude-Code-parity equivalent of `.mcp.json`. Infrastructure lives in `crates/aprender-orchestrate/src/agent/tool/mcp_client.rs` — `McpClientTool` + `StdioMcpTransport` + `discover_mcp_tools(manifest)` — and is feature-gated behind `agents-mcp`. Registration scaffolding is `register_mcp_tools` in `crates/aprender-orchestrate/src/cli/agent_helpers.rs:219`.
+`apr code` can load external MCP servers as tool providers, the Claude-Code-parity equivalent of `.mcp.json`. Infrastructure lives in `crates/aprender-orchestrate/src/agent/tool/mcp_client.rs` — `McpClientTool` + `StdioMcpTransport` + `discover_mcp_tools(manifest)` — and is feature-gated behind `agents-mcp`. The wiring into the live agent loop is `register_mcp_client_tools` at `crates/aprender-orchestrate/src/agent/code.rs:400-423`, invoked after `build_code_tools` so TOML-declared `manifest.mcp_servers[]` entries register as live tool providers.
 
-**Parity gaps vs Claude Code** (falsified 2026-04-18 by reading `agent/code.rs:360` and grepping for `McpClientTool` call sites):
+**Parity gaps vs Claude Code** (re-falsified 2026-04-19 via `pmat query "register_mcp_client_tools"` — wiring landed in `agent/code.rs:400-423`):
 
 | Gap | Status | Fix location |
 |-----|--------|--------------|
-| `build_code_tools` does **not** call `register_mcp_tools` — external MCP servers declared in manifest are silently ignored | OPEN | `crates/aprender-orchestrate/src/agent/code.rs:360-387` (add one call guarded by `cfg(feature = "agents-mcp")`) |
-| No `.mcp.json` loader — today only TOML `AgentManifest.mcp_servers` is read | OPEN | `crates/aprender-orchestrate/src/agent/manifest.rs` (add JSON reader at `$CWD/.mcp.json` and `~/.config/apr/mcp.json`) |
+| `build_code_tools` does **not** call `register_mcp_tools` — external MCP servers declared in manifest are silently ignored | CLOSED 2026-04-18 (PMAT-CODE-MCP-CLIENT-001) | `crates/aprender-orchestrate/src/agent/code.rs:400-423` (`register_mcp_client_tools` guarded by `cfg(feature = "agents-mcp")`) |
+| No `.mcp.json` loader — today only TOML `AgentManifest.mcp_servers` is read | OPEN (P2 deferred, PMAT-CODE-MCP-JSON-LOADER-001) | `crates/aprender-orchestrate/src/agent/manifest.rs` (add JSON reader at `$CWD/.mcp.json` and `~/.config/apr/mcp.json`) |
 | Transport is stdio-only; SSE/WebSocket deferred to M5 (matches `aprender-mcp`'s own surface — intentional parity) | ACCEPTED | M5 |
 
 ### Direction 2 — `aprender-mcp` as MCP **producer** (PARTIAL — 9 of 58 commands exposed)
