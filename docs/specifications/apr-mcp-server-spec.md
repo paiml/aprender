@@ -1,8 +1,8 @@
 # APR-MCP-SERVER: Model Context Protocol Server Specification
 
-**Version**: 1.0.0-draft
-**Date**: 2026-04-17
-**Status**: DRAFT (pre-implementation)
+**Version**: 1.2.0
+**Date**: 2026-04-19 (M1–M3 shipped in v0.31.0; M4 in flight)
+**Status**: ACTIVE — `aprender-mcp` ships 9 tools over stdio JSON-RPC 2.0; FALSIFY-MCP-008 ENFORCED at 4 layers (schema+description × live+codegen). M4 open (PRs #886/#889/#890/#891/#892).
 **Contracts**:
 - `contracts/mcp-tool-schema-v1.yaml` — MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
 - `contracts/pmcp/mcp-protocol-sdk-v1.yaml` — `pmcp` crate contract (existing)
@@ -206,6 +206,9 @@ Acceptance gate for promoting to ACTIVE:
 
 ---
 
-**Owner**: TBD
+**Owner**: apr-cli team
 **Sponsor**: apr-cli team
-**Target**: v0.32.0 (M1–M2), v0.33.0 (M3–M4)
+**Delivery**:
+- **v0.31.0** (2026-04-19, tag 62893da32): M1–M3 SHIPPED — 9 tools (`apr.run`, `apr.serve`, `apr.qa`, `apr.trace`, `apr.tensors`, `apr.validate`, `apr.bench`, `apr.finetune`, and dispatch infrastructure), `build.rs` schema+description codegen from `contracts/apr-mcp-tool-schemas-v1.yaml`, `notifications/progress` for `apr.finetune`, `notifications/cancelled` SIGTERM→SIGKILL, JSON Schema Draft 7 meta-validation on every tool input schema in CI, MCP book chapter documenting `.mcp.json` client config.
+- **M4** (in flight): PRs #886/#889/#890/#891/#892 — additional tool coverage + conformance hardening.
+- **M5+** (planned): per spec v1.2.0 roadmap — plugin marketplace, pre/post-inference hooks.
