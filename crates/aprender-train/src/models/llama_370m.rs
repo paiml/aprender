@@ -578,4 +578,249 @@ mod tests {
              discharges — PROPOSED contracts cannot gate a ship",
         );
     }
+
+    // ========================================================================
+    // GATE-ARCH-370M-004 / AC-SHIP2-009 / FALSIFY-SHIP-019
+    // ========================================================================
+
+    /// Enumerate every APR tensor name the 370M architecture produces.
+    ///
+    /// Returns `(name, expected_shape)` pairs. Ordering mirrors the
+    /// canonical GGUF/APR dump order: embedding → per-layer tensors
+    /// (24 layers × 9 tensors) → final norm. `lm_head.weight` shares
+    /// storage with `model.embed_tokens.weight` per INV-ARCH-370M-004
+    /// (tied), but the layout contract records it as a separate entry
+    /// because the kernel path needs a named row-major [vocab, hidden]
+    /// reference at decode time.
+    fn enumerate_370m_apr_tensors() -> Vec<(String, Vec<usize>)> {
+        let h = Llama370MConfig::HIDDEN_DIM;
+        let v = Llama370MConfig::VOCAB_SIZE;
+        let i = Llama370MConfig::INTERMEDIATE_DIM;
+        let nh = Llama370MConfig::NUM_HEADS;
+        let nkv = Llama370MConfig::NUM_KV_HEADS;
+        let hd = Llama370MConfig::HEAD_DIM;
+        let layers = Llama370MConfig::NUM_LAYERS;
+
+        let mut out: Vec<(String, Vec<usize>)> = Vec::with_capacity(3 + 9 * layers);
+        out.push(("model.embed_tokens.weight".into(), vec![v, h]));
+        out.push(("lm_head.weight".into(), vec![v, h]));
+        for n in 0..layers {
+            out.push((
+                format!("model.layers.{n}.self_attn.q_proj.weight"),
+                vec![nh * hd, h],
+            ));
+            out.push((
+                format!("model.layers.{n}.self_attn.k_proj.weight"),
+                vec![nkv * hd, h],
+            ));
+            out.push((
+                format!("model.layers.{n}.self_attn.v_proj.weight"),
+                vec![nkv * hd, h],
+            ));
+            out.push((
+                format!("model.layers.{n}.self_attn.o_proj.weight"),
+                vec![h, nh * hd],
+            ));
+            out.push((
+                format!("model.layers.{n}.mlp.gate_proj.weight"),
+                vec![i, h],
+            ));
+            out.push((format!("model.layers.{n}.mlp.up_proj.weight"), vec![i, h]));
+            out.push((
+                format!("model.layers.{n}.mlp.down_proj.weight"),
+                vec![h, i],
+            ));
+            out.push((
+                format!("model.layers.{n}.input_layernorm.weight"),
+                vec![h],
+            ));
+            out.push((
+                format!("model.layers.{n}.post_attention_layernorm.weight"),
+                vec![h],
+            ));
+        }
+        out.push(("model.norm.weight".into(), vec![h]));
+        out
+    }
+
+    /// FALSIFY-SHIP-019 (AC-SHIP2-009) — algorithm-level PARTIAL proof
+    /// that every APR tensor the 370M architecture produces is covered
+    /// by `aprender::format::layout_contract` (the authoritative
+    /// row-major validator reused by every GGUF↔APR export site, per
+    /// spec §9 Risk #2 mitigation).
+    ///
+    /// This test proves three things without needing a trained model:
+    ///   1. **Coverage:** every 370M tensor name normalises to a
+    ///      contract entry — no unknown-tensor silent-skip gap.
+    ///   2. **Row-major ordering:** every 2D tensor's enumerated shape
+    ///      is `[out_dim, in_dim]` (the row-major APR layout mandated
+    ///      by INV-ARCH-370M-009 and by LAYOUT-001). Specifically
+    ///      `lm_head.weight` is `[vocab, hidden]`, never reversed —
+    ///      GH-202 root cause.
+    ///   3. **Critical-tensor enforcement:** `validate_apr_shape` on
+    ///      `lm_head.weight` accepts `[vocab, hidden]` AND rejects
+    ///      `[hidden, vocab]`, proving the validator actively catches
+    ///      the GH-202 class of layout bug.
+    ///
+    /// **Discharge:** `evidence_discharged_by` on GATE-ARCH-370M-004;
+    /// full discharge blocks on real trained 370M artifact (need the
+    /// GGUF export path to actually invoke `validate_apr_shape` on
+    /// real tensor bytes, which requires a trained `.apr`).
+    #[test]
+    fn falsify_ship_019_layout_contract_covers_every_370m_tensor() {
+        use aprender::format::layout_contract::LayoutContract;
+        let contract = LayoutContract::new();
+        let tensors = enumerate_370m_apr_tensors();
+
+        // Invariant 1: the enumerator produces exactly the expected number
+        // of APR entries for a 24-layer 370M Llama (1 embedding + 1 lm_head
+        // + 9 per-layer + 1 final norm).
+        assert_eq!(
+            tensors.len(),
+            3 + 9 * Llama370MConfig::NUM_LAYERS,
+            "370M enumerator produced wrong tensor count — scaffold drift",
+        );
+
+        // Invariant 2: coverage — every enumerated name resolves to a
+        // TensorContract entry. Pattern-normalisation collapses
+        // `model.layers.<n>.*` to `model.layers.{n}.*`.
+        for (name, _) in &tensors {
+            assert!(
+                contract.get_apr_contract(name).is_some(),
+                "370M tensor `{name}` has no layout_contract entry — \
+                 LAYOUT-001 coverage gap (every tensor in this model must \
+                 pattern-match a TensorContract or GGUF export layout will \
+                 silently skip it)",
+            );
+        }
+
+        // Invariant 3: row-major ordering — every 2D tensor enumerated
+        // above has shape `[out_dim, in_dim]`. The ordering is the whole
+        // point of LAYOUT-001 (see layout_contract.rs §Key Principles).
+        // Spot-check the pinned invariants rather than re-parsing the
+        // formula strings.
+        let lm = tensors
+            .iter()
+            .find(|(n, _)| n == "lm_head.weight")
+            .expect("lm_head must be enumerated");
+        assert_eq!(
+            lm.1,
+            vec![Llama370MConfig::VOCAB_SIZE, Llama370MConfig::HIDDEN_DIM],
+            "lm_head.weight must be row-major [vocab, hidden] — GH-202 \
+             root cause; reversed `[hidden, vocab]` produces [PAD] garbage",
+        );
+        let embed = tensors
+            .iter()
+            .find(|(n, _)| n == "model.embed_tokens.weight")
+            .expect("embed_tokens must be enumerated");
+        assert_eq!(
+            embed.1,
+            vec![Llama370MConfig::VOCAB_SIZE, Llama370MConfig::HIDDEN_DIM],
+            "embed_tokens.weight must be row-major [vocab, hidden]",
+        );
+        // GQA: K/V projections are 4× smaller on the out_dim axis vs Q/O.
+        let k0 = tensors
+            .iter()
+            .find(|(n, _)| n == "model.layers.0.self_attn.k_proj.weight")
+            .expect("k_proj layer 0 must be enumerated");
+        assert_eq!(
+            k0.1,
+            vec![
+                Llama370MConfig::NUM_KV_HEADS * Llama370MConfig::HEAD_DIM,
+                Llama370MConfig::HIDDEN_DIM,
+            ],
+            "k_proj must be row-major [kv_heads*head_dim, hidden] — GQA",
+        );
+        let q0 = tensors
+            .iter()
+            .find(|(n, _)| n == "model.layers.0.self_attn.q_proj.weight")
+            .expect("q_proj layer 0 must be enumerated");
+        assert_eq!(
+            q0.1,
+            vec![
+                Llama370MConfig::NUM_HEADS * Llama370MConfig::HEAD_DIM,
+                Llama370MConfig::HIDDEN_DIM,
+            ],
+            "q_proj must be row-major [heads*head_dim, hidden]",
+        );
+
+        // Invariant 4: `validate_apr_shape` actively enforces the critical
+        // tensor. Correct shape passes, reversed shape fails — the
+        // validator must catch the GH-202 class of bug, not just
+        // silently accept.
+        contract
+            .validate_apr_shape(
+                "lm_head.weight",
+                &[Llama370MConfig::VOCAB_SIZE, Llama370MConfig::HIDDEN_DIM],
+                Llama370MConfig::VOCAB_SIZE,
+                Llama370MConfig::HIDDEN_DIM,
+            )
+            .expect("correct [vocab, hidden] lm_head must validate");
+        let bad = contract.validate_apr_shape(
+            "lm_head.weight",
+            &[Llama370MConfig::HIDDEN_DIM, Llama370MConfig::VOCAB_SIZE],
+            Llama370MConfig::VOCAB_SIZE,
+            Llama370MConfig::HIDDEN_DIM,
+        );
+        assert!(
+            bad.is_err(),
+            "reversed [hidden, vocab] lm_head MUST be rejected by the \
+             layout contract — this is GH-202 regression protection",
+        );
+    }
+
+    /// GATE-ARCH-370M-004 wiring check: once FALSIFY-SHIP-019 has an
+    /// algorithm-level PARTIAL discharge, the sovereign contract YAML
+    /// MUST record `discharge_status: PARTIAL_ALGORITHM_LEVEL` +
+    /// `evidence_discharged_by` + `full_discharge_blocks_on` on
+    /// GATE-ARCH-370M-004. Any edit that drops those fields fails this
+    /// test before the artifact ships.
+    #[test]
+    fn falsify_ship_019_gate_arch_370m_004_has_partial_discharge_marker() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+        let gates = doc["gates"]
+            .as_sequence()
+            .expect("gates must be a sequence in sovereign contract");
+        let gate = gates
+            .iter()
+            .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-004"))
+            .expect("GATE-ARCH-370M-004 must exist in sovereign contract");
+
+        assert_eq!(
+            gate["falsification_id"].as_str(),
+            Some("FALSIFY-SHIP-019"),
+            "GATE-ARCH-370M-004 must bind FALSIFY-SHIP-019",
+        );
+        assert_eq!(
+            gate["binds_to"].as_str(),
+            Some("AC-SHIP2-009"),
+            "GATE-ARCH-370M-004 must bind AC-SHIP2-009",
+        );
+        assert_eq!(
+            gate["discharge_status"].as_str(),
+            Some("PARTIAL_ALGORITHM_LEVEL"),
+            "GATE-ARCH-370M-004 must advertise PARTIAL_ALGORITHM_LEVEL \
+             (full discharge blocks on real trained 370M .apr)",
+        );
+        let evidence = gate["evidence_discharged_by"]
+            .as_sequence()
+            .expect("GATE-ARCH-370M-004 must have evidence_discharged_by");
+        assert!(
+            !evidence.is_empty(),
+            "GATE-ARCH-370M-004 evidence_discharged_by must list \
+             at least one test function or artifact",
+        );
+        assert!(
+            gate["full_discharge_blocks_on"].as_str().is_some(),
+            "PARTIAL gate must document full_discharge_blocks_on",
+        );
+        assert_eq!(
+            gate["ship_blocking"].as_bool(),
+            Some(true),
+            "GATE-ARCH-370M-004 must advertise ship_blocking:true — the \
+             gate's `verdict:pass` alone is insufficient green while \
+             discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
 }
