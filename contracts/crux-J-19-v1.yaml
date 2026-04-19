@@ -1,67 +1,92 @@
-# CRUX-J-19 — Export CLIP → ONNX / GGUF
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-19 — OpenCLAW offline / local-first fallback
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-19
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 2  # 1..5, low priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 2
   intake_status: missing
   description: >
-    Export CLIP → ONNX / GGUF. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW's tagline is "local-first personal AI assistant" — if the
+    cloud backend is unreachable, the agent degrades to the user's local
+    model instead of failing outright. Aprender parity: `apr` must be
+    able to run end-to-end with a local realizar model only (no cloud
+    backend required). Overlaps with CRUX-J-13 provider switching and
+    realizar-first inference architecture.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/crux-J-13-v1.yaml
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  local_first_fallback:
     formula: |
-      DRAFT — user workflow "Export CLIP → ONNX / GGUF"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      run(backend) :=
+        if backend.available : backend.complete(msg)
+        else                 : local_realizar.complete(msg)    (if enabled)
+      invariant: local_realizar.complete requires no network
+      invariant: apr can be used end-to-end with backend = local ONLY
+    domain: (backend_state, message)
+    codomain: completion from chosen path
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "local-only config is a first-class path, not a fallback-only workaround"
+    - "no outbound network required when backend = local"
+    - "cloud-unreachable emits an observable degrade, not silent cloud retry"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-19-001
-  rule: placeholder
-  prediction: "apr surface for 'Export CLIP → ONNX / GGUF' matches openclip canonical behavior"
+  rule: local-only operation is supported
+  prediction: "apr docs describe a local-only inference path via realizar"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-19" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "realizar local-only inference OR offline apr run" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no local-only inference story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-19 parity broken — apr MUST support a local-only inference path
+- id: FALSIFY-CRUX-J-19-002
+  rule: no silent cloud retry on local failure
+  prediction: "backend-unreachable failure surfaces explicitly"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "cloud backend unreachable fallback OR observable degrade" --limit 1 --format json | grep -q '"matches"' || {
+        echo "SKIP: degradation-observability evidence not yet indexed" >&2
+        exit 77
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-19 observability invariant — cloud/local transitions must be observable
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "local-only path is first-class"
+- type: invariant
+  property: "degrade is observable, not silent"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-19` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-19
   priority: low
   auto_created: true

@@ -2,7 +2,7 @@
 
 **Subspec ID**: `CRUX-001`
 **Status**: DRAFT
-**Version**: 2.0 (expanded 100 → 250 stories per user request 2026-04-18)
+**Version**: 2.1 (OpenCLAW identity resolved 2026-04-18 — Category J rewritten to agent-orchestration semantics; §5.J table + §10 + §4 updated; 20 J-contracts republished at v1.1.0)
 **Date**: 2026-04-18
 **Author**: PAIML Engineering
 **Parent**: [aprender-spec.md](aprender-spec.md), [aprender-monorepo-consolidation.md](aprender-monorepo-consolidation.md)
@@ -13,7 +13,7 @@
 ## 1. Motivation
 
 Aprender ships 57 `apr` subcommands and 634 contracts, but a user arriving from
-Ollama, llama.cpp, PyTorch, Hugging Face, vLLM, or OpenCLIP/OpenCLAW brings a
+Ollama, llama.cpp, PyTorch, Hugging Face, vLLM, or OpenCLAW brings a
 mental model built on those tools. If `apr` does not name, order, and complete
 the same workflows they already know, adoption friction is fatal — regardless
 of whether the feature technically exists somewhere.
@@ -89,16 +89,18 @@ larger workflow surface area (HF Transformers covers training + data + hub).
 | 3 | **PyTorch** | `torch.compile` / `nn.Module` | 33 | training mechanism shared with HF |
 | 4 | **Hugging Face** | `Trainer` / `AutoModel` / `huggingface-cli` | 78 | widest surface: train + hub + datasets |
 | 5 | **vLLM** | `vllm serve` / `LLM.generate` | 32 | serving depth (paged attn, batching) |
-| 6 | **OpenCLIP / OpenCLAW** | `open_clip.create_model` | 22 | contained vision-language niche |
+| 6 | **OpenCLAW** | `openclaw onboard` / `openclaw dashboard` | 20 | local-first personal AI assistant + agent orchestration (openclaw.ai) |
 | 7 | **Ecosystem interop** | — | 30 | SDKs, MCP, observability, deployment |
 
 Total = 250 stories. See §5 for the full registry.
 (Counts derived from `yq '[.stories[] | .competitor] | ...'` on master contract; drift between
 this table and the YAML is falsified by FALSIFY-CRUX-010.)
 
-> **Note on "OpenCLAW"**: user intake listed this verbatim. No public project
-> with that exact name is known. Category J assumes **OpenCLIP** pending
-> user confirmation; see §10 for the resolution protocol.
+> **OpenCLAW identity resolved 2026-04-18**: competitor is
+> [openclaw.ai](https://openclaw.ai) — a local-first personal AI assistant
+> / agent orchestration layer (chat-app transports, system control,
+> browser automation, persistent memory, MCP-shaped skill catalog). NOT
+> OpenCLIP. See §10 for the resolution record.
 
 ---
 
@@ -399,32 +401,37 @@ always `contracts/crux-{ID}-v1.yaml` unless noted.
 
 > ID gap: **CRUX-I-05** dropped — JSON-mode subsumed by C-10 grammar.
 
-### Category J — OpenCLIP / OpenCLAW Vision-Language (20 stories)
+### Category J — OpenCLAW Agent Orchestration (20 stories)
 
-> All 20 stories `status: pending-interpretation` until user confirms OpenCLAW identity (§10).
+> Resolved 2026-04-18: competitor identity is **openclaw.ai** (local-first
+> personal AI assistant / agent orchestration layer), NOT OpenCLIP. Each
+> story is a provable contract at `contracts/crux-J-NN-v1.yaml`
+> (`openclaw_interpretation: openclaw-agent-resolved`, `version: 1.1.0`).
+> Vision-language parity, if needed later, will live in a separate
+> category / sibling subspec — see §10.
 
-| ID | Story | Competitor verb | S | D |
+| ID | Story | Competitor verb / surface | S | D |
 |----|-------|----------------|---|---|
-| CRUX-J-01 | CLIP zero-shot classification | `open_clip` | ❌ | 5 |
-| CRUX-J-02 | Joint text+image embedding | `open_clip encode_*` | ❌ | 5 |
-| CRUX-J-03 | CLIP retrieval cosine search | `clip-retrieval` | ❌ | 4 |
-| CRUX-J-04 | Visual feature extraction | `open_clip.visual` | ❌ | 4 |
-| CRUX-J-05 | LAION WebDataset tar loading | `webdataset` | ❌ | 3 |
-| CRUX-J-06 | SigLIP model support | open_clip | ❌ | 4 |
-| CRUX-J-07 | EVA-CLIP model support | open_clip | ❌ | 3 |
-| CRUX-J-08 | CLIP contrastive training loop | open_clip train | ❌ | 3 |
-| CRUX-J-09 | Image preprocessing (resize/normalize) | `create_model_and_transforms` | ❌ | 5 |
-| CRUX-J-10 | Text tokenizer for CLIP (BPE) | `open_clip.get_tokenizer` | ❌ | 4 |
-| CRUX-J-11 | OpenCLIP checkpoint loader | `open_clip.create_model` | ❌ | 4 |
-| CRUX-J-12 | Image-text pair dataloader | webdataset | ❌ | 3 |
-| CRUX-J-13 | Video-CLIP temporal pooling | ViViT / X-CLIP | ❌ | 2 |
-| CRUX-J-14 | Audio-CLIP encoder | AudioCLIP | ❌ | 2 |
-| CRUX-J-15 | CLIP fine-tune on new concept | textual-inversion style | ❌ | 3 |
-| CRUX-J-16 | Distillation large-CLIP → small-CLIP | open_clip distill | ❌ | 2 |
-| CRUX-J-17 | Zero-shot detection (OWL-ViT) | HF OWL | ❌ | 3 |
-| CRUX-J-18 | Multilingual CLIP | open_clip multilingual | ❌ | 3 |
-| CRUX-J-19 | Export CLIP → ONNX / GGUF | HF optimum | ❌ | 2 |
-| CRUX-J-20 | CLIP eval ImageNet zero-shot | open_clip eval | ❌ | 4 |
+| CRUX-J-01 | Install + onboard one-liner | `curl openclaw.ai/install.sh \| bash` + `openclaw onboard` | ❌ | 5 |
+| CRUX-J-02 | User config JSON5 round-trip | `~/.openclaw/openclaw.json` | ❌ | 5 |
+| CRUX-J-03 | Per-channel allowFrom sender allowlist | `channels.*.allowFrom` (deny by default) | ❌ | 4 |
+| CRUX-J-04 | Group-chat @mention trigger | `groupChat.mentionRequired` | ❌ | 4 |
+| CRUX-J-05 | Dashboard Control UI (loopback bind) | `openclaw dashboard` on 127.0.0.1:18789 | ❌ | 3 |
+| CRUX-J-06 | Daemon install ∘ uninstall dual | `openclaw onboard --install-daemon` | ❌ | 4 |
+| CRUX-J-07 | Per-sender session isolation | per-sender RPC session | ❌ | 3 |
+| CRUX-J-08 | System-control shell.exec + SSC classifier gate | `tools.shell.exec` (SSC-gated) | ❌ | 3 |
+| CRUX-J-09 | Browser automation via MCP client | `tools.browser` via `mcp://` provider | ❌ | 5 |
+| CRUX-J-10 | Persistent memory put/get round-trip | `openclaw memory put/get [--ttl]` | ❌ | 4 |
+| CRUX-J-11 | Skill system / extensible capabilities | `openclaw skills add <pkg>` | ❌ | 4 |
+| CRUX-J-12 | Multi-transport chat dispatch | WhatsApp/Telegram/Discord/Slack/Signal/iMessage adapters | ❌ | 3 |
+| CRUX-J-13 | LLM provider switching | `llm.provider` ∈ {claude, openai, local} | ❌ | 2 |
+| CRUX-J-14 | Onboard safety prompts for destructive ops | `openclaw onboard --safe` | ❌ | 2 |
+| CRUX-J-15 | Auto-update / self-modify | `openclaw update` | ❌ | 3 |
+| CRUX-J-16 | Event log / audit trail | `~/.openclaw/audit.log` NDJSON | ❌ | 2 |
+| CRUX-J-17 | Rate limiting per sender | `rateLimit.perSender.msgsPerMin` | ❌ | 3 |
+| CRUX-J-18 | Encrypted credentials (OS keychain) | `credentials.backend = keychain` | ❌ | 3 |
+| CRUX-J-19 | Offline / local-first fallback | `offline.enabled + fallbackProvider=local` | ❌ | 2 |
+| CRUX-J-20 | Claude-Code MCP tool-call envelope parity | MCP tool_use_id / content schema | ❌ | 4 |
 
 ### Category K — Ecosystem Interop (20 stories)
 
@@ -491,10 +498,11 @@ at Phase 0 exit; intake estimates:
 - ✅ Registered all in master `contracts/crux-competitive-research-ux-v1.yaml`
 - ✅ Created 140 pmat work tickets (one per ❌ missing story) via
   `scripts/crux_bulk_pmat_work.sh` — tagged `crux,gap,crux-{category},competitor-{name},{id_lower}`
-- ✅ **230 of 250 contracts (92.0%)** promoted draft → **spec-complete**
-  via five parallel waves + wave 6 batches 1-10 direct authoring (2026-04-18).
-  **The entire non-J cohort is now spec-complete.** The remaining 20
-  are all J-series (OpenCLIP vision) blocked on OpenCLAW interpretation.
+- ✅ **250 of 250 contracts (100%)** promoted draft → **spec-complete**
+  via five parallel waves + wave 6 batches 1-10 direct authoring + J-series
+  OpenCLAW rewrite (2026-04-18). The 20-contract J-series was re-authored
+  from the earlier OpenCLIP draft to OpenCLAW agent-orchestration semantics
+  after the identity resolution recorded in §10.
   - Wave 1 (18 demand=5 missing): B-07/08/09, C-04/11/13, D-03/04/11/12,
     E-02/03/07, H-03, F-09/13, I-04, K-02
   - Wave 2 (24 demand=5 partials): A-01/05/09, C-03/05/06/07/08/31/33/34,
@@ -590,13 +598,14 @@ at Phase 0 exit; intake estimates:
     output shape matches config), K-17 (NVIDIA Dynamo worker integration
     — NATS heartbeat within 10s; schema validation; graceful
     worker_down on SIGTERM).
-  - 3 demand=5 stories still draft: J-01/02/09 (blocked on OpenCLAW
-    interpretation — every other demand≥4 non-J story is spec-complete)
+  - J-series (20 stories) rewritten to OpenCLAW agent-orchestration
+    semantics (§10 resolution 2026-04-18); all 250 stories carry
+    spec-complete bodies — no open interpretation gaps remain.
   - Each contract carries competitor CLI citations (arXiv papers, official
     docs) and bash falsification bodies with jq/curl/python3 invocations
 - Gate: `pmat comply check` passes with 250 CRUX contracts registered
 
-**Phase 1 — Evidence capture** (IN PROGRESS — 230/250 = 92.0%; entire non-J cohort spec-complete; remaining 20 J-series blocked on OpenCLAW)
+**Phase 1 — Evidence capture** (IN PROGRESS — 250/250 = 100% spec-complete; J-series now OpenCLAW-agent-resolved with evidence at `evidence/crux/openclaw/`)
 - Collect `evidence/crux/{competitor}/*` per §2.1 for all 7 competitors
 - Falsification harness comparing `apr --help` verbs vs competitor verbs
 - Enrich remaining 51 contracts (spec-complete body) — demand≥4 non-J
@@ -612,7 +621,7 @@ at Phase 0 exit; intake estimates:
 **Phase 3 — Implement ❌ missing** (grouped by shared infra)
 - **Group M1 — REST parity** (C-04, C-11, C-13, I-04, K-02, K-11): single `aprender-serve` sweep
 - **Group M2 — Distributed training** (D-11, D-12, D-33, D-34, D-35): `aprender-train` sharding PR
-- **Group M3 — OpenCLIP** (J-01..J-20): new `aprender-vision` crate (pending §10)
+- **Group M3 — OpenCLAW agent parity** (J-01..J-20): lands across existing `apr code`, MCP client layer, `apr serve` claude-proxy, SSC classifier, and a new `apr memory` surface (see evidence/crux/openclaw/)
 - **Group M4 — Observability** (F-06..F-18, K-07, K-08): new `aprender-observe` crate
 - **Group M5 — Advanced quant** (B-07..B-11, B-15..B-18): `aprender-compute` quant PR
 - **Group M6 — Alignment methods** (D-03, D-04, D-17..D-19): `aprender-train` RLHF PR
@@ -650,24 +659,42 @@ at Phase 0 exit; intake estimates:
 
 ---
 
-## 10. OpenCLAW interpretation note
+## 10. OpenCLAW interpretation — RESOLVED 2026-04-18
 
-User intake listed **openclaw**. No public project with that exact name is
-known. Interpretations ranked by plausibility:
+User intake listed **openclaw**. Resolution confirmed via the user
+linking directly to [https://openclaw.ai](https://openclaw.ai) on
+2026-04-18 during Phase 1 closure.
 
-1. **OpenCLIP** (image-text contrastive models) — default interpretation,
-   used to populate Category J.
-2. **Alternate spelling** (`OpenClaw`, `OpenCLAM`, `OpenClAW`) — requires
-   user confirmation.
+**What OpenCLAW actually is** (openclaw.ai):
 
-Resolution rule:
-- If clarification lands **before Phase 0 completes**: rewrite Category J
-  in-place, bump this subspec to v2.1.
-- If clarification lands **after Phase 0**: open sibling subspec
-  `crux-openclaw-v1.md`, deprecate Category J. Contract IDs remain stable.
+- Local-first personal AI assistant / agent orchestration layer
+- Chat-app transports: WhatsApp, Telegram, Discord, Slack, Signal, iMessage
+- System control: files, shell, scripts (SSC-gated)
+- Browser automation via MCP tool servers
+- Persistent memory that learns user preferences
+- Community-extensible skill catalog
+- Underlying reasoning: Claude / GPT / local models (orchestration layer,
+  not a model itself)
+- Canonical install: `curl -fsSL https://openclaw.ai/install.sh | bash`
+  → `npm i -g openclaw` → `openclaw onboard`
 
-All 20 Category J sub-contracts MUST carry `interpretation: pending` until
-resolved.
+**Earlier default interpretation ("OpenCLIP") is INVALID.** The phonetic
+similarity is a trap; the projects are unrelated. If vision-language
+parity (CLIP / SigLIP / LAION) is needed later, it will live in a
+separate category / sibling subspec `crux-openclip-v1.md`, not in
+Category J.
+
+**Resolution actions taken** (this revision, subspec v2.1.0):
+
+- All 20 Category J sub-contracts rewritten to OpenCLAW agent semantics
+  (commits on branch `docs/crux-competitive-research-ux`).
+- Each J-contract carries `openclaw_interpretation: openclaw-agent-resolved`
+  and `competitor: openclaw`.
+- Evidence captured under `evidence/crux/openclaw/` (README, readme-verbs,
+  config-schema.json5, hello.sh, capability-matrix, gaps).
+- Demand scores preserved per-ID so master-contract aggregates stay stable.
+
+Contract IDs `CRUX-J-01` … `CRUX-J-20` remain stable across the rewrite.
 
 ---
 

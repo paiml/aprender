@@ -1,67 +1,92 @@
-# CRUX-J-03 — CLIP retrieval cosine search
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-03 — OpenCLAW per-channel allowFrom sender allowlist
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-03
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 4  # 1..5, high priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 4
   intake_status: missing
   description: >
-    CLIP retrieval cosine search. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW treats every inbound channel (WhatsApp / Telegram / Discord /
+    Slack / Signal / iMessage) as hostile-by-default and requires an explicit
+    `allowFrom: [...]` allowlist per channel before the agent will act on
+    sender messages. Aprender parity: any `apr code`-adjacent inbound
+    surface MUST ship deny-by-default with a documented allowlist
+    mechanism. Overlaps with apr hooks allowlist (PMAT-CODE-HOOKS-001).
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/config-schema.json5
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  allowfrom_gate:
     formula: |
-      DRAFT — user workflow "CLIP retrieval cosine search"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      accept(channel, sender, msg) :=
+        (sender ∈ channels[channel].allowFrom) AND channel.enabled
+      default:  channels[*].allowFrom = ∅   (deny by default)
+      reject_emits_audit_line: ∀ rejected msg → audit.log has entry
+    domain: (channel_id, sender_id, msg)
+    codomain: "{accept, reject} with audit trail"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "empty allowFrom rejects every sender"
+    - "unlisted channel rejects every sender"
+    - "rejection is observable via audit trail (never silent)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-03-001
-  rule: placeholder
-  prediction: "apr surface for 'CLIP retrieval cosine search' matches openclip canonical behavior"
+  rule: deny-by-default allowlist concept exists in apr
+  prediction: "apr docs/code reference an allowlist or deny-by-default gate for inbound messages"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-03" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "allowlist OR allowFrom OR deny-by-default inbound" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no deny-by-default inbound gate documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-03 parity broken — apr MUST document a deny-by-default inbound allowlist
+- id: FALSIFY-CRUX-J-03-002
+  rule: hooks allowlist is the apr-side analogue
+  prediction: "hooks configuration expresses per-event allowlist semantics"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "hooks allow OR hook command allowlist" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: apr hooks do not express an allowlist" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-03 hooks invariant — apr hooks must express per-event allowlist semantics
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "deny-by-default on empty allowFrom"
+- type: invariant
+  property: "rejection produces audit trail"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-03` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-03
   priority: high
   auto_created: true

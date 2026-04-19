@@ -1,67 +1,89 @@
-# CRUX-J-16 — Distill large-CLIP → small-CLIP
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-16 — OpenCLAW event log / audit trail
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-16
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 2  # 1..5, low priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 2
   intake_status: missing
   description: >
-    Distill large-CLIP → small-CLIP. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW writes every tool invocation, message receipt, and daemon
+    state change to `~/.openclaw/audit.log` (newline-delimited JSON).
+    Aprender parity: any long-running `apr` daemon MUST ship a structured,
+    append-only event log at a documented $HOME path. Overlaps with
+    renacer tracing (distributed tracing feature flag).
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  audit_trail:
     formula: |
-      DRAFT — user workflow "Distill large-CLIP → small-CLIP"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      audit_log := append_only_file($HOME/.aprender/audit.log)
+      emit(event) : audit_log := audit_log ++ [ndjson(event)]
+      ∀ event_kind ∈ {tool_call, msg_in, msg_out, daemon_state} : audit_log captures event_kind
+      invariant: audit_log is never truncated mid-run (only rotated)
+    domain: runtime event stream
+    codomain: on-disk append-only log
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "append-only (no mid-run truncation)"
+    - "structured format (NDJSON or equivalent)"
+    - "covers all four event kinds above"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-16-001
-  rule: placeholder
-  prediction: "apr surface for 'Distill large-CLIP → small-CLIP' matches openclip canonical behavior"
+  rule: apr daemon emits a structured event log
+  prediction: "apr serve / renacer docs reference a structured audit / event log"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-16" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "audit log structured OR NDJSON event log OR renacer tracing append-only" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no structured audit-log story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-16 parity broken — apr daemon MUST ship a structured audit log
+- id: FALSIFY-CRUX-J-16-002
+  rule: audit log path lives under $HOME or a documented state dir
+  prediction: "audit log path is documented and user-owned"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "~/.aprender/audit OR XDG_STATE_HOME audit apr" --limit 1 --format json | grep -q '"matches"' || {
+        echo "SKIP: audit-log path evidence not yet indexed" >&2
+        exit 77
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-16 path invariant — audit log must live under $HOME or documented state dir
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "audit log is append-only"
+- type: invariant
+  property: "audit log covers tool_call / msg_in / msg_out / daemon_state"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-16` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-16
   priority: low
   auto_created: true

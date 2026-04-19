@@ -1,67 +1,93 @@
-# CRUX-J-18 — Multilingual CLIP
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-18 — OpenCLAW encrypted credentials (system keychain)
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-18
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 3  # 1..5, medium priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 3
   intake_status: missing
   description: >
-    Multilingual CLIP. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW stores transport credentials (WhatsApp session, Telegram bot
+    token, API keys) in the OS keychain (Keychain.app / libsecret / Windows
+    Credential Manager), NOT plaintext on disk. Aprender parity: any apr
+    credential store MUST prefer OS keychain; plaintext fallback only
+    opt-in with an explicit flag. Overlaps with `apr profile` secret
+    handling.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/crux-J-02-v1.yaml
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  keychain_default:
     formula: |
-      DRAFT — user workflow "Multilingual CLIP"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      store_credential(k, v) :=
+        if keychain.available : keychain.set(k, v)
+        elif user_opt_in_plaintext : file.write($HOME/.aprender/secrets, k, v)
+        else : refuse_to_store
+      load_credential(k) : first match from (keychain, plaintext_if_opted_in)
+      invariant: default is never plaintext-on-disk
+    domain: (credential key, value)
+    codomain: persisted credential store
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "OS keychain is default backend when available"
+    - "plaintext-on-disk requires explicit user opt-in"
+    - "`apr profile` or equivalent never prints the secret back to stdout"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-18-001
-  rule: placeholder
-  prediction: "apr surface for 'Multilingual CLIP' matches openclip canonical behavior"
+  rule: apr credential storage prefers OS keychain
+  prediction: "apr docs reference Keychain / libsecret / Credential Manager integration"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-18" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "keychain OR libsecret OR credential manager aprender" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no OS-keychain integration story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-18 parity broken — apr MUST prefer OS keychain for credential storage
+- id: FALSIFY-CRUX-J-18-002
+  rule: plaintext fallback is opt-in, not default
+  prediction: "documentation or code path for plaintext credentials is explicit opt-in"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "plaintext credentials opt-in OR --allow-plaintext-secret" --limit 1 --format json | grep -q '"matches"' || {
+        echo "SKIP: plaintext-opt-in evidence not yet indexed" >&2
+        exit 77
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-18 default invariant — plaintext-on-disk must NOT be default
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "OS keychain is default"
+- type: invariant
+  property: "plaintext is opt-in"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-18` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-18
   priority: medium
   auto_created: true

@@ -1,67 +1,95 @@
-# CRUX-J-06 — SigLIP model support
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-06 — OpenCLAW daemon install ∘ uninstall dual
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-06
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 4  # 1..5, high priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 4
   intake_status: missing
   description: >
-    SigLIP model support. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW installs a system daemon via `openclaw onboard --install-daemon`
+    (launchd / systemd / SCM depending on OS), and the inverse
+    `--uninstall-daemon` removes it cleanly. Aprender parity: any long-lived
+    `apr serve` daemon story MUST ship install∘uninstall as a dual — no
+    orphan service units after uninstall. Overlaps with apr-serve MCP /
+    anthropic proxy daemonization.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  install_uninstall_dual:
     formula: |
-      DRAFT — user workflow "SigLIP model support"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      uninstall ∘ install = id          (idempotent inverse)
+      install: writes unit file + registers with service manager
+      uninstall: removes unit file + deregisters, leaves no orphan
+      post_uninstall: service_manager.list() excludes "apr" entirely
+    domain: service manager state
+    codomain: service manager state
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "uninstall is a true inverse of install"
+    - "service-manager list is clean post-uninstall (no orphans)"
+    - "re-install after uninstall does not require manual cleanup"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-06-001
-  rule: placeholder
-  prediction: "apr surface for 'SigLIP model support' matches openclip canonical behavior"
+  rule: apr exposes service install + uninstall verbs
+  prediction: "apr --help surfaces service/daemon verbs (install, uninstall, status)"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-06" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    if apr --help 2>&1 | grep -qE '(service|daemon|install-daemon|systemd|launchd)'; then
+      :
+    else
+      if command -v pmat >/dev/null 2>&1; then
+        pmat query "apr service install OR systemd unit OR launchd plist" --limit 1 --format json | grep -q '"matches"' || {
+          echo "FAIL: no daemon install/uninstall surface" >&2
+          exit 1
+        }
+      else
+        echo "SKIP: pmat not available" >&2; exit 77
+      fi
+    fi
+  if_fails: CRUX-J-06 parity broken — apr MUST expose daemon install+uninstall verbs
+- id: FALSIFY-CRUX-J-06-002
+  rule: uninstall leaves no orphan units
+  prediction: "documentation or tests assert post-uninstall cleanup"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "uninstall service cleanup OR removes unit file" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no documented cleanup invariant" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-06 dual invariant — uninstall must leave no orphan service units
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "uninstall ∘ install = id on service manager state"
+- type: invariant
+  property: "no orphan service units post-uninstall"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-06` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-06
   priority: high
   auto_created: true

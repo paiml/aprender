@@ -93,11 +93,18 @@ evidence_sources:
     bug_histogram: "evidence/crux/vllm/bug-histogram.json"
     routes: "evidence/crux/vllm/routes.yaml"
     canonical_flow: "evidence/crux/vllm/hello.py"
+  openclaw:
+    readme_verbs: "evidence/crux/openclaw/readme-verbs.txt"
+    config_schema: "evidence/crux/openclaw/config-schema.json5"
+    canonical_flow: "evidence/crux/openclaw/hello.sh"
+    capability_matrix: "evidence/crux/openclaw/capability-matrix.yaml"
+    gaps: "evidence/crux/openclaw/gaps.md"
+    interpretation_note: "Resolved 2026-04-18: OpenCLAW is openclaw.ai (local-first personal AI assistant / agent orchestration). NOT OpenCLIP. Category J rewritten accordingly."
   openclip:
     readme_verbs: "evidence/crux/openclip/readme-verbs.txt"
     top_issues: "evidence/crux/openclip/top-issues.json"
     canonical_flow: "evidence/crux/openclip/hello.py"
-    interpretation_note: "openclaw in intake; interpreted as OpenCLIP pending user confirmation"
+    interpretation_note: "Vision-language stories E-25 and H-17 reference OpenCLIP directly. Category J no longer points here — see §10 in subspec."
 
 # ─────────────────────────────────────────────────────────────
 # Equations / invariants
@@ -138,11 +145,14 @@ equations:
   openclaw_interpretation_discipline:
     formula: |
       ∀ s in Category J:
-        s.interpretation == pending UNTIL user confirms OpenCLAW identity.
+        s.interpretation == openclaw-agent-resolved (2026-04-18, openclaw.ai)
+        AND s.competitor == openclaw
     domain: Category J (CRUX-J-01..CRUX-J-20)
     codomain: bool
     invariants:
-      - "Phase 0 completion requires Category J interpretation resolved"
+      - "Every Category J story carries interpretation == openclaw-agent-resolved"
+      - "Every Category J story carries competitor == openclaw"
+      - "Vision-language (OpenCLIP / SigLIP / LAION) is a separate category / sibling subspec, not Category J"
 
 # ─────────────────────────────────────────────────────────────
 # Story registry (250 entries)
@@ -380,27 +390,27 @@ stories:
   - { id: CRUX-I-15, title: "Agent memory plugin interface",       competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-I-15-v1.yaml }
   - { id: CRUX-I-16, title: "Guardrails output filter pipeline",   competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-I-16-v1.yaml }
 
-  # Category J — OpenCLIP / OpenCLAW (20) — interpretation pending
-  - { id: CRUX-J-01, title: "CLIP zero-shot classification",       competitor: openclip, demand_score: 5, status: missing, contract: crux-J-01-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-02, title: "Joint text+image embedding",          competitor: openclip, demand_score: 5, status: missing, contract: crux-J-02-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-03, title: "CLIP retrieval cosine search",        competitor: openclip, demand_score: 4, status: missing, contract: crux-J-03-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-04, title: "Visual feature extraction",           competitor: openclip, demand_score: 4, status: missing, contract: crux-J-04-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-05, title: "LAION WebDataset tar loading",        competitor: openclip, demand_score: 3, status: missing, contract: crux-J-05-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-06, title: "SigLIP model support",                competitor: openclip, demand_score: 4, status: missing, contract: crux-J-06-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-07, title: "EVA-CLIP model support",              competitor: openclip, demand_score: 3, status: missing, contract: crux-J-07-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-08, title: "CLIP contrastive training loop",      competitor: openclip, demand_score: 3, status: missing, contract: crux-J-08-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-09, title: "Image preprocessing resize/normalize", competitor: openclip, demand_score: 5, status: missing, contract: crux-J-09-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-10, title: "Text tokenizer for CLIP BPE",         competitor: openclip, demand_score: 4, status: missing, contract: crux-J-10-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-11, title: "OpenCLIP checkpoint loader",          competitor: openclip, demand_score: 4, status: missing, contract: crux-J-11-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-12, title: "Image-text pair dataloader",          competitor: openclip, demand_score: 3, status: missing, contract: crux-J-12-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-13, title: "Video-CLIP temporal pooling",         competitor: openclip, demand_score: 2, status: missing, contract: crux-J-13-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-14, title: "Audio-CLIP encoder",                  competitor: openclip, demand_score: 2, status: missing, contract: crux-J-14-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-15, title: "CLIP fine-tune on new concept",       competitor: openclip, demand_score: 3, status: missing, contract: crux-J-15-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-16, title: "Distill large-CLIP → small-CLIP",     competitor: openclip, demand_score: 2, status: missing, contract: crux-J-16-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-17, title: "Zero-shot detection OWL-ViT",         competitor: openclip, demand_score: 3, status: missing, contract: crux-J-17-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-18, title: "Multilingual CLIP",                   competitor: openclip, demand_score: 3, status: missing, contract: crux-J-18-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-19, title: "Export CLIP → ONNX / GGUF",           competitor: openclip, demand_score: 2, status: missing, contract: crux-J-19-v1.yaml, interpretation: pending }
-  - { id: CRUX-J-20, title: "CLIP eval ImageNet zero-shot",        competitor: openclip, demand_score: 4, status: missing, contract: crux-J-20-v1.yaml, interpretation: pending }
+  # Category J — OpenCLAW Agent Orchestration (20) — identity resolved 2026-04-18 (openclaw.ai)
+  - { id: CRUX-J-01, title: "OpenCLAW install + onboard one-liner",          competitor: openclaw, demand_score: 5, status: missing, contract: crux-J-01-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-02, title: "User config JSON5 round-trip",                  competitor: openclaw, demand_score: 5, status: missing, contract: crux-J-02-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-03, title: "Per-channel allowFrom sender allowlist",        competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-03-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-04, title: "Group-chat @mention trigger",                   competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-04-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-05, title: "Dashboard Control UI loopback bind",            competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-05-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-06, title: "Daemon install ∘ uninstall dual",               competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-06-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-07, title: "Per-sender session isolation",                  competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-07-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-08, title: "System-control shell.exec + SSC classifier gate", competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-08-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-09, title: "Browser automation via MCP client",             competitor: openclaw, demand_score: 5, status: missing, contract: crux-J-09-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-10, title: "Persistent memory put/get round-trip",          competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-10-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-11, title: "Skill system / extensible capabilities",        competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-11-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-12, title: "Multi-transport chat dispatch",                 competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-12-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-13, title: "LLM provider switching",                        competitor: openclaw, demand_score: 2, status: missing, contract: crux-J-13-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-14, title: "Onboard safety prompts for destructive ops",    competitor: openclaw, demand_score: 2, status: missing, contract: crux-J-14-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-15, title: "Auto-update / self-modify",                     competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-15-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-16, title: "Event log / audit trail",                       competitor: openclaw, demand_score: 2, status: missing, contract: crux-J-16-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-17, title: "Rate limiting per sender",                      competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-17-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-18, title: "Encrypted credentials (OS keychain)",           competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-18-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-19, title: "Offline / local-first fallback",                competitor: openclaw, demand_score: 2, status: missing, contract: crux-J-19-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-20, title: "Claude-Code MCP tool-call envelope parity",     competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-20-v1.yaml, interpretation: openclaw-agent-resolved }
 
   # Category K — Ecosystem Interop (20; gap at K-06)
   - { id: CRUX-K-01, title: "OpenAI Python SDK test suite",        competitor: ecosystem,   demand_score: 5, status: partial,   contract: crux-K-01-v1.yaml }
@@ -618,7 +628,7 @@ phases:
     groups:
       M1_rest_parity:           [CRUX-C-04, CRUX-C-11, CRUX-C-13, CRUX-I-04, CRUX-K-02, CRUX-K-11]
       M2_distributed_training:  [CRUX-D-11, CRUX-D-12, CRUX-D-33, CRUX-D-34, CRUX-D-35]
-      M3_openclip_vision:       [CRUX-J-01, CRUX-J-02, CRUX-J-03, CRUX-J-04, CRUX-J-05, CRUX-J-06, CRUX-J-07, CRUX-J-08, CRUX-J-09, CRUX-J-10, CRUX-J-11, CRUX-J-12, CRUX-J-13, CRUX-J-14, CRUX-J-15, CRUX-J-16, CRUX-J-17, CRUX-J-18, CRUX-J-19, CRUX-J-20]
+      M3_openclaw_agent:        [CRUX-J-01, CRUX-J-02, CRUX-J-03, CRUX-J-04, CRUX-J-05, CRUX-J-06, CRUX-J-07, CRUX-J-08, CRUX-J-09, CRUX-J-10, CRUX-J-11, CRUX-J-12, CRUX-J-13, CRUX-J-14, CRUX-J-15, CRUX-J-16, CRUX-J-17, CRUX-J-18, CRUX-J-19, CRUX-J-20]
       M4_observability:         [CRUX-F-06, CRUX-F-07, CRUX-F-09, CRUX-F-11, CRUX-F-13, CRUX-F-14, CRUX-F-15, CRUX-F-17, CRUX-F-18, CRUX-F-19, CRUX-K-07, CRUX-K-08]
       M5_advanced_quant:        [CRUX-B-02, CRUX-B-07, CRUX-B-08, CRUX-B-09, CRUX-B-10, CRUX-B-11, CRUX-B-15, CRUX-B-16, CRUX-B-17, CRUX-B-18]
       M6_alignment:             [CRUX-D-03, CRUX-D-04, CRUX-D-17, CRUX-D-18, CRUX-D-19, CRUX-D-20]
@@ -636,9 +646,11 @@ status:
   current: DRAFT
   next_milestone: phase_1_evidence
   owner: PAIML Engineering
-  openclaw_interpretation: pending-user-confirmation
+  openclaw_interpretation: openclaw-agent-resolved
+  openclaw_resolution_date: "2026-04-18"
+  openclaw_resolution_source: "https://openclaw.ai"
   last_subspec_sync: "2026-04-18"
-  spec_complete_contracts: 230  # of 250 (waves 1..5 = 153 demand≥4; wave 6 batches 1-10 = 77 non-J demand=3+2 across A/B/C/D/E/F/G/H/I/K); all 20 J-series remain draft (OpenCLAW-blocked)
+  spec_complete_contracts: 250  # of 250 (waves 1..5 = 153 demand≥4; wave 6 batches 1-10 = 77 non-J demand=3+2 across A/B/C/D/E/F/G/H/I/K; J-01..J-20 republished 2026-04-18 at v1.1.0 under openclaw-agent-resolved)
   pmat_tickets_created: 140    # one per missing story
   phase_0_completed_at: "2026-04-18"
-  last_enrichment_wave: "2026-04-18 wave 6 batch 10 — 10 non-J demand=2 closes ENTIRE non-J cohort (230/250 = 92.0%). Remaining 20 are all J-series OpenCLAW-blocked."
+  last_enrichment_wave: "2026-04-18 J-cohort republication — 20 J-stories rewritten from OpenCLIP draft to OpenCLAW agent-orchestration semantics (see §10 resolution); spec now 250/250 = 100% complete."

@@ -1,67 +1,92 @@
-# CRUX-J-12 — Image-text pair dataloader
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-12 — OpenCLAW multi-transport chat dispatch
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-12
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 3  # 1..5, medium priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 3
   intake_status: missing
   description: >
-    Image-text pair dataloader. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW receives and dispatches messages across WhatsApp, Telegram,
+    Discord, Slack, Signal, and iMessage via a transport-agnostic envelope.
+    Aprender parity: aprender-serve MUST expose a transport-agnostic
+    Message envelope (sender, channel, body, metadata) that chat-app
+    adapters can implement; the agent core must not hard-code a single
+    transport. Overlaps with Claude Messages-API proxy (PMAT-CLAUDE-PROXY-001).
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/capability-matrix.yaml
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  transport_agnostic_envelope:
     formula: |
-      DRAFT — user workflow "Image-text pair dataloader"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      Message := { transport: T, channel_id: str, sender_id: str,
+                   body: str, ts: timestamp, attachments: [blob] }
+      adapter[T].ingest(native_event) → Message
+      adapter[T].egress(Message)      → native_event
+      agent_core(Message)             → Message                (pure, no T dependency)
+    domain: native chat-app event
+    codomain: normalized agent Message envelope
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "agent core depends only on the Message envelope, not on any T"
+    - "each transport adapter owns ingest + egress symmetrically"
+    - "unsupported transport → observable error, not silent drop"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-12-001
-  rule: placeholder
-  prediction: "apr surface for 'Image-text pair dataloader' matches openclip canonical behavior"
+  rule: transport-agnostic message envelope concept exists
+  prediction: "aprender-serve / claude-proxy docs reference a normalized message envelope"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-12" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "message envelope transport-agnostic OR normalized chat event OR Messages API envelope" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no normalized envelope documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-12 parity broken — aprender MUST expose a transport-agnostic message envelope
+- id: FALSIFY-CRUX-J-12-002
+  rule: agent core is transport-independent
+  prediction: "core inference / agent code does not import any chat-app SDK directly"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "whatsapp SDK OR telegram bot SDK OR discord.py inside aprender crate" --limit 1 --format json | grep -q '"matches"' && {
+        echo "FAIL: chat-app SDK leaked into agent core" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-12 isolation invariant — no chat-app SDK may leak into agent core
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "agent core depends only on envelope"
+- type: invariant
+  property: "each transport adapter is ingest+egress symmetric"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-12` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-12
   priority: medium
   auto_created: true

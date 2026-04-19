@@ -1,67 +1,87 @@
-# CRUX-J-02 — Joint text+image embedding
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-02 — OpenCLAW user config JSON5 round-trip
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-02
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 5  # 1..5, critical priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 5
   intake_status: missing
   description: >
-    Joint text+image embedding. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW stores user preferences in `~/.openclaw/openclaw.json` (JSON5,
+    comments allowed). Channels, skills, LLM provider, and allowFrom lists
+    live in that single file. Aprender parity: `apr` MUST read/write a
+    user-config file under $HOME that round-trips losslessly on save.
+    Overlaps with the existing `apr profile` / `~/.aprender/config.toml`
+    surface.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/config-schema.json5
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  config_round_trip:
     formula: |
-      DRAFT — user workflow "Joint text+image embedding"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      load(write(cfg)) ≡ cfg        (lossless)
+      write(cfg).path ⊂ $HOME       (user-owned)
+      cfg.version ∈ documented_versions
+    domain: user config value
+    codomain: on-disk JSON file + re-parsed config value
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "write-then-read is identity on all supported keys"
+    - "path is under $HOME; no root-owned writes"
+    - "unknown keys are preserved, not stripped (forward compatibility)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-02-001
-  rule: placeholder
-  prediction: "apr surface for 'Joint text+image embedding' matches openclip canonical behavior"
+  rule: apr surfaces a user config verb
+  prediction: "`apr --help` exposes a config/profile-related verb"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-02" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr --help 2>&1 | grep -qE '(profile|config|configure|settings)' || {
+      echo "FAIL: apr has no config/profile verb" >&2
+      exit 1
+    }
+  if_fails: CRUX-J-02 parity broken — apr MUST expose a user-config verb
+- id: FALSIFY-CRUX-J-02-002
+  rule: config file lives under $HOME
+  prediction: "aprender documents a $HOME-rooted config path"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "~/.aprender/config OR HOME config toml apr" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no documented user-config path under HOME" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-02 location invariant — config MUST live under $HOME
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "write∘read is identity"
+- type: invariant
+  property: "config path is under $HOME"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-02` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-02
   priority: critical
   auto_created: true

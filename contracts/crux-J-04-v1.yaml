@@ -1,67 +1,91 @@
-# CRUX-J-04 — Visual feature extraction
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-04 — OpenCLAW group-chat @mention trigger
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-04
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 4  # 1..5, high priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 4
   intake_status: missing
   description: >
-    Visual feature extraction. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW only responds in group chats when the agent is @mentioned
+    (otherwise the agent would spam every group thread). Aprender parity:
+    when aprender's `apr code` / MCP surface is wired to any group-chat
+    transport, it MUST gate response on explicit mention, not every
+    inbound message. Overlaps with apr-mcp server event filtering.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/config-schema.json5
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  group_mention_gate:
     formula: |
-      DRAFT — user workflow "Visual feature extraction"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      respond(channel, msg) :=
+        if channel.type == "dm"           : respond_always(msg)
+        if channel.type == "group"        : respond_if(mention_self ∈ msg)
+        else                              : reject
+      mention_self : set of tokens {@bot_name, @bot_alias, <bot_id>}
+    domain: (channel_type, msg_text)
+    codomain: "{respond, ignore}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "group-chat message without mention → agent stays silent"
+    - "DM (1:1 chat) does not require mention"
+    - "mention match is case-insensitive on bot display name"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-04-001
-  rule: placeholder
-  prediction: "apr surface for 'Visual feature extraction' matches openclip canonical behavior"
+  rule: mention gate concept is documented for group-chat surfaces
+  prediction: "apr / aprender docs reference mention or @bot-name gating for group contexts"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-04" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "mention group chat OR @bot trigger OR group-chat gate" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no mention-gate story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-04 parity broken — group-chat mention gate must be documented
+- id: FALSIFY-CRUX-J-04-002
+  rule: MCP event filter is the apr-side analogue
+  prediction: "MCP server event dispatch supports per-event opt-in"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "MCP event filter OR MCP subscribe event" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: MCP dispatch lacks event-filter story" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-04 MCP invariant — event dispatch must be opt-in, not broadcast-default
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "group-chat silence without mention"
+- type: invariant
+  property: "DM responds without mention"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-04` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-04
   priority: high
   auto_created: true

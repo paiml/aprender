@@ -1,67 +1,93 @@
-# CRUX-J-08 — CLIP contrastive training loop
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-08 — OpenCLAW system-control shell.exec + SSC classifier gate
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-08
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 3  # 1..5, medium priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 3
   intake_status: missing
   description: >
-    CLIP contrastive training loop. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW exposes `tools.shell.exec` for system control (files, scripts,
+    commands). The envelope requires a safety gate because the tool runs
+    with user privileges. Aprender parity: aprender already ships the SSC
+    (Shell Safety Classifier) — any `apr code`-adjacent shell.exec surface
+    MUST route through SSC before dispatch. Overlaps with SSC canary eval
+    (contracts/ssc-canary-eval-v1.yaml).
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/ssc-canary-eval-v1.yaml
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  shell_exec_gated:
     formula: |
-      DRAFT — user workflow "CLIP contrastive training loop"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      dispatch(cmd) :=
+        let verdict = SSC.classify(cmd) in
+        if verdict == "safe"    : exec(cmd)
+        if verdict == "unsafe"  : reject(cmd, verdict.reason)
+        if verdict == "ambiguous": prompt_user(cmd)
+      invariant: ∀ cmd → SSC.classify(cmd) runs BEFORE exec
+    domain: shell command string
+    codomain: "{exec_result, reject_reason, user_prompt}"
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "no shell.exec dispatch without prior SSC classification"
+    - "unsafe classification blocks dispatch"
+    - "ambiguous classification escalates to explicit user confirmation"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-08-001
-  rule: placeholder
-  prediction: "apr surface for 'CLIP contrastive training loop' matches openclip canonical behavior"
+  rule: SSC classifier is wired into the apr shell-exec path
+  prediction: "apr / aprender documents SSC as the gate for shell.exec"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-08" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "SSC classifier shell safety OR shell_safety_classify OR unsafe command gate" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no SSC-gated shell.exec story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-08 parity broken — SSC must gate every shell.exec dispatch
+- id: FALSIFY-CRUX-J-08-002
+  rule: ambiguous commands escalate to user confirmation
+  prediction: "SSC docs describe a three-way verdict: safe / unsafe / ambiguous"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "SSC ambiguous OR shell command three-way verdict" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no three-way SSC verdict documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-08 three-way invariant — ambiguous commands must escalate, not default-deny or default-allow
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "no shell.exec without prior SSC classification"
+- type: invariant
+  property: "ambiguous verdict escalates to user confirmation"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-08` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-08
   priority: medium
   auto_created: true

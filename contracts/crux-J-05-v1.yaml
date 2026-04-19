@@ -1,67 +1,83 @@
-# CRUX-J-05 — LAION WebDataset tar loading
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-05 — OpenCLAW dashboard Control UI (loopback bind)
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-05
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 3  # 1..5, medium priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 3
   intake_status: missing
   description: >
-    LAION WebDataset tar loading. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW exposes a local Control UI ("dashboard") at 127.0.0.1:18789.
+    It binds to loopback by default and never exposes the agent to LAN/WAN
+    without an explicit flag. Aprender parity: any apr TUI / dashboard
+    HTTP surface MUST bind to 127.0.0.1 by default and require `--host`
+    to change. Overlaps with `apr serve` / `apr tui`.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  loopback_default:
     formula: |
-      DRAFT — user workflow "LAION WebDataset tar loading"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      serve(bind_default) : bind_default = "127.0.0.1"
+      serve(--host=H)     : bind = H        (explicit opt-in)
+      exposed_lan := (bind ∉ {127.0.0.1, ::1, localhost})
+      invariant: default_run → exposed_lan = false
+    domain: server start invocation
+    codomain: TCP bind address
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "default bind is loopback (127.0.0.1 or ::1)"
+    - "non-loopback bind requires explicit --host flag"
+    - "port is configurable and documented"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-05-001
-  rule: placeholder
-  prediction: "apr surface for 'LAION WebDataset tar loading' matches openclip canonical behavior"
+  rule: apr HTTP surfaces bind to loopback by default
+  prediction: "`apr serve --help` documents 127.0.0.1 as default bind"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-05" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr serve --help 2>&1 | grep -qE '(127\.0\.0\.1|localhost|loopback)' || {
+      echo "FAIL: apr serve lacks documented loopback default" >&2
+      exit 1
+    }
+  if_fails: CRUX-J-05 parity broken — apr serve MUST document loopback default bind
+- id: FALSIFY-CRUX-J-05-002
+  rule: host flag is explicit opt-in
+  prediction: "apr serve surfaces a --host flag"
+  test: |
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr serve --help 2>&1 | grep -qE '(--host|--bind|--listen)' || {
+      echo "FAIL: apr serve has no --host flag" >&2
+      exit 1
+    }
+  if_fails: CRUX-J-05 bind invariant — non-loopback bind must require explicit flag
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "default bind is loopback"
+- type: invariant
+  property: "non-loopback requires explicit flag"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-05` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-05
   priority: medium
   auto_created: true

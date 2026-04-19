@@ -1,0 +1,106 @@
+# OpenCLAW capability matrix — drives CRUX category J (20 stories).
+# resolution tag:
+#   documented — openclaw.ai / docs.openclaw.ai explicitly describes behaviour
+#   gap        — behaviour is implied by product claims but not formally documented
+# captured: 2026-04-18
+
+capabilities:
+- id: install-one-liner
+  crux_id: CRUX-J-01
+  resolution: documented
+  source: https://openclaw.ai/
+
+- id: user-config-json5
+  crux_id: CRUX-J-02
+  resolution: documented
+  source: docs.openclaw.ai/config
+
+- id: per-channel-allowfrom
+  crux_id: CRUX-J-03
+  resolution: documented
+  source: docs.openclaw.ai/security
+
+- id: group-mention-required
+  crux_id: CRUX-J-04
+  resolution: documented
+  source: docs.openclaw.ai/channels
+
+- id: dashboard-loopback-bind
+  crux_id: CRUX-J-05
+  resolution: documented
+  source: docs.openclaw.ai/dashboard
+
+- id: daemon-install-uninstall-dual
+  crux_id: CRUX-J-06
+  resolution: gap
+  notes: install-daemon documented, uninstall flow implied not shown
+
+- id: per-sender-session-isolation
+  crux_id: CRUX-J-07
+  resolution: gap
+  notes: implied by "per-sender sessions" product claim
+
+- id: shell-exec-with-safety-gate
+  crux_id: CRUX-J-08
+  resolution: documented
+  source: docs.openclaw.ai/tools/shell
+
+- id: browser-automation-mcp
+  crux_id: CRUX-J-09
+  resolution: documented
+  source: docs.openclaw.ai/tools/browser
+
+- id: persistent-memory-put-get
+  crux_id: CRUX-J-10
+  resolution: gap
+  notes: memory put/get verbs visible; backing store shape not documented
+
+- id: skill-system
+  crux_id: CRUX-J-11
+  resolution: documented
+  source: docs.openclaw.ai/skills
+
+- id: multi-transport-dispatch
+  crux_id: CRUX-J-12
+  resolution: documented
+  source: docs.openclaw.ai/channels
+
+- id: llm-provider-switching
+  crux_id: CRUX-J-13
+  resolution: documented
+  source: docs.openclaw.ai/config#llm
+
+- id: onboard-safety-prompts
+  crux_id: CRUX-J-14
+  resolution: gap
+  notes: --safe flag exists; exact prompt catalogue not documented
+
+- id: auto-update
+  crux_id: CRUX-J-15
+  resolution: documented
+  source: docs.openclaw.ai/cli#update
+
+- id: audit-log
+  crux_id: CRUX-J-16
+  resolution: gap
+  notes: path visible in filesystem docs; format not pinned
+
+- id: per-sender-rate-limit
+  crux_id: CRUX-J-17
+  resolution: documented
+  source: docs.openclaw.ai/config#rateLimit
+
+- id: keychain-credentials
+  crux_id: CRUX-J-18
+  resolution: documented
+  source: docs.openclaw.ai/security#credentials
+
+- id: offline-local-first
+  crux_id: CRUX-J-19
+  resolution: documented
+  source: https://openclaw.ai/
+
+- id: mcp-tool-call-parity
+  crux_id: CRUX-J-20
+  resolution: gap
+  notes: OpenCLAW's tool envelope shape is MCP-shaped but not byte-pinned to Claude-Code

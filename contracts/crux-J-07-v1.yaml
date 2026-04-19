@@ -1,67 +1,90 @@
-# CRUX-J-07 — EVA-CLIP model support
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-07 — OpenCLAW per-sender session isolation
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-07
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 3  # 1..5, medium priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 3
   intake_status: missing
   description: >
-    EVA-CLIP model support. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW isolates conversation state per sender: Alice's context never
+    leaks into Bob's replies, even in the same daemon process. Aprender
+    parity: any multi-user inbound surface MUST keep KV-cache, memory, and
+    tool-call context disjoint across sender_id. Overlaps with
+    aprender-serve session management and the CRUX-J-10 memory store.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/crux-J-10-v1.yaml
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  per_sender_isolation:
     formula: |
-      DRAFT — user workflow "EVA-CLIP model support"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      session(sender_a) ∩ session(sender_b) = ∅    for a ≠ b
+      context(sender) := {kv_cache, memory, tool_history}
+      cross_leak := ∃ key ∈ context(a) : key ∈ context(b)
+      invariant: cross_leak = false
+    domain: (sender_a, sender_b) distinct senders
+    codomain: per-sender context snapshots
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "per-sender KV cache isolation"
+    - "per-sender memory store namespace"
+    - "per-sender tool-call history isolation"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-07-001
-  rule: placeholder
-  prediction: "apr surface for 'EVA-CLIP model support' matches openclip canonical behavior"
+  rule: apr-serve surfaces per-user session isolation
+  prediction: "aprender-serve documents per-session or per-user context isolation"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-07" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "per-session KV cache OR session isolation aprender-serve OR user-scoped context" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no per-session isolation story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-07 parity broken — aprender-serve MUST document per-session isolation
+- id: FALSIFY-CRUX-J-07-002
+  rule: memory store keys are per-sender-scoped
+  prediction: "memory store exposes a sender/user scope in its key schema"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "memory namespace sender OR per-user memory scope" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no per-sender memory scoping documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-07 memory invariant — memory keys must be per-sender-scoped
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "sessions are disjoint across senders"
+- type: invariant
+  property: "memory keys carry sender scope"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-07` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-07
   priority: medium
   auto_created: true

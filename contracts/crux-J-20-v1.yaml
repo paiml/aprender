@@ -1,67 +1,93 @@
-# CRUX-J-20 — CLIP eval ImageNet zero-shot
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-20 — OpenCLAW Claude-Code MCP tool-call parity
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-20
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 4  # 1..5, high priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 4
   intake_status: missing
   description: >
-    CLIP eval ImageNet zero-shot. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW speaks the MCP tool-call envelope Claude-Code uses, so users
+    bring their existing skill catalog. Aprender parity: `apr code` MUST
+    emit and consume tool-call / tool-result envelopes that validate
+    against the MCP JSON schema used by Claude-Code. Overlaps with
+    PMAT-MCP-008 (FALSIFIED at 4 layers), PMAT-CODE-MCP-CLIENT-001,
+    and apr-code parity matrix v4.4.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - https://spec.modelcontextprotocol.io/
+  - contracts/apr-code-parity-v1.yaml
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  mcp_tool_envelope_parity:
     formula: |
-      DRAFT — user workflow "CLIP eval ImageNet zero-shot"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      envelope := { tool_use_id, name, input }   // request
+      result   := { tool_use_id, content, is_error }   // response
+      valid(envelope) := MCP_schema.validate(envelope) = true
+      apr_code.emit(envelope) ⟹ valid(envelope)
+      apr_code.accept(envelope) iff valid(envelope)
+    domain: tool invocation boundary
+    codomain: MCP JSON envelope pair
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "emitted envelopes validate against the MCP schema"
+    - "invalid envelopes are rejected at the boundary (never dispatched)"
+    - "tool_use_id correlates request/response one-to-one"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-20-001
-  rule: placeholder
-  prediction: "apr surface for 'CLIP eval ImageNet zero-shot' matches openclip canonical behavior"
+  rule: apr code emits MCP-conformant envelopes
+  prediction: "apr-code / aprender-mcp docs reference the MCP tool-call schema"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-20" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "MCP tool_use_id OR MCP JSON schema apr code" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no MCP envelope validation story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-20 parity broken — apr code MUST emit MCP-conformant tool envelopes
+- id: FALSIFY-CRUX-J-20-002
+  rule: MCP-008 schema/description drift gate is enforced
+  prediction: "FALSIFY-MCP-008 is ENFORCED in aprender-mcp build.rs (APR_<TOOL>_SCHEMA + _DESCRIPTION emitted so hand-edits are caught)"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "FALSIFY-MCP-008 OR APR tool schema description codegen" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no MCP-008 drift-gate enforcement documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-20 drift invariant — MCP schema/description drift MUST be compile-time enforced
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "emitted envelopes validate"
+- type: invariant
+  property: "schema/description drift is compile-time caught"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-20` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-20
   priority: high
   auto_created: true

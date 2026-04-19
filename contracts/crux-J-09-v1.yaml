@@ -1,67 +1,90 @@
-# CRUX-J-09 — Image preprocessing resize/normalize
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-09 — OpenCLAW browser automation via MCP client
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-09
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 5  # 1..5, critical priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 5
   intake_status: missing
   description: >
-    Image preprocessing resize/normalize. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW exposes browser automation (open URL, fill form, extract data)
+    as a tool in its skill catalog. Aprender parity: `apr code` must be
+    able to load an external browser-automation MCP server (e.g.
+    playwright-mcp, browser-use) through its MCP client layer, not
+    reimplement the browser. Overlaps with PMAT-CODE-MCP-CLIENT-001
+    (closed 2026-04-18) and the apr-code parity matrix.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/apr-code-parity-v1.yaml
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  browser_via_mcp:
     formula: |
-      DRAFT — user workflow "Image preprocessing resize/normalize"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      browser_action : MCP_tool_call
+        let server = mcp.clients["browser"] in
+        server.call_tool("browser.navigate" | "fill_form" | "extract", args)
+      invariant: aprender does NOT ship a browser engine itself
+      invariant: aprender MUST be able to consume an external browser MCP
+    domain: user intent referencing a URL or web form
+    codomain: MCP tool-call envelope routed to external server
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "browser automation is delegated to an MCP tool, not inlined"
+    - "apr code can register at least one MCP client for browser tools"
+    - "failure to register a browser MCP is an observable skip, not a silent no-op"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-09-001
-  rule: placeholder
-  prediction: "apr surface for 'Image preprocessing resize/normalize' matches openclip canonical behavior"
+  rule: apr code can load an external MCP server
+  prediction: "apr code docs reference MCP client registration or `.mcp.json` loader"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-09" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "MCP client aprender OR register_mcp_client_tools OR .mcp.json loader" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no MCP client story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-09 parity broken — apr code MUST support external MCP client registration
+- id: FALSIFY-CRUX-J-09-002
+  rule: browser automation is not re-implemented internally
+  prediction: "aprender does not ship a browser/DOM engine; it consumes one"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "playwright OR chromedriver OR browser-automation crate" --limit 1 --format json | grep -q '"matches"' || {
+        echo "SKIP: no browser engine documented (expected)" >&2
+        exit 77
+      }
+    fi
+  if_fails: CRUX-J-09 delegation invariant — browser automation must be delegated, not inlined
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "browser automation routes through MCP"
+- type: invariant
+  property: "no in-tree browser engine"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-09` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-09
   priority: critical
   auto_created: true

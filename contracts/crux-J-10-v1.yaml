@@ -1,67 +1,92 @@
-# CRUX-J-10 — Text tokenizer for CLIP BPE
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# CRUX-J-10 — OpenCLAW persistent memory store
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
 
 metadata:
   id: CRUX-J-10
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
   status: draft
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "J — Vision-Language (OpenCLIP/OpenCLAW)"
-  competitor: openclip
-  demand_score: 4  # 1..5, high priority in pmat work
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 4
   intake_status: missing
   description: >
-    Text tokenizer for CLIP BPE. Root-cause workflow extracted from openclip UX — see master
-    subspec §5.J and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
-  openclaw_interpretation: pending-user-confirmation
-  # Category J assumes OpenCLIP until user resolves OpenCLAW (see master §10).
+    OpenCLAW (per openclaw.ai) "remembers you and becomes uniquely yours"
+    via persistent memory. Backing store shape (sqlite / vector / plain file)
+    is NOT documented — see evidence/crux/openclaw/gaps.md#4. Aprender parity:
+    memory MUST be put/get round-trippable, TTL-aware, and recall-measurable
+    via self-recall@1 ≥ some documented threshold. Overlaps with the agent
+    memory plugin story in CRUX-I-15.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/crux-I-15-v1.yaml
+  - evidence/crux/openclaw/gaps.md
 
 equations:
-  placeholder_contract:
+  memory_round_trip:
     formula: |
-      DRAFT — user workflow "Text tokenizer for CLIP BPE"
-      must produce observable parity with openclip's canonical verb
-      on the golden input defined in evidence/crux/openclip/.
-    domain: user invocation
-    codomain: apr CLI output
+      put(key, value, ttl) → ack
+      get(key) at t:
+        if now() - put_time(key) < ttl : returns value
+        else                            : returns None
+      recall@1 := 1.0 on identity query (put then get without intervening ops)
+    domain: (key, value, ttl) agent memory write / subsequent read
+    codomain: value or None
     invariants:
-    - "TBD — replace with actual competitor parity invariants"
-    - "TBD — replace with falsifiable output contract"
+    - "put/get round-trip is deterministic when no intervening writes to key"
+    - "TTL is monotonic: value disappears exactly once after ttl elapses"
+    - "self-recall@1 on a just-written key = 1.0 (no quantization/hashing loss)"
+    - "backing store path is configurable and under $HOME by default"
 
 falsification_tests:
 - id: FALSIFY-CRUX-J-10-001
-  rule: placeholder
-  prediction: "apr surface for 'Text tokenizer for CLIP BPE' matches openclip canonical behavior"
+  rule: memory put/get round-trip
+  prediction: "apr memory put then apr memory get returns the same value"
   test: |
-    # TBD — collect openclip transcript in evidence/crux/openclip/
-    # and write a shell test that compares apr output to the golden.
-    echo "TODO: falsification body for CRUX-J-10" >&2
-    exit 2  # non-zero = placeholder not yet implemented
-  if_fails: "draft contract — falsification body not yet authored"
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr memory --help 2>&1 | grep -qE '(^|\s)put(\s|$)' || {
+      echo "FAIL: apr memory does not expose put verb" >&2; exit 1
+    }
+    apr memory --help 2>&1 | grep -qE '(^|\s)get(\s|$)' || {
+      echo "FAIL: apr memory does not expose get verb" >&2; exit 1
+    }
+  if_fails: CRUX-J-10 parity broken — apr memory MUST expose put/get verbs for OpenCLAW parity
+- id: FALSIFY-CRUX-J-10-002
+  rule: memory backing store path is configurable and under $HOME
+  prediction: "APR_MEMORY_DIR env or config key controls store path"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "APR_MEMORY_DIR memory store path" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no evidence of configurable memory store path" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-10 configurability invariant — memory store path must be user-configurable
 
 proof_obligations:
 - type: invariant
-  property: "TBD placeholder — replace with concrete obligation before promotion"
+  property: "put/get round-trip is deterministic"
+- type: invariant
+  property: "TTL is monotonic — value disappears exactly once"
 
 verification_summary:
-  total_obligations: 1
+  total_obligations: 2
   proven: 0
   tested: 0
   status: draft
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-j-10` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-j-10
   priority: high
   auto_created: true
