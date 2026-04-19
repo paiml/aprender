@@ -1,0 +1,398 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-TRAIN-PRETRAIN
+# Pretraining loop contract for SHIP-TWO-001 MODEL-2 (albor sovereign).
+# ─────────────────────────────────────────────────────────────
+# Discharges AC-SHIP2-003 (pretraining loop reaches target loss) and
+# AC-SHIP2-011 (seed reproducibility of first 100 steps). Crucially,
+# this contract encodes the MODEL-1 v2 QLoRA divergence lesson
+# (2026-04-17) as a first-class compile-time / runtime gate: if
+# val_loss at any epoch boundary exceeds 2× the previous epoch's
+# val_loss, the run ABORTS. No silent divergence. No epoch-0-only
+# checkpoints that pass Tensor Contract but fail Golden Output.
+#
+# Historical root cause (MODEL-1 v2, memory/project_ship_two_001_
+# model1_qlora_divergence.md): train_loss=15.41, val_loss=31.99,
+# PPL≈1e6, only epoch-0 completed, but the pipeline kept going
+# because there was no non-divergence gate. That is the defect
+# this contract eliminates.
+#
+# Peer:   contracts/model-families/llama-370m-sovereign-v1.yaml
+# Peer:   contracts/tokenizer-bpe-v1.yaml
+# Peer:   contracts/checkpoint-apr-native-v1.yaml          (sibling NEW)
+# Peer:   contracts/dataset-thestack-python-v1.yaml        (sibling NEW)
+# Peer:   contracts/distributed-training-v1.yaml
+# Peer:   contracts/adamw-kernel-v1.yaml
+#
+# References:
+#   - docs/specifications/aprender-train/ship-two-models-spec.md §5
+#     (AC-SHIP2-003, FALSIFY-SHIP-013, FALSIFY-SHIP-021)
+#   - Loshchilov & Hutter (2019). Decoupled Weight Decay
+#     Regularization. arXiv:1711.05101 (AdamW)
+#   - Radford et al. (2018/2019). GPT-1/GPT-2 pretraining
+#     methodology — CE loss, wall-clock budgets, val splits
+#   - memory/project_ship_two_001_model1_qlora_divergence.md
+#     (motivation for INV-TRAIN-005 / GATE-TRAIN-005)
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-TRAIN-PRETRAIN
+version: 1.1.0
+status: ACTIVE
+
+metadata:
+  version: "1.1.0"
+  created: "2026-04-18"
+  updated: "2026-04-19"
+  changelog:
+    - "1.1.0 (2026-04-19): GATE-TRAIN-006 / INV-TRAIN-006 discharged via
+       falsify_ship_021_* Rust tests; seed-plumbing race fixed by
+       lock_init_seed mutex in transformer/init.rs; status PROPOSED → ACTIVE"
+  author: PAIML Engineering
+  description: >
+    Pretraining loop contract: required per-step metrics, required
+    per-epoch artifacts, convergence gates, and — most importantly —
+    an explicit NON-DIVERGENCE gate that ABORTS training if val_loss
+    doubles between epochs. Encodes the MODEL-1 v2 QLoRA divergence
+    lesson as a machine-checked invariant.
+  registry: true
+  kind: training-loop
+  peer_contracts:
+    - contracts/model-families/llama-370m-sovereign-v1.yaml
+    - contracts/tokenizer-bpe-v1.yaml
+    - contracts/distributed-training-v1.yaml
+    - contracts/adamw-kernel-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §5"
+    - "Loshchilov & Hutter (2019) — AdamW (arXiv:1711.05101)"
+    - "memory/project_ship_two_001_model1_qlora_divergence.md"
+
+summary: >
+  Pretraining loop contract: required per-step metrics, required
+  per-epoch artifacts, convergence gates, and — most importantly —
+  an explicit NON-DIVERGENCE gate that ABORTS training if val_loss
+  doubles between epochs. Encodes the MODEL-1 v2 QLoRA divergence
+  lesson as a machine-checked invariant.
+
+motivation: >
+  MODEL-1 v2 (2026-04-17): the distilled checkpoint emitted garbage
+  ("ylkoylko…"), passed Tensor Contract, failed Golden Output. Root
+  cause: train_loss=15.41, val_loss=31.99 at epoch 0, no subsequent
+  epochs, no divergence guard. Only a post-hoc forensic read of loss
+  logs revealed the disaster. Any future run MUST abort the moment
+  val_loss exceeds 2× its prior value — no human-in-the-loop needed,
+  no ambiguity, no "let's see if it recovers."
+
+# ─────────────────────────────────────────────────────────────
+# Required per-step metrics (every optimizer step emits ALL of these)
+# ─────────────────────────────────────────────────────────────
+
+per_step_metrics:
+  required:
+    - name: step
+      type: u64
+      description: "Global step counter, monotonically increasing from 0."
+    - name: train_loss
+      type: f32
+      description: "Cross-entropy loss on the training micro-batch."
+    - name: grad_norm
+      type: f32
+      description: "Global L2 norm of gradients BEFORE clipping."
+    - name: lr
+      type: f32
+      description: "Current learning rate after scheduler update."
+    - name: tokens_per_sec
+      type: f32
+      description: "Throughput over the last step window (token count / wall seconds)."
+    - name: gpu_util_pct
+      type: f32
+      description: "GPU utilization percent (0.0..=100.0) sampled during the step."
+  sampling_period_steps: 1  # metrics emitted every step, not every-N
+
+# ─────────────────────────────────────────────────────────────
+# Required per-epoch artifacts
+# ─────────────────────────────────────────────────────────────
+
+per_epoch_artifacts:
+  checkpoint:
+    format: apr          # native APR (not PyTorch — see AC-SHIP2-005)
+    path_template: "{run_dir}/ckpt/epoch-{epoch:03d}.apr"
+  metadata_json:
+    path_template: "{run_dir}/ckpt/epoch-{epoch:03d}.metadata.json"
+    required_fields:
+      - epoch                    # integer, >= 0
+      - train_loss               # final train CE for the epoch (mean over last 100 steps)
+      - val_loss                 # held-out validation CE
+      - train_ppl                # exp(train_loss)
+      - val_ppl                  # exp(val_loss)
+      - optimizer_state_sha      # sha256 of optimizer state dict (for resumption audit)
+      - wall_seconds             # epoch wall time
+      - tokens_seen              # cumulative tokens across all completed steps
+      - grad_norm_max            # max grad norm observed in the epoch
+
+# ─────────────────────────────────────────────────────────────
+# Convergence policy
+# ─────────────────────────────────────────────────────────────
+
+convergence:
+  target_val_loss: 2.2                  # AC-SHIP2-003 / FALSIFY-SHIP-013 gate
+  require_epoch_over_epoch_improvement: true
+  patience_epochs: 2                    # allow 2 consecutive non-improvements
+  early_stop_on_patience_exhausted: true
+  min_epochs_before_early_stop: 3       # never early-stop before epoch 3
+
+# ─────────────────────────────────────────────────────────────
+# NON-NEGOTIABLE divergence gate (MODEL-1 v2 lesson)
+# ─────────────────────────────────────────────────────────────
+
+non_divergence:
+  rule: |
+    At every epoch boundary N ≥ 1:
+      if val_loss[N] > 2.0 * val_loss[N-1]:
+        abort_training(reason = "DIVERGENCE")
+        status = FAIL
+        exit_code = nonzero
+
+    Special case for N == 1:
+      if val_loss[0] > 10.0 OR val_loss[0] is NaN/Inf:
+        abort immediately after epoch 0
+
+    The check is MANDATORY and UNCONFIGURABLE. There is NO flag to
+    disable it. There is NO "warning" mode. Exceeding the threshold
+    is always fatal.
+
+    Rationale: MODEL-1 v2 crossed this exact threshold silently
+    (val_loss 31.99 vs a healthy baseline of ~3.5 expected after
+    epoch 0). A compile-time-enforced abort would have saved 14
+    days and all downstream distillation compute.
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — machine-checkable properties of the training loop
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-TRAIN-001
+    description: >
+      Every optimizer step emits a log line with ALL 6 required
+      per-step metrics (step, train_loss, grad_norm, lr,
+      tokens_per_sec, gpu_util_pct). No field may be null or
+      absent.
+    falsifier: >
+      Parse the training log JSONL; for each record, assert all
+      6 required keys are present and none is null/NaN. Any missing
+      field on any step fails.
+
+  - id: INV-TRAIN-002
+    description: >
+      Every completed epoch produces both a checkpoint file at
+      {run_dir}/ckpt/epoch-{N:03d}.apr AND a sibling metadata.json
+      with all 9 required fields populated.
+    falsifier: >
+      For every completed epoch N in the run log, assert both files
+      exist AND metadata.json parses AND all 9 required_fields keys
+      are present. Missing either file or key fails.
+
+  - id: INV-TRAIN-003
+    description: >
+      optimizer_state_sha in metadata.json is the sha256 of the
+      on-disk optimizer state at checkpoint time. Used to verify
+      resumption audit trails.
+    falsifier: >
+      Recompute sha256 over the optimizer state at checkpoint path;
+      compare to metadata.json value. Mismatch fails.
+
+  - id: INV-TRAIN-004
+    description: >
+      Convergence: for epochs 2..=K, val_loss[N] ≤ val_loss[N-1]
+      OR the patience counter increments. If patience_epochs is
+      exceeded without a new best, training early-stops cleanly
+      (exit 0, status = EARLY_STOP).
+    falsifier: >
+      Walk the epoch-metadata sequence; track best-so-far val_loss
+      and patience counter. Assert either: (a) a new best was set
+      within patience, or (b) early-stop status recorded at the
+      correct epoch. Deviation fails.
+
+  - id: INV-TRAIN-005
+    description: >
+      NON-DIVERGENCE (the MODEL-1 lesson): for every epoch boundary
+      N ≥ 1, val_loss[N] ≤ 2.0 × val_loss[N-1]. For N == 1,
+      val_loss[0] is finite and ≤ 10.0. Any violation triggers an
+      immediate abort with exit status = DIVERGENCE.
+    falsifier: >
+      Artificial harness: inject a synthetic epoch log where
+      val_loss doubles (e.g. [3.5, 7.1]). Run the training-loop
+      guard function; assert it returns Err(DivergenceAbort) and
+      the CLI exits nonzero. If the guard permits the run to
+      continue, this contract is violated.
+
+  - id: INV-TRAIN-006
+    description: >
+      Reproducibility: given a fixed seed, two runs produce
+      BYTE-IDENTICAL per-step metrics for the first 100 steps
+      (train_loss to 1e-6, grad_norm to 1e-6, lr exact).
+    falsifier: >
+      Spec AC-SHIP2-011 / FALSIFY-SHIP-021. Run twice with seed
+      fixed; diff per-step JSONL; assert abs diff ≤ 1e-6 for floats,
+      exact for integers, over 0..=99. Any larger delta fails.
+    harness:
+      - name: falsify_ship_021_seed_0_100_step_reproducibility
+        kind: rust-test
+        path: crates/aprender-train/src/train/transformer_trainer/tests.rs
+        asserts:
+          - "loss_a[k] and loss_b[k] both finite for k in 0..100"
+          - "|loss_a[k] - loss_b[k]| ≤ 1e-6 for all k in 0..100"
+          - "trainer_a.optimizer_state_sha256() == trainer_b.optimizer_state_sha256() after 100 steps"
+      - name: falsify_ship_021_different_seeds_do_diverge
+        kind: rust-test
+        path: crates/aprender-train/src/train/transformer_trainer/tests.rs
+        asserts:
+          - "seed=0 and seed=1 trainers produce |loss_a[k] - loss_b[k]| > 1e-4 for at least one k in 0..10 (counter-test: seed plumbing not a no-op)"
+
+  - id: INV-TRAIN-007
+    description: >
+      No NaN/Inf in train_loss or grad_norm at ANY step. NaN/Inf
+      is treated identically to divergence — abort with exit status
+      = NUMERICAL_INSTABILITY.
+    falsifier: >
+      Per-step guard: assert train_loss.is_finite() &&
+      grad_norm.is_finite(). First non-finite value aborts. Harness
+      test: inject a synthetic NaN; assert abort occurs within 1 step.
+
+  - id: INV-TRAIN-008
+    description: >
+      tokens_per_sec and gpu_util_pct are non-negative and finite
+      on every step. Enables throughput regressions to be detected
+      by downstream analysis without NaN poisoning.
+    falsifier: >
+      For each step record, assert tokens_per_sec ≥ 0 && finite AND
+      0 ≤ gpu_util_pct ≤ 100.
+
+# ─────────────────────────────────────────────────────────────
+# Acceptance gates (bind to AC-SHIP2-* in the spec)
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-TRAIN-001
+    rule: >
+      All 6 per-step metrics are present on every step (INV-TRAIN-001).
+    evidence_required: >
+      `apr inspect --train-log {run_dir}/train.jsonl` exits 0 and
+      reports missing_fields: 0 over N steps (N > 0).
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-002
+    rule: >
+      Every completed epoch has both checkpoint and metadata.json
+      with all 9 required fields (INV-TRAIN-002, INV-TRAIN-003).
+    evidence_required: >
+      `apr qa --epoch-artifacts {run_dir}` exits 0 with a report
+      showing epochs_completed == checkpoints_found ==
+      metadata_files_found AND required_field_coverage == 100%.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-003
+    rule: >
+      Final val_loss ≤ 2.2 (AC-SHIP2-003 target / FALSIFY-SHIP-013).
+    evidence_required: >
+      `apr inspect --final-metrics {run_dir}` returns
+      val_loss ≤ 2.2. Above threshold fails the ship gate.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    falsification_id: FALSIFY-SHIP-013
+
+  - id: GATE-TRAIN-004
+    rule: >
+      Epoch-over-epoch val_loss improvement OR clean early-stop
+      within patience (INV-TRAIN-004).
+    evidence_required: >
+      Walk epoch metadata sequence; assert either monotone decrease
+      in val_loss OR early-stop event at expected epoch with exit 0.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-005
+    rule: >
+      NON-DIVERGENCE: val_loss[N] ≤ 2.0 × val_loss[N-1] at every
+      epoch boundary; val_loss[0] ≤ 10.0 and finite (INV-TRAIN-005).
+      This is the MODEL-1 v2 lesson codified as a ship-blocker.
+    evidence_required: >
+      (1) Live: the training CLI exits nonzero with status =
+      DIVERGENCE the moment the threshold is crossed — proven by a
+      harness test that synthesizes a doubling val_loss trace.
+      (2) Post-hoc: `apr qa --check-non-divergence {run_dir}` over
+      the real training run exits 0 for a shipped checkpoint.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    ship_blocking: true
+    motivation: "memory/project_ship_two_001_model1_qlora_divergence.md"
+
+  - id: GATE-TRAIN-006
+    rule: >
+      Seed-fixed reproducibility across two runs for the first
+      100 steps (INV-TRAIN-006).
+    evidence_required: >
+      CI harness runs entrenar twice with seed=42, diffs steps 0..99
+      of train.jsonl, asserts abs(delta) ≤ 1e-6 for floats, exact
+      equality for integer fields.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/train/transformer_trainer/tests.rs::falsify_ship_021_seed_0_100_step_reproducibility"
+      - "crates/aprender-train/src/train/transformer_trainer/tests.rs::falsify_ship_021_different_seeds_do_diverge"
+    verdict: pass
+    binds_to: AC-SHIP2-011
+    falsification_id: FALSIFY-SHIP-021
+
+  - id: GATE-TRAIN-007
+    rule: >
+      No NaN/Inf in loss or gradient norm (INV-TRAIN-007).
+    evidence_required: >
+      `apr qa --numerical-stability {run_dir}/train.jsonl` exits 0
+      with nan_count: 0, inf_count: 0.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-008
+    rule: >
+      Throughput metrics non-negative and finite on every step
+      (INV-TRAIN-008).
+    evidence_required: >
+      Same train.jsonl QA report; assert no record has
+      tokens_per_sec < 0 or gpu_util_pct outside [0, 100].
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+# ─────────────────────────────────────────────────────────────
+# Failure modes (documented so future operators can recognize them)
+# ─────────────────────────────────────────────────────────────
+
+failure_modes:
+  - id: FM-TRAIN-DIVERGENCE
+    description: >
+      val_loss doubles between epochs. This is what MODEL-1 v2 did
+      (val_loss 31.99 at epoch 0, no recovery). Abort signal:
+      exit status = DIVERGENCE. Operator remedy: reduce learning
+      rate by 10×, verify LoRA rank matches recipe, re-check
+      temperature (MODEL-1 v2 used temp=4.0 — too high).
+  - id: FM-TRAIN-NAN
+    description: >
+      train_loss or grad_norm becomes NaN/Inf. Abort signal:
+      exit status = NUMERICAL_INSTABILITY. Operator remedy: enable
+      gradient clipping at 1.0, lower lr, check for corrupted
+      inputs in the data pipeline.
+  - id: FM-TRAIN-PLATEAU
+    description: >
+      val_loss fails to improve within patience_epochs. Not a
+      failure of THIS contract (clean early-stop is spec behavior),
+      but is a SHIP failure if final val_loss > target_val_loss
+      (see GATE-TRAIN-003).
+
+references:
+  - "contracts/model-families/llama-370m-sovereign-v1.yaml"
+  - "contracts/tokenizer-bpe-v1.yaml"
+  - "contracts/distributed-training-v1.yaml"
+  - "contracts/adamw-kernel-v1.yaml"
+  - "docs/specifications/aprender-train/ship-two-models-spec.md §5 (AC-SHIP2-003, -011)"
+  - "memory/project_ship_two_001_model1_qlora_divergence.md"
+  - "Loshchilov & Hutter (2019) arXiv:1711.05101"

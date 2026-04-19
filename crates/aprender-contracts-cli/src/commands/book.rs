@@ -2,7 +2,7 @@ use std::path::Path;
 
 use provable_contracts::book_gen::{generate_contract_page, update_summary};
 use provable_contracts::graph::dependency_graph;
-use provable_contracts::schema::{Contract, parse_contract};
+use provable_contracts::schema::{parse_contract, Contract};
 
 pub fn run(
     contract_dir: &Path,

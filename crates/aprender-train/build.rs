@@ -92,16 +92,9 @@ fn enforce_entrenar_binding() {
     };
 
     let deduped = dedupe_bindings(&bindings);
-    let (implemented, partial, not_implemented, gaps) =
-        emit_binding_vars(&bindings, &deduped);
+    let (implemented, partial, not_implemented, gaps) = emit_binding_vars(&bindings, &deduped);
 
-    report_and_enforce_gaps(
-        &bindings,
-        implemented,
-        partial,
-        not_implemented,
-        &gaps,
-    );
+    report_and_enforce_gaps(&bindings, implemented, partial, not_implemented, &gaps);
 }
 
 /// Load + parse the provable-contracts binding.yaml, emitting warnings + a
@@ -148,9 +141,8 @@ fn dedupe_bindings(bindings: &BindingFile) -> std::collections::HashMap<String, 
     for binding in &bindings.bindings {
         let var_name = env_var_name(&binding.contract, &binding.equation);
         let new_rank = status_rank(&binding.status);
-        let dominated = seen
-            .get(&var_name)
-            .is_some_and(|existing| status_rank(existing) >= new_rank);
+        let dominated =
+            seen.get(&var_name).is_some_and(|existing| status_rank(existing) >= new_rank);
         if !dominated {
             seen.insert(var_name, binding.status.clone());
         }
@@ -229,10 +221,7 @@ fn report_and_enforce_gaps(
     }
 
     println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=binding.yaml");
-    println!(
-        "cargo:rustc-env=CONTRACT_BINDING_VERSION={}",
-        bindings.version
-    );
+    println!("cargo:rustc-env=CONTRACT_BINDING_VERSION={}", bindings.version);
     println!("cargo:rustc-env=CONTRACT_TOTAL={total}");
     println!("cargo:rustc-env=CONTRACT_IMPLEMENTED={implemented}");
     println!("cargo:rustc-env=CONTRACT_PARTIAL={partial}");
@@ -264,19 +253,13 @@ fn is_contract_yaml(path: &Path) -> bool {
     if path.extension().and_then(|x| x.to_str()) != Some("yaml") {
         return false;
     }
-    !path
-        .file_name()
-        .is_some_and(|n| n.to_string_lossy().contains("binding"))
+    !path.file_name().is_some_and(|n| n.to_string_lossy().contains("binding"))
 }
 
 fn emit_contract_file(path: &Path, total_pre: &mut usize, total_post: &mut usize) {
     println!("cargo:rerun-if-changed={}", path.display());
-    let stem = path
-        .file_stem()
-        .and_then(|x| x.to_str())
-        .unwrap_or("x")
-        .to_uppercase()
-        .replace('-', "_");
+    let stem =
+        path.file_stem().and_then(|x| x.to_str()).unwrap_or("x").to_uppercase().replace('-', "_");
     let Ok(contents) = std::fs::read_to_string(path) else {
         return;
     };
@@ -284,21 +267,12 @@ fn emit_contract_file(path: &Path, total_pre: &mut usize, total_post: &mut usize
         return;
     };
     for (eq_name, eq) in &parsed.equations {
-        let key = format!(
-            "CONTRACT_{}_{}",
-            stem,
-            eq_name.to_uppercase().replace('-', "_")
-        );
+        let key = format!("CONTRACT_{}_{}", stem, eq_name.to_uppercase().replace('-', "_"));
         emit_pre_post(&key, eq, total_pre, total_post);
     }
 }
 
-fn emit_pre_post(
-    key: &str,
-    eq: &EquationYaml,
-    total_pre: &mut usize,
-    total_post: &mut usize,
-) {
+fn emit_pre_post(key: &str, eq: &EquationYaml, total_pre: &mut usize, total_post: &mut usize) {
     if !eq.preconditions.is_empty() {
         println!("cargo:rustc-env={key}_PRE_COUNT={}", eq.preconditions.len());
         for (i, v) in eq.preconditions.iter().enumerate() {
@@ -307,10 +281,7 @@ fn emit_pre_post(
         *total_pre += eq.preconditions.len();
     }
     if !eq.postconditions.is_empty() {
-        println!(
-            "cargo:rustc-env={key}_POST_COUNT={}",
-            eq.postconditions.len()
-        );
+        println!("cargo:rustc-env={key}_POST_COUNT={}", eq.postconditions.len());
         for (i, v) in eq.postconditions.iter().enumerate() {
             println!("cargo:rustc-env={key}_POST_{i}={v}");
         }

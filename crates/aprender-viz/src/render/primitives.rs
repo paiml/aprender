@@ -80,17 +80,7 @@ impl BresenhamCursor {
         let dy = -(y1 - y0).abs();
         let sx = if x0 < x1 { 1 } else { -1 };
         let sy = if y0 < y1 { 1 } else { -1 };
-        Self {
-            x: x0,
-            y: y0,
-            x1,
-            y1,
-            dx,
-            dy,
-            sx,
-            sy,
-            err: dx + dy,
-        }
+        Self { x: x0, y: y0, x1, y1, dx, dy, sx, sy, err: dx + dy }
     }
 
     fn finished(&self) -> bool {

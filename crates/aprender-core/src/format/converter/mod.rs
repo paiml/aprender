@@ -20,13 +20,13 @@ pub use trueno_quant::F16_MIN_NORMAL;
 // Note: Only import functions actually used in this module
 pub(crate) use trueno_quant::{dequantize_q4_k_to_f32, quantize_q4_k, quantize_q4_k_matrix};
 
-use crate::format::Compression;
 use crate::format::gguf::{
-    GgufModelConfig, GgufRawTensor, GgufReader, GgufTokenizer, load_gguf_raw,
-    load_gguf_with_tokenizer,
+    load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufReader,
+    GgufTokenizer,
 };
 use crate::format::v2::{AprV2Metadata, AprV2Writer, QuantizationMetadata};
-use crate::serialization::safetensors::{SafeTensorsMetadata, TensorMetadata, save_safetensors};
+use crate::format::Compression;
+use crate::serialization::safetensors::{save_safetensors, SafeTensorsMetadata, TensorMetadata};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -35,9 +35,9 @@ use std::path::Path;
 #[cfg(feature = "hf-hub-integration")]
 pub use crate::format::converter_types::parse_import_error;
 pub use crate::format::converter_types::{
-    Architecture, DequantizedTensors, ImportError, ImportOptions, NativeF32Tensors,
-    QuantizationType, ShardedIndex, Source, TensorExpectation, TensorProvenance, ValidationConfig,
-    detect_sharded_model,
+    detect_sharded_model, Architecture, DequantizedTensors, ImportError, ImportOptions,
+    NativeF32Tensors, QuantizationType, ShardedIndex, Source, TensorExpectation, TensorProvenance,
+    ValidationConfig,
 };
 
 // PMAT-197: Import functions moved to import.rs that are used elsewhere
@@ -52,8 +52,8 @@ pub use import::sanitize_hf_json;
 pub(crate) use crate::format::validation::{AprValidator, TensorStats};
 #[cfg(test)]
 pub(crate) use import::{
-    TensorAccumulator, compute_std, compute_tensor_stats, parse_tokenizer_json,
-    validate_single_tensor,
+    compute_std, compute_tensor_stats, parse_tokenizer_json, validate_single_tensor,
+    TensorAccumulator,
 };
 #[cfg(test)]
 pub(crate) use merge::calculate_merge_weights;

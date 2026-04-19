@@ -57,6 +57,16 @@ fn contract_kind_display() {
     assert_eq!(ContractKind::Kernel.to_string(), "kernel");
     assert_eq!(ContractKind::Registry.to_string(), "registry");
     assert_eq!(ContractKind::ModelFamily.to_string(), "model-family");
+    assert_eq!(
+        ContractKind::ModelFamilyVariant.to_string(),
+        "model-family-variant",
+    );
+    assert_eq!(ContractKind::Tokenizer.to_string(), "tokenizer");
+    assert_eq!(ContractKind::TrainingLoop.to_string(), "training-loop");
+    assert_eq!(
+        ContractKind::PretrainingCorpus.to_string(),
+        "pretraining-corpus",
+    );
     assert_eq!(ContractKind::Pattern.to_string(), "pattern");
     assert_eq!(ContractKind::Schema.to_string(), "schema");
 }
@@ -83,6 +93,10 @@ fn non_kernel_kinds_exempt_from_provability() {
     for kind in [
         ContractKind::Registry,
         ContractKind::ModelFamily,
+        ContractKind::ModelFamilyVariant,
+        ContractKind::Tokenizer,
+        ContractKind::TrainingLoop,
+        ContractKind::PretrainingCorpus,
         ContractKind::Pattern,
         ContractKind::Schema,
     ] {

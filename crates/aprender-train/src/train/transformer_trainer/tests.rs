@@ -437,6 +437,73 @@ fn falsify_alb038_saved_weights_differ_from_init() {
     );
 }
 
+/// Task #111 step 4: CPU `TransformerTrainer::save_apr` writes a valid
+/// APR file (row-major native format) that `AprReader` can open. This
+/// is the sovereign checkpoint path used by `apr pretrain` per
+/// aprender-train CLAUDE.md LAYOUT-002.
+#[test]
+fn save_apr_writes_readable_apr_file() {
+    use aprender::serialization::apr::AprReader;
+    use tempfile::NamedTempFile;
+
+    let config = TransformerTrainConfig::new(TransformerConfig::tiny());
+    let trainer = TransformerTrainer::new(config);
+
+    let temp = NamedTempFile::new().expect("temp file creation should succeed");
+    trainer
+        .save_apr(temp.path(), "task-111-test", "LlamaForCausalLM")
+        .expect("save_apr should succeed");
+
+    // APR magic + readable by AprReader.
+    let bytes = std::fs::read(temp.path()).expect("file read should succeed");
+    assert!(bytes.len() > 16, "APR file should not be empty");
+    let magic = &bytes[..4];
+    assert!(magic == b"APR\0" || magic == b"APRN", "APR magic bytes mismatch: got {magic:?}");
+
+    let reader = AprReader::open(temp.path()).expect("AprReader must open the file");
+    // The architecture metadata key is set by the APR save path so
+    // round-tripping it is the cheapest check that the file is valid.
+    let arch = reader
+        .get_metadata("architecture")
+        .or_else(|| reader.get_metadata("arch"))
+        .expect("APR file should carry an architecture metadata entry");
+    assert!(arch.is_string(), "architecture metadata should be a string, got {arch:?}");
+    // Read one tensor to confirm the data blob is intact.
+    let _embed = reader
+        .read_tensor_f32("model.embed_tokens.weight")
+        .expect("APR file should round-trip embed_tokens.weight");
+}
+
+// === Task #111 step 6: INV-TRAIN-003 optimizer-state sha256 ===
+
+/// INV-TRAIN-003 shape: the sha is a deterministic 64-char hex digest
+/// even before the first training step (all AdamW buffers uninitialized).
+#[test]
+fn optimizer_state_sha256_is_hex_digest_on_fresh_trainer() {
+    let config = TransformerTrainConfig::new(TransformerConfig::tiny());
+    let trainer = TransformerTrainer::new(config);
+    let sha = trainer.optimizer_state_sha256();
+    assert_eq!(sha.len(), 64, "sha256 hex digest must be 64 chars");
+    assert!(
+        sha.chars().all(|c| c.is_ascii_hexdigit()),
+        "sha256 hex digest must be lowercase hex: {sha}",
+    );
+}
+
+/// INV-TRAIN-003 stability: two fresh trainers produced from the same
+/// config must emit identical digests (uninit AdamW state is
+/// deterministic).
+#[test]
+fn optimizer_state_sha256_is_stable_across_fresh_trainers() {
+    let a = TransformerTrainer::new(TransformerTrainConfig::new(TransformerConfig::tiny()));
+    let b = TransformerTrainer::new(TransformerTrainConfig::new(TransformerConfig::tiny()));
+    assert_eq!(
+        a.optimizer_state_sha256(),
+        b.optimizer_state_sha256(),
+        "fresh AdamW optimizer state must hash to the same digest",
+    );
+}
+
 // === R-084: Bitwise deterministic training (C-DETERM-001) ===
 
 #[test]
@@ -528,6 +595,95 @@ fn test_deterministic_training_reproducibility() {
             "Step {i}: loss mismatch {l1} vs {l2} (C-DETERM-001 violation)"
         );
     }
+}
+
+/// FALSIFY-SHIP-021 / GATE-TRAIN-006 / INV-TRAIN-006:
+///
+/// Two fresh `TransformerTrainer::new(cfg)` instances with the same
+/// seed MUST produce identical per-step training losses for the first
+/// 100 steps. Tolerance: 1e-6 absolute.
+///
+/// Contract: `contracts/training-loop-pretrain-v1.yaml` GATE-TRAIN-006
+/// binds to AC-SHIP2-011 (AC: seed-fixed training reproducibility).
+///
+/// Historical motivation: deterministic CPU training is a ship-gate
+/// for MODEL-2 albor. If two seeded runs diverge in the first 100
+/// steps, nondeterminism has leaked into the init path, the optimizer,
+/// or the loss reduction — all of which breaks the
+/// reproducibility contract before we even attempt a multi-epoch
+/// pretraining run.
+#[test]
+fn falsify_ship_021_seed_0_100_step_reproducibility() {
+    let cfg_a = TransformerTrainConfig::new(TransformerConfig::tiny()).with_seed(0);
+    let cfg_b = TransformerTrainConfig::new(TransformerConfig::tiny()).with_seed(0);
+    let mut trainer_a = TransformerTrainer::new(cfg_a);
+    let mut trainer_b = TransformerTrainer::new(cfg_b);
+
+    // Rotate through 5 distinct batches to exercise more of the
+    // forward/backward surface than a single repeated batch would —
+    // the contract wants 100 DIFFERENT steps, not one batch looped.
+    let batches = [
+        LMBatch::single(vec![1, 2, 3, 4, 5], vec![2, 3, 4, 5, 6]),
+        LMBatch::single(vec![7, 8, 9, 10, 11], vec![8, 9, 10, 11, 12]),
+        LMBatch::single(vec![3, 1, 4, 1, 5], vec![1, 4, 1, 5, 9]),
+        LMBatch::single(vec![2, 7, 1, 8, 2], vec![7, 1, 8, 2, 8]),
+        LMBatch::single(vec![5, 5, 5, 5, 5], vec![5, 5, 5, 5, 5]),
+    ];
+
+    let mut losses_a = Vec::with_capacity(100);
+    let mut losses_b = Vec::with_capacity(100);
+    for step in 0..100 {
+        let batch = &batches[step % batches.len()];
+        losses_a.push(trainer_a.train_batch(batch));
+        losses_b.push(trainer_b.train_batch(batch));
+    }
+
+    for (i, (la, lb)) in losses_a.iter().zip(losses_b.iter()).enumerate() {
+        assert!(
+            la.is_finite() && lb.is_finite(),
+            "FALSIFY-SHIP-021 step {i}: non-finite loss (a={la}, b={lb})",
+        );
+        assert!(
+            (la - lb).abs() <= 1e-6,
+            "FALSIFY-SHIP-021 step {i}: loss divergence |{la} - {lb}| > 1e-6",
+        );
+    }
+
+    // Final optimizer-state digest parity (INV-TRAIN-003 + INV-TRAIN-006):
+    // the sha256 over (t, m, v) must match after 100 identical steps.
+    assert_eq!(
+        trainer_a.optimizer_state_sha256(),
+        trainer_b.optimizer_state_sha256(),
+        "FALSIFY-SHIP-021: AdamW optimizer-state sha256 diverged after 100 steps",
+    );
+}
+
+/// FALSIFY-SHIP-021 negative control: different seeds MUST produce a
+/// different loss trajectory. Without this counter-test, the positive
+/// parity test could trivially pass via a constant-loss bug.
+#[test]
+fn falsify_ship_021_different_seeds_do_diverge() {
+    let cfg_a = TransformerTrainConfig::new(TransformerConfig::tiny()).with_seed(0);
+    let cfg_b = TransformerTrainConfig::new(TransformerConfig::tiny()).with_seed(1);
+    let mut trainer_a = TransformerTrainer::new(cfg_a);
+    let mut trainer_b = TransformerTrainer::new(cfg_b);
+
+    let batch = LMBatch::single(vec![1, 2, 3, 4, 5], vec![2, 3, 4, 5, 6]);
+
+    // 10 steps is enough for the differently-seeded init weights to
+    // produce visibly different loss values on a tiny model.
+    let mut any_diverged = false;
+    for _ in 0..10 {
+        let la = trainer_a.train_batch(&batch);
+        let lb = trainer_b.train_batch(&batch);
+        if (la - lb).abs() > 1e-4 {
+            any_diverged = true;
+        }
+    }
+    assert!(
+        any_diverged,
+        "FALSIFY-SHIP-021 counter-test: seed=0 and seed=1 produced identical loss trajectories — seed plumbing is a no-op",
+    );
 }
 
 // ── Activation Checkpointing (R-021, #115) ──────────────────────────────

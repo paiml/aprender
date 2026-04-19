@@ -1,0 +1,350 @@
+---
+contract_id: F-DECODE-GPU-RESIDENT-SAMPLING-001
+title: "Decode Hot Path — Eliminate Per-Token argmax Sync via GPU-Resident Token Flow"
+status: FALSIFIED
+created: 2026-04-17
+revised: 2026-04-17
+author: aprender-perf
+
+metadata:
+  version: 1.1.0
+  description: |
+    Decode hot path — eliminate per-token argmax sync via GPU-resident token
+    flow. Contract was FALSIFIED when DECODE_TIMING dogfooding on Qwen2.5-Coder
+    1.5B Q4_K_M / RTX 4090 showed no net throughput win after the GPU-resident
+    token-flow rewrite.
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md — perf gate"
+
+falsification_finding: |
+  DECODE_TIMING=1 dogfooding run on Qwen2.5-Coder-1.5B Q4_K_M / RTX 4090
+  measured per-phase split:
+
+      [DECODE-TIMING] pos=N: embed=0-1µs gpu=2250-3344µs total≈2500µs
+
+  The CPU embedding lookup is sub-microsecond — NOT the stall this
+  contract assumed. The 862µs "Non-Kernel Host Overhead" measured by
+  F-PROFILE-010 is NOT host-side sync waiting; it is graph-internal
+  dispatch overhead (862µs / 647 nodes = 1.33µs per graph node on
+  RTX 4090 Ada).
+
+  why_4 ("host cannot queue next iteration until it knows token ID")
+  is falsified: the CPU-side work between iterations is 1-2µs total,
+  dominated by argmax sync wait. GPU-resident token flow would save
+  at most those 1-2µs, not the 862µs the contract targeted.
+
+  R-GRS-004 risk anticipated this outcome. Contract-first design
+  captured the falsification cheaply (5 minutes of dogfooding) before
+  any implementation effort.
+
+  REAL LEVER (revealed by falsification): kernel fusion to reduce
+  graph node count. At 1.33µs/node dispatch, fusing 100 kernels saves
+  133µs/token (5.9% throughput). Targets:
+    - RmsNorm → QkvProjection fusion (448 calls, ~600µs dispatch)
+    - Attention kernels consolidation (flash decoding wiring)
+  This becomes the NEXT contract scope.
+related:
+  - F-DECODE-HOTPATH-001  # per-token fs::write removal (SHIPPED)
+  - F-DECODE-HOTPATH-002  # first-N-tokens eprintln removal (SHIPPED)
+  - F-DECODE-HOTPATH-003  # prefix-cache config.trace gating (SHIPPED)
+  - F-PROFILE-010         # graphed vs ungraphed methodology (SHIPPED)
+  - PAR-068               # two-pass gpu_argmax (preceding work)
+
+abstract: |
+  `apr profile --granular` on Qwen2.5-Coder-1.5B Q4_K_M / RTX 4090 reports
+  37.9% "Non-Kernel Host Overhead" (862µs / 2274µs per token). This is the
+  residual after subtracting ungraphed per-op kernel sum from graphed
+  decode time. The dominant contributor is the per-token round trip:
+
+      [CPU] token_id (u32)
+         ├── embed_into(token_id, &mut embed_buf)    ~14KB CPU memcpy
+         ├── copy_from_host_async(embed_buf, stream)  H2D 14KB
+         ├── launch_graph(decode_graph_exec)          647 nodes
+         ├── gpu_argmax kernel pair (block + final)
+         ├── stream.synchronize()                     ← STALLS HOST
+         └── copy_to_host(next_token_id, 4 bytes)    D2H 4B
+
+  The `stream.synchronize()` at `gpu_argmax` (reduces.rs:255) fully
+  blocks the host until the entire decode graph + argmax kernels finish.
+  The host then does the CPU embedding lookup for the NEXT token, then
+  starts the H2D for that next iteration. GPU is idle during CPU-side
+  embed_into + H2D setup — measured in the 862µs overhead budget.
+
+  This contract proposes keeping the next-token ID GPU-resident and
+  doing the embedding lookup on GPU. The CPU→GPU→CPU round trip per
+  token becomes a GPU→GPU handoff. Sync only for stop-token checks
+  (periodic, e.g., every 8 tokens) or at end of generation.
+
+# ─────────────────────────────────────────────────────────────
+# FIVE WHYS
+# ─────────────────────────────────────────────────────────────
+five_whys:
+  problem: |
+    On Qwen2.5-Coder-1.5B Q4_K_M / RTX 4090, graphed decode = 2274µs/tok
+    (439.5 tok/s). Ungraphed kernel sum = 1412µs/tok. Delta 862µs (37.9%)
+    is Non-Kernel Host Overhead: host work between graph launches that
+    prevents the GPU from being saturated with successive decode graphs.
+
+  why_1: |
+    WHY is there 862µs of non-kernel time per token?
+    Because each decode iteration serializes: GPU compute → host sync →
+    host embedding lookup → H2D copy → next GPU compute. The host work
+    (embedding + H2D launch) is on the critical path because the host
+    cannot build the next iteration's input until it knows the token ID.
+
+  why_2: |
+    WHY does the host need the token ID?
+    Because `embed_into(token_id, &mut embed_buf)` is a CPU indexed-load
+    from the embedding table. The result is then H2D-copied into
+    `graph_input_buf`. The graph's first kernel reads from that buffer.
+
+  why_3: |
+    WHY is the embedding lookup on CPU?
+    Because the embedding table (151936 × 1536 f16 = 466MB, or Q4_K
+    quantized ~117MB) is held on the CPU side in the current GGUF
+    loader path. A GPU-resident embedding kernel was not written because
+    the CPU lookup was "cheap enough" — before HP-001/002/003 removed
+    other per-token costs it looked like noise.
+
+  why_4: |
+    WHY is it no longer cheap?
+    With graphed decode at 439 tok/s, per-token budget is 2.27ms. The
+    CPU embedding (14KB stride-read + H2D) is on the order of tens of µs,
+    but the CRITICAL cost is that the host sync at the end of argmax
+    creates a ~100-300µs stall where GPU kernels could have been queued
+    for the next iteration. Eliminating the sync point eliminates the
+    stall.
+
+  why_5: |
+    WHY has this not been fixed?
+    Because the optimization requires two coupled changes:
+      (a) Upload embedding weights to GPU (new memory + kernel)
+      (b) Change `forward_graphed_replay_to_token_id` to accept a
+          GPU-resident token_id buffer instead of &[f32] input.
+    Either alone is insufficient. The required code surgery spans
+    graph capture (embedding kernel must be captured as first node),
+    the GGUF loader (upload embedding on init), and the decode loop
+    (remove per-token CPU embed_into). No single small win made it
+    look worth the coordinated change — until HP-001/002/003 put us
+    at 1.47× Ollama with ~3% gap remaining.
+
+# ─────────────────────────────────────────────────────────────
+# INVARIANTS
+# ─────────────────────────────────────────────────────────────
+equations:
+  - id: gpu_resident_sampling_semantics
+    description: |
+      The observable token sequence MUST be bit-identical to the
+      pre-change greedy decode for the same model, prompt, and seed.
+    formula: |
+      ∀ model, prompt, seed: greedy_decode(gpu_resident=true,  model, prompt, seed).tokens
+                           == greedy_decode(gpu_resident=false, model, prompt, seed).tokens
+      AND stop_latency(gpu_resident=true) ≤ STOP_CHECK_EVERY_N
+    requirements:
+      - "Token sequence equality: gpu_resident_tokens == pre_change_tokens"
+      - "Stop-token detection latency ≤ STOP_CHECK_EVERY_N tokens of actual stop"
+      - "Generation length deterministic for greedy (temp=0, top_k=1) paths"
+
+  - id: host_sync_budget
+    description: |
+      After implementation, per-token host-sync frequency drops from
+      1 per token to 1 per STOP_CHECK_EVERY_N tokens (default N=8).
+    formula: |
+      syncs_per_token_post = 1 / STOP_CHECK_EVERY_N
+      measured_sync_reduction = (syncs_per_token_pre - syncs_per_token_post)
+                              * avg_sync_latency_us
+    domain: |
+      Greedy/top_k=1 decode path. Top-p/temperature paths defer — they
+      already materialize logits (not just argmax) and are a separate
+      contract.
+
+  - id: non_kernel_overhead_target
+    description: |
+      Non-Kernel Host Overhead (measured via apr profile --granular)
+      MUST drop from 37.9% to ≤ 20% after implementation.
+    formula: |
+      non_kernel_overhead_pct_post ≤ 0.20 * graphed_decode_us_per_token
+    domain: |
+      Measured on Qwen2.5-Coder-1.5B Q4_K_M / RTX 4090 greedy decode
+      via `apr profile --granular` after F-PROFILE-010 labeling.
+
+# ─────────────────────────────────────────────────────────────
+# PROOF OBLIGATIONS
+# ─────────────────────────────────────────────────────────────
+proof_obligations:
+  - id: PO-GRS-001
+    statement: "Greedy decode produces bit-identical token sequence before/after"
+    verification: |
+      apr run model.gguf --prompt "fn fib(n: u32) -> u32 {" \
+          --max-tokens 64 --temperature 0 > before.txt
+      # Apply change, rebuild
+      apr run model.gguf --prompt "fn fib(n: u32) -> u32 {" \
+          --max-tokens 64 --temperature 0 > after.txt
+      diff before.txt after.txt  # MUST be empty
+
+  - id: PO-GRS-002
+    statement: "Non-Kernel Host Overhead drops to ≤20%"
+    verification: |
+      apr profile model.gguf --granular 2>&1 | \
+          grep -E "Non-Kernel Host Overhead.*[0-9]+\.[0-9]+%"
+      # Parsed percentage MUST be ≤ 20.0%
+
+  - id: PO-GRS-003
+    statement: "apr qa Ollama parity ≥ 1.50×"
+    verification: |
+      apr qa model.gguf | grep "Ollama parity"
+      # Parsed ratio MUST be ≥ 1.50
+
+  - id: PO-GRS-004
+    statement: "Stop token detection still bounded"
+    verification: |
+      For prompt that generates a stop token within first 16 generated
+      tokens, total generated tokens MUST be ≤ stop_position + STOP_CHECK_EVERY_N.
+
+# ─────────────────────────────────────────────────────────────
+# FALSIFICATION TESTS
+# ─────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-GRS-001
+    name: "Token parity with pre-change decode"
+    method: |
+      Golden-output test: fixed prompt, fixed model, temp=0, max_tokens=32.
+      Compare token IDs (not decoded text) to pre-change snapshot stored
+      at `tests/fixtures/gpu_resident_sampling_golden.json`.
+    expected: |
+      Every token ID matches exactly (no off-by-one, no numerical drift).
+    fails_if: |
+      Any token ID diverges. Indicates embedding kernel or argmax-in-graph
+      numerics do not match CPU-path greedy decode.
+
+  - id: FALSIFY-GRS-002
+    name: "Throughput improvement crosses 1.5× Ollama"
+    method: |
+      Run apr qa on Qwen2.5-Coder-1.5B Q4_K_M three times. Take median
+      Ollama parity ratio.
+    expected: |
+      Median parity ≥ 1.50× (was 1.47× at F-PROFILE-010 ship).
+    fails_if: |
+      Median parity < 1.50× after three runs. Indicates either
+      implementation bug or the 37.9% overhead budget was mostly other
+      costs (test catches overestimate of this lever's ROI).
+
+  - id: FALSIFY-GRS-003
+    name: "Stop-token latency bounded"
+    method: |
+      Use a prompt that reliably produces an EOS within first 8 generated
+      tokens. Measure total generated tokens against stop position.
+    expected: |
+      generated_tokens ≤ stop_position + STOP_CHECK_EVERY_N
+      (for default N=8, this is ≤ stop_position + 8).
+    fails_if: |
+      generated_tokens > stop_position + STOP_CHECK_EVERY_N. Indicates
+      stop-token check is not actually firing at N-token intervals.
+
+  - id: FALSIFY-GRS-004
+    name: "Non-Kernel Host Overhead drops to ≤20%"
+    method: |
+      apr profile <model> --granular 2>&1 |
+        grep -E "Non-Kernel Host Overhead.*[0-9]+\.[0-9]+%"
+    expected: |
+      Parsed percentage ≤ 20.0% after GPU-resident token flow is enabled.
+      Matches PO-GRS-002 obligation: Non-Kernel Host Overhead ≤ 20%.
+    fails_if: |
+      Reported overhead remains >20%. Indicates the 862µs budget was
+      not dominated by host-side sync-wait and the lever ROI was
+      overestimated (supports existing FALSIFIED status).
+
+# ─────────────────────────────────────────────────────────────
+# KANI HARNESSES
+# ─────────────────────────────────────────────────────────────
+kani_harnesses:
+  - id: KH-GRS-001
+    obligation: PO-GRS-001
+    property: "greedy_decode_token_parity(gpu_resident, cpu_resident) == equal"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_greedy_token_parity
+  - id: KH-GRS-002
+    obligation: PO-GRS-004
+    property: "generated_tokens ≤ stop_position + STOP_CHECK_EVERY_N"
+    bound: 16
+    strategy: exhaustive
+    harness: verify_stop_latency_bound
+
+# ─────────────────────────────────────────────────────────────
+# IMPLEMENTATION PLAN
+# ─────────────────────────────────────────────────────────────
+implementation:
+  phase_1_investigation:
+    - "Confirm embedding weight storage: locate `embed_into` on CPU model (gguf/model.rs / embedding.rs)"
+    - "Size estimate: Qwen2.5-Coder-1.5B token_embd is [151936, 1536] — 466MB F16 or ~117MB Q4_K"
+    - "Decide Q4_K vs F16 GPU embedding: Q4_K requires fused dequant+gather kernel"
+    - "Verify there is no argmax node already inside decode_graph (reduces.rs path launches argmax OUTSIDE graph)"
+
+  phase_2_gpu_embedding_kernel:
+    files_to_create:
+      - "crates/aprender-serve/src/cuda/executor/layers/embed_gpu.rs"
+    new_functions:
+      - "fn upload_embedding_weights(&mut self, weights: &QuantizedTensor) -> Result<(), GpuError>"
+      - "fn gpu_embed_lookup(&mut self, token_id_device: u64, out_buf: u64, hidden: u32) -> Result<(), GpuError>"
+    notes: |
+      For Q4_K: reuse existing dequant kernel pattern, index-gather a single
+      row. For F16: simple strided copy kernel.
+
+  phase_3_graph_recapture:
+    files_to_modify:
+      - "crates/aprender-serve/src/cuda/executor/graph_builder.rs"
+      - "crates/aprender-serve/src/cuda/executor/layers/par-062.rs (forward_graphed_replay_to_token_id signature)"
+    changes: |
+      - Prepend embedding-lookup kernel as FIRST node in captured graph.
+      - Append argmax kernels (block + final) as LAST nodes in captured graph.
+      - Graph input becomes: u32 token_id_buf (4 bytes).
+        Graph output stays: u32 next_token_buf (4 bytes).
+      - Remove `stream.synchronize()` + per-token copy_to_host from gpu_argmax
+        in the graphed path. Keep ungraphed path synchronous (profiling).
+
+  phase_4_stop_check_batching:
+    files_to_modify:
+      - "crates/aprender-serve/src/gguf/cuda/uses.rs (generate loop)"
+    changes: |
+      - Keep a ring-buffer of last-N token IDs on GPU (or single slot overwritten each iter).
+      - Every STOP_CHECK_EVERY_N iterations, async D2H the last N IDs,
+        synchronize, and check against stop-token set.
+      - On stop hit, trim any overshoot tokens past stop_position before returning.
+      - Feature-flag behind env `GPU_RESIDENT_SAMPLING=0|1` to allow A/B.
+
+  followup:
+    - "Top-p / temperature sampling path (currently falls back to D2H logits) — separate contract"
+    - "Speculative decoding (F-SPEC-*) — compatible once greedy path is GPU-resident"
+    - "Multi-sequence batched decode (c>1 in batched_gpu_argmax) — extends similarly"
+
+# ─────────────────────────────────────────────────────────────
+# RISK LEDGER
+# ─────────────────────────────────────────────────────────────
+risks:
+  - id: R-GRS-001
+    risk: "Capturing argmax inside graph may break if graph needs to handle variable vocab_size"
+    mitigation: "Vocab size is fixed per-model — graph is recaptured on model load, not per-request"
+
+  - id: R-GRS-002
+    risk: "GPU embedding with Q4_K requires new kernel, may have numerical divergence from CPU"
+    mitigation: "FALSIFY-GRS-001 token parity test catches any divergence at bit level"
+
+  - id: R-GRS-003
+    risk: "Stop-token latency ≤ N tokens means up to 7 extra generated tokens past a stop"
+    mitigation: "Trim overshoot tokens before returning to caller. Cost: up to 7×2.27ms ≈ 16ms extra decode per response — acceptable given throughput win"
+
+  - id: R-GRS-004
+    risk: "Lever ROI overestimate: 862µs overhead may be mostly argmax kernel compute, not sync stall"
+    mitigation: "FALSIFY-GRS-002 falsifies this contract if throughput does not cross 1.5×"
+
+# ─────────────────────────────────────────────────────────────
+# QA GATE
+# ─────────────────────────────────────────────────────────────
+qa_gate:
+  must_pass:
+    - FALSIFY-GRS-001  # token parity
+    - FALSIFY-GRS-002  # 1.5× Ollama parity
+    - FALSIFY-GRS-003  # stop-token latency bound
+  integration: "apr qa on Qwen2.5-Coder-1.5B Q4_K_M (greedy path)"
+  regression_protection: "Token parity test fixed in CI prevents future drift between CPU and GPU greedy paths"

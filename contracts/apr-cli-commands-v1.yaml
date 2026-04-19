@@ -82,6 +82,12 @@ commands:
     requires_model: true
     side_effects: []
 
+  - name: validate-manifest
+    category: inspection
+    description: "Verify publish manifest (F-PUBLISH-MANIFEST-001): FALSIFY-PM-001..006"
+    requires_model: false
+    side_effects: []
+
   - name: lint
     category: inspection
     description: "Check for best practices and conventions"
@@ -220,6 +226,12 @@ commands:
   - name: train
     category: training
     description: "Training pipeline (plan/apply)"
+    requires_model: false
+    side_effects: [filesystem, gpu]
+
+  - name: pretrain
+    category: training
+    description: "Pretrain small language models from scratch (MODEL-2 loop)"
     requires_model: false
     side_effects: [filesystem, gpu]
 
