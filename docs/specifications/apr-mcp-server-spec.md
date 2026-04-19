@@ -2,7 +2,7 @@
 
 **Version**: 1.2.0
 **Date**: 2026-04-19 (M1–M3 shipped in v0.31.0; M4 in flight)
-**Status**: ACTIVE — `aprender-mcp` ships 9 tools over stdio JSON-RPC 2.0; FALSIFY-MCP-008 ENFORCED at 4 layers (schema+description × live+codegen). M4 open (PRs #886/#889/#890/#891/#892).
+**Status**: ACTIVE — `aprender-mcp` ships 9 tools over stdio JSON-RPC 2.0; FALSIFY-MCP-008 ENFORCED at 4 layers (schema+description × live+codegen); FALSIFY-MCP-003/-004 response-shape layer ENFORCED (PR #889 merged 2026-04-19). M4 open (PRs #890/#891/#892 still cycling; #886 and #889 landed).
 **Contracts**:
 - `contracts/mcp-tool-schema-v1.yaml` — upstream MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
 - `contracts/apr-mcp-tool-schemas-v1.yaml` — per-tool `inputSchema` + description source of truth; drives `build.rs` codegen; `status: ENFORCED` (M3, 2026-04-18)
@@ -158,8 +158,8 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 
 1. **FALSIFY-MCP-001**: `apr mcp < init.json` responds to `initialize` within 500ms with `{"protocolVersion":"2024-11-05", ...}`. **ENFORCED**.
 2. **FALSIFY-MCP-002**: `tools/list` returns the 8 Phase-1 workflow tools plus the `apr.version` M1 scaffold (9 total registered); every tool's schema validates against JSONSchema Draft 7. **ENFORCED** (see `crates/aprender-mcp/tests/falsify_m1.rs::falsify_mcp_002_tools_list_schema_shape`).
-3. **FALSIFY-MCP-003**: `tools/call apr.run` on `qwen2.5-0.5b-instruct-q4km.gguf` with prompt "1+1=" decodes "2" as first token within 5s. **PARTIAL** — surface tests ENFORCED; mock-subprocess e2e in flight; real-model gate deferred to M4 dogfood.
-4. **FALSIFY-MCP-004**: `tools/call apr.qa` returns 8 gates with correct pass/fail states matching `apr qa --json` CLI output byte-for-byte. **PARTIAL** — surface tests ENFORCED; byte-for-byte parity deferred to M4 dogfood.
+3. **FALSIFY-MCP-003**: `tools/call apr.run` on `qwen2.5-0.5b-instruct-q4km.gguf` with prompt "1+1=" decodes "2" as first token within 5s. **ENFORCED (response-shape layer)** — PR #889 merged 2026-04-19 promotes the surface layer to full mock-subprocess e2e response-shape gates (`crates/aprender-mcp/tests/falsify_mcp_003.rs`, 3 tests: happy-path response-shape, stop-reason, error surface). Real-model gate (live qwen2.5-0.5b on CI) remains M4 dogfood scope — covered by PR #892 as new gate FALSIFY-MCP-E2E-001.
+4. **FALSIFY-MCP-004**: `tools/call apr.qa` returns 8 gates with correct pass/fail states matching `apr qa --json` CLI output byte-for-byte. **ENFORCED (response-shape layer)** — PR #889 merged 2026-04-19 promotes the surface layer to full mock-subprocess e2e response-shape gates (`crates/aprender-mcp/tests/falsify_mcp_004.rs`, 2 tests: 8-gate structure + pass/fail field parity). Real-model byte-for-byte parity against `apr qa --json` remains M4 dogfood scope — covered by PR #892 as FALSIFY-MCP-E2E-001.
 5. **FALSIFY-MCP-005**: Malformed request (`"jsonrpc": "1.0"`) returns JSON-RPC error code `-32600`, does not crash server. **ENFORCED**.
 6. **FALSIFY-MCP-006**: `notifications/cancelled` during `apr.run` stops decoding within 30s, returns partial result. **ENFORCED**.
 7. **FALSIFY-MCP-007**: Protocol version mismatch (`"protocolVersion": "1999-01-01"`) returns error, does not attempt tools/list. **ENFORCED**.
@@ -385,7 +385,7 @@ These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mc
 ### M4: End-to-end validation — IN PROGRESS
 - [x] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions (FALSIFY-MCP-001..008) + test cross-links — PR #886 merged 2026-04-19 (pins exact-8 invariant via `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008` in `crates/aprender-contracts/tests/apr_mcp_server_contract.rs`)
 - [ ] Extend the contract with a 9th row for FALSIFY-MCP-PROGRESS-001 — relax the exact-8 invariant to "FALSIFY-MCP-001..008 + PROGRESS-001, no extras"
-- [ ] Strengthen FALSIFY-MCP-003/-004 from surface tests to mock-subprocess e2e response-shape assertions (PR #889 open — `feat/mcp-strengthen-003-004`)
+- [x] Strengthen FALSIFY-MCP-003/-004 from surface tests to mock-subprocess e2e response-shape assertions — PR #889 merged 2026-04-19 (`crates/aprender-mcp/tests/falsify_mcp_003.rs` + `falsify_mcp_004.rs`, 5 tests total; response-shape now byte-verified against mock-subprocess capture). Real-model gate still M4 scope (tracked by PR #892 as FALSIFY-MCP-E2E-001)
 - [ ] Real-model FALSIFY-MCP-003: `apr.run` decodes "2" within 5s on cached qwen2.5-0.5b (covered by PR #892 — `feat/mcp-real-model-e2e`, new gate FALSIFY-MCP-E2E-001)
 - [ ] Real-model FALSIFY-MCP-004: byte-for-byte `apr qa --json` parity (also covered by PR #892)
 - [ ] Claude Code dogfood — 1 full session using only `apr.*` tools (PR #890 open — `feat/mcp-dogfood-conformance`, new gate FALSIFY-MCP-DOGFOOD-001)
@@ -461,5 +461,5 @@ and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
 **Sponsor**: apr-cli team
 **Delivery**:
 - **v0.31.0** (2026-04-19, tag 62893da32): M1–M3 SHIPPED — 9 tools (`apr.run`, `apr.serve`, `apr.qa`, `apr.trace`, `apr.tensors`, `apr.validate`, `apr.bench`, `apr.finetune`, and dispatch infrastructure), `build.rs` schema+description codegen from `contracts/apr-mcp-tool-schemas-v1.yaml`, `notifications/progress` for `apr.finetune`, `notifications/cancelled` SIGTERM→SIGKILL, JSON Schema Draft 7 meta-validation on every tool input schema in CI, MCP book chapter documenting `.mcp.json` client config.
-- **M4** (in flight): PR #886 merged 2026-04-19 (`contracts/apr-mcp-server-v1.yaml` ACTIVE); PRs #889/#890/#891/#892 open — additional tool coverage + conformance hardening.
+- **M4** (in flight): PR #886 merged 2026-04-19 (`contracts/apr-mcp-server-v1.yaml` ACTIVE); PR #889 merged 2026-04-19 (FALSIFY-MCP-003/-004 response-shape e2e gates live, `falsify_mcp_003.rs` + `falsify_mcp_004.rs` = 5 tests). Remaining: PRs #890 (Claude-Code dogfood conformance), #891 (progress notifications for `apr.run`), #892 (real-model e2e gates) still cycling CI.
 - **M5+** (planned): per spec v1.2.0 roadmap — plugin marketplace, pre/post-inference hooks.
