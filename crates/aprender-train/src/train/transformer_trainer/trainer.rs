@@ -40,7 +40,16 @@ pub struct TransformerTrainer {
 impl TransformerTrainer {
     /// Create a new transformer trainer
     pub fn new(config: TransformerTrainConfig) -> Self {
+        // GATE-TRAIN-006 / INV-TRAIN-006: honor config.seed before weight init
+        // AND hold the init-seed lock for the full Transformer::new call so
+        // concurrent callers (parallel tests, concurrent harnesses) cannot
+        // clobber INIT_SEED between set and read. Previously only the YAML
+        // loader set this; direct TransformerTrainer::new callers silently
+        // inherited the global default (42), breaking seed reproducibility
+        // for any non-default seed.
+        let seed_guard = crate::transformer::init::lock_init_seed(config.seed);
         let model = Transformer::new(&config.model_config);
+        drop(seed_guard);
         Self::build(model, config)
     }
 
