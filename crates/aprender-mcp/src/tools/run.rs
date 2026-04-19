@@ -4,8 +4,9 @@
 //!
 //! M3 (FALSIFY-MCP-006) adds cancellation: the call accepts a cancel receiver
 //! and forwards it to [`run_apr_cancellable`], which SIGTERMs the spawned
-//! subprocess on signal and SIGKILLs after the grace window. Progress
-//! notifications (streamed per-token) are a separate M3 slice.
+//! subprocess on signal and SIGKILLs after the grace window. Per-token
+//! `notifications/progress` streaming is deferred to M4 — it needs an
+//! `apr run --stream` CLI flag prereq that doesn't yet exist.
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
@@ -32,9 +33,7 @@ pub fn run_tool_definition() -> ToolDefinition {
     );
     ToolDefinition {
         name: NAME.to_string(),
-        description:
-            "Run synchronous inference on a model. Wraps `apr run <model> --json` and returns tokens + tok/s + stop reason."
-                .to_string(),
+        description: crate::schemas::APR_RUN_DESCRIPTION.to_string(),
         input_schema,
     }
 }

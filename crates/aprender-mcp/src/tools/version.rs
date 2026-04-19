@@ -27,7 +27,7 @@ pub fn version_tool_definition() -> ToolDefinition {
         );
     ToolDefinition {
         name: NAME.to_string(),
-        description: "Return the aprender-mcp server version. Takes no arguments.".to_string(),
+        description: crate::schemas::APR_VERSION_DESCRIPTION.to_string(),
         input_schema,
     }
 }

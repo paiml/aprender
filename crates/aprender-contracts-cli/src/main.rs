@@ -41,6 +41,7 @@ fn run_command(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             binding,
         } => commands::explain::run(&contract, binding.as_deref(), &format),
         Commands::Validate { contract } => commands::validate::run(&contract),
+        Commands::CheckParity { contract } => commands::check_parity::run(&contract),
         Commands::Scaffold {
             contract,
             r#trait,

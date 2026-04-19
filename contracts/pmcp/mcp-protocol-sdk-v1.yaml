@@ -1,17 +1,23 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-03'
+  last_modified: '2026-04-18'
   author: PAIML Engineering
   description: >-
-    Provable contract for the pmcp crate (PAIML MCP Protocol SDK v2.1).
-    Covers JSON-RPC 2.0 protocol correctness, tool dispatch integrity,
-    session lifecycle state machine, transport abstraction safety,
-    version negotiation, payload limits, cancellation, and error mapping.
+    Provable contract for the pmcp crate (PAIML MCP Protocol SDK v2.3,
+    github.com/paiml/rust-mcp-sdk, crates.io/pmcp). Covers JSON-RPC 2.0
+    protocol correctness, tool dispatch integrity, session lifecycle
+    state machine, transport abstraction safety, version negotiation,
+    payload limits, cancellation, and error mapping.
+    Consumer of record: aprender-orchestrate (client role, feature
+    agents-mcp). Future consumer: aprender-mcp (server role, M5 migration
+    per apr-mcp-server-spec.md).
   references:
   - Model Context Protocol Specification (2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25)
   - JSON-RPC 2.0 Specification (jsonrpc.org)
   - pmcp crate docs (docs.rs/pmcp)
   - 'pv-spec: MCP SDK boundary contracts'
+  - 'docs/specifications/apr-mcp-server-spec.md: M5 pmcp migration milestone'
 
 equations:
   jsonrpc_framing:

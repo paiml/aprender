@@ -26,8 +26,7 @@ pub fn bench_tool_definition() -> ToolDefinition {
     );
     ToolDefinition {
         name: NAME.to_string(),
-        description: "Benchmark model throughput and latency. Wraps `apr bench <model> --json`."
-            .to_string(),
+        description: crate::schemas::APR_BENCH_DESCRIPTION.to_string(),
         input_schema,
     }
 }
