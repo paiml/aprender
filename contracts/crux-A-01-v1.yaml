@@ -27,6 +27,10 @@ metadata:
     a did-you-mean suggestion when the short name is unknown. Ref:
     https://ollama.com/library ; https://github.com/ollama/ollama/blob/main/docs/api.md#pull-a-model
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   short_name_resolution:
     formula: |
@@ -80,6 +84,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'dry-run prints resolved canonical URL' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-01-002
   rule: alias map ships with release
   prediction: "configs/aliases.yaml is present and parseable"
@@ -90,6 +95,7 @@ falsification_tests:
     [ -f "$ALIAS_FILE" ] || { echo "FAIL: aliases.yaml not shipped" >&2; exit 1; }
     python3 -c "import yaml,sys; m=yaml.safe_load(open('$ALIAS_FILE')); assert isinstance(m,dict) and {'llama3','mistral','qwen2','phi3'} <= set(m.keys()), 'missing canonical keys'"
 
+  if_fails: rule 'alias map ships with release' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-01-003
   rule: unknown short name emits did-you-mean
   prediction: "apr pull lama3 (typo) suggests 'llama3'"
@@ -102,6 +108,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'unknown short name emits did-you-mean' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-01-004
   rule: apr registry aliases lists all short names
   prediction: "apr registry aliases --json returns {name: url} map"
@@ -114,6 +121,7 @@ falsification_tests:
     }
     echo "$OUT" | jq -e '.llama3 | test("^(hf|https)://")' >/dev/null
 
+  if_fails: rule 'apr registry aliases lists all short names' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-01-005
   rule: resolution is deterministic across invocations
   prediction: "two back-to-back --dry-run invocations emit byte-identical canonical URLs"
@@ -122,6 +130,7 @@ falsification_tests:
     B=$(apr pull llama3 --dry-run 2>&1 | grep -oE '(hf|https)://[^ ]+' | head -1)
     [ -n "$A" ] && [ "$A" = "$B" ] || { echo "FAIL: non-deterministic resolution ($A vs $B)" >&2; exit 1; }
 
+  if_fails: rule 'resolution is deterministic across invocations' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "configs/aliases.yaml ships with every release and contains canonical short names"

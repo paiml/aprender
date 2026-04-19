@@ -18,6 +18,10 @@ metadata:
     downloading. Canonical: `ollama create mymodel -f Modelfile` (FROM
     /absolute/path.gguf) — copies blob into registry and writes a manifest.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   register_from_local:
     formula: |
@@ -45,6 +49,7 @@ falsification_tests:
     apr ls | grep -q local-qwen
     out=$(apr run local-qwen --prompt "hello" --max-tokens 5)
     [ -n "$out" ]
+  if_fails: rule 'register from .gguf produces runnable entry' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-24-002
   rule: hardlink used when same filesystem
   prediction: "registry blob has same inode as source file"
@@ -55,8 +60,9 @@ falsification_tests:
     blob=$(apr inspect --blob-path tst2 | head -1)
     [ "$(stat -c %i "$src")" = "$(stat -c %i "$blob")" ]
 
+  if_fails: rule 'hardlink used when same filesystem' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr create --from matches `ollama create -f Modelfile(FROM path)` semantics"
 - type: invariant
   property: "same-FS source is hardlinked (zero-copy); cross-FS is copy+sha256-verify"

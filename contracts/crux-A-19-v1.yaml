@@ -137,7 +137,7 @@ falsification_tests:
   if_fails: "parallel chunk accounting invisible in --verbose log"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr pull TTY progress shows pct+bytes+rate+ETA, matching huggingface-cli tqdm output"
 - type: invariant
   property: "Progress is emitted on stderr only when stderr is a TTY and --quiet/APR_PROGRESS=0 are not set"
@@ -145,7 +145,7 @@ proof_obligations:
   property: "Final progress line per file shows 100% and byte counter equals total size"
 - type: invariant
   property: "Parallel chunk count surfaces in --verbose log and matches configured concurrency"
-- type: equation
+- type: invariant
   property: "Byte counter is monotonic non-decreasing over the download lifetime"
 
 verification_summary:

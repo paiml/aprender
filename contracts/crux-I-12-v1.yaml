@@ -30,6 +30,10 @@ metadata:
     schema to an equivalent GBNF grammar and constrain sampling so that
     generated output parses against the original schema with 100% rate.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   schema_to_gbnf_compilation:
     formula: |
@@ -89,6 +93,7 @@ falsification_tests:
     echo "$G" | grep -q '"name"' || { echo "FAIL: required key 'name' absent" >&2; exit 1; }
     echo "$G" | grep -q '"age"'  || { echo "FAIL: required key 'age' absent"  >&2; exit 1; }
 
+  if_fails: rule 'grammar compiles for a required-keys schema' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-12-002
   rule: 100% validity of constrained outputs across seeds
   prediction: "50 runs with varying seeds all produce schema-valid JSON"
@@ -108,6 +113,7 @@ falsification_tests:
     done
     [ "$FAIL" -eq 0 ] || { echo "FAIL: $FAIL/50 runs invalid" >&2; exit 1; }
 
+  if_fails: rule '100% validity of constrained outputs across seeds' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-12-003
   rule: enum restriction is honored at sampling time
   prediction: "enum:['red','green','blue'] never emits any other string"
@@ -124,6 +130,7 @@ falsification_tests:
       case "$COLOR" in red|green|blue) ;; *) echo "FAIL: enum violation '$COLOR'" >&2; exit 1;; esac
     done
 
+  if_fails: rule 'enum restriction is honored at sampling time' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-12-004
   rule: parity with llama.cpp json_schema_to_grammar.py
   prediction: "grammar accepts the same language as upstream's script output"
@@ -136,6 +143,7 @@ falsification_tests:
     python3 evidence/crux/llama_cpp/gbnf_fuzz_parity.py /tmp/g-apr.gbnf /tmp/g-llama.gbnf \
       || { echo "FAIL: accept-set divergence vs llama.cpp" >&2; exit 1; }
 
+  if_fails: rule 'parity with llama.cpp json_schema_to_grammar.py' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "compile_gbnf(S) produces a grammar that accepts only instances satisfying S"
@@ -143,7 +151,7 @@ proof_obligations:
   property: "Constrained sampling yields JSON-valid, schema-valid output with 100% rate (50+ seeds)"
 - type: invariant
   property: "Enum and required-key schema clauses are enforced at sampling time, not post-hoc repair"
-- type: parity
+- type: equivalence
   property: "Grammar accepts the same JSON language as llama.cpp's json_schema_to_grammar.py on fuzzed inputs"
 
 verification_summary:

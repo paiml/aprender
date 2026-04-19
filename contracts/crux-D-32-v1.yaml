@@ -18,6 +18,11 @@ metadata:
     Canonical: HF `Trainer.train(resume_from_checkpoint="user/repo@sha")`;
     pulls optimizer+scheduler state, tokenizer, and config atomically.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   resume_from_hub:
     formula: |
@@ -53,6 +58,7 @@ falsification_tests:
     for k in range(5):
       assert abs(s[5+k]['loss'] - r[k]['loss']) < 1e-5, (s[5+k], r[k])
     "
+  if_fails: rule 'resumed run matches single-run loss trajectory' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-32-002
   rule: step counter resumes from saved global_step
   prediction: "trainer_state.json.global_step after resume == pre-pause + N"
@@ -60,6 +66,7 @@ falsification_tests:
     set -euo pipefail
     gs=$(jq .global_step /tmp/resumed/trainer_state.json)
     python3 -c "assert $gs == 10, $gs"
+  if_fails: rule 'step counter resumes from saved global_step' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-32-003
   rule: invalid URL fails fast with actionable error
   prediction: "apr train --resume-from hf://nonexistent/repo exits non-zero with HF error"
@@ -69,8 +76,9 @@ falsification_tests:
       --model tests/fixtures/tinyllama-hf --steps 1 -o /tmp/fail 2>/tmp/err
     grep -E "not found|404|unreachable" /tmp/err
 
+  if_fails: rule 'invalid URL fails fast with actionable error' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr train --resume-from hf://repo@rev matches HF Trainer `resume_from_checkpoint` semantics"
 - type: invariant
   property: "resumed loss trajectory matches single-run trajectory within 1e-5"

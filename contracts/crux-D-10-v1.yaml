@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   autocast_dtype_selection:
     formula: |
@@ -170,7 +175,7 @@ proof_obligations:
   property: "|final_loss(mixed) - final_loss(fp32)| / final_loss(fp32) ≤ 0.02"
 - type: invariant
   property: "zero nan/inf gradients over 100 consecutive bf16 steps"
-- type: parity
+- type: equivalence
   property: "apr --precision bf16 ≡ torch.autocast(dtype=torch.bfloat16) step-loss trajectory within 2%"
 
 # References:

@@ -132,7 +132,7 @@ proof_obligations:
   property: "apr stop is idempotent (second call on same target exits 0)"
 - type: invariant
   property: "VRAM freed ≥ 95% of pre-stop model footprint"
-- type: parity
+- type: equivalence
   property: "apr stop end-state ≡ ollama stop end-state on golden"
 
 verification_summary:

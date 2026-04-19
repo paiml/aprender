@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   arithmetic_intensity:
     formula: |
@@ -120,7 +124,7 @@ proof_obligations:
   property: "regime classification matches ai > (peak_flops/peak_bw) strictly"
 - type: invariant
   property: "utilization == achieved_flops / min(peak_flops, ai*peak_bw) in [0,1]"
-- type: parity
+- type: equivalence
   property: "apr profile --roofline matches PyTorch torch.profiler (with_flops=True) + bandwidth total FLOPs within ±5% on equivalent model"
 
 # References:

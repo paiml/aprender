@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   auth_header_attached:
     formula: |
@@ -112,7 +116,7 @@ falsification_tests:
   if_fails: "HF_TOKEN accepted by huggingface_hub but rejected by apr (or vice versa)"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr auth flow matches huggingface_hub token resolution and Bearer header construction"
   competitor_function: "huggingface_hub.HfApi(token=...)"
   reference: "https://huggingface.co/docs/hub/security-tokens"

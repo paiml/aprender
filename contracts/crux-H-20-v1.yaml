@@ -20,6 +20,11 @@ metadata:
     preserves row count; redaction is deterministic (same input + same
     policy ⇒ same output bytes); no detected pattern survives redaction.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   pii_redact:
     formula: |
@@ -45,6 +50,7 @@ falsification_tests:
     python3 -c "
     assert sum(1 for _ in open('/tmp/pii.jsonl')) == sum(1 for _ in open('/tmp/out.jsonl'))
     "
+  if_fails: rule 'row count preserved' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-20-002
   rule: no pattern survives redaction
   prediction: "re-running detector on output finds 0 PII hits"
@@ -56,6 +62,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/scan.json'))
     assert d['hits'] == 0, d
     "
+  if_fails: rule 'no pattern survives redaction' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-20-003
   rule: deterministic under fixed salt
   prediction: "two runs with --salt SAME produce byte-identical output"
@@ -67,8 +74,9 @@ falsification_tests:
     done
     diff /tmp/d1.jsonl /tmp/d2.jsonl
 
+  if_fails: rule 'deterministic under fixed salt' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr dataset redact matches Microsoft Presidio analyzer + anonymizer semantics"
 - type: invariant
   property: "no PII pattern survives (fail-closed redaction)"

@@ -18,6 +18,10 @@ metadata:
     models in one unified list. Canonical: `huggingface_hub.list_models`
     (server-side full-text search) + local `~/.cache/huggingface/hub` enum.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   hybrid_search:
     formula: |
@@ -43,6 +47,7 @@ falsification_tests:
     apr pull hf://gpt2 >/dev/null 2>&1 || true
     apr search gpt --offline --format json > /tmp/res.json
     jq -e '.[] | select(.repo=="gpt2") | .source=="LOCAL" or .source=="BOTH"' /tmp/res.json
+  if_fails: rule 'local cache entries appear without network' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-23-002
   rule: hub + local merge is deduplicated
   prediction: "a repo cached locally AND on Hub appears once with source=BOTH"
@@ -53,8 +58,9 @@ falsification_tests:
     count=$(jq '[.[] | select(.repo=="bert-base-uncased")] | length' /tmp/res.json)
     [ "$count" = "1" ]
 
+  if_fails: rule 'hub + local merge is deduplicated' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr search matches `huggingface_hub.list_models(search=...)` for Hub half"
 - type: invariant
   property: "merge dedups by repo; cached rows win (tagged BOTH)"

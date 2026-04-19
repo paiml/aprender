@@ -26,6 +26,11 @@ metadata:
       - Goyal et al. 2017 (linear warmup): https://arxiv.org/abs/1706.02677
       - PyTorch CosineAnnealingLR: https://pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.CosineAnnealingLR.html
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   warmup_linear:
     formula: |
@@ -156,7 +161,7 @@ proof_obligations:
   property: "lr(total_steps) ≈ min_lr"
 - type: invariant
   property: "Cosine decay is smooth (no per-step jumps > 5%)"
-- type: parity
+- type: equivalence
   property: "apr --lr-schedule cosine --warmup-steps W  ≅  HF get_cosine_schedule_with_warmup(optimizer, W, T) / PyTorch CosineAnnealingLR"
 
 verification_summary:

@@ -20,6 +20,11 @@ metadata:
     installable via `code --install-extension`. Shape: JSON manifest +
     activation events.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   vscode_ext:
     formula: |
@@ -52,6 +57,7 @@ falsification_tests:
     assert 'commands' in pkg['contributes']
     assert all('command' in c and 'title' in c for c in pkg['contributes']['commands'])
     "
+  if_fails: rule 'package.json validates against VSCode schema' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-12-002
   rule: every command has an activation event
   prediction: "set(commands) == set(onCommand:* in activationEvents)"
@@ -64,6 +70,7 @@ falsification_tests:
     acts = { e.split(':',1)[1] for e in p['activationEvents'] if e.startswith('onCommand:') }
     assert cmds == acts or cmds.issubset(acts), (cmds, acts)
     "
+  if_fails: rule 'every command has an activation event' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-12-003
   rule: vsix build is reproducible
   prediction: "two clean builds produce byte-identical .vsix"
@@ -78,8 +85,9 @@ falsification_tests:
     sha256sum /tmp/apr-ext1.vsix /tmp/apr-ext2.vsix | awk '{print $1}' | sort -u | wc -l | \
       xargs -I {} test {} -eq 1
 
+  if_fails: rule 'vsix build is reproducible' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr ext scaffold vscode emits valid package.json per VSCode Extension API"
 - type: invariant
   property: "commands ⊆ activationEvents (no orphan commands)"

@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   streaming_tool_call_delta_schema:
     formula: |
@@ -128,7 +132,7 @@ proof_obligations:
   property: "Reassembled function.arguments across deltas parses as valid JSON"
 - type: invariant
   property: "Terminal chunk finish_reason == 'tool_calls' when stream ends via tool call"
-- type: parity
+- type: equivalence
   property: "apr serve /v1/chat/completions streaming tool_calls matches vLLM OpenAI-compatible delta schema on golden prompt 'sum 2 and 3' with add() tool"
   reference: "https://docs.vllm.ai/en/latest/features/tool_calling.html"
 

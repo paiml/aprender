@@ -18,6 +18,11 @@ metadata:
     Canonical: HF TRL `RewardTrainer` (Bradley-Terry loss), used as the RM
     for downstream PPO/DPO.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   bradley_terry_loss:
     formula: |
@@ -45,6 +50,7 @@ falsification_tests:
     ref = 0.6931  # captured from TRL RewardTrainer step-0 on same batch
     assert abs(apr - ref) < 1e-4
     PY
+  if_fails: rule 'bradley-terry loss matches TRL within 1e-4' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-18-002
   rule: trained RM scores chosen > rejected on held-out
   prediction: "held-out accuracy > 0.7 after N steps on synthetic data"
@@ -54,6 +60,7 @@ falsification_tests:
       --steps 200 --output /tmp/rm
     acc=$(apr eval-rm /tmp/rm tests/fixtures/toy-pref-holdout.jsonl --format json | jq .accuracy)
     python3 -c "assert $acc > 0.7"
+  if_fails: rule 'trained RM scores chosen > rejected on held-out' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-18-003
   rule: saved model has scalar regression head (num_labels=1)
   prediction: "score_head.weight.shape == (1, hidden)"
@@ -62,8 +69,9 @@ falsification_tests:
     shape=$(apr inspect /tmp/rm/model.safetensors --tensor score.weight --format json | jq -r .shape)
     python3 -c "s=$shape; assert s[0]==1, s"
 
+  if_fails: rule 'saved model has scalar regression head (num_labels=1)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr train-rm matches TRL RewardTrainer Bradley-Terry loss within 1e-4"
 - type: invariant
   property: "RM output dimension == 1 (scalar); enforced by head config"

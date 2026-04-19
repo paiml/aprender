@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   client_disconnect_aborts_generation:
     formula: |
@@ -122,7 +126,7 @@ falsification_tests:
   if_fails: "Aborting a request blocks concurrent live requests"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr serve client-disconnect semantics match vLLM AsyncLLMEngine.abort() (free KV, stop decode within one step)"
 - type: invariant
   property: "Client disconnect aborts generation within <= 1 decode step"

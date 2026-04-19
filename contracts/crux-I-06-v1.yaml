@@ -30,6 +30,10 @@ metadata:
     same Thought/Action/Observation/Final-Answer grammar, and enforce
     stop conditions deterministically.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   react_loop_step:
     formula: |
@@ -93,6 +97,7 @@ falsification_tests:
     jq -e '.answer == "4"' /tmp/agent-trace.json \
       || { echo "FAIL: answer not extracted from Final Answer: line" >&2; exit 1; }
 
+  if_fails: rule 'ReAct loop halts on 'Final Answer:' before next Action' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-06-002
   rule: max-iterations fires with structured reason
   prediction: "loop without Final Answer halts at max_iterations with reason JSON"
@@ -107,6 +112,7 @@ falsification_tests:
     echo "$OUT" | jq -e '.reason == "max_iterations" and .iterations == 3' \
       || { echo "FAIL: expected structured max_iterations reason: $OUT" >&2; exit 1; }
 
+  if_fails: rule 'max-iterations fires with structured reason' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-06-003
   rule: deterministic replay at temperature=0
   prediction: "two runs with same seed and temp=0 produce identical traces"
@@ -124,6 +130,7 @@ falsification_tests:
     diff /tmp/r1.json /tmp/r2.json \
       || { echo "FAIL: non-deterministic trace at temp=0" >&2; exit 1; }
 
+  if_fails: rule 'deterministic replay at temperature=0' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-06-004
   rule: parity with LangChain ReAct grammar parser
   prediction: "same LLM output parses to identical (action, action_input, final_answer) as LangChain"
@@ -142,6 +149,7 @@ falsification_tests:
     [ "$APR_PARSE" = "$LC_PARSE" ] \
       || { echo "FAIL: parser diverges from LangChain: apr=$APR_PARSE lc=$LC_PARSE" >&2; exit 1; }
 
+  if_fails: rule 'parity with LangChain ReAct grammar parser' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "Loop halts on first 'Final Answer:' before executing next Action"
@@ -149,7 +157,7 @@ proof_obligations:
   property: "Exactly one stop condition fires per run with a structured reason JSON"
 - type: invariant
   property: "At temperature=0 with fixed seed, trace is byte-identical across runs"
-- type: parity
+- type: equivalence
   property: "ReAct grammar parser output matches langchain.agents.output_parsers.ReActOutputParser on shared golden traces"
 
 verification_summary:

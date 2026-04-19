@@ -193,7 +193,7 @@ falsification_tests:
   if_fails: "apr int8 dequantized weights diverge from torch.quantize_dynamic (cosine < 0.999)"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr quantize int8-dynamic matches torch.quantization.quantize_dynamic dequantized weights on evidence/crux/pytorch/int8-dynamic-goldens.json (cosine ≥ 0.999)"
 - type: invariant
   property: "Per-tensor symmetric affine qint8 with zero_point=0 and round-half-to-even"
@@ -201,7 +201,7 @@ proof_obligations:
   property: "Top-1 accuracy drop ≤ 1% on golden eval set"
 - type: invariant
   property: "Output file size ≤ 30% of fp32 input"
-- type: equation
+- type: invariant
   property: "dequant(W_int8) * scale ≈ W_fp32 with MAE ≤ 0.5 on reference batch logits"
 
 verification_summary:

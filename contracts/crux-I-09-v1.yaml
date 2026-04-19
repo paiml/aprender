@@ -30,6 +30,10 @@ metadata:
     unique `id` values, and the client submits corresponding `tool` role
     messages in any order in the next turn.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   multi_tool_call_response_schema:
     formula: |
@@ -98,6 +102,7 @@ falsification_tests:
     echo "$RESP" | jq -e '.choices[0].finish_reason == "tool_calls"' \
       || { echo "FAIL: finish_reason != tool_calls" >&2; exit 1; }
 
+  if_fails: rule 'multi tool_calls response schema is valid' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-09-002
   rule: tool_call ids are unique and arguments parse as JSON
   prediction: "every TC has a unique id and valid JSON arguments"
@@ -112,6 +117,7 @@ falsification_tests:
     ' "$RESP_FILE" \
       || { echo "FAIL: duplicate ids or non-object arguments" >&2; exit 1; }
 
+  if_fails: rule 'tool_call ids are unique and arguments parse as JSON' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-09-003
   rule: follow-up submission order is irrelevant at temp=0
   prediction: "two permutations of tool-result submissions yield identical assistant message"
@@ -122,6 +128,7 @@ falsification_tests:
     [ "$FWD_A" = "$FWD_B" ] \
       || { echo "FAIL: order-dependent assistant message: $FWD_A vs $FWD_B" >&2; exit 1; }
 
+  if_fails: rule 'follow-up submission order is irrelevant at temp=0' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-09-004
   rule: parity with vLLM parallel_tool_calls response shape
   prediction: "apr serve response matches vLLM's schema byte-for-byte on required fields"
@@ -140,6 +147,7 @@ falsification_tests:
     assert set(a["choices"][0]["message"].keys()) >= set(g["choices"][0]["message"].keys())
     PY
 
+  if_fails: rule 'parity with vLLM parallel_tool_calls response shape' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "Response tool_calls ids are pairwise distinct"
@@ -147,7 +155,7 @@ proof_obligations:
   property: "finish_reason == 'tool_calls' iff any tool_calls are returned"
 - type: invariant
   property: "At temperature=0, assistant reply is invariant under permutation of tool-result submission order"
-- type: parity
+- type: equivalence
   property: "Response schema matches vLLM OpenAI-compatible parallel_tool_calls shape (required field set superset)"
 
 verification_summary:

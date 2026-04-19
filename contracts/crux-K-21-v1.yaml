@@ -20,6 +20,11 @@ metadata:
     gate — absent on non-Darwin arm64 builds. Parity vs apr native
     fp16 CPU: logit cosine ≥0.999 on the same prompt.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   mlx_backend:
     formula: |
@@ -47,6 +52,7 @@ falsification_tests:
     fi
     ! cargo build --features mlx -p apr-cli 2>/tmp/err
     grep -E "mlx|darwin|feature" /tmp/err
+  if_fails: rule 'MLX feature absent on non-Darwin targets' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-21-002
   rule: parity with native fp16 ≥0.999 cosine
   prediction: "mlx logits match native within cosine gate (Darwin arm64 only)"
@@ -66,6 +72,7 @@ falsification_tests:
     cos=float((a.flatten() @ b.flatten()) / (np.linalg.norm(a)*np.linalg.norm(b)+1e-12))
     assert cos >= 0.999, cos
     "
+  if_fails: rule 'parity with native fp16 ≥0.999 cosine' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-21-003
   rule: determinism at temp=0 on MLX
   prediction: "two runs with temp=0, seed=42 produce identical tokens"
@@ -80,8 +87,9 @@ falsification_tests:
     done
     diff <(jq -S .tokens /tmp/m1.json) <(jq -S .tokens /tmp/m2.json)
 
+  if_fails: rule 'determinism at temp=0 on MLX' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr --backend mlx matches mlx_lm generate interface and yields ≥0.999 cosine vs native"
 - type: invariant
   property: "feature flag gated to Darwin arm64"

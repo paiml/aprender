@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   bundle_manifest_completeness:
     formula: |
@@ -146,7 +150,7 @@ falsification_tests:
   if_fails: "apr publish missing files that HfApi.upload_folder would include"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr publish --include-tokenizer --include-config matches HfApi.upload_folder bundle manifest"
 - type: invariant
   property: "HF /tree/main contains config.json + tokenizer.json + tokenizer_config.json"

@@ -20,6 +20,11 @@ metadata:
     ProtectSystem, ProtectHome, PrivateTmp), and restart on failure
     with bounded backoff.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   systemd_unit:
     formula: |
@@ -46,6 +51,7 @@ falsification_tests:
     apr serve emit-systemd --user apr --bind 0.0.0.0:8000 \
       --model-dir /var/lib/apr -o /tmp/apr-serve.service
     systemd-analyze verify /tmp/apr-serve.service
+  if_fails: rule 'emitted unit passes systemd-analyze verify' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-14-002
   rule: emitted unit does not run as root
   prediction: "User= field is not root"
@@ -54,6 +60,7 @@ falsification_tests:
     u=$(systemctl show -P User /tmp/apr-serve.service 2>/dev/null || \
         grep -oP '^User=\K\S+' /tmp/apr-serve.service)
     test "$u" != "root" && test -n "$u"
+  if_fails: rule 'emitted unit does not run as root' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-14-003
   rule: Restart policy is bounded
   prediction: "Restart=on-failure and RestartSec present"
@@ -64,8 +71,9 @@ falsification_tests:
     grep -qE '^NoNewPrivileges=yes' /tmp/apr-serve.service
     grep -qE '^ProtectSystem=' /tmp/apr-serve.service
 
+  if_fails: rule 'Restart policy is bounded' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "emitted unit conforms to systemd.service(5) directive set"
 - type: invariant
   property: "systemd-analyze verify passes"

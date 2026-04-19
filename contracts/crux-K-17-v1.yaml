@@ -21,6 +21,11 @@ metadata:
     ∈ {prefill, decode}, kv_cache_dtype, and max_seq_len. Apr must
     emit a valid Dynamo worker manifest and pass connection round-trip.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   dynamo_integration:
     formula: |
@@ -53,6 +58,7 @@ falsification_tests:
     timeout 10 nats --server=nats://127.0.0.1:14222 \
       sub 'dynamo.workers.decode.apr-test' --count=1 > /tmp/hb.json
     test -s /tmp/hb.json
+  if_fails: rule 'heartbeat published within 10s' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-17-002
   rule: heartbeat validates against Dynamo worker schema
   prediction: "heartbeat has role, worker_id, max_seq_len, kv_cache_dtype, endpoint"
@@ -64,6 +70,7 @@ falsification_tests:
         assert k in d, (k, d)
     assert d['role'] == 'decode'
     "
+  if_fails: rule 'heartbeat validates against Dynamo worker schema' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-17-003
   rule: graceful shutdown publishes worker_down
   prediction: "SIGTERM followed by NATS subscriber sees worker_down within 2s"
@@ -75,8 +82,9 @@ falsification_tests:
     wait
     test -s /tmp/down.json
 
+  if_fails: rule 'graceful shutdown publishes worker_down' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr serve --dynamo-role emits Dynamo-compatible worker manifest + lifecycle events"
 - type: invariant
   property: "heartbeat within 10s of startup"

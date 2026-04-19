@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   eight_gates_schema:
     formula: |
@@ -137,7 +141,7 @@ proof_obligations:
   property: "exit code 0 ⇔ every gate is PASS"
 - type: invariant
   property: "--require-golden-output promotes SKIPPED golden_output to FAIL"
-- type: parity
+- type: equivalence
   property: "pytest-style PASS/FAIL/SKIPPED semantics with per-test duration reporting match pytorch/pytest test runner behavior"
   competitor: pytorch
   reference: "https://docs.pytest.org/en/stable/reference/exit-codes.html; aprender CLAUDE.md §Tool Priorities; contracts/apr-model-qa-v1.yaml v1.1.0"

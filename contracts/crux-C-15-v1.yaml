@@ -110,13 +110,13 @@ falsification_tests:
   if_fails: "distributed metadata missing from --json output"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "TP=N, PP=M output ≡ TP=1, PP=1 at temp=0 top_k=1 (byte-identical tokens)"
 - type: invariant
   property: "num_heads % TP == 0 AND num_layers % PP == 0 enforced at startup"
-- type: performance
+- type: bound
   property: "TP scaling efficiency >= 70% (TP=2 >= 1.4×, TP=4 >= 2.8×)"
-- type: schema
+- type: invariant
   property: "--json output reports .distributed.{tp, pp, world_size}"
 
 verification_summary:

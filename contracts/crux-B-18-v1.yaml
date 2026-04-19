@@ -121,7 +121,7 @@ proof_obligations:
   property: "imatrix covers every linear tensor in the model graph"
 - type: invariant
   property: "No NaN/Inf/negative importance values emitted"
-- type: parity
+- type: equivalence
   property: "apr imatrix cosine_sim ≥ 0.99 vs llama.cpp imatrix per tensor"
 
 verification_summary:

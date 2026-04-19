@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
 equations:
   row_major_output:
     formula: |
@@ -32,7 +36,7 @@ equations:
       Equivalent to safetensors_load(...) which is natively row-major (numpy default).
       Ref: contracts/tensor-layout-v1.yaml (LAYOUT-001/002)
     domain: tensors in produced .apr file
-    codomain: {RowMajor, ColMajor}
+    codomain: 'RowMajor: None, ColMajor: None'
     invariants:
     - "Every 2D weight tensor in the .apr output is RowMajor"
     - "LayoutContract.validate_apr_shape(name, shape, rows, cols) returns Ok for every tensor"
@@ -132,7 +136,7 @@ falsification_tests:
   if_fails: "one or more prompts below 0.99 cosine similarity — quantization/layout regression"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr convert output forward-passes within 0.99 cosine of transformers.AutoModel reference"
   competitor_function: "transformers.AutoModel.from_pretrained"
   reference: "https://huggingface.co/docs/transformers/main/model_doc/auto"

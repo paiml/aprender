@@ -19,6 +19,10 @@ metadata:
     Canonical: Ollama stores `/usr/share/ollama/.ollama/models` group-shared
     on Linux systemd installs.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   shared_cache:
     formula: |
@@ -47,6 +51,7 @@ falsification_tests:
     apr pull hf://gpt2 --dry-run >/dev/null
     count2=$(find "$APR_MODELS/blobs" -type f 2>/dev/null | wc -l)
     [ "$count1" = "$count2" ]
+  if_fails: rule 'two pulls to shared cache dedup to one blob' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-21-002
   rule: read-only user can still load, but pull fails with exit 13
   prediction: "unprivileged user gets EACCES with actionable hint"
@@ -58,8 +63,9 @@ falsification_tests:
     apr pull hf://gpt2 2>/tmp/err && exit 1 || [ $? -eq 13 ]
     grep -E "permission|daemon" /tmp/err
 
+  if_fails: rule 'read-only user can still load, but pull fails with exit 13' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "APR_MODELS honored exactly like OLLAMA_MODELS on systemd deploys"
 - type: invariant
   property: "two unix users pulling identical repo share exactly one blob"

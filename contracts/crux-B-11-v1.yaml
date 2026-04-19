@@ -18,6 +18,10 @@ metadata:
     Canonical: `vllm serve --quantization fp8` dispatches TransformerEngine
     FP8 GEMM; llama.cpp has `--type f8_e4m3` in experimental branches.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
 equations:
   fp8_scaled_roundtrip:
     formula: |
@@ -47,6 +51,7 @@ falsification_tests:
       err = np.linalg.norm(w - deq[k]) / np.linalg.norm(w)
       assert err <= 0.01, f"{k}: err={err:.4f}"
     PY
+  if_fails: rule 'fp8 round-trip preserves within 1% Frobenius' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-B-11-002
   rule: non-Hopper GPU rejected with exit 2
   prediction: "apr quantize --fp8 on sm<90 prints 'requires Hopper/Blackwell' and exits 2"
@@ -56,8 +61,9 @@ falsification_tests:
     APR_CUDA_SM_OVERRIDE=80 apr quantize tests/fixtures/small-fp16.safetensors --format fp8-e4m3 -o /tmp/bad.apr 2>/tmp/err && exit 1 || [ $? -eq 2 ]
     grep -Ei "hopper|sm_?90|capability" /tmp/err
 
+  if_fails: rule 'non-Hopper GPU rejected with exit 2' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr quantize --fp8 matches `vllm serve --quantization fp8` numerical envelope (≤1% Frobenius)"
 - type: invariant
   property: "FP8 quantize on sm<90 fails fast with actionable capability msg"

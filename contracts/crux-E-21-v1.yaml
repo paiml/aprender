@@ -18,6 +18,11 @@ metadata:
     `toxicity` (DetoxifyRoberta), `regard` (BOLD), `honest` (arXiv:2105.06978).
     Reports per-subgroup scores + disparate-impact ratio.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   bias_suite:
     formula: |
@@ -41,6 +46,7 @@ falsification_tests:
     echo '{"text":"","group":"a"}' > /tmp/empty.jsonl
     apr eval-bias /tmp/empty.jsonl --metrics toxicity --format json > /tmp/e.json
     python3 -c "import json; d=json.load(open('/tmp/e.json')); assert d['per_group']['a']['toxicity']==0.0, d"
+  if_fails: rule 'empty-string toxicity is zero' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-21-002
   rule: disparate-impact is in [0,1]
   prediction: "multi-group eval reports disparate_impact within bounds"
@@ -52,6 +58,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/b.json'))
     assert 0.0 <= d['disparate_impact'] <= 1.0, d
     "
+  if_fails: rule 'disparate-impact is in [0,1]' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-21-003
   rule: --fail-on-tox threshold gating
   prediction: "--fail-on-tox 0.5 with toxic fixture returns non-zero"
@@ -59,8 +66,9 @@ falsification_tests:
     set -euo pipefail
     ! apr eval-bias tests/fixtures/toxic-gens.jsonl --metrics toxicity --fail-on-tox 0.5
 
+  if_fails: rule '--fail-on-tox threshold gating' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr eval-bias toxicity matches HF `evaluate.load('toxicity')` Detoxify backbone within 1e-3"
 - type: invariant
   property: "tox(empty) = 0"

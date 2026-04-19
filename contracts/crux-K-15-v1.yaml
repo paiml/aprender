@@ -20,6 +20,11 @@ metadata:
     lint`, render deterministically, and include a liveness/readiness
     probe pointing at `/healthz`.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   helm_chart:
     formula: |
@@ -46,6 +51,7 @@ falsification_tests:
     set -euo pipefail
     apr serve emit-helm -o /tmp/apr-chart
     helm lint /tmp/apr-chart
+  if_fails: rule 'helm lint passes on emitted chart' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-15-002
   rule: helm template is deterministic
   prediction: "two renders with same values byte-identical"
@@ -54,6 +60,7 @@ falsification_tests:
     helm template test /tmp/apr-chart > /tmp/rend1.yaml
     helm template test /tmp/apr-chart > /tmp/rend2.yaml
     diff /tmp/rend1.yaml /tmp/rend2.yaml
+  if_fails: rule 'helm template is deterministic' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-15-003
   rule: Deployment has liveness + readiness probes on /healthz
   prediction: "rendered Deployment spec contains both probes with path /healthz"
@@ -69,8 +76,9 @@ falsification_tests:
         assert c[p]['httpGet']['path'] == '/healthz', (p, c[p])
     "
 
+  if_fails: rule 'Deployment has liveness + readiness probes on /healthz' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "emitted chart conforms to Helm v3 chart.yaml v2 + apps/v1 Deployment schema"
 - type: invariant
   property: "helm lint == 0; helm template deterministic"

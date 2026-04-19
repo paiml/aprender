@@ -186,7 +186,7 @@ falsification_tests:
   if_fails: "shard sha256 diverged from HF Safetensors Space reference"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr convert .bin → .safetensors matches HF Safetensors Space on evidence/crux/huggingface/pt-to-st-goldens.json"
 - type: invariant
   property: "Tensor dtype, shape, and raw bytes preserved exactly (no precision loss)"
@@ -194,7 +194,7 @@ proof_obligations:
   property: "No shard exceeds --max-shard-size unless it contains a single oversize tensor"
 - type: invariant
   property: "weight_map in index.json covers all input tensors exactly once with no orphans"
-- type: equation
+- type: invariant
   property: "sum(shard_size_i) == metadata.total_size in index.json (within rounding for padding)"
 
 verification_summary:

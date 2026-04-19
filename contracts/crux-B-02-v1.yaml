@@ -135,7 +135,7 @@ proof_obligations:
   property: "Dequantization error ≤ 1e-2 (∞-norm) vs reference f32"
 - type: invariant
   property: "Tokenizer round-trips on golden strings (encode∘decode ≡ id)"
-- type: parity
+- type: equivalence
   property: "Converted model loads under transformers + peft identically to reference safetensors"
 
 verification_summary:

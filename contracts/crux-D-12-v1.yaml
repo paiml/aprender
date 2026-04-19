@@ -26,6 +26,11 @@ metadata:
     --data train.jsonl`. Reference: https://pytorch.org/docs/stable/fsdp.html,
     https://arxiv.org/abs/1910.02054 (Rajbhandari et al., ZeRO).
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   fsdp_memory_sharding:
     formula: |
@@ -53,7 +58,7 @@ equations:
         per_gpu_memory_state = 56 GB / 4 * 1.3 = 18.2 GB  < 24 GB
       i.e. training MUST complete at least one full step without OOM.
     domain: (7B bf16 model, 4× 24 GB GPUs, zero_stage=3) → bool
-    codomain: {OK, OOM}
+    codomain: 'OK: None, OOM: None'
     invariants:
     - "ZeRO-3 enables 7B training on 4× 24 GB consumer GPUs"
     - "Activation checkpointing may be required at long seq_len (orthogonal)"

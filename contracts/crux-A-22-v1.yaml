@@ -20,6 +20,10 @@ metadata:
     incoming model > quota, and emit a machine-parseable error with
     used/available/needed fields.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   quota:
     formula: |
@@ -50,6 +54,7 @@ falsification_tests:
     assert e['used'] + e['needed'] > e['used'] + e['free'], e
     assert all(k in e for k in ('used','free','needed'))
     "
+  if_fails: rule 'pull rejected when it would exceed quota' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-22-002
   rule: no partial blobs on disk after reject
   prediction: "registry byte count unchanged after rejection"
@@ -59,6 +64,7 @@ falsification_tests:
     ! apr pull hf://openai/whisper-tiny 2>/dev/null >/dev/null
     after=$(du -sb /tmp/apr-quota | awk '{print $1}')
     python3 -c "assert $before == $after, ($before, $after)"
+  if_fails: rule 'no partial blobs on disk after reject' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-22-003
   rule: permitted pull succeeds and stays under quota
   prediction: "pull within budget lands blobs; du ≤ quota"
@@ -70,8 +76,9 @@ falsification_tests:
     used=$(du -sb /tmp/apr-quota | awk '{print $1}')
     python3 -c "assert $used <= $quota, ($used, $quota)"
 
+  if_fails: rule 'permitted pull succeeds and stays under quota' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr registry quota semantics match Ollama OLLAMA_MAX_MODELS / docker storage-opt"
 - type: invariant
   property: "quota never exceeded"

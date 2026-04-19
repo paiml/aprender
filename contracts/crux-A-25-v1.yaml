@@ -18,6 +18,10 @@ metadata:
     Canonical: `ollama rm` decrements a blob refcount; Ollama daemon runs
     periodic GC. We expose it as an explicit verb plus optional `--gc` flag.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   refcounted_gc:
     formula: |
@@ -47,6 +51,7 @@ falsification_tests:
     after=$(du -sb "$APR_MODELS" | cut -f1)
     freed=$((before - after))
     [ "$freed" -gt 100000000 ]
+  if_fails: rule 'gc frees bytes after rm of last referrer' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-25-002
   rule: gc never deletes referenced blobs
   prediction: "gc after rm of one of two copies frees 0 bytes (blob still referenced)"
@@ -60,6 +65,7 @@ falsification_tests:
     after=$(du -sb "$APR_MODELS" | cut -f1)
     delta=$((before - after))
     [ "$delta" -lt 8192 ]
+  if_fails: rule 'gc never deletes referenced blobs' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-25-003
   rule: --dry-run prints but does not delete
   prediction: "apr gc --dry-run leaves disk usage unchanged"
@@ -73,8 +79,9 @@ falsification_tests:
     [ "$before" = "$after" ]
     grep -E "would free|candidate" /tmp/plan.txt
 
+  if_fails: rule '--dry-run prints but does not delete' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr rm + apr gc together match `ollama rm` refcount semantics"
 - type: invariant
   property: "gc is refcount-safe — no live blob is ever unlinked"

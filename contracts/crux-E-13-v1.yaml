@@ -19,6 +19,11 @@ metadata:
     upstream: github.com/hsiehjackson/RULER. Output is task-by-length matrix
     of accuracies + effective context length (first length < 85% accuracy).
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   ruler_eval:
     formula: |
@@ -44,6 +49,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/r.json'))
     assert d['task_by_length']['niah_single'][0] <= 0.01, d
     "
+  if_fails: rule 'random baseline fails NIAH' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-13-002
   rule: effective_ctx = 0 when every length below threshold
   prediction: "model that fails all lengths reports effective_ctx == 0"
@@ -52,6 +58,7 @@ falsification_tests:
     apr eval-ruler tests/fixtures/broken-model --context-lengths 4096,8192 \
       --format json > /tmp/e.json
     python3 -c "import json; d=json.load(open('/tmp/e.json')); assert d['effective_ctx']==0, d"
+  if_fails: rule 'effective_ctx = 0 when every length below threshold' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-13-003
   rule: determinism under temp=0 fixed seed
   prediction: "two runs with --seed 42 --temp 0 produce identical matrices"
@@ -63,8 +70,9 @@ falsification_tests:
       --temp 0 --format json > /tmp/b.json
     diff /tmp/a.json /tmp/b.json
 
+  if_fails: rule 'determinism under temp=0 fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr eval-ruler matches upstream RULER suite (arXiv:2404.06654) task definitions + scoring"
 - type: invariant
   property: "random baseline NIAH acc ≤ 0.01"

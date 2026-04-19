@@ -30,6 +30,10 @@ metadata:
     handles, and allocation stacks, loadable in chrome://tracing or
     https://ui.perfetto.dev.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   chrome_trace_schema:
     formula: |
@@ -83,6 +87,7 @@ falsification_tests:
     jq -e '.traceEvents | all(.ph? != null and .ts? != null and .name? != null)' "$OUT" \
       || { echo "FAIL: required Chrome Trace fields missing" >&2; exit 1; }
 
+  if_fails: rule 'Chrome Trace JSON schema is valid and loadable' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-07-002
   rule: alloc/free events pair by address
   prediction: "every alloc event has a matching free with identical addr"
@@ -97,6 +102,7 @@ falsification_tests:
     assert not orphans, f"FAIL: {len(orphans)} unfreed addrs"
     PY
 
+  if_fails: rule 'alloc/free events pair by address' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-07-003
   rule: timestamps monotone per stream
   prediction: "per-(pid,tid) timestamps are non-decreasing"
@@ -113,6 +119,7 @@ falsification_tests:
         last[k] = e['ts']
     PY
 
+  if_fails: rule 'timestamps monotone per stream' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-07-004
   rule: trace-derived peak agrees with NVML within 10%
   prediction: "|peak_trace − peak_nvml| / peak_nvml < 0.10"
@@ -133,6 +140,7 @@ falsification_tests:
     assert drift < 0.10, f"FAIL: peak drift {drift:.2%} > 10%"
     PY
 
+  if_fails: rule 'trace-derived peak agrees with NVML within 10%' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "Output file is valid Chrome Trace Event Format JSON (perfetto.dev loadable)"
@@ -140,7 +148,7 @@ proof_obligations:
   property: "Every alloc event pairs with exactly one free event of identical addr"
 - type: invariant
   property: "Timestamps are monotone non-decreasing per (pid, tid) stream"
-- type: parity
+- type: equivalence
   property: "Trace-derived peak memory agrees with NVML nvmlDeviceGetMemoryInfo() within 10%"
 
 verification_summary:

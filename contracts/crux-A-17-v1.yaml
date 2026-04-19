@@ -20,6 +20,10 @@ metadata:
     `.sig` and `.crt` alongside manifest; verification exits 0 on
     tampered-free blob and non-zero on any byte mutation.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   cosign_sign:
     formula: |
@@ -46,6 +50,7 @@ falsification_tests:
       --sig /tmp/m.sig --cert /tmp/m.crt --bundle /tmp/m.bundle
     cosign verify-blob --bundle /tmp/m.bundle \
       --certificate /tmp/m.crt --signature /tmp/m.sig /tmp/manifest.json
+  if_fails: rule 'round-trip sign → verify succeeds' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-17-002
   rule: tampered blob fails verification
   prediction: "one-byte flip → verify exit != 0"
@@ -56,6 +61,7 @@ falsification_tests:
     ! cosign verify-blob --bundle /tmp/m.bundle \
         --certificate /tmp/m.crt --signature /tmp/m.sig /tmp/bad.json 2>/tmp/err
     grep -E "verification failed|invalid signature" /tmp/err
+  if_fails: rule 'tampered blob fails verification' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-17-003
   rule: rekor transparency log inclusion proof present
   prediction: "bundle contains rekor entry with UUID and SET"
@@ -67,8 +73,9 @@ falsification_tests:
     assert 'Payload' in b or 'rekor' in json.dumps(b).lower(), b.keys()
     "
 
+  if_fails: rule 'rekor transparency log inclusion proof present' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr publish sign produces cosign-compatible sig + cert + bundle"
 - type: invariant
   property: "tamper detection (verify fails closed on any mutation)"

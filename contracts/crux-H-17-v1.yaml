@@ -20,6 +20,11 @@ metadata:
     (img, txt) pairs; negatives are the remaining B-1 texts per image and
     vice-versa. WebDataset format is the common on-disk shape.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   clip_pair_sampler:
     formula: |
@@ -47,6 +52,7 @@ falsification_tests:
     assert d['targets'] == list(range(8)), d['targets']
     assert len(d['keys']) == 8 and len(set(d['keys'])) == 8, 'duplicate keys'
     "
+  if_fails: rule 'positives on the diagonal' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-17-002
   rule: img/txt ordering aligned within each batch
   prediction: "key_i from img sidecar == key_i from txt sidecar for all i"
@@ -58,6 +64,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/clip.json'))
     assert d['img_keys'] == d['txt_keys'], (d['img_keys'], d['txt_keys'])
     "
+  if_fails: rule 'img/txt ordering aligned within each batch' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-17-003
   rule: drop_last default prevents ragged batches
   prediction: "when N % B != 0, final ragged batch is dropped"
@@ -71,8 +78,9 @@ falsification_tests:
     assert d['batches'] == 2 and d['dropped'] == 4, d
     "
 
+  if_fails: rule 'drop_last default prevents ragged batches' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr dataset clip-sample targets == arange(B) (OpenCLIP ClipLoss assumption)"
 - type: invariant
   property: "img/txt keys aligned per batch (no misalignment ⇒ no wrong-pair positives)"

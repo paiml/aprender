@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   gguf_to_apr_shape_transpose:
     formula: |
@@ -121,7 +125,7 @@ proof_obligations:
   property: "total element count is preserved across the import boundary"
 - type: invariant
   property: "malformed GGUF fails with an explicit LayoutError, never silent garbage"
-- type: parity
+- type: equivalence
   property: "post-import APR shape equals reversed gguf-py GGUFReader shape for every 2D tensor"
   competitor: llama_cpp
   reference: "contracts/tensor-layout-v1.yaml (SOURCE OF TRUTH); https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py"

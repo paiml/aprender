@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   activation_memory_reduction:
     formula: |
@@ -134,7 +139,7 @@ falsification_tests:
   if_fails: "checkpointing fails to unlock OOM-bound batch size"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr finetune --gradient-checkpointing matches torch.utils.checkpoint.checkpoint at ±0.5% final loss"
 - type: invariant
   property: "peak_activation_memory_ckpt / peak_activation_memory_no_ckpt <= 0.5"

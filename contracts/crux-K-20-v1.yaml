@@ -21,6 +21,11 @@ metadata:
     must hold under fp16 within cosine ≥0.995 (looser than ONNX CPU
     because fp16 kernel fusion introduces small numerical drift).
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   trtllm_export:
     formula: |
@@ -47,6 +52,7 @@ falsification_tests:
     test -f /tmp/engine/rank0.engine
     test -f /tmp/engine/rank1.engine
     test ! -f /tmp/engine/rank2.engine
+  if_fails: rule 'engine count equals tp_size' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-20-002
   rule: config.json records requested dtype
   prediction: "builder.dtype == fp16"
@@ -56,6 +62,7 @@ falsification_tests:
     import json; c = json.load(open('/tmp/engine/config.json'))
     assert c['builder']['dtype'] == 'fp16', c['builder']
     "
+  if_fails: rule 'config.json records requested dtype' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-20-003
   rule: logit parity vs native fp16
   prediction: "cos_sim(trtllm_logits, native_fp16_logits) ≥ 0.995"
@@ -71,8 +78,9 @@ falsification_tests:
     assert cos >= 0.995, cos
     "
 
+  if_fails: rule 'logit parity vs native fp16' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr export --format trtllm emits TensorRT-LLM runner-compatible engine dir"
 - type: invariant
   property: "engine count == tp_size"

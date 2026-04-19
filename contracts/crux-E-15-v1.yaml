@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   decode_tokens_per_second:
     formula: |
@@ -122,7 +127,7 @@ proof_obligations:
   property: "n_predict >= 128 for fair head-to-head comparison"
 - type: invariant
   property: "speedup_vs_llamacpp = decode_tok_per_sec / llamacpp_decode_tok_per_sec (exact)"
-- type: parity
+- type: equivalence
   property: "apr bench --n-predict 128 matches llama.cpp's llama-bench -m MODEL -n 128 decode tok/s on same model and hardware within ±10%"
 
 # References:

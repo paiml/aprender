@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   vram_linear_in_ngl:
     formula: |
@@ -151,7 +155,7 @@ falsification_tests:
   if_fails: "apr --gpu-layers N offloaded layer count differs from llama-cli -ngl N"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr --gpu-layers N offloads exactly the same layer count as llama-cli -ngl N"
   competitor_function: "llama.cpp llama_model_params.n_gpu_layers / -ngl"
   reference: "https://github.com/ggerganov/llama.cpp/blob/master/README.md#gpu-offloading"

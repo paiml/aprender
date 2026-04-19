@@ -109,7 +109,7 @@ proof_obligations:
   property: "per-task JSON contains correct num_tasks per benchmark (57/23/1)"
 - type: invariant
   property: "overall_acc = sample-weighted mean of per_task.acc"
-- type: parity
+- type: equivalence
   property: "apr eval accuracy matches lm-evaluation-harness within ±0.5pp on a golden checkpoint"
 - type: invariant
   property: "prompt hashes match upstream harness golden for documented n-shot"

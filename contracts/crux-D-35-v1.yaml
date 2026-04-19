@@ -100,7 +100,7 @@ proof_obligations:
   property: "WORLD_SIZE/RANK/MASTER_ADDR/MASTER_PORT set per accelerate spec"
 - type: invariant
   property: "config.yaml schema is a superset of accelerate's required keys"
-- type: parity
+- type: equivalence
   property: "apr serve --replicas N observable == accelerate launch --num_processes N"
 - type: invariant
   property: "launcher exit code = max of worker exit codes"

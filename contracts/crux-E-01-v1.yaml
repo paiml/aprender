@@ -25,6 +25,11 @@ metadata:
     HumanEval pass@1 ≈ 0.62.
     Source: https://github.com/bigcode-project/bigcode-evaluation-harness
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   pass_at_k:
     formula: |
@@ -36,7 +41,7 @@ equations:
       For k=1 with deterministic decoding (temp=0, seed fixed):
         pass@1 = (#solved problems) / (#total problems)
     domain: (n, c, k) ∈ ℕ³ with n >= k and c <= n
-    codomain: [0.0, 1.0]
+    codomain: 0.0; 1.0
     invariants:
     - "pass@1 ∈ [0.0, 1.0]"
     - "pass@k monotonically non-decreasing in k (for fixed n, c)"
@@ -51,7 +56,7 @@ equations:
                     process escape (ptrace), syscalls outside allowlist
       No sample's execution trace escapes S.
     domain: generated code samples
-    codomain: {contained, escaped}
+    codomain: 'contained: None, escaped: None'
     invariants:
     - "Network syscalls (connect, bind) are blocked by seccomp"
     - "Filesystem writes confined to tmpfs mount"

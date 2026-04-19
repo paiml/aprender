@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   parquet_ingest_row_fidelity:
     formula: |
@@ -134,7 +139,7 @@ proof_obligations:
   property: "parquet nulls are preserved, not silently coerced"
 - type: invariant
   property: "peak RSS during ingest scales with row-group size, not file size (streaming)"
-- type: parity
+- type: equivalence
   property: "apr ingest --format parquet matches datasets.load_dataset('parquet', data_files=...) on row count, column names, and null semantics"
   competitor: huggingface
   reference: "https://huggingface.co/docs/datasets/main/en/package_reference/loading_methods#datasets.load_dataset (parquet loader); https://arrow.apache.org/docs/python/parquet.html"

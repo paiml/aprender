@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   model_card_generation:
     formula: |
@@ -105,7 +109,7 @@ proof_obligations:
   property: "apr-generated README.md begins with YAML front-matter and contains required H2 sections"
 - type: invariant
   property: "apr-generated README.md is loadable by huggingface_hub.ModelCard.load without error"
-- type: parity
+- type: equivalence
   property: "apr model-card produces a README.md with the same required front-matter keys as huggingface_hub.ModelCard.from_template on equivalent ModelCardData"
   competitor: huggingface
   reference: "https://huggingface.co/docs/huggingface_hub/main/en/package_reference/cards (ModelCard.from_template, ModelCard.load)"

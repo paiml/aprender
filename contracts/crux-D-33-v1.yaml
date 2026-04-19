@@ -118,13 +118,13 @@ falsification_tests:
   if_fails: "invalid zero-stage value silently accepted"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "ZeRO-1 per-step loss matches DDP within ±1e-4 (fp32) or ±1e-3 (bf16) at same seed"
 - type: invariant
   property: "post-step weights byte-identical across all DP ranks (allgather complete)"
-- type: performance
+- type: bound
   property: "per-rank optimizer VRAM reduced ~DP_size× vs DDP baseline"
-- type: schema
+- type: invariant
   property: "--json output reports .distributed.{dp_size, zero_stage, peak_optimizer_vram_bytes}"
 
 verification_summary:

@@ -114,13 +114,13 @@ falsification_tests:
   if_fails: "non-image input silently accepted — likely segfault or garbage"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "temp=0.0 caption byte-identical to llama-llava-cli on golden image set"
 - type: invariant
   property: "N_img_tokens ∈ {576, 729}; projection_dim == hidden_size enforced at load"
 - type: invariant
   property: "image format validated; unsupported formats rejected before inference"
-- type: schema
+- type: invariant
   property: "--json output includes .prompt_tokens.image_token_count and .mmproj.sha256"
 
 verification_summary:

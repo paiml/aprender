@@ -21,6 +21,11 @@ metadata:
     `input`, `output`, `max_batch_size`. Triton must load it and serve
     HTTP/GRPC inference without modification.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   triton_backend:
     formula: |
@@ -50,6 +55,7 @@ falsification_tests:
     for k in ('name','platform','input','output','max_batch_size'):
         assert k in txt, (k, txt[:200])
     "
+  if_fails: rule 'config.pbtxt parses and declares required fields' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-16-002
   rule: tritonserver loads the model to READY
   prediction: "GET /v2/models/apr-model/ready returns 200 after load"
@@ -65,6 +71,7 @@ falsification_tests:
       sleep 1
     done
     exit 1
+  if_fails: rule 'tritonserver loads the model to READY' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-16-003
   rule: output shape matches config
   prediction: "infer response outputs[].shape == config.output.dims"
@@ -80,8 +87,9 @@ falsification_tests:
     assert shape == expected, (shape, expected)
     "
 
+  if_fails: rule 'output shape matches config' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr serve emit-triton produces tritonserver-loadable model-repository"
 - type: invariant
   property: "config.pbtxt parses + model loads to READY"

@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   cas_post_upload_verify:
     formula: |
@@ -127,7 +131,7 @@ proof_obligations:
   property: "apr --verify compares remote lfs.oid to local sha256 AFTER upload (never trusts HTTP 200 alone)"
 - type: invariant
   property: "apr exits non-zero when remote and local sha256 diverge"
-- type: parity
+- type: equivalence
   property: "apr publish --lfs --verify matches huggingface_hub upload + validate_lfs_files semantics on Xet CAS"
   competitor: huggingface
   reference: "https://huggingface.co/docs/hub/xet (Xet CAS); https://huggingface.co/docs/huggingface_hub/main/en/package_reference/hf_api (upload_file with lfs, tree lfs.oid field)"

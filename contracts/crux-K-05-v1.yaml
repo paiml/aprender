@@ -20,6 +20,11 @@ metadata:
     POST `/api/predict` JSON endpoint AND a GET `/` HTML page on the
     same port and survive browser refresh without losing bound model.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   gradio_ui:
     formula: |
@@ -50,6 +55,7 @@ falsification_tests:
       -H 'content-type: application/json' \
       -d '{"data":["hello",[]]}' > /tmp/pred.json
     python3 -c "import json; d=json.load(open('/tmp/pred.json')); assert 'data' in d, d"
+  if_fails: rule 'HTML + predict endpoints live on same port' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-05-002
   rule: determinism at temperature=0
   prediction: "two identical predict calls yield byte-identical reply"
@@ -61,6 +67,7 @@ falsification_tests:
         -d '{"data":["2+2=?",[]],"temperature":0,"seed":42}' > /tmp/p$i.json
     done
     diff <(jq -S .data /tmp/p1.json) <(jq -S .data /tmp/p2.json)
+  if_fails: rule 'determinism at temperature=0' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-05-003
   rule: model loaded once (not per-request)
   prediction: "second predict latency much lower than first (no reload cost)"
@@ -74,8 +81,9 @@ falsification_tests:
       -d '{"data":["second",[]]}')
     python3 -c "t1=$t1; t2=$t2; assert t2 < 0.2*t1 or t1<0.5, (t1,t2)"
 
+  if_fails: rule 'model loaded once (not per-request)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr ui predict JSON shape matches gradio.ChatInterface /api/predict contract"
 - type: invariant
   property: "determinism at temperature=0"

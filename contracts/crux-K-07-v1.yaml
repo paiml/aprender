@@ -31,6 +31,11 @@ metadata:
     text format with equivalent gauges/counters/histograms prefixed
     `apr_*`, scrapable by `prometheus` without config overrides.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   prometheus_text_format_v004:
     formula: |
@@ -102,6 +107,7 @@ falsification_tests:
     assert fams, "FAIL: no metric families parsed"
     PY
 
+  if_fails: rule '/metrics returns valid Prometheus text v0.0.4' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-07-002
   rule: required metric set is exported
   prediction: "all MUST_EXPORT metric names appear in /metrics"
@@ -115,6 +121,7 @@ falsification_tests:
         || { echo "FAIL: missing required metric $M" >&2; exit 1; }
     done
 
+  if_fails: rule 'required metric set is exported' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-07-003
   rule: counters are monotone across scrapes after inference
   prediction: "apr_generation_tokens_total strictly increases after a /v1/completions call"
@@ -125,6 +132,7 @@ falsification_tests:
     B2=$(curl -s http://localhost:18407/metrics | grep '^apr_generation_tokens_total ' | awk '{print $2}')
     python3 -c "assert float('$B2') > float('$B1'), 'FAIL: counter did not increase ($B1 -> $B2)'"
 
+  if_fails: rule 'counters are monotone across scrapes after inference' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-07-004
   rule: parity with vLLM metric shape
   prediction: "Prometheus can scrape apr and vLLM with the same scrape_configs"
@@ -136,6 +144,7 @@ falsification_tests:
     promtool check metrics < /tmp/body.txt \
       || { echo "FAIL: apr /metrics fails promtool lint" >&2; exit 1; }
 
+  if_fails: rule 'parity with vLLM metric shape' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "/metrics response is valid Prometheus text format v0.0.4 (promtool lint clean)"
@@ -143,7 +152,7 @@ proof_obligations:
   property: "MUST_EXPORT metric set is fully present with correct TYPE declarations"
 - type: invariant
   property: "Counter metrics are monotone non-decreasing across scrapes"
-- type: parity
+- type: equivalence
   property: "apr /metrics output passes the same prometheus/promtool linter that accepts vLLM /metrics"
 
 verification_summary:

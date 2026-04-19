@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   completion_only_loss_mask:
     formula: |
@@ -130,7 +135,7 @@ proof_obligations:
   property: "masked training loss differs from unmasked loss on SFT data"
 - type: invariant
   property: "loss_mask_fraction in (0, 1) when --mask-prompt is active"
-- type: parity
+- type: equivalence
   property: "apr finetune --mask-prompt --response-template TEMPLATE matches TRL's DataCollatorForCompletionOnlyLM(response_template=TEMPLATE) on golden fixture"
 
 # References:

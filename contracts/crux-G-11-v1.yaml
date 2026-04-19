@@ -30,6 +30,10 @@ metadata:
     protocol (blob POST + commit), verify per-blob sha256, and be
     idempotent (re-push of identical content is a no-op that exits 0).
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   manifest_schema:
     formula: |
@@ -88,6 +92,7 @@ falsification_tests:
            all(.layers[]; .digest and .mediaType and .size)' /tmp/ollama-manifest.json \
       || { echo "FAIL: manifest missing required OCI fields" >&2; exit 1; }
 
+  if_fails: rule 'manifest schema matches Ollama registry contract' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-G-11-002
   rule: idempotent re-push uploads zero bytes
   prediction: "second push of identical model transfers 0 bytes"
@@ -101,6 +106,7 @@ falsification_tests:
     [ "$BYTES1" -gt 0 ] || { echo "FAIL: first push uploaded 0 bytes" >&2; exit 1; }
     [ "$BYTES2" -eq 0 ] || { echo "FAIL: idempotent push uploaded $BYTES2 bytes" >&2; exit 1; }
 
+  if_fails: rule 'idempotent re-push uploads zero bytes' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-G-11-003
   rule: per-blob sha256 verification on commit
   prediction: "corrupt blob is rejected by registry with digest mismatch"
@@ -113,6 +119,7 @@ falsification_tests:
     echo "$OUT" | grep -iE 'digest|mismatch|BLOB_UPLOAD_DIGEST' \
       || { echo "FAIL: no digest mismatch error: $OUT" >&2; exit 1; }
 
+  if_fails: rule 'per-blob sha256 verification on commit' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-G-11-004
   rule: pushed model is pullable by ollama client
   prediction: "ollama pull localhost:5000/paiml/qwen-test:latest succeeds after apr publish"
@@ -123,6 +130,7 @@ falsification_tests:
     ollama pull "${REGISTRY}/paiml/qwen-test:latest" \
       || { echo "FAIL: ollama pull rejected apr-published manifest" >&2; exit 1; }
 
+  if_fails: rule 'pushed model is pullable by ollama client' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "Emitted manifest conforms to OCI distribution spec v2 (schemaVersion=2, typed config+layers)"
@@ -130,7 +138,7 @@ proof_obligations:
   property: "Second publish of identical content uploads 0 bytes and exits 0"
 - type: invariant
   property: "Per-blob sha256 digest is verified at commit (PUT ?digest=sha256:...) and mismatch aborts with non-zero exit"
-- type: parity
+- type: equivalence
   property: "Ollama client can `ollama pull` the manifest apr published (bytes-for-bytes interoperable)"
 
 verification_summary:

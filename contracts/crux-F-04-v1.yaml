@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   per_tensor_quantization_rmse:
     formula: |
@@ -124,7 +128,7 @@ proof_obligations:
   property: "--threshold triggers exit_code=1 iff over_budget non-empty"
 - type: invariant
   property: "rmse computed in row-major order (LAYOUT-001 compliance)"
-- type: parity
+- type: equivalence
   property: "apr qa-quant --per-tensor --metric rmse matches llama.cpp's llama-quantize-stats -v per-tensor rmse within 1e-5 on matching tensor names"
 
 # References:

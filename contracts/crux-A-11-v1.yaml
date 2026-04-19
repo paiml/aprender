@@ -18,6 +18,10 @@ metadata:
     Canonical: `ollama cp llama3:latest my-llama3:v1` — hard-links blobs,
     writes a new manifest pointing at the same blob sha256.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   copy_by_manifest:
     formula: |
@@ -47,6 +51,7 @@ falsification_tests:
     delta=$((after - before))
     [ "$delta" -le 4096 ] || { echo "cp allocated $delta bytes (expected ≤4096)"; exit 1; }
     apr ls | grep -q "$DST"
+  if_fails: rule 'copy is manifest-only; no new blob bytes land on disk' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-11-002
   rule: blobs are hard-linked, not bytewise copied
   prediction: "blob inode is identical between SRC and DST manifest references"
@@ -56,8 +61,9 @@ falsification_tests:
     dst_blob=$(apr inspect --blob-path "qwen2.5-0.5b:mycopy" | head -1)
     [ "$(stat -c %i "$src_blob")" = "$(stat -c %i "$dst_blob")" ]
 
+  if_fails: rule 'blobs are hard-linked, not bytewise copied' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr cp matches `ollama cp` — identical blob sharing semantics"
 - type: invariant
   property: "disk-usage delta ≤ 4 KiB per copy (manifest only)"

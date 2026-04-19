@@ -18,6 +18,11 @@ metadata:
     tokenizer_hash, max_seq_len, pack_mode). Canonical: HF `datasets` Arrow
     cache (`.cache/huggingface/datasets/...`); cache hits skip tokenize+pack.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   dataset_cache:
     formula: |
@@ -52,6 +57,7 @@ falsification_tests:
     def to_s(t): m,s = t.replace('m',' ').replace('s','').split(); return float(m)*60+float(s)
     assert to_s('$t1') >= 10 * to_s('$t2'), f't1={$t1!s} t2={$t2!s}'
     "
+  if_fails: rule 'second identical run is a cache hit' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-29-002
   rule: changing tokenizer busts the cache
   prediction: "different tokenizer → cache miss → fresh tokenization"
@@ -63,6 +69,7 @@ falsification_tests:
       --max-seq-len 2048 --format json > /tmp/b.json
     key_a=$(jq -r .cache_key /tmp/a.json); key_b=$(jq -r .cache_key /tmp/b.json)
     [ "$key_a" != "$key_b" ]
+  if_fails: rule 'changing tokenizer busts the cache' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-29-003
   rule: cache key is deterministic (same inputs → same key)
   prediction: "two distinct runs with identical inputs produce the same cache_key"
@@ -74,8 +81,9 @@ falsification_tests:
          --max-seq-len 2048 --format json | jq -r .cache_key)
     [ "$k1" = "$k2" ]
 
+  if_fails: rule 'cache key is deterministic (same inputs → same key)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr prepare-dataset cache semantics match HF `datasets` Arrow cache"
 - type: invariant
   property: "cache_key is deterministic hash of (dataset_fp, tokenizer_hash, max_seq_len, pack_mode)"

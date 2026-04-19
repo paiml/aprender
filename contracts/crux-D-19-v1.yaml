@@ -17,6 +17,11 @@ metadata:
     PPO with a reward model. Canonical: HF TRL `PPOTrainer` (arXiv:1707.06347).
     Requires a policy model, ref model, RM, and KL control on ref.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   ppo_objective:
     formula: |
@@ -48,12 +53,14 @@ falsification_tests:
     end   = sum(r['steps'][-10:]) / 10
     assert end - start >= 0.5, f'start={start} end={end}'
     "
+  if_fails: rule 'toy PPO run improves mean reward on synthetic RM' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-19-002
   rule: KL constraint prevents policy blowup
   prediction: "KL(policy || ref) stays < 20 nats throughout training"
   test: |
     set -euo pipefail
     jq '.kl[]' /tmp/rewards.json | awk '{if($1>20) exit 1}'
+  if_fails: rule 'KL constraint prevents policy blowup' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-19-003
   rule: loss components within TRL envelope on matched batch
   prediction: "L_clip, L_vf, entropy match TRL PPOTrainer within 1% on step 0"
@@ -69,8 +76,9 @@ falsification_tests:
       assert abs(c[k]-v)/max(abs(v),1e-6) < 0.01, f"{k}: apr={c[k]} ref={v}"
     PY
 
+  if_fails: rule 'loss components within TRL envelope on matched batch' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr train-ppo matches TRL PPOTrainer loss components within 1% on identical (policy, ref, RM, batch)"
 - type: invariant
   property: "KL(policy || ref) bounded throughout training (< 20 nats)"

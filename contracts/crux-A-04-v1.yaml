@@ -116,7 +116,7 @@ proof_obligations:
   property: "Selected(R, I, X) = (R ∩ I) \\ X with I=∅ ⇒ R"
 - type: invariant
   property: "Second identical pull is cache hit (no network I/O)"
-- type: parity
+- type: equivalence
   property: "apr pull globs ≡ huggingface-cli download globs on evidence goldens"
 - type: invariant
   property: "Glob syntax matches huggingface_hub fnmatch semantics"

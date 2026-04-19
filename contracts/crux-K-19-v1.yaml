@@ -20,6 +20,11 @@ metadata:
     compute unit, logits cosine ≥0.999 vs apr native fp32. fp16 weight
     storage is acceptable provided the cosine gate holds.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   coreml_export:
     formula: |
@@ -44,6 +49,7 @@ falsification_tests:
       --compute-precision fp16 -o /tmp/t.mlpackage
     test -f /tmp/t.mlpackage/Manifest.json
     test -f /tmp/t.mlpackage/Data/com.apple.CoreML/model.mlmodel
+  if_fails: rule 'mlpackage structure is valid' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-19-002
   rule: coremltools.MLModel.load succeeds
   prediction: "MLModel('/tmp/t.mlpackage') does not raise"
@@ -54,6 +60,7 @@ falsification_tests:
     m = ct.models.MLModel('/tmp/t.mlpackage', compute_units=ct.ComputeUnit.CPU_ONLY)
     assert m is not None
     "
+  if_fails: rule 'coremltools.MLModel.load succeeds' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-19-003
   rule: parity vs native ≥0.999 cosine
   prediction: "coreml logits vs native within cosine gate"
@@ -70,8 +77,9 @@ falsification_tests:
     assert cos >= 0.999, cos
     "
 
+  if_fails: rule 'parity vs native ≥0.999 cosine' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr export --format coreml produces CoreML-spec-compliant .mlpackage with ≥0.999 cosine vs native"
 - type: invariant
   property: "MLModel.load succeeds on CPU_ONLY compute unit"

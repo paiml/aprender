@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   truncation_length_bound:
     formula: |
@@ -122,7 +127,7 @@ proof_obligations:
   property: "truncation_side=right keeps prefix raw[0..N]"
 - type: invariant
   property: "truncation_side=left keeps suffix raw[L-N..L]"
-- type: parity
+- type: equivalence
   property: "Byte-identical to transformers.AutoTokenizer.encode(truncation=True, max_length=N, truncation_side=S)"
   reference: "https://huggingface.co/docs/transformers/main_classes/tokenizer"
 

@@ -37,7 +37,7 @@ equations:
         timeout_sec: f64 > 0            (per-problem wall clock)
         uid: non-root
     domain: (candidate_code, limits)
-    codomain: {pass, fail, timeout, error}
+    codomain: 'pass: None, fail: None, timeout: None, error: None'
     invariants:
     - "Network syscalls MUST be blocked (no outbound)"
     - "Process cannot write outside scratch tmpfs"
@@ -64,7 +64,7 @@ equations:
       apr eval MUST record status == 'timeout' and kill container
       within timeout_sec + grace (5s default).
     domain: (candidate_code, timeout_sec)
-    codomain: {status, wall_time_sec}
+    codomain: 'status: None, wall_time_sec: None'
     invariants:
     - "No candidate exceeds timeout_sec + 5s in wall_time_sec"
     - "Infinite loop does NOT hang the harness"
@@ -125,7 +125,7 @@ proof_obligations:
   property: "sandbox has network off, FS read-only, CPU+memory+time caps, non-root uid"
 - type: invariant
   property: "HumanEval num_problems == 164; pass_at_1 consistent with per_problem"
-- type: parity
+- type: equivalence
   property: "apr HumanEval pass@1 matches bigcode-evaluation-harness within ±1pp on identical model + image"
 - type: invariant
   property: "timeout kills container within timeout_sec + grace (5s)"

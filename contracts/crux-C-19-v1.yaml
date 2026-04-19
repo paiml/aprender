@@ -26,6 +26,10 @@ metadata:
       - https://en.wikipedia.org/wiki/Top-p_sampling (Holtzman et al. 2019)
       - https://github.com/ollama/ollama/blob/main/docs/modelfile.md#parameter
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   tempered_softmax:
     formula: |
@@ -125,7 +129,7 @@ proof_obligations:
   property: "H(p(T)) is monotone non-decreasing in T (higher temp → more entropy)"
 - type: invariant
   property: "Smaller top-p truncates the distribution more aggressively than larger top-p"
-- type: parity
+- type: equivalence
   property: "apr run --temperature/--top-p/--top-k  ≅  Ollama Modelfile PARAMETER {temperature, top_p, top_k}"
 
 verification_summary:

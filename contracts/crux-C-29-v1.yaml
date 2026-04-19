@@ -18,6 +18,10 @@ metadata:
     Canonical: llama.cpp `--numa distribute|isolate|numactl`, or explicit
     `numactl --cpunodebind=0 --membind=0 ...`.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   numa_binding:
     formula: |
@@ -49,6 +53,7 @@ falsification_tests:
     hit=$(numastat -p "$PID" | awk '/^Total/ {print $2}')
     miss=$(numastat -p "$PID" | awk '/^Total/ {print $3}')
     python3 -c "assert $miss / max($hit,1) < 0.01, 'miss=$miss hit=$hit'"
+  if_fails: rule 'numastat shows ~0 cross-node misses under --numa isolate' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-29-002
   rule: single-socket machine emits warning but does not error
   prediction: "on 1-socket host, --numa isolate logs WARN and continues"
@@ -63,8 +68,9 @@ falsification_tests:
     curl -sf http://127.0.0.1:18182/health
     grep -E "WARN.*numa|single.*socket" /tmp/log
 
+  if_fails: rule 'single-socket machine emits warning but does not error' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr serve --numa isolate matches llama.cpp `--numa isolate` thread+memory binding"
 - type: invariant
   property: "numa_miss / numa_hit < 1% on multi-socket host"

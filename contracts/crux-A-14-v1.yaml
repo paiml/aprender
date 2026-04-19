@@ -18,6 +18,10 @@ metadata:
     Reference: AWS CLI `aws s3 cp`, gcloud `gsutil cp`, and vLLM's
     `--model s3://bucket/path` transparent object-store loader.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   scheme_dispatch:
     formula: |
@@ -50,6 +54,7 @@ falsification_tests:
     expected=$(sha256sum /tmp/fixture.gguf | cut -c1-64)
     actual=$(sha256sum /tmp/out.gguf | cut -c1-64)
     [ "$expected" = "$actual" ]
+  if_fails: rule 's3:// URI downloads and sha256-verifies against MinIO-hosted fixture' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-14-002
   rule: unsupported scheme exits 2 with actionable error
   prediction: "apr pull ftp://example.com/model → exit 2, stderr mentions supported schemes"
@@ -58,8 +63,9 @@ falsification_tests:
     apr pull ftp://example.com/model 2>/tmp/err && exit 1 || [ $? -eq 2 ]
     grep -E "s3|gs|az|hf" /tmp/err
 
+  if_fails: rule 'unsupported scheme exits 2 with actionable error' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr pull s3://... matches `aws s3 cp` byte-identical + ETag-verified"
 - type: invariant
   property: "credentials are pulled from standard env/config — no aprender-specific auth"

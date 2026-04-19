@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   llama_index_provider_api:
     formula: |
@@ -132,7 +137,7 @@ proof_obligations:
   property: "apr-backed LLM conforms to llama_index BaseLLM interface (complete/chat/metadata)"
 - type: invariant
   property: "LLMMetadata exposes valid context_window and model_name"
-- type: parity
+- type: equivalence
   property: "apr serve is drop-in usable via llama_index.llms.openai_like.OpenAILike, matching OpenAI-compat provider behavior on the canonical VectorStoreIndex RAG smoke test"
   reference: "https://docs.llamaindex.ai/en/stable/module_guides/models/llms/"
 

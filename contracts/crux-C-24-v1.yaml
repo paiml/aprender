@@ -18,6 +18,10 @@ metadata:
     Canonical: `model.generate(..., num_beams=4, length_penalty=0.6,
     early_stopping=True, no_repeat_ngram_size=3)` in transformers.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   beam_search:
     formula: |
@@ -42,6 +46,7 @@ falsification_tests:
     apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "2+2=" --num-beams 1 --max-tokens 16 --format json > /tmp/b1.json
     apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "2+2=" --sampler greedy --max-tokens 16 --format json > /tmp/g.json
     diff <(jq .token_ids /tmp/b1.json) <(jq .token_ids /tmp/g.json)
+  if_fails: rule 'beam=1 matches greedy decode' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-24-002
   rule: beam=4 output log-prob ≥ greedy log-prob
   prediction: "beam search finds at least as good a sequence as greedy"
@@ -50,6 +55,7 @@ falsification_tests:
     p_beam=$(apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "2+2=" --num-beams 4 --max-tokens 16 --format json | jq .sequence_logprob)
     p_greedy=$(apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "2+2=" --sampler greedy --max-tokens 16 --format json | jq .sequence_logprob)
     python3 -c "assert $p_beam >= $p_greedy - 1e-6, 'beam=$p_beam greedy=$p_greedy'"
+  if_fails: rule 'beam=4 output log-prob ≥ greedy log-prob' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-24-003
   rule: parity with transformers.generate on small model
   prediction: "apr num_beams=4 top-1 equals HF beam_search top-1 on same model"
@@ -67,8 +73,9 @@ falsification_tests:
     )
     [ "$apr_out" = "$hf_out" ]
 
+  if_fails: rule 'parity with transformers.generate on small model' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr --num-beams matches HF `model.generate(num_beams=, length_penalty=, early_stopping=)` top-1"
 - type: invariant
   property: "num_beams=1 ≡ greedy (byte-equal output)"

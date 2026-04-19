@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   line_record_bijection:
     formula: |
@@ -115,7 +120,7 @@ proof_obligations:
   property: "malformed line error names the 1-indexed line number"
 - type: invariant
   property: "empty/whitespace-only lines are skipped silently"
-- type: parity
+- type: equivalence
   property: "Record set matches datasets.load_dataset('json', data_files=F)['train'] in count and content"
   reference: "https://jsonlines.org and https://huggingface.co/docs/datasets/loading#json"
 

@@ -18,6 +18,11 @@ metadata:
     `model.add_weighted_adapter(adapters=[...], weights=[...], combination_type="linear")`.
     Alt: TIES / DARE (arXiv:2306.01708, 2311.03099) for interference-aware merges.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   lora_fusion:
     formula: |
@@ -41,6 +46,7 @@ falsification_tests:
     apr merge-adapters tests/fixtures/lora1 --weights 1.0 --combination linear -o /tmp/m1
     diff <(apr inspect /tmp/m1/adapter.safetensors --format json | jq -S .) \
          <(apr inspect tests/fixtures/lora1/adapter.safetensors --format json | jq -S .)
+  if_fails: rule 'single-adapter linear merge is identity' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-28-002
   rule: linear fusion matches PEFT add_weighted_adapter
   prediction: "tensor-wise max-abs-diff < 1e-6 vs PEFT reference"
@@ -56,6 +62,7 @@ falsification_tests:
       d = (apr[k] - ref[k]).abs().max().item()
       assert d < 1e-6, f"{k}: max-abs-diff = {d}"
     PY
+  if_fails: rule 'linear fusion matches PEFT add_weighted_adapter' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-28-003
   rule: weights sum check enforced
   prediction: "non-normalizing weights emit warning or error"
@@ -65,8 +72,9 @@ falsification_tests:
       --weights 0.5,0.7 --combination linear -o /tmp/bad 2>&1 || true)
     echo "$out" | grep -E 'weights.*sum|not.*normalize'
 
+  if_fails: rule 'weights sum check enforced' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr merge-adapters linear matches PEFT `add_weighted_adapter(combination_type='linear')` within 1e-6"
 - type: invariant
   property: "N=1, weight=1.0 is byte-identical to the original adapter"

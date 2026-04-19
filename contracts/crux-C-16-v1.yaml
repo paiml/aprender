@@ -130,13 +130,13 @@ falsification_tests:
   if_fails: "base model state contaminated after LoRA unload"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "hotswap+decode ≡ offline-merge+decode at temp=0 (byte-identical tokens)"
 - type: invariant
   property: "adapter.base_sha256 validated; mismatches rejected at load"
-- type: performance
+- type: bound
   property: "load latency P99 < 2s; concurrent request latency spike < 50ms"
-- type: idempotence
+- type: idempotency
   property: "unload restores base state byte-identically (load → unload → decode ≡ fresh decode)"
 
 verification_summary:

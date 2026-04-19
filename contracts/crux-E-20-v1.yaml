@@ -110,7 +110,7 @@ proof_obligations:
   property: "KL stats schema complete (mean/median/p99/max/flip/num_tokens)"
 - type: invariant
   property: "KL >= 0 (Gibbs inequality) — never NaN, never negative"
-- type: parity
+- type: equivalence
   property: "apr KL mean matches llama.cpp --kl-divergence within ±5% on identical GGUF + dataset"
 - type: invariant
   property: "KL(M || M) == 0 within 1e-6 (self-identity)"

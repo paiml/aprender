@@ -148,7 +148,7 @@ proof_obligations:
   property: "Block size 64; storage 0.5 B/w (+ DQ overhead when enabled)"
 - type: invariant
   property: "Relative L2 dequant error < 0.06 on N(0,1) weights"
-- type: parity
+- type: equivalence
   property: "apr NF4 dequant ≡ bitsandbytes NF4 dequant (max_abs_diff < 1e-6)"
 
 verification_summary:

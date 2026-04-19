@@ -25,6 +25,11 @@ metadata:
     Memory reference: RTX 4090 1.5B Q4_K_M Ollama 0.5.7 DIRECT baseline = 307.17 tok/s.
     Ref: aprender CLAUDE.md §Performance Reference + Ollama README.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   median_decode_throughput:
     formula: |
@@ -130,7 +135,7 @@ proof_obligations:
   property: "Prefill and decode wall times are reported separately"
 - type: invariant
   property: "Median is computed over ≥5 trials"
-- type: parity
+- type: equivalence
   property: "apr bench median_tok_s_decode within 10% of Ollama 0.5.7 DIRECT on same model + GPU"
 - type: invariant
   property: "Derived 128/decode_ms matches reported median within 5% (internal consistency)"

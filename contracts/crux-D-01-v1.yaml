@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   full_parameter_update:
     formula: |
@@ -130,7 +135,7 @@ proof_obligations:
   property: "checkpoint written at every epoch boundary and resumable"
 - type: invariant
   property: "final_loss within ±5% of transformers.Trainer reference on same seed/data"
-- type: parity
+- type: equivalence
   property: "apr finetune --method full ≡ Trainer(model, args, train_dataset).train()"
 
 # References:

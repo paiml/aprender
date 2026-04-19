@@ -112,13 +112,13 @@ falsification_tests:
   if_fails: "acceptance_rate missing or out of [0,1] range in JSON schema"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "temp=0.0 top_k=1 speculative output ≡ non-speculative output (byte-identical token IDs)"
 - type: invariant
   property: "spec_tokens ∈ [1,16]; tokenizer+vocab match enforced before decode"
-- type: performance
+- type: bound
   property: "K=5 delivers tok/s uplift alpha >= 0.3 on code/math workloads"
-- type: schema
+- type: invariant
   property: "--json output includes speculative.{acceptance_rate, num_accepted, num_proposed}"
 
 verification_summary:

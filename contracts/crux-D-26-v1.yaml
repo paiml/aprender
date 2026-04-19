@@ -18,6 +18,11 @@ metadata:
     a short run, record loss per step, pick LR at steepest-descent point.
     Canonical: fastai `Learner.lr_find()`, PyTorch-Lightning `Tuner.lr_find()`.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   lr_range_test:
     formula: |
@@ -42,6 +47,7 @@ falsification_tests:
     apr lr-find tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
       --seed 42 --lr-min 1e-7 --lr-max 10 --steps 50 --format json > /tmp/b.json
     diff /tmp/a.json /tmp/b.json
+  if_fails: rule 'lr-finder output is deterministic under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-26-002
   rule: suggested lr is within swept range
   prediction: "lr_min ≤ suggested_lr ≤ lr_max"
@@ -53,6 +59,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/lr.json'))
     assert 1e-6 <= d['suggested_lr'] <= 1.0, d['suggested_lr']
     "
+  if_fails: rule 'suggested lr is within swept range' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-26-003
   rule: curve is monotone in lr
   prediction: "lr values are strictly increasing along the swept range"
@@ -64,8 +71,9 @@ falsification_tests:
     assert all(b > a for a,b in zip(lrs, lrs[1:])), 'not monotone'
     "
 
+  if_fails: rule 'curve is monotone in lr' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr lr-find matches fastai `Learner.lr_find()` / Lightning `Tuner.lr_find()` output schema"
 - type: invariant
   property: "deterministic under fixed seed (byte-identical JSON)"

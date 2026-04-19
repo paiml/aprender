@@ -20,6 +20,10 @@ metadata:
     Canonical: PyTorch sets NCCL_DEBUG=INFO + TORCH_NCCL_ASYNC_ERROR_HANDLING=1;
     NCCL docs at docs.nvidia.com/deeplearning/nccl/user-guide/docs/troubleshooting.html.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   nccl_diagnosis:
     formula: |
@@ -52,6 +56,7 @@ falsification_tests:
     for k in ("host","rank","nccl_version","last_op","code","suggest"):
       assert k in d, f"missing key {k}"
     PY
+  if_fails: rule 'nccl error produces parseable JSON diag' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-15-002
   rule: exit code encodes err code (not generic 1)
   prediction: "exit code != 1 (non-generic); maps to 128+code range"
@@ -60,6 +65,7 @@ falsification_tests:
     ! APR_SIMULATE_NCCL_ERR=async apr train tests/fixtures/tiny-sft.jsonl \
       --world-size 2 --steps 1 --model tests/fixtures/tinyllama-hf 2>/dev/null; ec=$?
     [ "$ec" -ge 128 ]
+  if_fails: rule 'exit code encodes err code (not generic 1)' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-15-003
   rule: suggest field cites NCCL doc link
   prediction: "suggest field contains an nvidia.com or nccl URL"
@@ -67,8 +73,9 @@ falsification_tests:
     set -euo pipefail
     grep -Eo 'https?://(docs\.nvidia\.com|developer\.nvidia\.com|github\.com/NVIDIA/nccl)' /tmp/nccl-err
 
+  if_fails: rule 'suggest field cites NCCL doc link' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr NCCL diagnosis surface matches TORCH_NCCL_ASYNC_ERROR_HANDLING behavior"
 - type: invariant
   property: "stderr JSON is parseable (not free text)"

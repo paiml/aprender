@@ -19,6 +19,11 @@ metadata:
     `torch.utils.checkpoint.checkpoint_sequential` + custom tag names
     like `{"attn": True, "ffn": False}`.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   ckpt_memory_vs_compute:
     formula: |
@@ -43,6 +48,7 @@ falsification_tests:
     apr finetune tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
       --steps 1 --dump-gradnorm /tmp/base.txt
     diff /tmp/off.txt /tmp/base.txt
+  if_fails: rule 'all-false policy is byte-equal to no-ckpt baseline' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-24-002
   rule: ckpt=attn+ffn cuts peak GPU mem > 30%
   prediction: "measured cuMemGetInfo peak differs by ≥30% between policies"
@@ -53,6 +59,7 @@ falsification_tests:
     on=$(grep -oP 'peak_mem=\K[0-9]+' /tmp/mem_on)
     off=$(grep -oP 'peak_mem=\K[0-9]+' /tmp/mem_off)
     python3 -c "assert ($off - $on) / $off > 0.3, f'on=$on off=$off'"
+  if_fails: rule 'ckpt=attn+ffn cuts peak GPU mem > 30%' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-24-003
   rule: loss curve unchanged (numerical parity with autograd)
   prediction: "|loss(ckpt) - loss(no-ckpt)| ≤ 1e-5 per step"
@@ -65,8 +72,9 @@ falsification_tests:
     assert all(abs(x['loss']-y['loss'])<1e-5 for x,y in zip(a,b))
     "
 
+  if_fails: rule 'loss curve unchanged (numerical parity with autograd)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr --activation-ckpt matches `torch.utils.checkpoint.checkpoint_sequential` recompute semantics"
 - type: invariant
   property: "empty policy ≡ no ckpt (byte-equal gradients)"

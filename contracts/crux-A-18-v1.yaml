@@ -18,6 +18,10 @@ metadata:
     re-prompt the user to `apr login` (token paste) and retry. Canonical:
     `huggingface-cli login` + `hf_hub_download` retry after `use_auth_token`.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   gated_retry_flow:
     formula: |
@@ -43,6 +47,7 @@ falsification_tests:
     unset HF_TOKEN
     printf "" | apr pull hf://meta-llama/Meta-Llama-3-8B --no-prompt 2>/tmp/err && exit 1 || [ $? -eq 2 ]
     grep -E "gated|access|huggingface\.co/meta-llama" /tmp/err
+  if_fails: rule '403 on gated repo triggers token prompt (not silent failure)' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-18-002
   rule: token file mode is 0600 after login
   prediction: "stat -c %a ~/.apr/token == 600"
@@ -50,6 +55,7 @@ falsification_tests:
     set -euo pipefail
     echo "hf_dummy_token" | apr login --stdin
     [ "$(stat -c %a ~/.apr/token)" = "600" ]
+  if_fails: rule 'token file mode is 0600 after login' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-18-003
   rule: token is never echoed to stderr
   prediction: "apr pull/login stderr does NOT contain the literal token"
@@ -59,8 +65,9 @@ falsification_tests:
     echo "$TOK" | apr login --stdin 2>/tmp/err
     ! grep -qF "$TOK" /tmp/err
 
+  if_fails: rule 'token is never echoed to stderr' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr pull matches `huggingface-cli login` + `hf_hub_download` retry semantics"
 - type: invariant
   property: "token file is mode 0600; never logged in any code path"

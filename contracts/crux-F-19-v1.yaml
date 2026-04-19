@@ -19,6 +19,10 @@ metadata:
     `--logit-bias`, `--logprobs N`, `llama-cli -lv` verbose sampling; HF
     `generate(..., output_scores=True, return_dict_in_generate=True)`.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   explain_token:
     formula: |
@@ -52,6 +56,7 @@ falsification_tests:
       total = sum(c["post_prob"] for c in r["candidates"])
       assert abs(total - 1.0) < 1e-5, (r["step"], total)
     PY
+  if_fails: rule 'post-sampler probs normalize' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-19-002
   rule: sampled token always present in candidate list
   prediction: "for each step, sampled_token in {c.token for c in candidates}"
@@ -64,6 +69,7 @@ falsification_tests:
       ids = {c["token_id"] for c in r["candidates"]}
       assert r["sampled_id"] in ids, r
     PY
+  if_fails: rule 'sampled token always present in candidate list' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-19-003
   rule: temp=0 always picks rank-0 candidate
   prediction: "--temp 0 --top-k 1 → sampled == argmax(logits)"
@@ -79,8 +85,9 @@ falsification_tests:
       assert r["sampled_id"] == top["token_id"], r
     PY
 
+  if_fails: rule 'temp=0 always picks rank-0 candidate' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr explain output matches HF `generate(output_scores=True)` token probabilities within 1e-5"
 - type: invariant
   property: "post-sampler probs sum to 1.0"

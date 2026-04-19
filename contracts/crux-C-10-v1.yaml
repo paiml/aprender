@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   gbnf_grammar_constraint:
     formula: |
@@ -96,7 +100,7 @@ falsification_tests:
   if_fails: "apr accepted malformed GBNF silently or emitted no diagnostic"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr run --grammar-file matches llama.cpp llama-cli --grammar-file json.gbnf on the golden prompt (both emit parseable JSON)"
 - type: invariant
   property: "Generated text parses under supplied GBNF grammar (root accept state reached or max_tokens)"

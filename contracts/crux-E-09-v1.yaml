@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   per_tensor_cosine_similarity:
     formula: |
@@ -121,7 +126,7 @@ proof_obligations:
   property: "per_tensor output sorted ascending by cosine and worst_tensor consistent"
 - type: invariant
   property: "every tensor in base model appears in diff output (no silent drops)"
-- type: parity
+- type: equivalence
   property: "apr diff --per-tensor --metric cosine matches llama.cpp's llama-quantize-stats per-tensor cosine within 1e-4 on matching tensor names"
 
 # References:

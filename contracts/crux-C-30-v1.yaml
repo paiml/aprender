@@ -111,13 +111,13 @@ falsification_tests:
   if_fails: "unsupported KV quantization silently accepted"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "q8_0 KV decode first-token ID ≡ f16 at temp=0 top_k=1 (greedy determinism preserved)"
 - type: invariant
   property: "KV footprint formula holds within 2%: q8_0 ≈ 0.53×, q4_0 ≈ 0.28× f16 footprint"
-- type: quality
+- type: invariant
   property: "q8_0 PPL <= f16 PPL * 1.01; q4_0 PPL <= f16 PPL * 1.05 on wikitext-2"
-- type: schema
+- type: invariant
   property: "--json output includes .kv_cache.{dtype, bytes, ctx_len}"
 
 verification_summary:

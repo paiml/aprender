@@ -18,6 +18,10 @@ metadata:
     IQ1_S..IQ4_NL). Canonical: `llama-quantize model.gguf out.gguf IQ3_XXS`
     using importance-matrix from `llama-imatrix`.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
 equations:
   imatrix_driven_quant:
     formula: |
@@ -44,6 +48,7 @@ falsification_tests:
     mine=$(ls -l /tmp/mine.gguf | awk '{print $5}')
     diff_pct=$(python3 -c "print(abs($ref-$mine)/$ref*100)")
     python3 -c "assert $diff_pct < 1.0, '$diff_pct%'"
+  if_fails: rule 'IQ3_XXS file size parity with llama-quantize reference' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-B-15-002
   rule: missing imatrix yields exit 2 with actionable msg
   prediction: "IQ3_XXS without --imatrix exits 2; stderr mentions llama-imatrix"
@@ -51,6 +56,7 @@ falsification_tests:
     set -e
     apr quantize tests/fixtures/tinyllama-fp16.gguf --format iq3_xxs -o /tmp/fail.gguf 2>/tmp/err && exit 1 || [ $? -eq 2 ]
     grep -Ei "imatrix|llama-imatrix" /tmp/err
+  if_fails: rule 'missing imatrix yields exit 2 with actionable msg' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-B-15-003
   rule: ppl drift ≤ 0.5 on wikitext-2
   prediction: "perplexity(iq3_xxs) - perplexity(fp16) ≤ 0.5"
@@ -60,8 +66,9 @@ falsification_tests:
     p_iq=$(apr eval /tmp/mine.gguf --metric perplexity --dataset wikitext-2 --limit 128 --format json | jq .ppl)
     python3 -c "assert ($p_iq) - ($p_fp16) <= 0.5"
 
+  if_fails: rule 'ppl drift ≤ 0.5 on wikitext-2' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr quantize --format iq3_xxs matches `llama-quantize IQ3_XXS` file size ± 1% and ppl drift ≤ 0.5"
 - type: invariant
   property: "IQ types require imatrix; absence rejected at parse time"

@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   loss_curve_emission:
     formula: |
@@ -103,7 +107,7 @@ proof_obligations:
   property: "apr finetune emits one loss value per epoch, with no silent gaps"
 - type: invariant
   property: "JSON epoch_metrics train_loss matches TFEvents loss/train scalar within 1e-6"
-- type: parity
+- type: equivalence
   property: "apr finetune --tensorboard-logdir matches PyTorch's torch.utils.tensorboard.SummaryWriter.add_scalar('loss/train',...) on the same training data"
   competitor: pytorch
   reference: "https://pytorch.org/docs/stable/tensorboard.html (torch.utils.tensorboard.SummaryWriter.add_scalar)"

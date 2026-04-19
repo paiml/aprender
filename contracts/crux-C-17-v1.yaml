@@ -127,13 +127,13 @@ falsification_tests:
   if_fails: "max_loras bound not enforced — OOM risk when capacity exceeded"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "batched multi-LoRA per-request output ≡ serial single-adapter output at temp=0"
 - type: invariant
   property: "max_loras bound enforced; unknown adapter → HTTP 404"
-- type: performance
+- type: bound
   property: "N=8 multi-LoRA throughput >= 80% of base-only batched throughput"
-- type: isolation
+- type: independence
   property: "adapter ordering within batch MUST NOT affect per-request output (no cross-contamination)"
 
 verification_summary:

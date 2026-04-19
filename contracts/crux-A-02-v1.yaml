@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   url_parsing:
     formula: |
@@ -115,7 +119,7 @@ falsification_tests:
   if_fails: "revision pin not honored; downloaded HEAD instead of @rev"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr pull hf://X/Y matches huggingface_hub.snapshot_download('X/Y') file set and bytes"
   competitor_function: "huggingface_hub.snapshot_download"
   reference: "https://huggingface.co/docs/huggingface_hub/main/en/package_reference/file_download"

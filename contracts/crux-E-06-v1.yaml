@@ -25,6 +25,11 @@ metadata:
     `/metrics` with gauges `apr_peak_rss_bytes` and `apr_peak_vram_bytes`.
     Source: https://docs.vllm.ai/en/latest/serving/metrics.html
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   peak_rss_definition:
     formula: |

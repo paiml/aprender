@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   per_epoch_eval_json_schema:
     formula: |
@@ -144,9 +149,9 @@ falsification_tests:
   if_fails: "trainer_state.json not machine-parseable for CI"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr finetune --eval-strategy epoch output schema matches HuggingFace Trainer trainer_state.json log_history on golden dataset"
-- type: parity
+- type: equivalence
   property: "apr finetune --load-best-model-at-end matches HF Trainer best-model selection on min eval_loss"
 - type: invariant
   property: "Number of eval entries >= total_epochs"

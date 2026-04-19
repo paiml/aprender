@@ -29,6 +29,11 @@ metadata:
     https://platform.openai.com/docs/api-reference/chat ;
     https://platform.openai.com/docs/guides/function-calling
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   smoke_script_exit_zero:
     formula: |
@@ -90,6 +95,7 @@ falsification_tests:
     [ -f scripts/openai_smoke.py ] || { echo "FAIL: scripts/openai_smoke.py missing" >&2; exit 1; }
     uv run --with "openai>=1.30" python scripts/openai_smoke.py "http://localhost:$PORT/v1"
 
+  if_fails: rule 'canonical smoke script exits zero' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-01-002
   rule: sync + async + streaming chat.completions all pass
   prediction: "smoke script's chat-mode probes all return non-empty content"
@@ -122,6 +128,7 @@ falsification_tests:
     print("OK sync/async/stream")
     PYEOF
 
+  if_fails: rule 'sync + async + streaming chat.completions all pass' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-01-003
   rule: embeddings.create returns valid embedding vector
   prediction: "client.embeddings.create returns data[0].embedding list with len>0"
@@ -140,6 +147,7 @@ falsification_tests:
     print(f"OK embedding dim={len(vec)}")
     PYEOF
 
+  if_fails: rule 'embeddings.create returns valid embedding vector' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-01-004
   rule: tool-use round-trip closes the loop
   prediction: "first call returns tool_calls, second call with tool result returns content"
@@ -164,6 +172,7 @@ falsification_tests:
     print("OK tool round-trip")
     PYEOF
 
+  if_fails: rule 'tool-use round-trip closes the loop' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-01-005
   rule: failures emit probe name + HTTP status for triage
   prediction: "smoke script failures include probe name and http_status in stderr"
@@ -180,6 +189,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'failures emit probe name + HTTP status for triage' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "scripts/openai_smoke.py exists and exits 0 against a ready apr serve"

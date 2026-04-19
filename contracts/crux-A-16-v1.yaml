@@ -135,7 +135,7 @@ proof_obligations:
   property: "Derived tag injects recipe.system as messages[0] when no CLI override"
 - type: invariant
   property: "CLI --system takes precedence over recipe.system"
-- type: parity
+- type: equivalence
   property: "apr-derived tokens ≡ ollama-derived tokens on first 64 tokens at T=0"
 
 verification_summary:

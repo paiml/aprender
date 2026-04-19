@@ -18,6 +18,11 @@ metadata:
     `ORPOTrainer` (arXiv:2403.07691), `KTOTrainer` (arXiv:2402.01306),
     `IPOTrainer` (arXiv:2310.12036). Each is a single-file swap-in for DPO.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   orpo_loss:
     formula: |
@@ -57,6 +62,7 @@ falsification_tests:
     ref = 1.2345  # captured from reference run, check-in with fixture
     assert abs(apr - ref) < 1e-4, f"apr={apr} ref={ref}"
     PY
+  if_fails: rule 'ORPO loss matches TRL on identical batch within 1e-4' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-17-002
   rule: KTO works on unpaired binary-labeled data
   prediction: "KTO accepts {prompt, completion, label ∈ {True, False}} and trains"
@@ -66,6 +72,7 @@ falsification_tests:
       --desirable-weight 1.0 --undesirable-weight 1.0 \
       --model tests/fixtures/tinyllama-hf --steps 10 --output /tmp/kto-out
     [ -f /tmp/kto-out/model.safetensors ]
+  if_fails: rule 'KTO works on unpaired binary-labeled data' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-17-003
   rule: IPO flag present and numerically distinct from DPO
   prediction: "IPO loss differs from DPO on identical batch by > 1e-3"
@@ -75,8 +82,9 @@ falsification_tests:
     l_ipo=$(apr train ... --method ipo --steps 1 --dump-loss /tmp/i.json; jq .loss /tmp/i.json)
     python3 -c "assert abs($l_dpo - $l_ipo) > 1e-3"
 
+  if_fails: rule 'IPO flag present and numerically distinct from DPO' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr train --method {orpo,kto,ipo} matches TRL {ORPO,KTO,IPO}Trainer within 1e-4"
 - type: invariant
   property: "lambda=0 for ORPO is exactly SFT (byte-equal gradients)"

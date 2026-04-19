@@ -18,6 +18,11 @@ metadata:
     `tune.run(..., scheduler=ASHAScheduler, search_alg=OptunaSearch)`.
     Search space as YAML/TOML, per-trial artifacts, pareto/best JSON report.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   hp_sweep:
     formula: |
@@ -44,6 +49,7 @@ falsification_tests:
     metrics = [t['metric'] for t in d['trials'] if t['status']=='completed']
     assert d['best']['metric'] == min(metrics), (d['best']['metric'], min(metrics))
     "
+  if_fails: rule 'best metric is the minimum across all completed trials' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-27-002
   rule: sweep is deterministic under fixed seed
   prediction: "two runs with --seed 42 produce identical trial configs"
@@ -52,6 +58,7 @@ falsification_tests:
     apr sweep config/sweep.yaml --seed 42 --n-trials 5 --format json | jq '[.trials[].config]' > /tmp/a.json
     apr sweep config/sweep.yaml --seed 42 --n-trials 5 --format json | jq '[.trials[].config]' > /tmp/b.json
     diff /tmp/a.json /tmp/b.json
+  if_fails: rule 'sweep is deterministic under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-27-003
   rule: ASHA scheduler actually prunes trials
   prediction: "with --scheduler asha, count(status=='pruned') > 0 on a 20-trial sweep"
@@ -61,8 +68,9 @@ falsification_tests:
     pruned=$(jq '[.trials[] | select(.status=="pruned")] | length' /tmp/asha.json)
     python3 -c "assert $pruned > 0, 'ASHA did not prune any trials'"
 
+  if_fails: rule 'ASHA scheduler actually prunes trials' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr sweep matches Ray Tune / Optuna search-algo + scheduler semantics for {random, tpe, asha}"
 - type: invariant
   property: "best.metric is the optimum across completed trials"

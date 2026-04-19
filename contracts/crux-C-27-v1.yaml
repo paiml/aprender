@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   mmap_syscall_used:
     formula: |
@@ -128,7 +132,7 @@ falsification_tests:
   if_fails: "apr run RSS > 1.5× llama-cli RSS — suggests missing mmap"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr run uses mmap on GGUF model files, matching llama.cpp default behavior"
   competitor_function: "llama_mmap (llama.cpp) / use_mmap=true"
   reference: "https://github.com/ggerganov/llama.cpp"

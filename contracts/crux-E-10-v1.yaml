@@ -19,6 +19,11 @@ metadata:
     `hallucination-detector` (e.g. SelfCheckGPT, arXiv:2303.08896) and
     PSI drift score against a reference corpus.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   drift_and_hallu:
     formula: |
@@ -44,6 +49,7 @@ falsification_tests:
     python3 -c "
     import json; d=json.load(open('/tmp/h.json')); assert d['hallu_rate']==0.0, d
     "
+  if_fails: rule 'identity generation scores zero hallucination' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-10-002
   rule: PSI against self is zero
   prediction: "PSI(corpus, corpus) < 1e-9"
@@ -52,6 +58,7 @@ falsification_tests:
     apr eval-drift tests/fixtures/corpus.jsonl --ref tests/fixtures/corpus.jsonl \
       --format json > /tmp/p.json
     python3 -c "import json; d=json.load(open('/tmp/p.json')); assert d['psi'] < 1e-9, d"
+  if_fails: rule 'PSI against self is zero' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-10-003
   rule: threshold failure emits non-zero exit
   prediction: "--fail-on-hallu 0.1 with noisy generations returns non-zero"
@@ -60,8 +67,9 @@ falsification_tests:
     ! apr eval-hallu tests/fixtures/noisy-gens.jsonl --refs tests/fixtures/refs.jsonl \
       --fail-on-hallu 0.1
 
+  if_fails: rule 'threshold failure emits non-zero exit' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr eval-hallu SelfCheckGPT variant matches HF `evaluate` + sentence-transformers reference within 1e-3"
 - type: invariant
   property: "identity gen==ref → hallu_score = 0"

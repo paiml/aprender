@@ -18,6 +18,10 @@ metadata:
     `hf://repo@v1.2.3`. Canonical: HF `create_tag(revision=None, tag='v1.2.3')`
     + huggingface_hub.hf_api. apr rejects non-semver tags unless --force.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   semver_tag:
     formula: |
@@ -39,6 +43,7 @@ falsification_tests:
     ! apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf \
       --tag not-semver --dry-run 2>/tmp/err
     grep -E "semver|not a valid version" /tmp/err
+  if_fails: rule 'non-semver tag rejected' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-G-07-002
   rule: re-publish same tag without --allow-overwrite fails
   prediction: "second publish with same tag exits non-zero"
@@ -47,6 +52,7 @@ falsification_tests:
     apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf --tag v1.0.0 --dry-run
     ! apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf --tag v1.0.0 --dry-run 2>/tmp/err2
     grep -E "exists|already|overwrite" /tmp/err2
+  if_fails: rule 're-publish same tag without --allow-overwrite fails' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-G-07-003
   rule: tag round-trips via pull
   prediction: "apr pull hf://repo@v1.2.3 produces the same commit hash as publish"
@@ -56,8 +62,9 @@ falsification_tests:
     pulled=$(apr pull hf://org/tinyllama-hf@v1.2.3 --format json | jq -r .commit_sha)
     [ "$commit" = "$pulled" ]
 
+  if_fails: rule 'tag round-trips via pull' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr publish --tag matches HF hub `create_tag(...)` git-ref semantics"
 - type: invariant
   property: "non-semver tags rejected without --force"

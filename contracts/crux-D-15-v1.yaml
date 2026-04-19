@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   lora_merge_math:
     formula: |
@@ -125,7 +130,7 @@ falsification_tests:
   if_fails: "apr pipeline diverges from HF peft + convert_hf_to_gguf.py reference"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr merge + export gguf matches peft.merge_and_unload + convert_hf_to_gguf.py at temp=0 argmax"
 - type: invariant
   property: "adapter.apr size / base.apr size <= 0.02"

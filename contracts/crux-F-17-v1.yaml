@@ -19,6 +19,10 @@ metadata:
     (github.com/jessevig/bertviz, McCormick 2019). Useful for diagnosing
     attention-sink, position bias, failing induction-heads.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   attention_viz:
     formula: |
@@ -47,6 +51,7 @@ falsification_tests:
     sums = a.sum(axis=-1)
     assert np.allclose(sums, 1.0, atol=1e-5), (sums.min(), sums.max())
     PY
+  if_fails: rule 'attention rows are proper distributions' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-17-002
   rule: causal mask zeroes future positions
   prediction: "upper-triangular positions (j > i) are ≤ 1e-9"
@@ -59,6 +64,7 @@ falsification_tests:
     mask = np.triu(np.ones((S, S)), k=1).astype(bool)
     assert (a[..., mask] <= 1e-9).all(), a[..., mask].max()
     PY
+  if_fails: rule 'causal mask zeroes future positions' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-17-003
   rule: HTML output contains one heatmap per requested head
   prediction: "html contains |layers|*|heads| canvas/svg elements"
@@ -67,8 +73,9 @@ falsification_tests:
     n=$(grep -o '<svg\|<canvas' /tmp/av/attn.html | wc -l)
     python3 -c "assert $n >= 4, $n"
 
+  if_fails: rule 'HTML output contains one heatmap per requested head' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr attn-viz attention values match HF `output_attentions=True` to 1e-5 on same model+prompt"
 - type: invariant
   property: "row softmax normalization preserved"

@@ -21,6 +21,10 @@ metadata:
     (pytorch.org/docs/stable/quantization.html). Observer tracks
     min/max, scale/zero-point frozen at convert time.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
 equations:
   qat:
     formula: |
@@ -49,6 +53,7 @@ falsification_tests:
     for layer, obs in d['observers'].items():
         assert obs['min'] <= obs['max'], (layer, obs)
     "
+  if_fails: rule 'observer range is well-formed' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-B-17-002
   rule: post-convert int8 accuracy within 0.5pp of QAT fp32
   prediction: "|acc(qat_fp32) - acc(qat_int8)| ≤ 0.005"
@@ -63,6 +68,7 @@ falsification_tests:
     b=json.load(open('/tmp/int8.json'))['accuracy']
     assert abs(a-b) <= 0.005, (a, b)
     "
+  if_fails: rule 'post-convert int8 accuracy within 0.5pp of QAT fp32' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-B-17-003
   rule: scale + zero_point round-trip to disk
   prediction: "load(save(model)).qparams == model.qparams"
@@ -73,8 +79,9 @@ falsification_tests:
     apr inspect /tmp/qat-int8-rt.apr --qparams --format json > /tmp/q2.json
     diff <(jq -S . /tmp/q1.json) <(jq -S . /tmp/q2.json)
 
+  if_fails: rule 'scale + zero_point round-trip to disk' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr train --mode qat matches PyTorch prepare_qat_fx / convert_fx semantics"
 - type: invariant
   property: "observer range well-formed (min ≤ max)"

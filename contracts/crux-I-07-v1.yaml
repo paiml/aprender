@@ -20,6 +20,10 @@ metadata:
     `{type, name, input}` input and `{type, tool_use_id, content}`
     response. Tool schema must be a valid JSON Schema Draft 2020-12.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   agent_sdk_tool:
     formula: |
@@ -49,6 +53,7 @@ falsification_tests:
     jsonschema.Draft202012Validator.check_schema(t['input_schema'])
     assert 'name' in t and 'description' in t, t
     "
+  if_fails: rule 'emitted tool schema validates against JSONSchema meta-schema' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-07-002
   rule: tool_use_id round-trips byte-identical; content is JSON-serializable
   prediction: "tool_result.tool_use_id == request.id"
@@ -62,6 +67,7 @@ falsification_tests:
     assert d['type'] == 'tool_result', d
     json.dumps(d['content'])  # must be serializable
     "
+  if_fails: rule 'tool_use_id round-trips byte-identical; content is JSON-serializable' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-07-003
   rule: invalid input rejected by schema, not by tool body
   prediction: "input violating required fields returns is_error=true before model runs"
@@ -74,8 +80,9 @@ falsification_tests:
     assert 'required' in d['content'].lower() or 'schema' in d['content'].lower(), d
     "
 
+  if_fails: rule 'invalid input rejected by schema, not by tool body' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr agent tool envelope matches Anthropic Agent SDK tool_use/tool_result block shape"
 - type: invariant
   property: "input_schema always passes Draft 2020-12 meta-schema"

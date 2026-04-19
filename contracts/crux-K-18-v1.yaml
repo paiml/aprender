@@ -20,6 +20,11 @@ metadata:
     within atol=1e-3 / rtol=1e-2 of apr native inference for the same
     fp32 input on CPU.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   onnx_backend:
     formula: |
@@ -45,6 +50,7 @@ falsification_tests:
     uv run --with onnx python3 -c "
     import onnx; m = onnx.load('/tmp/t.onnx'); onnx.checker.check_model(m)
     "
+  if_fails: rule 'exported ONNX passes checker' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-18-002
   rule: onnxruntime parity with native apr ≥0.999 cosine
   prediction: "cos_sim(onnx_logits, native_logits) ≥ 0.999"
@@ -60,6 +66,7 @@ falsification_tests:
     cos = float((y.flatten() @ n.flatten()) / (np.linalg.norm(y) * np.linalg.norm(n) + 1e-12))
     assert cos >= 0.999, cos
     "
+  if_fails: rule 'onnxruntime parity with native apr ≥0.999 cosine' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-18-003
   rule: determinism across sessions
   prediction: "two InferenceSession().run() byte-identical on same input"
@@ -76,8 +83,9 @@ falsification_tests:
     assert hs[0] == hs[1], hs
     "
 
+  if_fails: rule 'determinism across sessions' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr export --format onnx produces onnxruntime-runnable model with ≥0.999 logit cosine"
 - type: invariant
   property: "onnx.checker.check_model passes"

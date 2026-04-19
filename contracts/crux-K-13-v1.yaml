@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   docker_image_smoke:
     formula: |
@@ -135,7 +140,7 @@ proof_obligations:
   property: "Required OCI labels (source, version, licenses, title) present"
 - type: invariant
   property: "Compressed image size <= 500 MiB for CPU build"
-- type: parity
+- type: equivalence
   property: "paiml/apr-serve:latest provides the same `docker run -d -p` → healthy-serving-container UX as ollama/ollama:latest"
   reference: "https://hub.docker.com/r/ollama/ollama"
 

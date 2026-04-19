@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   chatopenai_invoke_contract:
     formula: |
@@ -167,7 +172,7 @@ falsification_tests:
   if_fails: "apr serve diverges from openai-python 1.x baseline under Langchain ChatOpenAI"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "Langchain ChatOpenAI.invoke/.stream/.bind_tools against apr serve matches openai-python 1.x reference"
 - type: invariant
   property: "ChatOpenAI.invoke() returns AIMessage with non-empty string content"

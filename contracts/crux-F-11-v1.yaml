@@ -30,6 +30,10 @@ metadata:
     report (layer_name, tensor_shape, first_bad_index, op) to stderr as
     structured JSON.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   finite_check_invariant:
     formula: |
@@ -81,6 +85,7 @@ falsification_tests:
     [ "$RC" -eq 0 ] || { echo "FAIL: clean run exited $RC" >&2; cat /tmp/f11.err >&2; exit 1; }
     ! grep -q non_finite /tmp/f11.err || { echo "FAIL: spurious non_finite on clean model" >&2; exit 1; }
 
+  if_fails: rule 'clean model passes with exit 0' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-11-002
   rule: poisoned weight triggers exit 2 with layer name
   prediction: "tensor with NaN injected reports first offending layer"
@@ -96,6 +101,7 @@ falsification_tests:
     echo "$OUT" | jq -e '.error == "non_finite" and .layer == "blk.0.ffn_up"' \
       || { echo "FAIL: missing or wrong layer in error JSON: $OUT" >&2; exit 1; }
 
+  if_fails: rule 'poisoned weight triggers exit 2 with layer name' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-11-003
   rule: layer coverage is complete
   prediction: "--check-finite --list enumerates every tensor-producing op"
@@ -105,6 +111,7 @@ falsification_tests:
     # Qwen2.5-Coder-1.5B has 28 blocks × 9 tensor ops + embed + final norm + lm_head ≈ 255
     [ "$N" -ge 100 ] || { echo "FAIL: only $N layers listed, expected >= 100" >&2; exit 1; }
 
+  if_fails: rule 'layer coverage is complete' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-11-004
   rule: parity with torch anomaly detection
   prediction: "apr and torch identify the same first-fault layer"
@@ -116,6 +123,7 @@ falsification_tests:
     [ -n "$APR_LAYER" ] && [ "$APR_LAYER" = "$TORCH_LAYER" ] \
       || { echo "FAIL: parity mismatch apr=$APR_LAYER torch=$TORCH_LAYER" >&2; exit 1; }
 
+  if_fails: rule 'parity with torch anomaly detection' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "Clean model run with --check-finite exits 0 and emits no error JSON"
@@ -123,7 +131,7 @@ proof_obligations:
   property: "First non-finite activation triggers exit 2 with structured JSON on stderr"
 - type: invariant
   property: "All tensor-producing layers are scanned (no silent skips)"
-- type: parity
+- type: equivalence
   property: "First-fault layer name matches torch.autograd.set_detect_anomaly on same poisoned input"
 
 verification_summary:

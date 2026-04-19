@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   ndjson_commit_contract:
     formula: |
@@ -56,7 +60,7 @@ equations:
         HEAD that URL → Content-Length == size_bytes(F)
         sha256(downloaded F) == sha256(local F)
     domain: post-upload remote state
-    codomain: {lfs_pointer_valid: bool, payload_matches: bool}
+    codomain: 'lfs_pointer_valid: bool, payload_matches: bool'
     invariants:
     - "LFS pointer resolves to downloadable storage URL"
     - "Downloaded payload byte-identical to local file"
@@ -151,7 +155,7 @@ proof_obligations:
   property: "post-upload /tree/main verification is mandatory (never trust HTTP 200 alone)"
 - type: invariant
   property: "remote sha256/oid == local sha256 after LFS/Xet resolve"
-- type: parity
+- type: equivalence
   property: "apr publish LFS oid matches huggingface_hub.HfApi.upload_file on identical input bytes"
   competitor: huggingface
   reference: "contracts/apr-publish-hf-large-file-v1.yaml (v1.1.3); https://huggingface.co/docs/hub/api-commit; MEMORY: HF_COMMIT_NDJSON_LOAD_BEARING"

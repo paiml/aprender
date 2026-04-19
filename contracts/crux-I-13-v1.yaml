@@ -20,6 +20,10 @@ metadata:
     2.0 verbs. Resource URIs must be stable, content returned with
     declared mimeType.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   mcp_resource:
     formula: |
@@ -48,6 +52,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/read.json'))
     assert d['result']['contents'][0]['uri'] == '$uri', d
     "
+  if_fails: rule 'list/read round-trip preserves URI' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-13-002
   rule: URI stability across restarts
   prediction: "two serve invocations on the same dir emit identical uri list"
@@ -59,6 +64,7 @@ falsification_tests:
     done
     diff <(jq -S '.result.resources | map(.uri) | sort' /tmp/list1.json) \
          <(jq -S '.result.resources | map(.uri) | sort' /tmp/list2.json)
+  if_fails: rule 'URI stability across restarts' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-13-003
   rule: mimeType matches content
   prediction: "text/plain resources decode as UTF-8 without replacement chars"
@@ -74,8 +80,9 @@ falsification_tests:
     assert '\ufffd' not in text, 'UTF-8 replacement char present'
     "
 
+  if_fails: rule 'mimeType matches content' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr mcp serve resources verbs match MCP spec JSON-RPC 2.0 shape (modelcontextprotocol.io)"
 - type: invariant
   property: "URI stability (same input ⇒ same URIs)"

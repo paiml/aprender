@@ -105,7 +105,7 @@ proof_obligations:
   property: "MT-Bench JSON schema matches FastChat reference"
 - type: invariant
   property: "judge determinism at temperature 0 (±0.3)"
-- type: parity
+- type: equivalence
   property: "apr eval --benchmark mtbench score matches FastChat gen_judgment.py within 0.5 on golden set"
 - type: invariant
   property: "pairwise battles run both orderings to cancel positional bias"

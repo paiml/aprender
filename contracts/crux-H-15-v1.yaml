@@ -20,6 +20,11 @@ metadata:
     `path/{train,validation,test}/dataset_info.json + data-*.arrow` and a
     top-level `dataset_dict.json` listing the splits.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   dataset_dict_save:
     formula: |
@@ -51,6 +56,7 @@ falsification_tests:
     assert sorted(d['splits'].keys()) == ['train','validation'], d
     assert d['splits']['train'] == 2 and d['splits']['validation'] == 1, d
     "
+  if_fails: rule 'round-trip preserves split names and row counts' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-15-002
   rule: manifest lists exactly the saved splits, sorted
   prediction: "dataset_dict.json.splits == sorted(dir names)"
@@ -62,6 +68,7 @@ falsification_tests:
     dirs = sorted([d for d in os.listdir('/tmp/dd_out') if os.path.isdir('/tmp/dd_out/'+d)])
     assert m['splits'] == dirs, (m, dirs)
     "
+  if_fails: rule 'manifest lists exactly the saved splits, sorted' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-15-003
   rule: partial save is rejected (atomic write)
   prediction: "interrupting save leaves no dataset_dict.json — load fails cleanly"
@@ -72,8 +79,9 @@ falsification_tests:
     ! apr dataset load-dict /tmp/dd_partial 2>/tmp/err
     grep -E "dataset_dict.json|manifest.*missing" /tmp/err
 
+  if_fails: rule 'partial save is rejected (atomic write)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr dataset save-dict/load-dict round-trips HF `DatasetDict.save_to_disk` layout"
 - type: invariant
   property: "manifest splits == sorted filesystem split dirs"

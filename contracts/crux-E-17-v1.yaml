@@ -26,6 +26,11 @@ metadata:
     emits sweep[] = [{concurrent, throughput_tok_s, avg_latency_ms}, ...].
     Source: https://docs.vllm.ai/en/latest/performance/benchmarks.html
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   throughput_definition:
     formula: |

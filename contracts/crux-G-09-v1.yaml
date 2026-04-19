@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   multi_file_atomic_commit:
     formula: |
@@ -128,7 +132,7 @@ proof_obligations:
   property: "a single `apr publish` CLI invocation produces exactly one HF commit covering all files"
 - type: invariant
   property: "on any file-level failure, no files are committed (atomic all-or-nothing)"
-- type: parity
+- type: equivalence
   property: "apr publish N files --commit-message M matches hf upload repo N files --commit-message M on HF /tree and /commits state"
   competitor: huggingface
   reference: "https://huggingface.co/docs/huggingface_hub/main/en/guides/cli (hf upload --commit-message, create_commit atomic operations[])"

@@ -110,7 +110,7 @@ proof_obligations:
   property: "grid cardinality == context_lens × depths × repeats"
 - type: invariant
   property: "recall ∈ [0, 1] for every cell"
-- type: parity
+- type: equivalence
   property: "apr niah heatmap matches gkamradt/LLMTest_NeedleInAHaystack reference within 5pp on a golden model"
 - type: invariant
   property: "default needle template sha256 matches upstream reference"

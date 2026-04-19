@@ -18,6 +18,10 @@ metadata:
     Canonical: llama.cpp `--typical 0.95` or HF `typical_p=0.95` —
     keep tokens whose information content is close to entropy.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   typical_p:
     formula: |
@@ -41,6 +45,7 @@ falsification_tests:
     apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "The" --typical 1.0 --seed 5 --max-tokens 16 --format json > /tmp/typ.json
     apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "The" --seed 5 --max-tokens 16 --format json > /tmp/base.json
     diff <(jq .token_ids /tmp/typ.json) <(jq .token_ids /tmp/base.json)
+  if_fails: rule 'p=1.0 is identity (no change from greedy/temperature-only)' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-22-002
   rule: matches HF TypicalLogitsWarper on identical logits
   prediction: "kept-token set identical to HF reference on a captured logits tensor"
@@ -60,8 +65,9 @@ falsification_tests:
     assert max(diffs) < 1e-5, max(diffs)
     PY
 
+  if_fails: rule 'matches HF TypicalLogitsWarper on identical logits' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr --typical matches HF `TypicalLogitsWarper` and llama.cpp `--typical` on identical logits"
 - type: invariant
   property: "p=1.0 is mathematically identity; verified by byte-equal tokens"

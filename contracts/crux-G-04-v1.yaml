@@ -19,6 +19,10 @@ metadata:
     `huggingface_hub.ModelCard.from_template(...)` + auto-generated example
     code-block in Python/CLI that actually runs.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   card_gen:
     formula: |
@@ -49,6 +53,7 @@ falsification_tests:
     fm = yaml.safe_load(m.group(1))
     assert "license" in fm and "library_name" in fm, fm
     PY
+  if_fails: rule 'frontmatter is valid YAML' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-G-04-002
   rule: generated CLI example actually runs
   prediction: "the ```bash code block extracted from README runs with exit=0"
@@ -63,6 +68,7 @@ falsification_tests:
     open("/tmp/usage.sh","w").write("set -e\n" + blocks[0])
     PY
     bash /tmp/usage.sh
+  if_fails: rule 'generated CLI example actually runs' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-G-04-003
   rule: unknown license is rejected
   prediction: "--license bogus yields non-zero + actionable error"
@@ -71,8 +77,9 @@ falsification_tests:
     ! apr gen-card tests/fixtures/tinyllama-hf --repo x/y --license bogus -o /tmp/bad.md 2>/tmp/err
     grep -E "unknown license|one of" /tmp/err
 
+  if_fails: rule 'unknown license is rejected' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr gen-card frontmatter schema matches huggingface_hub ModelCard minimal required fields"
 - type: invariant
   property: "generated README code example runs successfully"

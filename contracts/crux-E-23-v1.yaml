@@ -18,6 +18,11 @@ metadata:
     calling (single, multiple, parallel, REST, exec). Canonical: gorilla-llm/
     berkeley-function-call-leaderboard. Sub-scores on AST-match + exec-match.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   bfcl_eval:
     formula: |
@@ -41,6 +46,7 @@ falsification_tests:
     set -euo pipefail
     ! apr eval-bfcl tests/fixtures/tinyllama-hf --suite nonsense 2>/tmp/err
     grep -E "unknown suite|one of" /tmp/err
+  if_fails: rule 'unknown suite name fails fast' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-23-002
   rule: AST match ignores arg order when allowed
   prediction: "same function, swapped unordered args → ast_correct=true"
@@ -50,6 +56,7 @@ falsification_tests:
                   --ref     '{"name":"add","args":{"a":1,"b":2}}' \
                   --format json > /tmp/a.json
     python3 -c "import json; d=json.load(open('/tmp/a.json')); assert d['ast_correct']==True, d"
+  if_fails: rule 'AST match ignores arg order when allowed' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-23-003
   rule: deterministic scores under temp=0
   prediction: "two runs with --seed 42 --temp 0 return identical JSON"
@@ -61,8 +68,9 @@ falsification_tests:
       --format json > /tmp/b.json
     diff /tmp/a.json /tmp/b.json
 
+  if_fails: rule 'deterministic scores under temp=0' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr eval-bfcl scoring matches gorilla-llm/BFCL AST + exec judges within 1%"
 - type: invariant
   property: "deterministic under temp=0 + seed"

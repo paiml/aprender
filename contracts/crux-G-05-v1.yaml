@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   manifest_sha256_per_file:
     formula: |
@@ -105,7 +109,7 @@ proof_obligations:
   property: "manifest contains one entry per input file (no omissions)"
 - type: invariant
   property: "manifest.sha256 equals sha256 of raw file bytes (64 lowercase hex)"
-- type: parity
+- type: equivalence
   property: "apr manifest sha256 matches the value huggingface_hub exposes for the same file (lfs.oid for LFS, sha256 of bytes otherwise)"
   competitor: huggingface
   reference: "https://huggingface.co/docs/huggingface_hub/main/en/guides/cli (hf hash-file); https://huggingface.co/docs/hub/api (tree endpoint lfs.oid / blob_id)"

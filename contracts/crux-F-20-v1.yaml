@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   metadata_key_coverage:
     formula: |
@@ -129,7 +133,7 @@ proof_obligations:
   property: "scalar metadata values round-trip byte-identically to gguf-py"
 - type: invariant
   property: "array metadata values preserve length and element order"
-- type: parity
+- type: equivalence
   property: "apr inspect metadata is a superset of gguf-py GGUFReader.fields on the golden GGUF fixture"
   competitor: llama_cpp
   reference: "https://github.com/ggerganov/llama.cpp/tree/master/gguf-py (gguf.gguf_reader.GGUFReader)"

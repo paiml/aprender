@@ -20,6 +20,11 @@ metadata:
     (github.com/LAION-AI/CLIP_benchmark). Official ViT-B/32 LAION-2B
     baseline: ImageNet top-1 ≈ 66.5%, MSCOCO text→image R@1 ≈ 40.5%.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   vlm_bench:
     formula: |
@@ -47,6 +52,7 @@ falsification_tests:
     t1=d['metrics']['top1']; t5=d['metrics']['top5']
     assert 0.0 <= t1 <= t5 <= 1.0, (t1, t5)
     "
+  if_fails: rule 'top5 ≥ top1 (monotonicity)' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-25-002
   rule: retrieval recalls are nested (R@1 ≤ R@5 ≤ R@10)
   prediction: "MSCOCO t2i R@1 ≤ R@5 ≤ R@10"
@@ -59,6 +65,7 @@ falsification_tests:
     t2i = d['metrics']['t2i']
     assert t2i['R@1'] <= t2i['R@5'] <= t2i['R@10'], t2i
     "
+  if_fails: rule 'retrieval recalls are nested (R@1 ≤ R@5 ≤ R@10)' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-25-003
   rule: determinism under fixed seed
   prediction: "two runs with --seed 42 produce identical metrics"
@@ -70,8 +77,9 @@ falsification_tests:
     done
     diff <(jq -S .metrics /tmp/d1.json) <(jq -S .metrics /tmp/d2.json)
 
+  if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr eval-vlm matches OpenCLIP zero_shot + LAION CLIP_benchmark metric definitions"
 - type: invariant
   property: "top5 ≥ top1; R@1 ≤ R@5 ≤ R@10"

@@ -30,6 +30,10 @@ metadata:
     https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md#api-endpoints ;
     https://kubernetes.io/docs/concepts/configuration/liveness-readiness-startup-probes/
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   health_response_schema:
     formula: |
@@ -89,6 +93,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'GET /health returns schema-valid body with 200 when ready' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-34-002
   rule: status is from the enum
   prediction: "body.status ∈ {ok, loading, degraded}"
@@ -100,6 +105,7 @@ falsification_tests:
         exit 1
       }
 
+  if_fails: rule 'status is from the enum' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-34-003
   rule: uptime_sec is strictly monotonic
   prediction: "two sequential GETs show increasing uptime_sec"
@@ -114,6 +120,7 @@ falsification_tests:
     assert 0.5 <= (u2-u1) <= 2.0, f'delta {u2-u1}s outside [0.5,2.0]'
     "
 
+  if_fails: rule 'uptime_sec is strictly monotonic' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-34-004
   rule: /health/live and /health/ready exist with k8s semantics
   prediction: "/health/live returns 200, /health/ready returns 200 when model_loaded"
@@ -133,6 +140,7 @@ falsification_tests:
       exit 1
     fi
 
+  if_fails: rule '/health/live and /health/ready exist with k8s semantics' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-34-005
   rule: 503 during startup with status=loading
   prediction: "during model load, GET /health → 503 with status=loading"
@@ -156,6 +164,7 @@ falsification_tests:
       exit 77
     fi
 
+  if_fails: rule '503 during startup with status=loading' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "GET /health returns {status ∈ {ok,loading,degraded}, model_loaded: bool, uptime_sec: float>0}"

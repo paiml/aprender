@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   chat_template_render:
     formula: |
@@ -142,7 +147,7 @@ proof_obligations:
   property: "--chat-template auto selects correct family template from tokenizer config"
 - type: invariant
   property: "--dry-run --print-first-example emits diagnostic JSON with no side effects"
-- type: parity
+- type: equivalence
   property: "apr finetune + --chat-template ≡ TRL SFTTrainer with apply_chat_template formatting"
 
 # References:

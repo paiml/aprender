@@ -20,6 +20,11 @@ metadata:
     Case-insensitive directives; multi-line strings use triple quotes;
     unknown directive raises parse error.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   modelfile_parse:
     formula: |
@@ -58,6 +63,7 @@ falsification_tests:
     assert abs(d['parameters']['top_p'] - 0.9) < 1e-9, d
     assert 'helpful assistant' in d['system'], d
     "
+  if_fails: rule 'canonical Modelfile round-trips' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-11-002
   rule: case-insensitive directives
   prediction: "From/from/FROM all parse identically"
@@ -71,6 +77,7 @@ falsification_tests:
     lines = [l.strip() for l in sys.stdin if l.strip()]
     assert lines == ['tinyllama'], lines
     "
+  if_fails: rule 'case-insensitive directives' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-K-11-003
   rule: unknown directive errors with file:line:col
   prediction: "BOGUS directive fails with line number in stderr"
@@ -83,8 +90,9 @@ falsification_tests:
     ! apr modelfile parse /tmp/bad 2>/tmp/err
     grep -E ":2:" /tmp/err
 
+  if_fails: rule 'unknown directive errors with file:line:col' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr modelfile parse matches ollama Modelfile directive set + case rules"
 - type: invariant
   property: "FROM required (missing ⇒ parse error)"

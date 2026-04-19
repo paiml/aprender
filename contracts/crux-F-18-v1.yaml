@@ -20,6 +20,10 @@ metadata:
     PNG. Seeded UMAP is deterministic; token_str decoding round-trips
     through the tokenizer.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   umap_embed:
     formula: |
@@ -43,6 +47,7 @@ falsification_tests:
     vs=$(apr inspect tests/fixtures/tiny.apr --format json | jq -r .vocab_size)
     rows=$(tail -n +2 /tmp/emb.csv | wc -l)
     python3 -c "assert $vs == $rows, ($vs, $rows)"
+  if_fails: rule 'one row per vocab entry' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-18-002
   rule: token_str round-trips through tokenizer
   prediction: "row i token_str decodes to tokenizer.decode([i])"
@@ -56,6 +61,7 @@ falsification_tests:
             '--format','json'])
         assert json.loads(r)['text'] == row['token_str'], (i, row, r)
     "
+  if_fails: rule 'token_str round-trips through tokenizer' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-18-003
   rule: determinism under fixed seed
   prediction: "two runs with --seed 42 produce byte-identical CSV"
@@ -66,8 +72,9 @@ falsification_tests:
     done
     diff /tmp/emb1.csv /tmp/emb2.csv
 
+  if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr debug embed-viz matches umap-learn n_components=2 cosine fit_transform"
 - type: invariant
   property: "|rows| == vocab_size; token_str matches tokenizer.decode"

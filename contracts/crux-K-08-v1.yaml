@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
 equations:
   otlp_export_protocol:
     formula: |
@@ -134,7 +139,7 @@ proof_obligations:
   property: "Spans carry gen_ai.* semantic-convention attributes plus apr.tokens.prompt/output"
 - type: invariant
   property: "W3C traceparent header is honored (trace_id propagated into exported spans)"
-- type: parity
+- type: equivalence
   property: "apr serve OpenTelemetry instrumentation matches GenAI semantic conventions and OTLP export protocol as implemented by opentelemetry-instrumentation reference libraries"
   reference: "https://opentelemetry.io/docs/specs/semconv/gen-ai/"
 

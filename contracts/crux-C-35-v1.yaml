@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   graceful_shutdown_signal_handling:
     formula: |
@@ -125,7 +129,7 @@ falsification_tests:
   if_fails: "apr serve does not exit within shutdown_timeout after SIGTERM"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr serve SIGTERM handling matches vLLM api_server.py signal handler (drain in-flight, refuse new)"
 - type: invariant
   property: "New TCP connections refused or 503 after SIGTERM"

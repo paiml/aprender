@@ -20,6 +20,11 @@ metadata:
     hard-negative (top-k scoring non-positives). No positive must appear
     in its own negative set; count matches --num-negs.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   neg_sample:
     formula: |
@@ -48,6 +53,7 @@ falsification_tests:
         pos = set(info['pos']); neg = set(info['neg'])
         assert pos.isdisjoint(neg), (u, pos & neg)
     "
+  if_fails: rule 'no positive appears as its own negative' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-18-002
   rule: exact count
   prediction: "|negatives| == |positives| * num_negs"
@@ -61,6 +67,7 @@ falsification_tests:
     total_neg = sum(len(u['neg']) for u in d['users'].values())
     assert total_neg == total_pos * 4, (total_pos, total_neg)
     "
+  if_fails: rule 'exact count' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-18-003
   rule: popularity follows freq^0.75 at n=100000
   prediction: "top-item empirical share matches p ∝ freq^0.75 within ±2σ"
@@ -80,8 +87,9 @@ falsification_tests:
         assert abs(obs - n*exp) <= 2*sigma + 5, (item, obs, exp, sigma)
     "
 
+  if_fails: rule 'popularity follows freq^0.75 at n=100000' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr dataset neg-sample matches word2vec popularity sampler (freq^0.75) + BPR pairwise shape"
 - type: invariant
   property: "disjoint positives/negatives per user"

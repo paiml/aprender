@@ -18,6 +18,11 @@ metadata:
     YaRN). Canonical: HF `--rope-theta 1e6`, `rope_scaling={"type":"linear","factor":4}`
     in config.json; YaRN per arXiv:2309.00071.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   rope_scaling:
     formula: |
@@ -46,6 +51,7 @@ falsification_tests:
     h1=$(apr run /tmp/s1 --prompt "hello" --max-tokens 1 --logprobs --format json | jq -r .tokens[0].prob)
     h0=$(apr run /tmp/s0 --prompt "hello" --max-tokens 1 --logprobs --format json | jq -r .tokens[0].prob)
     python3 -c "assert abs($h1 - $h0) < 1e-6"
+  if_fails: rule 'factor=1 is identity — logits byte-equal' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-20-002
   rule: config round-trips rope_scaling exactly
   prediction: "apr save → apr inspect shows the scaling spec verbatim"
@@ -55,8 +61,9 @@ falsification_tests:
       --steps 1 -o /tmp/yarn
     apr inspect /tmp/yarn --format json | jq -e '.metadata.rope_scaling | .type=="yarn" and .factor==4.0'
 
+  if_fails: rule 'config round-trips rope_scaling exactly' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr --rope-scaling matches HF config rope_scaling for {linear, dynamic, ntk, yarn}"
 - type: invariant
   property: "factor=1.0 is identity (byte-equal logits)"

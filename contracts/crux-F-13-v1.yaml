@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   oom_report_schema:
     formula: |
@@ -67,7 +71,7 @@ equations:
         (2) emit OOM_REPORT path=... on stderr before exiting,
         (3) write the report file atomically (fsync then rename).
     domain: apr invocation with intentionally starved --gpu-mem-fraction
-    codomain: {exit_code, stderr, /tmp/apr-oom-*.json}
+    codomain: 'exit_code: None, stderr: None, /tmp/apr-oom-*.json: None'
     invariants:
     - "A deliberately OOM-triggering --gpu-mem-fraction produces a report file"
     - "stderr contains a single OOM_REPORT breadcrumb pointing at the written file"

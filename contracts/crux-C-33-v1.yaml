@@ -28,6 +28,10 @@ metadata:
     https://platform.openai.com/docs/api-reference/models/list ;
     https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   list_envelope_schema:
     formula: |
@@ -57,8 +61,8 @@ equations:
         → status == 200 (model is accepted)
       AND
       ∀ M, M' ∈ response.data: M.id == M'.id ⇒ M == M'
-    domain: {ids in /v1/models response}
-    codomain: {models accepted by /v1/chat/completions}
+    domain: 'ids in /v1/models response: None'
+    codomain: 'models accepted by /v1/chat/completions: None'
     invariants:
     - "Every listed id is accepted by /v1/chat/completions"
     - "ids are unique within the response (primary key)"
@@ -90,6 +94,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'GET /v1/models returns 200 with canonical envelope' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-33-002
   rule: each model has correct per-model schema
   prediction: "every data[i] has {id: string, object: 'model', created: int>0, owned_by: string}"
@@ -107,6 +112,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'each model has correct per-model schema' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-33-003
   rule: listed ids are accepted by /v1/chat/completions
   prediction: "POST /v1/chat/completions with model=data[0].id returns 200"
@@ -120,6 +126,7 @@ falsification_tests:
       -d "{\"model\":\"$ID\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}")
     [ "$CODE" = "200" ] || { echo "FAIL: chat rejected id $ID with $CODE" >&2; exit 1; }
 
+  if_fails: rule 'listed ids are accepted by /v1/chat/completions' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-33-004
   rule: created timestamp is not in the future
   prediction: "created <= now for every model"
@@ -132,6 +139,7 @@ falsification_tests:
         exit 1
       }
 
+  if_fails: rule 'created timestamp is not in the future' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-C-33-005
   rule: ids are unique within the response
   prediction: "no two data[i].id are equal"
@@ -143,6 +151,7 @@ falsification_tests:
         exit 1
       }
 
+  if_fails: rule 'ids are unique within the response' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "GET /v1/models returns 200 with {object: 'list', data: [...]} envelope"

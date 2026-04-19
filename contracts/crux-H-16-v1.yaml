@@ -19,6 +19,11 @@ metadata:
     (transformers.trainer_pt_utils). Buckets are chosen so mean padding
     overhead per batch drops below a target threshold (typically ≤10%).
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   length_bucket:
     formula: |
@@ -52,6 +57,7 @@ falsification_tests:
     all_idx = [i for batch in d['batches'] for i in batch]
     assert sorted(all_idx) == list(range(500)), 'not a permutation'
     "
+  if_fails: rule 'every sample assigned to exactly one batch' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-16-002
   rule: bucketing reduces padding vs random shuffle
   prediction: "mean pad_overhead(bucketed) < mean pad_overhead(random) by ≥20%"
@@ -67,6 +73,7 @@ falsification_tests:
     r=json.load(open('/tmp/r.json'))['mean_pad_overhead']
     assert b < 0.8 * r, (b, r)
     "
+  if_fails: rule 'bucketing reduces padding vs random shuffle' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-16-003
   rule: determinism under fixed seed
   prediction: "two runs with --seed S produce identical batch lists"
@@ -78,8 +85,9 @@ falsification_tests:
     done
     diff <(jq -S . /tmp/b1.json) <(jq -S . /tmp/b2.json)
 
+  if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr dataset bucket matches HF LengthGroupedSampler ordering semantics"
 - type: invariant
   property: "sample-coverage (permutation of 0..N-1)"

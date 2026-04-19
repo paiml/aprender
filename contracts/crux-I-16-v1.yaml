@@ -20,6 +20,10 @@ metadata:
     NVIDIA NeMo-Guardrails `output rails` + Guardrails AI `Guard.use()`;
     multiple validators compose; a single hard-fail short-circuits.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   guardrails_pipeline:
     formula: |
@@ -53,6 +57,7 @@ falsification_tests:
     assert d['by'] == 'toxicity', d
     assert 'output' not in d or d.get('output') is None, d
     "
+  if_fails: rule 'hard-fail short-circuits — subsequent validators don't see the text' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-16-002
   rule: rewrites compose in order
   prediction: "pipeline [pii_redact, upper] first redacts then uppercases"
@@ -66,6 +71,7 @@ falsification_tests:
     assert '@B.COM' not in d['output']  # email was redacted first
     assert d['output'] == d['output'].upper(), d
     "
+  if_fails: rule 'rewrites compose in order' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-16-003
   rule: empty pipeline is identity
   prediction: "--pipeline '' returns blocked=false with input unchanged"
@@ -77,8 +83,9 @@ falsification_tests:
     assert d['blocked'] is False and d['output'] == 'hello world', d
     "
 
+  if_fails: rule 'empty pipeline is identity' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr guardrails run matches NeMo-Guardrails + Guardrails AI ordered-validator semantics"
 - type: invariant
   property: "reject short-circuits (no downstream side effects)"

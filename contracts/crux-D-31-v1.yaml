@@ -135,13 +135,13 @@ falsification_tests:
   if_fails: "loss values diverge between tfevents, wandb, and --json sinks"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "scalar values match across tfevents, wandb, and --json at every (step, tag) pair"
 - type: invariant
   property: "tfevents step monotonically increasing; no duplicate (step, tag)"
-- type: schema
+- type: invariant
   property: "required tags emitted: train/{loss, learning_rate, grad_norm, tokens_per_sec}"
-- type: lifecycle
+- type: state_machine
   property: "wandb run reaches 'finished' state on successful completion"
 
 verification_summary:

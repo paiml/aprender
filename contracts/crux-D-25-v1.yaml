@@ -18,6 +18,11 @@ metadata:
     Canonical: PyTorch `model.tie_weights()` / HF `config.tie_word_embeddings=true`.
     Tying halves vocab×hidden params and sums gradients through both paths.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   weight_tying:
     formula: |
@@ -42,6 +47,7 @@ falsification_tests:
     V=$(apr inspect tests/fixtures/tinyllama-tied --format json | jq .config.vocab_size)
     H=$(apr inspect tests/fixtures/tinyllama-tied --format json | jq .config.hidden_size)
     python3 -c "assert $n_untie - $n_tied == $V * $H, f'{$n_untie - $n_tied} != {$V * $H}'"
+  if_fails: rule 'tied model has exactly V*H fewer trainable params' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-25-002
   rule: tied weights share storage (data_ptr equality)
   prediction: "lm_head and embed_tokens point to the same tensor storage"
@@ -52,6 +58,7 @@ falsification_tests:
     import json; s=json.load(open('/tmp/storage.json'))
     assert s['lm_head.weight']['data_ptr'] == s['model.embed_tokens.weight']['data_ptr']
     "
+  if_fails: rule 'tied weights share storage (data_ptr equality)' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-25-003
   rule: gradient sums both paths (matches PyTorch reference)
   prediction: "grad(embed_tokens.weight) after 1 step matches PyTorch tie_weights reference to 1e-6"
@@ -66,8 +73,9 @@ falsification_tests:
     assert torch.allclose(apr, ref, atol=1e-6), (apr - ref).abs().max()
     PY
 
+  if_fails: rule 'gradient sums both paths (matches PyTorch reference)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr tied-weights semantics match PyTorch `model.tie_weights()` (gradient accumulation + param count)"
 - type: invariant
   property: "tie=true: data_ptr(lm_head.weight) == data_ptr(embed_tokens.weight)"

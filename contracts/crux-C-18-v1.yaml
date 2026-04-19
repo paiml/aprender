@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   stop_sequence_truncation:
     formula: |
@@ -123,9 +127,9 @@ falsification_tests:
   if_fails: "apr serve does not honor Ollama options.stop parameter"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr serve /v1/chat/completions stop param matches OpenAI chat.completion stop semantics on the golden prompt"
-- type: parity
+- type: equivalence
   property: "apr serve /api/generate options.stop matches Ollama ollama serve behavior"
 - type: invariant
   property: "No stop string appears as substring of returned content"

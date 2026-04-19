@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   private_repo_creation:
     formula: |
@@ -47,7 +51,7 @@ equations:
         read(R, token=owner) = 200 OK
         read(R, token=null)  ∈ {401, 404}
         read(R, token=other) ∈ {401, 404}
-    domain: {requesting identity, private repo}
+    domain: 'requesting identity: None, private repo: None'
     codomain: HTTP status
     invariants:
     - "Only owner (or explicitly invited collaborators) can read"
@@ -134,7 +138,7 @@ proof_obligations:
   property: "owner with HF_TOKEN can read the private repo"
 - type: invariant
   property: "private repo is absent from unauthenticated /api/models listing"
-- type: parity
+- type: equivalence
   property: "apr publish --private produces identical visibility state to huggingface_hub.HfApi.create_repo(private=True)"
   competitor: huggingface
   reference: "https://huggingface.co/docs/hub/repositories-settings#private-repos; https://huggingface.co/docs/huggingface_hub/package_reference/hf_api#huggingface_hub.HfApi.create_repo"

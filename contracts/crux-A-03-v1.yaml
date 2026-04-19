@@ -137,7 +137,7 @@ falsification_tests:
   if_fails: "apr pinned-revision bytes diverge from huggingface-cli golden sha256"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr pull --revision matches huggingface-cli download --revision on evidence/crux/huggingface/revision-goldens.json tuples"
 - type: invariant
   property: "Resolved revision_sha is always 40-hex and recorded in local manifest"
@@ -145,7 +145,7 @@ proof_obligations:
   property: "Pinning to a full SHA is immutable: byte-identical output across invocations and over time"
 - type: invariant
   property: "Unknown revision exits non-zero with HTTP status surfaced in stderr"
-- type: equation
+- type: invariant
   property: "resolve_revision(REPO, REV) == HF API GET /api/models/REPO/revision/REV .sha"
 
 verification_summary:

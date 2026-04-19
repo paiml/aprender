@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   dataset_record_schema:
     formula: |
@@ -148,7 +153,7 @@ proof_obligations:
   property: "train/validation/test splits preserved with matching row counts"
 - type: invariant
   property: "len(input_ids) ≤ max_length for every record (truncation honored)"
-- type: parity
+- type: equivalence
   property: "apr data prepare hf://<slug> ≡ datasets.load_dataset + tokenizer.map on first row"
 
 # References:

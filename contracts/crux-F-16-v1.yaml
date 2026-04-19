@@ -19,6 +19,10 @@ metadata:
     `torch.profiler.profile(schedule=..., on_trace_ready=tensorboard_trace_handler(...))`
     OR CLI `nsys profile -o run apr train ...`.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   profile_export:
     formula: |
@@ -47,6 +51,7 @@ falsification_tests:
     assert "traceEvents" in t and isinstance(t["traceEvents"], list)
     assert all("name" in e and "ph" in e and "ts" in e for e in t["traceEvents"])
     PY
+  if_fails: rule 'trace.json is valid Chrome Trace format' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-16-002
   rule: kernels.csv rows have positive duration
   prediction: "no negative or NaN duration rows"
@@ -58,6 +63,7 @@ falsification_tests:
       d=int(row['duration_ns']); assert d >= 0, row
       assert row['name'], row
     "
+  if_fails: rule 'kernels.csv rows have positive duration' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-F-16-003
   rule: nsys parity within 5% per kernel
   prediction: "apr profile vs nsys sqlite export agree on median kernel duration ±5%"
@@ -68,8 +74,9 @@ falsification_tests:
     nsys stats --format csv --report kernelexec /tmp/n.nsys-rep > /tmp/nsys.csv
     python3 scripts/compare_kernel_timing.py /tmp/prof2/kernels.csv /tmp/nsys.csv --tol 0.05
 
+  if_fails: rule 'nsys parity within 5% per kernel' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr profile kernel timings match nsys within 5% per kernel"
 - type: invariant
   property: "trace.json validates Chrome Trace Event Format"

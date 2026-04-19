@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   bucketed_shuffle_contract:
     formula: |
@@ -108,7 +113,7 @@ proof_obligations:
   property: "one epoch is a partition of the dataset (every sample exactly once)"
 - type: invariant
   property: "bucketed batches respect pad_to_multiple and bucket_tolerance"
-- type: parity
+- type: equivalence
   property: "apr --shuffle --seed --start-epoch matches PyTorch DistributedSampler(seed, shuffle=True) + set_epoch() determinism"
   competitor: pytorch
   reference: "https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler (set_epoch, shuffle, seed)"

@@ -28,6 +28,10 @@ metadata:
     https://github.com/ollama/ollama/blob/main/docs/api.md#show-model-information ;
     https://github.com/ollama/ollama/blob/main/docs/api.md#delete-a-model
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   list_json_schema:
     formula: |
@@ -94,6 +98,7 @@ falsification_tests:
       (.quant | type == "string")
     )' >/dev/null || { echo "FAIL: schema violation" >&2; exit 1; }
 
+  if_fails: rule 'apr ls --json returns well-typed array' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-09-002
   rule: apr show NAME --json returns tensor histogram + chat_template + arch
   prediction: "apr show on a pulled model returns schema-valid JSON"
@@ -109,6 +114,7 @@ falsification_tests:
       (.size_bytes | type == "number" and . > 0)
     ' >/dev/null || { echo "FAIL: show --json schema violation" >&2; exit 1; }
 
+  if_fails: rule 'apr show NAME --json returns tensor histogram + chat_template + arch' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-09-003
   rule: apr rm NAME removes files and updates index atomically
   prediction: "after apr rm NAME, files are gone AND index does not list NAME"
@@ -124,6 +130,7 @@ falsification_tests:
     REG_ROOT="${APR_REGISTRY_ROOT:-$HOME/.aprender/models}"
     [ ! -e "$REG_ROOT/$NAME" ] || { echo "FAIL: files still present on disk" >&2; exit 1; }
 
+  if_fails: rule 'apr rm NAME removes files and updates index atomically' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-09-004
   rule: apr rm NAME --dry-run prints plan without acting
   prediction: "--dry-run prints what would be removed and leaves registry unchanged"
@@ -139,6 +146,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'apr rm NAME --dry-run prints plan without acting' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-09-005
   rule: apr show on unknown name exits non-zero
   prediction: "apr show does-not-exist exits non-zero with explanatory message"
@@ -151,6 +159,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'apr show on unknown name exits non-zero' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "apr ls --json emits a JSON array where every element has {name, size_bytes, sha256, quant} with correct types"

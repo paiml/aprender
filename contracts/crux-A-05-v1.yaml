@@ -27,6 +27,10 @@ metadata:
     Ref: https://huggingface.co/docs/huggingface_hub/guides/download#download-files-to-a-local-folder ;
     https://huggingface.co/docs/huggingface_hub/v0.23.0/en/package_reference/file_download#huggingface_hub.hf_hub_download
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
 equations:
   range_request_continuation:
     formula: |
@@ -94,6 +98,7 @@ falsification_tests:
     ACTUAL_SHA=$(sha256sum "$TARGET" | awk '{print $1}')
     [ "$ACTUAL_SHA" = "$EXPECTED_SHA" ] || { echo "FAIL: sha mismatch ($ACTUAL_SHA vs $EXPECTED_SHA)" >&2; exit 1; }
 
+  if_fails: rule 'resume completes partial download with correct sha256' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-05-002
   rule: complete shards are not re-downloaded
   prediction: "fully present shard emits zero network bytes on --resume"
@@ -109,6 +114,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'complete shards are not re-downloaded' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-05-003
   rule: etag mismatch triggers fresh download with warning
   prediction: "stale partial (wrong ETag) is discarded, warning emitted"
@@ -123,6 +129,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'etag mismatch triggers fresh download with warning' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-A-05-004
   rule: concurrent --resume invocations are mutually exclusive
   prediction: "second concurrent apr pull exits non-zero with lock error"
@@ -142,6 +149,7 @@ falsification_tests:
       exit 1
     }
 
+  if_fails: rule 'concurrent --resume invocations are mutually exclusive' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "HTTP Range: bytes=<offset>- header is emitted on --resume when a partial file exists"

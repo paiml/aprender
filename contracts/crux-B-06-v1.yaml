@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
 equations:
   kquant_coverage:
     formula: |
@@ -133,7 +137,7 @@ falsification_tests:
   if_fails: "Q4K degrades PPL by more than 10% vs fp16 baseline"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "K-quant series matches llama.cpp K-quant definitions and PPL ranking from PR #1684"
   competitor_function: "llama_model_quantize (ggml Q2_K..Q8_K)"
   reference: "https://github.com/ggerganov/llama.cpp/pull/1684"

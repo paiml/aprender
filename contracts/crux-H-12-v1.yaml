@@ -20,6 +20,11 @@ metadata:
     torchvision.datasets.ImageFolder.html). Classes are sorted
     lexicographically; label 0 = first class.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   imagefolder:
     formula: |
@@ -50,6 +55,7 @@ falsification_tests:
     m = d['class_to_idx']
     assert m == {'apple':0,'banana':1,'cherry':2}, m
     "
+  if_fails: rule 'lexicographic label ordering matches torchvision' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-12-002
   rule: dense labels (no gaps)
   prediction: "labels cover exactly {0,...,K-1}"
@@ -57,6 +63,7 @@ falsification_tests:
     set -euo pipefail
     labels=$(apr dataset inspect /tmp/if --loader imagefolder --format json | jq -r '.samples[] | .label' | sort -u | tr '\n' ',')
     python3 -c "assert '$labels'.rstrip(',') == '0,1,2', '$labels'"
+  if_fails: rule 'dense labels (no gaps)' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-12-003
   rule: corrupt image raises IOError, not silent skip
   prediction: "reading a corrupt png yields non-zero + I/O error message"
@@ -67,8 +74,9 @@ falsification_tests:
     ! apr dataset iter /tmp/if --loader imagefolder --index 0 2>/tmp/err
     grep -E "corrupt|decode|IOError" /tmp/err
 
+  if_fails: rule 'corrupt image raises IOError, not silent skip' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr imagefolder class_to_idx matches torchvision.datasets.ImageFolder exactly"
 - type: invariant
   property: "labels are dense 0..K-1"

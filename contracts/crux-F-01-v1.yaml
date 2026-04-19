@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   per_tensor_schema:
     formula: |
@@ -114,7 +118,7 @@ proof_obligations:
   property: "dtype string is from canonical set {F32,F16,BF16,Q4K,Q5K,Q6K,Q8K,Q8_0,I32,I8}"
 - type: invariant
   property: "min <= mean <= max and std >= 0 for every tensor"
-- type: parity
+- type: equivalence
   property: "sum(apr.num_elements) == gguf-py GGUFReader total element count (byte-identical on golden GGUF fixture)"
   competitor: llama_cpp
   reference: "https://github.com/ggerganov/llama.cpp/tree/master/gguf-py (GGUFReader.tensors[].n_elements)"

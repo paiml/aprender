@@ -193,7 +193,7 @@ falsification_tests:
   if_fails: "perplexity drift vs llama.cpp reference exceeds 0.05"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr quantize --type q4_0 matches llama-quantize Q4_0 byte-for-byte on evidence/crux/llama_cpp/q4_0-goldens.json"
 - type: invariant
   property: "Q4_0 block layout = 18 bytes (fp16 scale + 16 packed nibbles) per 32-element block"
@@ -201,7 +201,7 @@ proof_obligations:
   property: "Per-weight dequantization error ≤ block scale (one quant step)"
 - type: invariant
   property: "Perplexity within 0.05 of llama.cpp reference on wiki.test.raw golden eval"
-- type: equation
+- type: invariant
   property: "dequant_q4_0(q, d)[j] == (nibble(j) - 8) * d, matching ggml_dequantize_row_q4_0"
 
 verification_summary:

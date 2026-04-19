@@ -20,6 +20,11 @@ metadata:
     Resampling must be optional but deterministic; unsupported formats
     raise; channel count is preserved unless --mono is set.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   audio_loader:
     formula: |
@@ -46,6 +51,7 @@ falsification_tests:
     assert -1.0 <= d['min'] <= d['max'] <= 1.0, d
     assert math.isfinite(d['min']) and math.isfinite(d['max'])
     "
+  if_fails: rule 'waveform in [-1, 1] and finite' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-13-002
   rule: resample respects target rate
   prediction: "resample to 16000 Hz sets sample_rate=16000"
@@ -57,6 +63,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/r.json'))
     assert d['sample_rate'] == 16000, d
     "
+  if_fails: rule 'resample respects target rate' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-13-003
   rule: unsupported extension raises
   prediction: ".mp3 without --decode-mp3 flag fails with IOError"
@@ -66,8 +73,9 @@ falsification_tests:
     ! apr dataset audio-inspect /tmp/fake.mp3 2>/tmp/err
     grep -E "unsupported|IOError|cannot decode" /tmp/err
 
+  if_fails: rule 'unsupported extension raises' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr dataset audio-inspect matches torchaudio.load return shape + dtype"
 - type: invariant
   property: "waveform range + finite guarantees"

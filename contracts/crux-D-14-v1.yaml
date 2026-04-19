@@ -24,6 +24,11 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   early_stopping_patience:
     formula: |
@@ -135,7 +140,7 @@ proof_obligations:
   property: "output model equals argmin(val_loss) checkpoint (bitwise)"
 - type: invariant
   property: "best_val_loss is non-increasing across epochs"
-- type: parity
+- type: equivalence
   property: "apr finetune --early-stopping-patience P matches HuggingFace Trainer's EarlyStoppingCallback(early_stopping_patience=P) on golden fixture"
 
 # References:

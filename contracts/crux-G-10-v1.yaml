@@ -18,6 +18,10 @@ metadata:
     on missing write scope. Canonical: HF `whoami()` returns `auth.orgs[*].role`;
     HF `create_repo(repo_id='org/name')` fails with 403 if token lacks write.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   org_scope_check:
     formula: |
@@ -42,6 +46,7 @@ falsification_tests:
     HF_TOKEN=read_only_fixture ! apr publish tests/fixtures/tinyllama-hf \
       --repo testorg/x --dry-run 2>/tmp/err
     grep -E "write.*role|read-only|403" /tmp/err
+  if_fails: rule 'read-only token on org repo rejected pre-upload' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-G-10-002
   rule: personal-repo upload with user token OK
   prediction: "same user's repo accepts upload; exit=0"
@@ -49,6 +54,7 @@ falsification_tests:
     set -euo pipefail
     HF_TOKEN=$HF_TOKEN apr publish tests/fixtures/tinyllama-hf \
       --repo $(apr whoami --format json | jq -r .username)/test-tmp --dry-run
+  if_fails: rule 'personal-repo upload with user token OK' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-G-10-003
   rule: permission check happens before any file upload
   prediction: "strace shows no POST /commit before whoami check fails"
@@ -59,8 +65,9 @@ falsification_tests:
     # whoami must complete before any large-upload attempt
     ! grep -E "POST.*commit|POST.*upload" /tmp/strace
 
+  if_fails: rule 'permission check happens before any file upload' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr org-scope check matches HF whoami-v2 + create_repo 403 semantics"
 - type: invariant
   property: "permission mismatch fails before first data-plane byte"

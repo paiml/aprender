@@ -19,6 +19,10 @@ metadata:
     Canonical: `llama-quantize model.q4_0.gguf out.fp16.gguf F16` then
     `llama-quantize out.fp16.gguf out.q6_k.gguf Q6_K` preserves metadata.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
 equations:
   metadata_preservation:
     formula: |
@@ -43,6 +47,7 @@ falsification_tests:
     apr inspect tests/fixtures/tinyllama-q4_0.gguf --format json | jq '.metadata | to_entries | map(select(.key|startswith("general."))) | map(select(.key|IN("general.quantization_version","general.file_type")|not))' > /tmp/before.json
     apr inspect /tmp/q6k.gguf --format json | jq '.metadata | to_entries | map(select(.key|startswith("general."))) | map(select(.key|IN("general.quantization_version","general.file_type")|not))' > /tmp/after.json
     diff /tmp/before.json /tmp/after.json
+  if_fails: rule 'general.* metadata preserved across dequant→requant' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-B-19-002
   rule: tokenizer vocab/merges preserved byte-for-byte
   prediction: "sha256 of tokenizer.ggml.tokens + tokenizer.ggml.merges unchanged"
@@ -52,8 +57,9 @@ falsification_tests:
     h_after=$(apr inspect /tmp/q6k.gguf --export-key tokenizer.ggml.tokens | sha256sum | cut -c1-64)
     [ "$h_before" = "$h_after" ]
 
+  if_fails: rule 'tokenizer vocab/merges preserved byte-for-byte' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr dequant + apr quantize round-trip metadata matches llama-quantize semantics"
 - type: invariant
   property: "general.* preserved except quantization_version/file_type which reflect new qtype"

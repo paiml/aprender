@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
 equations:
   single_file_upload_contract:
     formula: |
@@ -48,7 +52,7 @@ equations:
     formula: |
       apr publish WITHOUT HF_TOKEN (or expired token) → exit != 0
       apr publish WITH valid HF_TOKEN AND user owns repo → exit 0
-    domain: {HF_TOKEN, target repo}
+    domain: 'HF_TOKEN: None, target repo: None'
     codomain: exit code
     invariants:
     - "Missing HF_TOKEN produces actionable error, never silent no-op"
@@ -137,7 +141,7 @@ proof_obligations:
   property: "remote sha256 == local sha256 byte-for-byte"
 - type: invariant
   property: "missing HF_TOKEN exits non-zero with actionable error"
-- type: parity
+- type: equivalence
   property: "apr publish produces identical /tree/main state to huggingface_hub.HfApi.upload_file on the same inputs"
   competitor: huggingface
   reference: "https://huggingface.co/docs/huggingface_hub/guides/upload (HfApi.upload_file); https://huggingface.co/docs/hub/api"

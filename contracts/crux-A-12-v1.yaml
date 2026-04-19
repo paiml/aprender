@@ -113,7 +113,7 @@ proof_obligations:
   property: "Every apr ps row satisfies the RunningModel JSON schema"
 - type: invariant
   property: "until timestamp ≥ wall-clock now for every row"
-- type: parity
+- type: equivalence
   property: "apr ps columns ⊇ {NAME, SIZE, PROCESSOR} from ollama ps"
 
 verification_summary:

@@ -25,6 +25,11 @@ metadata:
     ±1%), restore AdamW moments (m, v, step t), and resume the LR schedule
     at the correct step — NOT from step 0.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   adamw_state_roundtrip:
     formula: |
@@ -151,7 +156,7 @@ proof_obligations:
   property: "LR schedule resumes at step t, not 0"
 - type: invariant
   property: "apr finetune --resume-from <ckpt> exits 0 and continues to completion"
-- type: parity
+- type: equivalence
   property: "apr finetune --resume-from <ckpt>  ≅  HF Trainer(resume_from_checkpoint=<ckpt>)"
 
 verification_summary:

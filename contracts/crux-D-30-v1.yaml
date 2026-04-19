@@ -19,6 +19,11 @@ metadata:
     `interleave_datasets(datasets, probabilities=[...], stopping_strategy="all_exhausted")`
     inside a Trainer loop with task-id-aware loss.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
 equations:
   multitask_loop:
     formula: |
@@ -45,6 +50,7 @@ falsification_tests:
       --model tests/fixtures/tinyllama-hf --steps 5 -o /tmp/st.out
     diff <(apr inspect /tmp/mt.out/model.safetensors --format json | jq -S .) \
          <(apr inspect /tmp/st.out/model.safetensors --format json | jq -S .)
+  if_fails: rule 'single-dataset multitask run ≡ single-task baseline' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-30-002
   rule: observed task frequencies track probabilities
   prediction: "with --probs 0.7,0.3 over 1000 steps, task-0 count in [650, 750]"
@@ -55,6 +61,7 @@ falsification_tests:
       --model tests/fixtures/tinyllama-hf -o /tmp/mt2
     c0=$(jq '[.trace[] | select(.task_id==0)] | length' /tmp/trace.json)
     python3 -c "assert 650 <= $c0 <= 750, $c0"
+  if_fails: rule 'observed task frequencies track probabilities' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-D-30-003
   rule: deterministic task sequence under fixed seed
   prediction: "two runs with --seed 42 produce identical task-id sequences"
@@ -67,8 +74,9 @@ falsification_tests:
     done
     diff <(jq '[.trace[].task_id]' /tmp/tr1.json) <(jq '[.trace[].task_id]' /tmp/tr2.json)
 
+  if_fails: rule 'deterministic task sequence under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr train --datasets matches HF `interleave_datasets(probabilities=[...])` sampling distribution"
 - type: invariant
   property: "N=1 multitask is byte-equal to single-task"

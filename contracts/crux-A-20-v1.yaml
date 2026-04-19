@@ -161,7 +161,7 @@ falsification_tests:
   if_fails: "offline bytes diverged from online huggingface_hub golden"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr --offline matches huggingface_hub(local_files_only=True) / HF_HUB_OFFLINE=1 on evidence/crux/huggingface/offline-goldens.json"
 - type: invariant
   property: "Zero outbound non-loopback TCP connects under APR_OFFLINE=1, HF_HUB_OFFLINE=1, or --offline (strace-verified)"
@@ -169,7 +169,7 @@ proof_obligations:
   property: "Cache miss in offline mode is a hard error with 'offline' + cache-miss context in stderr"
 - type: invariant
   property: "HF_HUB_OFFLINE=1, APR_OFFLINE=1, and --offline are observationally equivalent"
-- type: equation
+- type: invariant
   property: "|TCP_connect_trace(offline invocation)| == 0 (strict equality)"
 
 verification_summary:

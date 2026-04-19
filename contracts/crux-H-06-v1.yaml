@@ -30,6 +30,11 @@ metadata:
     dataset size, support `--take N` / `--skip N` / `--shuffle-buffer B`,
     and be fully restartable from an epoch-stable shard cursor.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
 equations:
   bounded_rss_invariant:
     formula: |
@@ -84,6 +89,7 @@ falsification_tests:
     # 1000 rows × ~4KB/row + 500MB base envelope = ~510MB; cap at 4GiB to be safe
     [ "$PEAK_KB" -lt 4194304 ] || { echo "FAIL: peak RSS ${PEAK_KB}KB > 4GiB" >&2; exit 1; }
 
+  if_fails: rule 'RSS does not scale with dataset size' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-06-002
   rule: --take N emits exactly N NDJSON rows
   prediction: "apr dataset stream ... --take 100 | wc -l == 100"
@@ -94,6 +100,7 @@ falsification_tests:
       python3 -c "import sys,json; [json.loads(l) for l in sys.stdin]" \
       || { echo "FAIL: output not strict NDJSON" >&2; exit 1; }
 
+  if_fails: rule '--take N emits exactly N NDJSON rows' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-06-003
   rule: resumable cursor emits identical row sequence
   prediction: "uninterrupted run == interrupted+resumed run (row-by-row)"
@@ -105,6 +112,7 @@ falsification_tests:
     diff /tmp/stream-full.ndjson /tmp/stream-joined.ndjson \
       || { echo "FAIL: resumed stream differs from uninterrupted" >&2; exit 1; }
 
+  if_fails: rule 'resumable cursor emits identical row sequence' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-H-06-004
   rule: parity with datasets.load_dataset(streaming=True) row count
   prediction: "first 1000 rows of apr stream == first 1000 rows of hf datasets streaming"
@@ -117,6 +125,7 @@ falsification_tests:
     diff /tmp/apr-rows.txt /tmp/hf-rows.txt \
       || { echo "FAIL: row sequences diverge from hf datasets streaming" >&2; exit 1; }
 
+  if_fails: rule 'parity with datasets.load_dataset(streaming=True) row count' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
 - type: invariant
   property: "Peak RSS is O(--shuffle-buffer), independent of total dataset size"
@@ -124,7 +133,7 @@ proof_obligations:
   property: "--take N emits exactly N NDJSON-formatted rows then EOFs"
 - type: invariant
   property: "Resumable cursor guarantees no duplicate and no skipped rows across restart"
-- type: parity
+- type: equivalence
   property: "First N rows (deterministic seed) match datasets.load_dataset(..., streaming=True) row-for-row"
 
 verification_summary:

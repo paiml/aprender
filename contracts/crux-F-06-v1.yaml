@@ -123,7 +123,7 @@ proof_obligations:
   property: "timeline schema includes used/free blocks, used_pct, preemptions per step"
 - type: invariant
   property: "block conservation: used + free == total at every step"
-- type: parity
+- type: equivalence
   property: "apr KV-timeline matches vllm gpu_cache_usage_perc metric within ±1% on identical workload"
 - type: invariant
   property: "preemption only fires when used_pct >= preempt_threshold (default 0.95)"

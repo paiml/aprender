@@ -18,6 +18,11 @@ metadata:
     github.com/explodinggradients/ragas) + TruLens (truera/trulens).
     Metrics: context_precision, context_recall, faithfulness, answer_relevancy.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
 equations:
   ragas_metrics:
     formula: |
@@ -44,6 +49,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/r.json'))['per_sample'][0]
     assert d['context_precision']==0.0 and d['context_recall']==0.0, d
     "
+  if_fails: rule 'empty-context case returns 0 for retrieval metrics' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-24-002
   rule: ragas_score is bounded to [0,1]
   prediction: "aggregate ragas_score in [0,1] across any input"
@@ -54,6 +60,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/r2.json'))
     assert 0.0 <= d['ragas_score'] <= 1.0, d
     "
+  if_fails: rule 'ragas_score is bounded to [0,1]' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-E-24-003
   rule: identical answer+ctx yields faithfulness near 1
   prediction: "answer == ground_truth AND ctx contains ground_truth → faithfulness ≥ 0.9"
@@ -68,8 +75,9 @@ falsification_tests:
     assert d['faithfulness'] >= 0.9, d
     "
 
+  if_fails: rule 'identical answer+ctx yields faithfulness near 1' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr eval-rag metric definitions match RAGAS (arXiv:2309.15217) within 1% on shared corpus"
 - type: invariant
   property: "ragas_score ∈ [0, 1]"

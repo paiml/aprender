@@ -120,7 +120,7 @@ proof_obligations:
   property: "sweep schema complete with ppl/bpw/size/time per quant"
 - type: invariant
   property: "K-family monotone: higher bpw → lower ppl"
-- type: parity
+- type: equivalence
   property: "apr perplexity value matches llama.cpp llama-perplexity within ±0.05 on identical GGUF + wikitext2 slice"
 - type: invariant
   property: "Q4_K_M ppl uplift vs FP16 < 0.10 (quantization quality gate)"

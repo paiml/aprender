@@ -20,6 +20,10 @@ metadata:
     `prompts/get` renders the template with provided argument values,
     returning a list of messages.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   mcp_prompt:
     formula: |
@@ -46,6 +50,7 @@ falsification_tests:
     import json; d=json.load(open('/tmp/err.json'))
     assert d['error']['code'] == -32602, d
     "
+  if_fails: rule 'missing required argument produces JSON-RPC -32602' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-14-002
   rule: deterministic render for fixed arguments
   prediction: "two prompts/get calls with same args yield identical messages"
@@ -58,6 +63,7 @@ falsification_tests:
     done
     diff <(jq -S .result.messages /tmp/p1.json) \
          <(jq -S .result.messages /tmp/p2.json)
+  if_fails: rule 'deterministic render for fixed arguments' is violated — contract MUST be re-verified against competitor canonical reference
 - id: FALSIFY-CRUX-I-14-003
   rule: list arguments match get validation
   prediction: "every required arg from prompts/list is rejected when omitted in prompts/get"
@@ -77,8 +83,9 @@ falsification_tests:
         assert resp.get('error',{}).get('code') == -32602, (p['name'], resp)
     PY
 
+  if_fails: rule 'list arguments match get validation' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr mcp prompts verbs match MCP spec JSON-RPC 2.0 shape"
 - type: invariant
   property: "missing required arg → JSON-RPC -32602 (fail closed)"

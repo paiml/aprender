@@ -187,13 +187,13 @@ falsification_tests:
   if_fails: "apr sharded index.json sha256 diverges from HF transformers reference"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr shard/merge produces index.json and layout compatible with HF transformers sharded loader on evidence/crux/huggingface/shard-merge-goldens.json"
 - type: invariant
   property: "Every tensor appears in exactly one shard (no duplication, no omission)"
 - type: invariant
   property: "index.json total_size equals Σ(element_size × numel) across all tensors"
-- type: equation
+- type: invariant
   property: "merge(split(S, SZ)) == S (identity on tensor values for any valid max_shard_size)"
 - type: invariant
   property: "weight_map shard filenames are relative (no absolute paths, no ..)"

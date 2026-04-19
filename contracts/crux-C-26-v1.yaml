@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
 equations:
   rope_frequency_scaling:
     formula: |
@@ -109,9 +113,9 @@ falsification_tests:
   if_fails: "apr accepted non-positive rope_freq_scale"
 
 proof_obligations:
-- type: parity
+- type: equivalence
   property: "apr run --rope-freq-scale matches llama.cpp llama-cli --rope-freq-scale on golden in-context prompt (both S=1 produce identical greedy output)"
-- type: parity
+- type: equivalence
   property: "apr extended-context RoPE scaling recovers needle at 2x train context (matches llama.cpp behavior)"
 - type: invariant
   property: "rope_freq_scale=1.0 is a no-op (bit-exact equality vs unset)"

@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
 equations:
   layer_by_layer_graph_enumeration:
     formula: |
@@ -114,7 +118,7 @@ proof_obligations:
   property: "sum of per-layer params equals model total_params exactly"
 - type: invariant
   property: "adjacent layer shapes consistent (output_shape[i] == input_shape[i+1])"
-- type: parity
+- type: equivalence
   property: "apr trace --layers matches PyTorch torch.fx.symbolic_trace(model).graph layer enumeration on equivalent model"
 
 # References:

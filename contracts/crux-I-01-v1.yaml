@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   tools_list_schema:
     formula: |
@@ -158,7 +162,7 @@ proof_obligations:
   property: "JSON-RPC 2.0 envelope preserved (jsonrpc=='2.0', id echoed)"
 - type: invariant
   property: "tools/call dispatches and returns MCP-shaped content array"
-- type: parity
+- type: equivalence
   property: "Served metadata matches Model Context Protocol 2024-11-05 server/tools schema and equals build.rs codegen manifest (no hand-edit drift)"
   reference: "https://modelcontextprotocol.io/specification/2024-11-05/server/tools"
 

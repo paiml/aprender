@@ -129,7 +129,7 @@ proof_obligations:
   property: "Selected quant is arg-max of quality_rank over fitting candidates"
 - type: invariant
   property: "kv_cache_bytes = 2*n_layers*n_kv_heads*head_dim*ctx*dtype_size"
-- type: parity
+- type: equivalence
   property: "apr --auto-quant decision ≡ ollama offload decision (±1 layer) on goldens"
 
 verification_summary:

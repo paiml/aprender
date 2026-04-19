@@ -24,6 +24,10 @@ metadata:
     story"; the falsification body below is a placeholder and MUST be
     replaced with the competitor's canonical CLI transcript before promotion.
 
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
 equations:
   mcp_client_handshake:
     formula: |
@@ -100,7 +104,7 @@ proof_obligations:
   property: "MCP initialize handshake completes with supported protocolVersion"
 - type: invariant
   property: "Remote tools registered under mcp/<server>/<name> namespace (no name collision with local apr tools)"
-- type: parity
+- type: equivalence
   property: "apr MCP client matches @modelcontextprotocol/sdk ClientSession reference behavior against server-everything test server"
   reference: "https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle"
 
