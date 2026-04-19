@@ -9,7 +9,7 @@
 - `contracts/pmcp/mcp-protocol-sdk-v1.yaml` — `pmcp` crate contract (existing)
 - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — `paiml/rust-mcp-sdk` dependency contract (existing)
 - `contracts/apr-cli-commands-v1.yaml` — 58-command tool surface (57 commands + `mcp` added 2026-04-17 per PR #864)
-- **Pending (PR #886)**: `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract (not yet in-tree; promotes to M4)
+- `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract; 8 falsification_conditions + test cross-links + exact-8 invariant pinned by `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008`; `status: DRAFT` (PR #886 merged 2026-04-19, promotes to ENFORCED at M4 close)
 - `contracts/apr-claude-proxy-v1.yaml` — Anthropic Messages-API proxy request/response shape + 6 falsification gates; `status: DRAFT` (PMAT-CLAUDE-PROXY-001, promotes to ENFORCED at M6-δ, 2026-04-18)
 - `contracts/apr-code-parity-v1.yaml` — falsifiable encoding of the 21-row `apr code` ↔ Claude Code parity matrix; 5 falsification gates incl. row-by-row mechanical audit + headline aggregate invariant + prose↔YAML drift check; `status: ACTIVE` as of 2026-04-18 revision 5.1 (`pv validate` green via in-tree `aprender-contracts-cli`; epic PMAT-CODE-PARITY-MATRIX-001 **CLOSEABLE** — both closure conditions MET; current counts **14 SHIPPED / 3 PARTIAL / 4 NONE over 21 rows** per `pv check-parity` after **all 4 P0 + 5 P1 + 2 P2 tickets closed** — MCP-CLIENT, SLASH-PARITY, HOOKS, SPAWN-PARITY, CUSTOM-AGENTS, WEB-TOOLS, SKILLS, WORKTREE, PERMISSIONS, STATUS-LINE, ORG-POLICY; SHIPPED ≥9 AND MISSING ≤4 simultaneously satisfied; FALSIFY-CODE-PARITY-005 passes; 4 remaining MISSING rows are all P2 deferred surfaces with no epic dependency). Both gates green: `pv validate` enforces SCHEMA; `pv check-parity` executes each row's `cross_check_command` + enforces headline aggregate invariant (FALSIFY-CODE-PARITY-002). Neither is a bash script.
 **References**:
@@ -383,8 +383,8 @@ These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mc
 - [ ] **Deferred to M4**: Progress notifications for `apr.run` — work in flight on branch `feat/apr-run-stream-progress` (PR #891), pending an `apr run --stream` CLI flag prereq
 
 ### M4: End-to-end validation — IN PROGRESS
-- [ ] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions (FALSIFY-MCP-001..008) + test cross-links (PR #886 open — pins exact-8 invariant via `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008`)
-- [ ] Extend the contract with a 9th row for FALSIFY-MCP-PROGRESS-001 after PR #886 merges — relax the exact-8 invariant to "FALSIFY-MCP-001..008 + PROGRESS-001, no extras"
+- [x] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions (FALSIFY-MCP-001..008) + test cross-links — PR #886 merged 2026-04-19 (pins exact-8 invariant via `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008` in `crates/aprender-contracts/tests/apr_mcp_server_contract.rs`)
+- [ ] Extend the contract with a 9th row for FALSIFY-MCP-PROGRESS-001 — relax the exact-8 invariant to "FALSIFY-MCP-001..008 + PROGRESS-001, no extras"
 - [ ] Strengthen FALSIFY-MCP-003/-004 from surface tests to mock-subprocess e2e response-shape assertions (PR #889 open — `feat/mcp-strengthen-003-004`)
 - [ ] Real-model FALSIFY-MCP-003: `apr.run` decodes "2" within 5s on cached qwen2.5-0.5b (covered by PR #892 — `feat/mcp-real-model-e2e`, new gate FALSIFY-MCP-E2E-001)
 - [ ] Real-model FALSIFY-MCP-004: byte-for-byte `apr qa --json` parity (also covered by PR #892)
