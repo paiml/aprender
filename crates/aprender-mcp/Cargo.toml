@@ -44,6 +44,10 @@ jsonschema = "0.28"
 # FALSIFY-MCP-008 harness reads the YAML contract directly to assert byte
 # identity between codegen output and live tools/list schemas.
 serde_yaml = { workspace = true }
+# FALSIFY-MCP-DOGFOOD-001: locate the workspace-built `apr` binary in the
+# end-to-end stdio conformance test. Already in the workspace lockfile via
+# aprender-profile dev-deps; no new transitive cost.
+assert_cmd = "2.0"
 
 [lints]
 workspace = true
