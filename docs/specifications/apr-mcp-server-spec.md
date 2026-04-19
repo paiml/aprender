@@ -9,7 +9,7 @@
 - `contracts/pmcp/mcp-protocol-sdk-v1.yaml` — `pmcp` crate contract (existing)
 - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — `paiml/rust-mcp-sdk` dependency contract (existing)
 - `contracts/apr-cli-commands-v1.yaml` — 58-command tool surface (57 commands + `mcp` added 2026-04-17 per PR #864)
-- `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract; 8 falsification_conditions + test cross-links + exact-8 invariant pinned by `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008`; `status: DRAFT` (PR #886 merged 2026-04-19, promotes to ENFORCED at M4 close)
+- `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract; 8 falsification_conditions + test cross-links + exact-8 invariant pinned by `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008`; `status: ACTIVE` (PR #886 merged 2026-04-19; top-level `status: ACTIVE` + all 8 falsification_conditions `status: ENFORCED`)
 - `contracts/apr-claude-proxy-v1.yaml` — Anthropic Messages-API proxy request/response shape + 6 falsification gates; `status: DRAFT` (PMAT-CLAUDE-PROXY-001, promotes to ENFORCED at M6-δ, 2026-04-18)
 - `contracts/apr-code-parity-v1.yaml` — falsifiable encoding of the 21-row `apr code` ↔ Claude Code parity matrix; 5 falsification gates incl. row-by-row mechanical audit + headline aggregate invariant + prose↔YAML drift check; `status: ACTIVE` as of 2026-04-18 revision 5.1 (`pv validate` green via in-tree `aprender-contracts-cli`; epic PMAT-CODE-PARITY-MATRIX-001 **CLOSEABLE** — both closure conditions MET; current counts **14 SHIPPED / 3 PARTIAL / 4 NONE over 21 rows** per `pv check-parity` after **all 4 P0 + 5 P1 + 2 P2 tickets closed** — MCP-CLIENT, SLASH-PARITY, HOOKS, SPAWN-PARITY, CUSTOM-AGENTS, WEB-TOOLS, SKILLS, WORKTREE, PERMISSIONS, STATUS-LINE, ORG-POLICY; SHIPPED ≥9 AND MISSING ≤4 simultaneously satisfied; FALSIFY-CODE-PARITY-005 passes; 4 remaining MISSING rows are all P2 deferred surfaces with no epic dependency). Both gates green: `pv validate` enforces SCHEMA; `pv check-parity` executes each row's `cross_check_command` + enforces headline aggregate invariant (FALSIFY-CODE-PARITY-002). Neither is a bash script.
 **References**:
@@ -416,9 +416,13 @@ These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mc
 ## Success Criteria
 
 The spec is already ACTIVE as of M3 ship (2026-04-18). The table below is
-the acceptance gate for **closing M4** — i.e. promoting the
-`apr-mcp-server-v1.yaml` contract from DRAFT to ENFORCED (PR #886)
-and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
+the acceptance gate for **closing M4** — FALSIFY-MCP-003/-004 response-shape
+layer ENFORCED (PR #889), real-model FALSIFY-MCP-E2E-001 ENFORCED (PR #892),
+dogfood FALSIFY-MCP-DOGFOOD-001 ENFORCED (PR #890), and
+`apr-mcp-server-v1.yaml` contract promoted to ACTIVE with all 8
+falsification_conditions ENFORCED (PR #886). One row remaining: the
+`apr.run` progress notifications prereq on PR #891 — once that merges, M4
+closes:
 
 | Criterion | Threshold | Measurement |
 |-----------|-----------|-------------|
