@@ -167,6 +167,7 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 9. **FALSIFY-MCP-PROGRESS-001** (M3 addition): When client supplies `params._meta.progressToken`, `apr.finetune` emits one `notifications/progress` per non-empty stdout line of `apr finetune --json`, all flushed before the final `tools/call` response. Without a token, zero notifications. **ENFORCED**.
 10. **FALSIFY-MCP-DOGFOOD-001** (M4 addition): End-to-end protocol session — the real `apr mcp` binary, launched as a subprocess, answers `initialize`, `tools/list`, and `tools/call` for all 9 registered tools (plus unknown-method and bad-jsonrpc gates) within 2s via stdio. Test: `crates/aprender-mcp/tests/falsify_mcp_dogfood_001.rs::falsify_mcp_dogfood_001_full_client_session`. **ENFORCED**.
 11. **FALSIFY-MCP-E2E-001** (M4 addition): Real-model end-to-end. `apr.run` on a locally-cached qwen2-0.5b GGUF (env-var `APR_MCP_E2E_MODEL`) decodes content containing the digit "2" within 30s; `apr.qa` MCP wrapper output equals `apr qa --json` direct-CLI output (modulo nondeterministic timestamp/duration/throughput fields). Env-gated — skips via `println!` + early return when the env var is unset (project policy bans `#[ignore]`). Test file: `crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs`. **ENFORCED** (when env-gated).
+12. **FALSIFY-MCP-PROGRESS-002** (M4 addition): When client supplies `params._meta.progressToken`, `apr.run` spawns `apr run --stream` and forwards each NDJSON line of the CLI's per-token emission as a `notifications/progress` message tagged with the caller's token; all notifications flush before the final `tools/call` response. Without a token, zero notifications (MCP spec compliance). Test file: `crates/aprender-mcp/tests/falsify_mcp_progress_002.rs` (4 tests: ordering, token-tagging, no-token zero-emit, flush-before-result). **ENFORCED** (PR #891 merged 2026-04-19).
 
 ### Additional dispatcher invariant (not in `apr-mcp-server-v1.yaml`)
 
@@ -380,9 +381,9 @@ These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mc
 - [x] Cancellation: `notifications/cancelled` → SIGTERM (30s grace) → SIGKILL via std::thread+mpsc worker (#883)
 - [x] FALSIFY-MCP-008: build.rs codegen from `apr-mcp-tool-schemas-v1.yaml` — `apr.version` first (#880), then 7 remaining tools (#884); PMAT-514 extended codegen to tool-level `description` strings so neither `inputSchema` nor `description` can be hand-edited in Rust source (2026-04-18)
 - [x] Progress notifications for `apr.finetune` — `NotificationSink` plumbed; `params._meta.progressToken` opt-in; FALSIFY-MCP-PROGRESS-001 (#887)
-- [x] Progress notifications for `apr.run` — `apr run --stream` NDJSON CLI prereq + `NotificationSink` forwarding; FALSIFY-MCP-PROGRESS-002 (this PR)
+- [x] Progress notifications for `apr.run` — `apr run --stream` NDJSON CLI prereq + `NotificationSink` forwarding; FALSIFY-MCP-PROGRESS-002 (#891 merged 2026-04-19)
 - [x] Book chapter `book/src/tools/mcp-server.md` (#874 M2 creation, #885 M3 update)
-- [ ] **Deferred to M4**: Per-step structured progress for `apr.finetune` (CLI emits terminal blob today; needs CLI event channel)
+- [ ] **Deferred to M5+**: Per-step structured progress for `apr.finetune` (CLI emits terminal blob today; needs CLI event channel — same realizar callback-threading prereq that keeps `apr.run`'s per-token emission *post-decode* today, per PR #891's deliberate trade-off)
 
 ### M4: End-to-end validation — CODE COMPLETE (all 5 PRs merged 2026-04-19; manual client smoke tests remain)
 - [x] First-class contract `contracts/apr-mcp-server-v1.yaml` with 8 falsification_conditions (FALSIFY-MCP-001..008) + test cross-links — PR #886 merged 2026-04-19 (pins exact-8 invariant via `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008` in `crates/aprender-contracts/tests/apr_mcp_server_contract.rs`)
