@@ -474,4 +474,108 @@ mod tests {
         assert_eq!(std::mem::size_of::<Hidden>(), 0);
         assert_eq!(std::mem::size_of::<Heads>(), 0);
     }
+
+    // ========================================================================
+    // C-LLAMA-370M-SOVEREIGN / AC-SHIP2-001 / FALSIFY-SHIP-011
+    // ========================================================================
+
+    /// The sovereign contract YAML embedded at compile time so the test
+    /// binary has a byte-frozen copy — any edit to the file is caught
+    /// by the next test run, not discovered post-publish.
+    const SOVEREIGN_CONTRACT_YAML: &str =
+        include_str!("../../../../contracts/model-families/llama-370m-sovereign-v1.yaml");
+
+    /// GATE-ARCH-370M-001 / INV-ARCH-370M-002..008: every architectural
+    /// constant declared in `contracts/model-families/llama-370m-sovereign-v1.yaml`
+    /// matches the Rust scaffold `Llama370MConfig::*` const byte-equally.
+    ///
+    /// Discharges FALSIFY-SHIP-011 (AC-SHIP2-001): architecture registered
+    /// in a llama-family contract entry whose dimensions validate against
+    /// `contracts/model-families/_schema.yaml` AND match the compile-time
+    /// Rust config that the training loop will actually consume. Binds the
+    /// YAML contract and the Rust scaffold: if either drifts without the
+    /// other, this test fails — catching the MODEL-1 QLoRA class of
+    /// recipe/artifact drift at `cargo test` time, before a single step
+    /// of pretraining compute runs.
+    #[test]
+    fn falsify_ship_011_rust_scaffold_matches_yaml_contract() {
+        let doc: serde_yaml::Value = serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML)
+            .expect("llama-370m-sovereign-v1.yaml must parse as YAML");
+
+        // Contract identity — must be the right contract.
+        assert_eq!(
+            doc["contract_id"].as_str(),
+            Some("C-LLAMA-370M-SOVEREIGN"),
+            "wrong contract loaded — check include_str! path",
+        );
+        assert_eq!(doc["family"].as_str(), Some("llama"));
+        assert_eq!(doc["size_variant"].as_str(), Some("370m"));
+
+        // Architectural dimensions (INV-ARCH-370M-002, -003, -005, -006).
+        let arch = &doc["architecture"];
+        assert_eq!(
+            arch["hidden_dim"].as_u64().map(|v| v as usize),
+            Some(Llama370MConfig::HIDDEN_DIM),
+            "YAML architecture.hidden_dim drifted from Rust const",
+        );
+        assert_eq!(
+            arch["num_layers"].as_u64().map(|v| v as usize),
+            Some(Llama370MConfig::NUM_LAYERS),
+        );
+        assert_eq!(
+            arch["num_heads"].as_u64().map(|v| v as usize),
+            Some(Llama370MConfig::NUM_HEADS),
+        );
+        assert_eq!(
+            arch["num_kv_heads"].as_u64().map(|v| v as usize),
+            Some(Llama370MConfig::NUM_KV_HEADS),
+        );
+        assert_eq!(arch["head_dim"].as_u64().map(|v| v as usize), Some(Llama370MConfig::HEAD_DIM),);
+        assert_eq!(
+            arch["intermediate_dim"].as_u64().map(|v| v as usize),
+            Some(Llama370MConfig::INTERMEDIATE_DIM),
+        );
+        assert_eq!(
+            arch["vocab_size"].as_u64().map(|v| v as usize),
+            Some(Llama370MConfig::VOCAB_SIZE),
+        );
+        assert_eq!(
+            arch["max_position_embeddings"].as_u64().map(|v| v as usize),
+            Some(Llama370MConfig::MAX_POSITION_EMBEDDINGS),
+        );
+        let rope_theta = arch["rope_theta"].as_f64().expect("rope_theta must be a float");
+        assert!(
+            (rope_theta - f64::from(Llama370MConfig::ROPE_THETA)).abs() < 1e-6,
+            "YAML rope_theta {rope_theta} != Rust const {}",
+            Llama370MConfig::ROPE_THETA,
+        );
+
+        // Constraints (INV-ARCH-370M-004, -008).
+        let constraints = &doc["constraints"];
+        assert_eq!(
+            constraints["tied_embeddings"].as_bool(),
+            Some(Llama370MConfig::TIED_EMBEDDINGS),
+        );
+        assert_eq!(constraints["has_bias"].as_bool(), Some(Llama370MConfig::HAS_BIAS),);
+        assert_eq!(constraints["attention_type"].as_str(), Some("gqa"));
+        assert_eq!(constraints["activation"].as_str(), Some("silu"));
+        assert_eq!(constraints["norm_type"].as_str(), Some("rmsnorm"));
+        assert_eq!(constraints["positional_encoding"].as_str(), Some("rope"));
+        assert_eq!(constraints["mlp_type"].as_str(), Some("swiglu"));
+    }
+
+    /// GATE-ARCH-370M-001 (gate status): once FALSIFY-SHIP-011 is
+    /// discharged, the sovereign contract MUST declare status ACTIVE —
+    /// a PROPOSED gate cannot be a ship-blocker.
+    #[test]
+    fn falsify_ship_011_sovereign_contract_is_active() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+        assert_eq!(
+            doc["status"].as_str(),
+            Some("ACTIVE"),
+            "C-LLAMA-370M-SOVEREIGN must be ACTIVE once FALSIFY-SHIP-011 \
+             discharges — PROPOSED contracts cannot gate a ship",
+        );
+    }
 }

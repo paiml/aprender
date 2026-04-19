@@ -36,12 +36,24 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-LLAMA-370M-SOVEREIGN
-version: 1.0.0
-status: PROPOSED
+version: 1.1.0
+status: ACTIVE
 
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-04-19"
+  changelog:
+    - "1.0.0 (2026-04-18): Initial contract drafted as PROPOSED — froze
+       albor 370M architectural constants before pretraining begins."
+    - "1.1.0 (2026-04-19): Promoted to ACTIVE. FALSIFY-SHIP-011
+       discharged by falsify_ship_011_rust_scaffold_matches_yaml_contract
+       in crates/aprender-train/src/models/llama_370m.rs — Rust scaffold
+       constants bind byte-equally to this YAML contract; any drift in
+       either fails `cargo test -p aprender-train --lib llama_370m`
+       before a single step of compute runs. Scaffold-level compile-time
+       `validate()` already enforces INV-ARCH-370M-002..008 as `const _`
+       assertions."
   author: PAIML Engineering
   description: >
     Frozen architectural invariants for the 370M Llama-family sovereign
@@ -293,17 +305,31 @@ gates:
   - id: GATE-ARCH-370M-001
     rule: >
       llama.yaml (or this sibling contract) contains a `370m` entry
-      that validates against contracts/model-families/_schema.yaml.
+      that validates against contracts/model-families/_schema.yaml AND
+      binds byte-equally to the compile-time Rust scaffold that
+      aprender-train will actually consume.
     evidence_required: >
-      `pmat contract validate contracts/model-families/llama-370m-sovereign-v1.yaml`
-      exits 0. The published llama.yaml `size_variants.370m` entry,
-      once amended, lists all 9 keys (parameters, hidden_dim, num_layers,
-      num_heads, num_kv_heads, intermediate_dim, vocab_size,
-      max_position_embeddings, head_dim, rope_theta, rms_norm_eps) with
-      values byte-equal to this contract.
+      `pv validate contracts/model-families/llama-370m-sovereign-v1.yaml`
+      exits 0 (schema OK) AND `cargo test -p aprender-train --lib
+      llama_370m` exits 0. The Rust-side test
+      `falsify_ship_011_rust_scaffold_matches_yaml_contract` asserts
+      byte-equality between every architectural constant in
+      `Llama370MConfig` and this YAML's `architecture.*` /
+      `constraints.*` keys; the companion test
+      `falsify_ship_011_sovereign_contract_is_active` asserts this
+      contract's `status` is ACTIVE (a PROPOSED contract cannot gate a
+      ship). Together, any drift between YAML and Rust fails `cargo test`
+      before a single step of pretraining compute runs — catching the
+      MODEL-1 QLoRA class of recipe/artifact drift at contract-time.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_011_rust_scaffold_matches_yaml_contract"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_011_sovereign_contract_is_active"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::config_matches_contract_values"
+      - "crates/aprender-train/src/models/llama_370m.rs (const _: () = Llama370MConfig::validate();)"
     verdict: pass
     binds_to: AC-SHIP2-001
     falsification_id: FALSIFY-SHIP-011
+    ship_blocking: true
 
   - id: GATE-ARCH-370M-002
     rule: >
