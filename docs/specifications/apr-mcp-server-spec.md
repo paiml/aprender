@@ -2,7 +2,7 @@
 
 **Version**: 1.2.0
 **Date**: 2026-04-19 (M1–M3 shipped in v0.31.0; M4 in flight)
-**Status**: ACTIVE — `aprender-mcp` ships 9 tools over stdio JSON-RPC 2.0; FALSIFY-MCP-008 ENFORCED at 4 layers (schema+description × live+codegen); FALSIFY-MCP-003/-004 response-shape layer ENFORCED (PR #889 merged 2026-04-19); real-model FALSIFY-MCP-E2E-001 ENFORCED (PR #892 merged 2026-04-19). M4 open (PRs #890/#891 still cycling; #886/#889/#892 landed).
+**Status**: ACTIVE — `aprender-mcp` ships 9 tools over stdio JSON-RPC 2.0; FALSIFY-MCP-008 ENFORCED at 4 layers (schema+description × live+codegen); FALSIFY-MCP-003/-004 response-shape layer ENFORCED (PR #889); real-model FALSIFY-MCP-E2E-001 ENFORCED (PR #892); end-to-end dogfood FALSIFY-MCP-DOGFOOD-001 ENFORCED (PR #890); contract `apr-mcp-server-v1.yaml` ACTIVE with 9-gate invariant pinned (PR #886). M4 one-line remaining: PR #891 (`apr.run` progress notifications, workspace-test flake cycling on rerun). **4 of 5 M4 PRs merged 2026-04-19**.
 **Contracts**:
 - `contracts/mcp-tool-schema-v1.yaml` — upstream MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
 - `contracts/apr-mcp-tool-schemas-v1.yaml` — per-tool `inputSchema` + description source of truth; drives `build.rs` codegen; `status: ENFORCED` (M3, 2026-04-18)
@@ -165,7 +165,8 @@ The server is only ACTIVE if all of these are falsifiable by CI:
 7. **FALSIFY-MCP-007**: Protocol version mismatch (`"protocolVersion": "1999-01-01"`) returns error, does not attempt tools/list. **ENFORCED**.
 8. **FALSIFY-MCP-008**: Schema + description in `tools/list` output are byte-identical to the entry from `contracts/apr-mcp-tool-schemas-v1.yaml`. **ENFORCED** — `inputSchema` equality via `migrated_tools_match_yaml_contract_byte_for_byte`, tool-level `description` equality at two layers: live `ToolDefinition.description` via `tool_descriptions_match_yaml_contract`, and the `build.rs`-emitted `schemas::APR_<TOOL>_DESCRIPTION` codegen constants via `codegen_description_constants_match_yaml` (all in `tests/falsify_mcp_008.rs`). Both `inputSchema` and `description` are emitted by `build.rs` from the YAML — hand-editing them in Rust source is not possible.
 9. **FALSIFY-MCP-PROGRESS-001** (M3 addition): When client supplies `params._meta.progressToken`, `apr.finetune` emits one `notifications/progress` per non-empty stdout line of `apr finetune --json`, all flushed before the final `tools/call` response. Without a token, zero notifications. **ENFORCED**.
-10. **FALSIFY-MCP-E2E-001** (M4 addition): Real-model end-to-end. `apr.run` on a locally-cached qwen2-0.5b GGUF (env-var `APR_MCP_E2E_MODEL`) decodes content containing the digit "2" within 30s; `apr.qa` MCP wrapper output equals `apr qa --json` direct-CLI output (modulo nondeterministic timestamp/duration/throughput fields). Env-gated — skips via `println!` + early return when the env var is unset (project policy bans `#[ignore]`). Test file: `crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs`. **ENFORCED** (when env-gated).
+10. **FALSIFY-MCP-DOGFOOD-001** (M4 addition): End-to-end protocol session — the real `apr mcp` binary, launched as a subprocess, answers `initialize`, `tools/list`, and `tools/call` for all 9 registered tools (plus unknown-method and bad-jsonrpc gates) within 2s via stdio. Test: `crates/aprender-mcp/tests/falsify_mcp_dogfood_001.rs::falsify_mcp_dogfood_001_full_client_session`. **ENFORCED**.
+11. **FALSIFY-MCP-E2E-001** (M4 addition): Real-model end-to-end. `apr.run` on a locally-cached qwen2-0.5b GGUF (env-var `APR_MCP_E2E_MODEL`) decodes content containing the digit "2" within 30s; `apr.qa` MCP wrapper output equals `apr qa --json` direct-CLI output (modulo nondeterministic timestamp/duration/throughput fields). Env-gated — skips via `println!` + early return when the env var is unset (project policy bans `#[ignore]`). Test file: `crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs`. **ENFORCED** (when env-gated).
 
 ### Additional dispatcher invariant (not in `apr-mcp-server-v1.yaml`)
 
@@ -389,7 +390,7 @@ These gates live in `contracts/apr-claude-proxy-v1.yaml` — **outside** `apr-mc
 - [x] Strengthen FALSIFY-MCP-003/-004 from surface tests to mock-subprocess e2e response-shape assertions — PR #889 merged 2026-04-19 (`crates/aprender-mcp/tests/falsify_mcp_003.rs` + `falsify_mcp_004.rs`, 5 tests total; response-shape now byte-verified against mock-subprocess capture)
 - [x] Real-model FALSIFY-MCP-003: `apr.run` decodes "2" within 5s on cached qwen2.5-0.5b — PR #892 merged 2026-04-19 (new gate FALSIFY-MCP-E2E-001; [`crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs::falsify_mcp_e2e_001_apr_run_decodes_two`](../../crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs))
 - [x] Real-model FALSIFY-MCP-004: byte-for-byte `apr qa --json` parity — PR #892 merged 2026-04-19 ([`falsify_mcp_e2e_001_apr_qa_matches_cli_byte_for_byte`](../../crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs))
-- [ ] Claude Code dogfood — 1 full session using only `apr.*` tools (PR #890 open — `feat/mcp-dogfood-conformance`, new gate FALSIFY-MCP-DOGFOOD-001)
+- [x] Claude Code dogfood — 1 full session using only `apr.*` tools — PR #890 merged 2026-04-19 (FALSIFY-MCP-DOGFOOD-001, machine-verified via `crates/aprender-mcp/tests/falsify_mcp_dogfood_001.rs`)
 - [ ] Claude Code integration test (launch `apr mcp`, ask Claude to "run qwen2.5-0.5b with prompt X")
 - [ ] Cursor / Cline manual smoke test
 
@@ -425,8 +426,8 @@ and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
 | Tool call round-trip (non-inference) | <100ms | `apr.validate` on a cached model |
 | `apr.run` first-token latency | <2s | qwen2.5-0.5b-q4km on target hardware |
 | Protocol spec compliance | 100% | MCP conformance suite (external) |
-| Claude Code dogfood | 1 full session using only `apr.*` tools | Manual |
-| 10 falsification gates (FALSIFY-MCP-001..008 + PROGRESS-001 + VALIDATE-001) | all PASS or PARTIAL→PASS by M4 close | CI |
+| Claude Code dogfood | 1 full session using only `apr.*` tools | FALSIFY-MCP-DOGFOOD-001 (CI) |
+| 11 falsification gates (FALSIFY-MCP-001..008 + PROGRESS-001 + DOGFOOD-001 + VALIDATE-001) | all PASS or PARTIAL→PASS by M4 close | CI |
 
 ## Out of Scope (Phase 1)
 
@@ -465,5 +466,5 @@ and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
 **Sponsor**: apr-cli team
 **Delivery**:
 - **v0.31.0** (2026-04-19, tag 62893da32): M1–M3 SHIPPED — 9 tools (`apr.run`, `apr.serve`, `apr.qa`, `apr.trace`, `apr.tensors`, `apr.validate`, `apr.bench`, `apr.finetune`, and dispatch infrastructure), `build.rs` schema+description codegen from `contracts/apr-mcp-tool-schemas-v1.yaml`, `notifications/progress` for `apr.finetune`, `notifications/cancelled` SIGTERM→SIGKILL, JSON Schema Draft 7 meta-validation on every tool input schema in CI, MCP book chapter documenting `.mcp.json` client config.
-- **M4** (in flight): PR #886 merged 2026-04-19 (`contracts/apr-mcp-server-v1.yaml` ACTIVE); PR #889 merged 2026-04-19 (FALSIFY-MCP-003/-004 response-shape e2e gates live, `falsify_mcp_003.rs` + `falsify_mcp_004.rs` = 5 tests); PR #892 merged 2026-04-19 (real-model FALSIFY-MCP-E2E-001 gate ENFORCED, qwen2.5-0.5b decodes "2" within 5s + `apr qa --json` byte-for-byte parity via `falsify_mcp_e2e_001.rs`). Remaining: PRs #890 (Claude-Code dogfood conformance), #891 (progress notifications for `apr.run`) still cycling CI.
+- **M4** (4 of 5 PRs merged 2026-04-19): PR #886 (`contracts/apr-mcp-server-v1.yaml` ACTIVE with exact-8 `FALSIFY-MCP-001..008` pin); PR #889 (FALSIFY-MCP-003/-004 response-shape e2e gates live, `falsify_mcp_003.rs` + `falsify_mcp_004.rs` = 5 tests); PR #892 (real-model FALSIFY-MCP-E2E-001 ENFORCED, qwen2.5-0.5b decodes "2" within 5s + `apr qa --json` byte-for-byte parity via `falsify_mcp_e2e_001.rs`); PR #890 (FALSIFY-MCP-DOGFOOD-001 ENFORCED — real `apr mcp` binary launched as subprocess answers `initialize`+`tools/list`+`tools/call` for all 9 tools within 2s via stdio, `falsify_mcp_dogfood_001.rs`). Remaining: PR #891 (progress notifications for `apr.run` — `workspace-test` workflow flaking on unrelated `test_f203_simd_faster_than_scalar_q4_0` timing check, auto-merge armed SQUASH).
 - **M5+** (planned): per spec v1.2.0 roadmap — plugin marketplace, pre/post-inference hooks.

@@ -979,6 +979,7 @@ name = "aprender-mcp"
 version = "0.31.0"
 dependencies = [
  "anyhow",
+ "assert_cmd",
  "jsonschema 0.28.3",
  "nix 0.29.0",
  "serde",
