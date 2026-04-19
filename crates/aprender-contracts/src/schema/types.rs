@@ -13,7 +13,13 @@ pub struct Contract {
     pub metadata: Metadata,
     /// Equations are optional — kaizen, pipeline, and registry contracts
     /// may define only `proof_obligations` without mathematical equations.
-    #[serde(default)]
+    ///
+    /// Accepts both map form (`equations: { silu: { formula: ... } }`, the
+    /// canonical schema) and sequence form (`equations: [{ id: silu,
+    /// formula: ... }]`, used by several diagnostic/methodology contracts
+    /// predating APR-MONO). The sequence form promotes each item's `id`
+    /// field to the map key.
+    #[serde(default, deserialize_with = "deserialize_equations")]
     pub equations: BTreeMap<String, Equation>,
     #[serde(default)]
     pub proof_obligations: Vec<ProofObligation>,
@@ -137,6 +143,10 @@ pub enum EnforcementLevel {
 /// A mathematical equation extracted from a paper (Phase 1 output).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Equation {
+    /// Default-empty so diagnostic/methodology contracts that use prose
+    /// requirements instead of a formula (e.g.
+    /// `decode-hot-path-prefix-cache-diagnostic-v1`) still parse.
+    #[serde(default)]
     pub formula: String,
     #[serde(default)]
     pub domain: Option<String>,
@@ -174,10 +184,21 @@ pub struct Equation {
 /// `loop_variant`, `old_state`, `subcontract`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProofObligation {
-    #[serde(rename = "type")]
+    /// Obligation category. Defaults to `Invariant` for legacy contracts
+    /// that predate the DbC split (e.g. `eval-harness-humaneval-v1`,
+    /// `publish-manifest-v1`) which ship with just `property:`/`formal:`.
+    #[serde(rename = "type", default)]
     pub obligation_type: ObligationType,
+    /// Human-readable statement of what must hold. Alias `statement`
+    /// accepted for legacy diagnostic contracts (e.g.
+    /// `decode-hot-path-prefix-cache-diagnostic-v1`) whose POs predate
+    /// the canonical `property:` naming.
+    #[serde(default, alias = "statement")]
     pub property: String,
-    #[serde(default)]
+    /// Formal predicate (Rust/Lean syntax). Alias `verification` accepted
+    /// for legacy contracts that ship a shell/pmat-query check instead of
+    /// a formal predicate.
+    #[serde(default, alias = "verification")]
     pub formal: Option<String>,
     #[serde(default)]
     pub tolerance: Option<f64>,
@@ -221,6 +242,14 @@ pub enum ObligationType {
     Classification,
     Independence,
     Termination,
+    /// Memory/IO safety obligation (bounds checks, non-null, etc.). Legacy
+    /// pre-APR-MONO contracts (e.g. `apr-cli-publish-extra-v1`) used this
+    /// spelling; kept for back-compat alongside the 26 other types.
+    Safety,
+    /// Liveness property (eventually-happens). Same legacy contract
+    /// (`apr-cli-publish-extra-v1`) uses this for progress obligations;
+    /// kept for back-compat.
+    Liveness,
     // Eiffel DbC types (Meyer 1997)
     Precondition,
     Postcondition,
@@ -256,6 +285,8 @@ impl std::fmt::Display for ObligationType {
             Self::Classification => "classification",
             Self::Independence => "independence",
             Self::Termination => "termination",
+            Self::Safety => "safety",
+            Self::Liveness => "liveness",
             Self::Precondition => "precondition",
             Self::Postcondition => "postcondition",
             Self::Frame => "frame",
@@ -313,10 +344,27 @@ pub struct EnforcementRule {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FalsificationTest {
     pub id: String,
+    /// What the test asserts. Alias `description` accepted for legacy
+    /// pre-APR-MONO contracts that used the `description:` field name.
+    /// `name:` is NOT aliased because several legacy contracts (e.g.
+    /// `publish-manifest-v1`) ship both `name:` (a slug) and
+    /// `description:` (prose) side-by-side; aliasing both collapses to
+    /// a `duplicate field` error.
+    #[serde(default, alias = "description")]
     pub rule: String,
+    /// The predicted outcome if the rule holds. Alias `expected` accepted
+    /// for legacy contracts (e.g. `expected: exit 0`, `expected: "PASS"`).
+    /// Defaulted because diagnostic contracts often encode prediction
+    /// inside the rule text alone.
+    #[serde(default, alias = "expected")]
     pub prediction: String,
-    #[serde(default)]
+    /// How to run the test. Alias `command` accepted for legacy contracts
+    /// (e.g. shell snippets under `command: |`).
+    #[serde(default, alias = "command")]
     pub test: Option<String>,
+    /// What failure means. Alias `fails_if` accepted for legacy contracts.
+    /// Defaulted because several legacy diagnostic contracts omit it.
+    #[serde(default, alias = "fails_if")]
     pub if_fails: String,
 }
 
@@ -426,9 +474,16 @@ pub struct VerificationSummary {
 }
 
 /// QA gate definition for certeza integration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Legacy diagnostic contracts (e.g.
+/// `decode-hot-path-prefix-cache-diagnostic-v1`) ship a `qa_gate:` block
+/// with only `must_pass:` / `integration:` / `regression_protection:` — no
+/// `id:` or `name:`. All schema fields default so those parse cleanly.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct QaGate {
+    #[serde(default)]
     pub id: String,
+    #[serde(default)]
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -493,6 +548,43 @@ pub struct CoqObligation {
 
 fn coq_status_default() -> String {
     "stub".to_string()
+}
+
+/// Accepts `equations:` as either a map (canonical) or a list-of-dicts
+/// with an `id` field (legacy pre-APR-MONO diagnostic contracts like
+/// `decode-hot-path-prefix-cache-diagnostic-v1`). The list form promotes
+/// each entry's `id` to the map key; entries without `id` fall back to
+/// `equation_{N}` so parsing never silently drops data.
+fn deserialize_equations<'de, D>(d: D) -> Result<BTreeMap<String, Equation>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    use serde_yaml::Value;
+
+    let value = Value::deserialize(d)?;
+    match value {
+        Value::Null => Ok(BTreeMap::new()),
+        Value::Mapping(_) => serde_yaml::from_value(value).map_err(D::Error::custom),
+        Value::Sequence(items) => {
+            let mut out = BTreeMap::new();
+            for (i, mut item) in items.into_iter().enumerate() {
+                let key = match &mut item {
+                    Value::Mapping(m) => m
+                        .remove(Value::String("id".into()))
+                        .and_then(|v| v.as_str().map(ToString::to_string))
+                        .unwrap_or_else(|| format!("equation_{i}")),
+                    _ => format!("equation_{i}"),
+                };
+                let eq: Equation = serde_yaml::from_value(item).map_err(D::Error::custom)?;
+                out.insert(key, eq);
+            }
+            Ok(out)
+        }
+        other => Err(D::Error::custom(format!(
+            "`equations:` must be a map or a list; got {other:?}"
+        ))),
+    }
 }
 
 #[cfg(test)]

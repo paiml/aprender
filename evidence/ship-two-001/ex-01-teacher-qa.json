@@ -1,0 +1,110 @@
+{
+  "model": "/home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr",
+  "passed": true,
+  "gates": [
+    {
+      "name": "capability_match",
+      "passed": true,
+      "message": "Non-GGUF format — capability check not applicable",
+      "duration_ms": 3455,
+      "skipped": false
+    },
+    {
+      "name": "tensor_contract",
+      "passed": true,
+      "message": "339 tensors passed all PMAT-235 contract gates",
+      "value": 339.0,
+      "threshold": 0.0,
+      "duration_ms": 38513,
+      "skipped": false
+    },
+    {
+      "name": "metadata_plausibility",
+      "passed": true,
+      "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)",
+      "value": 4.0,
+      "threshold": 0.0,
+      "duration_ms": 7172,
+      "skipped": false
+    },
+    {
+      "name": "classifier_head",
+      "passed": true,
+      "message": "Skipped: Not requested (use --assert-classifier-head)",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "golden_output",
+      "passed": true,
+      "message": "2 golden test cases passed",
+      "value": 2.0,
+      "threshold": 2.0,
+      "duration_ms": 96535,
+      "skipped": false
+    },
+    {
+      "name": "throughput",
+      "passed": true,
+      "message": "9.0 tok/s >= 1 tok/s threshold",
+      "value": 9.006406989061887,
+      "threshold": 1.0,
+      "duration_ms": 71643,
+      "skipped": false
+    },
+    {
+      "name": "ollama_parity",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-ollama",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_speedup",
+      "passed": true,
+      "message": "Skipped: Only GGUF format supported",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "format_parity",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-format-parity",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "ptx_parity",
+      "passed": true,
+      "message": "Skipped: Skipped by --skip-ptx-parity",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_state_isolation",
+      "passed": true,
+      "message": "Skipped: Only GGUF format supported for GPU state isolation",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "performance_regression",
+      "passed": true,
+      "message": "No regressions >10% vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-7b-instruct-q4k.json",
+      "value": 0.0,
+      "threshold": 0.1,
+      "duration_ms": 0,
+      "skipped": false
+    }
+  ],
+  "gates_executed": 6,
+  "gates_skipped": 6,
+  "total_duration_ms": 224221,
+  "timestamp": "2026-04-17T15:59:11.081346302+00:00",
+  "summary": "All QA gates passed (6 executed, 6 skipped)",
+  "system_info": {
+    "cpu_model": "AMD Ryzen Threadripper 7960X 24-Cores",
+    "gpu_model": "NVIDIA GeForce RTX 4090",
+    "gpu_driver": "570.207"
+  }
+}

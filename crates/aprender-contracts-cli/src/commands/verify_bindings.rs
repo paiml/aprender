@@ -95,10 +95,7 @@ fn derive_src_root(binding_path: &Path, label: &str) -> std::path::PathBuf {
 }
 
 /// Sort the expected names missing from `found` for stable reporting.
-fn compute_missing<'a>(
-    expected: &'a HashSet<String>,
-    found: &HashSet<String>,
-) -> Vec<&'a String> {
+fn compute_missing<'a>(expected: &'a HashSet<String>, found: &HashSet<String>) -> Vec<&'a String> {
     let mut missing: Vec<&String> = expected
         .iter()
         .filter(|n| !found.contains(n.as_str()))

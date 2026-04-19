@@ -1,6 +1,6 @@
 
 fn print_hotspot_table(results: &RealProfileResults, granular: bool) {
-    output::subheader("Per-Operation Hotspots");
+    output::subheader("Per-Operation Hotspots (ungraphed — SKIP_CUDA_GRAPH=1)");
     println!();
 
     let total_time = results.hotspots.iter().map(|h| h.time_us).sum::<f64>();
@@ -55,13 +55,23 @@ fn print_hotspot_table(results: &RealProfileResults, granular: bool) {
     };
     println!("{}", output::table(headers, &rows));
     println!();
+    output::info(
+        "Per-op times include per-launch host overhead (~1-2µs/call).",
+    );
+    output::info(
+        "Graphed replay amortizes launches to ~0.3µs/node — use these",
+    );
+    output::info(
+        "numbers for fusion-target triage, NOT graphed-mode cost estimation.",
+    );
+    println!();
 }
 
 fn print_category_summary(results: &RealProfileResults) {
     let Some(ref cat) = results.category_summary else {
         return;
     };
-    output::subheader("Category Summary");
+    output::subheader("Category Summary (ungraphed)");
     println!();
     let bw = 40;
     let bar = |pct: f64| "█".repeat(((pct / 100.0) * bw as f64) as usize);
@@ -113,18 +123,21 @@ fn print_kernel_launch_overhead(results: &RealProfileResults) {
     if results.kernel_launch_overhead_us <= 0.0 {
         return;
     }
-    output::subheader("Kernel Launch Overhead (F-PROFILE-009)");
+    output::subheader("Non-Kernel Host Overhead (F-PROFILE-009)");
     println!();
     println!(
         "  Overhead: {:.0}µs ({:.1}% of decode time)",
         results.kernel_launch_overhead_us, results.kernel_launch_overhead_pct
     );
-    let msg = if results.kernel_launch_overhead_pct > 20.0 {
-        "WARNING: >20% overhead — consider kernel fusion".red()
-    } else if results.kernel_launch_overhead_pct > 10.0 {
-        "NOTE: 10-20% overhead — moderate, may benefit from CUDA graph".yellow()
+    println!("  (= graphed-per-token decode − ungraphed-per-token kernel sum)");
+    println!("  Captures argmax sync, H2D/D2H copies, graph-replay dispatch,");
+    println!("  and any kernels not instrumented by the brick profiler.");
+    let msg = if results.kernel_launch_overhead_pct > 40.0 {
+        "Large non-kernel overhead — investigate sampling sync (gpu_argmax D2H), graph replay dispatch".red()
+    } else if results.kernel_launch_overhead_pct > 20.0 {
+        "Moderate non-kernel overhead — per-token sync or missed instrumentation".yellow()
     } else {
-        "OK: <10% overhead — launch latency is not a bottleneck".green()
+        "Small non-kernel overhead — kernels dominate decode time".green()
     };
     println!("  {msg}");
     println!();

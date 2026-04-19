@@ -773,7 +773,11 @@ fn analyze_manifest_quality(manifest: &presentar_yaml::Manifest) -> QualityScore
 fn score_structural(manifest: &presentar_yaml::Manifest, widget_count: usize) -> f64 {
     let widget_score = (widget_count.min(20) as f64 / 20.0) * 10.0;
     let section_score = (manifest.layout.sections.len().min(5) as f64 / 5.0) * 8.0;
-    let layout_score = if manifest.layout.columns > 0 { 7.0 } else { 0.0 };
+    let layout_score = if manifest.layout.columns > 0 {
+        7.0
+    } else {
+        0.0
+    };
     widget_score + section_score + layout_score
 }
 

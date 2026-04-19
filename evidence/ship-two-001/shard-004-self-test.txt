@@ -1,0 +1,4 @@
+[self-test] ref pass@1 = 84.7600%
+[self-test] merged pass@1 = 84.7561%
+[self-test] delta = 0.0039 pp (threshold 0.01 pp)
+FALSIFY-SHARD-004 PASS

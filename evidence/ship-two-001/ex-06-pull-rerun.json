@@ -1,0 +1,14 @@
+{
+  "timestamp_utc": "2026-04-18T15:38:05+02:00",
+  "model_id": "paiml/qwen2.5-coder-7b-apache-q4k-v1",
+  "pulled_format": "gguf",
+  "pulled_path": "/home/noah/.cache/pacha/models/7bcabb852fedb36b.gguf",
+  "manifest_matched": "contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-gguf.yaml",
+  "ac_ex_005_sha256": "PASS",
+  "ac_ex_005_declared": "e6cac5d642b042641b308a3ea5d3fa1eb48aa80c48dea5877a7b4efa886e7981",
+  "ac_ex_005_computed": "e6cac5d642b042641b308a3ea5d3fa1eb48aa80c48dea5877a7b4efa886e7981",
+  "ac_ex_006_python_valid": "PASS",
+  "prompt": "def fib(n):",
+  "output_excerpt": "=== APR Run ===\n\nSource: /home/noah/.cache/pacha/models/7bcabb852fedb36b.gguf\n[GH-129] Early kernel preload: 49 modules compiled\n[PMAT-053] FP8 cache warmup failed (non-fatal): CUDA stream synchronization failed: CUDA driver error: CUDA_ERROR_ILLEGAL_ADDRESS (code: 700)\n[GH-181] Workspace reinit failed (non-fatal): GPU memory allocation failed: CUDA driver error: CUDA_ERROR_ILLEGAL_ADDRESS (code: 700)\n[PARITY-GATE] has_moe=false intermediate_dim=18944\n[PAR-054] Workspace not ready, using non-gra",
+  "overall": "PASS"
+}

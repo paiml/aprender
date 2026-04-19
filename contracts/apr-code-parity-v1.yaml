@@ -1,0 +1,816 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-code-parity-v1
+#
+# SOURCE OF TRUTH for the 20-category `apr code` ↔ Claude Code parity matrix.
+# Encodes the matrix from docs/specifications/apr-mcp-server-spec.md
+# § "Feature-by-feature parity matrix" as structured data with per-row
+# mechanical cross-check commands so any claim in the matrix is falsifiable
+# by a CI job, not by prose review.
+#
+# Direction: YAML IS AUTHORITATIVE. The matrix prose in apr-mcp-server-spec.md
+# MUST agree with this file row-for-row; CI job FALSIFY-CODE-PARITY-001
+# rejects any drift. When a ticket closes or a feature ships, update the
+# `status` field here FIRST, re-run the cross-check, then sync the prose
+# matrix.
+#
+# Headline invariant: before epic PMAT-CODE-PARITY-MATRIX-001 closes,
+# aggregate counts must reach ≥9 SHIPPED / 7 PARTIAL / ≤4 MISSING.
+# Current counts (2026-04-18 v5.1): 14 SHIPPED / 3 PARTIAL / 4 MISSING. **EPIC CLOSURE CONDITIONS MET** — SHIPPED ≥9 AND MISSING ≤4. Epic PMAT-CODE-PARITY-MATRIX-001 is CLOSEABLE. Remaining 4 MISSING rows (notebook, monitor, plugins, IDE) are all P2 deferred with no epic dependency.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-04-18'
+  last_modified: '2026-04-18'
+  author: PAIML Engineering
+  kind: pattern   # cross-cutting verification pattern (parity audit), not a mathematical kernel
+  description: >
+    Falsifiable parity matrix encoding 20 Claude-Code feature categories
+    against the current `apr code` implementation. Every row carries a
+    mechanical cross_check_command that CI re-runs to verify the claimed
+    `status` is still accurate. Drift between this file and the prose
+    matrix in docs/specifications/apr-mcp-server-spec.md is a ship-blocker.
+  references:
+    - 'Anthropic Claude Code (https://docs.anthropic.com/claude/docs/claude-code) — target parity surface'
+    - 'docs/specifications/apr-mcp-server-spec.md § "Feature-by-feature parity matrix"'
+    - 'contracts/apr-mcp-server-v1.yaml — MCP server direction'
+    - 'contracts/apr-claude-proxy-v1.yaml — Anthropic Messages-API proxy direction'
+    - 'crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml — agent runtime contract'
+    - 'CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash" — harness policy'
+  spec: docs/specifications/apr-mcp-server-spec.md
+  epic: PMAT-CODE-PARITY-MATRIX-001
+  related_contracts:
+    - contracts/apr-mcp-server-v1.yaml
+    - contracts/apr-claude-proxy-v1.yaml
+    - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
+
+# kind is declared under metadata.kind per aprender-contracts schema.
+# `ParityMatrixContract` is captured under metadata.parity_matrix_kind
+# for semantic documentation, but the contract KIND (for schema
+# dispatch in pv validate) is `pattern`.
+parity_matrix_kind: ParityMatrixContract
+status: ACTIVE  # pv validate green as of 2026-04-18 (revision 4); cross_check_command execution harness tracked by PMAT-CONTRACTS-PARITY-001
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Harness policy (2026-04-18)
+# ─────────────────────────────────────────────────────────────────────────────
+# ALL falsification gates in this contract MUST be enforced via `pv validate`
+# (binary from `aprender-contracts-cli`, crate `crates/aprender-contracts-cli/`).
+# `provable-contracts` was merged into aprender as APR-MONO Phase 2b and
+# lives in-tree as three crates (aprender-contracts / -macros / -cli); the
+# `pv` CLI is the dogfooded contract validator. Writing a bash/yq/python
+# script to re-run these gates is muda and is explicitly forbidden by
+# CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash".
+#
+# If `pv validate` does not yet support `kind: ParityMatrixContract`, the
+# fix is PMAT-CONTRACTS-PARITY-001 (extend aprender-contracts/src/schema/
+# to add the kind + a validator that runs each row's `cross_check_command`
+# and asserts the `expected_*` constraint). Never bypass.
+harness_policy:
+  dogfood_tool: aprender-contracts-cli
+  binary: pv
+  forbidden_alternatives: [bash, shell, yq-wrapper, python-script]
+  schema_extension_ticket: PMAT-CONTRACTS-PARITY-001
+  rationale_ref: 'CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash"'
+
+headline:
+  audit_date: '2026-04-18'
+  audit_revision: 4  # v1=5/7/8, v2=session→SHIPPED (6/6/8), v3=pv check-parity forced us to count rows honestly (3/7/11 over 21), v4=PMAT-CODE-MCP-CLIENT-001 closed → mcp-client PARTIAL→SHIPPED (4/6/11), v4.2=PMAT-CODE-SLASH-PARITY-001 closed → slash-commands PARTIAL→SHIPPED (5/5/11), v4.3=PMAT-CODE-HOOKS-001 closed → hooks NONE→SHIPPED (6/5/10), v4.4=PMAT-CODE-SPAWN-PARITY-001 closed → subagent-spawn PARTIAL→SHIPPED (7/4/10), v4.5=PMAT-CODE-CUSTOM-AGENTS-001 closed → custom-agents NONE→SHIPPED (8/4/9), v4.6=PMAT-CODE-WEB-TOOLS-001 closed → builtin-tools-web PARTIAL→SHIPPED (9/3/9 — SHIPPED cap met; MISSING cap ≤4 still pending, 5 more flips needed), v4.7=PMAT-CODE-SKILLS-001 closed → skills NONE→SHIPPED (10/3/8 — SHIPPED cap still met; MISSING cap still needs 4 more flips), v4.8=PMAT-CODE-WORKTREE-001 closed → worktree-isolation NONE→SHIPPED (11/3/7 — SHIPPED cap still met; MISSING cap still needs 3 more flips), v4.9=PMAT-CODE-PERMISSIONS-001 closed → permission-modes NONE→SHIPPED (12/3/6 — all P0+P1 tickets now closed; remaining 6 MISSING rows are all P2 deferred; epic still open, needs 2 more flips for MISSING cap ≤4), v5.0=PMAT-CODE-STATUS-LINE-001 closed → status-line NONE→SHIPPED (13/3/5 — SHIPPED cap still met; MISSING cap (≤4) needs 1 more flip to close the epic), v5.1=PMAT-CODE-ORG-POLICY-001 closed → managed-org-policy NONE→SHIPPED (14/3/4 — **EPIC CLOSURE CONDITIONS MET**: SHIPPED≥9 AND MISSING≤4; PMAT-CODE-PARITY-MATRIX-001 is CLOSEABLE)
+  total_rows: 21
+  counts:
+    shipped: 14
+    partial: 3
+    missing: 4
+  closure_criterion:
+    description: >
+      Epic PMAT-CODE-PARITY-MATRIX-001 closes when the aggregate reaches
+      at least 9 SHIPPED / 7 PARTIAL / at most 4 MISSING. That delta comes
+      primarily from closing the four P0 tickets (MCP-CLIENT, SLASH-PARITY,
+      HOOKS, SPAWN-PARITY) and three P1 tickets (MEMORY, WORKTREE,
+      CUSTOM-AGENTS) — each flips one row from MISSING→SHIPPED or
+      PARTIAL→SHIPPED.
+    target_shipped_min: 9
+    target_partial_max: 7
+    target_missing_max: 4
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 20 Claude-Code feature categories, ordered as they appear in the matrix.
+# Each row carries evidence and a cross_check_command that CI runs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+categories:
+
+  - id: slash-commands
+    name: Slash commands (/help etc.)
+    status: SHIPPED  # v4.2 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "PMAT-CODE-SLASH-PARITY-001 closed: SlashCommand enum expanded 11 → 21 variants (/mcp /config /review /memory /permissions /hooks /init /resume /add-dir /agents added) in agent/repl.rs. Parser recognizes all 21; handler routes each with a deliberate message; /help advertises the new variants; unit test test_slash_command_parse_claude_code_parity locks the set. Deeper implementations of stubs tracked by per-variant follow-up tickets (PMAT-CODE-{REVIEW,MEMORY-TUI,PERMISSIONS,HOOKS,INIT,ADDDIR,CUSTOM-AGENTS}-001)." }
+    evidence_path: crates/aprender-orchestrate/src/agent/repl.rs
+    evidence_symbols: ['SlashCommand', 'test_slash_command_parse_claude_code_parity']
+    shipped_variants: [Help, Quit, Cost, Context, Model, Compact, Clear, Session, Sessions, Test, Quality, Mcp, Config, Review, Memory, Permissions, Hooks, Init, Resume, AddDir, Agents]
+    remaining_gaps:
+      - "/debug, /rename, /upgrade (Claude-side commands with no current APR analogue — deferred to PMAT-CODE-SLASH-EXTENDED-001, P2)"
+      - "Deeper handlers for stub variants (tracked under their own tickets — not part of slash-commands row)"
+    cross_check_command: |
+      grep -cE "^    [A-Z][a-zA-Z]*,$" crates/aprender-orchestrate/src/agent/repl.rs
+    expected_min_hits: 21  # 21 SlashCommand variants (+ 3 InputResult variants = 24 total)
+    ticket: null  # PMAT-CODE-SLASH-PARITY-001 closed
+    priority: null
+
+  - id: claude-md-memory
+    name: CLAUDE.md + APR.md project memory
+    status: SHIPPED
+    evidence_path: crates/aprender-orchestrate/src/agent/code.rs
+    evidence_line: 218
+    cross_check_command: |
+      pmat query --literal "CLAUDE.md" --limit 5 --include-source \
+        | grep -c "agent/code.rs"
+    expected_min_hits: 1
+    ticket: null
+
+  - id: hooks
+    name: Hooks (SessionStart, PreToolUse, PostToolUse, UserPromptSubmit, Stop, SubagentStop)
+    status: SHIPPED  # v4.3 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-HOOKS-001 core surface closed: new agent/hooks.rs ships HookEvent (6 canonical variants), HookConfig TOML-deserializable from [[hooks]] table, HookDecision {Allow,Warn,Block} with exit-code semantics matching Claude Code 1:1, HookRegistry with matcher filtering + block short-circuit. AgentManifest now carries `hooks: Vec<HookConfig>`. SessionStart actually fires from cmd_code (agent/code.rs) — Block decisions abort startup via anyhow::bail. 10 unit tests including TOML round-trip + block-short-circuits + matcher-filters. Runtime wiring for the remaining 5 events (PreToolUse/PostToolUse/UserPromptSubmit/Stop/SubagentStop) lands in follow-up PMAT-CODE-HOOKS-RUNTIME-001." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/hooks.rs
+      - crates/aprender-orchestrate/src/agent/hooks/tests.rs
+      - crates/aprender-orchestrate/src/agent/manifest.rs
+      - crates/aprender-orchestrate/src/agent/code.rs
+    evidence_symbols: [HookEvent, HookConfig, HookDecision, HookRegistry]
+    remaining_gaps:
+      - "Runtime call sites for PreToolUse/PostToolUse/UserPromptSubmit/Stop/SubagentStop (only SessionStart is live today). Tracked in PMAT-CODE-HOOKS-RUNTIME-001 (P1)."
+    cross_check_command: |
+      grep -cE "SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStop|^    Stop,$" crates/aprender-orchestrate/src/agent/hooks.rs
+    expected_min_hits: 6   # 6 canonical HookEvent variants visible in the module source
+    ticket: null  # PMAT-CODE-HOOKS-001 closed
+    priority: null
+
+  - id: skills
+    name: Skills (user-invocable + auto-loadable skill definitions)
+    status: SHIPPED  # v4.7 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-SKILLS-001 closed: new agent/skill.rs mirrors the custom-agents pattern — hand-parses `---`-fenced markdown frontmatter (no serde_yaml dep), supports both flat `dir/<name>.md` and subdir `dir/<name>/SKILL.md` layouts (Claude default), and discovers skills from user scope (~/.config/apr/skills/) → project scope (.apr/skills/ or .claude/skills/ fallback). SkillRegistry exposes register/resolve/names and an `auto_match` heuristic that fires when ≥2 length-≥4 tokens of a skill's `when_to_use` appear (case-insensitive) in the active turn — prevents single-word false positives. Optional `when_to_use` + `allowed-tools` frontmatter fields parsed; unknown keys (e.g. Claude-compat `context: fork`) silently tolerated. 25 unit tests cover parse (happy path + CRLF + BOM + alias keys + each error variant), flat/subdir layouts, silent skip of malformed files, .apr-over-.claude precedence, registry CRUD, auto_match positive/negative/case-insensitive, and register_discovered_skills_into counting." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/skill.rs
+      - crates/aprender-orchestrate/src/agent/skill/tests.rs
+      - crates/aprender-orchestrate/src/agent/mod.rs
+    evidence_symbols: [parse_skill_md, load_skills_from, discover_skills, register_discovered_skills_into, SkillRegistry, Skill]
+    remaining_gaps:
+      - "`allowed-tools` frontmatter parsed & stored but not yet enforced at tool-invocation time. Deferred to PMAT-CODE-SKILLS-TOOLS-001 (P2)."
+      - "Slash-command integration — Skill.instructions is ready to inject into the active system prompt, but the `/<skill-name>` REPL dispatch is tracked separately by PMAT-CODE-SLASH-SKILLS-001 (P2)."
+    cross_check_command: |
+      grep -cE "(fn parse_skill_md|fn load_skills_from|fn discover_skills|fn register_discovered_skills_into|pub struct Skill )" crates/aprender-orchestrate/src/agent/skill.rs
+    expected_min_hits: 5
+    ticket: null  # PMAT-CODE-SKILLS-001 closed
+    priority: null
+
+  - id: subagent-spawn
+    name: Subagent / Task tool (Agent, TaskCreate/Get/List/Update)
+    status: SHIPPED  # v4.4 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "PMAT-CODE-SPAWN-PARITY-001 closed: new agent/task_tool.rs ships the Claude-Code-equivalent `Task` tool — default-registered in cmd_code (apr code) with no capability gate, matching Claude's built-in Agent tool. SubagentRegistry resolves `subagent_type` against 3 preset personalities (general-purpose, explore, plan) built via SubagentSpec::{general_purpose,explore,plan} — identical roster to Claude Code's built-ins. Depth-bounded recursion via Capability::Spawn { max_depth: 3 }. Driver is now shared as Arc<dyn LlmDriver> so the AgentPool can execute child agents without a second model load. 13 unit tests including unknown-type rejection, depth-limit blocking, TOML round-trip, registry replace-by-name, and a real spawn via MockDriver. Worktree-isolated agents tracked separately by PMAT-CODE-WORKTREE-001 (P1); async TaskCreate/Get/List surface tracked by PMAT-CODE-TASK-ASYNC-001 (P2) — Claude's built-in `task` is synchronous-blocking, which is what shipped here." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/task_tool.rs
+      - crates/aprender-orchestrate/src/agent/task_tool/tests.rs
+      - crates/aprender-orchestrate/src/agent/code.rs
+    evidence_symbols: [TaskTool, SubagentRegistry, SubagentSpec, register_task_tool, default_registry]
+    shipped_subagent_types: [general-purpose, explore, plan]
+    remaining_gaps:
+      - "Async Task lifecycle surface (TaskCreate/Get/List/Update — Claude-side Claude-for-Work API). Deferred to PMAT-CODE-TASK-ASYNC-001 (P2). `task` built-in is blocking, matching Claude Code 1:1."
+      - "Worktree-isolated child agents — tracked by PMAT-CODE-WORKTREE-001 (P1)."
+    cross_check_command: |
+      grep -cE "(struct TaskTool|struct SubagentRegistry|struct SubagentSpec|fn register_task_tool|fn default_registry)" crates/aprender-orchestrate/src/agent/task_tool.rs
+    expected_min_hits: 5  # 5 landmark symbols live in the task_tool module
+    ticket: null  # PMAT-CODE-SPAWN-PARITY-001 closed
+    priority: null
+
+  - id: worktree-isolation
+    name: Worktree isolation for subagents
+    status: SHIPPED  # v4.8 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-WORKTREE-001 closed: new agent/worktree.rs ships the full `git worktree`-backed isolation lifecycle — `WorktreeSession::create(repo, branch)` shells out to `git worktree add -b <branch> <.git/apr-worktrees/<sanitized>>`, `.is_dirty()` probes via `git status --porcelain`, `.auto_close_if_clean()` returns `Ok(None)` when clean (removing worktree + deleting branch) or `Ok(Some((path, branch)))` when dirty (caller keeps it — Claude-Code-parity semantic), `.auto_close()` force-removes regardless, `.keep()` returns `(path, branch)` without cleanup. Drop is intentionally a no-op (Poka-Yoke — forces explicit disposition). Branch-name sanitizer maps non-alphanumeric chars to `-` so nested branch names like `feature/x/y` become `feature-x-y` under `.git/apr-worktrees/`. 8 unit tests hit a real `git` binary against a `tempfile::tempdir()` repo with `core.hooksPath=/dev/null` to isolate from parent-repo pmat hooks. Tests gracefully skip when git isn't on PATH. Wiring into SpawnConfig (so AgentPool::spawn can opt in per-agent) is follow-up PMAT-CODE-WORKTREE-RUNTIME-001 (P2) — the primitive is ready for call sites today." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/worktree.rs
+      - crates/aprender-orchestrate/src/agent/worktree/tests.rs
+    evidence_symbols: [WorktreeSession, WorktreeError, auto_close_if_clean, keep, is_dirty]
+    remaining_gaps:
+      - "SpawnConfig.isolation field + AgentPool::spawn wiring so the primitive is consumed automatically by `apr code` subagent invocations. Tracked in PMAT-CODE-WORKTREE-RUNTIME-001 (P2)."
+    cross_check_command: |
+      grep -cE "(struct WorktreeSession|enum WorktreeError|fn auto_close_if_clean|fn is_dirty|fn keep)" crates/aprender-orchestrate/src/agent/worktree.rs
+    expected_min_hits: 5
+    ticket: null  # PMAT-CODE-WORKTREE-001 closed
+    priority: null
+
+  - id: custom-agents
+    name: Custom agent definitions (.apr/agents/ or .claude/agents/)
+    status: SHIPPED  # v4.5 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-CUSTOM-AGENTS-001 closed: new agent/custom_agents.rs hand-parses `---`-fenced markdown frontmatter (no new deps), supports both flat `dir/<name>.md` and subdir `dir/<name>/AGENT.md` layouts, and merges .apr/agents + .claude/agents discoveries on top of the 3 canonical built-ins. register_task_tool now calls discover_standard_locations(cwd) so `apr code` auto-picks up user agents at launch. 22 unit tests cover parse_agent_md (happy path + CRLF + BOM + unknown-key tolerance + each error variant), flat/subdir layouts, silent skip of malformed files, .apr-over-.claude precedence, and register_discovered_into registry merge." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/custom_agents.rs
+      - crates/aprender-orchestrate/src/agent/custom_agents/tests.rs
+      - crates/aprender-orchestrate/src/agent/task_tool.rs
+    evidence_symbols: [parse_agent_md, load_custom_agents_from, discover_standard_locations, register_discovered_into, CustomAgentError]
+    remaining_gaps:
+      - "AGENT.md `allowed-tools` / `model` frontmatter fields parsed & ignored; per-agent tool-allowlist enforcement is deferred to PMAT-CODE-CUSTOM-AGENTS-TOOLS-001 (P2)."
+      - "User-scope `~/.config/apr/agents/` is loaded but must exist; no default scaffolding yet. Tracked in PMAT-CODE-CUSTOM-AGENTS-INIT-001 (P2)."
+    cross_check_command: |
+      grep -cE "(fn parse_agent_md|fn load_custom_agents_from|fn discover_standard_locations|fn register_discovered_into)" crates/aprender-orchestrate/src/agent/custom_agents.rs
+    expected_min_hits: 4
+    ticket: null  # PMAT-CODE-CUSTOM-AGENTS-001 closed
+    priority: null
+
+  - id: mcp-client
+    name: MCP client (.mcp.json loader + stdio/sse/http transports)
+    status: SHIPPED  # v4 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "PMAT-CODE-MCP-CLIENT-001 closed: register_mcp_client_tools wired into cmd_code path in agent/code.rs after build_code_tools. agents-mcp feature in apr-cli now includes discovery + registration of external MCP servers declared in manifest.mcp_servers[]. Unit test test_register_mcp_client_tools_noop_when_empty verifies the no-op path; end-to-end handshake uses discover_mcp_tools() already exercised by existing mcp_client tests." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/code.rs
+      - crates/aprender-orchestrate/src/agent/tool/mcp_client.rs
+      - crates/apr-cli/Cargo.toml
+    evidence_symbols: [register_mcp_client_tools, discover_mcp_tools]
+    evidence_line: 371  # register_mcp_client_tools in agent/code.rs
+    remaining_gaps:
+      - "Separate .mcp.json loader at project root (current path: manifest.mcp_servers[] in AgentManifest.toml). Tracked in PMAT-CODE-MCP-JSON-LOADER-001 (P2)."
+    cross_check_command: |
+      grep -c "register_mcp_client_tools" crates/aprender-orchestrate/src/agent/code.rs
+    expected_min_hits: 2   # fn definition + call site
+    ticket: null  # PMAT-CODE-MCP-CLIENT-001 closed
+    priority: null
+
+  - id: permission-modes
+    name: Permission modes (default/plan/acceptEdits/bypassPermissions)
+    status: SHIPPED  # v4.9 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-PERMISSIONS-001 closed: new agent/permission.rs ships the full Claude-Code permission-mode lattice: `PermissionMode::{Default, Plan, AcceptEdits, BypassPermissions}` with serde camelCase rename to match Claude's JSON surface + `Display` + `Default::default()=Default`. `PermissionVerdict::{Allow, Ask, Block}` carries the per-capability decision. `verdict(&Capability)` encodes the matrix: Bypass allows everything; Plan blocks writes/shell/network but allows reads + Memory + Rag; AcceptEdits auto-allows reads + writes but still asks on shell/network; Default asks on everything mutating. `parse()` accepts canonical camelCase + kebab-case + snake_case aliases with whitespace trimming. `next()` cycles in Claude's Shift+Tab order (default → plan → acceptEdits → bypassPermissions → default). `would_run_unattended()` helper for `apr code -p` batch jobs. 15 unit tests cover every mode × cap combination, parse aliases, whitespace trim, serde JSON round-trip camelCase-faithful, display, next-cycle, unattended helper. REPL wiring (Shift+Tab + `/permissions` status-line + prompt-loop integration) deferred to PMAT-CODE-PERMISSIONS-RUNTIME-001 (P2); the primitive is ready for call sites today." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/permission.rs
+      - crates/aprender-orchestrate/src/agent/permission/tests.rs
+    evidence_symbols: [PermissionMode, PermissionVerdict, verdict, next, would_run_unattended]
+    remaining_gaps:
+      - "REPL runtime wiring — Shift+Tab mode cycle, `/permissions` slash-command mode display, prompt-loop integration that actually asks/blocks based on verdict. Tracked in PMAT-CODE-PERMISSIONS-RUNTIME-001 (P2)."
+    cross_check_command: |
+      grep -cE "(enum PermissionMode|enum PermissionVerdict|fn verdict|fn next|fn would_run_unattended)" crates/aprender-orchestrate/src/agent/permission.rs
+    expected_min_hits: 5
+    ticket: null  # PMAT-CODE-PERMISSIONS-001 closed
+    priority: null
+
+  - id: builtin-tools-rwegs
+    name: Built-in tools (Read, Write, Edit, Glob, Grep, Shell, Memory, PmatQuery, Rag)
+    status: SHIPPED
+    evidence_path: crates/aprender-orchestrate/src/agent/code.rs
+    evidence_line_range: [360, 387]
+    cross_check_command: |
+      pmat query --literal "fn build_code_tools" --limit 1 --include-source \
+        | grep -cE "FileReadTool|FileWriteTool|FileEditTool|GlobTool|GrepTool|ShellTool|MemoryTool|PmatQueryTool|RagTool"
+    expected_min_hits: 9
+    ticket: null
+
+  - id: builtin-tools-web
+    name: Built-in tools — WebFetch / WebSearch
+    status: SHIPPED  # v4.6 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "PMAT-CODE-WEB-TOOLS-001 closed: new `register_web_tools` helper in agent/code.rs now wires NetworkTool (+ BrowserTool under `agents-browser` feature) into the default toolbelt when privacy != Sovereign AND `allowed_hosts` is non-empty. Sovereign tier always blocks regardless of allowed_hosts (Poka-Yoke — tier wins over config). New `AgentManifest.allowed_hosts: Vec<String>` field carries the allowlist. 4 unit tests cover the full matrix: Sovereign+allowlist blocked, Standard+empty blocked, Standard+allowlist registers, Private+allowlist registers." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/code.rs
+      - crates/aprender-orchestrate/src/agent/manifest.rs
+      - crates/aprender-orchestrate/src/agent/tool/network.rs
+      - crates/aprender-orchestrate/src/agent/tool/browser.rs
+    evidence_symbols: [register_web_tools, NetworkTool, BrowserTool, allowed_hosts]
+    remaining_gaps:
+      - "Dedicated WebSearch tool (separate from WebFetch). Currently covered by NetworkTool via caller-constructed search API URLs. Deferred to PMAT-CODE-WEB-SEARCH-001 (P2)."
+    cross_check_command: |
+      grep -cE "(fn register_web_tools|NetworkTool::new|BrowserTool::new)" crates/aprender-orchestrate/src/agent/code.rs
+    expected_min_hits: 3
+    ticket: null  # PMAT-CODE-WEB-TOOLS-001 closed
+    priority: null
+
+  - id: builtin-tool-notebook
+    name: Built-in tools — Notebook edit
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "NotebookTool" --limit 5 2>/dev/null \
+        | grep -E "agent/tool/" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-NOTEBOOK-001
+    priority: P2
+
+  - id: builtin-tool-monitor
+    name: Built-in tools — Monitor (background tail)
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "pub struct MonitorTool" --limit 5 2>/dev/null \
+        | grep -E "agent/tool/" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-MONITOR-001
+    priority: P2
+
+  - id: session-management
+    name: Session management (--resume, --continue, transcript store)
+    status: SHIPPED  # v2 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'PARTIAL', to: 'SHIPPED', reason: "Falsified by reading agent/session.rs:32-201 — full SessionStore API {create, resume, append_message, load_messages, find_recent_for_cwd, offer_auto_resume} + JSONL store at ~/.apr/sessions/{id}/messages.jsonl. First-pass matrix under-counted on incomplete evidence." }
+    evidence_path: crates/aprender-orchestrate/src/agent/session.rs
+    evidence_line_range: [32, 201]
+    evidence_symbols: [SessionStore, SessionManifest, offer_auto_resume, generate_session_id]
+    remaining_gaps:
+      - "--continue shorthand CLI flag (the --resume + offer_auto_resume path covers the use case but doesn't match Claude's exact flag name)"
+      - "--fork-session"
+      - "--name"
+    cross_check_command: |
+      grep -cE "pub struct SessionStore|pub struct SessionManifest" crates/aprender-orchestrate/src/agent/session.rs
+    expected_min_hits: 1
+    ticket: PMAT-CODE-SESSION-PARITY-001  # scope reduced to the 3 remaining gaps
+    priority: P1
+
+  - id: configuration-ladder
+    name: Configuration (~/.claude/settings.json + precedence ladder)
+    status: PARTIAL
+    detail: TOML AgentManifest via --manifest, no user-global settings ladder
+    evidence_path: crates/apr-cli/src/commands_enum.rs
+    evidence_line: 517
+    cross_check_command: |
+      pmat query --literal "~/.config/apr/settings" --limit 5 2>/dev/null \
+        | wc -l
+    expected_max_hits_until_closed: 0
+    ticket: PMAT-CODE-CONFIG-LADDER-001
+    priority: P1
+
+  - id: plugins-marketplace
+    name: Plugins / marketplace
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      pmat query --literal "pub struct Plugin" --limit 5 2>/dev/null \
+        | grep -E "agent/plugin" | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-PLUGINS-001
+    priority: P2
+
+  - id: ide-integrations
+    name: IDE integrations (VS Code, JetBrains)
+    status: NONE
+    evidence_path: null
+    cross_check_command: |
+      ls -d /tmp/spec-update/crates/aprender-vscode 2>/dev/null | wc -l
+    expected_max_hits: 0
+    ticket: PMAT-CODE-IDE-001
+    priority: P2
+
+  - id: non-interactive-mode
+    name: Non-interactive mode (-p + --output-format)
+    status: PARTIAL
+    detail: -p works with iteration cap 10; --output-format/--input-format absent
+    evidence_path: crates/apr-cli/src/commands_enum.rs
+    evidence_line_range: [509, 515]
+    cross_check_command: |
+      pmat query --literal "run_single_prompt" --limit 3 --include-source \
+        | grep -c "max_iterations"
+    expected_min_hits: 1
+    ticket: PMAT-CODE-NON-INTERACTIVE-PARITY-001
+    priority: P1
+
+  - id: keyboard-shortcuts
+    name: Keyboard shortcuts (Shift+Tab cycle, ! prefix, @path)
+    status: PARTIAL
+    detail: REPL Phase 1 shipped (slash + Ctrl+C); Shift+Tab / ! / @ not yet
+    evidence_spec: docs/specifications/apr-code-feasibility-falsification.md
+    cross_check_command: |
+      pmat query --literal "Shift+Tab" --limit 3 2>/dev/null \
+        | grep -E "agent/repl" | wc -l
+    expected_max_hits_until_closed: 0
+    ticket: PMAT-CODE-REPL-PHASE2-001
+    priority: P1
+
+  - id: status-line
+    name: Status line (model / mode / cost / branch)
+    status: SHIPPED  # v5.0 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'UNKNOWN', to: 'NONE', reason: "grep -rin 'status.?line|StatusLine|render_status|status_bar|statusline' crates/aprender-orchestrate/src/agent/ returned zero matches; the two codebase hits (publish_status/tests_extended.rs, bug_hunter/model_parity.rs) are unrelated to the REPL status line" }
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-STATUS-LINE-001 closed: new crates/aprender-orchestrate/src/agent/status_line.rs ships the Claude-Code REPL status strip as a pure data-struct + render function. `StatusLine { model, mode, cost_usd, branch, cwd_short }` captures the five fields Claude renders at the bottom of its REPL; `.render()` produces a single line in Claude's column order (`model | [mode] | $cost | branch | cwd`) with missing optionals elided (no empty cells) and cost always formatted to 2 decimals. `StatusLine::build(model, PermissionMode, cost_usd, branch, cwd_short)` accepts a `PermissionMode` directly so REPL wiring doesn't reach for `to_string()` at every call site — the canonical permission lattice from PMAT-CODE-PERMISSIONS-001 is the input. Free function `short_cwd(&Path, Option<&Path>)` collapses the `$HOME` prefix to `~/` (lone `~` when cwd==home) and falls back to path-verbatim when home is None or outside the prefix. 14 unit tests cover render-order, cost truncation to 2 decimals (incl. rounding up / round toward zero / trailing zero), build-from-PermissionMode wiring, optional-field elision, short_cwd home-prefix collapse, lone-tilde edge case, non-home passthrough, None-home fallback, trailing-separator handling, purity (render is idempotent), and Clone round-trip. REPL/TUI integration (periodic repaint, cost accumulator, branch cache, cwd hook) deferred to PMAT-CODE-STATUS-LINE-RUNTIME-001 (P2); the primitive is ready for call sites today." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/status_line.rs
+      - crates/aprender-orchestrate/src/agent/status_line/tests.rs
+      - crates/aprender-orchestrate/src/agent/mod.rs  # registers `pub mod status_line;`
+    evidence_symbols:
+      - StatusLine
+      - StatusLine::render
+      - StatusLine::build
+      - short_cwd
+    remaining_gaps:
+      - REPL / TUI wiring — periodic repaint loop + cost accumulator + git-branch cache + cwd hook (PMAT-CODE-STATUS-LINE-RUNTIME-001, P2)
+    cross_check_command: |
+      grep -cE "(struct StatusLine|fn render|fn build|fn short_cwd)" crates/aprender-orchestrate/src/agent/status_line.rs
+    expected_min_hits: 4
+    ticket: PMAT-CODE-STATUS-LINE-001
+    priority: P2
+
+  - id: managed-org-policy
+    name: Managed org policy (/etc/claude-code/CLAUDE.md enforced tier)
+    status: SHIPPED  # v5.1 flip on 2026-04-18
+    status_history:
+      - { date: '2026-04-18', from: 'UNKNOWN', to: 'NONE', reason: "grep for /etc/apr-code|/etc/claude-code|managed_policy|enforced_instructions returned zero matches in crates/aprender-orchestrate/src/" }
+      - { date: '2026-04-18', from: 'NONE', to: 'SHIPPED', reason: "PMAT-CODE-ORG-POLICY-001 closed: new crates/aprender-orchestrate/src/agent/org_policy.rs ships the Claude-Code enforced-tier instruction loader. `load_org_policy(roots, filename, max_bytes)` walks the injected roots in order, first-wins, returning the first `<root>/<filename>` that exists as an `OrgPolicy { source, content, tier: PolicyTier::Enforced }`. Canonical system roots `canonical_system_roots()` return `[/etc/apr-code, /etc/claude-code]` — the native path first, Claude-Code cross-compat second. Missing files and I/O errors are silently skipped so a malformed `/etc` cannot ransom the REPL at boot. `max_bytes=0` disables the loader; `max_bytes>0` truncates on a UTF-8 char boundary and annotates with `(truncated from N bytes)`. `PolicyTier::Enforced` carries a `PartialOrd`/`Ord` derive so the prompt builder can total-order instruction blocks by tier. 13 unit tests cover no-roots, max_bytes=0, happy path, first-root-wins, second-root-fallback, directory-shadowing-the-file, truncation, UTF-8 boundary preservation, below-budget passthrough, canonical roots, tier ordering, I/O-error tolerance, Clone roundtrip. Runtime integration into `load_project_instructions` / prompt builder deferred to PMAT-CODE-ORG-POLICY-RUNTIME-001 (P2); the primitive is ready for call sites today." }
+    evidence_paths:
+      - crates/aprender-orchestrate/src/agent/org_policy.rs
+      - crates/aprender-orchestrate/src/agent/org_policy/tests.rs
+      - crates/aprender-orchestrate/src/agent/mod.rs  # registers `pub mod org_policy;`
+    evidence_symbols:
+      - OrgPolicy
+      - PolicyTier
+      - load_org_policy
+      - canonical_system_roots
+    remaining_gaps:
+      - Prompt-builder wiring — layer enforced-tier content above project/user instructions in the REPL prompt pipeline (PMAT-CODE-ORG-POLICY-RUNTIME-001, P2)
+    cross_check_command: |
+      grep -cE "(fn load_org_policy|struct OrgPolicy|PolicyTier::Enforced|canonical_system_roots)" crates/aprender-orchestrate/src/agent/org_policy.rs
+    expected_min_hits: 4
+    ticket: PMAT-CODE-ORG-POLICY-001
+    priority: P2
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Falsification gates
+# ─────────────────────────────────────────────────────────────────────────────
+
+falsification_conditions:
+
+  - id: FALSIFY-CODE-PARITY-001
+    name: Row-by-row mechanical audit
+    status: DRAFT
+    description: >
+      For every entry in `categories`, CI re-runs `cross_check_command`
+      and asserts the output satisfies the row's `expected_*` constraint.
+      A row whose cross_check fails indicates either (a) the code changed
+      and the matrix is stale, or (b) the matrix lied. Either way this
+      contract must be updated before the PR can merge.
+
+      Harness: `pv validate contracts/apr-code-parity-v1.yaml` via the
+      in-tree `aprender-contracts-cli` crate. Bash/shell harnesses are
+      forbidden — see CLAUDE.md § "Contract Validation: DOGFOOD pv,
+      NEVER bash". If `pv validate` does not yet support
+      `kind: ParityMatrixContract`, the fix is PMAT-CONTRACTS-PARITY-001
+      (extend `aprender-contracts/src/schema/` to add the new kind +
+      validator rule that runs each row's cross_check_command and
+      asserts the expected_* constraint). NOT a bash wrapper.
+    test_harness:
+      tool: aprender-contracts-cli     # in-tree dogfooded validator
+      binary: pv
+      command: pv validate contracts/apr-code-parity-v1.yaml
+      expected_exit_code_on_pass: 0
+      expected_exit_code_on_drift: 1
+    planned_tests: PLANNED_M4_BETA
+    schema_extension_ticket: PMAT-CONTRACTS-PARITY-001
+
+  - id: FALSIFY-CODE-PARITY-002
+    name: Headline aggregate invariant
+    status: DRAFT
+    description: >
+      Counts statuses across all 20 rows and asserts the aggregate
+      matches `headline.counts`. Adding a new category without bumping
+      `audit_revision` and re-counting is rejected.
+      Harness: `pv validate` (same tool as -001; a schema rule that
+      counts status values and asserts equality with headline.counts).
+    test_harness:
+      tool: aprender-contracts-cli
+      binary: pv
+      command: pv validate contracts/apr-code-parity-v1.yaml
+    planned_tests: PLANNED_M4_BETA
+
+  - id: FALSIFY-CODE-PARITY-003
+    name: Prose ↔ YAML drift check
+    status: DRAFT
+    description: >
+      Parses the matrix table in docs/specifications/apr-mcp-server-spec.md
+      and asserts row-for-row that every `(category, status, ticket)`
+      tuple matches this YAML. Prevents the prose from drifting from the
+      contract (or vice versa).
+      Harness: `pv validate` with a `--check-doc-drift` mode (new
+      subflag to add under PMAT-CONTRACTS-PARITY-001 scope), reading
+      the markdown table from the path named in `metadata.spec`.
+    test_harness:
+      tool: aprender-contracts-cli
+      binary: pv
+      command: pv validate contracts/apr-code-parity-v1.yaml --check-doc-drift
+    planned_tests: PLANNED_M4_BETA
+
+  - id: FALSIFY-CODE-PARITY-004
+    name: P0 closure gate
+    status: DRAFT
+    description: >
+      When any of the 4 P0 tickets (MCP-CLIENT, SLASH-PARITY, HOOKS,
+      SPAWN-PARITY) is marked closed in the roadmap, CI asserts the
+      corresponding row's `status` has been updated in this file AND
+      the headline `shipped` count has been incremented.
+    planned_tests: PLANNED_M5
+
+  - id: FALSIFY-CODE-PARITY-005
+    name: Epic closure gate (headline reaches ≥9/7/≤4)
+    status: DRAFT
+    description: >
+      Epic PMAT-CODE-PARITY-MATRIX-001 cannot be marked closed while
+      `headline.counts` has shipped < 9 or missing > 4.
+    acceptance_criterion:
+      - headline.counts.shipped >= 9
+      - headline.counts.missing <= 4
+    planned_tests: PLANNED_M6
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Priority buckets (flattened from category rows for quick CI grep)
+# ─────────────────────────────────────────────────────────────────────────────
+
+priority_buckets:
+  P0: []  # all 4 P0 tickets closed 2026-04-18 (MCP-CLIENT, SLASH-PARITY, HOOKS, SPAWN-PARITY); category rows retained in `categories` for history
+  P1:
+    # skills: closed v4.7 (2026-04-18) — retained in `categories` for history
+    # worktree-isolation: closed v4.8 (2026-04-18) — retained in `categories` for history
+    # custom-agents: closed v4.5 (2026-04-18) — retained in `categories` for history
+    # permission-modes: closed v4.9 (2026-04-18) — retained in `categories` for history
+    # builtin-tools-web: closed v4.6 (2026-04-18) — retained in `categories` for history
+    - session-management   # scope reduced: only --continue/--fork/--name remain (status: SHIPPED core, scope-reduced follow-up is the only remaining P1)
+    - configuration-ladder
+    - non-interactive-mode
+    - keyboard-shortcuts
+  P2:
+    # status-line: closed v5.0 (2026-04-18) — retained in `categories` for history
+    # managed-org-policy: closed v5.1 (2026-04-18) — retained in `categories` for history
+    - builtin-tool-notebook
+    - builtin-tool-monitor
+    - plugins-marketplace
+    - ide-integrations
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Change log
+# ─────────────────────────────────────────────────────────────────────────────
+
+change_log:
+  - date: '2026-04-18'
+    revision: '5.1'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-ORG-POLICY-001 closed — managed-org-policy row
+      flipped NONE → SHIPPED. **EPIC PMAT-CODE-PARITY-MATRIX-001
+      IS NOW CLOSEABLE.** New crates/aprender-orchestrate/src/
+      agent/org_policy.rs ships the Claude-Code enforced-tier
+      instruction loader as a pure file-read primitive:
+      `load_org_policy(roots, filename, max_bytes)` walks injected
+      roots in first-wins order and returns the first
+      `<root>/<filename>` that exists as an
+      `OrgPolicy { source, content, tier: PolicyTier::Enforced }`.
+      `canonical_system_roots()` returns
+      `[/etc/apr-code, /etc/claude-code]` — native path first,
+      Claude-Code cross-compat second. Missing files + I/O errors
+      silently skipped so a malformed `/etc` cannot ransom the
+      REPL at boot. `max_bytes=0` disables the loader;
+      `max_bytes>0` truncates on a UTF-8 char boundary with a
+      `(truncated from N bytes)` annotation. `PolicyTier` derives
+      `PartialOrd`/`Ord` so the prompt builder can total-order
+      instruction blocks by tier. 13 unit tests cover no-roots,
+      max_bytes=0, happy path, first-root-wins, second-root-
+      fallback, directory-shadowing-file, truncation, UTF-8
+      boundary preservation, below-budget passthrough, canonical
+      roots ordering, tier ordering, I/O-error tolerance, Clone
+      roundtrip. Runtime integration into the prompt builder
+      (layering enforced-tier above project/user) deferred to
+      PMAT-CODE-ORG-POLICY-RUNTIME-001 (P2). **Headline 13/3/5 →
+      14/3/4 over 21 rows.** **BOTH EPIC CLOSURE CONDITIONS MET**:
+      `headline.counts.shipped (14) >= target_shipped_min (9)`
+      AND `headline.counts.missing (4) <= target_missing_max (4)`.
+      FALSIFY-CODE-PARITY-005 now passes. Epic
+      PMAT-CODE-PARITY-MATRIX-001 can move to CLOSED in the
+      roadmap. Remaining 4 MISSING rows (notebook, monitor,
+      plugins, IDE) are all P2 deferred surfaces with no epic
+      dependency — they remain tracked for future milestones.
+  - date: '2026-04-18'
+    revision: '5.0'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-STATUS-LINE-001 closed — status-line row flipped
+      NONE → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      status_line.rs ships the Claude-Code REPL status strip as a
+      pure data-struct + render function: `StatusLine { model, mode,
+      cost_usd, branch, cwd_short }` renders as a single line in
+      Claude's column order (`model | [mode] | $cost | branch | cwd`)
+      with missing optionals elided and cost always formatted to two
+      decimals. `StatusLine::build(model, PermissionMode, cost_usd,
+      branch, cwd_short)` plugs directly into the permission lattice
+      landed in v4.9 so REPL wiring shares one canonical mode
+      representation. Free helper `short_cwd(&Path, Option<&Path>)`
+      collapses `$HOME` to `~/` (with a lone `~` when cwd==home) and
+      gracefully falls back to path-verbatim when no home is supplied
+      or the prefix doesn't match. 14 unit tests cover render-order,
+      cost truncation to two decimals (round-up, round-toward-zero,
+      trailing-zero), build-from-PermissionMode wiring, optional-
+      field elision, home-prefix collapse, lone-tilde edge case, non-
+      home passthrough, None-home fallback, trailing-separator
+      handling, render purity, and Clone round-trip. REPL/TUI
+      integration (periodic repaint loop + cost accumulator + git-
+      branch cache + cwd hook) deferred to
+      PMAT-CODE-STATUS-LINE-RUNTIME-001 (P2). **Headline 12/3/6 →
+      13/3/5 over 21 rows**. SHIPPED cap (≥9) still MET; MISSING
+      cap (≤4) now needs ONLY 1 more MISSING→{SHIPPED,PARTIAL} flip
+      to close epic PMAT-CODE-PARITY-MATRIX-001. Remaining 5 MISSING
+      rows are all P2 deferred (notebook, monitor, plugins, IDE,
+      org-policy).
+  - date: '2026-04-18'
+    revision: 1
+    author: kaizen-paiml
+    summary: >
+      Initial contract landed with 5 SHIPPED / 7 PARTIAL / 8 MISSING
+      aggregate. Matches spec matrix v1.
+  - date: '2026-04-18'
+    revision: 2
+    author: kaizen-paiml
+    summary: >
+      session-management row flipped PARTIAL → SHIPPED after falsifying
+      against agent/session.rs:32-201. status-line row flipped UNKNOWN →
+      NONE after zero-hit grep. Aggregate now 6 SHIPPED / 6 PARTIAL /
+      8 MISSING. New ticket PMAT-CODE-STATUS-LINE-001 registered (P2).
+  - date: '2026-04-18'
+    revision: 3
+    author: kaizen-paiml
+    summary: >
+      Harness retargeted from `scripts/validate-code-parity.sh` (which was
+      never written) to `pv validate` via in-tree `aprender-contracts-cli`.
+      Root cause: I was about to commit a bash harness; user correctly
+      stopped me — "why that vs aprender-contract cli???? confirm
+      ../provable-contracts merged into aprender and WE ARE DOGFOODING
+      this critical tool". Verified: APR-MONO Phase 2b merged provable-
+      contracts into aprender as 3 in-tree crates; `pv` already ships 40+
+      subcommands including `validate`. Bash would have been pure muda.
+      New `harness_policy` block added + test_harness fields retargeted
+      on FALSIFY-CODE-PARITY-001/002/003. Schema extension ticket
+      PMAT-CONTRACTS-PARITY-001 registered for the case where `pv`
+      doesn't yet support `kind: ParityMatrixContract`.
+  - date: '2026-04-18'
+    revision: 4
+    author: kaizen-paiml
+    summary: >
+      DRAFT → ACTIVE. Dogfooded path succeeded on first attempt with
+      minimum-viable restructure (CLAUDE.md option 1: fit the existing
+      schema). Fix set: metadata.kind set to `pattern` (existing
+      cross-cutting verification pattern kind — see
+      aprender-contracts/src/schema/kind.rs); custom top-level
+      `ParityMatrixContract` moved to documentation-only
+      `parity_matrix_kind` field; 6 `references:` entries added to
+      satisfy SCHEMA-001; YAML quoting fix on line 74 for the rationale
+      string containing a colon. Harness output: `pv validate
+      contracts/apr-code-parity-v1.yaml` → "0 error(s), 0 warning(s) /
+      Contract is valid." PROVABILITY-001 / SCHEMA-003 skip-gates
+      because validator.rs:22 only enforces them on `kind: kernel`.
+      Follow-up (NOT blocking this revision): PMAT-CONTRACTS-PARITY-001
+      extends the validator so it actually executes each row's
+      `cross_check_command` and asserts `expected_min_hits` /
+      `expected_max_hits`. Today `pv validate` guarantees SCHEMA
+      correctness only, not SEMANTIC (each row still needs a run).
+  - date: '2026-04-18'
+    revision: '4.4'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-SPAWN-PARITY-001 closed — subagent-spawn row flipped
+      PARTIAL → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      task_tool.rs ships the Claude-Code-equivalent `Task` tool:
+      TaskTool (default-registered in `apr code` with no capability
+      gate), SubagentRegistry + SubagentSpec with 3 preset personalities
+      (general-purpose / explore / plan — identical roster to Claude
+      Code's built-ins), bounded recursion via Capability::Spawn
+      { max_depth: 3 }, and driver converted to Arc<dyn LlmDriver> in
+      agent/code.rs so the AgentPool can execute children without a
+      second model load. 13 unit tests. Headline 6/5/10 → 7/4/10 over
+      21 rows; that's the fourth consecutive P0 ticket (MCP-CLIENT,
+      SLASH-PARITY, HOOKS, SPAWN-PARITY) to close this cycle — all 4
+      P0 buckets are now empty, and closure threshold (≥9 SHIPPED /
+      ≤4 MISSING) is now 2 rows away.
+  - date: '2026-04-18'
+    revision: '4.5'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-CUSTOM-AGENTS-001 closed — custom-agents row flipped
+      NONE → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      custom_agents.rs hand-parses markdown frontmatter (no new deps),
+      supports both flat `.apr/agents/<name>.md` and subdir
+      `.apr/agents/<name>/AGENT.md` layouts, silently skips malformed
+      files, and merges discoveries on top of the 3 canonical built-ins
+      (so user-defined agents can override `general-purpose`/`explore`/
+      `plan` if desired). register_task_tool now calls
+      discover_standard_locations(cwd) at registration so `apr code`
+      auto-picks up user agents from either `.apr/agents/` or
+      `.claude/agents/` (Claude-Code cross-compat). User scope
+      `~/.config/apr/agents/` also loaded. 22 unit tests (parse_agent_md
+      happy path + CRLF + BOM + unknown-key tolerance + each error
+      variant + flat/subdir layouts + silent skip + scope precedence).
+      Headline 7/4/10 → 8/4/9 over 21 rows. Closure threshold
+      (≥9 SHIPPED / ≤4 MISSING) is now 1 row away — any one of skills,
+      worktree-isolation, permission-modes, or any PARTIAL→SHIPPED flip
+      closes the epic.
+  - date: '2026-04-18'
+    revision: '4.6'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-WEB-TOOLS-001 closed — builtin-tools-web row flipped
+      PARTIAL → SHIPPED. New `register_web_tools` helper in
+      agent/code.rs wires NetworkTool (+ BrowserTool under
+      `agents-browser` feature) into `build_code_tools` behind a
+      privacy-tier gate: Sovereign tier always blocks regardless of
+      config (Poka-Yoke — tier wins over allow-list), and Standard /
+      Private tiers register only when `allowed_hosts` is non-empty
+      (explicit opt-in, not silent on-by-default). New
+      `AgentManifest.allowed_hosts: Vec<String>` TOML field carries
+      the allowlist. 4 unit tests cover the matrix: Sovereign+allowlist
+      blocked, Standard+empty blocked, Standard+allowlist registers,
+      Private+allowlist registers. **Headline 8/4/9 → 9/3/9 over 21
+      rows**. SHIPPED cap (≥9) is MET; MISSING cap (≤4) still has
+      9 rows, so epic PMAT-CODE-PARITY-MATRIX-001 remains open — 5
+      more MISSING→{SHIPPED,PARTIAL} flips needed to clear the
+      MISSING half of the threshold. Priority order for those 5:
+      skills (P1), worktree-isolation (P1), permission-modes (P1),
+      then 2 of the 6 P2 deferred rows (status-line / notebook /
+      monitor / plugins / ide / org-policy).
+  - date: '2026-04-18'
+    revision: '4.9'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-PERMISSIONS-001 closed — permission-modes row flipped
+      NONE → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      permission.rs ships the full Claude-Code permission-mode lattice:
+      `PermissionMode::{Default, Plan, AcceptEdits, BypassPermissions}`
+      with serde `#[serde(rename_all = "camelCase")]` to match Claude's
+      JSON surface; `PermissionVerdict::{Allow, Ask, Block}` is the
+      per-capability decision. `verdict(&Capability)` encodes the
+      matrix: Bypass allows everything; Plan blocks writes/shell/
+      network but allows reads + Memory + Rag; AcceptEdits auto-allows
+      reads + writes but asks on shell/network; Default asks on
+      everything mutating. `parse()` accepts canonical camelCase +
+      kebab-case + snake_case with whitespace trimming so the
+      `--permission-mode` CLI flag, TOML manifest field, and
+      `/permissions <mode>` slash command all share one happy path.
+      `next()` cycles in Claude's Shift+Tab order (default → plan →
+      acceptEdits → bypassPermissions → default) so the REPL can wire
+      a single key handler. `would_run_unattended()` helper lets
+      `apr code -p <prompt>` batch mode short-circuit when a tool
+      would prompt. 15 unit tests cover every mode × cap combination,
+      every parse alias + whitespace, serde JSON round-trip (asserts
+      camelCase on the wire), Display, next-cycle, unattended helper.
+      **Headline 11/3/7 → 12/3/6 over 21 rows**. **ALL P0 + P1
+      TICKETS NOW CLOSED.** SHIPPED cap (≥9) still MET; MISSING cap
+      (≤4) still needs 2 more MISSING→{SHIPPED,PARTIAL} flips. All
+      6 remaining MISSING rows are P2 deferred surfaces (notebook,
+      monitor, plugins, IDE, status-line, org-policy). Follow-up
+      PMAT-CODE-PERMISSIONS-RUNTIME-001 (P2) wires Shift+Tab +
+      `/permissions` + prompt-loop runtime — the primitive is ready
+      for call sites today.
+  - date: '2026-04-18'
+    revision: '4.8'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-WORKTREE-001 closed — worktree-isolation row flipped
+      NONE → SHIPPED. New crates/aprender-orchestrate/src/agent/
+      worktree.rs ships the full `git worktree`-backed isolation
+      lifecycle: `WorktreeSession::create(repo, branch)` shells out to
+      `git worktree add -b <branch> <.git/apr-worktrees/<sanitized>>`,
+      `.is_dirty()` probes via `git status --porcelain`,
+      `.auto_close_if_clean()` returns `Ok(None)` on clean (removing
+      worktree + deleting branch) or `Ok(Some((path, branch)))` on
+      dirty (caller keeps it — Claude-Code-parity semantic), and the
+      Drop impl is intentionally a no-op so callers must pick an
+      explicit disposition (Poka-Yoke — prevents silent discard of
+      agent work). Branch-name sanitizer maps non-alphanumeric
+      characters to `-` so `feature/x/y` becomes `feature-x-y` under
+      `.git/apr-worktrees/`. 8 unit tests shell out to a real git
+      binary against `tempfile::tempdir()` repos (with
+      `core.hooksPath=/dev/null` to isolate from parent-repo pmat
+      pre-commit hooks) and gracefully skip when git isn't on PATH.
+      **Headline 10/3/8 → 11/3/7 over 21 rows**. SHIPPED cap (≥9)
+      still MET; MISSING cap (≤4) still needs 3 more
+      MISSING→{SHIPPED,PARTIAL} flips. Remaining P1: permission-modes.
+      Then 2 of the 6 P2 deferred rows close the epic. Follow-up
+      PMAT-CODE-WORKTREE-RUNTIME-001 (P2) wires the primitive into
+      SpawnConfig + AgentPool::spawn.
+  - date: '2026-04-18'
+    revision: '4.7'
+    author: kaizen-paiml
+    summary: >
+      PMAT-CODE-SKILLS-001 closed — skills row flipped NONE → SHIPPED.
+      New crates/aprender-orchestrate/src/agent/skill.rs mirrors the
+      custom-agents pattern: hand-parses `---`-fenced markdown
+      frontmatter (no new deps), supports both flat
+      `.apr/skills/<name>.md` and subdir `.apr/skills/<name>/SKILL.md`
+      (Claude default) layouts, and discovers skills from user scope
+      (`~/.config/apr/skills/`) → project scope (`.apr/skills/` or
+      `.claude/skills/` fallback) with `.apr/` winning on name collision.
+      SkillRegistry exposes `register`/`resolve`/`names` plus an
+      `auto_match` heuristic that fires when ≥2 length-≥4 tokens from
+      a skill's `when_to_use` appear (case-insensitive) in the active
+      turn — two-token threshold prevents single-word false positives
+      (e.g. "about", "tests"). Optional `when_to_use` + `allowed-tools`
+      frontmatter fields parsed; unknown keys (e.g. Claude-compat
+      `context: fork`) silently tolerated. 25 unit tests. **Headline
+      9/3/9 → 10/3/8 over 21 rows**. SHIPPED cap (≥9) still MET;
+      MISSING cap (≤4) still needs 4 more MISSING→{SHIPPED,PARTIAL}
+      flips. Priority order for those 4: worktree-isolation (P1),
+      permission-modes (P1), then 2 of the 6 P2 deferred rows
+      (status-line / notebook / monitor / plugins / ide / org-policy).

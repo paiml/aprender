@@ -1,0 +1,72 @@
+{
+  "_comment": [
+    "F-PUB-LFS-001 FALSIFY-PUB-LFS-001 (file-size dispatch) live-on-teacher evidence.",
+    "Dry-run of `apr publish` against the actual SHIP-TWO-001 teacher directory",
+    "with the canonical cuda+xet release binary. Proves all three teacher",
+    "artifacts route to the Xet CAS path (not HTTP LFS, not reject_oversized_file).",
+    "Does NOT perform a network upload — no HF_TOKEN required."
+  ],
+  "timestamp": "2026-04-18T14:12:00Z",
+  "spec_version": "SPEC-SHIP-TWO-001 v2.8.1",
+  "contract": {
+    "file": "contracts/apr-publish-hf-large-file-v1.yaml",
+    "version": "1.1.0",
+    "gate": "FALSIFY-PUB-LFS-001",
+    "gate_name": "file_size_dispatch"
+  },
+  "binary": {
+    "path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "features": ["cuda", "xet"],
+    "tag": "0.31.0 (5ca162e24)"
+  },
+  "teacher_directory": "/mnt/nvme-raid0/models/ship-two-001",
+  "dispatch_verification": [
+    {
+      "file": "qwen2.5-coder-7b-instruct-q4k.apr",
+      "size_bytes": 8035635524,
+      "size_gib": 8.03,
+      "expected_route": "Xet CAS",
+      "actual_route": "Xet CAS (>5 GiB)",
+      "status": "PASS"
+    },
+    {
+      "file": "qwen2.5-coder-7b-instruct-q4k.gguf",
+      "size_bytes": 8037129408,
+      "size_gib": 8.04,
+      "expected_route": "Xet CAS",
+      "actual_route": "Xet CAS (>5 GiB)",
+      "status": "PASS"
+    },
+    {
+      "file": "qwen2.5-coder-7b-instruct-q4k.safetensors",
+      "size_bytes": 15231938404,
+      "size_gib": 15.23,
+      "expected_route": "Xet CAS",
+      "actual_route": "Xet CAS (>5 GiB)",
+      "status": "PASS"
+    }
+  ],
+  "gate_result": {
+    "gate": "FALSIFY-PUB-LFS-001",
+    "status": "PASS",
+    "method": "dry-run dispatch reporter",
+    "sibling_evidence": "evidence/ship-two-001/ex-04-xet-dryrun-teacher.txt"
+  },
+  "what_this_proves": [
+    "All three teacher artifacts exceed the 5 GiB HTTP LFS threshold and route to Xet",
+    "The dispatch gate in upload_via_lfs correctly calls should_use_xet(size)",
+    "The canonical binary has the Xet feature linked in (not the FAIL-fallback message)",
+    "The sizes reported by the CLI match the contract-recorded sizes to the byte"
+  ],
+  "what_this_does_not_prove": [
+    "Whether the live Xet CAS + LFS pointer commit will succeed (FALSIFY-PUB-LFS-010)",
+    "Whether the xet-core chunking/dedup/xorb phases are correct (delegated to hf-xet 1.5.1 reference impl)",
+    "Whether sha256 round-trip matches after upload (PM-002 post-upload gate)"
+  ],
+  "next_action": {
+    "gate": "FALSIFY-PUB-LFS-010",
+    "blocker": "HF_TOKEN required in ship environment",
+    "command": "HF_TOKEN=$TOKEN apr publish /mnt/nvme-raid0/models/ship-two-001 paiml/qwen2.5-coder-7b-apache-q4k-v1 --manifest contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-apr.yaml",
+    "expected_output": "3x Xet CAS uploads + 3x LFS pointer commits, evidence written to evidence/ship-two-001/ex-04-xet-upload.{log,json}"
+  }
+}

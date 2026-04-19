@@ -381,8 +381,7 @@ fn apply_parameter(params: &mut ManifestParameters, name: &str, val: &str) -> Re
 }
 
 fn parse_named<T: std::str::FromStr>(val: &str, field: &str) -> Result<T> {
-    val.parse()
-        .map_err(|_| PachaError::Validation(format!("Invalid {field}: {val}")))
+    val.parse().map_err(|_| PachaError::Validation(format!("Invalid {field}: {val}")))
 }
 
 // ============================================================================

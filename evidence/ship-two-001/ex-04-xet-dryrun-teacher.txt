@@ -1,0 +1,5 @@
+=== DRY RUN: Would publish to paiml/qwen2.5-coder-7b-apache-q4k-v1 ===
+  - /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr (8035.6 MB) [→ Xet CAS (>5 GiB)]
+  - /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf (8037.1 MB) [→ Xet CAS (>5 GiB)]
+  - /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors (15231.9 MB) [→ Xet CAS (>5 GiB)]
+=== DRY RUN COMPLETE ===
