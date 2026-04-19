@@ -461,5 +461,5 @@ and marking FALSIFY-MCP-003/-004 PASS instead of PARTIAL:
 **Sponsor**: apr-cli team
 **Delivery**:
 - **v0.31.0** (2026-04-19, tag 62893da32): M1–M3 SHIPPED — 9 tools (`apr.run`, `apr.serve`, `apr.qa`, `apr.trace`, `apr.tensors`, `apr.validate`, `apr.bench`, `apr.finetune`, and dispatch infrastructure), `build.rs` schema+description codegen from `contracts/apr-mcp-tool-schemas-v1.yaml`, `notifications/progress` for `apr.finetune`, `notifications/cancelled` SIGTERM→SIGKILL, JSON Schema Draft 7 meta-validation on every tool input schema in CI, MCP book chapter documenting `.mcp.json` client config.
-- **M4** (in flight): PRs #886/#889/#890/#891/#892 — additional tool coverage + conformance hardening.
+- **M4** (in flight): PR #886 merged 2026-04-19 (`contracts/apr-mcp-server-v1.yaml` ACTIVE); PRs #889/#890/#891/#892 open — additional tool coverage + conformance hardening.
 - **M5+** (planned): per spec v1.2.0 roadmap — plugin marketplace, pre/post-inference hooks.
