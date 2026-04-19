@@ -496,7 +496,9 @@ fn handle_slash_command(
             );
         }
         SlashCommand::Permissions => {
-            println!("  Permission modes not yet implemented — tracked by PMAT-CODE-PERMISSIONS-001.");
+            println!(
+                "  Permission modes not yet implemented — tracked by PMAT-CODE-PERMISSIONS-001."
+            );
         }
         SlashCommand::Hooks => {
             println!("  Hooks not yet implemented — tracked by PMAT-CODE-HOOKS-001.");
@@ -511,7 +513,9 @@ fn handle_slash_command(
             println!("  /add-dir not yet implemented — tracked by PMAT-CODE-ADDDIR-001.");
         }
         SlashCommand::Agents => {
-            println!("  Custom agents not yet implemented — tracked by PMAT-CODE-CUSTOM-AGENTS-001.");
+            println!(
+                "  Custom agents not yet implemented — tracked by PMAT-CODE-CUSTOM-AGENTS-001."
+            );
         }
         SlashCommand::Unknown(name) => {
             println!("  {} Unknown command: {name}. Type /help for commands.", "?".bright_yellow());

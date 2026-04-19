@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-04-19
+
+### Fixed
+
+- **`apr qa` `format_parity` gate** now SKIPs when the primary model is non-GGUF (SafeTensors, APR, ONNX) instead of FAILing the overall QA run (#907). Matches the pre-existing SKIP semantics of the 5 other inference-only gates when golden-output / golden-input / reference tokenizer are unavailable. Regression tests assert `skipped=true && passed=true` for both SafeTensors and APR primaries.
+
+### Added
+
+- **MCP M5 scaffold** (#908) — optional `pmcp = "2.3"` dependency on `aprender-mcp` behind a new `pmcp-dispatcher` feature flag (default off). Zero behaviour change: the hand-rolled stdio dispatcher still runs by default. Unblocks the M5 migration path (pmcp::Server delegation + FALSIFY-MCP-009 byte-identical parity test + SSE/WebSocket transports).
+
 ## [0.31.0] - 2026-04-19
 
 ### Added

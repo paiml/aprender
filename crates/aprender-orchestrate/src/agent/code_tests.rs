@@ -60,10 +60,7 @@ fn test_web_tools_registered_on_standard_privacy_with_allowlist() {
     m.privacy = PrivacyTier::Standard;
     m.allowed_hosts = vec!["docs.anthropic.com".into()];
     let tools = build_code_tools(&m);
-    assert!(
-        tools.get("network").is_some(),
-        "Standard + allowlist must register network tool"
-    );
+    assert!(tools.get("network").is_some(), "Standard + allowlist must register network tool");
 }
 
 #[test]
@@ -72,10 +69,7 @@ fn test_web_tools_registered_on_private_privacy_with_allowlist() {
     m.privacy = PrivacyTier::Private;
     m.allowed_hosts = vec!["github.com".into()];
     let tools = build_code_tools(&m);
-    assert!(
-        tools.get("network").is_some(),
-        "Private + allowlist must register network tool"
-    );
+    assert!(tools.get("network").is_some(), "Private + allowlist must register network tool");
 }
 
 #[test]
@@ -479,10 +473,7 @@ fn test_scale_prompt_large() {
 #[test]
 fn test_register_mcp_client_tools_noop_when_empty() {
     let manifest = build_default_manifest();
-    assert!(
-        manifest.mcp_servers.is_empty(),
-        "default manifest should declare zero mcp_servers"
-    );
+    assert!(manifest.mcp_servers.is_empty(), "default manifest should declare zero mcp_servers");
     let mut tools = build_code_tools(&manifest);
     let before = tools.len();
     register_mcp_client_tools(&mut tools, &manifest);

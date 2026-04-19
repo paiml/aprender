@@ -113,10 +113,7 @@ fn parse_skill_md_empty_body_errors() {
 fn load_skills_flat_layout() {
     let dir = tempfile::tempdir().expect("tempdir");
     write(&dir.path().join("a.md"), VALID);
-    write(
-        &dir.path().join("b.md"),
-        "---\nname: b\ndescription: db\n---\ninstructions-b\n",
-    );
+    write(&dir.path().join("b.md"), "---\nname: b\ndescription: db\n---\ninstructions-b\n");
     write(&dir.path().join("readme.txt"), "skip");
 
     let skills = load_skills_from(dir.path());

@@ -68,13 +68,8 @@ fn build_converts_permission_mode_to_canonical_string() {
 
 #[test]
 fn build_passes_through_optionals_untouched() {
-    let s = StatusLine::build(
-        "m",
-        PermissionMode::Plan,
-        0.5,
-        Some("br".into()),
-        Some("~/x".into()),
-    );
+    let s =
+        StatusLine::build("m", PermissionMode::Plan, 0.5, Some("br".into()), Some("~/x".into()));
     assert_eq!(s.branch.as_deref(), Some("br"));
     assert_eq!(s.cwd_short.as_deref(), Some("~/x"));
     assert_eq!(s.cost_usd, 0.5);

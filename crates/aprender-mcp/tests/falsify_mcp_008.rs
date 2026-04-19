@@ -62,15 +62,27 @@ const CODEGEN_CONSTANTS: &[(&str, &str)] = &[
 /// codegen path for tool descriptions matches YAML byte-for-byte, independent
 /// of the live `ToolDefinition` wiring.
 const CODEGEN_DESCRIPTIONS: &[(&str, &str)] = &[
-    ("apr.version", aprender_mcp::schemas::APR_VERSION_DESCRIPTION),
-    ("apr.validate", aprender_mcp::schemas::APR_VALIDATE_DESCRIPTION),
-    ("apr.tensors", aprender_mcp::schemas::APR_TENSORS_DESCRIPTION),
+    (
+        "apr.version",
+        aprender_mcp::schemas::APR_VERSION_DESCRIPTION,
+    ),
+    (
+        "apr.validate",
+        aprender_mcp::schemas::APR_VALIDATE_DESCRIPTION,
+    ),
+    (
+        "apr.tensors",
+        aprender_mcp::schemas::APR_TENSORS_DESCRIPTION,
+    ),
     ("apr.bench", aprender_mcp::schemas::APR_BENCH_DESCRIPTION),
     ("apr.qa", aprender_mcp::schemas::APR_QA_DESCRIPTION),
     ("apr.trace", aprender_mcp::schemas::APR_TRACE_DESCRIPTION),
     ("apr.run", aprender_mcp::schemas::APR_RUN_DESCRIPTION),
     ("apr.serve", aprender_mcp::schemas::APR_SERVE_DESCRIPTION),
-    ("apr.finetune", aprender_mcp::schemas::APR_FINETUNE_DESCRIPTION),
+    (
+        "apr.finetune",
+        aprender_mcp::schemas::APR_FINETUNE_DESCRIPTION,
+    ),
 ];
 
 fn contract_path() -> PathBuf {
@@ -329,7 +341,8 @@ fn codegen_description_constants_match_yaml() {
             .and_then(|v| v.as_str())
             .unwrap_or_else(|| panic!("contract entry for {tool_name} missing `description`"));
         assert_eq!(
-            *codegen_desc, yaml_desc,
+            *codegen_desc,
+            yaml_desc,
             "FALSIFY-MCP-008 FAIL: codegen APR_<{}>_DESCRIPTION drifted from YAML\n\
              expected (contracts/apr-mcp-tool-schemas-v1.yaml):\n{yaml_desc}\n\
              actual (schemas::APR_<TOOL>_DESCRIPTION emitted by build.rs):\n{codegen_desc}",

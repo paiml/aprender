@@ -222,11 +222,8 @@ fn split_at_fence(after_open: &str) -> Option<(&str, &str)> {
 }
 
 fn line_starts(s: &str) -> impl Iterator<Item = (usize, usize)> + '_ {
-    std::iter::once((0usize, 0usize)).chain(
-        s.match_indices('\n')
-            .enumerate()
-            .map(|(i, (pos, _))| (i + 1, pos + 1)),
-    )
+    std::iter::once((0usize, 0usize))
+        .chain(s.match_indices('\n').enumerate().map(|(i, (pos, _))| (i + 1, pos + 1)))
 }
 
 fn user_agents_dir() -> Option<PathBuf> {

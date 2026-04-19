@@ -41,7 +41,10 @@ fn main() {
     let pred = lr.predict(&x);
     let r2 = lr.score(&x, &y);
     println!();
-    println!("LinearRegression: R2 = {r2:.4}, first prediction = {:.4}", pred.as_slice()[0]);
+    println!(
+        "LinearRegression: R2 = {r2:.4}, first prediction = {:.4}",
+        pred.as_slice()[0]
+    );
     assert!(r2 > 0.99, "Perfect linear fit");
 
     // KMeans — same pattern as linfa

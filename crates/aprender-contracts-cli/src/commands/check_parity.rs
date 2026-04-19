@@ -160,11 +160,17 @@ fn check_row(row: &Value) -> RowResult {
     let min = row
         .get("expected_min_hits")
         .and_then(Value::as_u64)
-        .or_else(|| row.get("expected_variant_count_min").and_then(Value::as_u64));
+        .or_else(|| {
+            row.get("expected_variant_count_min")
+                .and_then(Value::as_u64)
+        });
     let max = row
         .get("expected_max_hits")
         .and_then(Value::as_u64)
-        .or_else(|| row.get("expected_variant_count_max").and_then(Value::as_u64));
+        .or_else(|| {
+            row.get("expected_variant_count_max")
+                .and_then(Value::as_u64)
+        });
 
     if let Some(m) = min {
         if hits < m {
