@@ -621,6 +621,52 @@ pub enum ExtendedCommands {
         #[command(subcommand)]
         command: TrainCommands,
     },
+    /// Pretraining loop driver (SHIP-TWO-001 MODEL-2).
+    ///
+    /// Wires the pretraining loop shape defined by
+    /// `contracts/training-loop-pretrain-v1.yaml`. Executes a synthetic
+    /// decreasing-loss drive by default so GATE-TRAIN-005 / -007 / -008
+    /// divergence-and-NaN guards can be exercised without an actual
+    /// 370M compute run. Real corpus wiring is a follow-up ticket.
+    #[cfg(feature = "training")]
+    Pretrain {
+        /// Dataset path (tokenized shard index or raw corpus).
+        #[arg(long, value_name = "PATH")]
+        dataset: PathBuf,
+        /// Tokenizer directory (vocab.json + merges.txt).
+        #[arg(long, value_name = "DIR")]
+        tokenizer: PathBuf,
+        /// Run output directory — checkpoints + metadata go to `{run_dir}/ckpt/`.
+        #[arg(long, value_name = "DIR")]
+        run_dir: PathBuf,
+        /// Peak learning rate after warmup (MODEL-1 v2 remedy default = 5e-5).
+        #[arg(long, default_value = "5e-5")]
+        lr: f32,
+        /// Warmup + cosine decay total steps.
+        #[arg(long, default_value = "1000")]
+        num_steps: usize,
+        /// Number of warmup steps.
+        #[arg(long, default_value = "100")]
+        warmup_steps: usize,
+        /// Micro-batch size.
+        #[arg(long, default_value = "16")]
+        batch_size: usize,
+        /// Sequence length per example.
+        #[arg(long, default_value = "1024")]
+        seq_length: usize,
+        /// Steps per epoch — controls per-epoch artifact cadence.
+        #[arg(long, default_value = "100")]
+        steps_per_epoch: usize,
+        /// GATE-TRAIN-006 fixed RNG seed.
+        #[arg(long, default_value = "42")]
+        seed: u64,
+        /// GATE-TRAIN-003 target val_loss (≤ 2.2 per spec).
+        #[arg(long, default_value = "2.2")]
+        target_val_loss: f32,
+        /// Synthetic-drive only — do not attempt real compute, exercise loop gates only.
+        #[arg(long, default_value = "true")]
+        synthetic: bool,
+    },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {
         #[command(subcommand)]

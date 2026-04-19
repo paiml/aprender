@@ -28,7 +28,7 @@ apr run qwen2.5-coder-1.5b "What is 2+2?"
 ## What is Aprender?
 
 Aprender is a complete ML framework built from scratch in Rust. One `cargo install`,
-one `apr` binary, 57 commands covering the full ML lifecycle:
+one `apr` binary, 58 commands covering the full ML lifecycle:
 
 | Stage | Commands | What it does |
 |-------|----------|-------------|
@@ -46,7 +46,7 @@ one `apr` binary, 57 commands covering the full ML lifecycle:
 - **76** workspace crates (was 20 separate repos)
 - **28,700+** tests, all passing
 - **799** provable contracts (equation-based verification)
-- **57** CLI commands with contract coverage
+- **58** CLI commands with contract coverage
 - **0** `[patch.crates-io]` — clean workspace deps
 
 ## Install
@@ -120,7 +120,7 @@ paiml/aprender/
 ├── Cargo.toml                    # Workspace root + `cargo install aprender`
 ├── crates/
 │   ├── aprender-core/            # ML library (use aprender::*)
-│   ├── apr-cli/                  # CLI logic (57 commands)
+│   ├── apr-cli/                  # CLI logic (58 commands)
 │   ├── aprender-compute/         # SIMD/GPU compute (was: trueno)
 │   ├── aprender-gpu/             # CUDA PTX kernels (was: trueno-gpu)
 │   ├── aprender-serve/           # Inference server (was: realizar)
@@ -230,7 +230,7 @@ git clone https://github.com/paiml/aprender
 cd aprender
 cargo test --workspace --lib    # 25,391 tests
 cargo check --workspace         # 70 crates
-apr --help                      # 57 commands
+apr --help                      # 58 commands
 ```
 
 ## License

@@ -25,7 +25,10 @@ fn test_calculate_wcet_small_model() {
 
     // Performance target: <100ms (verify via cargo bench, not wall-clock in tests)
     if wcet.as_millis() >= 100 {
-        eprintln!("[PERF WARNING] WCET for small model took {}ms (target <100ms)", wcet.as_millis());
+        eprintln!(
+            "[PERF WARNING] WCET for small model took {}ms (target <100ms)",
+            wcet.as_millis()
+        );
     }
 }
 

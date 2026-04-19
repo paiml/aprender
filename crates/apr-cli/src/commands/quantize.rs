@@ -16,9 +16,9 @@
 use crate::error::{CliError, Result};
 use crate::output;
 use aprender::format::{
-    ConvertOptions, QuantizationType, apr_convert, streaming_quantize_peak_estimate,
+    apr_convert, streaming_quantize_peak_estimate, ConvertOptions, QuantizationType,
 };
-use humansize::{BINARY, format_size};
+use humansize::{format_size, BINARY};
 use std::path::Path;
 
 /// Quantization scheme selection
@@ -542,7 +542,7 @@ fn quantize_to_gguf(
     json_output: bool,
 ) -> Result<()> {
     // GGUF export uses the export pipeline with quantization
-    use aprender::format::{ExportFormat, ExportOptions, apr_export};
+    use aprender::format::{apr_export, ExportFormat, ExportOptions};
 
     if !json_output {
         output::pipeline_stage("Quantizing to GGUF", output::StageStatus::Running);

@@ -48,6 +48,14 @@ mod contract_falsification {
                 continue;
             }
 
+            // Skip ModelFamilyVariant contracts (start with `contract_id:`) that
+            // co-locate under model-families/ for documentation purposes.
+            let head = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("Failed to read {file_name}: {e}"));
+            if head.lines().any(|l| l.starts_with("contract_id:")) {
+                continue;
+            }
+
             let config = load_family_yaml(&path)
                 .unwrap_or_else(|e| panic!("Failed to load {file_name}: {e}"));
             families.push((config.family.clone(), config));
