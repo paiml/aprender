@@ -1,0 +1,197 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-mcp-server-v1
+#
+# Top-level end-to-end contract for the `aprender-mcp` Model Context Protocol
+# server (MCP v2024-11-05 over JSON-RPC 2.0 stdio). Ships with `apr mcp` from
+# the root `apr` binary.
+#
+# This contract is the parent of `apr-mcp-tool-schemas-v1` (per-tool schema
+# source of truth) and `mcp-tool-schema-v1` (protocol-level invariants). It
+# promotes the 8 falsification gates in
+# `docs/specifications/apr-mcp-server-spec.md` from DRAFT to ACTIVE by
+# cross-linking each one to a shipped test in `crates/aprender-mcp/`.
+#
+# Authoring rule (M4): when a new FALSIFY-MCP gate is added to the spec, a
+# shipped test must land in the same PR that adds the entry here. The
+# integration test `aprender-contracts::tests/apr_mcp_server_contract.rs`
+# asserts every `test_file` referenced below exists on disk, so a missing or
+# renamed test fails the workspace test suite loudly.
+#
+# Scope at author time (2026-04-18): all 8 Phase-1 gates shipped —
+#   001/002/005/007 from PRs #862-#869 (M1 + M2 dispatcher hardening)
+#   003/004 from the apr.run (#870) and apr.qa (#867) M2 subprocess wrappers
+#   006 from PR #883 (M3 SIGTERM→SIGKILL cancellation)
+#   008 from PR #880 (M3 build.rs schema codegen)
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-04-18'
+  author: apr-cli team
+  registry: true
+  kind: registry
+  description: >
+    End-to-end contract for the aprender-mcp server — the MCP v2024-11-05
+    surface exposed by `apr mcp`. Binds each of the 8 FALSIFY-MCP-* gates
+    from docs/specifications/apr-mcp-server-spec.md to the shipped Rust test
+    that enforces it. Promotes the spec's success-criteria gates from DRAFT
+    to ACTIVE: every gate listed in `falsification_conditions` below is now
+    run by `cargo test -p aprender-mcp` and cross-referenced by the
+    `aprender-contracts` integration test suite.
+  references:
+    - 'docs/specifications/apr-mcp-server-spec.md'
+    - 'Model Context Protocol Specification v2024-11-05 (Anthropic)'
+    - 'JSON-RPC 2.0 Specification (ECMA-404)'
+    - 'contracts/apr-mcp-tool-schemas-v1.yaml'
+    - 'contracts/mcp-tool-schema-v1.yaml'
+    - 'contracts/apr-cli-commands-v1.yaml'
+    - 'crates/aprender-mcp/README.md'
+  depends_on:
+    - apr-mcp-tool-schemas-v1
+    - mcp-tool-schema-v1
+    - apr-cli-commands-v1
+
+kind: AprMcpServerContract
+name: apr-mcp-server
+version: "1.0.0"
+status: ACTIVE
+scope: "the `aprender-mcp` server binary surfaced as `apr mcp` (MCP 2024-11-05 over stdio)"
+binary: "apr mcp"
+crate: "aprender-mcp"
+protocol_version: "2024-11-05"
+transport: stdio
+spec: docs/specifications/apr-mcp-server-spec.md
+
+description: |
+  End-to-end contract covering the full `aprender-mcp` MCP server surface.
+  This contract promotes the 8 falsification gates from the server spec
+  (FALSIFY-MCP-001 through FALSIFY-MCP-008) to ACTIVE/ENFORCED status by
+  mapping each one to a shipped Rust test in `crates/aprender-mcp/`.
+
+  Each gate is enforceable locally via:
+      cargo test -p aprender-mcp --lib --no-fail-fast
+      cargo test -p aprender-mcp --test <test_file_stem> --no-fail-fast
+
+  The integration test
+  `crates/aprender-contracts/tests/apr_mcp_server_contract.rs` reads this
+  YAML, verifies all 8 IDs are present, and asserts every `test_file`
+  referenced below exists on disk. A missing file, a renamed test, or an
+  ignored test breaks the workspace suite loudly — no silent false-pass.
+
+# ── Enforced falsification gates ──
+# Each entry binds a spec gate ID to the exact Rust test that enforces it.
+# Adding a new gate requires: (1) a shipped test, (2) an entry here, (3)
+# spec cross-reference updated.
+
+falsification_conditions:
+  - id: FALSIFY-MCP-001
+    description: >
+      `initialize` responds within 500ms with protocolVersion "2024-11-05"
+      (spec budget 500ms; test budget 50ms for 10× CI headroom).
+    test_file: crates/aprender-mcp/tests/falsify_m1.rs
+    test_name: falsify_mcp_001_initialize_under_500ms
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-002
+    description: >
+      Every tool returned by `tools/list` exposes an `inputSchema` that
+      compiles as a valid JSON Schema Draft 7 document (meta-validated via
+      `jsonschema::validator_for`).
+    test_file: crates/aprender-mcp/tests/falsify_schema.rs
+    test_name: every_tool_input_schema_is_valid_jsonschema_draft_7
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-003
+    description: >
+      The `apr.run` tool exposes the correct MCP surface — name "apr.run",
+      object-typed schema, `model_path` required, and all optional inference
+      knobs (prompt/max_tokens/temperature/top_p) present in properties.
+    test_file: crates/aprender-mcp/src/tools/run.rs
+    test_name: tools::run::tests::definition_has_correct_name_and_required_field
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-004
+    description: >
+      The `apr.qa` tool exposes the correct MCP surface — name "apr.qa",
+      object-typed schema, `model_path` required, and QA knobs
+      (assert_tps/max_tokens/iterations) present in properties. Wraps
+      `apr qa --json` byte-for-byte.
+    test_file: crates/aprender-mcp/src/tools/qa.rs
+    test_name: tools::qa::tests::definition_has_correct_name_and_required_field
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-005
+    description: >
+      A request whose `jsonrpc` field is not exactly "2.0" is rejected with
+      JSON-RPC error code -32600 (Invalid Request) before method dispatch;
+      the server must not crash and must not route to initialize / tools/list
+      / tools/call.
+    test_file: crates/aprender-mcp/tests/falsify_m1.rs
+    test_name: falsify_mcp_005_invalid_jsonrpc_version_is_minus_32600
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-006
+    description: >
+      `notifications/cancelled` during a long-running tool call stops the
+      spawned subprocess within the configured grace window (SIGTERM then
+      SIGKILL) and returns a partial result flagged `isError: true`.
+    test_file: crates/aprender-mcp/tests/falsify_mcp_006.rs
+    test_name: falsify_mcp_006_cancel_stops_subprocess_within_grace
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-007
+    description: >
+      An `initialize` whose `params.protocolVersion` does not match the
+      server's supported version is rejected with JSON-RPC error code
+      -32602 (Invalid Params); the negotiation must not advance.
+    test_file: crates/aprender-mcp/tests/falsify_m1.rs
+    test_name: falsify_mcp_007_protocol_version_mismatch_is_minus_32602
+    status: ENFORCED
+
+  - id: FALSIFY-MCP-008
+    description: >
+      For every tool migrated to the build.rs codegen path, the live
+      `inputSchema` from `tools/list` is byte-identical (after JSON
+      canonicalization) to the schema derived from
+      `contracts/apr-mcp-tool-schemas-v1.yaml` by `build.rs`.
+    test_file: crates/aprender-mcp/tests/falsify_mcp_008.rs
+    test_name: migrated_tools_match_yaml_contract_byte_for_byte
+    status: ENFORCED
+
+# ── Acceptance gate ──
+# Promoting this contract out of ACTIVE requires all 8 conditions above to
+# hold simultaneously on a clean checkout with `cargo test -p aprender-mcp`.
+
+qa_gate:
+  id: F-MCP-SERVER-GATE
+  name: "apr mcp end-to-end contract"
+  pass_criteria: "All 8 FALSIFY-MCP-* tests listed in falsification_conditions pass"
+  run: "cargo test -p aprender-mcp --no-fail-fast"
+  falsification: >
+    Rename or delete any referenced test_file / test_name and the
+    `aprender-contracts::apr_mcp_server_contract` integration test fails
+    before the MCP crate tests even compile.
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — every protocol gate (001, 005, 007)
+    rejects malformed traffic BEFORE dispatching to any tool handler.
+    Schema gates (002, 008) meta-validate at test time so drift cannot
+    ship. Cancellation (006) halts in-flight work within a bounded grace
+    window — the subprocess cannot outlive the client's notification.
+  poka_yoke: >
+    "Mistake-proofing" — tools/list schemas (008) are codegen'd from
+    `apr-mcp-tool-schemas-v1.yaml`, so hand-editing a live schema out of
+    step with the contract is a test-time failure, not a runtime one.
+    The integration test in aprender-contracts asserts test_file paths
+    exist on disk; a rename without updating this YAML fails loudly.
+  genchi_genbutsu: >
+    "Go and see" — the falsification tests exercise the real
+    `AprMcpServer` type over its public JSON-RPC surface, not mocked
+    transports. Cancellation (006) spawns an actual long-running child
+    and sends a real signal. No mocks in the gate path.
+  kaizen: >
+    "Continuous improvement" — adding a new tool or protocol gate is a
+    three-step process with compiler/test enforcement at each step: ship
+    the test, append an entry here, update the spec. A missing step
+    fails CI instead of silently degrading.
