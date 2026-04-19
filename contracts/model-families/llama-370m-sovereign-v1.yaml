@@ -36,11 +36,11 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-LLAMA-370M-SOVEREIGN
-version: 1.1.0
+version: 1.2.0
 status: ACTIVE
 
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   updated: "2026-04-19"
   changelog:
@@ -54,6 +54,16 @@ metadata:
        before a single step of compute runs. Scaffold-level compile-time
        `validate()` already enforces INV-ARCH-370M-002..008 as `const _`
        assertions."
+    - "1.2.0 (2026-04-19): Algorithm-level PARTIAL discharge of
+       FALSIFY-SHIP-015 (GATE-ARCH-370M-003). Wired
+       estimated_param_count_within_contract_band +
+       estimated_param_count const-fn as the algorithm proof of
+       INV-ARCH-370M-001 (param count in [366M, 374M]). On-disk
+       `apr inspect --json` discharge remains PENDING on real 370M
+       .apr checkpoint materialization from compute-dispatch — no
+       harness rewrite required at that point, only artifact swap.
+       Sovereign contract stays ACTIVE (FALSIFY-SHIP-011 is the
+       ACTIVE-gating condition, not SHIP-015)."
   author: PAIML Engineering
   description: >
     Frozen architectural invariants for the 370M Llama-family sovereign
@@ -349,9 +359,28 @@ gates:
     evidence_required: >
       `apr inspect --json model.apr | jq '.param_count'` yields an
       integer P with 366_000_000 ≤ P ≤ 374_000_000.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::estimated_param_count_within_contract_band"
+      - "crates/aprender-train/src/models/llama_370m.rs::estimated_param_count (const fn)"
+      - "crates/aprender-train/src/models/llama_370m.rs::estimated_stored_param_count (const fn)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Algorithm level proven at compile time + unit test:
+      estimated_param_count() is a const fn over Llama370MConfig::*;
+      the test asserts the nominal count lies in
+      [PARAMETERS_MIN=366M, PARAMETERS_MAX=374M], within ±5% of
+      PARAMETERS_NOMINAL=370M, and that embedding tying (tied_embeddings=true)
+      reduces stored params by exactly VOCAB_SIZE * HIDDEN_DIM. Any change
+      to Llama370MConfig architectural constants that moves the count
+      out of the INV-ARCH-370M-001 band fails `cargo test -p aprender-train
+      --lib llama_370m` before a checkpoint exists. Full discharge
+      (`apr inspect --json <real 370M checkpoint>.apr`) remains PENDING
+      on 370M pretraining compute-dispatch; fixture swap is data-only.
+    full_discharge_blocks_on: "real 370M .apr checkpoint from pretraining compute-dispatch (AC-SHIP2-003/004)"
     verdict: pass
     binds_to: AC-SHIP2-005
     falsification_id: FALSIFY-SHIP-015
+    ship_blocking: true
 
   - id: GATE-ARCH-370M-004
     rule: >
