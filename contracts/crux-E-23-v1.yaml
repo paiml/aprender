@@ -1,0 +1,89 @@
+# CRUX-E-23 — Tool-use benchmark BFCL
+
+metadata:
+  id: CRUX-E-23
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Berkeley Function Call Leaderboard (BFCL) suite — evaluate model's tool
+    calling (single, multiple, parallel, REST, exec). Canonical: gorilla-llm/
+    berkeley-function-call-leaderboard. Sub-scores on AST-match + exec-match.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  bfcl_eval:
+    formula: |
+      ast_correct(call, ref) = match(parse_fn_call(call).name, ref.name)
+                               AND args_subset(call.args, ref.args)
+      exec_correct(call, ref) = exec(call) == exec(ref)   # for exec category only
+      score_category = mean(ast_correct or exec_correct)
+      overall = mean over categories weighted by count
+    domain: "(model: Path, suite: BFCL {simple, multi, parallel, rest, exec})"
+    codomain: "JSON {per_category: {...}, overall: f32, rank_estimate: str}"
+    invariants:
+    - "AST-match metric ignores arg order when schema marks them unordered"
+    - "suite identifier must be one of known BFCL buckets"
+    - "deterministic under temp=0 seeded sampling"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-23-001
+  rule: unknown suite name fails fast
+  prediction: "--suite nonsense returns non-zero with actionable error"
+  test: |
+    set -euo pipefail
+    ! apr eval-bfcl tests/fixtures/tinyllama-hf --suite nonsense 2>/tmp/err
+    grep -E "unknown suite|one of" /tmp/err
+  if_fails: rule 'unknown suite name fails fast' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-23-002
+  rule: AST match ignores arg order when allowed
+  prediction: "same function, swapped unordered args → ast_correct=true"
+  test: |
+    set -euo pipefail
+    apr eval-bfcl --check-ast '{"name":"add","args":{"b":2,"a":1}}' \
+                  --ref     '{"name":"add","args":{"a":1,"b":2}}' \
+                  --format json > /tmp/a.json
+    python3 -c "import json; d=json.load(open('/tmp/a.json')); assert d['ast_correct']==True, d"
+  if_fails: rule 'AST match ignores arg order when allowed' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-23-003
+  rule: deterministic scores under temp=0
+  prediction: "two runs with --seed 42 --temp 0 return identical JSON"
+  test: |
+    set -euo pipefail
+    apr eval-bfcl tests/fixtures/tinyllama-hf --suite simple --seed 42 --temp 0 \
+      --format json > /tmp/a.json
+    apr eval-bfcl tests/fixtures/tinyllama-hf --suite simple --seed 42 --temp 0 \
+      --format json > /tmp/b.json
+    diff /tmp/a.json /tmp/b.json
+
+  if_fails: rule 'deterministic scores under temp=0' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr eval-bfcl scoring matches gorilla-llm/BFCL AST + exec judges within 1%"
+- type: invariant
+  property: "deterministic under temp=0 + seed"
+- type: invariant
+  property: "unknown suite name rejected with actionable error"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-e-23
+  priority: medium
+  auto_created: true

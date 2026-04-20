@@ -1,0 +1,133 @@
+# CRUX-C-15 — Tensor + pipeline parallelism
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-15
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Tensor parallelism (shard attention/MLP across N GPUs) + pipeline
+    parallelism (shard layers across M stages). vLLM exposes as
+    `--tensor-parallel-size TP --pipeline-parallel-size PP` with total
+    world_size = TP * PP. Map to `apr serve --tp TP --pp PP` producing
+    identical output to single-GPU at temp=0 and delivering scaling
+    throughput (near-linear in TP for attention/FFN-bound workloads).
+  references:
+  - "https://docs.vllm.ai/en/latest/serving/distributed_serving.html"
+  - "Shoeybi et al. 2020 — 'Megatron-LM' tensor parallelism"
+  - "Huang et al. 2019 — 'GPipe' pipeline parallelism"
+
+equations:
+  tp_pp_parity_at_greedy:
+    formula: |
+      ∀ prompt p, TP ∈ {1,2,4,8}, PP ∈ {1,2,4}, temperature=0.0, top_k=1:
+        decode(model, p, TP=1, PP=1) ≡ decode(model, p, TP, PP)
+      (within numerical noise: cosine(logits_ref, logits_parallel) >= 0.9999)
+    domain: (model, prompt, TP, PP)
+    codomain: token sequence
+    invariants:
+    - "temp=0 top_k=1: token IDs byte-identical across TP/PP configs"
+    - "model.num_heads % TP == 0 (required divisibility)"
+    - "model.num_layers % PP == 0"
+    - "world_size = TP * PP <= available GPUs"
+
+  scaling_throughput:
+    formula: |
+      tok/s(TP=N) >= 0.7 * N * tok/s(TP=1)
+      (70% scaling efficiency floor for attention-heavy decode)
+    domain: (model, TP)
+    codomain: scaling efficiency ratio
+    invariants:
+    - "TP=2 achieves >=1.4× single-GPU throughput"
+    - "TP=4 achieves >=2.8× single-GPU throughput"
+    - "scaling efficiency reported in --json output"
+
+  divisibility_fail_fast:
+    formula: |
+      num_heads % TP != 0 OR num_layers % PP != 0 ⇒ exit non-zero
+    domain: (model_config, TP, PP)
+    codomain: exit_code ∈ {0, non-zero}
+    invariants:
+    - "invalid TP rejected at startup, not first decode step"
+    - "error message cites num_heads / num_layers and suggests valid values"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-15-001
+  rule: TP parity at greedy sampling
+  prediction: "TP=2 produces byte-identical tokens to TP=1 at temp=0"
+  test: |
+    # TODO: blocked until apr serve --tp flag wired; requires 2+ GPUs
+    REF=$(apr run model.gguf --prompt "The capital of France is" \
+      --max-tokens 32 --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
+    TP2=$(apr run model.gguf --tp 2 --prompt "The capital of France is" \
+      --max-tokens 32 --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
+    [ "$REF" = "$TP2" ]
+  if_fails: "tensor-parallel output diverges from single-GPU — allreduce bug or numerical precision"
+
+- id: FALSIFY-CRUX-C-15-002
+  rule: scaling efficiency floor
+  prediction: "TP=2 delivers >=1.4× single-GPU tok/s"
+  test: |
+    # TODO: blocked until --tp flag; requires 2 GPUs
+    BASE=$(apr bench model.gguf --max-tokens 128 --json | jq '.tokens_per_sec')
+    TP2=$(apr bench model.gguf --tp 2 --max-tokens 128 --json | jq '.tokens_per_sec')
+    python3 -c "import sys; sys.exit(0 if $TP2 / $BASE >= 1.4 else 1)"
+  if_fails: "TP=2 scaling efficiency below 70% (<1.4× single-GPU throughput)"
+
+- id: FALSIFY-CRUX-C-15-003
+  rule: invalid TP divisibility fails fast
+  prediction: "num_heads=32, --tp 3 exits non-zero with actionable error before decode"
+  test: |
+    # TODO: blocked until --tp flag
+    set +e
+    apr serve model-32head.gguf --tp 3 --port 18080 2>err.log &
+    sleep 3
+    rc=$?
+    set -e
+    kill %1 2>/dev/null || true
+    grep -qiE "num_heads|divisib|tensor.?parallel" err.log
+  if_fails: "invalid TP=3 with 32-head model silently accepted (will segfault at runtime)"
+
+- id: FALSIFY-CRUX-C-15-004
+  rule: world_size metadata reported
+  prediction: "--json output includes .distributed.{tp, pp, world_size}"
+  test: |
+    # TODO: blocked until --tp/--pp flags
+    apr run model.gguf --tp 2 --pp 2 --prompt "hi" --max-tokens 1 --json | \
+      jq -e '.distributed.tp == 2 and .distributed.pp == 2 and .distributed.world_size == 4'
+  if_fails: "distributed metadata missing from --json output"
+
+proof_obligations:
+- type: equivalence
+  property: "TP=N, PP=M output ≡ TP=1, PP=1 at temp=0 top_k=1 (byte-identical tokens)"
+- type: invariant
+  property: "num_heads % TP == 0 AND num_layers % PP == 0 enforced at startup"
+- type: bound
+  property: "TP scaling efficiency >= 70% (TP=2 >= 1.4×, TP=4 >= 2.8×)"
+- type: invariant
+  property: "--json output reports .distributed.{tp, pp, world_size}"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-15` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-15
+  priority: high
+  auto_created: true

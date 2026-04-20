@@ -1,0 +1,108 @@
+# CRUX-K-16 — Triton Inference Server backend
+
+metadata:
+  id: CRUX-K-16
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Deployment & Integration"
+  competitor: ecosystem
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Package apr model as an NVIDIA Triton Inference Server backend.
+    Canonical: Triton model-repository layout
+    (github.com/triton-inference-server/server) — `model-repo/NAME/1/
+    model.(apr|pt|onnx)` + `config.pbtxt` with `name`, `platform`,
+    `input`, `output`, `max_batch_size`. Triton must load it and serve
+    HTTP/GRPC inference without modification.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  triton_backend:
+    formula: |
+      model-repo/
+        apr-model/
+          config.pbtxt    # name, platform="apr_backend", input, output, max_batch_size
+          1/
+            model.apr
+      tritonserver --model-repository=model-repo  loads model=READY
+      POST /v2/models/apr-model/infer returns {outputs:[{name, shape, data}]}
+    domain: "(model: Path, backend: str, max_batch_size: u32)"
+    codomain: "tritonserver-loadable model-repo directory"
+    invariants:
+    - "config.pbtxt parses as Triton TextProto (tritonserver --model-control-mode=explicit --dry-run accepts)"
+    - "after POST /v2/repository/models/{name}/load, GET /v2/models/{name}/ready returns 200"
+    - "output tensor shape matches config.output shape"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-16-001
+  rule: config.pbtxt parses and declares required fields
+  prediction: "emitted config has name, platform, input, output, max_batch_size"
+  test: |
+    set -euo pipefail
+    apr serve emit-triton tests/fixtures/tiny.apr -o /tmp/mr/apr-model
+    python3 -c "
+    txt = open('/tmp/mr/apr-model/config.pbtxt').read()
+    for k in ('name','platform','input','output','max_batch_size'):
+        assert k in txt, (k, txt[:200])
+    "
+  if_fails: rule 'config.pbtxt parses and declares required fields' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-16-002
+  rule: tritonserver loads the model to READY
+  prediction: "GET /v2/models/apr-model/ready returns 200 after load"
+  test: |
+    set -euo pipefail
+    docker run --rm -d --name triton-apr -p 18000:8000 \
+      -v /tmp/mr:/models nvcr.io/nvidia/tritonserver:24.01-py3 \
+      tritonserver --model-repository=/models
+    trap 'docker rm -f triton-apr' EXIT
+    # wait up to 30s
+    for _ in $(seq 1 30); do
+      if curl -sf http://127.0.0.1:18000/v2/models/apr-model/ready; then exit 0; fi
+      sleep 1
+    done
+    exit 1
+  if_fails: rule 'tritonserver loads the model to READY' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-16-003
+  rule: output shape matches config
+  prediction: "infer response outputs[].shape == config.output.dims"
+  test: |
+    set -euo pipefail
+    curl -sf -X POST http://127.0.0.1:18000/v2/models/apr-model/infer \
+      -H 'content-type: application/json' \
+      -d @tests/fixtures/triton-infer-req.json > /tmp/resp.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/resp.json'))
+    shape = d['outputs'][0]['shape']
+    expected = [1, 128]  # from config
+    assert shape == expected, (shape, expected)
+    "
+
+  if_fails: rule 'output shape matches config' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr serve emit-triton produces tritonserver-loadable model-repository"
+- type: invariant
+  property: "config.pbtxt parses + model loads to READY"
+- type: invariant
+  property: "output tensor shape matches config"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-k-16
+  priority: medium
+  auto_created: true

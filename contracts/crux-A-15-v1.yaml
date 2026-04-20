@@ -1,0 +1,177 @@
+# CRUX-A-15 — Pull from local directory (file://)
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-15
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Pull from local directory (file://). Parity target is HuggingFace's
+    `hf_hub_download(..., local_files_only=True)` / `snapshot_download(...,
+    local_files_only=True)` mode and the `HF_HUB_OFFLINE=1` env var, which
+    resolve files exclusively from the local cache (`HF_HOME` /
+    `~/.cache/huggingface/hub/`) with zero network I/O. Aprender parity:
+    `apr pull file:///path/to/dir` and `apr pull hf://<repo> --local-only`
+    MUST copy (or symlink) files from a local directory or local cache into
+    the target path WITHOUT any outbound DNS/HTTP requests, preserving
+    sha256 integrity. See
+    https://huggingface.co/docs/huggingface_hub/guides/download#download-from-the-cache
+    and https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhuboffline
+  references:
+  - "https://huggingface.co/docs/huggingface_hub/guides/download#download-from-the-cache"
+  - "https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhuboffline"
+  - "https://huggingface.co/docs/huggingface_hub/v0.24.0/en/package_reference/file_download#huggingface_hub.hf_hub_download.local_files_only"
+
+equations:
+  local_scheme_resolution:
+    formula: |
+      apr pull file:///PATH [--include GLOB] [--exclude GLOB]:
+        Selected = Selected(PATH, include, exclude)  (same globs as CRUX-A-04)
+        For each f ∈ Selected: copy or hardlink PATH/f → OUT/f
+        exit_code == 0 iff PATH exists AND Selected ≠ ∅
+      Zero TCP connections are opened for the duration of the call.
+    domain: "file:// URL + include/exclude globs"
+    codomain: "local filesystem tree + empty network trace"
+    invariants:
+    - "file:// path resolves via filesystem, no DNS lookup"
+    - "Strace/ss-netstat during run shows zero outbound TCP connect() syscalls"
+    - "sha256 of copied files equals sha256 of source files"
+
+  offline_mode_for_hf_urls:
+    formula: |
+      With HF_HUB_OFFLINE=1 OR --local-only flag:
+        apr pull hf://REPO resolves from $HF_HOME/hub cache
+        if cache hit → exit 0, files materialized into OUT
+        if cache miss → exit non-zero with clear "offline, cache miss" message
+        zero network I/O in either case.
+    domain: "(hf://<repo>, HF_HOME cache state)"
+    codomain: "local tree + exit code + empty network trace"
+    invariants:
+    - "HF_HUB_OFFLINE=1 → zero network I/O regardless of cache state"
+    - "Cache miss under offline mode is a hard error, not a silent network fallback"
+    - "Error message names the missing file(s)"
+
+  parity_with_huggingface_cli_offline:
+    formula: |
+      ∀ (REPO, REV) ∈ evidence/crux/huggingface/offline-goldens.json:
+        run huggingface-cli download REPO --revision REV  (populate cache)
+        then HF_HUB_OFFLINE=1 apr pull hf://REPO --revision REV --out OUT
+        sha256(OUT/*) == sha256(cache/*)
+    domain: "(repo, revision) tuples with populated HF cache"
+    codomain: "sha256 file tree equality + empty network trace"
+    invariants:
+    - "Offline apr pull returns same bytes as online huggingface-cli download"
+    - "Works on the HF cache directory layout (blobs + snapshots/ symlinks)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-15-001
+  rule: file:// URL copies files from local path with zero network I/O
+  prediction: "apr pull file:///SRC issues zero TCP connect() syscalls"
+  test: |
+    SRC=$(mktemp -d); OUT=$(mktemp -d)
+    echo '{"model":"test"}' > "$SRC/config.json"
+    printf '%s\n' "fake weight bytes" > "$SRC/model.safetensors"
+    # Trace network calls with strace (fall back to ss check if strace unavailable)
+    if command -v strace >/dev/null; then
+      TRACE=$(mktemp)
+      strace -f -e trace=connect -o "$TRACE" apr pull "file://$SRC" --out "$OUT" 2>/dev/null
+      # Filter to IPv4/IPv6 sockaddr connects (ignore AF_UNIX)
+      grep -E 'connect\(.*(AF_INET|sin_family=AF_INET|sin6_family)' "$TRACE" && {
+        echo "FAIL: file:// pull made outbound TCP connect" >&2; exit 1
+      }
+    fi
+    [ -f "$OUT/config.json" ] || { echo "FAIL: config.json not copied" >&2; exit 1; }
+    diff "$SRC/config.json" "$OUT/config.json"
+  if_fails: "apr pull file:// made outbound network calls or did not copy files"
+
+- id: FALSIFY-CRUX-A-15-002
+  rule: HF_HUB_OFFLINE=1 hits cache and makes zero network calls
+  prediction: "after priming cache, HF_HUB_OFFLINE=1 apr pull succeeds with no DNS"
+  test: |
+    OUT=$(mktemp -d)
+    # Prime cache
+    apr pull hf://openai-community/gpt2 --include 'config.json' --out "$OUT" >/dev/null
+    # Now offline
+    OUT2=$(mktemp -d)
+    if command -v strace >/dev/null; then
+      TRACE=$(mktemp)
+      HF_HUB_OFFLINE=1 strace -f -e trace=connect -o "$TRACE" \
+        apr pull hf://openai-community/gpt2 --include 'config.json' --out "$OUT2" 2>/dev/null
+      grep -E 'connect\(.*(AF_INET|sin_family=AF_INET|sin6_family)' "$TRACE" && {
+        echo "FAIL: offline mode issued TCP connect" >&2; exit 1
+      }
+    fi
+    [ -f "$OUT2/config.json" ] || { echo "FAIL: offline pull did not materialize file" >&2; exit 1; }
+  if_fails: "HF_HUB_OFFLINE=1 did not prevent network I/O or failed to hit cache"
+
+- id: FALSIFY-CRUX-A-15-003
+  rule: offline cache miss exits non-zero with clear error
+  prediction: "HF_HUB_OFFLINE=1 on empty cache exits non-zero with cache-miss message"
+  test: |
+    CACHE=$(mktemp -d)
+    OUT=$(mktemp -d)
+    set +e
+    HF_HOME="$CACHE" HF_HUB_OFFLINE=1 apr pull hf://openai-community/gpt2 \
+      --include 'config.json' --out "$OUT" 2>&1 | tee /tmp/apr_offline.log
+    RC=${PIPESTATUS[0]}
+    set -e
+    [ "$RC" -ne 0 ] || { echo "FAIL: cache miss in offline mode should exit non-zero" >&2; exit 1; }
+    grep -iE 'offline|cache.?miss|not.?found' /tmp/apr_offline.log >/dev/null || {
+      echo "FAIL: error message lacks offline/cache-miss context" >&2; exit 1
+    }
+  if_fails: "offline cache miss was silent or fell back to network"
+
+- id: FALSIFY-CRUX-A-15-004
+  rule: parity with huggingface-cli offline mode on golden
+  prediction: "sha256 of apr file:// output matches huggingface-cli snapshot_download output"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/huggingface/offline-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, hashlib, os, sys, pathlib
+    for c in json.load(open(sys.argv[1])):
+        with tempfile.TemporaryDirectory() as d:
+            env = {**os.environ, "HF_HUB_OFFLINE": "1"}
+            subprocess.run(["apr","pull",f"hf://{c['repo']}","--include",c["filename"],"--out",d],
+                          check=True, env=env)
+            got = hashlib.sha256(open(pathlib.Path(d)/c["filename"],"rb").read()).hexdigest()
+            assert got == c["expected_sha256"], (c, got)
+    PY
+  if_fails: "apr offline output diverged from huggingface-cli golden bytes"
+
+proof_obligations:
+- type: equivalence
+  property: "apr pull file:// / --local-only matches huggingface_hub(local_files_only=True) on evidence/crux/huggingface/offline-goldens.json"
+- type: invariant
+  property: "file:// and HF_HUB_OFFLINE=1 invocations make zero outbound TCP connections (strace-verified)"
+- type: invariant
+  property: "Offline cache miss exits non-zero with a message identifying the missing file"
+- type: invariant
+  property: "Local-path copy preserves sha256 of every file"
+- type: invariant
+  property: "Selected(file://PATH, I, X) == Selected(fs-tree(PATH), I, X) with identical glob semantics as CRUX-A-04"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-15` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-15
+  priority: high
+  auto_created: false

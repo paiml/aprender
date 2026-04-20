@@ -1,0 +1,157 @@
+# CRUX-C-27 — GGUF lazy mmap loading
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-27
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: llama_cpp
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    GGUF lazy mmap loading. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  mmap_syscall_used:
+    formula: |
+      strace -e trace=openat,mmap,read apr run model.gguf ⇒
+        ∃ syscall: mmap(_, _, PROT_READ, MAP_PRIVATE|MAP_..., fd(model.gguf), 0)
+        ∧ total_bytes_read(model.gguf) via read() syscalls < 16 MiB (header/index only)
+      Matches llama.cpp's use_mmap default behavior.
+      Ref: https://github.com/ggerganov/llama.cpp (llama_mmap_init, use_mmap=true)
+    domain: apr run process syscall trace
+    codomain: bool
+    invariants:
+    - "Model file is mapped via mmap, not slurped via read()"
+    - "Cumulative read() bytes against the model fd is bounded by header/metadata size"
+
+  rss_less_than_model_size:
+    formula: |
+      RSS(apr run model.gguf, measured just after model loaded) < size(model.gguf)
+      Demonstrates lazy paging: only touched pages are resident.
+    domain: (model file size, process RSS)
+    codomain: bool
+    invariants:
+    - "Post-load RSS strictly less than model-on-disk size (no full-copy-into-heap)"
+
+  startup_latency:
+    formula: |
+      time_to_first_ready(apr run 7B.gguf) < 1000 ms
+      For 7B Q4_K_M model on SSD/NVMe, first "ready" (tokenizer loaded + graph built).
+    domain: wall-clock startup time
+    codomain: bool
+    invariants:
+    - "Startup to ready-state < 1s for 7B Q4_K_M on NVMe (parity with llama.cpp)"
+    - "Time-to-first-byte-latency measurable via strace timestamps"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-27-001
+  rule: mmap syscall used, no full-file read
+  prediction: "strace shows mmap of model fd; read() bytes << model size"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF -o "$SRC"
+    MODEL="${SRC}/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+    [ -f "$MODEL" ] || MODEL=$(find "$SRC" -name '*.gguf' | head -1)
+    LOG=$(mktemp)
+    timeout 10 strace -f -e trace=openat,mmap,read -o "$LOG" \
+      apr run "$MODEL" --prompt "hi" --max-tokens 1 || true
+    FD=$(awk -F'=' '/openat.*\.gguf/ {print $NF}' "$LOG" | tr -d ' )' | head -1)
+    grep -E "mmap\(.*${FD}," "$LOG" >/dev/null || { echo "no mmap on model fd"; exit 1; }
+    # Sum read() bytes against this fd
+    BYTES=$(awk -v fd="$FD" '/read\(/ && $0 ~ fd {
+      match($0, /= ([0-9]+)/, m); s+=m[1]} END{print s+0}' "$LOG")
+    SIZE=$(stat -c%s "$MODEL")
+    # Header + metadata should be << 16 MiB even for 7B
+    python3 -c "assert $BYTES < 16*1024*1024, ($BYTES, $SIZE)"
+  if_fails: "apr read() more than 16 MiB from model fd → not using mmap lazily"
+
+- id: FALSIFY-CRUX-C-27-002
+  rule: post-load RSS < model size
+  prediction: "RSS after model loaded strictly less than on-disk model size"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF -o "$SRC"
+    MODEL=$(find "$SRC" -name '*Q4_K_M*.gguf' | head -1)
+    SIZE=$(stat -c%s "$MODEL")
+    # Launch apr run, pause via sleep prompt, read /proc/PID/status VmRSS
+    apr run "$MODEL" --prompt "$(python3 -c 'print("a"*5)')" --max-tokens 1 &
+    PID=$!
+    sleep 2
+    RSS_KB=$(awk '/VmRSS/ {print $2}' /proc/$PID/status 2>/dev/null || echo 0)
+    kill $PID 2>/dev/null || true
+    wait $PID 2>/dev/null || true
+    RSS=$((RSS_KB * 1024))
+    python3 -c "assert $RSS < $SIZE, ('RSS', $RSS, 'SIZE', $SIZE)"
+  if_fails: "RSS >= model size — mmap not in effect, model slurped into heap"
+
+- id: FALSIFY-CRUX-C-27-003
+  rule: startup latency < 1s for 7B Q4_K_M on NVMe
+  prediction: "time from apr run → first decode < 1000 ms"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TheBloke/Llama-2-7B-Chat-GGUF -o "$SRC"
+    MODEL=$(find "$SRC" -name '*Q4_K_M*.gguf' | head -1)
+    # apr run --trace should emit TTFT-relative timestamps
+    OUT=$(apr run "$MODEL" --prompt "Hi" --max-tokens 1 --trace=load,tokenize --json 2>&1)
+    LOAD_MS=$(echo "$OUT" | jq '.trace.load_ms')
+    python3 -c "assert $LOAD_MS < 1000, $LOAD_MS"
+  if_fails: "7B Q4_K_M load time >= 1s — mmap not used or prefault too aggressive"
+
+- id: FALSIFY-CRUX-C-27-004
+  rule: parity with llama.cpp --mmap default
+  prediction: "apr run and llama-cli (with default mmap) have comparable RSS/startup"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF -o "$SRC"
+    MODEL=$(find "$SRC" -name '*Q4_K_M*.gguf' | head -1)
+    # llama-cli uses mmap by default
+    /usr/bin/time -f '%M' -o /tmp/llama.rss llama-cli -m "$MODEL" -p "hi" -n 1 >/dev/null 2>&1 || true
+    /usr/bin/time -f '%M' -o /tmp/apr.rss apr run "$MODEL" --prompt "hi" --max-tokens 1 >/dev/null 2>&1 || true
+    LLAMA=$(cat /tmp/llama.rss)
+    APR=$(cat /tmp/apr.rss)
+    # apr RSS within 1.5× llama-cli RSS (both must use mmap)
+    python3 -c "assert $APR <= 1.5 * $LLAMA, ($APR, $LLAMA)"
+  if_fails: "apr run RSS > 1.5× llama-cli RSS — suggests missing mmap"
+
+proof_obligations:
+- type: equivalence
+  property: "apr run uses mmap on GGUF model files, matching llama.cpp default behavior"
+  competitor_function: "llama_mmap (llama.cpp) / use_mmap=true"
+  reference: "https://github.com/ggerganov/llama.cpp"
+- type: invariant
+  property: "mmap syscall issued against model fd; read() bytes bounded by header/index"
+- type: invariant
+  property: "Post-load RSS strictly less than on-disk model size"
+- type: invariant
+  property: "7B Q4_K_M startup time < 1s on NVMe"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-27` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-27
+  priority: critical
+  auto_created: false

@@ -1,0 +1,115 @@
+# CRUX-B-09 — GPTQ quantization
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-B-09
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    GPTQ quantization. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.B and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
+equations:
+  gptq_size_and_cosine:
+    formula: |
+      Let N = 64 random prompts from held-out set P.
+      For each p_i ∈ P:
+        v_fp16 = logits(M_fp16, p_i)
+        v_gptq = logits(quantize(M, method=GPTQ, bits=4, group_size=128), p_i)
+        cos_i  = <v_fp16, v_gptq> / (||v_fp16|| * ||v_gptq||)
+      Contract:
+        (1) size(GPTQ) / size(fp16) <= 0.30
+        (2) mean(cos_i) >= 0.98 across all 64 prompts
+      Ref: Frantar et al. 2022 (arXiv:2210.17323) — OBS-based layer-wise quantization.
+    domain: (model M, 64 held-out prompts P)
+    codomain: (size_ratio ∈ ℝ+, mean_cosine ∈ [-1,1])
+    invariants:
+    - "GPTQ 4-bit file size <= 0.30 * fp16 baseline"
+    - "Mean logit cosine >= 0.98 on 64 random held-out prompts"
+    - "GPTQ uses approximate second-order (Hessian) info via OBS"
+
+  gptq_cli_parity:
+    formula: |
+      vllm   : python -m auto_gptq --model-path M --bits 4 --group-size 128 --output out
+      aprender: apr quantize M.apr --method gptq --bits 4 --group-size 128 -o out.apr
+      Both MUST emit a layer-wise quantized artifact with per-group scales/zeros.
+    domain: (model M, bits, group_size)
+    codomain: quantized APR file
+    invariants:
+    - "apr quantize --method gptq accepts --bits and --group-size"
+    - "Output records scale + zero_point per group_size=128 channels"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-09-001
+  rule: GPTQ size compression
+  prediction: "size(GPTQ-4bit) <= 0.30 * size(fp16)"
+  test: |
+    set -euo pipefail
+    apr quantize model.apr --method gptq --bits 4 --group-size 128 -o /tmp/model-gptq.apr
+    FP16=$(stat -c%s model.apr)
+    GPTQ=$(stat -c%s /tmp/model-gptq.apr)
+    python3 -c "import sys; sys.exit(0 if $GPTQ <= 0.30 * $FP16 else 1)"
+  if_fails: "GPTQ 4-bit artifact not compressed to expected 4 bits/weight; packing or metadata bloat bug"
+
+- id: FALSIFY-CRUX-B-09-002
+  rule: GPTQ logit cosine >= 0.98
+  prediction: "mean cosine(logits_fp16, logits_gptq) >= 0.98 on 64 random prompts"
+  test: |
+    set -euo pipefail
+    # TODO: evidence/crux/vllm/gptq/prompts-64.jsonl — 64 held-out prompts
+    apr diff model.apr /tmp/model-gptq.apr \
+      --prompts evidence/crux/vllm/gptq/prompts-64.jsonl \
+      --metric logit-cosine --json > /tmp/gptq-cos.json
+    MEAN=$(jq '.mean_cosine' /tmp/gptq-cos.json)
+    python3 -c "import sys; sys.exit(0 if $MEAN >= 0.98 else 1)"
+  if_fails: "GPTQ logit cosine below 0.98; Hessian-driven calibration is broken or omitted"
+
+- id: FALSIFY-CRUX-B-09-003
+  rule: GPTQ CLI surface parity with vllm/auto-gptq
+  prediction: "--method gptq --bits --group-size all accepted"
+  test: |
+    apr quantize --help 2>&1 | grep -qE -- '--method[[:space:]<]'
+    apr quantize --help 2>&1 | grep -qE 'gptq'
+  if_fails: "apr quantize lacks --method gptq; vllm/auto-gptq path not exposed"
+
+proof_obligations:
+- type: invariant
+  property: "GPTQ 4-bit artifact <= 0.30x fp16 size"
+- type: invariant
+  property: "Mean logit cosine(fp16, gptq) >= 0.98 on 64 held-out prompts"
+- type: invariant
+  property: "apr quantize --method gptq flag is on CLI surface and documented"
+- type: invariant
+  property: "GPTQ output includes per-group scale + zero_point metadata"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-b-09` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-b-09
+  priority: critical
+  auto_created: true

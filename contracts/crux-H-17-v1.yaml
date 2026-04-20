@@ -1,0 +1,99 @@
+# CRUX-H-17 — Contrastive pair sampler for CLIP
+
+metadata:
+  id: CRUX-H-17
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: openclip
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Contrastive pair sampler for CLIP: yield (image, text) positive pairs
+    and build in-batch negatives. Canonical: OpenCLIP
+    `src/open_clip/loss.py::ClipLoss` expects a batch of B aligned
+    (img, txt) pairs; negatives are the remaining B-1 texts per image and
+    vice-versa. WebDataset format is the common on-disk shape.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  clip_pair_sampler:
+    formula: |
+      batch = [ (img_i, txt_i) ]_{i=1..B}    # positives on the diagonal
+      logits_i2t = img_emb @ txt_emb.T / T   # shape (B, B)
+      target     = arange(B)                  # positives are (i,i)
+      loss = 0.5 * ( CE(logits_i2t, target) + CE(logits_i2t.T, target) )
+    domain: "(dataset: WebDataset({.jpg, .txt}), batch_size: B ≥ 2, temperature T > 0)"
+    codomain: "(img_emb, txt_emb, targets=arange(B))"
+    invariants:
+    - "|img_batch| == |txt_batch| == B (pairs never split)"
+    - "no duplicate keys in a single batch (distinct negatives)"
+    - "targets are identity permutation arange(B)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-17-001
+  rule: positives on the diagonal
+  prediction: "target labels for image-to-text match are 0..B-1 in order"
+  test: |
+    set -euo pipefail
+    apr dataset clip-sample tests/fixtures/clip-tiny.tar --batch-size 8 \
+      --seed 42 --format json > /tmp/clip.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/clip.json'))
+    assert d['targets'] == list(range(8)), d['targets']
+    assert len(d['keys']) == 8 and len(set(d['keys'])) == 8, 'duplicate keys'
+    "
+  if_fails: rule 'positives on the diagonal' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-17-002
+  rule: img/txt ordering aligned within each batch
+  prediction: "key_i from img sidecar == key_i from txt sidecar for all i"
+  test: |
+    set -euo pipefail
+    apr dataset clip-sample tests/fixtures/clip-tiny.tar --batch-size 8 \
+      --seed 42 --format json > /tmp/clip.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/clip.json'))
+    assert d['img_keys'] == d['txt_keys'], (d['img_keys'], d['txt_keys'])
+    "
+  if_fails: rule 'img/txt ordering aligned within each batch' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-17-003
+  rule: drop_last default prevents ragged batches
+  prediction: "when N % B != 0, final ragged batch is dropped"
+  test: |
+    set -euo pipefail
+    # fixture has 20 pairs, batch=8 → 2 full batches, 4 dropped
+    apr dataset clip-sample tests/fixtures/clip-tiny.tar --batch-size 8 \
+      --seed 0 --format json --count-batches > /tmp/n.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/n.json'))
+    assert d['batches'] == 2 and d['dropped'] == 4, d
+    "
+
+  if_fails: rule 'drop_last default prevents ragged batches' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr dataset clip-sample targets == arange(B) (OpenCLIP ClipLoss assumption)"
+- type: invariant
+  property: "img/txt keys aligned per batch (no misalignment ⇒ no wrong-pair positives)"
+- type: invariant
+  property: "no duplicate keys in a batch"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-h-17
+  priority: medium
+  auto_created: true

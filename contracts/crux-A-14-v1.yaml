@@ -1,0 +1,84 @@
+# CRUX-A-14 — Pull from S3/GCS/Azure URL
+
+metadata:
+  id: CRUX-A-14
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Accept cloud-object-store URIs (s3://, gs://, az://) on `apr pull`.
+    Reference: AWS CLI `aws s3 cp`, gcloud `gsutil cp`, and vLLM's
+    `--model s3://bucket/path` transparent object-store loader.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  scheme_dispatch:
+    formula: |
+      pull(uri) = match scheme(uri):
+        "s3://bucket/key"  -> s3_client.get_object(bucket, key)
+        "gs://bucket/obj"  -> storage_client.blob(obj).download_to_file()
+        "az://ctr/blob"    -> blob_service.get_blob_client(ctr, blob).download_blob()
+        "hf://..."         -> existing HF path
+        else               -> exit 2 (unsupported scheme)
+    domain: "uri: str with scheme ∈ {s3, gs, az, hf, file, http, https}"
+    codomain: "local path on disk, sha256 matches upstream object metadata"
+    invariants:
+    - "sha256(downloaded_bytes) == provider.head_object.etag_or_md5"
+    - "AWS_PROFILE / GOOGLE_APPLICATION_CREDENTIALS / AZURE_STORAGE_KEY honored"
+    - "partial download (interrupted) resumes via Range header, not restart"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-14-001
+  rule: s3:// URI downloads and sha256-verifies against MinIO-hosted fixture
+  prediction: "apr pull s3://bucket/model.gguf exits 0 and sha256 matches object ETag"
+  test: |
+    set -euo pipefail
+    mc alias set local http://127.0.0.1:9000 minioadmin minioadmin
+    mc mb local/aprtest 2>/dev/null || true
+    dd if=/dev/urandom of=/tmp/fixture.gguf bs=1M count=4
+    mc cp /tmp/fixture.gguf local/aprtest/model.gguf
+    AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin \
+      AWS_ENDPOINT_URL=http://127.0.0.1:9000 \
+      apr pull s3://aprtest/model.gguf -o /tmp/out.gguf
+    expected=$(sha256sum /tmp/fixture.gguf | cut -c1-64)
+    actual=$(sha256sum /tmp/out.gguf | cut -c1-64)
+    [ "$expected" = "$actual" ]
+  if_fails: rule 's3:// URI downloads and sha256-verifies against MinIO-hosted fixture' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-14-002
+  rule: unsupported scheme exits 2 with actionable error
+  prediction: "apr pull ftp://example.com/model → exit 2, stderr mentions supported schemes"
+  test: |
+    set -e
+    apr pull ftp://example.com/model 2>/tmp/err && exit 1 || [ $? -eq 2 ]
+    grep -E "s3|gs|az|hf" /tmp/err
+
+  if_fails: rule 'unsupported scheme exits 2 with actionable error' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr pull s3://... matches `aws s3 cp` byte-identical + ETag-verified"
+- type: invariant
+  property: "credentials are pulled from standard env/config — no aprender-specific auth"
+- type: invariant
+  property: "interrupted download resumes; a completed pull is idempotent"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-a-14
+  priority: medium
+  auto_created: true

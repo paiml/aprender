@@ -1,0 +1,85 @@
+# CRUX-C-23 — DRY sampling
+
+metadata:
+  id: CRUX-C-23
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: llama_cpp
+  demand_score: 3
+  intake_status: missing
+  description: >
+    DRY (Don't Repeat Yourself) sampling — penalizes tokens that extend a
+    long prior-context substring match. Canonical: llama.cpp
+    `--dry-multiplier 0.8 --dry-base 1.75 --dry-allowed-length 2`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  dry_penalty:
+    formula: |
+      for candidate token t:
+        match_len = longest suffix-match of (context + [t]) ending in context
+        if match_len >= allowed_length:
+          penalty = multiplier * base^(match_len - allowed_length)
+          logit[t] -= penalty
+    domain: "(ctx: Vec<TokenId>, multiplier: f32, base: f32, allowed: u32, range: u32, seq_breakers: Set<TokenId>)"
+    codomain: "logits tensor (penalized)"
+    invariants:
+    - "multiplier=0 → identity (penalty disabled)"
+    - "tokens in seq_breakers reset the match_len counter"
+    - "penalty is always ≥ 0; never boosts any token"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-23-001
+  rule: multiplier=0 is identity
+  prediction: "DRY with multiplier=0 yields identical output to no-DRY"
+  test: |
+    set -euo pipefail
+    PROMPT="The cat sat on the cat sat on the"
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "$PROMPT" --dry-multiplier 0 --seed 1 --max-tokens 16 --format json > /tmp/off.json
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "$PROMPT" --seed 1 --max-tokens 16 --format json > /tmp/base.json
+    diff <(jq .token_ids /tmp/off.json) <(jq .token_ids /tmp/base.json)
+  if_fails: rule 'multiplier=0 is identity' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-23-002
+  rule: DRY reduces exact-phrase repetition on adversarial prompt
+  prediction: "repetition-heavy prompt with DRY has fewer 4-gram repeats than without"
+  test: |
+    set -euo pipefail
+    PROMPT="the quick brown fox the quick brown fox the quick brown fox"
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "$PROMPT" --seed 2 --max-tokens 64 --format json > /tmp/base.json
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "$PROMPT" --dry-multiplier 0.8 --dry-base 1.75 --dry-allowed-length 2 --seed 2 --max-tokens 64 --format json > /tmp/dry.json
+    python3 - <<'PY'
+    import json
+    def n4(toks): return len({tuple(toks[i:i+4]) for i in range(len(toks)-3)})
+    base = json.load(open("/tmp/base.json"))["token_ids"]
+    dry  = json.load(open("/tmp/dry.json"))["token_ids"]
+    assert n4(dry) >= n4(base), f"DRY should preserve or increase uniqueness, base={n4(base)} dry={n4(dry)}"
+    PY
+
+  if_fails: rule 'DRY reduces exact-phrase repetition on adversarial prompt' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr --dry-* matches llama.cpp DRY sampler on identical (ctx, multiplier, base, allowed)"
+- type: invariant
+  property: "multiplier=0 is identity; verified by byte-equal tokens"
+- type: invariant
+  property: "penalty ≥ 0 for all tokens; never adds probability mass"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-c-23
+  priority: medium
+  auto_created: true

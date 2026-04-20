@@ -1,0 +1,102 @@
+# CRUX-G-14 — License metadata validator
+
+metadata:
+  id: CRUX-G-14
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "G — Format Conversion"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Validate model card license + derivative-license inheritance before publish.
+    Canonical: HF card.data.license must be in known SPDX list OR 'other'
+    + license_name + license_link. Derivative models must carry same or more
+    permissive license than every parent listed in `base_model`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
+equations:
+  license_validate:
+    formula: |
+      license ∈ SPDX ∪ {"other": requires license_name AND license_link}
+      for each p in base_model:
+        permissive_rank(license) >= permissive_rank(parent_license(p))
+      # rank: public_domain > mit > apache-2.0 > bsd > gpl > research-only > closed
+    domain: "(card: ModelCard, base_model: [str])"
+    codomain: "JSON {ok: bool, violations: [str]}"
+    invariants:
+    - "known SPDX license accepted"
+    - "license='other' without license_name + license_link rejected"
+    - "derivative more-restrictive than parent rejected"
+
+falsification_tests:
+- id: FALSIFY-CRUX-G-14-001
+  rule: unknown license rejected
+  prediction: "card with license: 'bogus' fails validation"
+  test: |
+    set -euo pipefail
+    cat > /tmp/card.md <<'MD'
+    ---
+    license: bogus
+    library_name: aprender
+    ---
+    MD
+    ! apr validate-license /tmp/card.md 2>/tmp/err
+    grep -E "unknown.*license|not.*SPDX" /tmp/err
+  if_fails: rule 'unknown license rejected' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-14-002
+  rule: "'other' license requires license_name + license_link"
+  prediction: "license: other without license_name+link is rejected"
+  test: |
+    set -euo pipefail
+    cat > /tmp/card2.md <<'MD'
+    ---
+    license: other
+    library_name: aprender
+    ---
+    MD
+    ! apr validate-license /tmp/card2.md 2>/tmp/err2
+    grep -E "license_name|license_link" /tmp/err2
+  if_fails: rule ''other' license requires license_name + license_link' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-14-003
+  rule: more-restrictive derivative rejected
+  prediction: "child: mit, parent: gpl-3.0 → validation fails"
+  test: |
+    set -euo pipefail
+    cat > /tmp/card3.md <<'MD'
+    ---
+    license: mit
+    base_model: someorg/gpl-parent
+    library_name: aprender
+    ---
+    MD
+    ! apr validate-license /tmp/card3.md --resolve-base-licenses 2>/tmp/err3
+    grep -E "parent.*more.*restrict|license.*conflict" /tmp/err3
+
+  if_fails: rule 'more-restrictive derivative rejected' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr validate-license matches HF hub card-validator SPDX + other-license rules"
+- type: invariant
+  property: "known SPDX license always accepted"
+- type: invariant
+  property: "derivative cannot be more permissive than parent"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-g-14
+  priority: medium
+  auto_created: true

@@ -1,0 +1,108 @@
+# CRUX-H-18 — Negative sampling for ranking
+
+metadata:
+  id: CRUX-H-18
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: pytorch
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Negative sampling for pairwise / listwise ranking losses. Canonical:
+    word2vec/NCE (Mikolov 2013, arXiv:1310.4546) + BPR (Rendle 2009).
+    Three strategies: uniform, popularity (P(j) ∝ freq(j)^0.75), and
+    hard-negative (top-k scoring non-positives). No positive must appear
+    in its own negative set; count matches --num-negs.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  neg_sample:
+    formula: |
+      strategy=uniform       : P(j|i) = 1 / (|V| - |pos(i)|)
+      strategy=popularity    : P(j|i) ∝ freq(j)^0.75  over j ∉ pos(i)
+      strategy=hard          : top_k(score(i, j)) over j ∉ pos(i)
+      # safety: negatives(i) ∩ positives(i) = ∅
+    domain: "(positives: [(u, i)], V: u32, num_negs: u32, strategy ∈ {uniform, popularity, hard})"
+    codomain: "negatives: [(u, j)] with |negatives| = |positives| × num_negs"
+    invariants:
+    - "for every user u: negatives(u) ∩ positives(u) = ∅"
+    - "|negatives| == |positives| × num_negs exactly"
+    - "popularity sampler empirical freq ∝ freq^0.75 at n=100000 (±2σ)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-18-001
+  rule: no positive appears as its own negative
+  prediction: "negatives(u) ∩ positives(u) = ∅ for every sampled user"
+  test: |
+    set -euo pipefail
+    apr dataset neg-sample tests/fixtures/inter.jsonl --num-negs 4 \
+      --strategy uniform --seed 42 --format json > /tmp/n.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/n.json'))
+    for u, info in d['users'].items():
+        pos = set(info['pos']); neg = set(info['neg'])
+        assert pos.isdisjoint(neg), (u, pos & neg)
+    "
+  if_fails: rule 'no positive appears as its own negative' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-18-002
+  rule: exact count
+  prediction: "|negatives| == |positives| * num_negs"
+  test: |
+    set -euo pipefail
+    apr dataset neg-sample tests/fixtures/inter.jsonl --num-negs 4 \
+      --strategy uniform --format json > /tmp/n.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/n.json'))
+    total_pos = sum(len(u['pos']) for u in d['users'].values())
+    total_neg = sum(len(u['neg']) for u in d['users'].values())
+    assert total_neg == total_pos * 4, (total_pos, total_neg)
+    "
+  if_fails: rule 'exact count' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-18-003
+  rule: popularity follows freq^0.75 at n=100000
+  prediction: "top-item empirical share matches p ∝ freq^0.75 within ±2σ"
+  test: |
+    set -euo pipefail
+    apr dataset neg-sample tests/fixtures/inter.jsonl --num-negs 1 \
+      --strategy popularity --seed 42 --sample-count 100000 \
+      --format json > /tmp/p.json
+    python3 -c "
+    import json, math
+    d=json.load(open('/tmp/p.json'))
+    # sampler reports observed and expected freq for each item
+    for item, info in d['freq_report'].items():
+        obs, exp = info['observed'], info['expected']
+        n = 100000
+        sigma = math.sqrt(n * exp * (1-exp))
+        assert abs(obs - n*exp) <= 2*sigma + 5, (item, obs, exp, sigma)
+    "
+
+  if_fails: rule 'popularity follows freq^0.75 at n=100000' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr dataset neg-sample matches word2vec popularity sampler (freq^0.75) + BPR pairwise shape"
+- type: invariant
+  property: "disjoint positives/negatives per user"
+- type: invariant
+  property: "exact total negative count"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-h-18
+  priority: medium
+  auto_created: true

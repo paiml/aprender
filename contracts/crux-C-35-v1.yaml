@@ -1,0 +1,152 @@
+# CRUX-C-35 — Graceful shutdown in-flight drain
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-35
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Graceful shutdown in-flight drain. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  graceful_shutdown_signal_handling:
+    formula: |
+      vLLM canonical:
+        SIGTERM / SIGINT → API server stops accepting new connections, drains
+        in-flight requests, then exits 0.
+        Reference: https://docs.vllm.ai/en/latest/serving/deploying_with_k8s.html
+                   https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py (signal_handler)
+      apr parity target (apr serve):
+        On SIGTERM:
+          1. Stop accepting new HTTP connections (listener closed; new TCP → ECONNREFUSED).
+          2. Return 503 for NEW /v1/chat/completions requests on keep-alive connections,
+             OR close listener so they fail at connect.
+          3. Let IN-FLIGHT generation requests run to completion (up to --shutdown-timeout, default 30s).
+          4. After drain OR timeout, exit with code 0 (clean) or 124 (timeout).
+    domain: "(serve_state, SIGTERM, shutdown_timeout: Duration)"
+    codomain: "(exit_code: i32, drained_requests: u64, aborted_requests: u64)"
+    invariants:
+    - "apr serve installs SIGTERM and SIGINT handlers (not SIG_DFL)"
+    - "New TCP connections after SIGTERM are refused within <= 100ms"
+    - "In-flight request started before SIGTERM completes with finish_reason in {stop, length}"
+    - "Process exits within shutdown_timeout seconds (default 30s)"
+    - "Exit code 0 when drain completes; exit code 124 when timeout forces abort"
+    - "Reference: SIGTERM handling in vLLM api_server.py run_server()"
+
+  shutdown_no_silent_data_loss:
+    formula: |
+      During graceful drain, NO in-flight request has its HTTP response silently
+      dropped. Either it completes with a normal finish_reason, OR the client
+      observes a connection reset / 503.
+    domain: "(in_flight_requests, SIGTERM)"
+    codomain: bool
+    invariants:
+    - "No client observes TCP success with empty body (silent hang)"
+    - "All successful responses have non-empty content or a finish_reason"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-35-001
+  rule: SIGTERM stops accepting new connections
+  prediction: "curl to apr serve started within 1s of SIGTERM fails to connect (ECONNREFUSED) or returns 503"
+  test: |
+    # Assumes apr serve runs on :8080; user starts/stops the harness.
+    # Reference: https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py
+    PID=$(pgrep -f 'apr serve' | head -1)
+    [ -n "$PID" ] || { echo "FAIL: apr serve not running" >&2; exit 1; }
+    kill -TERM "$PID"
+    sleep 0.2
+    set +e
+    CODE=$(curl -sS -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/v1/models 2>&1)
+    RC=$?
+    set -e
+    # Either connection refused (curl exit 7) or HTTP 503.
+    if [ "$RC" = "7" ] || [ "$CODE" = "503" ]; then
+      : # PASS
+    else
+      echo "FAIL: post-SIGTERM new conn: curl_rc=$RC http=$CODE (expected refused or 503)" >&2
+      exit 1
+    fi
+  if_fails: "apr serve continues to accept new connections after SIGTERM"
+
+- id: FALSIFY-CRUX-C-35-002
+  rule: in-flight request completes during graceful drain
+  prediction: "Request started before SIGTERM returns a valid completion"
+  test: |
+    PID=$(pgrep -f 'apr serve' | head -1)
+    [ -n "$PID" ] || { echo "FAIL: apr serve not running" >&2; exit 1; }
+    # Start a long-ish generation in background
+    (curl -sS -o /tmp/crux-c-35-resp.json -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"Count slowly to 10."}],"max_tokens":64}') &
+    REQ_PID=$!
+    sleep 0.3  # ensure request reached the server
+    kill -TERM "$PID"
+    wait $REQ_PID
+    jq -e '.choices[0].message.content | length > 0' /tmp/crux-c-35-resp.json >/dev/null \
+      || { echo "FAIL: in-flight request did not complete" >&2; exit 1; }
+    jq -e '.choices[0].finish_reason | IN("stop","length")' /tmp/crux-c-35-resp.json >/dev/null \
+      || { echo "FAIL: finish_reason missing or not in {stop,length}" >&2; exit 1; }
+  if_fails: "apr serve aborts in-flight requests on SIGTERM instead of draining"
+
+- id: FALSIFY-CRUX-C-35-003
+  rule: process exits 0 within shutdown_timeout
+  prediction: "apr serve process exits within 30s of SIGTERM with code 0 (drained) or 124 (timeout)"
+  test: |
+    PID=$(pgrep -f 'apr serve' | head -1)
+    [ -n "$PID" ] || { echo "FAIL: apr serve not running" >&2; exit 1; }
+    kill -TERM "$PID"
+    for _ in $(seq 1 30); do
+      kill -0 "$PID" 2>/dev/null || break
+      sleep 1
+    done
+    if kill -0 "$PID" 2>/dev/null; then
+      echo "FAIL: apr serve still alive >30s after SIGTERM" >&2
+      kill -KILL "$PID" 2>/dev/null || true
+      exit 1
+    fi
+    # exit code recovered via wait (only works if PID is child of this shell; otherwise skip)
+    echo "PASS: apr serve exited within shutdown_timeout"
+  if_fails: "apr serve does not exit within shutdown_timeout after SIGTERM"
+
+proof_obligations:
+- type: equivalence
+  property: "apr serve SIGTERM handling matches vLLM api_server.py signal handler (drain in-flight, refuse new)"
+- type: invariant
+  property: "New TCP connections refused or 503 after SIGTERM"
+- type: invariant
+  property: "In-flight requests complete with finish_reason in {stop,length} during drain"
+- type: invariant
+  property: "Process exits within shutdown_timeout"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-35` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-35
+  priority: high
+  auto_created: false

@@ -1,0 +1,182 @@
+# CRUX-C-07 — Paged-attention KV cache
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-07
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Paged-attention KV cache. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  per_token_kv_bytes:
+    formula: |
+      bytes_per_token = num_layers × num_kv_heads × head_dim × 2 × dtype_bytes
+      (factor 2 = K + V;  dtype_bytes: fp16=2, bf16=2, fp8=1)
+
+      block_bytes = block_size × bytes_per_token
+      total_kv_vram = num_blocks × block_bytes
+    domain: model config + scheduler config
+    codomain: bytes (u64)
+    invariants:
+    - "Allocation granularity is block_size tokens, not 1 token"
+    - "2 accounts for K and V tensors (each of shape [heads, head_dim])"
+    - "Reference: vLLM PagedAttention paper https://arxiv.org/abs/2309.06180 §4"
+
+  block_size_observable:
+    formula: |
+      apr serve --kv-block-size B  ⇒  /metrics exposes apr_kv_block_size == B
+      Default B == 16 (per vLLM default)
+    domain: scheduler config flag
+    codomain: bool
+    invariants:
+    - "--kv-block-size CLI flag present and honored"
+    - "Default block size is 16 tokens (matches vLLM default)"
+
+  peak_vram_bound:
+    formula: |
+      peak_vram_kv(ctx_len=L, N_req=1) ≤ ceil(L / block_size) × block_bytes × 1.1
+      (10% slack for bookkeeping; otherwise internal fragmentation ≤ block_size-1 tokens)
+    domain: single request with context length L
+    codomain: bytes (u64)
+    invariants:
+    - "Peak KV VRAM within 10% of formula prediction for any context length"
+    - "Wasted VRAM per sequence bounded by (block_size - 1) × bytes_per_token"
+
+  no_external_fragmentation:
+    formula: |
+      Let free_blocks = total_blocks - allocated_blocks
+      Any incoming request fitting in ≤ free_blocks CAN be admitted
+      (regardless of prior alloc/free pattern — blocks are uniformly sized)
+    domain: KV allocator state machine
+    codomain: bool
+    invariants:
+    - "Zero external fragmentation — all blocks are same size, interchangeable"
+    - "Admission decision depends only on free_blocks count, not layout"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-07-001
+  rule: --kv-block-size flag present and honored
+  prediction: "apr serve --kv-block-size 16 sets scheduler block size"
+  test: |
+    # Reference: https://arxiv.org/abs/2309.06180
+    apr serve --help 2>&1 | grep -qE '\-\-kv-block-size' \
+      || { echo "FAIL: --kv-block-size flag missing" >&2; exit 1; }
+    # Start with explicit block size, scrape /metrics
+    # (assumes apr serve running with --kv-block-size 16)
+    B=$(curl -sS http://127.0.0.1:8080/metrics | awk '/^apr_kv_block_size/ {print $2; exit}')
+    [ "$B" = "16" ] \
+      || { echo "FAIL: apr_kv_block_size=$B != 16" >&2; exit 1; }
+  if_fails: "--kv-block-size flag absent, or /metrics does not expose apr_kv_block_size"
+
+- id: FALSIFY-CRUX-C-07-002
+  rule: peak KV VRAM within 10% of formula
+  prediction: |
+    For 1k-context request:
+      peak_kv_vram <= ceil(1024/16) × 16 × num_layers × num_kv_heads × head_dim × 2 × 2 × 1.1
+  test: |
+    # Uses a model where we know the config (qwen2.5-coder-1.5b: 28 layers, 2 KV heads, 128 head_dim, fp16)
+    # bytes_per_token = 28 * 2 * 128 * 2 * 2 = 28,672 bytes
+    # 1024 ctx in block_size=16 => 64 blocks
+    # expected_peak_kv = 64 * 16 * 28672 = 29,360,128 bytes ≈ 28 MiB
+    PREDICTED_MIB=28
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    # Scrape /metrics baseline
+    BASE=$(curl -sS http://127.0.0.1:8080/metrics | awk '/^apr_kv_used_bytes/ {print $2; exit}')
+    # Fire 1k-context request (prompt padded to ~1000 tokens, max_tokens=24 for a small tail)
+    export PROMPT=$(python3 -c "print('hello '*512)")
+    ( curl -sS -X POST "$URL" -H "Content-Type: application/json" \
+        -d "$(python3 -c 'import json,os; print(json.dumps({"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":os.environ["PROMPT"]}],"stream":False,"max_tokens":24,"temperature":0}))')" \
+        >/dev/null ) &
+    REQ_PID=$!
+    # Poll peak
+    PEAK=$BASE
+    while kill -0 $REQ_PID 2>/dev/null; do
+      V=$(curl -sS http://127.0.0.1:8080/metrics | awk '/^apr_kv_used_bytes/ {print $2; exit}')
+      if python3 -c "import sys; sys.exit(0 if float('${V:-0}') > float('$PEAK') else 1)" 2>/dev/null; then
+        PEAK=$V
+      fi
+      sleep 0.05
+    done
+    wait
+    python3 -c "peak_mib=(float('$PEAK')-float('$BASE'))/(1024*1024); pred=$PREDICTED_MIB; print(f'peak_kv_delta={peak_mib:.1f} MiB  predicted={pred} MiB  ratio={peak_mib/pred:.2f}'); assert peak_mib <= pred*1.1, f'peak KV {peak_mib:.1f} > {pred*1.1:.1f} MiB (formula+10%)'"
+  if_fails: "Peak KV VRAM exceeds block-formula prediction by >10% (over-allocation or leak)"
+
+- id: FALSIFY-CRUX-C-07-003
+  rule: no external fragmentation — free block count is sufficient admission signal
+  prediction: |
+    After interleaved alloc/free of varied-length sequences,
+    next request of size <= free_blocks is always admitted
+  test: |
+    # TODO: requires a /debug/kv endpoint or APR_KV_TRACE=1 to record
+    # (free_blocks, admitted?) per scheduling decision.
+    # Spec check: admission decisions depend only on free_blocks count.
+    if [ -z "${APR_KV_TRACE:-}" ]; then
+      echo "SKIP: APR_KV_TRACE not set; fragmentation falsification pending" >&2
+      exit 2
+    fi
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    # Issue 10 requests with varied lengths, interleaved
+    for i in $(seq 1 10); do
+      ( curl -sS -X POST "$URL" -H "Content-Type: application/json" \
+          -d "{\"model\":\"qwen2.5-coder-1.5b\",\"messages\":[{\"role\":\"user\",\"content\":\"r$i\"}],\"stream\":false,\"max_tokens\":$((32+i*20)),\"temperature\":0}" \
+          >/dev/null ) &
+    done
+    wait
+    python3 -c "import re,os; log=open(os.environ['APR_KV_TRACE']).read(); decisions=re.findall(r'DECIDE free=(\d+) need=(\d+) admit=(\w+)', log); [ (_ for _ in ()).throw(AssertionError(f'rejected with need={int(need)} free={int(free)} (fragmentation)')) if (int(need) <= int(free) and admit != 'true') else None for free,need,admit in decisions ]"
+  if_fails: "Request rejected despite sufficient free blocks (external fragmentation present)"
+
+- id: FALSIFY-CRUX-C-07-004
+  rule: default block size is 16
+  prediction: "apr serve (no flag) uses block_size=16 by default"
+  test: |
+    # Start with no --kv-block-size flag
+    B=$(curl -sS http://127.0.0.1:8080/metrics | awk '/^apr_kv_block_size/ {print $2; exit}')
+    [ "$B" = "16" ] \
+      || { echo "FAIL: default block size $B != 16 (vLLM default)" >&2; exit 1; }
+  if_fails: "Default KV block size differs from vLLM canonical default of 16"
+
+proof_obligations:
+- type: invariant
+  property: "--kv-block-size CLI flag present and honored"
+- type: invariant
+  property: "Default block_size == 16 tokens"
+- type: invariant
+  property: "Peak KV VRAM within 10% of ceil(L/block_size) × block_bytes"
+- type: invariant
+  property: "Wasted VRAM per sequence <= (block_size - 1) × bytes_per_token"
+- type: invariant
+  property: "Zero external fragmentation — admission depends only on free_blocks"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-07` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-07
+  priority: critical
+  auto_created: false

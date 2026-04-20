@@ -1,0 +1,168 @@
+# CRUX-C-03 — OpenAI /v1/chat/completions
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-03
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    OpenAI /v1/chat/completions. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  chat_completion_response_schema:
+    formula: |
+      POST /v1/chat/completions  (stream=false)  response JSON MUST contain:
+        id:         string (non-empty)
+        object:     string == "chat.completion"
+        created:    u64 (Unix seconds, > 0)
+        model:      string (non-empty; matches --model or served alias)
+        choices:    array (length >= 1)
+        choices[0].index:         u64 == 0
+        choices[0].message.role:    string == "assistant"
+        choices[0].message.content: string
+        choices[0].finish_reason:   string ∈ {"stop","length","content_filter","tool_calls"}
+        usage.prompt_tokens:     u64 >= 1
+        usage.completion_tokens: u64 >= 0
+        usage.total_tokens:      u64 >= 1
+    domain: HTTP POST /v1/chat/completions with stream=false
+    codomain: application/json response body
+    invariants:
+    - "object field MUST equal literal string 'chat.completion'"
+    - "choices array length >= 1; non-stream returns full message in choices[0].message"
+    - "finish_reason drawn from OpenAI-defined set"
+    - "Reference: https://platform.openai.com/docs/api-reference/chat/create"
+
+  usage_token_accounting:
+    formula: |
+      usage.total_tokens == usage.prompt_tokens + usage.completion_tokens
+    domain: usage object in chat completion response
+    codomain: bool
+    invariants:
+    - "Token accounting identity holds EXACTLY (no rounding)"
+    - "prompt_tokens counts input messages after tokenization"
+    - "completion_tokens counts generated assistant tokens"
+
+  non_stream_single_message:
+    formula: |
+      stream=false  ⇒  Content-Type: application/json  ∧  single JSON object
+      (NOT text/event-stream, NOT an array of chunks)
+    domain: response Content-Type header + body framing
+    codomain: bool
+    invariants:
+    - "Content-Type header MUST be application/json for stream=false"
+    - "Body is a single well-formed JSON object, not SSE frames"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-03-001
+  rule: response schema conforms to OpenAI chat.completion object
+  prediction: "apr serve /v1/chat/completions returns JSON matching OpenAI schema"
+  test: |
+    # Start apr serve in background on :8080 with a small model
+    # Reference: https://platform.openai.com/docs/api-reference/chat/create
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"Say hi."}],"stream":false,"max_tokens":16}')
+    echo "$RESP" | jq -e '
+      .id | type == "string" and length > 0
+    ' >/dev/null || { echo "FAIL: id missing/empty" >&2; exit 1; }
+    echo "$RESP" | jq -e '.object == "chat.completion"' >/dev/null \
+      || { echo "FAIL: object != chat.completion" >&2; exit 1; }
+    echo "$RESP" | jq -e '.created | type == "number" and . > 0' >/dev/null \
+      || { echo "FAIL: created missing" >&2; exit 1; }
+    echo "$RESP" | jq -e '.model | type == "string" and length > 0' >/dev/null \
+      || { echo "FAIL: model missing" >&2; exit 1; }
+    echo "$RESP" | jq -e '
+      (.choices | length >= 1) and
+      (.choices[0].index == 0) and
+      (.choices[0].message.role == "assistant") and
+      (.choices[0].message.content | type == "string") and
+      (["stop","length","content_filter","tool_calls"] | index(.choices[0].finish_reason) != null)
+    ' >/dev/null || { echo "FAIL: choices[0] schema violation" >&2; exit 1; }
+  if_fails: "Response does not conform to OpenAI chat.completion schema"
+
+- id: FALSIFY-CRUX-C-03-002
+  rule: token accounting identity
+  prediction: "usage.total_tokens == usage.prompt_tokens + usage.completion_tokens"
+  test: |
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"What is 2+2?"}],"stream":false,"max_tokens":16}')
+    P=$(echo "$RESP" | jq '.usage.prompt_tokens')
+    C=$(echo "$RESP" | jq '.usage.completion_tokens')
+    T=$(echo "$RESP" | jq '.usage.total_tokens')
+    python3 -c "assert $T == $P + $C, f'total={$T} prompt={$P} completion={$C}'"
+  if_fails: "usage.total_tokens != prompt_tokens + completion_tokens"
+
+- id: FALSIFY-CRUX-C-03-003
+  rule: non-stream returns application/json single object
+  prediction: "stream=false yields Content-Type: application/json and single JSON body"
+  test: |
+    HDRS=$(curl -sS -D - -o /tmp/crux-c-03-body.json -X POST \
+      http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"ok"}],"stream":false,"max_tokens":8}')
+    echo "$HDRS" | grep -iE '^content-type:\s*application/json' >/dev/null \
+      || { echo "FAIL: wrong Content-Type" >&2; exit 1; }
+    # Body must parse as a single JSON object (not SSE, not array)
+    jq -e 'type == "object"' /tmp/crux-c-03-body.json >/dev/null \
+      || { echo "FAIL: body not single JSON object" >&2; exit 1; }
+
+  if_fails: "Non-stream response not application/json or not a single JSON object"
+
+- id: FALSIFY-CRUX-C-03-004
+  rule: model echo
+  prediction: "response.model matches request.model (or a documented alias)"
+  test: |
+    REQ_MODEL="qwen2.5-coder-1.5b"
+    RESP=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d "{\"model\":\"$REQ_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":false,\"max_tokens\":4}")
+    RESP_MODEL=$(echo "$RESP" | jq -r '.model')
+    [ "$RESP_MODEL" = "$REQ_MODEL" ] \
+      || { echo "FAIL: response.model=$RESP_MODEL != request.model=$REQ_MODEL" >&2; exit 1; }
+  if_fails: "Response model field does not echo requested model identifier"
+
+proof_obligations:
+- type: invariant
+  property: "response.object == 'chat.completion'"
+- type: invariant
+  property: "usage.total_tokens == usage.prompt_tokens + usage.completion_tokens"
+- type: invariant
+  property: "choices[0].message.{role,content} present with role=='assistant'"
+- type: invariant
+  property: "finish_reason ∈ {stop, length, content_filter, tool_calls}"
+- type: invariant
+  property: "Content-Type: application/json when stream=false"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-03` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-03
+  priority: critical
+  auto_created: false

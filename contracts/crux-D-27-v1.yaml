@@ -1,0 +1,89 @@
+# CRUX-D-27 — Hyperparameter sweep ray/optuna
+
+metadata:
+  id: CRUX-D-27
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: pytorch
+  demand_score: 3
+  intake_status: missing
+  description: >
+    HP sweep with ASHA / TPE samplers. Canonical: Ray Tune
+    `tune.run(..., scheduler=ASHAScheduler, search_alg=OptunaSearch)`.
+    Search space as YAML/TOML, per-trial artifacts, pareto/best JSON report.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  hp_sweep:
+    formula: |
+      trial_i ~ sampler(space)
+      metric_i = objective(trial_i.config)
+      best = argmin_i metric_i   # or argmax depending on direction
+      ASHA: prune trials where rung_t metric below bottom-η quantile of rung peers
+    domain: "(space: Map<String, Distribution>, n_trials: u32, sampler ∈ {random, tpe, bo}, scheduler ∈ {none, asha})"
+    codomain: "JSON {trials: [...], best: {config, metric}, pareto: [...]}"
+    invariants:
+    - "best.metric ≤ every trial.metric (for minimization direction)"
+    - "|trials| ≤ n_trials (ASHA may prune, so can be less)"
+    - "deterministic under --seed (same config + seed → same trial sequence)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-27-001
+  rule: best metric is the minimum across all completed trials
+  prediction: "best.metric == min(t.metric for t in trials if t.status=='completed')"
+  test: |
+    set -euo pipefail
+    apr sweep config/sweep.yaml --n-trials 10 --format json > /tmp/sweep.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/sweep.json'))
+    metrics = [t['metric'] for t in d['trials'] if t['status']=='completed']
+    assert d['best']['metric'] == min(metrics), (d['best']['metric'], min(metrics))
+    "
+  if_fails: rule 'best metric is the minimum across all completed trials' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-27-002
+  rule: sweep is deterministic under fixed seed
+  prediction: "two runs with --seed 42 produce identical trial configs"
+  test: |
+    set -euo pipefail
+    apr sweep config/sweep.yaml --seed 42 --n-trials 5 --format json | jq '[.trials[].config]' > /tmp/a.json
+    apr sweep config/sweep.yaml --seed 42 --n-trials 5 --format json | jq '[.trials[].config]' > /tmp/b.json
+    diff /tmp/a.json /tmp/b.json
+  if_fails: rule 'sweep is deterministic under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-27-003
+  rule: ASHA scheduler actually prunes trials
+  prediction: "with --scheduler asha, count(status=='pruned') > 0 on a 20-trial sweep"
+  test: |
+    set -euo pipefail
+    apr sweep config/sweep.yaml --scheduler asha --n-trials 20 --format json > /tmp/asha.json
+    pruned=$(jq '[.trials[] | select(.status=="pruned")] | length' /tmp/asha.json)
+    python3 -c "assert $pruned > 0, 'ASHA did not prune any trials'"
+
+  if_fails: rule 'ASHA scheduler actually prunes trials' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr sweep matches Ray Tune / Optuna search-algo + scheduler semantics for {random, tpe, asha}"
+- type: invariant
+  property: "best.metric is the optimum across completed trials"
+- type: invariant
+  property: "deterministic under --seed"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-27
+  priority: medium
+  auto_created: true

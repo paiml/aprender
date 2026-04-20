@@ -1,0 +1,93 @@
+# CRUX-D-24 — Activation checkpointing tags
+
+metadata:
+  id: CRUX-D-24
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: pytorch
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Named activation-checkpoint groups that let users toggle recompute
+    granularity per layer type. Canonical: PyTorch
+    `torch.utils.checkpoint.checkpoint_sequential` + custom tag names
+    like `{"attn": True, "ffn": False}`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  ckpt_memory_vs_compute:
+    formula: |
+      peak_mem(policy={tag→bool}) = sum_i sizeof(act_i) for i with tag(i).ckpt=False
+      fwd_time(policy) = T_fwd_base
+      bwd_time(policy) = T_bwd_base + sum_i T_fwd_i for i with tag(i).ckpt=True  # recompute
+    domain: "(tags_map: Map<String, bool>, model: torch.nn.Module)"
+    codomain: "training loop with per-tag checkpoint wrappers"
+    invariants:
+    - "all-false tags (no ckpt) == vanilla autograd (byte-equal gradients)"
+    - "all-true tags reduces peak activation memory ≥ 30% on 7B at 4k seq"
+    - "loss curve with ckpt differs from no-ckpt by ≤ 1e-5 (numerical noise only)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-24-001
+  rule: all-false policy is byte-equal to no-ckpt baseline
+  prediction: "gradient norms identical to 1e-6 under --activation-ckpt '{}'"
+  test: |
+    set -euo pipefail
+    apr finetune tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --activation-ckpt '{}' --steps 1 --dump-gradnorm /tmp/off.txt
+    apr finetune tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --steps 1 --dump-gradnorm /tmp/base.txt
+    diff /tmp/off.txt /tmp/base.txt
+  if_fails: rule 'all-false policy is byte-equal to no-ckpt baseline' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-24-002
+  rule: ckpt=attn+ffn cuts peak GPU mem > 30%
+  prediction: "measured cuMemGetInfo peak differs by ≥30% between policies"
+  test: |
+    set -euo pipefail
+    APR_DUMP_PEAK_MEM=1 apr finetune ... --activation-ckpt '{"attn":true,"ffn":true}' --steps 5 2>/tmp/mem_on
+    APR_DUMP_PEAK_MEM=1 apr finetune ... --steps 5 2>/tmp/mem_off
+    on=$(grep -oP 'peak_mem=\K[0-9]+' /tmp/mem_on)
+    off=$(grep -oP 'peak_mem=\K[0-9]+' /tmp/mem_off)
+    python3 -c "assert ($off - $on) / $off > 0.3, f'on=$on off=$off'"
+  if_fails: rule 'ckpt=attn+ffn cuts peak GPU mem > 30%' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-24-003
+  rule: loss curve unchanged (numerical parity with autograd)
+  prediction: "|loss(ckpt) - loss(no-ckpt)| ≤ 1e-5 per step"
+  test: |
+    set -euo pipefail
+    apr finetune ... --activation-ckpt '{"attn":true}' --steps 5 --dump-loss /tmp/l_on.json
+    apr finetune ... --steps 5 --dump-loss /tmp/l_off.json
+    python3 -c "
+    import json; a=json.load(open('/tmp/l_on.json'))['steps']; b=json.load(open('/tmp/l_off.json'))['steps']
+    assert all(abs(x['loss']-y['loss'])<1e-5 for x,y in zip(a,b))
+    "
+
+  if_fails: rule 'loss curve unchanged (numerical parity with autograd)' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr --activation-ckpt matches `torch.utils.checkpoint.checkpoint_sequential` recompute semantics"
+- type: invariant
+  property: "empty policy ≡ no ckpt (byte-equal gradients)"
+- type: invariant
+  property: "ckpt loss matches no-ckpt loss within 1e-5 per step"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-24
+  priority: medium
+  auto_created: true

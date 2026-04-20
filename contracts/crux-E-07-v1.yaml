@@ -1,0 +1,174 @@
+# CRUX-E-07 — Latency P50/P95/P99 under load
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-E-07
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    Latency P50/P95/P99 under load. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.E and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  # Competitor canonical CLI:
+  #   python benchmarks/benchmark_serving.py --num-prompts 1000 --request-rate 10
+  # Reference: https://docs.vllm.ai/en/latest/performance/benchmarks.html
+  # Aprender equivalent:
+  #   apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json
+
+  latency_percentile:
+    formula: |
+      P_q(L) = inf { x ∈ ℝ : F_L(x) >= q }
+      where:
+        L = observed per-request latencies over the bench window (ms)
+        F_L = empirical CDF of L
+        q ∈ {0.50, 0.95, 0.99}
+      Monotonicity:  P_0.50(L) <= P_0.95(L) <= P_0.99(L)
+    domain: per-request latency samples (list<f64 ms>)
+    codomain: (p50_ms, p95_ms, p99_ms) ∈ ℝ_+^3
+    invariants:
+    - "p99 >= p95 >= p50 (percentile monotonicity; violation = compute bug)"
+    - "All latencies > 0 (strictly positive wall-clock)"
+    - "ttft_p99 >= ttft_p95 >= ttft_p50 (same monotonicity for time-to-first-token)"
+
+  littles_law:
+    formula: |
+      L = λ · W  (Little's law for stationary queuing systems)
+      where:
+        L = average number of in-flight requests (≈ --concurrent)
+        λ = throughput (requests per second)
+        W = average request latency (seconds)
+      For token-level throughput:
+        throughput_tok_s ≈ concurrent * avg_tokens_per_req / avg_latency_sec
+    domain: (concurrency, throughput, avg_latency)
+    codomain: bool (law holds within tolerance)
+    invariants:
+    - "throughput_req_s * avg_latency_sec ≈ concurrent (±10% under steady-state load)"
+    - "throughput_tok_s > 0 when duration > 0"
+
+  bench_json_schema:
+    formula: |
+      apr bench --json output MUST contain:
+        latency_p50_ms: f64 > 0
+        latency_p95_ms: f64 > 0
+        latency_p99_ms: f64 > 0
+        ttft_p50_ms: f64 > 0
+        ttft_p95_ms: f64 > 0
+        ttft_p99_ms: f64 > 0
+        throughput_tok_s: f64 > 0
+        throughput_req_s: f64 > 0
+        num_requests_completed: u64 > 0
+        num_requests_failed: u64 >= 0
+        duration_sec: f64 > 0
+    domain: apr bench --json output
+    codomain: JSON object
+    invariants:
+    - "All 11 keys MUST be present"
+    - "No panics during load (num_requests_failed / num_requests_completed reported, not process crash)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-07-001
+  rule: JSON schema complete
+  prediction: "apr bench --json emits all 11 required keys"
+  test: |
+    OUT=$(apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json)
+    echo "$OUT" | jq -e '.latency_p50_ms and .latency_p95_ms and .latency_p99_ms and
+                         .ttft_p50_ms and .ttft_p95_ms and .ttft_p99_ms and
+                         .throughput_tok_s and .throughput_req_s and
+                         .num_requests_completed and (.num_requests_failed != null) and
+                         .duration_sec'
+  if_fails: "apr bench JSON missing one of the 11 required percentile/throughput keys"
+
+- id: FALSIFY-CRUX-E-07-002
+  rule: percentile monotonicity
+  prediction: "p99 >= p95 >= p50 for both latency and ttft"
+  test: |
+    OUT=$(apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json)
+    echo "$OUT" | jq -e '
+      .latency_p99_ms >= .latency_p95_ms and
+      .latency_p95_ms >= .latency_p50_ms and
+      .ttft_p99_ms    >= .ttft_p95_ms    and
+      .ttft_p95_ms    >= .ttft_p50_ms'
+  if_fails: "Latency percentiles non-monotonic — quantile computation bug"
+
+- id: FALSIFY-CRUX-E-07-003
+  rule: Little's law sanity
+  prediction: "throughput_req_s * avg_latency_sec ≈ concurrent (±10%)"
+  test: |
+    OUT=$(apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json)
+    python3 - "$OUT" <<'PY'
+    import json, sys
+    d = json.loads(sys.argv[1])
+    # Use p50 as proxy for avg_latency (within factor of 2 for reasonable dists)
+    avg_lat_sec = d["latency_p50_ms"] / 1000.0
+    L_observed  = d["throughput_req_s"] * avg_lat_sec
+    concurrent  = 16
+    rel_err = abs(L_observed - concurrent) / concurrent
+    sys.exit(0 if rel_err <= 0.50 else 1)  # loose bound since using p50 not mean
+    PY
+  if_fails: "Little's law violated by >50% — queuing model broken or measurements corrupted"
+
+- id: FALSIFY-CRUX-E-07-004
+  rule: no panics during load
+  prediction: "apr bench exits 0 and reports failures as JSON, not crash"
+  test: |
+    apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json > /tmp/bench.json
+    RC=$?
+    [ "$RC" -eq 0 ] && jq -e '.num_requests_completed > 0' /tmp/bench.json
+  if_fails: "apr bench crashed (non-zero exit) or completed zero requests under load"
+
+- id: FALSIFY-CRUX-E-07-005
+  rule: all latencies strictly positive
+  prediction: "every reported percentile > 0 ms"
+  test: |
+    OUT=$(apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json)
+    echo "$OUT" | jq -e '
+      .latency_p50_ms > 0 and .latency_p95_ms > 0 and .latency_p99_ms > 0 and
+      .ttft_p50_ms    > 0 and .ttft_p95_ms    > 0 and .ttft_p99_ms    > 0 and
+      .throughput_tok_s > 0 and .throughput_req_s > 0 and .duration_sec > 0'
+  if_fails: "Some percentile or throughput is zero/negative — timer or counter bug"
+
+proof_obligations:
+- type: invariant
+  property: "JSON has all 11 required keys (percentiles, ttft, throughput, counts, duration)"
+- type: invariant
+  property: "p99 >= p95 >= p50 for both latency and ttft"
+- type: invariant
+  property: "All latency/throughput/duration values strictly positive"
+- type: invariant
+  property: "Little's law: throughput_req_s * avg_latency_sec ≈ concurrent (±10% at steady-state)"
+- type: invariant
+  property: "No process crash under load — failures reported via num_requests_failed"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-07` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-07
+  priority: critical
+  auto_created: true

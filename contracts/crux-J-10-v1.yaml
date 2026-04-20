@@ -1,0 +1,92 @@
+# CRUX-J-10 — OpenCLAW persistent memory store
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-10
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 4
+  intake_status: missing
+  description: >
+    OpenCLAW (per openclaw.ai) "remembers you and becomes uniquely yours"
+    via persistent memory. Backing store shape (sqlite / vector / plain file)
+    is NOT documented — see evidence/crux/openclaw/gaps.md#4. Aprender parity:
+    memory MUST be put/get round-trippable, TTL-aware, and recall-measurable
+    via self-recall@1 ≥ some documented threshold. Overlaps with the agent
+    memory plugin story in CRUX-I-15.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/crux-I-15-v1.yaml
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  memory_round_trip:
+    formula: |
+      put(key, value, ttl) → ack
+      get(key) at t:
+        if now() - put_time(key) < ttl : returns value
+        else                            : returns None
+      recall@1 := 1.0 on identity query (put then get without intervening ops)
+    domain: (key, value, ttl) agent memory write / subsequent read
+    codomain: value or None
+    invariants:
+    - "put/get round-trip is deterministic when no intervening writes to key"
+    - "TTL is monotonic: value disappears exactly once after ttl elapses"
+    - "self-recall@1 on a just-written key = 1.0 (no quantization/hashing loss)"
+    - "backing store path is configurable and under $HOME by default"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-10-001
+  rule: memory put/get round-trip
+  prediction: "apr memory put then apr memory get returns the same value"
+  test: |
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr memory --help 2>&1 | grep -qE '(^|\s)put(\s|$)' || {
+      echo "FAIL: apr memory does not expose put verb" >&2; exit 1
+    }
+    apr memory --help 2>&1 | grep -qE '(^|\s)get(\s|$)' || {
+      echo "FAIL: apr memory does not expose get verb" >&2; exit 1
+    }
+  if_fails: CRUX-J-10 parity broken — apr memory MUST expose put/get verbs for OpenCLAW parity
+- id: FALSIFY-CRUX-J-10-002
+  rule: memory backing store path is configurable and under $HOME
+  prediction: "APR_MEMORY_DIR env or config key controls store path"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "APR_MEMORY_DIR memory store path" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no evidence of configurable memory store path" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-10 configurability invariant — memory store path must be user-configurable
+
+proof_obligations:
+- type: invariant
+  property: "put/get round-trip is deterministic"
+- type: invariant
+  property: "TTL is monotonic — value disappears exactly once"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-10
+  priority: high
+  auto_created: true

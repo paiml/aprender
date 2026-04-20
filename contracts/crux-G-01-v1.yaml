@@ -1,0 +1,160 @@
+# CRUX-G-01 — Publish ≤5 GB model to HF Hub
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-G-01
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "G — Format Conversion"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Publish ≤5 GB model to HF Hub. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.G and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
+equations:
+  single_file_upload_contract:
+    formula: |
+      For file F with size_bytes(F) <= 5 * 1024^3 (5 GiB):
+        apr publish hf://user/repo F →
+          HTTP POST /api/models/user/repo/commit/main
+            Content-Type: application/json
+            body: { files: [{ path: basename(F), content: <base64-or-raw> }],
+                    summary: "..." }
+          HTTP 200 with { commitUrl, success: true }
+      post-condition:
+        GET /api/models/user/repo/tree/main lists basename(F)
+        AND sha256(remote F) == sha256(local F)
+    domain: local model file
+    codomain: HF repository state
+    invariants:
+    - "Files ≤ 5 GiB use the regular JSON commit path (NOT NDJSON / Xet / LFS)"
+    - "Post-upload /tree/main lists the uploaded file by name"
+    - "Remote sha256 matches local sha256 byte-for-byte"
+
+  authentication_required:
+    formula: |
+      apr publish WITHOUT HF_TOKEN (or expired token) → exit != 0
+      apr publish WITH valid HF_TOKEN AND user owns repo → exit 0
+    domain: 'HF_TOKEN: None, target repo: None'
+    codomain: exit code
+    invariants:
+    - "Missing HF_TOKEN produces actionable error, never silent no-op"
+    - "HF API 401/403 is surfaced as non-zero exit"
+
+falsification_tests:
+- id: FALSIFY-CRUX-G-01-001
+  rule: small file goes through JSON commit path
+  prediction: "≤5 GiB file uploads via /api/models/<repo>/commit/main JSON (not LFS/Xet)"
+  test: |
+    # Use a tiny model (<5GB) and dry-run to capture the request
+    apr publish hf://paiml/crux-g01-test tests/fixtures/tiny-q4k.apr \
+        --dry-run --json | \
+      jq -e '.transport == "json-commit" and .ndjson == false and .lfs == false'
+  if_fails: "small-file publish routed through LFS/Xet path (should be plain JSON commit)"
+
+- id: FALSIFY-CRUX-G-01-002
+  rule: post-upload /tree/main lists the file
+  prediction: "after publish, HF /api/models/<repo>/tree/main shows the uploaded file"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN must be set — per MEMORY HF_TOKEN IS available}"
+    REPO="paiml/crux-g01-test-$$"
+    apr publish "hf://$REPO" tests/fixtures/tiny-q4k.apr --create-repo
+    curl -sH "Authorization: Bearer $HF_TOKEN" \
+         "https://huggingface.co/api/models/$REPO/tree/main" | \
+      jq -e 'any(.[]; .path == "tiny-q4k.apr")'
+  if_fails: "file not visible in /tree/main after publish — commit silently no-op"
+
+- id: FALSIFY-CRUX-G-01-003
+  rule: sha256 parity local vs remote
+  prediction: "remote sha256 matches local sha256 byte-for-byte"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required}"
+    REPO="paiml/crux-g01-test-sha"
+    LOCAL_SHA=$(sha256sum tests/fixtures/tiny-q4k.apr | awk '{print $1}')
+    apr publish "hf://$REPO" tests/fixtures/tiny-q4k.apr
+    # HF /tree response includes blob id sha256 for non-LFS files via `lfs.oid` or direct sha
+    REMOTE_SHA=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+                 "https://huggingface.co/api/models/$REPO/tree/main" | \
+                 jq -r '.[] | select(.path=="tiny-q4k.apr") | .lfs.oid // .oid')
+    # For non-LFS small files, apr should assert parity itself:
+    apr publish --verify-sha "hf://$REPO" tests/fixtures/tiny-q4k.apr
+  if_fails: "remote sha256 diverges from local — upload corrupted or wrong file shipped"
+
+- id: FALSIFY-CRUX-G-01-004
+  rule: missing HF_TOKEN fails fast
+  prediction: "apr publish with no HF_TOKEN exits non-zero with actionable message"
+  test: |
+    env -u HF_TOKEN apr publish hf://paiml/whatever tests/fixtures/tiny-q4k.apr 2>&1 | \
+      grep -iE "HF_TOKEN|authentication|unauthorized"
+    env -u HF_TOKEN apr publish hf://paiml/whatever tests/fixtures/tiny-q4k.apr
+    [ $? -ne 0 ]
+  if_fails: "publish ran without auth and appeared to succeed (silent failure)"
+
+- id: FALSIFY-CRUX-G-01-005
+  rule: parity with huggingface_hub.upload_file
+  prediction: "apr publish and huggingface_hub.upload_file produce equivalent /tree state"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required}"
+    REPO_APR="paiml/crux-g01-apr-$$"
+    REPO_HF="paiml/crux-g01-hf-$$"
+    apr publish "hf://$REPO_APR" tests/fixtures/tiny-q4k.apr --create-repo
+    uv run --with huggingface_hub python3 -c "
+    from huggingface_hub import HfApi
+    api = HfApi()
+    api.create_repo('$REPO_HF', exist_ok=True)
+    api.upload_file(path_or_fileobj='tests/fixtures/tiny-q4k.apr',
+                    path_in_repo='tiny-q4k.apr',
+                    repo_id='$REPO_HF')
+    "
+    diff \
+      <(curl -sH "Authorization: Bearer $HF_TOKEN" \
+         "https://huggingface.co/api/models/$REPO_APR/tree/main" | \
+        jq '.[] | {path, size} | [.path, .size]') \
+      <(curl -sH "Authorization: Bearer $HF_TOKEN" \
+         "https://huggingface.co/api/models/$REPO_HF/tree/main" | \
+        jq '.[] | {path, size} | [.path, .size]')
+  if_fails: "apr publish diverges from huggingface_hub.upload_file on /tree state"
+
+proof_obligations:
+- type: invariant
+  property: "files ≤ 5 GiB use plain JSON commit path (not NDJSON/LFS/Xet)"
+- type: invariant
+  property: "post-upload /tree/main lists the file (no silent no-op)"
+- type: invariant
+  property: "remote sha256 == local sha256 byte-for-byte"
+- type: invariant
+  property: "missing HF_TOKEN exits non-zero with actionable error"
+- type: equivalence
+  property: "apr publish produces identical /tree/main state to huggingface_hub.HfApi.upload_file on the same inputs"
+  competitor: huggingface
+  reference: "https://huggingface.co/docs/huggingface_hub/guides/upload (HfApi.upload_file); https://huggingface.co/docs/hub/api"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-g-01` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-g-01
+  priority: critical
+  auto_created: false

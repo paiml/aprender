@@ -1,0 +1,145 @@
+# CRUX-I-11 — Schema-coerced JSON output
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-I-11
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "I — Observability & Metrics"
+  competitor: vllm
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Schema-coerced JSON output. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.I and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
+equations:
+  guided_json_output_validates:
+    formula: |
+      vLLM structured-outputs: extra_body.guided_json = <JSONSchema>
+        → generated text, when parsed, validates against schema with zero errors.
+      Equivalent OpenAI API: response_format = { type: "json_schema",
+                                                  json_schema: { schema: <JSONSchema> } }
+      apr serve --json-schema <file>  OR  /v1/chat/completions response_format:
+        MUST parse as JSON AND validate against the schema.
+    domain: "(prompt P, JSONSchema S)"
+    codomain: "assistant.content string that parses as JSON satisfying S"
+    invariants:
+    - "json.loads(output) succeeds (no parse error)"
+    - "jsonschema.validate(json.loads(output), S) raises no error"
+    - "finish_reason in {'stop', 'length'} — never 'tool_calls' for guided_json path"
+    - "Reference: https://docs.vllm.ai/en/latest/features/structured_outputs.html"
+
+  schema_subset_enforcement:
+    formula: |
+      Supported JSONSchema constructs (vLLM outlines backend minimum):
+        types: object, array, string, integer, number, boolean, null
+        keywords: properties, required, items, enum, minimum, maximum,
+                   minLength, maxLength, pattern, oneOf, anyOf
+      apr must accept at least this subset; unsupported keywords fall through
+      with HTTP 400 error (not silent drop).
+    domain: "JSONSchema fragment"
+    codomain: "acceptance decision {accepted, HTTP 400 with keyword-name}"
+    invariants:
+    - "Silent schema-keyword ignoring is FORBIDDEN (explicit rejection)"
+    - "enum constraint is ENFORCED — output value must be in enum list"
+
+falsification_tests:
+- id: FALSIFY-CRUX-I-11-001
+  rule: "guided JSON output parses and validates against supplied schema"
+  prediction: "apr serve with response_format=json_schema emits parseable JSON matching schema"
+  test: |
+    set -euo pipefail
+    apr serve --port 7830 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    RESP=$(curl -sS http://127.0.0.1:7830/v1/chat/completions \
+             -H 'Content-Type: application/json' \
+             -d '{"model":"test","messages":[{"role":"user","content":"Emit a user record"}],
+                  "response_format":{"type":"json_schema","json_schema":{"schema":{
+                    "type":"object",
+                    "properties":{"name":{"type":"string"},"age":{"type":"integer","minimum":0}},
+                    "required":["name","age"]
+                  }}}}')
+    CONTENT=$(echo "$RESP" | jq -r '.choices[0].message.content')
+    echo "$CONTENT" | jq -e 'type == "object" and (.name | type == "string") and (.age | type == "number") and (.age >= 0)'
+  if_fails: "guided JSON output fails to parse or violates the required schema"
+
+- id: FALSIFY-CRUX-I-11-002
+  rule: "enum constraint is enforced (only values in enum appear)"
+  prediction: "output.color in ['red','green','blue'] across 5 samples"
+  test: |
+    set -euo pipefail
+    apr serve --port 7831 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    for i in 1 2 3 4 5; do
+      C=$(curl -sS http://127.0.0.1:7831/v1/chat/completions \
+             -H 'Content-Type: application/json' \
+             -d '{"model":"test","messages":[{"role":"user","content":"Pick a color"}],
+                  "response_format":{"type":"json_schema","json_schema":{"schema":{
+                    "type":"object","properties":{"color":{"type":"string",
+                      "enum":["red","green","blue"]}},"required":["color"]}}}}' \
+           | jq -r '.choices[0].message.content' | jq -r '.color')
+      case "$C" in red|green|blue) ;; *) echo "violation: $C"; exit 1;; esac
+    done
+  if_fails: "enum constraint not enforced — output sampled a value outside enum list"
+
+- id: FALSIFY-CRUX-I-11-003
+  rule: "unsupported schema keyword yields HTTP 400 (no silent drop)"
+  prediction: "schema using unsupported keyword (e.g. deprecated-only keyword) returns 400 error naming keyword"
+  test: |
+    set -euo pipefail
+    apr serve --port 7832 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    CODE=$(curl -sS -o /tmp/err.json -w '%{http_code}' http://127.0.0.1:7832/v1/chat/completions \
+             -H 'Content-Type: application/json' \
+             -d '{"model":"test","messages":[{"role":"user","content":"x"}],
+                  "response_format":{"type":"json_schema","json_schema":{"schema":{
+                    "type":"object","$unsupportedCustomKeyword":true}}}}')
+    test "$CODE" = "400"
+    jq -e '.error.message | test("unsupported|not supported|unknown keyword"; "i")' /tmp/err.json
+  if_fails: "unsupported schema keyword silently dropped instead of surfacing as HTTP 400"
+
+proof_obligations:
+- type: invariant
+  property: "Output validates against supplied JSONSchema (parse + validate both succeed)"
+- type: invariant
+  property: "Enum constraints enforced across repeated sampling"
+- type: invariant
+  property: "Unsupported schema keywords rejected with HTTP 400 (no silent drop)"
+- type: equivalence
+  property: "apr serve response_format=json_schema matches vLLM guided_json behavior on golden user-record and color-enum schemas"
+  reference: "https://docs.vllm.ai/en/latest/features/structured_outputs.html"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-i-11` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-i-11
+  priority: high
+  auto_created: false

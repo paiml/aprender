@@ -1,0 +1,144 @@
+# CRUX-F-03 — LAYOUT shape validation pre-load
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-F-03
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: llama_cpp
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    LAYOUT shape validation pre-load. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.F and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  gguf_to_apr_shape_transpose:
+    formula: |
+      For every 2D tensor T in GGUF col-major source:
+        shape_gguf(T) = [K, N]   # col-major K x N
+        shape_apr(T)  = [N, K]   # row-major N x K (transposed)
+      For every 1D tensor (bias/norm) T:
+        shape_apr(T)  = shape_gguf(T)  # no transpose (per tensor-layout-v1.yaml)
+    domain: GGUF tensor on disk
+    codomain: APR tensor post-import
+    invariants:
+    - "2D tensors have shape axes reversed via enforce_import_contract()"
+    - "1D tensors (norms, biases) keep their shape identically"
+    - "Total element count is preserved: prod(shape_gguf) == prod(shape_apr)"
+
+  layout_fail_closed:
+    formula: |
+      load(gguf_file) →
+        if layout_contract.validate(tensor_name, shape) == Err(LayoutError)
+        then return Err(LayoutError) [NOT panic, NOT garbage inference]
+        else proceed with row-major APR tensors
+    domain: apr load / apr run entry
+    codomain: Result<Model, LayoutError>
+    invariants:
+    - "Malformed GGUF produces an explicit LayoutError, never silently wrong output"
+    - "Error message names the offending tensor and the expected/actual shape"
+    - "No inference runs if LAYOUT validation fails"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-03-001
+  rule: good GGUF loads cleanly
+  prediction: "a well-formed GGUF passes layout validation and inference succeeds"
+  test: |
+    apr validate tests/fixtures/tinyllama-q4k.gguf --quality 2>&1 | \
+      grep -E "LAYOUT.*PASS|layout.*ok"
+  if_fails: "known-good GGUF fails LAYOUT validation — false positive"
+
+- id: FALSIFY-CRUX-F-03-002
+  rule: 2D tensor axes reversed post-import
+  prediction: "GGUF [K,N] becomes APR [N,K] for every 2D tensor"
+  test: |
+    GGUF_SHAPE=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    t = next(x for x in r.tensors if x.name == 'output.weight')
+    print(' '.join(str(d) for d in t.shape))
+    ")
+    # Convert GGUF → APR
+    apr convert tests/fixtures/tinyllama-q4k.gguf -o /tmp/t.apr
+    APR_SHAPE=$(apr tensors /tmp/t.apr --json | \
+                 jq -r '.[] | select(.name=="output.weight") | .shape | @tsv')
+    # GGUF col-major [K,N], APR row-major [N,K] => reversed
+    python3 -c "
+    gguf='$GGUF_SHAPE'.split()
+    apr='$APR_SHAPE'.split()
+    assert apr == list(reversed(gguf)), f'expected reversal, got gguf={gguf} apr={apr}'
+    "
+  if_fails: "2D tensor shape not transposed at GGUF import boundary"
+
+- id: FALSIFY-CRUX-F-03-003
+  rule: malformed GGUF fails closed
+  prediction: "a GGUF with a deliberately corrupted shape triggers LAYOUT error, not garbage"
+  test: |
+    # Synthesize a GGUF whose output.weight claims shape [1,1] but holds full payload
+    python3 scripts/make_malformed_gguf.py --out /tmp/bad.gguf \
+        --corrupt-tensor output.weight --wrong-shape 1,1
+    if apr validate /tmp/bad.gguf --quality 2>&1 | grep -qE "LAYOUT.*FAIL|LayoutError"; then
+      exit 0
+    else
+      echo "expected LAYOUT error, got clean load — fail-open regression" >&2
+      exit 1
+    fi
+  if_fails: "malformed GGUF was accepted — LAYOUT validation bypass"
+
+- id: FALSIFY-CRUX-F-03-004
+  rule: element count preserved
+  prediction: "prod(shape_gguf) == prod(shape_apr) for every tensor"
+  test: |
+    apr convert tests/fixtures/tinyllama-q4k.gguf -o /tmp/t.apr
+    GGUF_TOTAL=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    print(sum(int(t.n_elements) for t in r.tensors))
+    ")
+    APR_TOTAL=$(apr tensors /tmp/t.apr --json | jq '[.[].num_elements] | add')
+    [ "$GGUF_TOTAL" = "$APR_TOTAL" ]
+  if_fails: "element count drifted across GGUF → APR import (tensor dropped or mis-shaped)"
+
+proof_obligations:
+- type: invariant
+  property: "2D GGUF tensors have their shape axes reversed at import per tensor-layout-v1.yaml"
+- type: invariant
+  property: "1D tensors (norms, biases) preserve shape identically across GGUF → APR"
+- type: invariant
+  property: "total element count is preserved across the import boundary"
+- type: invariant
+  property: "malformed GGUF fails with an explicit LayoutError, never silent garbage"
+- type: equivalence
+  property: "post-import APR shape equals reversed gguf-py GGUFReader shape for every 2D tensor"
+  competitor: llama_cpp
+  reference: "contracts/tensor-layout-v1.yaml (SOURCE OF TRUTH); https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-f-03` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-f-03
+  priority: critical
+  auto_created: false

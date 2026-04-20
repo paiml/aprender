@@ -1,0 +1,172 @@
+# CRUX-H-03 — Packing for efficient SFT
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-H-03
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    Packing for efficient SFT. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.H and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  # Competitor canonical API:
+  #   trl.SFTTrainer(..., packing=True, max_seq_length=2048)
+  #   concatenates multiple short examples into one sequence up to max_seq_length,
+  #   with segment-aware attention mask preventing cross-example contamination.
+  # Reference: https://huggingface.co/docs/trl/main/en/sft_trainer#packing-dataset
+  # Aprender equivalent:
+  #   apr finetune --pack true --max-seq-len 2048 --data train.jsonl
+
+  packing_efficiency:
+    formula: |
+      speedup = wall_time_per_epoch(unpacked) / wall_time_per_epoch(packed)
+      packing_ratio = mean_seq_len_packed / max_seq_length
+      where:
+        unpacked: each example padded to max_seq_length individually
+        packed:   examples concatenated with segment separators up to max_seq_length
+      Expected: speedup >= 1.67 (i.e. packed_time / unpacked_time <= 0.6)
+               on datasets with mean_len=200, max_seq=2048.
+    domain: (dataset D, max_seq_length L)
+    codomain: "(speedup: f64, packing_ratio: f64 ∈ (0, 1])"
+    invariants:
+    - "speedup >= 1.67 (>=40% wall-clock reduction) for mean_len << max_seq_length"
+    - "packing_ratio > 0.80 (packed sequences fill >=80% of max_seq_length)"
+    - "No data dropped: total_tokens(packed) == total_tokens(unpacked)"
+
+  segmented_attention_mask:
+    formula: |
+      For packed sequence s = [e_1 | SEP | e_2 | SEP | ... | e_k],
+      with example_ids[i] ∈ {1, ..., k} marking which example token i belongs to,
+      the attention mask A must satisfy:
+        A[i, j] = 0  whenever example_ids[i] ≠ example_ids[j]
+        A[i, j] may be 1 (causal-allowed) whenever example_ids[i] == example_ids[j] AND j <= i
+    domain: (packed sequence, example_ids vector)
+    codomain: attention mask A ∈ {0, 1}^(L×L)
+    invariants:
+    - "Zero cross-example attention: no token attends across segment boundaries"
+    - "Within-segment causal mask preserved (j <= i AND same example)"
+    - "example_ids emitted in apr finetune --json metadata for verification"
+
+  loss_parity:
+    formula: |
+      For equal num_tokens trained:
+        | loss_packed - loss_unpacked | / loss_unpacked  <=  0.01
+      i.e. packed loss matches unpacked within ±1% (segmented mask preserves semantics).
+    domain: (trained_tokens N, loss_packed, loss_unpacked)
+    codomain: bool
+    invariants:
+    - "Packing is semantically neutral: loss differs by <=1% at same token budget"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-03-001
+  rule: wall-clock speedup >= 1.67x (>=40% faster)
+  prediction: "packed / unpacked epoch time <= 0.6 on mean_len=200 max_seq=2048 dataset"
+  test: |
+    # TODO: requires evidence/crux/huggingface/sft_short_examples.jsonl
+    # (synthetic dataset with mean_len≈200 tokens, 1000 examples)
+    DATA=evidence/crux/huggingface/sft_short_examples.jsonl
+    T_PACK=$(apr finetune --pack true  --max-seq-len 2048 --data "$DATA" \
+              --epochs 1 --json 2>&1 | jq '.wall_time_sec')
+    T_UNPACK=$(apr finetune --pack false --max-seq-len 2048 --data "$DATA" \
+              --epochs 1 --json 2>&1 | jq '.wall_time_sec')
+    python3 -c "import sys; r=$T_PACK/$T_UNPACK; sys.exit(0 if r <= 0.60 else 1)"
+  if_fails: "Packing does not deliver >=40% wall-clock speedup — packing or kernel path broken"
+
+- id: FALSIFY-CRUX-H-03-002
+  rule: no cross-example attention
+  prediction: "attention mask zeros out positions where example_ids differ"
+  test: |
+    # TODO: requires apr debug --dump-attention-mask or equivalent inspection hook.
+    DATA=evidence/crux/huggingface/sft_short_examples.jsonl
+    apr finetune --pack true --max-seq-len 2048 --data "$DATA" \
+      --epochs 1 --dump-attention-mask /tmp/mask.npz --json
+    python3 - <<'PY'
+    import numpy as np, sys
+    d = np.load("/tmp/mask.npz")
+    mask, ids = d["attention_mask"], d["example_ids"]
+    # Check: whenever ids[i] != ids[j], mask[i,j] must be 0
+    diff = ids[:, None] != ids[None, :]
+    bleed = (mask[diff] != 0).any()
+    sys.exit(1 if bleed else 0)
+    PY
+  if_fails: "Attention bleeds across packed segments — examples cross-contaminate"
+
+- id: FALSIFY-CRUX-H-03-003
+  rule: loss parity packed vs unpacked (±1%)
+  prediction: "final_loss_packed matches final_loss_unpacked within 1% at same num_tokens"
+  test: |
+    DATA=evidence/crux/huggingface/sft_short_examples.jsonl
+    L_P=$(apr finetune --pack true  --max-seq-len 2048 --data "$DATA" \
+           --max-tokens 1000000 --json | jq '.final_loss')
+    L_U=$(apr finetune --pack false --max-seq-len 2048 --data "$DATA" \
+           --max-tokens 1000000 --json | jq '.final_loss')
+    python3 -c "import sys; lp=$L_P; lu=$L_U; sys.exit(0 if abs(lp-lu)/lu <= 0.01 else 1)"
+  if_fails: "Packed vs unpacked loss diverge by >1% — segmented mask or loss reduction broken"
+
+- id: FALSIFY-CRUX-H-03-004
+  rule: no tokens dropped
+  prediction: "total_tokens(packed) == total_tokens(unpacked)"
+  test: |
+    DATA=evidence/crux/huggingface/sft_short_examples.jsonl
+    T_P=$(apr finetune --pack true  --max-seq-len 2048 --data "$DATA" \
+           --epochs 1 --json | jq '.total_tokens_trained')
+    T_U=$(apr finetune --pack false --max-seq-len 2048 --data "$DATA" \
+           --epochs 1 --json | jq '.total_tokens_trained')
+    [ "$T_P" = "$T_U" ]
+  if_fails: "Packing dropped or duplicated tokens — dataset integrity violated"
+
+- id: FALSIFY-CRUX-H-03-005
+  rule: packing_ratio > 0.80 on short-example dataset
+  prediction: "packed sequences fill >=80% of max_seq_length (mean_len=200, max_seq=2048)"
+  test: |
+    DATA=evidence/crux/huggingface/sft_short_examples.jsonl
+    OUT=$(apr finetune --pack true --max-seq-len 2048 --data "$DATA" \
+           --epochs 1 --json)
+    echo "$OUT" | jq -e '.packing_ratio > 0.80'
+  if_fails: "Packing underfills sequences — bin-packing strategy suboptimal"
+
+proof_obligations:
+- type: invariant
+  property: "Packed epoch time <= 0.6 * unpacked epoch time (>=40% speedup) on short-example data"
+- type: invariant
+  property: "Attention mask zero across example boundaries (no cross-contamination)"
+- type: invariant
+  property: "Loss parity: |loss_packed - loss_unpacked| / loss_unpacked <= 0.01 at equal num_tokens"
+- type: invariant
+  property: "Token conservation: total_tokens(packed) == total_tokens(unpacked)"
+- type: invariant
+  property: "packing_ratio > 0.80 (sequences fill >=80% of max_seq_length) on mean_len<<max_seq data"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-h-03` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-h-03
+  priority: critical
+  auto_created: true

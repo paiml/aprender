@@ -1,0 +1,162 @@
+# CRUX-B-01 — Safetensors → GGUF preserving tokenizer
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-B-01
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: llama_cpp
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Safetensors → GGUF preserving tokenizer. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.B and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
+equations:
+  tokenizer_fields_present:
+    formula: |
+      gguf_metadata(apr export --format gguf) ⊇ {
+        "tokenizer.ggml.model",
+        "tokenizer.ggml.tokens",
+        "tokenizer.ggml.scores"     (if SentencePiece),
+        "tokenizer.ggml.token_type" (if present upstream),
+        "tokenizer.ggml.bos_token_id",
+        "tokenizer.ggml.eos_token_id",
+        "tokenizer.ggml.padding_token_id" (optional),
+        "tokenizer.ggml.merges"     (if BPE),
+      }
+      Ref: https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/README.md
+    domain: apr-produced GGUF file
+    codomain: required metadata key set
+    invariants:
+    - "tokenizer.ggml.model field MUST be present and match source vocab type"
+    - "BPE tokenizers MUST include tokenizer.ggml.merges"
+    - "SentencePiece tokenizers MUST include tokenizer.ggml.scores"
+
+  llama_cpp_roundtrip:
+    formula: |
+      ∀ prompt p:
+        llama-cli -m apr_exported.gguf --temp 0 --seed 0 -n N -p p
+          == llama-cli -m reference_convert_hf.gguf --temp 0 --seed 0 -n N -p p
+      Where reference_convert_hf.gguf is produced by llama.cpp's convert_hf_to_gguf.py.
+      Ref: https://github.com/ggerganov/llama.cpp/blob/master/convert_hf_to_gguf.py
+    domain: greedy decode of same prompt through two GGUFs
+    codomain: output token sequence
+    invariants:
+    - "At temp=0 seed=0, apr-exported and llama.cpp-converted GGUF emit identical token ids"
+    - "Tokenizer special tokens (bos/eos) produce identical ids across both files"
+
+  vocab_size_preserved:
+    formula: |
+      len(gguf["tokenizer.ggml.tokens"]) ==
+        len(safetensors_source_tokenizer.get_vocab())
+    domain: source tokenizer vocab
+    codomain: exported GGUF vocab
+    invariants:
+    - "Vocab size MUST match source; no silent truncation"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-01-001
+  rule: tokenizer.ggml.* fields present
+  prediction: "apr export --format gguf emits all required tokenizer.ggml.* keys"
+  test: |
+    SRC=$(mktemp -d)
+    uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import snapshot_download
+    snapshot_download('hf-internal-testing/tiny-random-gpt2', local_dir='${SRC}')
+    "
+    OUT="${SRC}/out.gguf"
+    apr export "${SRC}" --format gguf -o "$OUT"
+    uv run --with 'gguf' python -c "
+    from gguf import GGUFReader
+    r = GGUFReader('${OUT}')
+    keys = {f.name for f in r.fields.values()}
+    required = {'tokenizer.ggml.model', 'tokenizer.ggml.tokens',
+                'tokenizer.ggml.bos_token_id', 'tokenizer.ggml.eos_token_id'}
+    missing = required - keys
+    assert not missing, f'missing: {missing}'
+    "
+  if_fails: "apr-produced GGUF missing one or more tokenizer.ggml.* fields"
+
+- id: FALSIFY-CRUX-B-01-002
+  rule: roundtrip greedy parity with llama.cpp convert_hf_to_gguf.py
+  prediction: "apr GGUF and llama.cpp GGUF emit identical tokens at temp=0 seed=0"
+  test: |
+    SRC=$(mktemp -d)
+    uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import snapshot_download
+    snapshot_download('hf-internal-testing/tiny-random-gpt2', local_dir='${SRC}')
+    "
+    APR_GGUF="${SRC}/apr.gguf"
+    REF_GGUF="${SRC}/ref.gguf"
+    apr export "${SRC}" --format gguf -o "$APR_GGUF"
+    # Reference conversion via llama.cpp convert_hf_to_gguf.py (assumed on PATH)
+    uv run --with 'gguf' --with 'torch' --with 'transformers' python \
+      "$(command -v convert_hf_to_gguf.py)" "${SRC}" --outfile "$REF_GGUF" --outtype f16
+    PROMPT="Hello"
+    A=$(llama-cli -m "$APR_GGUF" --temp 0 --seed 0 -n 8 -p "$PROMPT" --no-display-prompt 2>/dev/null | tr -d '\n')
+    B=$(llama-cli -m "$REF_GGUF" --temp 0 --seed 0 -n 8 -p "$PROMPT" --no-display-prompt 2>/dev/null | tr -d '\n')
+    [ "$A" = "$B" ]
+  if_fails: "greedy decode diverges between apr-exported and llama.cpp-converted GGUF"
+
+- id: FALSIFY-CRUX-B-01-003
+  rule: vocab size preserved
+  prediction: "len(tokens) in exported GGUF == source tokenizer vocab size"
+  test: |
+    SRC=$(mktemp -d)
+    uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import snapshot_download
+    snapshot_download('hf-internal-testing/tiny-random-gpt2', local_dir='${SRC}')
+    "
+    OUT="${SRC}/out.gguf"
+    apr export "${SRC}" --format gguf -o "$OUT"
+    uv run --with 'gguf' --with 'transformers' python -c "
+    from gguf import GGUFReader
+    from transformers import AutoTokenizer
+    r = GGUFReader('${OUT}')
+    toks = next(f for f in r.fields.values() if f.name == 'tokenizer.ggml.tokens')
+    src = AutoTokenizer.from_pretrained('${SRC}')
+    assert len(toks.data) == len(src.get_vocab()), (len(toks.data), len(src.get_vocab()))
+    "
+  if_fails: "exported GGUF vocab size does not match source tokenizer"
+
+proof_obligations:
+- type: equivalence
+  property: "apr export --format gguf matches llama.cpp convert_hf_to_gguf.py tokenizer schema and greedy decode"
+  competitor_function: "convert_hf_to_gguf.py / gguf.GGUFWriter"
+  reference: "https://github.com/ggerganov/llama.cpp/blob/master/convert_hf_to_gguf.py"
+- type: invariant
+  property: "All tokenizer.ggml.* required fields present in exported GGUF"
+- type: invariant
+  property: "Greedy decode (temp=0, seed=0) produces identical token sequence across apr-GGUF and llama.cpp-GGUF"
+- type: invariant
+  property: "Vocab size preserved; BPE merges preserved for BPE tokenizers"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-b-01` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-b-01
+  priority: critical
+  auto_created: false

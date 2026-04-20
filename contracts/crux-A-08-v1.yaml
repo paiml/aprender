@@ -1,0 +1,70 @@
+# CRUX-A-08 — Custom mirror / HF_ENDPOINT
+
+metadata:
+  id: CRUX-A-08
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Let users point `apr pull` at a private mirror via `HF_ENDPOINT` (same
+    contract as `huggingface_hub`: env var overrides the default
+    https://huggingface.co base URL for all hub API calls).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  endpoint_override:
+    formula: |
+      pull_url(repo, file, endpoint) =
+        f"{endpoint.rstrip('/')}/{repo}/resolve/{revision}/{file}"
+      where endpoint = os.getenv("HF_ENDPOINT", "https://huggingface.co")
+    domain: "(repo: str, file: str, endpoint: Option<URL>)"
+    codomain: "URL used for GET /{repo}/resolve/{rev}/{file}"
+    invariants:
+    - "HF_ENDPOINT unset → apr pull hits https://huggingface.co verbatim"
+    - "HF_ENDPOINT=https://mirror.local → no request goes to huggingface.co"
+    - "trailing slash stripped; scheme must be http|https; bad scheme → exit 2"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-08-001
+  rule: HF_ENDPOINT redirects all pulls; zero leaks to canonical host
+  prediction: "strace -f -e trace=connect apr pull hf://bert-base-uncased shows ONLY mirror IPs, never huggingface.co"
+  test: |
+    set -euo pipefail
+    MIRROR="http://127.0.0.1:18080"
+    python3 -m http.server 18080 --directory /tmp/mirror &>/tmp/mirror.log & PID=$!
+    trap "kill $PID" EXIT
+    sleep 1
+    HF_ENDPOINT="$MIRROR" strace -f -e trace=connect -o /tmp/trace.log apr pull hf://bert-base-uncased --dry-run 2>/dev/null || true
+    grep -E "huggingface\.co|34\.160|3\.163" /tmp/trace.log && exit 1
+    grep -E "127\.0\.0\.1|18080" /tmp/trace.log >/dev/null
+  if_fails: "apr pull leaked to huggingface.co despite HF_ENDPOINT override — check hf_hub::Client constructor"
+
+proof_obligations:
+- type: equivalence
+  property: "apr pull with HF_ENDPOINT matches `huggingface_hub.snapshot_download(endpoint=...)` URL construction"
+- type: invariant
+  property: "network isolation — strace shows zero packets to non-endpoint hosts"
+- type: invariant
+  property: "HF_ENDPOINT with invalid scheme (ftp://, file://) rejected at parse time with exit 2"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-a-08
+  priority: medium
+  auto_created: true

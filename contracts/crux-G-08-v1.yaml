@@ -1,0 +1,157 @@
+# CRUX-G-08 — Private repo upload
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-G-08
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "G — Format Conversion"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Private repo upload. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.G and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
+equations:
+  private_repo_creation:
+    formula: |
+      apr publish hf://user/repo F --private →
+        POST /api/repos/create
+          body: { name: "repo", type: "model", private: true }
+      post-condition:
+        GET /api/models/user/repo (with owner token) → {private: true}
+        GET /api/models/user/repo (no token)        → HTTP 401/404
+        GET /api/models (no token)                   → "user/repo" NOT in listing
+    domain: create+publish invocation
+    codomain: HF repository visibility state
+    invariants:
+    - "Repo is created with private: true"
+    - "Anonymous GET returns 401/404 (never 200)"
+    - "Repo absent from public /api/models listing"
+
+  token_gated_readability:
+    formula: |
+      For private repo R:
+        read(R, token=owner) = 200 OK
+        read(R, token=null)  ∈ {401, 404}
+        read(R, token=other) ∈ {401, 404}
+    domain: 'requesting identity: None, private repo: None'
+    codomain: HTTP status
+    invariants:
+    - "Only owner (or explicitly invited collaborators) can read"
+    - "Token absence and wrong token both produce non-200"
+    - "No information leak via error message content"
+
+falsification_tests:
+- id: FALSIFY-CRUX-G-08-001
+  rule: --private creates repo with private:true
+  prediction: "apr publish --private creates repo with private flag set"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required — per MEMORY IS available}"
+    REPO="paiml/crux-g08-priv-$$"
+    apr publish "hf://$REPO" tests/fixtures/tiny-q4k.apr --create-repo --private
+    curl -sH "Authorization: Bearer $HF_TOKEN" \
+         "https://huggingface.co/api/models/$REPO" | \
+      jq -e '.private == true'
+  if_fails: "--private flag did not set repo.private=true (repo created public)"
+
+- id: FALSIFY-CRUX-G-08-002
+  rule: anonymous reader gets 401/404
+  prediction: "unauthenticated GET on private repo returns 401 or 404"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required}"
+    REPO="paiml/crux-g08-anon-$$"
+    apr publish "hf://$REPO" tests/fixtures/tiny-q4k.apr --create-repo --private
+    CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+           "https://huggingface.co/api/models/$REPO")
+    [ "$CODE" = "401" ] || [ "$CODE" = "404" ]
+  if_fails: "anonymous request returned 200 — private repo publicly readable (security breach)"
+
+- id: FALSIFY-CRUX-G-08-003
+  rule: owner with token reads 200
+  prediction: "authenticated owner can GET the private repo"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required}"
+    REPO="paiml/crux-g08-owner-$$"
+    apr publish "hf://$REPO" tests/fixtures/tiny-q4k.apr --create-repo --private
+    curl -sfH "Authorization: Bearer $HF_TOKEN" \
+         "https://huggingface.co/api/models/$REPO" \
+         >/dev/null
+  if_fails: "owner cannot read their own private repo with HF_TOKEN"
+
+- id: FALSIFY-CRUX-G-08-004
+  rule: private repo absent from public listing
+  prediction: "private repo does NOT appear in unauthenticated /api/models?author=user"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required}"
+    REPO="paiml/crux-g08-listing-$$"
+    apr publish "hf://$REPO" tests/fixtures/tiny-q4k.apr --create-repo --private
+    ! curl -s "https://huggingface.co/api/models?author=paiml&limit=1000" | \
+      jq -e --arg r "$REPO" 'any(.[]; .modelId == $r)'
+  if_fails: "private repo leaked into public /api/models listing"
+
+- id: FALSIFY-CRUX-G-08-005
+  rule: parity with huggingface_hub create_repo(private=True)
+  prediction: "apr --private and HfApi.create_repo(private=True) produce identical visibility state"
+  test: |
+    : "${HF_TOKEN:?HF_TOKEN required}"
+    REPO_APR="paiml/crux-g08-apr-$$"
+    REPO_HF="paiml/crux-g08-hf-$$"
+    apr publish "hf://$REPO_APR" tests/fixtures/tiny-q4k.apr --create-repo --private
+    uv run --with huggingface_hub python3 -c "
+    from huggingface_hub import HfApi
+    api = HfApi()
+    api.create_repo('$REPO_HF', private=True, exist_ok=True)
+    api.upload_file(path_or_fileobj='tests/fixtures/tiny-q4k.apr',
+                    path_in_repo='tiny-q4k.apr',
+                    repo_id='$REPO_HF')
+    "
+    APR_PRIV=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+               "https://huggingface.co/api/models/$REPO_APR" | jq '.private')
+    HF_PRIV=$(curl -sH "Authorization: Bearer $HF_TOKEN" \
+              "https://huggingface.co/api/models/$REPO_HF" | jq '.private')
+    [ "$APR_PRIV" = "true" ] && [ "$HF_PRIV" = "true" ] && [ "$APR_PRIV" = "$HF_PRIV" ]
+  if_fails: "apr --private does not match huggingface_hub reference visibility state"
+
+proof_obligations:
+- type: invariant
+  property: "--private creates repo with private: true"
+- type: invariant
+  property: "anonymous GET on private repo returns 401 or 404 (never 200)"
+- type: invariant
+  property: "owner with HF_TOKEN can read the private repo"
+- type: invariant
+  property: "private repo is absent from unauthenticated /api/models listing"
+- type: equivalence
+  property: "apr publish --private produces identical visibility state to huggingface_hub.HfApi.create_repo(private=True)"
+  competitor: huggingface
+  reference: "https://huggingface.co/docs/hub/repositories-settings#private-repos; https://huggingface.co/docs/huggingface_hub/package_reference/hf_api#huggingface_hub.HfApi.create_repo"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-g-08` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-g-08
+  priority: critical
+  auto_created: false

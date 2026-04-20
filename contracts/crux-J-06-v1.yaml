@@ -1,0 +1,95 @@
+# CRUX-J-06 — OpenCLAW daemon install ∘ uninstall dual
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-06
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 4
+  intake_status: missing
+  description: >
+    OpenCLAW installs a system daemon via `openclaw onboard --install-daemon`
+    (launchd / systemd / SCM depending on OS), and the inverse
+    `--uninstall-daemon` removes it cleanly. Aprender parity: any long-lived
+    `apr serve` daemon story MUST ship install∘uninstall as a dual — no
+    orphan service units after uninstall. Overlaps with apr-serve MCP /
+    anthropic proxy daemonization.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  install_uninstall_dual:
+    formula: |
+      uninstall ∘ install = id          (idempotent inverse)
+      install: writes unit file + registers with service manager
+      uninstall: removes unit file + deregisters, leaves no orphan
+      post_uninstall: service_manager.list() excludes "apr" entirely
+    domain: service manager state
+    codomain: service manager state
+    invariants:
+    - "uninstall is a true inverse of install"
+    - "service-manager list is clean post-uninstall (no orphans)"
+    - "re-install after uninstall does not require manual cleanup"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-06-001
+  rule: apr exposes service install + uninstall verbs
+  prediction: "apr --help surfaces service/daemon verbs (install, uninstall, status)"
+  test: |
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    if apr --help 2>&1 | grep -qE '(service|daemon|install-daemon|systemd|launchd)'; then
+      :
+    else
+      if command -v pmat >/dev/null 2>&1; then
+        pmat query "apr service install OR systemd unit OR launchd plist" --limit 1 --format json | grep -q '"matches"' || {
+          echo "FAIL: no daemon install/uninstall surface" >&2
+          exit 1
+        }
+      else
+        echo "SKIP: pmat not available" >&2; exit 77
+      fi
+    fi
+  if_fails: CRUX-J-06 parity broken — apr MUST expose daemon install+uninstall verbs
+- id: FALSIFY-CRUX-J-06-002
+  rule: uninstall leaves no orphan units
+  prediction: "documentation or tests assert post-uninstall cleanup"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "uninstall service cleanup OR removes unit file" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no documented cleanup invariant" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-06 dual invariant — uninstall must leave no orphan service units
+
+proof_obligations:
+- type: invariant
+  property: "uninstall ∘ install = id on service manager state"
+- type: invariant
+  property: "no orphan service units post-uninstall"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-06
+  priority: high
+  auto_created: true

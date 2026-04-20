@@ -1,0 +1,120 @@
+# CRUX-F-12 — Tensor shape mismatch explainer
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-F-12
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: pytorch
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: supported
+  description: >
+    Tensor shape mismatch explainer. Root-cause workflow extracted from pytorch UX — see master
+    subspec §5.F and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  shape_mismatch_explainer:
+    formula: |
+      PyTorch canonical on shape mismatch:
+        torch.matmul(a, b) with a.shape=(M,K1), b.shape=(K2,N), K1!=K2 →
+          RuntimeError: mat1 and mat2 shapes cannot be multiplied (MxK1 and K2xN)
+      apr parity (apr validate / apr tensors / apr trace):
+        apr validate model.apr → on tensor-shape mismatch emits to stderr:
+          "shape mismatch: <op> expected <expected_shape> got <actual_shape>
+           at tensor '<name>' (layer <L>)"
+        exit code != 0
+    domain: "model file with a deliberate shape mismatch"
+    codomain: "stderr explanation + non-zero exit code"
+    invariants:
+    - "Error message names the operator (matmul, add, etc.)"
+    - "Error message prints both expected and actual shape tuples explicitly"
+    - "Error message identifies the offending tensor by name (not just index)"
+    - "Exit code is non-zero on shape mismatch — never silent success"
+
+  parity_with_pytorch_runtime_assert:
+    formula: |
+      For canonical mismatch (matmul (M,K1) × (K2,N), K1 != K2):
+        python -c 'import torch; torch.matmul(torch.zeros(2,3), torch.zeros(4,5))'
+        → exit != 0, stderr contains "mat1 and mat2 shapes cannot be multiplied"
+      apr validate on an equivalent model.apr must likewise exit != 0 and
+      print shapes (2,3) and (4,5) in the diagnostic.
+    domain: "deliberately-broken model with matmul shape mismatch"
+    codomain: "(stderr text, exit code)"
+    invariants:
+    - "Both PyTorch and apr exit non-zero on the identical mismatch"
+    - "apr stderr includes the same two shape tuples PyTorch names"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-12-001
+  rule: "apr surfaces shape mismatches with both expected and actual shapes, like PyTorch"
+  prediction: "apr validate on a model with a (2,3) x (4,5) matmul mismatch exits non-zero and prints both shapes and the tensor name"
+  test: |
+    set -euo pipefail
+    FIX=tests/fixtures/shape-mismatch.apr
+    [ -f "$FIX" ] || { echo "missing fixture $FIX"; exit 1; }
+    set +e
+    OUT=$(apr validate "$FIX" 2>&1)
+    RC=$?
+    set -e
+    [ $RC -ne 0 ] || { echo "apr validate unexpectedly succeeded"; exit 1; }
+    echo "$OUT" | grep -Eq '\(2, ?3\)|2x3|2,3'
+    echo "$OUT" | grep -Eq '\(4, ?5\)|4x5|4,5'
+    echo "$OUT" | grep -Eiq 'shape|mismatch'
+  if_fails: "apr validate is silent on shape mismatch, or omits shapes/tensor name"
+
+- id: FALSIFY-CRUX-F-12-002
+  rule: "parity with PyTorch runtime shape assertion on identical inputs"
+  prediction: "both PyTorch and apr exit non-zero on the same mismatch"
+  test: |
+    set -euo pipefail
+    set +e
+    uv run --with torch python3 -c "import torch; torch.matmul(torch.zeros(2,3), torch.zeros(4,5))" 2>/tmp/pt.err
+    PT=$?
+    set -e
+    [ $PT -ne 0 ] || { echo "pytorch unexpectedly succeeded"; exit 1; }
+    grep -qi "shapes cannot be multiplied\|mat1 and mat2" /tmp/pt.err
+    set +e
+    apr validate tests/fixtures/shape-mismatch.apr >/tmp/apr.out 2>&1
+    APR=$?
+    set -e
+    [ $APR -ne 0 ] || { echo "apr unexpectedly succeeded on mismatch"; exit 1; }
+  if_fails: "apr exits zero on a mismatch that PyTorch rejects (parity broken)"
+
+proof_obligations:
+- type: invariant
+  property: "apr validate exits non-zero on any tensor shape mismatch"
+- type: invariant
+  property: "apr diagnostic prints both expected and actual shape tuples and the tensor name"
+- type: equivalence
+  property: "apr validate rejects shape mismatches that PyTorch's runtime matmul assert rejects on equivalent inputs"
+  competitor: pytorch
+  reference: "https://pytorch.org/docs/stable/generated/torch.matmul.html (runtime shape assertion)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-f-12` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-f-12
+  priority: high
+  auto_created: false

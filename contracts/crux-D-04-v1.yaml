@@ -1,0 +1,148 @@
+# CRUX-D-04 — DPO preference training
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-04
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    Direct Preference Optimization (DPO). Competitor canonical:
+    `trl.DPOTrainer(model, ref_model, train_dataset=preferences)` where
+    preferences has {prompt, chosen, rejected}. Aprender surface:
+    `apr finetune model.apr --method dpo --data preferences.jsonl --beta 0.1`.
+    Reference: https://arxiv.org/abs/2305.18290 (Rafailov et al., DPO).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  dpo_loss:
+    formula: |
+      L_DPO(θ) = -E_{(x, y_w, y_l) ~ D} [
+        log σ( β * (log π_θ(y_w|x) - log π_ref(y_w|x))
+             - β * (log π_θ(y_l|x) - log π_ref(y_l|x)) )
+      ]
+      where:
+        y_w = chosen response
+        y_l = rejected response
+        β   = regularization strength (default 0.1)
+        π_θ = trained policy
+        π_ref = frozen reference policy
+        σ   = logistic sigmoid
+    domain: (prompt, chosen, rejected, β, π_ref) → scalar loss
+    codomain: R≥0
+    invariants:
+    - "π_ref parameters frozen throughout training (no gradients)"
+    - "β > 0 controls strength of KL regularization to π_ref"
+    - "Implicit reward r_θ(x,y) = β * (log π_θ(y|x) - log π_ref(y|x)) + β*log Z(x)"
+
+  preference_dataset_schema:
+    formula: |
+      Every record r ∈ preferences.jsonl MUST satisfy:
+        r.prompt   : string, non-empty, tokenizable
+        r.chosen   : string, non-empty, tokenizable
+        r.rejected : string, non-empty, tokenizable
+        r.chosen != r.rejected
+      Schema violation → apr finetune exits non-zero before training begins.
+    domain: preferences.jsonl records
+    codomain: bool (schema valid)
+    invariants:
+    - "Missing any of {prompt, chosen, rejected} → exit 2 pre-training"
+    - "chosen == rejected → exit 2 pre-training (degenerate pair)"
+    - "Schema check runs on full dataset before first forward pass"
+
+  chosen_reward_dominance:
+    formula: |
+      On held-out preference set P_eval after training:
+        | {(x, y_w, y_l) ∈ P_eval : r_θ(x, y_w) > r_θ(x, y_l)} | / |P_eval| >= 0.90
+      i.e. implicit reward for chosen > rejected on ≥90% of held-out pairs.
+    domain: (trained_policy, ref_policy, eval_preferences) → accuracy
+    codomain: 0; 1
+    invariants:
+    - "DPO must learn preference signal beyond ref policy baseline"
+    - "KL(π_θ || π_ref) logged per step; divergence bounded by β"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-04-001
+  rule: preference dataset schema enforced pre-training
+  prediction: "Missing {prompt, chosen, rejected} field → apr finetune exits non-zero before any training step"
+  test: |
+    set -euo pipefail
+    # Forge invalid dataset (missing `rejected` field)
+    echo '{"prompt":"q","chosen":"a"}' > /tmp/bad-prefs.jsonl
+    if apr finetune model.apr --method dpo --data /tmp/bad-prefs.jsonl --beta 0.1 --epochs 1 2>/tmp/err.log; then
+      echo "FAIL: apr finetune accepted malformed preference dataset" >&2
+      exit 1
+    fi
+    grep -qE "(missing|required).*rejected" /tmp/err.log
+  if_fails: "Schema validator absent or not run before training loop"
+
+- id: FALSIFY-CRUX-D-04-002
+  rule: chosen reward dominates rejected on ≥90% of held-out pairs
+  prediction: "After DPO training, implicit reward margin chosen>rejected on ≥90% eval pairs"
+  test: |
+    set -euo pipefail
+    apr finetune model.apr --method dpo --data tests/fixtures/preferences.jsonl \
+      --beta 0.1 --epochs 3 --eval-data tests/fixtures/preferences-held-out.jsonl \
+      --json 2>/dev/null | jq -e '.dpo_metrics.chosen_reward_win_rate >= 0.90'
+  if_fails: "DPO did not learn preference signal — β too large, LR too small, or ref model mismatched"
+
+- id: FALSIFY-CRUX-D-04-003
+  rule: KL divergence from ref model logged per step
+  prediction: "Training output contains per-step KL(π_θ || π_ref)"
+  test: |
+    set -euo pipefail
+    OUT=$(apr finetune model.apr --method dpo --data tests/fixtures/preferences.jsonl \
+      --beta 0.1 --epochs 1 --log-kl --json 2>/dev/null)
+    echo "$OUT" | jq -e '.dpo_metrics.kl_divergence | length > 0 and all(. >= 0)'
+  if_fails: "KL divergence not logged — reference policy drift unmeasurable"
+
+- id: FALSIFY-CRUX-D-04-004
+  rule: ref_model parameters frozen (no gradient updates)
+  prediction: "ref_model weights identical before and after training"
+  test: |
+    set -euo pipefail
+    # TODO: implement --dump-ref-checksum in apr finetune
+    BEFORE=$(apr inspect model.apr --field weights_sha256)
+    apr finetune model.apr --method dpo --data tests/fixtures/preferences.jsonl \
+      --beta 0.1 --epochs 1 --ref-model model.apr --dump-ref-checksum /tmp/ref-after.sha
+    AFTER=$(cat /tmp/ref-after.sha)
+    [ "$BEFORE" = "$AFTER" ]
+  if_fails: "Reference policy mutated during DPO — violates DPO paper §3"
+
+proof_obligations:
+- type: invariant
+  property: "Preference dataset schema {prompt, chosen, rejected} validated before training begins"
+- type: invariant
+  property: "Reference policy π_ref parameters frozen (zero gradient updates) throughout training"
+- type: invariant
+  property: "Implicit reward r_θ(x, y_chosen) > r_θ(x, y_rejected) on ≥90% held-out pairs after training"
+- type: invariant
+  property: "KL divergence KL(π_θ || π_ref) logged per step and bounded by β"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-04` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-04
+  priority: critical
+  auto_created: true

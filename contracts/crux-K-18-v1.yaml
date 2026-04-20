@@ -1,0 +1,104 @@
+# CRUX-K-18 — ONNX Runtime backend
+
+metadata:
+  id: CRUX-K-18
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Deployment & Integration"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    ONNX Runtime backend: export apr model to ONNX opset ≥17 and run
+    under `onnxruntime` (CPU or CUDA EP). Canonical:
+    onnxruntime.InferenceSession(path).run(None, feed). Parity: logits
+    within atol=1e-3 / rtol=1e-2 of apr native inference for the same
+    fp32 input on CPU.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  onnx_backend:
+    formula: |
+      apr export --format onnx --opset 17 model.apr -o model.onnx
+      session = onnxruntime.InferenceSession(model.onnx)
+      y_onnx  = session.run(None, { "input_ids": x })
+      y_native = apr.forward(model, x)
+      cos_sim(y_onnx, y_native) ≥ 1 - 1e-3
+    domain: "(model: Path, opset: int ≥ 17, provider ∈ {CPU, CUDA})"
+    codomain: "logits tensor matching native within tolerance"
+    invariants:
+    - "ONNX file passes onnx.checker.check_model"
+    - "logits cosine similarity ≥ 0.999 vs native on identical input"
+    - "determinism: two sessions on same input yield byte-identical output"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-18-001
+  rule: exported ONNX passes checker
+  prediction: "onnx.checker.check_model does not raise"
+  test: |
+    set -euo pipefail
+    apr export tests/fixtures/tiny.apr --format onnx --opset 17 -o /tmp/t.onnx
+    uv run --with onnx python3 -c "
+    import onnx; m = onnx.load('/tmp/t.onnx'); onnx.checker.check_model(m)
+    "
+  if_fails: rule 'exported ONNX passes checker' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-18-002
+  rule: onnxruntime parity with native apr ≥0.999 cosine
+  prediction: "cos_sim(onnx_logits, native_logits) ≥ 0.999"
+  test: |
+    set -euo pipefail
+    apr trace tests/fixtures/tiny.apr --input "hello" --dump-logits /tmp/native.npy
+    uv run --with onnxruntime --with numpy python3 -c "
+    import onnxruntime as ort, numpy as np
+    sess = ort.InferenceSession('/tmp/t.onnx', providers=['CPUExecutionProvider'])
+    x = np.load('/tmp/input_ids.npy')
+    y = sess.run(None, {'input_ids': x})[0]
+    n = np.load('/tmp/native.npy')
+    cos = float((y.flatten() @ n.flatten()) / (np.linalg.norm(y) * np.linalg.norm(n) + 1e-12))
+    assert cos >= 0.999, cos
+    "
+  if_fails: rule 'onnxruntime parity with native apr ≥0.999 cosine' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-18-003
+  rule: determinism across sessions
+  prediction: "two InferenceSession().run() byte-identical on same input"
+  test: |
+    set -euo pipefail
+    uv run --with onnxruntime --with numpy python3 -c "
+    import onnxruntime as ort, numpy as np, hashlib
+    x = np.load('/tmp/input_ids.npy')
+    hs = []
+    for _ in range(2):
+        s = ort.InferenceSession('/tmp/t.onnx', providers=['CPUExecutionProvider'])
+        y = s.run(None, {'input_ids': x})[0]
+        hs.append(hashlib.sha256(y.tobytes()).hexdigest())
+    assert hs[0] == hs[1], hs
+    "
+
+  if_fails: rule 'determinism across sessions' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr export --format onnx produces onnxruntime-runnable model with ≥0.999 logit cosine"
+- type: invariant
+  property: "onnx.checker.check_model passes"
+- type: invariant
+  property: "determinism across independent InferenceSession runs"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-k-18
+  priority: medium
+  auto_created: true

@@ -1,0 +1,93 @@
+# CRUX-J-08 — OpenCLAW system-control shell.exec + SSC classifier gate
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-08
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 3
+  intake_status: missing
+  description: >
+    OpenCLAW exposes `tools.shell.exec` for system control (files, scripts,
+    commands). The envelope requires a safety gate because the tool runs
+    with user privileges. Aprender parity: aprender already ships the SSC
+    (Shell Safety Classifier) — any `apr code`-adjacent shell.exec surface
+    MUST route through SSC before dispatch. Overlaps with SSC canary eval
+    (contracts/ssc-canary-eval-v1.yaml).
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/ssc-canary-eval-v1.yaml
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  shell_exec_gated:
+    formula: |
+      dispatch(cmd) :=
+        let verdict = SSC.classify(cmd) in
+        if verdict == "safe"    : exec(cmd)
+        if verdict == "unsafe"  : reject(cmd, verdict.reason)
+        if verdict == "ambiguous": prompt_user(cmd)
+      invariant: ∀ cmd → SSC.classify(cmd) runs BEFORE exec
+    domain: shell command string
+    codomain: "{exec_result, reject_reason, user_prompt}"
+    invariants:
+    - "no shell.exec dispatch without prior SSC classification"
+    - "unsafe classification blocks dispatch"
+    - "ambiguous classification escalates to explicit user confirmation"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-08-001
+  rule: SSC classifier is wired into the apr shell-exec path
+  prediction: "apr / aprender documents SSC as the gate for shell.exec"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "SSC classifier shell safety OR shell_safety_classify OR unsafe command gate" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no SSC-gated shell.exec story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-08 parity broken — SSC must gate every shell.exec dispatch
+- id: FALSIFY-CRUX-J-08-002
+  rule: ambiguous commands escalate to user confirmation
+  prediction: "SSC docs describe a three-way verdict: safe / unsafe / ambiguous"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "SSC ambiguous OR shell command three-way verdict" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no three-way SSC verdict documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-08 three-way invariant — ambiguous commands must escalate, not default-deny or default-allow
+
+proof_obligations:
+- type: invariant
+  property: "no shell.exec without prior SSC classification"
+- type: invariant
+  property: "ambiguous verdict escalates to user confirmation"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-08
+  priority: medium
+  auto_created: true
