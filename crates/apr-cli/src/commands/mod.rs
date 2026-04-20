@@ -85,3 +85,4 @@ pub(crate) mod tui;
 pub(crate) mod tune;
 pub(crate) mod validate;
 pub(crate) mod validate_manifest;
+pub(crate) mod xet_mode;
