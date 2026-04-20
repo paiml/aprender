@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-13
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -78,6 +79,23 @@ falsification_tests:
     ! apr ps --json | jq -e '.[] | select(.name|contains("Qwen2.5-Coder-7B"))' >/dev/null
     kill $PID
   if_fails: "apr stop did NOT evict the target model from apr ps"
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/stop_op.rs
+    sub_claim: >
+      The pure state-transition classifier `plan_stop(set, target)` provably
+      returns a `new_set` that does not contain `target` whenever `target`
+      was in the input `set`. The `plan_removes_target` predicate witnesses
+      the post-condition directly.
+    tests:
+    - falsify_001_sub_claim_evicts_resident_target
+    - stop_preserves_other_models
+    - eviction_reduces_len_by_exactly_one
+    scope: >
+      PARTIAL_ALGORITHM_LEVEL. Classifier proves the set-minus-target sub-
+      claim. Full discharge requires a live `apr serve` daemon actually
+      removing the target from its resident registry after receiving the
+      stop RPC, deferred to integration.
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
 
 - id: FALSIFY-CRUX-A-13-002
   rule: idempotent
@@ -88,6 +106,26 @@ falsification_tests:
     apr stop some-never-loaded-model  # second call
     kill $PID
   if_fails: "apr stop is not idempotent (second call failed)"
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/stop_op.rs
+    sub_claim: >
+      `plan_is_idempotent` proves that applying `plan_stop` twice to any
+      (set, target) pair produces the same resulting resident set. The
+      second call always outcomes `NotLoaded` with exit code 0, never
+      `InvalidName` or an error, satisfying the shell-level idempotency
+      contract.
+    tests:
+    - falsify_002_sub_claim_idempotent_on_resident
+    - idempotent_on_never_loaded
+    - idempotent_on_empty
+    - not_loaded_exit_code_is_zero
+    - evicted_exit_code_is_zero
+    scope: >
+      PARTIAL_ALGORITHM_LEVEL. Classifier fully proves the idempotency sub-
+      claim on any resident-set snapshot. Full discharge requires wiring
+      `apr stop` into the live serve daemon and confirming exit code 0 on
+      the real second invocation.
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
 
 - id: FALSIFY-CRUX-A-13-003
   rule: VRAM reclaimed
@@ -138,8 +176,25 @@ proof_obligations:
 verification_summary:
   total_obligations: 4
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 2
+  status: partial
+  evidence:
+    falsify_001: PARTIAL_ALGORITHM_LEVEL via commands::stop_op::plan_stop set-minus-target classifier
+    falsify_002: PARTIAL_ALGORITHM_LEVEL via commands::stop_op::plan_is_idempotent classifier
+    falsify_003: NOT_DISCHARGED — requires live `apr serve` + nvidia-smi VRAM observation
+    falsify_004: NOT_DISCHARGED — requires ollama stop golden at evidence/crux/ollama/stop-golden.json
+  coverage:
+  - "crates/apr-cli/src/commands/stop_op.rs: 22 unit tests, all passing"
+  - "sub-claim tests: falsify_001_sub_claim_evicts_resident_target, falsify_002_sub_claim_idempotent_on_resident"
+  scope_honesty: >
+    Contract status is `partial`. 2 of 4 FALSIFY gates reach
+    PARTIAL_ALGORITHM_LEVEL via a pure state-transition classifier;
+    FALSIFY-003 (VRAM reclaim) and FALSIFY-004 (ollama parity golden) are
+    integration-only and NOT discharged. Master contract
+    `crux-competitive-research-ux-v1` supported_count is NOT bumped;
+    `intake_status` stays `missing` until the real `apr stop` subcommand
+    ships and all 4 FALSIFY gates are fully discharged against a live
+    `apr serve` daemon with CUDA.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
