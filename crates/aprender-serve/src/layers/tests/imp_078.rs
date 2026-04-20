@@ -149,12 +149,24 @@ fn test_imp_080_performance_diagnostics() {
     let collector = DiagnosticsCollector::new();
 
     // Test 2: Track request phases
+    // Use a tight busy-wait floor so elapsed time is bounded below by a known
+    // minimum even under CI scheduler jitter. `std::thread::sleep` can both
+    // overshoot and undershoot under load, which made the prior
+    // `inference > tokenization` ordering assertion flaky on shared runners.
+    const TOKEN_FLOOR_US: u64 = 5_000;
+    const INFER_FLOOR_US: u64 = 10_000;
     let timer = PhaseTimer::new();
     timer.start_phase("tokenization");
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    let t0 = std::time::Instant::now();
+    while t0.elapsed().as_micros() < u128::from(TOKEN_FLOOR_US) {
+        std::hint::spin_loop();
+    }
     timer.end_phase("tokenization");
     timer.start_phase("inference");
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    let t1 = std::time::Instant::now();
+    while t1.elapsed().as_micros() < u128::from(INFER_FLOOR_US) {
+        std::hint::spin_loop();
+    }
     timer.end_phase("inference");
 
     let breakdown = timer.breakdown();
@@ -166,10 +178,13 @@ fn test_imp_080_performance_diagnostics() {
         breakdown.contains_key("inference"),
         "IMP-080: Should track inference"
     );
-    assert!(
-        *breakdown.get("inference").expect("test") > *breakdown.get("tokenization").expect("test"),
-        "IMP-080: Inference should take longer"
-    );
+    // Each phase recorded a nonzero duration that respects its busy-wait floor.
+    // We deliberately do NOT assert inference > tokenization — that ordering is
+    // scheduler-dependent under CI load and caused a real flake (imp_078.rs).
+    let tok = *breakdown.get("tokenization").expect("test");
+    let inf = *breakdown.get("inference").expect("test");
+    assert!(tok >= TOKEN_FLOOR_US, "IMP-080: tokenization {tok}µs < {TOKEN_FLOOR_US}µs floor");
+    assert!(inf >= INFER_FLOOR_US, "IMP-080: inference {inf}µs < {INFER_FLOOR_US}µs floor");
 
     // Test 3: Memory allocation tracking
     let tracker = MemoryTracker::new();
