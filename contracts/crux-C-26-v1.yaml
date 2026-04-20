@@ -1,0 +1,136 @@
+# CRUX-C-26 — Context-window extension RoPE scale
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-26
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: llama_cpp
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Context-window extension RoPE scale. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  rope_frequency_scaling:
+    formula: |
+      llama.cpp canonical flags:
+        --rope-freq-scale S      # linear scaling: theta_i *= S (S < 1 extends context)
+        --rope-freq-base B       # base theta (default 10000.0)
+        --ctx-size N             # target context length (tokens)
+        Reference: https://github.com/ggerganov/llama.cpp/blob/master/examples/main/README.md#context-size-and-rope-settings
+      apr parity target:
+        apr run <model> --rope-freq-scale S --rope-freq-base B --ctx-size N
+        HTTP: {"options":{"rope_freq_scale":S,"rope_freq_base":B,"num_ctx":N}}
+      RoPE rotation angle at position p, dimension 2i:
+        theta_i = B^(-2i/d_head)
+        angle(p, i) = p * theta_i * S        # with freq_scale S
+      To extend context from C_train to C_target:
+        S <= C_train / C_target              # linear scaling heuristic
+    domain: "(rope_freq_scale: f32, rope_freq_base: f32, num_ctx: u32)"
+    codomain: "rotary_embedding_angles: Tensor"
+    invariants:
+    - "S == 1.0 and B == model_default reproduces baseline RoPE (bit-exact)"
+    - "S < 1.0 extends effective context window (positions scale by S)"
+    - "num_ctx > model_trained_ctx REQUIRES S < 1.0 or NTK-aware variant; else output degenerates"
+    - "At num_ctx <= model_trained_ctx with S=1, perplexity is within 1% of baseline"
+    - "Reference: https://github.com/ggerganov/llama.cpp/pull/2054 (RoPE scaling implementation)"
+
+  rope_scale_coherence_long_context:
+    formula: |
+      With S = C_train / C_target (linear), a prompt of ~C_train tokens + retrieval
+      question MUST yield a coherent answer. Concretely:
+        let prompt be a recitation of 3000 tokens ending with "The magic word is FOOBAR."
+        followed by "What is the magic word?"
+        With proper S, response contains "FOOBAR" (case-insensitive).
+        With S=1.0 and ctx > train_ctx, response is garbage (does not contain FOOBAR).
+    domain: "(long_prompt, rope_freq_scale)"
+    codomain: bool
+    invariants:
+    - "Correctly-scaled RoPE recovers the needle from a haystack at 2x train context"
+    - "Misconfigured RoPE (S=1 when ctx>train_ctx) produces degenerate output"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-26-001
+  rule: rope_freq_scale=1.0 is a no-op on in-context prompts
+  prediction: "Output with --rope-freq-scale 1.0 equals output with flag omitted at temperature=0"
+  test: |
+    # Reference: https://github.com/ggerganov/llama.cpp/blob/master/examples/main/README.md
+    A=$(apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \
+      --rope-freq-scale 1.0 --prompt "2+2=" --max-tokens 4 --temperature 0 2>/dev/null)
+    B=$(apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \
+      --prompt "2+2=" --max-tokens 4 --temperature 0 2>/dev/null)
+    [ "$A" = "$B" ] \
+      || { echo "FAIL: rope_freq_scale=1.0 changed output A=$A B=$B" >&2; exit 1; }
+  if_fails: "rope_freq_scale=1.0 not a no-op — RoPE transform is applied when S=1"
+
+- id: FALSIFY-CRUX-C-26-002
+  rule: extended context with proper RoPE scale answers needle question
+  prediction: "With S <= train_ctx/target_ctx, model answers needle at 2x train context"
+  test: |
+    # Synthesize ~3000-token needle prompt (Qwen2.5 trained at 32k, so use 2x=64k would exceed;
+    # instead target model with smaller train ctx like 1.5B at 4096 train → 8192 test S=0.5).
+    # For a 1.5B Qwen model trained at 32k, this test asserts the CLI plumbing, not a stress test.
+    python3 -c "print('The needle is FOOBAR42. ' + 'filler. '*400 + 'What is the needle?')" > /tmp/crux-c-26-needle.txt
+    OUT=$(apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \
+      --rope-freq-scale 0.5 --ctx-size 8192 \
+      --prompt-file /tmp/crux-c-26-needle.txt \
+      --max-tokens 24 --temperature 0 2>/dev/null) \
+      || { echo "FAIL: apr run exited non-zero with rope-freq-scale" >&2; exit 1; }
+    echo "$OUT" | grep -qi 'FOOBAR42' \
+      || { echo "FAIL: needle not recovered from extended context: $OUT" >&2; exit 1; }
+  if_fails: "apr does not correctly apply RoPE scaling for context extension (needle not retrieved)"
+
+- id: FALSIFY-CRUX-C-26-003
+  rule: invalid rope_freq_scale rejected
+  prediction: "rope_freq_scale <= 0 or non-finite produces non-zero exit"
+  test: |
+    if apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \
+        --rope-freq-scale 0 --prompt hi --max-tokens 4 2>/tmp/crux-c-26-err.log; then
+      echo "FAIL: accepted rope_freq_scale=0" >&2; exit 1
+    fi
+    if apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \
+        --rope-freq-scale -1.0 --prompt hi --max-tokens 4 2>>/tmp/crux-c-26-err.log; then
+      echo "FAIL: accepted rope_freq_scale=-1" >&2; exit 1
+    fi
+  if_fails: "apr accepted non-positive rope_freq_scale"
+
+proof_obligations:
+- type: equivalence
+  property: "apr run --rope-freq-scale matches llama.cpp llama-cli --rope-freq-scale on golden in-context prompt (both S=1 produce identical greedy output)"
+- type: equivalence
+  property: "apr extended-context RoPE scaling recovers needle at 2x train context (matches llama.cpp behavior)"
+- type: invariant
+  property: "rope_freq_scale=1.0 is a no-op (bit-exact equality vs unset)"
+- type: invariant
+  property: "rope_freq_scale <= 0 rejected with non-zero exit"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-26` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-26
+  priority: high
+  auto_created: false

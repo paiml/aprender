@@ -1,0 +1,79 @@
+# CRUX-B-16 — Per-tensor layer-quant override
+
+metadata:
+  id: CRUX-B-16
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: llama_cpp
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Override quantization type for specific tensor groups.
+    Canonical: `llama-quantize --token-embedding-type f16
+    --output-tensor-type q6_k model.fp16.gguf out.gguf Q4_K_M`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
+equations:
+  per_tensor_policy:
+    formula: |
+      final_qtype(tensor) = explicit_override(tensor.name)
+                         or group_override(match_pattern(tensor.name))
+                         or default_qtype
+      result.metadata.quant_map = [{name, qtype}, ...]   (persisted)
+    domain: "(defaults: QType, overrides: Map<Regex|Name, QType>)"
+    codomain: "per-tensor qtype in output gguf metadata"
+    invariants:
+    - "CLI flag parity — --token-embedding-type, --output-tensor-type, --layer-quants JSON"
+    - "overridden tensors use specified qtype byte-for-byte matching llama-quantize"
+    - "quant_map round-trips — apr inspect shows the same map used at creation"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-16-001
+  rule: --output-tensor-type q6_k produces Q6_K output.weight tensor
+  prediction: "apr inspect shows output.weight has qtype=Q6_K despite default Q4_K_M"
+  test: |
+    set -euo pipefail
+    apr quantize tests/fixtures/tinyllama-fp16.gguf \
+      --format q4_k_m --output-tensor-type q6_k -o /tmp/mixed.gguf
+    qtype=$(apr inspect /tmp/mixed.gguf --format json | jq -r '.tensors["output.weight"].qtype')
+    [ "$qtype" = "Q6_K" ]
+  if_fails: rule '--output-tensor-type q6_k produces Q6_K output.weight tensor' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-B-16-002
+  rule: matches llama-quantize byte-for-byte when same overrides applied
+  prediction: "sha256(apr out) == sha256(llama-quantize out) under identical flags"
+  test: |
+    set -euo pipefail
+    apr quantize tests/fixtures/tinyllama-fp16.gguf \
+      --format q4_k_m --token-embedding-type f16 --output-tensor-type q6_k -o /tmp/apr.gguf
+    llama-quantize --token-embedding-type f16 --output-tensor-type q6_k \
+      tests/fixtures/tinyllama-fp16.gguf /tmp/ref.gguf Q4_K_M
+    [ "$(sha256sum /tmp/apr.gguf | cut -c1-64)" = "$(sha256sum /tmp/ref.gguf | cut -c1-64)" ]
+
+  if_fails: rule 'matches llama-quantize byte-for-byte when same overrides applied' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr quantize per-tensor overrides byte-identical to `llama-quantize --token-embedding-type / --output-tensor-type`"
+- type: invariant
+  property: "quant_map persisted in output metadata; apr inspect reproduces it"
+- type: invariant
+  property: "unknown override target (typo in tensor name) → exit 2 with fuzzy suggestion"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-b-16
+  priority: medium
+  auto_created: true

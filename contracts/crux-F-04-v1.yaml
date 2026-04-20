@@ -1,0 +1,149 @@
+# CRUX-F-04 — Quantization error per tensor ranked
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-F-04
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: llama_cpp
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Quantization error per tensor ranked. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.F and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  per_tensor_quantization_rmse:
+    formula: |
+      Competitor (llama.cpp llama-quantize-stats):
+        ./llama-quantize-stats -m fp16.gguf -q q4k.gguf -v
+      computes per-tensor RMSE between FP16 reference and quantized weights.
+      apr parity:
+        apr qa-quant BASE.apr QUANTIZED.apr --per-tensor --metric rmse --rank --json
+      MUST output per-tensor RMSE sorted descending (worst first):
+        rmse(W, W_q) = sqrt(mean((W - dequant(W_q))^2))
+      where dequant restores quantized weights to f32 row-major.
+    domain: "base fp16/f32 model W, quantized model W_q over same tensor set T"
+    codomain: "ranked list [{tensor_name, rmse, max_abs_error, elements}]"
+    invariants:
+    - "rmse(W, W) == 0.0 for identical inputs (self-check)"
+    - "output sorted descending by rmse (worst-quantized first)"
+    - "rmse computed in row-major flattened order (LAYOUT-001)"
+    - "Competitor parity: matches llama-quantize-stats per-tensor rmse within 1e-5"
+
+  error_budget_threshold:
+    formula: |
+      Given user-specified threshold tau:
+        over_budget = { name : rmse(name) > tau }
+      apr MUST list over_budget tensors and fail CLI with exit_code=1
+      when --threshold tau and over_budget non-empty.
+    domain: "rmse vector r_i, threshold tau in R_{>=0}"
+    codomain: "{ over_budget: list[str], exit_code: int }"
+    invariants:
+    - "exit_code == 1 iff over_budget non-empty AND --threshold supplied"
+    - "over_budget list matches {n : rmse[n] > tau} exactly"
+
+  ranking_stability:
+    formula: |
+      For the same (base, quantized) pair, two invocations produce
+      identical rank order (JSON-equal modulo wall times).
+    domain: "(base model, quantized model) pair"
+    codomain: "ordered list of tensor names"
+    invariants:
+    - "ranking is deterministic (no RNG in error metric)"
+    - "ties broken by tensor_name lexicographic order (stable sort)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-04-001
+  rule: "per-tensor list sorted descending by rmse (worst first)"
+  prediction: "rmse[i] >= rmse[i+1] for all i in output ordering"
+  test: |
+    set -euo pipefail
+    BASE=fixtures/crux-f-04/base.apr
+    QUANT=fixtures/crux-f-04/base-q4k.apr
+    apr qa-quant "$BASE" "$QUANT" --per-tensor --metric rmse --rank --json \
+      > /tmp/f04-rank.json
+    python3 -c "
+    import json,sys
+    pt=json.load(open('/tmp/f04-rank.json'))['per_tensor']
+    ok=all(pt[i]['rmse'] >= pt[i+1]['rmse'] for i in range(len(pt)-1))
+    sys.exit(0 if ok else 1)"
+  if_fails: "per_tensor not sorted descending by rmse"
+
+- id: FALSIFY-CRUX-F-04-002
+  rule: "error budget threshold fails CLI when exceeded"
+  prediction: "apr qa-quant --threshold 0.0 --rank exits nonzero with any nonzero rmse"
+  test: |
+    set -euo pipefail
+    BASE=fixtures/crux-f-04/base.apr
+    QUANT=fixtures/crux-f-04/base-q4k.apr
+    # threshold 0.0 forces any nonzero rmse to over-budget
+    set +e
+    apr qa-quant "$BASE" "$QUANT" --per-tensor --metric rmse \
+      --threshold 0.0 --rank --json > /tmp/f04-bud.json
+    RC=$?
+    set -e
+    OVER=$(jq -r '.over_budget | length' /tmp/f04-bud.json)
+    [ "$RC" -eq 1 ] && [ "$OVER" -gt 0 ]
+  if_fails: "--threshold did not trigger exit_code=1 when over_budget non-empty"
+
+- id: FALSIFY-CRUX-F-04-003
+  rule: "llama-quantize-stats parity: rmse matches within 1e-5 per tensor"
+  prediction: "apr per-tensor rmse agrees with llama-quantize-stats golden"
+  test: |
+    set -euo pipefail
+    GOLDEN=evidence/crux/llama_cpp/f-04-quantize-stats-rmse.json
+    BASE=fixtures/crux-f-04/base.apr
+    QUANT=fixtures/crux-f-04/base-q4k.apr
+    apr qa-quant "$BASE" "$QUANT" --per-tensor --metric rmse --rank --json \
+      > /tmp/f04-apr.json
+    python3 -c "
+    import json,sys
+    apr={t['tensor_name']:t['rmse'] for t in json.load(open('/tmp/f04-apr.json'))['per_tensor']}
+    hf=json.load(open('$GOLDEN'))['per_tensor']
+    bad=[n for n in hf if n in apr and abs(apr[n]-hf[n]['rmse'])>1e-5]
+    sys.exit(0 if not bad else 1)"
+  if_fails: "apr per-tensor rmse diverges from llama-quantize-stats by >1e-5"
+
+proof_obligations:
+- type: invariant
+  property: "per_tensor output sorted descending by rmse (worst-quantized first)"
+- type: invariant
+  property: "--threshold triggers exit_code=1 iff over_budget non-empty"
+- type: invariant
+  property: "rmse computed in row-major order (LAYOUT-001 compliance)"
+- type: equivalence
+  property: "apr qa-quant --per-tensor --metric rmse matches llama.cpp's llama-quantize-stats -v per-tensor rmse within 1e-5 on matching tensor names"
+
+# References:
+#   https://github.com/ggerganov/llama.cpp/blob/master/examples/quantize-stats/quantize-stats.cpp
+#   https://github.com/ggerganov/llama.cpp/tree/master/examples/quantize-stats
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-f-04` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-f-04
+  priority: high
+  auto_created: false

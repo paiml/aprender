@@ -1,0 +1,109 @@
+# CRUX-B-07 — imatrix calibration
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-B-07
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: llama_cpp
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    imatrix calibration. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.B and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
+equations:
+  imatrix_ppl_improvement:
+    formula: |
+      Let PPL_naive  = perplexity(quantize(M, Q4_K, imatrix=None), D_eval)
+      Let PPL_calib  = perplexity(quantize(M, Q4_K, imatrix=calibration), D_eval)
+      Calibration gain: Δ = (PPL_naive - PPL_calib) / PPL_naive
+      Contract requires Δ >= 0.005 (>=0.5% PPL reduction on 512-token sample).
+    domain: "(model M: fp16|fp32, calibration set C: JSONL, eval set D_eval: >=512 tokens)"
+    codomain: "Δ ∈ ℝ, Δ >= 0.005"
+    invariants:
+    - "Calibrated Q4_K weights MUST yield lower perplexity than naïve Q4_K on held-out D_eval"
+    - "apr quantize --imatrix writes the per-channel activation scale map into APR sidecar metadata"
+    - "Calibration set C and eval set D_eval MUST be disjoint (no leakage)"
+
+  cli_surface_parity:
+    formula: |
+      llama_cpp: llama-imatrix -m M.gguf -f calib.txt -o imat.dat
+                 && llama-quantize --imatrix imat.dat M.gguf out-q4k.gguf Q4_K_M
+      aprender : apr quantize M.apr --imatrix calib.jsonl --output out-q4k.apr
+      Both paths MUST produce a Q4_K artifact whose PPL on D_eval
+      differs by <= 2% from the competitor's calibrated artifact.
+    domain: (M, calibration) pair
+    codomain: Q4_K file on disk
+    invariants:
+    - "apr CLI accepts --imatrix <path> on the quantize subcommand"
+    - "Output file carries imatrix provenance (source calibration sha256) in metadata"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-07-001
+  rule: imatrix reduces perplexity
+  prediction: "Calibrated Q4_K beats naïve Q4_K by >=0.5% PPL on held-out 512-token sample"
+  test: |
+    set -euo pipefail
+    # TODO: evidence/crux/llama_cpp/imatrix/ must contain calibration.jsonl + wikitext-eval-512.txt
+    apr quantize model.apr --method q4k --output /tmp/naive-q4k.apr
+    apr quantize model.apr --method q4k --imatrix evidence/crux/llama_cpp/imatrix/calibration.jsonl \
+      --output /tmp/calib-q4k.apr
+    PPL_NAIVE=$(apr qa /tmp/naive-q4k.apr  --eval evidence/crux/llama_cpp/imatrix/wikitext-eval-512.txt --json | jq '.perplexity')
+    PPL_CALIB=$(apr qa /tmp/calib-q4k.apr --eval evidence/crux/llama_cpp/imatrix/wikitext-eval-512.txt --json | jq '.perplexity')
+    python3 -c "import sys; d=($PPL_NAIVE-$PPL_CALIB)/$PPL_NAIVE; sys.exit(0 if d>=0.005 else 1)"
+  if_fails: "imatrix calibration did not reduce perplexity by >=0.5%; calibration pipeline is broken or no-op"
+
+- id: FALSIFY-CRUX-B-07-002
+  rule: CLI flag accepted
+  prediction: "apr quantize --imatrix flag exists and accepts a JSONL path"
+  test: |
+    apr quantize --help 2>&1 | grep -qE -- '--imatrix[[:space:]<]'
+  if_fails: "apr quantize lacks --imatrix flag; competitor parity missing"
+
+- id: FALSIFY-CRUX-B-07-003
+  rule: imatrix provenance recorded
+  prediction: "Output APR sidecar records sha256 of calibration set"
+  test: |
+    CALIB_SHA=$(sha256sum evidence/crux/llama_cpp/imatrix/calibration.jsonl | awk '{print $1}')
+    apr inspect /tmp/calib-q4k.apr --json | jq -e --arg s "$CALIB_SHA" '.metadata.imatrix_source_sha256 == $s'
+  if_fails: "Quantized output does not record imatrix provenance; cannot audit which calibration produced weights"
+
+proof_obligations:
+- type: invariant
+  property: "Calibrated Q4_K PPL <= naïve Q4_K PPL * 0.995 on held-out 512-token eval"
+- type: invariant
+  property: "apr quantize --imatrix flag is on CLI surface and documented in --help"
+- type: invariant
+  property: "Imatrix provenance (sha256) persisted in output metadata for auditability"
+- type: invariant
+  property: "Calibration and eval sets disjoint (leakage check enforced by contract)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-b-07` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-b-07
+  priority: critical
+  auto_created: true

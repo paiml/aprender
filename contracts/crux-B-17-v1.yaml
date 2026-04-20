@@ -1,0 +1,100 @@
+# CRUX-B-17 — Quantization-aware training (QAT)
+
+metadata:
+  id: CRUX-B-17
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Quantization & Formats"
+  competitor: pytorch
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Quantization-aware training: insert fake-quant ops during fine-tune so
+    the post-conversion int8 model matches the QAT-trained fp32 within
+    a tight accuracy band. Canonical: PyTorch
+    `torch.ao.quantization.QConfig` + `prepare_qat_fx` / `convert_fx`
+    (pytorch.org/docs/stable/quantization.html). Observer tracks
+    min/max, scale/zero-point frozen at convert time.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
+equations:
+  qat:
+    formula: |
+      forward_qat(x) = fake_quant(W) · x  where
+        fake_quant(w) = clamp(round(w/scale) + zp, qmin, qmax) * scale
+        scale, zp computed from running min/max observer
+      convert(model) replaces fake_quant with real int8 op
+      accuracy(qat_int8) - accuracy(qat_fp32) ∈ [-0.5 pp, +0 pp] on eval set
+    domain: "(model: Model, calib_loader: DataLoader, bits ∈ {8, 4})"
+    codomain: "int8 model with QAT-trained scales"
+    invariants:
+    - "observer min ≤ max at all times (no reversed range)"
+    - "post-convert int8 accuracy within 0.5pp of QAT fp32 on eval split"
+    - "scale, zero_point stored in state_dict and round-trip to disk"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-17-001
+  rule: observer range is well-formed
+  prediction: "for every quantized layer, min ≤ max in observer state"
+  test: |
+    set -euo pipefail
+    apr train --config tests/fixtures/qat-tiny.yaml --mode qat \
+      --output /tmp/qat.pt --epochs 1 --format json > /tmp/qat.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/qat.json'))
+    for layer, obs in d['observers'].items():
+        assert obs['min'] <= obs['max'], (layer, obs)
+    "
+  if_fails: rule 'observer range is well-formed' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-B-17-002
+  rule: post-convert int8 accuracy within 0.5pp of QAT fp32
+  prediction: "|acc(qat_fp32) - acc(qat_int8)| ≤ 0.005"
+  test: |
+    set -euo pipefail
+    apr eval /tmp/qat.pt --dataset tests/fixtures/eval --format json > /tmp/fp.json
+    apr convert /tmp/qat.pt --to int8 -o /tmp/qat-int8.apr
+    apr eval /tmp/qat-int8.apr --dataset tests/fixtures/eval --format json > /tmp/int8.json
+    python3 -c "
+    import json
+    a=json.load(open('/tmp/fp.json'))['accuracy']
+    b=json.load(open('/tmp/int8.json'))['accuracy']
+    assert abs(a-b) <= 0.005, (a, b)
+    "
+  if_fails: rule 'post-convert int8 accuracy within 0.5pp of QAT fp32' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-B-17-003
+  rule: scale + zero_point round-trip to disk
+  prediction: "load(save(model)).qparams == model.qparams"
+  test: |
+    set -euo pipefail
+    apr inspect /tmp/qat-int8.apr --qparams --format json > /tmp/q1.json
+    apr convert /tmp/qat-int8.apr --to int8 -o /tmp/qat-int8-rt.apr
+    apr inspect /tmp/qat-int8-rt.apr --qparams --format json > /tmp/q2.json
+    diff <(jq -S . /tmp/q1.json) <(jq -S . /tmp/q2.json)
+
+  if_fails: rule 'scale + zero_point round-trip to disk' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr train --mode qat matches PyTorch prepare_qat_fx / convert_fx semantics"
+- type: invariant
+  property: "observer range well-formed (min ≤ max)"
+- type: invariant
+  property: "≤0.5pp accuracy gap after convert"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-b-17
+  priority: medium
+  auto_created: true

@@ -1,0 +1,91 @@
+# CRUX-E-13 — RULER long-context eval
+
+metadata:
+  id: CRUX-E-13
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    RULER benchmark (arXiv:2404.06654, NVIDIA): 13 synthetic tasks measuring
+    long-context capability across varied lengths (4k..128k). Canonical
+    upstream: github.com/hsiehjackson/RULER. Output is task-by-length matrix
+    of accuracies + effective context length (first length < 85% accuracy).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  ruler_eval:
+    formula: |
+      for task t in {niah_single, niah_multi, vt, cwe, fwe, qa_1, qa_2, ...}:
+        for L in context_lengths:
+          acc[t][L] = mean(correct(gen(model, example_k)) for k in task.samples)
+      effective_ctx = min { L : mean_task(acc[:,L]) < 0.85 }
+    domain: "(model: Path, context_lengths: [u32] = [4k,8k,16k,32k,65k,131k])"
+    codomain: "JSON {task_by_length: [[f32]], effective_ctx: u32, avg: f32}"
+    invariants:
+    - "random-guess model accuracy ≤ 0.01 for NIAH single"
+    - "effective_ctx ≤ max(context_lengths) (monotone-threshold crossing)"
+    - "deterministic under fixed seed + temp=0"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-13-001
+  rule: random baseline fails NIAH
+  prediction: "apr eval-ruler with --random-baseline reports niah_single ≤ 0.01"
+  test: |
+    set -euo pipefail
+    apr eval-ruler --random-baseline --context-lengths 4096 --format json > /tmp/r.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/r.json'))
+    assert d['task_by_length']['niah_single'][0] <= 0.01, d
+    "
+  if_fails: rule 'random baseline fails NIAH' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-13-002
+  rule: effective_ctx = 0 when every length below threshold
+  prediction: "model that fails all lengths reports effective_ctx == 0"
+  test: |
+    set -euo pipefail
+    apr eval-ruler tests/fixtures/broken-model --context-lengths 4096,8192 \
+      --format json > /tmp/e.json
+    python3 -c "import json; d=json.load(open('/tmp/e.json')); assert d['effective_ctx']==0, d"
+  if_fails: rule 'effective_ctx = 0 when every length below threshold' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-13-003
+  rule: determinism under temp=0 fixed seed
+  prediction: "two runs with --seed 42 --temp 0 produce identical matrices"
+  test: |
+    set -euo pipefail
+    apr eval-ruler tests/fixtures/tinyllama-hf --context-lengths 4096 --seed 42 \
+      --temp 0 --format json > /tmp/a.json
+    apr eval-ruler tests/fixtures/tinyllama-hf --context-lengths 4096 --seed 42 \
+      --temp 0 --format json > /tmp/b.json
+    diff /tmp/a.json /tmp/b.json
+
+  if_fails: rule 'determinism under temp=0 fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr eval-ruler matches upstream RULER suite (arXiv:2404.06654) task definitions + scoring"
+- type: invariant
+  property: "random baseline NIAH acc ≤ 0.01"
+- type: invariant
+  property: "deterministic under fixed seed + temp=0"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-e-13
+  priority: medium
+  auto_created: true

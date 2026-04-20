@@ -1,0 +1,97 @@
+# CRUX-A-22 — Disk-quota enforcement on registry
+
+metadata:
+  id: CRUX-A-22
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Hub & Distribution"
+  competitor: ollama
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Enforce an absolute byte quota on the local model registry. Canonical:
+    Ollama `OLLAMA_MAX_MODELS`/manual prune; docker `--storage-opt
+    size=...`. Must reject `apr pull` when aggregate manifest size +
+    incoming model > quota, and emit a machine-parseable error with
+    used/available/needed fields.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  quota:
+    formula: |
+      used(registry) = Σ size(blob)_b for b ∈ unique blobs in manifest
+      free = quota - used
+      allow(pull) = free ≥ size(incoming)
+      # enforcement is pre-download: no bytes land on disk on reject
+    domain: "(registry: Path, quota: u64 bytes, incoming: Manifest)"
+    codomain: "{allowed: bool, used: u64, free: u64, needed: u64}"
+    invariants:
+    - "quota never exceeded (disk usage always ≤ quota after any pull)"
+    - "rejection is pre-download (no partial blobs left on disk)"
+    - "error body is valid JSON with used/free/needed fields"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-22-001
+  rule: pull rejected when it would exceed quota
+  prediction: "pull 2GB model with 1GB remaining fails with quota error"
+  test: |
+    set -euo pipefail
+    export APR_MODELS=/tmp/apr-quota
+    rm -rf /tmp/apr-quota && mkdir -p /tmp/apr-quota
+    apr registry set-quota 1048576  # 1 MB
+    ! apr pull hf://openai/whisper-tiny 2>/tmp/err >/dev/null
+    python3 -c "
+    import json
+    e = json.loads(open('/tmp/err').read().split('\n')[-2])
+    assert e['used'] + e['needed'] > e['used'] + e['free'], e
+    assert all(k in e for k in ('used','free','needed'))
+    "
+  if_fails: rule 'pull rejected when it would exceed quota' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-22-002
+  rule: no partial blobs on disk after reject
+  prediction: "registry byte count unchanged after rejection"
+  test: |
+    set -euo pipefail
+    before=$(du -sb /tmp/apr-quota | awk '{print $1}')
+    ! apr pull hf://openai/whisper-tiny 2>/dev/null >/dev/null
+    after=$(du -sb /tmp/apr-quota | awk '{print $1}')
+    python3 -c "assert $before == $after, ($before, $after)"
+  if_fails: rule 'no partial blobs on disk after reject' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-22-003
+  rule: permitted pull succeeds and stays under quota
+  prediction: "pull within budget lands blobs; du ≤ quota"
+  test: |
+    set -euo pipefail
+    apr registry set-quota 104857600  # 100 MB
+    apr pull hf://paiml/tiny-fixture
+    quota=$(apr registry info --format json | jq -r .quota)
+    used=$(du -sb /tmp/apr-quota | awk '{print $1}')
+    python3 -c "assert $used <= $quota, ($used, $quota)"
+
+  if_fails: rule 'permitted pull succeeds and stays under quota' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr registry quota semantics match Ollama OLLAMA_MAX_MODELS / docker storage-opt"
+- type: invariant
+  property: "quota never exceeded"
+- type: invariant
+  property: "rejection is pre-download (atomic)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-a-22
+  priority: medium
+  auto_created: true

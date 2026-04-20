@@ -1,0 +1,161 @@
+# CRUX-D-14 — Early stopping + best ckpt
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-14
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Early stopping + best ckpt. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.D and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  early_stopping_patience:
+    formula: |
+      Competitor (HuggingFace Trainer + EarlyStoppingCallback):
+        Trainer(model, args, ..., callbacks=[EarlyStoppingCallback(early_stopping_patience=P)])
+      where training halts at epoch e iff
+        val_loss[e] > min(val_loss[0..e]) + early_stopping_threshold
+        for P consecutive evaluation steps.
+      apr parity:
+        apr finetune MODEL --early-stopping-patience P --early-stopping-threshold T
+      MUST halt training when the best val_loss has not improved for P
+      consecutive eval epochs, matching HF semantics.
+    domain: "epoch_metrics[i].val_loss for i in [0, total_epochs-1], patience P in N"
+    codomain: "halted: bool, halted_epoch: u64 | null"
+    invariants:
+    - "If patience P elapses without val_loss improvement, training halts"
+    - "halted_epoch == best_epoch + P (±1) when early stop triggers"
+    - "Competitor parity: matches EarlyStoppingCallback(patience=P) semantics"
+    - "Without --early-stopping-patience, training runs to --epochs (no halt)"
+
+  best_checkpoint_persistence:
+    formula: |
+      Competitor: Trainer with load_best_model_at_end=True restores the
+      checkpoint with minimal val_loss after training completes.
+      apr parity:
+        apr finetune MODEL --load-best-model-at-end --metric-for-best val_loss
+      MUST, at termination, persist the checkpoint corresponding to
+      argmin_{e in [0, halted_epoch]} val_loss[e].
+    domain: "epoch checkpoints {e_0, e_1, ..., e_halted}"
+    codomain: "best_checkpoint_path: string (valid path)"
+    invariants:
+    - "Output model equals epoch_metrics[best_epoch] checkpoint (bitwise)"
+    - "best_epoch == argmin(epoch_metrics[].val_loss)"
+    - "JSON output contains best_epoch and best_val_loss fields"
+
+  monotonic_best_tracking:
+    formula: |
+      For all epoch indices i in [0, halted_epoch]:
+        best_val_loss[i] = min(val_loss[0..=i])
+      best_val_loss is a non-increasing sequence.
+    domain: "epoch_metrics array"
+    codomain: bool
+    invariants:
+    - "best_val_loss[i] <= best_val_loss[i-1] for all i > 0"
+    - "best_val_loss[halted_epoch] == min(val_loss[0..=halted_epoch])"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-14-001
+  rule: "early stopping halts at best_epoch + patience when val_loss plateaus"
+  prediction: "apr finetune --early-stopping-patience 2 halts within 2 epochs of best"
+  test: |
+    set -euo pipefail
+    BASE=fixtures/crux-d-14/tiny-base.apr
+    OUT=/tmp/crux-d-14-es.apr
+    # Use train data that will plateau quickly
+    apr finetune "$BASE" --method full \
+      --data fixtures/crux-d-14/train.jsonl \
+      --val-data fixtures/crux-d-14/val.jsonl \
+      --epochs 10 --early-stopping-patience 2 \
+      --load-best-model-at-end --metric-for-best val_loss \
+      --output "$OUT" --json > /tmp/d14-metrics.json
+    # Assert: halted_epoch <= best_epoch + patience + 1
+    jq -e '
+      (.epoch_metrics | map(.val_loss) | [., min] as [$all, $min]
+       | ($all | map(. == $min) | index(true))) as $best
+      | (.halted_epoch // (.epoch_metrics | length - 1)) as $halted
+      | ($halted - $best) <= 3
+    ' /tmp/d14-metrics.json
+  if_fails: "early stopping did not halt within patience window — callback broken or val_loss not tracked"
+
+- id: FALSIFY-CRUX-D-14-002
+  rule: "load-best-model-at-end persists argmin(val_loss) checkpoint"
+  prediction: "final output model equals epoch_metrics[best_epoch] checkpoint"
+  test: |
+    set -euo pipefail
+    BASE=fixtures/crux-d-14/tiny-base.apr
+    OUT=/tmp/crux-d-14-best.apr
+    apr finetune "$BASE" --method full \
+      --data fixtures/crux-d-14/train.jsonl \
+      --val-data fixtures/crux-d-14/val.jsonl \
+      --epochs 5 --load-best-model-at-end --metric-for-best val_loss \
+      --checkpoint-dir /tmp/d14-ckpts \
+      --output "$OUT" --json > /tmp/d14-best.json
+    BEST_EPOCH=$(jq -r '.best_epoch' /tmp/d14-best.json)
+    # Compare output with checkpoint directory epoch-$BEST_EPOCH
+    apr diff "$OUT" "/tmp/d14-ckpts/epoch-$BEST_EPOCH" --json \
+      | jq -e '.tensors_differ_count == 0'
+  if_fails: "output checkpoint does not match best_epoch — load-best-model-at-end violated"
+
+- id: FALSIFY-CRUX-D-14-003
+  rule: "HF Trainer EarlyStoppingCallback parity on canonical fixture"
+  prediction: "apr halted_epoch matches HF Trainer callback within ±1 epoch"
+  test: |
+    set -euo pipefail
+    GOLDEN=evidence/crux/huggingface/d-14-early-stopping.json
+    APR_HALT=$(apr finetune fixtures/crux-d-14/tiny-base.apr --method full \
+      --data fixtures/crux-d-14/train.jsonl \
+      --val-data fixtures/crux-d-14/val.jsonl \
+      --epochs 10 --early-stopping-patience 3 --seed 42 --json \
+      | jq -r '.halted_epoch')
+    HF_HALT=$(jq -r '.halted_epoch' "$GOLDEN")
+    python3 -c "import sys; sys.exit(0 if abs($APR_HALT - $HF_HALT) <= 1 else 1)"
+  if_fails: "apr diverges from HF EarlyStoppingCallback halt epoch by >1"
+
+proof_obligations:
+- type: invariant
+  property: "training halts within patience P of best val_loss epoch"
+- type: invariant
+  property: "output model equals argmin(val_loss) checkpoint (bitwise)"
+- type: invariant
+  property: "best_val_loss is non-increasing across epochs"
+- type: equivalence
+  property: "apr finetune --early-stopping-patience P matches HuggingFace Trainer's EarlyStoppingCallback(early_stopping_patience=P) on golden fixture"
+
+# References:
+#   https://huggingface.co/docs/transformers/en/main_classes/callback#transformers.EarlyStoppingCallback
+#   https://huggingface.co/docs/transformers/en/main_classes/trainer#transformers.TrainingArguments.load_best_model_at_end
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-14` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-14
+  priority: high
+  auto_created: false

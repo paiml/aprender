@@ -41,6 +41,7 @@ fn registered_commands() -> Vec<&'static str> {
         "pull",
         "list",
         "rm",
+        "registry",
         "publish",
         "finetune",
         "prune",

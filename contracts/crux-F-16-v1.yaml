@@ -1,0 +1,95 @@
+# CRUX-F-16 — Kernel timing nsys/nvprof export
+
+metadata:
+  id: CRUX-F-16
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: pytorch
+  demand_score: 3
+  intake_status: partial
+  description: >
+    Collect per-kernel timing via CUPTI/nsys under a traced region, export as
+    a standard `.nsys-rep` + SQL-backed Chrome-trace JSON. Canonical: PyTorch
+    `torch.profiler.profile(schedule=..., on_trace_ready=tensorboard_trace_handler(...))`
+    OR CLI `nsys profile -o run apr train ...`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  profile_export:
+    formula: |
+      start = nvtxRangePushA("apr.step")
+      ... ops ...
+      stop  = nvtxRangePop()
+      # optionally traced; post-process CUPTI to JSON
+    domain: "(model: Path, workload: apr_subcmd, out_dir: Path)"
+    codomain: "{out_dir}/trace.json (Chrome-trace schema) + {out_dir}/kernels.csv"
+    invariants:
+    - "trace.json validates as Chrome Trace Event Format (traceEvents array)"
+    - "every kernel row in kernels.csv has duration_ns ≥ 0 and a non-empty name"
+    - "apr profile + nsys profile over same run produce ≤ 5% relative timing drift per-kernel"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-16-001
+  rule: trace.json is valid Chrome Trace format
+  prediction: "out_dir/trace.json passes chrome-trace jsonschema"
+  test: |
+    set -euo pipefail
+    apr profile tests/fixtures/tinyllama-hf --prompt "hi" --max-tokens 4 \
+      --out /tmp/prof --format chrome-trace
+    python3 - <<'PY'
+    import json, jsonschema
+    t = json.load(open("/tmp/prof/trace.json"))
+    assert "traceEvents" in t and isinstance(t["traceEvents"], list)
+    assert all("name" in e and "ph" in e and "ts" in e for e in t["traceEvents"])
+    PY
+  if_fails: rule 'trace.json is valid Chrome Trace format' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-16-002
+  rule: kernels.csv rows have positive duration
+  prediction: "no negative or NaN duration rows"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import csv
+    for row in csv.DictReader(open('/tmp/prof/kernels.csv')):
+      d=int(row['duration_ns']); assert d >= 0, row
+      assert row['name'], row
+    "
+  if_fails: rule 'kernels.csv rows have positive duration' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-16-003
+  rule: nsys parity within 5% per kernel
+  prediction: "apr profile vs nsys sqlite export agree on median kernel duration ±5%"
+  test: |
+    set -euo pipefail
+    nsys profile -o /tmp/n apr profile tests/fixtures/tinyllama-hf --prompt hi \
+      --max-tokens 4 --out /tmp/prof2
+    nsys stats --format csv --report kernelexec /tmp/n.nsys-rep > /tmp/nsys.csv
+    python3 scripts/compare_kernel_timing.py /tmp/prof2/kernels.csv /tmp/nsys.csv --tol 0.05
+
+  if_fails: rule 'nsys parity within 5% per kernel' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr profile kernel timings match nsys within 5% per kernel"
+- type: invariant
+  property: "trace.json validates Chrome Trace Event Format"
+- type: invariant
+  property: "kernels.csv duration_ns ≥ 0 for every row"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-f-16
+  priority: medium
+  auto_created: true

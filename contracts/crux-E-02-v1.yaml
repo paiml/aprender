@@ -1,0 +1,149 @@
+# CRUX-E-02 — Perplexity on held-out corpus
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-E-02
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: llama_cpp
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    Perplexity on held-out corpus. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.E and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  # Competitor canonical CLI:
+  #   llama-perplexity -m model.gguf -f wikitext-2-raw.txt -c 2048
+  #   → "Final estimate: PPL = 6.1234 +/- 0.01234"
+  # Reference: https://github.com/ggerganov/llama.cpp/tree/master/examples/perplexity
+  # Aprender equivalent:
+  #   apr eval model.apr --task perplexity --corpus wikitext.txt --context 2048 --json
+
+  perplexity_definition:
+    formula: |
+      PPL(M, C) = exp( - (1 / N) * Σ_{i=1..N} log p_M(t_i | t_{<i}) )
+      where:
+        M = language model under test
+        C = held-out corpus tokenized into t_1, ..., t_N
+        N = num_tokens evaluated (excludes context warmup)
+        p_M(·|·) = model's next-token probability (softmax of logits)
+    domain: (model M, corpus C, context_length L)
+    codomain: f64 ∈ [1.0, +∞)  # PPL is bounded below by 1.0 (perfect prediction)
+    invariants:
+    - "PPL >= 1.0 (exp of non-negative cross-entropy)"
+    - "PPL is finite for non-degenerate models (no NaN/Inf)"
+    - "PPL computed on log-probabilities, NOT argmax"
+    - "context_length L matches --context flag (sliding window over corpus)"
+
+  ppl_json_schema:
+    formula: |
+      apr eval --task perplexity --json output MUST contain:
+        ppl: f64 >= 1.0
+        ppl_stderr: f64 >= 0.0
+        num_tokens: u64 > 0
+        context_length: u64 > 0
+        corpus_path: string (valid path)
+        model_path: string (valid path)
+    domain: apr eval --task perplexity --json output
+    codomain: JSON object
+    invariants:
+    - "All 6 keys MUST be present (missing key = FAIL)"
+    - "ppl_stderr < 0.05 * ppl (convergence sanity; <5% relative stderr)"
+    - "num_tokens >= context_length (at least one full window evaluated)"
+    - "For fp16 Llama-3-8B on WikiText-2-raw, ppl ∈ [5.5, 7.5] (known-good band; llama.cpp reports ~6.1)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-02-001
+  rule: JSON schema complete
+  prediction: "apr eval --task perplexity --json emits all 6 required keys"
+  test: |
+    OUT=$(apr eval model.apr --task perplexity \
+      --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
+      --context 2048 --json)
+    echo "$OUT" | jq -e '.ppl and .ppl_stderr and .num_tokens and .context_length and .corpus_path and .model_path'
+  if_fails: "apr eval perplexity JSON missing required keys (ppl/ppl_stderr/num_tokens/context_length/corpus_path/model_path)"
+
+- id: FALSIFY-CRUX-E-02-002
+  rule: PPL in known-good band for Llama-3-8B fp16 on WikiText-2
+  prediction: "5.5 <= ppl <= 7.5 (llama.cpp reference: 6.12)"
+  test: |
+    # TODO: requires Llama-3-8B fp16 .apr + WikiText-2-raw golden corpus.
+    OUT=$(apr eval models/llama-3-8b-fp16.apr --task perplexity \
+      --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
+      --context 2048 --json)
+    PPL=$(echo "$OUT" | jq '.ppl')
+    python3 -c "import sys; ppl=$PPL; sys.exit(0 if 5.5 <= ppl <= 7.5 else 1)"
+  if_fails: "Llama-3-8B fp16 perplexity outside [5.5, 7.5] band — model or tokenizer broken"
+
+- id: FALSIFY-CRUX-E-02-003
+  rule: ppl_stderr convergence sanity
+  prediction: "ppl_stderr < 0.05 * ppl (stderr under 5% of estimate)"
+  test: |
+    OUT=$(apr eval model.apr --task perplexity \
+      --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
+      --context 2048 --json)
+    echo "$OUT" | jq -e '.ppl_stderr < (.ppl * 0.05)'
+  if_fails: "ppl_stderr >= 5% of ppl — not converged, need more tokens or larger context"
+
+- id: FALSIFY-CRUX-E-02-004
+  rule: PPL >= 1.0 invariant
+  prediction: "perplexity is bounded below by 1.0 (exp of non-negative CE)"
+  test: |
+    OUT=$(apr eval model.apr --task perplexity \
+      --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
+      --context 2048 --json)
+    echo "$OUT" | jq -e '.ppl >= 1.0 and (.ppl | isnan | not) and (.ppl | isinfinite | not)'
+  if_fails: "PPL < 1.0 or NaN/Inf — cross-entropy computation broken"
+
+- id: FALSIFY-CRUX-E-02-005
+  rule: context_length echoes flag
+  prediction: "JSON .context_length == --context flag value"
+  test: |
+    OUT=$(apr eval model.apr --task perplexity \
+      --corpus evidence/crux/llama_cpp/wikitext-2-raw.txt \
+      --context 2048 --json)
+    echo "$OUT" | jq -e '.context_length == 2048'
+  if_fails: "context_length in JSON does not match --context flag"
+
+proof_obligations:
+- type: invariant
+  property: "ppl >= 1.0 and finite (no NaN/Inf)"
+- type: invariant
+  property: "JSON output has all 6 required keys: ppl, ppl_stderr, num_tokens, context_length, corpus_path, model_path"
+- type: invariant
+  property: "ppl_stderr < 0.05 * ppl (convergence sanity)"
+- type: invariant
+  property: "For fp16 Llama-3-8B on WikiText-2, ppl ∈ [5.5, 7.5] (parity with llama.cpp reference)"
+- type: invariant
+  property: "num_tokens >= context_length (sliding window covers at least one full context)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-02` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-02
+  priority: critical
+  auto_created: true

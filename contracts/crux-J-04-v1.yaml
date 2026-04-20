@@ -1,0 +1,91 @@
+# CRUX-J-04 — OpenCLAW group-chat @mention trigger
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-04
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 4
+  intake_status: missing
+  description: >
+    OpenCLAW only responds in group chats when the agent is @mentioned
+    (otherwise the agent would spam every group thread). Aprender parity:
+    when aprender's `apr code` / MCP surface is wired to any group-chat
+    transport, it MUST gate response on explicit mention, not every
+    inbound message. Overlaps with apr-mcp server event filtering.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/config-schema.json5
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  group_mention_gate:
+    formula: |
+      respond(channel, msg) :=
+        if channel.type == "dm"           : respond_always(msg)
+        if channel.type == "group"        : respond_if(mention_self ∈ msg)
+        else                              : reject
+      mention_self : set of tokens {@bot_name, @bot_alias, <bot_id>}
+    domain: (channel_type, msg_text)
+    codomain: "{respond, ignore}"
+    invariants:
+    - "group-chat message without mention → agent stays silent"
+    - "DM (1:1 chat) does not require mention"
+    - "mention match is case-insensitive on bot display name"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-04-001
+  rule: mention gate concept is documented for group-chat surfaces
+  prediction: "apr / aprender docs reference mention or @bot-name gating for group contexts"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "mention group chat OR @bot trigger OR group-chat gate" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no mention-gate story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-04 parity broken — group-chat mention gate must be documented
+- id: FALSIFY-CRUX-J-04-002
+  rule: MCP event filter is the apr-side analogue
+  prediction: "MCP server event dispatch supports per-event opt-in"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "MCP event filter OR MCP subscribe event" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: MCP dispatch lacks event-filter story" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-04 MCP invariant — event dispatch must be opt-in, not broadcast-default
+
+proof_obligations:
+- type: invariant
+  property: "group-chat silence without mention"
+- type: invariant
+  property: "DM responds without mention"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-04
+  priority: high
+  auto_created: true

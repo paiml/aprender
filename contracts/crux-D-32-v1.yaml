@@ -1,0 +1,97 @@
+# CRUX-D-32 — Resume from HF Hub ckpt URL
+
+metadata:
+  id: CRUX-D-32
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: partial
+  description: >
+    Resume training from a checkpoint stored on the Hub by URL/repo:rev.
+    Canonical: HF `Trainer.train(resume_from_checkpoint="user/repo@sha")`;
+    pulls optimizer+scheduler state, tokenizer, and config atomically.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  resume_from_hub:
+    formula: |
+      url = parse("hf://user/repo@rev" | "https://huggingface.co/user/repo/...")
+      ckpt_dir = hf_hub_snapshot(url, files=["model.safetensors","optimizer.pt","scheduler.pt","trainer_state.json"])
+      resume(ckpt_dir)
+    domain: "(url: String, auth_token: Option<String>)"
+    codomain: "training run that continues from saved step with restored optimizer+scheduler+rng state"
+    invariants:
+    - "loss trajectory after resume matches single-run trajectory from same step (within optimizer numerics, 1e-5)"
+    - "step counter resumes from trainer_state.json.global_step (+1), not from 0"
+    - "rng state restored: next random.random() matches pre-pause value"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-32-001
+  rule: resumed run matches single-run loss trajectory
+  prediction: "|loss(resumed, step_N+k) - loss(single, step_N+k)| ≤ 1e-5 for k in [1..5]"
+  test: |
+    set -euo pipefail
+    # single-run reference: train 10 steps
+    apr train tests/fixtures/tiny-sft.jsonl --seed 42 --steps 10 \
+      --model tests/fixtures/tinyllama-hf --dump-loss /tmp/single.json -o /tmp/single
+    # paused-run: train 5, push to hub, resume 5 more
+    apr train tests/fixtures/tiny-sft.jsonl --seed 42 --steps 5 \
+      --model tests/fixtures/tinyllama-hf -o /tmp/part1
+    apr push /tmp/part1 hf://testorg/tmp-ckpt@v1 --include-optimizer
+    apr train tests/fixtures/tiny-sft.jsonl --seed 42 --steps 5 \
+      --resume-from hf://testorg/tmp-ckpt@v1 --dump-loss /tmp/resumed.json -o /tmp/resumed
+    python3 -c "
+    import json
+    s = json.load(open('/tmp/single.json'))['steps']
+    r = json.load(open('/tmp/resumed.json'))['steps']
+    for k in range(5):
+      assert abs(s[5+k]['loss'] - r[k]['loss']) < 1e-5, (s[5+k], r[k])
+    "
+  if_fails: rule 'resumed run matches single-run loss trajectory' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-32-002
+  rule: step counter resumes from saved global_step
+  prediction: "trainer_state.json.global_step after resume == pre-pause + N"
+  test: |
+    set -euo pipefail
+    gs=$(jq .global_step /tmp/resumed/trainer_state.json)
+    python3 -c "assert $gs == 10, $gs"
+  if_fails: rule 'step counter resumes from saved global_step' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-32-003
+  rule: invalid URL fails fast with actionable error
+  prediction: "apr train --resume-from hf://nonexistent/repo exits non-zero with HF error"
+  test: |
+    set -euo pipefail
+    ! apr train tests/fixtures/tiny-sft.jsonl --resume-from hf://nonexistent/repo@v1 \
+      --model tests/fixtures/tinyllama-hf --steps 1 -o /tmp/fail 2>/tmp/err
+    grep -E "not found|404|unreachable" /tmp/err
+
+  if_fails: rule 'invalid URL fails fast with actionable error' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr train --resume-from hf://repo@rev matches HF Trainer `resume_from_checkpoint` semantics"
+- type: invariant
+  property: "resumed loss trajectory matches single-run trajectory within 1e-5"
+- type: invariant
+  property: "global_step and rng state restored exactly"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-32
+  priority: medium
+  auto_created: true

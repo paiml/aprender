@@ -1,0 +1,144 @@
+# CRUX-C-13 — /v1/embeddings endpoint
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-13
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: llama_cpp
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    /v1/embeddings endpoint. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  embeddings_response_schema:
+    formula: |
+      POST /v1/embeddings
+      Request: {"model": str, "input": string | [string, ...]}
+      Response MUST contain:
+        object : "list"
+        data   : [{"object":"embedding", "embedding":[f32; H], "index": u64}, ...]
+        model  : string
+        usage  : {"prompt_tokens": u64, "total_tokens": u64}
+      Invariants:
+        len(response.data) == len(request.input)      (1 vector per input)
+        ∀ i: len(response.data[i].embedding) == H      (H = model.hidden_size)
+        response.data[i].index == i                    (preserves request order)
+      Ref: https://platform.openai.com/docs/api-reference/embeddings
+    domain: POST /v1/embeddings request
+    codomain: JSON response with embeddings array
+    invariants:
+    - "len(data) == len(input) when input is an array"
+    - "Every embedding vector has exactly model.hidden_size f32 elements"
+    - "data[i].index == i preserves request order"
+    - "usage.total_tokens == usage.prompt_tokens (embeddings produce no completion tokens)"
+
+  embedding_determinism:
+    formula: |
+      For identical input s at temperature-independent endpoint:
+        cosine(embed(s), embed(s)) == 1.0 ± 1e-6
+      (Embeddings MUST be deterministic for the same input on the same model.)
+    domain: string s ∈ text
+    codomain: cosine similarity ∈ [-1, 1]
+    invariants:
+    - "Repeated calls with identical input produce cosine == 1.0 ± 1e-6"
+    - "Embedding model runs with deterministic (no-sampling) forward pass"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-13-001
+  rule: response schema and length parity
+  prediction: "len(data) == len(input) AND len(data[i].embedding) == model.hidden_size"
+  test: |
+    set -euo pipefail
+    R=$(curl -s http://localhost:8080/v1/embeddings -H 'Content-Type: application/json' \
+      -d '{"model":"all-minilm","input":["text1","text2","text3"]}')
+    echo "$R" | jq -e '.object == "list"' >/dev/null
+    echo "$R" | jq -e '.data | length == 3' >/dev/null
+    # Hidden size is model-dependent; query metadata
+    H=$(apr inspect all-minilm.apr --json | jq '.metadata.hidden_size')
+    for i in 0 1 2; do
+      echo "$R" | jq -e --argjson i "$i" --argjson h "$H" \
+        '.data[$i].embedding | length == $h' >/dev/null
+      echo "$R" | jq -e --argjson i "$i" '.data[$i].index == $i' >/dev/null
+    done
+  if_fails: "/v1/embeddings response length or vector dimension mismatches spec"
+
+- id: FALSIFY-CRUX-C-13-002
+  rule: determinism — identical inputs cosine == 1.0
+  prediction: "cosine(embed(s), embed(s)) == 1.0 ± 1e-6"
+  test: |
+    set -euo pipefail
+    R1=$(curl -s http://localhost:8080/v1/embeddings -H 'Content-Type: application/json' \
+      -d '{"model":"all-minilm","input":"hello world"}')
+    R2=$(curl -s http://localhost:8080/v1/embeddings -H 'Content-Type: application/json' \
+      -d '{"model":"all-minilm","input":"hello world"}')
+    python3 - <<PY
+    import json, sys, math
+    v1 = json.loads('''$R1''')['data'][0]['embedding']
+    v2 = json.loads('''$R2''')['data'][0]['embedding']
+    dot = sum(a*b for a,b in zip(v1,v2))
+    n1 = math.sqrt(sum(a*a for a in v1))
+    n2 = math.sqrt(sum(b*b for b in v2))
+    cos = dot/(n1*n2)
+    assert abs(cos - 1.0) < 1e-6, f"cosine={cos}, expected 1.0"
+    PY
+  if_fails: "Embeddings non-deterministic for identical input; stochastic path leaked into embedding model"
+
+- id: FALSIFY-CRUX-C-13-003
+  rule: usage token accounting
+  prediction: "usage.total_tokens == usage.prompt_tokens (no completion tokens in embeddings)"
+  test: |
+    set -euo pipefail
+    R=$(curl -s http://localhost:8080/v1/embeddings -H 'Content-Type: application/json' \
+      -d '{"model":"all-minilm","input":"hello"}')
+    echo "$R" | jq -e '.usage.total_tokens == .usage.prompt_tokens' >/dev/null
+    echo "$R" | jq -e '.usage.prompt_tokens >= 1' >/dev/null
+  if_fails: "usage fields inconsistent; billing/metering clients will mis-account tokens"
+
+- id: FALSIFY-CRUX-C-13-004
+  rule: CLI surface exposes --embeddings-enabled
+  prediction: "apr serve --embeddings-enabled flag exists"
+  test: |
+    apr serve --help 2>&1 | grep -qE -- '--embeddings-enabled'
+  if_fails: "apr serve lacks --embeddings-enabled flag; endpoint cannot be exposed as documented"
+
+proof_obligations:
+- type: invariant
+  property: "len(response.data) == len(request.input) for array inputs"
+- type: invariant
+  property: "Every embedding vector length equals model.hidden_size"
+- type: invariant
+  property: "cosine(embed(s), embed(s)) == 1.0 ± 1e-6 (determinism)"
+- type: invariant
+  property: "usage.total_tokens == usage.prompt_tokens on embedding responses"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-13` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-13
+  priority: critical
+  auto_created: true

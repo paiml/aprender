@@ -361,6 +361,15 @@ pub enum Commands {
         /// Force re-download even if cached
         #[arg(long)]
         force: bool,
+        /// CRUX-A-01: resolve short name to canonical URL and exit without
+        /// performing any network I/O.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Registry operations (CRUX-A-01): inspect alias map, etc.
+    Registry {
+        #[command(subcommand)]
+        command: crate::commands::registry::RegistryCommands,
     },
     /// List cached models
     #[command(name = "list", alias = "ls")]

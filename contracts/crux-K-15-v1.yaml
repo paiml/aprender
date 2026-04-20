@@ -1,0 +1,97 @@
+# CRUX-K-15 — Kubernetes Helm chart
+
+metadata:
+  id: CRUX-K-15
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Deployment & Integration"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Emit a production Kubernetes Helm chart for `apr serve`. Canonical:
+    helm v3 (helm.sh/docs/topics/charts/) + Kubernetes apps/v1
+    Deployment + Service + HPA + ServiceMonitor. Chart must pass `helm
+    lint`, render deterministically, and include a liveness/readiness
+    probe pointing at `/healthz`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  helm_chart:
+    formula: |
+      chart/
+        Chart.yaml         (apiVersion=v2, name, version SemVer, appVersion)
+        values.yaml        (replicaCount, image.repository, image.tag, resources)
+        templates/deployment.yaml  (apps/v1 Deployment)
+        templates/service.yaml     (v1 Service)
+        templates/hpa.yaml         (autoscaling/v2 HPA)
+      helm lint returns "0 chart(s) failed"
+      helm template produces stable YAML (same input ⇒ identical output bytes)
+    domain: "(values: dict)"
+    codomain: "rendered k8s manifest yaml"
+    invariants:
+    - "helm lint exit code == 0"
+    - "helm template output is deterministic (byte-identical re-renders)"
+    - "Deployment has livenessProbe and readinessProbe hitting /healthz"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-15-001
+  rule: helm lint passes on emitted chart
+  prediction: "helm lint returns exit 0"
+  test: |
+    set -euo pipefail
+    apr serve emit-helm -o /tmp/apr-chart
+    helm lint /tmp/apr-chart
+  if_fails: rule 'helm lint passes on emitted chart' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-15-002
+  rule: helm template is deterministic
+  prediction: "two renders with same values byte-identical"
+  test: |
+    set -euo pipefail
+    helm template test /tmp/apr-chart > /tmp/rend1.yaml
+    helm template test /tmp/apr-chart > /tmp/rend2.yaml
+    diff /tmp/rend1.yaml /tmp/rend2.yaml
+  if_fails: rule 'helm template is deterministic' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-15-003
+  rule: Deployment has liveness + readiness probes on /healthz
+  prediction: "rendered Deployment spec contains both probes with path /healthz"
+  test: |
+    set -euo pipefail
+    uv run --with pyyaml python3 -c "
+    import yaml, sys
+    docs = list(yaml.safe_load_all(open('/tmp/rend1.yaml')))
+    dep = next(d for d in docs if d and d.get('kind') == 'Deployment')
+    c = dep['spec']['template']['spec']['containers'][0]
+    for p in ('livenessProbe','readinessProbe'):
+        assert p in c, (p, c)
+        assert c[p]['httpGet']['path'] == '/healthz', (p, c[p])
+    "
+
+  if_fails: rule 'Deployment has liveness + readiness probes on /healthz' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "emitted chart conforms to Helm v3 chart.yaml v2 + apps/v1 Deployment schema"
+- type: invariant
+  property: "helm lint == 0; helm template deterministic"
+- type: invariant
+  property: "both probes present on /healthz"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-k-15
+  priority: medium
+  auto_created: true

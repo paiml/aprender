@@ -1,0 +1,89 @@
+# CRUX-G-15 — Duplicate-artifact detector pre-push
+
+metadata:
+  id: CRUX-G-15
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "G — Format Conversion"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Before `apr publish` uploads to HF, detect if destination repo already
+    contains byte-identical files and skip those uploads; also warn if
+    sibling repos in the same org carry the same sha (probable dup). Saves
+    LFS bandwidth. Canonical: HF LFS dedup via git sha1 + HF `hf_hub_download`
+    cache fingerprint.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
+equations:
+  dup_detect:
+    formula: |
+      local_sha[f] = sha256(f)
+      remote_sha[f] = HEAD /api/repos/{repo}/tree?recursive=true  # returns sha256 per file
+      dup_set = { f : local_sha[f] == remote_sha[f] }
+      upload_set = local_files \ dup_set
+      sibling_dup[f] = { r : r ∈ org/* AND remote_sha(r,f) == local_sha[f] }
+    domain: "(model: Path, repo: str)"
+    codomain: "JSON {skip: [...], upload: [...], sibling_dups: {...}}"
+    invariants:
+    - "re-publishing byte-identical model uploads ZERO bytes of LFS"
+    - "sibling_dups populated when ≥2 repos share same content"
+    - "SHA check happens before any data-plane upload"
+
+falsification_tests:
+- id: FALSIFY-CRUX-G-15-001
+  rule: no-change re-publish uploads zero bytes
+  prediction: "strace on second publish shows no multipart upload writes"
+  test: |
+    set -euo pipefail
+    apr publish tests/fixtures/tinyllama-hf --repo org/dup-test --tag v1.0.0 --dry-run=false
+    strace -f -e trace=sendto apr publish tests/fixtures/tinyllama-hf \
+      --repo org/dup-test --tag v1.0.1 --dry-run=false 2>/tmp/st || true
+    bytes=$(grep -oP 'sendto.*=\K\d+' /tmp/st | awk '{s+=$1} END {print s}')
+    [ "$bytes" -lt 100000 ]  # only metadata+commit, no weight bytes
+  if_fails: rule 'no-change re-publish uploads zero bytes' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-15-002
+  rule: dup-scan JSON lists skipped files
+  prediction: "apr publish --dedupe-scan lists model.safetensors under 'skip' if unchanged"
+  test: |
+    set -euo pipefail
+    apr publish tests/fixtures/tinyllama-hf --repo org/dup-test --dedupe-scan --format json > /tmp/d.json
+    jq -e '.skip | index("model.safetensors")' /tmp/d.json
+  if_fails: rule 'dup-scan JSON lists skipped files' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-15-003
+  rule: sibling-dup warning fires when duplicate found in org
+  prediction: "stderr contains 'sibling duplicate' if another repo has same sha"
+  test: |
+    set -euo pipefail
+    apr publish tests/fixtures/tinyllama-hf --repo org/dup-test-b \
+      --scan-org-dups --format json > /tmp/e.json
+    jq -e '.sibling_dups | length > 0' /tmp/e.json
+
+  if_fails: rule 'sibling-dup warning fires when duplicate found in org' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr dedupe matches HF LFS git-sha1 equality checks"
+- type: invariant
+  property: "byte-identical re-publish uploads 0 LFS bytes"
+- type: invariant
+  property: "sha check precedes any data-plane upload"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-g-15
+  priority: medium
+  auto_created: true

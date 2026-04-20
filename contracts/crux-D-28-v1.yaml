@@ -1,0 +1,93 @@
+# CRUX-D-28 — Adapter fusion combine N LoRAs
+
+metadata:
+  id: CRUX-D-28
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Fuse N LoRA adapters into a single delta. Canonical: PEFT
+    `model.add_weighted_adapter(adapters=[...], weights=[...], combination_type="linear")`.
+    Alt: TIES / DARE (arXiv:2306.01708, 2311.03099) for interference-aware merges.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  lora_fusion:
+    formula: |
+      linear: delta_W = sum_i w_i * (B_i @ A_i)                # weighted sum
+      cat:    A' = concat_rank(A_1, ..., A_N); B' = concat_rank(B_1, ..., B_N)
+      ties:   keep top-k% by magnitude, resolve sign conflicts via majority
+      dare:   random-dropout then rescale: delta = (mask ⊙ sum_i w_i * delta_i) / keep_p
+    domain: "(adapters: [Path], weights: [f32], combination ∈ {linear, cat, ties, dare})"
+    codomain: "merged model with single set of (A, B) or merged base weights"
+    invariants:
+    - "sum(weights) = 1.0 and N=1 → merged ≡ single adapter (byte-equal)"
+    - "linear combination with all-zero weights yields base model unchanged"
+    - "ties+dare with prune_ratio=0 reduces to linear combination"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-28-001
+  rule: single-adapter linear merge is identity
+  prediction: "apr merge-adapters lora1 --weights 1.0 is byte-equal to lora1"
+  test: |
+    set -euo pipefail
+    apr merge-adapters tests/fixtures/lora1 --weights 1.0 --combination linear -o /tmp/m1
+    diff <(apr inspect /tmp/m1/adapter.safetensors --format json | jq -S .) \
+         <(apr inspect tests/fixtures/lora1/adapter.safetensors --format json | jq -S .)
+  if_fails: rule 'single-adapter linear merge is identity' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-28-002
+  rule: linear fusion matches PEFT add_weighted_adapter
+  prediction: "tensor-wise max-abs-diff < 1e-6 vs PEFT reference"
+  test: |
+    set -euo pipefail
+    apr merge-adapters tests/fixtures/lora1 tests/fixtures/lora2 \
+      --weights 0.3,0.7 --combination linear -o /tmp/fused
+    python3 - <<'PY'
+    import safetensors.torch as st, torch
+    apr = st.load_file("/tmp/fused/adapter.safetensors")
+    ref = st.load_file("tests/fixtures/peft-linear-ref.safetensors")
+    for k in ref:
+      d = (apr[k] - ref[k]).abs().max().item()
+      assert d < 1e-6, f"{k}: max-abs-diff = {d}"
+    PY
+  if_fails: rule 'linear fusion matches PEFT add_weighted_adapter' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-28-003
+  rule: weights sum check enforced
+  prediction: "non-normalizing weights emit warning or error"
+  test: |
+    set -euo pipefail
+    out=$(apr merge-adapters tests/fixtures/lora1 tests/fixtures/lora2 \
+      --weights 0.5,0.7 --combination linear -o /tmp/bad 2>&1 || true)
+    echo "$out" | grep -E 'weights.*sum|not.*normalize'
+
+  if_fails: rule 'weights sum check enforced' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr merge-adapters linear matches PEFT `add_weighted_adapter(combination_type='linear')` within 1e-6"
+- type: invariant
+  property: "N=1, weight=1.0 is byte-identical to the original adapter"
+- type: invariant
+  property: "ties/dare with prune_ratio=0 ≡ linear combination"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-28
+  priority: medium
+  auto_created: true

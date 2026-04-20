@@ -1,0 +1,169 @@
+# CRUX-E-08 — Golden-output regression gate
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-E-08
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Golden-output regression gate. A test set `evidence/crux/goldens.json` of
+    { prompt, expected_tokens } pairs is re-run deterministically (temp=0,
+    seed fixed); `apr qa --require-golden-output` emits PASS iff every
+    prompt's decoded token sequence matches the golden exactly, FAIL on
+    any divergence. Non-strict comparison (e.g. "contains expected") is
+    rejected. Parity target: HF evals + aprender CLAUDE.md §Debugging
+    first-tool mandate (`apr qa` catches 80% of issues).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  deterministic_decode:
+    formula: |
+      For each test case (prompt, expected_tokens) ∈ goldens.json:
+          observed = apr_decode(model, prompt, temperature=0.0, seed=FIXED, max_tokens=|expected_tokens|)
+          pass_i  := observed == expected_tokens   (exact token-id equality)
+      Gate pass := ∀ i . pass_i
+    domain: goldens.json × (model, seed)
+    codomain: 'PASS: None, FAIL: None'
+    invariants:
+    - "Exact token-id equality is the only accepted criterion (no fuzzy match)"
+    - "Any single divergence flips the overall gate to FAIL"
+    - "Running twice on the same model+seed produces the same PASS/FAIL verdict"
+
+  json_output_contract:
+    formula: |
+      apr qa --require-golden-output --json emits:
+        status ∈ {"PASS", "FAIL"}
+        total: N
+        passed: P
+        failed: F      (F = N - P)
+        divergences: [ { prompt_id, expected, observed, first_diff_idx }, ... ]
+      Gate semantics:
+        exit 0 iff status == "PASS" AND F == 0
+        exit 1 iff status == "FAIL" OR F > 0
+    domain: goldens.json
+    codomain: (exit_code, JSON report)
+    invariants:
+    - "exit code aligns with status field (0 ↔ PASS, 1 ↔ FAIL)"
+    - "divergences[].first_diff_idx identifies the failing token position"
+    - "missing goldens.json causes exit >= 2 with 'goldens not found' stderr"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-08-001
+  rule: --require-golden-output flag exists and is documented
+  prediction: "apr qa --help advertises --require-golden-output"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "--require-golden-output"
+  if_fails: "apr qa lacks --require-golden-output — golden gate not exposed"
+
+- id: FALSIFY-CRUX-E-08-002
+  rule: PASS on an all-matching goldens set
+  prediction: "With goldens built from a greedy run, re-running yields PASS and exit 0"
+  test: |
+    set -euo pipefail
+    # Build a known-good goldens file by recording a greedy run.
+    uv run python - <<'PY' > evidence/crux/goldens.json
+    import json, subprocess
+    cases = []
+    for pid, prompt in enumerate(["2+2=", "Hi,"]):
+        out = subprocess.check_output([
+          "apr","run","qwen2.5-coder-1.5b-q4k.apr",
+          "--prompt", prompt, "--temperature","0.0","--seed","42","--max-tokens","8",
+          "--json-tokens"], text=True)
+        toks = json.loads(out)["tokens"]
+        cases.append({"id": pid, "prompt": prompt, "expected_tokens": toks})
+    json.dump(cases, open("evidence/crux/goldens.json","w"))
+    PY
+    apr qa --require-golden-output \
+      --goldens evidence/crux/goldens.json \
+      --model qwen2.5-coder-1.5b-q4k.apr --seed 42 --json > /tmp/qa-e08.json
+    jq -e '.status == "PASS" and .failed == 0' /tmp/qa-e08.json >/dev/null
+  if_fails: "Golden gate fails on freshly recorded goldens — determinism is broken"
+
+- id: FALSIFY-CRUX-E-08-003
+  rule: FAIL on a corrupted goldens entry (mutation detection)
+  prediction: "Mutating one expected token flips the gate to FAIL with exit 1"
+  test: |
+    set -euo pipefail
+    uv run python - <<'PY'
+    import json
+    g = json.load(open("evidence/crux/goldens.json"))
+    # Flip one token id to force divergence.
+    g[0]["expected_tokens"][0] = (g[0]["expected_tokens"][0] + 1) % 100000
+    json.dump(g, open("evidence/crux/goldens.json","w"))
+    PY
+    set +e
+    apr qa --require-golden-output \
+      --goldens evidence/crux/goldens.json \
+      --model qwen2.5-coder-1.5b-q4k.apr --seed 42 --json > /tmp/qa-e08.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || { echo "expected exit 1, got $EC"; exit 1; }
+    jq -e '.status == "FAIL" and .failed >= 1' /tmp/qa-e08.json >/dev/null
+  if_fails: "apr qa does not detect token divergence — golden gate is a placebo"
+
+- id: FALSIFY-CRUX-E-08-004
+  rule: determinism — two invocations yield identical verdicts
+  prediction: "Running apr qa twice with same inputs produces identical JSON reports"
+  test: |
+    set -euo pipefail
+    apr qa --require-golden-output --goldens evidence/crux/goldens.json \
+      --model qwen2.5-coder-1.5b-q4k.apr --seed 42 --json > /tmp/qa-A.json
+    apr qa --require-golden-output --goldens evidence/crux/goldens.json \
+      --model qwen2.5-coder-1.5b-q4k.apr --seed 42 --json > /tmp/qa-B.json
+    diff <(jq -S . /tmp/qa-A.json) <(jq -S . /tmp/qa-B.json)
+  if_fails: "Golden gate is non-deterministic — same inputs, different verdict"
+
+- id: FALSIFY-CRUX-E-08-005
+  rule: missing goldens.json is a hard error (not silent pass)
+  prediction: "apr qa exits non-zero when goldens file is absent"
+  test: |
+    set -euo pipefail
+    set +e
+    apr qa --require-golden-output --goldens /tmp/does-not-exist.json \
+      --model qwen2.5-coder-1.5b-q4k.apr >/dev/null 2>&1
+    EC=$?
+    set -e
+    [ "$EC" -ne 0 ] || { echo "silent pass on missing goldens — violates P0-QA-001 class bug"; exit 1; }
+  if_fails: "Missing goldens file is silently accepted — regression gate has no teeth"
+
+proof_obligations:
+- type: invariant
+  property: "Gate emits PASS iff every golden's observed tokens == expected tokens exactly"
+- type: invariant
+  property: "Exit code is 0 on PASS, 1 on FAIL, ≥2 on configuration error"
+- type: invariant
+  property: "Determinism — identical (model, seed, goldens) yields identical JSON report"
+- type: invariant
+  property: "Missing goldens.json is a hard error (no silent-pass footgun)"
+- type: equivalence
+  property: "apr qa --require-golden-output  ≅  HF evals-style deterministic regression gate (exact-match, fixed seed)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-08` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-08
+  priority: critical
+  auto_created: false

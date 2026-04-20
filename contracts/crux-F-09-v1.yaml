@@ -1,0 +1,146 @@
+# CRUX-F-09 — Gradient-norm telemetry per step
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-F-09
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: pytorch
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    Gradient-norm telemetry per step. Root-cause workflow extracted from pytorch UX — see master
+    subspec §5.F and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  grad_norm_per_step_schema:
+    formula: |
+      Competitor reference:
+        grad_norm = torch.nn.utils.clip_grad_norm_(params, max_norm)
+        # returns pre-clip L2 norm: sqrt(sum_i ||g_i||_2^2)
+
+      Aprender equivalent:
+        apr finetune --log-grad-norm --json  emits per-step JSON lines:
+          { step: u64 >= 0,
+            grad_norm: f64 >= 0.0,
+            grad_norm_clipped: f64 >= 0.0,
+            loss: f64 >= 0.0 }
+
+      Relations:
+        grad_norm_clipped <= grad_norm                             (clipping is non-expansive)
+        grad_norm_clipped <= max_grad_norm + eps  (eps = 1e-6)     when --max-grad-norm M set
+        len(step_records) == total_training_steps
+    domain: apr finetune --log-grad-norm --json stdout (one JSON object per step)
+    codomain: NDJSON stream of {step, grad_norm, grad_norm_clipped, loss}
+    invariants:
+    - "Every step record has grad_norm field of type f64 and value >= 0.0"
+    - "grad_norm_clipped <= max_grad_norm + 1e-6 when --max-grad-norm is set"
+    - "grad_norm_clipped <= grad_norm (clipping never amplifies)"
+    - "len(step_records) == (epochs * batches_per_epoch)"
+
+  grad_spike_detection:
+    formula: |
+      Let M_k = rolling median of grad_norm over last 16 steps before k.
+      A spike is flagged when grad_norm[k] > 10.0 * M_k.
+      On spike, stderr MUST contain a line matching:
+        ^GRAD_SPIKE step=<N> grad_norm=<F> median=<F>$
+    domain: per-step grad_norm sequence
+    codomain: stderr warnings (string set)
+    invariants:
+    - "Every k with grad_norm[k] > 10 * rolling_median_16(k) emits GRAD_SPIKE warning"
+    - "No GRAD_SPIKE emitted when grad_norm[k] <= 10 * rolling_median_16(k)"
+    - "Warning line is machine-parseable (prefix=GRAD_SPIKE, three k=v fields)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-09-001
+  rule: grad_norm field present on every step
+  prediction: "every training step in --json output has a non-null grad_norm field (float, >= 0)"
+  test: |
+    set -euo pipefail
+    OUT=$(apr finetune --log-grad-norm --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 1 2>/dev/null)
+    # Every NDJSON line that is a step record must have grad_norm present and >= 0
+    echo "$OUT" | jq -cr 'select(.step != null) | .grad_norm' | \
+      awk 'BEGIN{ok=1} { if ($1 == "null" || $1+0 < 0) ok=0 } END{ exit ok?0:1 }'
+  if_fails: "At least one step record missing grad_norm or had negative grad_norm"
+
+- id: FALSIFY-CRUX-F-09-002
+  rule: grad_norm_clipped respects --max-grad-norm
+  prediction: "when --max-grad-norm 1.0 set, all grad_norm_clipped <= 1.0 + 1e-6"
+  test: |
+    set -euo pipefail
+    OUT=$(apr finetune --log-grad-norm --max-grad-norm 1.0 --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 1 2>/dev/null)
+    echo "$OUT" | jq -cr 'select(.step != null) | .grad_norm_clipped' | \
+      awk 'BEGIN{ok=1} { if ($1+0 > 1.0 + 1e-6) ok=0 } END{ exit ok?0:1 }'
+  if_fails: "grad_norm_clipped exceeded max_grad_norm threshold — clipping not applied correctly"
+
+- id: FALSIFY-CRUX-F-09-003
+  rule: grad_norm_clipped <= grad_norm always
+  prediction: "clipping is non-expansive: grad_norm_clipped[k] <= grad_norm[k] for every k"
+  test: |
+    set -euo pipefail
+    OUT=$(apr finetune --log-grad-norm --max-grad-norm 0.5 --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 1 2>/dev/null)
+    echo "$OUT" | jq -cr 'select(.step != null) | [.grad_norm, .grad_norm_clipped] | @tsv' | \
+      awk 'BEGIN{ok=1} { if ($2+0 > $1+0 + 1e-9) ok=0 } END{ exit ok?0:1 }'
+  if_fails: "grad_norm_clipped > grad_norm — clipping amplified gradient (impossible under L2 projection)"
+
+- id: FALSIFY-CRUX-F-09-004
+  rule: GRAD_SPIKE warning fires on > 10x rolling median
+  prediction: "injected gradient spike produces GRAD_SPIKE line on stderr with step/grad_norm/median fields"
+  test: |
+    set -euo pipefail
+    # TODO: add --inject-grad-spike-at <step> harness flag so this test is deterministic
+    ERR=$(apr finetune --log-grad-norm --inject-grad-spike-at 10 --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 1 2>&1 >/dev/null)
+    echo "$ERR" | grep -E '^GRAD_SPIKE step=[0-9]+ grad_norm=[0-9.eE+-]+ median=[0-9.eE+-]+$' >/dev/null
+  if_fails: "injected spike did not surface GRAD_SPIKE warning in machine-parseable form"
+
+- id: FALSIFY-CRUX-F-09-005
+  rule: step record count equals configured training steps
+  prediction: "count of JSON step records == epochs * batches_per_epoch"
+  test: |
+    set -euo pipefail
+    OUT=$(apr finetune --log-grad-norm --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 2 --batch-size 4 2>/dev/null)
+    N=$(echo "$OUT" | jq -cr 'select(.step != null)' | wc -l)
+    EXPECTED=$(echo "$OUT" | jq -cr 'select(.total_steps != null) | .total_steps' | tail -1)
+    [ "$N" -eq "$EXPECTED" ]
+  if_fails: "emitted step-record count disagrees with total_steps summary field — missing or duplicated steps"
+
+proof_obligations:
+- type: invariant
+  property: "every step record in --json output has grad_norm: f64 >= 0.0"
+- type: invariant
+  property: "grad_norm_clipped <= max_grad_norm + 1e-6 when --max-grad-norm is set"
+- type: invariant
+  property: "grad_norm_clipped <= grad_norm pointwise (clipping non-expansive)"
+- type: invariant
+  property: "GRAD_SPIKE warning fires iff grad_norm[k] > 10 * rolling_median_16(k)"
+- type: invariant
+  property: "step-record count == epochs * batches_per_epoch"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-f-09` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-f-09
+  priority: critical
+  auto_created: true

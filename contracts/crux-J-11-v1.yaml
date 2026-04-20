@@ -1,0 +1,91 @@
+# CRUX-J-11 — OpenCLAW skill system / extensible capabilities
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-11
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 4
+  intake_status: missing
+  description: >
+    OpenCLAW is extensible via community "skills" — self-contained
+    capability packages the agent can load at runtime. Aprender parity:
+    `apr code` must support a skill/plugin model. The obvious wiring is
+    MCP tools-as-skills (one MCP server = one skill). Overlaps with
+    CRUX-J-09 (browser-automation MCP) and PMAT-CODE-MCP-CLIENT-001.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/apr-code-parity-v1.yaml
+  - contracts/crux-J-09-v1.yaml
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  skill_registry:
+    formula: |
+      skills := load_manifest($HOME/.aprender/skills/)
+      register(skill) : skills ∪= {skill}
+      tool_namespace(skill) : isolated (skill_a.foo ≠ skill_b.foo)
+      dispatch(agent, tool_name) : look-up in flattened_namespace(skills)
+    domain: skill manifest + runtime dispatch call
+    codomain: set of registered skills, dispatched tool calls
+    invariants:
+    - "skills are discoverable from a documented directory"
+    - "tool-name collisions across skills are detected, not silently shadowed"
+    - "skill load failure is observable — not a silent drop"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-11-001
+  rule: apr code supports an extensible skill/plugin surface
+  prediction: "apr-code parity contract names skills or MCP-tools as the extension point"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "apr code skill plugin OR MCP tool extension OR register_mcp_client_tools" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no skill/plugin extension story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-11 parity broken — apr code MUST expose a skill/plugin extension surface
+- id: FALSIFY-CRUX-J-11-002
+  rule: skill namespace collision is detected
+  prediction: "skill / MCP tool registry docs describe collision handling"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "MCP tool name collision OR skill namespace conflict" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no collision handling documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-11 collision invariant — tool-name collisions must be detected, not silently shadowed
+
+proof_obligations:
+- type: invariant
+  property: "skill registry is discoverable from documented directory"
+- type: invariant
+  property: "tool-name collisions are detected"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-11
+  priority: high
+  auto_created: true

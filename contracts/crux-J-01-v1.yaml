@@ -1,0 +1,88 @@
+# CRUX-J-01 — OpenCLAW install + onboard one-liner
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-01
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 5
+  intake_status: missing
+  description: >
+    OpenCLAW (openclaw.ai) ships a canonical bootstrap: `curl -fsSL
+    https://openclaw.ai/install.sh | bash` → `npm i -g openclaw` →
+    `openclaw onboard`. Aprender parity: `apr` MUST be installable via
+    a single documented verb and expose an `onboard`-equivalent first
+    run that configures credentials, transport, and default model.
+    Overlaps with existing `apr init` story and install docs.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - https://openclaw.ai/install.sh
+  - evidence/crux/openclaw/gaps.md
+  - evidence/crux/openclaw/hello.sh
+
+equations:
+  install_onboard_first_run:
+    formula: |
+      install(verb) ∘ onboard() → ready_agent
+        where ready_agent has: {config_path, default_model, transports}
+      idempotent: onboard() ∘ onboard() = onboard()
+    domain: (install_verb, onboard_verb) on a clean host
+    codomain: ready_agent state persisted at $HOME
+    invariants:
+    - "single documented install verb exists (one-liner curl | bash OR a package-manager equivalent)"
+    - "onboard is idempotent — re-running does not re-prompt already-answered questions"
+    - "first run writes config under $HOME, never root-owned paths"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-01-001
+  rule: install + onboard verbs exist
+  prediction: "`apr --help` exposes an install-adjacent verb (init/onboard/setup) and is on PATH after a documented install"
+  test: |
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr --help 2>&1 | grep -qE '(init|onboard|setup|configure)' || {
+      echo "FAIL: apr has no onboard-equivalent verb" >&2
+      exit 1
+    }
+  if_fails: CRUX-J-01 parity broken — apr MUST expose an onboard-equivalent verb for OpenCLAW parity
+- id: FALSIFY-CRUX-J-01-002
+  rule: install docs cover one-liner bootstrap
+  prediction: "docs or README documents a single-command install (curl | sh, cargo install, brew, or equivalent)"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "cargo install aprender OR curl install.sh OR brew install apr" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no documented one-liner install path" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-01 docs obligation — one-liner install must be documented and searchable
+
+proof_obligations:
+- type: invariant
+  property: "onboard is idempotent"
+- type: invariant
+  property: "first-run artifacts live under $HOME"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-01
+  priority: critical
+  auto_created: true

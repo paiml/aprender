@@ -1,0 +1,182 @@
+# CRUX-C-28 — GPU layer offloading -ngl
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-28
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: llama_cpp
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    GPU layer offloading -ngl. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  vram_linear_in_ngl:
+    formula: |
+      VRAM(apr run --gpu-layers N, model) ≈
+        overhead + N * per_layer_vram(model)
+      where per_layer_vram = (weight_bytes_per_layer + kv_cache_slice).
+      Matches llama.cpp --n-gpu-layers / -ngl semantics.
+      Ref: https://github.com/ggerganov/llama.cpp/blob/master/README.md#gpu-offloading
+    domain: (N ∈ [0, total_layers], model)
+    codomain: nvidia-smi used_vram_mb
+    invariants:
+    - "VRAM(N) is monotonically non-decreasing in N"
+    - "Linear fit slope ≈ per_layer_vram within ±15% across N ∈ {0, L/4, L/2, 3L/4, L}"
+
+  ngl_zero_means_cpu_only:
+    formula: |
+      apr run --gpu-layers 0 model ⇒ nvidia-smi shows 0 MB allocated to apr process
+      Matches llama.cpp -ngl 0 → pure CPU backend.
+    domain: --gpu-layers 0 invocation
+    codomain: process VRAM usage
+    invariants:
+    - "With --gpu-layers 0, process uses 0 bytes of VRAM (no CUDA context beyond probe)"
+
+  ngl_max_offloads_all_layers:
+    formula: |
+      apr run --gpu-layers N model, N >= total_layers
+        ⇒ all transformer layers resident on GPU
+        ⇒ apr trace reports device=gpu for every layer
+    domain: --gpu-layers >= total_layers
+    codomain: per-layer device assignment
+    invariants:
+    - "Every layer's compute device is GPU when --gpu-layers >= total_layers"
+    - "Throughput (tok/s) with full offload >= throughput at --gpu-layers 0"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-28-001
+  rule: --gpu-layers 0 → 0 VRAM
+  prediction: "apr run --gpu-layers 0 uses 0 MB of VRAM"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF -o "$SRC"
+    MODEL=$(find "$SRC" -name '*Q4_K_M*.gguf' | head -1)
+    apr run "$MODEL" --gpu-layers 0 --prompt "hi" --max-tokens 1 &
+    PID=$!
+    sleep 3
+    VRAM=$(nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits \
+      | awk -F', *' -v pid=$PID '$1==pid {print $2}')
+    kill $PID 2>/dev/null || true
+    wait $PID 2>/dev/null || true
+    VRAM=${VRAM:-0}
+    python3 -c "assert $VRAM == 0, 'VRAM=$VRAM MB with --gpu-layers 0'"
+  if_fails: "--gpu-layers 0 still allocated VRAM — CPU-only invariant violated"
+
+- id: FALSIFY-CRUX-C-28-002
+  rule: VRAM monotonic and ~linear in N
+  prediction: "VRAM(N) non-decreasing; linear slope stable within ±15%"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF -o "$SRC"
+    MODEL=$(find "$SRC" -name '*Q4_K_M*.gguf' | head -1)
+    # TinyLlama has 22 layers — sample at 0, 5, 11, 16, 22
+    declare -A V
+    for N in 0 5 11 16 22; do
+      apr run "$MODEL" --gpu-layers $N --prompt "hi" --max-tokens 1 &
+      PID=$!
+      sleep 3
+      V[$N]=$(nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits \
+        | awk -F', *' -v pid=$PID '$1==pid {print $2}')
+      V[$N]=${V[$N]:-0}
+      kill $PID 2>/dev/null || true
+      wait $PID 2>/dev/null || true
+    done
+    python3 -c "
+    v = [${V[0]}, ${V[5]}, ${V[11]}, ${V[16]}, ${V[22]}]
+    # Monotonic non-decreasing
+    assert all(a <= b for a,b in zip(v, v[1:])), v
+    # Slope stable: (v[-1]-v[0])/22 ≈ per-layer
+    slope = (v[-1]-v[0])/22
+    for n, used in zip([0,5,11,16,22], v):
+        expected = v[0] + slope*n
+        if expected > 0:
+            assert abs(used - expected)/expected < 0.30 or abs(used-expected) < 50, (n, used, expected)
+    "
+  if_fails: "VRAM not monotonic or not approximately linear in N"
+
+- id: FALSIFY-CRUX-C-28-003
+  rule: --gpu-layers N (N>=L) offloads all layers
+  prediction: "apr trace reports device=gpu for every transformer layer"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF -o "$SRC"
+    MODEL=$(find "$SRC" -name '*Q4_K_M*.gguf' | head -1)
+    TRACE=$(apr trace "$MODEL" --gpu-layers 999 --prompt "hi" --max-tokens 1 --json)
+    CPU_LAYERS=$(echo "$TRACE" | jq '[.layers[] | select(.device != "gpu")] | length')
+    [ "$CPU_LAYERS" -eq 0 ]
+  if_fails: "some layers remained on CPU despite --gpu-layers 999"
+
+- id: FALSIFY-CRUX-C-28-004
+  rule: full-offload throughput > CPU-only throughput
+  prediction: "tok/s with --gpu-layers 999 > tok/s with --gpu-layers 0"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF -o "$SRC"
+    MODEL=$(find "$SRC" -name '*Q4_K_M*.gguf' | head -1)
+    CPU_TPS=$(apr bench "$MODEL" --gpu-layers 0 --tokens 128 --json | jq '.tokens_per_sec')
+    GPU_TPS=$(apr bench "$MODEL" --gpu-layers 999 --tokens 128 --json | jq '.tokens_per_sec')
+    python3 -c "assert $GPU_TPS > $CPU_TPS, ($GPU_TPS, $CPU_TPS)"
+  if_fails: "full GPU offload not faster than CPU-only — offload not actually executing on GPU"
+
+- id: FALSIFY-CRUX-C-28-005
+  rule: parity with llama-cli -ngl semantics
+  prediction: "apr --gpu-layers N and llama-cli -ngl N produce identical device assignment"
+  test: |
+    SRC=$(mktemp -d)
+    apr pull hf://TinyLlama/TinyLlama-1.1B-Chat-v1.0-GGUF -o "$SRC"
+    MODEL=$(find "$SRC" -name '*Q4_K_M*.gguf' | head -1)
+    for N in 0 11 999; do
+      APR_GPU=$(apr trace "$MODEL" --gpu-layers $N --prompt "hi" --max-tokens 1 --json \
+        | jq '[.layers[] | select(.device=="gpu")] | length')
+      LLAMA_OUT=$(llama-cli -m "$MODEL" -ngl $N -p "hi" -n 1 --verbose 2>&1)
+      LLAMA_GPU=$(echo "$LLAMA_OUT" | grep -oE 'offloaded [0-9]+ layers' | grep -oE '[0-9]+' | head -1)
+      LLAMA_GPU=${LLAMA_GPU:-0}
+      [ "$APR_GPU" = "$LLAMA_GPU" ] || { echo "N=$N: apr=$APR_GPU llama=$LLAMA_GPU"; exit 1; }
+    done
+  if_fails: "apr --gpu-layers N offloaded layer count differs from llama-cli -ngl N"
+
+proof_obligations:
+- type: equivalence
+  property: "apr --gpu-layers N offloads exactly the same layer count as llama-cli -ngl N"
+  competitor_function: "llama.cpp llama_model_params.n_gpu_layers / -ngl"
+  reference: "https://github.com/ggerganov/llama.cpp/blob/master/README.md#gpu-offloading"
+- type: invariant
+  property: "--gpu-layers 0 allocates 0 MB VRAM (CPU-only)"
+- type: invariant
+  property: "VRAM usage monotonic non-decreasing and approximately linear in N"
+- type: invariant
+  property: "--gpu-layers >= total_layers puts every layer on GPU"
+- type: invariant
+  property: "Full-offload throughput > CPU-only throughput"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-28` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-28
+  priority: critical
+  auto_created: false

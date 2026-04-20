@@ -1,0 +1,108 @@
+# CRUX-B-08 — AWQ quantization
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-B-08
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    AWQ quantization. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.B and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
+equations:
+  awq_quality_retention:
+    formula: |
+      Let P_fp16 = pass@1(M_fp16, HumanEval[0..9])
+      Let P_awq  = pass@1(quantize(M, method=AWQ, w_bit=4, q_group_size=128), HumanEval[0..9])
+      Contract: P_awq >= 0.80 * P_fp16
+      (AWQ 4-bit MUST retain >= 80% of fp16 baseline pass@1 on HumanEval/0..9)
+      Ref: Lin et al. 2023 (arXiv:2306.00978) — salient-weight-aware scaling.
+    domain: (model M, HumanEval prompts[0..9])
+    codomain: pass@1 score ∈ [0,1]
+    invariants:
+    - "AWQ output MUST pass `apr qa --require-golden-output` on HumanEval/0..9"
+    - "Per-group scale is stored per 128-channel tile (q_group_size=128 default)"
+    - "AWQ runs salient-weight activation calibration before scaling"
+
+  awq_cli_parity:
+    formula: |
+      vllm   : python -m awq.quantize --model-path M --w-bit 4 --q-group-size 128 --output out
+      aprender: apr quantize M.apr --method awq --bits 4 --group-size 128 -o out.apr
+      Artifact sizes MUST agree to within 5% of the vllm AWQ reference.
+    domain: (model M, bits ∈ {3,4,8}, group_size ∈ {64,128})
+    codomain: quantized APR file
+    invariants:
+    - "apr quantize --method awq accepts --bits and --group-size flags"
+    - "Group size default = 128 (matches vllm/awq reference)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-08-001
+  rule: AWQ retains >=80% of fp16 pass@1
+  prediction: "pass@1(AWQ, HumanEval/0..9) >= 0.80 * pass@1(fp16, HumanEval/0..9)"
+  test: |
+    set -euo pipefail
+    apr quantize model.apr --method awq --bits 4 --group-size 128 -o /tmp/model-awq.apr
+    P_FP16=$(apr qa model.apr --eval humaneval --shard 0..9 --json | jq '.pass_at_1')
+    P_AWQ=$(apr qa /tmp/model-awq.apr --eval humaneval --shard 0..9 --require-golden-output --json | jq '.pass_at_1')
+    python3 -c "import sys; sys.exit(0 if $P_AWQ >= 0.80 * $P_FP16 else 1)"
+  if_fails: "AWQ 4-bit degraded quality below 80% of fp16 baseline; salient-weight scaling ineffective"
+
+- id: FALSIFY-CRUX-B-08-002
+  rule: CLI surface matches vllm
+  prediction: "apr quantize --method awq --bits --group-size all accepted"
+  test: |
+    apr quantize --help 2>&1 | grep -qE -- '--method[[:space:]<]'
+    apr quantize --help 2>&1 | grep -qE -- '--bits[[:space:]<]'
+    apr quantize --help 2>&1 | grep -qE -- '--group-size[[:space:]<]'
+  if_fails: "apr quantize missing AWQ-equivalent flags; competitor parity broken"
+
+- id: FALSIFY-CRUX-B-08-003
+  rule: AWQ artifact size <= 0.3x fp16
+  prediction: "4-bit AWQ file <= 30% of fp16 source size"
+  test: |
+    FP16=$(stat -c%s model.apr)
+    AWQ=$(stat -c%s /tmp/model-awq.apr)
+    python3 -c "import sys; sys.exit(0 if $AWQ <= 0.30 * $FP16 else 1)"
+  if_fails: "AWQ output not compressed to ~4 bits/weight; packing bug"
+
+proof_obligations:
+- type: invariant
+  property: "AWQ pass@1 >= 80% of fp16 pass@1 on HumanEval/0..9"
+- type: invariant
+  property: "apr quantize --method awq --bits --group-size flags present on CLI"
+- type: invariant
+  property: "AWQ 4-bit artifact <= 0.30x fp16 source bytes"
+- type: invariant
+  property: "AWQ calibration uses activation statistics (not weight-only RTN)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-b-08` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-b-08
+  priority: critical
+  auto_created: true

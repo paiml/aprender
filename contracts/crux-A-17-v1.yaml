@@ -1,0 +1,94 @@
+# CRUX-A-17 — Manifest signing cosign/sigstore
+
+metadata:
+  id: CRUX-A-17
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Hub & Distribution"
+  competitor: ecosystem
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Sign apr model manifests with cosign / sigstore (keyless OIDC or
+    keyed). Canonical: `cosign sign-blob` + `cosign verify-blob`
+    (github.com/sigstore/cosign). Signature is detached;
+    `.sig` and `.crt` alongside manifest; verification exits 0 on
+    tampered-free blob and non-zero on any byte mutation.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  cosign_sign:
+    formula: |
+      sign(blob) → { sig: bytes, cert: x509, bundle: rekor_entry }
+      verify(blob, sig, cert) =
+        x509.verify_chain(cert, fulcio_roots)
+        ∧ signature_verify(cert.pubkey, blob, sig)
+        ∧ rekor.check_inclusion(bundle)
+      tamper(blob) ⇒ verify = false (fail closed)
+    domain: "(manifest: Path, oidc_issuer: str?, keyless: bool)"
+    codomain: "{sig: Path, cert: Path, bundle: Path}"
+    invariants:
+    - "verify on original blob returns exit 0"
+    - "verify on byte-flipped blob returns non-zero exit"
+    - "signed manifest round-trips through cosign binary (external verifier)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-17-001
+  rule: round-trip sign → verify succeeds
+  prediction: "apr sign produces artifacts cosign verify-blob accepts"
+  test: |
+    set -euo pipefail
+    apr publish sign /tmp/manifest.json --keyless \
+      --sig /tmp/m.sig --cert /tmp/m.crt --bundle /tmp/m.bundle
+    cosign verify-blob --bundle /tmp/m.bundle \
+      --certificate /tmp/m.crt --signature /tmp/m.sig /tmp/manifest.json
+  if_fails: rule 'round-trip sign → verify succeeds' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-17-002
+  rule: tampered blob fails verification
+  prediction: "one-byte flip → verify exit != 0"
+  test: |
+    set -euo pipefail
+    cp /tmp/manifest.json /tmp/bad.json
+    printf 'X' | dd of=/tmp/bad.json bs=1 count=1 seek=0 conv=notrunc
+    ! cosign verify-blob --bundle /tmp/m.bundle \
+        --certificate /tmp/m.crt --signature /tmp/m.sig /tmp/bad.json 2>/tmp/err
+    grep -E "verification failed|invalid signature" /tmp/err
+  if_fails: rule 'tampered blob fails verification' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-17-003
+  rule: rekor transparency log inclusion proof present
+  prediction: "bundle contains rekor entry with UUID and SET"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import json
+    b = json.load(open('/tmp/m.bundle'))
+    assert 'Payload' in b or 'rekor' in json.dumps(b).lower(), b.keys()
+    "
+
+  if_fails: rule 'rekor transparency log inclusion proof present' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr publish sign produces cosign-compatible sig + cert + bundle"
+- type: invariant
+  property: "tamper detection (verify fails closed on any mutation)"
+- type: invariant
+  property: "rekor transparency log inclusion"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-a-17
+  priority: medium
+  auto_created: true

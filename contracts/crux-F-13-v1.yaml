@@ -1,0 +1,170 @@
+# CRUX-F-13 — CUDA OOM postmortem report
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-F-13
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: pytorch
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    CUDA OOM postmortem report. Root-cause workflow extracted from pytorch UX — see master
+    subspec §5.F and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  oom_report_schema:
+    formula: |
+      Competitor reference:
+        torch.cuda.memory._record_memory_history()
+        # ... run until OOM ...
+        torch.cuda.memory._dump_snapshot("snapshot.pickle")
+        # viewable at https://pytorch.org/memory_viz
+
+      Aprender equivalent:
+        On CUDA OOM, apr MUST write `/tmp/apr-oom-<unix_ts>.json` with:
+          { peak_allocated_bytes: u64 > 0,
+            peak_reserved_bytes:  u64 >= peak_allocated_bytes,
+            largest_alloc_stack:  [string]  (non-empty, frames from outer→inner),
+            tensor_histogram:     { "<size_bucket>": count, ... } (>= 1 bucket),
+            last_100_ops:         [ { op: string, bytes: u64, ts_ns: u64 } ]  (len <= 100),
+            exit_code:            int (137 or non-zero),
+            timestamp:            string (RFC3339) }
+
+      Exit contract:
+        process exit code ∈ {137} ∪ {non-zero}  (never 0, never silent)
+        stderr MUST contain line: "OOM_REPORT path=/tmp/apr-oom-<ts>.json"
+
+      Size contract:
+        sizeof(report.json) < 10 * 1024 * 1024 bytes   (10 MB cap, no raw tensor dumps)
+    domain: CUDA OOM fault path of apr {run, finetune, train, serve}
+    codomain: JSON file at /tmp/apr-oom-<ts>.json + non-zero exit + stderr breadcrumb
+    invariants:
+    - "Report file exists at /tmp/apr-oom-<ts>.json after any OOM"
+    - "File contains all 7 required top-level keys"
+    - "peak_reserved_bytes >= peak_allocated_bytes >= 0"
+    - "last_100_ops array length <= 100"
+    - "Report file size < 10 MB"
+    - "Process exit code != 0 (never silent-swallow OOM)"
+
+  oom_trigger_determinism:
+    formula: |
+      Given --gpu-mem-fraction f ∈ (0, 1] with f * total_vram < model_weights_bytes,
+      apr MUST:
+        (1) fail fast (no partial weight load beyond f * total_vram),
+        (2) emit OOM_REPORT path=... on stderr before exiting,
+        (3) write the report file atomically (fsync then rename).
+    domain: apr invocation with intentionally starved --gpu-mem-fraction
+    codomain: 'exit_code: None, stderr: None, /tmp/apr-oom-*.json: None'
+    invariants:
+    - "A deliberately OOM-triggering --gpu-mem-fraction produces a report file"
+    - "stderr contains a single OOM_REPORT breadcrumb pointing at the written file"
+    - "Report is written atomically (no truncated JSON on disk)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-13-001
+  rule: OOM report file exists after triggered OOM
+  prediction: "starving --gpu-mem-fraction produces /tmp/apr-oom-*.json"
+  test: |
+    set -euo pipefail
+    rm -f /tmp/apr-oom-*.json
+    # 0.01 fraction of VRAM is guaranteed insufficient for any real model
+    set +e
+    apr run evidence/crux/pytorch/tiny-model.safetensors --prompt "x" --gpu-mem-fraction 0.01 2>/tmp/apr-oom.stderr
+    EC=$?
+    set -e
+    [ "$EC" -ne 0 ] || { echo "OOM silent-swallowed (exit 0)"; exit 1; }
+    ls /tmp/apr-oom-*.json >/dev/null
+  if_fails: "no OOM postmortem file written, or process exited 0 on OOM"
+
+- id: FALSIFY-CRUX-F-13-002
+  rule: OOM report has all required top-level keys
+  prediction: "report JSON contains peak_allocated_bytes, peak_reserved_bytes, largest_alloc_stack, tensor_histogram, last_100_ops, exit_code, timestamp"
+  test: |
+    set -euo pipefail
+    F=$(ls -t /tmp/apr-oom-*.json 2>/dev/null | head -1)
+    [ -n "$F" ] || { echo "no OOM report file from previous test"; exit 1; }
+    jq -e '
+      (.peak_allocated_bytes   | type == "number") and
+      (.peak_reserved_bytes    | type == "number") and
+      (.largest_alloc_stack    | type == "array" and length > 0) and
+      (.tensor_histogram       | type == "object" and (keys | length >= 1)) and
+      (.last_100_ops           | type == "array" and length <= 100) and
+      (.exit_code              | type == "number" and . != 0) and
+      (.timestamp              | type == "string")
+    ' "$F" >/dev/null
+  if_fails: "OOM report missing required keys, wrong types, or has > 100 ops recorded"
+
+- id: FALSIFY-CRUX-F-13-003
+  rule: OOM report file size under 10 MB cap
+  prediction: "postmortem stays compact; never dumps raw tensors"
+  test: |
+    set -euo pipefail
+    F=$(ls -t /tmp/apr-oom-*.json 2>/dev/null | head -1)
+    SIZE=$(stat -c%s "$F")
+    [ "$SIZE" -lt 10485760 ]
+  if_fails: "OOM report exceeded 10 MB — raw tensor data leaked into postmortem"
+
+- id: FALSIFY-CRUX-F-13-004
+  rule: exit code is non-zero and stderr has breadcrumb
+  prediction: "process exits with 137 (OOM-kill) or any non-zero; stderr has OOM_REPORT path=... line"
+  test: |
+    set -euo pipefail
+    rm -f /tmp/apr-oom-*.json
+    set +e
+    apr run evidence/crux/pytorch/tiny-model.safetensors --prompt "x" --gpu-mem-fraction 0.01 2>/tmp/apr-oom.stderr
+    EC=$?
+    set -e
+    [ "$EC" -ne 0 ]
+    grep -E '^OOM_REPORT path=/tmp/apr-oom-[0-9]+\.json$' /tmp/apr-oom.stderr >/dev/null
+  if_fails: "OOM silent (exit 0) or missing OOM_REPORT breadcrumb on stderr"
+
+- id: FALSIFY-CRUX-F-13-005
+  rule: peak_reserved_bytes >= peak_allocated_bytes
+  prediction: "reserved is a superset of allocated, always"
+  test: |
+    set -euo pipefail
+    F=$(ls -t /tmp/apr-oom-*.json 2>/dev/null | head -1)
+    jq -e '.peak_reserved_bytes >= .peak_allocated_bytes and .peak_allocated_bytes >= 0' "$F" >/dev/null
+  if_fails: "peak_reserved_bytes < peak_allocated_bytes — accounting bug in CUDA memory tracker"
+
+proof_obligations:
+- type: invariant
+  property: "CUDA OOM produces /tmp/apr-oom-<ts>.json with all 7 required keys"
+- type: invariant
+  property: "peak_reserved_bytes >= peak_allocated_bytes >= 0"
+- type: invariant
+  property: "last_100_ops array length <= 100"
+- type: invariant
+  property: "OOM report file size < 10 MB"
+- type: invariant
+  property: "process exit code != 0 AND stderr contains OOM_REPORT path=... breadcrumb"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-f-13` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-f-13
+  priority: critical
+  auto_created: true

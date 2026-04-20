@@ -1,0 +1,171 @@
+# CRUX-D-12 — FSDP / ZeRO sharding
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-12
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: pytorch
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    Fully Sharded Data Parallel (FSDP) / ZeRO stage-3 sharding.
+    Competitor canonical:
+    `torch.distributed.fsdp.FullyShardedDataParallel(model,
+    sharding_strategy=ShardingStrategy.FULL_SHARD)`. Aprender surface:
+    `apr finetune model.apr --parallel fsdp --zero-stage 3 --num-gpus 4
+    --data train.jsonl`. Reference: https://pytorch.org/docs/stable/fsdp.html,
+    https://arxiv.org/abs/1910.02054 (Rajbhandari et al., ZeRO).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  fsdp_memory_sharding:
+    formula: |
+      Let M_total = sizeof(model_params) + sizeof(optimizer_state) + sizeof(gradients)
+      Let N      = num_gpus, stage ∈ {1, 2, 3}
+      Per-GPU memory budget (FULL_SHARD / ZeRO-3):
+        M_per_gpu <= (M_total / N) * 1.3
+      where 1.3 accounts for activation memory, temporary full-parameter
+      gather during forward, and framework overhead.
+      ZeRO stage memory shares:
+        stage-1: optimizer state sharded only    → 4x base reduction
+        stage-2: + gradients sharded             → 8x
+        stage-3: + parameters sharded            → N× with comms overhead
+    domain: (model, num_gpus, zero_stage) → per_gpu_bytes
+    codomain: bool (budget respected)
+    invariants:
+    - "Per-GPU memory ≤ (model + optim + grads) / N × 1.3 at ZeRO-3"
+    - "Forward/backward gathers then re-shards parameters; peak < full replica"
+    - "All-gather and reduce-scatter collectives replace DDP all-reduce"
+
+  fsdp_7b_on_4x24gb:
+    formula: |
+      For a 7B bf16 model (~14 GB params + ~28 GB optimizer state (Adam fp32)
+      + ~14 GB gradients = ~56 GB total state) on 4× 24 GB GPUs:
+        per_gpu_memory_state = 56 GB / 4 * 1.3 = 18.2 GB  < 24 GB
+      i.e. training MUST complete at least one full step without OOM.
+    domain: (7B bf16 model, 4× 24 GB GPUs, zero_stage=3) → bool
+    codomain: 'OK: None, OOM: None'
+    invariants:
+    - "ZeRO-3 enables 7B training on 4× 24 GB consumer GPUs"
+    - "Activation checkpointing may be required at long seq_len (orthogonal)"
+    - "Single training step completes without CUDA_ERROR_OUT_OF_MEMORY"
+
+  checkpoint_reshardability:
+    formula: |
+      Let ckpt_N = save_checkpoint(fsdp_train(model, num_gpus=N))
+      Let resumed_M = load_checkpoint(ckpt_N, num_gpus=M) for any M ≠ N
+      Reshardability invariant:
+        forall M in {1, 2, 4, 8}:
+          load_checkpoint(ckpt_N, num_gpus=M) succeeds AND
+          parameter_sha256(resumed_M) == parameter_sha256(full_unsharded(ckpt_N))
+    domain: (checkpoint, target_num_gpus) → loaded_checkpoint
+    codomain: bool (resharded checkpoint bit-identical)
+    invariants:
+    - "Saved checkpoint stores full unsharded state OR sharded with rank metadata"
+    - "Loading on different N reconstructs full params bit-identically"
+    - "Rejects incompatible shard counts with clear error, never silent corruption"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-12-001
+  rule: per-GPU memory ≤ model_size/N × 1.3
+  prediction: "At ZeRO-3, per-GPU VRAM ≤ (params+optim+grads)/N × 1.3"
+  test: |
+    set -euo pipefail
+    # TODO: wire --report-per-gpu-memory
+    OUT=$(apr finetune model.apr --parallel fsdp --zero-stage 3 --num-gpus 4 \
+      --data tests/fixtures/train.jsonl --epochs 1 \
+      --report-per-gpu-memory --json 2>/dev/null)
+    TOTAL_STATE=$(echo "$OUT" | jq '.fsdp_metrics.total_state_bytes')
+    PER_GPU=$(echo "$OUT" | jq '.fsdp_metrics.peak_per_gpu_bytes')
+    python3 -c "
+    total, pg = $TOTAL_STATE, $PER_GPU
+    budget = (total / 4) * 1.3
+    assert pg <= budget, f'per-GPU {pg} > budget {budget} (total_state={total}, N=4)'
+    "
+  if_fails: "FSDP per-GPU memory exceeds ZeRO-3 theoretical budget — sharding incomplete"
+
+- id: FALSIFY-CRUX-D-12-002
+  rule: 7B model trains on 4× 24 GB GPUs without OOM
+  prediction: "apr finetune of 7B bf16 model with --zero-stage 3 --num-gpus 4 completes ≥1 step"
+  test: |
+    set -euo pipefail
+    # Assumes 7B checkpoint present at tests/fixtures/qwen2.5-coder-7b.apr
+    apr finetune tests/fixtures/qwen2.5-coder-7b.apr \
+      --parallel fsdp --zero-stage 3 --num-gpus 4 \
+      --data tests/fixtures/train.jsonl --epochs 1 --max-steps 2 \
+      --json 2>/tmp/err.log | jq -e '.total_steps_completed >= 1'
+    if grep -qiE "(out of memory|OOM|CUDA.*OUT_OF_MEMORY)" /tmp/err.log; then
+      echo "FAIL: OOM during 7B FSDP training on 4× 24 GB" >&2
+      exit 1
+    fi
+  if_fails: "7B FSDP training OOMs on 4×24 GB — ZeRO-3 not achieving full param shard"
+
+- id: FALSIFY-CRUX-D-12-003
+  rule: checkpoint resharable to different N
+  prediction: "Save at N=4, reload at M∈{1,2,8} yields bit-identical unsharded params"
+  test: |
+    set -euo pipefail
+    apr finetune model.apr --parallel fsdp --zero-stage 3 --num-gpus 4 \
+      --data tests/fixtures/train.jsonl --epochs 1 -o /tmp/fsdp-n4.apr
+    SHA4=$(apr inspect /tmp/fsdp-n4.apr --field weights_sha256)
+    # Reload at different world sizes and verify SHA matches
+    for M in 1 2 8; do
+      # TODO: wire --load-only mode
+      apr finetune /tmp/fsdp-n4.apr --parallel fsdp --zero-stage 3 --num-gpus "$M" \
+        --data tests/fixtures/train.jsonl --max-steps 0 --load-only -o /tmp/fsdp-m$M.apr
+      SHAM=$(apr inspect /tmp/fsdp-m$M.apr --field weights_sha256)
+      [ "$SHA4" = "$SHAM" ] || { echo "FAIL: reshard N=4→M=$M produced different weights" >&2; exit 1; }
+    done
+  if_fails: "FSDP checkpoint not resharable — rank-count baked into serialization"
+
+- id: FALSIFY-CRUX-D-12-004
+  rule: --zero-stage ∈ {1, 2, 3} validated; invalid rejected
+  prediction: "--zero-stage 4 or --zero-stage 0 exits non-zero with clear error"
+  test: |
+    set -euo pipefail
+    for BAD in 0 4 -1; do
+      if apr finetune model.apr --parallel fsdp --zero-stage "$BAD" \
+           --data tests/fixtures/train.jsonl --epochs 1 2>/tmp/err.log; then
+        echo "FAIL: --zero-stage $BAD accepted" >&2
+        exit 1
+      fi
+      grep -qE "(invalid|zero.stage|must be 1, 2, or 3)" /tmp/err.log
+    done
+  if_fails: "--zero-stage argument not validated; silent fallback to default or crash"
+
+proof_obligations:
+- type: invariant
+  property: "At ZeRO-3 per-GPU memory ≤ (params+optim+grads)/N × 1.3"
+- type: invariant
+  property: "7B bf16 model trains on 4×24 GB GPUs with --zero-stage 3 without OOM"
+- type: invariant
+  property: "Checkpoint saved at N ranks is loadable at M ≠ N with bit-identical reconstructed params"
+- type: invariant
+  property: "--zero-stage values outside {1, 2, 3} rejected with non-zero exit and clear error"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-12` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-12
+  priority: critical
+  auto_created: true

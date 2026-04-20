@@ -1,0 +1,191 @@
+# CRUX-C-34 — /health endpoint
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-34
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    /health endpoint. Competitors vLLM (GET /health → 200 once the engine is
+    up) and llama.cpp server (GET /health → {"status":"ok"}) expose a cheap
+    liveness probe for operators and orchestrators. Aprender parity: `apr
+    serve` MUST expose GET /health returning
+    `{status: "ok"|"loading"|"degraded", model_loaded: bool, uptime_sec: float}`,
+    with status 200 when ready and 503 during startup. Separate k8s-idiomatic
+    /health/live (liveness) and /health/ready (readiness) endpoints MUST also
+    be available. Refs:
+    https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html ;
+    https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md#api-endpoints ;
+    https://kubernetes.io/docs/concepts/configuration/liveness-readiness-startup-probes/
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  health_response_schema:
+    formula: |
+      GET /health:
+        status ∈ {200, 503}
+        body is JSON object with:
+          status: string ∈ {"ok", "loading", "degraded"}
+          model_loaded: bool
+          uptime_sec: float > 0
+        status == 200 ⇔ body.status == "ok"
+        status == 503 ⇔ body.status ∈ {"loading", "degraded"}
+    domain: HTTP GET /health
+    codomain: (status_code, JSON body)
+    invariants:
+    - "HTTP status and body.status are consistent"
+    - "uptime_sec is strictly positive (server has been up for some time)"
+    - "status is one of exactly three enum values"
+
+  liveness_vs_readiness:
+    formula: |
+      GET /health/live → 200 iff server process is alive (always 200 once bound)
+      GET /health/ready → 200 iff status == "ok" AND model_loaded == true
+                        → 503 otherwise
+    domain: (HTTP endpoint, server state)
+    codomain: status code
+    invariants:
+    - "/health/live is a cheap liveness probe — always 200 once the HTTP port is open"
+    - "/health/ready gates on model_loaded==true (k8s readiness probe semantic)"
+    - "During model load: /health/live==200 AND /health/ready==503"
+
+  uptime_monotonic:
+    formula: |
+      For two requests at times t_1 < t_2:
+        response_1.uptime_sec < response_2.uptime_sec
+        AND (response_2.uptime_sec - response_1.uptime_sec) ≈ (t_2 - t_1) ± 0.5s
+    domain: two sequential /health requests
+    codomain: bool
+    invariants:
+    - "uptime_sec is strictly monotonically increasing"
+    - "delta(uptime_sec) tracks wall-clock delta within 500ms"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-34-001
+  rule: GET /health returns schema-valid body with 200 when ready
+  prediction: "ready server returns 200 with status=ok, model_loaded=true"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    CODE=$(curl -s -o /tmp/apr-health.json -w '%{http_code}' "http://localhost:$PORT/health")
+    [ "$CODE" = "200" ] || { echo "FAIL: expected 200, got $CODE" >&2; exit 1; }
+    jq -e '
+      (.status == "ok") and
+      (.model_loaded == true) and
+      (.uptime_sec | type == "number" and . > 0)
+    ' /tmp/apr-health.json >/dev/null || {
+      echo "FAIL: health body schema violation" >&2
+      cat /tmp/apr-health.json >&2
+      exit 1
+    }
+
+  if_fails: rule 'GET /health returns schema-valid body with 200 when ready' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-34-002
+  rule: status is from the enum
+  prediction: "body.status ∈ {ok, loading, degraded}"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    curl -s "http://localhost:$PORT/health" | \
+      jq -e '.status | IN("ok","loading","degraded")' >/dev/null || {
+        echo "FAIL: status not in enum" >&2
+        exit 1
+      }
+
+  if_fails: rule 'status is from the enum' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-34-003
+  rule: uptime_sec is strictly monotonic
+  prediction: "two sequential GETs show increasing uptime_sec"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    U1=$(curl -s "http://localhost:$PORT/health" | jq '.uptime_sec')
+    sleep 1
+    U2=$(curl -s "http://localhost:$PORT/health" | jq '.uptime_sec')
+    python3 -c "
+    u1,u2=$U1,$U2
+    assert u2 > u1, f'uptime regressed: {u1} -> {u2}'
+    assert 0.5 <= (u2-u1) <= 2.0, f'delta {u2-u1}s outside [0.5,2.0]'
+    "
+
+  if_fails: rule 'uptime_sec is strictly monotonic' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-34-004
+  rule: /health/live and /health/ready exist with k8s semantics
+  prediction: "/health/live returns 200, /health/ready returns 200 when model_loaded"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    LIVE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PORT/health/live")
+    READY=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PORT/health/ready")
+    [ "$LIVE" = "200" ] || { echo "FAIL: /health/live returned $LIVE" >&2; exit 1; }
+    [ "$READY" = "200" ] || [ "$READY" = "503" ] || {
+      echo "FAIL: /health/ready returned unexpected $READY" >&2
+      exit 1
+    }
+    # When /health says ok, /health/ready MUST be 200
+    MAIN_STATUS=$(curl -s "http://localhost:$PORT/health" | jq -r '.status')
+    if [ "$MAIN_STATUS" = "ok" ] && [ "$READY" != "200" ]; then
+      echo "FAIL: /health=ok but /health/ready=$READY" >&2
+      exit 1
+    fi
+
+  if_fails: rule '/health/live and /health/ready exist with k8s semantics' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-34-005
+  rule: 503 during startup with status=loading
+  prediction: "during model load, GET /health → 503 with status=loading"
+  test: |
+    # TODO: integration harness that queries /health in the narrow window
+    # between server bind and model-loaded. For now, assert that the code
+    # path EXISTS: serve --help mentions a startup-delay knob or the
+    # contract test flips model_loaded via a test-only env.
+    PORT="${APR_SERVE_PORT:-8000}"
+    # Probe with APR_TEST_FORCE_LOADING=1 if supported
+    if apr serve --help 2>&1 | grep -qE 'APR_TEST_FORCE_LOADING|--force-loading'; then
+      APR_TEST_FORCE_LOADING=1 apr serve --port "$((PORT+1))" &
+      SPID=$!
+      sleep 0.3
+      CODE=$(curl -s -o /tmp/apr-health-loading.json -w '%{http_code}' "http://localhost:$((PORT+1))/health")
+      kill "$SPID" 2>/dev/null || true
+      [ "$CODE" = "503" ] || { echo "FAIL: loading state did not return 503 (got $CODE)" >&2; exit 1; }
+      jq -e '.status == "loading"' /tmp/apr-health-loading.json >/dev/null
+    else
+      echo "SKIP: no test-mode loading hook available (wire APR_TEST_FORCE_LOADING)" >&2
+      exit 77
+    fi
+
+  if_fails: rule '503 during startup with status=loading' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: invariant
+  property: "GET /health returns {status ∈ {ok,loading,degraded}, model_loaded: bool, uptime_sec: float>0}"
+- type: invariant
+  property: "HTTP status 200 iff body.status=='ok'; 503 iff body.status ∈ {loading, degraded}"
+- type: invariant
+  property: "/health/live returns 200 once the HTTP port is bound (k8s liveness idiom)"
+- type: invariant
+  property: "/health/ready returns 200 iff status=='ok' AND model_loaded==true (k8s readiness idiom)"
+- type: invariant
+  property: "uptime_sec is strictly monotonically increasing and tracks wall-clock delta within 500ms"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-34` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-34
+  priority: critical
+  auto_created: false

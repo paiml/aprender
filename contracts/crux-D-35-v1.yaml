@@ -1,0 +1,119 @@
+# CRUX-D-35 — accelerate launch wrapper
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (spec-complete).
+# Evidence must land before ACTIVE promotion — see master §12.
+
+metadata:
+  id: CRUX-D-35
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    accelerate launch wrapper. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.D and §2 Five Whys methodology for rationale. `accelerate launch` is the
+    canonical distributed/multi-GPU launcher that wraps torchrun with a config-driven
+    YAML (accelerate config) so that `python train.py` becomes a topology-aware
+    multi-process job. aprender equivalent: `apr serve --replicas N` (inference) and
+    `apr train --accelerate-config` (training dispatch).
+  references:
+  - "https://huggingface.co/docs/accelerate/basic_tutorials/launch"
+  - "https://github.com/huggingface/accelerate/blob/main/src/accelerate/commands/launch.py"
+  - "crates/apr-cli/src/commands/serve.rs"
+
+equations:
+  launcher_topology_parity:
+    formula: |
+      apr serve --replicas N --strategy ddp launches N processes
+      with {RANK, WORLD_SIZE, LOCAL_RANK, MASTER_ADDR, MASTER_PORT}
+      env vars set exactly as `accelerate launch --num_processes N` would.
+    domain: "(N: u32, strategy ∈ {ddp, fsdp, deepspeed})"
+    codomain: set of worker processes
+    invariants:
+    - "WORLD_SIZE == N for every worker"
+    - "RANK values form a complete {0, 1, ..., N-1}"
+    - "MASTER_PORT is free at launch (bind() succeeds)"
+
+  config_schema_compat:
+    formula: |
+      `apr accelerate-config → config.yaml` produces a file
+      that `accelerate launch --config_file config.yaml` consumes without error.
+    domain: accelerate config YAML
+    codomain: bool (accelerate parses)
+    invariants:
+    - "Required keys: compute_environment, distributed_type, num_processes, mixed_precision"
+    - "distributed_type ∈ {NO, MULTI_GPU, FSDP, DEEPSPEED}"
+
+  exit_code_propagation:
+    formula: |
+      exit(apr serve --replicas N) == max(exit_code(worker_i)) for i in [0, N)
+    domain: worker exit codes
+    codomain: launcher exit code
+    invariants:
+    - "Any worker failure (non-zero exit) propagates to launcher"
+    - "SIGTERM to launcher broadcasts to all workers within 5s"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-35-001
+  rule: launcher topology parity
+  prediction: "apr serve --replicas 2 sets WORLD_SIZE=2 and distinct RANK per worker"
+  test: |
+    # TODO: implement after `apr serve --replicas` lands (tracked: crux-crux-d-35)
+    apr serve --replicas 2 --print-env --dry-run 2>&1 | \
+      jq -s 'map(.WORLD_SIZE) | all(. == "2") and (map(.RANK) | unique | length == 2)'
+  if_fails: "RANK/WORLD_SIZE env vars not set per accelerate launch contract"
+
+- id: FALSIFY-CRUX-D-35-002
+  rule: config schema compat with accelerate
+  prediction: "apr-generated config.yaml parses under accelerate launch"
+  test: |
+    apr accelerate-config --num-processes 2 --mixed-precision bf16 -o /tmp/acc.yaml
+    python3 -c "import yaml; c=yaml.safe_load(open('/tmp/acc.yaml')); \
+      assert {'compute_environment','distributed_type','num_processes','mixed_precision'} <= set(c)"
+  if_fails: "apr config missing required accelerate keys"
+
+- id: FALSIFY-CRUX-D-35-003
+  rule: exit code propagation
+  prediction: "worker exit 1 surfaces as launcher exit non-zero"
+  test: |
+    # TODO: implement after multi-replica launcher lands
+    apr serve --replicas 2 --cmd "exit 1" --dry-run; test $? -ne 0
+  if_fails: "launcher swallowed worker failure"
+
+- id: FALSIFY-CRUX-D-35-004
+  rule: master port free at launch
+  prediction: "MASTER_PORT is bindable on 127.0.0.1 at launcher startup"
+  test: |
+    # TODO: implement; exercises PortAllocator
+    PORT=$(apr accelerate-config --print-master-port 2>/dev/null)
+    python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', $PORT)); s.close()"
+  if_fails: "chosen MASTER_PORT collides with an existing listener"
+
+proof_obligations:
+- type: invariant
+  property: "WORLD_SIZE/RANK/MASTER_ADDR/MASTER_PORT set per accelerate spec"
+- type: invariant
+  property: "config.yaml schema is a superset of accelerate's required keys"
+- type: equivalence
+  property: "apr serve --replicas N observable == accelerate launch --num_processes N"
+- type: invariant
+  property: "launcher exit code = max of worker exit codes"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-35` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-35
+  priority: high
+  auto_created: true

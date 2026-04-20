@@ -1,0 +1,142 @@
+# CRUX-C-20 — Repetition penalty
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-20
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: ollama
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: supported
+  description: >
+    Repetition penalty. Root-cause workflow extracted from ollama UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  repetition_penalty_logit_scaling:
+    formula: |
+      Ollama canonical (HTTP /api/generate options):
+        {"options":{"repeat_penalty": r, "repeat_last_n": n}}
+        Default r=1.1, n=64.
+        Reference: https://github.com/ollama/ollama/blob/main/docs/modelfile.md#parameter
+      llama.cpp equivalent: --repeat-penalty r --repeat-last-n n
+      apr parity:
+        apr run <model> --repeat-penalty <r> --repeat-last-n <n>
+        HTTP body: {"options":{"repeat_penalty":r,"repeat_last_n":n}}
+      Logit transformation (llama.cpp sample_repetition_penalties):
+        For each token t that appears in the last n generated tokens:
+          if logit[t] > 0:  logit[t] /= r
+          else:             logit[t] *= r
+      r == 1.0 is a no-op. r > 1.0 discourages repetition. r < 1.0 encourages it.
+    domain: "(logits: Vec<f32>, history: Vec<TokenId>, r: f32, n: u32)"
+    codomain: "penalized_logits: Vec<f32>"
+    invariants:
+    - "r == 1.0 → output equals baseline (deterministic sampling) bit-for-bit"
+    - "r > 1.0 → P(repeat_last_n) strictly decreases vs r==1.0 baseline"
+    - "Only tokens in last n positions are penalized; positions older than n unchanged"
+    - "r must be > 0.0; r <= 0 rejected with non-zero exit"
+    - "Reference: llama.cpp src/llama-sampling.cpp sample_repetition_penalties"
+
+  repetition_measurable_reduction:
+    formula: |
+      Let rep(text) = max over all tokens t of count(t in text) / len(tokens).
+      For the same seed, prompt, and max_tokens:
+        rep(generate(r=1.3)) <  rep(generate(r=1.0))   with margin >= 10%
+      on a prompt that is known to induce repetition.
+    domain: "(prompt, seed, r_values)"
+    codomain: bool
+    invariants:
+    - "Higher repeat_penalty produces measurably less-repetitive output on adversarial prompt"
+    - "Effect is monotone: r1 < r2 ⇒ rep(r1) >= rep(r2) (within seed noise)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-20-001
+  rule: repeat_penalty=1.0 is a no-op
+  prediction: "Two requests with same seed and repeat_penalty=1.0 vs omitted produce identical output"
+  test: |
+    # Reference: https://github.com/ollama/ollama/blob/main/docs/modelfile.md#parameter
+    A=$(curl -sS -X POST http://127.0.0.1:8080/api/generate \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","prompt":"List 3 colors:","stream":false,
+           "options":{"seed":42,"temperature":0,"repeat_penalty":1.0,"num_predict":32}}' \
+      | jq -r '.response')
+    B=$(curl -sS -X POST http://127.0.0.1:8080/api/generate \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","prompt":"List 3 colors:","stream":false,
+           "options":{"seed":42,"temperature":0,"num_predict":32}}' \
+      | jq -r '.response')
+    [ "$A" = "$B" ] \
+      || { echo "FAIL: repeat_penalty=1.0 not a no-op A=$A B=$B" >&2; exit 1; }
+  if_fails: "repeat_penalty=1.0 changed output — logit transform is applied when r=1"
+
+- id: FALSIFY-CRUX-C-20-002
+  rule: repeat_penalty > 1 reduces repetition on adversarial prompt
+  prediction: "repeat_penalty=1.3 produces fewer duplicate tokens than repeat_penalty=1.0 on a loop-inducing prompt"
+  test: |
+    measure() {
+      curl -sS -X POST http://127.0.0.1:8080/api/generate \
+        -H "Content-Type: application/json" \
+        -d "{\"model\":\"qwen2.5-coder-1.5b\",\"prompt\":\"Repeat the word hello:\",\"stream\":false,
+             \"options\":{\"seed\":42,\"temperature\":0,\"repeat_penalty\":$1,\"num_predict\":64}}" \
+        | jq -r '.response' \
+        | python3 -c "import sys,collections; w=sys.stdin.read().split(); c=collections.Counter(w); print(max(c.values()) if w else 0)"
+    }
+    BASELINE=$(measure 1.0)
+    PENALIZED=$(measure 1.3)
+    python3 -c "import sys; b=$BASELINE; p=$PENALIZED; sys.exit(0 if p <= b else 1)" \
+      || { echo "FAIL: repeat_penalty=1.3 did not reduce repetition (b=$BASELINE p=$PENALIZED)" >&2; exit 1; }
+  if_fails: "Higher repeat_penalty does not reduce measurable repetition"
+
+- id: FALSIFY-CRUX-C-20-003
+  rule: invalid repeat_penalty rejected
+  prediction: "repeat_penalty <= 0 produces non-zero exit or 4xx HTTP status"
+  test: |
+    CODE=$(curl -sS -o /dev/null -w '%{http_code}' \
+      -X POST http://127.0.0.1:8080/api/generate \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","prompt":"hi","stream":false,
+           "options":{"repeat_penalty":0.0,"num_predict":4}}')
+    case "$CODE" in
+      4*|5*) : ;;
+      *) echo "FAIL: accepted repeat_penalty=0 with HTTP $CODE" >&2; exit 1 ;;
+    esac
+  if_fails: "apr serve accepted repeat_penalty <= 0 without error"
+
+proof_obligations:
+- type: equivalence
+  property: "apr run --repeat-penalty matches llama.cpp llama-cli --repeat-penalty logit transform on golden prompt"
+- type: equivalence
+  property: "apr serve /api/generate options.repeat_penalty matches Ollama server behavior"
+- type: invariant
+  property: "repeat_penalty=1.0 is a bit-exact no-op"
+- type: invariant
+  property: "Higher repeat_penalty monotonically reduces repetition on adversarial prompt"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-20` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-20
+  priority: high
+  auto_created: false

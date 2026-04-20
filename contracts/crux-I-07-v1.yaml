@@ -1,0 +1,101 @@
+# CRUX-I-07 — Claude Agent SDK compatibility
+
+metadata:
+  id: CRUX-I-07
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "I — Observability & Metrics"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Claude Agent SDK compatibility: expose apr model as a tool callable
+    from `@anthropic-ai/claude-agent-sdk` (npm) / `claude_agent_sdk`
+    (PyPI). Canonical: Anthropic Agent SDK `tool_use` block with
+    `{type, name, input}` input and `{type, tool_use_id, content}`
+    response. Tool schema must be a valid JSON Schema Draft 2020-12.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
+equations:
+  agent_sdk_tool:
+    formula: |
+      tool_schema = { "name": str, "description": str, "input_schema": JSONSchema }
+      invoke(tool, input) → response where:
+        response.tool_use_id == request.id
+        response.type == "tool_result"
+        response.content is JSON-serializable
+      JSONSchema(input) validates against tool.input_schema
+    domain: "(tool_name: str, input: json, api_key: str)"
+    codomain: "tool_result block forwardable to Claude messages endpoint"
+    invariants:
+    - "emitted input_schema is valid JSONSchema (jsonschema.validate of meta-schema passes)"
+    - "tool_use_id echoed byte-identical in tool_result"
+    - "content field is always JSON-serializable (no raw bytes / NaN)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-I-07-001
+  rule: emitted tool schema validates against JSONSchema meta-schema
+  prediction: "apr agent describe-tool produces a valid JSONSchema"
+  test: |
+    set -euo pipefail
+    apr agent describe-tool apr-qa --format json > /tmp/tool.json
+    uv run --with jsonschema python3 -c "
+    import json, jsonschema
+    t = json.load(open('/tmp/tool.json'))
+    jsonschema.Draft202012Validator.check_schema(t['input_schema'])
+    assert 'name' in t and 'description' in t, t
+    "
+  if_fails: rule 'emitted tool schema validates against JSONSchema meta-schema' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-I-07-002
+  rule: tool_use_id round-trips byte-identical; content is JSON-serializable
+  prediction: "tool_result.tool_use_id == request.id"
+  test: |
+    set -euo pipefail
+    apr agent invoke --tool apr-qa --input '{"model":"tests/fixtures/tiny.apr"}' \
+      --request-id abc-123 --format json > /tmp/resp.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/resp.json'))
+    assert d['tool_use_id'] == 'abc-123', d
+    assert d['type'] == 'tool_result', d
+    json.dumps(d['content'])  # must be serializable
+    "
+  if_fails: rule 'tool_use_id round-trips byte-identical; content is JSON-serializable' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-I-07-003
+  rule: invalid input rejected by schema, not by tool body
+  prediction: "input violating required fields returns is_error=true before model runs"
+  test: |
+    set -euo pipefail
+    apr agent invoke --tool apr-qa --input '{}' --request-id x --format json > /tmp/err.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/err.json'))
+    assert d.get('is_error') is True, d
+    assert 'required' in d['content'].lower() or 'schema' in d['content'].lower(), d
+    "
+
+  if_fails: rule 'invalid input rejected by schema, not by tool body' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr agent tool envelope matches Anthropic Agent SDK tool_use/tool_result block shape"
+- type: invariant
+  property: "input_schema always passes Draft 2020-12 meta-schema"
+- type: invariant
+  property: "schema validation fails closed (invalid input never reaches tool body)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-i-07
+  priority: medium
+  auto_created: true

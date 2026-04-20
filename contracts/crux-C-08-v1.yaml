@@ -1,0 +1,182 @@
+# CRUX-C-08 — Automatic prefix caching
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-08
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Automatic prefix caching. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  prefix_hash_equality:
+    formula: |
+      For requests R1, R2 sharing common token prefix P (|P| >= block_size):
+        blocks(R1)[0 .. |P|/block_size]  ≡  blocks(R2)[0 .. |P|/block_size]
+        (physical block ids identical — refcounted, not copied)
+    domain: two requests with identical leading tokens
+    codomain: bool
+    invariants:
+    - "Prefix blocks are de-duplicated via content-hash (block-level)"
+    - "Refcount increments on hit; block freed only when refcount reaches 0"
+    - "Reference: https://docs.vllm.ai/en/latest/features/automatic_prefix_caching.html"
+
+  ttft_ratio_on_hit:
+    formula: |
+      Let TTFT_miss = first request with prefix P (cold)
+      Let TTFT_hit_i = request i (2..N) sharing same prefix P
+        TTFT_hit_i / TTFT_miss  ≤  0.3   for all i in 2..N
+      (KV prefill skipped for cached prefix blocks)
+    domain: N sequential requests with shared ≥500-token system prompt
+    codomain: ℝ (dimensionless ratio)
+    invariants:
+    - "Warm-prefix TTFT must be <= 30% of cold-prefix TTFT"
+    - "Savings scale with |P|/total_prompt_len"
+
+  hit_rate_metric:
+    formula: |
+      /metrics exposes:
+        apr_prefix_cache_hits_total (counter)
+        apr_prefix_cache_misses_total (counter)
+        apr_prefix_cache_hit_rate = hits / (hits + misses)
+      Under shared-prefix load (10 reqs, same 500-tok system prompt): hit_rate > 0.8
+    domain: Prometheus-style /metrics scrape under test load
+    codomain: ℝ ∈ [0, 1]
+    invariants:
+    - "Prefix cache hit rate observable via /metrics"
+    - "Hit rate > 0.8 when 10 requests share identical 500-token system prompt"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-08-001
+  rule: warm-prefix TTFT << cold-prefix TTFT
+  prediction: "TTFT for requests 2..10 with shared 500-tok system prompt is <= 0.3x TTFT of request 1"
+  test: |
+    # Reference: https://docs.vllm.ai/en/latest/features/automatic_prefix_caching.html
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    # 500-token shared system prompt (padded)
+    SYS=$(python3 -c "print('The system is a coding assistant. '*32)")
+    MK_REQ() {
+      python3 -c 'import json,sys; print(json.dumps({"model":"qwen2.5-coder-1.5b","messages":[{"role":"system","content":sys.argv[1]},{"role":"user","content":sys.argv[2]}],"stream":True,"max_tokens":4,"temperature":0}))' "$SYS" "$1"
+    }
+    TTFT_OF() {
+      local BODY="$1"
+      local T0=$(date +%s.%N)
+      curl -sS -N -X POST "$URL" -H "Content-Type: application/json" -d "$BODY" \
+        | grep -m1 'delta' >/dev/null
+      local T1=$(date +%s.%N)
+      python3 -c "print($T1-$T0)"
+    }
+    # Clear cache if endpoint available (best-effort)
+    curl -sS -X POST http://127.0.0.1:8080/debug/prefix_cache/clear >/dev/null 2>&1 || true
+    # Cold request
+    COLD=$(TTFT_OF "$(MK_REQ "user Q1")")
+    # 9 warm requests
+    WARM_SUM=0
+    for i in $(seq 2 10); do
+      T=$(TTFT_OF "$(MK_REQ "user Q$i")")
+      WARM_SUM=$(python3 -c "print($WARM_SUM + $T)")
+    done
+    WARM_AVG=$(python3 -c "print($WARM_SUM/9)")
+    python3 -c "cold=$COLD; warm=$WARM_AVG; print(f'TTFT cold={cold*1000:.0f}ms warm_avg={warm*1000:.0f}ms ratio={warm/cold:.2f}'); assert warm <= 0.3 * cold, f'warm TTFT {warm:.3f}s > 0.3 * cold {cold:.3f}s (no prefix cache hit)'"
+  if_fails: "Warm-prefix TTFT not significantly lower than cold (prefix cache inactive)"
+
+- id: FALSIFY-CRUX-C-08-002
+  rule: /metrics exposes prefix_cache_hit_rate > 0.8 under shared-prefix load
+  prediction: "apr_prefix_cache_hit_rate > 0.8 after 10 shared-prefix requests"
+  test: |
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    METRICS=http://127.0.0.1:8080/metrics
+    SYS=$(python3 -c "print('System context. '*64)")
+    export SYS
+    for i in $(seq 1 10); do
+      export USER_Q="q$i"
+      curl -sS -X POST "$URL" -H "Content-Type: application/json" \
+        -d "$(python3 -c 'import json,os; print(json.dumps({"model":"qwen2.5-coder-1.5b","messages":[{"role":"system","content":os.environ["SYS"]},{"role":"user","content":os.environ["USER_Q"]}],"stream":False,"max_tokens":4,"temperature":0}))')" >/dev/null
+    done
+    HITS=$(curl -sS "$METRICS" | awk '/^apr_prefix_cache_hits_total/ {print $2; exit}')
+    MISSES=$(curl -sS "$METRICS" | awk '/^apr_prefix_cache_misses_total/ {print $2; exit}')
+    python3 -c "h=float('${HITS:-0}'); m=float('${MISSES:-0}'); rate = h / (h+m) if (h+m) > 0 else 0.0; print(f'hits={h} misses={m} hit_rate={rate:.3f}'); assert rate > 0.8, f'prefix_cache hit_rate {rate:.3f} <= 0.8'"
+  if_fails: "/metrics hit_rate <= 0.8 under 10 shared-prefix requests"
+
+- id: FALSIFY-CRUX-C-08-003
+  rule: cache is block-aligned (prefix shorter than block_size does not cache)
+  prediction: "Prefix shorter than one block is a miss (no partial-block sharing)"
+  test: |
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    METRICS=http://127.0.0.1:8080/metrics
+    # Tiny shared prefix (~5 tokens), smaller than block_size=16
+    for i in $(seq 1 5); do
+      curl -sS -X POST "$URL" -H "Content-Type: application/json" \
+        -d "{\"model\":\"qwen2.5-coder-1.5b\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi q$i\"}],\"stream\":false,\"max_tokens\":4,\"temperature\":0}" \
+        >/dev/null
+    done
+    HITS=$(curl -sS "$METRICS" | awk '/^apr_prefix_cache_hits_total/ {print $2; exit}')
+    MISSES=$(curl -sS "$METRICS" | awk '/^apr_prefix_cache_misses_total/ {print $2; exit}')
+    python3 -c "h=float('${HITS:-0}'); m=float('${MISSES:-0}'); assert m >= h, f'sub-block prefix produced hits={h} misses={m} (partial-block caching?)'"
+  if_fails: "Sub-block prefix produced cache hits (caching is not block-aligned)"
+
+- id: FALSIFY-CRUX-C-08-004
+  rule: output correctness preserved on cache hit
+  prediction: "Response content identical whether prefix is cached or not (temperature=0)"
+  test: |
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    SYS=$(python3 -c "print('You are helpful. '*40)")
+    MK() {
+      python3 -c 'import json,sys; print(json.dumps({"model":"qwen2.5-coder-1.5b","messages":[{"role":"system","content":sys.argv[1]},{"role":"user","content":sys.argv[2]}],"stream":False,"max_tokens":16,"temperature":0}))' "$SYS" "$1"
+    }
+    # Clear cache
+    curl -sS -X POST http://127.0.0.1:8080/debug/prefix_cache/clear >/dev/null 2>&1 || true
+    COLD=$(curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$(MK 'what is 2+2?')")
+    # Prime cache with same system prompt + different user
+    curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$(MK 'warm-up')" >/dev/null
+    WARM=$(curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$(MK 'what is 2+2?')")
+    CC=$(echo "$COLD" | jq -r '.choices[0].message.content')
+    WC=$(echo "$WARM" | jq -r '.choices[0].message.content')
+    [ "$CC" = "$WC" ] \
+      || { echo "FAIL: cold='$CC' != warm='$WC' (prefix cache corrupts output)" >&2; exit 1; }
+  if_fails: "Prefix cache hit changes generated content (correctness violated)"
+
+proof_obligations:
+- type: invariant
+  property: "Warm-prefix TTFT <= 0.3 × cold-prefix TTFT"
+- type: invariant
+  property: "apr_prefix_cache_{hits,misses}_total counters exposed on /metrics"
+- type: invariant
+  property: "Hit rate > 0.8 under 10-request shared-prefix load"
+- type: invariant
+  property: "Caching is block-aligned (no partial-block sharing)"
+- type: invariant
+  property: "Output correctness identical between cold and warm cache (deterministic sampling)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-08` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-08
+  priority: critical
+  auto_created: false

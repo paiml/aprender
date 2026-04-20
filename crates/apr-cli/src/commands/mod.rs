@@ -5,6 +5,7 @@
 //! - Jidoka: Stop on quality issues
 //! - Visualization: Make problems visible
 
+pub(crate) mod aliases;
 pub mod bench;
 pub mod canary;
 pub mod cbtop;
@@ -60,6 +61,7 @@ pub(crate) mod qa;
 pub(crate) mod qa_capability;
 pub(crate) mod qualify;
 pub(crate) mod quantize;
+pub(crate) mod registry;
 pub(crate) mod rosetta;
 pub(crate) mod run;
 #[cfg(feature = "training")]
