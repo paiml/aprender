@@ -1,19 +1,22 @@
 //! Falsification tests for CRUX-A-01 — Pull model by short name.
 //!
 //! Contract: contracts/crux-A-01-v1.yaml
-//! This test closes FALSIFY-CRUX-A-01-002: `configs/aliases.yaml` ships with
-//! the repo, parses as YAML mapping str→str, and contains the four canonical
-//! short names required by the CRUX-A-01 invariants:
-//!   {"llama3", "mistral", "phi3", "qwen2"} ⊆ keys(map)
+//! Closes:
+//! - FALSIFY-CRUX-A-01-001: `apr pull <short> --dry-run` emits the canonical
+//!   URL on stdout and performs zero network I/O.
+//! - FALSIFY-CRUX-A-01-002: `configs/aliases.yaml` ships with the repo,
+//!   parses as str→str, and contains the four canonical short names:
+//!   {"llama3", "mistral", "phi3", "qwen2"} ⊆ keys(map).
 //!
-//! Other FALSIFY-CRUX-A-01-{001, 003, 004, 005} gates still need the
-//! `apr pull --dry-run` + `apr registry aliases --json` surface and are
+//! Remaining FALSIFY-CRUX-A-01-{003, 004, 005} gates (did-you-mean, `apr
+//! registry aliases --json`, invocation determinism across binary runs) are
 //! tracked by the M1 epic (GitHub #918).
 
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn repo_root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -71,4 +74,68 @@ fn falsify_crux_a_01_002_resolution_deterministic() {
         a, b,
         "FALSIFY-CRUX-A-01-002: two reads of aliases.yaml must yield byte-identical maps"
     );
+}
+
+// ---------------------------------------------------------------------------
+// FALSIFY-CRUX-A-01-001 — `apr pull <short> --dry-run` emits canonical URL.
+// ---------------------------------------------------------------------------
+
+fn run_apr_pull_dry_run(short: &str) -> (std::process::Output, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_apr"))
+        .args(["pull", short, "--dry-run"])
+        .output()
+        .unwrap_or_else(|e| panic!("FALSIFY-CRUX-A-01-001: failed to spawn apr: {e}"));
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    (output, stdout)
+}
+
+#[test]
+fn falsify_crux_a_01_001_dry_run_emits_canonical_url_for_llama3() {
+    let (output, stdout) = run_apr_pull_dry_run("llama3");
+    assert!(
+        output.status.success(),
+        "FALSIFY-CRUX-A-01-001: apr pull llama3 --dry-run must exit 0, stdout=\n{stdout}\nstderr=\n{}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert!(
+        stdout.contains("hf://") || stdout.contains("https://"),
+        "FALSIFY-CRUX-A-01-001: --dry-run stdout must contain a canonical URL, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn falsify_crux_a_01_001_dry_run_resolution_is_deterministic() {
+    let (_, a) = run_apr_pull_dry_run("llama3");
+    let (_, b) = run_apr_pull_dry_run("llama3");
+    let extract = |s: &str| -> String {
+        s.lines()
+            .find_map(|l| {
+                l.split_whitespace()
+                    .find(|w| w.starts_with("hf://") || w.starts_with("https://"))
+                    .map(str::to_string)
+            })
+            .unwrap_or_default()
+    };
+    let url_a = extract(&a);
+    let url_b = extract(&b);
+    assert!(!url_a.is_empty(), "no canonical URL in first run:\n{a}");
+    assert_eq!(
+        url_a, url_b,
+        "FALSIFY-CRUX-A-01-001: two back-to-back --dry-run invocations must be byte-identical"
+    );
+}
+
+#[test]
+fn falsify_crux_a_01_001_dry_run_every_canonical_name_resolves() {
+    for canonical in ["llama3", "mistral", "phi3", "qwen2"] {
+        let (output, stdout) = run_apr_pull_dry_run(canonical);
+        assert!(
+            output.status.success(),
+            "FALSIFY-CRUX-A-01-001: {canonical} --dry-run must exit 0"
+        );
+        assert!(
+            stdout.contains("hf://") || stdout.contains("https://"),
+            "FALSIFY-CRUX-A-01-001: {canonical} --dry-run must emit canonical URL, got:\n{stdout}"
+        );
+    }
 }

@@ -81,6 +81,7 @@
         let cmd = Commands::Pull {
             model_ref: "hf://org/repo".to_string(),
             force: false,
+            dry_run: false,
         };
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Pull is a diagnostic command (exempt)");

@@ -361,6 +361,10 @@ pub enum Commands {
         /// Force re-download even if cached
         #[arg(long)]
         force: bool,
+        /// CRUX-A-01: resolve short name to canonical URL and exit without
+        /// performing any network I/O.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// List cached models
     #[command(name = "list", alias = "ls")]

@@ -48,10 +48,16 @@ pub struct FileChecksum {
     "apr-cli-operations-v1",
     equation = "mutating_output_contract"
 )]
-pub fn run(model_ref: &str, force: bool) -> Result<()> {
+pub fn run(model_ref: &str, force: bool, dry_run: bool) -> Result<()> {
     contract_pre_pull_cache_integrity!();
     println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
+
+    // CRUX-A-01 FALSIFY-CRUX-A-01-001: --dry-run resolves short name to
+    // canonical URL and exits with zero network I/O.
+    if dry_run {
+        return run_dry_run(model_ref);
+    }
 
     // GH-213: Resolve HuggingFace URI — detect single vs sharded models
     let resolved = resolve_hf_model(model_ref)?;
@@ -524,6 +530,32 @@ fn write_shard_manifest(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to serialize manifest: {e}")))?;
     std::fs::write(manifest_path, manifest_json)?;
     println!("  {} .apr-manifest.json (integrity checksums)", "✓".green());
+    Ok(())
+}
+
+/// CRUX-A-01 FALSIFY-CRUX-A-01-001: `--dry-run` resolver.
+///
+/// Emits the resolved canonical URL on stdout and returns `Ok(())` with zero
+/// network I/O. Short names are resolved via the embedded alias map
+/// (`configs/aliases.yaml`); scheme-qualified inputs (`hf://…`,
+/// `https://…`) and bare `org/repo` inputs echo as their canonical forms.
+fn run_dry_run(model_ref: &str) -> Result<()> {
+    use super::aliases;
+
+    let resolved = if let Some(url) = aliases::resolve_short_name(model_ref) {
+        url
+    } else if !model_ref.contains("://") && model_ref.contains('/') {
+        format!("hf://{model_ref}")
+    } else {
+        return Err(CliError::ValidationFailed(format!(
+            "CRUX-A-01: unknown short name '{model_ref}' and not a fully-qualified URI. \
+             Run `apr registry aliases --json` to list known short names."
+        )));
+    };
+
+    println!("Model:    {}", model_ref.cyan());
+    println!("Resolved: {}", resolved.green());
+    println!("Mode:     {} (no network I/O)", "dry-run".yellow());
     Ok(())
 }
 

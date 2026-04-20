@@ -5,6 +5,7 @@
 //! - Jidoka: Stop on quality issues
 //! - Visualization: Make problems visible
 
+pub(crate) mod aliases;
 pub mod bench;
 pub mod canary;
 pub mod cbtop;
