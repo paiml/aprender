@@ -74,6 +74,7 @@ pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
 pub(crate) mod showcase;
 pub(crate) mod tensors;
+pub(crate) mod token_redactor;
 pub(crate) mod tokenize;
 pub(crate) mod trace;
 #[cfg(feature = "training")]
