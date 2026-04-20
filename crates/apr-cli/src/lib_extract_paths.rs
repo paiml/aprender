@@ -82,6 +82,7 @@
             model_ref: "hf://org/repo".to_string(),
             force: false,
             dry_run: false,
+            revision: None,
         };
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Pull is a diagnostic command (exempt)");
