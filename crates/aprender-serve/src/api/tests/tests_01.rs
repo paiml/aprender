@@ -92,7 +92,7 @@ async fn test_health_endpoint() {
         Ok(v) => v,
         Err(_) => return, // Mock state: error response, skip body assertions
     };
-    assert_eq!(health.status, "healthy");
+    assert_eq!(health.status, "ok");
 }
 
 #[tokio::test]
