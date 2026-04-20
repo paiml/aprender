@@ -366,6 +366,11 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Registry operations (CRUX-A-01): inspect alias map, etc.
+    Registry {
+        #[command(subcommand)]
+        command: crate::commands::registry::RegistryCommands,
+    },
     /// List cached models
     #[command(name = "list", alias = "ls")]
     List,

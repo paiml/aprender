@@ -9,10 +9,10 @@
 //!   {"llama3", "mistral", "phi3", "qwen2"} ⊆ keys(map).
 //! - FALSIFY-CRUX-A-01-003: unknown short name exits non-zero with a
 //!   "did you mean …" hint (Levenshtein ≤ 2 against alias-map keys).
-//!
-//! Remaining FALSIFY-CRUX-A-01-{004, 005} gates (`apr registry aliases
-//! --json`, invocation determinism across binary runs) are tracked by the
-//! M1 epic (GitHub #918).
+//! - FALSIFY-CRUX-A-01-004: `apr registry aliases --json` emits the full
+//!   alias map as a JSON object with every value carrying a known scheme.
+//! - FALSIFY-CRUX-A-01-005: three back-to-back process invocations of
+//!   `apr pull llama3 --dry-run` emit byte-identical canonical URLs.
 
 #![allow(clippy::unwrap_used)]
 
@@ -199,5 +199,101 @@ fn falsify_crux_a_01_003_far_typo_has_no_suggestion() {
     assert!(
         !combined.contains("did you mean"),
         "FALSIFY-CRUX-A-01-003: far typo must NOT fabricate a suggestion, got:\n{combined}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// FALSIFY-CRUX-A-01-004 — `apr registry aliases --json` emits the full
+// alias map as a JSON object; every value starts with a known scheme.
+// ---------------------------------------------------------------------------
+
+fn run_registry_aliases_json() -> (std::process::Output, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_apr"))
+        .args(["registry", "aliases", "--json"])
+        .output()
+        .unwrap_or_else(|e| panic!("FALSIFY-CRUX-A-01-004: failed to spawn apr: {e}"));
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    (output, stdout)
+}
+
+#[test]
+fn falsify_crux_a_01_004_registry_aliases_json_is_object() {
+    let (output, stdout) = run_registry_aliases_json();
+    assert!(
+        output.status.success(),
+        "FALSIFY-CRUX-A-01-004: exit 0 required, stdout=\n{stdout}\nstderr=\n{}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let json: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("FALSIFY-CRUX-A-01-004: stdout not valid JSON: {e}\n{stdout}"));
+    let obj = json
+        .as_object()
+        .expect("FALSIFY-CRUX-A-01-004: top-level JSON must be an object");
+    assert!(
+        !obj.is_empty(),
+        "FALSIFY-CRUX-A-01-004: alias map must be non-empty"
+    );
+}
+
+#[test]
+fn falsify_crux_a_01_004_registry_aliases_contains_canonical_names() {
+    let (_, stdout) = run_registry_aliases_json();
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let obj = json.as_object().unwrap();
+    for canonical in ["llama3", "mistral", "phi3", "qwen2"] {
+        let val = obj.get(canonical).unwrap_or_else(|| {
+            panic!("FALSIFY-CRUX-A-01-004: '{canonical}' missing from registry aliases --json")
+        });
+        let url = val
+            .as_str()
+            .unwrap_or_else(|| panic!("FALSIFY-CRUX-A-01-004: '{canonical}' value is not a string"));
+        assert!(
+            url.starts_with("hf://") || url.starts_with("https://"),
+            "FALSIFY-CRUX-A-01-004: '{canonical}' → '{url}' missing known scheme"
+        );
+    }
+}
+
+#[test]
+fn falsify_crux_a_01_004_registry_aliases_is_deterministic() {
+    let (_, a) = run_registry_aliases_json();
+    let (_, b) = run_registry_aliases_json();
+    assert_eq!(
+        a.trim(),
+        b.trim(),
+        "FALSIFY-CRUX-A-01-004: two invocations of `apr registry aliases --json` must be byte-identical"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// FALSIFY-CRUX-A-01-005 — two separate process invocations of
+// `apr pull llama3 --dry-run` emit byte-identical canonical URLs.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn falsify_crux_a_01_005_cross_process_determinism() {
+    let extract = |s: &str| -> String {
+        s.lines()
+            .find_map(|l| {
+                l.split_whitespace()
+                    .find(|w| w.starts_with("hf://") || w.starts_with("https://"))
+                    .map(str::to_string)
+            })
+            .unwrap_or_default()
+    };
+    let (_, a) = run_apr_pull_dry_run("llama3");
+    let (_, b) = run_apr_pull_dry_run("llama3");
+    let (_, c) = run_apr_pull_dry_run("llama3");
+    let ua = extract(&a);
+    let ub = extract(&b);
+    let uc = extract(&c);
+    assert!(!ua.is_empty(), "FALSIFY-CRUX-A-01-005: no canonical URL:\n{a}");
+    assert_eq!(
+        ua, ub,
+        "FALSIFY-CRUX-A-01-005: invocation 1 vs 2 differ ({ua} vs {ub})"
+    );
+    assert_eq!(
+        ub, uc,
+        "FALSIFY-CRUX-A-01-005: invocation 2 vs 3 differ ({ub} vs {uc})"
     );
 }

@@ -113,7 +113,6 @@ falsification_tests:
   rule: apr registry aliases lists all short names
   prediction: "apr registry aliases --json returns {name: url} map"
   test: |
-    # TODO: wire `apr registry aliases` subcommand
     OUT=$(apr registry aliases --json 2>&1) || { echo "FAIL: subcommand missing" >&2; exit 1; }
     echo "$OUT" | jq -e 'type == "object" and (keys | length > 0)' >/dev/null || {
       echo "FAIL: aliases --json output not a non-empty object" >&2

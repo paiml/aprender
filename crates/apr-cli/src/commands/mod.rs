@@ -61,6 +61,7 @@ pub(crate) mod qa;
 pub(crate) mod qa_capability;
 pub(crate) mod qualify;
 pub(crate) mod quantize;
+pub(crate) mod registry;
 pub(crate) mod rosetta;
 pub(crate) mod run;
 #[cfg(feature = "training")]
