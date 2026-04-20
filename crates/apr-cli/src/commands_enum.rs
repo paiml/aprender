@@ -167,6 +167,23 @@ pub enum Commands {
         #[arg(long)]
         min_score: Option<u8>,
     },
+    /// Validate a publish manifest (FALSIFY-PM-001..006).
+    ///
+    /// Contract: `contracts/publish-manifest-v1.yaml`
+    /// Spec:     SPEC-SHIP-TWO-001 §12.3 AC-EX-004
+    ValidateManifest {
+        /// Path to manifest YAML
+        #[arg(value_name = "MANIFEST")]
+        file: PathBuf,
+        /// Optional local .apr artifact to discharge FALSIFY-PM-002 (sha256 match)
+        #[arg(long, value_name = "APR_FILE")]
+        artifact: Option<PathBuf>,
+        /// Discharge FALSIFY-PM-003 via network: HTTP HEAD + streaming sha256.
+        /// Default is DEFERRED (offline-safe). Ignored when --offline is set.
+        /// Closes F-PUBLISH-EXTRA-001::dogfood_ex05 (no Python in ex-05).
+        #[arg(long)]
+        live: bool,
+    },
     /// Compare two models
     Diff {
         /// First model file
@@ -457,6 +474,11 @@ pub enum Commands {
     /// Model optimization commands (fine-tune, prune, distill)
     #[command(flatten)]
     ModelOps(ModelOpsCommands),
+    /// Start the MCP (Model Context Protocol) server over stdio
+    ///
+    /// Exposes `apr` as MCP tools for Claude Code, Cursor, Cline, and other
+    /// MCP clients. Configure via `.mcp.json` with `{"command":"apr","args":["mcp"]}`.
+    Mcp {},
     /// Interactive terminal UI
     Tui {
         /// Path to .apr model file

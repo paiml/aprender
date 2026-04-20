@@ -36,11 +36,7 @@ struct CallSite {
     macro_name: String,
     level: ELevel,
 }
-#[allow(
-    clippy::too_many_lines,
-    clippy::too_many_arguments,
-    clippy::fn_params_excessive_bools
-)]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub fn run(
     contract_dir: &Path,
     src_root: &Path,
@@ -51,211 +47,25 @@ pub fn run(
     json_output: bool,
     min_score: Option<f64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repos: Vec<(String, PathBuf, PathBuf)> = Vec::new();
-
-    let Ok(entries) = std::fs::read_dir(contract_dir) else {
-        return Err(format!("cannot read {}", contract_dir.display()).into());
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
-
-        if matches!(name.as_str(), "kaizen" | "legacy" | "pipelines") {
-            continue;
-        }
-        let binding_path = path.join("binding.yaml");
-        if !binding_path.exists() {
-            continue;
-        }
-        if let Some(filter) = repo_filter {
-            if name != filter {
-                continue;
-            }
-        }
-        let repo_path = resolve_repo_path(src_root, &name, &binding_path);
-        if !repo_path.exists() {
-            continue;
-        }
-
-        repos.push((name, repo_path, binding_path));
-    }
-
-    repos.sort_by(|a, b| a.0.cmp(&b.0));
-
+    let repos = collect_repo_paths(contract_dir, src_root, repo_filter)?;
     if repos.is_empty() {
         return Err("no repos found with binding.yaml and sibling directory".into());
     }
 
-    println!("pv kaizen — fleet enforcement improvement");
-    println!("==========================================\n");
-    println!(
-        "Mode: {}",
-        if do_fix {
-            "fix (inject + validate)"
-        } else if do_codegen {
-            "codegen (regenerate macros)"
-        } else {
-            "measure (dry-run)"
-        }
-    );
-    println!("Repos: {}\n", repos.len());
+    print_kaizen_banner(repos.len(), do_fix, do_codegen);
 
     let mut reports: Vec<RepoReport> = Vec::new();
-
     for (name, repo_path, binding_path) in &repos {
-        let binding = match parse_binding(binding_path) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("  warning: {name}: {e}");
-                continue;
-            }
-        };
-
-        let implemented_bindings = binding
-            .bindings
-            .iter()
-            .filter(|b| b.status == ImplStatus::Implemented)
-            .count();
-
-        let src_dir = repo_path.join("src");
-
-        // Collect all source directories to scan (top-level + workspace subcrates)
-        let mut scan_dirs: Vec<PathBuf> = Vec::new();
-        if src_dir.exists() {
-            scan_dirs.push(src_dir.clone());
+        if let Some(report) = process_repo(
+            name,
+            repo_path,
+            binding_path,
+            contract_dir,
+            do_codegen,
+            do_fix,
+        ) {
+            reports.push(report);
         }
-        // Also scan workspace subcrates: <repo>/crates/*/src/
-        let crates_dir = repo_path.join("crates");
-        if crates_dir.exists() {
-            if let Ok(crate_entries) = std::fs::read_dir(&crates_dir) {
-                for crate_entry in crate_entries.flatten() {
-                    let crate_src = crate_entry.path().join("src");
-                    if crate_src.exists() {
-                        scan_dirs.push(crate_src);
-                    }
-                }
-            }
-        }
-        // Also scan top-level workspace members: <repo>/*/src/ (e.g., rash/src/)
-        if let Ok(top_entries) = std::fs::read_dir(repo_path) {
-            for entry in top_entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if name == "target" || name == ".git" || name == "crates" || name == "src" {
-                        continue;
-                    }
-                    let member_src = path.join("src");
-                    if member_src.exists() && path.join("Cargo.toml").exists() {
-                        scan_dirs.push(member_src);
-                    }
-                }
-            }
-        }
-        if scan_dirs.is_empty() {
-            continue;
-        }
-
-        let mut sites_before: Vec<CallSite> = Vec::new();
-        for dir in &scan_dirs {
-            scan_call_sites(dir, &mut sites_before);
-        }
-
-        let gen_path = src_dir.join("generated_contracts.rs");
-        let gen_content = std::fs::read_to_string(&gen_path).unwrap_or_default();
-
-        for site in &mut sites_before {
-            site.level = classify_macro(&site.macro_name, &gen_content);
-        }
-
-        let assertions_before = count_assertions(&gen_content);
-
-        let mut report = RepoReport {
-            name: name.clone(),
-            bindings: implemented_bindings,
-            call_sites_before: sites_before.len(),
-            call_sites_after: sites_before.len(),
-            e0: sites_before
-                .iter()
-                .filter(|s| s.level == ELevel::E0)
-                .count(),
-            e1: sites_before
-                .iter()
-                .filter(|s| s.level == ELevel::E1)
-                .count(),
-            e2: sites_before
-                .iter()
-                .filter(|s| s.level == ELevel::E2)
-                .count(),
-            assertions_before,
-            assertions_after: assertions_before,
-            codegen_ok: true,
-            check_ok: None,
-            injection_count: 0,
-        };
-
-        if do_codegen || do_fix {
-            let contracts = codegen::generate_all(contract_dir);
-            if !contracts.is_empty() {
-                match codegen::write_rust_module(&contracts, &gen_path) {
-                    Ok(()) => {
-                        let new_content = std::fs::read_to_string(&gen_path).unwrap_or_default();
-                        report.assertions_after = count_assertions(&new_content);
-                        report.codegen_ok = true;
-                    }
-                    Err(e) => {
-                        eprintln!("  {name}: codegen failed: {e}");
-                        report.codegen_ok = false;
-                    }
-                }
-            }
-        }
-
-        if do_fix {
-            let gen_content_new = std::fs::read_to_string(&gen_path).unwrap_or_default();
-            let injected = inject_call_sites(&src_dir, &binding, &gen_content_new);
-            report.injection_count = injected;
-
-            let mut sites_after: Vec<CallSite> = Vec::new();
-            for dir in &scan_dirs {
-                scan_call_sites(dir, &mut sites_after);
-            }
-            let gen_content_final = std::fs::read_to_string(&gen_path).unwrap_or_default();
-            for site in &mut sites_after {
-                site.level = classify_macro(&site.macro_name, &gen_content_final);
-            }
-            report.call_sites_after = sites_after.len();
-            report.e0 = sites_after.iter().filter(|s| s.level == ELevel::E0).count();
-            report.e1 = sites_after.iter().filter(|s| s.level == ELevel::E1).count();
-            report.e2 = sites_after.iter().filter(|s| s.level == ELevel::E2).count();
-
-            let check = std::process::Command::new("cargo")
-                .args(["check", "--message-format=short"])
-                .current_dir(repo_path)
-                .output();
-            match check {
-                Ok(output) => {
-                    report.check_ok = Some(output.status.success());
-                    if !output.status.success() {
-                        eprintln!("  {name}: cargo check failed, reverting injections");
-                    }
-                }
-                Err(e) => {
-                    eprintln!("  {name}: cargo check error: {e}");
-                    report.check_ok = Some(false);
-                }
-            }
-        }
-
-        reports.push(report);
     }
 
     if json_output {
@@ -264,15 +74,297 @@ pub fn run(
         print_text_report(&reports, dry_run, do_fix);
     }
 
+    enforce_min_score(&reports, min_score);
+    Ok(())
+}
+
+/// Enumerate every `<contract_dir>/<repo>/binding.yaml` and resolve its sibling source tree.
+fn collect_repo_paths(
+    contract_dir: &Path,
+    src_root: &Path,
+    repo_filter: Option<&str>,
+) -> Result<Vec<(String, PathBuf, PathBuf)>, Box<dyn std::error::Error>> {
+    let Ok(entries) = std::fs::read_dir(contract_dir) else {
+        return Err(format!("cannot read {}", contract_dir.display()).into());
+    };
+
+    let mut repos: Vec<(String, PathBuf, PathBuf)> = Vec::new();
+    for entry in entries.flatten() {
+        if let Some(repo) = classify_repo_entry(&entry, src_root, repo_filter) {
+            repos.push(repo);
+        }
+    }
+    repos.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(repos)
+}
+
+/// Return `Some((name, repo_path, binding_path))` if `entry` is a valid repo for kaizen.
+fn classify_repo_entry(
+    entry: &std::fs::DirEntry,
+    src_root: &Path,
+    repo_filter: Option<&str>,
+) -> Option<(String, PathBuf, PathBuf)> {
+    let path = entry.path();
+    if !path.is_dir() {
+        return None;
+    }
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string();
+    if matches!(name.as_str(), "kaizen" | "legacy" | "pipelines") {
+        return None;
+    }
+    let binding_path = path.join("binding.yaml");
+    if !binding_path.exists() {
+        return None;
+    }
+    if let Some(filter) = repo_filter {
+        if name != filter {
+            return None;
+        }
+    }
+    let repo_path = resolve_repo_path(src_root, &name, &binding_path);
+    if !repo_path.exists() {
+        return None;
+    }
+    Some((name, repo_path, binding_path))
+}
+
+/// Print the header with the configured operating mode and repo count.
+fn print_kaizen_banner(num_repos: usize, do_fix: bool, do_codegen: bool) {
+    println!("pv kaizen — fleet enforcement improvement");
+    println!("==========================================\n");
+    let mode = if do_fix {
+        "fix (inject + validate)"
+    } else if do_codegen {
+        "codegen (regenerate macros)"
+    } else {
+        "measure (dry-run)"
+    };
+    println!("Mode: {mode}");
+    println!("Repos: {num_repos}\n");
+}
+
+/// Produce a `RepoReport` for one repo, or `None` if the binding failed to parse.
+fn process_repo(
+    name: &str,
+    repo_path: &Path,
+    binding_path: &Path,
+    contract_dir: &Path,
+    do_codegen: bool,
+    do_fix: bool,
+) -> Option<RepoReport> {
+    let binding = match parse_binding(binding_path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("  warning: {name}: {e}");
+            return None;
+        }
+    };
+
+    let implemented_bindings = binding
+        .bindings
+        .iter()
+        .filter(|b| b.status == ImplStatus::Implemented)
+        .count();
+
+    let src_dir = repo_path.join("src");
+    let scan_dirs = collect_scan_dirs(repo_path, &src_dir);
+    if scan_dirs.is_empty() {
+        return None;
+    }
+
+    let gen_path = src_dir.join("generated_contracts.rs");
+    let sites_before = scan_and_classify(&scan_dirs, &gen_path);
+    let assertions_before =
+        count_assertions(&std::fs::read_to_string(&gen_path).unwrap_or_default());
+
+    let mut report =
+        build_initial_report(name, implemented_bindings, &sites_before, assertions_before);
+
+    if do_codegen || do_fix {
+        apply_codegen_step(contract_dir, &gen_path, name, &mut report);
+    }
+
+    if do_fix {
+        apply_fix_step(
+            &src_dir,
+            &scan_dirs,
+            &gen_path,
+            repo_path,
+            &binding,
+            name,
+            &mut report,
+        );
+    }
+
+    Some(report)
+}
+
+/// Collect every scannable source directory below `repo_path` (top-level + workspace subcrates).
+fn collect_scan_dirs(repo_path: &Path, src_dir: &Path) -> Vec<PathBuf> {
+    let mut scan_dirs: Vec<PathBuf> = Vec::new();
+    if src_dir.exists() {
+        scan_dirs.push(src_dir.to_path_buf());
+    }
+    let crates_dir = repo_path.join("crates");
+    if crates_dir.exists() {
+        if let Ok(crate_entries) = std::fs::read_dir(&crates_dir) {
+            for crate_entry in crate_entries.flatten() {
+                let crate_src = crate_entry.path().join("src");
+                if crate_src.exists() {
+                    scan_dirs.push(crate_src);
+                }
+            }
+        }
+    }
+    if let Ok(top_entries) = std::fs::read_dir(repo_path) {
+        for entry in top_entries.flatten() {
+            if let Some(member_src) = workspace_member_src(&entry) {
+                scan_dirs.push(member_src);
+            }
+        }
+    }
+    scan_dirs
+}
+
+/// Return the `src/` directory for a top-level workspace-member crate, if `entry` is one.
+fn workspace_member_src(entry: &std::fs::DirEntry) -> Option<PathBuf> {
+    let path = entry.path();
+    if !path.is_dir() {
+        return None;
+    }
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if matches!(name, "target" | ".git" | "crates" | "src") {
+        return None;
+    }
+    let member_src = path.join("src");
+    if member_src.exists() && path.join("Cargo.toml").exists() {
+        Some(member_src)
+    } else {
+        None
+    }
+}
+
+/// Scan every dir in `scan_dirs` for call sites, then classify each site's E-level via `gen_path`.
+fn scan_and_classify(scan_dirs: &[PathBuf], gen_path: &Path) -> Vec<CallSite> {
+    let mut sites: Vec<CallSite> = Vec::new();
+    for dir in scan_dirs {
+        scan_call_sites(dir, &mut sites);
+    }
+    let gen_content = std::fs::read_to_string(gen_path).unwrap_or_default();
+    for site in &mut sites {
+        site.level = classify_macro(&site.macro_name, &gen_content);
+    }
+    sites
+}
+
+/// Count `ELevel::E0/E1/E2` occurrences in `sites` and return them as `(e0, e1, e2)`.
+fn count_levels(sites: &[CallSite]) -> (usize, usize, usize) {
+    let e0 = sites.iter().filter(|s| s.level == ELevel::E0).count();
+    let e1 = sites.iter().filter(|s| s.level == ELevel::E1).count();
+    let e2 = sites.iter().filter(|s| s.level == ELevel::E2).count();
+    (e0, e1, e2)
+}
+
+/// Build the baseline `RepoReport` from the pre-fix scan.
+fn build_initial_report(
+    name: &str,
+    implemented_bindings: usize,
+    sites_before: &[CallSite],
+    assertions_before: usize,
+) -> RepoReport {
+    let (e0, e1, e2) = count_levels(sites_before);
+    RepoReport {
+        name: name.to_string(),
+        bindings: implemented_bindings,
+        call_sites_before: sites_before.len(),
+        call_sites_after: sites_before.len(),
+        e0,
+        e1,
+        e2,
+        assertions_before,
+        assertions_after: assertions_before,
+        codegen_ok: true,
+        check_ok: None,
+        injection_count: 0,
+    }
+}
+
+/// Run codegen, write the generated contracts module, and update report assertion counts.
+fn apply_codegen_step(contract_dir: &Path, gen_path: &Path, name: &str, report: &mut RepoReport) {
+    let contracts = codegen::generate_all(contract_dir);
+    if contracts.is_empty() {
+        return;
+    }
+    match codegen::write_rust_module(&contracts, gen_path) {
+        Ok(()) => {
+            let new_content = std::fs::read_to_string(gen_path).unwrap_or_default();
+            report.assertions_after = count_assertions(&new_content);
+            report.codegen_ok = true;
+        }
+        Err(e) => {
+            eprintln!("  {name}: codegen failed: {e}");
+            report.codegen_ok = false;
+        }
+    }
+}
+
+/// Inject call sites, re-scan to refresh level counts, and run `cargo check` to validate.
+#[allow(clippy::too_many_arguments)]
+fn apply_fix_step(
+    src_dir: &Path,
+    scan_dirs: &[PathBuf],
+    gen_path: &Path,
+    repo_path: &Path,
+    binding: &BindingRegistry,
+    name: &str,
+    report: &mut RepoReport,
+) {
+    let gen_content_new = std::fs::read_to_string(gen_path).unwrap_or_default();
+    report.injection_count = inject_call_sites(src_dir, binding, &gen_content_new);
+
+    let sites_after = scan_and_classify(scan_dirs, gen_path);
+    let (e0, e1, e2) = count_levels(&sites_after);
+    report.call_sites_after = sites_after.len();
+    report.e0 = e0;
+    report.e1 = e1;
+    report.e2 = e2;
+
+    report.check_ok = Some(run_cargo_check(repo_path, name));
+}
+
+/// Run `cargo check` in `repo_path`; log a diagnostic and return false on failure.
+fn run_cargo_check(repo_path: &Path, name: &str) -> bool {
+    let check = std::process::Command::new("cargo")
+        .args(["check", "--message-format=short"])
+        .current_dir(repo_path)
+        .output();
+    match check {
+        Ok(output) => {
+            if !output.status.success() {
+                eprintln!("  {name}: cargo check failed, reverting injections");
+            }
+            output.status.success()
+        }
+        Err(e) => {
+            eprintln!("  {name}: cargo check error: {e}");
+            false
+        }
+    }
+}
+
+/// Fail the command if the computed fleet score falls below an optional threshold.
+fn enforce_min_score(reports: &[RepoReport], min_score: Option<f64>) {
     if let Some(threshold) = min_score {
-        let fleet_score = compute_fleet_score(&reports);
+        let fleet_score = compute_fleet_score(reports);
         if fleet_score < threshold {
             eprintln!("\nEnforcement score {fleet_score:.4} below threshold {threshold:.4}");
             std::process::exit(1);
         }
     }
-
-    Ok(())
 }
 
 /// Scan `.rs` files recursively for contract macro call sites.

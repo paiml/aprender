@@ -15,11 +15,16 @@ pub fn run_apr_inference(
     verbose: bool,
     trace_config: Option<crate::inference_trace::TraceConfig>,
 ) -> Result<()> {
-    use crate::apr::AprV2Model;
-    use crate::apr_transformer::AprTransformer;
+    use crate::apr::{AprV2Model, MappedAprModel};
+    use crate::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
     use crate::inference_trace::{InferenceTracer, ModelInfo, TraceStep};
     use std::path::Path;
     use std::time::Instant;
+
+    // GH-479: CPU path now loads via MappedAprModel + OwnedQuantizedModel (per-tensor
+    // scratch dequant from GH-478) instead of eager F32 AprTransformer. file_data is
+    // unused on both paths but kept in the signature for caller compatibility.
+    let _ = file_data;
 
     // APR-TRACE-001: Create tracer from config
     let mut tracer = trace_config
@@ -41,9 +46,7 @@ pub fn run_apr_inference(
     // Both AprF32ToGpuAdapter and forward_token_apr_q4k produce garbage on GPU.
     #[cfg(feature = "cuda")]
     if force_gpu {
-        use crate::apr::MappedAprModel;
-        use crate::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig};
-        use std::path::Path;
+        use crate::gguf::OwnedQuantizedModelCuda;
 
         let model_path = Path::new(model_ref);
 
@@ -81,27 +84,35 @@ pub fn run_apr_inference(
 
     let load_start = Instant::now();
 
-    // Load APR transformer (CPU path)
-    let transformer = AprTransformer::from_apr_bytes(file_data).map_err(|e| {
+    // GH-479: Load APR via MappedAprModel + OwnedQuantizedModel — per-tensor scratch
+    // dequant avoids eager F32 inflation (GH-478). Replaces AprTransformer::from_apr_bytes.
+    let model_path_for_load = Path::new(model_ref);
+    let mapped = MappedAprModel::from_path(model_path_for_load).map_err(|e| {
         crate::error::RealizarError::UnsupportedOperation {
             operation: "parse_apr".to_string(),
-            reason: format!("Failed to parse APR: {e}"),
+            reason: format!("Failed to map APR file: {e}"),
+        }
+    })?;
+    let model = OwnedQuantizedModel::from_apr(&mapped).map_err(|e| {
+        crate::error::RealizarError::UnsupportedOperation {
+            operation: "parse_apr".to_string(),
+            reason: format!("Failed to load APR as OwnedQuantizedModel: {e}"),
         }
     })?;
 
     // APR-TRACE-001: Set model info
     tracer.set_model_info(ModelInfo {
         name: model_ref.to_string(),
-        num_layers: transformer.config.num_layers,
-        hidden_dim: transformer.config.hidden_dim,
-        vocab_size: transformer.config.vocab_size,
-        num_heads: transformer.config.num_heads,
-        quant_type: Some("APR F32".to_string()),
+        num_layers: model.config.num_layers,
+        hidden_dim: model.config.hidden_dim,
+        vocab_size: model.config.vocab_size,
+        num_heads: model.config.num_heads,
+        quant_type: Some("APR scratch-dequant".to_string()),
     });
 
     let load_time = load_start.elapsed();
     if verbose {
-        println!("Backend: CPU (AVX2 + SIMD)");
+        println!("Backend: CPU (per-tensor scratch dequant)");
         println!("Model loaded in {:.2}ms", load_time.as_secs_f64() * 1000.0);
     }
 
@@ -122,39 +133,41 @@ pub fn run_apr_inference(
         .unwrap_or_else(|| prompt.chars().map(|c| c as u32).collect());
     let prompt_len = prompt_tokens.len();
 
-    tracer.trace_encode(prompt, &prompt_tokens, transformer.config.vocab_size);
+    tracer.trace_encode(prompt, &prompt_tokens, model.config.vocab_size);
 
     if verbose {
         println!("Prompt tokens: {}", prompt_len);
-        println!("Temperature: {:.1} (using greedy decoding)", temperature);
+        println!("Temperature: {:.1}", temperature);
         println!();
     }
 
     // APR-TRACE-001: Trace embedding (approximation - we don't have direct access)
     tracer.start_step(TraceStep::Embed);
-    tracer.trace_embed(prompt_len, transformer.config.hidden_dim, None);
+    tracer.trace_embed(prompt_len, model.config.hidden_dim, None);
 
     // APR-TRACE-001: Trace transformer blocks (high-level, generation is a black box)
     tracer.start_step(TraceStep::TransformerBlock);
 
-    // Run inference with timing
-    // PMAT-103 FIX: Use generate_with_cache for O(n) instead of O(n²) complexity
-    let gen_config = crate::apr_transformer::GenerateConfig {
+    // GH-479: OwnedQuantizedModel::generate_with_cache — O(n) autoregressive decode
+    // with per-tensor scratch dequant on each matmul (no eager F32 inflation).
+    let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
+        top_k: if temperature == 0.0 { 1 } else { 40 },
+        trace: trace_config.is_some(),
         ..Default::default()
     };
     let gen_start = Instant::now();
-    let generated = transformer.generate_with_cache(&prompt_tokens, &gen_config)?;
+    let generated = model.generate_with_cache(&prompt_tokens, &gen_config)?;
     let gen_time = gen_start.elapsed();
 
     // Record transformer block completion (aggregate timing)
     tracer.trace_layer(
-        transformer.config.num_layers - 1,
+        model.config.num_layers - 1,
         0,
         None,
         1,
-        transformer.config.hidden_dim,
+        model.config.hidden_dim,
     );
 
     let tokens_generated = generated.len().saturating_sub(prompt_len);
@@ -175,7 +188,7 @@ pub fn run_apr_inference(
             .chars()
             .nth(i.min(output_text.len().saturating_sub(1)))
             .map_or_else(|| format!("<{token}>"), |c| c.to_string());
-        tracer.trace_decode(i, token, &decoded, transformer.config.vocab_size);
+        tracer.trace_decode(i, token, &decoded, model.config.vocab_size);
     }
 
     match format {
@@ -246,108 +259,42 @@ fn decode_apr_output_tokens(model_path: &std::path::Path, output_tokens: &[u32])
         .collect()
 }
 
-/// Print verbose debug weight comparison between CPU and GPU models
+/// Greedy argmax over logits.
 #[cfg(feature = "cuda")]
-fn print_gpu_debug_weights(
-    transformer: &crate::apr_transformer::AprTransformer,
-    gpu_model: &crate::gpu::GpuModel,
-) {
-    let has_gate = transformer
-        .layers
-        .first()
-        .is_some_and(|l| l.ffn_gate_weight.is_some());
-    eprintln!(
-        "[DEBUG-SwiGLU] APR transformer has gate weight: {}",
-        has_gate
-    );
-    if has_gate {
-        let gate_len = transformer.layers[0]
-            .ffn_gate_weight
-            .as_ref()
-            .map_or(0, Vec::len);
-        eprintln!(
-            "[DEBUG-SwiGLU] Gate weight elements: {} (expected: {}x{}={})",
-            gate_len,
-            transformer.config.hidden_dim,
-            transformer.config.intermediate_dim,
-            transformer.config.hidden_dim * transformer.config.intermediate_dim
-        );
-    }
+pub(crate) fn argmax(logits: &[f32]) -> u32 {
+    logits
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map_or(0, |(idx, _)| idx as u32)
+}
 
-    let has_gpu_gate = gpu_model
-        .block_weights
-        .first()
-        .is_some_and(|b| b.ffn_gate_weight.is_some());
-    eprintln!("[DEBUG-SwiGLU] GpuModel has gate weight: {}", has_gpu_gate);
+/// Sample a token with temperature and top-k.
+#[cfg(feature = "cuda")]
+pub(crate) fn sample_with_temperature(logits: &[f32], temperature: f32, top_k: usize) -> u32 {
+    let scaled: Vec<f32> = logits.iter().map(|&l| l / temperature).collect();
 
-    if let Some(layer0) = transformer.layers.first() {
-        eprintln!(
-            "[DEBUG-WEIGHT] CPU qkv_weight first 5: {:?}",
-            &layer0.qkv_weight[0..5.min(layer0.qkv_weight.len())]
-        );
-        eprintln!(
-            "[DEBUG-WEIGHT] GPU qkv_weight first 5: {:?}",
-            &gpu_model.block_weights[0].qkv_weight
-                [0..5.min(gpu_model.block_weights[0].qkv_weight.len())]
-        );
-        eprintln!(
-            "[DEBUG-WEIGHT] CPU fc1 (up) first 5: {:?}",
-            &layer0.ffn_up_weight[0..5.min(layer0.ffn_up_weight.len())]
-        );
-        eprintln!(
-            "[DEBUG-WEIGHT] GPU fc1 (up) first 5: {:?}",
-            &gpu_model.block_weights[0].ffn_fc1_weight
-                [0..5.min(gpu_model.block_weights[0].ffn_fc1_weight.len())]
-        );
+    let mut indexed: Vec<(usize, f32)> = scaled.into_iter().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let top = &indexed[..top_k.min(indexed.len())];
 
-        let hidden_dim = transformer.config.hidden_dim;
-        if transformer.token_embedding.len() < hidden_dim {
-            eprintln!("[DEBUG] token_embedding too short ({} < {hidden_dim}), skipping weight debug", transformer.token_embedding.len());
-            return;
-        }
-        let test_embedding = &transformer.token_embedding[0..hidden_dim];
+    let max_val = top[0].1;
+    let exp_vals: Vec<(usize, f32)> = top.iter().map(|&(i, v)| (i, (v - max_val).exp())).collect();
+    let sum: f32 = exp_vals.iter().map(|(_, v)| v).sum();
 
-        // CPU matmul: y = x @ W where W is [out_dim, in_dim] (transposed internally)
-        let cpu_qkv_dim = layer0.qkv_weight.len() / hidden_dim;
-        let mut cpu_qkv = vec![0.0f32; cpu_qkv_dim];
-        for o in 0..cpu_qkv_dim {
-            let w_start = o * hidden_dim;
-            let mut sum = 0.0f32;
-            for i in 0..hidden_dim {
-                sum += test_embedding[i] * layer0.qkv_weight[w_start + i];
-            }
-            cpu_qkv[o] = sum;
-        }
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::time::SystemTime;
+    let mut hasher = DefaultHasher::new();
+    SystemTime::now().hash(&mut hasher);
+    let r = (hasher.finish() as f32 / u64::MAX as f32) * sum;
 
-        // GPU matmul: y = x @ W_t where W_t is [in_dim, out_dim] (already transposed)
-        let gpu_qkv_weight = &gpu_model.block_weights[0].qkv_weight;
-        let gpu_qkv_dim = gpu_qkv_weight.len() / hidden_dim;
-        let mut gpu_qkv = vec![0.0f32; gpu_qkv_dim];
-        for j in 0..gpu_qkv_dim {
-            let mut sum = 0.0f32;
-            for i in 0..hidden_dim {
-                sum += test_embedding[i] * gpu_qkv_weight[i * gpu_qkv_dim + j];
-            }
-            gpu_qkv[j] = sum;
-        }
-
-        eprintln!(
-            "[DEBUG-MATMUL] CPU QKV first 5: {:?}",
-            &cpu_qkv[0..5.min(cpu_qkv.len())]
-        );
-        eprintln!(
-            "[DEBUG-MATMUL] GPU QKV first 5: {:?}",
-            &gpu_qkv[0..5.min(gpu_qkv.len())]
-        );
-
-        let max_diff: f32 = cpu_qkv
-            .iter()
-            .zip(gpu_qkv.iter())
-            .map(|(c, g)| (c - g).abs())
-            .fold(0.0f32, f32::max);
-        eprintln!("[DEBUG-MATMUL] Max diff: {}", max_diff);
-        if max_diff > 0.01 {
-            eprintln!("[DEBUG-MATMUL] WARNING: CPU vs GPU QKV mismatch!");
+    let mut cumsum = 0.0f32;
+    for &(idx, val) in &exp_vals {
+        cumsum += val;
+        if cumsum >= r {
+            return idx as u32;
         }
     }
+    exp_vals.last().map_or(0, |&(i, _)| i as u32)
 }

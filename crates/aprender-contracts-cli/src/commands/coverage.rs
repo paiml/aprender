@@ -1,11 +1,10 @@
 use std::path::Path;
 
 use provable_contracts::binding::parse_binding;
-use provable_contracts::coverage::{coverage_report, overall_percentage};
+use provable_contracts::coverage::{coverage_report, overall_percentage, CoverageReport};
 use provable_contracts::reverse_coverage::reverse_coverage;
-use provable_contracts::schema::parse_contract;
+use provable_contracts::schema::{parse_contract, Contract};
 
-#[allow(clippy::too_many_lines)]
 pub fn run(
     contract_dir: &Path,
     binding_path: Option<&Path>,
@@ -13,51 +12,82 @@ pub fn run(
     reverse_crate: Option<&Path>,
     enforcement_crate: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Reverse coverage mode
     if let Some(crate_dir) = reverse_crate {
-        let bp = binding_path.ok_or("--reverse requires --binding <path>")?;
-        let report = reverse_coverage(crate_dir, bp);
-        println!("Reverse Coverage Report");
-        println!("=======================");
-        println!("  Public functions: {}", report.total_pub_fns);
-        println!("  Bound (in binding.yaml): {}", report.bound_fns);
-        println!("  Annotated (#[contract]): {}", report.annotated_fns);
-        println!("  Auto-exempt (trivial): {}", report.exempt_fns);
-        println!("  Unbound: {}", report.unbound.len());
-        println!(
-            "  Coverage: {:.1}% (bound + exempt / total)",
-            report.coverage_pct
-        );
-        // Count feature-gated functions
-        let gated_count = report
-            .unbound
-            .iter()
-            .filter(|f| f.feature_gate.is_some())
-            .count();
-        if gated_count > 0 {
-            println!("  Feature-gated:   {gated_count} (require --features to test)");
-        }
-        if !report.unbound.is_empty() {
-            println!("\nUnbound functions:");
-            for f in report.unbound.iter().take(20) {
-                let gate_note = match &f.feature_gate {
-                    Some(feat) => format!(" [requires --features {feat}]"),
-                    None => String::new(),
-                };
-                println!("  {} ({}:{}){gate_note}", f.path, f.file, f.line);
-            }
-            if report.unbound.len() > 20 {
-                println!("  ... and {} more", report.unbound.len() - 20);
-            }
-        }
-        return Ok(());
+        return run_reverse_coverage(crate_dir, binding_path);
     }
+
     let binding = match binding_path {
         Some(bp) => Some(parse_binding(bp)?),
         None => None,
     };
 
-    // Collect all .yaml contracts recursively from the directory
+    let contracts = load_yaml_contracts(contract_dir);
+    let refs: Vec<(String, &Contract)> = contracts.iter().map(|(s, c)| (s.clone(), c)).collect();
+    let report = coverage_report(&refs, binding.as_ref());
+    let pct = overall_percentage(&report);
+
+    print_coverage_report(&report, pct, binding_path.is_some());
+
+    if let Some(crate_dir) = enforcement_crate {
+        let bp = binding_path.ok_or("--enforcement requires --binding <path>")?;
+        let binding = provable_contracts::binding::parse_binding(bp)?;
+        print_enforcement_report(crate_dir, &binding);
+    }
+
+    Ok(())
+}
+
+/// Run `--reverse` mode: list public functions not covered by `binding.yaml`.
+fn run_reverse_coverage(
+    crate_dir: &Path,
+    binding_path: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let bp = binding_path.ok_or("--reverse requires --binding <path>")?;
+    let report = reverse_coverage(crate_dir, bp);
+    println!("Reverse Coverage Report");
+    println!("=======================");
+    println!("  Public functions: {}", report.total_pub_fns);
+    println!("  Bound (in binding.yaml): {}", report.bound_fns);
+    println!("  Annotated (#[contract]): {}", report.annotated_fns);
+    println!("  Auto-exempt (trivial): {}", report.exempt_fns);
+    println!("  Unbound: {}", report.unbound.len());
+    println!(
+        "  Coverage: {:.1}% (bound + exempt / total)",
+        report.coverage_pct
+    );
+
+    let gated_count = report
+        .unbound
+        .iter()
+        .filter(|f| f.feature_gate.is_some())
+        .count();
+    if gated_count > 0 {
+        println!("  Feature-gated:   {gated_count} (require --features to test)");
+    }
+
+    print_unbound_functions(&report.unbound);
+    Ok(())
+}
+
+fn print_unbound_functions(unbound: &[provable_contracts::reverse_coverage::PubFn]) {
+    if unbound.is_empty() {
+        return;
+    }
+    println!("\nUnbound functions:");
+    for f in unbound.iter().take(20) {
+        let gate_note = match &f.feature_gate {
+            Some(feat) => format!(" [requires --features {feat}]"),
+            None => String::new(),
+        };
+        println!("  {} ({}:{}){gate_note}", f.path, f.file, f.line);
+    }
+    if unbound.len() > 20 {
+        println!("  ... and {} more", unbound.len() - 20);
+    }
+}
+
+/// Load, parse, and sort all contract `.yaml` files under `contract_dir`.
+fn load_yaml_contracts(contract_dir: &Path) -> Vec<(String, Contract)> {
     let mut yaml_paths = Vec::new();
     collect_yaml_files(contract_dir, &mut yaml_paths);
 
@@ -70,20 +100,14 @@ pub fn run(
             .to_string();
         match parse_contract(path) {
             Ok(c) => contracts.push((stem, c)),
-            Err(e) => {
-                eprintln!("warning: skipping {}: {e}", path.display());
-            }
+            Err(e) => eprintln!("warning: skipping {}: {e}", path.display()),
         }
     }
-
     contracts.sort_by(|a, b| a.0.cmp(&b.0));
+    contracts
+}
 
-    let refs: Vec<(String, &provable_contracts::schema::Contract)> =
-        contracts.iter().map(|(s, c)| (s.clone(), c)).collect();
-
-    let report = coverage_report(&refs, binding.as_ref());
-    let pct = overall_percentage(&report);
-
+fn print_coverage_report(report: &CoverageReport, pct: f64, has_binding: bool) {
     println!("Obligation Coverage Report");
     println!("==========================");
     println!();
@@ -111,7 +135,7 @@ pub fn run(
         report.totals.falsification_tests
     );
     println!("  Kani harnesses:       {}", report.totals.kani_harnesses);
-    if binding_path.is_some() {
+    if has_binding {
         println!(
             "  Binding implemented:  {}",
             report.totals.binding_implemented
@@ -121,15 +145,6 @@ pub fn run(
     }
     println!();
     println!("Overall obligation coverage: {pct:.1}%");
-
-    // Enforcement quality analysis
-    if let Some(crate_dir) = enforcement_crate {
-        let bp = binding_path.ok_or("--enforcement requires --binding <path>")?;
-        let binding = provable_contracts::binding::parse_binding(bp)?;
-        print_enforcement_report(crate_dir, &binding);
-    }
-
-    Ok(())
 }
 
 /// Scan crate source for contract call sites and classify enforcement quality.

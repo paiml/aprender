@@ -95,6 +95,7 @@ pub mod integrity;
 pub mod io;
 pub mod lora;
 pub mod merge;
+pub mod models;
 pub mod moe;
 pub mod monitor;
 pub mod numerical;

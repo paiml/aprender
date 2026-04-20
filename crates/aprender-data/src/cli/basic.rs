@@ -104,27 +104,8 @@ pub(crate) fn cmd_info(path: &Path) -> crate::Result<()> {
 
 /// Display first N rows of a dataset.
 pub(crate) fn cmd_head(path: &Path, rows: usize) -> crate::Result<()> {
-    // ALB-099: For Parquet, use with_limit() to avoid loading the entire dataset.
-    // dhat profiling showed `head -n 10` allocated 69.8 MB for a 9 MB/1M-row file.
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let dataset = if ext == "parquet" {
-        let file = std::fs::File::open(path).map_err(|e| crate::Error::io(e, path))?;
-        let builder = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file)
-            .map_err(crate::Error::Parquet)?;
-        let reader = builder
-            .with_limit(rows)
-            .build()
-            .map_err(crate::Error::Parquet)?;
-        let batches: Vec<arrow::record_batch::RecordBatch> = reader
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(crate::Error::Arrow)?;
-        if batches.is_empty() {
-            println!("Dataset is empty");
-            return Ok(());
-        }
-        ArrowDataset::new(batches)?
-    } else {
-        load_dataset(path)?
+    let Some(dataset) = load_head_dataset(path, rows)? else {
+        return Ok(());
     };
 
     if dataset.is_empty() {
@@ -132,10 +113,53 @@ pub(crate) fn cmd_head(path: &Path, rows: usize) -> crate::Result<()> {
         return Ok(());
     }
 
-    // Collect rows into batches
+    let (collected, count) = collect_head_batches(&dataset, rows);
+    if collected.is_empty() {
+        println!("No data to display");
+        return Ok(());
+    }
+
+    print_batches(&collected).map_err(crate::Error::Arrow)?;
+    if count < dataset.len() {
+        println!("... showing {} of {} rows", count, dataset.len());
+    }
+    Ok(())
+}
+
+/// Load a dataset limited to `rows` rows when possible.
+///
+/// Returns `Ok(None)` when the dataset is immediately known to be empty
+/// (caller should return after printing the empty notice).
+fn load_head_dataset(path: &Path, rows: usize) -> crate::Result<Option<ArrowDataset>> {
+    // ALB-099: For Parquet, use with_limit() to avoid loading the entire dataset.
+    // dhat profiling showed `head -n 10` allocated 69.8 MB for a 9 MB/1M-row file.
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if ext != "parquet" {
+        return Ok(Some(load_dataset(path)?));
+    }
+    let file = std::fs::File::open(path).map_err(|e| crate::Error::io(e, path))?;
+    let builder = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file)
+        .map_err(crate::Error::Parquet)?;
+    let reader = builder
+        .with_limit(rows)
+        .build()
+        .map_err(crate::Error::Parquet)?;
+    let batches: Vec<arrow::record_batch::RecordBatch> = reader
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(crate::Error::Arrow)?;
+    if batches.is_empty() {
+        println!("Dataset is empty");
+        return Ok(None);
+    }
+    Ok(Some(ArrowDataset::new(batches)?))
+}
+
+fn collect_head_batches(
+    dataset: &ArrowDataset,
+    rows: usize,
+) -> (Vec<arrow::record_batch::RecordBatch>, usize) {
     let mut collected = Vec::new();
     let mut count = 0;
-
     for batch in dataset.iter() {
         let take = (rows - count).min(batch.num_rows());
         if take > 0 {
@@ -146,20 +170,7 @@ pub(crate) fn cmd_head(path: &Path, rows: usize) -> crate::Result<()> {
             break;
         }
     }
-
-    if collected.is_empty() {
-        println!("No data to display");
-        return Ok(());
-    }
-
-    // Print using Arrow's pretty printer
-    print_batches(&collected).map_err(crate::Error::Arrow)?;
-
-    if count < dataset.len() {
-        println!("... showing {} of {} rows", count, dataset.len());
-    }
-
-    Ok(())
+    (collected, count)
 }
 
 /// Display dataset schema.

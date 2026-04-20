@@ -208,6 +208,15 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             crate::pipe::with_stdin_support(file, |p| validate::run(p, q, s, ms, j, sc))
         }
 
+        Commands::ValidateManifest {
+            file,
+            artifact,
+            live,
+        } => {
+            let live_check = *live && !cli.offline;
+            validate_manifest::run(file, artifact.as_deref(), cli.json, live_check)
+        }
+
         Commands::Lint { file } => {
             let (j, q) = (cli.json, cli.quiet);
             crate::pipe::with_stdin_support(file, |p| lint::run(p, j, q))
@@ -599,6 +608,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         Commands::List => pull::list(cli.json, cli.quiet),
         Commands::Rm { model_ref } => pull::remove(model_ref),
         Commands::Tui { file } => tui::run(file.clone()),
+        Commands::Mcp {} => mcp::run(),
 
         _ => return None,
     })

@@ -1,0 +1,273 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: F-PUBLISH-EXTRA-001
+# apr publish: accept publish-manifest + arbitrary sidecar files
+# ─────────────────────────────────────────────────────────────
+# Closes the dogfood gap surfaced by SHIP-TWO-001 EX-04:
+# `apr publish` could not upload tokenizer.json + manifest.yaml,
+# so ex-04-upload-hf.sh used Python huggingface_hub instead.
+# After this contract, `apr publish` natively consumes
+# contracts/publish-manifest-v1.yaml and any sidecar files.
+#
+# Parent: contracts/apr-cli-publish-v1.yaml (crates.io dep safety —
+#         separate concern, unchanged)
+# Peer:   contracts/publish-manifest-v1.yaml (the schema we now consume)
+# ─────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.2.0
+  created: '2026-04-18'
+  updated: '2026-04-18'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'SHIP-TWO-001 §12.2 EX-04 dogfood miss'
+  - 'SHIP-TWO-001 §12.7.2 ship-blocker: F32 weight tensors with fp16 manifest'
+  - 'feedback_full_problems_pmat_contracts.md'
+  - 'evidence/ship-two-001/ex-04-five-whys-dogfood-miss.md'
+  changelog:
+  - v1.2.0 (2026-04-18): Added preflight_validate_manifest equation + FALSIFY-PUB-EXTRA-009/-010. ex-04-upload-hf.sh now runs `apr validate-manifest --artifact` per-format BEFORE any network I/O; a FAIL (including new FALSIFY-PM-007 safetensors dtype gate) aborts the ship with exit 2.
+  - v1.1.0 (2026-04-18): Added dogfood_ex05 equation + FALSIFY-PUB-EXTRA-008. `apr validate-manifest --live` discharges FALSIFY-PM-003 + FALSIFY-PM-002-live natively; ex-05-verify-manifest.sh no longer invokes `uv run python3`.
+  - v1.0.0 (2026-04-18): Initial — EX-04 dogfood rewrite + fp16 safetensors default + three-format ship.
+  description: >
+    Contract for the extended `apr publish` subcommand that natively ships
+    a publish-manifest plus arbitrary sidecar files (tokenizer.json, vocab,
+    special configs). Closes the product gap between `apr publish`
+    (model-weights-only) and `publish-manifest-v1.yaml` (full schema).
+
+equations:
+  manifest_upload_roundtrip:
+    formula: |
+      For a manifest M at path P with declared sha256 S and declared
+      artifact A (derivable from manifest.artifact_url basename):
+        apr publish DIR REPO --manifest P
+      MUST:
+        1. Parse M via serde_yaml_ng::from_str (same parser as apr validate-manifest)
+        2. Reject if validate_manifest returns any FAIL (internal pre-upload gate)
+        3. Compute sha256(A) at path DIR/basename(artifact_url) — must equal S
+        4. Upload A to REPO as path_in_repo = basename(artifact_url)
+        5. Upload P to REPO as path_in_repo = "manifest.yaml"
+    domain: manifest file path × local artifact directory
+    codomain: Result<UploadReport, PublishError>
+    invariants:
+    - "sha256 mismatch between manifest.sha256 and local artifact aborts before network I/O"
+    - "validate_manifest FAIL aborts before network I/O"
+    - "A partial upload (some files uploaded, later step fails) MUST surface the error — never silently succeed"
+
+  extra_file_passthrough:
+    formula: |
+      For each --extra-file PATH_i provided:
+        basename(PATH_i) becomes path_in_repo
+        bytes(PATH_i) upload verbatim (no transformation)
+        order of uploads preserves CLI argument order (deterministic)
+    domain: CLI arg list × local filesystem
+    codomain: ordered list of (local_path, path_in_repo)
+
+  no_readme_when_manifest:
+    formula: |
+      When --manifest is passed, apr publish MUST NOT auto-generate or
+      upload a README.md. The manifest IS the provenance document.
+      (Optional: apr publish MAY upload a minimal README.md that
+      redirects readers to manifest.yaml, but that README must contain
+      NO sha256, NO eval numbers, NO provenance claims.)
+    domain: publish invocation with --manifest
+    codomain: set of files uploaded
+
+  dogfood_shell_script:
+    formula: |
+      scripts/ship-two-001/ex-04-upload-hf.sh MUST invoke
+      `apr publish` (or canonical release binary equivalent) and
+      MUST NOT invoke `uv run`, `pip`, `huggingface-cli`, or any
+      Python huggingface_hub entry point.
+    domain: bash script source
+    codomain: bool
+    invariants:
+    - "grep -E 'uv run|huggingface_hub|huggingface-cli|pip' scripts/ship-two-001/ex-04-upload-hf.sh returns empty"
+
+  three_format_preference:
+    formula: |
+      Every SHIP-TWO-* release MUST publish the model in THREE formats
+      side-by-side in the same HF repo:
+        1. .apr         (native — for `apr run`, `apr serve`, aprender ecosystem)
+        2. .safetensors (transformers/candle/HF ecosystem)
+        3. .gguf        (llama.cpp/ollama ecosystem)
+      Conversions are produced via `apr export --format {safetensors,gguf}`.
+      All three formats ship with identical underlying weights (verified via
+      logit cosine parity ≥ 0.9999 in F2 gate if eval is run per-format).
+      Manifest may declare per-format sha256 entries under `formats:`, or one
+      manifest per format under `contracts/publish-manifests/*-{format}.yaml`.
+    domain: release artifact set
+    codomain: set of paths in HF repo
+    invariants:
+    - "an HF repo for a ship MUST contain files with all three extensions"
+    - "all three artifacts pass per-format sha256 stream round-trip (EX-05)"
+
+  safetensors_dtype_fp16:
+    formula: |
+      When `apr export --format safetensors` is invoked for a ship, the
+      default export dtype MUST be fp16. Reason: the `transformers` /
+      `candle` / HF ecosystem reads fp16 natively; exporting fp32 doubles
+      disk and upload cost for zero downstream benefit (downstream code
+      immediately casts to fp16/bf16 on load).
+
+      Mandatory invocation (or equivalent in-process call):
+        apr export <MODEL.apr> --format safetensors --quantize fp16 \
+                   --output <MODEL>.safetensors
+
+      Expected size ratio for a 7B model:
+        .apr (Q4_K)    ≈ 7.5 GB
+        .safetensors   ≈ 14 GB (fp16)           ← target
+        .safetensors   ≈ 29 GB (fp32 — FORBIDDEN for ships)
+        .gguf (Q4_K)   ≈ 7.5 GB
+    domain: safetensors export invocation
+    codomain: bytes per parameter (16 bits)
+    invariants:
+    - "ship-bound .safetensors MUST have size_bytes ≤ 2.5 × size_bytes(.apr)"
+    - "ship-bound .safetensors header metadata MUST declare dtype F16 (not F32) for all weight tensors"
+    - "apr export invocation in ship scripts MUST pass --quantize fp16 when --format safetensors"
+
+  dogfood_ex05:
+    formula: |
+      scripts/ship-two-001/ex-05-verify-manifest.sh MUST discharge
+      FALSIFY-PM-003 (URL liveness via HEAD) and FALSIFY-PM-002-live
+      (streaming sha256 over the remote artifact) via
+      `apr validate-manifest --live`. It MUST NOT invoke
+      `uv run`, `pip`, `python3`, or any Python interpreter.
+
+      The --live flag in apr validate-manifest is implemented natively in
+      Rust using the same `ureq` HTTP client that `apr pull` uses, ensuring
+      a single code path for remote byte fetches across the CLI.
+    domain: bash script source × network
+    codomain: bool × JSON evidence artifact
+    invariants:
+    - "grep -E 'uv run|python3|pip|huggingface_hub' scripts/ship-two-001/ex-05-verify-manifest.sh returns empty"
+    - "apr validate-manifest --live exercises both FALSIFY-PM-003 and FALSIFY-PM-002-live against each ship-bound manifest"
+    - "ex-05 produces one JSON report per manifest plus a top-level summary, with overall=PASS only when every gate on every manifest passes"
+
+  preflight_validate_manifest:
+    formula: |
+      scripts/ship-two-001/ex-04-upload-hf.sh MUST run, BEFORE its first
+      network-I/O invocation of `apr publish`:
+
+        for fmt in apr safetensors gguf:
+            apr validate-manifest <manifest-for-fmt> --artifact <staged-for-fmt>
+            if exit_code != 0: exit 2
+
+      This gate discharges FALSIFY-PM-001..007 against the LOCAL staged file
+      before any upload starts. PM-007 (safetensors header dtype Poka-Yoke)
+      specifically prevents the SHIP-TWO-001 §12.7.2 ship-blocker: uploading
+      a .safetensors whose weight tensors declare F32 when the manifest
+      states `quantization: fp16`.
+
+      Rationale: once a broken artifact lands on HF Hub, un-shipping requires
+      a deprecation cycle visible to every downstream consumer. The cost of
+      running seven falsifications locally (< 60s for apr/gguf; ~2min sha256
+      stream over 15 GiB for safetensors) is orders of magnitude smaller.
+    domain: bash script source × local filesystem
+    codomain: bool (exit 0 only if all per-format PM-001..007 PASS)
+    invariants:
+    - "preflight_validate_manifest is defined and called 3 times (apr, safetensors, gguf) in ex-04-upload-hf.sh"
+    - "every preflight_validate_manifest invocation precedes every publish_format invocation in source order"
+    - "failure of any pre-flight check aborts with exit code 2 BEFORE apr publish runs (no network I/O performed)"
+
+falsification_tests:
+- id: FALSIFY-PUB-EXTRA-001
+  rule: --manifest accepts a valid publish-manifest-v1.yaml
+  prediction: "apr publish DIR REPO --manifest valid.yaml --dry-run exits 0"
+  test: "apr publish contracts/publish-manifests/ paiml/qwen2.5-coder-7b-apache-q4k-v1 --manifest contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1.yaml --dry-run"
+  if_fails: "manifest consumption broken — ship is blocked"
+
+- id: FALSIFY-PUB-EXTRA-002
+  rule: --manifest rejects a manifest whose sha256 disagrees with local artifact
+  prediction: "apr publish aborts before upload with sha256 mismatch error"
+  test: "temp-corrupt manifest sha256, run apr publish, expect non-zero exit and no network call"
+  if_fails: "CRITICAL: the whole point of manifest-first publish is the sha256 guard — if it fails, we ship garbage"
+
+- id: FALSIFY-PUB-EXTRA-003
+  rule: --extra-file uploads sidecar files verbatim
+  prediction: "after apr publish DIR REPO --extra-file tokenizer.json, HF repo contains tokenizer.json with byte-identical sha256"
+  test: "apr publish [...] --extra-file /tmp/probe.json && apr pull REPO && diff <probe> <pulled>"
+  if_fails: "sidecars corrupt — tokenizer.json ship breaks"
+
+- id: FALSIFY-PUB-EXTRA-004
+  rule: no-manifest path preserves existing behavior
+  prediction: "apr publish DIR REPO (no --manifest) behaves exactly as before: auto-README + weight files only"
+  test: "apr publish contracts/ paiml/test-fixture --dry-run | grep -v 'manifest.yaml'"
+  if_fails: "backwards compat broken — ships using old behavior regress"
+
+- id: FALSIFY-PUB-EXTRA-005
+  rule: ex-04-upload-hf.sh does not invoke Python uploaders
+  prediction: "grep -E 'uv run|huggingface_hub|huggingface-cli|pip install' scripts/ship-two-001/ex-04-upload-hf.sh → empty"
+  test: "! grep -E 'uv run|huggingface_hub|huggingface-cli|pip install' scripts/ship-two-001/ex-04-upload-hf.sh"
+  if_fails: "dogfood gate still bypassed — root cause not fixed"
+
+- id: FALSIFY-PUB-EXTRA-006
+  rule: post-upload sha256 round-trip matches manifest
+  prediction: "apr pull REPO && sha256sum pulled.apr == manifest.sha256"
+  test: "EX-05 stream-SHA gate"
+  if_fails: "byte-integrity lost in transit"
+
+- id: FALSIFY-PUB-EXTRA-007
+  rule: three-format preference — HF repo contains .apr + .safetensors + .gguf
+  prediction: "HF API list-repo-files for the ship repo contains one file of each extension"
+  test: "apr pull REPO --list-only | grep -cE '\\.(apr|safetensors|gguf)$' == 3"
+  if_fails: "ship only offers one ecosystem's tooling — downstream users must re-convert"
+
+- id: FALSIFY-PUB-EXTRA-008
+  rule: ex-05-verify-manifest.sh does not invoke Python
+  prediction: "grep -E 'uv run|python3|pip install|huggingface_hub' scripts/ship-two-001/ex-05-verify-manifest.sh → empty"
+  test: "! grep -E 'uv run|python3|pip install|huggingface_hub' scripts/ship-two-001/ex-05-verify-manifest.sh"
+  if_fails: "ex-05 dogfood gate bypassed — FALSIFY-PM-003/PM-002-live still discharged by Python"
+
+- id: FALSIFY-PUB-EXTRA-009
+  rule: "ex-04-upload-hf.sh runs `apr validate-manifest --artifact` pre-flight for every format BEFORE any network I/O"
+  prediction: |
+    If any per-format manifest fails PM-001..007 against its staged local
+    artifact, ex-04 aborts with exit code 2 and performs zero uploads.
+  test: |
+    # Corrupt a safetensors manifest sha256, run ex-04 in a dry harness,
+    # expect exit 2 and zero HF API calls recorded.
+    tmp=$(mktemp -d)
+    cp contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-safetensors.yaml "$tmp/m.yaml"
+    sed -i 's/^sha256: .*/sha256: 0000000000000000000000000000000000000000000000000000000000000000/' "$tmp/m.yaml"
+    ! bash scripts/ship-two-001/ex-04-upload-hf.sh  # expect non-zero
+  if_fails: |
+    A broken artifact (wrong sha256 / wrong safetensors dtype) could reach the
+    HuggingFace Hub and require a deprecation cycle to remove. This gate is
+    the ship-time Poka-Yoke that makes SHIP-TWO-001 §12.7.2 unreachable.
+
+- id: FALSIFY-PUB-EXTRA-010
+  rule: "preflight_validate_manifest function is present and called for every format before publish_format"
+  prediction: |
+    The string `preflight_validate_manifest` appears at least 4 times in
+    scripts/ship-two-001/ex-04-upload-hf.sh (1 definition + 3 invocations,
+    one per format) AND every invocation precedes the first `publish_format`
+    invocation in source order.
+  test: |
+    grep -c '^preflight_validate_manifest\|preflight_validate_manifest ' scripts/ship-two-001/ex-04-upload-hf.sh  # ≥ 4
+    awk '/^preflight_validate_manifest/{p=NR} /^publish_format/{f=NR; exit} END{exit (p < f) ? 0 : 1}' scripts/ship-two-001/ex-04-upload-hf.sh
+  if_fails: "pre-flight gate removed or reordered after a publish — ship-time Poka-Yoke compromised"
+
+proof_obligations:
+- type: safety
+  property: "no network I/O before sha256 local guard passes"
+- type: safety
+  property: "no README.md auto-generation when --manifest is provided"
+- type: liveness
+  property: "successful manifest path uploads manifest.yaml as a side-car"
+- type: invariant
+  property: "CLI is backwards-compatible (--manifest optional)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending
+
+discharge_plan:
+  - "Extend Commands::Publish enum with optional manifest: Option<PathBuf>, extra_file: Vec<PathBuf>"
+  - "Route dispatch in dispatch_analysis.rs → publish::execute(…, manifest, extra_files, …)"
+  - "In publish::execute: when manifest is Some, parse via serde_yaml_ng, validate_manifest pre-gate, compute local sha256, reject on mismatch"
+  - "Iterate extra_files and call HfHubClient::push_to_hub per file"
+  - "Suppress README auto-generation on manifest path (upload manifest.yaml as the primary metadata file)"
+  - "Rewrite scripts/ship-two-001/ex-04-upload-hf.sh to invoke apr publish"
+  - "Add 4 unit tests for validate+reject+extra+roundtrip on publish::execute"

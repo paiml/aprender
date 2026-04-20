@@ -1,0 +1,76 @@
+//! `apr.validate` — M2 subprocess wrapper over `apr validate <model> --json`.
+//!
+//! This was the first M2 tool shipped and established the subprocess pattern
+//! every M2/M3 `apr.*` wrapper follows: spawn `apr <subcommand> --json`,
+//! capture stdout, pass through to the MCP client as a single text content
+//! block. Non-zero exit maps to `isError: true` with stderr attached. All 7
+//! M2 wrappers (`apr.validate`, `apr.tensors`, `apr.bench`, `apr.qa`,
+//! `apr.trace`, `apr.run`, `apr.serve`) and the M3 addition `apr.finetune`
+//! now ship on this pattern.
+
+#![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
+
+use crate::tools::subprocess::run_apr;
+use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
+
+/// Tool name registered with MCP clients.
+pub const NAME: &str = "apr.validate";
+
+/// Return the MCP tool definition for `apr.validate`.
+///
+/// FALSIFY-MCP-008: the `inputSchema` is parsed from the build-time codegen
+/// constant `crate::schemas::APR_VALIDATE_SCHEMA`, which `build.rs` emits from
+/// `contracts/apr-mcp-tool-schemas-v1.yaml`. The contract is the single
+/// source of truth — the live `tools/list` response and the YAML must agree
+/// byte-for-byte after JSON canonicalization (asserted by
+/// `tests/falsify_mcp_008.rs`).
+#[must_use]
+pub fn validate_tool_definition() -> ToolDefinition {
+    let input_schema: InputSchema = serde_json::from_str(crate::schemas::APR_VALIDATE_SCHEMA)
+        .expect(
+            "FALSIFY-MCP-008: apr.validate codegen constant must parse as InputSchema; \
+             regenerate by editing contracts/apr-mcp-tool-schemas-v1.yaml and rebuilding",
+        );
+    ToolDefinition {
+        name: NAME.to_string(),
+        description: crate::schemas::APR_VALIDATE_DESCRIPTION.to_string(),
+        input_schema,
+    }
+}
+
+/// Execute `apr.validate` by spawning `apr validate <model_path> --json`.
+#[must_use]
+pub fn call(args: &serde_json::Value) -> ToolCallResult {
+    let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
+        return ToolCallResult::error("Missing required argument: model_path");
+    };
+    run_apr(&["validate", model_path, "--json"])
+}
+
+#[cfg(test)]
+#[allow(clippy::disallowed_methods)] // serde_json::json! expands to code that hits unwrap()
+mod tests {
+    use super::*;
+
+    #[test]
+    fn definition_has_correct_name_and_required_field() {
+        let def = validate_tool_definition();
+        assert_eq!(def.name, "apr.validate");
+        assert_eq!(def.input_schema.schema_type, "object");
+        assert_eq!(def.input_schema.required, vec!["model_path".to_string()]);
+        assert!(def.input_schema.properties.contains_key("model_path"));
+    }
+
+    #[test]
+    fn missing_model_path_returns_error() {
+        let result = call(&serde_json::json!({}));
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("model_path"));
+    }
+
+    #[test]
+    fn nonstring_model_path_returns_error() {
+        let result = call(&serde_json::json!({ "model_path": 42 }));
+        assert_eq!(result.is_error, Some(true));
+    }
+}

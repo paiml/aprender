@@ -781,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "size mismatch")]
+    #[should_panic(expected = "Pre-condition violated")]
     fn test_matmul_size_mismatch_a() {
         let a = Tensor::new(Array1::from(vec![1.0, 2.0, 3.0]), false);
         let b = Tensor::new(Array1::from(vec![5.0, 6.0, 7.0, 8.0]), false);
@@ -789,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "size mismatch")]
+    #[should_panic(expected = "Pre-condition violated")]
     fn test_matmul_size_mismatch_b() {
         let a = Tensor::new(Array1::from(vec![1.0, 2.0, 3.0, 4.0]), false);
         let b = Tensor::new(Array1::from(vec![5.0, 6.0, 7.0]), false);

@@ -13,6 +13,18 @@ use serde::{Deserialize, Serialize};
 ///   size variants, vendor) — exempt from provability, validated for
 ///   `metadata` fields. Custom top-level fields are preserved but not
 ///   enforced by the kernel schema.
+/// - `ModelFamilyVariant`: a concrete size variant of a model family
+///   (e.g. Llama 370M sovereign). Freezes hyperparameters (vocab, hidden
+///   dim, layer count) and delta-dispatches invariants from the parent
+///   family. Exempt from provability.
+/// - `Tokenizer`: a concrete tokenizer contract — vocab bounds, required
+///   special tokens, round-trip gate, normalization form. Exempt from
+///   provability (gates are byte-exact tests, not Kani harnesses).
+/// - `TrainingLoop`: a training-loop contract — loss schedule, optimizer
+///   config, gradient-clipping policy, checkpoint cadence. Exempt from
+///   provability; validated for `metadata` + schedule fields.
+/// - `PretrainingCorpus`: a pretraining-corpus contract — dataset source,
+///   license, total-bytes bound, shard layout. Exempt from provability.
 /// - `Pattern`: a cross-cutting verification pattern (threading safety,
 ///   async safety, compute parity) that applies across multiple kernels.
 ///   Exempt from the kernel provability invariant but still validated for
@@ -29,6 +41,10 @@ pub enum ContractKind {
     Kernel,
     Registry,
     ModelFamily,
+    ModelFamilyVariant,
+    Tokenizer,
+    TrainingLoop,
+    PretrainingCorpus,
     Pattern,
     Schema,
 }
@@ -39,6 +55,10 @@ impl std::fmt::Display for ContractKind {
             Self::Kernel => "kernel",
             Self::Registry => "registry",
             Self::ModelFamily => "model-family",
+            Self::ModelFamilyVariant => "model-family-variant",
+            Self::Tokenizer => "tokenizer",
+            Self::TrainingLoop => "training-loop",
+            Self::PretrainingCorpus => "pretraining-corpus",
             Self::Pattern => "pattern",
             Self::Schema => "schema",
         };

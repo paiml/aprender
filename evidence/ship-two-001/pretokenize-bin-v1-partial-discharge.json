@@ -1,0 +1,54 @@
+{
+  "contract": "pretokenize-bin-v1",
+  "version": "1.0.0",
+  "status": "PROPOSED",
+  "discharge_status": "PARTIAL_ALGORITHM_LEVEL",
+  "generated_at": "2026-04-19T09:00:00-07:00",
+  "task": "#123 Native Rust pretokenize CLI",
+  "root_cause_rejection_of": "Python pretokenize shim (2026-04-19 MUDA callout)",
+  "evidence": {
+    "loader_tests": {
+      "test_bpe_from_vocab_merges_roundtrip": "PASS",
+      "test_bpe_from_vocab_merges_rejects_orphan_merge": "PASS",
+      "location": "crates/aprender-train/src/tokenizer/bpe.rs"
+    },
+    "roundtrip_tests": {
+      "cli_shard_layout_is_read_by_shard_batch_iter": "PASS",
+      "multi_shard_names_preserve_order": "PASS",
+      "location": "crates/aprender-train/tests/pretokenize_shard_roundtrip.rs"
+    },
+    "cli_smoke": {
+      "corpus": "/tmp/pretok-smoke/corpus.jsonl",
+      "docs": 5,
+      "tokenizer_vocab_size": 300,
+      "tokenizer_eos_id": 2,
+      "tokenizer_eos_name": "</s>",
+      "eos_policy": "between",
+      "total_tokens": 78,
+      "content_tokens": 74,
+      "eos_separators": 4,
+      "expected_eos_for_between": "N-1 = 4 for N=5 docs",
+      "shard_count": 1,
+      "shard_file": "shard-00000.bin",
+      "shard_bytes": 312,
+      "alignment_check": "312 % 4 == 0",
+      "bound_check": "all ids < 300"
+    },
+    "invariants_validated": [
+      "INV-PRETOK-001 (token id < vocab_size)",
+      "INV-PRETOK-002 (shard size % 4 == 0)",
+      "INV-PRETOK-003 (total_tokens consistency)",
+      "INV-PRETOK-004 (shard-NNNNN.bin naming)",
+      "INV-PRETOK-007 (round-trip via ShardBatchIter)",
+      "INV-PRETOK-008 (EOS policy N-1 for between, N for after, 0 for none)"
+    ],
+    "invariants_pending_full_discharge": [
+      "INV-PRETOK-005 (same-host determinism across runs)",
+      "INV-PRETOK-006 (cross-host byte-identical shards)"
+    ]
+  },
+  "binds_to": "SHIP-TWO-001 AC-SHIP2-003",
+  "blocks_until_full_discharge": [
+    "yoga + lambda-labs cross-host byte-identical test (task #118 MODEL-2 50257-vocab tokenizer must finish first)"
+  ]
+}

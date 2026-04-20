@@ -60,60 +60,26 @@ pub(crate) fn run(
         return print_targets(json_output);
     }
 
-    let file = file.ok_or_else(|| {
-        CliError::ValidationFailed("Input .apr file is required (unless --list-targets)".into())
-    })?;
-
-    if quantize.is_some() {
-        return Err(CliError::ValidationFailed(
-            "Pre-embed quantization (--quantize) is not yet implemented. \
-             Quantize with `apr quantize` first, then compile the quantized model."
-                .into(),
-        ));
-    }
-
-    if !file.exists() {
-        return Err(CliError::FileNotFound(file.to_path_buf()));
-    }
-
+    let file = validate_compile_inputs(file, quantize)?;
     let info = read_model_info(file)?;
-
     let bin_name = derive_binary_name(file);
     let output_path = output_path.map_or_else(|| PathBuf::from(&bin_name), Path::to_path_buf);
 
     if !json_output {
-        output::header("APR Compile Pipeline");
-        println!(
-            "{}",
-            output::kv_table(&[
-                ("Model", file.display().to_string()),
-                ("Name", info.name.clone()),
-                ("Architecture", info.model_type.clone()),
-                ("Parameters", format_param_count(info.param_count)),
-                ("Tensors", info.tensor_count.to_string()),
-                ("Output", output_path.display().to_string()),
-            ])
-        );
-        println!();
+        print_compile_banner(file, &info, &output_path);
     }
 
-    // Generate ephemeral Cargo project for compilation
-    let tmp_dir = tempfile::tempdir().map_err(|e| CliError::Io(std::io::Error::other(e)))?;
-    let project_dir = tmp_dir.path().join(&bin_name);
-
-    generate_cargo_project(&project_dir, &bin_name, file, &info, release, strip, lto)?;
-
-    if !json_output {
-        output::pipeline_stage("Compiling", output::StageStatus::Running);
-    }
-
-    let built_binary = run_cargo_build(&project_dir, target, release, strip, lto, &bin_name)?;
-
-    // Copy to output and make executable
-    fs::copy(&built_binary, &output_path)?;
-    make_executable(&output_path)?;
-
-    let binary_size = fs::metadata(&output_path)?.len();
+    let binary_size = compile_pipeline(
+        file,
+        &info,
+        &bin_name,
+        &output_path,
+        target,
+        release,
+        strip,
+        lto,
+        json_output,
+    )?;
 
     if json_output {
         print_compile_result_json(
@@ -131,6 +97,70 @@ pub(crate) fn run(
     }
 
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+fn compile_pipeline(
+    file: &Path,
+    info: &ModelInfo,
+    bin_name: &str,
+    output_path: &Path,
+    target: Option<&str>,
+    release: bool,
+    strip: bool,
+    lto: bool,
+    json_output: bool,
+) -> Result<u64> {
+    let tmp_dir = tempfile::tempdir().map_err(|e| CliError::Io(std::io::Error::other(e)))?;
+    let project_dir = tmp_dir.path().join(bin_name);
+
+    generate_cargo_project(&project_dir, bin_name, file, info, release, strip, lto)?;
+
+    if !json_output {
+        output::pipeline_stage("Compiling", output::StageStatus::Running);
+    }
+
+    let built_binary = run_cargo_build(&project_dir, target, release, strip, lto, bin_name)?;
+    finalize_output(&built_binary, output_path)
+}
+
+fn validate_compile_inputs<'a>(file: Option<&'a Path>, quantize: Option<&str>) -> Result<&'a Path> {
+    let file = file.ok_or_else(|| {
+        CliError::ValidationFailed("Input .apr file is required (unless --list-targets)".into())
+    })?;
+    if quantize.is_some() {
+        return Err(CliError::ValidationFailed(
+            "Pre-embed quantization (--quantize) is not yet implemented. \
+             Quantize with `apr quantize` first, then compile the quantized model."
+                .into(),
+        ));
+    }
+    if !file.exists() {
+        return Err(CliError::FileNotFound(file.to_path_buf()));
+    }
+    Ok(file)
+}
+
+fn print_compile_banner(file: &Path, info: &ModelInfo, output_path: &Path) {
+    output::header("APR Compile Pipeline");
+    println!(
+        "{}",
+        output::kv_table(&[
+            ("Model", file.display().to_string()),
+            ("Name", info.name.clone()),
+            ("Architecture", info.model_type.clone()),
+            ("Parameters", format_param_count(info.param_count)),
+            ("Tensors", info.tensor_count.to_string()),
+            ("Output", output_path.display().to_string()),
+        ])
+    );
+    println!();
+}
+
+fn finalize_output(built_binary: &Path, output_path: &Path) -> Result<u64> {
+    fs::copy(built_binary, output_path)?;
+    make_executable(output_path)?;
+    Ok(fs::metadata(output_path)?.len())
 }
 
 /// Run cargo build and return the path to the built binary.
@@ -155,17 +185,7 @@ fn run_cargo_build(
         cmd.arg("--target").arg(t);
     }
 
-    // Build RUSTFLAGS
-    let mut rustflags = Vec::new();
-    if strip {
-        rustflags.push("-C strip=symbols".to_string());
-    }
-    if lto {
-        rustflags.push("-C lto=fat".to_string());
-    }
-    if !rustflags.is_empty() {
-        cmd.env("RUSTFLAGS", rustflags.join(" "));
-    }
+    apply_rustflags(&mut cmd, strip, lto);
 
     let build_output = cmd.output().map_err(|e| {
         CliError::ValidationFailed(format!(
@@ -180,7 +200,28 @@ fn run_cargo_build(
         )));
     }
 
-    // Locate output binary
+    locate_built_binary(project_dir, target, release, bin_name)
+}
+
+fn apply_rustflags(cmd: &mut Command, strip: bool, lto: bool) {
+    let mut rustflags = Vec::new();
+    if strip {
+        rustflags.push("-C strip=symbols".to_string());
+    }
+    if lto {
+        rustflags.push("-C lto=fat".to_string());
+    }
+    if !rustflags.is_empty() {
+        cmd.env("RUSTFLAGS", rustflags.join(" "));
+    }
+}
+
+fn locate_built_binary(
+    project_dir: &Path,
+    target: Option<&str>,
+    release: bool,
+    bin_name: &str,
+) -> Result<PathBuf> {
     let profile_dir = if release { "release" } else { "debug" };
     let built_binary = if let Some(t) = target {
         project_dir

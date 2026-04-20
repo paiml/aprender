@@ -97,6 +97,35 @@
         }
     }
 
+    /// Test parsing 'apr run --stream' flag (NDJSON token stream).
+    #[test]
+    fn test_parse_run_stream_flag() {
+        let args = vec!["apr", "run", "model.gguf", "--prompt", "Hi", "--stream"];
+        let cli = parse_cli(args).expect("Failed to parse --stream");
+        match *cli.command {
+            Commands::Run {
+                source,
+                stream,
+                ..
+            } => {
+                assert_eq!(source, "model.gguf");
+                assert!(stream, "--stream must set stream=true");
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Default for --stream is false when omitted.
+    #[test]
+    fn test_parse_run_stream_default_false() {
+        let args = vec!["apr", "run", "model.gguf", "--prompt", "Hi"];
+        let cli = parse_cli(args).expect("Failed to parse default");
+        match *cli.command {
+            Commands::Run { stream, .. } => assert!(!stream, "--stream defaults to false"),
+            _ => panic!("Expected Run command"),
+        }
+    }
+
     /// Test parsing 'apr chat' command
     #[test]
     fn test_parse_chat_command() {

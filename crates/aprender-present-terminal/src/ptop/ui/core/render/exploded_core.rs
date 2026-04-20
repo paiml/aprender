@@ -84,23 +84,10 @@ fn draw_process_row_bg(
 
 fn draw_process_dataframe(app: &App, canvas: &mut DirectTerminalCanvas, area: Rect) {
     use crate::ptop::app::ProcessSortColumn;
-    use crate::widgets::display_rules::{
-        format_column, format_percent, ColumnAlign, TruncateStrategy,
-    };
-    use crate::HeatScheme;
 
     let col_widths = [7usize, 10, 8, 8];
     let cmd_width = (area.width as usize).saturating_sub(col_widths.iter().sum::<usize>() + 5);
-
-    let header_bg = Color::new(0.12, 0.15, 0.22, 1.0);
-    let selected_col_bg = COL_SELECT_BG;
-    let selected_row_bg = ROW_SELECT_BG;
-    let sort_color = FOCUS_ACCENT_COLOR;
     let dim_color = Color::new(0.5, 0.5, 0.5, 1.0);
-    let text_color = Color::new(0.9, 0.9, 0.9, 1.0);
-
-    let mut y = area.y;
-    let x = area.x;
 
     let columns = [
         (ProcessSortColumn::Pid, "PID", col_widths[0]),
@@ -110,18 +97,83 @@ fn draw_process_dataframe(app: &App, canvas: &mut DirectTerminalCanvas, area: Re
         (ProcessSortColumn::Command, "COMMAND", cmd_width),
     ];
 
-    canvas.fill_rect(Rect::new(x, y, area.width, 1.0), header_bg);
+    let mut y = area.y;
+    draw_process_dataframe_header(app, canvas, area, y, &columns, dim_color);
+    y += 1.0;
+    canvas.draw_text(
+        &"─".repeat((area.width as usize).min(200)),
+        Point::new(area.x, y),
+        &TextStyle {
+            color: dim_color,
+            ..Default::default()
+        },
+    );
+    y += 1.0;
 
-    let mut col_x = x;
+    let processes = collect_filtered_sorted_processes(app);
+    let visible_rows = (area.height as usize).saturating_sub(2);
+    let scroll_offset = app
+        .process_scroll_offset
+        .min(processes.len().saturating_sub(visible_rows));
+
+    let text_color = Color::new(0.9, 0.9, 0.9, 1.0);
+    for (rel_idx, (pid, proc)) in processes
+        .iter()
+        .skip(scroll_offset)
+        .take(visible_rows)
+        .enumerate()
+    {
+        let is_selected = scroll_offset + rel_idx == app.process_selected;
+        draw_process_dataframe_row(
+            app,
+            canvas,
+            area,
+            y,
+            &col_widths,
+            cmd_width,
+            is_selected,
+            text_color,
+            pid,
+            proc,
+        );
+        y += 1.0;
+    }
+
+    draw_process_scrollbar(
+        canvas,
+        area,
+        &processes,
+        visible_rows,
+        scroll_offset,
+        dim_color,
+    );
+}
+
+/// Draw the column-header row with sort indicators and column selection highlight.
+fn draw_process_dataframe_header(
+    app: &App,
+    canvas: &mut DirectTerminalCanvas,
+    area: Rect,
+    y: f32,
+    columns: &[(crate::ptop::app::ProcessSortColumn, &str, usize)],
+    dim_color: Color,
+) {
+    use crate::widgets::display_rules::{format_column, ColumnAlign, TruncateStrategy};
+
+    let header_bg = Color::new(0.12, 0.15, 0.22, 1.0);
+    let selected_col_bg = COL_SELECT_BG;
+    let sort_color = FOCUS_ACCENT_COLOR;
+
+    canvas.fill_rect(Rect::new(area.x, y, area.width, 1.0), header_bg);
+
+    let mut col_x = area.x;
     let valid_selected = app.selected_column.min(columns.len().saturating_sub(1));
     for (i, (col, label, width)) in columns.iter().enumerate() {
         let is_selected = valid_selected == i;
         let is_sorted = app.sort_column == *col;
-
         if is_selected {
             canvas.fill_rect(Rect::new(col_x, y, *width as f32, 1.0), selected_col_bg);
         }
-
         let header_raw = if is_sorted {
             format!("{}{}", label, if app.sort_descending { "▼" } else { "▲" })
         } else {
@@ -137,18 +189,13 @@ fn draw_process_dataframe(app: &App, canvas: &mut DirectTerminalCanvas, area: Re
         canvas.draw_text(&header_text, Point::new(col_x, y), &style);
         col_x += *width as f32 + 1.0;
     }
-    y += 1.0;
+}
 
-    canvas.draw_text(
-        &"─".repeat((area.width as usize).min(200)),
-        Point::new(x, y),
-        &TextStyle {
-            color: dim_color,
-            ..Default::default()
-        },
-    );
-    y += 1.0;
+/// Filter (by user-entered filter + activity threshold) and sort the process list.
+fn collect_filtered_sorted_processes(app: &App) -> Vec<(&sysinfo::Pid, &sysinfo::Process)> {
+    use crate::ptop::ui::panels::process::sort_processes;
 
+    let filter_lower = app.filter.to_lowercase();
     let mut processes: Vec<_> = app
         .system
         .processes()
@@ -158,140 +205,152 @@ fn draw_process_dataframe(app: &App, canvas: &mut DirectTerminalCanvas, area: Re
                 || p.name()
                     .to_string_lossy()
                     .to_lowercase()
-                    .contains(&app.filter.to_lowercase());
+                    .contains(&filter_lower);
             matches_filter && (p.cpu_usage() > 0.001 || p.memory() > 1024 * 1024)
         })
         .collect();
-
-    use crate::ptop::ui::panels::process::sort_processes;
     sort_processes(&mut processes, app.sort_column, app.sort_descending);
+    processes
+}
 
-    let visible_rows = (area.height as usize).saturating_sub(2);
-    let scroll_offset = app
-        .process_scroll_offset
-        .min(processes.len().saturating_sub(visible_rows));
+/// Draw one row of the process dataframe (bg + 5 columns).
+#[allow(clippy::too_many_arguments)]
+fn draw_process_dataframe_row(
+    app: &App,
+    canvas: &mut DirectTerminalCanvas,
+    area: Rect,
+    y: f32,
+    col_widths: &[usize; 4],
+    cmd_width: usize,
+    is_selected: bool,
+    text_color: Color,
+    pid: &sysinfo::Pid,
+    proc: &sysinfo::Process,
+) {
+    use crate::widgets::display_rules::{
+        format_column, format_percent, ColumnAlign, TruncateStrategy,
+    };
+    use crate::HeatScheme;
 
-    for (rel_idx, (pid, proc)) in processes
-        .iter()
-        .skip(scroll_offset)
-        .take(visible_rows)
-        .enumerate()
-    {
-        let abs_idx = scroll_offset + rel_idx;
-        let is_selected = abs_idx == app.process_selected;
+    draw_process_row_bg(canvas, area.x, y, area.width, is_selected, ROW_SELECT_BG);
+    let row_style = if is_selected {
+        TextStyle {
+            color: Color::WHITE,
+            ..Default::default()
+        }
+    } else {
+        TextStyle {
+            color: text_color,
+            ..Default::default()
+        }
+    };
+    let mut col_x = area.x;
 
-        draw_process_row_bg(canvas, x, y, area.width, is_selected, selected_row_bg);
+    let pid_str = format_column(
+        &pid.as_u32().to_string(),
+        col_widths[0],
+        ColumnAlign::Right,
+        TruncateStrategy::End,
+    );
+    canvas.draw_text(&pid_str, Point::new(col_x, y), &row_style);
+    col_x += col_widths[0] as f32 + 1.0;
 
-        let row_style = if is_selected {
-            TextStyle {
-                color: Color::WHITE,
-                ..Default::default()
-            }
-        } else {
-            TextStyle {
-                color: text_color,
-                ..Default::default()
-            }
-        };
-        let mut col_x = x;
+    let user_raw = proc
+        .user_id()
+        .and_then(|uid| app.users.get_user_by_id(uid))
+        .map(|u| u.name().to_string())
+        .unwrap_or_else(|| "-".to_string());
+    let user = format_column(
+        &user_raw,
+        col_widths[1],
+        ColumnAlign::Left,
+        TruncateStrategy::End,
+    );
+    canvas.draw_text(&user, Point::new(col_x, y), &row_style);
+    col_x += col_widths[1] as f32 + 1.0;
 
-        let pid_str = format_column(
-            &pid.as_u32().to_string(),
-            col_widths[0],
-            ColumnAlign::Right,
-            TruncateStrategy::End,
-        );
-        canvas.draw_text(&pid_str, Point::new(col_x, y), &row_style);
-        col_x += col_widths[0] as f32 + 1.0;
+    let cpu = proc.cpu_usage();
+    let cpu_color = if is_selected {
+        Color::WHITE
+    } else {
+        HeatScheme::Thermal.color_for_percent(cpu as f64)
+    };
+    let cpu_str = format_column(
+        &format_percent(cpu),
+        col_widths[2],
+        ColumnAlign::Right,
+        TruncateStrategy::End,
+    );
+    canvas.draw_text(
+        &cpu_str,
+        Point::new(col_x, y),
+        &TextStyle {
+            color: cpu_color,
+            ..Default::default()
+        },
+    );
+    col_x += col_widths[2] as f32 + 1.0;
 
-        let user_raw = proc
-            .user_id()
-            .and_then(|uid| app.users.get_user_by_id(uid))
-            .map(|u| u.name().to_string())
-            .unwrap_or_else(|| "-".to_string());
-        let user = format_column(
-            &user_raw,
-            col_widths[1],
-            ColumnAlign::Left,
-            TruncateStrategy::End,
-        );
-        canvas.draw_text(&user, Point::new(col_x, y), &row_style);
-        col_x += col_widths[1] as f32 + 1.0;
+    let mem_pct = (proc.memory() as f64 / app.mem_total as f64 * 100.0) as f32;
+    let mem_color = mem_display_color(mem_pct, is_selected, text_color);
+    let mem_str = format_column(
+        &format_percent(mem_pct),
+        col_widths[3],
+        ColumnAlign::Right,
+        TruncateStrategy::End,
+    );
+    canvas.draw_text(
+        &mem_str,
+        Point::new(col_x, y),
+        &TextStyle {
+            color: mem_color,
+            ..Default::default()
+        },
+    );
+    col_x += col_widths[3] as f32 + 1.0;
 
-        let cpu = proc.cpu_usage();
-        let cpu_color = if is_selected {
-            Color::WHITE
-        } else {
-            HeatScheme::Thermal.color_for_percent(cpu as f64)
-        };
-        let cpu_str = format_column(
-            &format_percent(cpu),
-            col_widths[2],
-            ColumnAlign::Right,
-            TruncateStrategy::End,
-        );
-        canvas.draw_text(
-            &cpu_str,
-            Point::new(col_x, y),
-            &TextStyle {
-                color: cpu_color,
-                ..Default::default()
-            },
-        );
-        col_x += col_widths[2] as f32 + 1.0;
+    let cmd_parts = proc.cmd();
+    let cmd_full = if cmd_parts.is_empty() {
+        proc.name().to_string_lossy().to_string()
+    } else {
+        cmd_parts
+            .iter()
+            .map(|s| s.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let cmd_display = format_column(
+        &cmd_full,
+        cmd_width,
+        ColumnAlign::Left,
+        TruncateStrategy::Command,
+    );
+    canvas.draw_text(&cmd_display, Point::new(col_x, y), &row_style);
+}
 
-        let mem_pct = (proc.memory() as f64 / app.mem_total as f64 * 100.0) as f32;
-        let mem_color = mem_display_color(mem_pct, is_selected, text_color);
-        let mem_str = format_column(
-            &format_percent(mem_pct),
-            col_widths[3],
-            ColumnAlign::Right,
-            TruncateStrategy::End,
-        );
-        canvas.draw_text(
-            &mem_str,
-            Point::new(col_x, y),
-            &TextStyle {
-                color: mem_color,
-                ..Default::default()
-            },
-        );
-        col_x += col_widths[3] as f32 + 1.0;
-
-        let cmd_parts = proc.cmd();
-        let cmd_full = if cmd_parts.is_empty() {
-            proc.name().to_string_lossy().to_string()
-        } else {
-            cmd_parts
-                .iter()
-                .map(|s| s.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ")
-        };
-        let cmd_display = format_column(
-            &cmd_full,
-            cmd_width,
-            ColumnAlign::Left,
-            TruncateStrategy::Command,
-        );
-        canvas.draw_text(&cmd_display, Point::new(col_x, y), &row_style);
-
-        y += 1.0;
+/// Draw a single-character scrollbar marker at the right edge of `area`.
+fn draw_process_scrollbar(
+    canvas: &mut DirectTerminalCanvas,
+    area: Rect,
+    processes: &[(&sysinfo::Pid, &sysinfo::Process)],
+    visible_rows: usize,
+    scroll_offset: usize,
+    dim_color: Color,
+) {
+    if processes.len() <= visible_rows {
+        return;
     }
-
-    if processes.len() > visible_rows {
-        let scroll_pct = scroll_offset as f32 / (processes.len() - visible_rows) as f32;
-        let bar_y =
-            area.y + 2.0 + (scroll_pct * (visible_rows - 1) as f32).min((visible_rows - 1) as f32);
-        canvas.draw_text(
-            "█",
-            Point::new(area.x + area.width - 1.0, bar_y),
-            &TextStyle {
-                color: dim_color,
-                ..Default::default()
-            },
-        );
-    }
+    let scroll_pct = scroll_offset as f32 / (processes.len() - visible_rows) as f32;
+    let bar_y =
+        area.y + 2.0 + (scroll_pct * (visible_rows - 1) as f32).min((visible_rows - 1) as f32);
+    canvas.draw_text(
+        "█",
+        Point::new(area.x + area.width - 1.0, bar_y),
+        &TextStyle {
+            color: dim_color,
+            ..Default::default()
+        },
+    );
 }
 
 /// Draw core stats DataFrame for CPU exploded view.
@@ -717,73 +776,120 @@ pub(super) fn draw_memory_exploded(app: &App, canvas: &mut DirectTerminalCanvas,
     use crate::widgets::selection::RowHighlight;
     use crate::HeatScheme;
 
-    let gb = |b: u64| b as f64 / 1024.0 / 1024.0 / 1024.0;
-    let mem_pct = if app.mem_total > 0 {
-        (app.mem_used as f64 / app.mem_total as f64) * 100.0
-    } else {
-        0.0
+    let pcts = MemoryPcts::from_app(app);
+    let Some(inner) = layout_memory_panel(app, canvas, area, &pcts) else {
+        return;
     };
 
-    // Build title with full details for exploded mode
+    let process_height = memory_process_height(inner.height);
+
+    let mut y = inner.y;
+    draw_memory_stacked_bar(canvas, inner, y, &pcts);
+    y += 1.0;
+    draw_memory_segments(app, canvas, inner, y, &pcts);
+    y += 1.0;
+
+    let dim_style = TextStyle {
+        color: Color::new(0.5, 0.5, 0.5, 1.0),
+        ..Default::default()
+    };
+    canvas.draw_text(
+        &"─".repeat(inner.width as usize),
+        Point::new(inner.x, y),
+        &dim_style,
+    );
+    y += 1.0;
+
+    let process_rect = Rect::new(inner.x, y, inner.width, process_height);
+    draw_memory_process_table(app, canvas, process_rect, &dim_style);
+}
+
+/// Cached memory percentages used by both the title and the body of the panel.
+struct MemoryPcts {
+    mem_pct: f64,
+    used_pct: f64,
+    cached_pct: f64,
+    free_pct: f64,
+    swap_pct: f64,
+}
+
+impl MemoryPcts {
+    fn from_app(app: &App) -> Self {
+        let mem_pct = percent(app.mem_used, app.mem_total);
+        let used_pct = percent(
+            app.mem_total.saturating_sub(app.mem_available),
+            app.mem_total,
+        );
+        let cached_pct = percent(app.mem_cached, app.mem_total);
+        let free_pct = 100.0 - used_pct;
+        let swap_pct = percent(app.swap_used, app.swap_total);
+        Self {
+            mem_pct,
+            used_pct,
+            cached_pct,
+            free_pct,
+            swap_pct,
+        }
+    }
+}
+
+fn percent(num: u64, denom: u64) -> f64 {
+    if denom > 0 {
+        (num as f64 / denom as f64) * 100.0
+    } else {
+        0.0
+    }
+}
+
+/// Configure the panel border and return the inner drawing rect, or `None`
+/// when the panel is too small (in which case the mini memory panel is drawn).
+fn layout_memory_panel(
+    app: &App,
+    canvas: &mut DirectTerminalCanvas,
+    area: Rect,
+    pcts: &MemoryPcts,
+) -> Option<Rect> {
+    let gb = |b: u64| b as f64 / 1024.0 / 1024.0 / 1024.0;
     let title = format!(
         "Memory │ {:.1}G / {:.1}G ({:.0}%) │ Swap: {:.1}G / {:.1}G │ Cached: {:.1}G │ [FULLSCREEN]",
         gb(app.mem_used),
         gb(app.mem_total),
-        mem_pct,
+        pcts.mem_pct,
         gb(app.swap_used),
         gb(app.swap_total),
         gb(app.mem_cached),
     );
-
     let is_focused = app.is_panel_focused(PanelType::Memory);
     let mut border = create_panel_border(&title, MEMORY_COLOR, is_focused);
     border.layout(area);
     border.paint(canvas);
     let inner = border.inner_rect();
-
     if inner.height < 10.0 || inner.width < 40.0 {
         draw_memory_panel(app, canvas, area);
-        return;
+        return None;
     }
+    Some(inner)
+}
 
-    // =========================================================================
-    // FULLSCREEN LAYOUT: Memory breakdown + Top memory consumers
-    // =========================================================================
-    // Top section (30%): Memory breakdown bars and stats
-    // Bottom section (70%): Per-process memory DataFrame
-    // =========================================================================
+/// Height of the process-table region inside the memory panel.
+fn memory_process_height(inner_height: f32) -> f32 {
+    let breakdown_height = (inner_height * 0.25).max(6.0).min(12.0);
+    inner_height - breakdown_height - 1.0
+}
 
-    let breakdown_height = (inner.height * 0.25).max(6.0).min(12.0);
-    let process_height = inner.height - breakdown_height - 1.0;
-
-    let mut y = inner.y;
-
-    // =========================================================================
-    // SECTION 1: MEMORY BREAKDOWN (Top section)
-    // Uses MicroHeatBar for proportional visualization
-    // =========================================================================
-
-    // Row 1: Full-width stacked memory bar
+/// Draw the full-width stacked Used/Cached/Free memory bar.
+fn draw_memory_stacked_bar(
+    canvas: &mut DirectTerminalCanvas,
+    inner: Rect,
+    y: f32,
+    pcts: &MemoryPcts,
+) {
+    use crate::HeatScheme;
     let bar_width = inner.width as usize;
-    let used_pct = if app.mem_total > 0 {
-        ((app.mem_total - app.mem_available) as f64 / app.mem_total as f64) * 100.0
-    } else {
-        0.0
-    };
-    let cached_pct = if app.mem_total > 0 {
-        (app.mem_cached as f64 / app.mem_total as f64) * 100.0
-    } else {
-        0.0
-    };
-    let free_pct = 100.0 - used_pct;
-
-    // Draw stacked bar using thermal-like color scheme for memory
-    let used_chars = ((used_pct / 100.0) * bar_width as f64) as usize;
-    let cached_chars = ((cached_pct / 100.0) * bar_width as f64) as usize;
+    let used_chars = ((pcts.used_pct / 100.0) * bar_width as f64) as usize;
+    let cached_chars = ((pcts.cached_pct / 100.0) * bar_width as f64) as usize;
     let free_chars = bar_width.saturating_sub(used_chars + cached_chars);
-
-    // Used: intensity based on pressure
-    let used_color = HeatScheme::Warm.color_for_percent(used_pct);
+    let used_color = HeatScheme::Warm.color_for_percent(pcts.used_pct);
     if used_chars > 0 {
         canvas.draw_text(
             &"█".repeat(used_chars),
@@ -814,40 +920,37 @@ pub(super) fn draw_memory_exploded(app: &App, canvas: &mut DirectTerminalCanvas,
             },
         );
     }
-    y += 1.0;
+}
 
-    // Row 2-5: Memory segment details in columns
+/// Draw the 4-column Used/Cached/Available/Swap segment summary row.
+fn draw_memory_segments(
+    app: &App,
+    canvas: &mut DirectTerminalCanvas,
+    inner: Rect,
+    y: f32,
+    pcts: &MemoryPcts,
+) {
+    use crate::widgets::display_rules::{
+        format_bytes_si, format_column, ColumnAlign, TruncateStrategy,
+    };
+    use crate::HeatScheme;
     let col_width = (inner.width / 4.0).floor() as usize;
     let segments = [
         (
             "Used",
             app.mem_used,
-            used_pct,
-            HeatScheme::Warm.color_for_percent(used_pct),
+            pcts.used_pct,
+            HeatScheme::Warm.color_for_percent(pcts.used_pct),
         ),
-        ("Cached", app.mem_cached, cached_pct, CACHED_COLOR),
-        ("Available", app.mem_available, free_pct, FREE_COLOR),
+        ("Cached", app.mem_cached, pcts.cached_pct, CACHED_COLOR),
+        ("Available", app.mem_available, pcts.free_pct, FREE_COLOR),
         (
             "Swap",
             app.swap_used,
-            if app.swap_total > 0 {
-                (app.swap_used as f64 / app.swap_total as f64) * 100.0
-            } else {
-                0.0
-            },
-            swap_color(if app.swap_total > 0 {
-                (app.swap_used as f64 / app.swap_total as f64) * 100.0
-            } else {
-                0.0
-            }),
+            pcts.swap_pct,
+            swap_color(pcts.swap_pct),
         ),
     ];
-
-    let dim_style = TextStyle {
-        color: Color::new(0.5, 0.5, 0.5, 1.0),
-        ..Default::default()
-    };
-
     for (i, (label, bytes, pct, color)) in segments.iter().enumerate() {
         let x = inner.x + (i as f32 * col_width as f32);
         let text = format!("{}: {} ({:.0}%)", label, format_bytes_si(*bytes), pct);
@@ -865,43 +968,51 @@ pub(super) fn draw_memory_exploded(app: &App, canvas: &mut DirectTerminalCanvas,
             },
         );
     }
-    y += 1.0;
+}
 
-    // Separator
+/// Draw the bottom memory-consumer table (header + sorted rows).
+fn draw_memory_process_table(
+    app: &App,
+    canvas: &mut DirectTerminalCanvas,
+    process_rect: Rect,
+    dim_style: &TextStyle,
+) {
+    let widths = memory_process_column_widths(process_rect.width);
+    draw_memory_process_header(canvas, process_rect, &widths);
     canvas.draw_text(
-        &"─".repeat(inner.width as usize),
-        Point::new(inner.x, y),
-        &dim_style,
+        &"─".repeat(process_rect.width as usize),
+        Point::new(process_rect.x, process_rect.y + 1.0),
+        dim_style,
     );
-    y += 1.0;
 
-    // =========================================================================
-    // SECTION 2: TOP MEMORY CONSUMERS (Bottom section - fills remaining space)
-    // Uses RowHighlight for selection, sorted by memory usage
-    // =========================================================================
+    let mut processes: Vec<_> = app.system.processes().iter().collect();
+    processes.sort_by(|a, b| b.1.memory().cmp(&a.1.memory()));
 
-    let process_y = y;
-    let process_rect = Rect::new(inner.x, process_y, inner.width, process_height);
+    let visible_rows = (process_rect.height as usize).saturating_sub(2);
+    let mut row_y = process_rect.y + 2.0;
+    for (idx, (pid, proc)) in processes.iter().take(visible_rows).enumerate() {
+        let is_selected = idx == app.process_selected;
+        draw_memory_process_row(
+            app,
+            canvas,
+            process_rect,
+            row_y,
+            &widths,
+            is_selected,
+            pid,
+            proc,
+        );
+        row_y += 1.0;
+    }
+}
 
-    // Column widths for process memory table
-    let col_pid = 8;
-    let col_user = 10;
-    let col_mem_pct = 8;
-    let col_mem_bytes = 10;
-    let col_rss = 10;
-    let col_virt = 10;
-    let col_cmd = (inner.width as usize)
+/// 7-column layout for the memory-consumer table: PID/USER/MEM%/MEM/RSS/VIRT/CMD.
+fn memory_process_column_widths(width: f32) -> [usize; 7] {
+    let (col_pid, col_user, col_mem_pct, col_mem_bytes, col_rss, col_virt) =
+        (8usize, 10, 8, 10, 10, 10);
+    let col_cmd = (width as usize)
         .saturating_sub(col_pid + col_user + col_mem_pct + col_mem_bytes + col_rss + col_virt + 10);
-
-    // Header
-    let header_bg = Color::new(0.12, 0.15, 0.22, 1.0);
-    canvas.fill_rect(
-        Rect::new(process_rect.x, process_rect.y, process_rect.width, 1.0),
-        header_bg,
-    );
-
-    let headers = ["PID", "USER", "MEM%", "MEM", "RSS", "VIRT", "COMMAND"];
-    let widths = [
+    [
         col_pid,
         col_user,
         col_mem_pct,
@@ -909,7 +1020,21 @@ pub(super) fn draw_memory_exploded(app: &App, canvas: &mut DirectTerminalCanvas,
         col_rss,
         col_virt,
         col_cmd,
-    ];
+    ]
+}
+
+fn draw_memory_process_header(
+    canvas: &mut DirectTerminalCanvas,
+    process_rect: Rect,
+    widths: &[usize; 7],
+) {
+    use crate::widgets::display_rules::{format_column, ColumnAlign, TruncateStrategy};
+    let header_bg = Color::new(0.12, 0.15, 0.22, 1.0);
+    canvas.fill_rect(
+        Rect::new(process_rect.x, process_rect.y, process_rect.width, 1.0),
+        header_bg,
+    );
+    let headers = ["PID", "USER", "MEM%", "MEM", "RSS", "VIRT", "COMMAND"];
     let mut hx = process_rect.x;
     for (header, width) in headers.iter().zip(widths.iter()) {
         canvas.draw_text(
@@ -922,127 +1047,119 @@ pub(super) fn draw_memory_exploded(app: &App, canvas: &mut DirectTerminalCanvas,
         );
         hx += *width as f32 + 1.0;
     }
+}
 
-    // Separator
+#[allow(clippy::too_many_arguments)]
+fn draw_memory_process_row(
+    app: &App,
+    canvas: &mut DirectTerminalCanvas,
+    process_rect: Rect,
+    row_y: f32,
+    widths: &[usize; 7],
+    is_selected: bool,
+    pid: &sysinfo::Pid,
+    proc: &sysinfo::Process,
+) {
+    use crate::widgets::display_rules::{
+        format_bytes_si, format_column, format_percent, ColumnAlign, TruncateStrategy,
+    };
+    use crate::widgets::selection::RowHighlight;
+    use crate::HeatScheme;
+
+    let [col_pid, col_user, col_mem_pct, col_mem_bytes, col_rss, col_virt, col_cmd] = *widths;
+
+    let row_bounds = Rect::new(process_rect.x, row_y, process_rect.width, 1.0);
+    let highlight = RowHighlight::new(row_bounds, is_selected);
+    highlight.paint(canvas);
+    let text_style = highlight.text_style();
+
+    let mut col_x = process_rect.x;
+
     canvas.draw_text(
-        &"─".repeat(process_rect.width as usize),
-        Point::new(process_rect.x, process_rect.y + 1.0),
-        &dim_style,
+        &format_column(
+            &pid.as_u32().to_string(),
+            col_pid,
+            ColumnAlign::Right,
+            TruncateStrategy::End,
+        ),
+        Point::new(col_x, row_y),
+        &text_style,
     );
+    col_x += col_pid as f32 + 1.0;
 
-    // Process rows sorted by memory
-    let mut processes: Vec<_> = app.system.processes().iter().collect();
-    processes.sort_by(|a, b| b.1.memory().cmp(&a.1.memory()));
+    let user = proc
+        .user_id()
+        .and_then(|uid| app.users.get_user_by_id(uid))
+        .map(|u| u.name().to_string())
+        .unwrap_or_else(|| "-".to_string());
+    canvas.draw_text(
+        &format_column(&user, col_user, ColumnAlign::Left, TruncateStrategy::End),
+        Point::new(col_x, row_y),
+        &text_style,
+    );
+    col_x += col_user as f32 + 1.0;
 
-    let visible_rows = (process_rect.height as usize).saturating_sub(2);
-    let mut row_y = process_rect.y + 2.0;
+    let mem_pct = (proc.memory() as f64 / app.mem_total as f64) * 100.0;
+    let mem_color = if is_selected {
+        Color::WHITE
+    } else {
+        HeatScheme::Cool.color_for_percent(mem_pct * 10.0)
+    };
+    canvas.draw_text(
+        &format_column(
+            &format_percent(mem_pct as f32),
+            col_mem_pct,
+            ColumnAlign::Right,
+            TruncateStrategy::End,
+        ),
+        Point::new(col_x, row_y),
+        &TextStyle {
+            color: mem_color,
+            ..Default::default()
+        },
+    );
+    col_x += col_mem_pct as f32 + 1.0;
 
-    for (idx, (pid, proc)) in processes.iter().take(visible_rows).enumerate() {
-        let is_selected = idx == app.process_selected;
+    canvas.draw_text(
+        &format_column(
+            &format_bytes_si(proc.memory()),
+            col_mem_bytes,
+            ColumnAlign::Right,
+            TruncateStrategy::End,
+        ),
+        Point::new(col_x, row_y),
+        &text_style,
+    );
+    col_x += col_mem_bytes as f32 + 1.0;
 
-        // FRAMEWORK: Use RowHighlight for selection
-        let row_bounds = Rect::new(process_rect.x, row_y, process_rect.width, 1.0);
-        let highlight = RowHighlight::new(row_bounds, is_selected);
-        highlight.paint(canvas);
-        let text_style = highlight.text_style();
+    canvas.draw_text(
+        &format_column(
+            &format_bytes_si(proc.memory()),
+            col_rss,
+            ColumnAlign::Right,
+            TruncateStrategy::End,
+        ),
+        Point::new(col_x, row_y),
+        &text_style,
+    );
+    col_x += col_rss as f32 + 1.0;
 
-        let mut col_x = process_rect.x;
+    canvas.draw_text(
+        &format_column(
+            &format_bytes_si(proc.virtual_memory()),
+            col_virt,
+            ColumnAlign::Right,
+            TruncateStrategy::End,
+        ),
+        Point::new(col_x, row_y),
+        &text_style,
+    );
+    col_x += col_virt as f32 + 1.0;
 
-        // PID
-        canvas.draw_text(
-            &format_column(
-                &pid.as_u32().to_string(),
-                col_pid,
-                ColumnAlign::Right,
-                TruncateStrategy::End,
-            ),
-            Point::new(col_x, row_y),
-            &text_style,
-        );
-        col_x += col_pid as f32 + 1.0;
-
-        // USER
-        let user = proc
-            .user_id()
-            .and_then(|uid| app.users.get_user_by_id(uid))
-            .map(|u| u.name().to_string())
-            .unwrap_or_else(|| "-".to_string());
-        canvas.draw_text(
-            &format_column(&user, col_user, ColumnAlign::Left, TruncateStrategy::End),
-            Point::new(col_x, row_y),
-            &text_style,
-        );
-        col_x += col_user as f32 + 1.0;
-
-        // MEM%
-        let mem_pct = (proc.memory() as f64 / app.mem_total as f64) * 100.0;
-        let mem_color = if is_selected {
-            Color::WHITE
-        } else {
-            HeatScheme::Cool.color_for_percent(mem_pct * 10.0) // Scale up for visibility
-        };
-        canvas.draw_text(
-            &format_column(
-                &format_percent(mem_pct as f32),
-                col_mem_pct,
-                ColumnAlign::Right,
-                TruncateStrategy::End,
-            ),
-            Point::new(col_x, row_y),
-            &TextStyle {
-                color: mem_color,
-                ..Default::default()
-            },
-        );
-        col_x += col_mem_pct as f32 + 1.0;
-
-        // MEM bytes
-        canvas.draw_text(
-            &format_column(
-                &format_bytes_si(proc.memory()),
-                col_mem_bytes,
-                ColumnAlign::Right,
-                TruncateStrategy::End,
-            ),
-            Point::new(col_x, row_y),
-            &text_style,
-        );
-        col_x += col_mem_bytes as f32 + 1.0;
-
-        // RSS (same as memory for now)
-        canvas.draw_text(
-            &format_column(
-                &format_bytes_si(proc.memory()),
-                col_rss,
-                ColumnAlign::Right,
-                TruncateStrategy::End,
-            ),
-            Point::new(col_x, row_y),
-            &text_style,
-        );
-        col_x += col_rss as f32 + 1.0;
-
-        // VIRT
-        canvas.draw_text(
-            &format_column(
-                &format_bytes_si(proc.virtual_memory()),
-                col_virt,
-                ColumnAlign::Right,
-                TruncateStrategy::End,
-            ),
-            Point::new(col_x, row_y),
-            &text_style,
-        );
-        col_x += col_virt as f32 + 1.0;
-
-        // COMMAND
-        let cmd = proc.name().to_string_lossy().to_string();
-        canvas.draw_text(
-            &format_column(&cmd, col_cmd, ColumnAlign::Left, TruncateStrategy::Command),
-            Point::new(col_x, row_y),
-            &text_style,
-        );
-
-        row_y += 1.0;
-    }
+    let cmd = proc.name().to_string_lossy().to_string();
+    canvas.draw_text(
+        &format_column(&cmd, col_cmd, ColumnAlign::Left, TruncateStrategy::Command),
+        Point::new(col_x, row_y),
+        &text_style,
+    );
 }

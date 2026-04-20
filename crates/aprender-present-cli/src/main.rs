@@ -238,6 +238,21 @@ const HOT_RELOAD_SCRIPT: &str = r#"
 "#;
 
 fn serve(port: u16, dir: PathBuf, watch: bool) {
+    print_serve_banner(port, &dir, watch);
+    spawn_watchers_if_enabled(&dir, watch);
+
+    let addr = format!("0.0.0.0:{}", port);
+    let server = Server::http(&addr).expect("Failed to start server");
+
+    for request in server.incoming_requests() {
+        let path = resolve_request_path(&dir, request.url());
+        let response = build_response(&path, watch);
+        let _ = request.respond(response);
+    }
+}
+
+/// Print the startup banner for `serve`.
+fn print_serve_banner(port: u16, dir: &PathBuf, watch: bool) {
     println!("Starting Presentar dev server...");
     println!("  Serving: {}", dir.display());
     println!("  URL: http://localhost:{}", port);
@@ -247,75 +262,74 @@ fn serve(port: u16, dir: PathBuf, watch: bool) {
     }
     println!();
     println!("Press Ctrl+C to stop");
+}
 
-    // Start file watcher in background thread (requires dev-server feature)
+/// Launch file-watcher and hot-reload websocket if `--watch` is set.
+fn spawn_watchers_if_enabled(_dir: &PathBuf, watch: bool) {
+    if !watch {
+        return;
+    }
     #[cfg(feature = "dev-server")]
-    if watch {
-        let watch_dir = dir.clone();
-        std::thread::spawn(move || {
-            watch_and_rebuild(&watch_dir);
-        });
-
-        // Start WebSocket server for hot reload
-        std::thread::spawn(|| {
-            run_hot_reload_server();
-        });
+    {
+        let watch_dir = _dir.clone();
+        std::thread::spawn(move || watch_and_rebuild(&watch_dir));
+        std::thread::spawn(run_hot_reload_server);
     }
     #[cfg(not(feature = "dev-server"))]
-    if watch {
+    {
         eprintln!(
             "Warning: --watch requires the 'dev-server' feature. Serving without hot reload."
         );
     }
+}
 
-    let addr = format!("0.0.0.0:{}", port);
-    let server = Server::http(&addr).expect("Failed to start server");
-
-    for request in server.incoming_requests() {
-        let url = request.url().to_string();
-        let path = if url == "/" {
-            dir.join("index.html")
-        } else {
-            dir.join(url.trim_start_matches('/'))
-        };
-
-        let response = if path.exists() && path.is_file() {
-            let mut file = fs::File::open(&path).expect("open file");
-            let mut content = Vec::new();
-            file.read_to_end(&mut content).expect("read file");
-
-            let content_type = match path.extension().and_then(|e| e.to_str()) {
-                Some("html") => "text/html",
-                Some("js") => "application/javascript",
-                Some("wasm") => "application/wasm",
-                Some("css") => "text/css",
-                Some("json") => "application/json",
-                Some("svg") => "image/svg+xml",
-                Some("png") => "image/png",
-                Some("yaml" | "yml") => "text/yaml",
-                _ => "application/octet-stream",
-            };
-
-            // Inject hot reload script into HTML files when watching
-            #[cfg(feature = "dev-server")]
-            let content = if watch && content_type == "text/html" {
-                inject_hot_reload_script(&content)
-            } else {
-                content
-            };
-            #[cfg(not(feature = "dev-server"))]
-            let content = content;
-
-            Response::from_data(content).with_header(
-                tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
-                    .expect("header"),
-            )
-        } else {
-            Response::from_string("404 Not Found").with_status_code(404)
-        };
-
-        let _ = request.respond(response);
+/// Resolve the URL to a filesystem path under `dir` (empty path → index.html).
+fn resolve_request_path(dir: &PathBuf, url: &str) -> PathBuf {
+    if url == "/" {
+        dir.join("index.html")
+    } else {
+        dir.join(url.trim_start_matches('/'))
     }
+}
+
+/// Map a file extension to a MIME type.
+fn content_type_for(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("html") => "text/html",
+        Some("js") => "application/javascript",
+        Some("wasm") => "application/wasm",
+        Some("css") => "text/css",
+        Some("json") => "application/json",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("yaml" | "yml") => "text/yaml",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Build the HTTP response for a request path, injecting hot-reload when applicable.
+fn build_response(path: &PathBuf, watch: bool) -> Response<std::io::Cursor<Vec<u8>>> {
+    if !(path.exists() && path.is_file()) {
+        return Response::from_string("404 Not Found").with_status_code(404);
+    }
+    let mut file = fs::File::open(path).expect("open file");
+    let mut content = Vec::new();
+    file.read_to_end(&mut content).expect("read file");
+    let content_type = content_type_for(path);
+
+    #[cfg(feature = "dev-server")]
+    let content = if watch && content_type == "text/html" {
+        inject_hot_reload_script(&content)
+    } else {
+        content
+    };
+    #[cfg(not(feature = "dev-server"))]
+    let _ = watch;
+
+    Response::from_data(content).with_header(
+        tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
+            .expect("header"),
+    )
 }
 
 #[cfg(feature = "dev-server")]
@@ -726,120 +740,121 @@ struct QualityScore {
 
 #[allow(clippy::too_many_lines)]
 fn analyze_manifest_quality(manifest: &presentar_yaml::Manifest) -> QualityScore {
-    // Structural (25 points max)
     let widget_count: usize = manifest
         .layout
         .sections
         .iter()
         .map(|s| s.widgets.len())
         .sum();
-    let section_count = manifest.layout.sections.len();
 
-    let structural_score = {
-        let widget_score = (widget_count.min(20) as f64 / 20.0) * 10.0; // Up to 10 points for widgets
-        let section_score = (section_count.min(5) as f64 / 5.0) * 8.0; // Up to 8 points for sections
-        let layout_score = if manifest.layout.columns > 0 {
-            7.0
-        } else {
-            0.0
-        }; // 7 points for grid layout
-        widget_score + section_score + layout_score
+    let structural = score_structural(manifest, widget_count);
+    let performance = score_performance(widget_count);
+    let accessibility = score_accessibility(manifest);
+    let data = score_data(manifest);
+    let documentation = score_documentation(manifest);
+    let consistency = score_consistency(manifest);
+
+    let overall = structural + performance + accessibility + data + documentation + consistency;
+    let grade = overall_grade(overall);
+
+    QualityScore {
+        overall,
+        grade,
+        structural,
+        performance,
+        accessibility,
+        data,
+        documentation,
+        consistency,
+    }
+}
+
+/// Structural quality (max 25): widget density + section count + grid layout.
+fn score_structural(manifest: &presentar_yaml::Manifest, widget_count: usize) -> f64 {
+    let widget_score = (widget_count.min(20) as f64 / 20.0) * 10.0;
+    let section_score = (manifest.layout.sections.len().min(5) as f64 / 5.0) * 8.0;
+    let layout_score = if manifest.layout.columns > 0 {
+        7.0
+    } else {
+        0.0
     };
+    widget_score + section_score + layout_score
+}
 
-    // Performance (20 points max) - estimate based on widget complexity
-    let performance_score = {
-        let complexity_penalty = (widget_count as f64 / 50.0).min(1.0) * 5.0;
-        20.0 - complexity_penalty
-    };
+/// Performance (max 20): light penalty for widget bloat beyond 50.
+fn score_performance(widget_count: usize) -> f64 {
+    let complexity_penalty = (widget_count as f64 / 50.0).min(1.0) * 5.0;
+    20.0 - complexity_penalty
+}
 
-    // Accessibility (20 points max)
-    let accessibility_score = {
-        let has_description = !manifest.description.is_empty();
-        let has_sections = !manifest.layout.sections.is_empty();
-        let sections_have_ids = manifest.layout.sections.iter().all(|s| !s.id.is_empty());
+/// Accessibility (max 20): description + sections + sections have ids.
+fn score_accessibility(manifest: &presentar_yaml::Manifest) -> f64 {
+    let mut score = 0.0;
+    if !manifest.description.is_empty() {
+        score += 8.0;
+    }
+    if !manifest.layout.sections.is_empty() {
+        score += 6.0;
+    }
+    if manifest.layout.sections.iter().all(|s| !s.id.is_empty()) {
+        score += 6.0;
+    }
+    score
+}
 
-        let mut score = 0.0;
-        if has_description {
-            score += 8.0;
-        }
-        if has_sections {
-            score += 6.0;
-        }
-        if sections_have_ids {
-            score += 6.0;
-        }
-        score
-    };
+/// Data quality (max 15): has sources + source count + auto-refresh.
+fn score_data(manifest: &presentar_yaml::Manifest) -> f64 {
+    let mut score = 0.0;
+    if !manifest.data.is_empty() {
+        score += 7.0;
+    }
+    score += (manifest.data.len().min(3) as f64 / 3.0) * 5.0;
+    if manifest.data.values().any(|d| d.refresh.is_some()) {
+        score += 3.0;
+    }
+    score
+}
 
-    // Data Quality (15 points max)
-    let data_score = {
-        let has_data_sources = !manifest.data.is_empty();
-        let data_count = manifest.data.len();
-        let has_refresh = manifest.data.values().any(|d| d.refresh.is_some());
+/// Documentation (max 10): name + version + description.
+fn score_documentation(manifest: &presentar_yaml::Manifest) -> f64 {
+    let mut score = 0.0;
+    if !manifest.name.is_empty() {
+        score += 3.0;
+    }
+    if !manifest.version.is_empty() {
+        score += 3.0;
+    }
+    if !manifest.description.is_empty() {
+        score += 4.0;
+    }
+    score
+}
 
-        let mut score = 0.0;
-        if has_data_sources {
-            score += 7.0;
-        }
-        score += (data_count.min(3) as f64 / 3.0) * 5.0;
-        if has_refresh {
-            score += 3.0;
-        }
-        score
-    };
+/// Consistency (max 10): kebab/snake ids + all widgets typed.
+fn score_consistency(manifest: &presentar_yaml::Manifest) -> f64 {
+    let ids_consistent = manifest.layout.sections.iter().all(|s| {
+        s.id.chars()
+            .all(|c| c.is_ascii_lowercase() || c == '-' || c == '_')
+    });
+    let widgets_have_types = manifest
+        .layout
+        .sections
+        .iter()
+        .flat_map(|s| &s.widgets)
+        .all(|w| !w.widget_type.is_empty());
+    let mut score = 0.0;
+    if ids_consistent {
+        score += 5.0;
+    }
+    if widgets_have_types {
+        score += 5.0;
+    }
+    score
+}
 
-    // Documentation (10 points max)
-    let documentation_score = {
-        let has_name = !manifest.name.is_empty();
-        let has_version = !manifest.version.is_empty();
-        let has_description = !manifest.description.is_empty();
-
-        let mut score = 0.0;
-        if has_name {
-            score += 3.0;
-        }
-        if has_version {
-            score += 3.0;
-        }
-        if has_description {
-            score += 4.0;
-        }
-        score
-    };
-
-    // Consistency (10 points max)
-    let consistency_score = {
-        // Check for consistent naming conventions
-        let ids_consistent = manifest.layout.sections.iter().all(|s| {
-            s.id.chars()
-                .all(|c| c.is_ascii_lowercase() || c == '-' || c == '_')
-        });
-
-        let widgets_have_types = manifest
-            .layout
-            .sections
-            .iter()
-            .flat_map(|s| &s.widgets)
-            .all(|w| !w.widget_type.is_empty());
-
-        let mut score = 0.0;
-        if ids_consistent {
-            score += 5.0;
-        }
-        if widgets_have_types {
-            score += 5.0;
-        }
-        score
-    };
-
-    let overall = structural_score
-        + performance_score
-        + accessibility_score
-        + data_score
-        + documentation_score
-        + consistency_score;
-
-    let grade = match overall as u32 {
+/// Map an overall 0-100 score into a letter grade.
+fn overall_grade(overall: f64) -> String {
+    match overall as u32 {
         90..=100 => "A+",
         85..=89 => "A",
         80..=84 => "A-",
@@ -852,18 +867,7 @@ fn analyze_manifest_quality(manifest: &presentar_yaml::Manifest) -> QualityScore
         50..=59 => "D",
         _ => "F",
     }
-    .to_string();
-
-    QualityScore {
-        overall,
-        grade,
-        structural: structural_score,
-        performance: performance_score,
-        accessibility: accessibility_score,
-        data: data_score,
-        documentation: documentation_score,
-        consistency: consistency_score,
-    }
+    .to_string()
 }
 
 fn generate_badge(score: &QualityScore) -> String {
@@ -900,6 +904,27 @@ fn generate_badge(score: &QualityScore) -> String {
 fn run_gates(path: &PathBuf, min_grade: &str, min_score: Option<f64>, strict: bool) {
     println!("Running quality gates for: {}", path.display());
 
+    let manifest = load_manifest_or_exit(path);
+    let score = analyze_manifest_quality(&manifest);
+    let failures = collect_gate_failures(&score, min_grade, min_score);
+    let warnings = collect_gate_warnings(&score, &manifest);
+
+    render_gate_report(&score, &failures, &warnings);
+
+    if !failures.is_empty() {
+        eprintln!("GATE FAILED");
+        std::process::exit(1);
+    }
+    if strict && !warnings.is_empty() {
+        eprintln!("GATE FAILED (strict mode)");
+        std::process::exit(1);
+    }
+
+    println!("GATE PASSED");
+}
+
+/// Read + parse the manifest, exiting (1) with the original error messages on failure.
+fn load_manifest_or_exit(path: &PathBuf) -> presentar_yaml::Manifest {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
@@ -907,31 +932,28 @@ fn run_gates(path: &PathBuf, min_grade: &str, min_score: Option<f64>, strict: bo
             std::process::exit(1);
         }
     };
-
-    let manifest = match presentar_yaml::Manifest::from_yaml(&content) {
+    match presentar_yaml::Manifest::from_yaml(&content) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("GATE FAILED: Invalid manifest - {}", e);
             std::process::exit(1);
         }
-    };
+    }
+}
 
-    let score = analyze_manifest_quality(&manifest);
+/// Hard-fail checks: grade threshold and optional score threshold.
+fn collect_gate_failures(
+    score: &QualityScore,
+    min_grade: &str,
+    min_score: Option<f64>,
+) -> Vec<String> {
     let mut failures = Vec::new();
-    let mut warnings = Vec::new();
-
-    // Check minimum grade
-    let grade_value = grade_to_value(&score.grade);
-    let min_grade_value = grade_to_value(min_grade);
-
-    if grade_value < min_grade_value {
+    if grade_to_value(&score.grade) < grade_to_value(min_grade) {
         failures.push(format!(
             "Grade {} is below minimum {}",
             score.grade, min_grade
         ));
     }
-
-    // Check minimum score
     if let Some(min) = min_score {
         if score.overall < min {
             failures.push(format!(
@@ -940,49 +962,46 @@ fn run_gates(path: &PathBuf, min_grade: &str, min_score: Option<f64>, strict: bo
             ));
         }
     }
+    failures
+}
 
-    // Additional gate checks
+/// Soft warnings surfaced to the user (and promoted to failures under --strict).
+fn collect_gate_warnings(
+    score: &QualityScore,
+    manifest: &presentar_yaml::Manifest,
+) -> Vec<&'static str> {
+    let mut warnings = Vec::new();
     if score.accessibility < 10.0 {
         warnings.push("Low accessibility score - consider adding descriptions and ARIA labels");
     }
-
     if score.documentation < 5.0 {
         warnings.push("Poor documentation - add name, version, and description");
     }
-
     if manifest.layout.sections.is_empty() {
         warnings.push("No sections defined in layout");
     }
+    warnings
+}
 
-    // Report results
+/// Print the score + warning/failure blocks in the original format.
+fn render_gate_report(score: &QualityScore, failures: &[String], warnings: &[&str]) {
     println!();
     println!("Score: {:.1}/100 ({})", score.overall, score.grade);
     println!();
-
     if !warnings.is_empty() {
         println!("Warnings:");
-        for w in &warnings {
+        for w in warnings {
             println!("  - {}", w);
         }
         println!();
     }
-
     if !failures.is_empty() {
         println!("Failures:");
-        for f in &failures {
+        for f in failures {
             println!("  - {}", f);
         }
         println!();
-        eprintln!("GATE FAILED");
-        std::process::exit(1);
     }
-
-    if strict && !warnings.is_empty() {
-        eprintln!("GATE FAILED (strict mode)");
-        std::process::exit(1);
-    }
-
-    println!("GATE PASSED");
 }
 
 fn grade_to_value(grade: &str) -> u32 {

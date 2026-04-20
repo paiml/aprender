@@ -1,12 +1,12 @@
 # pmcp: Rust MCP SDK
 
-**pmcp** (v1.8.6) is a high-quality Rust SDK for the Model Context Protocol with full TypeScript SDK compatibility.
+**pmcp** (v2.3.1 on crates.io as of 2026-04-16) is PAIML's high-quality Rust SDK for the Model Context Protocol with full TypeScript SDK compatibility.
 
 ## Installation
 
 ```toml
 [dependencies]
-pmcp = "1.8"
+pmcp = "2.3"
 ```
 
 ## Features

@@ -158,8 +158,34 @@ pub fn parse_perf_stat_csv(output: &str) -> Result<PerfStatResult> {
 pub fn profile_simd(function: &str, size: u32, arch: &str) -> Result<()> {
     println!("\n=== CGP SIMD Profile: {function} (size={size}, arch={arch}) ===\n");
 
-    // Validate architecture
-    let simd_events: &[&str] = match arch {
+    let Some(simd_events) = resolve_simd_events(arch)? else {
+        println!();
+        return Ok(());
+    };
+
+    if which::which("perf").is_err() {
+        print_perf_missing(function, arch);
+        println!();
+        return Ok(());
+    }
+
+    let Some(binary) = find_bench_binary() else {
+        println!("  No benchmark binary found.");
+        println!("  Build with: cargo build --release --bench vector_ops");
+        println!("  Then re-run cgp profile simd.");
+        println!();
+        return Ok(());
+    };
+
+    profile_with_perf(&binary, simd_events);
+    println!();
+    Ok(())
+}
+
+/// Return the SIMD perf event list for `arch`, or `None` when the arch is
+/// unsupported on the host (early-exit for caller). Warning printed to stdout.
+fn resolve_simd_events(arch: &str) -> Result<Option<&'static [&'static str]>> {
+    match arch {
         "avx2" => {
             #[cfg(target_arch = "x86_64")]
             {
@@ -167,7 +193,7 @@ pub fn profile_simd(function: &str, size: u32, arch: &str) -> Result<()> {
                     println!("  Warning: AVX2 not available on this CPU.");
                 }
             }
-            AVX2_EVENTS
+            Ok(Some(AVX2_EVENTS))
         }
         "avx512" => {
             #[cfg(target_arch = "x86_64")]
@@ -176,107 +202,108 @@ pub fn profile_simd(function: &str, size: u32, arch: &str) -> Result<()> {
                     println!("  Warning: AVX-512 not available on this CPU.");
                 }
             }
-            AVX512_EVENTS
+            Ok(Some(AVX512_EVENTS))
         }
         "neon" => {
             #[cfg(not(target_arch = "aarch64"))]
             {
                 println!("  NEON not available -- use --cross-profile for QEMU-based analysis");
-                return Ok(());
+                Ok(None)
             }
             #[cfg(target_arch = "aarch64")]
             {
-                &["INST_RETIRED", "CPU_CYCLES", "ASE_SPEC"][..]
+                const NEON_EVENTS: &[&str] = &["INST_RETIRED", "CPU_CYCLES", "ASE_SPEC"];
+                Ok(Some(NEON_EVENTS))
             }
         }
-        "sse2" => &[
-            "fp_arith_inst_retired.scalar_single",
-            "fp_arith_inst_retired.128b_packed_single",
-        ][..],
+        "sse2" => {
+            const SSE2_EVENTS: &[&str] = &[
+                "fp_arith_inst_retired.scalar_single",
+                "fp_arith_inst_retired.128b_packed_single",
+            ];
+            Ok(Some(SSE2_EVENTS))
+        }
         _ => {
             anyhow::bail!("Unknown SIMD architecture: {arch}. Supported: avx2, avx512, neon, sse2")
         }
-    };
-
-    let has_perf = which::which("perf").is_ok();
-    if !has_perf {
-        println!("  perf not found. Install linux-tools-common for hardware counter profiling.");
-        println!("  Showing static analysis only.");
-        println!("\n  Function: {function}");
-        println!("  Architecture: {arch}");
-        return Ok(());
     }
+}
 
-    // Try to find a trueno benchmark binary
-    let bin_path = find_bench_binary();
-    match bin_path {
-        Some(binary) => {
-            println!("  Backend: perf stat");
-            println!("  Binary: {binary}");
+fn print_perf_missing(function: &str, arch: &str) {
+    println!("  perf not found. Install linux-tools-common for hardware counter profiling.");
+    println!("  Showing static analysis only.");
+    println!("\n  Function: {function}");
+    println!("  Architecture: {arch}");
+}
 
-            // Collect base + SIMD counters
-            let mut all_events: Vec<&str> = SIMD_PERF_EVENTS.to_vec();
-            all_events.extend_from_slice(simd_events);
+fn profile_with_perf(binary: &str, simd_events: &[&str]) {
+    println!("  Backend: perf stat");
+    println!("  Binary: {binary}");
 
-            match run_perf_stat(&binary, &[], &all_events) {
-                Ok(result) => {
-                    // Check if counters are all zero (paranoid mode)
-                    let cycles = *result.counters.get("cycles").unwrap_or(&0);
-                    if cycles == 0 && !result.counters.is_empty() {
-                        let paranoid =
-                            std::fs::read_to_string("/proc/sys/kernel/perf_event_paranoid")
-                                .ok()
-                                .and_then(|s| s.trim().parse::<i32>().ok())
-                                .unwrap_or(-1);
-                        if paranoid > 2 {
-                            println!("  \x1b[33m[WARN]\x1b[0m perf_event_paranoid={paranoid} — hardware counters blocked.");
-                            println!("  Fix: sudo sysctl kernel.perf_event_paranoid=2");
-                            println!("  Or run: sudo cgp profile simd ...\n");
-                        }
-                    }
+    let mut all_events: Vec<&str> = SIMD_PERF_EVENTS.to_vec();
+    all_events.extend_from_slice(simd_events);
 
-                    println!("\n  Hardware Counters:");
-                    println!("    Cycles:       {:>14}", format_count(cycles));
-                    println!(
-                        "    Instructions: {:>14}",
-                        format_count(*result.counters.get("instructions").unwrap_or(&0))
-                    );
-                    println!("    IPC:          {:>14.2}", result.ipc());
-                    println!("    Cache miss:   {:>13.1}%", result.cache_miss_rate());
-                    println!("    Branch miss:  {:>13.1}%", result.branch_miss_rate());
-
-                    if let Some(simd_pct) = result.simd_utilization() {
-                        println!("\n  SIMD Utilization:");
-                        println!("    Vector ops:    {simd_pct:.1}%");
-                        println!("    Scalar ops:    {:.1}%", 100.0 - simd_pct);
-                        if simd_pct < 50.0 {
-                            println!(
-                                "    [WARN] Low SIMD utilization — check for scalar fallbacks"
-                            );
-                        } else {
-                            println!("    [OK] Good SIMD utilization");
-                        }
-                    }
-
-                    if result.wall_time_secs > 0.0 {
-                        println!("\n  Wall time: {:.3}s", result.wall_time_secs);
-                    }
-                }
-                Err(e) => {
-                    println!("  perf stat failed: {e}");
-                    println!("  Try: sudo sysctl kernel.perf_event_paranoid=2");
-                }
+    match run_perf_stat(binary, &[], &all_events) {
+        Ok(result) => {
+            warn_if_counters_blocked(&result);
+            print_hardware_counters(&result);
+            print_simd_utilization(&result);
+            if result.wall_time_secs > 0.0 {
+                println!("\n  Wall time: {:.3}s", result.wall_time_secs);
             }
         }
-        None => {
-            println!("  No benchmark binary found.");
-            println!("  Build with: cargo build --release --bench vector_ops");
-            println!("  Then re-run cgp profile simd.");
+        Err(e) => {
+            println!("  perf stat failed: {e}");
+            println!("  Try: sudo sysctl kernel.perf_event_paranoid=2");
         }
     }
+}
 
-    println!();
-    Ok(())
+/// Emit a warning when cycles counter is zero despite a non-empty counter set
+/// (typical sign of blocked perf paranoia).
+fn warn_if_counters_blocked(result: &PerfStatResult) {
+    let cycles = *result.counters.get("cycles").unwrap_or(&0);
+    if cycles != 0 || result.counters.is_empty() {
+        return;
+    }
+    let paranoid = std::fs::read_to_string("/proc/sys/kernel/perf_event_paranoid")
+        .ok()
+        .and_then(|s| s.trim().parse::<i32>().ok())
+        .unwrap_or(-1);
+    if paranoid > 2 {
+        println!(
+            "  \x1b[33m[WARN]\x1b[0m perf_event_paranoid={paranoid} — hardware counters blocked."
+        );
+        println!("  Fix: sudo sysctl kernel.perf_event_paranoid=2");
+        println!("  Or run: sudo cgp profile simd ...\n");
+    }
+}
+
+fn print_hardware_counters(result: &PerfStatResult) {
+    let cycles = *result.counters.get("cycles").unwrap_or(&0);
+    println!("\n  Hardware Counters:");
+    println!("    Cycles:       {:>14}", format_count(cycles));
+    println!(
+        "    Instructions: {:>14}",
+        format_count(*result.counters.get("instructions").unwrap_or(&0))
+    );
+    println!("    IPC:          {:>14.2}", result.ipc());
+    println!("    Cache miss:   {:>13.1}%", result.cache_miss_rate());
+    println!("    Branch miss:  {:>13.1}%", result.branch_miss_rate());
+}
+
+fn print_simd_utilization(result: &PerfStatResult) {
+    let Some(simd_pct) = result.simd_utilization() else {
+        return;
+    };
+    println!("\n  SIMD Utilization:");
+    println!("    Vector ops:    {simd_pct:.1}%");
+    println!("    Scalar ops:    {:.1}%", 100.0 - simd_pct);
+    if simd_pct < 50.0 {
+        println!("    [WARN] Low SIMD utilization — check for scalar fallbacks");
+    } else {
+        println!("    [OK] Good SIMD utilization");
+    }
 }
 
 /// Format a large number with comma separators.

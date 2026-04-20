@@ -21,7 +21,7 @@ metadata:
 kind: CLICommandContract
 name: apr-cli-commands
 version: "1.0.0"
-scope: "all apr CLI subcommands (57 commands)"
+scope: "all apr CLI subcommands (58 commands — original 57 + `mcp` added 2026-04-17 via PR #864)"
 binary: "apr"
 install: "cargo install aprender"
 
@@ -80,6 +80,12 @@ commands:
     category: inspection
     description: "Validate model integrity and quality"
     requires_model: true
+    side_effects: []
+
+  - name: validate-manifest
+    category: inspection
+    description: "Verify publish manifest (F-PUBLISH-MANIFEST-001): FALSIFY-PM-001..006"
+    requires_model: false
     side_effects: []
 
   - name: lint
@@ -220,6 +226,12 @@ commands:
   - name: train
     category: training
     description: "Training pipeline (plan/apply)"
+    requires_model: false
+    side_effects: [filesystem, gpu]
+
+  - name: pretrain
+    category: training
+    description: "Pretrain small language models from scratch (MODEL-2 loop)"
     requires_model: false
     side_effects: [filesystem, gpu]
 
@@ -389,6 +401,12 @@ commands:
     description: "Decrypt .apr model file"
     requires_model: true
     side_effects: [filesystem]
+
+  - name: mcp
+    category: misc
+    description: "Run MCP (Model Context Protocol) server over stdio"
+    requires_model: false
+    side_effects: [stdio]
 
 # ── Falsification Conditions ──
 
