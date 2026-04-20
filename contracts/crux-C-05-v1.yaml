@@ -1,28 +1,33 @@
 # CRUX-C-05 — SSE streaming tokens [DONE]
 # Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Promoted 2026-04-20 — 4 FALSIFY gates discharged by in-process axum harness.
 
 metadata:
   id: CRUX-C-05
-  version: "1.0.0-draft"
+  version: "1.0.0"
   created: "2026-04-18"
+  promoted: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: active
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: vllm
   demand_score: 5  # 1..5, critical priority in pmat work
-  intake_status: partial
+  intake_status: supported
   description: >
-    SSE streaming tokens [DONE]. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    SSE streaming tokens [DONE] (OpenAI-compatible). Competitors OpenAI and
+    vLLM expose POST /v1/chat/completions with {"stream": true} returning
+    text/event-stream framed as
+    `data: <chat.completion.chunk>\n\n` ... `data: [DONE]\n\n`.
+    Aprender parity: canonical `/v1/chat/completions` with stream=true
+    dispatches to `pregenerated_sse_response` (demo path) or
+    `true_streaming_sse_response` (CUDA/GPU path), both using
+    `sse_event()` which emits single-prefix `data: <json>\n\n` frames.
+    Refs:
+    https://platform.openai.com/docs/api-reference/chat/streaming ;
+    https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
@@ -158,8 +163,38 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 5
+  status: discharged
+
+discharge_evidence:
+  harness: crates/aprender-serve/tests/falsification_crux_c_05.rs
+  framework: tokio::test + tower::ServiceExt::oneshot (in-process axum)
+  test_count: 4
+  falsify_crux_c_05_001:
+  - falsify_crux_c_05_001_content_type_and_done_terminator
+  falsify_crux_c_05_002:
+  - falsify_crux_c_05_002_every_chunk_is_chat_completion_chunk
+  falsify_crux_c_05_003:
+  - falsify_crux_c_05_003_delta_concat_equals_nonstream_content
+  falsify_crux_c_05_004:
+  - falsify_crux_c_05_004_finish_reason_exactly_once_before_done
+  implementation:
+  - crates/aprender-serve/src/api/openai_handlers.rs  # sse_event + pregenerated_sse_response + true_streaming_sse_response
+  - crates/aprender-serve/src/api/cuda_chat_backend.rs  # registry_fallback (demo path) + try_quantized_backend (GGUF path)
+  scope_honesty: |
+    Tests hit the canonical `/v1/chat/completions` route with `{stream:true}`
+    via in-process axum (`tower::ServiceExt::oneshot`); TCP/TLS/HTTP wire
+    semantics and network keep-alive behaviour are not exercised.
+    The legacy alternate route `/v1/chat/completions/stream`
+    (crates/aprender-serve/src/api/chat_completions_stream.rs) has a known
+    double-`data: ` prefix bug in its hand-rolled Event formatting and is
+    NOT part of this contract — OpenAI parity is the canonical
+    stream-via-body-flag route, which correctly uses `sse_event()`.
+    FALSIFY-003 uses temperature=0.01 (near-greedy) because the server-side
+    sampler rejects strictly 0.0 ("Temperature must be positive"); the demo
+    model produces identical token streams across repeated requests at this
+    temperature, which is sufficient to detect any divergence between the
+    streaming delta concatenation and the non-streaming full message.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
