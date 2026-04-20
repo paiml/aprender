@@ -639,15 +639,23 @@ pub enum ExtendedCommands {
         /// Run output directory — checkpoints + metadata go to `{run_dir}/ckpt/`.
         #[arg(long, value_name = "DIR")]
         run_dir: PathBuf,
-        /// Peak learning rate after warmup (MODEL-1 v2 remedy default = 5e-5).
-        #[arg(long, default_value = "5e-5")]
-        lr: f32,
+        /// Training regime — finetune (MODEL-1) or from-scratch (MODEL-2 cold start).
+        /// Per contract training-loop-pretrain-v1 §hyperparameter_defaults,
+        /// this atomically flips (regime, lr_max, warmup_steps, target_val_loss)
+        /// unless explicit --lr / --warmup-steps / --target-val-loss override.
+        #[arg(long, value_enum, default_value = "finetune")]
+        mode: PretrainMode,
+        /// Peak learning rate after warmup. Omit to inherit mode default
+        /// (finetune: 5e-5, from-scratch: 3e-4).
+        #[arg(long)]
+        lr: Option<f32>,
         /// Warmup + cosine decay total steps.
         #[arg(long, default_value = "1000")]
         num_steps: usize,
-        /// Number of warmup steps.
-        #[arg(long, default_value = "100")]
-        warmup_steps: usize,
+        /// Number of warmup steps. Omit to inherit mode default
+        /// (finetune: 100, from-scratch: 1000).
+        #[arg(long)]
+        warmup_steps: Option<usize>,
         /// Micro-batch size.
         #[arg(long, default_value = "16")]
         batch_size: usize,
@@ -660,9 +668,14 @@ pub enum ExtendedCommands {
         /// GATE-TRAIN-006 fixed RNG seed.
         #[arg(long, default_value = "42")]
         seed: u64,
-        /// GATE-TRAIN-003 target val_loss (≤ 2.2 per spec).
-        #[arg(long, default_value = "2.2")]
-        target_val_loss: f32,
+        /// Target val_loss. Omit to inherit mode default
+        /// (finetune: 2.2, from-scratch: 3.0).
+        #[arg(long)]
+        target_val_loss: Option<f32>,
+        /// Vocabulary size (required for `--mode from-scratch` INV-TRAIN-005
+        /// regime-dependent cap: 2·ln(vocab_size)). MODEL-2 uses 50257.
+        #[arg(long, default_value = "50257")]
+        vocab_size: u32,
         /// Synthetic-drive only — do not attempt real compute, exercise loop gates only.
         #[arg(long, default_value = "true")]
         synthetic: bool,
