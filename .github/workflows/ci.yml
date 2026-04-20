@@ -38,6 +38,13 @@ jobs:
       # paiml/.github infra issue — not this repo).
       enable_sccache: false
       use_nextest: true
+      # PMAT-159 (paiml/.github#29): the reusable workflow switches its primary
+      # test invocation from `cargo nextest run --lib` (root only) to
+      # `--workspace --lib`. aprender-gpu / aprender-cuda-edge / aprender-compute
+      # don't build (or crash on exit) inside the sovereign-ci container; the
+      # workspace-test job below handles them separately. Excluding here keeps
+      # ci/test green once paiml/.github#29 merges.
+      test_args: "--exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute"
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
