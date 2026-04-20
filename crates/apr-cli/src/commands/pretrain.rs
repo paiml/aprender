@@ -569,4 +569,69 @@ mod tests {
         assert_eq!(hp.warmup_steps, 1000);
         assert!((hp.target_val_loss - 3.0).abs() < 1.0e-6);
     }
+
+    // ── GATE-TRAIN-010 / INV-TRAIN-010 falsifiers ──────────────────────
+    // Contract: training-loop-pretrain-v1 v1.4.0 §INV-TRAIN-010
+    //
+    // Task #105's original wiring shipped `synthetic: bool` with
+    // `default_value = "true"`. The `--synthetic` flag had no
+    // companion to turn it off, so every invocation of `apr pretrain`
+    // silently routed to drive_synthetic. Tasks #119 / #124 / #125
+    // all captured scripted-loss output and mis-labeled it real
+    // compute. These two tests parse actual argv through clap and
+    // assert the routing discriminator byte-for-byte.
+
+    fn parse_pretrain_synthetic(extra: &[&str]) -> bool {
+        // The `Commands` enum is large enough in debug builds to overflow
+        // the default 2 MiB test-thread stack during clap's recursive
+        // destructuring. Run the parse on a worker thread with a 16 MiB
+        // stack so this falsifier passes in both debug and release.
+        let extra: Vec<String> = extra.iter().map(|s| (*s).to_string()).collect();
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                use clap::Parser;
+                let mut argv: Vec<String> = vec![
+                    "apr".to_string(),
+                    "pretrain".to_string(),
+                    "--dataset".to_string(),
+                    "/tmp/_gate_train_010/ds".to_string(),
+                    "--tokenizer".to_string(),
+                    "/tmp/_gate_train_010/tok".to_string(),
+                    "--run-dir".to_string(),
+                    "/tmp/_gate_train_010/run".to_string(),
+                ];
+                argv.extend(extra);
+                let cli = crate::Cli::try_parse_from(&argv).expect("clap parse must succeed");
+                match *cli.command {
+                    crate::Commands::Extended(crate::ExtendedCommands::Pretrain {
+                        synthetic,
+                        ..
+                    }) => synthetic,
+                    other => panic!("expected ExtendedCommands::Pretrain, got {other:?}"),
+                }
+            })
+            .expect("spawn parse thread")
+            .join()
+            .expect("parse thread must not panic")
+    }
+
+    #[test]
+    fn cli_pretrain_defaults_to_real_compute() {
+        // Absent `--synthetic` MUST parse to synthetic=false so the
+        // dispatcher routes through drive_real.
+        assert!(
+            !parse_pretrain_synthetic(&[]),
+            "INV-TRAIN-010: `apr pretrain` (no --synthetic) must parse to synthetic=false"
+        );
+    }
+
+    #[test]
+    fn cli_pretrain_synthetic_flag_routes_to_synthetic() {
+        // `--synthetic` present MUST parse to synthetic=true.
+        assert!(
+            parse_pretrain_synthetic(&["--synthetic"]),
+            "INV-TRAIN-010: `apr pretrain --synthetic` must parse to synthetic=true"
+        );
+    }
 }

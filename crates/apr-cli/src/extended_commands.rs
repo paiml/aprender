@@ -1,4 +1,3 @@
-
 /// Extended CLI commands (analysis, profiling, QA, benchmarks, and advanced tools).
 ///
 /// Flattened into `Commands` via `#[command(flatten)]` so all subcommands remain
@@ -677,7 +676,8 @@ pub enum ExtendedCommands {
         #[arg(long, default_value = "50257")]
         vocab_size: u32,
         /// Synthetic-drive only — do not attempt real compute, exercise loop gates only.
-        #[arg(long, default_value = "true")]
+        /// INV-TRAIN-010: absent = real compute (drive_real), present = synthetic (drive_synthetic).
+        #[arg(long, action = clap::ArgAction::SetTrue)]
         synthetic: bool,
     },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
