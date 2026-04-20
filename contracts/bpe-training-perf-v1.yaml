@@ -1,0 +1,320 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-BPE-TRAIN-PERF (BPE training — performance + determinism)
+# ─────────────────────────────────────────────────────────────
+# Binds the ALGORITHMIC CHOICE for `aprender-train::BPETokenizer::train`:
+# priority-queue + inverted-index incremental BPE (Sennrich 2016 / HF
+# tokenizers pattern) with a LEX-MIN tie-breaker for determinism.
+#
+# Replaces the naïve re-scan-everything implementation at
+# `crates/aprender-train/src/tokenizer/bpe.rs::BPETokenizer::train`
+# (commit 2de45469f). Motivation: a 50 257-vocab × 127 MB Python corpus
+# did not complete after 25 h 40 m of continuous CPU work on a single
+# RTX 4090 host (PID 2832743, killed 2026-04-20). Root cause: the naïve
+# algorithm is O(V × N × L) — every merge rescans the entire tokenized
+# corpus both to count pair frequencies and to apply the merge. The
+# replacement is O((V + E) log V) amortized where E is the number of
+# pair-count updates across all merges (empirically E ≪ V · N).
+#
+# This contract is narrower than `bpe-tokenization-v1.yaml`: that
+# contract covers the tokenizer's RUNTIME behavior (encode/decode);
+# this contract covers the TRAINING algorithm's performance +
+# deterministic tie-breaking. Correctness of the output tokenizer
+# (round-trip, vocab bounds, special tokens) is inherited from
+# `tokenizer-bpe-v1.yaml` unchanged.
+#
+# Parent: contracts/bpe-tokenization-v1.yaml        (algorithm invariants)
+# Peer:   contracts/tokenizer-bpe-v1.yaml           (tokenizer output correctness)
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-BPE-TRAIN-PERF
+version: 1.1.0
+status: PROPOSED
+
+metadata:
+  version: "1.1.0"
+  created: "2026-04-20"
+  updated: "2026-04-20"
+  changelog:
+    - "1.0.0 (2026-04-20): Initial. Introduced alongside task #118 BPE
+       algorithm rewrite after the naïve implementation failed to
+       complete a 50K-vocab × 127 MB CSN-Python training run in
+       25 h 40 m. Specifies priority-queue + inverted-index algorithm
+       with a lex-min tie-breaker for cross-run determinism."
+    - "1.1.0 (2026-04-20): Add org-wide 1.5× parity-replacement rule.
+       Any replacement of an existing algorithm MUST be ≥1.5× faster
+       than the algorithm it replaces on a representative workload —
+       sub-1.5× replacements are REJECTED regardless of asymptotic
+       complexity claims. Adds proof_obligation `speedup_ge_1_5x`,
+       FALSIFY-BPE-TRAIN-PERF-005, and ship-blocking
+       GATE-BPE-TRAIN-PERF-005. Motivation: user directive
+       2026-04-20 — ‘we never accept less than 1.5× performance
+       replacements.’"
+  author: PAIML Engineering
+  description: >
+    Performance + determinism contract for the aprender-train BPE
+    training loop. Mandates a priority-queue + inverted-index
+    incremental algorithm with deterministic lex-min tie-breaking, and
+    pins a 30-minute wall-clock upper bound for the SHIP-TWO-001
+    MODEL-2 training workload (vocab=50 257, CSN-Python
+    train-00000.jsonl, ~127 MB, ~113 k docs).
+  registry: true
+  kind: kernel
+  parent_contracts:
+    - contracts/bpe-tokenization-v1.yaml
+  peer_contracts:
+    - contracts/tokenizer-bpe-v1.yaml
+  references:
+    - "Sennrich, Haddow, Birch (2016). Neural Machine Translation of
+       Rare Words with Subword Units. arXiv:1508.07909"
+    - "HuggingFace tokenizers (Apache-2.0) — BpeTrainer reference"
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §5"
+    - "memory/project_task_118_bpe_quadratic_blocker.md (2026-04-20)"
+
+summary: >
+  Mandates that `aprender-train::BPETokenizer::train` use a
+  priority-queue + inverted-index algorithm (Sennrich / HF tokenizers
+  style) rather than the naïve re-scan loop, and that ties between
+  equally-frequent pairs be broken by lex-min on the (left, right)
+  token-id tuple so output is bit-identical across runs + machines.
+
+motivation: >
+  BPE training is on the critical path of SHIP-TWO-001 MODEL-2. A
+  25 h 40 m single-host run that produced zero output is operationally
+  unshippable. A deterministic, well-bounded training step turns
+  MODEL-2 tokenizer provisioning from an overnight wait-and-see into a
+  sub-hour step. Additionally, the naïve algorithm's HashMap-iteration
+  tie-breaker silently violated INV-BPE-006 (cross-run determinism) —
+  fixing the algorithm closes that hidden defect.
+
+# ─────────────────────────────────────────────────────────────
+# Equations — the training step formalized
+# ─────────────────────────────────────────────────────────────
+
+equations:
+  train_step:
+    formula: |
+      Incremental BPE training step (repeated until |V| = vocab_size
+      or the best remaining pair's count falls below min_frequency):
+
+        1. pair_counts: Map<(id, id), i64>
+           pair_words : Map<(id, id), Set<word_ix>>
+           heap       : MaxHeap<(count, pair)>
+
+        2. loop:
+           pop (c, p) from heap
+           if c != pair_counts[p]: continue          (stale entry)
+           if c < min_frequency   : break
+           if |V| >= vocab_size   : break
+
+           new_id = |V|
+           V.insert(concat(p))
+           merges.push(p)
+
+           for word_ix in pair_words[p]:
+             scan word; for every adjacent occurrence of p:
+               decrement pair_counts on the (left, p.0) and (p.1, right) pairs
+               increment pair_counts on the (left, new_id) and (new_id, right) pairs
+               update pair_words similarly
+               splice p into new_id in the word (length shrinks by 1)
+
+           push refreshed heap entries for every changed pair
+
+      Tie-breaker: when two pairs have equal count, the one with the
+      smaller (left_id, right_id) tuple wins. This makes the output
+      deterministic across runs / machines / hash seeds.
+    domain: "corpus ∈ [UTF-8 string]*, vocab_size ≥ |special_tokens| + 256, min_frequency ≥ 1"
+    codomain: "(vocab : Map<String, id>, merges : [(String, String)])"
+    invariants:
+      - "Each merge strictly decreases total tokenized-corpus length by ≥ 1 (Σ over words)."
+      - "|merges| ≤ vocab_size − |special_tokens| − 256."
+      - "For the SAME corpus + config, (vocab, merges) is bit-identical across runs / machines (enforced by lex-min tie-breaker)."
+      - "Naïve reference and fast implementation produce IDENTICAL (vocab, merges) when the naïve implementation's tie-breaker is forced to the same lex-min rule."
+    preconditions:
+      - "corpus.len() > 0"
+      - "vocab_size > |special_tokens| + 256"
+    lean_theorem: "Theorems.Bpe_Train_Priority_Queue"
+
+proof_obligations:
+  - type: invariant
+    property: "Fast-BPE and naïve-BPE parity under lex-min tie-breaker"
+    formal: "fast_train(corpus, vs, mf) == naive_train_lexmin(corpus, vs, mf) for |corpus| ≤ 1 KB, vs ≤ 512"
+    applies_to: all
+  - type: invariant
+    property: "Cross-run determinism"
+    formal: "fast_train(corpus, vs, mf) on run A == fast_train(corpus, vs, mf) on run B, byte-identical"
+    applies_to: all
+  - type: bound
+    property: "Wall-clock bound on the MODEL-2 training workload"
+    formal: "train(corpus=csn-python-train-00000.jsonl, vs=50257, mf=2) wall_time ≤ 30 min on RTX 4090 host"
+    applies_to: workload=MODEL-2
+  - type: bound
+    property: "Merge count bound"
+    formal: "|merges_out| ≤ vocab_size - |special_tokens| - 256"
+    applies_to: all
+  - type: monotonicity
+    property: "Vocabulary grows strictly monotonically per merge"
+    formal: "∀i: |vocab| after merge i > |vocab| before merge i"
+    applies_to: all
+  - type: bound
+    property: "1.5× speedup vs replaced algorithm (org-wide replacement rule)"
+    formal: >
+      naive_wall_seconds / fast_wall_seconds ≥ 1.5 on a representative
+      workload (500-document synthetic Python corpus, vocab_size=2048,
+      min_frequency=2) measured on the same host in the same process.
+      The replaced algorithm is the HashMap-rescan loop at commit
+      2de45469f, preserved verbatim as `train_naive_reference` for
+      parity + speedup measurement.
+    applies_to: all
+
+kernel_structure:
+  phases:
+    - name: init_state
+      description: "Byte-tokenize every document, build unique-word map with multiplicity counts."
+      invariant: "Sum of multiplicity over unique words equals |corpus|."
+    - name: build_pair_indexes
+      description: "One pass over words builds pair_counts (Map<(id,id), i64>) and pair_words (Map<(id,id), Set<word_ix>>)."
+      invariant: "For every adjacent pair p in any word: p ∈ pair_counts ∧ word_ix ∈ pair_words[p]."
+    - name: seed_heap
+      description: "Push one entry per pair into a MaxHeap keyed by (count, ties-broken-lex-min)."
+      invariant: "heap.len() == pair_counts.len() immediately after seeding."
+    - name: merge_loop
+      description: "Pop top of heap, validate freshness, apply merge in each containing word, push refreshed neighbors."
+      invariant: "A popped entry is applied IFF its count matches pair_counts[p]; otherwise it is discarded (stale)."
+    - name: finalize
+      description: "Return vocab + merges. Trained=true."
+      invariant: "|vocab| ≤ requested vocab_size."
+
+# ─────────────────────────────────────────────────────────────
+# Falsification tests
+# ─────────────────────────────────────────────────────────────
+
+falsification_tests:
+  - id: FALSIFY-BPE-TRAIN-PERF-001
+    rule: "Fast-vs-naive parity on small corpus under lex-min tie-breaker"
+    prediction: >
+      For a 20-document synthetic corpus with vocab_size=512 and
+      min_frequency=1, the fast priority-queue algorithm produces the
+      same (vocab, merges) as the naïve re-scan algorithm when both
+      are run with lex-min tie-breaking.
+    test: >
+      `cargo test -p aprender-train bpe_fast_vs_naive_parity`.
+      Constructs a fixed 20-doc Python-like corpus, runs both
+      implementations, compares vocab maps as JSON (stringified to
+      canonical form), compares merges slice element-by-element.
+    if_fails: >
+      Tie-breaker drift, off-by-one in the merge-apply inner loop, or
+      a bug in the pair-count update around word boundaries.
+
+  - id: FALSIFY-BPE-TRAIN-PERF-002
+    rule: "Cross-run determinism"
+    prediction: >
+      Running the fast BPE twice on the SAME corpus with the SAME
+      config produces byte-identical (vocab, merges). Determinism
+      must hold even when the underlying `HashMap` uses a randomised
+      hasher.
+    test: >
+      `cargo test -p aprender-train bpe_fast_is_deterministic`.
+      Trains twice in-process with the default `HashMap` hasher,
+      serializes both to JSON, asserts byte-equal output.
+    if_fails: >
+      Tie-breaker not fully deterministic (e.g. iteration order leaks
+      in), or a non-deterministic data structure (HashSet ordering)
+      is used in a decision path.
+
+  - id: FALSIFY-BPE-TRAIN-PERF-003
+    rule: "Wall-clock performance gate on MODEL-2 workload"
+    prediction: >
+      `apr tokenize train --corpus $CSN_PY_TRAIN --vocab-size 50257
+       --min-frequency 2 --normalization nfc` completes in ≤ 30 min
+      on a single RTX 4090 host (CPU-only — BPE does not use GPU).
+    test: >
+      `evidence/ship-two-001/model-2/bpe-training-perf.json` records
+      wall_clock_seconds ≤ 1800 from a live run logged to
+      /tmp/tokenize-train.log.
+    if_fails: >
+      Algorithm regressed to a quadratic path (e.g. accidentally
+      re-scanning all words), or the heap is not being pruned on stale
+      entries (unbounded heap growth can itself become O(V²)).
+
+  - id: FALSIFY-BPE-TRAIN-PERF-004
+    rule: "Progress observable — periodic stderr reports"
+    prediction: >
+      Stderr carries a progress line at least once per 1 000 merges
+      containing elapsed seconds, merges emitted, and current vocab
+      size. A silent training run (stderr empty until exit) is
+      considered a regression because it defeats operator monitoring.
+    test: >
+      `apr tokenize train ... 2> log.txt` — assert
+      `grep -c "^\\[bpe\\]" log.txt >= vocab_size / 1000`.
+    if_fails: >
+      Progress logger stripped or gated behind a feature flag.
+
+  - id: FALSIFY-BPE-TRAIN-PERF-005
+    rule: "1.5× parity-replacement rule"
+    prediction: >
+      On a representative workload — 500-document synthetic Python
+      corpus, vocab_size=2048, min_frequency=2, Normalization::NFC —
+      the fast implementation is ≥ 1.5× faster than the naïve
+      implementation it replaces, measured on the same host in the
+      same process.
+    test: >
+      `cargo test -p aprender-train --release
+       bpe_fast_meets_1_5x_parity_replacement_rule`. Builds the fixed
+      500-doc corpus, runs `train_naive_reference` once, then the fast
+      `train_fast` once, both release-mode, asserts
+      `naive_secs / fast_secs >= 1.5`. Writes
+      `evidence/ship-two-001/model-2/bpe-speedup.json` with both
+      measurements and the computed ratio.
+    if_fails: >
+      Replacement is rejected outright. Org policy: any replacement
+      must clear 1.5× or it is not worth the code churn — we do NOT
+      merge sub-1.5× replacements regardless of asymptotic arguments.
+
+# ─────────────────────────────────────────────────────────────
+# Acceptance gates
+# ─────────────────────────────────────────────────────────────
+
+gates:
+  - id: GATE-BPE-TRAIN-PERF-001
+    rule: "Fast-vs-naive parity (FALSIFY-BPE-TRAIN-PERF-001)"
+    evidence_required: "Parity test green on CI."
+    verdict: pass
+    binds_to: AC-SHIP2-002
+
+  - id: GATE-BPE-TRAIN-PERF-002
+    rule: "Cross-run determinism (FALSIFY-BPE-TRAIN-PERF-002)"
+    evidence_required: "Determinism test green on CI."
+    verdict: pass
+    binds_to: AC-SHIP2-002
+
+  - id: GATE-BPE-TRAIN-PERF-003
+    rule: "Performance gate (FALSIFY-BPE-TRAIN-PERF-003)"
+    evidence_required: >
+      evidence/ship-two-001/model-2/bpe-training-perf.json with
+      wall_clock_seconds ≤ 1800 from a live RTX 4090 run.
+    verdict: pass
+    binds_to: AC-SHIP2-002
+    ship_blocking: true
+
+  - id: GATE-BPE-TRAIN-PERF-004
+    rule: "Observability — periodic progress reporting (FALSIFY-BPE-TRAIN-PERF-004)"
+    evidence_required: "Captured stderr from live run showing ≥ 50 `[bpe]` lines."
+    verdict: pass
+    binds_to: AC-SHIP2-002
+
+  - id: GATE-BPE-TRAIN-PERF-005
+    rule: "1.5× parity-replacement speedup (FALSIFY-BPE-TRAIN-PERF-005)"
+    evidence_required: >
+      evidence/ship-two-001/model-2/bpe-speedup.json with
+      naive_secs / fast_secs ≥ 1.5 on the 500-doc / vocab=2048
+      representative workload. Both times captured on the same host
+      in the same `cargo test --release` invocation.
+    verdict: pass
+    binds_to: AC-SHIP2-002
+    ship_blocking: true
+
+references:
+  - "contracts/bpe-tokenization-v1.yaml — algorithm invariants inherited"
+  - "contracts/tokenizer-bpe-v1.yaml — tokenizer output correctness (unchanged)"
+  - "memory/project_task_118_bpe_quadratic_blocker.md — root-cause analysis"
+  - "Sennrich et al. (2016) arXiv:1508.07909"

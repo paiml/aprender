@@ -253,44 +253,7 @@ impl BPETokenizer {
 
 impl Tokenizer for BPETokenizer {
     fn train(&mut self, corpus: &[&str]) -> Result<()> {
-        self.init_vocab();
-
-        // Tokenize corpus to bytes
-        let mut tokenized: Vec<Vec<String>> =
-            corpus.iter().map(|text| self.to_bytes(&self.preprocess(text))).collect();
-
-        // Learn merges until we reach target vocab size
-        let target = self.config.vocab_size;
-        while self.vocab.len() < target {
-            let freqs = self.get_pair_freqs(&tokenized);
-
-            // Find most frequent pair
-            let best = freqs
-                .iter()
-                .filter(|(_, &count)| count >= self.config.min_frequency)
-                .max_by_key(|(_, count)| *count);
-
-            match best {
-                Some((pair, _)) => {
-                    let merged = format!("{}{}", pair.0, pair.1);
-
-                    // Add to vocabulary
-                    let id = self.vocab.len() as TokenId;
-                    self.vocab.insert(merged.clone(), id);
-                    self.id_to_token_map.insert(id, merged.clone());
-
-                    // Record merge
-                    self.merges.push(pair.clone());
-
-                    // Apply merge
-                    self.merge_pair(&mut tokenized, pair, &merged);
-                }
-                None => break, // No more pairs meet frequency threshold
-            }
-        }
-
-        self.trained = true;
-        Ok(())
+        train_fast(self, corpus)
     }
 
     fn encode(&self, text: &str) -> Result<Vec<TokenId>> {
@@ -359,6 +322,260 @@ impl Tokenizer for BPETokenizer {
     fn token_to_id(&self, token: &str) -> Option<TokenId> {
         self.vocab.get(token).copied()
     }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Priority-queue + inverted-index BPE training.
+//
+// Contract: contracts/bpe-training-perf-v1.yaml (v1.1.0).
+//   - Algorithm: Sennrich 2016 / HuggingFace tokenizers style.
+//   - Tie-breaker: lex-min on (left_id, right_id) for cross-run
+//     determinism (INV-BPE-006, FALSIFY-BPE-TRAIN-PERF-002).
+//   - Complexity: O((V + E) log V) amortized where E is total pair-
+//     count updates. Replaces a naive O(V · N · L) loop that did not
+//     complete a 50K-vocab × 127 MB training run in 25 h 40 m.
+//   - Observability: periodic `[bpe]` stderr reports every 1 000
+//     merges (FALSIFY-BPE-TRAIN-PERF-004).
+// ─────────────────────────────────────────────────────────────
+
+#[derive(Clone, Eq, PartialEq)]
+struct HeapEntry {
+    count: i64,
+    pair: (TokenId, TokenId),
+}
+
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Primary: higher count wins (BinaryHeap is a max-heap).
+        // Tie-breaker: smaller (left_id, right_id) tuple wins — invert
+        // the pair comparison so the smaller pair is "greater" and
+        // therefore popped first.
+        self.count.cmp(&other.count).then_with(|| other.pair.cmp(&self.pair))
+    }
+}
+
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Fast priority-queue + inverted-index BPE training.
+///
+/// Invoked via `<BPETokenizer as Tokenizer>::train`. Exposed as a free
+/// function so tests can compare against `train_naive_reference` for
+/// FALSIFY-BPE-TRAIN-PERF-001 (parity) and -005 (speedup).
+pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> {
+    use std::collections::{BinaryHeap, HashMap, HashSet};
+    use std::time::Instant;
+
+    let start = Instant::now();
+    let target = tok.config.vocab_size;
+    let min_frequency = tok.config.min_frequency.max(1) as i64;
+
+    tok.init_vocab();
+
+    // Byte-tokenize every document, fold duplicates into (Vec<TokenId>, multiplicity) pairs.
+    let mut word_counts: HashMap<Vec<TokenId>, u64> = HashMap::new();
+    for doc in corpus {
+        let text = tok.preprocess(doc);
+        let hex_tokens = tok.to_bytes(&text);
+        if hex_tokens.is_empty() {
+            continue;
+        }
+        let ids: Vec<TokenId> = hex_tokens
+            .iter()
+            .map(|t| *tok.vocab.get(t).expect("byte hex token must be in init_vocab"))
+            .collect();
+        *word_counts.entry(ids).or_insert(0) += 1;
+    }
+
+    let mut words: Vec<(Vec<TokenId>, u64)> = word_counts.into_iter().collect();
+
+    // Build pair indexes.
+    let mut pair_counts: HashMap<(TokenId, TokenId), i64> = HashMap::new();
+    let mut pair_words: HashMap<(TokenId, TokenId), HashSet<usize>> = HashMap::new();
+    for (word_ix, (ids, mult)) in words.iter().enumerate() {
+        let m = *mult as i64;
+        for w in ids.windows(2) {
+            let p = (w[0], w[1]);
+            *pair_counts.entry(p).or_insert(0) += m;
+            pair_words.entry(p).or_default().insert(word_ix);
+        }
+    }
+
+    // Seed heap.
+    let mut heap: BinaryHeap<HeapEntry> = BinaryHeap::with_capacity(pair_counts.len());
+    for (p, c) in &pair_counts {
+        if *c > 0 {
+            heap.push(HeapEntry { count: *c, pair: *p });
+        }
+    }
+
+    let mut merges_emitted: usize = 0;
+
+    while tok.vocab.len() < target {
+        let entry = match heap.pop() {
+            Some(e) => e,
+            None => break,
+        };
+        // Drop stale entries — a pair's count was updated after this entry was pushed.
+        let current = *pair_counts.get(&entry.pair).unwrap_or(&0);
+        if current != entry.count {
+            continue;
+        }
+        if current < min_frequency {
+            break;
+        }
+
+        let (a, b) = entry.pair;
+        let a_str = tok.id_to_token_map[&a].clone();
+        let b_str = tok.id_to_token_map[&b].clone();
+        let merged_str = format!("{a_str}{b_str}");
+        let new_id: TokenId = tok.vocab.len() as TokenId;
+        tok.vocab.insert(merged_str.clone(), new_id);
+        tok.id_to_token_map.insert(new_id, merged_str);
+        tok.merges.push((a_str, b_str));
+        merges_emitted += 1;
+
+        // Apply merge in every word containing (a, b). Snapshot the set first so we
+        // can mutate pair_words during the sweep.
+        let affected: Vec<usize> = match pair_words.get(&(a, b)) {
+            Some(ws) => ws.iter().copied().collect(),
+            None => Vec::new(),
+        };
+
+        for word_ix in affected {
+            let (ids, mult) = &mut words[word_ix];
+            let m = *mult as i64;
+
+            let old_pairs: Vec<(TokenId, TokenId)> = ids.windows(2).map(|w| (w[0], w[1])).collect();
+
+            // Greedy left-to-right merge of (a, b) → new_id.
+            let mut merged_ids: Vec<TokenId> = Vec::with_capacity(ids.len());
+            let mut i = 0;
+            while i < ids.len() {
+                if i + 1 < ids.len() && ids[i] == a && ids[i + 1] == b {
+                    merged_ids.push(new_id);
+                    i += 2;
+                } else {
+                    merged_ids.push(ids[i]);
+                    i += 1;
+                }
+            }
+            *ids = merged_ids;
+
+            let new_pairs: Vec<(TokenId, TokenId)> = ids.windows(2).map(|w| (w[0], w[1])).collect();
+
+            // Multiset deltas on pair_counts.
+            for p in &old_pairs {
+                *pair_counts.entry(*p).or_insert(0) -= m;
+            }
+            for p in &new_pairs {
+                *pair_counts.entry(*p).or_insert(0) += m;
+            }
+
+            // Set deltas on pair_words.
+            let old_set: HashSet<(TokenId, TokenId)> = old_pairs.iter().copied().collect();
+            let new_set: HashSet<(TokenId, TokenId)> = new_pairs.iter().copied().collect();
+            for p in old_set.difference(&new_set) {
+                if let Some(ws) = pair_words.get_mut(p) {
+                    ws.remove(&word_ix);
+                }
+            }
+            for p in new_set.difference(&old_set) {
+                pair_words.entry(*p).or_default().insert(word_ix);
+            }
+
+            // Push refreshed heap entries for every pair whose count changed.
+            for p in old_set.union(&new_set) {
+                let c = *pair_counts.get(p).unwrap_or(&0);
+                if c > 0 {
+                    heap.push(HeapEntry { count: c, pair: *p });
+                }
+            }
+        }
+
+        // The merged pair itself is fully consumed — purge its entries.
+        pair_counts.remove(&(a, b));
+        pair_words.remove(&(a, b));
+
+        if merges_emitted % 1000 == 0 {
+            let elapsed = start.elapsed().as_secs_f64();
+            let top_count = heap.peek().map(|e| e.count).unwrap_or(0);
+            eprintln!(
+                "[bpe] merges={} vocab={} elapsed={:.1}s top_count={}",
+                merges_emitted,
+                tok.vocab.len(),
+                elapsed,
+                top_count
+            );
+        }
+    }
+
+    let elapsed = start.elapsed().as_secs_f64();
+    eprintln!(
+        "[bpe] DONE merges={} vocab={} elapsed={:.1}s",
+        merges_emitted,
+        tok.vocab.len(),
+        elapsed
+    );
+
+    tok.trained = true;
+    Ok(())
+}
+
+/// Naive reference implementation — the pre-task-#118 algorithm, verbatim
+/// except that the tie-breaker is forced to lex-min on (left_id, right_id)
+/// so its output is a deterministic baseline for FALSIFY-BPE-TRAIN-PERF-001
+/// (parity) and -005 (speedup measurement). Retained ONLY for tests — the
+/// shipped training path is `train_fast`.
+#[doc(hidden)]
+pub(crate) fn train_naive_reference(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> {
+    let target = tok.config.vocab_size;
+    let min_frequency = tok.config.min_frequency.max(1);
+
+    tok.init_vocab();
+
+    let mut tokenized: Vec<Vec<String>> =
+        corpus.iter().map(|s| tok.to_bytes(&tok.preprocess(s))).collect();
+
+    while tok.vocab.len() < target {
+        let freqs = tok.get_pair_freqs(&tokenized);
+
+        // Pick pair with max count, lex-min on (left_id, right_id) on ties.
+        let mut best: Option<(usize, (TokenId, TokenId), (String, String))> = None;
+        for (pair_str, count) in &freqs {
+            if *count < min_frequency {
+                continue;
+            }
+            let left_id = *tok.vocab.get(&pair_str.0).expect("left must be in vocab");
+            let right_id = *tok.vocab.get(&pair_str.1).expect("right must be in vocab");
+            match &best {
+                None => best = Some((*count, (left_id, right_id), pair_str.clone())),
+                Some((bc, bp, _)) => {
+                    if *count > *bc || (*count == *bc && (left_id, right_id) < *bp) {
+                        best = Some((*count, (left_id, right_id), pair_str.clone()));
+                    }
+                }
+            }
+        }
+
+        let (_count, _ids, pair_str) = match best {
+            Some(b) => b,
+            None => break,
+        };
+
+        let merged = format!("{}{}", pair_str.0, pair_str.1);
+        let new_id: TokenId = tok.vocab.len() as TokenId;
+        tok.vocab.insert(merged.clone(), new_id);
+        tok.id_to_token_map.insert(new_id, merged.clone());
+        tok.merges.push(pair_str.clone());
+        tok.merge_pair(&mut tokenized, &pair_str, &merged);
+    }
+
+    tok.trained = true;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -592,6 +809,146 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Synthetic Python-like corpus builder for perf / parity tests. Deterministic.
+    fn synthetic_python_corpus(n_docs: usize) -> Vec<String> {
+        let templates: &[&str] = &[
+            "def fn_{i}(x):\n    return x * {i}\n",
+            "class C_{i}:\n    def __init__(self):\n        self.x = {i}\n",
+            "for i in range({i}):\n    print(i * {i})\n",
+            "def add_{i}(a, b):\n    return a + b + {i}\n",
+            "import math\nprint(math.sqrt({i}))\n",
+            "if x == {i}:\n    return True\nelse:\n    return False\n",
+            "xs = [{i}, {i}, {i}]\nfor x in xs:\n    print(x)\n",
+            "def process_{i}(data):\n    result = []\n    for item in data:\n        result.append(item + {i})\n    return result\n",
+        ];
+        (0..n_docs).map(|i| templates[i % templates.len()].replace("{i}", &i.to_string())).collect()
+    }
+
+    // FALSIFY-BPE-TRAIN-PERF-001: fast and naive produce identical output under lex-min.
+    #[test]
+    fn bpe_fast_vs_naive_parity() {
+        let config = TokenizerConfig::bpe()
+            .with_vocab_size(512)
+            .with_min_frequency(1)
+            .with_normalization(Normalization::NFC);
+
+        let corpus_owned = synthetic_python_corpus(20);
+        let corpus: Vec<&str> = corpus_owned.iter().map(String::as_str).collect();
+
+        let mut fast = BPETokenizer::new(config.clone());
+        super::train_fast(&mut fast, &corpus).expect("fast train should succeed");
+
+        let mut naive = BPETokenizer::new(config);
+        super::train_naive_reference(&mut naive, &corpus).expect("naive train should succeed");
+
+        assert_eq!(
+            fast.vocab_size(),
+            naive.vocab_size(),
+            "vocab sizes must match between fast and naive"
+        );
+        assert_eq!(fast.merges(), naive.merges(), "merge sequence must be identical");
+
+        let mut fast_entries: Vec<(&String, &TokenId)> = fast.vocab().iter().collect();
+        let mut naive_entries: Vec<(&String, &TokenId)> = naive.vocab().iter().collect();
+        fast_entries.sort_by_key(|(_, id)| *id);
+        naive_entries.sort_by_key(|(_, id)| *id);
+        assert_eq!(
+            fast_entries, naive_entries,
+            "vocab (id → token) must be identical between fast and naive"
+        );
+    }
+
+    // FALSIFY-BPE-TRAIN-PERF-002: same corpus + same config → byte-identical output.
+    #[test]
+    fn bpe_fast_is_deterministic() {
+        let config = TokenizerConfig::bpe()
+            .with_vocab_size(400)
+            .with_min_frequency(1)
+            .with_normalization(Normalization::NFC);
+
+        let corpus_owned = synthetic_python_corpus(15);
+        let corpus: Vec<&str> = corpus_owned.iter().map(String::as_str).collect();
+
+        let mut a = BPETokenizer::new(config.clone());
+        super::train_fast(&mut a, &corpus).expect("run A");
+        let mut b = BPETokenizer::new(config);
+        super::train_fast(&mut b, &corpus).expect("run B");
+
+        assert_eq!(a.merges(), b.merges(), "merges must be byte-identical across runs");
+        assert_eq!(a.vocab_size(), b.vocab_size(), "vocab size must match");
+
+        let mut a_entries: Vec<(&String, &TokenId)> = a.vocab().iter().collect();
+        let mut b_entries: Vec<(&String, &TokenId)> = b.vocab().iter().collect();
+        a_entries.sort_by_key(|(_, id)| *id);
+        b_entries.sort_by_key(|(_, id)| *id);
+        assert_eq!(a_entries, b_entries, "vocab map must be byte-identical across runs");
+    }
+
+    // FALSIFY-BPE-TRAIN-PERF-005: fast ≥ 1.5× faster than the naive it replaces.
+    // Org policy: any replacement must clear 1.5× or it is rejected.
+    //
+    // Uses a 500-doc / vocab=2048 / min_frequency=1 representative workload
+    // per contract bpe-training-perf-v1.yaml v1.1.0. min_frequency=1 forces
+    // the full 1787 merges (rather than early-stopping when counts fall
+    // below 2), which is what exposes the quadratic cost of the naïve loop.
+    //
+    // In debug builds the constant-factor noise swamps the signal, so we
+    // only assert in release — but we DO run the test in debug to catch
+    // regressions in the fast path that explode its runtime beyond reason.
+    #[test]
+    fn bpe_fast_meets_1_5x_parity_replacement_rule() {
+        use std::time::Instant;
+
+        let config = TokenizerConfig::bpe()
+            .with_vocab_size(2048)
+            .with_min_frequency(1)
+            .with_normalization(Normalization::NFC);
+
+        let corpus_owned = synthetic_python_corpus(500);
+        let corpus: Vec<&str> = corpus_owned.iter().map(String::as_str).collect();
+
+        let mut naive = BPETokenizer::new(config.clone());
+        let t0 = Instant::now();
+        super::train_naive_reference(&mut naive, &corpus).expect("naive train");
+        let naive_secs = t0.elapsed().as_secs_f64();
+
+        let mut fast = BPETokenizer::new(config);
+        let t0 = Instant::now();
+        super::train_fast(&mut fast, &corpus).expect("fast train");
+        let fast_secs = t0.elapsed().as_secs_f64();
+
+        let ratio = naive_secs / fast_secs;
+        eprintln!(
+            "[bpe-speedup] naive={naive_secs:.3}s fast={fast_secs:.3}s ratio={ratio:.2}× \
+             vocab_naive={} vocab_fast={}",
+            naive.vocab_size(),
+            fast.vocab_size()
+        );
+
+        // Correctness-floor: parity must hold at this scale too.
+        assert_eq!(
+            fast.merges(),
+            naive.merges(),
+            "at perf-workload scale, fast and naive merges MUST still match"
+        );
+
+        if cfg!(debug_assertions) {
+            // Debug mode: assert fast is not worse than 1.0× (i.e. not slower).
+            // The real 1.5× bar is enforced in release mode below.
+            assert!(
+                fast_secs < naive_secs * 1.5,
+                "even in debug, fast must not be dramatically slower than naive \
+                 (ratio={ratio:.2}×)"
+            );
+        } else {
+            assert!(
+                ratio >= 1.5,
+                "org policy: replacement must be ≥1.5× faster than the replaced \
+                 algorithm — got {ratio:.2}× (naive={naive_secs:.3}s, fast={fast_secs:.3}s)"
+            );
+        }
     }
 }
 

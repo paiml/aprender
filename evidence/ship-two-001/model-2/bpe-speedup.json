@@ -1,0 +1,27 @@
+{
+  "contract": "contracts/bpe-training-perf-v1.yaml",
+  "contract_version": "1.1.0",
+  "falsification_id": "FALSIFY-BPE-TRAIN-PERF-005",
+  "gate_id": "GATE-BPE-TRAIN-PERF-005",
+  "rule": "1.5x parity-replacement rule — replacement must be >=1.5x faster than the algorithm it replaces",
+  "test": "cargo test -p aprender-train --lib --release bpe_fast_meets_1_5x_parity_replacement_rule",
+  "host": "noah-Lambda-Vector",
+  "build": "release",
+  "captured_at_utc": "2026-04-19",
+  "workload": {
+    "corpus": "synthetic_python_corpus(500) — 500 deterministic Python-like documents",
+    "vocab_size": 2048,
+    "min_frequency": 1,
+    "normalization": "NFC"
+  },
+  "merges_emitted": 1787,
+  "final_vocab_size": 2048,
+  "measurements": {
+    "naive_seconds": 0.403,
+    "fast_seconds": 0.122,
+    "speedup_ratio": 3.31
+  },
+  "parity_check": "PASS — fast.merges() == naive.merges() at full workload",
+  "verdict": "PASS",
+  "ratio_vs_bar": "3.31x >= 1.5x"
+}
