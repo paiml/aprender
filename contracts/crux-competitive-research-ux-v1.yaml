@@ -593,8 +593,10 @@ phases:
 
   phase_1_evidence:
     description: "Capture competitor evidence into evidence/crux/*/ and enrich contracts to spec-complete"
-    status: in_progress
-    progress: "199 / 250 contracts spec-complete (2026-04-18: wave 6 batch 6 — G demand=3 via direct authoring)"
+    status: complete
+    completed_at: "2026-04-20"
+    completed_in_pr: 916
+    progress: "250 / 250 contracts spec-complete (2026-04-18 J-cohort republication landed the final 20 under openclaw-agent-resolved semantics)"
     waves:
     - { id: wave_1, stories: 18, target: "demand=5 missing", date: "2026-04-18" }
     - { id: wave_2, stories: 24, target: "demand=5 partial", date: "2026-04-18" }
@@ -611,10 +613,10 @@ phases:
     - { id: wave_6_batch_8, stories: 5, target: "I-series demand=3 (direct author)", date: "2026-04-18" }
     - { id: wave_6_batch_9, stories: 9, target: "K-series demand=3 (direct author — final demand=3 cohort)", date: "2026-04-18" }
     - { id: wave_6_batch_10, stories: 10, target: "all remaining non-J demand=2 (closes entire non-J cohort)", date: "2026-04-18" }
-    remaining_demand_5: 3  # J-01/02/09 (OpenCLAW-blocked only)
-    remaining_demand_4: 0  # non-J (all demand=4 A-I, K complete)
-    remaining_demand_3: 0  # non-J — ALL demand=3 cohort spec-complete (67/67 across A..K except J)
-    remaining_demand_2: 0  # non-J — ALL demand=2 cohort spec-complete
+    remaining_demand_5: 0  # J-01/02/09 resolved under openclaw-agent semantics in PR #916
+    remaining_demand_4: 0  # all demand=4 complete
+    remaining_demand_3: 0  # all demand=3 complete
+    remaining_demand_2: 0  # all demand=2 complete
     exit_criteria: "apr qa --crux emits per-story PASS/FAIL/SKIP; pmat work tickets exist for all missing"
     blocks: [phase_2_partials]
 
@@ -625,6 +627,17 @@ phases:
 
   phase_3_missing:
     description: "Implement ❌ missing stories grouped by shared infra"
+    github_umbrella: 917
+    github_children:
+      M1_rest_parity:           918
+      M2_distributed_training:  919
+      M3_openclaw_agent:        920
+      M4_observability:         921
+      M5_advanced_quant:        922
+      M6_alignment:             923
+      M7_data_depth:            924
+      M8_deployment:            925
+    github_milestone: 1  # "CRUX Phase 3"
     groups:
       M1_rest_parity:           [CRUX-C-04, CRUX-C-11, CRUX-C-13, CRUX-I-04, CRUX-K-02, CRUX-K-11]
       M2_distributed_training:  [CRUX-D-11, CRUX-D-12, CRUX-D-33, CRUX-D-34, CRUX-D-35]
@@ -643,8 +656,8 @@ phases:
 # Status
 # ─────────────────────────────────────────────────────────────
 status:
-  current: DRAFT
-  next_milestone: phase_1_evidence
+  current: ACTIVE
+  next_milestone: phase_2_partials
   owner: PAIML Engineering
   openclaw_interpretation: openclaw-agent-resolved
   openclaw_resolution_date: "2026-04-18"
