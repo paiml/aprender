@@ -21,7 +21,7 @@ metadata:
 kind: CLICommandContract
 name: apr-cli-commands
 version: "1.0.0"
-scope: "all apr CLI subcommands (58 commands — original 57 + `mcp` added 2026-04-17 via PR #864)"
+scope: "all apr CLI subcommands (59 commands — original 57 + `mcp` added 2026-04-17 via PR #864 + `registry` added 2026-04-20 via CRUX-A-01)"
 binary: "apr"
 install: "cargo install aprender"
 
@@ -197,6 +197,12 @@ commands:
     description: "Remove model from cache"
     requires_model: false
     side_effects: [filesystem]
+
+  - name: registry
+    category: registry
+    description: "Registry operations (CRUX-A-01): inspect alias map, etc."
+    requires_model: false
+    side_effects: []
 
   - name: publish
     category: registry
