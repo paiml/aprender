@@ -216,29 +216,78 @@ impl EpochArtifact {
 /// `non_divergence.rule` block in `training-loop-pretrain-v1.yaml`.
 pub const DIVERGENCE_RATIO_LIMIT: f32 = 2.0;
 
-/// Hard cap on `val_loss[0]`. The contract literal is 10.0. Beyond this
-/// the loop aborts even without a prior epoch to compare against — the
-/// MODEL-1 v2 failure mode.
+/// Finetune-regime hard cap on `val_loss[0]`. The contract literal is
+/// 10.0 (MODEL-1 v2 failure mode: val_loss=31.99 at epoch 0 with base
+/// weights already pretrained). Kept as the `TrainingRegime::Finetune`
+/// threshold so downstream callers and tests can still refer to the
+/// literal.
 pub const EPOCH_ZERO_VAL_LOSS_LIMIT: f32 = 10.0;
+
+/// Training regime selects which epoch-zero val_loss cap INV-TRAIN-005
+/// enforces. The doubling rule at N ≥ 1 is identical across regimes.
+///
+/// Contract: `training-loop-pretrain-v1.yaml` v1.2.0 `non_divergence`.
+///
+/// - [`TrainingRegime::Finetune`] — base weights pretrained; epoch-zero
+///   cap is 10.0, matching the MODEL-1 literal.
+/// - [`TrainingRegime::FromScratch`] — random init; epoch-zero cap is
+///   `2.0 × ln(vocab_size)`, i.e. 2× the uniform-random cross-entropy
+///   baseline. For vocab=50257 the cap is ≈21.64.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TrainingRegime {
+    Finetune,
+    FromScratch { vocab_size: u32 },
+}
+
+impl TrainingRegime {
+    /// Regime-dependent cap on `val_loss[0]` — the v1.2.0 amendment.
+    ///
+    /// Finetune: [`EPOCH_ZERO_VAL_LOSS_LIMIT`] (10.0, MODEL-1 literal).
+    /// FromScratch: `DIVERGENCE_RATIO_LIMIT × ln(vocab_size)`. For
+    /// `vocab_size=50257` this is ≈21.64. `vocab_size < 2` is clamped
+    /// to 2 so `ln` stays positive — operator misuse, not worth a panic.
+    pub fn epoch_zero_val_loss_limit(&self) -> f32 {
+        match self {
+            Self::Finetune => EPOCH_ZERO_VAL_LOSS_LIMIT,
+            Self::FromScratch { vocab_size } => {
+                let v = (*vocab_size).max(2) as f32;
+                DIVERGENCE_RATIO_LIMIT * v.ln()
+            }
+        }
+    }
+}
+
+impl Default for TrainingRegime {
+    fn default() -> Self {
+        Self::Finetune
+    }
+}
 
 /// GATE-TRAIN-005 — the non-divergence guard, verbatim from the contract.
 ///
 /// For every epoch boundary N ≥ 1, check that `val_loss[N] ≤ 2.0 × val_loss[N-1]`.
-/// For N == 0, check that `val_loss[0]` is finite and ≤ `EPOCH_ZERO_VAL_LOSS_LIMIT`.
+/// For N == 0, check that `val_loss[0]` is finite and within the
+/// regime-dependent cap (see [`TrainingRegime::epoch_zero_val_loss_limit`]).
 /// Any violation returns `Err(PretrainAbort::Divergence{,AtEpochZero})`.
 ///
 /// This function is the falsifier harness for `FALSIFY-SHIP-013`:
 /// inject `[3.5, 7.1]` as the val-loss trace, call this on N=1, and the
-/// return value MUST be `Err(Divergence)`. See the unit test below.
-pub fn check_non_divergence(epoch: usize, val_loss_history: &[f32]) -> Result<(), PretrainAbort> {
+/// return value MUST be `Err(Divergence)`. See the unit tests below.
+pub fn check_non_divergence(
+    epoch: usize,
+    val_loss_history: &[f32],
+    regime: &TrainingRegime,
+) -> Result<(), PretrainAbort> {
     let Some(&curr) = val_loss_history.get(epoch) else {
         // Nothing at this epoch yet — caller error, not divergence.
         return Ok(());
     };
 
-    // Special case N == 0.
+    // Special case N == 0 — regime-dependent cap (v1.2.0).
     if epoch == 0 {
-        if !curr.is_finite() || curr > EPOCH_ZERO_VAL_LOSS_LIMIT {
+        let cap = regime.epoch_zero_val_loss_limit();
+        if !curr.is_finite() || curr > cap {
             return Err(PretrainAbort::DivergenceAtEpochZero { val_loss: curr });
         }
         return Ok(());
@@ -334,11 +383,17 @@ pub struct PretrainConfig {
     pub patience_epochs: usize,
     /// Minimum epochs before early-stop can trigger (contract default 3).
     pub min_epochs_before_early_stop: usize,
+    /// INV-TRAIN-005 regime — selects the epoch-zero val_loss cap.
+    /// Defaults to `Finetune` (10.0) to preserve v1.1.0 behavior.
+    #[serde(default)]
+    pub regime: TrainingRegime,
 }
 
 impl PretrainConfig {
     /// Recipe that aligns with the MODEL-1 v2 post-mortem remedy:
-    /// LR=5e-5, rank=32 (moot here — not LoRA), seed=42.
+    /// LR=5e-5, rank=32 (moot here — not LoRA), seed=42. Defaults
+    /// `regime` to `Finetune` (MODEL-1-style). Use
+    /// [`PretrainConfig::from_scratch`] to flip to the MODEL-2 regime.
     pub fn model_2_defaults(
         dataset_path: PathBuf,
         tokenizer_dir: PathBuf,
@@ -361,6 +416,7 @@ impl PretrainConfig {
             target_val_loss: 2.2,
             patience_epochs: 2,
             min_epochs_before_early_stop: 3,
+            regime: TrainingRegime::Finetune,
         }
     }
 }
@@ -569,7 +625,8 @@ impl<S: StepFn, V: ValFn> PretrainLoop<S, V> {
         self.val_loss_history.push(val_loss);
 
         // GATE-TRAIN-005 — ship-blocking divergence guard.
-        check_non_divergence(epoch, &self.val_loss_history)?;
+        // v1.2.0: epoch-zero cap is regime-dependent.
+        check_non_divergence(epoch, &self.val_loss_history, &self.config.regime)?;
 
         let wall_seconds = t0.elapsed().as_secs_f32();
         // INV-TRAIN-003: prefer the real AdamW-state digest if the
@@ -768,6 +825,7 @@ mod tests {
             target_val_loss: 2.2,
             patience_epochs: 2,
             min_epochs_before_early_stop: 1,
+            regime: TrainingRegime::Finetune,
         }
     }
 
@@ -778,7 +836,7 @@ mod tests {
     #[test]
     fn gate_train_005_aborts_on_doubling_val_loss() {
         let trace = vec![3.5, 7.1];
-        let res = check_non_divergence(1, &trace);
+        let res = check_non_divergence(1, &trace, &TrainingRegime::Finetune);
         match res {
             Err(PretrainAbort::Divergence { epoch, prev_val_loss, curr_val_loss, ratio }) => {
                 assert_eq!(epoch, 1);
@@ -795,7 +853,7 @@ mod tests {
     #[test]
     fn gate_train_005_aborts_on_epoch_zero_blowup() {
         let trace = vec![31.99];
-        let res = check_non_divergence(0, &trace);
+        let res = check_non_divergence(0, &trace, &TrainingRegime::Finetune);
         match res {
             Err(PretrainAbort::DivergenceAtEpochZero { val_loss }) => {
                 assert!((val_loss - 31.99).abs() < 1e-4);
@@ -809,7 +867,7 @@ mod tests {
     fn gate_train_005_allows_healthy_decrease() {
         let trace = vec![3.5, 3.0, 2.5, 2.2];
         for epoch in 0..trace.len() {
-            assert!(check_non_divergence(epoch, &trace).is_ok());
+            assert!(check_non_divergence(epoch, &trace, &TrainingRegime::Finetune).is_ok());
         }
     }
 
@@ -817,7 +875,62 @@ mod tests {
     #[test]
     fn gate_train_005_allows_exact_two_x() {
         let trace = vec![2.0, 4.0];
-        assert!(check_non_divergence(1, &trace).is_ok());
+        assert!(check_non_divergence(1, &trace, &TrainingRegime::Finetune).is_ok());
+    }
+
+    // ── INV-TRAIN-005 v1.2.0 regime split — from_scratch epoch-zero cap ──
+
+    /// v1.2.0: from_scratch epoch-zero cap is 2·ln(vocab_size). For
+    /// vocab=50257 this is ≈21.64. `val_loss[0]=18.0` is below cap and
+    /// would trip the old 10.0 literal — must be allowed in the new regime.
+    #[test]
+    fn gate_train_005_from_scratch_permits_near_random_baseline() {
+        let trace = vec![18.0_f32];
+        let regime = TrainingRegime::FromScratch { vocab_size: 50_257 };
+        assert!(
+            check_non_divergence(0, &trace, &regime).is_ok(),
+            "val_loss[0]=18 must be within 2·ln(50257)≈21.64 from_scratch cap"
+        );
+        // Same trace under Finetune still aborts — regime split is not a weakening.
+        assert!(matches!(
+            check_non_divergence(0, &trace, &TrainingRegime::Finetune),
+            Err(PretrainAbort::DivergenceAtEpochZero { .. }),
+        ));
+    }
+
+    /// v1.2.0: from_scratch above 2·ln(vocab_size) still aborts. Confirms
+    /// the gate is not degenerate — it catches truly broken inits.
+    #[test]
+    fn gate_train_005_from_scratch_aborts_above_2_ln_vocab() {
+        let trace = vec![25.0_f32];
+        let regime = TrainingRegime::FromScratch { vocab_size: 50_257 };
+        match check_non_divergence(0, &trace, &regime) {
+            Err(PretrainAbort::DivergenceAtEpochZero { val_loss }) => {
+                assert!((val_loss - 25.0).abs() < 1e-4);
+            }
+            other => panic!("from_scratch cap missed: got {other:?}"),
+        }
+    }
+
+    /// v1.2.0: the computed cap matches the formula 2·ln(vocab_size).
+    /// Locks the threshold so a silent code change cannot relax it.
+    #[test]
+    fn training_regime_from_scratch_cap_matches_formula() {
+        let v = 50_257u32;
+        let regime = TrainingRegime::FromScratch { vocab_size: v };
+        let expected = DIVERGENCE_RATIO_LIMIT * (v as f32).ln();
+        assert!(
+            (regime.epoch_zero_val_loss_limit() - expected).abs() < 1e-4,
+            "cap formula drift: got {} expected {}",
+            regime.epoch_zero_val_loss_limit(),
+            expected
+        );
+        // Finetune stays on the MODEL-1 literal.
+        assert!(
+            (TrainingRegime::Finetune.epoch_zero_val_loss_limit() - EPOCH_ZERO_VAL_LOSS_LIMIT)
+                .abs()
+                < 1e-6
+        );
     }
 
     // ── GATE-TRAIN-007 falsifier — NaN poisoning ──
