@@ -66,6 +66,7 @@ impl BPETokenizer {
     }
 
     /// Get pair frequencies from tokenized corpus
+    #[cfg(test)]
     fn get_pair_freqs(&self, tokenized: &[Vec<String>]) -> HashMap<(String, String), usize> {
         let mut freqs = HashMap::new();
 
@@ -80,6 +81,7 @@ impl BPETokenizer {
     }
 
     /// Merge the most frequent pair
+    #[cfg(test)]
     fn merge_pair(&self, tokenized: &mut [Vec<String>], pair: &(String, String), merged: &str) {
         for tokens in tokenized.iter_mut() {
             let mut i = 0;
@@ -592,7 +594,7 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
         pair_counts.remove(&(a, b));
         pair_words.remove(&(a, b));
 
-        if merges_emitted == 1 || merges_emitted % 100 == 0 {
+        if merges_emitted == 1 || merges_emitted.is_multiple_of(100) {
             let elapsed = start.elapsed().as_secs_f64();
             let top_count = heap.peek().map(|e| e.count).unwrap_or(0);
             eprintln!(
@@ -626,6 +628,7 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
 /// so its output is a deterministic baseline for FALSIFY-BPE-TRAIN-PERF-001
 /// (parity) and -005 (speedup measurement). Retained ONLY for tests — the
 /// shipped training path is `train_fast`.
+#[cfg(test)]
 #[doc(hidden)]
 pub(crate) fn train_naive_reference(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> {
     let target = tok.config.vocab_size;
