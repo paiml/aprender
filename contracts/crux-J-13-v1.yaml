@@ -1,0 +1,88 @@
+# CRUX-J-13 — OpenCLAW LLM provider switching
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-13
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 2
+  intake_status: missing
+  description: >
+    OpenCLAW lets the user pick a reasoning backend (Claude / GPT / a local
+    model) via a single `llm.provider` config key. Aprender parity:
+    `apr serve` must support provider switching so `apr code` can run on
+    Claude Messages API, OpenAI Chat API, or local realizar inference
+    without code changes. Overlaps with Claude proxy
+    (PMAT-CLAUDE-PROXY-001) and apr-cli-commands-v1.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/apr-cli-commands-v1.yaml
+  - evidence/crux/openclaw/config-schema.json5
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  provider_switch:
+    formula: |
+      provider ∈ {claude, openai, local}
+      dispatch(msg, provider) := backend[provider].complete(msg)
+      switch_provider(p) : idempotent config write (no session restart required)
+    domain: (config.llm.provider, message)
+    codomain: completion from chosen backend
+    invariants:
+    - "provider is a runtime-switchable config, not a compile-time flag"
+    - "provider-specific keys (api_key, model) live under provider namespace"
+    - "provider=local requires no outbound network"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-13-001
+  rule: apr serve supports multiple backends
+  prediction: "apr serve --help exposes backend/provider choice"
+  test: |
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr serve --help 2>&1 | grep -qE '(openai|anthropic|claude|ollama|local)' || {
+      echo "FAIL: apr serve does not document a provider/backend choice" >&2
+      exit 1
+    }
+  if_fails: CRUX-J-13 parity broken — apr serve MUST expose provider/backend switching
+- id: FALSIFY-CRUX-J-13-002
+  rule: local provider requires no network
+  prediction: "local/realizar path is documented as offline-capable"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "realizar local inference offline OR no-network local provider" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no offline-local-provider story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-13 offline invariant — local provider must operate without network
+
+proof_obligations:
+- type: invariant
+  property: "provider is runtime-switchable"
+- type: invariant
+  property: "local provider requires no outbound network"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-13
+  priority: low
+  auto_created: true

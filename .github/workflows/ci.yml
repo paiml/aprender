@@ -30,7 +30,13 @@ jobs:
       # APR-MONO monorepo: 60+ crates, largest dep graph in the fleet.
       # Highest expected sccache hit-rate lift — the signal that justifies
       # fleet-wide rollout (or shelves it).
-      enable_sccache: true
+      #
+      # 2026-04-19: temporarily disabled — sovereign-ci:stable container image
+      # is missing the `rustc-sccache` wrapper script, so every sccache-gated
+      # job fails at toolchain probe ("No such file or directory"). Re-enable
+      # once paiml/.github runner image ships the wrapper again (tracked in
+      # paiml/.github infra issue — not this repo).
+      enable_sccache: false
       use_nextest: true
     secrets: inherit
 
@@ -61,6 +67,11 @@ jobs:
           cargo test -p aprender-core --test monorepo_invariants
           cargo test -p aprender-core --test readme_contract
           cargo test -p apr-cli --test cli_commands
+      - name: Build.rs crate-root escape check (v0.31.1 yank guard)
+        # Static Poka-Yoke: flags build.rs files that panic on files outside
+        # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
+        # See scripts/check_build_rs_paths.sh for the full rationale.
+        run: bash scripts/check_build_rs_paths.sh
       - name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |

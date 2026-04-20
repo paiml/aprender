@@ -1,0 +1,194 @@
+# CRUX-C-06 — Continuous batching
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-06
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Continuous batching. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  throughput_speedup:
+    formula: |
+      Let T_serial   = Σ_{i=1..N} latency_i  (issued sequentially)
+      Let T_batched  = wall_time(N requests issued concurrently)
+      speedup = T_serial / T_batched
+      continuous_batching ⇒  speedup > 1.5  for N >= 16 with mixed lengths
+    domain: N concurrent requests with varied prompt/output lengths
+    codomain: ℝ (dimensionless speedup)
+    invariants:
+    - "Server admits new requests mid-step without draining in-flight batch"
+    - "Variable sequence lengths coexist in the same forward pass"
+    - "Reference: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html"
+    - "Reference (algorithm): Orca OSDI'22 / vLLM SOSP'23 §4"
+
+  no_head_of_line_blocking:
+    formula: |
+      For concurrent requests R_short (max_tokens=8) and R_long (max_tokens=512)
+      issued simultaneously:
+        TTFT(R_short)  ≤  2 × TTFT_single(R_short)
+      (short request is NOT blocked behind long request's full decode)
+    domain: concurrent mixed-length request pair
+    codomain: bool
+    invariants:
+    - "Short request's TTFT must not be penalized by an unrelated long generation"
+    - "Scheduler preempts at step boundaries, not generation boundaries"
+
+  batch_admission_observable:
+    formula: |
+      /metrics exposes `apr_running_requests` gauge ≥ 2 during concurrent load
+    domain: Prometheus-style /metrics scrape during load
+    codomain: bool
+    invariants:
+    - "Concurrent in-flight request count observable via /metrics"
+    - "Gauge is non-monotonic (rises and falls as requests enter/exit)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-06-001
+  rule: concurrent throughput exceeds serial by >1.5x
+  prediction: "16 concurrent requests complete in <= 2/3 of serial wall time"
+  test: |
+    # Reference: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    REQ_BODY_FOR() {
+      # Vary max_tokens to exercise continuous-batching interleaving
+      python3 -c 'import json,sys; i=int(sys.argv[1]); print(json.dumps({"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":f"Request {i}: count to {4+(i%12)}"}],"stream":False,"max_tokens":16 + (i*7) % 96,"temperature":0}))' "$1"
+    }
+    # Serial baseline
+    T0=$(date +%s.%N)
+    for i in $(seq 1 16); do
+      curl -sS -X POST "$URL" -H "Content-Type: application/json" \
+        -d "$(REQ_BODY_FOR $i)" >/dev/null
+    done
+    T1=$(date +%s.%N)
+    SERIAL=$(python3 -c "print($T1-$T0)")
+    # Concurrent
+    T2=$(date +%s.%N)
+    for i in $(seq 1 16); do
+      ( curl -sS -X POST "$URL" -H "Content-Type: application/json" \
+          -d "$(REQ_BODY_FOR $i)" >/dev/null ) &
+    done
+    wait
+    T3=$(date +%s.%N)
+    BATCH=$(python3 -c "print($T3-$T2)")
+    python3 -c "s=$SERIAL; b=$BATCH; sp=s/b; print(f'serial={s:.2f}s batched={b:.2f}s speedup={sp:.2f}x'); assert sp > 1.5, f'speedup {sp:.2f}x <= 1.5x (continuous batching not effective)'"
+  if_fails: "Concurrent speedup <= 1.5x (scheduler blocks or serializes)"
+
+- id: FALSIFY-CRUX-C-06-002
+  rule: no head-of-line blocking on mixed lengths
+  prediction: "TTFT(short) is independent of co-running long request"
+  test: |
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    SHORT='{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"hi"}],"stream":true,"max_tokens":8,"temperature":0}'
+    LONG='{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"Write a long story"}],"stream":true,"max_tokens":512,"temperature":0}'
+    # Baseline: short alone
+    T0=$(date +%s.%N)
+    curl -sS -N -X POST "$URL" -H "Content-Type: application/json" -d "$SHORT" \
+      | grep -m1 'delta' >/dev/null
+    T1=$(date +%s.%N)
+    TTFT_ALONE=$(python3 -c "print($T1-$T0)")
+    # Concurrent: long in background, then short
+    ( curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$LONG" >/dev/null ) &
+    LONG_PID=$!
+    sleep 0.1  # let long enter batch
+    T2=$(date +%s.%N)
+    curl -sS -N -X POST "$URL" -H "Content-Type: application/json" -d "$SHORT" \
+      | grep -m1 'delta' >/dev/null
+    T3=$(date +%s.%N)
+    TTFT_MIXED=$(python3 -c "print($T3-$T2)")
+    wait $LONG_PID || true
+    python3 -c "a=$TTFT_ALONE; m=$TTFT_MIXED; print(f'TTFT alone={a*1000:.0f}ms mixed={m*1000:.0f}ms ratio={m/a:.2f}'); assert m <= 2*a, f'head-of-line blocking: mixed TTFT {m:.3f}s > 2x alone {a:.3f}s'"
+  if_fails: "Short request TTFT > 2x baseline when co-scheduled with long generation"
+
+- id: FALSIFY-CRUX-C-06-003
+  rule: /metrics exposes running_requests gauge during load
+  prediction: "apr_running_requests reaches >=2 during concurrent load"
+  test: |
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    METRICS=http://127.0.0.1:8080/metrics
+    # Start 8 concurrent requests
+    for i in $(seq 1 8); do
+      ( curl -sS -X POST "$URL" -H "Content-Type: application/json" \
+          -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"hi"}],"stream":false,"max_tokens":128,"temperature":0}' >/dev/null ) &
+    done
+    # Sample /metrics a few times while they run
+    MAX=0
+    for _ in $(seq 1 10); do
+      V=$(curl -sS "$METRICS" | awk '/^apr_running_requests/ {print $2; exit}')
+      V=${V:-0}
+      if python3 -c "import sys; sys.exit(0 if float('$V') > float('$MAX') else 1)" 2>/dev/null; then
+        MAX=$V
+      fi
+      sleep 0.2
+    done
+    wait
+    python3 -c "assert float('$MAX') >= 2, f'peak running_requests={$MAX} < 2'"
+  if_fails: "apr_running_requests gauge never exceeds 1 (no true concurrency)"
+
+- id: FALSIFY-CRUX-C-06-004
+  rule: admission after first-token phase (continuous vs static batching)
+  prediction: "Late-arriving request joins in-flight batch (not blocked until drain)"
+  test: |
+    # TODO: requires APR_BATCH_TRACE=1 to emit per-step admission timestamps
+    # check that request B admitted at step S_B with S_B < last_step(A) when B
+    # arrives mid-generation of A
+    URL=http://127.0.0.1:8080/v1/chat/completions
+    LONG='{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"long"}],"stream":false,"max_tokens":256,"temperature":0}'
+    MED='{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"med"}],"stream":false,"max_tokens":32,"temperature":0}'
+    ( APR_BATCH_TRACE=/tmp/crux-c-06-batch-trace.log \
+      curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$LONG" >/dev/null ) &
+    sleep 0.3
+    curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$MED" >/dev/null
+    wait
+    # If the trace log exists, inspect admission step
+    if [ -f /tmp/crux-c-06-batch-trace.log ]; then
+      python3 -c "import re; trace=open('/tmp/crux-c-06-batch-trace.log').read(); admits=re.findall(r'ADMIT\s+req_id=\S+\s+step=(\d+)', trace); assert any(int(s) > 0 for s in admits), 'no mid-generation admission observed'"
+    else
+      echo "SKIP: APR_BATCH_TRACE unsupported; falsification pending" >&2
+      exit 2
+    fi
+  if_fails: "Requests only admitted at batch boundaries (static batching, not continuous)"
+
+proof_obligations:
+- type: invariant
+  property: "16-concurrent speedup > 1.5x over serial"
+- type: invariant
+  property: "TTFT(short) <= 2x baseline when co-scheduled with long request"
+- type: invariant
+  property: "apr_running_requests gauge exceeds 1 under concurrent load"
+- type: invariant
+  property: "Late requests admitted mid-generation (continuous, not static, batching)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-06` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-06
+  priority: critical
+  auto_created: false

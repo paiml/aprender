@@ -46,10 +46,7 @@ fn parse_accepts_canonical_camel_case() {
     assert_eq!(PermissionMode::parse("default"), Some(PermissionMode::Default));
     assert_eq!(PermissionMode::parse("plan"), Some(PermissionMode::Plan));
     assert_eq!(PermissionMode::parse("acceptEdits"), Some(PermissionMode::AcceptEdits));
-    assert_eq!(
-        PermissionMode::parse("bypassPermissions"),
-        Some(PermissionMode::BypassPermissions)
-    );
+    assert_eq!(PermissionMode::parse("bypassPermissions"), Some(PermissionMode::BypassPermissions));
 }
 
 #[test]

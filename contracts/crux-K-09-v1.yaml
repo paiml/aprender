@@ -1,0 +1,172 @@
+# CRUX-K-09 — Safetensors metadata round-trip
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-K-09
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Ecosystem & Integration"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Safetensors metadata round-trip. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.K and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  metadata_round_trip:
+    formula: |
+      Let M_in = __metadata__ block of input safetensors file.
+      Let F₁(x) = apr convert x.safetensors → x.apr
+      Let F₂(x) = apr convert x.apr        → x.safetensors
+      Let M_out = __metadata__ block of F₂(F₁(x)).
+      Round-trip invariant:
+        M_in ≡ M_out  (byte-identical canonical JSON)
+      where ≡ means keys and string values match exactly after
+      canonical (sorted-key, no extra whitespace) serialization.
+    domain: safetensors __metadata__ dict<string,string>
+    codomain: safetensors __metadata__ dict<string,string>
+    invariants:
+    - "__metadata__ keys preserved exactly (no additions, no drops)"
+    - "__metadata__ values preserved byte-identically (string == string)"
+    - "Canonicalized JSON of M_in and M_out are byte-equal"
+
+  inspect_surface_contract:
+    formula: |
+      apr inspect model.safetensors --json emits:
+        {
+          format: "safetensors",
+          metadata: { "__metadata__": <dict<string,string>>,
+                       <tensor-name>: {dtype, shape, data_offsets}, ... },
+          tensors: [TensorInfo; N]
+        }
+      where metadata["__metadata__"] equals safetensors.safe_open(...).metadata()
+      (official safetensors Python reader).
+    domain: apr inspect on .safetensors file
+    codomain: JSON object
+    invariants:
+    - "metadata.__metadata__ is surfaced verbatim to users"
+    - "apr inspect __metadata__ dict matches safetensors.safe_open().metadata() byte-for-byte"
+    - "No lossy rewriting of metadata during read"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-09-001
+  rule: __metadata__ surfaced by inspect
+  prediction: "apr inspect --json exposes the __metadata__ block"
+  test: |
+    apr inspect tests/fixtures/qwen-7b.safetensors --json | \
+      jq -e '.metadata.__metadata__ | type == "object"
+             and (keys | length > 0)'
+  if_fails: "__metadata__ block missing from apr inspect output"
+
+- id: FALSIFY-CRUX-K-09-002
+  rule: inspect parity with safetensors Python reader
+  prediction: "apr inspect __metadata__ == safetensors.safe_open().metadata()"
+  test: |
+    APR_META=$(apr inspect tests/fixtures/qwen-7b.safetensors --json | \
+                jq -S -c '.metadata.__metadata__')
+    ST_META=$(uv run --with safetensors python3 -c "
+    import json, sys
+    from safetensors import safe_open
+    with safe_open('tests/fixtures/qwen-7b.safetensors', framework='pt') as f:
+        m = f.metadata() or {}
+    print(json.dumps(m, sort_keys=True, separators=(',', ':')))
+    ")
+    [ "$APR_META" = "$ST_META" ]
+  if_fails: "apr __metadata__ diverges from safetensors.safe_open().metadata()"
+
+- id: FALSIFY-CRUX-K-09-003
+  rule: safetensors → apr → safetensors round-trip
+  prediction: "__metadata__ survives safetensors → apr → safetensors byte-identically"
+  test: |
+    SRC=tests/fixtures/qwen-7b.safetensors
+    apr convert "$SRC" -o /tmp/rt.apr
+    apr convert /tmp/rt.apr -o /tmp/rt.safetensors
+    ORIG=$(uv run --with safetensors python3 -c "
+    import json
+    from safetensors import safe_open
+    with safe_open('$SRC', framework='pt') as f:
+        m = f.metadata() or {}
+    print(json.dumps(m, sort_keys=True, separators=(',', ':')))
+    ")
+    RT=$(uv run --with safetensors python3 -c "
+    import json
+    from safetensors import safe_open
+    with safe_open('/tmp/rt.safetensors', framework='pt') as f:
+        m = f.metadata() or {}
+    print(json.dumps(m, sort_keys=True, separators=(',', ':')))
+    ")
+    [ "$ORIG" = "$RT" ]
+  if_fails: "__metadata__ diverged across safetensors→apr→safetensors round-trip"
+
+- id: FALSIFY-CRUX-K-09-004
+  rule: dtype/shape header preserved across round-trip
+  prediction: "per-tensor dtype and shape in safetensors header survive round-trip"
+  test: |
+    SRC=tests/fixtures/qwen-7b.safetensors
+    apr convert "$SRC" -o /tmp/rt.apr
+    apr convert /tmp/rt.apr -o /tmp/rt.safetensors
+    uv run --with safetensors python3 - <<'PY'
+    from safetensors import safe_open
+    def hdr(p):
+        with safe_open(p, framework='pt') as f:
+            return {k: (f.get_tensor(k).dtype, tuple(f.get_tensor(k).shape)) for k in f.keys()}
+    a = hdr('tests/fixtures/qwen-7b.safetensors')
+    b = hdr('/tmp/rt.safetensors')
+    assert a.keys() == b.keys(), f'key set drift: {a.keys() ^ b.keys()}'
+    for k in a:
+        assert a[k] == b[k], f'drift at {k}: {a[k]} vs {b[k]}'
+    PY
+  if_fails: "per-tensor dtype/shape drifted across safetensors round-trip"
+
+- id: FALSIFY-CRUX-K-09-005
+  rule: metadata keys are strings, values are strings
+  prediction: "apr preserves safetensors __metadata__ as dict<string,string> (not JSON-parsed)"
+  test: |
+    apr inspect tests/fixtures/qwen-7b.safetensors --json | \
+      jq -e '.metadata.__metadata__ | to_entries
+              | all(.value | type == "string")'
+  if_fails: "apr coerced __metadata__ values away from strings (safetensors spec violation)"
+
+proof_obligations:
+- type: invariant
+  property: "apr inspect surfaces __metadata__ verbatim"
+- type: invariant
+  property: "__metadata__ is dict<string,string> (values remain strings per safetensors spec)"
+- type: invariant
+  property: "__metadata__ survives safetensors → apr → safetensors round-trip byte-identically"
+- type: invariant
+  property: "per-tensor dtype and shape survive round-trip"
+- type: equivalence
+  property: "apr inspect __metadata__ is byte-identical to safetensors.safe_open().metadata() on the same file"
+  competitor: huggingface
+  reference: "https://github.com/huggingface/safetensors (file format spec); https://huggingface.co/docs/safetensors/metadata_parsing"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-k-09` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-k-09
+  priority: critical
+  auto_created: false

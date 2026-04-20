@@ -1,0 +1,96 @@
+# CRUX-E-24 — RAG eval RAGAS/TruLens
+
+metadata:
+  id: CRUX-E-24
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    RAG evaluation suite. Canonical: RAGAS (arXiv:2309.15217,
+    github.com/explodinggradients/ragas) + TruLens (truera/trulens).
+    Metrics: context_precision, context_recall, faithfulness, answer_relevancy.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  ragas_metrics:
+    formula: |
+      context_precision = mean_k (relevant(ctx_k, q) / k  over top-k)
+      context_recall     = overlap(ground_truth_entities, retrieved_ctx) / |ground_truth_entities|
+      faithfulness       = #{claims(answer) ⊂ ctx} / #{claims(answer)}
+      answer_relevancy   = cosine(embed(q), embed(gen_q_from_answer))
+    domain: "(eval_jsonl with {question, answer, contexts[], ground_truth})"
+    codomain: "JSON {per_sample: [...], ragas_score: f32 (harmonic mean)}"
+    invariants:
+    - "ragas_score ∈ [0, 1]"
+    - "answer identical to ground_truth ⇒ faithfulness = 1 when ctx contains claims"
+    - "empty contexts ⇒ context_precision = context_recall = 0"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-24-001
+  rule: empty-context case returns 0 for retrieval metrics
+  prediction: "contexts=[] yields context_precision=0, context_recall=0"
+  test: |
+    set -euo pipefail
+    echo '{"question":"q","answer":"a","contexts":[],"ground_truth":"a"}' > /tmp/r.jsonl
+    apr eval-rag /tmp/r.jsonl --format json > /tmp/r.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/r.json'))['per_sample'][0]
+    assert d['context_precision']==0.0 and d['context_recall']==0.0, d
+    "
+  if_fails: rule 'empty-context case returns 0 for retrieval metrics' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-24-002
+  rule: ragas_score is bounded to [0,1]
+  prediction: "aggregate ragas_score in [0,1] across any input"
+  test: |
+    set -euo pipefail
+    apr eval-rag tests/fixtures/rag.jsonl --format json > /tmp/r2.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/r2.json'))
+    assert 0.0 <= d['ragas_score'] <= 1.0, d
+    "
+  if_fails: rule 'ragas_score is bounded to [0,1]' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-24-003
+  rule: identical answer+ctx yields faithfulness near 1
+  prediction: "answer == ground_truth AND ctx contains ground_truth → faithfulness ≥ 0.9"
+  test: |
+    set -euo pipefail
+    cat > /tmp/f.jsonl <<'JSON'
+    {"question":"capital of France?","answer":"Paris","contexts":["Paris is the capital of France."],"ground_truth":"Paris"}
+    JSON
+    apr eval-rag /tmp/f.jsonl --format json > /tmp/f.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/f.json'))['per_sample'][0]
+    assert d['faithfulness'] >= 0.9, d
+    "
+
+  if_fails: rule 'identical answer+ctx yields faithfulness near 1' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr eval-rag metric definitions match RAGAS (arXiv:2309.15217) within 1% on shared corpus"
+- type: invariant
+  property: "ragas_score ∈ [0, 1]"
+- type: invariant
+  property: "empty-ctx retrieval metrics = 0"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-e-24
+  priority: medium
+  auto_created: true

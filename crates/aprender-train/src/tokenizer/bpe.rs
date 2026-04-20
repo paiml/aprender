@@ -165,6 +165,90 @@ impl BPETokenizer {
         let json = std::fs::read_to_string(path)?;
         serde_json::from_str(&json).map_err(|e| TokenizerError::Serialization(e.to_string()))
     }
+
+    /// Reconstruct a trained `BPETokenizer` from the HuggingFace-style pair of
+    /// `vocab.json` + `merges.txt` emitted by `apr tokenize train`.
+    ///
+    /// # Format
+    /// - `vocab.json`: JSON object mapping token string → token id (u32). Order
+    ///   is informational; the loader inverts the map to build `id_to_token`.
+    /// - `merges.txt`: leading `#version: 0.2\n` header line, then one merge per
+    ///   line in apply order. Each line is `"<left> <right>"` with a single
+    ///   ASCII space separator (tokens in the aprender-train hex
+    ///   representation never contain spaces, so space-split is unambiguous).
+    ///
+    /// # Parameters
+    /// - `vocab_path`: path to `vocab.json`
+    /// - `merges_path`: path to `merges.txt`
+    /// - `config`: caller-supplied config (normalization, special tokens, etc.)
+    ///   since those fields are not recorded in the HF-style files. MUST match
+    ///   the config used at training time — wrong normalization here produces
+    ///   silently-wrong encodings.
+    ///
+    /// # Invariants
+    /// - C-PRETOK-BIN INV-PRETOK-001: every loaded vocab id < returned
+    ///   tokenizer's `vocab_size()`.
+    /// - Every merge's `(left, right)` concatenation is present in the loaded
+    ///   vocab (otherwise applying the merge during encode would produce a
+    ///   token the vocab cannot resolve). Enforced; mismatch returns an error.
+    pub fn from_vocab_merges(
+        vocab_path: &str,
+        merges_path: &str,
+        config: TokenizerConfig,
+    ) -> Result<Self> {
+        let vocab_json = std::fs::read_to_string(vocab_path)?;
+        let vocab: HashMap<String, TokenId> = serde_json::from_str(&vocab_json)
+            .map_err(|e| TokenizerError::Serialization(e.to_string()))?;
+
+        let id_to_token_map: HashMap<TokenId, String> =
+            vocab.iter().map(|(tok, &id)| (id, tok.clone())).collect();
+
+        if id_to_token_map.len() != vocab.len() {
+            return Err(TokenizerError::Serialization(
+                "vocab.json contains duplicate token ids (collision detected after inverting map)"
+                    .to_string(),
+            ));
+        }
+
+        let merges_text = std::fs::read_to_string(merges_path)?;
+        let mut merges: Vec<(String, String)> = Vec::new();
+        for (line_no, line) in merges_text.lines().enumerate() {
+            if line.is_empty() || line.starts_with("#") {
+                continue;
+            }
+            let mut parts = line.splitn(2, ' ');
+            let left = parts
+                .next()
+                .ok_or_else(|| {
+                    TokenizerError::Serialization(format!(
+                        "merges.txt line {}: missing left token",
+                        line_no + 1
+                    ))
+                })?
+                .to_string();
+            let right = parts
+                .next()
+                .ok_or_else(|| {
+                    TokenizerError::Serialization(format!(
+                        "merges.txt line {}: missing right token (expected '<left> <right>')",
+                        line_no + 1
+                    ))
+                })?
+                .to_string();
+
+            let merged = format!("{left}{right}");
+            if !vocab.contains_key(&merged) {
+                return Err(TokenizerError::Serialization(format!(
+                    "merges.txt line {}: merged token {:?} not present in vocab.json",
+                    line_no + 1,
+                    merged
+                )));
+            }
+            merges.push((left, right));
+        }
+
+        Ok(Self { config, vocab, id_to_token_map, merges, trained: true })
+    }
 }
 
 impl Tokenizer for BPETokenizer {
@@ -410,6 +494,104 @@ mod tests {
             ids_composed, ids_decomposed,
             "Without NFC, composed and decomposed café MUST diverge (falsification witness for INV-TOK-003)"
         );
+    }
+
+    // C-PRETOK-BIN GATE-PRETOK-003 prerequisite: reloading a trained
+    // tokenizer from its emitted vocab.json + merges.txt MUST yield
+    // byte-identical encodings vs the original in-memory tokenizer.
+    // Any drift here means `apr tokenize encode-corpus` (which loads
+    // via from_vocab_merges) would produce shards that differ from
+    // what the tokenizer intended — ShardBatchIter round-trip fails.
+    #[test]
+    fn test_bpe_from_vocab_merges_roundtrip() {
+        use std::fmt::Write;
+        let config = TokenizerConfig::bpe()
+            .with_vocab_size(400)
+            .with_min_frequency(1)
+            .with_normalization(Normalization::NFC);
+        let mut original = BPETokenizer::new(config.clone());
+        let corpus = vec!["def hello():\n    return 1\n", "def world():\n    return 2\n"];
+        original.train(&corpus).expect("training should succeed");
+
+        let tmp = std::env::temp_dir().join(format!(
+            "bpe_roundtrip_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let vocab_path = tmp.join("vocab.json");
+        let merges_path = tmp.join("merges.txt");
+
+        let mut entries: Vec<(&String, &TokenId)> = original.vocab().iter().collect();
+        entries.sort_by_key(|(_, id)| *id);
+        let ordered: serde_json::Map<String, serde_json::Value> = entries
+            .into_iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::Number((*v).into())))
+            .collect();
+        let vocab_json = serde_json::to_string_pretty(&ordered).unwrap();
+        std::fs::write(&vocab_path, vocab_json).unwrap();
+
+        let mut merges_content = String::from("#version: 0.2\n");
+        for (left, right) in original.merges() {
+            writeln!(merges_content, "{left} {right}").unwrap();
+        }
+        std::fs::write(&merges_path, merges_content).unwrap();
+
+        let reloaded = BPETokenizer::from_vocab_merges(
+            vocab_path.to_str().unwrap(),
+            merges_path.to_str().unwrap(),
+            config,
+        )
+        .expect("from_vocab_merges should succeed");
+
+        assert_eq!(reloaded.vocab_size(), original.vocab_size(), "reloaded vocab size must match");
+
+        for text in &corpus {
+            let original_ids = original.encode(text).expect("original encode");
+            let reloaded_ids = reloaded.encode(text).expect("reloaded encode");
+            assert_eq!(
+                original_ids, reloaded_ids,
+                "reloaded encoding must byte-equal original encoding for {text:?}"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // Negative: from_vocab_merges must reject a merges.txt with a merged
+    // token not present in vocab.json — that's a corrupt pair, and encoding
+    // would silently emit <unk> instead of the intended token.
+    #[test]
+    fn test_bpe_from_vocab_merges_rejects_orphan_merge() {
+        let tmp = std::env::temp_dir().join(format!(
+            "bpe_orphan_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let vocab_path = tmp.join("vocab.json");
+        let merges_path = tmp.join("merges.txt");
+
+        std::fs::write(&vocab_path, r#"{"<unk>": 0, "aa": 1, "bb": 2}"#).unwrap();
+        std::fs::write(&merges_path, "#version: 0.2\naa bb\n").unwrap();
+
+        let result = BPETokenizer::from_vocab_merges(
+            vocab_path.to_str().unwrap(),
+            merges_path.to_str().unwrap(),
+            TokenizerConfig::bpe(),
+        );
+
+        assert!(
+            result.is_err(),
+            "from_vocab_merges must reject merges.txt with merged token not in vocab.json"
+        );
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("aabb"),
+            "error should name the offending merged token, got: {err_msg}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
 

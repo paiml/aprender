@@ -1,0 +1,130 @@
+# CRUX-A-12 — apr ps list running models
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-12
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: ollama
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    `apr ps` — list running / VRAM-resident models. Parity target is
+    `ollama ps` (https://github.com/ollama/ollama/blob/main/docs/api.md#list-running-models
+    and CLI `ollama ps`), which reports NAME, ID, SIZE, PROCESSOR, and UNTIL
+    (idle-eviction timestamp) for each model currently loaded by the serve
+    daemon. aprender equivalent: `apr ps` queries the `apr serve` control socket
+    (or HTTP GET /api/ps) and emits the same fields plus `--json` for scripts.
+  references:
+  - "https://github.com/ollama/ollama/blob/main/docs/api.md#list-running-models"
+  - "https://github.com/ollama/ollama/blob/main/cmd/cmd.go"  # ListRunningHandler
+
+equations:
+  ps_row_schema:
+    formula: |
+      Each row in `apr ps --json` output is a JSON object with fields:
+        name:        string          (e.g. "qwen2.5-coder:7b-q4_k_m")
+        id:          string          (sha256 prefix, ≥12 hex chars)
+        size_bytes:  u64 > 0
+        processor:   string ∈ {"100% GPU", "NN%/MM% CPU/GPU", "100% CPU"}
+        until:       RFC3339 string  (idle-eviction deadline, monotonic ≥ now)
+    domain: "`apr serve` loaded-model registry"
+    codomain: array of RunningModel JSON objects
+    invariants:
+    - "Every required field present and typed correctly"
+    - "until ≥ now (no already-evicted entries shown)"
+    - "size_bytes matches the file on disk (not quant-name estimate)"
+
+  ps_reflects_runtime_state:
+    formula: |
+      Let L = set of models currently mmap'd/resident in `apr serve` at time t.
+      `apr ps` at time t ≥ t₀ returns exactly L, modulo models evicted in
+      the [t₀, t] window.
+    domain: (serve_state_t0, elapsed)
+    codomain: Set[RunningModel]
+    invariants:
+    - "A model not currently loaded MUST NOT appear in apr ps"
+    - "A model loaded in the last ≤5s MUST appear"
+
+  ollama_ps_parity:
+    formula: |
+      Same-model-loaded state: `apr ps --json` and `ollama ps --format json`
+      yield the same (name_normalized, processor_pct_gpu) tuple up to name
+      prefix mapping; field set is a superset of ollama's.
+    domain: identical load state
+    codomain: JSON ps listing
+    invariants:
+    - "apr ps columns are a superset of ollama ps columns (NAME, SIZE, PROCESSOR)"
+    - "processor_pct_gpu parses identically from both tools"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-12-001
+  rule: empty ps when nothing loaded
+  prediction: "`apr ps --json` returns [] when serve has no model loaded"
+  test: |
+    apr serve --daemon --idle-timeout 0 &
+    PID=$!; sleep 1
+    apr ps --json | jq 'length == 0'
+    kill $PID
+  if_fails: "apr ps reports phantom entries for unloaded models"
+
+- id: FALSIFY-CRUX-A-12-002
+  rule: load is visible in ps
+  prediction: "running a short completion makes that model appear in apr ps"
+  test: |
+    apr serve --daemon &
+    PID=$!; sleep 1
+    apr run hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF --prompt "hi" --max-tokens 4 >/dev/null
+    apr ps --json | jq -e '.[] | select(.name | contains("Qwen2.5-Coder-7B"))' >/dev/null
+    kill $PID
+  if_fails: "apr ps does not show a model that was just loaded"
+
+- id: FALSIFY-CRUX-A-12-003
+  rule: row schema complete
+  prediction: "every row has {name,id,size_bytes,processor,until}"
+  test: |
+    apr ps --json | jq -e 'all(.[]; (.name and .id and .size_bytes and .processor and .until))'
+  if_fails: "apr ps row missing required fields (schema drift)"
+
+- id: FALSIFY-CRUX-A-12-004
+  rule: parity with ollama ps column set
+  prediction: "apr ps columns ⊇ {NAME, SIZE, PROCESSOR}"
+  test: |
+    # TODO: capture `ollama ps` text transcript in evidence/crux/ollama/ps-golden.txt
+    HDR=$(apr ps | head -1)
+    for col in NAME SIZE PROCESSOR; do
+      echo "$HDR" | grep -qw "$col" || { echo "missing column $col"; exit 1; }
+    done
+  if_fails: "apr ps header lacks one or more ollama-parity columns"
+
+proof_obligations:
+- type: invariant
+  property: "apr ps rows reflect the currently-loaded model set in apr serve"
+- type: invariant
+  property: "Every apr ps row satisfies the RunningModel JSON schema"
+- type: invariant
+  property: "until timestamp ≥ wall-clock now for every row"
+- type: equivalence
+  property: "apr ps columns ⊇ {NAME, SIZE, PROCESSOR} from ollama ps"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-12` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-12
+  priority: high
+  auto_created: true

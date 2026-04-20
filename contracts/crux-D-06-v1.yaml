@@ -1,0 +1,174 @@
+# CRUX-D-06 — Load HF dataset + tokenize + pack
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-06
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Load HF dataset + tokenize + pack. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.D and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  dataset_record_schema:
+    formula: |
+      Output .apr dataset is an array of records, each:
+        {
+          "input_ids":      list[int]  with len ≤ max_length,
+          "attention_mask": list[int]  with values ∈ {0,1}, len == len(input_ids),
+          "labels":         list[int]  with len == len(input_ids),
+                                      where -100 marks ignored positions
+        }
+    domain: HF dataset rows × tokenizer × (max_length, truncation_side)
+    codomain: list[record] serialized as .apr dataset file
+    invariants:
+    - "Every record has the three keys (input_ids, attention_mask, labels)"
+    - "len(input_ids) == len(attention_mask) == len(labels)"
+    - "len(input_ids) ≤ max_length for all records (truncation enforced)"
+    - "Competitor parity: datasets.load_dataset(..).map(tokenizer, batched=True)"
+
+  determinism_under_seed:
+    formula: |
+      ∀ seed s, invocation i₁, i₂:
+        prepare(hf://<slug>, tokenizer, max_length, truncation_side, seed=s)_{i₁}
+        ≡ prepare(hf://<slug>, tokenizer, max_length, truncation_side, seed=s)_{i₂}
+      bytewise on the serialized .apr dataset file.
+    domain: (dataset slug, tokenizer, config, seed)
+    codomain: sha256(output .apr file)
+    invariants:
+    - "Same seed → byte-identical output"
+    - "Shuffle, tokenization order, and packing are deterministic"
+
+  split_preservation:
+    formula: |
+      Let S = { "train", "validation", "test" } ∩ dataset.splits.
+      For each s ∈ S:
+        packed.apr/splits/s exists AND
+        |packed.apr/splits/s| == |hf_dataset[s]|   (no row loss)
+    domain: HF dataset with optional splits
+    codomain: .apr dataset directory structure
+    invariants:
+    - "All HF splits preserved verbatim"
+    - "Row count per split matches upstream exactly (no silent dropping)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-06-001
+  rule: "every record has {input_ids, attention_mask, labels}"
+  prediction: "apr data prepare emits canonical HF-style records"
+  test: |
+    apr data prepare hf://squad --tokenizer fixtures/crux-d-06/tok.apr \
+      --max-length 2048 --truncation-side right --seed 42 \
+      -o /tmp/crux-d-06-packed.apr --json > /tmp/d06.json
+    # TODO: expose `apr dataset inspect --json` to dump first record
+    apr dataset inspect /tmp/crux-d-06-packed.apr --split train --limit 1 --json \
+      | jq -e '.records[0] | has("input_ids") and has("attention_mask") and has("labels")'
+  if_fails: "Record schema missing required keys — downstream trainer will crash"
+
+- id: FALSIFY-CRUX-D-06-002
+  rule: "deterministic output under fixed seed"
+  prediction: "sha256(prepare(..., seed=42)) stable across invocations"
+  test: |
+    apr data prepare hf://squad --tokenizer fixtures/crux-d-06/tok.apr \
+      --max-length 2048 --truncation-side right --seed 42 \
+      -o /tmp/crux-d-06-a.apr > /dev/null
+    apr data prepare hf://squad --tokenizer fixtures/crux-d-06/tok.apr \
+      --max-length 2048 --truncation-side right --seed 42 \
+      -o /tmp/crux-d-06-b.apr > /dev/null
+    A=$(sha256sum /tmp/crux-d-06-a.apr | cut -d' ' -f1)
+    B=$(sha256sum /tmp/crux-d-06-b.apr | cut -d' ' -f1)
+    [ "$A" = "$B" ]
+  if_fails: "Non-deterministic output under fixed seed — shuffle or hashing is non-reproducible"
+
+- id: FALSIFY-CRUX-D-06-003
+  rule: "all splits preserved with matching row counts"
+  prediction: "train/val/test rows match upstream HF dataset row counts"
+  test: |
+    apr data prepare hf://squad --tokenizer fixtures/crux-d-06/tok.apr \
+      --max-length 2048 --seed 42 -o /tmp/crux-d-06-packed.apr > /dev/null
+    # TODO: hf-row-counts.json captured from datasets.load_dataset("squad")
+    REF=evidence/crux/huggingface/d-06-squad-row-counts.json
+    for SPLIT in train validation; do
+      APR_N=$(apr dataset inspect /tmp/crux-d-06-packed.apr --split $SPLIT --json \
+              | jq '.num_rows')
+      HF_N=$(jq ".$SPLIT" "$REF")
+      [ "$APR_N" -eq "$HF_N" ] || { echo "split $SPLIT: apr=$APR_N hf=$HF_N"; exit 1; }
+    done
+  if_fails: "Split row count mismatch — dataset loader dropped or duplicated rows"
+
+- id: FALSIFY-CRUX-D-06-004
+  rule: "truncation honored: no record exceeds max_length"
+  prediction: "len(input_ids) ≤ max_length for every record"
+  test: |
+    apr data prepare hf://squad --tokenizer fixtures/crux-d-06/tok.apr \
+      --max-length 512 --truncation-side right --seed 42 \
+      -o /tmp/crux-d-06-packed.apr > /dev/null
+    apr dataset inspect /tmp/crux-d-06-packed.apr --split train --json \
+      | jq -e '[.records[].input_ids | length] | max <= 512'
+  if_fails: "Truncation not enforced — record exceeds max_length"
+
+- id: FALSIFY-CRUX-D-06-005
+  rule: "datasets library parity on tokenization"
+  prediction: "input_ids for first row match datasets.load_dataset + tokenizer byte-for-byte"
+  test: |
+    # TODO: golden ids at evidence/crux/huggingface/d-06-squad-first-ids.json
+    GOLDEN=evidence/crux/huggingface/d-06-squad-first-ids.json
+    apr data prepare hf://squad --tokenizer fixtures/crux-d-06/tok.apr \
+      --max-length 2048 --seed 42 -o /tmp/crux-d-06-packed.apr > /dev/null
+    apr dataset inspect /tmp/crux-d-06-packed.apr --split train --limit 1 --json \
+      > /tmp/d06-first.json
+    python3 -c "
+    import json
+    apr = json.load(open('/tmp/d06-first.json'))['records'][0]['input_ids']
+    ref = json.load(open('$GOLDEN'))['input_ids']
+    assert apr == ref, f'apr[:20]={apr[:20]} ref[:20]={ref[:20]}'
+    "
+  if_fails: "Tokenization diverges from datasets + tokenizer reference"
+
+proof_obligations:
+- type: invariant
+  property: "every output record has {input_ids, attention_mask, labels} with equal lengths"
+- type: invariant
+  property: "byte-identical output under fixed seed (determinism)"
+- type: invariant
+  property: "train/validation/test splits preserved with matching row counts"
+- type: invariant
+  property: "len(input_ids) ≤ max_length for every record (truncation honored)"
+- type: equivalence
+  property: "apr data prepare hf://<slug> ≡ datasets.load_dataset + tokenizer.map on first row"
+
+# References:
+#   HF datasets: https://huggingface.co/docs/datasets
+#   Tokenizer .map pattern: https://huggingface.co/docs/transformers/en/preprocessing
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-06` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-06
+  priority: critical
+  auto_created: false

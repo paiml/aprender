@@ -1,0 +1,151 @@
+# CRUX-E-06 — Peak RSS + VRAM during generate
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-E-06
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Peak RSS + VRAM during generate. Competitor: vLLM exposes Prometheus
+    `/metrics` with `vllm:gpu_cache_usage_perc` and the PyTorch primitive
+    `torch.cuda.max_memory_allocated()` for VRAM high-water mark.
+    Aprender surface: `apr serve --metrics-enabled` exposes Prometheus
+    `/metrics` with gauges `apr_peak_rss_bytes` and `apr_peak_vram_bytes`.
+    Source: https://docs.vllm.ai/en/latest/serving/metrics.html
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  peak_rss_definition:
+    formula: |
+      apr_peak_rss_bytes(t) = max_{τ ∈ [0, t]} RSS(τ)
+      where RSS(τ) is resident set size at time τ, read from
+      /proc/<pid>/status VmRSS field on Linux.
+    domain: t ∈ [process_start, now]
+    codomain: ℕ (bytes, non-negative monotonic non-decreasing)
+    invariants:
+    - "Monotonically non-decreasing over process lifetime"
+    - "apr_peak_rss_bytes >= model_file_size_bytes (weights must be resident)"
+    - "Resets only on explicit POST /metrics/reset (optional endpoint)"
+
+  peak_vram_definition:
+    formula: |
+      apr_peak_vram_bytes(t) = max_{τ ∈ [0, t]} VRAM_allocated(τ)
+      where VRAM_allocated(τ) is reported by cudaMemGetInfo or
+      equivalent wgpu/trueno probe.
+    domain: t ∈ [process_start, now]
+    codomain: ℕ (bytes, non-negative monotonic non-decreasing)
+    invariants:
+    - "Monotonically non-decreasing over process lifetime"
+    - "apr_peak_vram_bytes <= gpu_total_bytes * 0.95 (no OOM)"
+    - "For CPU-only runs, apr_peak_vram_bytes == 0"
+
+  oom_safety:
+    formula: |
+      For all generate calls:
+        apr_peak_vram_bytes / gpu_total_bytes <= 0.95
+      Violation triggers graceful error, never SIGKILL.
+    domain: generate requests
+    codomain: bool
+    invariants:
+    - "Generation fails gracefully before hitting hardware OOM"
+    - "Error message includes current VRAM pressure"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-06-001
+  rule: Both RSS and VRAM metrics present after generate
+  prediction: "After 1 generate call, /metrics exposes apr_peak_rss_bytes and apr_peak_vram_bytes"
+  test: |
+    apr serve --model model.apr --metrics-enabled --port 8080 &
+    SERVER_PID=$!
+    sleep 2
+    curl -s http://localhost:8080/v1/generate -d '{"prompt":"hello","max_tokens":16}'
+    METRICS=$(curl -s http://localhost:8080/metrics)
+    echo "$METRICS" | grep -q 'apr_peak_rss_bytes' && \
+      echo "$METRICS" | grep -q 'apr_peak_vram_bytes'
+    kill $SERVER_PID
+  if_fails: "Required memory metrics missing from /metrics endpoint"
+
+- id: FALSIFY-CRUX-E-06-002
+  rule: VRAM stays below 95% of total (no OOM)
+  prediction: "peak_vram / gpu_total <= 0.95"
+  test: |
+    # TODO: requires CUDA runtime to query gpu_total_bytes via nvidia-smi
+    GPU_TOTAL=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+    GPU_TOTAL_BYTES=$((GPU_TOTAL * 1024 * 1024))
+    PEAK=$(curl -s http://localhost:8080/metrics | \
+           grep '^apr_peak_vram_bytes ' | awk '{print $2}')
+    python3 -c "assert $PEAK <= $GPU_TOTAL_BYTES * 0.95, 'VRAM over 95%'"
+  if_fails: "peak_vram exceeds 95% of gpu_total (OOM risk)"
+
+- id: FALSIFY-CRUX-E-06-003
+  rule: Monotonic non-decreasing
+  prediction: "peak_rss and peak_vram never decrease during process lifetime"
+  test: |
+    A_RSS=$(curl -s http://localhost:8080/metrics | grep '^apr_peak_rss_bytes ' | awk '{print $2}')
+    curl -s http://localhost:8080/v1/generate -d '{"prompt":"test","max_tokens":64}' > /dev/null
+    B_RSS=$(curl -s http://localhost:8080/metrics | grep '^apr_peak_rss_bytes ' | awk '{print $2}')
+    python3 -c "assert $B_RSS >= $A_RSS, 'peak_rss decreased'"
+  if_fails: "peak_rss/peak_vram decreased (monotonicity violated)"
+
+- id: FALSIFY-CRUX-E-06-004
+  rule: peak_rss >= model file size
+  prediction: "peak_rss_bytes >= model_file_size_bytes (weights must be in RAM)"
+  test: |
+    MODEL_SIZE=$(stat -c%s model.apr)
+    PEAK_RSS=$(curl -s http://localhost:8080/metrics | grep '^apr_peak_rss_bytes ' | awk '{print $2}')
+    python3 -c "assert $PEAK_RSS >= $MODEL_SIZE, f'peak_rss {$PEAK_RSS} < model {$MODEL_SIZE}'"
+  if_fails: "peak_rss < model file size (weights not fully resident, unexpected)"
+
+- id: FALSIFY-CRUX-E-06-005
+  rule: Graceful OOM handling
+  prediction: "Requests that would exceed 95% VRAM fail with 5xx, not SIGKILL"
+  test: |
+    # TODO: construct request with max_tokens large enough to force pressure
+    RESP=$(curl -s -o /tmp/body -w "%{http_code}" \
+           http://localhost:8080/v1/generate \
+           -d '{"prompt":"x","max_tokens":100000}')
+    # Either 200 (fit) or 5xx (graceful) — never process death
+    [ "$RESP" = "200" ] || [ "${RESP:0:1}" = "5" ]
+    pgrep -f 'apr serve' > /dev/null  # process still alive
+  if_fails: "Server crashed (SIGKILL) instead of returning error"
+
+proof_obligations:
+- type: invariant
+  property: "apr_peak_rss_bytes and apr_peak_vram_bytes always exposed via /metrics"
+- type: invariant
+  property: "peak_vram <= gpu_total * 0.95 (no OOM)"
+- type: invariant
+  property: "Both metrics monotonic non-decreasing over process lifetime"
+- type: invariant
+  property: "peak_rss >= model_file_size_bytes"
+- type: invariant
+  property: "Graceful failure on VRAM pressure (no SIGKILL)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-06` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-06
+  priority: critical
+  auto_created: false

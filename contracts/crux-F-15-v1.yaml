@@ -1,0 +1,94 @@
+# CRUX-F-15 — NCCL failure diagnostics
+
+metadata:
+  id: CRUX-F-15
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: pytorch
+  demand_score: 3
+  intake_status: missing
+  description: >
+    On NCCL error (unhandled CUDA error, async error, peer-closed, async-error
+    watchdog), emit actionable diagnosis naming host, rank, NCCL version,
+    CUDA_VISIBLE_DEVICES, IB/Ethernet fabric, and last collective-op name.
+    Canonical: PyTorch sets NCCL_DEBUG=INFO + TORCH_NCCL_ASYNC_ERROR_HANDLING=1;
+    NCCL docs at docs.nvidia.com/deeplearning/nccl/user-guide/docs/troubleshooting.html.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  nccl_diagnosis:
+    formula: |
+      on nccl_err(code, op, peer):
+        emit {
+          "host": gethostname(), "rank": rank, "peer_rank": peer,
+          "nccl_version": nccl_lib_version(), "cuda_devices": $CUDA_VISIBLE_DEVICES,
+          "fabric": detect_fabric(ib|eth|nvlink), "last_op": op, "code": code,
+          "suggest": suggest_from_code(code)
+        }
+        exit(128 + code)
+    domain: "(err: NcclErr, rank: u32, world_size: u32)"
+    codomain: "actionable JSON to stderr + non-zero exit"
+    invariants:
+    - "stderr is a parseable JSON object on NCCL error (not free text)"
+    - "exit code encodes NCCL err code so schedulers can dispatch"
+    - "diagnosis carries NCCL version (mismatch across ranks is top root cause)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-15-001
+  rule: nccl error produces parseable JSON diag
+  prediction: "simulated NCCL failure emits JSON to stderr with expected keys"
+  test: |
+    set -euo pipefail
+    ! APR_SIMULATE_NCCL_ERR=async apr train tests/fixtures/tiny-sft.jsonl \
+      --model tests/fixtures/tinyllama-hf --world-size 2 --steps 1 \
+      --model tests/fixtures/tinyllama-hf 2>/tmp/nccl-err
+    python3 - <<'PY'
+    import json; d=json.load(open("/tmp/nccl-err"))
+    for k in ("host","rank","nccl_version","last_op","code","suggest"):
+      assert k in d, f"missing key {k}"
+    PY
+  if_fails: rule 'nccl error produces parseable JSON diag' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-15-002
+  rule: exit code encodes err code (not generic 1)
+  prediction: "exit code != 1 (non-generic); maps to 128+code range"
+  test: |
+    set -euo pipefail
+    ! APR_SIMULATE_NCCL_ERR=async apr train tests/fixtures/tiny-sft.jsonl \
+      --world-size 2 --steps 1 --model tests/fixtures/tinyllama-hf 2>/dev/null; ec=$?
+    [ "$ec" -ge 128 ]
+  if_fails: rule 'exit code encodes err code (not generic 1)' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-15-003
+  rule: suggest field cites NCCL doc link
+  prediction: "suggest field contains an nvidia.com or nccl URL"
+  test: |
+    set -euo pipefail
+    grep -Eo 'https?://(docs\.nvidia\.com|developer\.nvidia\.com|github\.com/NVIDIA/nccl)' /tmp/nccl-err
+
+  if_fails: rule 'suggest field cites NCCL doc link' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr NCCL diagnosis surface matches TORCH_NCCL_ASYNC_ERROR_HANDLING behavior"
+- type: invariant
+  property: "stderr JSON is parseable (not free text)"
+- type: invariant
+  property: "exit code encodes NCCL err class (≥ 128)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-f-15
+  priority: medium
+  auto_created: true

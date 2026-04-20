@@ -1,0 +1,128 @@
+# CRUX-G-05 — Checksum manifest SHA256 per file
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-G-05
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "G — Format Conversion"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Checksum manifest SHA256 per file. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.G and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
+equations:
+  manifest_sha256_per_file:
+    formula: |
+      HuggingFace canonical (CLI):
+        hf hash-file <path>             → prints git-style sha256 (blob oid)
+        GET /api/models/<repo>/tree/main → per-file {path, size, oid, lfs.oid?}
+          - small files: `oid` is the git sha1-of-blob header
+          - LFS files:   `lfs.oid` is the sha256 of the raw content
+      apr parity:
+        apr publish ... --manifest <MAN.json>
+          produces MAN.json with schema:
+            { "files": [ { "path": str, "size_bytes": int, "sha256": hex64 }, ... ],
+              "generated_at": iso8601, "tool": "apr", "version": semver }
+        AND for every file F listed, sha256(F) == MAN.files[i].sha256
+    domain: "local file set about to be published"
+    codomain: "manifest JSON + filesystem file contents"
+    invariants:
+    - "Manifest MUST contain one entry per file in the publish set (no omissions)"
+    - "Each sha256 is 64 lowercase hex chars (SHA-256 of raw bytes, not git blob oid)"
+    - "sha256(local file) == manifest[i].sha256 for every i"
+    - "Re-running the manifest on the same inputs yields byte-identical content except generated_at"
+
+  manifest_matches_hf_blob_id:
+    formula: |
+      For LFS-eligible files (>5 GiB or --lfs), manifest.sha256 must equal
+      HF's lfs.oid after upload:
+        sha256_local = apr manifest sha256 for file F
+        GET /api/models/<repo>/tree/main → entry for F → entry.lfs.oid
+        ⇒ sha256_local == entry.lfs.oid
+    domain: "published LFS file"
+    codomain: "HF /tree lfs.oid"
+    invariants:
+    - "For LFS files, apr manifest sha256 byte-equals HF lfs.oid after upload"
+
+falsification_tests:
+- id: FALSIFY-CRUX-G-05-001
+  rule: "apr manifest sha256 matches sha256sum of raw bytes for every file"
+  prediction: "for every file in the manifest, sha256(file) == manifest[i].sha256 (lowercase hex-64)"
+  test: |
+    set -euo pipefail
+    MAN=$(mktemp --suffix=.json)
+    apr manifest tests/fixtures/tiny-q4k.apr tests/fixtures/tiny-tokenizer.json \
+        -o "$MAN"
+    jq -e '.files | length >= 2' "$MAN"
+    jq -r '.files[] | [.path, .sha256] | @tsv' "$MAN" | \
+      while IFS=$'\t' read -r P HASH; do
+        LOCAL=$(sha256sum "$P" | awk '{print $1}')
+        [ "$LOCAL" = "$HASH" ] || { echo "sha256 mismatch for $P: $LOCAL vs $HASH"; exit 1; }
+        echo "$HASH" | grep -Eq '^[0-9a-f]{64}$' || { echo "bad hash format"; exit 1; }
+      done
+  if_fails: "manifest sha256 disagrees with sha256sum of the file (corrupt or misaligned manifest)"
+
+- id: FALSIFY-CRUX-G-05-002
+  rule: "manifest is a complete enumeration of the publish set (no silent omissions)"
+  prediction: "every file passed to `apr manifest` appears in manifest.files"
+  test: |
+    set -euo pipefail
+    MAN=$(mktemp --suffix=.json)
+    apr manifest tests/fixtures/tiny-q4k.apr tests/fixtures/tiny-tokenizer.json -o "$MAN"
+    for F in tests/fixtures/tiny-q4k.apr tests/fixtures/tiny-tokenizer.json; do
+      jq -e --arg f "$F" '.files | map(.path) | index($f) != null' "$MAN"
+    done
+  if_fails: "manifest silently omits a file that was passed on the command line"
+
+- id: FALSIFY-CRUX-G-05-003
+  rule: "parity with hf hash-file for non-LFS files"
+  prediction: "where HF exposes sha256 (via LFS upload or hf hash-file --sha256), apr manifest sha256 agrees"
+  test: |
+    set -euo pipefail
+    MAN=$(mktemp --suffix=.json)
+    apr manifest tests/fixtures/tiny-q4k.apr -o "$MAN"
+    APR_SHA=$(jq -r '.files[0].sha256' "$MAN")
+    LOCAL_SHA=$(sha256sum tests/fixtures/tiny-q4k.apr | awk '{print $1}')
+    [ "$APR_SHA" = "$LOCAL_SHA" ]
+  if_fails: "apr manifest sha256 diverges from raw-bytes sha256 (parity with HF blob verification broken)"
+
+proof_obligations:
+- type: invariant
+  property: "manifest contains one entry per input file (no omissions)"
+- type: invariant
+  property: "manifest.sha256 equals sha256 of raw file bytes (64 lowercase hex)"
+- type: equivalence
+  property: "apr manifest sha256 matches the value huggingface_hub exposes for the same file (lfs.oid for LFS, sha256 of bytes otherwise)"
+  competitor: huggingface
+  reference: "https://huggingface.co/docs/huggingface_hub/main/en/guides/cli (hf hash-file); https://huggingface.co/docs/hub/api (tree endpoint lfs.oid / blob_id)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-g-05` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-g-05
+  priority: high
+  auto_created: false

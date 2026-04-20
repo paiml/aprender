@@ -1,0 +1,98 @@
+# CRUX-G-04 — Auto-generate README with examples
+
+metadata:
+  id: CRUX-G-04
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "G — Format Conversion"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Scaffold a model-card README from tensor layout + config + tokenizer so
+    the initial Hub page meets HF card-content schema. Canonical:
+    `huggingface_hub.ModelCard.from_template(...)` + auto-generated example
+    code-block in Python/CLI that actually runs.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
+equations:
+  card_gen:
+    formula: |
+      frontmatter = YAML { license, library_name, base_model?, tags: [infer from tensor], ... }
+      body       = sections(["Model", "Usage", "Training", "Eval"])
+      usage_py   = f"from apr import run; print(run('{repo}'))"
+      usage_cli  = f"apr run hf://{repo} --prompt 'hello'"
+    domain: "(model: Path, repo: str, license ∈ known_licenses)"
+    codomain: "README.md with valid YAML frontmatter + executable usage block"
+    invariants:
+    - "frontmatter YAML parses"
+    - "usage_cli block actually runs (non-zero exit ⇒ fail)"
+    - "required fields license + library_name always present"
+
+falsification_tests:
+- id: FALSIFY-CRUX-G-04-001
+  rule: frontmatter is valid YAML
+  prediction: "head of README.md through second '---' parses as YAML"
+  test: |
+    set -euo pipefail
+    apr gen-card tests/fixtures/tinyllama-hf --repo org/tinyllama-hf \
+      --license apache-2.0 -o /tmp/card/README.md
+    python3 - <<'PY'
+    import re, yaml, sys
+    text = open("/tmp/card/README.md").read()
+    m = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+    assert m, "no frontmatter"
+    fm = yaml.safe_load(m.group(1))
+    assert "license" in fm and "library_name" in fm, fm
+    PY
+  if_fails: rule 'frontmatter is valid YAML' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-04-002
+  rule: generated CLI example actually runs
+  prediction: "the ```bash code block extracted from README runs with exit=0"
+  test: |
+    set -euo pipefail
+    python3 - <<'PY'
+    import re
+    text = open("/tmp/card/README.md").read()
+    blocks = re.findall(r"```bash\n(.*?)```", text, re.DOTALL)
+    assert blocks, "no bash block in README"
+    # write first block and run
+    open("/tmp/usage.sh","w").write("set -e\n" + blocks[0])
+    PY
+    bash /tmp/usage.sh
+  if_fails: rule 'generated CLI example actually runs' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-04-003
+  rule: unknown license is rejected
+  prediction: "--license bogus yields non-zero + actionable error"
+  test: |
+    set -euo pipefail
+    ! apr gen-card tests/fixtures/tinyllama-hf --repo x/y --license bogus -o /tmp/bad.md 2>/tmp/err
+    grep -E "unknown license|one of" /tmp/err
+
+  if_fails: rule 'unknown license is rejected' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr gen-card frontmatter schema matches huggingface_hub ModelCard minimal required fields"
+- type: invariant
+  property: "generated README code example runs successfully"
+- type: invariant
+  property: "required license + library_name always present"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-g-04
+  priority: medium
+  auto_created: true

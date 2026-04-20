@@ -1,0 +1,121 @@
+# CRUX-C-10 — Grammar-constrained GBNF output
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-10
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: llama_cpp
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Grammar-constrained GBNF output. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  gbnf_grammar_constraint:
+    formula: |
+      llama.cpp canonical:
+        llama-cli --grammar-file grammar.gbnf --prompt "..."  (or --grammar "root ::= ...")
+        Reference: https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md
+      apr parity target:
+        apr run <model> --grammar-file grammar.gbnf --prompt "..." [--json]
+        apr serve HTTP: POST /v1/chat/completions with "grammar": "<gbnf-string>"
+      Output MUST parse as the grammar's start symbol (root ::= ...).
+      Every emitted token MUST be drawn from the token set legal at the
+      current grammar parser state; tokens outside that set have their
+      logits masked to -inf before sampling.
+    domain: "(model, prompt, gbnf_grammar_string)"
+    codomain: generated_text:string
+    invariants:
+    - "Output string is accepted by a conforming GBNF parser for the supplied grammar"
+    - "Rejected tokens (outside legal set at state s) have sampling probability == 0"
+    - "If grammar is unsatisfiable, apr returns non-zero exit and stderr contains 'grammar'"
+    - "Reference: llama.cpp grammars/README.md and examples/json.gbnf"
+
+  gbnf_json_output_wellformed:
+    formula: |
+      Given the canonical llama.cpp grammars/json.gbnf applied to any prompt,
+      the generated completion MUST parse via json.loads() without exception.
+    domain: "(model, prompt, grammar=json.gbnf)"
+    codomain: bool
+    invariants:
+    - "For grammar=json.gbnf, python3 -c 'import json,sys; json.loads(sys.stdin.read())' returns 0"
+    - "finish_reason is 'stop' (grammar accept state) or 'length' (max_tokens hit)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-10-001
+  rule: grammar-constrained output parses as JSON when grammar=json.gbnf
+  prediction: "apr run --grammar-file json.gbnf emits text that json.loads() accepts"
+  test: |
+    # Golden: llama.cpp's own json.gbnf grammar
+    # Reference: https://github.com/ggerganov/llama.cpp/blob/master/grammars/json.gbnf
+    GRAMMAR=/tmp/crux-c-10-json.gbnf
+    cat >"$GRAMMAR" <<'EOF'
+    root   ::= object
+    value  ::= object | array | string | number | ("true" | "false" | "null") ws
+    object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? "}" ws
+    array  ::= "[" ws ( value ("," ws value)* )? "]" ws
+    string ::= "\"" ( [^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}) )* "\"" ws
+    number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+    ws     ::= [ \t\n]*
+    EOF
+    OUT=$(apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \
+           --grammar-file "$GRAMMAR" \
+           --prompt "Emit a JSON object with keys a,b,c." \
+           --max-tokens 64 --temperature 0 2>/dev/null) \
+      || { echo "FAIL: apr run exited non-zero" >&2; exit 1; }
+    python3 -c "import json,sys; json.loads(sys.argv[1])" "$OUT" \
+      || { echo "FAIL: output not valid JSON: $OUT" >&2; exit 1; }
+  if_fails: "Grammar-constrained output does not parse under the supplied GBNF (apr does not mask illegal tokens)"
+
+- id: FALSIFY-CRUX-C-10-002
+  rule: unsupported/unsatisfiable grammar surfaces clear error
+  prediction: "apr run with malformed grammar exits non-zero and mentions 'grammar' in stderr"
+  test: |
+    BAD=/tmp/crux-c-10-bad.gbnf
+    echo 'root ::= @@@invalid@@@' > "$BAD"
+    if apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \
+         --grammar-file "$BAD" --prompt "x" --max-tokens 4 2>/tmp/crux-c-10-err.log; then
+      echo "FAIL: expected non-zero exit on malformed grammar" >&2; exit 1
+    fi
+    grep -i grammar /tmp/crux-c-10-err.log >/dev/null \
+      || { echo "FAIL: stderr missing 'grammar' diagnostic" >&2; exit 1; }
+  if_fails: "apr accepted malformed GBNF silently or emitted no diagnostic"
+
+proof_obligations:
+- type: equivalence
+  property: "apr run --grammar-file matches llama.cpp llama-cli --grammar-file json.gbnf on the golden prompt (both emit parseable JSON)"
+- type: invariant
+  property: "Generated text parses under supplied GBNF grammar (root accept state reached or max_tokens)"
+- type: invariant
+  property: "Malformed grammar produces non-zero exit with 'grammar' diagnostic in stderr"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-10` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-10
+  priority: high
+  auto_created: false

@@ -1,0 +1,165 @@
+# CRUX-B-10 — BitsAndBytes NF4 4-bit
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-B-10
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    BitsAndBytes NF4 (4-bit NormalFloat) quantization from the QLoRA paper
+    (Dettmers et al. 2023, https://arxiv.org/abs/2305.14314), as implemented in
+    `bitsandbytes` and consumed via `transformers.BitsAndBytesConfig(load_in_4bit=True,
+    bnb_4bit_quant_type='nf4')`. aprender equivalent: `apr quantize model.apr
+    --method nf4 -o model-nf4.apr` applies per-block NF4 with optional double
+    quantization (bnb_4bit_use_double_quant) and bf16/f16 compute dtype.
+  references:
+  - "https://arxiv.org/abs/2305.14314"  # QLoRA paper
+  - "https://github.com/TimDettmers/bitsandbytes/blob/main/bitsandbytes/functional.py"
+  - "https://huggingface.co/docs/transformers/main/en/quantization/bitsandbytes"
+
+equations:
+  nf4_codebook:
+    formula: |
+      NF4 uses a fixed 16-level codebook (symmetric zero, ~quantile of N(0,1)):
+        C = [-1.0, -0.6962, -0.5251, -0.3949, -0.2844, -0.1848, -0.0911, 0.0,
+              0.0796, 0.1609, 0.2461, 0.3379, 0.4407, 0.5626, 0.7229, 1.0]
+      For each block of 64 weights w:
+        absmax = max(|w_i|)
+        s = absmax / 1.0          # scale
+        q_i = argmin_k |w_i/s - C[k]|
+      Dequant: w_hat_i = C[q_i] * s
+    domain: f32 weight block, length 64
+    codomain: (u4[64], f32 scale)
+    invariants:
+    - "Codebook C is exactly 16 fixed values and MUST match bitsandbytes table"
+    - "Block size is 64 by default (matches bitsandbytes default)"
+    - "|w_hat - w|_2 / |w|_2 < 0.06 on average for N(0,1) blocks (paper claim)"
+
+  double_quant_option:
+    formula: |
+      When --double-quant is set:
+        scales = [s_b for each block b]           # f32
+        scales_q = symmetric_quant(scales, 256)   # 8-bit per-scale quantization
+        stored = (u4 codes, scales_q u8, super_scale f32)
+      Memory: NF4 = 0.5 B/weight + 4 B/block; NF4+DQ = 0.5 + 0.127 B/weight.
+    domain: (f32 scales, double_quant_flag)
+    codomain: packed_scales
+    invariants:
+    - "Storage = 0.5 B/w + (4 B/block if !dq else 0.127 B/w)"
+    - "Round-trip dequant error matches non-DQ within 1e-4 relative"
+
+  parity_with_bnb:
+    formula: |
+      For the same f32 input weights, apr NF4 dequant output and bitsandbytes
+      NF4 dequant output (via `transformers` load_in_4bit) must satisfy
+      max_abs_diff < 1e-6 (identical codebook, identical algorithm).
+    domain: f32 weight tensor
+    codomain: dequant f32 tensor
+    invariants:
+    - "Bit-exact parity with bitsandbytes (same codebook index for every weight)"
+    - "NOT merely statistically close — same deterministic algorithm"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-10-001
+  rule: NF4 codebook table exact match
+  prediction: "apr's NF4 codebook == bitsandbytes 16-value table"
+  test: |
+    apr inspect --print-nf4-codebook --json > /tmp/cb.json
+    python3 - <<'PY'
+    import json
+    got = json.load(open("/tmp/cb.json"))["codebook"]
+    bnb = [-1.0, -0.6961928009986877, -0.5250730514526367, -0.39491748809814453,
+           -0.28444138169288635, -0.18477343022823334, -0.09105003625154495, 0.0,
+            0.07958029955625534, 0.16093020141124725, 0.24611230194568634,
+            0.33791524171829224, 0.44070982933044434, 0.5626170039176941,
+            0.7229568362236023, 1.0]
+    assert len(got) == 16
+    for a, b in zip(got, bnb):
+        assert abs(a - b) < 1e-6, (a, b)
+    PY
+  if_fails: "apr NF4 codebook diverges from bitsandbytes canonical table"
+
+- id: FALSIFY-CRUX-B-10-002
+  rule: storage footprint correct
+  prediction: "NF4 file = ~0.5 B/weight; NF4+DQ = ~0.127 B/weight additional scale cost"
+  test: |
+    apr quantize test-data/tinyllama-f16.apr --method nf4 -o /tmp/nf4.apr
+    apr quantize test-data/tinyllama-f16.apr --method nf4 --double-quant -o /tmp/nf4dq.apr
+    python3 - <<'PY'
+    import os
+    nparams = 1_100_000_000  # TinyLlama ~1.1B
+    s1 = os.path.getsize("/tmp/nf4.apr")
+    s2 = os.path.getsize("/tmp/nf4dq.apr")
+    # Expect ~0.5 B/weight + block overhead; allow ±10%
+    assert 0.45*nparams <= s1 <= 0.65*nparams, s1
+    assert s2 < s1, (s1, s2)
+    PY
+  if_fails: "NF4 storage footprint outside expected envelope"
+
+- id: FALSIFY-CRUX-B-10-003
+  rule: dequant error bounded
+  prediction: "||W_dq - W||_2 / ||W||_2 < 0.06 on N(0,1) synthetic weights"
+  test: |
+    apr quantize test-data/synthetic-normal.apr --method nf4 -o /tmp/synth-nf4.apr
+    apr diff test-data/synthetic-normal.apr /tmp/synth-nf4.apr --json > /tmp/diff.json
+    python3 - <<'PY'
+    import json
+    d = json.load(open("/tmp/diff.json"))
+    for t in d["tensors"]:
+        assert t["rel_l2_error"] < 0.06, t
+    PY
+  if_fails: "NF4 relative L2 error exceeds 0.06 paper bound"
+
+- id: FALSIFY-CRUX-B-10-004
+  rule: parity with bitsandbytes dequant
+  prediction: "max_abs_diff(apr_dequant, bnb_dequant) < 1e-6 on identical input"
+  test: |
+    # TODO: requires CUDA for bitsandbytes; gate with env probe
+    command -v nvidia-smi >/dev/null || { echo "no GPU"; exit 2; }
+    apr quantize test-data/tinyllama-f16.apr --method nf4 -o /tmp/apr-nf4.apr
+    apr export /tmp/apr-nf4.apr --format safetensors --dequant -o /tmp/apr-deq.safetensors
+    uv run --with bitsandbytes --with torch --with safetensors python3 - <<'PY'
+    import torch, bitsandbytes as bnb
+    from safetensors.torch import load_file
+    W = load_file("test-data/tinyllama-f16.safetensors")["model.layers.0.self_attn.q_proj.weight"].cuda().to(torch.float16)
+    q, state = bnb.functional.quantize_nf4(W)
+    bnb_deq = bnb.functional.dequantize_nf4(q, state).float().cpu()
+    apr_deq = load_file("/tmp/apr-deq.safetensors")["model.layers.0.self_attn.q_proj.weight"].float()
+    assert (apr_deq - bnb_deq).abs().max().item() < 1e-6
+    PY
+  if_fails: "apr NF4 dequant does not bit-match bitsandbytes"
+
+proof_obligations:
+- type: invariant
+  property: "NF4 codebook = fixed 16-value table from QLoRA paper (bit-exact)"
+- type: invariant
+  property: "Block size 64; storage 0.5 B/w (+ DQ overhead when enabled)"
+- type: invariant
+  property: "Relative L2 dequant error < 0.06 on N(0,1) weights"
+- type: equivalence
+  property: "apr NF4 dequant ≡ bitsandbytes NF4 dequant (max_abs_diff < 1e-6)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-b-10` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-b-10
+  priority: high
+  auto_created: true

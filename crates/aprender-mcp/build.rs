@@ -85,14 +85,20 @@ fn main() {
     });
 }
 
-/// Resolve `contracts/apr-mcp-tool-schemas-v1.yaml` relative to this crate's
-/// manifest dir. Works for both in-tree builds and worktree copies.
+/// Resolve `apr-mcp-tool-schemas-v1.yaml` relative to this crate's
+/// manifest dir.
+///
+/// Single source of truth per-crate: `CARGO_MANIFEST_DIR/contracts/…`.
+/// Shipping the YAML inside the crate (via `Cargo.toml` `include`) is what
+/// makes `cargo install aprender` work — the workspace-root
+/// `contracts/apr-mcp-tool-schemas-v1.yaml` is outside the published
+/// package and would panic this build.rs at install time (v0.31.1 bug).
+/// A drift-guard test in `tests/falsify_mcp_008.rs` asserts the in-crate
+/// copy stays byte-identical to the workspace-root copy in-tree.
 fn locate_contract() -> PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .expect("FALSIFY-MCP-008: CARGO_MANIFEST_DIR unset in build.rs");
     Path::new(&manifest_dir)
-        .join("..")
-        .join("..")
         .join("contracts")
         .join("apr-mcp-tool-schemas-v1.yaml")
 }

@@ -54,8 +54,7 @@ fn create_clean_worktree_and_auto_close_if_clean_cleans_up() {
         return;
     }
     let (_td, repo) = init_temp_repo();
-    let session =
-        WorktreeSession::create(&repo, "agent/clean").expect("create worktree");
+    let session = WorktreeSession::create(&repo, "agent/clean").expect("create worktree");
     let wt_path = session.path().to_path_buf();
     let wt_branch = session.branch().to_string();
 
@@ -74,10 +73,7 @@ fn create_clean_worktree_and_auto_close_if_clean_cleans_up() {
         .args(["branch", "--list", "agent/clean"])
         .output()
         .expect("git branch");
-    assert!(
-        String::from_utf8_lossy(&out.stdout).trim().is_empty(),
-        "branch must be deleted"
-    );
+    assert!(String::from_utf8_lossy(&out.stdout).trim().is_empty(), "branch must be deleted");
 }
 
 #[test]
@@ -86,8 +82,7 @@ fn create_dirty_worktree_and_auto_close_if_clean_keeps_it() {
         return;
     }
     let (_td, repo) = init_temp_repo();
-    let session =
-        WorktreeSession::create(&repo, "agent/dirty").expect("create worktree");
+    let session = WorktreeSession::create(&repo, "agent/dirty").expect("create worktree");
     let wt_path = session.path().to_path_buf();
     // Make the worktree dirty.
     fs::write(wt_path.join("scratch.txt"), "new file\n").expect("write scratch");
@@ -117,8 +112,7 @@ fn keep_returns_path_and_branch_without_removing() {
         return;
     }
     let (_td, repo) = init_temp_repo();
-    let session =
-        WorktreeSession::create(&repo, "agent/kept").expect("create worktree");
+    let session = WorktreeSession::create(&repo, "agent/kept").expect("create worktree");
     let wt_path = session.path().to_path_buf();
 
     let (kept_path, kept_branch) = session.keep();
@@ -140,8 +134,7 @@ fn auto_close_removes_even_if_dirty() {
         return;
     }
     let (_td, repo) = init_temp_repo();
-    let session =
-        WorktreeSession::create(&repo, "agent/force").expect("create worktree");
+    let session = WorktreeSession::create(&repo, "agent/force").expect("create worktree");
     let wt_path = session.path().to_path_buf();
     fs::write(wt_path.join("scratch.txt"), "dirty\n").expect("write scratch");
 
@@ -173,8 +166,7 @@ fn repo_root_accessor_returns_input_path() {
         return;
     }
     let (_td, repo) = init_temp_repo();
-    let session =
-        WorktreeSession::create(&repo, "agent/root-probe").expect("create worktree");
+    let session = WorktreeSession::create(&repo, "agent/root-probe").expect("create worktree");
     assert_eq!(session.repo_root(), repo.as_path());
     session.auto_close().expect("cleanup");
 }

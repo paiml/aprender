@@ -1,0 +1,96 @@
+# CRUX-H-19 — Synthetic data generation via LLM
+
+metadata:
+  id: CRUX-H-19
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Synthetic data generation via LLM: prompt a teacher model over a seed
+    set of instructions to produce new (prompt, response) rows. Canonical:
+    HF `distilabel` (Self-Instruct / EvolInstruct) + SFTTrainer input
+    format. Output rows must validate against an emitted JSON schema and
+    pass exact-duplicate dedup against the seed.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  synthgen:
+    formula: |
+      for seed_i in seed_set:
+        response_i = LLM(prompt_template(seed_i), temperature=T, seed=S_i)
+        row_i = { "prompt": prompt_i, "response": response_i }
+        if row_i ∉ emitted ∧ len(response_i) ≥ min_tokens:
+          emit row_i
+    domain: "(seed: [str], teacher: Model, n: int, temperature: f32, seed: u64)"
+    codomain: "jsonl rows with schema {prompt: str, response: str, meta: {model, temp, seed_idx}}"
+    invariants:
+    - "every row validates against --schema /tmp/schema.json"
+    - "no byte-identical duplicates within the emitted set"
+    - "--seed S produces byte-identical jsonl across runs"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-19-001
+  rule: every emitted row validates against schema
+  prediction: "jsonschema validates 100% of rows"
+  test: |
+    set -euo pipefail
+    apr synth generate tests/fixtures/seeds.txt \
+      --teacher hf://Qwen/Qwen2.5-0.5B-Instruct --n 20 --seed 7 \
+      --schema /tmp/schema.json -o /tmp/syn.jsonl
+    uv run --with jsonschema python3 -c "
+    import json, jsonschema
+    schema = json.load(open('/tmp/schema.json'))
+    for line in open('/tmp/syn.jsonl'):
+        jsonschema.validate(json.loads(line), schema)
+    "
+  if_fails: rule 'every emitted row validates against schema' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-19-002
+  rule: no within-set duplicates
+  prediction: "count(unique lines) == count(lines)"
+  test: |
+    set -euo pipefail
+    n=$(wc -l < /tmp/syn.jsonl)
+    u=$(sort -u /tmp/syn.jsonl | wc -l)
+    python3 -c "assert $n == $u, ($n, $u)"
+  if_fails: rule 'no within-set duplicates' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-19-003
+  rule: determinism under fixed seed
+  prediction: "two runs with --seed 7 are byte-identical"
+  test: |
+    set -euo pipefail
+    apr synth generate tests/fixtures/seeds.txt \
+      --teacher hf://Qwen/Qwen2.5-0.5B-Instruct --n 20 --seed 7 \
+      -o /tmp/syn2.jsonl
+    diff /tmp/syn.jsonl /tmp/syn2.jsonl
+
+  if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr synth generate output format matches distilabel + SFTTrainer jsonl schema"
+- type: invariant
+  property: "schema validation always passes on emitted rows"
+- type: invariant
+  property: "determinism under fixed seed + fixed teacher"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-h-19
+  priority: medium
+  auto_created: true

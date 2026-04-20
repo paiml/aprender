@@ -1,0 +1,158 @@
+# CRUX-H-09 — Parquet/Arrow ingest
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-H-09
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Parquet/Arrow ingest. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.H and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  parquet_ingest_row_fidelity:
+    formula: |
+      HuggingFace datasets canonical:
+        from datasets import load_dataset
+        ds = load_dataset("parquet", data_files="data.parquet")
+        # rows: ds["train"] has len == parquet.num_rows
+        # schema: ds.features matches parquet Arrow schema 1:1
+      apr parity:
+        apr ingest --format parquet --input data.parquet --output data.apr
+        OR apr finetune --data data.parquet ...
+      Post-conditions:
+        row_count(apr.ingested) == pyarrow.parquet.ParquetFile(F).metadata.num_rows
+        schema(apr.ingested)    matches pyarrow Arrow schema (field names + types)
+        for every row i: bytes(apr[i]) semantically equals bytes(ds[i])
+    domain: "parquet file F with N rows and K columns"
+    codomain: "apr-ingested dataset"
+    invariants:
+    - "row count after ingest equals parquet num_rows (no silent truncation)"
+    - "column names and Arrow types preserved through ingest"
+    - "nullable columns preserve nulls (not silently coerced to empty string/0)"
+    - "ingest handles files larger than RAM via streaming (no OOM on 10x-RAM input)"
+
+  arrow_streaming_no_oom:
+    formula: |
+      For a parquet file F with size_bytes(F) > available_ram / 2:
+        apr ingest --format parquet --input F streams row groups;
+        peak RSS stays below 2 * row_group_size_bytes.
+    domain: "large parquet file with multiple row groups"
+    codomain: "peak RSS during ingest"
+    invariants:
+    - "apr ingest processes parquet via row-group streaming (no full-file load)"
+    - "Peak RSS scales with row-group size, not file size"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-09-001
+  rule: "apr ingest of a parquet file preserves row count and schema"
+  prediction: "apr ingest --format parquet yields the same row count and column set as datasets.load_dataset('parquet', ...)"
+  test: |
+    set -euo pipefail
+    TMP=$(mktemp -d)
+    uv run --with "datasets" --with "pyarrow" python3 - "$TMP" <<'PY'
+    import sys, pyarrow as pa, pyarrow.parquet as pq
+    tbl = pa.table({"text": ["hello","world","foo","bar"],
+                    "label":[0,1,0,1]})
+    pq.write_table(tbl, f"{sys.argv[1]}/data.parquet")
+    PY
+    P="$TMP/data.parquet"
+    OUT="$TMP/out.apr"
+    apr ingest --format parquet --input "$P" --output "$OUT"
+    APR_ROWS=$(apr inspect --json "$OUT" | jq '.dataset.row_count // .row_count')
+    HF_ROWS=$(uv run --with "datasets" python3 -c "
+    from datasets import load_dataset
+    print(len(load_dataset('parquet', data_files='$P', split='train')))
+    ")
+    [ "$APR_ROWS" = "$HF_ROWS" ] || { echo "row count mismatch apr=$APR_ROWS hf=$HF_ROWS"; exit 1; }
+    # Column names parity
+    APR_COLS=$(apr inspect --json "$OUT" | jq -r '.dataset.columns[]? // .columns[]?' | sort)
+    HF_COLS=$(uv run --with "datasets" python3 -c "
+    from datasets import load_dataset
+    ds = load_dataset('parquet', data_files='$P', split='train')
+    print('\n'.join(sorted(ds.column_names)))
+    ")
+    [ "$APR_COLS" = "$HF_COLS" ] || { echo "column mismatch"; exit 1; }
+  if_fails: "apr ingest drops rows or mangles schema vs datasets.load_dataset('parquet', ...)"
+
+- id: FALSIFY-CRUX-H-09-002
+  rule: "null values preserved through parquet ingest (not silently coerced)"
+  prediction: "a parquet column with nulls has the same null count after apr ingest as reported by pyarrow"
+  test: |
+    set -euo pipefail
+    TMP=$(mktemp -d); P="$TMP/n.parquet"; OUT="$TMP/n.apr"
+    uv run --with "pyarrow" python3 - "$P" <<'PY'
+    import sys, pyarrow as pa, pyarrow.parquet as pq
+    tbl = pa.table({"x": pa.array([1, None, 3, None, 5], type=pa.int64())})
+    pq.write_table(tbl, sys.argv[1])
+    PY
+    apr ingest --format parquet --input "$P" --output "$OUT"
+    APR_NULLS=$(apr inspect --json "$OUT" | jq '.dataset.null_counts.x // 0')
+    [ "$APR_NULLS" = "2" ] || { echo "expected 2 nulls, got $APR_NULLS"; exit 1; }
+  if_fails: "apr silently coerces parquet nulls (not parity with pyarrow/datasets null semantics)"
+
+- id: FALSIFY-CRUX-H-09-003
+  rule: "streaming ingest — peak RSS bounded by row-group size, not file size"
+  prediction: "apr ingest of a 500 MiB parquet file holds peak RSS under 200 MiB (proves row-group streaming)"
+  test: |
+    set -euo pipefail
+    TMP=$(mktemp -d); P="$TMP/big.parquet"; OUT="$TMP/big.apr"
+    uv run --with "pyarrow" python3 - "$P" <<'PY'
+    import sys, pyarrow as pa, pyarrow.parquet as pq
+    import string, random
+    rows = 500_000
+    tbl = pa.table({"text":[''.join(random.choices(string.ascii_letters, k=1000))
+                            for _ in range(rows)]})
+    pq.write_table(tbl, sys.argv[1], row_group_size=50_000)
+    PY
+    # /usr/bin/time -v reports Maximum resident set size in KB
+    /usr/bin/time -v apr ingest --format parquet --input "$P" --output "$OUT" \
+        2> "$TMP/time.log"
+    RSS_KB=$(awk '/Maximum resident set size/{print $NF}' "$TMP/time.log")
+    [ "$RSS_KB" -lt 204800 ] || { echo "RSS $RSS_KB KB exceeded 200 MiB cap"; exit 1; }
+  if_fails: "apr ingest loads full parquet file into RAM (no row-group streaming)"
+
+proof_obligations:
+- type: invariant
+  property: "apr ingest preserves parquet row count and column schema"
+- type: invariant
+  property: "parquet nulls are preserved, not silently coerced"
+- type: invariant
+  property: "peak RSS during ingest scales with row-group size, not file size (streaming)"
+- type: equivalence
+  property: "apr ingest --format parquet matches datasets.load_dataset('parquet', data_files=...) on row count, column names, and null semantics"
+  competitor: huggingface
+  reference: "https://huggingface.co/docs/datasets/main/en/package_reference/loading_methods#datasets.load_dataset (parquet loader); https://arrow.apache.org/docs/python/parquet.html"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-h-09` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-h-09
+  priority: high
+  auto_created: false

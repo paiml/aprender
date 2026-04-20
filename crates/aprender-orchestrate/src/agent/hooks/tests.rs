@@ -14,31 +14,19 @@ use std::env;
 
 #[test]
 fn test_decision_from_exit_code_allow() {
-    assert_eq!(
-        HookDecision::from_exit_code(0, "ignored".into()),
-        HookDecision::Allow
-    );
+    assert_eq!(HookDecision::from_exit_code(0, "ignored".into()), HookDecision::Allow);
 }
 
 #[test]
 fn test_decision_from_exit_code_warn() {
-    assert_eq!(
-        HookDecision::from_exit_code(1, "hi".into()),
-        HookDecision::Warn("hi".into())
-    );
+    assert_eq!(HookDecision::from_exit_code(1, "hi".into()), HookDecision::Warn("hi".into()));
 }
 
 #[test]
 fn test_decision_from_exit_code_block() {
-    assert_eq!(
-        HookDecision::from_exit_code(2, "no".into()),
-        HookDecision::Block("no".into())
-    );
+    assert_eq!(HookDecision::from_exit_code(2, "no".into()), HookDecision::Block("no".into()));
     // Anything other than 0/1 is also a block.
-    assert_eq!(
-        HookDecision::from_exit_code(42, "x".into()),
-        HookDecision::Block("x".into())
-    );
+    assert_eq!(HookDecision::from_exit_code(42, "x".into()), HookDecision::Block("x".into()));
 }
 
 #[test]
@@ -80,10 +68,7 @@ fn test_registry_from_configs() {
 fn test_registry_run_allow_when_empty() {
     let reg = HookRegistry::new();
     let cwd = env::temp_dir();
-    assert_eq!(
-        reg.run(HookEvent::PreToolUse, "shell", &cwd),
-        HookDecision::Allow
-    );
+    assert_eq!(reg.run(HookEvent::PreToolUse, "shell", &cwd), HookDecision::Allow);
 }
 
 #[test]

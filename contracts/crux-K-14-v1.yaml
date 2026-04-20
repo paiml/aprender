@@ -1,0 +1,92 @@
+# CRUX-K-14 — systemd unit for apr serve
+
+metadata:
+  id: CRUX-K-14
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Deployment & Integration"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Emit a production-ready `apr-serve.service` systemd unit. Canonical:
+    systemd.unit(5) + systemd.service(5). Must pass `systemd-analyze
+    verify`, run as non-root user, enforce hardening (NoNewPrivileges,
+    ProtectSystem, ProtectHome, PrivateTmp), and restart on failure
+    with bounded backoff.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  systemd_unit:
+    formula: |
+      apr-serve.service [Unit]        → After=network-online.target
+                       [Service]      → User=apr, Group=apr, ExecStart=/usr/bin/apr serve,
+                                        Restart=on-failure, RestartSec=5s, LimitNOFILE=65536,
+                                        NoNewPrivileges=yes, ProtectSystem=strict,
+                                        ProtectHome=yes, PrivateTmp=yes
+                       [Install]      → WantedBy=multi-user.target
+      systemd-analyze verify apr-serve.service returns exit 0
+    domain: "(bind_addr: str, model_dir: Path, user: str)"
+    codomain: "systemd unit file passing analyze+verify"
+    invariants:
+    - "systemd-analyze verify exit code == 0"
+    - "no User=root (fail-closed hardening)"
+    - "Restart=on-failure and RestartSec set (bounded backoff)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-14-001
+  rule: emitted unit passes systemd-analyze verify
+  prediction: "systemd-analyze verify apr-serve.service exits 0"
+  test: |
+    set -euo pipefail
+    apr serve emit-systemd --user apr --bind 0.0.0.0:8000 \
+      --model-dir /var/lib/apr -o /tmp/apr-serve.service
+    systemd-analyze verify /tmp/apr-serve.service
+  if_fails: rule 'emitted unit passes systemd-analyze verify' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-14-002
+  rule: emitted unit does not run as root
+  prediction: "User= field is not root"
+  test: |
+    set -euo pipefail
+    u=$(systemctl show -P User /tmp/apr-serve.service 2>/dev/null || \
+        grep -oP '^User=\K\S+' /tmp/apr-serve.service)
+    test "$u" != "root" && test -n "$u"
+  if_fails: rule 'emitted unit does not run as root' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-14-003
+  rule: Restart policy is bounded
+  prediction: "Restart=on-failure and RestartSec present"
+  test: |
+    set -euo pipefail
+    grep -qE '^Restart=on-failure' /tmp/apr-serve.service
+    grep -qE '^RestartSec=' /tmp/apr-serve.service
+    grep -qE '^NoNewPrivileges=yes' /tmp/apr-serve.service
+    grep -qE '^ProtectSystem=' /tmp/apr-serve.service
+
+  if_fails: rule 'Restart policy is bounded' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "emitted unit conforms to systemd.service(5) directive set"
+- type: invariant
+  property: "systemd-analyze verify passes"
+- type: invariant
+  property: "non-root + hardening directives present"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-k-14
+  priority: medium
+  auto_created: true

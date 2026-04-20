@@ -1,0 +1,152 @@
+# CRUX-F-20 — GGUF metadata dump
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-F-20
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: llama_cpp
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    GGUF metadata dump. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.F and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  metadata_key_coverage:
+    formula: |
+      keys(apr inspect --json .metadata) ⊇ keys(gguf_reader.fields)
+      for every GGUF file, where canonical keys include:
+        general.*             (name, architecture, quantization_version, file_type, ...)
+        tokenizer.ggml.*      (model, tokens, scores, token_type, bos_token_id, ...)
+        <arch>.attention.head_count
+        <arch>.attention.head_count_kv
+        <arch>.block_count
+        <arch>.context_length
+        <arch>.embedding_length
+        <arch>.feed_forward_length
+        <arch>.rope.freq_base (if applicable)
+    domain: apr inspect model.gguf --json
+    codomain: JSON object (metadata block)
+    invariants:
+    - "Every GGUF key observed by gguf-py is present in apr output"
+    - "No apr-specific keys are injected into the GGUF metadata block"
+    - "Key ordering is deterministic (sorted or file-order)"
+
+  value_byte_identity:
+    formula: |
+      For every k ∈ keys(gguf_reader.fields):
+        apr_inspect[k] == gguf_reader[k]
+      with value-preserving types:
+        u32/u64 → JSON number
+        f32/f64 → JSON number (full precision)
+        string  → JSON string (UTF-8)
+        array   → JSON array (same length, same element order)
+    domain: metadata values
+    codomain: JSON values
+    invariants:
+    - "Scalar metadata values are byte-identical to gguf-py GGUFReader output"
+    - "Array metadata values preserve length and element order"
+    - "No lossy truncation of float metadata"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-20-001
+  rule: required GGUF keys present
+  prediction: "apr inspect --json surfaces general.*, tokenizer.*, and arch.* keys"
+  test: |
+    apr inspect tests/fixtures/tinyllama-q4k.gguf --json | \
+      jq -e '.metadata
+        | has("general.architecture")
+        and has("general.name")
+        and has("tokenizer.ggml.model")
+        and (to_entries | any(.key | test("\\.attention\\.head_count$")))
+        and (to_entries | any(.key | test("\\.block_count$")))'
+  if_fails: "required GGUF metadata keys missing from apr inspect output"
+
+- id: FALSIFY-CRUX-F-20-002
+  rule: key-set parity with gguf-py
+  prediction: "apr inspect .metadata keys ⊇ gguf_reader.fields keys"
+  test: |
+    APR_KEYS=$(apr inspect tests/fixtures/tinyllama-q4k.gguf --json | \
+                jq -r '.metadata | keys[]' | sort)
+    GGUF_KEYS=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    for k in sorted(r.fields.keys()):
+        print(k)
+    ")
+    # Every gguf-py key must appear in apr output
+    MISSING=$(comm -23 <(echo "$GGUF_KEYS") <(echo "$APR_KEYS"))
+    [ -z "$MISSING" ]
+  if_fails: "apr inspect missing metadata keys that gguf-py reports"
+
+- id: FALSIFY-CRUX-F-20-003
+  rule: scalar value byte-identity
+  prediction: "scalar metadata values match gguf-py on the same file"
+  test: |
+    APR_ARCH=$(apr inspect tests/fixtures/tinyllama-q4k.gguf --json | \
+                jq -r '.metadata["general.architecture"]')
+    GGUF_ARCH=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    f = r.fields['general.architecture']
+    print(bytes(f.parts[f.data[0]]).decode('utf-8'))
+    ")
+    [ "$APR_ARCH" = "$GGUF_ARCH" ]
+  if_fails: "general.architecture value diverges from gguf-py"
+
+- id: FALSIFY-CRUX-F-20-004
+  rule: tokenizer array length parity
+  prediction: "len(tokenizer.ggml.tokens) matches gguf-py"
+  test: |
+    APR_LEN=$(apr inspect tests/fixtures/tinyllama-q4k.gguf --json | \
+               jq '.metadata["tokenizer.ggml.tokens"] | length')
+    GGUF_LEN=$(uv run --with gguf python3 -c "
+    from gguf.gguf_reader import GGUFReader
+    r = GGUFReader('tests/fixtures/tinyllama-q4k.gguf')
+    f = r.fields['tokenizer.ggml.tokens']
+    print(len(f.data))
+    ")
+    [ "$APR_LEN" = "$GGUF_LEN" ]
+  if_fails: "tokenizer vocab length diverges from gguf-py"
+
+proof_obligations:
+- type: invariant
+  property: "apr inspect --json contains all general.*, tokenizer.*, and <arch>.* keys"
+- type: invariant
+  property: "scalar metadata values round-trip byte-identically to gguf-py"
+- type: invariant
+  property: "array metadata values preserve length and element order"
+- type: equivalence
+  property: "apr inspect metadata is a superset of gguf-py GGUFReader.fields on the golden GGUF fixture"
+  competitor: llama_cpp
+  reference: "https://github.com/ggerganov/llama.cpp/tree/master/gguf-py (gguf.gguf_reader.GGUFReader)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-f-20` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-f-20
+  priority: critical
+  auto_created: false

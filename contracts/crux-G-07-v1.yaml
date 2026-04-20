@@ -1,0 +1,83 @@
+# CRUX-G-07 — SemVer tag on apr publish
+
+metadata:
+  id: CRUX-G-07
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "G — Format Conversion"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Enforce semver on `apr publish --tag` so downstream users can pin to
+    `hf://repo@v1.2.3`. Canonical: HF `create_tag(revision=None, tag='v1.2.3')`
+    + huggingface_hub.hf_api. apr rejects non-semver tags unless --force.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
+equations:
+  semver_tag:
+    formula: |
+      re.match(r'^v(\d+)\.(\d+)\.(\d+)(-[A-Za-z0-9.-]+)?(\+[A-Za-z0-9.-]+)?$', tag)
+      git-tag-compatible: tag cannot start with '-' or contain ':' '?' '*' '[' '~' '^'
+    domain: "(model: Path, repo: str, tag: String, force: bool)"
+    codomain: "HF repo has `refs/tags/{tag}` pointing to commit of uploaded model"
+    invariants:
+    - "non-semver tags are rejected (unless --force)"
+    - "re-publishing same version without --allow-overwrite fails fast"
+    - "tag resolves: `apr pull hf://repo@{tag}` returns exact commit of publish"
+
+falsification_tests:
+- id: FALSIFY-CRUX-G-07-001
+  rule: non-semver tag rejected
+  prediction: "apr publish --tag not-semver exits non-zero"
+  test: |
+    set -euo pipefail
+    ! apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf \
+      --tag not-semver --dry-run 2>/tmp/err
+    grep -E "semver|not a valid version" /tmp/err
+  if_fails: rule 'non-semver tag rejected' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-07-002
+  rule: re-publish same tag without --allow-overwrite fails
+  prediction: "second publish with same tag exits non-zero"
+  test: |
+    set -euo pipefail
+    apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf --tag v1.0.0 --dry-run
+    ! apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf --tag v1.0.0 --dry-run 2>/tmp/err2
+    grep -E "exists|already|overwrite" /tmp/err2
+  if_fails: rule 're-publish same tag without --allow-overwrite fails' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-07-003
+  rule: tag round-trips via pull
+  prediction: "apr pull hf://repo@v1.2.3 produces the same commit hash as publish"
+  test: |
+    set -euo pipefail
+    commit=$(apr publish tests/fixtures/tinyllama-hf --repo org/tinyllama-hf --tag v1.2.3 --format json | jq -r .commit_sha)
+    pulled=$(apr pull hf://org/tinyllama-hf@v1.2.3 --format json | jq -r .commit_sha)
+    [ "$commit" = "$pulled" ]
+
+  if_fails: rule 'tag round-trips via pull' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr publish --tag matches HF hub `create_tag(...)` git-ref semantics"
+- type: invariant
+  property: "non-semver tags rejected without --force"
+- type: invariant
+  property: "tag uniquely resolves to commit (round-trip)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-g-07
+  priority: medium
+  auto_created: true

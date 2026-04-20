@@ -1,0 +1,92 @@
+# CRUX-H-14 — Dataset mixing per-source weights
+
+metadata:
+  id: CRUX-H-14
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Mix N datasets with per-source sampling weights. Canonical: HF
+    `datasets.interleave_datasets([d1,d2,d3], probabilities=[0.6,0.3,0.1])`
+    with `stopping_strategy ∈ {first_exhausted, all_exhausted}`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  dataset_mix:
+    formula: |
+      source_i ~ Categorical(probabilities)
+      yield next(dataset[source_i])
+      # stopping: first_exhausted ends when ANY dataset runs out;
+      # all_exhausted ends when ALL do.
+    domain: "(datasets: [Path], probabilities: [f32] ≥ 0 summing to 1, stopping ∈ {first, all})"
+    codomain: "mixed iterator; length depends on stopping strategy"
+    invariants:
+    - "observed source frequency → probabilities (LLN; ±2σ at n=10000)"
+    - "first_exhausted length ≤ all_exhausted length"
+    - "deterministic under --seed (same source sequence)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-14-001
+  rule: source frequencies match probabilities (n=10000)
+  prediction: "with --probs 0.7,0.3, source-0 count is in [6700, 7300]"
+  test: |
+    set -euo pipefail
+    apr dataset mix tests/fixtures/a.jsonl,tests/fixtures/b.jsonl \
+      --probs 0.7,0.3 --seed 42 --take 10000 --dump-source-ids /tmp/ids.txt >/dev/null
+    c0=$(grep -c '^0$' /tmp/ids.txt)
+    python3 -c "assert 6700 <= $c0 <= 7300, $c0"
+  if_fails: rule 'source frequencies match probabilities (n=10000)' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-14-002
+  rule: stopping=first terminates when any dataset exhausts
+  prediction: "first_exhausted on (small, big) yields at most ~|small|/p_small samples"
+  test: |
+    set -euo pipefail
+    apr dataset mix tests/fixtures/small.jsonl,tests/fixtures/big.jsonl \
+      --probs 0.5,0.5 --stopping first --format json > /tmp/m.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/m.json'))
+    assert d['count'] <= 2 * d['size_of']['small.jsonl'] + 5, d
+    "
+  if_fails: rule 'stopping=first terminates when any dataset exhausts' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-14-003
+  rule: deterministic source sequence under fixed seed
+  prediction: "two runs with --seed 42 yield identical source id sequences"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr dataset mix tests/fixtures/a.jsonl,tests/fixtures/b.jsonl \
+        --probs 0.5,0.5 --seed 42 --take 200 --dump-source-ids /tmp/ids$i.txt >/dev/null
+    done
+    diff /tmp/ids1.txt /tmp/ids2.txt
+
+  if_fails: rule 'deterministic source sequence under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr dataset mix matches HF `interleave_datasets` probabilities + stopping semantics"
+- type: invariant
+  property: "observed source freq converges to probabilities (LLN)"
+- type: invariant
+  property: "deterministic under fixed seed"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-h-14
+  priority: medium
+  auto_created: true

@@ -1,0 +1,104 @@
+# CRUX-D-34 — Deepspeed config loader
+
+metadata:
+  id: CRUX-D-34
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Accept a DeepSpeed-style JSON config (zero_optimization stage, offload,
+    gradient_accumulation_steps, bf16, …) and wire it through training.
+    Canonical: HF Trainer `--deepspeed ds_config.json`; config keys follow
+    the DeepSpeed schema so existing configs drop in unchanged.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  ds_config_mapping:
+    formula: |
+      ds_config.train_micro_batch_size_per_gpu → apr --batch-size
+      ds_config.gradient_accumulation_steps    → apr --grad-accum
+      ds_config.zero_optimization.stage ∈ {0,1,2,3} → apr --zero-stage
+      ds_config.bf16.enabled                   → apr --dtype bf16
+      ds_config.optimizer.type == "AdamW"     → apr optimizer
+    domain: "ds_config: Map<String, Any> (DeepSpeed schema)"
+    codomain: "apr Trainer args; training run with those semantics"
+    invariants:
+    - "omitted keys use DeepSpeed defaults, not apr defaults (no silent drift)"
+    - "unknown/extra keys are warned (never silently ignored)"
+    - "invalid type combinations (e.g. bf16+fp16 both enabled) are rejected"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-34-001
+  rule: valid ds_config maps to trainer args
+  prediction: "apr train --deepspeed ds.json echoes resolved config matching expected keys"
+  test: |
+    set -euo pipefail
+    cat > /tmp/ds.json <<'JSON'
+    {
+      "train_micro_batch_size_per_gpu": 4,
+      "gradient_accumulation_steps": 8,
+      "bf16": {"enabled": true},
+      "zero_optimization": {"stage": 2}
+    }
+    JSON
+    apr train tests/fixtures/tiny-sft.jsonl --deepspeed /tmp/ds.json \
+      --model tests/fixtures/tinyllama-hf --steps 1 --dry-run --format json > /tmp/resolved.json
+    python3 -c "
+    import json; c = json.load(open('/tmp/resolved.json'))['resolved_args']
+    assert c['batch_size'] == 4
+    assert c['grad_accum'] == 8
+    assert c['dtype'] == 'bf16'
+    assert c['zero_stage'] == 2
+    "
+  if_fails: rule 'valid ds_config maps to trainer args' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-34-002
+  rule: unknown keys emit warning (not silent ignore)
+  prediction: "stderr contains 'unknown deepspeed key' for misspelled field"
+  test: |
+    set -euo pipefail
+    echo '{"train_micro_batch_size_per_gpu": 4, "typoo_key": true}' > /tmp/ds2.json
+    apr train tests/fixtures/tiny-sft.jsonl --deepspeed /tmp/ds2.json \
+      --model tests/fixtures/tinyllama-hf --steps 1 --dry-run 2>/tmp/err >/dev/null
+    grep -E "unknown.*typoo_key|typoo_key.*ignored" /tmp/err
+  if_fails: rule 'unknown keys emit warning (not silent ignore)' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-34-003
+  rule: conflicting precision flags are rejected
+  prediction: "bf16.enabled=true && fp16.enabled=true → non-zero exit"
+  test: |
+    set -euo pipefail
+    echo '{"bf16": {"enabled": true}, "fp16": {"enabled": true}}' > /tmp/ds3.json
+    ! apr train tests/fixtures/tiny-sft.jsonl --deepspeed /tmp/ds3.json \
+      --model tests/fixtures/tinyllama-hf --steps 1 --dry-run 2>/tmp/err3
+    grep -E "bf16.*fp16|conflict|mutually exclusive" /tmp/err3
+
+  if_fails: rule 'conflicting precision flags are rejected' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr --deepspeed accepts canonical DeepSpeed JSON schema (matches HF Trainer's behavior)"
+- type: invariant
+  property: "unknown keys surface as warnings (never silently dropped)"
+- type: invariant
+  property: "conflicting dtype flags fail fast before step 1"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-34
+  priority: medium
+  auto_created: true

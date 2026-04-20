@@ -1,0 +1,87 @@
+# CRUX-J-02 — OpenCLAW user config JSON5 round-trip
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-02
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 5
+  intake_status: missing
+  description: >
+    OpenCLAW stores user preferences in `~/.openclaw/openclaw.json` (JSON5,
+    comments allowed). Channels, skills, LLM provider, and allowFrom lists
+    live in that single file. Aprender parity: `apr` MUST read/write a
+    user-config file under $HOME that round-trips losslessly on save.
+    Overlaps with the existing `apr profile` / `~/.aprender/config.toml`
+    surface.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/config-schema.json5
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  config_round_trip:
+    formula: |
+      load(write(cfg)) ≡ cfg        (lossless)
+      write(cfg).path ⊂ $HOME       (user-owned)
+      cfg.version ∈ documented_versions
+    domain: user config value
+    codomain: on-disk JSON file + re-parsed config value
+    invariants:
+    - "write-then-read is identity on all supported keys"
+    - "path is under $HOME; no root-owned writes"
+    - "unknown keys are preserved, not stripped (forward compatibility)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-02-001
+  rule: apr surfaces a user config verb
+  prediction: "`apr --help` exposes a config/profile-related verb"
+  test: |
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr --help 2>&1 | grep -qE '(profile|config|configure|settings)' || {
+      echo "FAIL: apr has no config/profile verb" >&2
+      exit 1
+    }
+  if_fails: CRUX-J-02 parity broken — apr MUST expose a user-config verb
+- id: FALSIFY-CRUX-J-02-002
+  rule: config file lives under $HOME
+  prediction: "aprender documents a $HOME-rooted config path"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "~/.aprender/config OR HOME config toml apr" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no documented user-config path under HOME" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-02 location invariant — config MUST live under $HOME
+
+proof_obligations:
+- type: invariant
+  property: "write∘read is identity"
+- type: invariant
+  property: "config path is under $HOME"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-02
+  priority: critical
+  auto_created: true

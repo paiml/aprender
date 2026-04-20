@@ -1,0 +1,158 @@
+# CRUX-D-31 — TensorBoard / wandb integration
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-31
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: pytorch
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Training observability via TensorBoard (tfevents binary logs) and
+    Weights & Biases (wandb cloud run). PyTorch exposes via
+    `torch.utils.tensorboard.SummaryWriter` and `wandb.init() +
+    wandb.log()`. Map to `apr finetune --log-tensorboard <dir>` and
+    `--log-wandb <project>` emitting per-step scalars (loss, lr,
+    grad_norm, tokens_per_sec) readable by both tools without custom
+    converters.
+  references:
+  - "https://pytorch.org/docs/stable/tensorboard.html"
+  - "https://docs.wandb.ai/guides/integrations/pytorch"
+  - "https://github.com/tensorflow/tensorboard/blob/master/tensorboard/compat/proto/event.proto"
+
+equations:
+  tensorboard_event_format:
+    formula: |
+      tfevents file = sequence of Event protobuf records
+      Each scalar event contains:
+        wall_time: f64 (UNIX epoch)
+        step: i64 >= 0
+        summary.value[].tag: string
+        summary.value[].simple_value: f32
+      File name: events.out.tfevents.<unix_ts>.<hostname>.<pid>
+    domain: apr finetune --log-tensorboard output
+    codomain: .tfevents binary file (Event protobuf stream)
+    invariants:
+    - "tfevents file parseable by `tensorboard --logdir <dir>` without errors"
+    - "tags include: train/loss, train/learning_rate, train/grad_norm, train/tokens_per_sec"
+    - "step monotonically increasing; no duplicate (step, tag) pairs"
+
+  wandb_run_schema:
+    formula: |
+      wandb run contains:
+        config: {model, dataset, epochs, lr, batch_size, ...}
+        history: [{_step, train/loss, train/learning_rate, ...}]
+        summary: {final_loss, best_val_loss, wall_time_sec}
+    domain: apr finetune --log-wandb output
+    codomain: wandb run (API + cloud UI)
+    invariants:
+    - "config captures all CLI-settable hyperparameters"
+    - "history contains one row per logging step"
+    - "run.state ∈ {running, finished, crashed, failed}; MUST reach 'finished' on success"
+
+  scalar_parity_across_backends:
+    formula: |
+      ∀ step s, tag t:
+        tensorboard.scalar(s, t) == wandb.history[s][t] == json_metrics[s][t]
+      (same value logged to all three sinks)
+    domain: (tb_file, wandb_run, json_metrics)
+    codomain: bool
+    invariants:
+    - "no sink sees different values for same (step, tag)"
+    - "no sink silently drops events"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-31-001
+  rule: tfevents file parseable by TensorBoard
+  prediction: "apr finetune --log-tensorboard emits parseable .tfevents"
+  test: |
+    # TODO: blocked until --log-tensorboard flag implemented
+    apr finetune --data test.jsonl --epochs 1 --log-tensorboard ./tb
+    ls ./tb/events.out.tfevents.* 1>/dev/null 2>&1
+    uv run --with tensorboard python3 -c "
+    from tensorboard.backend.event_processing import event_accumulator
+    import glob
+    acc = event_accumulator.EventAccumulator(glob.glob('./tb/events.out.tfevents.*')[0])
+    acc.Reload()
+    tags = acc.Tags()['scalars']
+    required = {'train/loss', 'train/learning_rate', 'train/grad_norm'}
+    assert required.issubset(set(tags)), f'missing tags: {required - set(tags)}'
+    "
+  if_fails: "tfevents file missing required tags or unparseable by TensorBoard"
+
+- id: FALSIFY-CRUX-D-31-002
+  rule: tfevents step monotonically increasing
+  prediction: "no duplicate or out-of-order (step, tag) pairs"
+  test: |
+    # TODO: blocked until --log-tensorboard
+    apr finetune --data test.jsonl --epochs 2 --log-tensorboard ./tb
+    uv run --with tensorboard python3 -c "
+    from tensorboard.backend.event_processing import event_accumulator
+    import glob
+    acc = event_accumulator.EventAccumulator(glob.glob('./tb/events.out.tfevents.*')[0])
+    acc.Reload()
+    loss_events = acc.Scalars('train/loss')
+    steps = [e.step for e in loss_events]
+    assert steps == sorted(steps), f'steps not monotonic: {steps}'
+    assert len(steps) == len(set(steps)), 'duplicate steps detected'
+    "
+  if_fails: "duplicate or out-of-order steps in tfevents scalar stream"
+
+- id: FALSIFY-CRUX-D-31-003
+  rule: wandb run reaches 'finished' state
+  prediction: "apr finetune --log-wandb completes with run.state == 'finished'"
+  test: |
+    # TODO: blocked until --log-wandb flag; requires WANDB_API_KEY
+    RUN_ID=$(apr finetune --data test.jsonl --epochs 1 --log-wandb apr-crux-test --json | jq -r '.wandb.run_id')
+    uv run --with wandb python3 -c "
+    import wandb
+    api = wandb.Api()
+    run = api.run(f'apr-crux-test/{$RUN_ID}'.replace(chr(36),''))
+    assert run.state == 'finished', f'run.state={run.state}'
+    "
+  if_fails: "wandb run state != 'finished' after successful training"
+
+- id: FALSIFY-CRUX-D-31-004
+  rule: scalar parity across tfevents + wandb + JSON
+  prediction: "train/loss at each step identical across all three sinks"
+  test: |
+    # TODO: blocked until both --log-tensorboard and --log-wandb
+    RUN_OUT=$(apr finetune --data test.jsonl --epochs 1 \
+      --log-tensorboard ./tb --log-wandb apr-crux-test --json)
+    echo "$RUN_OUT" > run.json
+    uv run --with tensorboard --with wandb python3 scripts/verify_crux_d31_parity.py \
+      ./tb run.json apr-crux-test
+  if_fails: "loss values diverge between tfevents, wandb, and --json sinks"
+
+proof_obligations:
+- type: equivalence
+  property: "scalar values match across tfevents, wandb, and --json at every (step, tag) pair"
+- type: invariant
+  property: "tfevents step monotonically increasing; no duplicate (step, tag)"
+- type: invariant
+  property: "required tags emitted: train/{loss, learning_rate, grad_norm, tokens_per_sec}"
+- type: state_machine
+  property: "wandb run reaches 'finished' state on successful completion"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-31` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-31
+  priority: high
+  auto_created: true

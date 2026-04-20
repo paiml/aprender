@@ -1,0 +1,90 @@
+# CRUX-J-17 — OpenCLAW rate limiting per sender
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-17
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 3
+  intake_status: missing
+  description: >
+    OpenCLAW applies per-sender rate limits (`rateLimit.perSender.msgs_per_min`)
+    so a single chat participant cannot flood the daemon or the upstream
+    LLM. Aprender parity: `apr serve` / `apr code` inbound surface MUST
+    support documented per-caller rate limits when multi-tenant. Overlaps
+    with Claude proxy (PMAT-CLAUDE-PROXY-001) quota story.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/crux-J-07-v1.yaml
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  per_sender_rate_limit:
+    formula: |
+      bucket(sender) := token_bucket(refill_rate, capacity)
+      accept(msg) := bucket(msg.sender).try_consume(cost(msg))
+      reject_on_exceed := true
+      emit_429(sender) when bucket(sender).is_empty
+    domain: (sender_id, msg)
+    codomain: "{accept, reject_rate_limit}"
+    invariants:
+    - "per-sender bucket — no global shared counter"
+    - "exceeding rate emits an observable reject (429-equivalent)"
+    - "limits are configurable per-sender or per-tier"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-17-001
+  rule: apr serve documents per-caller rate limiting
+  prediction: "aprender-serve / claude-proxy docs reference rate-limiting policy"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "rate limit per user OR 429 too many requests apr serve OR token bucket" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no per-caller rate-limit story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-17 parity broken — apr serve MUST document per-caller rate limiting
+- id: FALSIFY-CRUX-J-17-002
+  rule: reject is observable (not silent drop)
+  prediction: "rate-limit reject surfaces as 429-equivalent error"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "HTTP 429 OR too many requests rate limit response" --limit 1 --format json | grep -q '"matches"' || {
+        echo "SKIP: rate-limit-rejection evidence not yet indexed" >&2
+        exit 77
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-17 observability invariant — rate-limit reject must be observable
+
+proof_obligations:
+- type: invariant
+  property: "per-sender buckets are independent"
+- type: invariant
+  property: "rate-limit reject is observable"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-17
+  priority: medium
+  auto_created: true

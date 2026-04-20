@@ -1,0 +1,174 @@
+# CRUX-D-08 — Per-epoch eval JSON for CI
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-08
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Per-epoch eval JSON for CI. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.D and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  per_epoch_eval_json_schema:
+    formula: |
+      HuggingFace Trainer canonical (transformers.TrainingArguments):
+        TrainingArguments(
+          evaluation_strategy="epoch",       # eval at end of every epoch
+          eval_steps=<int>,                   # or per N steps
+          load_best_model_at_end=True,
+          metric_for_best_model="eval_loss",
+          greater_is_better=False,
+        )
+        Trainer emits per-epoch entries to state.log_history[] as dicts:
+          {"epoch": f, "eval_loss": f, "eval_accuracy": f, "step": i, ...}
+        And writes trainer_state.json with log_history array.
+        Reference: https://huggingface.co/docs/transformers/main_classes/trainer#transformers.TrainingArguments.evaluation_strategy
+                   https://huggingface.co/docs/transformers/main_classes/trainer#transformers.TrainerState
+      apr parity:
+        apr finetune --data train.jsonl --eval-data val.jsonl \
+                     --eval-strategy epoch --load-best-model-at-end \
+                     --metric-for-best-model eval_loss --json
+      Output (stdout or $CHECKPOINT_DIR/trainer_state.json):
+        {
+          "log_history": [
+            {"epoch": <f64>, "step": <u64>, "train_loss": <f64>},
+            {"epoch": <f64>, "step": <u64>, "eval_loss": <f64>, "eval_accuracy": <f64>},
+            ...
+          ],
+          "best_metric": <f64>,
+          "best_model_checkpoint": "<path>"
+        }
+    domain: "(train_dataset, eval_dataset, epochs: u32, eval_strategy: enum)"
+    codomain: "trainer_state.json: JSON"
+    invariants:
+    - "log_history contains at least one eval_loss entry per epoch when eval_strategy=epoch"
+    - "Number of eval entries == total_epochs (no missing epochs)"
+    - "best_metric equals min(eval_loss) across all eval entries (for greater_is_better=false)"
+    - "best_model_checkpoint path exists on disk and is loadable"
+    - "All eval entries have monotonically non-decreasing step and epoch"
+    - "Reference: HF Trainer source trainer.py evaluate() and _maybe_log_save_evaluate()"
+
+  eval_json_ci_parseable:
+    formula: |
+      For CI consumption: the JSON is valid and every eval entry has required keys:
+        {epoch: number, eval_loss: number}
+      And the file is written atomically (no partial writes on SIGKILL).
+    domain: "trainer_state.json"
+    codomain: "valid_for_ci: bool"
+    invariants:
+    - "File is parseable by jq / python json.loads"
+    - "Every eval entry has numeric eval_loss field (no null, no NaN as string)"
+    - "load_best_model_at_end=true ⇒ best_model_checkpoint field is non-empty string"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-08-001
+  rule: per-epoch eval entries produced with eval_strategy=epoch
+  prediction: "apr finetune --eval-strategy epoch --epochs 3 produces >= 3 eval_loss entries in log_history"
+  test: |
+    # Reference: https://huggingface.co/docs/transformers/main_classes/trainer
+    TMP=$(mktemp -d)
+    printf '{"text":"hello world"}\n{"text":"foo bar baz"}\n' > "$TMP/train.jsonl"
+    printf '{"text":"the cat sat"}\n' > "$TMP/val.jsonl"
+    apr finetune \
+      --data "$TMP/train.jsonl" \
+      --eval-data "$TMP/val.jsonl" \
+      --eval-strategy epoch \
+      --epochs 3 \
+      --output-dir "$TMP/out" \
+      --json > "$TMP/state.json" 2>"$TMP/err.log" \
+      || { echo "FAIL: apr finetune exit non-zero"; cat "$TMP/err.log" >&2; exit 1; }
+    N=$(jq '[.log_history[] | select(.eval_loss)] | length' "$TMP/state.json")
+    [ "$N" -ge 3 ] \
+      || { echo "FAIL: only $N eval entries for 3 epochs" >&2; exit 1; }
+  if_fails: "apr finetune --eval-strategy epoch does not emit per-epoch eval entries"
+
+- id: FALSIFY-CRUX-D-08-002
+  rule: load_best_model_at_end selects min eval_loss checkpoint
+  prediction: "best_metric == min(eval_loss across log_history) AND best_model_checkpoint exists on disk"
+  test: |
+    TMP=$(mktemp -d)
+    printf '{"text":"hello"}\n{"text":"world"}\n' > "$TMP/train.jsonl"
+    printf '{"text":"val text"}\n' > "$TMP/val.jsonl"
+    apr finetune \
+      --data "$TMP/train.jsonl" \
+      --eval-data "$TMP/val.jsonl" \
+      --eval-strategy epoch \
+      --epochs 2 \
+      --load-best-model-at-end \
+      --metric-for-best-model eval_loss \
+      --output-dir "$TMP/out" \
+      --json > "$TMP/state.json"
+    BEST=$(jq '.best_metric' "$TMP/state.json")
+    MIN=$(jq '[.log_history[] | select(.eval_loss) | .eval_loss] | min' "$TMP/state.json")
+    python3 -c "import sys; assert abs($BEST - $MIN) < 1e-6, '$BEST != $MIN'" \
+      || { echo "FAIL: best_metric=$BEST != min(eval_loss)=$MIN" >&2; exit 1; }
+    CKPT=$(jq -r '.best_model_checkpoint' "$TMP/state.json")
+    [ -n "$CKPT" ] && [ -e "$CKPT" ] \
+      || { echo "FAIL: best_model_checkpoint=$CKPT does not exist" >&2; exit 1; }
+  if_fails: "best-model selection does not honor min(eval_loss) or checkpoint path invalid"
+
+- id: FALSIFY-CRUX-D-08-003
+  rule: eval JSON is CI-parseable (valid JSON, numeric fields)
+  prediction: "jq and python json.loads both parse trainer_state.json; no NaN strings"
+  test: |
+    TMP=$(mktemp -d)
+    printf '{"text":"x"}\n' > "$TMP/train.jsonl"
+    printf '{"text":"y"}\n' > "$TMP/val.jsonl"
+    apr finetune --data "$TMP/train.jsonl" --eval-data "$TMP/val.jsonl" \
+      --eval-strategy epoch --epochs 1 --output-dir "$TMP/out" --json > "$TMP/state.json"
+    jq . "$TMP/state.json" >/dev/null \
+      || { echo "FAIL: jq cannot parse trainer_state.json" >&2; exit 1; }
+    python3 -c "import json,sys,math
+    d=json.load(open('$TMP/state.json'))
+    for e in d['log_history']:
+        if 'eval_loss' in e:
+            v=e['eval_loss']
+            assert isinstance(v,(int,float)) and not math.isnan(v) and not math.isinf(v), f'bad eval_loss {v!r}'" \
+      || { echo "FAIL: eval_loss has non-finite or non-numeric value" >&2; exit 1; }
+  if_fails: "trainer_state.json not machine-parseable for CI"
+
+proof_obligations:
+- type: equivalence
+  property: "apr finetune --eval-strategy epoch output schema matches HuggingFace Trainer trainer_state.json log_history on golden dataset"
+- type: equivalence
+  property: "apr finetune --load-best-model-at-end matches HF Trainer best-model selection on min eval_loss"
+- type: invariant
+  property: "Number of eval entries >= total_epochs"
+- type: invariant
+  property: "best_metric == min(eval_loss) when greater_is_better=false"
+- type: invariant
+  property: "trainer_state.json is valid JSON with finite numeric eval_loss values"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-08` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-08
+  priority: high
+  auto_created: false

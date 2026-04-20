@@ -1,0 +1,157 @@
+# CRUX-A-01 — Pull model by short name
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-01
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: ollama
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Pull model by short name. Competitor `ollama pull llama3` resolves the
+    short name through Ollama's library registry (https://ollama.com/library)
+    and downloads the canonical manifest. Aprender parity: `apr pull llama3`
+    MUST resolve canonical short names via a bundled alias map shipped at
+    `configs/aliases.yaml`, emitting a fully-qualified URL (e.g.
+    `hf://meta-llama/Llama-3-8B-Instruct`) before download, and MUST surface
+    a did-you-mean suggestion when the short name is unknown. Ref:
+    https://ollama.com/library ; https://github.com/ollama/ollama/blob/main/docs/api.md#pull-a-model
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  short_name_resolution:
+    formula: |
+      resolve(short_name) -> canonical_url
+        where alias_map: configs/aliases.yaml (shipped with release)
+        and canonical_url ∈ {hf://<repo>/<model>, https://<host>/<path>}
+      apr pull SHORT [--dry-run]:
+        stdout contains the canonical_url on resolution
+        exit_code == 0 iff short_name ∈ alias_map.keys()
+    domain: short_name ∈ string (no scheme prefix)
+    codomain: canonical URL (hf://… or https://…) + exit code
+    invariants:
+    - "alias_map is loaded from configs/aliases.yaml at startup"
+    - "resolution is deterministic: same short_name → same canonical_url"
+    - "--dry-run emits canonical_url to stdout and performs no network I/O"
+    - "unknown short_name → non-zero exit with 'did you mean ...' suggestion"
+
+  alias_map_shipped_with_release:
+    formula: |
+      ∀ release tarball T:
+        configs/aliases.yaml ∈ files(T)
+        AND parse(configs/aliases.yaml) is valid YAML mapping str→str
+        AND {"llama3", "mistral", "phi3", "qwen2"} ⊆ keys(map)
+    domain: release artifact
+    codomain: bool
+    invariants:
+    - "configs/aliases.yaml is a release asset, not a dev-only file"
+    - "canonical short names (llama3, mistral, qwen2, phi3) must be present"
+
+  did_you_mean_suggestion:
+    formula: |
+      apr pull UNKNOWN_NAME:
+        stderr contains 'did you mean' substring
+        AND contains at least one key from alias_map with
+            edit_distance(UNKNOWN_NAME, key) <= 2
+        AND exit_code != 0
+    domain: unknown short_name
+    codomain: (stderr string, exit_code)
+    invariants:
+    - "Suggestion uses Levenshtein ≤ 2 against alias_map keys"
+    - "Exit code is non-zero (conventionally 1 or 64 for usage errors)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-01-001
+  rule: dry-run prints resolved canonical URL
+  prediction: "apr pull llama3 --dry-run emits hf:// or https:// URL on stdout"
+  test: |
+    OUT=$(apr pull llama3 --dry-run 2>&1)
+    echo "$OUT" | grep -E '(hf://|https://)' || {
+      echo "FAIL: --dry-run did not print canonical URL" >&2
+      exit 1
+    }
+
+  if_fails: rule 'dry-run prints resolved canonical URL' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-01-002
+  rule: alias map ships with release
+  prediction: "configs/aliases.yaml is present and parseable"
+  test: |
+    # Locate packaged aliases.yaml (installed next to binary or in share/)
+    ALIAS_FILE="${APR_CONFIG_DIR:-$HOME/.config/apr}/aliases.yaml"
+    [ -f "$ALIAS_FILE" ] || ALIAS_FILE="$(dirname "$(command -v apr)")/../share/apr/aliases.yaml"
+    [ -f "$ALIAS_FILE" ] || { echo "FAIL: aliases.yaml not shipped" >&2; exit 1; }
+    python3 -c "import yaml,sys; m=yaml.safe_load(open('$ALIAS_FILE')); assert isinstance(m,dict) and {'llama3','mistral','qwen2','phi3'} <= set(m.keys()), 'missing canonical keys'"
+
+  if_fails: rule 'alias map ships with release' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-01-003
+  rule: unknown short name emits did-you-mean
+  prediction: "apr pull lama3 (typo) suggests 'llama3'"
+  test: |
+    OUT=$(apr pull lama3 --dry-run 2>&1 || true)
+    RC=$?
+    [ "$RC" -ne 0 ] || { echo "FAIL: unknown name should exit non-zero" >&2; exit 1; }
+    echo "$OUT" | grep -iE 'did you mean.*llama3' || {
+      echo "FAIL: no did-you-mean suggestion for typo" >&2
+      exit 1
+    }
+
+  if_fails: rule 'unknown short name emits did-you-mean' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-01-004
+  rule: apr registry aliases lists all short names
+  prediction: "apr registry aliases --json returns {name: url} map"
+  test: |
+    # TODO: wire `apr registry aliases` subcommand
+    OUT=$(apr registry aliases --json 2>&1) || { echo "FAIL: subcommand missing" >&2; exit 1; }
+    echo "$OUT" | jq -e 'type == "object" and (keys | length > 0)' >/dev/null || {
+      echo "FAIL: aliases --json output not a non-empty object" >&2
+      exit 1
+    }
+    echo "$OUT" | jq -e '.llama3 | test("^(hf|https)://")' >/dev/null
+
+  if_fails: rule 'apr registry aliases lists all short names' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-01-005
+  rule: resolution is deterministic across invocations
+  prediction: "two back-to-back --dry-run invocations emit byte-identical canonical URLs"
+  test: |
+    A=$(apr pull llama3 --dry-run 2>&1 | grep -oE '(hf|https)://[^ ]+' | head -1)
+    B=$(apr pull llama3 --dry-run 2>&1 | grep -oE '(hf|https)://[^ ]+' | head -1)
+    [ -n "$A" ] && [ "$A" = "$B" ] || { echo "FAIL: non-deterministic resolution ($A vs $B)" >&2; exit 1; }
+
+  if_fails: rule 'resolution is deterministic across invocations' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: invariant
+  property: "configs/aliases.yaml ships with every release and contains canonical short names"
+- type: invariant
+  property: "apr pull SHORT --dry-run prints fully-qualified URL to stdout and performs zero network I/O"
+- type: invariant
+  property: "Unknown short name exits non-zero with a 'did you mean' suggestion (Levenshtein ≤ 2)"
+- type: invariant
+  property: "apr registry aliases --json enumerates all shipped aliases as {name: url}"
+- type: invariant
+  property: "Resolution is deterministic: same short name → same canonical URL across invocations"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-01` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-01
+  priority: critical
+  auto_created: false

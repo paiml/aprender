@@ -1,0 +1,178 @@
+# CRUX-C-33 — /v1/models endpoint
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-33
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    /v1/models endpoint (OpenAI-compatible). Competitors OpenAI and vLLM
+    expose GET /v1/models returning a List object containing Model objects,
+    per OpenAI API spec. Aprender parity: `apr serve` MUST expose GET
+    /v1/models returning the canonical schema
+    `{object: "list", data: [{id, object: "model", created, owned_by}, ...]}`
+    where each `id` is the stable identifier used in
+    /v1/chat/completions `model` field. Refs:
+    https://platform.openai.com/docs/api-reference/models/list ;
+    https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  list_envelope_schema:
+    formula: |
+      GET /v1/models:
+        status == 200
+        response.body is JSON object {
+          object: "list" (literal),
+          data: [M_1, ..., M_n]
+        }
+        where each M_i: {
+          id: string (non-empty),
+          object: "model" (literal),
+          created: integer > 0 (Unix timestamp),
+          owned_by: string (non-empty)
+        }
+    domain: HTTP GET /v1/models
+    codomain: JSON response body + status code
+    invariants:
+    - "Top-level `object` is exactly the literal string 'list'"
+    - "`data` is an array (may be empty only if no models are loaded)"
+    - "Every element has `object == 'model'`"
+
+  stable_id_round_trip:
+    formula: |
+      ∀ M ∈ response.data:
+        POST /v1/chat/completions with {"model": M.id, ...}
+        → status == 200 (model is accepted)
+      AND
+      ∀ M, M' ∈ response.data: M.id == M'.id ⇒ M == M'
+    domain: 'ids in /v1/models response: None'
+    codomain: 'models accepted by /v1/chat/completions: None'
+    invariants:
+    - "Every listed id is accepted by /v1/chat/completions"
+    - "ids are unique within the response (primary key)"
+    - "ids are stable across server restarts for the same loaded model"
+
+  created_timestamp_domain:
+    formula: |
+      ∀ M ∈ response.data:
+        M.created is a positive integer
+        AND M.created <= current_unix_time()
+        AND M.created represents model load time or model release time
+    domain: Unix timestamp (seconds since epoch)
+    codomain: bool
+    invariants:
+    - "created > 0 (not zero, not negative, not JSON null)"
+    - "created <= server wall clock (no future timestamps)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-33-001
+  rule: GET /v1/models returns 200 with canonical envelope
+  prediction: "response matches {object: 'list', data: [...]}"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    URL="http://localhost:$PORT/v1/models"
+    CODE=$(curl -s -o /tmp/apr-models.json -w '%{http_code}' "$URL")
+    [ "$CODE" = "200" ] || { echo "FAIL: status $CODE" >&2; exit 1; }
+    jq -e '.object == "list" and (.data | type == "array")' /tmp/apr-models.json >/dev/null || {
+      echo "FAIL: envelope schema violation" >&2
+      exit 1
+    }
+
+  if_fails: rule 'GET /v1/models returns 200 with canonical envelope' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-33-002
+  rule: each model has correct per-model schema
+  prediction: "every data[i] has {id: string, object: 'model', created: int>0, owned_by: string}"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    curl -s "http://localhost:$PORT/v1/models" > /tmp/apr-models.json
+    jq -e '.data | length > 0 and all(.[];
+      (.id | type == "string" and length > 0) and
+      (.object == "model") and
+      (.created | type == "number" and . > 0) and
+      (.owned_by | type == "string" and length > 0)
+    )' /tmp/apr-models.json >/dev/null || {
+      echo "FAIL: per-model schema violation" >&2
+      jq '.' /tmp/apr-models.json >&2
+      exit 1
+    }
+
+  if_fails: rule 'each model has correct per-model schema' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-33-003
+  rule: listed ids are accepted by /v1/chat/completions
+  prediction: "POST /v1/chat/completions with model=data[0].id returns 200"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    ID=$(curl -s "http://localhost:$PORT/v1/models" | jq -r '.data[0].id')
+    [ -n "$ID" ] && [ "$ID" != "null" ] || { echo "FAIL: no model id available" >&2; exit 1; }
+    CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+      -X POST "http://localhost:$PORT/v1/chat/completions" \
+      -H 'content-type: application/json' \
+      -d "{\"model\":\"$ID\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}")
+    [ "$CODE" = "200" ] || { echo "FAIL: chat rejected id $ID with $CODE" >&2; exit 1; }
+
+  if_fails: rule 'listed ids are accepted by /v1/chat/completions' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-33-004
+  rule: created timestamp is not in the future
+  prediction: "created <= now for every model"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    NOW=$(date +%s)
+    curl -s "http://localhost:$PORT/v1/models" | \
+      jq -e --argjson now "$NOW" '.data | all(.[]; .created > 0 and .created <= $now)' >/dev/null || {
+        echo "FAIL: created timestamp invalid or in future" >&2
+        exit 1
+      }
+
+  if_fails: rule 'created timestamp is not in the future' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-33-005
+  rule: ids are unique within the response
+  prediction: "no two data[i].id are equal"
+  test: |
+    PORT="${APR_SERVE_PORT:-8000}"
+    curl -s "http://localhost:$PORT/v1/models" | \
+      jq -e '(.data | map(.id) | length) == (.data | map(.id) | unique | length)' >/dev/null || {
+        echo "FAIL: duplicate ids in /v1/models" >&2
+        exit 1
+      }
+
+  if_fails: rule 'ids are unique within the response' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: invariant
+  property: "GET /v1/models returns 200 with {object: 'list', data: [...]} envelope"
+- type: invariant
+  property: "Every data[i] satisfies {id: non-empty string, object: 'model', created: int>0, owned_by: non-empty string}"
+- type: invariant
+  property: "Every listed id is accepted by /v1/chat/completions (round-trip stability)"
+- type: invariant
+  property: "ids are unique within the response and stable across server restarts"
+- type: invariant
+  property: "created timestamp is a positive integer <= server wall clock"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-33` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-33
+  priority: critical
+  auto_created: false

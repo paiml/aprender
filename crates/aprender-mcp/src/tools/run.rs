@@ -4,14 +4,21 @@
 //!
 //! M3 (FALSIFY-MCP-006) adds cancellation: the call accepts a cancel receiver
 //! and forwards it to [`run_apr_cancellable`], which SIGTERMs the spawned
-//! subprocess on signal and SIGKILLs after the grace window. Per-token
-//! `notifications/progress` streaming is deferred to M4 — it needs an
-//! `apr run --stream` CLI flag prereq that doesn't yet exist.
+//! subprocess on signal and SIGKILLs after the grace window.
+//!
+//! M3 (FALSIFY-MCP-PROGRESS-002) adds streaming: when the originating
+//! `tools/call` carries `params._meta.progressToken`, [`call_with_sink`]
+//! invokes `apr run ... --stream` (NDJSON: one `event=token` line per
+//! decoded token, then one `event=final` blob) and forwards each line as a
+//! `notifications/progress` message tagged with the caller's token. When the
+//! sink is absent (no progressToken), we fall back to the original
+//! cancellable sync path so existing clients see no behaviour change.
 
 #![allow(clippy::disallowed_methods)] // serde_json::json! macro expands to .unwrap() internally
 
-use crate::tools::subprocess::{run_apr_cancellable, CANCEL_GRACE_MS};
-use crate::types::{InputSchema, ToolCallResult, ToolDefinition};
+use crate::server::NotificationSink;
+use crate::tools::subprocess::{run_apr_cancellable, spawn_streaming, CANCEL_GRACE_MS};
+use crate::types::{InputSchema, JsonRpcNotification, ToolCallResult, ToolDefinition};
 use std::sync::mpsc::Receiver;
 
 /// Tool name registered with MCP clients.
@@ -43,17 +50,53 @@ pub fn run_tool_definition() -> ToolDefinition {
 /// `cancel_rx` is signalled by the MCP dispatcher when a matching
 /// `notifications/cancelled` arrives on the same request id (FALSIFY-MCP-006).
 /// Pass a never-firing channel for tests or direct non-MCP callers.
+///
+/// Back-compat entry point used by callers that don't opt into progress
+/// streaming. Equivalent to `call_with_sink(args, cancel_rx, None, None)` but
+/// preserves the cancellable code path for the no-stream case.
 #[must_use]
 pub fn call(args: &serde_json::Value, cancel_rx: &Receiver<()>) -> ToolCallResult {
+    call_with_sink(args, cancel_rx, None, None)
+}
+
+/// Execute `apr.run` with optional `notifications/progress` streaming.
+///
+/// FALSIFY-MCP-PROGRESS-002: when both `sink` and `progress_token` are
+/// `Some`, the subprocess is spawned with `apr run ... --stream` so each
+/// decoded token (NDJSON `event=token` line) and the terminal `event=final`
+/// blob is forwarded as a `notifications/progress` message tagged with the
+/// caller's token. When either argument is `None` (no progressToken on the
+/// originating `tools/call`) we fall back to the synchronous
+/// [`run_apr_cancellable`] path so existing clients see identical behaviour.
+///
+/// Note: the streaming path does NOT honour `cancel_rx` today (the MCP
+/// `apr.finetune` streaming path made the same trade-off in #887). Wiring
+/// SIGTERM into [`spawn_streaming`] is tracked separately — clients that
+/// require both streaming AND cancellation should not yet supply a
+/// progressToken on `apr.run`. The non-streaming path remains fully
+/// cancellable.
+#[must_use]
+pub fn call_with_sink(
+    args: &serde_json::Value,
+    cancel_rx: &Receiver<()>,
+    sink: Option<&NotificationSink>,
+    progress_token: Option<serde_json::Value>,
+) -> ToolCallResult {
     let Some(model_path) = args.get("model_path").and_then(|v| v.as_str()) else {
         return ToolCallResult::error("Missing required argument: model_path");
     };
 
-    let mut owned: Vec<String> = vec![
-        "run".to_string(),
-        model_path.to_string(),
-        "--json".to_string(),
-    ];
+    let streaming = sink.is_some() && progress_token.is_some();
+
+    let mut owned: Vec<String> = vec!["run".to_string(), model_path.to_string()];
+    // --stream emits NDJSON (one event per line); the legacy --json path
+    // emits a single pretty-printed blob. Pick whichever matches the
+    // intended consumer.
+    if streaming {
+        owned.push("--stream".to_string());
+    } else {
+        owned.push("--json".to_string());
+    }
 
     if let Some(prompt) = args.get("prompt").and_then(|v| v.as_str()) {
         if !prompt.is_empty() {
@@ -75,7 +118,38 @@ pub fn call(args: &serde_json::Value, cancel_rx: &Receiver<()>) -> ToolCallResul
     }
 
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
-    run_apr_cancellable(&argv, cancel_rx, CANCEL_GRACE_MS)
+
+    match (streaming, sink, progress_token) {
+        (true, Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
+        _ => run_apr_cancellable(&argv, cancel_rx, CANCEL_GRACE_MS),
+    }
+}
+
+/// Test-visible: stream `program args...` and forward each stdout line as a
+/// `notifications/progress` notification through `sink`, tagged with
+/// `progress_token`. Each stdout line is JSON-parsed if possible (the
+/// `apr run --stream` NDJSON contract guarantees JSON) so downstream MCP
+/// clients receive structured `message.event = "token"` / `"final"` events;
+/// non-JSON lines fall back to a bare string. The returned `ToolCallResult`
+/// is the aggregated stdout (same shape as `run_apr_cancellable`'s success
+/// body) so non-streaming consumers get the full payload too.
+#[must_use]
+pub fn stream_with_sink(
+    program: &str,
+    args: &[&str],
+    sink: &NotificationSink,
+    progress_token: &serde_json::Value,
+) -> ToolCallResult {
+    spawn_streaming(program, args, |line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        let payload = serde_json::from_str::<serde_json::Value>(trimmed)
+            .unwrap_or_else(|_| serde_json::Value::String(line.to_string()));
+        let notif = JsonRpcNotification::progress(progress_token.clone(), payload);
+        sink(notif);
+    })
 }
 
 #[cfg(test)]

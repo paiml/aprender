@@ -1,0 +1,153 @@
+# CRUX-C-16 — LoRA hotswap at runtime
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-16
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    LoRA adapter hotswap at runtime — load, switch, and unload LoRA adapters
+    in a live serving process without model reload. vLLM exposes via
+    OpenAI-compatible /v1/load_lora_adapter and /v1/unload_lora_adapter
+    endpoints (see vLLM LoRA docs) and HTTP header `X-LoRA-Adapter: <name>`
+    for per-request selection. Map to `apr serve --enable-lora` + POST
+    /v1/lora/load with adapter_name + path, then request-time selection.
+  references:
+  - "https://docs.vllm.ai/en/latest/models/lora.html"
+  - "Hu et al. 2021 — 'LoRA: Low-Rank Adaptation of Large Language Models'"
+
+equations:
+  lora_hotswap_correctness:
+    formula: |
+      ∀ base model B, adapter A, prompt p, temperature=0.0:
+        decode(B + A_loaded, p) ≡ merged_decode(merge(B, A), p)
+      within cosine(logits) >= 0.9999
+    domain: (base_model, adapter, prompt)
+    codomain: token sequence
+    invariants:
+    - "hotswapped adapter output ≡ offline-merged adapter output"
+    - "unload returns base model to pristine state (byte-identical to fresh load)"
+    - "concurrent requests with different X-LoRA-Adapter headers routed correctly"
+
+  lora_load_latency:
+    formula: |
+      t_load(adapter) <= 2.0s (P99) for rank<=64 adapters
+      AND no request blocks >50ms during load
+    domain: (adapter_rank, adapter_size_MB)
+    codomain: load latency (seconds)
+    invariants:
+    - "load latency P99 < 2.0s for typical 7B-Q4K + rank-64 adapter"
+    - "in-flight decode requests observe <50ms latency spike during load"
+    - "load/unload operations are atomic (no partial state visible)"
+
+  adapter_compatibility:
+    formula: |
+      adapter.base_model_sha256 == base.sha256 AND
+      adapter.target_modules ⊆ base.module_names AND
+      adapter.rank ∈ [1, 512]
+    domain: (adapter_config, base_model)
+    codomain: bool
+    invariants:
+    - "mismatched base sha256 MUST be rejected at load time"
+    - "unknown target_modules MUST be rejected with module list in error"
+    - "rank > 512 rejected (likely malformed adapter)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-16-001
+  rule: hotswap output parity with offline merge
+  prediction: "served+adapter output ≡ offline-merged base+adapter output at temp=0"
+  test: |
+    # TODO: blocked until apr serve --enable-lora + /v1/lora/load wired
+    apr merge base.gguf adapter.gguf -o merged.gguf
+    REF=$(apr run merged.gguf --prompt "task:" --max-tokens 32 \
+      --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
+    apr serve base.gguf --enable-lora --port 18080 &
+    sleep 5
+    curl -sX POST localhost:18080/v1/lora/load \
+      -d '{"adapter_name":"sql","lora_path":"adapter.gguf"}'
+    HOT=$(curl -sX POST localhost:18080/v1/completions \
+      -H 'X-LoRA-Adapter: sql' \
+      -d '{"prompt":"task:","max_tokens":32,"temperature":0.0,"top_k":1}' | \
+      jq -r '.choices[0].token_ids | join(",")')
+    kill %1
+    [ "$REF" = "$HOT" ]
+  if_fails: "hotswapped adapter diverges from offline-merged baseline — LoRA math bug"
+
+- id: FALSIFY-CRUX-C-16-002
+  rule: load latency P99 <2s
+  prediction: "rank-64 adapter load completes in <2s P99"
+  test: |
+    # TODO: blocked until /v1/lora/load endpoint
+    apr serve base.gguf --enable-lora --port 18080 &
+    sleep 5
+    for i in $(seq 1 20); do
+      /usr/bin/time -f "%e" curl -sX POST localhost:18080/v1/lora/load \
+        -d "{\"adapter_name\":\"a$i\",\"lora_path\":\"adapter.gguf\"}" 2>>times.txt
+      curl -sX POST localhost:18080/v1/lora/unload -d "{\"adapter_name\":\"a$i\"}"
+    done
+    kill %1
+    python3 -c "import numpy as np; t=np.loadtxt('times.txt'); assert np.percentile(t,99) < 2.0, f'P99={np.percentile(t,99):.2f}s'"
+  if_fails: "LoRA load latency P99 exceeds 2s budget"
+
+- id: FALSIFY-CRUX-C-16-003
+  rule: mismatched base model rejected
+  prediction: "adapter trained on model X rejected when served with model Y"
+  test: |
+    # TODO: blocked until /v1/lora/load endpoint
+    apr serve qwen-7b.gguf --enable-lora --port 18080 &
+    sleep 5
+    RES=$(curl -sX POST localhost:18080/v1/lora/load \
+      -d '{"adapter_name":"wrong","lora_path":"llama-adapter.gguf"}')
+    kill %1
+    echo "$RES" | jq -e '.error' && echo "$RES" | grep -qiE "base.?model|sha256|mismatch"
+  if_fails: "mismatched-base adapter silently loaded — will produce garbage output"
+
+- id: FALSIFY-CRUX-C-16-004
+  rule: unload restores base model
+  prediction: "after unload, requests without X-LoRA-Adapter ≡ fresh base load"
+  test: |
+    # TODO: blocked until /v1/lora/{load,unload}
+    REF=$(apr run base.gguf --prompt "hi" --max-tokens 16 --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
+    apr serve base.gguf --enable-lora --port 18080 &
+    sleep 5
+    curl -sX POST localhost:18080/v1/lora/load -d '{"adapter_name":"a","lora_path":"adapter.gguf"}'
+    curl -sX POST localhost:18080/v1/lora/unload -d '{"adapter_name":"a"}'
+    AFTER=$(curl -sX POST localhost:18080/v1/completions -d '{"prompt":"hi","max_tokens":16,"temperature":0.0,"top_k":1}' | jq -r '.choices[0].token_ids | join(",")')
+    kill %1
+    [ "$REF" = "$AFTER" ]
+  if_fails: "base model state contaminated after LoRA unload"
+
+proof_obligations:
+- type: equivalence
+  property: "hotswap+decode ≡ offline-merge+decode at temp=0 (byte-identical tokens)"
+- type: invariant
+  property: "adapter.base_sha256 validated; mismatches rejected at load"
+- type: bound
+  property: "load latency P99 < 2s; concurrent request latency spike < 50ms"
+- type: idempotency
+  property: "unload restores base state byte-identically (load → unload → decode ≡ fresh decode)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-16` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-16
+  priority: high
+  auto_created: true

@@ -1,0 +1,103 @@
+# CRUX-K-17 — NVIDIA Dynamo integration
+
+metadata:
+  id: CRUX-K-17
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Deployment & Integration"
+  competitor: ecosystem
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Integrate apr serve with NVIDIA Dynamo distributed inference
+    framework. Canonical: github.com/ai-dynamo/dynamo — Dynamo
+    disaggregates prefill from decode workers and expects each worker
+    to register via NATS pub-sub with a schema that declares role
+    ∈ {prefill, decode}, kv_cache_dtype, and max_seq_len. Apr must
+    emit a valid Dynamo worker manifest and pass connection round-trip.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  dynamo_integration:
+    formula: |
+      apr serve --dynamo-role {prefill|decode} \
+                --dynamo-nats nats://host:4222 \
+                --dynamo-model-name <str>
+      emits heartbeat on NATS subject `dynamo.workers.{role}.{model}` with:
+        { role, worker_id, max_seq_len, kv_cache_dtype, endpoint }
+      dynamo router receives heartbeat within 10s and lists worker
+    domain: "(role ∈ {prefill, decode}, nats_url: str, model: str)"
+    codomain: "NATS heartbeat messages + HTTP endpoint"
+    invariants:
+    - "heartbeat published within 10s of serve startup"
+    - "heartbeat JSON validates against Dynamo worker schema"
+    - "graceful shutdown publishes worker_down within 2s"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-17-001
+  rule: heartbeat published within 10s
+  prediction: "NATS subscriber sees first heartbeat within 10s of startup"
+  test: |
+    set -euo pipefail
+    docker run --rm -d --name nats-apr -p 14222:4222 nats:2.10 -js
+    trap 'docker rm -f nats-apr' EXIT
+    sleep 1
+    apr serve tests/fixtures/tiny.apr --dynamo-role decode \
+      --dynamo-nats nats://127.0.0.1:14222 --dynamo-model-name apr-test \
+      --port 0 &
+    SRV=$!; trap "kill $SRV; docker rm -f nats-apr" EXIT
+    timeout 10 nats --server=nats://127.0.0.1:14222 \
+      sub 'dynamo.workers.decode.apr-test' --count=1 > /tmp/hb.json
+    test -s /tmp/hb.json
+  if_fails: rule 'heartbeat published within 10s' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-17-002
+  rule: heartbeat validates against Dynamo worker schema
+  prediction: "heartbeat has role, worker_id, max_seq_len, kv_cache_dtype, endpoint"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import json; d=json.loads(open('/tmp/hb.json').read().split('\n')[-2])
+    for k in ('role','worker_id','max_seq_len','kv_cache_dtype','endpoint'):
+        assert k in d, (k, d)
+    assert d['role'] == 'decode'
+    "
+  if_fails: rule 'heartbeat validates against Dynamo worker schema' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-17-003
+  rule: graceful shutdown publishes worker_down
+  prediction: "SIGTERM followed by NATS subscriber sees worker_down within 2s"
+  test: |
+    set -euo pipefail
+    nats --server=nats://127.0.0.1:14222 \
+      sub 'dynamo.workers.decode.apr-test.down' --count=1 > /tmp/down.json &
+    kill -TERM $SRV || true
+    wait
+    test -s /tmp/down.json
+
+  if_fails: rule 'graceful shutdown publishes worker_down' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr serve --dynamo-role emits Dynamo-compatible worker manifest + lifecycle events"
+- type: invariant
+  property: "heartbeat within 10s of startup"
+- type: invariant
+  property: "graceful shutdown publishes worker_down"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-k-17
+  priority: medium
+  auto_created: true

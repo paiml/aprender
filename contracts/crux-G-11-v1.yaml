@@ -1,0 +1,155 @@
+# CRUX-G-11 — Ollama push to remote registry
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-G-11
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "G — Format Conversion"
+  competitor: ollama
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Ollama push to remote registry. Competitor `ollama push user/model:tag`
+    (see https://github.com/ollama/ollama/blob/main/docs/api.md#push-a-model
+    and https://github.com/ollama/ollama/blob/main/docs/import.md#sharing-your-model)
+    uploads the local model blobs (manifest + layers) to registry.ollama.ai
+    via a chunked OCI-style API with resumable uploads and per-layer sha256
+    verification. Parity: `apr publish hf://user/model` already exists for
+    HuggingFace (contract apr-publish-hf-large-file-v1.yaml). CRUX-G-11
+    extends this to Ollama registry: `apr publish ollama://user/model:tag
+    model.apr` MUST convert APR → GGUF blobs, upload via the ollama push
+    protocol (blob POST + commit), verify per-blob sha256, and be
+    idempotent (re-push of identical content is a no-op that exits 0).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
+equations:
+  manifest_schema:
+    formula: |
+      On publish, apr emits an OCI-style manifest:
+        { "schemaVersion": 2,
+          "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+          "config":  { "digest": "sha256:...", "mediaType": "application/vnd.ollama.image.config", "size": C },
+          "layers": [
+            { "digest": "sha256:...", "mediaType": "application/vnd.ollama.image.model",    "size": L1 },
+            { "digest": "sha256:...", "mediaType": "application/vnd.ollama.image.template", "size": L2 },
+            ...
+          ] }
+    domain: local .apr model
+    codomain: OCI manifest JSON POSTed to registry.ollama.ai/v2/<ns>/<name>/manifests/<tag>
+    invariants:
+    - "config.digest and all layers[i].digest are sha256 hashes of the actual blob bytes"
+    - "Σ layers[i].size + config.size == total bytes pushed"
+    - "mediaType strings match ollama registry contract (application/vnd.ollama.image.*)"
+
+  idempotent_publish:
+    formula: |
+      publish(M, tag) ; publish(M, tag)  ≡  publish(M, tag)
+      Specifically:
+        First invocation uploads N bytes; second invocation uploads 0 bytes.
+        Both exit 0, both leave registry in identical state.
+    domain: (model M, remote tag) called twice in sequence
+    codomain: (bytes_uploaded_1, bytes_uploaded_2) with bytes_uploaded_2 == 0
+    invariants:
+    - "Server HEAD /v2/<ns>/<name>/blobs/<digest> returns 200 → skip upload"
+    - "Server HEAD 404 → POST the blob; returns 201 Created with Location header"
+    - "Second invocation of identical content exits 0 with 'already present' log"
+
+  sha256_verify_on_commit:
+    formula: |
+      After chunked upload completes at /v2/<ns>/<name>/blobs/uploads/<uuid>:
+        PUT /v2/<ns>/<name>/blobs/uploads/<uuid>?digest=sha256:<D>
+        response.status == 201 → local sha256(blob) == D
+        response.status == 400 BLOB_UPLOAD_DIGEST_MISMATCH → abort, exit non-zero
+    domain: (local blob, computed digest, server response)
+    codomain: bool (digests agree ∧ server accepted)
+    invariants:
+    - "Digest is computed locally before commit request"
+    - "Mismatch aborts with non-zero exit and 'digest mismatch' stderr message"
+
+falsification_tests:
+- id: FALSIFY-CRUX-G-11-001
+  rule: manifest schema matches Ollama registry contract
+  prediction: "apr publish emits an OCI-style manifest parseable by ollama pull"
+  test: |
+    # TODO: stand up a local registry (e.g. `registry:2` container) and point apr at it
+    MODEL=/mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr
+    REGISTRY=${OLLAMA_TEST_REGISTRY:-localhost:5000}
+    apr publish "ollama://${REGISTRY}/paiml/qwen-test:latest" "$MODEL" \
+      --dry-run --manifest-out /tmp/ollama-manifest.json
+    jq -e '.schemaVersion == 2 and .config.digest and (.layers | length > 0) and
+           all(.layers[]; .digest and .mediaType and .size)' /tmp/ollama-manifest.json \
+      || { echo "FAIL: manifest missing required OCI fields" >&2; exit 1; }
+
+  if_fails: rule 'manifest schema matches Ollama registry contract' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-11-002
+  rule: idempotent re-push uploads zero bytes
+  prediction: "second push of identical model transfers 0 bytes"
+  test: |
+    MODEL=/mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr
+    REGISTRY=${OLLAMA_TEST_REGISTRY:-localhost:5000}
+    BYTES1=$(apr publish "ollama://${REGISTRY}/paiml/qwen-test:latest" "$MODEL" --json 2>/dev/null \
+             | jq '.bytes_uploaded')
+    BYTES2=$(apr publish "ollama://${REGISTRY}/paiml/qwen-test:latest" "$MODEL" --json 2>/dev/null \
+             | jq '.bytes_uploaded')
+    [ "$BYTES1" -gt 0 ] || { echo "FAIL: first push uploaded 0 bytes" >&2; exit 1; }
+    [ "$BYTES2" -eq 0 ] || { echo "FAIL: idempotent push uploaded $BYTES2 bytes" >&2; exit 1; }
+
+  if_fails: rule 'idempotent re-push uploads zero bytes' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-11-003
+  rule: per-blob sha256 verification on commit
+  prediction: "corrupt blob is rejected by registry with digest mismatch"
+  test: |
+    # TODO: use a mocking proxy that mutates one byte mid-upload
+    REGISTRY=${OLLAMA_TEST_REGISTRY:-localhost:5000}
+    MODEL=/mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr
+    OUT=$(APR_FAULT_INJECT_BLOB_CORRUPT=1 \
+      apr publish "ollama://${REGISTRY}/paiml/qwen-test:corrupt" "$MODEL" 2>&1 || true)
+    echo "$OUT" | grep -iE 'digest|mismatch|BLOB_UPLOAD_DIGEST' \
+      || { echo "FAIL: no digest mismatch error: $OUT" >&2; exit 1; }
+
+  if_fails: rule 'per-blob sha256 verification on commit' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-G-11-004
+  rule: pushed model is pullable by ollama client
+  prediction: "ollama pull localhost:5000/paiml/qwen-test:latest succeeds after apr publish"
+  test: |
+    command -v ollama >/dev/null || { echo "SKIP: ollama CLI not installed" >&2; exit 77; }
+    REGISTRY=${OLLAMA_TEST_REGISTRY:-localhost:5000}
+    ollama rm "${REGISTRY}/paiml/qwen-test:latest" 2>/dev/null || true
+    ollama pull "${REGISTRY}/paiml/qwen-test:latest" \
+      || { echo "FAIL: ollama pull rejected apr-published manifest" >&2; exit 1; }
+
+  if_fails: rule 'pushed model is pullable by ollama client' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: invariant
+  property: "Emitted manifest conforms to OCI distribution spec v2 (schemaVersion=2, typed config+layers)"
+- type: invariant
+  property: "Second publish of identical content uploads 0 bytes and exits 0"
+- type: invariant
+  property: "Per-blob sha256 digest is verified at commit (PUT ?digest=sha256:...) and mismatch aborts with non-zero exit"
+- type: equivalence
+  property: "Ollama client can `ollama pull` the manifest apr published (bytes-for-bytes interoperable)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-g-11` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-g-11
+  priority: high
+  auto_created: true

@@ -123,10 +123,7 @@ fn parse_agent_md_skips_comment_lines() {
 fn load_custom_agents_from_flat_layout() {
     let dir = tempfile::tempdir().expect("tempdir");
     write(&dir.path().join("reviewer.md"), VALID);
-    write(
-        &dir.path().join("planner.md"),
-        "---\nname: planner\ndescription: plans\n---\nbody\n",
-    );
+    write(&dir.path().join("planner.md"), "---\nname: planner\ndescription: plans\n---\nbody\n");
     // Non-md files are ignored
     write(&dir.path().join("README.txt"), "not an agent");
 
@@ -182,10 +179,7 @@ fn discover_standard_locations_finds_project_dir() {
 fn discover_standard_locations_falls_back_to_claude_dir() {
     let cwd = tempfile::tempdir().expect("tempdir");
     // No .apr/agents — only .claude/agents
-    write(
-        &cwd.path().join(".claude").join("agents").join("x.md"),
-        VALID,
-    );
+    write(&cwd.path().join(".claude").join("agents").join("x.md"), VALID);
 
     let specs = discover_standard_locations(cwd.path());
     assert!(

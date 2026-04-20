@@ -1,0 +1,176 @@
+# CRUX-A-05 — Resume interrupted download
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-05
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Resume interrupted download. Competitor `huggingface_hub.snapshot_download(
+    resume_download=True)` (default in hub>=0.23) continues a partial transfer
+    via HTTP Range requests and verifies ETag/sha256 on completion. Aprender
+    parity: `apr pull hf://repo/model --resume` MUST use Range requests to
+    continue from partial bytes, skip already-complete shards, fail closed on
+    ETag/sha256 mismatch, and prevent concurrent writers via a file lock.
+    Ref: https://huggingface.co/docs/huggingface_hub/guides/download#download-files-to-a-local-folder ;
+    https://huggingface.co/docs/huggingface_hub/v0.23.0/en/package_reference/file_download#huggingface_hub.hf_hub_download
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  range_request_continuation:
+    formula: |
+      For partial file P of expected size S with P.size = k (0 < k < S):
+        GET <url> with header "Range: bytes=k-"
+        → response.status ∈ {206 Partial Content, 200 OK (server may serve full)}
+        → on 206: append response.body to P, final P.size == S
+        → on 200: restart from byte 0 (log warning)
+    domain: (partial_file, remote_url)
+    codomain: completed file of size S with sha256 == expected
+    invariants:
+    - "Resumed download issues Range: bytes=<offset>- header"
+    - "Final file size == Content-Length of full object"
+    - "Final sha256 == manifest sha256 (HF LFS pointer or model index)"
+
+  no_redownload_completed_shards:
+    formula: |
+      For multi-shard pull with shards = [s_1, ..., s_n]:
+        ∀ s_i where s_i.local_size == s_i.remote_size ∧ s_i.sha256 == expected:
+          bytes_fetched(s_i, --resume) == 0
+    domain: shard set with partial completion
+    codomain: bytes fetched per shard
+    invariants:
+    - "Complete shards emit zero network bytes on --resume"
+    - "Incomplete shards fetch exactly (remote_size - local_size) bytes"
+
+  etag_mismatch_triggers_fresh_download:
+    formula: |
+      If local_etag(P) != remote_etag(url):
+        delete P
+        restart download from byte 0
+        log warning "etag mismatch: remote changed, discarding partial"
+    domain: (partial_file, remote ETag)
+    codomain: fresh download with final sha256 == expected
+    invariants:
+    - "Stale partial is discarded when server ETag changed"
+    - "Warning is emitted on stderr, not silently swallowed"
+
+  concurrent_write_prevention:
+    formula: |
+      apr pull hf://X --resume acquires advisory lock at <target>.lock
+      Second concurrent invocation:
+        exits non-zero with 'another apr pull is in progress' message
+        does NOT write to <target>
+    domain: two concurrent apr pull processes
+    codomain: (exit_code_1, exit_code_2) where exactly one is 0
+    invariants:
+    - "Lock file <target>.lock is created on download start, removed on exit"
+    - "Second concurrent invocation fails fast with explanatory message"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-05-001
+  rule: resume completes partial download with correct sha256
+  prediction: "kill at ~50% then --resume produces file matching expected sha256"
+  test: |
+    TARGET=/tmp/apr-resume-test.bin
+    EXPECTED_SHA=$(cat evidence/crux/huggingface/expected_sha256.txt 2>/dev/null || echo "")
+    [ -n "$EXPECTED_SHA" ] || { echo "SKIP: evidence/crux/huggingface/expected_sha256.txt missing" >&2; exit 77; }
+    rm -f "$TARGET"
+    # TODO: kick off pull, kill mid-flight (timeout 3s should land mid-transfer on large LFS file)
+    timeout 3s apr pull hf://paiml/qwen2.5-coder-7b-apache-q4k-v1 -o "$TARGET" 2>/dev/null || true
+    [ -s "$TARGET" ] || { echo "FAIL: no partial file created" >&2; exit 1; }
+    PARTIAL_SIZE=$(wc -c < "$TARGET")
+    apr pull hf://paiml/qwen2.5-coder-7b-apache-q4k-v1 -o "$TARGET" --resume
+    ACTUAL_SHA=$(sha256sum "$TARGET" | awk '{print $1}')
+    [ "$ACTUAL_SHA" = "$EXPECTED_SHA" ] || { echo "FAIL: sha mismatch ($ACTUAL_SHA vs $EXPECTED_SHA)" >&2; exit 1; }
+
+  if_fails: rule 'resume completes partial download with correct sha256' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-05-002
+  rule: complete shards are not re-downloaded
+  prediction: "fully present shard emits zero network bytes on --resume"
+  test: |
+    # TODO: measure bytes over the wire via strace or NET counters
+    # For now assert log line "skipping complete shard" appears
+    TARGET_DIR=/tmp/apr-resume-shard-test
+    mkdir -p "$TARGET_DIR"
+    apr pull hf://paiml/qwen2.5-coder-7b-apache-q4k-v1 -o "$TARGET_DIR" 2>/dev/null
+    OUT=$(apr pull hf://paiml/qwen2.5-coder-7b-apache-q4k-v1 -o "$TARGET_DIR" --resume 2>&1)
+    echo "$OUT" | grep -iE 'skip|cached|complete' || {
+      echo "FAIL: --resume re-downloaded already-complete shards" >&2
+      exit 1
+    }
+
+  if_fails: rule 'complete shards are not re-downloaded' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-05-003
+  rule: etag mismatch triggers fresh download with warning
+  prediction: "stale partial (wrong ETag) is discarded, warning emitted"
+  test: |
+    # TODO: construct synthetic partial with mismatched .etag sidecar
+    TARGET=/tmp/apr-etag-test.bin
+    echo "stale garbage" > "$TARGET"
+    echo "wrong-etag-value" > "$TARGET.etag"
+    OUT=$(apr pull hf://paiml/qwen2.5-coder-7b-apache-q4k-v1 -o "$TARGET" --resume 2>&1)
+    echo "$OUT" | grep -iE 'etag|mismatch|restart|discarding' || {
+      echo "FAIL: no warning on etag mismatch" >&2
+      exit 1
+    }
+
+  if_fails: rule 'etag mismatch triggers fresh download with warning' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-05-004
+  rule: concurrent --resume invocations are mutually exclusive
+  prediction: "second concurrent apr pull exits non-zero with lock error"
+  test: |
+    TARGET=/tmp/apr-lock-test.bin
+    rm -f "$TARGET" "$TARGET.lock"
+    apr pull hf://paiml/qwen2.5-coder-7b-apache-q4k-v1 -o "$TARGET" --resume &
+    PID1=$!
+    sleep 1
+    OUT2=$(apr pull hf://paiml/qwen2.5-coder-7b-apache-q4k-v1 -o "$TARGET" --resume 2>&1 || true)
+    RC2=$?
+    kill "$PID1" 2>/dev/null || true
+    wait "$PID1" 2>/dev/null || true
+    [ "$RC2" -ne 0 ] || { echo "FAIL: second invocation succeeded instead of failing" >&2; exit 1; }
+    echo "$OUT2" | grep -iE 'lock|in progress|already running' || {
+      echo "FAIL: no lock error message" >&2
+      exit 1
+    }
+
+  if_fails: rule 'concurrent --resume invocations are mutually exclusive' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: invariant
+  property: "HTTP Range: bytes=<offset>- header is emitted on --resume when a partial file exists"
+- type: invariant
+  property: "Final sha256 matches the manifest sha256 regardless of resume vs fresh path"
+- type: invariant
+  property: "Complete shards emit zero network bytes when --resume finds them intact"
+- type: invariant
+  property: "ETag mismatch discards the partial and restarts from byte 0 with a stderr warning"
+- type: invariant
+  property: "Advisory file lock at <target>.lock prevents concurrent writers (second invocation exits non-zero)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-05` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-05
+  priority: critical
+  auto_created: false

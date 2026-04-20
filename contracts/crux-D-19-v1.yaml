@@ -1,0 +1,97 @@
+# CRUX-D-19 — PPO reinforcement learning
+
+metadata:
+  id: CRUX-D-19
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    PPO with a reward model. Canonical: HF TRL `PPOTrainer` (arXiv:1707.06347).
+    Requires a policy model, ref model, RM, and KL control on ref.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  ppo_objective:
+    formula: |
+      advantage_t = reward_t - value_t
+      ratio_t = pi_theta(a_t|s_t) / pi_theta_old(a_t|s_t)
+      L_clip = E_t[ min(ratio_t * A_t, clip(ratio_t, 1-epsilon, 1+epsilon) * A_t) ]
+      L_total = L_clip - c_v * (V_phi - R)^2 + c_h * H(pi) - beta * KL(pi || pi_ref)
+    domain: "(policy, ref, rm, rollout_batch, clip_eps: 0.2, kl_coef: 0.1, c_v: 0.5)"
+    codomain: "updated policy params"
+    invariants:
+    - "KL(policy || ref) stays bounded (dynamic beta if >target)"
+    - "mean reward increases over training (monotone after warmup)"
+    - "final policy generates strings that RM scores higher than ref-policy strings"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-19-001
+  rule: toy PPO run improves mean reward on synthetic RM
+  prediction: "mean reward after 200 steps > mean reward at step 0 by ≥ 0.5"
+  test: |
+    set -euo pipefail
+    apr train-ppo tests/fixtures/ppo-prompts.jsonl \
+      --policy tests/fixtures/tinyllama-hf \
+      --reward-model tests/fixtures/toy-rm \
+      --kl-coef 0.1 --clip-eps 0.2 --steps 200 \
+      --output /tmp/ppo-out --dump-rewards /tmp/rewards.json
+    python3 -c "
+    import json; r = json.load(open('/tmp/rewards.json'))
+    start = sum(r['steps'][:10]) / 10
+    end   = sum(r['steps'][-10:]) / 10
+    assert end - start >= 0.5, f'start={start} end={end}'
+    "
+  if_fails: rule 'toy PPO run improves mean reward on synthetic RM' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-19-002
+  rule: KL constraint prevents policy blowup
+  prediction: "KL(policy || ref) stays < 20 nats throughout training"
+  test: |
+    set -euo pipefail
+    jq '.kl[]' /tmp/rewards.json | awk '{if($1>20) exit 1}'
+  if_fails: rule 'KL constraint prevents policy blowup' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-19-003
+  rule: loss components within TRL envelope on matched batch
+  prediction: "L_clip, L_vf, entropy match TRL PPOTrainer within 1% on step 0"
+  test: |
+    set -euo pipefail
+    apr train-ppo ... --dump-components /tmp/comp.json --steps 1
+    python3 - <<'PY'
+    import json
+    c = json.load(open("/tmp/comp.json"))
+    # reference captured from TRL PPOTrainer on identical batch
+    ref = {"L_clip": -0.123, "L_vf": 0.456, "entropy": 1.234}
+    for k,v in ref.items():
+      assert abs(c[k]-v)/max(abs(v),1e-6) < 0.01, f"{k}: apr={c[k]} ref={v}"
+    PY
+
+  if_fails: rule 'loss components within TRL envelope on matched batch' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr train-ppo matches TRL PPOTrainer loss components within 1% on identical (policy, ref, RM, batch)"
+- type: invariant
+  property: "KL(policy || ref) bounded throughout training (< 20 nats)"
+- type: invariant
+  property: "mean reward increases monotonically after warmup (cheap smoke proof)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-19
+  priority: medium
+  auto_created: true

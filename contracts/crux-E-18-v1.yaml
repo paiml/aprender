@@ -1,0 +1,132 @@
+# CRUX-E-18 — Throughput at max batch
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-E-18
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Throughput at max batch — peak tokens/sec achievable at the highest
+    concurrent batch that fits in VRAM. Binary-search over concurrent
+    counts until OOM margin is hit, then measure steady-state throughput.
+    Competitor: vLLM `benchmark_throughput.py --max-num-batched-tokens`.
+    Aprender surface: `apr bench --find-max-batch --json` emits
+    {max_concurrent, peak_throughput_tok_s, vram_used_bytes, vram_total_bytes}.
+    Source: https://docs.vllm.ai/en/latest/performance/benchmarks.html
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  max_batch_throughput:
+    formula: |
+      max_concurrent = argmax_{C ∈ ℕ⁺} C  s.t.  vram_used(C) <= vram_total × 0.95
+      peak_throughput = throughput(max_concurrent)
+    domain: C ∈ ℕ⁺
+    codomain: "(max_concurrent: ℕ⁺, peak_throughput: ℝ⁺)"
+    invariants:
+    - "max_concurrent >= 1 (at least one request fits)"
+    - "peak_throughput > 0"
+
+  batching_speedup:
+    formula: |
+      speedup = peak_throughput / throughput(concurrent=1)
+      Continuous batching should give >= 4× over single-request baseline.
+    domain: valid max_concurrent run
+    codomain: ℝ⁺
+    invariants:
+    - "peak_throughput >= throughput(C=1) × 4 (batching is real)"
+    - "If speedup < 2×, batching kernel is broken"
+
+  vram_safety:
+    formula: |
+      vram_used_bytes / vram_total_bytes <= 0.95
+      No OOM (process survives; no SIGKILL) throughout measurement.
+    domain: max-batch run
+    codomain: bool
+    invariants:
+    - "vram_used <= 95% of vram_total"
+    - "Process survives entire benchmark (no OOM kill)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-18-001
+  rule: Required JSON fields
+  prediction: "output has max_concurrent, peak_throughput_tok_s, vram_used_bytes, vram_total_bytes"
+  test: |
+    apr bench --find-max-batch --prompt-len 128 --json > out.json
+    jq -e '.max_concurrent and .peak_throughput_tok_s and .vram_used_bytes and .vram_total_bytes' out.json
+  if_fails: "max-batch JSON output missing required fields"
+
+- id: FALSIFY-CRUX-E-18-002
+  rule: VRAM below 95% of total
+  prediction: "vram_used_bytes <= vram_total_bytes × 0.95"
+  test: |
+    apr bench --find-max-batch --prompt-len 128 --json > out.json
+    jq -e '.vram_used_bytes <= (.vram_total_bytes * 0.95)' out.json
+  if_fails: "vram_used exceeds 95% of vram_total (OOM risk margin violated)"
+
+- id: FALSIFY-CRUX-E-18-003
+  rule: Peak throughput >= 4× single-request
+  prediction: "peak_throughput >= single-request throughput × 4 (batching saves real)"
+  test: |
+    SINGLE=$(apr bench --concurrent 1 --prompt-len 128 --json | jq '.throughput_tok_s')
+    PEAK=$(apr bench --find-max-batch --prompt-len 128 --json | jq '.peak_throughput_tok_s')
+    python3 -c "assert $PEAK >= $SINGLE * 4, f'peak {$PEAK} < 4x single {$SINGLE}'"
+  if_fails: "Batching speedup < 4× — continuous batching broken"
+
+- id: FALSIFY-CRUX-E-18-004
+  rule: max_concurrent >= 1
+  prediction: "max_concurrent is at least 1"
+  test: |
+    apr bench --find-max-batch --prompt-len 128 --json | jq -e '.max_concurrent >= 1'
+  if_fails: "max_concurrent < 1 (no request fits — model too large for GPU)"
+
+- id: FALSIFY-CRUX-E-18-005
+  rule: No OOM during measurement
+  prediction: "apr bench --find-max-batch completes without SIGKILL"
+  test: |
+    # TODO: verify by wrapping in timeout + checking exit code / dmesg for oom_kill
+    timeout 600 apr bench --find-max-batch --prompt-len 128 --json > out.json
+    RC=$?
+    [ "$RC" -eq 0 ]
+    ! dmesg | tail -50 | grep -q 'oom_kill.*apr'
+  if_fails: "Process killed by OOM during max-batch search (binary-search unsafe)"
+
+proof_obligations:
+- type: invariant
+  property: "JSON output contains {max_concurrent, peak_throughput_tok_s, vram_used_bytes, vram_total_bytes}"
+- type: invariant
+  property: "vram_used_bytes <= vram_total_bytes × 0.95"
+- type: invariant
+  property: "peak_throughput >= single-request throughput × 4"
+- type: invariant
+  property: "max_concurrent >= 1"
+- type: invariant
+  property: "No OOM (process survives benchmark)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-18` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-18
+  priority: critical
+  auto_created: false

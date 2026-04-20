@@ -1,0 +1,151 @@
+# CRUX-C-32 — Chunked prefill long contexts
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-32
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Chunked prefill long contexts. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  chunked_prefill_semantics:
+    formula: |
+      vLLM canonical:
+        python -m vllm.entrypoints.openai.api_server \
+          --enable-chunked-prefill --max-num-batched-tokens 2048
+        Reference: https://docs.vllm.ai/en/latest/models/performance.html#chunked-prefill
+      apr parity:
+        apr serve --enable-chunked-prefill --max-num-batched-tokens <N>
+        Env: APR_CHUNKED_PREFILL=1 APR_MAX_BATCHED_TOKENS=N
+      Behavior:
+        A long prompt of P tokens is split into ceil(P/N) chunks processed
+        sequentially, each chunk feeding KV cache. Intermediate chunks produce
+        NO tokens; final chunk kicks off decode.
+      Output correctness invariant:
+        generate(prompt, chunked=true, chunk_size=N) == generate(prompt, chunked=false)
+        (bit-identical at temperature=0 for same seed).
+    domain: "(prompt: string, max_num_batched_tokens: u32, enable_chunked_prefill: bool)"
+    codomain: "(completion_text: string, ttft_ms: f32)"
+    invariants:
+    - "At temperature=0, chunked and non-chunked prefill produce identical output text"
+    - "Chunked prefill succeeds for prompts with len(tokens) > max_num_batched_tokens"
+    - "Non-chunked serving of prompts with len(tokens) > max_model_len returns 4xx / error"
+    - "TTFT grows roughly linearly with prompt length (not quadratic) under chunked prefill"
+    - "Reference: vLLM PR #3130 (chunked prefill)"
+
+  chunked_prefill_concurrency:
+    formula: |
+      Under chunked prefill, a second request arriving mid-prefill of request A
+      is NOT fully starved. Its prefill chunks are interleaved with A's decode.
+      Observable: for 2 concurrent requests R1 (long prompt) and R2 (short prompt),
+        TTFT(R2) with chunked prefill << TTFT(R2) without chunked prefill.
+    domain: "(concurrent_requests, chunked_enabled)"
+    codomain: "ttft_R2: f32"
+    invariants:
+    - "Chunked prefill reduces TTFT tail latency under concurrency"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-32-001
+  rule: chunked and non-chunked prefill produce identical output at temperature=0
+  prediction: "Same prompt, seed, and temperature=0 yields bit-identical completion regardless of chunked prefill"
+  test: |
+    # Reference: https://docs.vllm.ai/en/latest/models/performance.html#chunked-prefill
+    python3 -c "print('Context: ' + 'The quick brown fox jumps over the lazy dog. '*200 + ' Question: What animal jumps? Answer:')" > /tmp/crux-c-32-long.txt
+    PROMPT=$(cat /tmp/crux-c-32-long.txt)
+    A=$(APR_CHUNKED_PREFILL=0 curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n --arg p "$PROMPT" '{model:"qwen2.5-coder-1.5b",messages:[{role:"user",content:$p}],temperature:0,max_tokens:16,seed:42}')" \
+      | jq -r '.choices[0].message.content')
+    B=$(APR_CHUNKED_PREFILL=1 APR_MAX_BATCHED_TOKENS=512 \
+      curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n --arg p "$PROMPT" '{model:"qwen2.5-coder-1.5b",messages:[{role:"user",content:$p}],temperature:0,max_tokens:16,seed:42}')" \
+      | jq -r '.choices[0].message.content')
+    [ "$A" = "$B" ] \
+      || { echo "FAIL: chunked vs non-chunked differ A=$A B=$B" >&2; exit 1; }
+  if_fails: "Chunked prefill changes deterministic output — numerics mismatch between chunk boundaries"
+
+- id: FALSIFY-CRUX-C-32-002
+  rule: chunked prefill succeeds when prompt exceeds max_num_batched_tokens
+  prediction: "Prompt of 4000 tokens succeeds with max_num_batched_tokens=512 and chunked prefill enabled"
+  test: |
+    python3 -c "print(('word ' * 4000).strip())" > /tmp/crux-c-32-big.txt
+    PROMPT=$(cat /tmp/crux-c-32-big.txt)
+    CODE=$(APR_CHUNKED_PREFILL=1 APR_MAX_BATCHED_TOKENS=512 \
+      curl -sS -o /tmp/crux-c-32-big-resp.json -w '%{http_code}' \
+      -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n --arg p "$PROMPT" '{model:"qwen2.5-coder-1.5b",messages:[{role:"user",content:$p}],temperature:0,max_tokens:8}')")
+    [ "$CODE" = "200" ] \
+      || { echo "FAIL: chunked prefill returned HTTP $CODE for 4k prompt" >&2; exit 1; }
+    jq -e '.choices[0].message.content | length > 0' /tmp/crux-c-32-big-resp.json >/dev/null \
+      || { echo "FAIL: empty completion from chunked prefill" >&2; exit 1; }
+  if_fails: "Chunked prefill cannot handle prompt exceeding max_num_batched_tokens"
+
+- id: FALSIFY-CRUX-C-32-003
+  rule: chunked prefill reduces TTFT tail under concurrency
+  prediction: "With chunked prefill enabled, a short concurrent request is not starved by a long one"
+  test: |
+    # Run a long prompt in background, concurrently fire a short request, measure TTFT.
+    python3 -c "print('ctx '*3000 + 'What is 2+2?')" > /tmp/crux-c-32-long2.txt
+    LONG=$(cat /tmp/crux-c-32-long2.txt)
+    (curl -sS -o /dev/null -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n --arg p "$LONG" '{model:"qwen2.5-coder-1.5b",messages:[{role:"user",content:$p}],max_tokens:64}')" ) &
+    BG_PID=$!
+    sleep 0.1
+    START=$(date +%s%N)
+    curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"hi"}],"max_tokens":4}' >/dev/null
+    END=$(date +%s%N)
+    wait $BG_PID 2>/dev/null || true
+    TTFT_MS=$(( (END - START) / 1000000 ))
+    # With chunked prefill, expect TTFT < 2000ms even with a long prefill in flight.
+    [ "$TTFT_MS" -lt 2000 ] \
+      || { echo "FAIL: concurrent short-request TTFT=${TTFT_MS}ms (>2000ms); chunked prefill not interleaving" >&2; exit 1; }
+  if_fails: "Chunked prefill does not interleave — short requests are starved by long prefill"
+
+proof_obligations:
+- type: equivalence
+  property: "apr serve --enable-chunked-prefill matches vLLM vllm serve --enable-chunked-prefill on golden long prompt (bit-identical output at temperature=0)"
+- type: invariant
+  property: "Chunked and non-chunked output identical at temperature=0"
+- type: invariant
+  property: "Prompts exceeding max_num_batched_tokens succeed under chunked prefill"
+- type: invariant
+  property: "Concurrent short requests have bounded TTFT under long prefill load"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-32` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-32
+  priority: high
+  auto_created: false
