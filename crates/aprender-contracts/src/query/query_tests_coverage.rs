@@ -250,9 +250,12 @@
 
     #[test]
     fn coverage_map_enrichment() {
-        // Coverage map requires sibling repos (aprender) for binding data
+        // Coverage map requires sibling repos (provable-contracts) for binding data.
+        // Check for provable-contracts, not aprender: GitHub checks repos out at
+        // /__w/<repo>/<repo>, so a parent sibling named `aprender` false-positives
+        // against the workspace itself. provable-contracts is a distinct sibling.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-        if !root.parent().is_some_and(|p| p.join("aprender").exists()) { return; }
+        if !root.parent().is_some_and(|p| p.join("provable-contracts").exists()) { return; }
         let index = test_index();
         let params = QueryParams {
             query: "softmax".to_string(),
