@@ -60,7 +60,7 @@ async fn test_real_server_health_endpoint() {
     assert_eq!(resp.status(), 200);
 
     let body: Value = resp.json().await.expect("json");
-    assert_eq!(body["status"], "healthy");
+    assert_eq!(body["status"], "ok");
 
     handle.abort();
 }

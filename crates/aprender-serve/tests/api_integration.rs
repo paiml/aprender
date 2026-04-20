@@ -53,7 +53,9 @@ async fn test_health_endpoint_returns_200() {
 
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["status"], "healthy");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["model_loaded"], true);
+    assert!(json["uptime_sec"].as_f64().unwrap() > 0.0);
 }
 
 #[tokio::test]

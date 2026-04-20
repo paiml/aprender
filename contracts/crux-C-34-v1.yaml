@@ -6,17 +6,18 @@
 
 metadata:
   id: CRUX-C-34
-  version: "1.0.0-draft"
+  version: "1.0.0"
   created: "2026-04-18"
+  promoted: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: active
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: vllm
   demand_score: 5  # 1..5, critical priority in pmat work
-  intake_status: partial
+  intake_status: supported
   description: >
     /health endpoint. Competitors vLLM (GET /health → 200 once the engine is
     up) and llama.cpp server (GET /health → {"status":"ok"}) expose a cheap
@@ -180,8 +181,35 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 5
+  status: discharged
+
+discharge_evidence:
+  harness: crates/aprender-serve/tests/falsification_crux_c_34.rs
+  framework: tokio::test + tower::ServiceExt::oneshot (in-process axum)
+  test_count: 12
+  falsify_crux_c_34_001:
+  - falsify_crux_c_34_001_health_schema_200
+  falsify_crux_c_34_002:
+  - falsify_crux_c_34_002_status_enum_ready
+  - falsify_crux_c_34_002_status_enum_loading
+  - falsify_crux_c_34_002_loading_returns_503
+  falsify_crux_c_34_003:
+  - falsify_crux_c_34_003_uptime_monotonic
+  falsify_crux_c_34_004:
+  - falsify_crux_c_34_004_live_always_200_ready_server
+  - falsify_crux_c_34_004_live_always_200_loading_server
+  - falsify_crux_c_34_004_ready_200_when_model_loaded
+  - falsify_crux_c_34_004_ready_503_when_no_model
+  - falsify_crux_c_34_004_main_health_agrees_with_ready
+  falsify_crux_c_34_005:
+  - falsify_crux_c_34_005_force_loading_env_flips_status
+  - falsify_crux_c_34_005_force_loading_ready_is_503
+  implementation:
+  - crates/aprender-serve/src/api/router.rs  # handlers + OnceLock uptime + force_loading hook
+  - crates/aprender-serve/src/api/types.rs   # HealthResponse schema
+  - crates/aprender-serve/src/api/mod_app_state_gpu.rs  # AppState::model_loaded()
+  loading_hook: APR_TEST_FORCE_LOADING=1
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
