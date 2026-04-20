@@ -32,6 +32,7 @@ pub(crate) mod flow;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod hex;
+pub(crate) mod hf_endpoint;
 pub(crate) mod import;
 pub(crate) mod inspect;
 pub(crate) mod kernel_explain;
