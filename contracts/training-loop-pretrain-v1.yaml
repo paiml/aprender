@@ -35,17 +35,34 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-TRAIN-PRETRAIN
-version: 1.1.0
+version: 1.3.0
 status: ACTIVE
 
 metadata:
-  version: "1.1.0"
+  version: "1.3.0"
   created: "2026-04-18"
-  updated: "2026-04-19"
+  updated: "2026-04-20"
   changelog:
     - "1.1.0 (2026-04-19): GATE-TRAIN-006 / INV-TRAIN-006 discharged via
        falsify_ship_021_* Rust tests; seed-plumbing race fixed by
        lock_init_seed mutex in transformer/init.rs; status PROPOSED → ACTIVE"
+    - "1.2.0 (2026-04-20): INV-TRAIN-005 / GATE-TRAIN-005 epoch-zero cap
+       becomes regime-dependent — `finetune` keeps the MODEL-1 literal
+       10.0, `from_scratch` uses 2.0 × ln(vocab_size). Motivation: task
+       #119 smoke run tripped the guard because uniform-random baseline
+       for vocab=50257 is ln(50257) ≈ 10.82, already over a hardcoded
+       10.0. The doubling rule at N ≥ 1 is unchanged across regimes.
+       Falsifier FALSIFY-SHIP-021B covers the from_scratch regime."
+    - "1.3.0 (2026-04-20): HP defaults + --mode flag. Adds
+       hyperparameter_defaults table (finetune vs from_scratch) and
+       INV-TRAIN-009 / GATE-TRAIN-009: `apr pretrain --mode={finetune|
+       from-scratch}` atomically flips (regime, lr_max, warmup_steps,
+       target_val_loss) together so operators can't ship a run with
+       MODEL-1 finetune LR on a from-scratch regime. Explicit CLI
+       overrides (--lr, --warmup-steps, --target-val-loss) always win
+       over mode defaults. Motivation: task #119 used MODEL-1 finetune
+       defaults (lr=5e-5, target=2.2) for a cold-start run — wrong LR
+       band AND unreachable target. INV-TRAIN-005 is unchanged."
   author: PAIML Engineering
   description: >
     Pretraining loop contract: required per-step metrics, required
@@ -151,18 +168,58 @@ non_divergence:
         status = FAIL
         exit_code = nonzero
 
-    Special case for N == 1:
-      if val_loss[0] > 10.0 OR val_loss[0] is NaN/Inf:
-        abort immediately after epoch 0
+    Special case for N == 0 (regime-dependent, v1.2.0):
+      FINETUNE regime (base weights already pretrained):
+        if val_loss[0] > 10.0 OR val_loss[0] is NaN/Inf:
+          abort immediately after epoch 0
+      FROM_SCRATCH regime (random init, vocab-dependent baseline):
+        if val_loss[0] > 2.0 * ln(vocab_size) OR val_loss[0] is NaN/Inf:
+          abort immediately after epoch 0
 
-    The check is MANDATORY and UNCONFIGURABLE. There is NO flag to
-    disable it. There is NO "warning" mode. Exceeding the threshold
-    is always fatal.
+    Rationale for the regime split: uniform-random baseline for a
+    vocab_size-V next-token predictor is ln(V). For V=50257 that is
+    10.82 — already over the MODEL-1 literal 10.0 before any training.
+    A finetune start should be much lower than ln(V) (base weights
+    already learned token distribution); a from-scratch start should
+    be within 2× ln(V) for the init to be considered usable. The 2×
+    safety margin catches truly broken inits (val_loss[0] > 2·ln(V)
+    means the model is worse than random by a log-factor).
 
-    Rationale: MODEL-1 v2 crossed this exact threshold silently
-    (val_loss 31.99 vs a healthy baseline of ~3.5 expected after
-    epoch 0). A compile-time-enforced abort would have saved 14
-    days and all downstream distillation compute.
+    The check is MANDATORY. The regime is configurable (operator
+    picks finetune vs from_scratch) but the thresholds for each
+    regime are not. There is NO "warning" mode. Exceeding the
+    chosen-regime threshold is always fatal.
+
+    Historical context: MODEL-1 v2 was a FINETUNE run (base weights
+    were Qwen2.5-Coder-7B-Instruct, already pretrained) and crossed
+    val_loss=31.99 — 3× the finetune threshold. The regime split
+    here does not weaken the MODEL-1 lesson: a finetune with
+    val_loss[0] > 10.0 still aborts. It only permits the from-scratch
+    case (MODEL-2 370M) to start above 10.0 without false abort.
+
+# ─────────────────────────────────────────────────────────────
+# Hyperparameter defaults per regime (v1.3.0)
+# Consumed by: crates/apr-cli/src/commands/pretrain.rs::mode_defaults
+# ─────────────────────────────────────────────────────────────
+
+hyperparameter_defaults:
+  finetune:
+    regime: finetune
+    lr_max: 5.0e-5
+    warmup_steps: 100
+    target_val_loss: 2.2
+    rationale: >
+      MODEL-1 v2 remedy (task #86): post-divergence rerun
+      hyperparameters that converged the distilled 7B Qwen lane.
+  from_scratch:
+    regime: from_scratch
+    lr_max: 3.0e-4
+    warmup_steps: 1000
+    target_val_loss: 3.0
+    rationale: >
+      Standard 370M cold-start band (GPT-2/Llama-2 scaling) — linear
+      warmup over 1000 steps, cosine decay, realistic Python-code CE
+      floor around 3.0 for ~370M params on CSN-Python-2048.
 
 # ─────────────────────────────────────────────────────────────
 # Invariants — machine-checkable properties of the training loop
@@ -214,16 +271,23 @@ invariants:
 
   - id: INV-TRAIN-005
     description: >
-      NON-DIVERGENCE (the MODEL-1 lesson): for every epoch boundary
-      N ≥ 1, val_loss[N] ≤ 2.0 × val_loss[N-1]. For N == 1,
-      val_loss[0] is finite and ≤ 10.0. Any violation triggers an
-      immediate abort with exit status = DIVERGENCE.
+      NON-DIVERGENCE (the MODEL-1 lesson, regime-aware in v1.2.0):
+      for every epoch boundary N ≥ 1, val_loss[N] ≤ 2.0 × val_loss[N-1].
+      For N == 0, val_loss[0] is finite AND ≤ regime-dependent cap:
+        - finetune    regime: 10.0 (MODEL-1 literal)
+        - from_scratch regime: 2.0 × ln(vocab_size)
+      Any violation triggers an immediate abort with exit status =
+      DIVERGENCE.
     falsifier: >
-      Artificial harness: inject a synthetic epoch log where
-      val_loss doubles (e.g. [3.5, 7.1]). Run the training-loop
-      guard function; assert it returns Err(DivergenceAbort) and
-      the CLI exits nonzero. If the guard permits the run to
-      continue, this contract is violated.
+      Two harnesses (regime coverage):
+      (a) finetune regime: inject `[3.5, 7.1]` as val-loss trace,
+          assert `check_non_divergence(1, trace, Finetune)` returns
+          Err(Divergence). Inject `[11.0]`, assert epoch-0 abort.
+      (b) from_scratch regime: for vocab_size=50257 (ln ≈ 10.82,
+          2·ln ≈ 21.64), assert `check_non_divergence(0, [18.0],
+          FromScratch{vocab_size: 50257})` returns Ok (below cap)
+          but `check_non_divergence(0, [25.0], FromScratch{...})`
+          returns Err. Same doubling rule at N ≥ 1 in both regimes.
 
   - id: INV-TRAIN-006
     description: >
@@ -266,6 +330,30 @@ invariants:
     falsifier: >
       For each step record, assert tokens_per_sec ≥ 0 && finite AND
       0 ≤ gpu_util_pct ≤ 100.
+
+  - id: INV-TRAIN-009
+    description: >
+      HP defaults are ATOMIC per regime. When an operator invokes
+      `apr pretrain --mode={finetune|from-scratch}` without also
+      passing --lr / --warmup-steps / --target-val-loss, the CLI
+      MUST apply the full 4-tuple (regime, lr_max, warmup_steps,
+      target_val_loss) from the regime's default row:
+        finetune:     (Finetune,    lr_max=5e-5, warmup=100,  target=2.2)
+        from_scratch: (FromScratch, lr_max=3e-4, warmup=1000, target=3.0)
+      If the operator DOES pass an explicit override, that override
+      wins unchanged (the regime still flips). No silent drift
+      between regime and HPs: the CLI cannot construct a
+      PretrainConfig where regime is FromScratch but lr_max/warmup/
+      target came from the finetune default row.
+    falsifier: >
+      CLI-level harness (apr-cli pretrain unit tests):
+      (a) `--mode from-scratch` with no other HP flags → resolved
+          PretrainConfig has regime=FromScratch{vocab_size}, lr_max≈3e-4,
+          warmup_steps=1000, target_val_loss≈3.0.
+      (b) `--mode from-scratch --lr 1e-4` → regime=FromScratch, lr_max=1e-4,
+          warmup_steps=1000, target_val_loss≈3.0 (explicit --lr wins).
+      (c) `--mode finetune` (or no --mode) → regime=Finetune, lr_max=5e-5,
+          warmup_steps=100, target_val_loss=2.2.
 
 # ─────────────────────────────────────────────────────────────
 # Acceptance gates (bind to AC-SHIP2-* in the spec)
@@ -315,19 +403,27 @@ gates:
 
   - id: GATE-TRAIN-005
     rule: >
-      NON-DIVERGENCE: val_loss[N] ≤ 2.0 × val_loss[N-1] at every
-      epoch boundary; val_loss[0] ≤ 10.0 and finite (INV-TRAIN-005).
-      This is the MODEL-1 v2 lesson codified as a ship-blocker.
+      NON-DIVERGENCE (regime-aware in v1.2.0): val_loss[N] ≤ 2.0 ×
+      val_loss[N-1] at every epoch boundary N ≥ 1; val_loss[0] finite
+      AND ≤ regime-dependent cap (finetune: 10.0; from_scratch: 2·ln
+      vocab_size). INV-TRAIN-005. MODEL-1 v2 ship-blocker retained.
     evidence_required: >
       (1) Live: the training CLI exits nonzero with status =
       DIVERGENCE the moment the threshold is crossed — proven by a
-      harness test that synthesizes a doubling val_loss trace.
+      harness test that synthesizes a doubling val_loss trace AND
+      by regime-specific epoch-0 tests (finetune over 10.0 aborts,
+      from_scratch over 2·ln(vocab_size) aborts but within cap passes).
       (2) Post-hoc: `apr qa --check-non-divergence {run_dir}` over
       the real training run exits 0 for a shipped checkpoint.
     verdict: pass
     binds_to: AC-SHIP2-003
     ship_blocking: true
     motivation: "memory/project_ship_two_001_model1_qlora_divergence.md"
+    evidence_discharged_by:
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_aborts_on_doubling_val_loss"
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_aborts_on_epoch_zero_blowup"
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_from_scratch_permits_near_random_baseline"
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_from_scratch_aborts_above_2_ln_vocab"
 
   - id: GATE-TRAIN-006
     rule: >
@@ -362,6 +458,24 @@ gates:
       tokens_per_sec < 0 or gpu_util_pct outside [0, 100].
     verdict: pass
     binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-009
+    rule: >
+      `apr pretrain --mode={finetune|from-scratch}` atomically flips
+      (regime, lr_max, warmup_steps, target_val_loss) per the
+      hyperparameter_defaults table. Explicit CLI overrides win.
+      INV-TRAIN-009.
+    evidence_required: >
+      apr-cli unit tests call the flag-resolution helper with three
+      shapes — (a) from-scratch defaults, (b) from-scratch with --lr
+      override, (c) finetune defaults — and assert the resolved
+      PretrainConfig matches the contract's HP rows byte-for-byte.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    evidence_discharged_by:
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::mode_from_scratch_applies_all_four_defaults"
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::mode_from_scratch_honors_explicit_lr_override"
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::mode_finetune_is_default_and_matches_contract"
 
 # ─────────────────────────────────────────────────────────────
 # Failure modes (documented so future operators can recognize them)

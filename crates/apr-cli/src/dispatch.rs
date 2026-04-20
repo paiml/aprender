@@ -608,7 +608,9 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             model_ref,
             force,
             dry_run,
-        } => pull::run(model_ref, *force, *dry_run),
+            revision,
+            offline,
+        } => pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline),
         Commands::Registry { command } => {
             crate::commands::registry::run(command.clone())
         }

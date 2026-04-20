@@ -44,6 +44,7 @@ pub(crate) mod model_config;
 pub(crate) mod monitor;
 #[cfg(feature = "dev")]
 pub mod mono;
+pub(crate) mod offline;
 pub(crate) mod oracle;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
@@ -51,17 +52,21 @@ pub(crate) mod pipeline;
 pub(crate) mod pretrain;
 pub(crate) mod probar;
 pub(crate) mod profile;
+pub(crate) mod progress;
 pub(crate) mod prune;
 #[cfg(feature = "full")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;
 pub(crate) mod publish;
 pub(crate) mod pull;
+pub(crate) mod pull_scheme;
 pub(crate) mod qa;
 pub(crate) mod qa_capability;
 pub(crate) mod qualify;
 pub(crate) mod quantize;
 pub(crate) mod registry;
+pub(crate) mod resume_paths;
+pub(crate) mod revision;
 pub(crate) mod rosetta;
 pub(crate) mod run;
 #[cfg(feature = "training")]
@@ -71,6 +76,7 @@ pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
 pub(crate) mod showcase;
 pub(crate) mod tensors;
+pub(crate) mod token_redactor;
 pub(crate) mod tokenize;
 pub(crate) mod trace;
 #[cfg(feature = "training")]

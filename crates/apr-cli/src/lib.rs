@@ -15,7 +15,7 @@
     unused_assignments
 )]
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
 
 // Contract assertions from YAML (pv codegen)
@@ -53,6 +53,9 @@ use commands::{
 };
 #[cfg(feature = "training")]
 use commands::{finetune, gpu, train, tune};
+
+#[cfg(feature = "training")]
+pub use commands::pretrain::PretrainMode;
 
 /// apr - APR Model Operations Tool
 ///

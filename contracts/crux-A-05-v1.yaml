@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-05
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -130,6 +131,31 @@ falsification_tests:
     }
 
   if_fails: rule 'etag mismatch triggers fresh download with warning' is violated — contract MUST be re-verified against competitor canonical reference
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    sub_claim: >
+      The sub-claim discharged is the etag-comparator invariant: given a
+      recorded "wrong-etag-value" sidecar and any real served ETag,
+      `compare_etag(Some("wrong-etag-value"), served)` provably returns
+      `EtagDecision::Mismatch`, and `should_discard_partial` on that
+      decision provably returns true. The sidecar path is deterministic
+      (`{target}.etag`) so the disk-side check has a fixed address. This
+      is a NECESSARY (not sufficient) condition for the full discard +
+      warning integration.
+    tests:
+    - file: crates/apr-cli/src/commands/resume_paths.rs
+      tests:
+      - commands::resume_paths::tests::etag_mismatch_sub_claim_falsify_003
+      - commands::resume_paths::tests::compare_etag_returns_mismatch_on_diff
+      - commands::resume_paths::tests::compare_etag_returns_match_on_equal
+      - commands::resume_paths::tests::compare_etag_trims_trailing_whitespace
+      - commands::resume_paths::tests::should_discard_partial_agrees_with_decision
+      - commands::resume_paths::tests::etag_path_appends_dot_etag
+    scope: >
+      ONLY the comparator logic + sidecar path convention are discharged.
+      The actual HTTP Range request flow, the stderr warning emission,
+      and the fresh-download-from-byte-0 restart are NOT discharged —
+      they require integration into `commands::pull`.
 - id: FALSIFY-CRUX-A-05-004
   rule: concurrent --resume invocations are mutually exclusive
   prediction: "second concurrent apr pull exits non-zero with lock error"
@@ -150,6 +176,31 @@ falsification_tests:
     }
 
   if_fails: rule 'concurrent --resume invocations are mutually exclusive' is violated — contract MUST be re-verified against competitor canonical reference
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    sub_claim: >
+      The sub-claim discharged is the lock-path-determinism invariant:
+      two `lock_path(target)` calls on the same target path provably
+      return the same `PathBuf` (appending `.lock`), and two different
+      targets provably return different `PathBuf`s. Two concurrent
+      `apr pull --resume` invocations against the same `--out` therefore
+      contend on the same canonical advisory lock file. This is a
+      NECESSARY (not sufficient) condition for the mutual-exclusion
+      invariant.
+    tests:
+    - file: crates/apr-cli/src/commands/resume_paths.rs
+      tests:
+      - commands::resume_paths::tests::lock_path_appends_dot_lock
+      - commands::resume_paths::tests::sidecar_paths_are_deterministic
+      - commands::resume_paths::tests::sidecar_paths_are_distinct_by_target
+      - commands::resume_paths::tests::sidecar_paths_preserve_directory
+      - commands::resume_paths::tests::sidecar_suffixes_are_stable
+    scope: >
+      ONLY the lock-path computation is discharged. Acquiring the real
+      `fcntl(F_SETLK)` / `flock(LOCK_EX|LOCK_NB)` advisory lock, writing
+      the caller PID into the lock file, emitting the "already in
+      progress" error, and exiting non-zero are NOT discharged — they
+      require integration into `commands::pull`.
 proof_obligations:
 - type: invariant
   property: "HTTP Range: bytes=<offset>- header is emitted on --resume when a partial file exists"
@@ -165,8 +216,39 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 2  # FALSIFY-003 + FALSIFY-004 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/resume_paths.rs
+    functions:
+    - commands::resume_paths::lock_path
+    - commands::resume_paths::etag_path
+    - commands::resume_paths::partial_path
+    - commands::resume_paths::compare_etag
+    - commands::resume_paths::should_discard_partial
+    coverage:
+    - falsify-003: commands::resume_paths::tests::etag_mismatch_sub_claim_falsify_003
+    - falsify-003: commands::resume_paths::tests::compare_etag_returns_mismatch_on_diff
+    - falsify-003: commands::resume_paths::tests::compare_etag_trims_trailing_whitespace
+    - falsify-003: commands::resume_paths::tests::compare_etag_returns_match_on_equal
+    - falsify-003: commands::resume_paths::tests::compare_etag_returns_missing_recorded_on_none
+    - falsify-004: commands::resume_paths::tests::lock_path_appends_dot_lock
+    - falsify-004: commands::resume_paths::tests::sidecar_paths_are_deterministic
+    - falsify-004: commands::resume_paths::tests::sidecar_paths_are_distinct_by_target
+    - determinism: commands::resume_paths::tests::compare_etag_is_deterministic
+    - negative-space: commands::resume_paths::tests::sidecar_paths_work_on_paths_with_many_dots
+  scope_honesty: >
+    ONLY the SIDECAR-PATH resolver and the ETAG comparator are discharged
+    at PARTIAL_ALGORITHM_LEVEL. `{target}.lock` and `{target}.etag` are
+    deterministic given `target`, and `compare_etag` provably classifies
+    mismatched recorded-vs-served pairs as `Mismatch`. Both are NECESSARY
+    conditions for FALSIFY-003 (stale partial discarded + warning) and
+    FALSIFY-004 (concurrent resume → lock error) but not sufficient.
+    FALSIFY-001 (partial completes with correct sha256) and FALSIFY-002
+    (complete shards skip network) are NOT discharged — they require
+    HTTP Range + sha256 verification. NO INTEGRATION DISCHARGE — the
+    classifier is not yet wired into `commands::pull`. Contract retains
+    `status: partial`.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

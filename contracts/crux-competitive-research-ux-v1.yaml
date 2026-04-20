@@ -210,9 +210,9 @@ stories:
   # Category C — Inference & Serving (35; gap at C-14)
   - { id: CRUX-C-01, title: "apr run one-shot",                    competitor: ollama,      demand_score: 5, status: supported, contract: crux-C-01-v1.yaml }
   - { id: CRUX-C-02, title: "apr chat interactive REPL",           competitor: ollama,      demand_score: 5, status: supported, contract: crux-C-02-v1.yaml }
-  - { id: CRUX-C-03, title: "OpenAI /v1/chat/completions",         competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-03-v1.yaml }
+  - { id: CRUX-C-03, title: "OpenAI /v1/chat/completions",         competitor: vllm,        demand_score: 5, status: supported, contract: crux-C-03-v1.yaml }
   - { id: CRUX-C-04, title: "Ollama /api/chat",                    competitor: ollama,      demand_score: 5, status: missing,   contract: crux-C-04-v1.yaml }
-  - { id: CRUX-C-05, title: "SSE streaming tokens [DONE]",         competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-05-v1.yaml }
+  - { id: CRUX-C-05, title: "SSE streaming tokens [DONE]",         competitor: vllm,        demand_score: 5, status: supported, contract: crux-C-05-v1.yaml }
   - { id: CRUX-C-06, title: "Continuous batching",                 competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-06-v1.yaml }
   - { id: CRUX-C-07, title: "Paged-attention KV cache",            competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-07-v1.yaml }
   - { id: CRUX-C-08, title: "Automatic prefix caching",            competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-08-v1.yaml }
@@ -240,7 +240,7 @@ stories:
   - { id: CRUX-C-30, title: "KV cache quantization Q8_0/Q4_0",     competitor: llama_cpp,   demand_score: 4, status: missing,   contract: crux-C-30-v1.yaml }
   - { id: CRUX-C-31, title: "FlashAttention-2 enabled path",       competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-31-v1.yaml }
   - { id: CRUX-C-32, title: "Chunked prefill long contexts",       competitor: vllm,        demand_score: 4, status: partial,   contract: crux-C-32-v1.yaml }
-  - { id: CRUX-C-33, title: "/v1/models endpoint",                 competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-33-v1.yaml }
+  - { id: CRUX-C-33, title: "/v1/models endpoint",                 competitor: vllm,        demand_score: 5, status: supported, contract: crux-C-33-v1.yaml }
   - { id: CRUX-C-34, title: "/health endpoint",                    competitor: vllm,        demand_score: 5, status: supported, contract: crux-C-34-v1.yaml }
   - { id: CRUX-C-35, title: "Graceful shutdown in-flight drain",   competitor: vllm,        demand_score: 4, status: partial,   contract: crux-C-35-v1.yaml }
   - { id: CRUX-C-36, title: "Cancel in-flight requests",           competitor: vllm,        demand_score: 4, status: partial,   contract: crux-C-36-v1.yaml }
@@ -439,8 +439,8 @@ stories:
 # Coverage — intake v2.0.0 (verified by awk over §5 of subspec)
 # ─────────────────────────────────────────────────────────────
 coverage_intake:
-  supported: 40
-  partial:   70
+  supported: 43
+  partial:   67
   missing:   140
   unclear:    0
   total:    250
