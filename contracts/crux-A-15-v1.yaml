@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-15
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -95,6 +96,31 @@ falsification_tests:
     [ -f "$OUT/config.json" ] || { echo "FAIL: config.json not copied" >&2; exit 1; }
     diff "$SRC/config.json" "$OUT/config.json"
   if_fails: "apr pull file:// made outbound network calls or did not copy files"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    sub_claim: >
+      A necessary condition for "zero outbound TCP" is that any `file://`
+      URL is classified as the Local transport and therefore never reaches
+      the HTTP dispatch layer. This sub-claim is discharged by the pure
+      classifier `commands::pull_scheme::classify_pull_source`.
+    tests:
+    - file: crates/apr-cli/src/commands/pull_scheme.rs
+      tests:
+      - commands::pull_scheme::tests::file_scheme_absolute_path
+      - commands::pull_scheme::tests::file_scheme_relative_path
+      - commands::pull_scheme::tests::file_scheme_is_always_local_transport
+      - commands::pull_scheme::tests::is_local_transport_rejects_non_local
+    - file: crates/apr-cli/src/commands/pull_scheme.rs
+      properties:
+      - "∀ src starting with 'file://': is_local_transport(classify(src)) == true"
+      - "∀ src starting with 'hf://' | 'https://' | 'http://' | bare org/repo | short-name:
+         is_local_transport(classify(src)) == false"
+    scope: >
+      ONLY the classification step is discharged. The actual filesystem
+      copy that preserves sha256 (FALSIFY-001 full), the strace-verified
+      absence of AF_INET connect() syscalls during a real `apr pull`, and
+      the `--out` integration are NOT discharged here — they require a
+      file:// transport implementation in `commands::pull` itself.
 
 - id: FALSIFY-CRUX-A-15-002
   rule: HF_HUB_OFFLINE=1 hits cache and makes zero network calls
@@ -166,8 +192,32 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 1  # FALSIFY-001 at PARTIAL_ALGORITHM_LEVEL (classifier sub-claim only)
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/pull_scheme.rs
+    functions:
+    - commands::pull_scheme::classify_pull_source
+    - commands::pull_scheme::is_local_transport
+    coverage:
+    - falsify-001: commands::pull_scheme::tests::file_scheme_absolute_path
+    - falsify-001: commands::pull_scheme::tests::file_scheme_relative_path
+    - falsify-001: commands::pull_scheme::tests::file_scheme_is_always_local_transport
+    - falsify-001: commands::pull_scheme::tests::is_local_transport_rejects_non_local
+    - negative-space: commands::pull_scheme::tests::unsupported_scheme_is_error
+    - negative-space: commands::pull_scheme::tests::file_without_slash_slash_is_error
+    - determinism: commands::pull_scheme::tests::is_deterministic
+  scope_honesty: >
+    ONLY the URL-scheme CLASSIFIER is discharged at PARTIAL_ALGORITHM_LEVEL.
+    A `file://` input provably classifies as the Local transport variant,
+    which is a NECESSARY condition for FALSIFY-001's "zero outbound TCP
+    connect()" invariant but not sufficient on its own. FALSIFY-002
+    (HF_HUB_OFFLINE=1 cache hit), FALSIFY-003 (offline cache-miss exits
+    non-zero), and FALSIFY-004 (hf-cli byte-parity on goldens) are NOT
+    discharged — they require a `file://` filesystem-copy transport, an
+    HF cache model, and a live `huggingface-cli` golden set respectively.
+    NO INTEGRATION DISCHARGE — the classifier is not yet wired into the
+    real `apr pull` dispatch path. Contract retains `status: partial`.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
