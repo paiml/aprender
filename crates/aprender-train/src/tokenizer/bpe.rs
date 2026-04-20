@@ -445,6 +445,14 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
             None => Vec::new(),
         };
 
+        // Aggregate the set of pairs whose count changed across ALL affected
+        // words. Pushing heap entries once per pair per merge (rather than
+        // once per (pair, word) tuple) is load-bearing: early merges of
+        // common byte-pairs can touch 10⁵+ words, and pushing per-word
+        // produced 10⁸+ stale heap entries / merge, OOM-killing the run
+        // (observed 2026-04-20, PID 1387417 hit 29 GB RSS).
+        let mut pairs_touched: HashSet<(TokenId, TokenId)> = HashSet::new();
+
         for word_ix in affected {
             let (ids, mult) = &mut words[word_ix];
             let m = *mult as i64;
@@ -487,12 +495,15 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
                 pair_words.entry(*p).or_default().insert(word_ix);
             }
 
-            // Push refreshed heap entries for every pair whose count changed.
-            for p in old_set.union(&new_set) {
-                let c = *pair_counts.get(p).unwrap_or(&0);
-                if c > 0 {
-                    heap.push(HeapEntry { count: c, pair: *p });
-                }
+            // Accumulate affected pairs for a single post-sweep heap push.
+            pairs_touched.extend(old_set.union(&new_set).copied());
+        }
+
+        // Push ONE refreshed heap entry per affected pair (not per word).
+        for p in pairs_touched {
+            let c = *pair_counts.get(&p).unwrap_or(&0);
+            if c > 0 {
+                heap.push(HeapEntry { count: c, pair: p });
             }
         }
 
@@ -504,12 +515,16 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
             let elapsed = start.elapsed().as_secs_f64();
             let top_count = heap.peek().map(|e| e.count).unwrap_or(0);
             eprintln!(
-                "[bpe] merges={} vocab={} elapsed={:.1}s top_count={}",
+                "[bpe] merges={} vocab={} elapsed={:.1}s top_count={} heap={} pairs={}",
                 merges_emitted,
                 tok.vocab.len(),
                 elapsed,
-                top_count
+                top_count,
+                heap.len(),
+                pair_counts.len()
             );
+            use std::io::Write;
+            let _ = std::io::stderr().flush();
         }
     }
 
@@ -520,6 +535,8 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
         tok.vocab.len(),
         elapsed
     );
+    use std::io::Write;
+    let _ = std::io::stderr().flush();
 
     tok.trained = true;
     Ok(())
