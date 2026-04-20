@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-07
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -118,6 +119,30 @@ falsification_tests:
       echo "FAIL: xet requests emitted despite APR_XET=0" >&2; exit 1
     }
   if_fails: "xet opt-out did not disable xet path"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/xet_mode.rs
+    sub_claim: >
+      APR_XET=0 (and variants false/no/off) MUST classify as "xet
+      disabled" at the env-var reader layer; APR_XET unset and
+      APR_XET=1 MUST classify as "xet enabled". This is the algorithm-
+      level precondition for the integration-level "no xet CAS
+      requests emitted" strace check.
+    tests:
+    - commands::xet_mode::tests::falsify_003_sub_claim_apr_xet_zero_opts_out
+    - commands::xet_mode::tests::apr_xet_zero_disables_xet
+    - commands::xet_mode::tests::falsy_variants_all_disable
+    - commands::xet_mode::tests::truthy_variants_all_enable
+    - commands::xet_mode::tests::default_no_signal_is_enabled
+    - commands::xet_mode::tests::flag_overrides_truthy_env
+    - commands::xet_mode::tests::is_deterministic
+    scope: >
+      Algorithm-level discharge: the pure classifier
+      `is_xet_enabled(no_xet_flag, env)` proves APR_XET=0 deterministically
+      flips Xet off and APR_XET unset / APR_XET=1 keeps it on. NOT YET
+      DISCHARGED: strace-verified zero xet CAS / chunk HTTP requests
+      under APR_XET=0 in the full pull path (requires network-gated
+      harness with a real Xet-backed repo and observable HTTP trace).
 
 - id: FALSIFY-CRUX-A-07-004
   rule: parity with huggingface-cli xet path on golden
@@ -152,8 +177,34 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 1  # FALSIFY-003 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/xet_mode.rs
+    classifier: crates/apr-cli/src/commands/xet_mode.rs
+    commands:
+    - APR_XET=0 apr pull <repo> --include <file> --out <tmp>   # classifier-observable
+    - APR_XET=1 apr pull <repo> --include <file> --out <tmp>   # classifier-observable
+    coverage:
+    - falsify-003: commands::xet_mode::tests::falsify_003_sub_claim_apr_xet_zero_opts_out
+    - falsify-003: commands::xet_mode::tests::apr_xet_zero_disables_xet
+    - falsify-003: commands::xet_mode::tests::falsy_variants_all_disable
+    - falsify-003: commands::xet_mode::tests::truthy_variants_all_enable
+    - falsify-003: commands::xet_mode::tests::default_no_signal_is_enabled
+    - falsify-003: commands::xet_mode::tests::flag_overrides_truthy_env
+    - falsify-003: commands::xet_mode::tests::is_deterministic
+  scope_honesty: >
+    FALSIFY-CRUX-A-07-003 is discharged at PARTIAL_ALGORITHM_LEVEL — the
+    Rust classifier proves that `APR_XET=0` (and HF's boolean-falsy
+    variants) deterministically opts out of the Xet fast path at the
+    env-var reader layer, and that the default / `APR_XET=1` keep the
+    fast path enabled. NOT YET DISCHARGED: strace-verified zero xet
+    CAS / chunk HTTP requests under `APR_XET=0` in the full pull path
+    (requires network harness with a real Xet-backed repo). FALSIFY-001
+    (byte parity vs HTTPS), FALSIFY-002 (>=4 concurrent chunk GETs), and
+    FALSIFY-004 (huggingface_hub hf_xet byte parity on goldens) are NOT
+    discharged — all three need live HTTP + a Xet-backed test repo.
+    Contract stays `status: partial`.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
