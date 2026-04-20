@@ -375,7 +375,12 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
 
     tok.init_vocab();
 
+    eprintln!("[bpe-setup] ingest start: {} docs", corpus.len());
+    use std::io::Write;
+    let _ = std::io::stderr().flush();
+
     // Byte-tokenize every document, fold duplicates into (Vec<TokenId>, multiplicity) pairs.
+    let t0 = Instant::now();
     let mut word_counts: HashMap<Vec<TokenId>, u64> = HashMap::new();
     for doc in corpus {
         let text = tok.preprocess(doc);
@@ -389,10 +394,17 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
             .collect();
         *word_counts.entry(ids).or_insert(0) += 1;
     }
+    eprintln!(
+        "[bpe-setup] ingest done: {} unique words in {:.1}s",
+        word_counts.len(),
+        t0.elapsed().as_secs_f64()
+    );
+    let _ = std::io::stderr().flush();
 
     let mut words: Vec<(Vec<TokenId>, u64)> = word_counts.into_iter().collect();
 
     // Build pair indexes.
+    let t1 = Instant::now();
     let mut pair_counts: HashMap<(TokenId, TokenId), i64> = HashMap::new();
     let mut pair_words: HashMap<(TokenId, TokenId), HashSet<usize>> = HashMap::new();
     for (word_ix, (ids, mult)) in words.iter().enumerate() {
@@ -403,16 +415,41 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
             pair_words.entry(p).or_default().insert(word_ix);
         }
     }
+    eprintln!(
+        "[bpe-setup] pair indexes: {} unique pairs in {:.1}s",
+        pair_counts.len(),
+        t1.elapsed().as_secs_f64()
+    );
+    let _ = std::io::stderr().flush();
 
     // Seed heap.
+    let t2 = Instant::now();
     let mut heap: BinaryHeap<HeapEntry> = BinaryHeap::with_capacity(pair_counts.len());
     for (p, c) in &pair_counts {
         if *c > 0 {
             heap.push(HeapEntry { count: *c, pair: *p });
         }
     }
+    eprintln!(
+        "[bpe-setup] heap seeded: {} entries in {:.1}s; entering merge loop",
+        heap.len(),
+        t2.elapsed().as_secs_f64()
+    );
+    let _ = std::io::stderr().flush();
 
     let mut merges_emitted: usize = 0;
+
+    // Scratch buffers hoisted OUT of the per-word loop. Each early common-pair
+    // merge affects ~100K words; allocating transient containers per word cost
+    // ~400K mallocs per merge (observed as 1+ s/merge at merge 400, PID
+    // 1568187, 2026-04-20). HashSet reuse was tried and FALSIFIED (27% slower
+    // on PID 1638021, 2026-04-20) because `HashSet::clear()` walks the backing
+    // array (up to 4096 slots) per call. Vec + sort_unstable + merge-pass for
+    // set ops wins on (u32, u32) keys: cheaper to sort than to hash.
+    let mut old_pairs_buf: Vec<(TokenId, TokenId)> = Vec::with_capacity(512);
+    let mut new_pairs_buf: Vec<(TokenId, TokenId)> = Vec::with_capacity(512);
+    let mut pairs_touched_buf: Vec<(TokenId, TokenId)> = Vec::with_capacity(1 << 16);
+    let mut affected_buf: Vec<usize> = Vec::with_capacity(1 << 16);
 
     while tok.vocab.len() < target {
         let entry = match heap.pop() {
@@ -440,10 +477,10 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
 
         // Apply merge in every word containing (a, b). Snapshot the set first so we
         // can mutate pair_words during the sweep.
-        let affected: Vec<usize> = match pair_words.get(&(a, b)) {
-            Some(ws) => ws.iter().copied().collect(),
-            None => Vec::new(),
-        };
+        affected_buf.clear();
+        if let Some(ws) = pair_words.get(&(a, b)) {
+            affected_buf.extend(ws.iter().copied());
+        }
 
         // Aggregate the set of pairs whose count changed across ALL affected
         // words. Pushing heap entries once per pair per merge (rather than
@@ -451,59 +488,103 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
         // common byte-pairs can touch 10⁵+ words, and pushing per-word
         // produced 10⁸+ stale heap entries / merge, OOM-killing the run
         // (observed 2026-04-20, PID 1387417 hit 29 GB RSS).
-        let mut pairs_touched: HashSet<(TokenId, TokenId)> = HashSet::new();
+        pairs_touched_buf.clear();
 
-        for word_ix in affected {
+        for &word_ix in &affected_buf {
             let (ids, mult) = &mut words[word_ix];
             let m = *mult as i64;
 
-            let old_pairs: Vec<(TokenId, TokenId)> = ids.windows(2).map(|w| (w[0], w[1])).collect();
+            // Collect old pairs into reused buffer (zero alloc).
+            old_pairs_buf.clear();
+            old_pairs_buf.extend(ids.windows(2).map(|w| (w[0], w[1])));
 
-            // Greedy left-to-right merge of (a, b) → new_id.
-            let mut merged_ids: Vec<TokenId> = Vec::with_capacity(ids.len());
-            let mut i = 0;
-            while i < ids.len() {
-                if i + 1 < ids.len() && ids[i] == a && ids[i + 1] == b {
-                    merged_ids.push(new_id);
-                    i += 2;
+            // In-place greedy left-to-right merge of (a, b) → new_id.
+            // Since the merge only shrinks the Vec, read ≥ write holds, so
+            // the single-buffer two-pointer walk is safe.
+            let mut write = 0;
+            let mut read = 0;
+            while read < ids.len() {
+                if read + 1 < ids.len() && ids[read] == a && ids[read + 1] == b {
+                    ids[write] = new_id;
+                    write += 1;
+                    read += 2;
                 } else {
-                    merged_ids.push(ids[i]);
-                    i += 1;
+                    ids[write] = ids[read];
+                    write += 1;
+                    read += 1;
                 }
             }
-            *ids = merged_ids;
+            ids.truncate(write);
 
-            let new_pairs: Vec<(TokenId, TokenId)> = ids.windows(2).map(|w| (w[0], w[1])).collect();
+            // Collect new pairs into reused buffer.
+            new_pairs_buf.clear();
+            new_pairs_buf.extend(ids.windows(2).map(|w| (w[0], w[1])));
 
-            // Multiset deltas on pair_counts.
-            for p in &old_pairs {
+            // Multiset deltas on pair_counts (duplicates matter for counts).
+            for p in &old_pairs_buf {
                 *pair_counts.entry(*p).or_insert(0) -= m;
             }
-            for p in &new_pairs {
+            for p in &new_pairs_buf {
                 *pair_counts.entry(*p).or_insert(0) += m;
             }
 
-            // Set deltas on pair_words.
-            let old_set: HashSet<(TokenId, TokenId)> = old_pairs.iter().copied().collect();
-            let new_set: HashSet<(TokenId, TokenId)> = new_pairs.iter().copied().collect();
-            for p in old_set.difference(&new_set) {
-                if let Some(ws) = pair_words.get_mut(p) {
-                    ws.remove(&word_ix);
+            // Set deltas on pair_words via sort + linear merge-pass.
+            // HashSet alternative was FALSIFIED (27% slower) because
+            // HashSet::clear walks the backing array (4096 slots) per call.
+            // sort_unstable on (u32, u32) is branch-predictable + LLVM
+            // auto-vectorizes; no hashing cost for POD keys.
+            old_pairs_buf.sort_unstable();
+            old_pairs_buf.dedup();
+            new_pairs_buf.sort_unstable();
+            new_pairs_buf.dedup();
+
+            let mut i = 0usize;
+            let mut j = 0usize;
+            while i < old_pairs_buf.len() && j < new_pairs_buf.len() {
+                match old_pairs_buf[i].cmp(&new_pairs_buf[j]) {
+                    std::cmp::Ordering::Less => {
+                        if let Some(ws) = pair_words.get_mut(&old_pairs_buf[i]) {
+                            ws.remove(&word_ix);
+                        }
+                        pairs_touched_buf.push(old_pairs_buf[i]);
+                        i += 1;
+                    }
+                    std::cmp::Ordering::Greater => {
+                        pair_words.entry(new_pairs_buf[j]).or_default().insert(word_ix);
+                        pairs_touched_buf.push(new_pairs_buf[j]);
+                        j += 1;
+                    }
+                    std::cmp::Ordering::Equal => {
+                        // Present in both — no pair_words delta, but still
+                        // touched (multiplicity / top-pair ordering may shift).
+                        pairs_touched_buf.push(old_pairs_buf[i]);
+                        i += 1;
+                        j += 1;
+                    }
                 }
             }
-            for p in new_set.difference(&old_set) {
-                pair_words.entry(*p).or_default().insert(word_ix);
+            while i < old_pairs_buf.len() {
+                if let Some(ws) = pair_words.get_mut(&old_pairs_buf[i]) {
+                    ws.remove(&word_ix);
+                }
+                pairs_touched_buf.push(old_pairs_buf[i]);
+                i += 1;
             }
-
-            // Accumulate affected pairs for a single post-sweep heap push.
-            pairs_touched.extend(old_set.union(&new_set).copied());
+            while j < new_pairs_buf.len() {
+                pair_words.entry(new_pairs_buf[j]).or_default().insert(word_ix);
+                pairs_touched_buf.push(new_pairs_buf[j]);
+                j += 1;
+            }
         }
 
-        // Push ONE refreshed heap entry per affected pair (not per word).
-        for p in pairs_touched {
-            let c = *pair_counts.get(&p).unwrap_or(&0);
+        // Dedup aggregated pairs across all affected words, then push ONE
+        // refreshed heap entry per affected pair (not per word).
+        pairs_touched_buf.sort_unstable();
+        pairs_touched_buf.dedup();
+        for p in &pairs_touched_buf {
+            let c = *pair_counts.get(p).unwrap_or(&0);
             if c > 0 {
-                heap.push(HeapEntry { count: c, pair: p });
+                heap.push(HeapEntry { count: c, pair: *p });
             }
         }
 
@@ -511,7 +592,7 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
         pair_counts.remove(&(a, b));
         pair_words.remove(&(a, b));
 
-        if merges_emitted % 1000 == 0 {
+        if merges_emitted == 1 || merges_emitted % 100 == 0 {
             let elapsed = start.elapsed().as_secs_f64();
             let top_count = heap.peek().map(|e| e.count).unwrap_or(0);
             eprintln!(
@@ -523,7 +604,6 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
                 heap.len(),
                 pair_counts.len()
             );
-            use std::io::Write;
             let _ = std::io::stderr().flush();
         }
     }
@@ -535,7 +615,6 @@ pub(crate) fn train_fast(tok: &mut BPETokenizer, corpus: &[&str]) -> Result<()> 
         tok.vocab.len(),
         elapsed
     );
-    use std::io::Write;
     let _ = std::io::stderr().flush();
 
     tok.trained = true;
