@@ -369,6 +369,10 @@ pub enum Commands {
         /// (HuggingFace Hub). Defaults to "main" when omitted.
         #[arg(long, value_name = "REV")]
         revision: Option<String>,
+        /// CRUX-A-20: offline mode — forbid any outbound network I/O.
+        /// Equivalent to APR_OFFLINE=1 or HF_HUB_OFFLINE=1 in the environment.
+        #[arg(long)]
+        offline: bool,
     },
     /// Registry operations (CRUX-A-01): inspect alias map, etc.
     Registry {
