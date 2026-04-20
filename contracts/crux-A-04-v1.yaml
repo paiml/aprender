@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-04
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -74,6 +75,26 @@ falsification_tests:
     # Any non-safetensors file present is a falsification
     find "$TMP" -type f ! -name '*.safetensors' | grep -q . && exit 1 || exit 0
   if_fails: "apr pull downloaded files NOT matching any --include glob"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/glob_filter.rs
+    sub_claim: >
+      The pure `select_files(files, include, exclude)` classifier
+      proves that `--include '*.safetensors'` restricts the output
+      set to only paths matching the glob, with no leaks. This is
+      the algorithm-level precondition for the integration-level
+      `find ! -name '*.safetensors' | grep -q .` check.
+    tests:
+    - commands::glob_filter::tests::include_safetensors_falsify_001_algorithm_sub_claim
+    - commands::glob_filter::tests::falsify_001_gpt2_shape_only_safetensors_survive
+    - commands::glob_filter::tests::include_matches_no_file_produces_empty
+    - commands::glob_filter::tests::multiple_include_globs_union_semantics
+    scope: >
+      Algorithm-level discharge: the selection function matches the
+      contract `glob_selection_set` formula exactly for --include.
+      NOT YET DISCHARGED: `apr pull --include` actually downloads
+      only the matching file set from a real HF repo (requires live
+      HTTP + a CLI flag wiring into the pull path).
 
 - id: FALSIFY-CRUX-A-04-002
   rule: exclude glob removes matching files
@@ -83,6 +104,21 @@ falsification_tests:
     apr pull hf://openai-community/gpt2 --exclude '*.bin' --out "$TMP" >/dev/null
     [ "$(find "$TMP" -type f -name '*.bin' | wc -l)" -eq 0 ]
   if_fails: "apr pull kept files matching --exclude"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/glob_filter.rs
+    sub_claim: >
+      The pure classifier proves that `--exclude '*.bin'` drops every
+      path matching the glob from the output set. Algorithm-level
+      precondition for the `find -name '*.bin' | wc -l == 0` check.
+    tests:
+    - commands::glob_filter::tests::exclude_bin_falsify_002_algorithm_sub_claim
+    - commands::glob_filter::tests::falsify_002_gpt2_shape_zero_bin_files
+    - commands::glob_filter::tests::multiple_exclude_globs_union_semantics
+    scope: >
+      Algorithm-level discharge: selection function implements the
+      `R \ X` half of the contract formula. NOT YET DISCHARGED: real
+      pull path actually refrains from downloading excluded files.
 
 - id: FALSIFY-CRUX-A-04-003
   rule: exclude wins over include
@@ -92,6 +128,21 @@ falsification_tests:
     apr pull hf://openai-community/gpt2 --include '*.json' --exclude 'config.json' --out "$TMP" >/dev/null
     [ ! -f "$TMP/config.json" ] && ls "$TMP"/*.json >/dev/null 2>&1
   if_fails: "precedence rule violated — exclude did not override include"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/glob_filter.rs
+    sub_claim: >
+      The pure classifier proves that `--include '*.json' --exclude
+      'config.json'` keeps all *.json files EXCEPT config.json,
+      matching the `--exclude wins` precedence rule from the contract
+      formula `(R ∩ I) \ X`.
+    tests:
+    - commands::glob_filter::tests::exclude_wins_over_include_falsify_003_algorithm_sub_claim
+    - commands::glob_filter::tests::falsify_003_gpt2_shape_config_dropped_others_kept
+    scope: >
+      Algorithm-level discharge: selection function implements the
+      full `(R ∩ I) \ X` formula including precedence. NOT YET
+      DISCHARGED: real pull path honors both flags together.
 
 - id: FALSIFY-CRUX-A-04-004
   rule: parity with huggingface-cli on golden set
@@ -124,8 +175,41 @@ proof_obligations:
 verification_summary:
   total_obligations: 4
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 3  # FALSIFY-001/002/003 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/glob_filter.rs
+    classifier: crates/apr-cli/src/commands/glob_filter.rs
+    commands:
+    - apr pull <repo> --include <glob> --out <tmp>  # classifier-observable
+    - apr pull <repo> --exclude <glob> --out <tmp>  # classifier-observable
+    - apr pull <repo> --include <g> --exclude <g> --out <tmp>
+    coverage:
+    - falsify-001: commands::glob_filter::tests::include_safetensors_falsify_001_algorithm_sub_claim
+    - falsify-001: commands::glob_filter::tests::falsify_001_gpt2_shape_only_safetensors_survive
+    - falsify-001: commands::glob_filter::tests::include_matches_no_file_produces_empty
+    - falsify-002: commands::glob_filter::tests::exclude_bin_falsify_002_algorithm_sub_claim
+    - falsify-002: commands::glob_filter::tests::falsify_002_gpt2_shape_zero_bin_files
+    - falsify-002: commands::glob_filter::tests::multiple_exclude_globs_union_semantics
+    - falsify-003: commands::glob_filter::tests::exclude_wins_over_include_falsify_003_algorithm_sub_claim
+    - falsify-003: commands::glob_filter::tests::falsify_003_gpt2_shape_config_dropped_others_kept
+  scope_honesty: >
+    FALSIFY-CRUX-A-04-001/002/003 are discharged at
+    PARTIAL_ALGORITHM_LEVEL — the pure `select_files(files, include,
+    exclude)` classifier implements the contract
+    `glob_selection_set` formula `(if I==∅ then R else R ∩ I) \ X`
+    exactly, and 18 unit tests cover include-only / exclude-only /
+    precedence / multi-glob / `**` recursive / invalid-pattern /
+    determinism / order-preservation / empty-repo / no-match-empty.
+    NOT YET DISCHARGED: `apr pull --include/--exclude` actually
+    downloads only the selected file set from a real HF repo
+    (requires live HTTP + CLI flag wiring into the pull path).
+    FALSIFY-CRUX-A-04-004 (huggingface-cli byte-level parity on
+    goldens) is NOT discharged — it needs live HTTP + the
+    evidence/crux/huggingface/glob-goldens.json fixture.
+    Contract stays `status: partial`; master `supported_count` NOT
+    bumped. `intake_status` stays `missing` (the feature is not yet
+    observable end-to-end).
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
