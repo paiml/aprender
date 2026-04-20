@@ -539,6 +539,9 @@ fn write_shard_manifest(
 /// network I/O. Short names are resolved via the embedded alias map
 /// (`configs/aliases.yaml`); scheme-qualified inputs (`hf://…`,
 /// `https://…`) and bare `org/repo` inputs echo as their canonical forms.
+///
+/// CRUX-A-01 FALSIFY-CRUX-A-01-003: unknown short names (no scheme, no `/`)
+/// return an error that includes a Levenshtein ≤ 2 "did you mean …" hint.
 fn run_dry_run(model_ref: &str) -> Result<()> {
     use super::aliases;
 
@@ -547,16 +550,36 @@ fn run_dry_run(model_ref: &str) -> Result<()> {
     } else if !model_ref.contains("://") && model_ref.contains('/') {
         format!("hf://{model_ref}")
     } else {
-        return Err(CliError::ValidationFailed(format!(
-            "CRUX-A-01: unknown short name '{model_ref}' and not a fully-qualified URI. \
-             Run `apr registry aliases --json` to list known short names."
-        )));
+        return Err(unknown_short_name_error(model_ref));
     };
 
     println!("Model:    {}", model_ref.cyan());
     println!("Resolved: {}", resolved.green());
     println!("Mode:     {} (no network I/O)", "dry-run".yellow());
     Ok(())
+}
+
+/// CRUX-A-01 FALSIFY-CRUX-A-01-003: build an error carrying a did-you-mean
+/// hint derived from Levenshtein ≤ 2 matches against the alias map.
+fn unknown_short_name_error(name: &str) -> CliError {
+    use super::aliases;
+
+    let suggestions = aliases::did_you_mean(name, 2);
+    let hint = if suggestions.is_empty() {
+        "Run `apr registry aliases --json` to list known short names.".to_string()
+    } else {
+        format!(
+            "did you mean {}? (run `apr registry aliases --json` for the full list)",
+            suggestions
+                .iter()
+                .map(|s| format!("`{s}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    CliError::ValidationFailed(format!(
+        "CRUX-A-01: unknown short name '{name}' and not a fully-qualified URI. {hint}"
+    ))
 }
 
 include!("pull_list.rs");

@@ -7,10 +7,12 @@
 //! - FALSIFY-CRUX-A-01-002: `configs/aliases.yaml` ships with the repo,
 //!   parses as str→str, and contains the four canonical short names:
 //!   {"llama3", "mistral", "phi3", "qwen2"} ⊆ keys(map).
+//! - FALSIFY-CRUX-A-01-003: unknown short name exits non-zero with a
+//!   "did you mean …" hint (Levenshtein ≤ 2 against alias-map keys).
 //!
-//! Remaining FALSIFY-CRUX-A-01-{003, 004, 005} gates (did-you-mean, `apr
-//! registry aliases --json`, invocation determinism across binary runs) are
-//! tracked by the M1 epic (GitHub #918).
+//! Remaining FALSIFY-CRUX-A-01-{004, 005} gates (`apr registry aliases
+//! --json`, invocation determinism across binary runs) are tracked by the
+//! M1 epic (GitHub #918).
 
 #![allow(clippy::unwrap_used)]
 
@@ -138,4 +140,64 @@ fn falsify_crux_a_01_001_dry_run_every_canonical_name_resolves() {
             "FALSIFY-CRUX-A-01-001: {canonical} --dry-run must emit canonical URL, got:\n{stdout}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// FALSIFY-CRUX-A-01-003 — unknown short name emits a did-you-mean hint
+// (Levenshtein ≤ 2 against the alias map) and exits non-zero.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn falsify_crux_a_01_003_typo_exits_nonzero() {
+    let (output, _stdout) = run_apr_pull_dry_run("lama3");
+    assert!(
+        !output.status.success(),
+        "FALSIFY-CRUX-A-01-003: unknown short name 'lama3' must exit non-zero"
+    );
+}
+
+#[test]
+fn falsify_crux_a_01_003_typo_suggests_llama3() {
+    let output = Command::new(env!("CARGO_BIN_EXE_apr"))
+        .args(["pull", "lama3", "--dry-run"])
+        .output()
+        .unwrap();
+    let combined = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let lower = combined.to_lowercase();
+    assert!(
+        lower.contains("did you mean"),
+        "FALSIFY-CRUX-A-01-003: output must contain 'did you mean', got:\n{combined}"
+    );
+    assert!(
+        lower.contains("llama3"),
+        "FALSIFY-CRUX-A-01-003: suggestion must include 'llama3', got:\n{combined}"
+    );
+}
+
+#[test]
+fn falsify_crux_a_01_003_far_typo_has_no_suggestion() {
+    // A name with edit distance > 2 from every alias should NOT emit a
+    // concrete suggestion — the error should fall back to the generic hint.
+    let output = Command::new(env!("CARGO_BIN_EXE_apr"))
+        .args(["pull", "completely-unrelated-xyz-model", "--dry-run"])
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "FALSIFY-CRUX-A-01-003: far typo must still exit non-zero"
+    );
+    let combined = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+    .to_lowercase();
+    assert!(
+        !combined.contains("did you mean"),
+        "FALSIFY-CRUX-A-01-003: far typo must NOT fabricate a suggestion, got:\n{combined}"
+    );
 }
