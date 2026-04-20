@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-20
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -93,6 +94,20 @@ falsification_tests:
       head -20 "$TRACE" >&2; exit 1
     }
   if_fails: "APR_OFFLINE=1 did not prevent outbound network I/O"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_20.rs
+    tests:
+    - falsify_crux_a_20_algo_002_apr_offline_env_triggers_offline
+    - falsify_crux_a_20_algo_002_apr_offline_env_zero_is_false
+    - falsify_crux_a_20_algo_001_dry_run_offline_flag_accepted
+    classifier: crates/apr-cli/src/commands/offline.rs
+    scope: >
+      Algorithm-level discharge: `APR_OFFLINE=1` is observed by the CLI
+      dry-run path and produces `Offline: true` without network I/O;
+      `APR_OFFLINE=0` / empty / unrelated values leave the signal off.
+      NOT YET DISCHARGED: strace-verified zero outbound TCP connects in
+      the full pull path (requires primed cache + real download path).
 
 - id: FALSIFY-CRUX-A-20-002
   rule: HF_HUB_OFFLINE=1 env var is honored (HF compat)
@@ -107,6 +122,19 @@ falsification_tests:
     BAD=$(grep -E 'connect\(.*sin_(addr|port)' "$TRACE" | grep -vE '127\.0\.0\.1|::1|AF_UNIX' | wc -l)
     [ "$BAD" -eq 0 ] || { echo "FAIL: HF_HUB_OFFLINE=1 not honored ($BAD connects)" >&2; exit 1; }
   if_fails: "HF-compatible env var did not trigger offline mode"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_20.rs
+    tests:
+    - falsify_crux_a_20_algo_003_hf_hub_offline_env_triggers_offline
+    - falsify_crux_a_20_algo_004_all_three_offline_signals_equivalent
+    classifier: crates/apr-cli/src/commands/offline.rs
+    scope: >
+      Algorithm-level discharge: `HF_HUB_OFFLINE=1` is observed by the
+      CLI dry-run path and is observationally equivalent to both
+      `APR_OFFLINE=1` and `--offline` (byte-identical `Offline:` line).
+      NOT YET DISCHARGED: strace-verified zero TCP connects under
+      `HF_HUB_OFFLINE=1` in the full pull path (follow-up network harness).
 
 - id: FALSIFY-CRUX-A-20-003
   rule: offline cache miss exits non-zero with actionable message
@@ -124,6 +152,9 @@ falsification_tests:
     grep -qiE 'cache|not.?found|missing' "$LOG" || { echo "FAIL: no cache-miss keyword" >&2; exit 1; }
     grep -qi 'gpt2\|config.json' "$LOG" || { echo "FAIL: error does not name missing repo/file" >&2; exit 1; }
   if_fails: "offline cache miss lacked non-zero exit or actionable message"
+  # No algorithm-level sub-claim: this gate requires a real cache layer +
+  # populated/empty cache states + actual pull path execution. Discharge
+  # deferred to the follow-up network-gated harness.
 
 - id: FALSIFY-CRUX-A-20-004
   rule: --offline flag is equivalent to APR_OFFLINE=1
@@ -139,6 +170,20 @@ falsification_tests:
     [ "$BAD" -eq 0 ] || { echo "FAIL: --offline flag made $BAD network calls" >&2; exit 1; }
     [ -f "$OUT2/config.json" ] || { echo "FAIL: cached file not materialized" >&2; exit 1; }
   if_fails: "--offline flag did not behave equivalently to env var"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_20.rs
+    tests:
+    - falsify_crux_a_20_algo_001_dry_run_offline_flag_accepted
+    - falsify_crux_a_20_algo_004_all_three_offline_signals_equivalent
+    - falsify_crux_a_20_algo_001_dry_run_offline_is_deterministic
+    classifier: crates/apr-cli/src/commands/offline.rs
+    scope: >
+      Algorithm-level discharge: `--offline` CLI flag is parsed, plumbed
+      through dispatch, and produces a byte-identical `Offline:` line
+      to the env-var paths. Back-to-back invocations are deterministic.
+      NOT YET DISCHARGED: strace-verified zero TCP connects under
+      `--offline` in the full pull path with a primed cache (follow-up).
 
 - id: FALSIFY-CRUX-A-20-005
   rule: parity with huggingface_hub on cache-hit offline reads
@@ -175,8 +220,34 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 3  # FALSIFY-001/002/004 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    rust_tests: crates/apr-cli/tests/falsification_crux_a_20.rs
+    unit_tests: crates/apr-cli/src/commands/offline.rs
+    commands:
+    - apr pull <short> --dry-run --offline
+    - APR_OFFLINE=1 apr pull <short> --dry-run
+    - HF_HUB_OFFLINE=1 apr pull <short> --dry-run
+    coverage:
+    - falsify-001: falsify_crux_a_20_algo_002_apr_offline_env_triggers_offline
+    - falsify-001: falsify_crux_a_20_algo_002_apr_offline_env_zero_is_false
+    - falsify-002: falsify_crux_a_20_algo_003_hf_hub_offline_env_triggers_offline
+    - falsify-002: falsify_crux_a_20_algo_004_all_three_offline_signals_equivalent
+    - falsify-004: falsify_crux_a_20_algo_001_dry_run_offline_flag_accepted
+    - falsify-004: falsify_crux_a_20_algo_001_dry_run_offline_is_deterministic
+    - algo-005: falsify_crux_a_20_algo_005_default_offline_is_false
+  scope_honesty: >
+    FALSIFY-CRUX-A-20-001/002/004 are discharged at PARTIAL_ALGORITHM_LEVEL
+    — the Rust harness proves the offline sub-claims (CLI flag / env var
+    parsing, observational equivalence of `--offline` vs `APR_OFFLINE=1`
+    vs `HF_HUB_OFFLINE=1`, default-online behavior). The network-level
+    sub-claims (strace-verified zero non-loopback TCP connect() syscalls,
+    DNS suppression) remain TODO and require a separate strace-gated
+    harness with a primed cache. FALSIFY-CRUX-A-20-003 (cache-miss hard
+    error) and FALSIFY-CRUX-A-20-005 (huggingface_hub byte parity) are
+    NOT yet discharged — both need cache-layer + real pull-path wiring.
+    Contract stays `status: partial`.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

@@ -304,6 +304,7 @@
                 force,
                 dry_run,
                 revision: _,
+                offline: _,
             } => {
                 assert_eq!(model_ref, "hf://Qwen/Qwen2.5-Coder-1.5B");
                 assert!(force);
@@ -324,6 +325,7 @@
                 force,
                 dry_run,
                 revision: _,
+                offline: _,
             } => {
                 assert_eq!(model_ref, "qwen2.5-coder");
                 assert!(!force);
@@ -344,6 +346,7 @@
                 force,
                 dry_run,
                 revision: _,
+                offline: _,
             } => {
                 assert_eq!(model_ref, "llama3");
                 assert!(!force);

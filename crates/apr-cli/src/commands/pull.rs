@@ -48,7 +48,7 @@ pub struct FileChecksum {
     "apr-cli-operations-v1",
     equation = "mutating_output_contract"
 )]
-pub fn run(model_ref: &str, force: bool, dry_run: bool, revision: Option<&str>) -> Result<()> {
+pub fn run(model_ref: &str, force: bool, dry_run: bool, revision: Option<&str>, offline: bool) -> Result<()> {
     contract_pre_pull_cache_integrity!();
     println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
@@ -57,8 +57,10 @@ pub fn run(model_ref: &str, force: bool, dry_run: bool, revision: Option<&str>) 
     // canonical URL and exits with zero network I/O.
     // CRUX-A-03 ALGO-001..003: --dry-run echoes the revision spec the user
     // supplied (or the default "main") and validates its local form.
+    // CRUX-A-20 ALGO-001..005: --dry-run also echoes the resolved offline
+    // mode so callers can assert CLI-flag / env-var equivalence offline.
     if dry_run {
-        return run_dry_run(model_ref, revision);
+        return run_dry_run(model_ref, revision, offline);
     }
 
     // GH-213: Resolve HuggingFace URI — detect single vs sharded models
@@ -547,8 +549,12 @@ fn write_shard_manifest(
 /// CRUX-A-03 ALGO-001..003: `--revision` is classified locally and echoed
 /// in the dry-run output. Malformed revisions (empty, whitespace, URL)
 /// fail fast without touching the network.
-fn run_dry_run(model_ref: &str, revision: Option<&str>) -> Result<()> {
+///
+/// CRUX-A-20 ALGO-001..005: the effective offline signal (CLI flag OR
+/// `APR_OFFLINE` OR `HF_HUB_OFFLINE` truthy) is echoed too.
+fn run_dry_run(model_ref: &str, revision: Option<&str>, offline_flag: bool) -> Result<()> {
     use super::aliases;
+    use super::offline;
     use super::revision as rev;
 
     let resolved = if let Some(url) = aliases::resolve_short_name(model_ref) {
@@ -566,9 +572,16 @@ fn run_dry_run(model_ref: &str, revision: Option<&str>) -> Result<()> {
         ))
     })?;
 
+    // CRUX-A-20: resolve offline signal from CLI flag + env vars.
+    let env = offline::read_offline_env();
+    let env_borrowed: Vec<(&str, &str)> =
+        env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let is_offline = offline::is_offline(offline_flag, env_borrowed.iter().copied());
+
     println!("Model:    {}", model_ref.cyan());
     println!("Resolved: {}", resolved.green());
     println!("Revision: {} ({:?})", rev_spec.green(), rev_kind);
+    println!("Offline:  {}", if is_offline { "true".green() } else { "false".yellow() });
     println!("Mode:     {} (no network I/O)", "dry-run".yellow());
     Ok(())
 }
