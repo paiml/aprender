@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-19
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -92,6 +93,9 @@ falsification_tests:
     grep -qE '[0-9.]+\s*(B|KiB|MiB|GiB)/s' "$LOG" || { echo "FAIL: no rate shown" >&2; exit 1; }
     grep -qE 'ETA\s+([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}' "$LOG" || { echo "FAIL: no ETA" >&2; exit 1; }
   if_fails: "progress bar missing required tqdm-parity fields on TTY"
+  # No algorithm-level sub-claim: this gate asserts actual PTY rendering of
+  # tqdm-parity fields (pct, bytes, rate, ETA). Requires live download path
+  # + indicatif renderer wiring. Discharge deferred to TTY-gated follow-up.
 
 - id: FALSIFY-CRUX-A-19-002
   rule: non-TTY suppresses progress
@@ -105,6 +109,19 @@ falsification_tests:
       echo "FAIL: progress emitted on non-TTY stderr" >&2; exit 1
     }
   if_fails: "apr pull leaked progress lines to piped/redirected stderr"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/progress.rs
+    tests:
+    - commands::progress::tests::non_tty_always_suppresses
+    - commands::progress::tests::three_suppression_signals_observationally_equivalent
+    scope: >
+      Algorithm-level discharge: the decision function
+      `progress_enabled(stderr_is_tty=false, ...) -> false` returns false
+      for any non-TTY stderr regardless of flag/env state. NOT YET
+      DISCHARGED: real stderr TTY probe at the `apr pull` entrypoint and
+      actual suppression of indicatif output (requires live-download
+      path wiring; TTY-gated follow-up harness).
 
 - id: FALSIFY-CRUX-A-19-003
   rule: --quiet and APR_PROGRESS=0 honor suppression on TTY
@@ -122,6 +139,24 @@ falsification_tests:
       echo "FAIL: APR_PROGRESS=0 did not suppress progress" >&2; exit 1
     }
   if_fails: "--quiet or APR_PROGRESS=0 did not suppress progress output"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/progress.rs
+    tests:
+    - commands::progress::tests::quiet_flag_suppresses_on_tty
+    - commands::progress::tests::apr_progress_zero_suppresses_on_tty
+    - commands::progress::tests::falsy_env_variants_all_suppress
+    - commands::progress::tests::quiet_overrides_truthy_env
+    - commands::progress::tests::three_suppression_signals_observationally_equivalent
+    scope: >
+      Algorithm-level discharge: the decision function returns false when
+      `quiet_flag=true` regardless of TTY/env, and returns false when
+      `APR_PROGRESS` is any falsy value ("0", "false", "no", "off") on a
+      TTY. The three suppression signals (non-TTY, --quiet, APR_PROGRESS
+      falsy) are observationally equivalent. NOT YET DISCHARGED: PTY-
+      backed integration test proving `apr pull --quiet` and
+      `APR_PROGRESS=0 apr pull` actually emit zero progress lines under
+      script(1) (requires live download path; TTY-gated follow-up).
 
 - id: FALSIFY-CRUX-A-19-004
   rule: parallel chunk count surfaces in verbose mode
@@ -135,6 +170,8 @@ falsification_tests:
       echo "FAIL: expected >=2 chunk log lines, saw $CHUNKS" >&2; exit 1
     }
   if_fails: "parallel chunk accounting invisible in --verbose log"
+  # No algorithm-level sub-claim: this gate requires xet chunk logging to
+  # be wired into the real download path. Discharge deferred.
 
 proof_obligations:
 - type: equivalence
@@ -151,8 +188,33 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 2  # FALSIFY-002/003 at PARTIAL_ALGORITHM_LEVEL (decision logic only)
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/progress.rs
+    functions:
+    - commands::progress::progress_enabled
+    coverage:
+    - falsify-002: commands::progress::tests::non_tty_always_suppresses
+    - falsify-003: commands::progress::tests::quiet_flag_suppresses_on_tty
+    - falsify-003: commands::progress::tests::apr_progress_zero_suppresses_on_tty
+    - falsify-003: commands::progress::tests::falsy_env_variants_all_suppress
+    - falsify-003: commands::progress::tests::quiet_overrides_truthy_env
+    - equivalence: commands::progress::tests::three_suppression_signals_observationally_equivalent
+    - equivalence: commands::progress::tests::truthy_env_variants_leave_progress_on
+    - determinism: commands::progress::tests::is_deterministic
+  scope_honesty: >
+    ONLY the PURE DECISION LOGIC is discharged at PARTIAL_ALGORITHM_LEVEL.
+    FALSIFY-002 (non-TTY suppresses) and FALSIFY-003 (--quiet /
+    APR_PROGRESS=0 suppress) each have algorithm-level evidence in the
+    form of unit tests over `progress_enabled(tty, quiet, env) -> bool`.
+    NO INTEGRATION DISCHARGE — the classifier is not yet wired into the
+    real `apr pull` download path. FALSIFY-001 (live tqdm-parity fields
+    on PTY stderr), FALSIFY-004 (xet chunk visibility), and byte-level
+    HF parity are NOT discharged and require: (a) indicatif renderer
+    integration, (b) live stderr TTY probe at the pull entrypoint,
+    (c) PTY-backed integration harness under script(1). Contract
+    retains `status: partial`.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

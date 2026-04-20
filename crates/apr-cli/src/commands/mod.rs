@@ -52,6 +52,7 @@ pub(crate) mod pipeline;
 pub(crate) mod pretrain;
 pub(crate) mod probar;
 pub(crate) mod profile;
+pub(crate) mod progress;
 pub(crate) mod prune;
 #[cfg(feature = "full")]
 pub(crate) mod ptx_explain;
