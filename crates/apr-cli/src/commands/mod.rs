@@ -65,6 +65,7 @@ pub(crate) mod qa_capability;
 pub(crate) mod qualify;
 pub(crate) mod quantize;
 pub(crate) mod registry;
+pub(crate) mod registry_schema;
 pub(crate) mod resume_paths;
 pub(crate) mod revision;
 pub(crate) mod rosetta;
