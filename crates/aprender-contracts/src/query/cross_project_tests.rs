@@ -68,10 +68,15 @@ fn repo_root() -> PathBuf {
 
 /// Returns true if sibling repos exist (local dev environment).
 /// In CI, only this repo is checked out so siblings are absent.
+///
+/// We look for `provable-contracts` specifically, not `aprender`: GitHub
+/// checks repos out at `/__w/<repo>/<repo>`, so `parent.join("aprender")`
+/// false-positives against the workspace itself. `provable-contracts` is
+/// a distinct sibling that only exists in local dev trees.
 fn has_sibling_repos() -> bool {
     let root = repo_root();
     root.parent()
-        .is_some_and(|p| p.join("aprender").exists())
+        .is_some_and(|p| p.join("provable-contracts").exists())
 }
 
 /// Returns true if sibling repos have enough git history for commit-ref scanning.
@@ -166,12 +171,11 @@ fn parse_contract_annotation_line() {
 
 #[test]
 fn find_binding_path_real() {
+    if !has_sibling_repos() { return; }
     let root = repo_root();
     let aprender_dir = root.parent().unwrap().join("aprender");
-    if aprender_dir.exists() {
-        let bp = find_binding_path(&aprender_dir, "aprender");
-        assert!(bp.is_some(), "Should find binding.yaml for aprender");
-    }
+    let bp = find_binding_path(&aprender_dir, "aprender");
+    assert!(bp.is_some(), "Should find binding.yaml for aprender");
 }
 
 #[test]
