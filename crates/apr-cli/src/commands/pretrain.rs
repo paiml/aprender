@@ -83,6 +83,8 @@ pub(crate) fn run(
         target_val_loss,
         patience_epochs: 2,
         min_epochs_before_early_stop: 1,
+        // v1.2.0: default to Finetune until #125 wires a --regime CLI flag.
+        regime: entrenar::train::pretrain::TrainingRegime::Finetune,
     };
 
     if !json_output {

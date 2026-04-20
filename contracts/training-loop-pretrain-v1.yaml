@@ -35,17 +35,24 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-TRAIN-PRETRAIN
-version: 1.1.0
+version: 1.2.0
 status: ACTIVE
 
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
-  updated: "2026-04-19"
+  updated: "2026-04-20"
   changelog:
     - "1.1.0 (2026-04-19): GATE-TRAIN-006 / INV-TRAIN-006 discharged via
        falsify_ship_021_* Rust tests; seed-plumbing race fixed by
        lock_init_seed mutex in transformer/init.rs; status PROPOSED → ACTIVE"
+    - "1.2.0 (2026-04-20): INV-TRAIN-005 / GATE-TRAIN-005 epoch-zero cap
+       becomes regime-dependent — `finetune` keeps the MODEL-1 literal
+       10.0, `from_scratch` uses 2.0 × ln(vocab_size). Motivation: task
+       #119 smoke run tripped the guard because uniform-random baseline
+       for vocab=50257 is ln(50257) ≈ 10.82, already over a hardcoded
+       10.0. The doubling rule at N ≥ 1 is unchanged across regimes.
+       Falsifier FALSIFY-SHIP-021B covers the from_scratch regime."
   author: PAIML Engineering
   description: >
     Pretraining loop contract: required per-step metrics, required
@@ -151,18 +158,34 @@ non_divergence:
         status = FAIL
         exit_code = nonzero
 
-    Special case for N == 1:
-      if val_loss[0] > 10.0 OR val_loss[0] is NaN/Inf:
-        abort immediately after epoch 0
+    Special case for N == 0 (regime-dependent, v1.2.0):
+      FINETUNE regime (base weights already pretrained):
+        if val_loss[0] > 10.0 OR val_loss[0] is NaN/Inf:
+          abort immediately after epoch 0
+      FROM_SCRATCH regime (random init, vocab-dependent baseline):
+        if val_loss[0] > 2.0 * ln(vocab_size) OR val_loss[0] is NaN/Inf:
+          abort immediately after epoch 0
 
-    The check is MANDATORY and UNCONFIGURABLE. There is NO flag to
-    disable it. There is NO "warning" mode. Exceeding the threshold
-    is always fatal.
+    Rationale for the regime split: uniform-random baseline for a
+    vocab_size-V next-token predictor is ln(V). For V=50257 that is
+    10.82 — already over the MODEL-1 literal 10.0 before any training.
+    A finetune start should be much lower than ln(V) (base weights
+    already learned token distribution); a from-scratch start should
+    be within 2× ln(V) for the init to be considered usable. The 2×
+    safety margin catches truly broken inits (val_loss[0] > 2·ln(V)
+    means the model is worse than random by a log-factor).
 
-    Rationale: MODEL-1 v2 crossed this exact threshold silently
-    (val_loss 31.99 vs a healthy baseline of ~3.5 expected after
-    epoch 0). A compile-time-enforced abort would have saved 14
-    days and all downstream distillation compute.
+    The check is MANDATORY. The regime is configurable (operator
+    picks finetune vs from_scratch) but the thresholds for each
+    regime are not. There is NO "warning" mode. Exceeding the
+    chosen-regime threshold is always fatal.
+
+    Historical context: MODEL-1 v2 was a FINETUNE run (base weights
+    were Qwen2.5-Coder-7B-Instruct, already pretrained) and crossed
+    val_loss=31.99 — 3× the finetune threshold. The regime split
+    here does not weaken the MODEL-1 lesson: a finetune with
+    val_loss[0] > 10.0 still aborts. It only permits the from-scratch
+    case (MODEL-2 370M) to start above 10.0 without false abort.
 
 # ─────────────────────────────────────────────────────────────
 # Invariants — machine-checkable properties of the training loop
@@ -214,16 +237,23 @@ invariants:
 
   - id: INV-TRAIN-005
     description: >
-      NON-DIVERGENCE (the MODEL-1 lesson): for every epoch boundary
-      N ≥ 1, val_loss[N] ≤ 2.0 × val_loss[N-1]. For N == 1,
-      val_loss[0] is finite and ≤ 10.0. Any violation triggers an
-      immediate abort with exit status = DIVERGENCE.
+      NON-DIVERGENCE (the MODEL-1 lesson, regime-aware in v1.2.0):
+      for every epoch boundary N ≥ 1, val_loss[N] ≤ 2.0 × val_loss[N-1].
+      For N == 0, val_loss[0] is finite AND ≤ regime-dependent cap:
+        - finetune    regime: 10.0 (MODEL-1 literal)
+        - from_scratch regime: 2.0 × ln(vocab_size)
+      Any violation triggers an immediate abort with exit status =
+      DIVERGENCE.
     falsifier: >
-      Artificial harness: inject a synthetic epoch log where
-      val_loss doubles (e.g. [3.5, 7.1]). Run the training-loop
-      guard function; assert it returns Err(DivergenceAbort) and
-      the CLI exits nonzero. If the guard permits the run to
-      continue, this contract is violated.
+      Two harnesses (regime coverage):
+      (a) finetune regime: inject `[3.5, 7.1]` as val-loss trace,
+          assert `check_non_divergence(1, trace, Finetune)` returns
+          Err(Divergence). Inject `[11.0]`, assert epoch-0 abort.
+      (b) from_scratch regime: for vocab_size=50257 (ln ≈ 10.82,
+          2·ln ≈ 21.64), assert `check_non_divergence(0, [18.0],
+          FromScratch{vocab_size: 50257})` returns Ok (below cap)
+          but `check_non_divergence(0, [25.0], FromScratch{...})`
+          returns Err. Same doubling rule at N ≥ 1 in both regimes.
 
   - id: INV-TRAIN-006
     description: >
@@ -315,19 +345,27 @@ gates:
 
   - id: GATE-TRAIN-005
     rule: >
-      NON-DIVERGENCE: val_loss[N] ≤ 2.0 × val_loss[N-1] at every
-      epoch boundary; val_loss[0] ≤ 10.0 and finite (INV-TRAIN-005).
-      This is the MODEL-1 v2 lesson codified as a ship-blocker.
+      NON-DIVERGENCE (regime-aware in v1.2.0): val_loss[N] ≤ 2.0 ×
+      val_loss[N-1] at every epoch boundary N ≥ 1; val_loss[0] finite
+      AND ≤ regime-dependent cap (finetune: 10.0; from_scratch: 2·ln
+      vocab_size). INV-TRAIN-005. MODEL-1 v2 ship-blocker retained.
     evidence_required: >
       (1) Live: the training CLI exits nonzero with status =
       DIVERGENCE the moment the threshold is crossed — proven by a
-      harness test that synthesizes a doubling val_loss trace.
+      harness test that synthesizes a doubling val_loss trace AND
+      by regime-specific epoch-0 tests (finetune over 10.0 aborts,
+      from_scratch over 2·ln(vocab_size) aborts but within cap passes).
       (2) Post-hoc: `apr qa --check-non-divergence {run_dir}` over
       the real training run exits 0 for a shipped checkpoint.
     verdict: pass
     binds_to: AC-SHIP2-003
     ship_blocking: true
     motivation: "memory/project_ship_two_001_model1_qlora_divergence.md"
+    evidence_discharged_by:
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_aborts_on_doubling_val_loss"
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_aborts_on_epoch_zero_blowup"
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_from_scratch_permits_near_random_baseline"
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_from_scratch_aborts_above_2_ln_vocab"
 
   - id: GATE-TRAIN-006
     rule: >
