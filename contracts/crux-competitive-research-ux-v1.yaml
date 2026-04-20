@@ -159,7 +159,7 @@ equations:
 # ─────────────────────────────────────────────────────────────
 stories:
   # Category A — Model Acquisition & Registry (25)
-  - { id: CRUX-A-01, title: "Pull model by short name",            competitor: ollama,      demand_score: 5, status: partial,   contract: crux-A-01-v1.yaml }
+  - { id: CRUX-A-01, title: "Pull model by short name",            competitor: ollama,      demand_score: 5, status: supported, contract: crux-A-01-v1.yaml }
   - { id: CRUX-A-02, title: "Pull HF repo by hf://org/name",       competitor: huggingface, demand_score: 5, status: supported, contract: crux-A-02-v1.yaml }
   - { id: CRUX-A-03, title: "Pin to revision/branch/SHA",          competitor: huggingface, demand_score: 4, status: partial,   contract: crux-A-03-v1.yaml }
   - { id: CRUX-A-04, title: "Include/exclude file globs",          competitor: huggingface, demand_score: 4, status: missing,   contract: crux-A-04-v1.yaml }
@@ -439,8 +439,8 @@ stories:
 # Coverage — intake v2.0.0 (verified by awk over §5 of subspec)
 # ─────────────────────────────────────────────────────────────
 coverage_intake:
-  supported: 38
-  partial:   72
+  supported: 39
+  partial:   71
   missing:   140
   unclear:    0
   total:    250

@@ -1,22 +1,21 @@
 # CRUX-A-01 — Pull model by short name
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Promoted to ACTIVE 2026-04-20 after all 5 FALSIFY gates discharge via
+# Rust integration tests in crates/apr-cli/tests/falsification_crux_a_01.rs.
 
 metadata:
   id: CRUX-A-01
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: active
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
   competitor: ollama
   demand_score: 5  # 1..5, critical priority in pmat work
-  intake_status: partial
+  intake_status: supported
   description: >
     Pull model by short name. Competitor `ollama pull llama3` resolves the
     short name through Ollama's library registry (https://ollama.com/library)
@@ -113,7 +112,6 @@ falsification_tests:
   rule: apr registry aliases lists all short names
   prediction: "apr registry aliases --json returns {name: url} map"
   test: |
-    # TODO: wire `apr registry aliases` subcommand
     OUT=$(apr registry aliases --json 2>&1) || { echo "FAIL: subcommand missing" >&2; exit 1; }
     echo "$OUT" | jq -e 'type == "object" and (keys | length > 0)' >/dev/null || {
       echo "FAIL: aliases --json output not a non-empty object" >&2
@@ -146,8 +144,29 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 5
+  status: supported
+  evidence:
+    rust_tests: crates/apr-cli/tests/falsification_crux_a_01.rs
+    unit_tests: crates/apr-cli/src/commands/aliases.rs
+    commands:
+    - apr pull <short> --dry-run
+    - apr registry aliases --json
+    coverage:
+    - falsify-001: falsify_crux_a_01_001_dry_run_emits_canonical_url_for_llama3
+    - falsify-001: falsify_crux_a_01_001_dry_run_resolution_is_deterministic
+    - falsify-001: falsify_crux_a_01_001_dry_run_every_canonical_name_resolves
+    - falsify-002: falsify_crux_a_01_002_aliases_yaml_present_and_parseable
+    - falsify-002: falsify_crux_a_01_002_canonical_short_names_present
+    - falsify-002: falsify_crux_a_01_002_every_value_has_known_scheme
+    - falsify-002: falsify_crux_a_01_002_resolution_deterministic
+    - falsify-003: falsify_crux_a_01_003_typo_exits_nonzero
+    - falsify-003: falsify_crux_a_01_003_typo_suggests_llama3
+    - falsify-003: falsify_crux_a_01_003_far_typo_has_no_suggestion
+    - falsify-004: falsify_crux_a_01_004_registry_aliases_json_is_object
+    - falsify-004: falsify_crux_a_01_004_registry_aliases_contains_canonical_names
+    - falsify-004: falsify_crux_a_01_004_registry_aliases_is_deterministic
+    - falsify-005: falsify_crux_a_01_005_cross_process_determinism
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
