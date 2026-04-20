@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-03
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -90,6 +91,22 @@ falsification_tests:
       echo "FAIL: revision_sha not 40-hex ($SHA)" >&2; exit 1
     }
   if_fails: "apr pull did not record a canonical full-SHA revision in manifest"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_03.rs
+    tests:
+    - falsify_crux_a_03_algo_001_dry_run_echoes_revision_main
+    - falsify_crux_a_03_algo_001_dry_run_echoes_full_sha
+    - falsify_crux_a_03_algo_001_dry_run_echoes_tag
+    - falsify_crux_a_03_algo_001_dry_run_is_deterministic
+    classifier: crates/apr-cli/src/commands/revision.rs
+    scope: >
+      Algorithm-level discharge: the CLI parser accepts `--revision <REV>`,
+      classifies the form (FullSha vs ShortSha vs RefName) with a
+      deterministic pure function, and echoes the spec in `--dry-run` output
+      without network I/O. NOT YET DISCHARGED at full scope: the live HTTP
+      GET /api/models/<repo>/revision/<REV> call and the manifest write of
+      the resolved 40-hex SHA. Both require a follow-up network-gated harness.
 
 - id: FALSIFY-CRUX-A-03-002
   rule: pin to full SHA is byte-identical across invocations
@@ -105,6 +122,19 @@ falsification_tests:
     SB=$(sha256sum "$B/config.json" | awk '{print $1}')
     [ "$SA" = "$SB" ] || { echo "FAIL: non-deterministic pinned pull ($SA vs $SB)" >&2; exit 1; }
   if_fails: "apr pull of same SHA produced divergent bytes — pin is not immutable"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_03.rs
+    tests:
+    - falsify_crux_a_03_algo_002_default_revision_is_main
+    - falsify_crux_a_03_algo_002_default_matches_explicit_main
+    - falsify_crux_a_03_algo_001_dry_run_is_deterministic
+    scope: >
+      Algorithm-level discharge: default revision is "main" when `--revision`
+      is omitted (HF CLI parity), and back-to-back dry-runs at the same
+      revision emit byte-identical `Revision:` lines. NOT YET DISCHARGED at
+      full scope: byte-equality of downloaded file contents across
+      invocations pinned to the same full SHA (network-gated).
 
 - id: FALSIFY-CRUX-A-03-003
   rule: unknown revision exits non-zero
@@ -117,6 +147,21 @@ falsification_tests:
     set -e
     [ "$RC" -ne 0 ] || { echo "FAIL: fake SHA should have errored" >&2; exit 1; }
   if_fails: "apr pull accepted a non-existent revision"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_03.rs
+    tests:
+    - falsify_crux_a_03_algo_003_empty_revision_rejected
+    - falsify_crux_a_03_algo_003_url_in_revision_rejected
+    - falsify_crux_a_03_algo_003_whitespace_rejected
+    classifier: crates/apr-cli/src/commands/revision.rs
+    scope: >
+      Algorithm-level discharge of the offline precondition: malformed
+      `--revision` specs (empty, URL-shaped, whitespace, control chars)
+      are rejected locally with a non-zero exit before any network call.
+      NOT YET DISCHARGED at full scope: "valid-format but unknown on remote"
+      case (e.g. deadbeef…beef fake SHA) still requires the live HF HTTP 404
+      path. Follow-up network-gated harness.
 
 - id: FALSIFY-CRUX-A-03-004
   rule: parity with huggingface-cli on golden revisions
@@ -151,8 +196,34 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 3  # FALSIFY-001/002/003 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    rust_tests: crates/apr-cli/tests/falsification_crux_a_03.rs
+    unit_tests: crates/apr-cli/src/commands/revision.rs
+    commands:
+    - apr pull <short> --dry-run --revision <REV>
+    coverage:
+    - falsify-001: falsify_crux_a_03_algo_001_dry_run_echoes_revision_main
+    - falsify-001: falsify_crux_a_03_algo_001_dry_run_echoes_full_sha
+    - falsify-001: falsify_crux_a_03_algo_001_dry_run_echoes_tag
+    - falsify-001: falsify_crux_a_03_algo_001_dry_run_is_deterministic
+    - falsify-002: falsify_crux_a_03_algo_002_default_revision_is_main
+    - falsify-002: falsify_crux_a_03_algo_002_default_matches_explicit_main
+    - falsify-003: falsify_crux_a_03_algo_003_empty_revision_rejected
+    - falsify-003: falsify_crux_a_03_algo_003_url_in_revision_rejected
+    - falsify-003: falsify_crux_a_03_algo_003_whitespace_rejected
+  scope_honesty: >
+    FALSIFY-CRUX-A-03-001/002/003 are ALL discharged at
+    PARTIAL_ALGORITHM_LEVEL — the Rust harness proves the offline
+    sub-claims (CLI parsing, revision-form classification, default=main,
+    local rejection of malformed specs). The network-level sub-claims
+    (HF Hub GET /api/models/<repo>/revision/<REV>, manifest
+    revision_sha persistence, byte-identical file downloads, HTTP 404
+    for unknown refs) remain TODO and will be discharged by a separate
+    network-gated harness. FALSIFY-CRUX-A-03-004 (byte-for-byte parity
+    with huggingface-cli on golden tuples) is NOT yet discharged.
+    Contract stays `status: partial`.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
