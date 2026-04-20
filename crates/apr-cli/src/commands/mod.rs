@@ -29,6 +29,7 @@ pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;
 pub(crate) mod flow;
+pub(crate) mod glob_filter;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod hex;
