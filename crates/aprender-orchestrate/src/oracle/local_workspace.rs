@@ -381,6 +381,22 @@ impl LocalWorkspaceOracle {
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|| "unknown".to_string());
+        // Detached HEAD (common in CI `actions/checkout`) makes `branch --show-current`
+        // emit an empty string. Fall back to the short SHA so downstream consumers and
+        // assertions like `!branch.is_empty()` stay meaningful.
+        let branch = if branch.is_empty() {
+            Command::new("git")
+                .args(["rev-parse", "--short", "HEAD"])
+                .current_dir(path)
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| format!("HEAD@{}", s.trim()))
+                .filter(|s| s != "HEAD@")
+                .unwrap_or_else(|| "unknown".to_string())
+        } else {
+            branch
+        };
 
         let status_output = Command::new("git")
             .args(["status", "--porcelain"])
