@@ -36,6 +36,7 @@ pub(crate) mod export;
 pub(crate) mod finetune;
 pub(crate) mod flow;
 pub(crate) mod glob_filter;
+pub(crate) mod gbnf_classifier;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod hex;
