@@ -2,7 +2,7 @@
 
 metadata:
   id: CRUX-B-11
-  version: "1.2.0"
+  version: "1.3.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -54,6 +54,13 @@ falsification_tests:
   if_fails: rule 'fp8 round-trip preserves within 1% Frobenius' is violated — contract MUST be re-verified against competitor canonical reference
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/fp8_classifier.rs
+    cli_path: crates/apr-cli/src/commands/fp8_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_11.rs
+    e2e_tests:
+    - falsify_crux_b_11_001_frobenius_ok_on_identical_vectors
+    - falsify_crux_b_11_001_frobenius_rejects_degraded_reconstruction
+    - falsify_crux_b_11_001_frobenius_rejects_length_mismatch
+    - falsify_crux_b_11_001_frobenius_rejects_zero_original
     sub_claim: |
       Algorithm-level necessary conditions:
         (a) `e4m3_positive_finites` enumerates exactly 127 ascending
@@ -119,6 +126,13 @@ falsification_tests:
   if_fails: rule 'non-Hopper GPU rejected with exit 2' is violated — contract MUST be re-verified against competitor canonical reference
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/fp8_classifier.rs
+    cli_path: crates/apr-cli/src/commands/fp8_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_11.rs
+    e2e_tests:
+    - falsify_crux_b_11_002_capability_ok_on_sm_90
+    - falsify_crux_b_11_002_capability_ok_on_sm_100_blackwell
+    - falsify_crux_b_11_002_capability_rejects_sm_80_ampere
+    - falsify_crux_b_11_002_capability_rejects_sm_0_unknown
     sub_claim: |
       Algorithm-level necessary condition: `classify_sm_capability`
       admits sm ≥ `FP8_MIN_HOPPER_SM` (90) as `Capable`, and every
@@ -160,6 +174,30 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-B-11-002
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: "wiring `APR_CUDA_SM_OVERRIDE` + clap exit-code path"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/fp8_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/fp8_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_b_11.rs
+    contract: contracts/crux-B-11-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr fp8-lint --observation-file <obs.json>` dispatches two FP8
+    classifiers (frobenius round-trip, SM capability) over a captured
+    JSON observation. e2e suite (13 tests) exercises help surface,
+    bare-invocation rejection, ok+reject paths on both gates
+    (identical/degraded/length-mismatch/zero-original frobenius and
+    sm 90/100/80/0 capability), empty/nonexistent file rejection, and
+    --json shape. Full ACTIVE discharge remains blocked on
+    `apr quantize --format fp8-e4m3` + `apr dequant` CLI surfaces +
+    Hopper hardware for bit-exact TransformerEngine parity + clap
+    wiring for `APR_CUDA_SM_OVERRIDE` exit-code path.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-b-11
