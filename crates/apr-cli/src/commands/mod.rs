@@ -35,6 +35,7 @@ pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;
 pub(crate) mod flow;
+pub(crate) mod gguf_safetensors_lint;
 pub(crate) mod gguf_to_safetensors;
 pub(crate) mod glob_filter;
 pub(crate) mod gbnf_classifier;

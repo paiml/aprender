@@ -6,8 +6,9 @@
 
 metadata:
   id: CRUX-B-02
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
   status: partial
@@ -82,12 +83,20 @@ falsification_tests:
   if_fails: "converted directory is missing required HuggingFace files"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/gguf_to_safetensors.rs
+    cli_path: crates/apr-cli/src/commands/gguf_safetensors_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_02.rs
+    e2e_tests:
+    - falsify_crux_b_02_001_layout_complete_passes
+    - falsify_crux_b_02_001_layout_missing_safetensors_fails
+    - falsify_crux_b_02_001_layout_empty_listing_fails_all
     sub_claim: |
       Algorithm-level necessary condition: `hf_required_files()` is the
       canonical trio HF transformers expects, and `missing_hf_files`
       reports the exact subset absent from any candidate directory
       listing. Without these filenames present, no downstream byte-
-      level load work can succeed.
+      level load work can succeed. The `apr gguf-safetensors-lint`
+      CLI dispatches the classifier over an observed layout listing
+      and exit-codes the FALSIFY-CRUX-B-02-001 gate.
     tests:
     - required_files_set_is_canonical
     - missing_files_empty_on_complete_output
@@ -131,6 +140,14 @@ falsification_tests:
   if_fails: "transformers cannot load the converted safetensors directory"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/gguf_to_safetensors.rs
+    cli_path: crates/apr-cli/src/commands/gguf_safetensors_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_02.rs
+    e2e_tests:
+    - falsify_crux_b_02_003_metadata_full_passes
+    - falsify_crux_b_02_003_metadata_missing_architecture_expected_missing_key_passes
+    - falsify_crux_b_02_003_metadata_missing_key_with_wrong_expectation_fails
+    - falsify_crux_b_02_003_metadata_wrong_type_expected_wrong_type_passes
+    - falsify_crux_b_02_003_metadata_string_for_embedding_length_is_wrong_type
     sub_claim: |
       Algorithm-level necessary condition: `translate_gguf_metadata`
       produces a well-typed `HfLlamaConfig` with the four required
@@ -138,7 +155,10 @@ falsification_tests:
       num_attention_heads) and serializes round-trip clean through
       serde_json. Missing keys return Err rather than silently
       defaulting, which would hide upstream bugs and let
-      `from_pretrained` succeed with the wrong layer count.
+      `from_pretrained` succeed with the wrong layer count. The
+      `apr gguf-safetensors-lint` CLI dispatches the translator over
+      an observed GGUF KV map and exit-codes the
+      FALSIFY-CRUX-B-02-003 gate.
     tests:
     - translate_full_metadata_succeeds
     - translate_missing_architecture_errors
@@ -168,13 +188,23 @@ falsification_tests:
   if_fails: "PEFT LoRA attachment failed — converted output is not PEFT-ready"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/gguf_to_safetensors.rs
+    cli_path: crates/apr-cli/src/commands/gguf_safetensors_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_02.rs
+    e2e_tests:
+    - falsify_crux_b_02_004_peft_default_targets_resolve
+    - falsify_crux_b_02_004_peft_unknown_target_is_unresolved
+    - falsify_crux_b_02_004_peft_unknown_target_with_wrong_expectation_fails
+    - falsify_crux_b_02_004_peft_empty_target_list_trivially_resolves
     sub_claim: |
       Algorithm-level necessary condition: `peft_target_modules_resolve`
       checks that every target module name (q_proj, v_proj, etc.)
       matches at least one tensor in the safetensors archive via
       substring containment, mirroring PEFT's own name-matching rule.
       If every target resolves, `peft.get_peft_model` has the
-      precondition it needs to attach LoRA adapters.
+      precondition it needs to attach LoRA adapters. The
+      `apr gguf-safetensors-lint` CLI dispatches the resolver over
+      an observed tensor listing and exit-codes the
+      FALSIFY-CRUX-B-02-004 gate.
     tests:
     - peft_default_targets_resolve_on_llama_layout
     - peft_unknown_target_module_flagged
@@ -213,6 +243,39 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-B-02-004
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: uv run peft get_peft_model attach harness
+
+ship_discipline:
+  # CRUX-SHIP-001 retrofit: every classifier-only CRUX PR must ship pure-Rust
+  # classifier AND working `apr` CLI wiring + e2e test in the same commit.
+  policy: CRUX-SHIP-001
+  merge_gates:
+    g1_classifier_green:
+      status: PASS
+      evidence: crates/apr-cli/src/commands/gguf_to_safetensors.rs (unit tests)
+    g2_cli_reachable:
+      status: PASS
+      evidence: "`apr gguf-safetensors-lint --help` advertises --observation-file"
+      wired_in:
+      - crates/apr-cli/src/commands/mod.rs
+      - crates/apr-cli/src/commands/gguf_safetensors_lint.rs
+      - crates/apr-cli/src/extended_commands.rs
+      - crates/apr-cli/src/dispatch_analysis.rs
+      - crates/apr-cli/tests/cli_commands.rs
+      - contracts/apr-cli-commands-v1.yaml
+    g3_e2e_runs:
+      status: PASS
+      evidence: crates/apr-cli/tests/falsification_crux_b_02.rs (20 tests)
+    g4_contract_discharged:
+      status: PASS
+      evidence: "FALSIFY-CRUX-B-02-{001,003,004} carry cli_path + e2e_path + e2e_tests; FALSIFY-CRUX-B-02-002 remains NOT_DISCHARGED (blocked on Q4_K_M dequant numerical harness)"
+  partial_scope_rationale: |
+    Three of four FALSIFY gates ship with PARTIAL_ALGORITHM_LEVEL
+    discharge. FALSIFY-CRUX-B-02-002 (dequant numerical bound) has no
+    algorithm-level proxy in the classifier — it requires a real
+    Q4_K_M .gguf fixture and a reference f32 .safetensors file. That
+    gate is correctly kept at NOT_DISCHARGED under
+    BLOCKER-FIXTURE-ABSENT rather than forced to PARTIAL with no
+    backing algorithm.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
