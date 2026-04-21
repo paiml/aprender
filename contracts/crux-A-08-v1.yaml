@@ -2,11 +2,12 @@
 
 metadata:
   id: CRUX-A-08
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -49,6 +50,40 @@ falsification_tests:
     grep -E "huggingface\.co|34\.160|3\.163" /tmp/trace.log && exit 1
     grep -E "127\.0\.0\.1|18080" /tmp/trace.log >/dev/null
   if_fails: "apr pull leaked to huggingface.co despite HF_ENDPOINT override — check hf_hub::Client constructor"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/hf_endpoint.rs
+    sub_claim: >
+      The pure `resolve_endpoint(env) -> Result<String, EndpointError>` and
+      `pull_url(endpoint, repo, revision, file) -> String` classifier proves
+      that when `HF_ENDPOINT=http://127.0.0.1:18080` is set, the resolved URL
+      for `apr pull` targets the mirror and contains no "huggingface.co"
+      substring. Conversely, when HF_ENDPOINT is unset, the URL is anchored
+      at the canonical host `https://huggingface.co`. This is the algorithm-
+      level precondition for the integration-level strace check: if the
+      classifier is correct, every URL passed to the HTTP client is already
+      mirror-targeted, so no packet can leak to huggingface.co absent a bug
+      below this layer.
+    tests:
+    - commands::hf_endpoint::tests::falsify_001_sub_claim_mirror_keeps_url_off_huggingface_co
+    - commands::hf_endpoint::tests::falsify_001_sub_claim_unset_uses_canonical_host
+    - commands::hf_endpoint::tests::hf_endpoint_override_wins
+    - commands::hf_endpoint::tests::ftp_scheme_rejected
+    - commands::hf_endpoint::tests::file_scheme_rejected
+    - commands::hf_endpoint::tests::pull_url_mirror_matches_hf_formula
+    - commands::hf_endpoint::tests::url_targets_endpoint_agreement
+    - commands::hf_endpoint::tests::resolve_is_deterministic
+    scope: >
+      Algorithm-level discharge: the classifier implements the contract
+      `endpoint_override` formula
+      `pull_url = {endpoint.rstrip('/')}/{repo}/resolve/{revision}/{file}`
+      exactly, including trailing-slash stripping and http|https scheme
+      enforcement. NOT YET DISCHARGED: strace-level zero-leak verification
+      at the integration boundary (requires live HTTP client wiring plus
+      a local mirror server under `strace -f -e trace=connect`). The
+      classifier proves the URL construction is correct; the remaining
+      FALSIFY gate verifies that the HTTP client actually consumes the
+      resolved URL with no fallback to huggingface.co.
 
 proof_obligations:
 - type: equivalence
@@ -61,8 +96,34 @@ proof_obligations:
 verification_summary:
   total_obligations: 3
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 1  # FALSIFY-001 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/hf_endpoint.rs
+    classifier: crates/apr-cli/src/commands/hf_endpoint.rs
+    commands:
+    - HF_ENDPOINT=http://mirror apr pull hf://<repo>  # classifier-observable via resolve_endpoint
+    coverage:
+    - falsify-001: commands::hf_endpoint::tests::falsify_001_sub_claim_mirror_keeps_url_off_huggingface_co
+    - falsify-001: commands::hf_endpoint::tests::falsify_001_sub_claim_unset_uses_canonical_host
+    - falsify-001: commands::hf_endpoint::tests::hf_endpoint_override_wins
+    - falsify-001: commands::hf_endpoint::tests::ftp_scheme_rejected
+    - falsify-001: commands::hf_endpoint::tests::file_scheme_rejected
+    - falsify-001: commands::hf_endpoint::tests::pull_url_mirror_matches_hf_formula
+    - falsify-001: commands::hf_endpoint::tests::url_targets_endpoint_agreement
+    - falsify-001: commands::hf_endpoint::tests::resolve_is_deterministic
+  scope_honesty: >
+    FALSIFY-CRUX-A-08-001 is discharged at PARTIAL_ALGORITHM_LEVEL — the
+    pure `resolve_endpoint` + `pull_url` classifier implements the contract
+    `endpoint_override` formula exactly, and 23 unit tests cover
+    default-host / mirror-override / trailing-slash stripping / scheme
+    validation (http, https, HTTP, HTTPS, ftp rejected, file rejected) /
+    empty / whitespace / scheme-only / determinism / URL-targets-endpoint
+    agreement. NOT YET DISCHARGED: strace-level zero-leak verification
+    (requires live HTTP client wiring plus local mirror under
+    `strace -f -e trace=connect`). Contract stays `status: partial`;
+    master `supported_count` NOT bumped. `intake_status` stays `missing`
+    (the feature is not yet observable end-to-end via `apr pull`).
 
 pmat_work_tracking:
   ticket_tag: crux-crux-a-08
