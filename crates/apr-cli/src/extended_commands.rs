@@ -757,6 +757,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a GBNF grammar-constrained observation (CRUX-C-10)
+    GbnfLint {
+        /// Path to captured GBNF observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
