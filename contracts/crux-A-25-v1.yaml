@@ -2,11 +2,11 @@
 
 metadata:
   id: CRUX-A-25
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -52,6 +52,23 @@ falsification_tests:
     freed=$((before - after))
     [ "$freed" -gt 100000000 ]
   if_fails: rule 'gc frees bytes after rm of last referrer' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/blob_gc.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `apply_rm(manifests, tag)`
+      followed by `plan_gc(all_blobs, compute_refcounts(reduced))`
+      yields a plan containing exactly the blobs that were uniquely
+      owned by the removed manifest. The composition is a pure
+      function chain on in-memory data — no filesystem I/O required
+      to prove the orphan-detection algorithm is correct.
+    tests:
+    - rm_then_gc_frees_unique_owned_blobs
+    - plan_gc_flags_orphaned_blob
+    - refcount_counts_unique_referrers
+    - refcount_duplicate_blob_in_manifest_counts_once
+    scope: rm → refcount → plan composition (pure functions)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: end-to-end pull/rm/gc harness against a real HF fixture
 - id: FALSIFY-CRUX-A-25-002
   rule: gc never deletes referenced blobs
   prediction: "gc after rm of one of two copies frees 0 bytes (blob still referenced)"
@@ -66,6 +83,22 @@ falsification_tests:
     delta=$((before - after))
     [ "$delta" -lt 8192 ]
   if_fails: rule 'gc never deletes referenced blobs' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/blob_gc.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `plan_gc` filters blobs to
+      those with refcount==0, so a blob referenced by any surviving
+      manifest cannot appear in the candidate list. The duplicate-tag
+      case (rm of one of two aliases) is explicitly proven to produce
+      an empty plan, which is the exact safety invariant on test.
+    tests:
+    - plan_gc_never_flags_referenced_blob
+    - rm_of_one_of_two_duplicate_tags_frees_nothing
+    - apply_plan_removes_exactly_the_candidates
+    - apply_plan_preserves_blobs_not_in_plan
+    scope: refcount safety filter (pure function)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: end-to-end duplicate-tag rm/gc harness against a real HF fixture
 - id: FALSIFY-CRUX-A-25-003
   rule: --dry-run prints but does not delete
   prediction: "apr gc --dry-run leaves disk usage unchanged"
@@ -80,6 +113,23 @@ falsification_tests:
     grep -E "would free|candidate" /tmp/plan.txt
 
   if_fails: rule '--dry-run prints but does not delete' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/blob_gc.rs
+    sub_claim: |
+      Algorithm-level necessary condition: the plan/apply separation
+      is structural — `plan_gc` is a pure query returning a `GcPlan`
+      and `apply_plan` is the only mutator. A --dry-run that emits
+      the plan without calling `apply_plan` cannot mutate disk state
+      because the plan data structure itself carries no filesystem
+      effect. Dry-run and real-run produce byte-identical plans.
+    tests:
+    - dry_run_plan_equals_real_run_plan
+    - gc_is_idempotent_second_run_is_noop
+    - plan_gc_candidates_are_sorted
+    - plan_serializes_to_stable_json
+    scope: plan/apply separation + dry-run purity (pure functions)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: end-to-end `apr gc --dry-run` harness asserting disk usage unchanged
 proof_obligations:
 - type: equivalence
   property: "apr rm + apr gc together match `ollama rm` refcount semantics"
@@ -93,6 +143,16 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-A-25-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: end-to-end pull/rm/gc harness against a real HF fixture
+  - falsify_id: FALSIFY-CRUX-A-25-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: end-to-end duplicate-tag rm/gc harness
+  - falsify_id: FALSIFY-CRUX-A-25-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "`apr gc --dry-run` disk-usage-unchanged harness"
 
 pmat_work_tracking:
   ticket_tag: crux-crux-a-25

@@ -10,6 +10,7 @@ pub(crate) mod auto_quant;
 pub(crate) mod awq_classifier;
 pub(crate) mod awq_lint;
 pub mod bench;
+pub(crate) mod blob_gc;
 pub mod canary;
 pub mod cbtop;
 pub mod chat;
