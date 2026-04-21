@@ -44,6 +44,7 @@ pub(crate) mod mcp;
 pub(crate) mod merge;
 pub(crate) mod multi_lora_classifier;
 pub(crate) mod typical_p_classifier;
+pub(crate) mod typical_p_lint;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;
 #[cfg(feature = "training")]

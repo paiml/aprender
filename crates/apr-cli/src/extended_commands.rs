@@ -723,6 +723,11 @@ pub enum ExtendedCommands {
         #[arg(long)]
         stream: bool,
     },
+    /// Lint a typical-p sampling observation (CRUX-C-22)
+    TypicalPLint {
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),

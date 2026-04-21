@@ -2,7 +2,7 @@
 
 metadata:
   id: CRUX-C-22
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   updated: "2026-04-21"
   author: PAIML Engineering
@@ -53,6 +53,14 @@ falsification_tests:
   if_fails: rule 'p=1.0 is identity (no change from greedy/temperature-only)' is violated — contract MUST be re-verified against competitor canonical reference
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/typical_p_classifier.rs
+    cli_path: crates/apr-cli/src/commands/typical_p_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_22.rs
+    e2e_tests:
+    - falsify_crux_c_22_001_range_ok_on_valid_p
+    - falsify_crux_c_22_001_range_rejects_zero_p
+    - falsify_crux_c_22_001_range_rejects_above_one
+    - falsify_crux_c_22_001_identity_ok_on_all_kept
+    - falsify_crux_c_22_001_identity_rejects_dropped_tokens
     sub_claim: "p=1.0 identity + parameter-range invariants captured by pure classifiers"
     tests:
     - identity_ok_when_all_kept
@@ -95,6 +103,14 @@ falsification_tests:
   if_fails: rule 'matches HF TypicalLogitsWarper on identical logits' is violated — contract MUST be re-verified against competitor canonical reference
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/typical_p_classifier.rs
+    cli_path: crates/apr-cli/src/commands/typical_p_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_22.rs
+    e2e_tests:
+    - falsify_crux_c_22_002_mass_ok_when_meets_threshold
+    - falsify_crux_c_22_002_mass_rejects_insufficient
+    - falsify_crux_c_22_002_renorm_ok_when_sums_to_one
+    - falsify_crux_c_22_002_renorm_rejects_under_normalized
+    - falsify_crux_c_22_002_sort_ok_on_uniform
     sub_claim: "mass-coverage, sort-by-c_i ASC, and renormalization sum=1.0±1e-6 properties captured by pure classifiers"
     tests:
     - mass_ok_when_kept_meets_threshold
@@ -138,6 +154,27 @@ verification_summary:
   proven: 0
   tested: 2
   status: partial
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/typical_p_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/typical_p_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_22.rs
+    contract: contracts/crux-C-22-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr typical-p-lint --observation-file <obs.json>` dispatches five
+    classifiers (range, identity, mass-coverage, sort-order,
+    renormalization) over captured JSON. e2e suite (15 tests) exercises
+    help surface, bare-invocation rejection, per-gate ok+reject paths,
+    empty/nonexistent file rejection, and --json shape. Full ACTIVE
+    discharge remains blocked on `apr run --typical` identity test against
+    a real GGUF fixture + Python HF TypicalLogitsWarper reference parity.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-c-22
