@@ -2,11 +2,11 @@
 
 metadata:
   id: CRUX-A-22
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Hub & Distribution"
@@ -55,6 +55,32 @@ falsification_tests:
     assert all(k in e for k in ('used','free','needed'))
     "
   if_fails: rule 'pull rejected when it would exceed quota' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/registry_quota.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_pull_against_quota`
+      returns Reject iff `used + incoming > quota`, with the triple
+      (used, free, needed) preserved in full. `render_quota_error_json`
+      then emits a single-line JSON body carrying all three required
+      keys plus a stable `error: "registry_quota_exceeded"` discriminator.
+      The FALSIFY invariant `needed > free` follows from the Reject
+      precondition and is separately re-asserted on the serialized body.
+    tests:
+    - allow_when_incoming_fits
+    - allow_exactly_at_quota_boundary
+    - reject_one_byte_over_quota
+    - reject_when_already_over_quota
+    - saturating_arithmetic_prevents_overflow
+    - classifier_is_deterministic
+    - reject_preserves_all_three_fields
+    - error_json_contains_required_keys
+    - error_json_values_roundtrip
+    - error_json_discriminator_is_stable
+    - error_json_is_single_line
+    - error_json_parses_with_same_arithmetic_invariant
+    scope: quota decision + machine-parseable error body (pure functions)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "`apr pull` pre-download enforcement harness against a real HF fixture"
 - id: FALSIFY-CRUX-A-22-002
   rule: no partial blobs on disk after reject
   prediction: "registry byte count unchanged after rejection"
@@ -65,6 +91,23 @@ falsification_tests:
     after=$(du -sb /tmp/apr-quota | awk '{print $1}')
     python3 -c "assert $before == $after, ($before, $after)"
   if_fails: rule 'no partial blobs on disk after reject' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/registry_quota.rs
+    sub_claim: |
+      Algorithm-level necessary condition: the quota decision is a pure
+      function of (quota, used, incoming) with no I/O. Because the
+      decision runs pre-download, a Reject verdict cannot have left
+      partial blobs on disk — there is no code path that starts a
+      network transfer before the classifier returns. Determinism is
+      proven on identical inputs.
+    tests:
+    - classifier_is_deterministic
+    - reject_one_byte_over_quota
+    - reject_preserves_all_three_fields
+    - saturating_arithmetic_prevents_overflow
+    scope: pre-download purity (no I/O in classifier)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "end-to-end reject harness that asserts `du -sb` is unchanged after a rejected pull"
 - id: FALSIFY-CRUX-A-22-003
   rule: permitted pull succeeds and stays under quota
   prediction: "pull within budget lands blobs; du ≤ quota"
@@ -77,6 +120,20 @@ falsification_tests:
     python3 -c "assert $used <= $quota, ($used, $quota)"
 
   if_fails: rule 'permitted pull succeeds and stays under quota' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/registry_quota.rs
+    sub_claim: |
+      Algorithm-level necessary condition: an Allow verdict carries
+      `free_after = quota - (used + incoming)`, so the post-pull
+      invariant `used + incoming ≤ quota` is true by construction.
+      The exact-fit boundary (used + incoming == quota) is explicitly
+      tested and classified as Allow.
+    tests:
+    - allow_when_incoming_fits
+    - allow_exactly_at_quota_boundary
+    scope: post-pull quota invariant (pure function)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "end-to-end pull + `du` harness against a real HF fixture"
 proof_obligations:
 - type: equivalence
   property: "apr registry quota semantics match Ollama OLLAMA_MAX_MODELS / docker storage-opt"
@@ -90,6 +147,16 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-A-22-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: apr pull pre-download harness against a real HF fixture
+  - falsify_id: FALSIFY-CRUX-A-22-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: du -sb reject harness
+  - falsify_id: FALSIFY-CRUX-A-22-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: end-to-end pull + du quota-ceiling harness
 
 pmat_work_tracking:
   ticket_tag: crux-crux-a-22
