@@ -742,6 +742,15 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a captured CUDA OOM postmortem report (CRUX-F-13)
+    OomLint {
+        /// Path to captured OOM postmortem JSON (e.g. /tmp/apr-oom-<ts>.json)
+        #[arg(long, value_name = "FILE")]
+        report_file: PathBuf,
+        /// Optional captured stderr log to verify the OOM_REPORT breadcrumb
+        #[arg(long, value_name = "FILE")]
+        stderr_file: Option<PathBuf>,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
