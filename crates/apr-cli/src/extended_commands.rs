@@ -723,6 +723,18 @@ pub enum ExtendedCommands {
         #[arg(long)]
         stream: bool,
     },
+    /// Lint a captured DRY-sampling observation (CRUX-C-23)
+    DrySamplingLint {
+        /// Path to observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured AWQ quality/compression/flags observation (CRUX-B-08)
+    AwqLint {
+        /// Path to captured AWQ observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),

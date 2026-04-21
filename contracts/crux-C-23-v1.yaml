@@ -2,11 +2,13 @@
 
 metadata:
   id: CRUX-C-23
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
@@ -20,8 +22,8 @@ metadata:
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/huggingface/accelerate
-  - github.com/pytorch/pytorch — DDP/FSDP
+  - 'impl: llama.cpp DRY sampler (--dry-multiplier, --dry-base, --dry-allowed-length, --dry-penalty-last-n, --dry-sequence-breakers)'
+
 equations:
   dry_penalty:
     formula: |
@@ -36,6 +38,8 @@ equations:
     - "multiplier=0 → identity (penalty disabled)"
     - "tokens in seq_breakers reset the match_len counter"
     - "penalty is always ≥ 0; never boosts any token"
+    - "penalty is monotone non-decreasing in match_len for fixed (allowed, multiplier, base)"
+    - "base must be ≥ 1; multiplier must be ≥ 0; allowed_length must be ≥ 1"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-23-001
@@ -48,6 +52,39 @@ falsification_tests:
     apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "$PROMPT" --seed 1 --max-tokens 16 --format json > /tmp/base.json
     diff <(jq .token_ids /tmp/off.json) <(jq .token_ids /tmp/base.json)
   if_fails: rule 'multiplier=0 is identity' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/dry_sampling_classifier.rs
+    cli_path: crates/apr-cli/src/commands/dry_sampling_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_23.rs
+    e2e_tests:
+    - falsify_crux_c_23_001_params_ok_on_defaults
+    - falsify_crux_c_23_001_params_rejects_negative_multiplier
+    - falsify_crux_c_23_001_params_rejects_base_below_one
+    - falsify_crux_c_23_001_params_rejects_allowed_length_zero
+    - falsify_crux_c_23_001_identity_ok_when_unchanged
+    - falsify_crux_c_23_001_identity_rejects_changed_logit
+    sub_claim: "multiplier=0 identity + parameter-range invariants captured by pure classifiers"
+    tests:
+    - identity_ok_when_logits_unchanged
+    - identity_flags_changed_logit
+    - identity_rejects_non_zero_multiplier
+    - identity_rejects_length_mismatch
+    - identity_rejects_empty
+    - identity_rejects_nan
+    - penalty_zero_when_multiplier_zero
+    - identity_and_penalty_zero_multiplier_coincide
+    - params_valid_defaults
+    - params_valid_zero_multiplier
+    - params_rejects_negative_multiplier
+    - params_rejects_base_below_one
+    - params_rejects_allowed_length_zero
+    - params_rejects_nan_multiplier
+    - params_rejects_nan_base
+    - params_rejects_infinity
+    scope: PARTIAL_ALGORITHM_LEVEL
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "end-to-end `apr run --dry-multiplier 0` identity test against real GGUF fixture (requires fixtures/tinyllama-q4_k_m.gguf + DRY CLI wiring)"
+
 - id: FALSIFY-CRUX-C-23-002
   rule: DRY reduces exact-phrase repetition on adversarial prompt
   prediction: "repetition-heavy prompt with DRY has fewer 4-gram repeats than without"
@@ -65,6 +102,44 @@ falsification_tests:
     PY
 
   if_fails: rule 'DRY reduces exact-phrase repetition on adversarial prompt' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/dry_sampling_classifier.rs
+    cli_path: crates/apr-cli/src/commands/dry_sampling_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_23.rs
+    e2e_tests:
+    - falsify_crux_c_23_002_match_len_ok_on_repeated_trigram
+    - falsify_crux_c_23_002_match_len_rejects_wrong_expected
+    - falsify_crux_c_23_002_match_len_seq_breaker_zero
+    - falsify_crux_c_23_002_penalty_ok_at_threshold
+    - falsify_crux_c_23_002_penalty_rejects_invalid_input
+    - falsify_crux_c_23_002_monotone_ok_non_decreasing
+    - falsify_crux_c_23_002_monotone_rejects_decreasing_args
+    sub_claim: "suffix-match length, penalty formula, seq-breaker reset, and monotonicity-in-match_len captured by pure classifiers"
+    tests:
+    - match_len_zero_when_ctx_empty
+    - match_len_zero_when_candidate_not_in_ctx
+    - match_len_one_when_candidate_matches_single_token
+    - match_len_detects_repeated_bigram
+    - match_len_detects_repeated_trigram
+    - match_len_seq_breaker_stops_extension
+    - match_len_repeated_trigram_twice
+    - penalty_zero_below_threshold
+    - penalty_equals_multiplier_at_threshold
+    - penalty_exponential_growth
+    - penalty_rejects_negative_multiplier
+    - penalty_rejects_base_below_one
+    - penalty_rejects_allowed_zero
+    - penalty_rejects_nan
+    - monotone_ok_below_threshold_both_zero
+    - monotone_ok_below_to_at_threshold
+    - monotone_ok_strict_growth_above_threshold
+    - monotone_rejects_decreasing_args
+    - monotone_ok_equal_match_len
+    - match_len_above_allowed_triggers_positive_penalty
+    scope: PARTIAL_ALGORITHM_LEVEL
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "adversarial-prompt 4-gram uniqueness test against real GGUF fixture with DRY sampler wired into apr run CLI"
+
 proof_obligations:
 - type: equivalence
   property: "apr --dry-* matches llama.cpp DRY sampler on identical (ctx, multiplier, base, allowed)"
@@ -76,8 +151,29 @@ proof_obligations:
 verification_summary:
   total_obligations: 3
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 2
+  status: partial
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/dry_sampling_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/dry_sampling_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_23.rs
+    contract: contracts/crux-C-23-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr dry-sampling-lint --observation-file <obs.json>` dispatches five
+    classifiers (params, identity, match_len, penalty, monotone) over
+    captured JSON. e2e suite (18 tests) exercises help surface,
+    bare-invocation rejection, per-gate ok+reject paths,
+    empty/nonexistent file rejection, and --json shape. Full ACTIVE
+    discharge remains blocked on `apr run --dry-*` identity test against
+    a real GGUF fixture + llama.cpp DRY sampler parity.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-c-23

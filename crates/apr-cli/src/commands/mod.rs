@@ -7,6 +7,8 @@
 
 pub(crate) mod aliases;
 pub(crate) mod auto_quant;
+pub(crate) mod awq_classifier;
+pub(crate) mod awq_lint;
 pub mod bench;
 pub mod canary;
 pub mod cbtop;
@@ -42,6 +44,8 @@ pub(crate) mod kernel_explain;
 pub(crate) mod lint;
 pub(crate) mod mcp;
 pub(crate) mod merge;
+pub(crate) mod dry_sampling_classifier;
+pub(crate) mod dry_sampling_lint;
 pub(crate) mod multi_lora_classifier;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;

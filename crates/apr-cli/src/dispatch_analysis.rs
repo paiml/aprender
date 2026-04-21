@@ -101,6 +101,18 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stream,
         } => commands::ollama_chat::run(response_file, *stream, cli.json),
 
+        ExtendedCommands::DrySamplingLint { observation_file } => {
+            commands::dry_sampling_lint::run(observation_file, cli.json)
+        }
+
+        ExtendedCommands::AwqLint { observation_file } => commands::awq_lint::run(
+            commands::awq_lint::AwqLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
         ExtendedCommands::Hex {
             file,
             tensor,
