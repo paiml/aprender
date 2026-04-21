@@ -719,6 +719,15 @@ pub enum ExtendedCommands {
         #[arg(long)]
         stream: bool,
     },
+    /// Lint a speculative-decoding observation (CRUX-C-09)
+    SpeculativeLint {
+        /// Path to captured observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+        /// Minimum uplift alpha required (vLLM default 0.30)
+        #[arg(long, default_value = "0.30")]
+        alpha_min: f64,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),

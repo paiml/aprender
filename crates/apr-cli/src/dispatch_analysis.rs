@@ -101,6 +101,11 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stream,
         } => commands::ollama_chat::run(response_file, *stream, cli.json),
 
+        ExtendedCommands::SpeculativeLint {
+            observation_file,
+            alpha_min,
+        } => commands::speculative_lint::run(observation_file, *alpha_min, cli.json),
+
         ExtendedCommands::Hex {
             file,
             tensor,
