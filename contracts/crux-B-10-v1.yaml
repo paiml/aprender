@@ -1,16 +1,13 @@
 # CRUX-B-10 — BitsAndBytes NF4 4-bit
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml.
 
 metadata:
   id: CRUX-B-10
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "B — Inspection & Debugging"
@@ -90,6 +87,24 @@ falsification_tests:
         assert abs(a - b) < 1e-6, (a, b)
     PY
   if_fails: "apr NF4 codebook diverges from bitsandbytes canonical table"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/nf4_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `NF4_CODEBOOK` is a const
+      [f32; 16] whose values byte-match the bitsandbytes canonical
+      table to within 1e-6. The structural invariants (exactly 16
+      entries, symmetric endpoints ±1.0, exact zero at index 7,
+      strict monotonicity) are proved separately so any accidental
+      reshuffle/truncation surfaces as a distinct test failure.
+    tests:
+    - codebook_has_sixteen_entries
+    - codebook_endpoints_are_exact_plus_minus_one
+    - codebook_contains_exact_zero
+    - codebook_is_strictly_monotonic
+    - codebook_matches_bitsandbytes_canonical_values
+    scope: codebook constant table (compile-time)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "`apr inspect --print-nf4-codebook --json` wiring"
 
 - id: FALSIFY-CRUX-B-10-002
   rule: storage footprint correct
@@ -102,11 +117,29 @@ falsification_tests:
     nparams = 1_100_000_000  # TinyLlama ~1.1B
     s1 = os.path.getsize("/tmp/nf4.apr")
     s2 = os.path.getsize("/tmp/nf4dq.apr")
-    # Expect ~0.5 B/weight + block overhead; allow ±10%
     assert 0.45*nparams <= s1 <= 0.65*nparams, s1
     assert s2 < s1, (s1, s2)
     PY
   if_fails: "NF4 storage footprint outside expected envelope"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/nf4_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `expected_nf4_storage_bytes`
+      implements the paper formula (0.5 B/weight codes + per-block
+      f32 scales, or + per-block u8 scales with one f32 super-scale
+      per 256-block super-block when double-quant is on). At 1B
+      weights and block_size=64 the ratio lands in [0.50, 0.65]
+      bytes/weight, matching the paper envelope. Double-quant strictly
+      reduces the byte count (dq < no_dq).
+    tests:
+    - storage_base_is_half_byte_per_weight
+    - storage_with_double_quant_is_smaller
+    - storage_odd_weights_rounds_up_codes
+    - storage_is_deterministic
+    - storage_matches_paper_claim_on_large_tensor
+    scope: storage-bytes formula (pure arithmetic)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: real NF4 quantizer + `apr quantize --method nf4` wiring
 
 - id: FALSIFY-CRUX-B-10-003
   rule: dequant error bounded
@@ -121,12 +154,38 @@ falsification_tests:
         assert t["rel_l2_error"] < 0.06, t
     PY
   if_fails: "NF4 relative L2 error exceeds 0.06 paper bound"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/nf4_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `nf4_quantize_block` +
+      `nf4_dequantize_block` roundtrip, averaged across 128 blocks of
+      deterministic Box-Muller N(0,1) samples, produces mean rel-L2
+      error well under `NF4_MAX_REL_L2_ERROR_SYNTHETIC` (0.15). This
+      is a loose algorithmic-correctness guard — the paper's 0.06
+      bound is for real LLM weight tensors whose distribution matches
+      the codebook quantile design, and requires a real quantizer run
+      against a real tensor to discharge fully. Zero-block roundtrips
+      bit-exactly, absmax element reconstructs bit-exactly.
+    tests:
+    - nearest_index_of_zero_is_seven
+    - nearest_index_of_one_is_fifteen
+    - nearest_index_of_neg_one_is_zero
+    - nearest_index_is_deterministic
+    - nearest_index_saturates_outside_codebook_range
+    - zero_block_roundtrips_to_zero
+    - absmax_weight_reconstructs_exactly
+    - block_quantize_is_deterministic
+    - rel_l2_on_identical_is_zero
+    - rel_l2_on_zero_input_is_infinity
+    - nf4_mean_roundtrip_error_under_synthetic_gaussian_bound
+    scope: per-block NF4 quantize/dequant + rel-L2 bound (pure math)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: real N(0,1) synthetic tensor fixture + `apr diff --json` harness
 
 - id: FALSIFY-CRUX-B-10-004
   rule: parity with bitsandbytes dequant
   prediction: "max_abs_diff(apr_dequant, bnb_dequant) < 1e-6 on identical input"
   test: |
-    # TODO: requires CUDA for bitsandbytes; gate with env probe
     command -v nvidia-smi >/dev/null || { echo "no GPU"; exit 2; }
     apr quantize test-data/tinyllama-f16.apr --method nf4 -o /tmp/apr-nf4.apr
     apr export /tmp/apr-nf4.apr --format safetensors --dequant -o /tmp/apr-deq.safetensors
@@ -140,6 +199,26 @@ falsification_tests:
     assert (apr_deq - bnb_deq).abs().max().item() < 1e-6
     PY
   if_fails: "apr NF4 dequant does not bit-match bitsandbytes"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/nf4_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `nearest_codebook_index` is
+      deterministic (first-minimum wins on exact ties), saturates
+      outside the codebook range to {0, 15}, and produces stable
+      output across calls. Given identical codebook + identical
+      absmax-scale + identical argmin rule, every weight maps to the
+      same index across runs — this is the prerequisite for bit-exact
+      parity with bitsandbytes.
+    tests:
+    - nearest_index_of_zero_is_seven
+    - nearest_index_of_one_is_fifteen
+    - nearest_index_of_neg_one_is_zero
+    - nearest_index_is_deterministic
+    - nearest_index_saturates_outside_codebook_range
+    - block_quantize_is_deterministic
+    scope: argmin-nearest determinism (prerequisite for bit-exact)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: GPU harness (bitsandbytes quantize_nf4 on same fp16 input)
 
 proof_obligations:
 - type: invariant
@@ -156,10 +235,21 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-B-10-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "`apr inspect --print-nf4-codebook --json` wiring"
+  - falsify_id: FALSIFY-CRUX-B-10-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: real NF4 quantizer + `apr quantize --method nf4` wiring
+  - falsify_id: FALSIFY-CRUX-B-10-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: real N(0,1) synthetic tensor fixture + `apr diff --json` harness
+  - falsify_id: FALSIFY-CRUX-B-10-004
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: GPU harness (bitsandbytes quantize_nf4 on same fp16 input)
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-b-10` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-b-10
   priority: high
   auto_created: true
