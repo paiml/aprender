@@ -76,6 +76,7 @@ fn registered_commands() -> Vec<&'static str> {
         "dry-sampling-lint",
         "awq-lint",
         "oom-lint",
+        "tool-use-lint",
         "oracle",
         "encrypt",
         "decrypt",

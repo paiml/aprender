@@ -1,33 +1,32 @@
 # CRUX-C-11 — OpenAI tool-use function calling
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-11
-  version: "1.0.0-draft"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: vllm
-  demand_score: 5  # 1..5, critical priority in pmat work
+  demand_score: 5
   intake_status: missing
   description: >
-    OpenAI tool-use function calling. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    OpenAI tool-use function calling. apr /v1/chat/completions must
+    honour the OpenAI shape: when `tools[]` is declared the response
+    emits `choices[0].message.tool_calls[]` with a matching
+    `function.name`, JSON-string `function.arguments` that validates
+    against the declared `parameters` schema, and `finish_reason ==
+    "tool_calls"`. When `tools[]` is absent, no tool_calls are
+    synthesized and finish_reason ∈ {stop, length}.
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/huggingface/accelerate
-  - github.com/pytorch/pytorch — DDP/FSDP
+  - 'https://platform.openai.com/docs/guides/function-calling'
+  - 'https://docs.vllm.ai/en/latest/features/tool_calling.html'
+
 equations:
   tool_call_response_schema:
     formula: |
@@ -41,7 +40,6 @@ equations:
         choices[0].message.tool_calls[i].function.name      : string (matches a provided tool.function.name)
         choices[0].message.tool_calls[i].function.arguments : string (JSON-parseable)
         choices[0].finish_reason : "tool_calls"
-      Ref: https://platform.openai.com/docs/guides/function-calling
     domain: POST /v1/chat/completions with tools[]
     codomain: JSON response with tool_calls[]
     invariants:
@@ -88,6 +86,43 @@ falsification_tests:
     echo "$R" | jq -e '.choices[0].message.tool_calls[0].function.arguments | type == "string"' >/dev/null
     echo "$R" | jq -e '.choices[0].finish_reason == "tool_calls"' >/dev/null
   if_fails: "apr /v1/chat/completions does not emit OpenAI-shaped tool_calls[]; client integrations broken"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/tool_use_classifier.rs
+    cli_path: crates/apr-cli/src/commands/tool_use_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_11.rs
+    e2e_tests:
+    - falsify_crux_c_11_001_shape_ok_on_well_formed_call
+    - falsify_crux_c_11_001_shape_rejects_unknown_name
+    - falsify_crux_c_11_001_shape_rejects_non_function_type
+    - falsify_crux_c_11_001_shape_rejects_non_json_arguments
+    - falsify_crux_c_11_001_shape_rejects_wrong_finish_reason
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-parsed
+      `choices[0].message`:
+        (a) each tool_call.call_type == "function" (OpenAI spec; non-
+            function dispatches are rejected with `WrongCallType`);
+        (b) each tool_call.name ∈ declared_tools.map(.name) (unknown
+            names are rejected with `UnknownToolName`);
+        (c) each tool_call.arguments_json_string is JSON-parseable
+            (`ArgumentsNotJson` if not — catches the common bug of
+            emitting a bare object instead of the OpenAI-specified
+            string form);
+        (d) `finish_reason == "tool_calls"` iff tool_calls is non-empty
+            (`FinishReasonMismatch` surfaces the actual value and the
+            expected set so the server can be debugged).
+      Classifier is a pure function of `(declared_tools, tool_calls,
+      finish_reason)` and deterministic.
+    tests:
+    - shape_ok_on_well_formed_single_call
+    - shape_unknown_tool_name_rejected
+    - shape_non_function_type_rejected
+    - shape_non_json_arguments_rejected
+    - shape_wrong_finish_reason_with_tool_calls_rejected
+    - shape_empty_calls_with_stop_is_ok
+    - shape_empty_calls_with_tool_calls_finish_reason_rejected
+    scope: "(declared_tools, tool_calls, finish_reason) → ToolCallsShapeOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live /v1/chat/completions handler in aprender-serve emitting OpenAI-shaped tool_calls"
 
 - id: FALSIFY-CRUX-C-11-002
   rule: arguments are valid JSON matching parameter schema
@@ -107,6 +142,43 @@ falsification_tests:
     jsonschema.validate(args, schema)
     PY
   if_fails: "arguments string is not valid JSON or violates declared parameter schema"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/tool_use_classifier.rs
+    cli_path: crates/apr-cli/src/commands/tool_use_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_11.rs
+    e2e_tests:
+    - falsify_crux_c_11_002_schema_ok_on_matching_object
+    - falsify_crux_c_11_002_schema_rejects_missing_required
+    - falsify_crux_c_11_002_schema_rejects_wrong_type
+    sub_claim: |
+      Algorithm-level necessary conditions: `classify_arguments_against_schema`
+      validates the declared JSON-schema subset
+      `{type:object, required:[...], properties:{name:{type:T}}}`:
+        (a) arguments parses as JSON else `ArgumentsNotJson{raw}`;
+        (b) parsed is an object else `ArgumentsNotObject`;
+        (c) every `required` property is present else
+            `MissingRequiredProperty{name}`;
+        (d) property type matches declared type (with the standard
+            "integer is a number" widening) else `WrongPropertyType
+            {name, expected, got}`;
+        (e) unsupported schema shapes return `UnsupportedSchema{reason}`
+            rather than silently passing — no path through the
+            classifier quietly admits uninspected input.
+    tests:
+    - schema_ok_on_matching_object
+    - schema_missing_required_property_rejected
+    - schema_wrong_property_type_rejected
+    - schema_integer_accepted_for_number_type
+    - schema_number_rejected_for_integer_type
+    - schema_non_json_arguments_rejected
+    - schema_non_object_arguments_rejected
+    - schema_top_level_non_object_is_unsupported
+    - schema_unsupported_property_type_is_flagged
+    - schema_property_without_type_is_unsupported
+    - schema_validator_is_deterministic
+    scope: "(arguments_json_string, parameters_schema) → SchemaValidationOutcome (pure JSON subset)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "real model emitting JSON arguments conforming to a tool's JSON-Schema parameters (beyond the supported subset: enum, anyOf, nested required, pattern)"
 
 - id: FALSIFY-CRUX-C-11-003
   rule: no tools → no tool_calls
@@ -118,6 +190,31 @@ falsification_tests:
     echo "$R" | jq -e '(.choices[0].message.tool_calls // []) | length == 0' >/dev/null
     echo "$R" | jq -e '.choices[0].finish_reason | IN("stop","length")' >/dev/null
   if_fails: "apr emits tool_calls when client did not request them; protocol violation"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/tool_use_classifier.rs
+    cli_path: crates/apr-cli/src/commands/tool_use_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_11.rs
+    e2e_tests:
+    - falsify_crux_c_11_003_passthrough_ok_with_stop
+    - falsify_crux_c_11_003_passthrough_rejects_synthesized_calls
+    - falsify_crux_c_11_003_passthrough_rejects_tool_calls_finish_reason
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_no_tools_passthrough`
+      rejects any response where tool_calls is non-empty
+      (`UnexpectedToolCalls{n_calls}`) or where finish_reason is
+      anything other than "stop" or "length"
+      (`WrongFinishReason{got, expected_any_of}`). The only pass
+      path is (tool_calls empty) ∧ (finish_reason ∈ {stop, length}).
+      Pure function; deterministic.
+    tests:
+    - no_tools_empty_calls_with_stop_is_ok
+    - no_tools_empty_calls_with_length_is_ok
+    - no_tools_synthesized_calls_rejected
+    - no_tools_wrong_finish_reason_rejected
+    - no_tools_classifier_is_deterministic
+    scope: "(tool_calls, finish_reason) → NoToolsPassthroughOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live /v1/chat/completions handler returning a response when tools[] is absent"
 
 proof_obligations:
 - type: invariant
@@ -134,10 +231,38 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-C-11-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /v1/chat/completions handler emitting OpenAI-shaped tool_calls"
+  - falsify_id: FALSIFY-CRUX-C-11-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "real model + full JSON-Schema feature set beyond object/required/type subset"
+  - falsify_id: FALSIFY-CRUX-C-11-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /v1/chat/completions handler response when tools[] is absent"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/tool_use_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/tool_use_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_11.rs
+    contract: contracts/crux-C-11-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr tool-use-lint --observation-file <obs.json>` dispatches three
+    classifiers (shape, schema, passthrough) over captured JSON. e2e suite
+    (16 tests) exercises help surface, bare-invocation rejection, per-gate
+    ok+reject paths, empty/nonexistent file rejection, and --json shape.
+    Full ACTIVE discharge remains blocked on live /v1/chat/completions
+    handler in aprender-serve emitting OpenAI-shaped tool_calls[].
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-11` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-11
   priority: critical
   auto_created: true
