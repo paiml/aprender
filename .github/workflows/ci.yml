@@ -43,6 +43,15 @@ jobs:
   # APR-MONO: Workspace-wide test (all 75 crates)
   workspace-test:
     runs-on: [self-hosted, X64, Linux]
+    # Repo-wide serialization. #994's per-PR target dir removed cache stomping,
+    # but 3 PRs × 70 cold crates still saturated the self-hosted runner's CPU
+    # and all three timed out at 45min simultaneously. Serializing this one
+    # job (not the whole workflow — ci/gate/lint still run in parallel) trades
+    # backlog latency for reliable cold-compile completion. `cancel-in-progress:
+    # false` means queued runs wait instead of being dropped.
+    concurrency:
+      group: workspace-test-serial
+      cancel-in-progress: false
     container:
       image: localhost:5000/sovereign-ci:stable
       volumes:
