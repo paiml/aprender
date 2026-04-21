@@ -2,11 +2,11 @@
 
 metadata:
   id: CRUX-A-14
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -55,6 +55,23 @@ falsification_tests:
     actual=$(sha256sum /tmp/out.gguf | cut -c1-64)
     [ "$expected" = "$actual" ]
   if_fails: rule 's3:// URI downloads and sha256-verifies against MinIO-hosted fixture' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/pull_scheme.rs
+    sub_claim: |
+      Algorithm-level necessary condition: any well-formed s3:// URI
+      classifies as PullScheme::S3 { bucket, key } with both fields
+      non-empty, never HTTPS/HF/Local, and with AWS_ACCESS_KEY_ID as the
+      standard credential env var. This is a necessary (not sufficient)
+      precondition for the MinIO-hosted sha256-parity gate.
+    tests:
+    - s3_scheme_classifies_as_s3
+    - object_store_requires_bucket_and_key
+    - object_store_transports_never_local_or_hf
+    - object_store_keys_preserve_path_separators
+    - credential_env_names_are_standard_not_aprender_specific
+    scope: scheme classifier + credential env mapping (pure function, no I/O)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: MinIO harness + sha256 parity against `aws s3 cp` on same object
 - id: FALSIFY-CRUX-A-14-002
   rule: unsupported scheme exits 2 with actionable error
   prediction: "apr pull ftp://example.com/model → exit 2, stderr mentions supported schemes"
@@ -64,6 +81,20 @@ falsification_tests:
     grep -E "s3|gs|az|hf" /tmp/err
 
   if_fails: rule 'unsupported scheme exits 2 with actionable error' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/pull_scheme.rs
+    sub_claim: |
+      Algorithm-level necessary condition: any scheme NOT in
+      {s3, gs, az, hf, file, http, https} causes classify_pull_source to
+      return Err, and the Err payload includes the word "unsupported" so
+      the dispatch layer can emit a user-facing message. Schemes with the
+      ://-shape are inspected by prefix, so ftp://, ssh://, rsync:// all
+      reject at classification time before any transport is chosen.
+    tests:
+    - unsupported_scheme_is_error
+    scope: scheme classifier (pure function, no I/O)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: end-to-end exit-code-2 + stderr-scheme-list test via CLI integration harness
 proof_obligations:
 - type: equivalence
   property: "apr pull s3://... matches `aws s3 cp` byte-identical + ETag-verified"
@@ -77,6 +108,13 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-A-14-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: MinIO harness for full sha256-byte-identical verification
+  - falsify_id: FALSIFY-CRUX-A-14-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: CLI end-to-end exit-code-2 test
 
 pmat_work_tracking:
   ticket_tag: crux-crux-a-14
