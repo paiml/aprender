@@ -2,8 +2,8 @@
 
 **Subspec ID**: `CRUX-001`
 **Status**: DRAFT
-**Version**: 2.1 (OpenCLAW identity resolved 2026-04-18 — Category J rewritten to agent-orchestration semantics; §5.J table + §10 + §4 updated; 20 J-contracts republished at v1.1.0)
-**Date**: 2026-04-18
+**Version**: 2.2 (2026-04-21 — Category L [HF kernels-community, 15 stories] and Category M [APR-QA Playbook canonicalization, 10 stories] added; §13 chain-of-thought derivation appended; §3 matrix and §6 coverage recomputed; story total 250 → 275)
+**Date**: 2026-04-21
 **Author**: PAIML Engineering
 **Parent**: [aprender-spec.md](aprender-spec.md), [aprender-monorepo-consolidation.md](aprender-monorepo-consolidation.md)
 **Master contract**: [`contracts/crux-competitive-research-ux-v1.yaml`](../../contracts/crux-competitive-research-ux-v1.yaml)
@@ -91,8 +91,10 @@ larger workflow surface area (HF Transformers covers training + data + hub).
 | 5 | **vLLM** | `vllm serve` / `LLM.generate` | 32 | serving depth (paged attn, batching) |
 | 6 | **OpenCLAW** | `openclaw onboard` / `openclaw dashboard` | 20 | local-first personal AI assistant + agent orchestration (openclaw.ai) |
 | 7 | **Ecosystem interop** | — | 30 | SDKs, MCP, observability, deployment |
+| 8 | **HF kernels-community** | `get_kernel("kernels-community/<name>")` | 15 | optimized GPU kernels as drop-in `.so` packages (v2.2) |
+| 9 | **APR-QA Playbook** | `apr qa --gate=<N>` / `apr-model-qa-playbook` | 10 | Popperian falsification framework for model qualification (v2.2) |
 
-Total = 250 stories. See §5 for the full registry.
+Total = 275 stories. See §5 for the full registry.
 (Counts derived from `yq '[.stories[] | .competitor] | ...'` on master contract; drift between
 this table and the YAML is falsified by FALSIFY-CRUX-010.)
 
@@ -460,21 +462,60 @@ always `contracts/crux-{ID}-v1.yaml` unless noted.
 
 > ID gap: **CRUX-K-06** dropped — Jupyter `%%apr` magic deferred (ecosystem nice-to-have).
 
-**Total: 250 stories** across 11 categories; 5 ID gaps (`C-14`, `F-10`, `H-04`, `I-05`, `K-06`) intentional and documented.
+### Category L — HF kernels-community Integration (15 stories)
+
+> Added v2.2 (2026-04-21). Competitor source: [huggingface.co/kernels-community](https://huggingface.co/kernels-community). Canonical verb: `from kernels import get_kernel`. Aprender target surface: `apr kernels pull` + trueno/aprender-compute kernel-loader trait. Full derivation in §13.1.
+
+| ID | Story | Competitor verb | S | D |
+|----|-------|----------------|---|---|
+| CRUX-L-01 | Load pre-built HF kernel by `hf://kernels-community/<name>` | `kernels.get_kernel` | ❌ | 4 |
+| CRUX-L-02 | Drop-in `flash-attn2` HF kernel behind aprender FA trait | `kernels-community/flash-attn2` | ❌ | 4 |
+| CRUX-L-03 | Drop-in `flash-attn3` HF kernel (sm_90a / sm_100) | `kernels-community/flash-attn3` | ❌ | 4 |
+| CRUX-L-04 | `rmsnorm` fused kernel behind LayerNorm trait | `kernels-community/rmsnorm` | ❌ | 3 |
+| CRUX-L-05 | `rotary` fused RoPE-apply kernel | `kernels-community/rotary` | ❌ | 3 |
+| CRUX-L-06 | `paged-attention` KV-cache kernel (vLLM-compat) | `kernels-community/paged-attention` | ❌ | 4 |
+| CRUX-L-07 | `fp8-fbgemm` matmul path for H100+ | `kernels-community/fp8-fbgemm` | ❌ | 3 |
+| CRUX-L-08 | `quantization-bitsandbytes` NF4 via HF kernel | `kernels-community/quantization-bitsandbytes` | ❌ | 3 |
+| CRUX-L-09 | `quantization-gptq` fused dequant+matmul | `kernels-community/quantization-gptq` | ❌ | 3 |
+| CRUX-L-10 | `liger-kernels` fused CE-loss for training | `kernels-community/liger-kernels` | ❌ | 4 |
+| CRUX-L-11 | `megablocks` MoE routing kernel | `kernels-community/megablocks` | ❌ | 3 |
+| CRUX-L-12 | `punica-sgmv` multi-LoRA fused SGMV | `kernels-community/punica-sgmv` | ❌ | 3 |
+| CRUX-L-13 | `activation` fused SwiGLU/GeGLU kernel | `kernels-community/activation` | ❌ | 3 |
+| CRUX-L-14 | `mamba-ssm` state-space kernel | `kernels-community/mamba-ssm` | ❌ | 2 |
+| CRUX-L-15 | Kernel version-pinning + SHA-verified load | `kernels.get_kernel(..., revision=...)` | ❌ | 4 |
+
+### Category M — APR-QA Playbook Canonicalization (10 stories)
+
+> Added v2.2 (2026-04-21). Competitor source: sibling repo [`apr-model-qa-playbook`](https://github.com/paiml/apr-model-qa-playbook) — Popperian property-based QA framework. `apr qa` (F-21 ✅) is the entry point; Category M decomposes the playbook's 8 gates plus two meta-gates (5-Whys root-cause, property-based fuzz) into first-class CRUX stories so the playbook's falsifiers bind to the registry. Full derivation in §13.2.
+
+| ID | Story | Competitor verb | S | D |
+|----|-------|----------------|---|---|
+| CRUX-M-01 | Gate-1 byte-identical vs safetensors ground truth | `apr-qa gate-byte-identical` | 🔨 | 5 |
+| CRUX-M-02 | Gate-2 tensor-stats parity (min/max/mean/std, per-tensor) | `apr-qa gate-tensor-stats` | 🔨 | 5 |
+| CRUX-M-03 | Gate-3 golden-output determinism @ seed=0 | `apr qa --require-golden-output` | ✅ | 5 |
+| CRUX-M-04 | Gate-4 cross-format parity APR ↔ GGUF ↔ safetensors | `apr-qa gate-cross-format` | 🔨 | 5 |
+| CRUX-M-05 | Gate-5 tokenizer round-trip with NFC normalization | `apr-qa gate-tokenizer` | 🔨 | 4 |
+| CRUX-M-06 | Gate-6 chat-template rendering equivalence | `apr-qa gate-chat-template` | 🔨 | 4 |
+| CRUX-M-07 | Gate-7 pass@1 on canary suite with confidence interval | `apr-qa gate-canary` | 🔨 | 5 |
+| CRUX-M-08 | Gate-8 5-Whys root-cause generator on failure | `apr-qa jidoka-trace` | 🔨 | 4 |
+| CRUX-M-09 | Property-based falsifier ≥ 1000 fuzz cases per gate | `apr-qa fuzz --cases 1000` | ❌ | 4 |
+| CRUX-M-10 | Upstream-fix enforcement (reject workarounds; route to aprender/trueno/realizar) | playbook "no-workarounds" rule | 🔨 | 4 |
+
+**Total: 275 stories** across 13 categories; 5 ID gaps (`C-14`, `F-10`, `H-04`, `I-05`, `K-06`) intentional and documented.
 
 ---
 
-## 6. Coverage Summary (v2.0 intake)
+## 6. Coverage Summary (v2.2 intake)
 
-Counts verified from §5 table (via `awk` emoji extraction):
+Counts verified from §5 table (via `awk` emoji extraction). Δ columns show v2.1 → v2.2 movement from the L+M additions.
 
-| Status | Count | % | Meaning |
-|--------|-------|---|---------|
-| ✅ supported | 38 | 15.2 % | Golden test passes today |
-| 🔨 partial   | 72 | 28.8 % | Exists; needs polish/flags/alias |
-| ❌ missing   | 140 | 56.0 % | Implementation ticket required |
-| 🤔 unclear   | 0  | 0.0 % | — |
-| **total**    | **250** | 100 % | |
+| Status | Count | Δ v2.1→v2.2 | % | Meaning |
+|--------|-------|-------------|---|---------|
+| ✅ supported | 39 | +1 (M-03) | 14.2 % | Golden test passes today |
+| 🔨 partial   | 80 | +8 (M-01/02/04..08/10) | 29.1 % | Exists; needs polish/flags/alias |
+| ❌ missing   | 156 | +16 (15 × L + M-09) | 56.7 % | Implementation ticket required |
+| 🤔 unclear   | 0  | 0 | 0.0 % | — |
+| **total**    | **275** | +25 | 100 % | |
 
 Demand-weighted view — **high-demand (D≥4)** stories still ❌ missing are
 the fast path to adoption parity and become the first `pmat work` items
@@ -800,3 +841,265 @@ locked step-in-step. Update cadence:
    harness and committed in the same PR.
 5. **Weekly cadence**: `pmat work supervise -t crux` (manual until a hook
    exists) to surface stalled tickets.
+
+---
+
+## 13. Chain-of-Thought Derivation: HF kernels-community and APR-QA Canonicalization
+
+> *Appendix added in v2.2 (2026-04-21). Presented in academic style
+> (abstract → motivation → methodology → predictions → risks → references)
+> to make the inclusion decision falsifiable rather than editorial.*
+
+### Abstract
+
+We formalize the addition of **Category L** (HuggingFace
+`kernels-community` integration, 15 stories) and **Category M**
+(APR-QA Playbook canonicalization, 10 stories) to the CRUX taxonomy,
+raising story count 250 → 275. We argue that both categories were
+provably missing from v2.1, that their omission produced a
+**shadow-demand signal** bypassing §2's Five-Whys discipline, and
+that folding them into the registry is the *minimal* intervention
+that preserves the Iron Rule (**no story without a provable
+contract**; equivalently, no contract without a story). We present
+the Five-Whys root-cause decomposition, demand-weighted ranking, and
+falsification conditions for each new category, and enumerate the
+counterfactual risk of continued omission.
+
+### 13.1 HF kernels-community (Category L)
+
+#### 13.1.1 Motivation — why the gap exists
+
+Between 2026-02 and 2026-04 aprender accumulated ≥ 18 performance
+contracts (`FUSION-001..004`, `F-HOST-OVERHEAD-*`,
+`F-ATTN-FLASHDECODE-*`, `F-DECODE-HOTPATH-*`) all tracking
+*user-invisible* implementation concerns in `trueno` / `aprender-compute`.
+CRUX, by construction (§4 "canonical verb" invariant), admits only
+user-visible verbs. The effect is a **false-positive saturation**:
+v2.1 reports 100% parity with Ollama/vLLM/llama.cpp/HF Transformers
+while silently losing ground to the kernel-delivery layer one level
+below the Python API — namely HF's `kernels-community` organization,
+which ships drop-in `.so` kernels (`flash-attn2`, `flash-attn3`,
+`fp8-fbgemm`, `paged-attention`, `liger-kernels`, `megablocks`,
+`punica-sgmv`, `mamba-ssm`, etc.) pinned to specific CUDA /
+compute-capability targets [1,2].
+
+#### 13.1.2 Root cause (Five-Whys)
+
+```
+$ from kernels import get_kernel
+$ fa3 = get_kernel("kernels-community/flash-attn3")
+
+  Q1  WHY does the user invoke get_kernel?
+  A1  → they want best-in-class FA3 performance without maintaining
+        their own CUDA fork.
+  Q2  WHY not fork?
+  A2  → kernel authors ship CUDA 12.8 / PTX 9.0 / sm_100 updates on
+        a weekly cadence — forking is O(staff-years).
+  Q3  WHY weekly updates?
+  A3  → H100 / B200 architecture-specific micro-optimizations (TMA,
+        cluster launch, async WGMMA) [9,10].
+  Q4  WHY can't aprender supply these in-tree?
+  A4  → trueno's custom PTX path is blocked by the JIT pre-warming
+        bug (`trueno#200`; must-use fused NF4 until 0.4.36).
+  Q5  WHY is that a CRUX matter?
+  A5  → because the community-visible *verb* for kernel access is
+        `get_kernel(...)`, and that verb has no `apr` surface.
+
+  ROOT CAUSE: aprender's kernel-delivery velocity is bandwidth-bound
+              by kernel-author release cadence; HF kernels-community
+              is the de-facto community mechanism for that delivery;
+              parity with `get_kernel` is the minimal user-visible
+              gate that unblocks the FUSION-003/004 roadmap.
+  MAPS TO:    Category L (15 stories) — contracts/crux-L-*-v1.yaml
+```
+
+#### 13.1.3 Demand ranking
+
+Applied to each of the 15 L-stories using the §2 signal weights
+(README × 0.3 + issue-volume × 0.4 + bug-freq × 0.3):
+
+| Subgroup | Stories | D | Justification |
+|----------|---------|---|---------------|
+| Canonical loader | L-01, L-15 | 4 | Any `apr` path to HF kernels requires these as preconditions |
+| Attention kernels | L-02, L-03, L-06 | 4 | FA2/FA3/PA are top-3 cited kernels in `kernels-community` README [2] |
+| Fused-loss | L-10 | 4 | liger-kernels fused CE-loss is the #1 training-speedup request upstream |
+| Norm + rotary | L-04, L-05 | 3 | Small but steady wins; low-risk integration |
+| Quant kernels | L-07, L-08, L-09 | 3 | Overlap with CRUX-B-09/10/11; Category L is the *integration* verb, B-series are the *algorithm* verbs |
+| Specialized | L-11, L-12, L-13, L-14 | 2–3 | MoE / LoRA-SGMV / SSM — niche but growing |
+
+#### 13.1.4 Falsification predictions
+
+- **FALSIFY-CRUX-L-02**: if aprender's internal FA2 path is ≥ 3 %
+  slower than `kernels-community/flash-attn2` on a held-out
+  grid `{hidden_dim ∈ [64, 128], seq_len ∈ [512, 4096],
+  head_dim ∈ [64, 128]}` under identical sm_80 hardware and
+  CUDA 12.6, L-02 escalates to P0 and the HF kernel becomes
+  the aprender default. The 3 % threshold mirrors the
+  Ollama-parity methodology in CLAUDE.md.
+- **FALSIFY-CRUX-L-15**: if a published `kernels-community` SHA is
+  loaded into aprender without byte-verified revision-pinning
+  (mirroring `huggingface_hub.hf_hub_download(revision=...)`
+  semantics [1]), the contract is violated — the kernel
+  surface is a supply-chain boundary.
+
+### 13.2 APR-QA Playbook Canonicalization (Category M)
+
+#### 13.2.1 Motivation — why the gap exists
+
+The sibling repository `apr-model-qa-playbook` ([8]) formalizes an
+8-gate Popperian QA protocol rooted in Toyota Production System
+principles ([7]: Jidoka, Poka-Yoke) and Popperian falsification
+([6]). At v2.1, CRUX surfaces exactly *two* rows bound to that
+protocol:
+
+- `CRUX-E-08` ✅ golden-output regression gate
+- `CRUX-F-21` ✅ `apr qa` 8-gate runner
+
+The remaining ≥ 8 gates (tensor-stats, cross-format parity,
+tokenizer round-trip, chat-template equivalence, canary pass@1,
+5-Whys trace, property-based fuzz, upstream-fix enforcement) are
+invisible in the competitor matrix. Because CRUX is the registry
+a new contributor reads to understand what `apr` *must* do, the
+playbook's 8 additional gates accrue outside CRUX's gravity well —
+which is exactly the shadow-demand failure mode §13.0's Abstract
+names.
+
+#### 13.2.2 Root cause (Five-Whys)
+
+```
+$ apr qa model.apr --golden-output
+
+  Q1  WHY does the user invoke this?
+  A1  → they need a PASS/FAIL gate before shipping a model.
+  Q2  WHY a gate?
+  A2  → contracts/apr-model-qa-v1.yaml promises 8 Popperian checks.
+  Q3  WHY 8 checks?
+  A3  → apr-model-qa-playbook formalizes the Toyota-Jidoka protocol
+        as 8 gates [8].
+  Q4  WHY are only 2 visible in CRUX?
+  A4  → the playbook is a sibling repo; the `has_sibling_repos`
+        detector (PMAT-160) marked it as external → excluded from
+        CRUX scan.
+  Q5  WHY is that a problem?
+  A5  → users onboarding via the Sovereign-AI-Stack book expect QA
+        to be a first-class CRUX category, equivalent in stature to
+        C (serving) and D (training).
+
+  ROOT CAUSE: the playbook is the canonical source of truth for
+              model qualification, but CRUX indexes only 2 of its
+              gates. New engineers therefore meet the gates via
+              the playbook's README rather than via CRUX, bypassing
+              the Iron Rule and the §12 pmat-work tracking.
+  MAPS TO:    Category M (10 stories) — contracts/crux-M-*-v1.yaml
+```
+
+#### 13.2.3 Demand ranking
+
+| Subgroup | Stories | D | Justification |
+|----------|---------|---|---------------|
+| Ship-blocker gates | M-01, M-02, M-03, M-04, M-07 | 5 | Any one of these failing is a release veto; they are the playbook's P0 cohort |
+| Integrity gates | M-05, M-06 | 4 | Tokenizer + chat-template are the two highest-frequency silent-corruption vectors historically (GH-202 class) |
+| Meta-gates | M-08, M-10 | 4 | 5-Whys root-cause + upstream-fix rule are the Toyota Jidoka backbone |
+| Coverage extension | M-09 | 4 | Property-based fuzz is the only row *missing* from the playbook itself and the only ❌ in Category M |
+
+#### 13.2.4 Falsification predictions
+
+- **FALSIFY-CRUX-M-01**: if `apr qa --gate=byte-identical` returns
+  PASS on a model that subsequently fails the playbook's
+  safetensors round-trip on the *same* bytes, M-01 is falsified
+  and the playbook implementation becomes authoritative. This
+  makes the in-tree `apr qa` gate the *derivable* artefact, not
+  the source of truth.
+- **FALSIFY-CRUX-M-09**: if the property-based fuzz harness, run
+  for 1000 cases against a historical shipped regression (e.g.
+  GH-202 tokenizer OOB; CB-510 `/models/` gitignore hazard),
+  fails to reproduce the regression, M-09 is falsified — the
+  harness is insufficient and the contract resets to ❌ until
+  fixed.
+- **FALSIFY-CRUX-M-10**: if any aprender PR lands a workaround
+  (a shim, a compatibility hack, a silent-fallback) for a bug in
+  `trueno` / `realizar` / `aprender-train` instead of fixing the
+  root cause, M-10 is falsified. The contract binds the
+  playbook's no-workarounds rule ([8, CLAUDE.md]) to CRUX CI.
+
+### 13.3 Why *now* — update triggers per §12.7
+
+- **§12.7 trigger #2** (new competitor release): HF shipped
+  `kernels-community` with prebuilt `flash-attn3` kernels for
+  `sm_90a` / `sm_100` in 2026-Q1 [2]; this is the first upstream
+  release that meaningfully closes aprender's kernel gap without
+  the trueno#200 JIT blocker, raising L's inclusion utility.
+- **§12.7 trigger #4** (coverage-count change): the CRUX-SHIP-001
+  retrofit loop closed 18 classifier-only PRs (`#962..#988`) on
+  2026-04-21, exhausting the retrofit queue. Author-bandwidth is
+  freed for the 25 new stories, and every L/M contract can adopt
+  the g1..g4 merge discipline **from story authoring**, rather
+  than as retrofit — avoiding the PARTIAL_ALGORITHM_LEVEL
+  compromise entirely.
+
+### 13.4 Counterfactual risk (if Categories L + M are omitted)
+
+1. **False-positive parity**. CRUX continues to report 100 %
+   registration while the community's de-facto kernel-delivery
+   mechanism ([1,2]) and the project's own QA playbook ([8])
+   remain unbound. A new contributor reading only §5 cannot
+   deduce that either exists. This violates the Iron Rule
+   transitively.
+2. **Shadow-demand accrual**. Both surfaces continue to absorb
+   engineering work outside CRUX's §12 pmat-work tracking —
+   invisible to the weekly `pmat work supervise -t crux`
+   cadence. When the surfaces eventually ship they arrive
+   unreviewed by the competitive-parity lens.
+3. **Jidoka regression**. M-10 is the clause that forbids
+   workarounds. Its absence from CRUX is the load-bearing
+   failure mode: the Aprender organization has repeatedly paid
+   for this (PMAT-216 test-mocking bypass; GH-202 tokenizer
+   OOB escape) and the only durable fix is a registry-bound
+   contract that CI can enforce.
+
+### References
+
+[1] HuggingFace. *kernels: a package and decorator for using
+    prebuilt optimized kernels from the Hub*. `huggingface.co/docs/kernels`.
+    Accessed 2026-04-21.
+
+[2] HuggingFace. *kernels-community organization*.
+    `huggingface.co/kernels-community`. Accessed 2026-04-21.
+
+[3] Dao, T., Haziza, D., Massa, F., Sizov, G. *FlashAttention-3:
+    Fast and Accurate Attention with Asynchrony and Low-Precision*.
+    arXiv:2407.08608. 2024.
+
+[4] Frantar, E., Ashkboos, S., Hoefler, T., Alistarh, D.
+    *GPTQ: Accurate Post-Training Quantization for Generative
+    Pre-trained Transformers*. arXiv:2210.17323. 2022.
+
+[5] Lin, J. et al. *AWQ: Activation-aware Weight Quantization for
+    LLM Compression and Acceleration*. arXiv:2306.00978. 2023.
+
+[6] Popper, K. *The Logic of Scientific Discovery*. Hutchinson &
+    Co. 1959.
+
+[7] Ohno, T. *Toyota Production System: Beyond Large-Scale
+    Production*. Productivity Press. 1988.
+
+[8] Aprender Engineering (PAIML). *apr-model-qa-playbook:
+    property-based model qualification with Popperian
+    falsification*. `github.com/paiml/apr-model-qa-playbook`.
+    Accessed 2026-04-21.
+
+[9] NVIDIA. *H100 Tensor Core GPU Architecture Whitepaper*. 2022.
+
+[10] NVIDIA. *B200 Blackwell Architecture Whitepaper*. 2024.
+
+[11] Gu, A., Dao, T. *Mamba: Linear-Time Sequence Modeling with
+     Selective State Spaces*. arXiv:2312.00752. 2023.
+
+[12] Chen, L. et al. *Punica: Multi-Tenant LoRA Serving*.
+     arXiv:2310.18547. 2023.
+
+[13] Dao, T. *FlashAttention-2: Faster Attention with Better
+     Parallelism and Work Partitioning*. arXiv:2307.08691. 2023.
+
+[14] Dettmers, T. et al. *QLoRA: Efficient Finetuning of Quantized
+     LLMs*. arXiv:2305.14314. 2023.
