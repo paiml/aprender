@@ -75,6 +75,10 @@ pub enum ExtendedCommands {
         /// Benchmark specific brick
         #[arg(long)]
         brick: Option<String>,
+        /// Comma-separated latency percentile points for JSON output
+        /// (CRUX-E-07). Default: `50,95,99`. Values must be in (0, 100].
+        #[arg(long, value_delimiter = ',', default_value = "50,95,99")]
+        percentiles: Vec<f64>,
     },
     /// Evaluate model perplexity (spec H13: PPL <= 20) or classification metrics
     Eval {

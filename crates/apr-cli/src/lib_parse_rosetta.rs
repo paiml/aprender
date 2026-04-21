@@ -276,6 +276,7 @@
             prompt: None,
             fast: false,
             brick: None,
+            percentiles: vec![50.0, 95.0, 99.0],
         });
         let paths = extract_model_paths(&bench_cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
