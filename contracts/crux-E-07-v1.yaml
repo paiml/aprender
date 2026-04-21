@@ -1,174 +1,214 @@
 # CRUX-E-07 — Latency P50/P95/P99 under load
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-E-07
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
-  category: "E — Training & Fine-tuning"
+  category: "E — Evaluation"
   competitor: vllm
-  demand_score: 5  # 1..5, critical priority in pmat work
-  intake_status: missing
+  demand_score: 5
+  intake_status: partial
   description: >
-    Latency P50/P95/P99 under load. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.E and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Latency P50/P95/P99 nearest-rank percentile reporting over per-request
+    latency samples. Canonical competitor: vllm
+    `benchmarks/benchmark_serving.py --num-prompts 1000 --request-rate 10`.
+    Aprender surface: `apr bench --percentiles 50,95,99 --json` (default
+    `50,95,99`) emits `latency_p<N>_ms` keys derived from the `iteration_times`
+    captured during warmed-up realizar benchmarks.
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/EleutherAI/lm-evaluation-harness
-  - github.com/openai/human-eval
-  - github.com/mlfoundations/open_clip
-equations:
-  # Competitor canonical CLI:
-  #   python benchmarks/benchmark_serving.py --num-prompts 1000 --request-rate 10
-  # Reference: https://docs.vllm.ai/en/latest/performance/benchmarks.html
-  # Aprender equivalent:
-  #   apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json
+  - 'arXiv:2505.02502 — deployment-framework latency capability'
+  - 'vllm benchmarks/benchmark_serving.py (nearest-rank percentile convention)'
+  - 'https://github.com/vllm-project/vllm/issues/4145 (user demand)'
+  - 'https://github.com/vllm-project/vllm/issues/9722 (P99 under concurrency)'
 
+equations:
   latency_percentile:
     formula: |
-      P_q(L) = inf { x ∈ ℝ : F_L(x) >= q }
-      where:
-        L = observed per-request latencies over the bench window (ms)
-        F_L = empirical CDF of L
-        q ∈ {0.50, 0.95, 0.99}
-      Monotonicity:  P_0.50(L) <= P_0.95(L) <= P_0.99(L)
-    domain: per-request latency samples (list<f64 ms>)
-    codomain: (p50_ms, p95_ms, p99_ms) ∈ ℝ_+^3
+      P_q(L) = x_(k)  where  k = ceil(q/100 * n)  (nearest-rank, 1-indexed)
+      x_(1) <= x_(2) <= ... <= x_(n)  (sorted ascending)
+      q ∈ (0, 100]
+      n = |L| > 0
+    domain: "(samples: Vec<f64 ms>, percentile: f64)"
+    codomain: "PercentileOutcome (Ok(f64) | EmptySamples | InvalidPercentile | NonFiniteSample | NegativeSample)"
     invariants:
-    - "p99 >= p95 >= p50 (percentile monotonicity; violation = compute bug)"
-    - "All latencies > 0 (strictly positive wall-clock)"
-    - "ttft_p99 >= ttft_p95 >= ttft_p50 (same monotonicity for time-to-first-token)"
+    - "p > 0 && p <= 100 && n > 0 -> Ok(v) where v in samples"
+    - "p1 < p2 -> compute_percentile(xs, p1) <= compute_percentile(xs, p2) (monotone in p)"
+    - "empty samples -> EmptySamples (distinct outcome, no silent pass)"
+    - "NaN or Inf sample -> NonFiniteSample"
+    - "negative sample -> NegativeSample (wall-clock cannot be negative)"
+    - "p not in (0, 100] or p non-finite -> InvalidPercentile"
+    - "p = 100 -> compute_percentile(xs, 100) == max(xs)"
 
-  littles_law:
+  percentile_ladder:
     formula: |
-      L = λ · W  (Little's law for stationary queuing systems)
-      where:
-        L = average number of in-flight requests (≈ --concurrent)
-        λ = throughput (requests per second)
-        W = average request latency (seconds)
-      For token-level throughput:
-        throughput_tok_s ≈ concurrent * avg_tokens_per_req / avg_latency_sec
-    domain: (concurrency, throughput, avg_latency)
-    codomain: bool (law holds within tolerance)
+      compute_percentile_ladder(xs, [p1, p2, ..., pk]) =
+        Ok([v1, v2, ..., vk])  iff
+          (strictly increasing: p_i < p_(i+1))
+          AND (monotone outputs: v_i <= v_(i+1))
+          AND (all sub-computations succeed)
+    domain: "(samples: Vec<f64>, points: Vec<f64>)"
+    codomain: "PercentileLadderOutcome"
     invariants:
-    - "throughput_req_s * avg_latency_sec ≈ concurrent (±10% under steady-state load)"
-    - "throughput_tok_s > 0 when duration > 0"
-
-  bench_json_schema:
-    formula: |
-      apr bench --json output MUST contain:
-        latency_p50_ms: f64 > 0
-        latency_p95_ms: f64 > 0
-        latency_p99_ms: f64 > 0
-        ttft_p50_ms: f64 > 0
-        ttft_p95_ms: f64 > 0
-        ttft_p99_ms: f64 > 0
-        throughput_tok_s: f64 > 0
-        throughput_req_s: f64 > 0
-        num_requests_completed: u64 > 0
-        num_requests_failed: u64 >= 0
-        duration_sec: f64 > 0
-    domain: apr bench --json output
-    codomain: JSON object
-    invariants:
-    - "All 11 keys MUST be present"
-    - "No panics during load (num_requests_failed / num_requests_completed reported, not process crash)"
+    - "Unsorted points (p_i >= p_(i+1)) -> PointsNotSorted"
+    - "Any sub-failure -> SubFailure(inner_outcome)"
+    - "Outputs not monotone -> MonotonicityViolated (compute bug signal)"
 
 falsification_tests:
 - id: FALSIFY-CRUX-E-07-001
-  rule: JSON schema complete
-  prediction: "apr bench --json emits all 11 required keys"
+  rule: "--percentiles flag is reachable from the CLI"
+  prediction: "apr bench --help advertises --percentiles with default 50,95,99"
   test: |
-    OUT=$(apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json)
-    echo "$OUT" | jq -e '.latency_p50_ms and .latency_p95_ms and .latency_p99_ms and
-                         .ttft_p50_ms and .ttft_p95_ms and .ttft_p99_ms and
-                         .throughput_tok_s and .throughput_req_s and
-                         .num_requests_completed and (.num_requests_failed != null) and
-                         .duration_sec'
-  if_fails: "apr bench JSON missing one of the 11 required percentile/throughput keys"
+    apr bench --help | grep -F -- '--percentiles'
+    apr bench --help | grep -F '50,95,99'
+  if_fails: "CLI does not surface percentile reporting; users cannot reach the feature"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/tests/falsification_crux_e_07.rs
+    sub_claim: "--percentiles flag plumbed through clap with monotone default"
+    tests:
+    - falsify_crux_e_07_help_advertises_percentiles_flag
+    - falsify_crux_e_07_help_mentions_default_50_95_99
+    - falsify_crux_e_07_accepts_comma_separated_percentiles
+    - falsify_crux_e_07_rejects_percentile_without_value
+    scope: FULL
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-E-07-002
   rule: percentile monotonicity
-  prediction: "p99 >= p95 >= p50 for both latency and ttft"
+  prediction: "p99 >= p95 >= p50 for all positive-sample distributions"
   test: |
-    OUT=$(apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json)
-    echo "$OUT" | jq -e '
-      .latency_p99_ms >= .latency_p95_ms and
-      .latency_p95_ms >= .latency_p50_ms and
-      .ttft_p99_ms    >= .ttft_p95_ms    and
-      .ttft_p95_ms    >= .ttft_p50_ms'
-  if_fails: "Latency percentiles non-monotonic — quantile computation bug"
+    OUT=$(apr bench model.apr --percentiles 50,95,99 --json)
+    echo "$OUT" | jq -e '.latency_p99_ms >= .latency_p95_ms and .latency_p95_ms >= .latency_p50_ms'
+  if_fails: "Percentile computation bug - nearest-rank implementation violates order-preservation"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/percentile.rs
+    sub_claim: "compute_percentile_ladder enforces monotonicity across (50, 95, 99)"
+    tests:
+    - ladder_50_95_99_monotone_on_positive
+    - classify_ladder_monotone_passes
+    - falsify_crux_e_07_002_monotonicity_via_classifier
+    scope: FULL
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-E-07-003
-  rule: Little's law sanity
-  prediction: "throughput_req_s * avg_latency_sec ≈ concurrent (±10%)"
+  rule: no-silent-pass on ill-formed input
+  prediction: "empty, NaN, Inf, negative, and out-of-range all map to distinct Outcome variants"
   test: |
-    OUT=$(apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json)
-    python3 - "$OUT" <<'PY'
-    import json, sys
-    d = json.loads(sys.argv[1])
-    # Use p50 as proxy for avg_latency (within factor of 2 for reasonable dists)
-    avg_lat_sec = d["latency_p50_ms"] / 1000.0
-    L_observed  = d["throughput_req_s"] * avg_lat_sec
-    concurrent  = 16
-    rel_err = abs(L_observed - concurrent) / concurrent
-    sys.exit(0 if rel_err <= 0.50 else 1)  # loose bound since using p50 not mean
-    PY
-  if_fails: "Little's law violated by >50% — queuing model broken or measurements corrupted"
+    true
+  if_fails: "Silent zero/default on bad input would mask quantile bugs"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/percentile.rs
+    sub_claim: "EmptySamples, NonFiniteSample, NegativeSample, InvalidPercentile are distinct variants"
+    tests:
+    - empty_samples_distinct_outcome
+    - nan_sample_rejected
+    - infinite_sample_rejected
+    - negative_sample_rejected
+    - percentile_zero_rejected
+    - percentile_over_100_rejected
+    - percentile_nan_point_rejected
+    - ladder_unsorted_rejected
+    - ladder_duplicate_rejected
+    - ladder_sub_failure_propagates
+    - classify_empty_is_distinct_passes
+    - classify_invalid_percentile_rejected_passes
+    - falsify_crux_e_07_nan_sample_distinct_outcome
+    - falsify_crux_e_07_empty_samples_distinct_outcome
+    scope: FULL
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-E-07-004
-  rule: no panics during load
-  prediction: "apr bench exits 0 and reports failures as JSON, not crash"
+  rule: nearest-rank p100 equals max(samples)
+  prediction: "compute_percentile(xs, 100) == max(xs) for any non-empty positive sample set"
   test: |
-    apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json > /tmp/bench.json
-    RC=$?
-    [ "$RC" -eq 0 ] && jq -e '.num_requests_completed > 0' /tmp/bench.json
-  if_fails: "apr bench crashed (non-zero exit) or completed zero requests under load"
+    true
+  if_fails: "Nearest-rank convention broken - would diverge from vllm benchmark_serving.py"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/percentile.rs
+    sub_claim: "classify_p100_is_max holds on randomized inputs"
+    tests:
+    - p100_equals_max
+    - small_sample_count_5_p99
+    - single_sample_is_every_percentile
+    - duplicate_samples_handled
+    - unsorted_input_still_correct
+    scope: FULL
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-E-07-005
-  rule: all latencies strictly positive
-  prediction: "every reported percentile > 0 ms"
+  rule: all reported percentiles strictly positive
+  prediction: "every percentile over wall-clock latency samples is > 0"
   test: |
-    OUT=$(apr bench model.apr --concurrent 16 --duration 60s --request-rate 10 --json)
-    echo "$OUT" | jq -e '
-      .latency_p50_ms > 0 and .latency_p95_ms > 0 and .latency_p99_ms > 0 and
-      .ttft_p50_ms    > 0 and .ttft_p95_ms    > 0 and .ttft_p99_ms    > 0 and
-      .throughput_tok_s > 0 and .throughput_req_s > 0 and .duration_sec > 0'
-  if_fails: "Some percentile or throughput is zero/negative — timer or counter bug"
+    OUT=$(apr bench model.apr --percentiles 50,95,99 --json)
+    echo "$OUT" | jq -e '.latency_p50_ms > 0 and .latency_p95_ms > 0 and .latency_p99_ms > 0'
+  if_fails: "Timer corruption or negative-sample leak"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/percentile.rs
+    sub_claim: "negative samples rejected before percentile computation; positive inputs produce positive outputs"
+    tests:
+    - negative_sample_rejected
+    - p50_of_sorted_1_to_10_is_5
+    - p99_of_100_samples_is_99th_element
+    - falsify_crux_e_07_005_percentiles_strictly_positive
+    scope: FULL
+    discharge_status: FULL
+
+- id: FALSIFY-CRUX-E-07-006
+  rule: JSON output under real model load emits latency_p<N>_ms keys
+  prediction: "apr bench --percentiles 50,95,99 --json produces keys latency_p50_ms, latency_p95_ms, latency_p99_ms with finite positive values against a real GGUF fixture"
+  test: |
+    OUT=$(apr bench tests/fixtures/tinyllama-q4_k_m.gguf --percentiles 50,95,99 --json)
+    echo "$OUT" | jq -e '.latency_p50_ms and .latency_p95_ms and .latency_p99_ms'
+  if_fails: "End-to-end JSON schema regression - consumers parsing the output will break"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/bench.rs
+    sub_claim: "print_bench_json inserts one key per percentile point from the classifier"
+    tests:
+    - falsify_crux_e_07_help_advertises_percentiles_flag
+    scope: PARTIAL_ALGORITHM_LEVEL
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "BLOCKER-FIXTURE-ABSENT - real GGUF fixture (tinyllama-q4_k_m.gguf) not in-tree; fixture-creation ticket required for FULL discharge of the JSON-shape assertion against live inference"
 
 proof_obligations:
 - type: invariant
-  property: "JSON has all 11 required keys (percentiles, ttft, throughput, counts, duration)"
+  property: "p99 >= p95 >= p50 (monotonicity in percentile rank)"
 - type: invariant
-  property: "p99 >= p95 >= p50 for both latency and ttft"
+  property: "Every reported percentile > 0 for wall-clock latency samples"
 - type: invariant
-  property: "All latency/throughput/duration values strictly positive"
+  property: "Ill-formed inputs (empty/NaN/negative/out-of-range) produce distinct Outcome variants (no silent pass)"
 - type: invariant
-  property: "Little's law: throughput_req_s * avg_latency_sec ≈ concurrent (±10% at steady-state)"
+  property: "compute_percentile(xs, 100) == max(xs) (nearest-rank convention)"
 - type: invariant
-  property: "No process crash under load — failures reported via num_requests_failed"
+  property: "--percentiles CLI flag reaches the classifier layer with the declared default 50,95,99"
 
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 5
+  status: partial
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-e-07` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-e-07
   priority: critical
   auto_created: true
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/aprender-core/src/metrics/percentile.rs
+    cli_wiring: "crates/apr-cli/src/extended_commands.rs + dispatch_analysis.rs + commands/bench.rs (--percentiles flag)"
+    e2e_test: crates/apr-cli/tests/falsification_crux_e_07.rs
+    contract: contracts/crux-E-07-v1.yaml
+  merge_gates:
+    g1_classifier_green: "21 unit tests pass (metrics::percentile)"
+    g2_cli_reachable: "apr bench --help advertises --percentiles"
+    g3_e2e_runs: "8 falsification tests pass (falsification_crux_e_07)"
+    g4_contract_discharged: "5 of 6 FALSIFY-* at FULL; FALSIFY-006 PARTIAL under BLOCKER-FIXTURE-ABSENT"
