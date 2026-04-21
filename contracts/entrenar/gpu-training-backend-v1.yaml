@@ -392,17 +392,17 @@ implementation_plan:
 
   phase_1:
     title: "Device enum + dispatch helper"
-    status: pending
+    status: complete
     deliverables:
-      - "crates/aprender-train/src/train/device.rs: Device enum + resolve_device() with FALSIFY-GPUTRAIN-001/002 tests"
-      - "--device CLI flag wired in crates/apr-cli/src/commands/pretrain.rs"
-      - "SharedTrainer enum extended with CudaVariant (NotImplemented stub)"
+      - "crates/aprender-train/src/train/device.rs: Device enum + resolve_device() with FALSIFY-GPUTRAIN-001/002 tests (17 tests PASS)"
+      - "--device CLI flag wired in crates/apr-cli/src/extended_commands.rs (default `auto`, 3 cli_pretrain_device_* tests PASS)"
+      - "drive_real NotImplemented stub when Device::is_cuda() — GATE-GPUTRAIN-002 hard-fail before any trainer allocation"
 
   phase_2:
     title: "Wire existing CudaTransformerTrainer"
     status: pending
     deliverables:
-      - "SharedTrainer::CudaVariant dispatches to crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs"
+      - "Replace Phase 1 drive_real NotImplemented stub with SharedTrainer::CudaVariant dispatch (extend pretrain_real.rs with CudaRealStepFn / CudaRealValFn / CudaAprCheckpointFn)"
       - "drive_real branches on Device in pretrain.rs (mirror loader/mod.rs:227)"
       - "nvidia-smi residency probe + GATE-GPUTRAIN-003 harness"
 
