@@ -10,6 +10,7 @@ pub mod classification;
 pub mod drift;
 pub mod evaluator;
 pub mod percentile;
+pub mod perplexity;
 pub mod ranking;
 
 use crate::primitives::{Matrix, Vector};
