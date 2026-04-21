@@ -1,0 +1,162 @@
+# CRUX-M-05 — QA Gate-5: tokenizer roundtrip parity
+# Authored under PMAT-673. See docs/specifications/crux-competitive-research-ux-workflows.md §5.M.
+
+metadata:
+  id: CRUX-M-05
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - apr-model-qa-v1
+  - tokenizer-bpe-v1
+  category: "M — APR-QA Playbook Canonicalization"
+  competitor: apr-qa-playbook
+  demand_score: 4
+  intake_status: partial
+  description: >
+    QA Gate-5 from apr-model-qa-playbook — tokenizer roundtrip parity.
+    For a fixed fixture corpus F, the APR tokenizer MUST satisfy
+    decode(encode(x)) == x for every x ∈ F (UTF-8 byte equality after
+    NFC normalization). Also, encode(x) MUST equal the upstream HF
+    `tokenizers` crate output for the same vocab+merges. Catches
+    silent tokenizer drift (off-by-one merges, NFC vs NFKC mismatch,
+    BPE merge-rule reordering).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'sibling repo: github.com/paiml/apr-model-qa-playbook — Gate-5'
+  - 'upstream: github.com/huggingface/tokenizers — HF tokenizers crate'
+  - 'contracts/tokenizer-bpe-v1.yaml — APR tokenizer invariants'
+
+equations:
+  tokenizer_roundtrip:
+    formula: |
+      Let fixture F = frozen set of 128 strings (ASCII, UTF-8, emoji, code, math)
+      For each x ∈ F:
+          ids_apr := apr_tokenizer.encode(x)
+          x'      := apr_tokenizer.decode(ids_apr)
+          ids_hf  := hf_tokenizer.encode(x)        # reference
+      Gate pass := (x' == x)  ∀ x ∈ F                 # roundtrip
+                 AND (ids_apr == ids_hf)  ∀ x ∈ F     # upstream parity
+    domain: "APR tokenizer × HF tokenizer × fixture F"
+    codomain: "PASS if roundtrip + upstream parity hold on all fixtures"
+    invariants:
+    - "decode(encode(x)) returns bytes identical to NFC(x) — not UTF-8 lossy"
+    - "HF upstream parity uses the same vocab+merges files — NOT a different tokenizer family"
+    - "fixture includes emoji + code + Unicode combining marks (catches NFC/NFKC split)"
+    - "a single divergent fixture fails the gate; per-fixture diff is emitted"
+
+  gate_contract:
+    formula: |
+      apr qa --gate tokenizer-roundtrip \
+             --tokenizer model.apr \
+             --hf-vocab vocab.json --hf-merges merges.txt \
+             --fixture fixtures/tokenizer-canary.jsonl \
+             --json
+        emits:
+          status ∈ {"PASS", "FAIL"}
+          fixture_size: 128
+          roundtrip_failures: K1
+          upstream_divergences: K2
+          failures:
+            - { idx, input, decoded, apr_ids, hf_ids, diff_kind: "roundtrip|upstream" }
+      exit 0 iff PASS and K1==0 and K2==0 ; exit 1 iff any failure ; exit >= 2 on I/O error
+    domain: "tokenizer files + fixture"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status"
+    - "both roundtrip and upstream-parity failures are surfaced (never 'first failure wins')"
+    - "fixture file is checked into the repo — not regenerated per-run"
+
+falsification_tests:
+- id: FALSIFY-CRUX-M-05-001
+  rule: "--gate tokenizer-roundtrip flag exists"
+  prediction: "apr qa --help advertises --gate tokenizer-roundtrip"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "tokenizer-roundtrip"
+  if_fails: "apr qa lacks tokenizer-roundtrip gate — Gate-5 not wired"
+
+- id: FALSIFY-CRUX-M-05-002
+  rule: "PASS on the frozen canary fixture"
+  prediction: "The checked-in fixtures/tokenizer-canary.jsonl roundtrips + matches HF for qwen2.5-coder tokenizer"
+  test: |
+    set -euo pipefail
+    apr qa --gate tokenizer-roundtrip \
+           --tokenizer qwen2.5-coder-7b.apr \
+           --hf-vocab third_party/qwen2.5-coder-7b/vocab.json \
+           --hf-merges third_party/qwen2.5-coder-7b/merges.txt \
+           --fixture fixtures/tokenizer-canary.jsonl --json > /tmp/m05.json
+    jq -e '.status == "PASS" and .roundtrip_failures == 0 and .upstream_divergences == 0' /tmp/m05.json >/dev/null
+  if_fails: "Canary tokenizer drifts from HF — downstream eval numbers are not comparable"
+
+- id: FALSIFY-CRUX-M-05-003
+  rule: "FAIL on a mutated merges.txt (drop one merge rule)"
+  prediction: "Deleting a single merge rule flips the gate to FAIL with upstream_divergences >= 1"
+  test: |
+    set -euo pipefail
+    head -n -1 third_party/qwen2.5-coder-7b/merges.txt > /tmp/merges-dropped.txt
+    set +e
+    apr qa --gate tokenizer-roundtrip \
+           --tokenizer qwen2.5-coder-7b.apr \
+           --hf-vocab third_party/qwen2.5-coder-7b/vocab.json \
+           --hf-merges /tmp/merges-dropped.txt \
+           --fixture fixtures/tokenizer-canary.jsonl --json > /tmp/m05-drop.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and .upstream_divergences >= 1' /tmp/m05-drop.json >/dev/null
+  if_fails: "Gate does not catch a dropped merge rule — off-by-one tokenizer drift ships silently"
+
+- id: FALSIFY-CRUX-M-05-004
+  rule: "FAIL on NFC vs NFKC fixture divergence"
+  prediction: "A fixture containing U+FB01 (ﬁ ligature) fails when tokenizer uses NFKC (collapses to 'fi')"
+  test: |
+    set -euo pipefail
+    printf '{"text":"\\uFB01le"}\n' > /tmp/m05-nfc.jsonl
+    set +e
+    apr qa --gate tokenizer-roundtrip \
+           --tokenizer broken-nfkc.apr \
+           --hf-vocab third_party/qwen2.5-coder-7b/vocab.json \
+           --hf-merges third_party/qwen2.5-coder-7b/merges.txt \
+           --fixture /tmp/m05-nfc.jsonl --json > /tmp/m05-nfc.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and (.failures[] | select(.diff_kind == "roundtrip")) != null' /tmp/m05-nfc.json >/dev/null
+  if_fails: "NFC/NFKC split undetected — tokenizer silently corrupts ligatures"
+
+- id: FALSIFY-CRUX-M-05-005
+  rule: "fixture is checked in, not regenerated"
+  prediction: "git ls-files shows fixtures/tokenizer-canary.jsonl"
+  test: |
+    set -euo pipefail
+    git ls-files fixtures/tokenizer-canary.jsonl | grep -qE "tokenizer-canary.jsonl"
+  if_fails: "Fixture is not checked in — ship verdicts are not reproducible"
+
+proof_obligations:
+- type: invariant
+  property: "decode(encode(x)) == NFC(x) for every fixture x"
+- type: invariant
+  property: "encode(x) bit-identical to HF tokenizers crate for every fixture x"
+- type: invariant
+  property: "Failures surface both kinds (roundtrip + upstream), never just one"
+- type: invariant
+  property: "Fixture is version-controlled (reproducibility)"
+- type: equivalence
+  property: "apr qa --gate tokenizer-roundtrip  ≅  apr-model-qa-playbook Gate-5 (tokenizer parity)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-m-05
+  ticket_id: PMAT-673
+  priority: high
+  auto_created: true

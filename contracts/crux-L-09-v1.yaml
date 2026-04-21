@@ -1,0 +1,128 @@
+# CRUX-L-09 — GPTQ / AWQ quantization kernel dispatch
+# Authored under PMAT-663. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-09
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Dispatch GPTQ (exllama-v2 lineage) and AWQ quantized matmul via
+    HF kernels-community. Both are activation-aware 4-bit schemes
+    with different calibration: GPTQ (Hessian-based, arXiv:2210.17323)
+    and AWQ (activation-aware salient weight protection, 2306.00978).
+    Parity vs pre-dequant bf16 reference within scheme-specific
+    tolerance.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/huggingface/kernels-community — gptq + awq'
+  - 'arXiv:2210.17323 — GPTQ'
+  - 'arXiv:2306.00978 — AWQ'
+
+equations:
+  gptq_awq_dispatch:
+    formula: |
+      gptq_matmul(A_bf16, B_gptq_4bit, scales, zeros) -> out_bf16
+      awq_matmul(A_bf16,  B_awq_4bit,  scales, zeros) -> out_bf16
+      Parity vs reference:
+          max_abs_diff(gptq_out, dequant+matmul) <= 2e-2
+          max_abs_diff(awq_out,  dequant+matmul) <= 2e-2
+    domain: "(A, B_quant, scales, zeros)"
+    codomain: "out tensor (bf16)"
+    invariants:
+    - "group_size ∈ {32, 64, 128} — other sizes error"
+    - "scheme identifier must match the .safetensors metadata (auto-detect, no guessing)"
+
+  cli_contract:
+    formula: |
+      apr kernel parity --impl gptq --fixture fixtures/gptq-canary.json --json
+      apr kernel parity --impl awq  --fixture fixtures/awq-canary.json  --json
+    domain: "(impl, fixture)"
+    codomain: "parity JSON"
+    invariants:
+    - "impl names are 'gptq' and 'awq' separately — never a fused 'gptq-awq' shortcut"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-09-001
+  rule: "GPTQ parity within 2e-2"
+  prediction: "gptq matches dequant+matmul reference"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl gptq --ref dequant-matmul --fixture fixtures/gptq-canary.json --json > /tmp/l09-gptq.json
+    jq -e '.max_abs_diff <= 2e-2' /tmp/l09-gptq.json >/dev/null
+  if_fails: "GPTQ exceeds published quant bound"
+
+- id: FALSIFY-CRUX-L-09-002
+  rule: "AWQ parity within 2e-2"
+  prediction: "awq matches dequant+matmul reference"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl awq --ref dequant-matmul --fixture fixtures/awq-canary.json --json > /tmp/l09-awq.json
+    jq -e '.max_abs_diff <= 2e-2' /tmp/l09-awq.json >/dev/null
+  if_fails: "AWQ exceeds published quant bound"
+
+- id: FALSIFY-CRUX-L-09-003
+  rule: "group_size ∈ {32,64,128}; other sizes error"
+  prediction: "group_size=96 exits 1"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl gptq --group-size 96 --fixture fixtures/gptq-canary.json --json >/dev/null
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+  if_fails: "Unsupported group_size silently accepted"
+
+- id: FALSIFY-CRUX-L-09-004
+  rule: "scheme auto-detect from safetensors metadata"
+  prediction: "Passing --impl gptq on AWQ fixture errors with scheme-mismatch"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl gptq --fixture fixtures/awq-canary.json --json > /tmp/l09-mis.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.error | test("scheme|gptq|awq|mismatch")' /tmp/l09-mis.json >/dev/null
+  if_fails: "Scheme confusion silently accepted — quant decode corrupt"
+
+- id: FALSIFY-CRUX-L-09-005
+  rule: "kernel_source pinned on dispatch"
+  prediction: "Successful dispatch emits kernel_source='hf-kernels-community:<gptq|awq>@<sha>'"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl gptq --ref dequant-matmul --fixture fixtures/gptq-canary.json --json > /tmp/l09.json
+    jq -e '.kernel_source | test("^hf-kernels-community:(gptq|awq)@[0-9a-f]{40}$")' /tmp/l09.json >/dev/null
+  if_fails: "Unpinned gptq/awq source"
+
+proof_obligations:
+- type: invariant
+  property: "GPTQ parity max_abs_diff <= 2e-2"
+- type: invariant
+  property: "AWQ parity max_abs_diff <= 2e-2"
+- type: invariant
+  property: "group_size ∈ {32,64,128}; scheme auto-detect"
+- type: equivalence
+  property: "apr gptq/awq kernel  ≅  HF kernels-community gptq / awq"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-09
+  ticket_id: PMAT-663
+  priority: medium
+  auto_created: true
