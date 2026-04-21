@@ -122,6 +122,10 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             commands::tool_use_lint::run(observation_file, cli.json)
         }
 
+        ExtendedCommands::GbnfLint { observation_file } => {
+            commands::gbnf_lint::run(observation_file, cli.json)
+        }
+
 
         ExtendedCommands::Hex {
             file,
