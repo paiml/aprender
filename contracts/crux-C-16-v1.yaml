@@ -1,21 +1,17 @@
 # CRUX-C-16 — LoRA hotswap at runtime
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-16
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: vllm
-  demand_score: 4  # 1..5, high priority in pmat work
+  demand_score: 4
   intake_status: missing
   description: >
     LoRA adapter hotswap at runtime — load, switch, and unload LoRA adapters
@@ -69,7 +65,6 @@ falsification_tests:
   rule: hotswap output parity with offline merge
   prediction: "served+adapter output ≡ offline-merged base+adapter output at temp=0"
   test: |
-    # TODO: blocked until apr serve --enable-lora + /v1/lora/load wired
     apr merge base.gguf adapter.gguf -o merged.gguf
     REF=$(apr run merged.gguf --prompt "task:" --max-tokens 32 \
       --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
@@ -84,12 +79,36 @@ falsification_tests:
     kill %1
     [ "$REF" = "$HOT" ]
   if_fails: "hotswapped adapter diverges from offline-merged baseline — LoRA math bug"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/lora_hotswap_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_hotswap_parity(merged,
+      hotswap)` accepts iff the two token streams are byte-identical.
+      Rejection paths distinguish root causes deterministically:
+        (a) one-sided emptiness → `EmptinessMismatch{merged_empty,
+            hotswap_empty}` (vs "silent divergence at position 0" — an
+            empty hotswap is a different bug from "first token wrong");
+        (b) unequal length → `LengthMismatch{merged_len, hotswap_len}`;
+        (c) equal length but diverges at some index → `TokenDivergence
+            {at_index, merged_token, hotswap_token}` at the FIRST
+            mismatch (deterministic; bisection-friendly for LoRA-math
+            and routing debugging).
+      Pure; deterministic.
+    tests:
+    - hotswap_parity_ok_on_identical
+    - hotswap_parity_ok_on_two_empty
+    - hotswap_parity_rejects_emptiness_mismatch
+    - hotswap_parity_rejects_length_mismatch
+    - hotswap_parity_rejects_first_divergence
+    - hotswap_parity_is_deterministic
+    scope: "(merged_tokens, hotswap_tokens) → HotswapParityOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr serve --enable-lora + /v1/lora/load + X-LoRA-Adapter request-time selection surface emitting token_ids"
 
 - id: FALSIFY-CRUX-C-16-002
   rule: load latency P99 <2s
   prediction: "rank-64 adapter load completes in <2s P99"
   test: |
-    # TODO: blocked until /v1/lora/load endpoint
     apr serve base.gguf --enable-lora --port 18080 &
     sleep 5
     for i in $(seq 1 20); do
@@ -100,12 +119,40 @@ falsification_tests:
     kill %1
     python3 -c "import numpy as np; t=np.loadtxt('times.txt'); assert np.percentile(t,99) < 2.0, f'P99={np.percentile(t,99):.2f}s'"
   if_fails: "LoRA load latency P99 exceeds 2s budget"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/lora_hotswap_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_load_latency(samples,
+      budget)` computes nearest-rank P99 (deterministic; no interpolation;
+      P99 index = ceil(0.99 * N) - 1, clamped to [0, N-1]) and accepts
+      iff that P99 <= budget. Rejection paths:
+        (a) non-finite, non-positive, or empty-sample input →
+            `InvalidInput{reason}` so measurement-pipeline bugs cannot
+            masquerade as latency regressions;
+        (b) NaN or negative samples → `InvalidInput` with a distinct
+            reason string (time measurements are non-negative finite);
+        (c) valid samples with P99 > budget → `Exceeded{p99_seconds,
+            budget_seconds}` (the only way to "fail" on valid input).
+      LORA_LOAD_LATENCY_P99_S = 2.0s is the contract's budget.
+      Pure; deterministic.
+    tests:
+    - load_latency_ok_under_budget
+    - load_latency_ok_single_sample
+    - load_latency_rejects_exceeded_budget
+    - load_latency_nearest_rank_p99_is_99th_smallest_of_100
+    - load_latency_rejects_zero_budget
+    - load_latency_rejects_empty_samples
+    - load_latency_rejects_nan_sample
+    - load_latency_rejects_negative_sample
+    - load_latency_is_deterministic
+    scope: "(samples_seconds: &[f64], budget_seconds: f64) → LoadLatencyOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr serve --enable-lora + /v1/lora/load endpoint emitting load-timing telemetry; 50ms decode-spike bound is a runtime-scheduler property out of scope for this pure gate"
 
 - id: FALSIFY-CRUX-C-16-003
   rule: mismatched base model rejected
   prediction: "adapter trained on model X rejected when served with model Y"
   test: |
-    # TODO: blocked until /v1/lora/load endpoint
     apr serve qwen-7b.gguf --enable-lora --port 18080 &
     sleep 5
     RES=$(curl -sX POST localhost:18080/v1/lora/load \
@@ -113,12 +160,49 @@ falsification_tests:
     kill %1
     echo "$RES" | jq -e '.error' && echo "$RES" | grep -qiE "base.?model|sha256|mismatch"
   if_fails: "mismatched-base adapter silently loaded — will produce garbage output"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/lora_hotswap_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_adapter_compat(
+      base_sha, adapter_base_sha, base_modules, adapter_targets, rank)`
+      accepts iff all of:
+        - `base_sha` non-empty;
+        - `adapter_base_sha` non-empty;
+        - case-insensitive sha256 equality (`eq_ignore_ascii_case`);
+        - `adapter_target_modules` non-empty;
+        - every `adapter_target_modules[i]` appears in `base_module_names`;
+        - rank ∈ [LORA_RANK_MIN=1, LORA_RANK_MAX=512].
+      Rejection paths distinguish six distinct defect classes:
+        (a) `EmptyBaseSha256` (base-metadata load bug);
+        (b) `EmptyAdapterBaseSha256` (adapter-metadata load bug);
+        (c) `BaseSha256Mismatch` (true compatibility failure);
+        (d) `EmptyTargetModules` (malformed adapter);
+        (e) `UnknownTargetModules{unknown}` with the offending names so
+            the error is actionable;
+        (f) `RankTooSmall{rank}` / `RankTooLarge{rank}` (adapter outside
+            [1, 512] window).
+      Pure; deterministic.
+    tests:
+    - adapter_compat_ok_on_matching_everything
+    - adapter_compat_ok_case_insensitive_sha
+    - adapter_compat_rejects_empty_base_sha
+    - adapter_compat_rejects_empty_adapter_sha
+    - adapter_compat_rejects_sha_mismatch
+    - adapter_compat_rejects_empty_target_modules
+    - adapter_compat_rejects_unknown_target_modules
+    - adapter_compat_rejects_rank_too_small
+    - adapter_compat_rejects_rank_too_large
+    - adapter_compat_ok_at_rank_boundaries
+    - adapter_compat_is_deterministic
+    - lora_constants_are_canonical
+    scope: "(base_sha, adapter_sha, base_mods, adapter_targets, rank) → AdapterCompatOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr serve --enable-lora + /v1/lora/load invoking this classifier on adapter metadata BEFORE splicing LoRA weights into the base graph"
 
 - id: FALSIFY-CRUX-C-16-004
   rule: unload restores base model
   prediction: "after unload, requests without X-LoRA-Adapter ≡ fresh base load"
   test: |
-    # TODO: blocked until /v1/lora/{load,unload}
     REF=$(apr run base.gguf --prompt "hi" --max-tokens 16 --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
     apr serve base.gguf --enable-lora --port 18080 &
     sleep 5
@@ -128,6 +212,32 @@ falsification_tests:
     kill %1
     [ "$REF" = "$AFTER" ]
   if_fails: "base model state contaminated after LoRA unload"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/lora_hotswap_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_unload_restore(fresh,
+      after_unload)` accepts iff the two token streams are byte-identical.
+      Rejection paths distinguish:
+        (a) one-sided emptiness → `EmptinessMismatch{fresh_empty,
+            after_unload_empty}` (a completely-broken unload that
+            produces no output is a different defect from "drift");
+        (b) unequal length → `LengthMismatch{fresh_len,
+            after_unload_len}`;
+        (c) equal length but diverges at some index → `TokenDivergence
+            {at_index, fresh_token, after_unload_token}` at the FIRST
+            mismatch (deterministic; bisection-friendly for weight-
+            contamination debugging).
+      Pure; deterministic.
+    tests:
+    - unload_restore_ok_on_identical
+    - unload_restore_ok_on_two_empty
+    - unload_restore_rejects_emptiness_mismatch
+    - unload_restore_rejects_length_mismatch
+    - unload_restore_rejects_first_divergence
+    - unload_restore_is_deterministic
+    scope: "(fresh_tokens, after_unload_tokens) → UnloadRestoreOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr serve --enable-lora + /v1/lora/unload surface that returns base weights to pristine state"
 
 proof_obligations:
 - type: equivalence
@@ -144,10 +254,21 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-C-16-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr serve --enable-lora + /v1/lora/load + X-LoRA-Adapter request selection"
+  - falsify_id: FALSIFY-CRUX-C-16-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr serve --enable-lora + /v1/lora/load emitting load-timing telemetry"
+  - falsify_id: FALSIFY-CRUX-C-16-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr serve --enable-lora + /v1/lora/load invoking this classifier on adapter metadata before splice"
+  - falsify_id: FALSIFY-CRUX-C-16-004
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr serve --enable-lora + /v1/lora/unload returning base to pristine state"
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-16` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-16
   priority: high
   auto_created: true
