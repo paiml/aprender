@@ -87,6 +87,7 @@ pub(crate) mod stop_op;
 pub(crate) mod tensors;
 pub(crate) mod token_redactor;
 pub(crate) mod tokenize;
+pub(crate) mod tp_pp_classifier;
 pub(crate) mod trace;
 #[cfg(feature = "training")]
 pub(crate) mod train;
