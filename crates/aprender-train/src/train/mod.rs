@@ -33,6 +33,7 @@ mod batch;
 pub mod callback;
 mod config;
 mod curriculum;
+pub mod device;
 mod loss;
 mod metrics;
 pub mod pretrain;
@@ -52,6 +53,7 @@ pub use callback::{
     MonitorCallback, ProgressCallback, TrainerCallback,
 };
 pub use config::{MetricsTracker, TrainConfig};
+pub use device::{resolve_device, Device, DeviceError};
 pub use curriculum::{
     efficiency_score, select_optimal_tier, AdaptiveCurriculum, CurriculumScheduler,
     LinearCurriculum, TieredCurriculum,

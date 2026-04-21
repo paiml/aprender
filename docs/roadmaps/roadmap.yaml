@@ -5488,23 +5488,27 @@ roadmap:
   - 'Streaming (SSE) event sequence validates against Anthropic v2026-02-01 schedule: message_start → (content_block_start → N × content_block_delta → content_block_stop)⁺ → message_delta → message_stop.'
   phases:
   - id: M6-alpha
-    title: 'Request-shape parser'
+    name: 'Request-shape parser'
+    status: planned
     blocks_on: PMAT-MCP-PARITY-001 (M5 pmcp port prerequisite)
     criteria:
     - 'contracts/apr-claude-proxy-v1.yaml committed'
     - 'FALSIFY-CLAUDE-PROXY-001 PASS on fixture corpus (captured anthropic-sdk-python request bodies)'
   - id: M6-beta
-    title: 'Non-streaming response generation'
+    name: 'Non-streaming response generation'
+    status: planned
     criteria:
     - 'FALSIFY-CLAUDE-PROXY-002 (output shape) PASS'
     - 'FALSIFY-CLAUDE-PROXY-003 (tool_use round-trip on Bash fixture) PASS'
   - id: M6-gamma
-    title: 'SSE streaming'
+    name: 'SSE streaming'
+    status: planned
     criteria:
     - 'FALSIFY-CLAUDE-PROXY-004 (event-sequence parity) PASS'
     - 'Throughput parity within ±5% of non-proxied `apr serve` decode path'
   - id: M6-delta
-    title: 'Default-model autoselect + sovereignty'
+    name: 'Default-model autoselect + sovereignty'
+    status: planned
     criteria:
     - 'FALSIFY-CLAUDE-PROXY-005 (bind-after-pull, <3s cold start if cached) PASS'
     - 'FALSIFY-CLAUDE-PROXY-006 (zero egress to api.anthropic.com) PASS'

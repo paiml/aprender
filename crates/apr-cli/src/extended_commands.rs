@@ -683,6 +683,13 @@ pub enum ExtendedCommands {
         /// INV-TRAIN-010: absent = real compute (drive_real), present = synthetic (drive_synthetic).
         #[arg(long, action = clap::ArgAction::SetTrue)]
         synthetic: bool,
+        /// Training backend. Grammar (contract gpu-training-backend-v1
+        /// INV-GPUTRAIN-001): `^(cpu|cuda(:[0-9]|:1[0-5])?|auto)$`.
+        /// Default `auto` uses CUDA if available, else CPU (the only
+        /// spelling that may fall back silently — all other values
+        /// hard-fail on missing runtime per GATE-GPUTRAIN-002).
+        #[arg(long, default_value = "auto")]
+        device: String,
     },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {

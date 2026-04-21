@@ -17,6 +17,7 @@ use crate::output;
 use clap::ValueEnum;
 use colored::Colorize;
 use entrenar::models::llama_370m::{Llama370MConfig, assert_tokenizer_vocab_matches_model};
+use entrenar::train::device::{Device, resolve_device};
 use entrenar::train::pretrain::{
     CheckpointFn, LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus,
     ScriptedVal, StepFn, TrainingRegime, ValFn,
@@ -99,8 +100,17 @@ pub(crate) fn run(
     target_val_loss: Option<f32>,
     vocab_size: u32,
     synthetic: bool,
+    device: &str,
     json_output: bool,
 ) -> Result<()> {
+    // Contract gpu-training-backend-v1 INV-GPUTRAIN-001 / GATE-GPUTRAIN-002:
+    // parse --device BEFORE any trainer allocation so an invalid spec
+    // or an explicit `cuda` on a CPU-only host fails fast with a clear
+    // diagnostic. Synthetic drive still honours --device (for parity
+    // with real compute) but the stub error surface is identical.
+    let resolved_device =
+        resolve_device(device).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
+
     let hp = mode_defaults(mode, vocab_size, lr, warmup_steps, target_val_loss);
 
     // Validation: GATE-TRAIN-003 requires target_val_loss > 0.
@@ -143,6 +153,12 @@ pub(crate) fn run(
 
     if !json_output {
         print_header(&config);
+        // GATE-GPUTRAIN-002 visibility: print the resolved Device so the
+        // operator can confirm which backend was selected. `auto` is the
+        // only spec that may silently fall back, and this print makes
+        // the fall-back visible at startup.
+        output::kv("  Device", resolved_device.to_string());
+        println!();
     }
 
     let status = if synthetic {
@@ -161,6 +177,7 @@ pub(crate) fn run(
             seq_length,
             batch_size,
             seed,
+            resolved_device,
             json_output,
         )?
     };
@@ -227,6 +244,7 @@ fn preflight_tokenizer_vocab_matches_model(tokenizer_dir: &Path) -> Result<()> {
 /// Real-corpus drive: build a shared 370M `TransformerTrainer`, split
 /// the shard stream head-off into a held-out validation set, and run a
 /// full forward + backward + AdamW step per training batch.
+#[allow(clippy::too_many_arguments)]
 fn drive_real(
     config: PretrainConfig,
     dataset: &Path,
@@ -234,8 +252,26 @@ fn drive_real(
     seq_length: usize,
     batch_size: usize,
     seed: u64,
+    device: Device,
     json_output: bool,
 ) -> Result<RunStatus> {
+    // Phase 1 stub (contract gpu-training-backend-v1 §implementation_plan
+    // phase 1 / peer_contracts apr-cli-commands-v1): CLI surface accepts
+    // `--device cuda[:N]` and resolves it, but the CUDA training path is
+    // not yet wired — Phase 2 will extend `SharedTrainer` to dispatch to
+    // `CudaTransformerTrainer`. Until then, any resolved CUDA device
+    // must surface a clear NotImplemented error rather than silently
+    // using the CPU path (GATE-GPUTRAIN-002).
+    if device.is_cuda() {
+        return Err(CliError::ValidationFailed(format!(
+            "--device {device} resolved, but the CUDA training backend \
+             is not yet wired in `apr pretrain` (contract \
+             gpu-training-backend-v1 phase 2 pending, task #132). \
+             Pass `--device cpu` to opt in to the CPU path, or wait for \
+             Phase 2 to land.",
+        )));
+    }
+
     // GATE-ARCH-370M-011 / INV-ARCH-370M-006 — refuse to dispatch a real
     // training step when the tokenizer vocab_size and the model vocab_size
     // disagree. The N-09 OOB escape guard in Embedding::forward masks the
@@ -548,6 +584,7 @@ mod tests {
             Some(2.2),
             50257,
             true,
+            "cpu",
             true,
         );
         assert!(
@@ -581,6 +618,7 @@ mod tests {
             Some(2.2),
             50257,
             false,
+            "cpu",
             true,
         )
         .expect_err("empty dataset dir must fail to initialise the shard iterator");
@@ -613,6 +651,7 @@ mod tests {
             Some(-1.0),
             50257,
             true,
+            "cpu",
             true,
         )
         .expect_err("negative target_val_loss must be rejected");
@@ -748,5 +787,72 @@ mod tests {
             parse_pretrain_synthetic(&["--synthetic"]),
             "INV-TRAIN-010: `apr pretrain --synthetic` must parse to synthetic=true"
         );
+    }
+
+    // ── FALSIFY-GPUTRAIN-001 / 002 CLI surface (contract phase 1) ────
+    // Contract: gpu-training-backend-v1 §device_dispatch
+    //
+    // These tests parse actual `apr pretrain --device …` argv through
+    // clap and assert the string is surfaced byte-for-byte to the
+    // dispatcher. `resolve_device()` itself is exercised by
+    // `aprender-train::train::device::tests` — these tests verify that
+    // the CLI flag exists and that its default is `auto` (the only
+    // spec allowed to fall back).
+
+    fn parse_pretrain_device(extra: &[&str]) -> String {
+        let extra: Vec<String> = extra.iter().map(|s| (*s).to_string()).collect();
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                use clap::Parser;
+                let mut argv: Vec<String> = vec![
+                    "apr".to_string(),
+                    "pretrain".to_string(),
+                    "--dataset".to_string(),
+                    "/tmp/_gputrain_device/ds".to_string(),
+                    "--tokenizer".to_string(),
+                    "/tmp/_gputrain_device/tok".to_string(),
+                    "--run-dir".to_string(),
+                    "/tmp/_gputrain_device/run".to_string(),
+                ];
+                argv.extend(extra);
+                let cli = crate::Cli::try_parse_from(&argv).expect("clap parse must succeed");
+                match *cli.command {
+                    crate::Commands::Extended(crate::ExtendedCommands::Pretrain {
+                        device,
+                        ..
+                    }) => device,
+                    other => panic!("expected ExtendedCommands::Pretrain, got {other:?}"),
+                }
+            })
+            .expect("spawn parse thread")
+            .join()
+            .expect("parse thread must not panic")
+    }
+
+    #[test]
+    fn cli_pretrain_device_defaults_to_auto() {
+        // Absent `--device`, the flag MUST parse to `"auto"` — the only
+        // spec allowed to silently fall back to CPU when CUDA is not
+        // available. Any other default would violate the contract's
+        // "explicit request → hard-fail" invariant.
+        assert_eq!(
+            parse_pretrain_device(&[]),
+            "auto",
+            "gpu-training-backend-v1 INV-GPUTRAIN-002: default --device must be `auto`",
+        );
+    }
+
+    #[test]
+    fn cli_pretrain_device_accepts_cpu() {
+        // `--device cpu` MUST round-trip through clap unchanged.
+        assert_eq!(parse_pretrain_device(&["--device", "cpu"]), "cpu");
+    }
+
+    #[test]
+    fn cli_pretrain_device_accepts_cuda_index() {
+        // `--device cuda:7` MUST round-trip unchanged; grammar
+        // enforcement happens in `resolve_device`, not at clap.
+        assert_eq!(parse_pretrain_device(&["--device", "cuda:7"]), "cuda:7");
     }
 }
