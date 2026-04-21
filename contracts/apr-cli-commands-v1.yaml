@@ -21,7 +21,7 @@ metadata:
 kind: CLICommandContract
 name: apr-cli-commands
 version: "1.0.0"
-scope: "all apr CLI subcommands (66 commands — original 57 + `mcp` added 2026-04-17 via PR #864 + `registry` added 2026-04-20 via CRUX-A-01 + `ollama-chat-lint` added 2026-04-21 via CRUX-C-04 SHIP-001 retrofit + `dry-sampling-lint` added 2026-04-21 via CRUX-C-23 SHIP-001 retrofit + `awq-lint` added 2026-04-21 via CRUX-B-08 SHIP-001 retrofit + `oom-lint` added 2026-04-21 via CRUX-F-13 SHIP-001 + `tool-use-lint` added 2026-04-21 via CRUX-C-11 SHIP-001 retrofit + `gbnf-lint` added 2026-04-21 via CRUX-C-10 SHIP-001 retrofit + `typical-p-lint` added 2026-04-21 via CRUX-C-22 SHIP-001 retrofit)"
+scope: "all apr CLI subcommands (67 commands — original 57 + `mcp` added 2026-04-17 via PR #864 + `registry` added 2026-04-20 via CRUX-A-01 + `ollama-chat-lint` added 2026-04-21 via CRUX-C-04 SHIP-001 retrofit + `dry-sampling-lint` added 2026-04-21 via CRUX-C-23 SHIP-001 retrofit + `awq-lint` added 2026-04-21 via CRUX-B-08 SHIP-001 retrofit + `oom-lint` added 2026-04-21 via CRUX-F-13 SHIP-001 + `tool-use-lint` added 2026-04-21 via CRUX-C-11 SHIP-001 retrofit + `gbnf-lint` added 2026-04-21 via CRUX-C-10 SHIP-001 retrofit + `typical-p-lint` added 2026-04-21 via CRUX-C-22 SHIP-001 retrofit + `speculative-lint` added 2026-04-21 via CRUX-C-09 SHIP-001 retrofit)"
 binary: "apr"
 install: "cargo install aprender"
 
@@ -429,6 +429,12 @@ commands:
   - name: typical-p-lint
     category: inspection
     description: "Lint a captured typical-p sampling observation (CRUX-C-22)"
+    requires_model: false
+    side_effects: []
+
+  - name: speculative-lint
+    category: inspection
+    description: "Lint a speculative-decoding observation (CRUX-C-09)"
     requires_model: false
     side_effects: []
 

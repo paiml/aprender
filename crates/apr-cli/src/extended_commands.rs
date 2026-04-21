@@ -768,6 +768,13 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a speculative-decoding observation (CRUX-C-09)
+    SpeculativeLint {
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+        #[arg(long, default_value = "0.30")]
+        alpha_min: f64,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
