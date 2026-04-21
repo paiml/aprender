@@ -41,6 +41,7 @@ pub(crate) mod inspect;
 pub(crate) mod kernel_explain;
 pub(crate) mod lint;
 pub(crate) mod llava_classifier;
+pub(crate) mod llava_lint;
 pub(crate) mod mcp;
 pub(crate) mod merge;
 pub(crate) mod multi_lora_classifier;

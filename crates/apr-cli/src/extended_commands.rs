@@ -719,6 +719,11 @@ pub enum ExtendedCommands {
         #[arg(long)]
         stream: bool,
     },
+    /// Lint a LLaVA multi-modal observation (CRUX-C-12)
+    LlavaLint {
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
