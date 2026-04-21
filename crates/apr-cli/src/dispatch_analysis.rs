@@ -170,6 +170,13 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             .map_err(crate::error::CliError::Aprender)
         }
 
+        ExtendedCommands::ImatrixLint { observation_file } => commands::imatrix_lint::run(
+            commands::imatrix_lint::ImatrixLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
 
         ExtendedCommands::Hex {
             file,

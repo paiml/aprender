@@ -3,8 +3,9 @@
 
 metadata:
   id: CRUX-B-07
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
   status: partial
@@ -70,6 +71,15 @@ falsification_tests:
   if_fails: "imatrix calibration did not reduce perplexity by >=0.5%; calibration pipeline is broken or no-op"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/imatrix_classifier.rs
+    cli_path: crates/apr-cli/src/commands/imatrix_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_07.rs
+    e2e_tests:
+    - falsify_crux_b_07_001_improvement_ok_at_threshold
+    - falsify_crux_b_07_001_improvement_rejects_below_threshold
+    - falsify_crux_b_07_001_improvement_rejects_regression
+    - falsify_crux_b_07_001_improvement_rejects_zero_baseline
+    - falsify_crux_b_07_001_leakage_ok_disjoint
+    - falsify_crux_b_07_001_leakage_rejects_overlap
     sub_claim: |
       Algorithm-level necessary condition: `classify_imatrix_improvement`
       computes Δ = (PPL_naive − PPL_calib)/PPL_naive and admits only
@@ -100,6 +110,15 @@ falsification_tests:
   if_fails: "apr quantize lacks --imatrix flag; competitor parity missing"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/imatrix_classifier.rs
+    cli_path: crates/apr-cli/src/commands/imatrix_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_07.rs
+    e2e_tests:
+    - falsify_crux_b_07_002_flags_ok_space_form
+    - falsify_crux_b_07_002_flags_ok_equals_form
+    - falsify_crux_b_07_002_flags_ok_absent_as_expected
+    - falsify_crux_b_07_002_flags_rejects_wrong_path
+    - falsify_crux_b_07_002_flags_rejects_similar_named_flag
+    - falsify_crux_b_07_002_flags_rejects_trailing_no_value
     sub_claim: |
       Algorithm-level necessary condition: `parse_imatrix_flag`
       recognises both the `--imatrix <path>` and `--imatrix=<path>`
@@ -126,6 +145,14 @@ falsification_tests:
   if_fails: "Quantized output does not record imatrix provenance; cannot audit which calibration produced weights"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/imatrix_classifier.rs
+    cli_path: crates/apr-cli/src/commands/imatrix_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_07.rs
+    e2e_tests:
+    - falsify_crux_b_07_003_provenance_match_via_expected_sha256
+    - falsify_crux_b_07_003_provenance_match_is_case_insensitive
+    - falsify_crux_b_07_003_provenance_rejects_missing_recorded
+    - falsify_crux_b_07_003_provenance_rejects_mismatch
+    - falsify_crux_b_07_003_provenance_rejects_no_expected_input
     sub_claim: |
       Algorithm-level necessary condition: `compute_provenance_sha256`
       produces a 64-char lowercase hex sha256 that byte-matches the
@@ -171,6 +198,32 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-B-07-003
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: "AprV2Metadata.imatrix_source_sha256 field + `apr inspect --json` wiring"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/imatrix_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/imatrix_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_b_07.rs
+    contract: contracts/crux-B-07-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr imatrix-lint --observation-file <obs.json>` dispatches four
+    classifiers (improvement, leakage, flags, provenance) over captured
+    JSON; each missing top-level key is skipped so observations can
+    exercise any subset of FALSIFY-CRUX-B-07-001/002/003 independently.
+    e2e suite (23 tests) covers help surface, bare-invocation rejection,
+    improvement at/below/regression/zero-baseline, leakage
+    disjoint/overlap, flags space/equals/absent-expected/wrong-path/
+    similar-named/trailing-no-value, provenance match/case-insensitive/
+    missing/mismatch/no-expected-input, empty/nonexistent/unknown-keys
+    input rejection, and --json shape. Full ACTIVE discharge remains
+    blocked on real calibration.jsonl + wikitext-eval-512 corpus +
+    apr qa perplexity harness + AprV2Metadata.imatrix_source_sha256.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-b-07
