@@ -2,11 +2,11 @@
 
 metadata:
   id: CRUX-A-23
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -48,6 +48,25 @@ falsification_tests:
     apr search gpt --offline --format json > /tmp/res.json
     jq -e '.[] | select(.repo=="gpt2") | .source=="LOCAL" or .source=="BOTH"' /tmp/res.json
   if_fails: rule 'local cache entries appear without network' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/search_merge.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `merge_search_results(&[], local)`
+      preserves every local row with `Source::Local` and `cached=true`,
+      which is exactly the state `--offline` produces (hub half
+      collapses to empty). No code path through the merger returns an
+      error or drops rows when the Hub half is empty — the
+      NetworkError-free-offline invariant holds by construction at
+      this layer.
+    tests:
+    - local_only_repo_keeps_local_source
+    - offline_mode_modeled_as_empty_hub_never_errors
+    - local_entries_always_surface_even_with_nonempty_hub_miss
+    - empty_hub_and_empty_local_returns_empty
+    - classify_local_only
+    scope: offline-safety merge (pure function, no I/O)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: end-to-end `apr search --offline` CLI harness
 - id: FALSIFY-CRUX-A-23-002
   rule: hub + local merge is deduplicated
   prediction: "a repo cached locally AND on Hub appears once with source=BOTH"
@@ -59,6 +78,27 @@ falsification_tests:
     [ "$count" = "1" ]
 
   if_fails: rule 'hub + local merge is deduplicated' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/search_merge.rs
+    sub_claim: |
+      Algorithm-level necessary condition: the merger keys rows by
+      `repo` in a BTreeMap, so any repo appearing in both halves
+      collapses to a single row tagged `Source::Both`. The output
+      length equals |hub_repos ∪ local_repos| by construction.
+      Sort is deterministic (downloads DESC, likes DESC, repo ASC)
+      so the merged list is byte-stable across runs.
+    tests:
+    - repo_in_both_halves_appears_once_as_both
+    - merged_row_count_equals_union_of_repos
+    - merge_preserves_max_downloads_on_both
+    - merge_is_deterministic
+    - sort_is_by_downloads_descending
+    - sort_breaks_ties_by_likes_then_repo
+    - classify_both_halves
+    - merge_serializes_to_stable_json
+    scope: hub+local join + dedup + sort (pure function)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: end-to-end `apr search` CLI harness against a real HF API + local cache
 proof_obligations:
 - type: equivalence
   property: "apr search matches `huggingface_hub.list_models(search=...)` for Hub half"
@@ -72,6 +112,13 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-A-23-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "`apr search --offline` CLI harness"
+  - falsify_id: FALSIFY-CRUX-A-23-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: end-to-end apr search CLI harness against a real HF API
 
 pmat_work_tracking:
   ticket_tag: crux-crux-a-23
