@@ -130,6 +130,10 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             commands::typical_p_lint::run(observation_file, cli.json)
         }
 
+        ExtendedCommands::LoraHotswapLint { observation_file } => {
+            commands::lora_hotswap_lint::run(observation_file, cli.json)
+        }
+
 
         ExtendedCommands::Hex {
             file,

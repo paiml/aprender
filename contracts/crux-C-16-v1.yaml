@@ -2,7 +2,7 @@
 
 metadata:
   id: CRUX-C-16
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -81,6 +81,11 @@ falsification_tests:
   if_fails: "hotswapped adapter diverges from offline-merged baseline — LoRA math bug"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/lora_hotswap_classifier.rs
+    cli_path: crates/apr-cli/src/commands/lora_hotswap_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_16.rs
+    e2e_tests:
+    - falsify_crux_c_16_001_hotswap_parity_ok_on_identical
+    - falsify_crux_c_16_001_hotswap_parity_rejects_token_divergence
     sub_claim: |
       Algorithm-level necessary condition: `classify_hotswap_parity(merged,
       hotswap)` accepts iff the two token streams are byte-identical.
@@ -121,6 +126,12 @@ falsification_tests:
   if_fails: "LoRA load latency P99 exceeds 2s budget"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/lora_hotswap_classifier.rs
+    cli_path: crates/apr-cli/src/commands/lora_hotswap_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_16.rs
+    e2e_tests:
+    - falsify_crux_c_16_002_load_latency_ok_under_budget
+    - falsify_crux_c_16_002_load_latency_rejects_exceeded
+    - falsify_crux_c_16_002_load_latency_rejects_invalid_budget
     sub_claim: |
       Algorithm-level necessary condition: `classify_load_latency(samples,
       budget)` computes nearest-rank P99 (deterministic; no interpolation;
@@ -162,6 +173,13 @@ falsification_tests:
   if_fails: "mismatched-base adapter silently loaded — will produce garbage output"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/lora_hotswap_classifier.rs
+    cli_path: crates/apr-cli/src/commands/lora_hotswap_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_16.rs
+    e2e_tests:
+    - falsify_crux_c_16_003_adapter_compat_ok_on_matching
+    - falsify_crux_c_16_003_adapter_compat_rejects_sha_mismatch
+    - falsify_crux_c_16_003_adapter_compat_rejects_rank_too_large
+    - falsify_crux_c_16_003_adapter_compat_rejects_unknown_modules
     sub_claim: |
       Algorithm-level necessary condition: `classify_adapter_compat(
       base_sha, adapter_base_sha, base_modules, adapter_targets, rank)`
@@ -214,6 +232,11 @@ falsification_tests:
   if_fails: "base model state contaminated after LoRA unload"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/lora_hotswap_classifier.rs
+    cli_path: crates/apr-cli/src/commands/lora_hotswap_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_16.rs
+    e2e_tests:
+    - falsify_crux_c_16_004_unload_restore_ok_on_identical
+    - falsify_crux_c_16_004_unload_restore_rejects_divergence
     sub_claim: |
       Algorithm-level necessary condition: `classify_unload_restore(fresh,
       after_unload)` accepts iff the two token streams are byte-identical.
@@ -267,6 +290,27 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-C-16-004
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: "apr serve --enable-lora + /v1/lora/unload returning base to pristine state"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/lora_hotswap_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/lora_hotswap_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_16.rs
+    contract: contracts/crux-C-16-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr lora-hotswap-lint --observation-file <obs.json>` dispatches all four
+    classifiers (hotswap_parity, load_latency, adapter_compat,
+    unload_restore) over captured JSON. e2e suite (16 tests) exercises help
+    surface, bare-invocation rejection, per-gate ok+reject paths,
+    empty/nonexistent file rejection, and --json shape. Full ACTIVE
+    discharge remains blocked on an actual `apr serve --enable-lora` +
+    /v1/lora/load,unload runtime.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-c-16
