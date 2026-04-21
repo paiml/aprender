@@ -113,6 +113,11 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         )
         .map_err(crate::error::CliError::Aprender),
 
+        ExtendedCommands::OomLint {
+            report_file,
+            stderr_file,
+        } => commands::oom_lint::run(report_file, stderr_file.as_deref(), cli.json),
+
         ExtendedCommands::Hex {
             file,
             tensor,

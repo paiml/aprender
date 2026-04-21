@@ -1,16 +1,22 @@
 # CRUX-F-13 — CUDA OOM postmortem report
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (v1.0.0-draft, 2026-04-18).
+# Promoted to PARTIAL_ALGORITHM_LEVEL at v1.1.0 under CRUX-SHIP-001 (2026-04-21):
+# - classifier: crates/apr-cli/src/commands/oom_classifier.rs (28 unit tests)
+# - CLI surface: `apr oom-lint --report-file FILE [--stderr-file FILE] [--json]`
+# - e2e: crates/apr-cli/tests/falsification_crux_f_13.rs (15 tests)
+# Full discharge blocks on a live CUDA OOM trigger in aprender-serve emitting
+# the 7-key postmortem at /tmp/apr-oom-<ts>.json plus the OOM_REPORT stderr
+# breadcrumb — tracked as BLOCKER-UPSTREAM-MISSING.
 
 metadata:
   id: CRUX-F-13
-  version: "1.0.0-draft"
+  version: "1.1.0"
+  kind: kernel
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
@@ -18,16 +24,18 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: missing
   description: >
-    CUDA OOM postmortem report. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.F and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    CUDA OOM postmortem report. On out-of-memory, apr MUST write a bounded
+    JSON postmortem to /tmp/apr-oom-<unix_ts>.json with 7 required keys and
+    emit an OOM_REPORT breadcrumb on stderr before exiting non-zero. Classifier
+    in `apr-cli/src/commands/oom_classifier.rs` discharges schema, invariants,
+    size, and breadcrumb gates at PARTIAL_ALGORITHM_LEVEL; live OOM trigger
+    path in aprender-serve is tracked as BLOCKER-UPSTREAM-MISSING.
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'pytorch: torch.cuda.memory._record_memory_history / _dump_snapshot (https://pytorch.org/memory_viz)'
+  - github.com/pytorch/pytorch/blob/main/torch/cuda/memory.py
   - github.com/tensorflow/tensorboard
-  - github.com/wandb/wandb
 equations:
   oom_report_schema:
     formula: |
@@ -92,6 +100,24 @@ falsification_tests:
     [ "$EC" -ne 0 ] || { echo "OOM silent-swallowed (exit 0)"; exit 1; }
     ls /tmp/apr-oom-*.json >/dev/null
   if_fails: "no OOM postmortem file written, or process exited 0 on OOM"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/oom_classifier.rs
+    cli_path: crates/apr-cli/src/commands/oom_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_13.rs
+    sub_claim: |
+      Algorithm-level necessary condition: given an already-captured postmortem
+      file path, the CLI (`apr oom-lint --report-file FILE`) exits 0 on success
+      and non-zero when the file is missing/unreadable/malformed. End-to-end
+      exercised by the `apr` binary over tempfiles. The live OOM-trigger that
+      actually *writes* /tmp/apr-oom-<ts>.json under a starved
+      `--gpu-mem-fraction` is the blocked leg.
+    tests:
+    - falsify_crux_f_13_rejects_nonexistent_file
+    - falsify_crux_f_13_rejects_bare_invocation_without_file
+    - falsify_crux_f_13_schema_rejects_malformed_json
+    scope: "(report_file_path) → process exit code (pure CLI) + tempfile e2e"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live CUDA OOM trigger in aprender-serve that actually writes /tmp/apr-oom-<ts>.json on a starved --gpu-mem-fraction invocation"
 
 - id: FALSIFY-CRUX-F-13-002
   rule: OOM report has all required top-level keys
@@ -110,6 +136,42 @@ falsification_tests:
       (.timestamp              | type == "string")
     ' "$F" >/dev/null
   if_fails: "OOM report missing required keys, wrong types, or has > 100 ops recorded"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/oom_classifier.rs
+    cli_path: crates/apr-cli/src/commands/oom_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_13.rs
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-parsed OOM report:
+        (a) report root is a JSON object (else `NotAnObject`);
+        (b) every key in the 7-item OOM_REPORT_REQUIRED_KEYS list is present
+            (else `MissingRequiredKey{key}`);
+        (c) `peak_allocated_bytes` and `peak_reserved_bytes` are JSON numbers;
+        (d) `largest_alloc_stack` is a JSON array of strings;
+        (e) `tensor_histogram` is a JSON object;
+        (f) `last_100_ops` is a JSON array;
+        (g) `exit_code` is a JSON number;
+        (h) `timestamp` is a JSON string.
+      Classifier `classify_oom_schema` is pure; deterministic. CLI surface:
+      `apr oom-lint --report-file FILE` dispatches this classifier over a
+      captured postmortem end-to-end.
+    tests:
+    - schema_accepts_well_formed_report
+    - schema_rejects_non_object
+    - schema_rejects_each_missing_key
+    - schema_rejects_non_number_peak_allocated
+    - schema_rejects_non_number_peak_reserved
+    - schema_rejects_stack_with_non_strings
+    - schema_rejects_stack_not_array
+    - schema_rejects_histogram_not_object
+    - schema_rejects_ops_not_array
+    - schema_rejects_exit_code_not_number
+    - schema_rejects_timestamp_not_string
+    - falsify_crux_f_13_schema_accepts_well_formed_report
+    - falsify_crux_f_13_schema_rejects_missing_required_key
+    - falsify_crux_f_13_schema_rejects_malformed_json
+    scope: "(parsed_json_report) → OomSchemaOutcome (pure) + CLI e2e over captured postmortem"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live OOM-trigger handler emitting all 7 postmortem keys with runtime-real values"
 
 - id: FALSIFY-CRUX-F-13-003
   rule: OOM report file size under 10 MB cap
@@ -120,6 +182,24 @@ falsification_tests:
     SIZE=$(stat -c%s "$F")
     [ "$SIZE" -lt 10485760 ]
   if_fails: "OOM report exceeded 10 MB — raw tensor data leaked into postmortem"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/oom_classifier.rs
+    cli_path: crates/apr-cli/src/commands/oom_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_13.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_oom_size(bytes)` rejects
+      any byte count >= OOM_REPORT_MAX_SIZE_BYTES (10 * 1024 * 1024) with
+      `TooLarge{bytes, cap_bytes}`. Exactly one pass path:
+      `Ok{bytes}` when `bytes < cap_bytes`. Pure; deterministic. CLI surface
+      measures the captured postmortem file size and dispatches this gate
+      end-to-end.
+    tests:
+    - size_accepts_under_cap
+    - size_rejects_at_and_over_cap
+    - falsify_crux_f_13_schema_accepts_well_formed_report
+    scope: "(byte_count) → OomSizeOutcome (pure) + CLI e2e over captured postmortem"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live OOM-trigger handler that produces a real postmortem on disk whose size can be measured"
 
 - id: FALSIFY-CRUX-F-13-004
   rule: exit code is non-zero and stderr has breadcrumb
@@ -134,6 +214,32 @@ falsification_tests:
     [ "$EC" -ne 0 ]
     grep -E '^OOM_REPORT path=/tmp/apr-oom-[0-9]+\.json$' /tmp/apr-oom.stderr >/dev/null
   if_fails: "OOM silent (exit 0) or missing OOM_REPORT breadcrumb on stderr"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/oom_classifier.rs
+    cli_path: crates/apr-cli/src/commands/oom_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_13.rs
+    sub_claim: |
+      Algorithm-level necessary conditions on a captured stderr body:
+        (a) exactly one line matches `^OOM_REPORT path=(.+)$`
+            (else `NotFound`);
+        (b) the captured path matches `/tmp/apr-oom-<digits>.json`
+            (else `MalformedPath{got}`).
+      `classify_oom_breadcrumb(stderr)` is pure; deterministic. CLI surface:
+      `apr oom-lint --stderr-file FILE` reads captured stderr alongside the
+      postmortem and rejects malformed or missing breadcrumbs end-to-end.
+    tests:
+    - breadcrumb_accepts_well_formed
+    - breadcrumb_rejects_when_missing
+    - breadcrumb_rejects_wrong_path_prefix
+    - breadcrumb_rejects_non_digit_ts
+    - breadcrumb_rejects_empty_ts
+    - breadcrumb_rejects_wrong_suffix
+    - falsify_crux_f_13_breadcrumb_accepts_well_formed_stderr
+    - falsify_crux_f_13_breadcrumb_rejects_missing_line
+    - falsify_crux_f_13_breadcrumb_rejects_wrong_prefix
+    scope: "(captured_stderr_body) → OomBreadcrumbOutcome (pure) + CLI e2e"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live aprender-serve OOM fault path that writes OOM_REPORT path=/tmp/apr-oom-<ts>.json to stderr before exiting non-zero"
 
 - id: FALSIFY-CRUX-F-13-005
   rule: peak_reserved_bytes >= peak_allocated_bytes
@@ -143,6 +249,37 @@ falsification_tests:
     F=$(ls -t /tmp/apr-oom-*.json 2>/dev/null | head -1)
     jq -e '.peak_reserved_bytes >= .peak_allocated_bytes and .peak_allocated_bytes >= 0' "$F" >/dev/null
   if_fails: "peak_reserved_bytes < peak_allocated_bytes — accounting bug in CUDA memory tracker"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/oom_classifier.rs
+    cli_path: crates/apr-cli/src/commands/oom_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_f_13.rs
+    sub_claim: |
+      Algorithm-level necessary conditions on a schema-valid OOM report:
+        (a) `peak_reserved_bytes >= peak_allocated_bytes` (else
+            `ReservedLessThanAllocated{reserved, allocated}`);
+        (b) `last_100_ops` length <= 100 (else `TooManyOps{got}`);
+        (c) `tensor_histogram` is non-empty (else `EmptyHistogram`);
+        (d) `largest_alloc_stack` is non-empty (else `EmptyStack`);
+        (e) `exit_code != 0` (else `SilentExitCode` — OOM was silent-swallowed).
+      `classify_oom_invariants` is pure; deterministic. CLI surface exercises
+      this gate end-to-end alongside the schema gate.
+    tests:
+    - invariants_accepts_well_formed_report
+    - invariants_rejects_reserved_less_than_allocated
+    - invariants_accepts_reserved_equals_allocated
+    - invariants_rejects_too_many_ops
+    - invariants_accepts_exactly_100_ops
+    - invariants_rejects_empty_histogram
+    - invariants_rejects_empty_stack
+    - invariants_rejects_silent_exit_code_zero
+    - invariants_accepts_non_zero_exit_code
+    - falsify_crux_f_13_invariants_rejects_reserved_less_than_allocated
+    - falsify_crux_f_13_invariants_rejects_silent_exit_code_zero
+    - falsify_crux_f_13_invariants_rejects_more_than_100_ops
+    - falsify_crux_f_13_invariants_rejects_empty_histogram
+    scope: "(parsed_json_report) → OomInvariantsOutcome (pure) + CLI e2e"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live CUDA memory tracker emitting real peak_* accounting and operation histogram at OOM"
 
 proof_obligations:
 - type: invariant
@@ -161,6 +298,22 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-F-13-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live CUDA OOM trigger in aprender-serve that actually writes /tmp/apr-oom-<ts>.json"
+  - falsify_id: FALSIFY-CRUX-F-13-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live OOM-trigger handler emitting all 7 postmortem keys with runtime-real values"
+  - falsify_id: FALSIFY-CRUX-F-13-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live OOM-trigger handler producing a real postmortem on disk"
+  - falsify_id: FALSIFY-CRUX-F-13-004
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live aprender-serve OOM fault path writing OOM_REPORT stderr breadcrumb"
+  - falsify_id: FALSIFY-CRUX-F-13-005
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live CUDA memory tracker emitting real peak_* accounting at OOM"
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
@@ -168,3 +321,16 @@ pmat_work_tracking:
   ticket_tag: crux-crux-f-13
   priority: critical
   auto_created: true
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/oom_classifier.rs
+    cli_wiring: "crates/apr-cli/src/extended_commands.rs + dispatch_analysis.rs + commands/oom_lint.rs (apr oom-lint --report-file FILE [--stderr-file FILE] [--json])"
+    e2e_test: crates/apr-cli/tests/falsification_crux_f_13.rs
+    contract: contracts/crux-F-13-v1.yaml
+  merge_gates:
+    g1_classifier_green: "28 unit tests pass (commands::oom_classifier)"
+    g2_cli_reachable: "apr oom-lint --help advertises --report-file and --stderr-file"
+    g3_e2e_runs: "15 falsification tests pass (falsification_crux_f_13)"
+    g4_contract_discharged: "5 of 5 FALSIFY-* at PARTIAL_ALGORITHM_LEVEL under BLOCKER-UPSTREAM-MISSING (live OOM trigger + handler in aprender-serve); classifier + CLI paths end-to-end exercised"
