@@ -6,6 +6,7 @@
 //! - Visualization: Make problems visible
 
 pub(crate) mod aliases;
+pub(crate) mod auto_quant;
 pub mod bench;
 pub mod canary;
 pub mod cbtop;
@@ -14,6 +15,7 @@ pub mod check;
 pub mod compare_hf;
 pub(crate) mod compile;
 pub(crate) mod convert;
+pub(crate) mod copy_tag;
 pub(crate) mod debug;
 pub(crate) mod diff;
 pub(crate) mod distill;
@@ -29,9 +31,11 @@ pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;
 pub(crate) mod flow;
+pub(crate) mod glob_filter;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod hex;
+pub(crate) mod hf_endpoint;
 pub(crate) mod import;
 pub(crate) mod inspect;
 pub(crate) mod kernel_explain;
@@ -54,6 +58,7 @@ pub(crate) mod probar;
 pub(crate) mod profile;
 pub(crate) mod progress;
 pub(crate) mod prune;
+pub(crate) mod ps_schema;
 #[cfg(feature = "full")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;
@@ -65,6 +70,7 @@ pub(crate) mod qa_capability;
 pub(crate) mod qualify;
 pub(crate) mod quantize;
 pub(crate) mod registry;
+pub(crate) mod registry_schema;
 pub(crate) mod resume_paths;
 pub(crate) mod revision;
 pub(crate) mod rosetta;
@@ -75,6 +81,7 @@ pub(crate) mod serve;
 pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
 pub(crate) mod showcase;
+pub(crate) mod stop_op;
 pub(crate) mod tensors;
 pub(crate) mod token_redactor;
 pub(crate) mod tokenize;
@@ -87,3 +94,4 @@ pub(crate) mod tui;
 pub(crate) mod tune;
 pub(crate) mod validate;
 pub(crate) mod validate_manifest;
+pub(crate) mod xet_mode;
