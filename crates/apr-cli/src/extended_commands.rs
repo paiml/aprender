@@ -767,6 +767,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a captured GPTQ compression/cosine/flags observation (CRUX-B-09)
+    GptqLint {
+        /// Path to captured GPTQ observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Lint a captured CUDA OOM postmortem report (CRUX-F-13)
     OomLint {
         /// Path to captured OOM postmortem JSON (e.g. /tmp/apr-oom-<ts>.json)
