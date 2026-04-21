@@ -2,7 +2,7 @@
 
 metadata:
   id: CRUX-C-13
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -75,6 +75,13 @@ falsification_tests:
   if_fails: "/v1/embeddings response length or vector dimension mismatches spec"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_13.rs
+    e2e_tests:
+    - falsify_crux_c_13_001_shape_ok_on_three_rows
+    - falsify_crux_c_13_001_shape_rejects_row_count_mismatch
+    - falsify_crux_c_13_001_shape_rejects_vector_dim_mismatch
+    - falsify_crux_c_13_001_shape_rejects_index_out_of_order
     sub_claim: |
       Algorithm-level necessary condition: `classify_embeddings_response_shape`
       enforces three invariants in sequence, surfacing the first violation
@@ -119,6 +126,12 @@ falsification_tests:
   if_fails: "Embeddings non-deterministic for identical input; stochastic path leaked into embedding model"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_13.rs
+    e2e_tests:
+    - falsify_crux_c_13_002_determinism_ok_on_identical
+    - falsify_crux_c_13_002_determinism_rejects_drift
+    - falsify_crux_c_13_002_determinism_rejects_zero_vector
     sub_claim: |
       Algorithm-level necessary conditions:
         (a) `cosine_similarity` implements the standard <a,b>/(‖a‖·‖b‖)
@@ -163,6 +176,12 @@ falsification_tests:
   if_fails: "usage fields inconsistent; billing/metering clients will mis-account tokens"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_13.rs
+    e2e_tests:
+    - falsify_crux_c_13_003_usage_ok_on_matching_prompt_total
+    - falsify_crux_c_13_003_usage_rejects_mismatch
+    - falsify_crux_c_13_003_usage_rejects_zero_prompt
     sub_claim: |
       Algorithm-level necessary condition: `classify_usage_tokens(prompt, total)`
       admits `Ok{prompt, total}` iff prompt ≥ 1 AND total == prompt; else
@@ -188,6 +207,13 @@ falsification_tests:
   if_fails: "apr serve lacks --embeddings-enabled flag; endpoint cannot be exposed as documented"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_path: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_13.rs
+    e2e_tests:
+    - falsify_crux_c_13_004_flag_bare_form_enabled
+    - falsify_crux_c_13_004_flag_equals_false_disabled
+    - falsify_crux_c_13_004_flag_rejects_wrong_expectation
+    - falsify_crux_c_13_004_flag_malformed_is_rejected
     sub_claim: |
       Algorithm-level necessary condition: `parse_embeddings_flag(argv)`
       accepts both bare (`--embeddings-enabled`) and equals forms
@@ -238,6 +264,27 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-C-13-004
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: "clap `apr serve --embeddings-enabled` surface"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/embeddings_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/embeddings_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_13.rs
+    contract: contracts/crux-C-13-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr embeddings-lint --observation-file <obs.json>` dispatches four
+    classifiers (shape, determinism, usage, flag) over a captured JSON
+    observation. e2e suite (19 tests) exercises help surface, bare-
+    invocation rejection, per-gate ok+reject paths, empty/nonexistent
+    file rejection, and --json shape. Full ACTIVE discharge remains
+    blocked on live /v1/embeddings handler in aprender-serve + clap
+    `--embeddings-enabled` surface on `apr serve`.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-c-13
