@@ -36,14 +36,29 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-LLAMA-370M-SOVEREIGN
-version: 1.3.0
+version: 1.4.0
 status: ACTIVE
 
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
   created: "2026-04-18"
-  updated: "2026-04-19"
+  updated: "2026-04-21"
   changelog:
+    - "1.4.0 (2026-04-21): Added GATE-ARCH-370M-011 operationalizing
+       INV-ARCH-370M-006 as a pre-flight gate on the `apr pretrain`
+       dispatch path. Motivation: first real-compute MODEL-2 dispatch
+       (commit 29607ed33, task #126) fired the N-09 OOB escape guard
+       on the first forward pass because the tokenizer artifact at
+       /mnt/nvme-raid0/models/model-2-tokenizer-v1/ has 50_257 vocab
+       entries but this contract pins VOCAB_SIZE=50_000 exact. The
+       INV-ARCH-370M-006 invariant named the required check but had
+       no enforced falsifier — training would silently emit garbage
+       gradients. GATE-ARCH-370M-011 wires a hard pre-flight in
+       drive_real (crates/apr-cli/src/commands/pretrain.rs) that
+       reads tokenizer/vocab.json, counts entries, and refuses to
+       start training when tokenizer.vocab_size() != model.vocab_size.
+       Contract stays ACTIVE — the new gate hardens an existing
+       invariant rather than introducing a new architectural claim."
     - "1.0.0 (2026-04-18): Initial contract drafted as PROPOSED — froze
        albor 370M architectural constants before pretraining begins."
     - "1.1.0 (2026-04-19): Promoted to ACTIVE. FALSIFY-SHIP-011
@@ -441,6 +456,33 @@ gates:
     verdict: pass
     binds_to: AC-SHIP2-009
     falsification_id: FALSIFY-SHIP-019
+    ship_blocking: true
+
+  - id: GATE-ARCH-370M-011
+    rule: >
+      At the entry point of every `apr pretrain` dispatch, the paired
+      tokenizer's vocab size (loaded from tokenizer_dir/vocab.json)
+      MUST equal the 370M Llama model's vocab_size
+      (`Llama370MConfig::VOCAB_SIZE`). Mismatch is a ship-blocker:
+      dispatch aborts with a clear error before the first forward
+      pass. Operationalizes INV-ARCH-370M-006.
+    evidence_required: >
+      `cargo test -p apr-cli --lib pretrain` exercises the pre-flight:
+      (1) tokenizer vocab == model vocab → dispatch proceeds
+      (2) tokenizer vocab != model vocab → CliError::ValidationFailed
+          with a message citing GATE-ARCH-370M-011 and naming both
+          numbers. And `cargo test -p aprender-train --lib llama_370m`
+          passes `falsify_gate_arch_370m_011_helper_rejects_mismatch`
+          which asserts the pure vocab-parity helper rejects any
+          (tokenizer_vocab, model_vocab) pair where they differ.
+    evidence_discharged_by:
+      - "crates/apr-cli/src/commands/pretrain.rs::assert_tokenizer_vocab_matches_model"
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::preflight_rejects_tokenizer_vocab_mismatch"
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::preflight_accepts_matching_vocab"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_gate_arch_370m_011_helper_rejects_mismatch"
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    falsification_id: FALSIFY-ARCH-370M-011
     ship_blocking: true
 
 references:
