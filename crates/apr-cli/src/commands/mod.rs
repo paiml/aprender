@@ -58,6 +58,7 @@ pub(crate) mod probar;
 pub(crate) mod profile;
 pub(crate) mod progress;
 pub(crate) mod prune;
+pub(crate) mod ps_schema;
 #[cfg(feature = "full")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;
