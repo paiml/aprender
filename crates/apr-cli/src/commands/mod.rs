@@ -48,6 +48,8 @@ pub(crate) mod kernel_explain;
 pub(crate) mod lint;
 pub(crate) mod mcp;
 pub(crate) mod merge;
+pub(crate) mod multi_lora_classifier;
+pub(crate) mod typical_p_classifier;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;
 #[cfg(feature = "training")]
