@@ -38,13 +38,17 @@ jobs:
       # (ci/test + ci/coverage both timed out on run 24685501433).
       enable_sccache: true
       use_nextest: true
-      # PMAT-159 (paiml/.github#29): opt-in to `cargo nextest run --workspace --lib`
-      # so aprender's workspace-member lib tests actually run in ci/test (prior
-      # behavior was root-only → 0 tests, see infra#33). aprender-gpu / cuda-edge /
-      # compute don't build in the sovereign-ci container, so exclude them here
-      # (workspace-test below still covers them with the GPU-ready harness).
-      test_workspace: true
-      test_args: "--exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute"
+      # PMAT-159 decision (2026-04-21): NOT opting into test_workspace here.
+      # Rationale: aprender's bespoke `workspace-test` job below is the trusted
+      # test signal for APR-MONO and runs the same workload. Dual execution
+      # doubles compile work on one host (jobserver oversubscription — cargo
+      # #12912). F11 is overridden per-repo to measure `workspace-test` for
+      # aprender instead of `ci / test`; see infra examples/falsify_f11_test_job_p95.rs
+      # and docs/specifications/build-performance.md §7 Phase 2.4.
+      #
+      # ci/test here reverts to `cargo nextest run --lib` on the root stub
+      # (0 tests, green). It is intentionally kept as a gate presence so the
+      # org ruleset's `ci / gate` context stays populated.
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
