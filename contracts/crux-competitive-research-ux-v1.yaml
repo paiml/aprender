@@ -575,6 +575,95 @@ pmat_work:
     by pre-push hook calling `pmat work validate`.
 
 # ─────────────────────────────────────────────────────────────
+# Shipping discipline (CRUX-SHIP-001, added 2026-04-21)
+# ─────────────────────────────────────────────────────────────
+shipping_discipline:
+  rule_id: CRUX-SHIP-001
+  status: ACTIVE
+  updated: "2026-04-21"
+  principle: >
+    A pure-Rust classifier without working CLI wiring is WASTE (muda).
+    Every CRUX PR MUST ship both the classifier AND end-to-end CLI wiring
+    in the SAME commit. Classifier-only (PARTIAL_ALGORITHM_LEVEL-only)
+    PRs produce well-documented empty promises: specs rot, follow-ups
+    never land, users can't reach the feature. Toyota Way: a PR that
+    doesn't pass value downstream to a real user hasn't completed.
+
+  default_path:
+    description: "What every CRUX PR MUST include by default"
+    deliverables:
+      - "crates/apr-cli/src/commands/<feature>_classifier.rs — pure-Rust falsification classifier"
+      - "crates/apr-cli/src/commands/<feature>.rs OR flag wiring on existing subcommand"
+      - "tests/<feature>_e2e.rs — at least one assert_cmd (or subprocess) end-to-end test"
+      - "contracts/crux-<ID>-v1.yaml — falsification_tests[].evidence_discharged_by populated"
+      - "pv validate contracts/crux-<ID>-v1.yaml — 0 errors, 0 warnings"
+
+  merge_gates:
+    g1_classifier_green:
+      check: "cargo test -p apr-cli --lib -- <feature>_classifier"
+      reason: "Pure-Rust invariants must hold"
+    g2_cli_reachable:
+      check: "apr <cmd> --help contains the new flag/subcommand"
+      reason: "User must be able to invoke the feature"
+    g3_e2e_runs:
+      check: "cargo test -p apr-cli --test <feature>_e2e"
+      reason: "Classifier + CLI integration must hold end-to-end"
+    g4_contract_discharged:
+      check: "pv validate 0/0 AND at least one FALSIFY-* sub-claim at FULL or declared-blocker PARTIAL"
+      reason: "Contract must bind to the implementation, not float free"
+
+  exceptions_allowing_partial_only:
+    description: "PARTIAL_ALGORITHM_LEVEL-only is acceptable ONLY under one of these named blockers"
+    allowed_blockers:
+      - id: BLOCKER-UPSTREAM-MISSING
+        meaning: "Required upstream (trueno kernel, realizar sampler, etc.) isn't merged yet"
+        evidence_required: "Link to upstream PR/issue + expected merge date"
+      - id: BLOCKER-FIXTURE-ABSENT
+        meaning: "Real fixture (.gguf model, dataset) needed for the e2e test doesn't exist"
+        evidence_required: "Link to fixture-creation ticket + estimated fixture size"
+      - id: BLOCKER-SPEC-OPEN
+        meaning: "Canonical competitor spec (OpenAI schema version, llama.cpp flag semantics) is under revision"
+        evidence_required: "Link to upstream spec discussion + our interpretation choice"
+    forbidden_blockers:
+      - "I didn't get to the CLI wiring"
+      - "The test harness is annoying"
+      - "I'll do it in a follow-up PR"
+      - "The classifier is the hard part"
+      - "CI was slow so I split the PR"
+    declaration_site:
+      - "PR description body — quote blocker id verbatim + evidence link"
+      - "contracts/crux-<ID>-v1.yaml — falsification_tests[].evidence_discharged_by.full_discharge_blocked_on references blocker id"
+
+  pr_title_template:
+    fully_wired: |
+      feat(crux-<ID>): <feature> classifier + CLI (<K> of <N> FALSIFY FULL, <M> of <N> PARTIAL)
+    partial_under_blocker: |
+      feat(crux-<ID>): <feature> classifier (<M> of <N> FALSIFY PARTIAL_ALGORITHM_LEVEL; blocked on BLOCKER-<X>)
+
+  backfill_obligation: >
+    Pre-2026-04-21 classifier-only PRs (grandfathered: C-15, C-16, C-17,
+    C-22, C-23 and any other classifier-only PRs that merged before this
+    rule landed) each require a follow-up ticket `crux-wireup-<id>` that
+    lands deliverables #2 (CLI wiring) and #3 (e2e test). These wire-up
+    tickets carry the same priority as the original CRUX ticket.
+
+  review_checklist:
+    reviewer_must_verify:
+      - "apr <subcommand> --help shows the new flag/subcommand"
+      - "tests/ contains at least one e2e test that invokes the real binary"
+      - "contract falsification_tests[].evidence_discharged_by has classifier_path AND tests[] AND scope AND discharge_status"
+      - "If discharge_status=PARTIAL_ALGORITHM_LEVEL, full_discharge_blocked_on names an allowed blocker"
+      - "No forbidden_blockers quoted anywhere in PR body or contract"
+
+  rationale: >
+    Toyota Way kaizen principle — every PR must pass value downstream to
+    a real user. A classifier that proves an invariant in pure Rust but
+    isn't reachable via `apr` is equivalent to a paper proof: mathematically
+    sound, operationally useless. The C-15/16/17/22/23 pattern of "ship
+    classifier, open follow-up ticket, never land the wiring" created
+    technical-promise-debt that this rule eliminates at the PR boundary.
+
+# ─────────────────────────────────────────────────────────────
 # Implementation phases (mirrors subspec §7)
 # ─────────────────────────────────────────────────────────────
 phases:
