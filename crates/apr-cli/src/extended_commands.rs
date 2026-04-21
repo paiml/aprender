@@ -761,6 +761,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a captured NF4 codebook/roundtrip/storage/parity observation (CRUX-B-10)
+    Nf4Lint {
+        /// Path to captured NF4 observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Lint a captured CUDA OOM postmortem report (CRUX-F-13)
     OomLint {
         /// Path to captured OOM postmortem JSON (e.g. /tmp/apr-oom-<ts>.json)

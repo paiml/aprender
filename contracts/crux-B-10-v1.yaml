@@ -3,7 +3,7 @@
 
 metadata:
   id: CRUX-B-10
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -89,6 +89,13 @@ falsification_tests:
   if_fails: "apr NF4 codebook diverges from bitsandbytes canonical table"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/nf4_classifier.rs
+    cli_path: crates/apr-cli/src/commands/nf4_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_10.rs
+    e2e_tests:
+    - falsify_crux_b_10_001_codebook_ok_on_canonical
+    - falsify_crux_b_10_001_codebook_ok_without_expected
+    - falsify_crux_b_10_001_codebook_rejects_length_mismatch
+    - falsify_crux_b_10_001_codebook_rejects_wrong_values
     sub_claim: |
       Algorithm-level necessary condition: `NF4_CODEBOOK` is a const
       [f32; 16] whose values byte-match the bitsandbytes canonical
@@ -123,6 +130,12 @@ falsification_tests:
   if_fails: "NF4 storage footprint outside expected envelope"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/nf4_classifier.rs
+    cli_path: crates/apr-cli/src/commands/nf4_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_10.rs
+    e2e_tests:
+    - falsify_crux_b_10_002_storage_ok_single_quant
+    - falsify_crux_b_10_002_storage_rejects_tight_envelope
+    - falsify_crux_b_10_002_storage_rejects_zero_n_weights
     sub_claim: |
       Algorithm-level necessary condition: `expected_nf4_storage_bytes`
       implements the paper formula (0.5 B/weight codes + per-block
@@ -156,6 +169,12 @@ falsification_tests:
   if_fails: "NF4 relative L2 error exceeds 0.06 paper bound"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/nf4_classifier.rs
+    cli_path: crates/apr-cli/src/commands/nf4_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_10.rs
+    e2e_tests:
+    - falsify_crux_b_10_003_roundtrip_ok_on_small_block
+    - falsify_crux_b_10_003_roundtrip_rejects_tight_bound
+    - falsify_crux_b_10_003_roundtrip_rejects_empty_weights
     sub_claim: |
       Algorithm-level necessary condition: `nf4_quantize_block` +
       `nf4_dequantize_block` roundtrip, averaged across 128 blocks of
@@ -201,6 +220,12 @@ falsification_tests:
   if_fails: "apr NF4 dequant does not bit-match bitsandbytes"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/nf4_classifier.rs
+    cli_path: crates/apr-cli/src/commands/nf4_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_10.rs
+    e2e_tests:
+    - falsify_crux_b_10_004_parity_ok_on_zero_target
+    - falsify_crux_b_10_004_parity_ok_on_extreme_positive
+    - falsify_crux_b_10_004_parity_rejects_wrong_index
     sub_claim: |
       Algorithm-level necessary condition: `nearest_codebook_index` is
       deterministic (first-minimum wins on exact ties), saturates
@@ -248,6 +273,32 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-B-10-004
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: GPU harness (bitsandbytes quantize_nf4 on same fp16 input)
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/nf4_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/nf4_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_b_10.rs
+    contract: contracts/crux-B-10-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr nf4-lint --observation-file <obs.json>` dispatches four NF4
+    classifiers (codebook table, roundtrip rel-L2, storage envelope,
+    parity of nearest-index) over a captured JSON observation.
+    e2e suite (19 tests) exercises help surface, bare-invocation
+    rejection, ok+reject paths on all four gates (canonical/implicit/
+    length-mismatch/wrong-values codebook; small-block/tight-bound/
+    empty-weights roundtrip; single-quant/tight-envelope/zero-weights
+    storage; zero-target/extreme-positive/wrong-index parity),
+    empty/nonexistent file rejection, observation-without-known-keys
+    rejection, and --json shape. Full ACTIVE discharge remains blocked
+    on `apr inspect --print-nf4-codebook`, `apr quantize --method nf4`,
+    `apr diff --json` harness, and GPU bitsandbytes parity runner.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-b-10

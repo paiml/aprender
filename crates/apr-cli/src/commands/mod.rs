@@ -61,6 +61,7 @@ pub(crate) mod monitor;
 pub mod mono;
 pub(crate) mod multi_lora_classifier;
 pub(crate) mod nf4_classifier;
+pub(crate) mod nf4_lint;
 pub(crate) mod offline;
 pub(crate) mod ollama_chat;
 pub(crate) mod ollama_chat_classifier;
