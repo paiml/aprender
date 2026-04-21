@@ -41,6 +41,7 @@ pub(crate) mod gbnf_lint;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod gptq_classifier;
+pub(crate) mod gptq_lint;
 pub(crate) mod hex;
 pub(crate) mod hf_endpoint;
 pub(crate) mod import;

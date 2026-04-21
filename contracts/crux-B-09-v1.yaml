@@ -3,7 +3,7 @@
 
 metadata:
   id: CRUX-B-09
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -69,6 +69,12 @@ falsification_tests:
   if_fails: "GPTQ 4-bit artifact not compressed to expected 4 bits/weight; packing or metadata bloat bug"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/gptq_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gptq_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_09.rs
+    e2e_tests:
+    - falsify_crux_b_09_001_compression_ok_under_ceiling
+    - falsify_crux_b_09_001_compression_rejects_over_ceiling
+    - falsify_crux_b_09_001_compression_rejects_zero_source
     sub_claim: |
       Algorithm-level necessary condition: `classify_compression_ratio`
       computes ρ = gptq_bytes / fp16_bytes and admits only
@@ -96,6 +102,13 @@ falsification_tests:
   if_fails: "GPTQ logit cosine below 0.98; Hessian-driven calibration is broken or omitted"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/gptq_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gptq_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_09.rs
+    e2e_tests:
+    - falsify_crux_b_09_002_cosine_ok_on_identical_logits
+    - falsify_crux_b_09_002_cosine_rejects_orthogonal_pair
+    - falsify_crux_b_09_002_cosine_rejects_all_mismatched_lengths
+    - falsify_crux_b_09_002_cosine_rejects_missing_pairs_key
     sub_claim: |
       Algorithm-level necessary condition: `cosine_similarity` implements
       the standard <a,b>/(‖a‖·‖b‖) formula (verified on identical,
@@ -128,6 +141,15 @@ falsification_tests:
   if_fails: "apr quantize lacks --method gptq; vllm/auto-gptq path not exposed"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/gptq_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gptq_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_09.rs
+    e2e_tests:
+    - falsify_crux_b_09_003_flags_ok_on_canonical_argv
+    - falsify_crux_b_09_003_flags_ok_on_equals_form
+    - falsify_crux_b_09_003_flags_rejects_wrong_method
+    - falsify_crux_b_09_003_flags_rejects_invalid_bits
+    - falsify_crux_b_09_003_flags_rejects_missing_bits
+    - falsify_crux_b_09_003_flags_observer_can_assert_expected_failure
     sub_claim: |
       Algorithm-level necessary condition: `parse_gptq_flags` handles
       both `--method gptq` and `--method=gptq`; accepts the auto-gptq
@@ -176,6 +198,33 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-B-09-003
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: "clap `apr quantize --help` subcommand surface + gptq method enum"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/gptq_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/gptq_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_b_09.rs
+    contract: contracts/crux-B-09-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr gptq-lint --observation-file <obs.json>` dispatches three GPTQ
+    classifiers (compression ratio, logit-cosine fidelity, CLI flag
+    validation) over a captured JSON observation. e2e suite (19 tests)
+    exercises help surface, bare-invocation rejection, ok+reject paths
+    on all three gates (under-ceiling/over-ceiling/zero-source
+    compression; identical-logits/orthogonal/length-mismatch/missing-pairs
+    cosine; canonical/equals-form/wrong-method/invalid-bits/missing-bits
+    flags + observer-asserted negative case), empty/nonexistent file
+    rejection, observation-without-known-keys rejection, and --json
+    shape. Full ACTIVE discharge remains blocked on real GPTQ 4-bit
+    packer, `evidence/crux/vllm/gptq/prompts-64.jsonl`, `apr diff
+    --metric logit-cosine` harness, and `apr quantize --method gptq`
+    clap surface.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-b-09

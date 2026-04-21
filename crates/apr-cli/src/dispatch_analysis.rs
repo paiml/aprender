@@ -130,6 +130,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             commands::typical_p_lint::run(observation_file, cli.json)
         }
 
+        ExtendedCommands::GptqLint { observation_file } => commands::gptq_lint::run(
+            commands::gptq_lint::GptqLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
 
         ExtendedCommands::Hex {
             file,
