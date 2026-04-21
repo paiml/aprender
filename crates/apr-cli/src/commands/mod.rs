@@ -15,6 +15,7 @@ pub mod check;
 pub mod compare_hf;
 pub(crate) mod compile;
 pub(crate) mod convert;
+pub(crate) mod copy_tag;
 pub(crate) mod debug;
 pub(crate) mod diff;
 pub(crate) mod distill;
@@ -30,9 +31,11 @@ pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;
 pub(crate) mod flow;
+pub(crate) mod glob_filter;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod hex;
+pub(crate) mod hf_endpoint;
 pub(crate) mod import;
 pub(crate) mod inspect;
 pub(crate) mod kernel_explain;
