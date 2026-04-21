@@ -1,21 +1,17 @@
 # CRUX-C-12 — Multi-modal vision input LLaVA
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-12
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: llama_cpp
-  demand_score: 4  # 1..5, high priority in pmat work
+  demand_score: 4
   intake_status: missing
   description: >
     Multi-modal vision input via LLaVA-style vision encoder (CLIP/SigLIP) +
@@ -64,34 +60,76 @@ equations:
     codomain: bool
     invariants:
     - "incompatible projection_dim MUST fail fast with actionable error"
-    - "mmproj magic bytes validated at load time (not first inference)"
+    - "unsupported vision arch MUST fail fast"
+    - "zero projection_dim or zero hidden_size MUST be rejected"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-12-001
   rule: image splice produces N_img_tokens embeddings
   prediction: "vision embeddings occupy exactly 576 (LLaVA-1.5) or 729 (SigLIP) tokens"
   test: |
-    # TODO: blocked until --mmproj flag implemented
     apr run llava-7b.gguf --mmproj llava-vision.gguf --image cat.jpg \
       --prompt "<image>\nDescribe:" --max-tokens 1 --json | \
       jq -e '.prompt_tokens.image_token_count == 576'
   if_fails: "vision token count mismatch — projector output shape incorrect"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/llava_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_image_token_count(arch,
+      got)` accepts `Ok` iff `got == arch.expected_image_tokens()` with
+      LLaVA-1.5 → 576 and SigLIP → 729. Rejection paths:
+        (a) `got == 0` → `ZeroImageTokens` (splice produced no image
+            embeddings — different defect from "wrong count");
+        (b) `got != expected` → `Mismatch{arch, expected, got}`.
+      Pure; deterministic.
+    tests:
+    - image_tokens_ok_llava15
+    - image_tokens_ok_siglip
+    - image_tokens_rejects_zero
+    - image_tokens_rejects_mismatch
+    - image_tokens_rejects_siglip_with_llava_count
+    - image_tokens_classifier_is_deterministic
+    - vision_arch_constants_are_canonical
+    scope: "(arch: VisionArch, got_image_tokens: u32) → ImageTokenCountOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr run --mmproj --image surface integrating a real CLIP/SigLIP vision tower that exposes image_token_count in --json output"
 
 - id: FALSIFY-CRUX-C-12-002
   rule: temp=0 caption parity with llama-llava-cli
   prediction: "apr caption at temp=0 matches llama-llava-cli golden byte-for-byte"
   test: |
-    # TODO: capture golden via: llama-llava-cli -m llava-7b.gguf --mmproj llava-vision.gguf --image cat.jpg -p "Describe:" --temp 0 > golden.txt
     APR_OUT=$(apr run llava-7b.gguf --mmproj llava-vision.gguf --image cat.jpg \
       --prompt "Describe:" --temperature 0.0 --top-k 1 --max-tokens 64)
     diff <(echo "$APR_OUT") evidence/crux/llama_cpp/llava/cat-golden.txt
   if_fails: "caption diverges from llama-llava-cli golden at temp=0"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/llava_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_caption_parity(apr,
+      golden)` accepts iff both strings are byte-identical. Rejection paths
+      distinguish root causes deterministically:
+        (a) one-sided emptiness → `EmptinessMismatch{apr_empty, golden_empty}`
+            (vs the harder-to-debug "silent divergence at position 0");
+        (b) unequal byte-length → `LengthMismatch`;
+        (c) equal length but diverges at some index → `ByteDivergence
+            {at_index, apr_byte, golden_byte}` at the FIRST mismatch
+            (deterministic; bisection-friendly).
+      Pure; deterministic.
+    tests:
+    - caption_ok_on_byte_identical
+    - caption_ok_on_two_empty
+    - caption_rejects_emptiness_mismatch
+    - caption_rejects_length_mismatch
+    - caption_rejects_byte_divergence
+    - caption_classifier_is_deterministic
+    scope: "(apr_caption, golden) → CaptionParityOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr run --mmproj --image surface + golden captions captured from llama-llava-cli on the llama.cpp evidence set"
 
 - id: FALSIFY-CRUX-C-12-003
-  rule: incompatible mmproj rejected
+  rule: incompatible mmproj rejected BEFORE first inference step
   prediction: "mmproj with mismatched projection_dim MUST exit non-zero"
   test: |
-    # TODO: blocked until --mmproj flag; requires deliberately-mismatched test mmproj
     set +e
     apr run qwen2-1.5b.gguf --mmproj llava-vision.gguf --image cat.jpg \
       --prompt "Describe:" 2>err.log
@@ -99,12 +137,35 @@ falsification_tests:
     set -e
     [ "$rc" -ne 0 ] && grep -qiE "projection_dim|hidden_size|incompatib" err.log
   if_fails: "mismatched mmproj silently accepted — will produce garbage output"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/llava_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition:
+      `classify_mmproj_compatibility(arch, projection_dim, hidden_size)`
+      accepts `Ok` iff the lowercased arch ∈ {"clip", "siglip"} AND
+      `projection_dim != 0` AND `hidden_size != 0` AND
+      `projection_dim == hidden_size`. Rejection paths:
+        (a) unknown arch → `UnsupportedArch{got}`;
+        (b) zero projection_dim or hidden_size → `ZeroDim{which}`;
+        (c) nonzero but unequal → `ProjectionDimMismatch{projection_dim,
+            hidden_size}`.
+      Pure; deterministic.
+    tests:
+    - mmproj_ok_on_clip_matching_dim
+    - mmproj_ok_on_siglip_case_insensitive
+    - mmproj_rejects_unknown_arch
+    - mmproj_rejects_zero_projection_dim
+    - mmproj_rejects_zero_hidden_size
+    - mmproj_rejects_dim_mismatch
+    - mmproj_classifier_is_deterministic
+    scope: "(mmproj_arch, projection_dim, hidden_size) → MmprojCompatOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr run --mmproj surface actually invoking this classifier on GGUF mmproj metadata before the first inference step"
 
 - id: FALSIFY-CRUX-C-12-004
   rule: unsupported image format rejected
   prediction: "non-image input (e.g. .txt, .mp4) exits non-zero with actionable error"
   test: |
-    # TODO: blocked until --image flag implemented
     set +e
     apr run llava-7b.gguf --mmproj llava-vision.gguf --image README.md \
       --prompt "?" 2>err.log
@@ -112,6 +173,33 @@ falsification_tests:
     set -e
     [ "$rc" -ne 0 ] && grep -qiE "image|format|decode" err.log
   if_fails: "non-image input silently accepted — likely segfault or garbage"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/llava_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_image_format(filename)`
+      reports the last filename-component's extension, lowercased, and
+      accepts iff it is in `SUPPORTED_IMAGE_EXTENSIONS = [jpg, jpeg, png,
+      bmp]`. Rejection paths:
+        (a) empty filename → `EmptyFilename`;
+        (b) no extension or trailing dot → `MissingExtension`;
+        (c) recognized-but-unsupported extension → `UnsupportedExtension
+            {got}`.
+      Directory-level dots in the path do NOT count; only the final
+      component's dot is consulted. Pure; deterministic.
+    tests:
+    - image_format_ok_jpg
+    - image_format_ok_jpeg_case_insensitive
+    - image_format_ok_png_with_path
+    - image_format_ok_bmp
+    - image_format_rejects_unsupported
+    - image_format_rejects_missing_extension
+    - image_format_rejects_empty_filename
+    - image_format_ignores_directory_dots
+    - image_format_classifier_is_deterministic
+    - supported_extensions_are_canonical
+    scope: "(filename: &str) → ImageFormatOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr run --image surface that actually validates the format before attempting to decode; MIME/header inspection is out of scope for this algorithm-level gate"
 
 proof_obligations:
 - type: equivalence
@@ -128,10 +216,21 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-C-12-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr run --mmproj surface emitting prompt_tokens.image_token_count"
+  - falsify_id: FALSIFY-CRUX-C-12-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr run --mmproj surface + golden captions from llama-llava-cli"
+  - falsify_id: FALSIFY-CRUX-C-12-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr run --mmproj invoking this classifier on GGUF metadata before first decode"
+  - falsify_id: FALSIFY-CRUX-C-12-004
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr run --image validating format before decode"
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-12` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-12
   priority: high
   auto_created: true

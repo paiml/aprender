@@ -46,6 +46,7 @@ pub(crate) mod import;
 pub(crate) mod inspect;
 pub(crate) mod kernel_explain;
 pub(crate) mod lint;
+pub(crate) mod llava_classifier;
 pub(crate) mod mcp;
 pub(crate) mod merge;
 #[cfg(feature = "training")]
