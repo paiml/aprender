@@ -90,6 +90,7 @@ pub(crate) mod run;
 #[cfg(feature = "training")]
 pub(crate) mod runs;
 pub(crate) mod search_merge;
+pub(crate) mod unified_search_lint;
 pub(crate) mod serve;
 pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
