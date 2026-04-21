@@ -1,0 +1,150 @@
+# CRUX-M-06 — QA Gate-6: chat-template parity vs upstream Jinja
+# Authored under PMAT-674. See docs/specifications/crux-competitive-research-ux-workflows.md §5.M.
+
+metadata:
+  id: CRUX-M-06
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - apr-model-qa-v1
+  category: "M — APR-QA Playbook Canonicalization"
+  competitor: apr-qa-playbook
+  demand_score: 4
+  intake_status: partial
+  description: >
+    QA Gate-6 from apr-model-qa-playbook — chat-template parity.
+    For a fixed fixture of (messages, tool_calls) conversation
+    snippets, the APR chat-template renderer (minijinja-backed)
+    MUST produce byte-identical output to the upstream Hugging
+    Face `tokenizer_config.json`'s chat_template rendered by the
+    Python `transformers` library. Catches silent chat-template
+    drift (role prefix changes, tool-call wrapping, BOS/EOS
+    injection) that poisons instruction-following evals.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'sibling repo: github.com/paiml/apr-model-qa-playbook — Gate-6'
+  - 'upstream: github.com/huggingface/transformers — apply_chat_template'
+  - 'crates/aprender-core/src/text/chat_template.rs — APR renderer'
+
+equations:
+  chat_template_parity:
+    formula: |
+      Let fixture F = frozen set of 32 (messages, tool_calls?) conversations
+      For each (msgs, tools) ∈ F, with tokenizer_config.json:
+          out_apr := apr_chat_template.render(tokenizer_config, msgs, tools)
+          out_hf  := python_transformers.apply_chat_template(tokenizer_config, msgs, tools)
+      Gate pass := out_apr == out_hf (byte-for-byte UTF-8 equality)  ∀ (msgs, tools) ∈ F
+    domain: "APR renderer × HF transformers × fixture F"
+    codomain: "PASS if all renders byte-equal; FAIL on any diff"
+    invariants:
+    - "comparison is byte-equality on UTF-8, not semantic / regex-tolerant"
+    - "BOS/EOS/generation_prompt additions are INCLUDED in the render (matches HF add_generation_prompt=True)"
+    - "missing tools field is passed through — not coerced to [] or {}"
+    - "fixture is version-controlled (fixtures/chat-template-canary.jsonl)"
+
+  gate_contract:
+    formula: |
+      apr qa --gate chat-template \
+             --tokenizer-config tokenizer_config.json \
+             --fixture fixtures/chat-template-canary.jsonl \
+             --json
+        emits:
+          status ∈ {"PASS", "FAIL"}
+          fixture_size: 32
+          divergences: K
+          failures:
+            - { idx, msgs, expected_hf, observed_apr, first_byte_diff_offset }
+      exit 0 iff PASS and K==0 ; exit 1 iff FAIL ; exit >= 2 on I/O / HF-runner error
+    domain: "(tokenizer_config path, fixture path)"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status"
+    - "first_byte_diff_offset enables quick root-cause (role prefix vs EOS vs tool wrapping)"
+    - "HF reference is invoked via `uv run --with transformers python -c '...'` (pinned version in fixture)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-M-06-001
+  rule: "--gate chat-template flag exists"
+  prediction: "apr qa --help advertises --gate chat-template"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "chat-template"
+  if_fails: "apr qa lacks chat-template gate — Gate-6 not wired"
+
+- id: FALSIFY-CRUX-M-06-002
+  rule: "PASS on the frozen canary fixture for qwen2.5-coder"
+  prediction: "minijinja render matches HF apply_chat_template byte-for-byte on 32 fixtures"
+  test: |
+    set -euo pipefail
+    apr qa --gate chat-template \
+           --tokenizer-config third_party/qwen2.5-coder-7b/tokenizer_config.json \
+           --fixture fixtures/chat-template-canary.jsonl --json > /tmp/m06.json
+    jq -e '.status == "PASS" and .divergences == 0' /tmp/m06.json >/dev/null
+  if_fails: "APR minijinja renderer diverges from HF — instruction-following evals are invalid"
+
+- id: FALSIFY-CRUX-M-06-003
+  rule: "FAIL on a tampered tokenizer_config.chat_template"
+  prediction: "Replacing <|im_start|> with <|IM_START|> in chat_template flips gate to FAIL"
+  test: |
+    set -euo pipefail
+    jq '.chat_template |= gsub("<\\|im_start\\|>"; "<|IM_START|>")' \
+       third_party/qwen2.5-coder-7b/tokenizer_config.json > /tmp/m06-tampered.json
+    set +e
+    apr qa --gate chat-template \
+           --tokenizer-config /tmp/m06-tampered.json \
+           --fixture fixtures/chat-template-canary.jsonl --json > /tmp/m06-fail.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and .divergences >= 1 and .failures[0].first_byte_diff_offset >= 0' /tmp/m06-fail.json >/dev/null
+  if_fails: "Gate misses a role-prefix tamper — tool-call hijack-class bug ships silently"
+
+- id: FALSIFY-CRUX-M-06-004
+  rule: "tool_calls present in the fixture (tool-wrapping coverage)"
+  prediction: "At least 1 fixture has a non-empty tools field (exercises the tool-wrapping path)"
+  test: |
+    set -euo pipefail
+    jq -s 'any(.[]; .tools != null and (.tools | length) >= 1)' \
+       fixtures/chat-template-canary.jsonl
+  if_fails: "Fixture lacks tool-call coverage — Gate-6 cannot detect tool-wrapping regressions"
+
+- id: FALSIFY-CRUX-M-06-005
+  rule: "HF runner invocation is deterministic and pinned"
+  prediction: "Two consecutive runs produce identical JSON reports"
+  test: |
+    set -euo pipefail
+    apr qa --gate chat-template \
+           --tokenizer-config third_party/qwen2.5-coder-7b/tokenizer_config.json \
+           --fixture fixtures/chat-template-canary.jsonl --json > /tmp/m06-A.json
+    apr qa --gate chat-template \
+           --tokenizer-config third_party/qwen2.5-coder-7b/tokenizer_config.json \
+           --fixture fixtures/chat-template-canary.jsonl --json > /tmp/m06-B.json
+    diff <(jq -S . /tmp/m06-A.json) <(jq -S . /tmp/m06-B.json)
+  if_fails: "Gate-6 non-deterministic — same config, different verdict (violates Jidoka)"
+
+proof_obligations:
+- type: invariant
+  property: "apr render byte-equal to HF apply_chat_template for every fixture"
+- type: invariant
+  property: "Tool-call path covered by at least 1 fixture (non-zero tools)"
+- type: invariant
+  property: "Exit code aligns with status; determinism across runs"
+- type: equivalence
+  property: "apr qa --gate chat-template  ≅  apr-model-qa-playbook Gate-6 (chat-template byte parity)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-m-06
+  ticket_id: PMAT-674
+  priority: high
+  auto_created: true

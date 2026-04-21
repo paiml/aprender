@@ -1,0 +1,141 @@
+# CRUX-L-15 — Kernel version pinning + SBOM manifest
+# Authored under PMAT-669. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-15
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 4
+  intake_status: missing
+  description: >
+    Every HF kernel loaded by aprender MUST be pinned to (pkg, tag,
+    sha256, cuda_arch) in a checked-in manifest `kernels.lock`.
+    Covers supply-chain audit (SBOM export) and reproducibility
+    (identical kernel set across CI + user installs). Gate-L-15
+    rejects any `apr kernel load` that resolves to a kernel NOT in
+    kernels.lock.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'SPDX 2.3 — SBOM format'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader'
+
+equations:
+  kernel_lockfile:
+    formula: |
+      kernels.lock shape:
+          [[kernel]]
+          pkg     = "flash-attn3"
+          tag     = "v2.6.1"
+          sha256  = "<64-hex>"
+          cuda    = "sm_90"
+          abi_v   = 1
+      Invariant: ∀ runtime loaded (pkg, sha256, cuda) triple ∃ entry in kernels.lock
+                 AND sha256(downloaded) == lock.sha256
+    domain: "kernels.lock × runtime load events"
+    codomain: "PASS if every load matches a lock entry"
+    invariants:
+    - "lock file is root-anchored (./kernels.lock) and version-controlled"
+    - "cuda field is specific (sm_80, sm_90, sm_100) — NOT 'any'"
+    - "abi_v is integer (not semver) — breaking ABI bump is explicit"
+    - "unknown load is a hard error, never silent accept"
+
+  cli_contract:
+    formula: |
+      apr kernel audit --lock kernels.lock --json
+        emits:
+          status: "PASS" | "FAIL"
+          lock_entries: N
+          loaded_kernels: K
+          unlocked_loads:
+            - { pkg, sha256, cuda, reason: "not in lock" | "sha mismatch" | "arch mismatch" }
+      exit 0 iff PASS ; exit 1 iff any unlocked load ; exit >= 2 on I/O
+      apr kernel sbom --format spdx-json > kernels.sbom.json
+    domain: "(kernels.lock, runtime event stream)"
+    codomain: "(exit_code, JSON + SBOM export)"
+    invariants:
+    - "SBOM export is SPDX 2.3 JSON — scannable by standard tooling"
+    - "audit subcommand is exit-code-honest (never warn-only)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-15-001
+  rule: "apr kernel audit + sbom subcommands exist"
+  prediction: "apr kernel --help advertises 'audit' and 'sbom'"
+  test: |
+    set -euo pipefail
+    apr kernel --help | grep -qE "^\\s*audit"
+    apr kernel --help | grep -qE "^\\s*sbom"
+  if_fails: "apr kernel lacks audit/sbom — L-15 not wired"
+
+- id: FALSIFY-CRUX-L-15-002
+  rule: "kernels.lock exists and is version-controlled"
+  prediction: "git ls-files returns kernels.lock at repo root"
+  test: |
+    set -euo pipefail
+    git ls-files kernels.lock | grep -qE "^kernels.lock$"
+  if_fails: "kernels.lock missing — supply-chain audit impossible"
+
+- id: FALSIFY-CRUX-L-15-003
+  rule: "FAIL on a runtime load of a kernel NOT in the lock"
+  prediction: "Loading a kernel with forged sha256 flips audit gate to FAIL with unlocked_loads >= 1"
+  test: |
+    set -euo pipefail
+    set +e
+    APR_KERNEL_FAKE_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef \
+      apr kernel load --pkg flash-attn3 --kernel fwd_dispatch --arch sm_90 --dry-run --json >/dev/null
+    apr kernel audit --lock kernels.lock --json > /tmp/l15-audit.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || { echo "expected exit 1 on unlocked load, got $EC"; exit 1; }
+    jq -e '.status == "FAIL" and (.unlocked_loads | length) >= 1' /tmp/l15-audit.json >/dev/null
+  if_fails: "Audit accepts unlocked kernel — lockfile is decorative"
+
+- id: FALSIFY-CRUX-L-15-004
+  rule: "SBOM export is SPDX 2.3 JSON"
+  prediction: "apr kernel sbom --format spdx-json emits spdxVersion SPDX-2.3 with at least 1 package"
+  test: |
+    set -euo pipefail
+    apr kernel sbom --format spdx-json > /tmp/l15-sbom.json
+    jq -e '.spdxVersion == "SPDX-2.3" and (.packages | length) >= 1' /tmp/l15-sbom.json >/dev/null
+  if_fails: "SBOM non-standard — supply-chain scanners cannot consume"
+
+- id: FALSIFY-CRUX-L-15-005
+  rule: "cuda field is specific (not 'any')"
+  prediction: "No kernels.lock entry has cuda='any' or cuda='*'"
+  test: |
+    set -euo pipefail
+    grep -E '^cuda\s*=' kernels.lock | grep -qE "sm_[0-9]+" && \
+    ! grep -E '^cuda\s*=\s*"(any|\*)"' kernels.lock
+  if_fails: "Arch pin is wildcarded — sm_80 user downloads sm_100 kernel, crash at dispatch"
+
+proof_obligations:
+- type: invariant
+  property: "Every runtime-loaded kernel has a matching kernels.lock entry"
+- type: invariant
+  property: "kernels.lock is version-controlled (reproducibility)"
+- type: invariant
+  property: "SBOM export is SPDX 2.3 (standard-compliant)"
+- type: invariant
+  property: "cuda field is specific (sm_XX), never wildcard"
+- type: equivalence
+  property: "apr kernel audit  ≅  Cargo.lock / npm shrinkwrap discipline for HF kernels"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-15
+  ticket_id: PMAT-669
+  priority: high
+  auto_created: true
