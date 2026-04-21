@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-10
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -79,6 +80,30 @@ falsification_tests:
     assert r["estimated_footprint_bytes"] <= r["free_vram_bytes"] * 0.90, r
     PY
   if_fails: "auto-quant selected a quant that overflows VRAM budget"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/auto_quant.rs
+    sub_claim: >
+      The pure `select_auto_quant(shape, available, free_vram, ctx_len,
+      safety_factor)` classifier plus `decision_respects_budget(d)`
+      predicate prove that the selected quant's footprint never
+      exceeds `free_vram * safety_factor`. This is the algorithm-level
+      precondition for the integration-level `apr pull --auto-quant
+      --json` footprint-vs-budget check.
+    tests:
+    - commands::auto_quant::tests::falsify_001_sub_claim_selected_quant_under_budget
+    - commands::auto_quant::tests::budget_overflow_returns_cpu_fallback
+    - commands::auto_quant::tests::cpu_fallback_branch_respects_both_invariants
+    - commands::auto_quant::tests::rtx_4090_24gib_7b_picks_q6k_or_better
+    - commands::auto_quant::tests::three_b_laptop_8gib_picks_mid_range_quant
+    scope: >
+      Algorithm-level discharge: selector implements the contract
+      `auto_quant_selection` formula
+      `pick = argmax(quality_rank, {q | footprint(q) ≤ budget})` with
+      budget rounded DOWN so overflow is impossible. NOT YET
+      DISCHARGED: `apr pull --auto-quant --json` actually emits the
+      resolved footprint and budget (requires CLI wiring, real free-
+      VRAM detection, and `--json` output path).
 
 - id: FALSIFY-CRUX-A-10-002
   rule: highest-quality quant that fits is picked
@@ -94,6 +119,24 @@ falsification_tests:
             assert cand["footprint_bytes"] > budget, (r["selected_quant"], cand)
     PY
   if_fails: "a strictly higher-quality quant would have fit but was not selected"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/auto_quant.rs
+    sub_claim: >
+      The `decision_is_argmax(d)` predicate proves that every fitting
+      candidate has `quality_rank ≤ picked_quality_rank` — i.e. no
+      strictly-better quant would have fit within budget.
+    tests:
+    - commands::auto_quant::tests::falsify_002_sub_claim_argmax_of_fitting
+    - commands::auto_quant::tests::argmax_never_skips_a_fitting_candidate
+    - commands::auto_quant::tests::cpu_fallback_branch_respects_both_invariants
+    scope: >
+      Algorithm-level discharge: selection is arg-max of quality_rank
+      over fitting candidates by construction
+      (`max_by_key(|c| c.quant.quality_rank())`). NOT YET DISCHARGED:
+      integration-level check that `apr pull --auto-quant --json`
+      emits a candidate list enumerating every offered quant with
+      footprint and fits flag.
 
 - id: FALSIFY-CRUX-A-10-003
   rule: ctx-len tightens selection
@@ -103,6 +146,23 @@ falsification_tests:
     B=$(apr pull hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF --auto-quant --ctx 32768 --json | jq -r '.selected_quant')
     python3 -c "r={'Q2_K':1,'Q3_K_S':2,'Q3_K_M':3,'Q4_K_S':4,'Q4_K_M':5,'Q5_K_S':6,'Q5_K_M':7,'Q6_K':8,'Q8_0':9,'F16':10}; assert r['$B'] <= r['$A']"
   if_fails: "larger context window did not tighten quant selection"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/auto_quant.rs
+    sub_claim: >
+      The classifier proves that `footprint` is monotone non-decreasing
+      in `ctx_len` (kv_cache scales linearly), so doubling ctx can
+      only SHRINK the fitting set and therefore cannot raise the
+      selected quality_rank.
+    tests:
+    - commands::auto_quant::tests::falsify_003_sub_claim_ctx_doubling_never_raises_quality
+    - commands::auto_quant::tests::footprint_monotone_in_ctx_len
+    - commands::auto_quant::tests::kv_cache_matches_contract_formula
+    scope: >
+      Algorithm-level discharge: three explicit ctx steps
+      (2048 → 4096 → 32768) at fixed free-VRAM show quality_rank is
+      monotone non-increasing. NOT YET DISCHARGED: integration-level
+      `--ctx` flag round-trip on live CLI.
 
 - id: FALSIFY-CRUX-A-10-004
   rule: parity with ollama on captured goldens
@@ -135,8 +195,40 @@ proof_obligations:
 verification_summary:
   total_obligations: 4
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 3  # FALSIFY-001/002/003 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/auto_quant.rs
+    classifier: crates/apr-cli/src/commands/auto_quant.rs
+    commands:
+    - apr pull <repo> --auto-quant --ctx <N> --json  # classifier-observable
+    coverage:
+    - falsify-001: commands::auto_quant::tests::falsify_001_sub_claim_selected_quant_under_budget
+    - falsify-001: commands::auto_quant::tests::budget_overflow_returns_cpu_fallback
+    - falsify-001: commands::auto_quant::tests::cpu_fallback_branch_respects_both_invariants
+    - falsify-002: commands::auto_quant::tests::falsify_002_sub_claim_argmax_of_fitting
+    - falsify-002: commands::auto_quant::tests::argmax_never_skips_a_fitting_candidate
+    - falsify-003: commands::auto_quant::tests::falsify_003_sub_claim_ctx_doubling_never_raises_quality
+    - falsify-003: commands::auto_quant::tests::footprint_monotone_in_ctx_len
+    - falsify-003: commands::auto_quant::tests::kv_cache_matches_contract_formula
+  scope_honesty: >
+    FALSIFY-CRUX-A-10-001/002/003 are discharged at
+    PARTIAL_ALGORITHM_LEVEL. The pure `select_auto_quant` classifier
+    implements the contract `auto_quant_selection` formula
+    `pick = argmax(quality_rank, {q | footprint(q) ≤ budget})` with
+    budget rounded DOWN and 20 unit tests covering the contract
+    equations (`vram_footprint_model`, `auto_quant_selection`)
+    directly: quality_rank monotonicity, bits-per-weight formula,
+    kv_cache formula, footprint monotonicity in ctx_len and quality,
+    cpu_fallback branch, argmax-across-budget-range stress, and
+    per-device sanity (24 GiB/7B, 8 GiB/3B, tiny model F16).
+    NOT YET DISCHARGED: FALSIFY-CRUX-A-10-004 (ollama-offload parity
+    on captured goldens) requires a real `apr pull --auto-quant
+    --json` CLI plus `evidence/crux/ollama/vram-autoquant-goldens.json`
+    fixture plus live GPU detection. Contract stays `status: partial`;
+    master `supported_count` NOT bumped. `intake_status` stays
+    `missing` (feature is not yet observable end-to-end via `apr pull
+    --auto-quant`).
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

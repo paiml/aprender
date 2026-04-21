@@ -6,6 +6,7 @@
 //! - Visualization: Make problems visible
 
 pub(crate) mod aliases;
+pub(crate) mod auto_quant;
 pub mod bench;
 pub mod canary;
 pub mod cbtop;
