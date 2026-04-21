@@ -1,16 +1,13 @@
 # CRUX-B-07 — imatrix calibration
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml.
 
 metadata:
   id: CRUX-B-07
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "B — Inspection & Debugging"
@@ -18,16 +15,19 @@ metadata:
   demand_score: 5  # 1..5, critical priority in pmat work
   intake_status: missing
   description: >
-    imatrix calibration. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    imatrix calibration. llama.cpp's `llama-imatrix` collects per-channel
+    activation statistics over a calibration corpus, then `llama-quantize
+    --imatrix imat.dat` uses them to bias Q4_K (and friends) rounding so
+    perplexity is preserved better than naive quantization. aprender
+    equivalent: `apr quantize model.apr --method q4k --imatrix calib.jsonl
+    -o out-q4k.apr`. Output sidecar records the calibration file's sha256
+    so audits can reconstruct provenance.
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - "https://github.com/ggerganov/llama.cpp/tree/master/examples/imatrix"
   - github.com/huggingface/peft — LoRA/PEFT
-  - arXiv:2106.09685 — LoRA
+
 equations:
   imatrix_ppl_improvement:
     formula: |
@@ -61,7 +61,6 @@ falsification_tests:
   prediction: "Calibrated Q4_K beats naïve Q4_K by >=0.5% PPL on held-out 512-token sample"
   test: |
     set -euo pipefail
-    # TODO: evidence/crux/llama_cpp/imatrix/ must contain calibration.jsonl + wikitext-eval-512.txt
     apr quantize model.apr --method q4k --output /tmp/naive-q4k.apr
     apr quantize model.apr --method q4k --imatrix evidence/crux/llama_cpp/imatrix/calibration.jsonl \
       --output /tmp/calib-q4k.apr
@@ -69,6 +68,29 @@ falsification_tests:
     PPL_CALIB=$(apr qa /tmp/calib-q4k.apr --eval evidence/crux/llama_cpp/imatrix/wikitext-eval-512.txt --json | jq '.perplexity')
     python3 -c "import sys; d=($PPL_NAIVE-$PPL_CALIB)/$PPL_NAIVE; sys.exit(0 if d>=0.005 else 1)"
   if_fails: "imatrix calibration did not reduce perplexity by >=0.5%; calibration pipeline is broken or no-op"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/imatrix_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_imatrix_improvement`
+      computes Δ = (PPL_naive − PPL_calib)/PPL_naive and admits only
+      Δ >= `MIN_PPL_IMPROVEMENT` (0.005) as the `Improved` verdict; any
+      regression, zero-or-negative baseline, or below-threshold gain
+      returns `Insufficient` rather than panicking (i.e., we don't hide
+      upstream pipeline bugs). `calibration_eval_disjoint` enforces the
+      leakage invariant via BTreeSet intersection.
+    tests:
+    - improvement_meets_threshold_exact
+    - improvement_above_threshold_classifies_improved
+    - improvement_just_below_threshold_is_insufficient
+    - regression_is_insufficient
+    - zero_or_negative_baseline_is_insufficient_not_panic
+    - improvement_is_deterministic
+    - disjoint_sets_are_disjoint
+    - overlapping_sets_are_not_disjoint
+    - empty_sets_are_trivially_disjoint
+    scope: PPL-Δ threshold + calib/eval leakage (pure functions)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: real calibration.jsonl + wikitext-eval-512 corpus + apr qa perplexity harness
 
 - id: FALSIFY-CRUX-B-07-002
   rule: CLI flag accepted
@@ -76,6 +98,24 @@ falsification_tests:
   test: |
     apr quantize --help 2>&1 | grep -qE -- '--imatrix[[:space:]<]'
   if_fails: "apr quantize lacks --imatrix flag; competitor parity missing"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/imatrix_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `parse_imatrix_flag`
+      recognises both the `--imatrix <path>` and `--imatrix=<path>`
+      shapes, rejects trailing-no-value mistakes, and does not match
+      similarly-named flags (`--imatrix-force`). This proves the
+      parser surface name is exactly `--imatrix`, matching llama.cpp's
+      `llama-quantize --imatrix imat.dat` shape.
+    tests:
+    - parse_imatrix_flag_finds_space_form
+    - parse_imatrix_flag_finds_equals_form
+    - parse_imatrix_flag_missing_returns_none
+    - parse_imatrix_flag_without_value_returns_none
+    - parse_imatrix_flag_ignores_similar_names
+    scope: CLI argv → Option<path> (pure parser)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: clap subcommand wiring + `apr quantize --help` snapshot
 
 - id: FALSIFY-CRUX-B-07-003
   rule: imatrix provenance recorded
@@ -84,6 +124,27 @@ falsification_tests:
     CALIB_SHA=$(sha256sum evidence/crux/llama_cpp/imatrix/calibration.jsonl | awk '{print $1}')
     apr inspect /tmp/calib-q4k.apr --json | jq -e --arg s "$CALIB_SHA" '.metadata.imatrix_source_sha256 == $s'
   if_fails: "Quantized output does not record imatrix provenance; cannot audit which calibration produced weights"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/imatrix_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `compute_provenance_sha256`
+      produces a 64-char lowercase hex sha256 that byte-matches the
+      standard `sha256sum` output (verified via the well-known
+      empty-input constant e3b0c442…b855) and is deterministic.
+      `validate_recorded_provenance` classifies the three possible
+      sidecar states — Match (case-insensitive), Missing, Mismatch —
+      without silently accepting absent provenance.
+    tests:
+    - sha256_of_empty_is_known_constant
+    - sha256_is_deterministic
+    - sha256_differs_on_different_input
+    - provenance_match_ok
+    - provenance_match_is_case_insensitive
+    - provenance_missing_is_failure
+    - provenance_mismatch_carries_both_values
+    scope: sha256 hex + recorded-vs-expected classifier (pure functions)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: AprV2Metadata.imatrix_source_sha256 field + `apr inspect --json` wiring
 
 proof_obligations:
 - type: invariant
@@ -100,10 +161,18 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-B-07-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: real calibration.jsonl + wikitext-eval-512 corpus + apr qa perplexity harness
+  - falsify_id: FALSIFY-CRUX-B-07-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: clap subcommand wiring + `apr quantize --help` snapshot
+  - falsify_id: FALSIFY-CRUX-B-07-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "AprV2Metadata.imatrix_source_sha256 field + `apr inspect --json` wiring"
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-b-07` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-b-07
   priority: critical
   auto_created: true
