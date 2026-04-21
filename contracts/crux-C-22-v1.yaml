@@ -1,12 +1,14 @@
-# CRUX-C-22 — Typical sampling
+# CRUX-C-22 — Typical-p (locally typical) sampling
 
 metadata:
   id: CRUX-C-22
   version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
@@ -20,8 +22,10 @@ metadata:
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/huggingface/accelerate
-  - github.com/pytorch/pytorch — DDP/FSDP
+  - 'paper: https://arxiv.org/abs/2202.00666 — Meister et al., Typical Decoding'
+  - 'impl: transformers.TypicalLogitsWarper'
+  - 'impl: llama.cpp --typical flag'
+
 equations:
   typical_p:
     formula: |
@@ -35,6 +39,7 @@ equations:
     - "p = 1.0 → no filtering (identity)"
     - "tokens kept are exactly those whose |−log p − H| is smallest cumulative sum ≥ p"
     - "matches HF `TypicalLogitsWarper` bit-for-bit on f32 logits"
+    - "filtered distribution renormalizes to sum=1.0 ± 1e-6"
 
 falsification_tests:
 - id: FALSIFY-CRUX-C-22-001
@@ -46,12 +51,35 @@ falsification_tests:
     apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "The" --seed 5 --max-tokens 16 --format json > /tmp/base.json
     diff <(jq .token_ids /tmp/typ.json) <(jq .token_ids /tmp/base.json)
   if_fails: rule 'p=1.0 is identity (no change from greedy/temperature-only)' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/typical_p_classifier.rs
+    sub_claim: "p=1.0 identity + parameter-range invariants captured by pure classifiers"
+    tests:
+    - identity_ok_when_all_kept
+    - identity_ok_order_insensitive
+    - identity_flags_dropped_tokens
+    - identity_rejects_non_unity_p
+    - identity_rejects_oob_index
+    - identity_rejects_duplicate_index
+    - identity_rejects_empty_total
+    - identity_p_one_and_mass_coverage_coincide
+    - range_valid_for_one
+    - range_valid_for_half
+    - range_valid_for_canonical_0_95
+    - range_rejects_zero
+    - range_rejects_negative
+    - range_rejects_above_one
+    - range_rejects_nan
+    - range_rejects_infinity
+    scope: PARTIAL_ALGORITHM_LEVEL
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "end-to-end `apr run --typical 1.0` identity test against real GGUF fixture (requires fixtures/tinyllama-q4_k_m.gguf on CI runner)"
+
 - id: FALSIFY-CRUX-C-22-002
   rule: matches HF TypicalLogitsWarper on identical logits
   prediction: "kept-token set identical to HF reference on a captured logits tensor"
   test: |
     set -euo pipefail
-    # apr writes the post-filter prob vector for introspection
     apr debug sample --logits tests/fixtures/logits_row.npy --typical 0.95 --format json > /tmp/apr.json
     python3 - <<'PY'
     import numpy as np, json
@@ -64,8 +92,39 @@ falsification_tests:
     diffs = [abs(a-b) for a,b in zip(apr, hf)]
     assert max(diffs) < 1e-5, max(diffs)
     PY
-
   if_fails: rule 'matches HF TypicalLogitsWarper on identical logits' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/typical_p_classifier.rs
+    sub_claim: "mass-coverage, sort-by-c_i ASC, and renormalization sum=1.0±1e-6 properties captured by pure classifiers"
+    tests:
+    - mass_ok_when_kept_meets_threshold
+    - mass_rejects_under_threshold
+    - mass_rejects_above_one
+    - mass_rejects_empty
+    - mass_rejects_invalid_p_zero
+    - mass_rejects_prob_above_one
+    - mass_rejects_negative_prob
+    - mass_rejects_nan_prob
+    - sort_ok_when_kept_empty_is_rejected
+    - sort_ok_uniform_distribution_any_order
+    - sort_ok_when_kept_ordered_ascending_by_c
+    - sort_flags_descending_order
+    - sort_rejects_zero_prob
+    - sort_rejects_nan_kept
+    - sort_rejects_nan_all_probs
+    - sort_rejects_empty_all_probs
+    - renorm_ok_when_sums_to_one
+    - renorm_ok_within_tolerance
+    - renorm_flags_under_normalization
+    - renorm_flags_negative_prob
+    - renorm_rejects_nan
+    - renorm_rejects_infinity
+    - renorm_rejects_empty
+    - renormalized_two_token_distribution_parity
+    scope: PARTIAL_ALGORITHM_LEVEL
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "Python HF reference parity run against `tests/fixtures/logits_row.npy` (requires transformers, fixture, and `apr debug sample --typical` CLI wiring)"
+
 proof_obligations:
 - type: equivalence
   property: "apr --typical matches HF `TypicalLogitsWarper` and llama.cpp `--typical` on identical logits"
@@ -77,8 +136,8 @@ proof_obligations:
 verification_summary:
   total_obligations: 3
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 2
+  status: partial
 
 pmat_work_tracking:
   ticket_tag: crux-crux-c-22
