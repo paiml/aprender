@@ -2,11 +2,11 @@
 
 metadata:
   id: CRUX-A-17
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Hub & Distribution"
@@ -51,6 +51,23 @@ falsification_tests:
     cosign verify-blob --bundle /tmp/m.bundle \
       --certificate /tmp/m.crt --signature /tmp/m.sig /tmp/manifest.json
   if_fails: rule 'round-trip sign → verify succeeds' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/sign_artifacts.rs
+    sub_claim: |
+      Algorithm-level necessary condition: the three sidecar artifacts
+      (.sig, .crt, .bundle) exist at predictable paths adjacent to the
+      manifest. Without this layout, `cosign verify-blob` cannot locate
+      the inputs. The classifier proves path computation is deterministic
+      and the parent directory is shared.
+    tests:
+    - artifact_paths_use_dot_suffix_convention
+    - artifact_paths_adjacent_to_manifest
+    - artifact_paths_relative_manifest_is_fine
+    - artifact_paths_are_deterministic
+    - all_present_false_when_paths_do_not_exist
+    scope: sidecar path layout (pure function)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: cosign binary round-trip harness + Fulcio OIDC issuance
 - id: FALSIFY-CRUX-A-17-002
   rule: tampered blob fails verification
   prediction: "one-byte flip → verify exit != 0"
@@ -62,6 +79,25 @@ falsification_tests:
         --certificate /tmp/m.crt --signature /tmp/m.sig /tmp/bad.json 2>/tmp/err
     grep -E "verification failed|invalid signature" /tmp/err
   if_fails: rule 'tampered blob fails verification' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/sign_artifacts.rs
+    sub_claim: |
+      Necessary condition for tamper detection: sha256(blob_after) !=
+      sha256(blob_before) for any one-bit mutation, append, or
+      truncation. If this gate passes, the signing pipeline has
+      fail-closed semantics at the hash layer BEFORE any X.509 /
+      Fulcio / Rekor work begins. Proved here for single-byte flip,
+      byte-append, byte-truncation, and empty-vs-nonempty.
+    tests:
+    - content_hash_matches_identical_blob
+    - content_hash_rejects_single_byte_flip
+    - content_hash_rejects_trailing_byte_append
+    - content_hash_rejects_truncation
+    - content_hash_rejects_empty_against_nonempty
+    - content_hash_mismatch_carries_hex_for_debug
+    scope: sha256 gate (pure function)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: cosign verify-blob end-to-end failure-exit-code harness
 - id: FALSIFY-CRUX-A-17-003
   rule: rekor transparency log inclusion proof present
   prediction: "bundle contains rekor entry with UUID and SET"
@@ -74,6 +110,25 @@ falsification_tests:
     "
 
   if_fails: rule 'rekor transparency log inclusion proof present' is violated — contract MUST be re-verified against competitor canonical reference
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/sign_artifacts.rs
+    sub_claim: |
+      Algorithm-level necessary condition: the bundle is valid JSON and
+      carries a rekor-inclusion-proof envelope (Payload + Base64Signature,
+      or a rekorBundle-shaped key, or rekor_bundle snake-case). Without
+      this envelope there is no inclusion proof to verify. Full
+      crypto-layer inclusion verification requires live Rekor access.
+    tests:
+    - bundle_with_cosign_modern_shape_is_recognized
+    - bundle_with_legacy_rekor_bundle_key_is_recognized
+    - bundle_with_rekor_snake_case_key_is_recognized
+    - bundle_without_rekor_or_payload_is_rejected
+    - bundle_with_only_payload_but_no_signature_is_rejected
+    - malformed_bundle_json_is_rejected
+    - bundle_classifier_is_pure
+    scope: bundle shape classifier (pure function, JSON parse only)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: live Rekor transparency-log inclusion-verify harness
 proof_obligations:
 - type: equivalence
   property: "apr publish sign produces cosign-compatible sig + cert + bundle"
@@ -87,6 +142,16 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-A-17-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: cosign binary round-trip + Fulcio OIDC harness
+  - falsify_id: FALSIFY-CRUX-A-17-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: cosign verify-blob end-to-end harness
+  - falsify_id: FALSIFY-CRUX-A-17-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: live Rekor transparency-log harness
 
 pmat_work_tracking:
   ticket_tag: crux-crux-a-17

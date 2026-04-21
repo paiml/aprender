@@ -42,6 +42,7 @@ pub(crate) mod kernel_explain;
 pub(crate) mod lint;
 pub(crate) mod mcp;
 pub(crate) mod merge;
+pub(crate) mod multi_lora_classifier;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;
 #[cfg(feature = "training")]
@@ -82,6 +83,7 @@ pub(crate) mod serve;
 pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
 pub(crate) mod showcase;
+pub(crate) mod sign_artifacts;
 pub(crate) mod stop_op;
 pub(crate) mod tensors;
 pub(crate) mod token_redactor;
