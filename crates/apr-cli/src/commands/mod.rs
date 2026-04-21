@@ -93,6 +93,7 @@ pub(crate) mod serve;
 pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
 pub(crate) mod shared_cache;
+pub(crate) mod shared_cache_lint;
 pub(crate) mod showcase;
 pub(crate) mod sign_artifacts;
 pub(crate) mod stop_op;
