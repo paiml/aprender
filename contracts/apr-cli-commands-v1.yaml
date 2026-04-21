@@ -444,6 +444,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: ppl
+    category: inspection
+    description: "Perplexity classifier from per-token log-probabilities (CRUX-E-02)"
+    requires_model: false
+    side_effects: []
+
   - name: encrypt
     category: model_ops
     description: "Encrypt .apr model file (AES-256-GCM)"
