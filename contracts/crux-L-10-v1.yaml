@@ -1,0 +1,127 @@
+# CRUX-L-10 — liger-kernels RMSNorm/RoPE/SwiGLU fused dispatch
+# Authored under PMAT-664. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-10
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 4
+  intake_status: missing
+  description: >
+    Dispatch the Liger Kernel fused primitives (RMSNorm + RoPE +
+    SwiGLU) via HF kernels-community. Liger claims 20% throughput
+    and 60% memory for training and decode. aprender exposes
+    --primitives liger on `apr run`/`apr serve` with numerical
+    parity vs the unfused naive reference.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/linkedin/Liger-Kernel — canonical Liger'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  liger_primitive_dispatch:
+    formula: |
+      Fused kernels offered:
+          rms_norm_fwd(x, weight, eps) -> y
+          rope_fwd(q, k, cos, sin)    -> (q', k')
+          swiglu_fwd(x, w_gate, w_up, w_down) -> y
+      Each fused kernel MUST match its unfused numpy/trueno reference:
+          max_abs_diff <= 1e-5 (f32)  |  1e-3 (bf16)  |  5e-3 (fp16)
+          cosine_sim   >= 0.99999
+    domain: "per-primitive (x, weights, ...)"
+    codomain: "out tensor"
+    invariants:
+    - "each primitive is independently falsifiable — not a bundled 'liger passes'"
+    - "dtype-dependent tolerance pinned per published Liger bound"
+    - "unsupported dtype (e.g. fp8) errors at dispatch, not silent downgrade"
+
+  cli_contract:
+    formula: |
+      apr run <model> --primitives liger --json
+        emits:
+          primitives: "liger"
+          liger_kernels: ["rms_norm", "rope", "swiglu"]
+          kernel_source: "hf-kernels-community:liger@<sha>"
+    domain: "(model, --primitives liger)"
+    codomain: "generation output + impl metadata"
+    invariants:
+    - "liger_kernels enumerates ALL fused primitives actually used (no aspirational entries)"
+    - "kernel_source is pinned per primitive bundle"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-10-001
+  rule: "--primitives liger flag exists"
+  prediction: "apr run --help advertises --primitives liger"
+  test: |
+    set -euo pipefail
+    apr run --help 2>&1 | grep -qE -- "liger|primitives"
+  if_fails: "apr run lacks --primitives liger — L-10 not wired"
+
+- id: FALSIFY-CRUX-L-10-002
+  rule: "RMSNorm parity within 1e-5 (f32)"
+  prediction: "liger rms_norm matches naive reference at max_abs_diff <= 1e-5 for f32"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl liger-rms_norm --ref naive --dtype f32 --fixture fixtures/rms-norm-canary.json --json > /tmp/l10-rms.json
+    jq -e '.max_abs_diff <= 1e-5 and .cosine_sim >= 0.99999' /tmp/l10-rms.json >/dev/null
+  if_fails: "Liger RMSNorm diverges — foundational norm layer unsafe"
+
+- id: FALSIFY-CRUX-L-10-003
+  rule: "RoPE parity within 1e-5 (f32)"
+  prediction: "liger rope matches naive reference on same inputs"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl liger-rope --ref naive --dtype f32 --fixture fixtures/rope-canary.json --json > /tmp/l10-rope.json
+    jq -e '.max_abs_diff <= 1e-5' /tmp/l10-rope.json >/dev/null
+  if_fails: "Liger RoPE diverges — positional encoding broken, downstream tokens wrong"
+
+- id: FALSIFY-CRUX-L-10-004
+  rule: "SwiGLU parity within 1e-5 (f32)"
+  prediction: "liger swiglu matches unfused (gate*silu)*up reference"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl liger-swiglu --ref naive --dtype f32 --fixture fixtures/swiglu-canary.json --json > /tmp/l10-swi.json
+    jq -e '.max_abs_diff <= 1e-5' /tmp/l10-swi.json >/dev/null
+  if_fails: "Liger SwiGLU diverges — FFN computation broken"
+
+- id: FALSIFY-CRUX-L-10-005
+  rule: "liger_kernels enumeration is truthful"
+  prediction: "JSON's liger_kernels[] length == actual dispatched fused-primitive count"
+  test: |
+    set -euo pipefail
+    apr run tests/fixtures/tiny.apr --prompt hi --max-tokens 1 --primitives liger --json 2>/dev/null > /tmp/l10-enum.json || true
+    jq -e '(.liger_kernels | length) >= 1 and (.liger_kernels | all(. | test("^(rms_norm|rope|swiglu)$")))' /tmp/l10-enum.json >/dev/null
+  if_fails: "Enumeration lies — user cannot verify which primitives are actually fused"
+
+proof_obligations:
+- type: invariant
+  property: "RMSNorm parity max_abs_diff <= 1e-5 (f32)"
+- type: invariant
+  property: "RoPE parity max_abs_diff <= 1e-5 (f32)"
+- type: invariant
+  property: "SwiGLU parity max_abs_diff <= 1e-5 (f32)"
+- type: invariant
+  property: "liger_kernels enumeration is truthful (no aspirational entries)"
+- type: equivalence
+  property: "apr --primitives liger  ≅  linkedin/Liger-Kernel (RMSNorm+RoPE+SwiGLU fused)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-10
+  ticket_id: PMAT-664
+  priority: high
+  auto_created: true

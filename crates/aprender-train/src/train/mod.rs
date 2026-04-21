@@ -33,10 +33,13 @@ mod batch;
 pub mod callback;
 mod config;
 mod curriculum;
+pub mod device;
 mod loss;
 mod metrics;
 pub mod pretrain;
 pub mod pretrain_real;
+#[cfg(feature = "cuda")]
+pub mod pretrain_real_cuda;
 pub mod shard_reader;
 mod trainer;
 pub mod transformer_trainer;
@@ -56,6 +59,7 @@ pub use curriculum::{
     efficiency_score, select_optimal_tier, AdaptiveCurriculum, CurriculumScheduler,
     LinearCurriculum, TieredCurriculum,
 };
+pub use device::{resolve_device, Device, DeviceError};
 pub use loss::{
     BCEWithLogitsLoss, CausalLMLoss, CrossEntropyLoss, HuberLoss, L1Loss, LossFn, MSELoss,
     SampleWeightedLoss, SmoothL1Loss, WeightedLoss,

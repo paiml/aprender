@@ -1,0 +1,150 @@
+# CRUX-M-09 — QA Gate-9: property-based + fuzz for QA gates
+# Authored under PMAT-677. See docs/specifications/crux-competitive-research-ux-workflows.md §5.M.
+
+metadata:
+  id: CRUX-M-09
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - apr-model-qa-v1
+  category: "M — APR-QA Playbook Canonicalization"
+  competitor: apr-qa-playbook
+  demand_score: 4
+  intake_status: missing
+  description: >
+    QA Gate-9 from apr-model-qa-playbook — property-based + fuzz
+    harnesses over the QA gates themselves. Runs proptest
+    (generated inputs) + cargo-fuzz (coverage-guided) against
+    each `apr qa --gate X` implementation to catch:
+      (a) panics / unwrap() explosions on malformed inputs
+      (b) invariant violations (e.g. exit code != status)
+      (c) silent fall-throughs (status=PASS on objectively bad inputs)
+    This is the meta-gate that guards the other gates.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'sibling repo: github.com/paiml/apr-model-qa-playbook — Gate-9'
+  - 'docs.rs/proptest — proptest crate'
+  - 'rust-fuzz.github.io/book — cargo-fuzz'
+
+equations:
+  property_fuzz_coverage:
+    formula: |
+      Let G = {Gate-1, Gate-2, Gate-3, Gate-4, Gate-5, Gate-6, Gate-7, Gate-8}
+      For each g ∈ G:
+          proptest_harness(g)    runs N_p = 256 generated cases with coverage >= 80%
+          fuzz_harness(g)        runs N_f >= 300 seconds CPU with 0 crashes
+          invariant_checks(g)    = {exit_code_aligns_with_status, no_panic, status_not_silent_pass}
+      Gate pass := ∀ g ∈ G . proptest_harness(g) PASS AND fuzz_harness(g) PASS AND all invariant_checks(g)
+    domain: "8 QA gates × generated + fuzzed inputs"
+    codomain: "PASS if all 8 gates pass property+fuzz harnesses with no panics/invariant breaks"
+    invariants:
+    - "proptest seed is logged and stable (shrinkable regressions are reproducible)"
+    - "fuzz seeds are checked into fuzz/corpus/ (coverage compounds across runs)"
+    - "a single panic anywhere in the 8 gates fails the meta-gate"
+    - "'silent pass' is a dedicated failure category: status=PASS on an input that should FAIL"
+
+  gate_contract:
+    formula: |
+      apr qa --gate property-fuzz \
+             --proptest-cases 256 \
+             --fuzz-seconds 300 \
+             --json
+        emits:
+          status ∈ {"PASS", "FAIL"}
+          gates_exercised: 8
+          per_gate:
+            - { gate: "Gate-1", proptest_cases: 256, proptest_shrink_seed?, fuzz_corpus_size, crashes: 0, silent_passes: 0 }
+      exit 0 iff PASS ; exit 1 iff any per-gate crash / invariant break ; exit >= 2 on harness error
+    domain: "(proptest_cases, fuzz_seconds)"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status"
+    - "per_gate entries are ordered by gate number (stable output)"
+    - "shrink seed is included for any proptest failure (reproducibility)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-M-09-001
+  rule: "--gate property-fuzz flag exists"
+  prediction: "apr qa --help advertises --gate property-fuzz"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "property-fuzz"
+  if_fails: "apr qa lacks property-fuzz meta-gate — Gate-9 not wired"
+
+- id: FALSIFY-CRUX-M-09-002
+  rule: "all 8 gates are exercised (no silent skip)"
+  prediction: "JSON reports per_gate entries for Gate-1..Gate-8, length 8"
+  test: |
+    set -euo pipefail
+    apr qa --gate property-fuzz --proptest-cases 32 --fuzz-seconds 5 --json > /tmp/m09.json
+    jq -e '.gates_exercised == 8 and (.per_gate | length) == 8' /tmp/m09.json >/dev/null
+  if_fails: "Meta-gate silently skips a gate — coverage is fake"
+
+- id: FALSIFY-CRUX-M-09-003
+  rule: "FAIL on a deliberately inserted panic in one gate"
+  prediction: "Patching Gate-1 to panic!() on a specific malformed input fails the meta-gate with crashes >= 1"
+  test: |
+    set -euo pipefail
+    # Env toggle wires a harness-only panic into Gate-1 (feature-gated)
+    set +e
+    APR_QA_GATE1_INJECT_PANIC=1 apr qa --gate property-fuzz \
+        --proptest-cases 32 --fuzz-seconds 5 --json > /tmp/m09-fail.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and (.per_gate[] | select(.gate == "Gate-1") | .crashes >= 1)' /tmp/m09-fail.json >/dev/null
+  if_fails: "Meta-gate does not catch injected panic — safety net is illusory"
+
+- id: FALSIFY-CRUX-M-09-004
+  rule: "proptest shrink seed is emitted on failure"
+  prediction: "Any proptest failure includes proptest_shrink_seed for reproducibility"
+  test: |
+    set -euo pipefail
+    set +e
+    APR_QA_GATE2_INJECT_PROP_FAIL=1 apr qa --gate property-fuzz \
+        --proptest-cases 32 --fuzz-seconds 5 --json > /tmp/m09-shrink.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.per_gate[] | select(.gate == "Gate-2") | has("proptest_shrink_seed")' /tmp/m09-shrink.json >/dev/null
+  if_fails: "No shrink seed on proptest failure — regression is not reproducible, team cannot debug"
+
+- id: FALSIFY-CRUX-M-09-005
+  rule: "fuzz corpus persists across runs (coverage compounds)"
+  prediction: "fuzz/corpus/Gate-1 has N entries before, N' >= N after a 5s fuzz run"
+  test: |
+    set -euo pipefail
+    BEFORE=$(find fuzz/corpus/Gate-1 -type f 2>/dev/null | wc -l || echo 0)
+    apr qa --gate property-fuzz --proptest-cases 0 --fuzz-seconds 5 --json >/dev/null
+    AFTER=$(find fuzz/corpus/Gate-1 -type f 2>/dev/null | wc -l || echo 0)
+    [ "$AFTER" -ge "$BEFORE" ]
+  if_fails: "Fuzz corpus is ephemeral — no compounding coverage, each run starts from zero"
+
+proof_obligations:
+- type: invariant
+  property: "All 8 QA gates are exercised each run; no silent skips"
+- type: invariant
+  property: "Zero panics across proptest + fuzz on all 8 gates"
+- type: invariant
+  property: "Shrink seed emitted for every proptest failure (reproducibility)"
+- type: invariant
+  property: "Fuzz corpus persists and compounds across runs"
+- type: equivalence
+  property: "apr qa --gate property-fuzz  ≅  apr-model-qa-playbook Gate-9 (meta-gate over Gate-1..8)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-m-09
+  ticket_id: PMAT-677
+  priority: high
+  auto_created: true

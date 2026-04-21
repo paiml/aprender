@@ -1,0 +1,113 @@
+# CRUX-L-05 — rotary (RoPE) fused kernel dispatch via HF kernels-community
+# Authored under PMAT-659. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-05
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Standalone rotary (RoPE) fused kernel via HF kernels-community
+    `rotary` package. Applies RoPE to (Q, K) in-place using precomputed
+    cos/sin. Parity target: matches naive rotate_half-based reference
+    at f32 tol 1e-5.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/huggingface/kernels-community — rotary'
+  - 'Su et al. 2021 — RoFormer / RoPE paper'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  rope_dispatch:
+    formula: |
+      (q_rot, k_rot) := rope_fwd(q, k, cos, sin) via HF kernel .so
+      ref            := rotate_half-based numpy reference
+      Parity: max_abs_diff <= 1e-5 (f32)
+      Interleaved vs half-split layout MUST match HF convention
+    domain: "(q, k, cos, sin)"
+    codomain: "(q_rot, k_rot)"
+    invariants:
+    - "layout convention pinned (HF uses half-split, not interleaved) — mismatched layout is a contract violation"
+    - "cos/sin precomputed outside the kernel (kernel is pure math, not cache)"
+    - "per-head-dim==64 and ==128 both tested"
+
+  cli_contract:
+    formula: |
+      apr kernel parity --impl rope --ref naive --dtype f32 --fixture fixtures/rope-canary.json --json
+    domain: "(impl, dtype, fixture)"
+    codomain: "parity JSON"
+    invariants:
+    - "fixture includes BOTH head_dim=64 and head_dim=128 cases"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-05-001
+  rule: "parity within 1e-5 (f32, head_dim=64)"
+  prediction: "rope kernel matches naive at f32 for head_dim=64"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl rope --ref naive --dtype f32 --head-dim 64 --fixture fixtures/rope-canary.json --json > /tmp/l05-64.json
+    jq -e '.max_abs_diff <= 1e-5' /tmp/l05-64.json >/dev/null
+  if_fails: "RoPE head_dim=64 diverges"
+
+- id: FALSIFY-CRUX-L-05-002
+  rule: "parity within 1e-5 (f32, head_dim=128)"
+  prediction: "rope kernel matches naive for head_dim=128"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl rope --ref naive --dtype f32 --head-dim 128 --fixture fixtures/rope-canary.json --json > /tmp/l05-128.json
+    jq -e '.max_abs_diff <= 1e-5' /tmp/l05-128.json >/dev/null
+  if_fails: "RoPE head_dim=128 diverges"
+
+- id: FALSIFY-CRUX-L-05-003
+  rule: "layout mismatch is a hard error"
+  prediction: "apr kernel parity --rope-layout interleaved (non-HF) errors"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl rope --ref naive --rope-layout interleaved --fixture fixtures/rope-canary.json --json > /tmp/l05-il.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.error | test("layout|interleaved|unsupported")' /tmp/l05-il.json >/dev/null
+  if_fails: "Layout mismatch silently accepted — tokens silently wrong"
+
+- id: FALSIFY-CRUX-L-05-004
+  rule: "kernel_source pinned"
+  prediction: "Successful dispatch emits kernel_source='hf-kernels-community:rotary@<sha>'"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl rope --ref naive --dtype f32 --fixture fixtures/rope-canary.json --json > /tmp/l05.json
+    jq -e '.kernel_source | test("^hf-kernels-community:rotary@[0-9a-f]{40}$")' /tmp/l05.json >/dev/null
+  if_fails: "Unpinned rotary source"
+
+proof_obligations:
+- type: invariant
+  property: "f32 parity max_abs_diff <= 1e-5 for head_dim ∈ {64, 128}"
+- type: invariant
+  property: "Layout convention matches HF (half-split)"
+- type: invariant
+  property: "Kernel source pinned on dispatch"
+- type: equivalence
+  property: "apr rope kernel  ≅  HF kernels-community rotary"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-05
+  ticket_id: PMAT-659
+  priority: medium
+  auto_created: true

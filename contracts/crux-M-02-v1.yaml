@@ -1,0 +1,152 @@
+# CRUX-M-02 — QA Gate-2: per-tensor stats parity (min/max/mean/std)
+# Authored under PMAT-671. See docs/specifications/crux-competitive-research-ux-workflows.md §5.M.
+
+metadata:
+  id: CRUX-M-02
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - apr-model-qa-v1
+  category: "M — APR-QA Playbook Canonicalization"
+  competitor: apr-qa-playbook
+  demand_score: 5
+  intake_status: partial
+  description: >
+    QA Gate-2 from apr-model-qa-playbook — per-tensor statistics parity.
+    For every tensor T, the quadruple (min, max, mean, std) in the APR
+    file MUST match the safetensors ground truth within an absolute
+    tolerance of 1e-6 (f32) or the quant-scheme's documented rounding
+    error (Q4_K/Q6_K). Catches silent dequant drift that Gate-1
+    byte-identical cannot reach (lossy quant paths).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'sibling repo: github.com/paiml/apr-model-qa-playbook — Gate-2'
+  - 'contracts/tensor-layout-v1.yaml — LAYOUT source of truth'
+
+equations:
+  per_tensor_stats_parity:
+    formula: |
+      For each tensor T in (S = safetensors, A = apr_import(S)):
+          stats(T) := (min(T), max(T), mean(T), std(T))
+          Δ(T)     := max(|stats(S[T]) - stats(A[T])|)   (elementwise sup-norm on the quadruple)
+          tol(T)   := 1e-6  if T.dtype == f32
+                     q_tol(T.qtype) otherwise
+      Gate pass := ∀ T . Δ(T) <= tol(T)
+    domain: "safetensors × APR"
+    codomain: "PASS if all tensor stats within tolerance; FAIL otherwise"
+    invariants:
+    - "f32 tensors: absolute tolerance 1e-6 (covers FMA rounding in mean/std)"
+    - "quant tensors: tol is the documented dequant error (Q4_K ≤ 0.01, Q6_K ≤ 0.005)"
+    - "std is computed population-style (1/N), not sample-style (1/(N-1)), to match safetensors readers"
+    - "missing tensor is never tolerated — emits FAIL with reason='missing'"
+
+  gate_contract:
+    formula: |
+      apr qa --gate tensor-stats --safetensors model.safetensors --apr model.apr --json
+        emits:
+          status ∈ {"PASS", "FAIL"}
+          total_tensors: N
+          failed_tensors: K
+          per_tensor:
+            - { name, expected: { min, max, mean, std }, observed: { ... }, delta: { ... }, tol, within_tol }
+      exit 0 iff PASS and K == 0 ; exit 1 iff FAIL or K > 0 ; exit >= 2 on I/O error
+    domain: "(safetensors path, apr path)"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status"
+    - "per_tensor entries are ordered by tensor name (stable)"
+    - "a tensor missing on either side is reported with within_tol=false"
+
+falsification_tests:
+- id: FALSIFY-CRUX-M-02-001
+  rule: "--gate tensor-stats flag exists and is documented"
+  prediction: "apr qa --help advertises --gate tensor-stats"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "tensor-stats"
+  if_fails: "apr qa lacks tensor-stats gate — Gate-2 not wired"
+
+- id: FALSIFY-CRUX-M-02-002
+  rule: "PASS on freshly imported safetensors (no lossy transform)"
+  prediction: "safetensors → APR (f32) → stats comparison yields PASS within 1e-6"
+  test: |
+    set -euo pipefail
+    SRC=/tmp/m02-src.safetensors
+    APR=/tmp/m02.apr
+    uv run --with safetensors python - <<PY
+    import torch
+    from safetensors.torch import save_file
+    save_file({"w": torch.randn(128, 128, generator=torch.Generator().manual_seed(0))}, "$SRC")
+    PY
+    apr import --from "$SRC" --to "$APR"
+    apr qa --gate tensor-stats --safetensors "$SRC" --apr "$APR" --json > /tmp/m02.json
+    jq -e '.status == "PASS" and .failed_tensors == 0' /tmp/m02.json >/dev/null
+  if_fails: "f32 round-trip drifts stats > 1e-6 — numerical correctness broken"
+
+- id: FALSIFY-CRUX-M-02-003
+  rule: "FAIL on perturbed APR (stats divergence)"
+  prediction: "Perturbing one weight in-place flips the gate to FAIL and pinpoints the tensor"
+  test: |
+    set -euo pipefail
+    # Mutate the APR model tensor via apr convert --perturb (or custom tool)
+    apr convert --in /tmp/m02.apr --out /tmp/m02-perturbed.apr --perturb weight,0,0,+1.0
+    set +e
+    apr qa --gate tensor-stats --safetensors /tmp/m02-src.safetensors --apr /tmp/m02-perturbed.apr --json > /tmp/m02-fail.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || { echo "expected exit 1, got $EC"; exit 1; }
+    jq -e '.status == "FAIL" and .failed_tensors >= 1 and (.per_tensor[] | select(.within_tol == false) | .name) != null' /tmp/m02-fail.json >/dev/null
+  if_fails: "Gate does not detect mean/std drift — Gate-2 has no numerical teeth"
+
+- id: FALSIFY-CRUX-M-02-004
+  rule: "quant tensors use documented q_tol, not 1e-6"
+  prediction: "Q4_K tensor with max dequant error 0.008 passes at q_tol=0.01"
+  test: |
+    set -euo pipefail
+    apr convert --in /tmp/m02.apr --quantize q4_k --out /tmp/m02-q4k.apr
+    apr qa --gate tensor-stats --safetensors /tmp/m02-src.safetensors --apr /tmp/m02-q4k.apr --json > /tmp/m02-q4k.json
+    jq -e '.status == "PASS" and (.per_tensor[].tol | tonumber) >= 0.005' /tmp/m02-q4k.json >/dev/null
+  if_fails: "Gate over-rejects legitimate quant paths (false FAIL) — breaks the Q4_K ship path"
+
+- id: FALSIFY-CRUX-M-02-005
+  rule: "missing tensor on either side is reported, never silently skipped"
+  prediction: "Dropping a tensor from APR flips gate to FAIL with reason='missing'"
+  test: |
+    set -euo pipefail
+    apr convert --in /tmp/m02.apr --drop-tensor w --out /tmp/m02-drop.apr
+    set +e
+    apr qa --gate tensor-stats --safetensors /tmp/m02-src.safetensors --apr /tmp/m02-drop.apr --json > /tmp/m02-drop.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and (.per_tensor[] | select(.name == "w") | .within_tol == false)' /tmp/m02-drop.json >/dev/null
+  if_fails: "Gate silently accepts a missing tensor — Gate-2 has no completeness check"
+
+proof_obligations:
+- type: invariant
+  property: "Stats parity holds for every tensor within its documented tolerance"
+- type: invariant
+  property: "Quant qtol is the dequant error bound, not the f32 tolerance"
+- type: invariant
+  property: "Missing tensor is FAIL with reason='missing' (never silent)"
+- type: invariant
+  property: "Exit code aligns with status; determinism for (src, apr) pair"
+- type: equivalence
+  property: "apr qa --gate tensor-stats  ≅  apr-model-qa-playbook Gate-2 (per-tensor (min,max,mean,std) parity)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-m-02
+  ticket_id: PMAT-671
+  priority: critical
+  auto_created: true

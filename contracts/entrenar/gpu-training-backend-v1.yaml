@@ -392,17 +392,31 @@ implementation_plan:
 
   phase_1:
     title: "Device enum + dispatch helper"
-    status: pending
+    status: complete
     deliverables:
-      - "crates/aprender-train/src/train/device.rs: Device enum + resolve_device() with FALSIFY-GPUTRAIN-001/002 tests"
-      - "--device CLI flag wired in crates/apr-cli/src/commands/pretrain.rs"
-      - "SharedTrainer enum extended with CudaVariant (NotImplemented stub)"
+      - "crates/aprender-train/src/train/device.rs: Device enum + resolve_device() with FALSIFY-GPUTRAIN-001/002 tests (17 tests PASS)"
+      - "--device CLI flag wired in crates/apr-cli/src/extended_commands.rs (default `auto`, 3 cli_pretrain_device_* tests PASS)"
+      - "drive_real NotImplemented stub when Device::is_cuda() — GATE-GPUTRAIN-002 hard-fail before any trainer allocation"
 
   phase_2:
     title: "Wire existing CudaTransformerTrainer"
     status: pending
+    prerequisites:
+      # Phase 2 design-surface audit (2026-04-21): CudaTransformerTrainer
+      # HAS train_batch() + save_apr() + model()/model_mut(), but is
+      # MISSING two methods the existing CPU adapter chain relies on:
+      #   1. forward_single(inp: &[u32], tgt: &[u32]) -> (f32, Tensor, Tensor)
+      #      — required by RealValFn::validate() for held-out forward-only
+      #        loss (INV-TRAIN-004).
+      #   2. optimizer_state_sha256() -> String
+      #      — required by StepFn::optimizer_state_sha256() override
+      #        (INV-TRAIN-003 reproducibility discharge).
+      # These MUST land on CudaTransformerTrainer before the Cuda* adapters
+      # can discharge the same invariants as their CPU counterparts.
+      - "Add CudaTransformerTrainer::forward_single (forward-only held-out eval; signature matches TransformerTrainer::forward_single)"
+      - "Add CudaTransformerTrainer::optimizer_state_sha256 (hash AdamW (t, m, v) buffers after D2H copy)"
     deliverables:
-      - "SharedTrainer::CudaVariant dispatches to crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs"
+      - "Replace Phase 1 drive_real NotImplemented stub with SharedTrainer::CudaVariant dispatch (extend pretrain_real.rs with CudaRealStepFn / CudaRealValFn / CudaAprCheckpointFn)"
       - "drive_real branches on Device in pretrain.rs (mirror loader/mod.rs:227)"
       - "nvidia-smi residency probe + GATE-GPUTRAIN-003 harness"
 

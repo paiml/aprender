@@ -245,6 +245,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             target_val_loss,
             vocab_size,
             synthetic,
+            device,
         } => commands::pretrain::run(
             dataset,
             tokenizer,
@@ -260,6 +261,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *target_val_loss,
             *vocab_size,
             *synthetic,
+            device,
             cli.json,
         ),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),

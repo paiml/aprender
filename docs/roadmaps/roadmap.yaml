@@ -5395,7 +5395,7 @@ roadmap:
   updated: 2026-04-18T13:33:05.351120919+00:00
   spec: null
   acceptance_criteria:
-  - 'Ongoing kaizen sweeps on docs/specifications/apr-mcp-server-spec.md + crates/aprender-mcp + book/src/tools/mcp-server.md + contracts/apr-mcp-tool-schemas-v1.yaml. Each sweep fixes stale counts, stale roadmap tense (Mx→shipped), stale tool descriptions, and cross-spec inconsistencies.'
+  - Ongoing kaizen sweeps on docs/specifications/apr-mcp-server-spec.md + crates/aprender-mcp + book/src/tools/mcp-server.md + contracts/apr-mcp-tool-schemas-v1.yaml. Each sweep fixes stale counts, stale roadmap tense (Mx→shipped), stale tool descriptions, and cross-spec inconsistencies.
   - 'DISCHARGED 2026-04-18: FALSIFY-MCP-008 extended to cover tool-level `description` at both the live-wiring layer (`tool_descriptions_match_yaml_contract`) and the codegen-constant layer (`codegen_description_constants_match_yaml`); build.rs now emits `APR_<TOOL>_DESCRIPTION` alongside `APR_<TOOL>_SCHEMA`. Neither field can be hand-edited in Rust source.'
   - 'DISCHARGED 2026-04-18: Spec §"Relationship to `apr code`" added — bidirectional MCP scope (consumer + producer + future apr.code tool) + feature-flag caveat + 9-of-58 coverage table + Phase-2 priority batch. Closes the gap where the spec treated Claude Code as an external-client-only concern and never referenced the sibling `apr code` agent (PMAT-182).'
   phases: []
@@ -5403,7 +5403,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-
 - id: PMAT-MCP-PARITY-001
   github_issue: null
   item_type: task
@@ -5420,7 +5419,7 @@ roadmap:
   - 'Wave 3 (model-management + analysis): apr.pull (download), apr.profile (roofline), apr.explain (nat-lang description), apr.tokenize (debug tokenization).'
   - 'Wave 4 (evaluation): apr.eval, apr.probar (behaviour-test pipeline).'
   - 'Each wave: extend contracts/apr-mcp-tool-schemas-v1.yaml, update build.rs codegen coverage tests, extend FALSIFY-MCP-008 CODEGEN_CONSTANTS + CODEGEN_DESCRIPTIONS arrays, add integration tests mirroring each tool.'
-  - 'Interactive-only commands (apr chat, apr tui, apr cbtop, apr monitor) and meta-commands (apr mcp itself) are EXPLICITLY out of scope — MCP tools must be one-shot request/response.'
+  - Interactive-only commands (apr chat, apr tui, apr cbtop, apr monitor) and meta-commands (apr mcp itself) are EXPLICITLY out of scope — MCP tools must be one-shot request/response.
   - 'Falsification gate FALSIFY-MCP-COVERAGE-001: `apr-cli-commands-v1.yaml` commands with `side_effects: none` OR `category: readonly`/`analysis` MUST appear in the MCP tool set or be explicitly listed as deferred — enforced by a new test that diffs the two contracts.'
   phases: []
   subtasks: []
@@ -5430,7 +5429,6 @@ roadmap:
   - parity
   - claude-code
   notes: null
-
 - id: PMAT-CODE-MCP-CLIENT-001
   github_issue: null
   item_type: task
@@ -5442,8 +5440,8 @@ roadmap:
   updated: 2026-04-18T15:00:00Z
   spec: docs/specifications/aprender-orchestrate/components/apr-code.md
   acceptance_criteria:
-  - 'Add .mcp.json loader at `$CWD/.mcp.json` and `~/.config/apr/mcp.json` — mirrors Claude Code / Cursor / Cline precedence. Existing TOML AgentManifest.mcp_servers path remains supported.'
-  - 'Wire `register_mcp_tools` (today in crates/aprender-orchestrate/src/cli/agent_helpers.rs:219, feature-gated behind `agents-mcp`) into `build_code_tools` at crates/aprender-orchestrate/src/agent/code.rs:360. Today the call site is missing — external MCP servers declared in manifest are silently ignored by `apr code`.'
+  - Add .mcp.json loader at `$CWD/.mcp.json` and `~/.config/apr/mcp.json` — mirrors Claude Code / Cursor / Cline precedence. Existing TOML AgentManifest.mcp_servers path remains supported.
+  - Wire `register_mcp_tools` (today in crates/aprender-orchestrate/src/cli/agent_helpers.rs:219, feature-gated behind `agents-mcp`) into `build_code_tools` at crates/aprender-orchestrate/src/agent/code.rs:360. Today the call site is missing — external MCP servers declared in manifest are silently ignored by `apr code`.
   - 'Falsification: spawn a stdio MCP server (e.g. the aprender-mcp binary itself), declare it in `.mcp.json`, launch `apr code --print`, prompt it to call one of the exposed tools (e.g. apr.version), assert the tool appears in agent logs and the returned content is in the final transcript.'
   - 'Privacy-tier guard: Sovereign tier must allow only stdio transport (McpTransport::Stdio); SSE/HTTP rejected with user-visible error. Existing PrivacyTier logic in mcp_client.rs already expresses this — verify at wire-up.'
   - 'Feature flag: keep behind `agents-mcp`. No changes to default install story (apr code only appears with `--features code`).'
@@ -5456,7 +5454,6 @@ roadmap:
   - claude-code
   - apr-code
   notes: null
-
 - id: PMAT-CLAUDE-PROXY-001
   github_issue: null
   item_type: feature
@@ -5467,48 +5464,32 @@ roadmap:
   created: 2026-04-18T16:00:00Z
   updated: 2026-04-18T16:00:00Z
   spec: docs/specifications/apr-mcp-server-spec.md
-  contract: contracts/apr-claude-proxy-v1.yaml
-  summary: >
-    Drop-in local replacement for Anthropic's Messages API (POST /v1/messages).
-    Clients speaking the Anthropic SDK (Claude Code, Cursor, Zed AI, anthropic-
-    sdk-python, anthropic-sdk-typescript) point ANTHROPIC_BASE_URL at a local
-    `apr serve anthropic` and swap in a sovereign on-device model
-    (default: Qwen3-Coder-30B-A3B-Instruct Q4_K_M, ~18.6 GB, fits 24 GB VRAM,
-    ~196 tok/s on RTX 4090) with zero client-side code change. Both the
-    request shape and the response shape are pinned by
-    contracts/apr-claude-proxy-v1.yaml and asserted by 6 falsification gates.
   acceptance_criteria:
   - 'Contract committed: contracts/apr-claude-proxy-v1.yaml (DRAFT → ENFORCED when all 6 gates PASS).'
   - 'Spec section committed: docs/specifications/apr-mcp-server-spec.md § "Claude Messages-API Provable-Contract Proxy (PLANNED M6)".'
   - 'Default-model resolver implements the fallback chain: unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M → Qwen/Qwen3-30B-A3B-GGUF:Q4_K_M → APR_CODE_MODEL env → manifest.default_model.'
   - 'HTTP surface lives in `crates/aprender-serve/src/anthropic/` (new module). CLI entry: `apr serve anthropic` — new `ServeCommands::Anthropic` variant in `crates/apr-cli/src/serve_commands.rs` alongside existing `Plan` and `Run`.'
-  - 'FALSIFY-CLAUDE-PROXY-001..006 all ENFORCED before promotion from PLANNED → ACTIVE (see contract for details).'
+  - FALSIFY-CLAUDE-PROXY-001..006 all ENFORCED before promotion from PLANNED → ACTIVE (see contract for details).
   - 'Sovereignty gate (FALSIFY-CLAUDE-PROXY-006): zero outbound sockets to api.anthropic.com under any combination of headers/env/config. Asserted by network-sandboxed CI container.'
-  - 'Translation semantics are a pure function of (request_body, resolved_model, server_config) — no client-identity leakage, property-tested round-trip via `apr serve anthropic --dump-translation`.'
+  - Translation semantics are a pure function of (request_body, resolved_model, server_config) — no client-identity leakage, property-tested round-trip via `apr serve anthropic --dump-translation`.
   - 'Streaming (SSE) event sequence validates against Anthropic v2026-02-01 schedule: message_start → (content_block_start → N × content_block_delta → content_block_stop)⁺ → message_delta → message_stop.'
   phases:
-  - id: M6-alpha
-    title: 'Request-shape parser'
-    blocks_on: PMAT-MCP-PARITY-001 (M5 pmcp port prerequisite)
-    criteria:
-    - 'contracts/apr-claude-proxy-v1.yaml committed'
-    - 'FALSIFY-CLAUDE-PROXY-001 PASS on fixture corpus (captured anthropic-sdk-python request bodies)'
-  - id: M6-beta
-    title: 'Non-streaming response generation'
-    criteria:
-    - 'FALSIFY-CLAUDE-PROXY-002 (output shape) PASS'
-    - 'FALSIFY-CLAUDE-PROXY-003 (tool_use round-trip on Bash fixture) PASS'
-  - id: M6-gamma
-    title: 'SSE streaming'
-    criteria:
-    - 'FALSIFY-CLAUDE-PROXY-004 (event-sequence parity) PASS'
-    - 'Throughput parity within ±5% of non-proxied `apr serve` decode path'
-  - id: M6-delta
-    title: 'Default-model autoselect + sovereignty'
-    criteria:
-    - 'FALSIFY-CLAUDE-PROXY-005 (bind-after-pull, <3s cold start if cached) PASS'
-    - 'FALSIFY-CLAUDE-PROXY-006 (zero egress to api.anthropic.com) PASS'
-    - 'Contract status promotes DRAFT → ENFORCED; spec section promotes PLANNED → ACTIVE'
+  - name: Request-shape parser
+    status: planned
+    estimated_effort: null
+    completion: 0
+  - name: Non-streaming response generation
+    status: planned
+    estimated_effort: null
+    completion: 0
+  - name: SSE streaming
+    status: planned
+    estimated_effort: null
+    completion: 0
+  - name: Default-model autoselect + sovereignty
+    status: planned
+    estimated_effort: null
+    completion: 0
   subtasks: []
   estimated_effort: null
   labels:
@@ -5518,15 +5499,8 @@ roadmap:
   - apr-code
   - anthropic
   - sovereign
-  notes: >
-    Sibling to PMAT-MCP-PARITY-001 (MCP server surface) and PMAT-CODE-MCP-
-    CLIENT-001 (apr code MCP-client wiring). The three together close the
-    triangle of Claude-Code parity: (1) apr mcp exposes apr as MCP tools;
-    (2) apr code consumes external MCP servers; (3) apr serve --compat
-    anthropic exposes the full agent loop via Anthropic's Messages API.
-    PMAT-CLAUDE-PROXY-001 unlocks the largest category of IDE integrations
-    (everything speaking `anthropic-sdk-*`) without any MCP dependency.
-
+  notes: |
+    Sibling to PMAT-MCP-PARITY-001 (MCP server surface) and PMAT-CODE-MCP- CLIENT-001 (apr code MCP-client wiring). The three together close the triangle of Claude-Code parity: (1) apr mcp exposes apr as MCP tools; (2) apr code consumes external MCP servers; (3) apr serve --compat anthropic exposes the full agent loop via Anthropic's Messages API. PMAT-CLAUDE-PROXY-001 unlocks the largest category of IDE integrations (everything speaking `anthropic-sdk-*`) without any MCP dependency.
 - id: PMAT-CODE-PARITY-MATRIX-001
   github_issue: null
   item_type: epic
@@ -5537,62 +5511,20 @@ roadmap:
   created: 2026-04-18T17:00:00Z
   updated: 2026-04-18T17:00:00Z
   spec: docs/specifications/apr-mcp-server-spec.md
-  summary: >
-    Parent epic for the Claude-Code-feature parity matrix in
-    docs/specifications/apr-mcp-server-spec.md § "Feature-by-feature parity
-    matrix — apr code vs Claude Code (2026-04-18 audit)". The audit falsified
-    each Claude Code feature category against the actual
-    crates/aprender-orchestrate/src/ implementation. Of 20 categories:
-    5 SHIPPED, 7 PARTIAL, 8 missing. This epic groups the partial + missing
-    gaps and prioritises the four that unblock the most downstream parity
-    work.
-  headline_audit_result: '5 SHIPPED / 7 PARTIAL / 8 MISSING across 20 categories'
-  p0_near_term_work:
-  - id: PMAT-CODE-MCP-CLIENT-001
-    status: already-registered
-    note: '.mcp.json loader + register_mcp_tools wire-up. Unblocks all external-MCP IDE integrations.'
-  - id: PMAT-CODE-SLASH-PARITY-001
-    status: new
-    note: 'Expand SlashCommand enum from 11 to ~20 variants. Missing: /config, /mcp, /review, /memory, /permissions, /hooks, /init, /resume, /add-dir, /agents.'
-  - id: PMAT-CODE-HOOKS-001
-    status: new
-    note: 'New agent/hooks.rs module + manifest [[hooks]] table + SessionStart/PreToolUse/PostToolUse/UserPromptSubmit events with exit-code→block/warn/allow semantics.'
-  - id: PMAT-CODE-SPAWN-PARITY-001
-    status: new
-    note: 'Lift SpawnTool from capability-gated to default registry; add TaskCreate/Get/List/Update surface. Prereq for worktree isolation (PMAT-CODE-WORKTREE-001) and subagent-style Claude Code Agent tool.'
-  p1_follow_ons_filed_by_audit:
-  - PMAT-CODE-MEMORY-PARITY-001 (CLAUDE.md @imports + user-level + auto-memory directory)
-  - PMAT-CODE-SKILLS-001 (skill discovery + /name invocation + SKILL.md frontmatter)
-  - PMAT-CODE-WORKTREE-001 (EnterWorktree/ExitWorktree tools + --worktree flag)
-  - PMAT-CODE-CUSTOM-AGENTS-001 (.apr/agents/*/AGENT.md discovery)
-  - PMAT-CODE-PERMISSIONS-001 (default/plan/acceptEdits/auto/bypass modes + --permission-mode flag)
-  - PMAT-CODE-WEB-TOOLS-001 (wire NetworkTool + BrowserTool into default registry behind privacy-tier gate)
-  - PMAT-CODE-SESSION-PARITY-001 (--continue shorthand, durable JSONL transcripts, --fork-session, --name)
-  - PMAT-CODE-CONFIG-LADDER-001 (~/.config/apr/settings.json + managed-org → user → project → local precedence)
-  - PMAT-CODE-REPL-PHASE2-001 (Shift+Tab permission cycling, ! bash inline, @ path file-mention)
-  - PMAT-CODE-NON-INTERACTIVE-PARITY-001 (--output-format json|text|stream-json, --input-format stream-json, --max-budget-usd)
-  p2_deferred_filed_by_audit:
-  - PMAT-CODE-NOTEBOOK-001
-  - PMAT-CODE-MONITOR-001
-  - PMAT-CODE-PLUGINS-001
-  - PMAT-CODE-IDE-001
-  - PMAT-CODE-ORG-POLICY-001
   acceptance_criteria:
-  - 'P0 tickets (PMAT-CODE-{MCP-CLIENT,SLASH-PARITY,HOOKS,SPAWN-PARITY}-001) each promote from planned to in-progress with first acceptance criterion landed.'
-  - 'Audit re-runs after P0 completion (via the six pmat query / grep cross-checks listed in the spec matrix) and each of the four P0 rows flips from PARTIAL/NONE to SHIPPED with updated evidence path.'
-  - 'Headline count rebalances from 5/7/8 to at minimum 9/7/4 before this epic closes.'
+  - P0 tickets (PMAT-CODE-{MCP-CLIENT,SLASH-PARITY,HOOKS,SPAWN-PARITY}-001) each promote from planned to in-progress with first acceptance criterion landed.
+  - Audit re-runs after P0 completion (via the six pmat query / grep cross-checks listed in the spec matrix) and each of the four P0 rows flips from PARTIAL/NONE to SHIPPED with updated evidence path.
+  - Headline count rebalances from 5/7/8 to at minimum 9/7/4 before this epic closes.
+  phases: []
+  subtasks: []
+  estimated_effort: null
   labels:
   - apr-code
   - parity
   - claude-code
   - epic
-  notes: >
-    The matrix is falsifiable, not aspirational — every row cites a specific
-    file path or a specific zero-hit grep, and can be re-run to verify the
-    gap has closed. This is the key advantage of the audit approach: parity
-    progress is mechanically checkable, not "does it feel like Claude Code".
-    Re-run the six falsification cross-checks listed at the bottom of the
-    spec matrix section after each ticket closes.
+  notes: |
+    The matrix is falsifiable, not aspirational — every row cites a specific file path or a specific zero-hit grep, and can be re-run to verify the gap has closed. This is the key advantage of the audit approach: parity progress is mechanically checkable, not "does it feel like Claude Code". Re-run the six falsification cross-checks listed at the bottom of the spec matrix section after each ticket closes.
 - id: PMAT-654
   github_issue: null
   item_type: task
@@ -8672,4 +8604,532 @@ roadmap:
   - crux-K
   - competitor-ecosystem
   - crux-k-21
+  notes: null
+- id: PMAT-655
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-01 — Load pre-built HF kernel by hf://kernels-community/<name>'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:13Z
+  updated: 2026-04-21T17:33:02.612716065+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-01-v1.yaml | Competitor: hf-kernels | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-01
+  notes: null
+- id: PMAT-656
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-02 — Drop-in flash-attn2 HF kernel behind aprender FA trait'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:13Z
+  updated: 2026-04-21T17:33:06.129257648+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-02-v1.yaml | Competitor: hf-kernels | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-02
+  notes: null
+- id: PMAT-657
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-03 — Drop-in flash-attn3 HF kernel (sm_90a / sm_100)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:13Z
+  updated: 2026-04-21T17:33:08.064157032+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-03-v1.yaml | Competitor: hf-kernels | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-03
+  notes: null
+- id: PMAT-658
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-04 — rmsnorm fused kernel behind LayerNorm trait'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-21T17:14:13Z
+  updated: 2026-04-21T17:40:24.866055855+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-04-v1.yaml | Competitor: hf-kernels | Demand: 3/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-04
+  notes: null
+- id: PMAT-659
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-05 — rotary fused RoPE-apply kernel'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:40:30.201327933+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-05-v1.yaml | Competitor: hf-kernels | Demand: 3/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-05
+  notes: null
+- id: PMAT-660
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-06 — paged-attention KV-cache kernel (vLLM-compat)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:33:09.987621693+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-06-v1.yaml | Competitor: hf-kernels | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-06
+  notes: null
+- id: PMAT-661
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-07 — fp8-fbgemm matmul path for H100+'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:40:32.230207985+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-07-v1.yaml | Competitor: hf-kernels | Demand: 3/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-07
+  notes: null
+- id: PMAT-662
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-08 — quantization-bitsandbytes NF4 via HF kernel'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:40:34.193033469+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-08-v1.yaml | Competitor: hf-kernels | Demand: 3/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-08
+  notes: null
+- id: PMAT-663
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-09 — quantization-gptq fused dequant+matmul'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:40:36.166173160+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-09-v1.yaml | Competitor: hf-kernels | Demand: 3/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-09
+  notes: null
+- id: PMAT-664
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-10 — liger-kernels fused CE-loss for training'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:33:11.883491490+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-10-v1.yaml | Competitor: hf-kernels | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-10
+  notes: null
+- id: PMAT-665
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-11 — megablocks MoE routing kernel'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:40:38.151284268+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-11-v1.yaml | Competitor: hf-kernels | Demand: 3/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-11
+  notes: null
+- id: PMAT-666
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-12 — punica-sgmv multi-LoRA fused SGMV'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:40:40.127745556+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-12-v1.yaml | Competitor: hf-kernels | Demand: 3/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-12
+  notes: null
+- id: PMAT-667
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-13 — activation fused SwiGLU/GeGLU kernel'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:40:42.178009715+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-13-v1.yaml | Competitor: hf-kernels | Demand: 3/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-13
+  notes: null
+- id: PMAT-668
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-14 — mamba-ssm state-space kernel'
+  status: inprogress
+  priority: low
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:50:35.218351146+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-14-v1.yaml | Competitor: hf-kernels | Demand: 2/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-14
+  notes: null
+- id: PMAT-669
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-L-15 — Kernel version-pinning + SHA-verified load'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:33:13.764545029+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-l-15-v1.yaml | Competitor: hf-kernels | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.l + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-l
+  - competitor-hf-kernels
+  - crux-l-15
+  notes: null
+- id: PMAT-670
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-M-01 — Gate-1 byte-identical vs safetensors ground truth'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:15:28.724749093+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-m-01-v1.yaml | Competitor: apr-qa-playbook | Demand: 5/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.m + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-m
+  - competitor-apr-qa-playbook
+  - crux-m-01
+  notes: null
+- id: PMAT-671
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-M-02 — Gate-2 tensor-stats parity (min/max/mean/std, per-tensor)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:17:55.283180138+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-m-02-v1.yaml | Competitor: apr-qa-playbook | Demand: 5/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.m + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-m
+  - competitor-apr-qa-playbook
+  - crux-m-02
+  notes: null
+- id: PMAT-672
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-M-04 — Gate-4 cross-format parity APR ↔ GGUF ↔ safetensors'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:17:57.869191475+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-m-04-v1.yaml | Competitor: apr-qa-playbook | Demand: 5/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.m + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-m
+  - competitor-apr-qa-playbook
+  - crux-m-04
+  notes: null
+- id: PMAT-673
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-M-05 — Gate-5 tokenizer round-trip with NFC normalization'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:26:37.956162146+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-m-05-v1.yaml | Competitor: apr-qa-playbook | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.m + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-m
+  - competitor-apr-qa-playbook
+  - crux-m-05
+  notes: null
+- id: PMAT-674
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-M-06 — Gate-6 chat-template rendering equivalence'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:26:42.477286282+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-m-06-v1.yaml | Competitor: apr-qa-playbook | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.m + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-m
+  - competitor-apr-qa-playbook
+  - crux-m-06
+  notes: null
+- id: PMAT-675
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-M-07 — Gate-7 pass@1 on canary suite with confidence interval'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:17:59.816988505+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-m-07-v1.yaml | Competitor: apr-qa-playbook | Demand: 5/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.m + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-m
+  - competitor-apr-qa-playbook
+  - crux-m-07
+  notes: null
+- id: PMAT-676
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-M-08 — Gate-8 5-Whys root-cause generator on failure'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:26:44.416035305+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-m-08-v1.yaml | Competitor: apr-qa-playbook | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.m + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-m
+  - competitor-apr-qa-playbook
+  - crux-m-08
+  notes: null
+- id: PMAT-677
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-M-09 — Property-based falsifier ≥ 1000 fuzz cases per gate'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:26:46.354228420+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-m-09-v1.yaml | Competitor: apr-qa-playbook | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.m + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-m
+  - competitor-apr-qa-playbook
+  - crux-m-09
+  notes: null
+- id: PMAT-678
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-M-10 — Upstream-fix enforcement (reject workarounds)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-21T17:14:14Z
+  updated: 2026-04-21T17:26:48.292544025+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-m-10-v1.yaml | Competitor: apr-qa-playbook | Demand: 4/5 | Subspec: docs/specifications/crux-competitive-research-ux-workflows.md §5.m + §13'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-m
+  - competitor-apr-qa-playbook
+  - crux-m-10
   notes: null

@@ -1,0 +1,116 @@
+# CRUX-L-08 — bitsandbytes (bnb) quantization kernel dispatch
+# Authored under PMAT-662. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-08
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Load bnb (bitsandbytes) 4-bit NF4 / 8-bit quantization kernels
+    via HF kernels-community. Covers the `load_in_4bit=True` and
+    `load_in_8bit=True` paths for HF Transformers-style quantization.
+    Parity vs naive dequant-matmul within the NF4/int8 tolerance
+    bounds.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/bitsandbytes-foundation/bitsandbytes'
+  - 'arXiv:2305.14314 — QLoRA (NF4)'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  bnb_dispatch:
+    formula: |
+      Two paths:
+          nf4_matmul(A_bf16, B_nf4, absmax) -> out_bf16     # 4-bit NF4
+          int8_matmul(A_bf16, B_int8, scale) -> out_bf16    # 8-bit linear quant
+      Parity:
+          max_abs_diff(nf4_matmul_out, dequant_then_matmul) <= 2e-2
+          max_abs_diff(int8_matmul_out, dequant_then_matmul) <= 5e-3
+    domain: "(A, B_quant, scales)"
+    codomain: "out tensor"
+    invariants:
+    - "NF4 tol 2e-2 reflects 4-bit quant noise (from QLoRA paper bounds)"
+    - "int8 tol 5e-3 reflects linear int8 quant error"
+    - "blocksize for NF4 is 64 (bnb default) — other sizes error"
+
+  cli_contract:
+    formula: |
+      apr kernel parity --impl bnb-nf4 --ref dequant-matmul --fixture fixtures/bnb-nf4-canary.json --json
+      apr kernel parity --impl bnb-int8 --ref dequant-matmul --fixture fixtures/bnb-int8-canary.json --json
+    domain: "(impl, fixture)"
+    codomain: "parity JSON"
+    invariants:
+    - "two independent parity runs — bnb-nf4 and bnb-int8"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-08-001
+  rule: "NF4 parity within 2e-2"
+  prediction: "bnb-nf4 matches dequant+matmul at 2e-2"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl bnb-nf4 --ref dequant-matmul --fixture fixtures/bnb-nf4-canary.json --json > /tmp/l08-nf4.json
+    jq -e '.max_abs_diff <= 2e-2' /tmp/l08-nf4.json >/dev/null
+  if_fails: "bnb NF4 exceeds QLoRA-published quant bound"
+
+- id: FALSIFY-CRUX-L-08-002
+  rule: "int8 parity within 5e-3"
+  prediction: "bnb-int8 matches dequant+matmul at 5e-3"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl bnb-int8 --ref dequant-matmul --fixture fixtures/bnb-int8-canary.json --json > /tmp/l08-i8.json
+    jq -e '.max_abs_diff <= 5e-3' /tmp/l08-i8.json >/dev/null
+  if_fails: "bnb int8 exceeds linear quant bound"
+
+- id: FALSIFY-CRUX-L-08-003
+  rule: "NF4 blocksize=64 is the only accepted default"
+  prediction: "apr kernel parity --impl bnb-nf4 --blocksize 128 errors"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl bnb-nf4 --blocksize 128 --fixture fixtures/bnb-nf4-canary.json --json > /tmp/l08-bs.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+  if_fails: "Blocksize!=64 silently accepted — mismatched quant format"
+
+- id: FALSIFY-CRUX-L-08-004
+  rule: "kernel_source pinned on dispatch"
+  prediction: "Successful dispatch emits kernel_source='hf-kernels-community:bnb@<sha>'"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl bnb-nf4 --ref dequant-matmul --fixture fixtures/bnb-nf4-canary.json --json > /tmp/l08-nf4.json
+    jq -e '.kernel_source | test("^hf-kernels-community:bnb@[0-9a-f]{40}$")' /tmp/l08-nf4.json >/dev/null
+  if_fails: "Unpinned bnb source"
+
+proof_obligations:
+- type: invariant
+  property: "NF4 parity max_abs_diff <= 2e-2"
+- type: invariant
+  property: "int8 parity max_abs_diff <= 5e-3"
+- type: invariant
+  property: "blocksize=64 enforced for NF4"
+- type: equivalence
+  property: "apr bnb kernel  ≅  HF kernels-community bitsandbytes"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-08
+  ticket_id: PMAT-662
+  priority: medium
+  auto_created: true
