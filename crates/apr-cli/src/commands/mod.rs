@@ -8,6 +8,7 @@
 pub(crate) mod aliases;
 pub(crate) mod auto_quant;
 pub(crate) mod awq_classifier;
+pub(crate) mod awq_lint;
 pub mod bench;
 pub mod canary;
 pub mod cbtop;
