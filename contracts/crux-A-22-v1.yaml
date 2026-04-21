@@ -2,8 +2,9 @@
 
 metadata:
   id: CRUX-A-22
-  version: "1.2.0"
+  version: "1.3.0"
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
   status: partial
@@ -57,6 +58,12 @@ falsification_tests:
   if_fails: rule 'pull rejected when it would exceed quota' is violated — contract MUST be re-verified against competitor canonical reference
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/registry_quota.rs
+    cli_path: crates/apr-cli/src/commands/registry_quota_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_a_22.rs
+    e2e_tests:
+    - falsify_crux_a_22_001_reject_one_byte_over
+    - falsify_crux_a_22_001_allow_under_budget
+    - falsify_crux_a_22_001_wrong_expected_outcome_fails
     sub_claim: |
       Algorithm-level necessary condition: `classify_pull_against_quota`
       returns Reject iff `used + incoming > quota`, with the triple
@@ -93,6 +100,12 @@ falsification_tests:
   if_fails: rule 'no partial blobs on disk after reject' is violated — contract MUST be re-verified against competitor canonical reference
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/registry_quota.rs
+    cli_path: crates/apr-cli/src/commands/registry_quota_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_a_22.rs
+    e2e_tests:
+    - falsify_crux_a_22_002_atomic_reject_is_deterministic
+    - falsify_crux_a_22_002_atomic_allow_is_deterministic
+    - falsify_crux_a_22_002_atomic_wrong_outcome_fails
     sub_claim: |
       Algorithm-level necessary condition: the quota decision is a pure
       function of (quota, used, incoming) with no I/O. Because the
@@ -122,6 +135,13 @@ falsification_tests:
   if_fails: rule 'permitted pull succeeds and stays under quota' is violated — contract MUST be re-verified against competitor canonical reference
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/registry_quota.rs
+    cli_path: crates/apr-cli/src/commands/registry_quota_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_a_22.rs
+    e2e_tests:
+    - falsify_crux_a_22_003_ceiling_allow_preserves_invariant
+    - falsify_crux_a_22_003_ceiling_exact_fit_allow
+    - falsify_crux_a_22_003_ceiling_reject_invariant_false
+    - falsify_crux_a_22_003_ceiling_wrong_invariant_fails
     sub_claim: |
       Algorithm-level necessary condition: an Allow verdict carries
       `free_after = quota - (used + incoming)`, so the post-pull
@@ -157,6 +177,31 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-A-22-003
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: end-to-end pull + du quota-ceiling harness
+
+ship_discipline:
+  # CRUX-SHIP-001 retrofit: every classifier-only CRUX PR must ship pure-Rust
+  # classifier AND working `apr` CLI wiring + e2e test in the same commit.
+  policy: CRUX-SHIP-001
+  merge_gates:
+    g1_classifier_green:
+      status: PASS
+      evidence: crates/apr-cli/src/commands/registry_quota.rs (unit tests)
+    g2_cli_reachable:
+      status: PASS
+      evidence: "`apr registry-quota-lint --help` advertises --observation-file"
+      wired_in:
+      - crates/apr-cli/src/commands/mod.rs
+      - crates/apr-cli/src/commands/registry_quota_lint.rs
+      - crates/apr-cli/src/extended_commands.rs
+      - crates/apr-cli/src/dispatch_analysis.rs
+      - crates/apr-cli/tests/cli_commands.rs
+      - contracts/apr-cli-commands-v1.yaml
+    g3_e2e_runs:
+      status: PASS
+      evidence: crates/apr-cli/tests/falsification_crux_a_22.rs (18 tests)
+    g4_contract_discharged:
+      status: PASS
+      evidence: "FALSIFY-CRUX-A-22-{001,002,003} carry cli_path + e2e_path + e2e_tests"
 
 pmat_work_tracking:
   ticket_tag: crux-crux-a-22
