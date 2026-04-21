@@ -274,7 +274,7 @@
         // This exercises the prompt.unwrap_or("What is 2+2?") branch at line 109
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None, false);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false, &[]);
         // Will error because it's not a real model, but exercises the None prompt path
         assert!(result.is_err());
     }
@@ -293,6 +293,7 @@
             false,
             None,
             false,
+            &[],
         );
         assert!(result.is_err());
     }
@@ -302,7 +303,7 @@
         // fast=true should not change behavior (deprecated parameter)
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 1, 1, 16, None, true, None, false);
+        let result = run(file.path(), 1, 1, 16, None, true, None, false, &[]);
         assert!(result.is_err());
     }
 
@@ -310,7 +311,7 @@
     fn test_run_zero_warmup_iterations() {
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 0, 0, 0, None, false, None, false);
+        let result = run(file.path(), 0, 0, 0, None, false, None, false, &[]);
         assert!(result.is_err());
     }
 
@@ -318,7 +319,7 @@
     fn test_run_large_max_tokens() {
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 1, 1, 100_000, None, false, None, false);
+        let result = run(file.path(), 1, 1, 100_000, None, false, None, false, &[]);
         assert!(result.is_err());
     }
 
@@ -331,7 +332,7 @@
     fn test_brick_name_rms_norm_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         // rms_norm is a valid brick name - should not return "Unknown brick" error
-        let result = run(file.path(), 1, 3, 16, None, false, Some("rms_norm"), false);
+        let result = run(file.path(), 1, 3, 16, None, false, Some("rms_norm"), false, &[]);
         // Either succeeds or fails with a non-"Unknown brick" error
         if let Err(e) = &result {
             let msg = format!("{e}");
@@ -343,7 +344,7 @@
     #[test]
     fn test_brick_name_qkv_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("qkv"), false);
+        let result = run(file.path(), 1, 3, 16, None, false, Some("qkv"), false, &[]);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -354,7 +355,7 @@
     #[test]
     fn test_brick_name_rope_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("rope"), false);
+        let result = run(file.path(), 1, 3, 16, None, false, Some("rope"), false, &[]);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -365,7 +366,7 @@
     #[test]
     fn test_brick_name_attn_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("attn"), false);
+        let result = run(file.path(), 1, 3, 16, None, false, Some("attn"), false, &[]);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -376,7 +377,7 @@
     #[test]
     fn test_brick_name_attention_alias_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("attention"), false);
+        let result = run(file.path(), 1, 3, 16, None, false, Some("attention"), false, &[]);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -387,7 +388,7 @@
     #[test]
     fn test_brick_name_o_proj_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("o_proj"), false);
+        let result = run(file.path(), 1, 3, 16, None, false, Some("o_proj"), false, &[]);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -398,7 +399,7 @@
     #[test]
     fn test_brick_name_ffn_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("ffn"), false);
+        let result = run(file.path(), 1, 3, 16, None, false, Some("ffn"), false, &[]);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -409,7 +410,7 @@
     #[test]
     fn test_brick_name_layer_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("layer"), false);
+        let result = run(file.path(), 1, 3, 16, None, false, Some("layer"), false, &[]);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -429,6 +430,7 @@
             false,
             Some("unknown_thing"),
             false,
+            &[],
         );
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
@@ -440,7 +442,7 @@
     #[test]
     fn test_brick_name_empty_string_returns_error() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some(""), false);
+        let result = run(file.path(), 1, 3, 16, None, false, Some(""), false, &[]);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
         assert!(msg.contains("Unknown brick type"));

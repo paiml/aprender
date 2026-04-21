@@ -75,6 +75,10 @@ pub enum ExtendedCommands {
         /// Benchmark specific brick
         #[arg(long)]
         brick: Option<String>,
+        /// Comma-separated latency percentile points for JSON output
+        /// (CRUX-E-07). Default: `50,95,99`. Values must be in (0, 100].
+        #[arg(long, value_delimiter = ',', default_value = "50,95,99")]
+        percentiles: Vec<f64>,
     },
     /// Evaluate model perplexity (spec H13: PPL <= 20) or classification metrics
     Eval {
@@ -725,6 +729,18 @@ pub enum ExtendedCommands {
         /// Treat input as NDJSON stream (one frame per line)
         #[arg(long)]
         stream: bool,
+    },
+    /// Lint a captured DRY-sampling observation (CRUX-C-23)
+    DrySamplingLint {
+        /// Path to observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured AWQ quality/compression/flags observation (CRUX-B-08)
+    AwqLint {
+        /// Path to captured AWQ observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
     },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
