@@ -21,7 +21,7 @@ metadata:
 kind: CLICommandContract
 name: apr-cli-commands
 version: "1.0.0"
-scope: "all apr CLI subcommands (59 commands — original 57 + `mcp` added 2026-04-17 via PR #864 + `registry` added 2026-04-20 via CRUX-A-01)"
+scope: "all apr CLI subcommands (60 commands — original 57 + `mcp` added 2026-04-17 via PR #864 + `registry` added 2026-04-20 via CRUX-A-01 + `ollama-chat-lint` added 2026-04-21 via CRUX-C-04 SHIP-001 retrofit)"
 binary: "apr"
 install: "cargo install aprender"
 
@@ -388,6 +388,12 @@ commands:
     category: misc
     description: "Automated Five Whys diagnosis on a training checkpoint"
     requires_model: true
+    side_effects: []
+
+  - name: ollama-chat-lint
+    category: inspection
+    description: "Lint a captured Ollama /api/chat response (CRUX-C-04)"
+    requires_model: false
     side_effects: []
 
   - name: oracle

@@ -710,6 +710,15 @@ pub enum ExtendedCommands {
         #[arg(long, default_value = "5")]
         num_classes: usize,
     },
+    /// Lint an Ollama /api/chat response for schema + NDJSON invariants (CRUX-C-04)
+    OllamaChatLint {
+        /// Path to captured /api/chat response (JSON object, or NDJSON if --stream)
+        #[arg(long, value_name = "FILE")]
+        response_file: PathBuf,
+        /// Treat input as NDJSON stream (one frame per line)
+        #[arg(long)]
+        stream: bool,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),

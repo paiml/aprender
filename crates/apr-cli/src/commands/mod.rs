@@ -50,6 +50,8 @@ pub(crate) mod monitor;
 #[cfg(feature = "dev")]
 pub mod mono;
 pub(crate) mod offline;
+pub(crate) mod ollama_chat;
+pub(crate) mod ollama_chat_classifier;
 pub(crate) mod oracle;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
