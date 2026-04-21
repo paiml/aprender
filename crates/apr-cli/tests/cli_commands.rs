@@ -79,6 +79,7 @@ fn registered_commands() -> Vec<&'static str> {
         "tool-use-lint",
         "gbnf-lint",
         "typical-p-lint",
+        "rm-gc-lint",
         "oracle",
         "encrypt",
         "decrypt",

@@ -768,6 +768,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a captured `apr rm` / `apr gc` blob-GC observation (CRUX-A-25)
+    RmGcLint {
+        /// Path to captured rm/gc observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
