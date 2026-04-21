@@ -35,11 +35,11 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-TRAIN-PRETRAIN
-version: 1.3.0
+version: 1.4.0
 status: ACTIVE
 
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
   created: "2026-04-18"
   updated: "2026-04-20"
   changelog:
@@ -63,6 +63,20 @@ metadata:
        over mode defaults. Motivation: task #119 used MODEL-1 finetune
        defaults (lr=5e-5, target=2.2) for a cold-start run — wrong LR
        band AND unreachable target. INV-TRAIN-005 is unchanged."
+    - "1.4.0 (2026-04-20): CLI default-routing gate. Adds
+       INV-TRAIN-010 / GATE-TRAIN-010 / FALSIFY-TRAIN-010 binding the
+       `apr pretrain` clap surface to its two drive paths:
+       `apr pretrain` (no --synthetic) MUST route to drive_real;
+       `apr pretrain --synthetic` MUST route to drive_synthetic.
+       Motivation: task #105's extended_commands.rs shipped
+       `#[arg(long, default_value = \"true\")] synthetic: bool` and
+       no `--synthetic=false` companion, so EVERY `apr pretrain`
+       invocation silently routed to the scripted-loss synthetic
+       path. Tasks #119 / #124 / #125 captured val_loss values that
+       exactly match the synthetic formula `target × 1.8` linear-
+       decayed — their 'real-compute' claims were actually synthetic.
+       Fix: `synthetic` becomes an explicit clap::ArgAction::SetTrue
+       flag (absent = false = real, present = true = synthetic)."
   author: PAIML Engineering
   description: >
     Pretraining loop contract: required per-step metrics, required
@@ -355,6 +369,28 @@ invariants:
       (c) `--mode finetune` (or no --mode) → regime=Finetune, lr_max=5e-5,
           warmup_steps=100, target_val_loss=2.2.
 
+  - id: INV-TRAIN-010
+    description: >
+      CLI default routing MUST reach drive_real. `apr pretrain`
+      without the `--synthetic` flag MUST parse to a Pretrain
+      command whose `synthetic` field is `false`, which routes
+      execution through drive_real (real 370M forward + backward +
+      AdamW over the dataset shards). `apr pretrain --synthetic`
+      MUST parse to `synthetic=true`, which routes through
+      drive_synthetic (scripted-loss sequence, no compute). No
+      intermediate CLI shape may silently coerce `--synthetic`
+      absent into `synthetic=true` — this was the defect that
+      caused tasks #119 / #124 / #125 to capture scripted-loss
+      values and mis-label them "real compute".
+    falsifier: >
+      CLI-parse-level harness: build an `apr pretrain --dataset X
+      --tokenizer Y --run-dir Z` argv, parse via `Cli::parse_from`,
+      destructure the resulting `ExtendedCommands::Pretrain`
+      variant, and assert `synthetic == false`. Then parse the
+      same argv with `--synthetic` appended and assert
+      `synthetic == true`. Any clap default that silently flips
+      the absent case to `true` fails the first assert.
+
 # ─────────────────────────────────────────────────────────────
 # Acceptance gates (bind to AC-SHIP2-* in the spec)
 # ─────────────────────────────────────────────────────────────
@@ -476,6 +512,34 @@ gates:
       - "crates/apr-cli/src/commands/pretrain.rs::tests::mode_from_scratch_applies_all_four_defaults"
       - "crates/apr-cli/src/commands/pretrain.rs::tests::mode_from_scratch_honors_explicit_lr_override"
       - "crates/apr-cli/src/commands/pretrain.rs::tests::mode_finetune_is_default_and_matches_contract"
+
+  - id: GATE-TRAIN-010
+    rule: >
+      `apr pretrain` (no --synthetic flag) routes execution through
+      drive_real (real 370M forward + backward + AdamW on dataset
+      shards). `apr pretrain --synthetic` routes through
+      drive_synthetic. INV-TRAIN-010. Ship-blocking: without this
+      gate, every real-compute claim is falsifiable as scripted-
+      loss output.
+    evidence_required: >
+      apr-cli parse-level harness: build argv for
+      `apr pretrain --dataset … --tokenizer … --run-dir …`, parse
+      with `Cli::parse_from`, destructure the Pretrain variant,
+      and assert `synthetic == false`. Add `--synthetic` to the
+      argv, re-parse, assert `synthetic == true`.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    ship_blocking: true
+    motivation: >
+      task #105 shipped `default_value = "true"` on the synthetic
+      flag with no `--synthetic=false` companion, so every
+      `apr pretrain` ran the scripted-loss path. The reported
+      val_loss values (e.g. 18 at target=10, 4.2 at target=3)
+      match the synthetic formula target × 1.8 linear-decayed,
+      proving no real compute happened.
+    evidence_discharged_by:
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::cli_pretrain_defaults_to_real_compute"
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::cli_pretrain_synthetic_flag_routes_to_synthetic"
 
 # ─────────────────────────────────────────────────────────────
 # Failure modes (documented so future operators can recognize them)
