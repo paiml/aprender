@@ -1,53 +1,51 @@
 # CRUX-C-10 — Grammar-constrained GBNF output
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-C-10
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "C — Serving & Chat UX"
   competitor: llama_cpp
-  demand_score: 4  # 1..5, high priority in pmat work
+  demand_score: 4
   intake_status: partial
   description: >
-    Grammar-constrained GBNF output. Root-cause workflow extracted from llama_cpp UX — see master
-    subspec §5.C and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Grammar-constrained GBNF output. llama.cpp canonical:
+    `llama-cli --grammar-file grammar.gbnf --prompt "..."`. apr parity:
+    `apr run <model> --grammar-file grammar.gbnf --prompt "..."` and
+    HTTP POST /v1/chat/completions with `{"grammar": "<gbnf-string>"}`.
+    Output MUST parse as the grammar's start symbol; every emitted token
+    MUST be drawn from the legal set at the current parser state, which
+    requires illegal-position logits to be masked to -INFINITY before
+    sampling. Malformed grammars MUST fail with a `grammar`-tagged
+    diagnostic on stderr.
 
   references:
-  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/huggingface/accelerate
-  - github.com/pytorch/pytorch — DDP/FSDP
+  - "https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md"
+  - "https://github.com/ggerganov/llama.cpp/blob/master/grammars/json.gbnf"
+
 equations:
   gbnf_grammar_constraint:
     formula: |
       llama.cpp canonical:
-        llama-cli --grammar-file grammar.gbnf --prompt "..."  (or --grammar "root ::= ...")
-        Reference: https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md
+        llama-cli --grammar-file grammar.gbnf --prompt "..."
       apr parity target:
         apr run <model> --grammar-file grammar.gbnf --prompt "..." [--json]
         apr serve HTTP: POST /v1/chat/completions with "grammar": "<gbnf-string>"
       Output MUST parse as the grammar's start symbol (root ::= ...).
       Every emitted token MUST be drawn from the token set legal at the
       current grammar parser state; tokens outside that set have their
-      logits masked to -inf before sampling.
+      logits masked to -INFINITY before sampling.
     domain: "(model, prompt, gbnf_grammar_string)"
     codomain: generated_text:string
     invariants:
     - "Output string is accepted by a conforming GBNF parser for the supplied grammar"
-    - "Rejected tokens (outside legal set at state s) have sampling probability == 0"
-    - "If grammar is unsatisfiable, apr returns non-zero exit and stderr contains 'grammar'"
-    - "Reference: llama.cpp grammars/README.md and examples/json.gbnf"
+    - "Rejected tokens (outside legal set at state s) have logit == -INFINITY"
+    - "If grammar is unsatisfiable/malformed, apr returns non-zero exit and stderr contains 'grammar'"
 
   gbnf_json_output_wellformed:
     formula: |
@@ -64,8 +62,6 @@ falsification_tests:
   rule: grammar-constrained output parses as JSON when grammar=json.gbnf
   prediction: "apr run --grammar-file json.gbnf emits text that json.loads() accepts"
   test: |
-    # Golden: llama.cpp's own json.gbnf grammar
-    # Reference: https://github.com/ggerganov/llama.cpp/blob/master/grammars/json.gbnf
     GRAMMAR=/tmp/crux-c-10-json.gbnf
     cat >"$GRAMMAR" <<'EOF'
     root   ::= object
@@ -84,9 +80,46 @@ falsification_tests:
     python3 -c "import json,sys; json.loads(sys.argv[1])" "$OUT" \
       || { echo "FAIL: output not valid JSON: $OUT" >&2; exit 1; }
   if_fails: "Grammar-constrained output does not parse under the supplied GBNF (apr does not mask illegal tokens)"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gbnf_classifier.rs
+    sub_claim: |
+      Two algorithm-level necessary conditions:
+      (1) `classify_json_grammar_output(output, finish_reason)` accepts iff
+          `output` is non-empty, `finish_reason ∈ {"stop", "length"}`, and
+          `serde_json::from_str::<Value>(output)` succeeds. Rejection paths
+          distinguish `EmptyOutput`, `NotJson{error}`, and
+          `WrongFinishReason{got}` so a wrong-cause bug cannot be mistaken
+          for a JSON parse bug.
+      (2) `classify_illegal_token_masking(logits, legal_mask)` is the
+          mechanism condition behind (1): every illegal-at-state-s position
+          must have logit == -INFINITY (finite values, +INF, and NaN are
+          all rejected as `IllegalTokenNotMasked{token_index, logit}`).
+          Length mismatch and an all-false mask are distinct defect
+          classes (`LengthMismatch`, `NoLegalTokens`).
+      Both classifiers are pure; deterministic.
+    tests:
+    - json_grammar_ok_on_object_with_stop
+    - json_grammar_ok_on_array_with_length
+    - json_grammar_rejects_empty_output
+    - json_grammar_rejects_non_json_text
+    - json_grammar_rejects_wrong_finish_reason
+    - json_grammar_rejects_content_filter_reason
+    - json_grammar_classifier_is_deterministic
+    - masking_ok_when_illegal_positions_are_neg_infinity
+    - masking_ok_when_all_positions_legal
+    - masking_rejects_length_mismatch
+    - masking_rejects_empty_legal_mask
+    - masking_rejects_finite_logit_at_illegal_position
+    - masking_rejects_positive_infinity_at_illegal_position
+    - masking_rejects_nan_at_illegal_position
+    - masking_classifier_is_deterministic
+    - allowed_finish_reasons_are_stop_or_length
+    scope: "(output, finish_reason) and (logits, legal_mask) — both pure"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr run --grammar-file surface integrating a real GBNF parser + sampler that consults legal_mask"
 
 - id: FALSIFY-CRUX-C-10-002
-  rule: unsupported/unsatisfiable grammar surfaces clear error
+  rule: malformed grammar surfaces a non-zero exit with 'grammar' diagnostic
   prediction: "apr run with malformed grammar exits non-zero and mentions 'grammar' in stderr"
   test: |
     BAD=/tmp/crux-c-10-bad.gbnf
@@ -98,6 +131,28 @@ falsification_tests:
     grep -i grammar /tmp/crux-c-10-err.log >/dev/null \
       || { echo "FAIL: stderr missing 'grammar' diagnostic" >&2; exit 1; }
   if_fails: "apr accepted malformed GBNF silently or emitted no diagnostic"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gbnf_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition:
+      `classify_grammar_error_diagnostic(exit_code, stderr)` accepts iff
+      `exit_code != 0` AND the lowercased stderr contains the substring
+      "grammar". Rejection paths:
+        (a) `exit_code == 0` → `ZeroExitCode` (silent accept bug);
+        (b) non-zero but no keyword → `MissingGrammarDiagnostic{stderr_snippet}`
+            with a deterministic 160-char snippet so the actionable error is
+            visible without flooding the classifier's telemetry.
+      Pure; deterministic.
+    tests:
+    - grammar_error_ok_on_nonzero_exit_with_keyword
+    - grammar_error_ok_case_insensitive
+    - grammar_error_rejects_zero_exit
+    - grammar_error_rejects_missing_keyword
+    - grammar_error_snippet_is_truncated_to_160_chars
+    - grammar_error_classifier_is_deterministic
+    scope: "(exit_code: i32, stderr: &str) → GrammarErrorDiagnosticOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr run --grammar-file surface that actually rejects malformed GBNF with a 'grammar'-tagged diagnostic"
 
 proof_obligations:
 - type: equivalence
@@ -105,17 +160,24 @@ proof_obligations:
 - type: invariant
   property: "Generated text parses under supplied GBNF grammar (root accept state reached or max_tokens)"
 - type: invariant
+  property: "Illegal-at-state-s tokens have logit == -INFINITY"
+- type: invariant
   property: "Malformed grammar produces non-zero exit with 'grammar' diagnostic in stderr"
 
 verification_summary:
-  total_obligations: 3
+  total_obligations: 4
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-C-10-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr run --grammar-file surface + real GBNF parser wired to sampler"
+  - falsify_id: FALSIFY-CRUX-C-10-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr run --grammar-file surface rejecting malformed GBNF with a tagged diagnostic"
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-c-10` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-c-10
   priority: high
   auto_created: false
