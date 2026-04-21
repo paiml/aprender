@@ -47,11 +47,20 @@ jobs:
       image: localhost:5000/sovereign-ci:stable
       volumes:
         - /home/noah/.cargo/registry:/usr/local/cargo/registry
-        - /mnt/nvme-raid0/targets/aprender-ci:/workspace/target
+        # Per-PR (or per-branch) target dir. Before task #134, ALL concurrent PRs
+        # bind-mounted the same /workspace/target and stomped each other's
+        # incremental cache, pushing every run to the 45-min timeout. Isolating
+        # the target dir per PR number removes the contention at the source.
+        # Push-to-main uses ref_name ("main"); PRs use PR number.
+        - /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}:/workspace/target
     timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: /workspace/target
-      CARGO_INCREMENTAL: 1
+      # CARGO_INCREMENTAL intentionally disabled in CI: incremental compilation
+      # tracks per-function dirty state for dev-loop speed, but on PR-scale
+      # diffs that touch many files the overhead outweighs savings, and the
+      # state file is a further contention point under parallelism.
+      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
       - name: Workspace check (all 70 crates)
