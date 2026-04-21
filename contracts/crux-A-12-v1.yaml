@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-12
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -76,6 +77,24 @@ falsification_tests:
     apr ps --json | jq 'length == 0'
     kill $PID
   if_fails: "apr ps reports phantom entries for unloaded models"
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/ps_schema.rs
+    sub_claim: >
+      A pure classifier distinguishes a literal empty JSON array `[]` from all
+      non-empty, null, object, or scalar representations. This guarantees that
+      when `apr ps --json` emits `[]`, downstream consumers can detect the
+      empty state unambiguously (the necessary condition for a valid empty
+      response).
+    tests:
+    - falsify_001_sub_claim_empty_is_empty_array
+    - is_empty_ps_rejects_non_array_types
+    - empty_array_passes_validation
+    scope: >
+      PARTIAL_ALGORITHM_LEVEL. Classifier proves the JSON-shape sub-claim. Full
+      discharge requires booting `apr serve --daemon` with zero models loaded
+      and asserting stdout of `apr ps --json` is the literal `[]`. Deferred to
+      CRUX-A-12 integration discharge (owner: serve team).
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
 
 - id: FALSIFY-CRUX-A-12-002
   rule: load is visible in ps
@@ -94,6 +113,40 @@ falsification_tests:
   test: |
     apr ps --json | jq -e 'all(.[]; (.name and .id and .size_bytes and .processor and .until))'
   if_fails: "apr ps row missing required fields (schema drift)"
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/ps_schema.rs
+    sub_claim: >
+      `validate_ps_row` rejects any JSON object missing one of {name, id,
+      size_bytes, processor, until}, and further rejects bad types
+      (size_bytes=0 or string, id<12 hex chars, processor outside the
+      ollama-parity set, until not RFC3339 shape). `validate_ps_array`
+      enforces the same rule for every row. Any real `apr ps --json` output
+      can be fed through this classifier and will fail closed on schema
+      drift.
+    tests:
+    - falsify_003_sub_claim_good_row_validates
+    - missing_name_is_error
+    - missing_id_is_error
+    - missing_size_bytes_is_error
+    - missing_processor_is_error
+    - missing_until_is_error
+    - size_bytes_zero_is_error
+    - size_bytes_string_is_error
+    - short_id_is_error
+    - non_hex_id_is_error
+    - processor_garbage_rejected
+    - processor_bad_sum_rejected
+    - until_not_rfc3339_rejected
+    - two_row_array_validates_each_row
+    - second_row_malformed_is_detected
+    - validate_rejects_non_array_top_level
+    - validate_rejects_row_that_is_not_object
+    scope: >
+      PARTIAL_ALGORITHM_LEVEL. Classifier fully proves the row-schema sub-
+      claim on any JSON payload. Full discharge requires `apr serve` to
+      actually emit this schema; wiring the real `apr ps` CLI into the
+      classifier is the integration step, deferred.
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
 
 - id: FALSIFY-CRUX-A-12-004
   rule: parity with ollama ps column set
@@ -105,6 +158,26 @@ falsification_tests:
       echo "$HDR" | grep -qw "$col" || { echo "missing column $col"; exit 1; }
     done
   if_fails: "apr ps header lacks one or more ollama-parity columns"
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/ps_schema.rs
+    sub_claim: >
+      `header_has_required_columns` enforces that the `apr ps` text header
+      contains each of {NAME, SIZE, PROCESSOR} as a whole token (not as a
+      prefix/suffix inside another word). A header that drops, renames, or
+      substrings a required column is rejected at this layer.
+    tests:
+    - falsify_004_sub_claim_header_has_required_columns
+    - header_missing_name_rejected
+    - header_missing_size_rejected
+    - header_missing_processor_rejected
+    - header_named_not_a_name_match
+    - header_case_matters
+    scope: >
+      PARTIAL_ALGORITHM_LEVEL. Classifier proves the header-token-set sub-
+      claim for any text header. Full parity-vs-ollama discharge requires a
+      golden `ollama ps` transcript at evidence/crux/ollama/ps-golden.txt and
+      running `apr ps | head -1` against it, deferred.
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
 
 proof_obligations:
 - type: invariant
@@ -119,8 +192,24 @@ proof_obligations:
 verification_summary:
   total_obligations: 4
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 3
+  status: partial
+  evidence:
+    falsify_001: PARTIAL_ALGORITHM_LEVEL via commands::ps_schema::is_empty_ps classifier
+    falsify_002: NOT_DISCHARGED — requires live `apr serve` daemon + model load integration
+    falsify_003: PARTIAL_ALGORITHM_LEVEL via commands::ps_schema::validate_ps_row / validate_ps_array classifier
+    falsify_004: PARTIAL_ALGORITHM_LEVEL via commands::ps_schema::header_has_required_columns classifier
+  coverage:
+  - "crates/apr-cli/src/commands/ps_schema.rs: 29 unit tests, all passing"
+  - "sub-claim tests: falsify_001_sub_claim_empty_is_empty_array, falsify_003_sub_claim_good_row_validates, falsify_004_sub_claim_header_has_required_columns"
+  scope_honesty: >
+    Contract status is `partial`. 3 of 4 FALSIFY gates reach
+    PARTIAL_ALGORITHM_LEVEL via a pure JSON/header classifier; FALSIFY-002
+    (load visibility round-trip) is integration-only and NOT discharged.
+    Master contract `crux-competitive-research-ux-v1` supported_count is
+    NOT bumped by this change; `intake_status` stays `missing` until the
+    real `apr ps` subcommand ships and all 4 FALSIFY gates are fully
+    discharged with evidence from a live `apr serve` daemon.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket

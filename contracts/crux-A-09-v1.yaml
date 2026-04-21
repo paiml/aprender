@@ -6,11 +6,12 @@
 
 metadata:
   id: CRUX-A-09
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  last_updated: "2026-04-20"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "A — Model Intake & Discovery"
@@ -99,6 +100,31 @@ falsification_tests:
     )' >/dev/null || { echo "FAIL: schema violation" >&2; exit 1; }
 
   if_fails: rule 'apr ls --json returns well-typed array' is violated — contract MUST be re-verified against competitor canonical reference
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/registry_schema.rs
+    sub_claim: >
+      The pure `validate_ls_array` + `validate_ls_entry` classifiers
+      accept well-typed arrays (matching the jq-level schema in the
+      test) and reject malformed ones (missing name, non-hex sha256,
+      uppercase sha256, non-object entries, empty name, wrong types
+      on size_bytes). This is the algorithm-level precondition for
+      the integration-level `apr ls --json | jq -e '…'` check.
+    tests:
+    - commands::registry_schema::tests::ls_entry_accepts_good_entry
+    - commands::registry_schema::tests::ls_array_accepts_array_of_good_entries
+    - commands::registry_schema::tests::ls_array_accepts_empty_array
+    - commands::registry_schema::tests::ls_array_rejects_non_array
+    - commands::registry_schema::tests::ls_entry_rejects_missing_name
+    - commands::registry_schema::tests::ls_entry_rejects_missing_sha256
+    - commands::registry_schema::tests::ls_entry_rejects_non_hex_sha256
+    - commands::registry_schema::tests::ls_entry_rejects_uppercase_sha256
+    scope: >
+      Algorithm-level discharge: the schema validator proves a
+      candidate JSON array is / isn't a valid `apr ls --json` output.
+      NOT YET DISCHARGED: `apr ls --json` actually emits a schema-valid
+      array backed by real registry state (requires registry read-path
+      + integration harness).
 - id: FALSIFY-CRUX-A-09-002
   rule: apr show NAME --json returns tensor histogram + chat_template + arch
   prediction: "apr show on a pulled model returns schema-valid JSON"
@@ -115,6 +141,27 @@ falsification_tests:
     ' >/dev/null || { echo "FAIL: show --json schema violation" >&2; exit 1; }
 
   if_fails: rule 'apr show NAME --json returns tensor histogram + chat_template + arch' is violated — contract MUST be re-verified against competitor canonical reference
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/registry_schema.rs
+    sub_claim: >
+      The pure `validate_show_object` classifier accepts a well-typed
+      `apr show NAME --json` object (arch string, params u64>0,
+      tensor_histogram object, size_bytes u64>0) and rejects every
+      combination of missing field / wrong type / zero param count —
+      matching the jq predicate in the integration test.
+    tests:
+    - commands::registry_schema::tests::show_object_accepts_good_object
+    - commands::registry_schema::tests::show_object_accepts_empty_histogram
+    - commands::registry_schema::tests::show_object_rejects_missing_arch
+    - commands::registry_schema::tests::show_object_rejects_zero_params
+    - commands::registry_schema::tests::show_object_rejects_non_object_histogram
+    scope: >
+      Algorithm-level discharge: the schema validator proves a
+      candidate JSON object is / isn't a valid `apr show` output.
+      NOT YET DISCHARGED: `apr show NAME --json` actually emits such
+      an object backed by real registry metadata (requires registry
+      read-path + integration harness).
 - id: FALSIFY-CRUX-A-09-003
   rule: apr rm NAME removes files and updates index atomically
   prediction: "after apr rm NAME, files are gone AND index does not list NAME"
@@ -147,6 +194,23 @@ falsification_tests:
     }
 
   if_fails: rule 'apr rm NAME --dry-run prints plan without acting' is violated — contract MUST be re-verified against competitor canonical reference
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/registry_schema.rs
+    sub_claim: >
+      The pure `rm_dry_run_plan_line(name)` renderer emits a line
+      containing "would remove" + "dry-run" + the model name, matching
+      the `grep -iE 'would (remove|delete)|dry.?run'` predicate in the
+      integration test. Determinism is asserted.
+    tests:
+    - commands::registry_schema::tests::rm_dry_run_plan_line_contains_would_remove
+    - commands::registry_schema::tests::rm_dry_run_plan_line_is_deterministic
+    scope: >
+      Algorithm-level discharge: the plan-line renderer emits the
+      substrings the integration grep looks for. NOT YET DISCHARGED:
+      `apr rm NAME --dry-run` actually leaves the registry state
+      untouched — that requires a real registry and side-effect
+      observation (filesystem + index).
 - id: FALSIFY-CRUX-A-09-005
   rule: apr show on unknown name exits non-zero
   prediction: "apr show does-not-exist exits non-zero with explanatory message"
@@ -160,6 +224,28 @@ falsification_tests:
     }
 
   if_fails: rule 'apr show on unknown name exits non-zero' is violated — contract MUST be re-verified against competitor canonical reference
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/registry_schema.rs
+    sub_claim: >
+      The pure `resolve_name(name, entries)` classifier returns
+      `Err(ResolveError::NotFound(name))` for unknown names; its
+      Display impl produces a message containing "not found" AND the
+      queried name, matching the `grep -iE 'not found|unknown|no such'`
+      predicate in the integration test.
+    tests:
+    - commands::registry_schema::tests::resolve_name_err_on_miss
+    - commands::registry_schema::tests::resolve_name_err_message_contains_not_found
+    - commands::registry_schema::tests::resolve_name_err_message_names_missing_model
+    - commands::registry_schema::tests::resolve_name_on_empty_registry_errs
+    - commands::registry_schema::tests::resolve_name_ok_on_hit
+    - commands::registry_schema::tests::resolve_name_is_deterministic
+    scope: >
+      Algorithm-level discharge: the pure resolver proves unknown
+      names produce a non-Ok result whose message carries the
+      expected substrings. NOT YET DISCHARGED: `apr show` actually
+      exits non-zero on unknown names (requires wiring the resolver
+      into the show command path).
 proof_obligations:
 - type: invariant
   property: "apr ls --json emits a JSON array where every element has {name, size_bytes, sha256, quant} with correct types"
@@ -175,8 +261,41 @@ proof_obligations:
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 4  # FALSIFY-001/002/004/005 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/registry_schema.rs
+    classifier: crates/apr-cli/src/commands/registry_schema.rs
+    commands:
+    - apr ls --json         # classifier-observable schema
+    - apr show <name> --json # classifier-observable schema
+    - apr rm <name> --dry-run # classifier-observable plan line
+    coverage:
+    - falsify-001: commands::registry_schema::tests::ls_array_accepts_array_of_good_entries
+    - falsify-001: commands::registry_schema::tests::ls_entry_rejects_non_hex_sha256
+    - falsify-001: commands::registry_schema::tests::ls_entry_rejects_uppercase_sha256
+    - falsify-001: commands::registry_schema::tests::ls_array_accepts_empty_array
+    - falsify-002: commands::registry_schema::tests::show_object_accepts_good_object
+    - falsify-002: commands::registry_schema::tests::show_object_rejects_missing_arch
+    - falsify-002: commands::registry_schema::tests::show_object_rejects_zero_params
+    - falsify-004: commands::registry_schema::tests::rm_dry_run_plan_line_contains_would_remove
+    - falsify-004: commands::registry_schema::tests::rm_dry_run_plan_line_is_deterministic
+    - falsify-005: commands::registry_schema::tests::resolve_name_err_message_contains_not_found
+    - falsify-005: commands::registry_schema::tests::resolve_name_err_message_names_missing_model
+    - falsify-005: commands::registry_schema::tests::resolve_name_on_empty_registry_errs
+  scope_honesty: >
+    FALSIFY-CRUX-A-09-001/002/004/005 are discharged at
+    PARTIAL_ALGORITHM_LEVEL — pure validators / resolver / plan-line
+    renderer prove the ls schema, show schema, dry-run plan substring,
+    and unknown-name error substring at the algorithm layer. NOT YET
+    DISCHARGED: the integration-level claims that `apr ls --json`,
+    `apr show --json`, and `apr rm --dry-run` ACTUALLY emit these
+    shapes from real registry state — those require wiring the
+    classifiers into the subcommand paths + a disposable-registry
+    integration harness. FALSIFY-CRUX-A-09-003 (atomic rm of files
+    + index) is NOT discharged — it needs the registry write-path
+    with atomic index updates + filesystem side-effect observation.
+    Contract stays `status: partial`; master supported_count NOT bumped.
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
