@@ -2,7 +2,7 @@
 
 metadata:
   id: CRUX-C-12
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -74,6 +74,11 @@ falsification_tests:
   if_fails: "vision token count mismatch — projector output shape incorrect"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/llava_classifier.rs
+    cli_path: crates/apr-cli/src/commands/llava_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_12.rs
+    e2e_tests:
+    - falsify_crux_c_12_001_image_tokens_ok_on_llava15
+    - falsify_crux_c_12_001_image_tokens_rejects_mismatch
     sub_claim: |
       Algorithm-level necessary condition: `classify_image_token_count(arch,
       got)` accepts `Ok` iff `got == arch.expected_image_tokens()` with
@@ -104,6 +109,11 @@ falsification_tests:
   if_fails: "caption diverges from llama-llava-cli golden at temp=0"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/llava_classifier.rs
+    cli_path: crates/apr-cli/src/commands/llava_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_12.rs
+    e2e_tests:
+    - falsify_crux_c_12_002_caption_ok_on_byte_identical
+    - falsify_crux_c_12_002_caption_rejects_byte_divergence
     sub_claim: |
       Algorithm-level necessary condition: `classify_caption_parity(apr,
       golden)` accepts iff both strings are byte-identical. Rejection paths
@@ -139,6 +149,12 @@ falsification_tests:
   if_fails: "mismatched mmproj silently accepted — will produce garbage output"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/llava_classifier.rs
+    cli_path: crates/apr-cli/src/commands/llava_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_12.rs
+    e2e_tests:
+    - falsify_crux_c_12_003_mmproj_ok_on_clip_matching_dim
+    - falsify_crux_c_12_003_mmproj_rejects_dim_mismatch
+    - falsify_crux_c_12_003_mmproj_rejects_unknown_arch
     sub_claim: |
       Algorithm-level necessary condition:
       `classify_mmproj_compatibility(arch, projection_dim, hidden_size)`
@@ -175,6 +191,11 @@ falsification_tests:
   if_fails: "non-image input silently accepted — likely segfault or garbage"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/llava_classifier.rs
+    cli_path: crates/apr-cli/src/commands/llava_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_12.rs
+    e2e_tests:
+    - falsify_crux_c_12_004_image_format_ok_on_png
+    - falsify_crux_c_12_004_image_format_rejects_unsupported_extension
     sub_claim: |
       Algorithm-level necessary condition: `classify_image_format(filename)`
       reports the last filename-component's extension, lowercased, and
@@ -229,6 +250,26 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-C-12-004
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: "apr run --image validating format before decode"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/llava_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/llava_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_12.rs
+    contract: contracts/crux-C-12-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr llava-lint --observation-file <obs.json>` dispatches all four
+    classifiers (image_tokens, caption, mmproj, image_format) over captured
+    JSON. e2e suite (14 tests) exercises help surface, bare-invocation
+    rejection, per-gate ok+reject paths, empty/nonexistent file rejection,
+    and --json shape. Full ACTIVE discharge remains blocked on an actual
+    `apr run --mmproj --image` inference surface.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-c-12
