@@ -361,6 +361,28 @@ pub const fn estimated_stored_param_count() -> usize {
     embedding + l * per_layer + final_norm
 }
 
+/// Pure helper that enforces GATE-ARCH-370M-011 / INV-ARCH-370M-006:
+/// the tokenizer's vocabulary size MUST exactly match the model's
+/// `vocab_size` before pretraining dispatches. Returns `Ok(())` when
+/// they match, `Err(String)` with a machine-diffable message when they
+/// do not. The caller is expected to surface the error to the user
+/// and abort the dispatch before any forward pass.
+pub fn assert_tokenizer_vocab_matches_model(
+    tokenizer_vocab_size: usize,
+    model_vocab_size: usize,
+) -> Result<(), String> {
+    if tokenizer_vocab_size == model_vocab_size {
+        return Ok(());
+    }
+    Err(format!(
+        "GATE-ARCH-370M-011 (INV-ARCH-370M-006) violated: \
+         tokenizer vocab_size ({tokenizer_vocab_size}) != model vocab_size \
+         ({model_vocab_size}). See contracts/model-families/llama-370m-sovereign-v1.yaml \
+         and contracts/tokenizer-bpe-v1.yaml — retrain the tokenizer or amend both contracts \
+         in lockstep before resuming pretraining."
+    ))
+}
+
 // ─────────────────────────────────────────────────────────────
 // Unit tests
 // ─────────────────────────────────────────────────────────────
@@ -394,6 +416,35 @@ mod tests {
             Llama370MConfig::HIDDEN_DIM,
         );
         assert_eq!(Llama370MConfig::NUM_HEADS % Llama370MConfig::NUM_KV_HEADS, 0);
+    }
+
+    /// GATE-ARCH-370M-011 / INV-ARCH-370M-006 — pure vocab-parity helper
+    /// MUST reject any mismatch between tokenizer vocab_size and model
+    /// vocab_size, and MUST accept equal values. The real-compute MODEL-2
+    /// dispatch at commit 29607ed33 surfaced this when a tokenizer at
+    /// vocab=50_257 was paired with a model pinned at VOCAB_SIZE=50_000;
+    /// the N-09 OOB escape masked the mismatch → garbage gradients.
+    #[test]
+    fn falsify_gate_arch_370m_011_helper_rejects_mismatch() {
+        assert!(assert_tokenizer_vocab_matches_model(
+            Llama370MConfig::VOCAB_SIZE,
+            Llama370MConfig::VOCAB_SIZE,
+        )
+        .is_ok());
+
+        let err = assert_tokenizer_vocab_matches_model(50_257, Llama370MConfig::VOCAB_SIZE)
+            .expect_err("mismatch must return Err");
+        assert!(
+            err.contains("GATE-ARCH-370M-011") && err.contains("50257") && err.contains("50000"),
+            "error must name the gate and both vocab sizes for forensics, got: {err}",
+        );
+
+        assert!(assert_tokenizer_vocab_matches_model(0, 1).is_err());
+        assert!(assert_tokenizer_vocab_matches_model(
+            Llama370MConfig::VOCAB_SIZE + 1,
+            Llama370MConfig::VOCAB_SIZE
+        )
+        .is_err());
     }
 
     /// INV-ARCH-370M-001 — estimated param count within [366M, 374M].

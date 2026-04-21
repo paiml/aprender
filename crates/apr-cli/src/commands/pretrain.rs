@@ -16,6 +16,7 @@ use crate::error::{CliError, Result};
 use crate::output;
 use clap::ValueEnum;
 use colored::Colorize;
+use entrenar::models::llama_370m::{assert_tokenizer_vocab_matches_model, Llama370MConfig};
 use entrenar::train::pretrain::{
     CheckpointFn, LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus,
     ScriptedVal, StepFn, TrainingRegime, ValFn,
@@ -199,6 +200,30 @@ fn drive_synthetic(
     run_and_report(config, step_fn, val_fn, None, json_output)
 }
 
+/// GATE-ARCH-370M-011 pre-flight: count the tokenizer's vocabulary entries
+/// from `vocab.json` and assert the count matches `Llama370MConfig::VOCAB_SIZE`
+/// before any trainer allocation. Any mismatch aborts the dispatch with a
+/// clear error naming both values and the violated invariant — the N-09 OOB
+/// escape in `Embedding::forward` would otherwise silently corrupt training.
+fn preflight_tokenizer_vocab_matches_model(tokenizer_dir: &Path) -> Result<()> {
+    let vocab_path = tokenizer_dir.join("vocab.json");
+    let vocab_json = std::fs::read_to_string(&vocab_path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "GATE-ARCH-370M-011 pre-flight: cannot read {} ({e})",
+            vocab_path.display()
+        ))
+    })?;
+    let vocab: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&vocab_json)
+        .map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "GATE-ARCH-370M-011 pre-flight: {} is not a valid vocab.json: {e}",
+                vocab_path.display()
+            ))
+        })?;
+    assert_tokenizer_vocab_matches_model(vocab.len(), Llama370MConfig::VOCAB_SIZE)
+        .map_err(CliError::ValidationFailed)
+}
+
 /// Real-corpus drive: build a shared 370M `TransformerTrainer`, split
 /// the shard stream head-off into a held-out validation set, and run a
 /// full forward + backward + AdamW step per training batch.
@@ -211,6 +236,13 @@ fn drive_real(
     seed: u64,
     json_output: bool,
 ) -> Result<RunStatus> {
+    // GATE-ARCH-370M-011 / INV-ARCH-370M-006 — refuse to dispatch a real
+    // training step when the tokenizer vocab_size and the model vocab_size
+    // disagree. The N-09 OOB escape guard in Embedding::forward masks the
+    // mismatch at runtime → silent garbage gradients otherwise. Synthetic
+    // drive skips this check because it never touches the real model.
+    preflight_tokenizer_vocab_matches_model(&config.tokenizer_dir)?;
+
     // MVP: pad_id/eos_id both 0. All sequences are uniform length
     // (seq_length + 1) so LMBatch::from_sequences takes the shared
     // layout path and pad_id is never used for padding. The real
@@ -415,6 +447,79 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// Stage a `vocab.json` with exactly `n` distinct integer-string tokens at
+    /// `<dir>/vocab.json`. Used by pre-flight gate tests + by other tests that
+    /// need to get PAST the GATE-ARCH-370M-011 pre-flight to exercise a later
+    /// failure mode (e.g. empty dataset shards).
+    fn stage_vocab_json(dir: &std::path::Path, n: usize) {
+        std::fs::create_dir_all(dir).expect("mkdir tokenizer dir");
+        let mut obj = serde_json::Map::with_capacity(n);
+        for i in 0..n {
+            obj.insert(format!("t{i}"), serde_json::Value::from(i as u64));
+        }
+        let json = serde_json::to_string(&obj).expect("serialize");
+        std::fs::write(dir.join("vocab.json"), json).expect("write vocab.json");
+    }
+
+    #[test]
+    fn preflight_accepts_matching_vocab() {
+        // GATE-ARCH-370M-011 acceptance case: tokenizer vocab.json with
+        // exactly Llama370MConfig::VOCAB_SIZE entries must pass pre-flight.
+        let tmp = TempDir::new().expect("tempdir");
+        stage_vocab_json(tmp.path(), Llama370MConfig::VOCAB_SIZE);
+        preflight_tokenizer_vocab_matches_model(tmp.path())
+            .expect("matching vocab must pass GATE-ARCH-370M-011");
+    }
+
+    #[test]
+    fn preflight_rejects_tokenizer_vocab_mismatch() {
+        // FALSIFY-ARCH-370M-011: a tokenizer at 50_257 paired with the
+        // 370M model (VOCAB_SIZE=50_000) MUST abort dispatch with an
+        // error message that names both values and the gate id, so the
+        // operator can see the mismatch without stepping through code.
+        let tmp = TempDir::new().expect("tempdir");
+        stage_vocab_json(tmp.path(), 50_257);
+        let err = preflight_tokenizer_vocab_matches_model(tmp.path())
+            .expect_err("50_257 vs 50_000 must be rejected");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("GATE-ARCH-370M-011"),
+                    "msg must cite gate: {msg}"
+                );
+                assert!(
+                    msg.contains("50257"),
+                    "msg must name tokenizer vocab: {msg}"
+                );
+                assert!(msg.contains("50000"), "msg must name model vocab: {msg}");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn preflight_rejects_missing_vocab_json() {
+        // Missing vocab.json is a pre-flight failure (not a later shard
+        // error) — the operator should know the tokenizer layout is
+        // wrong, not that the dataset is empty.
+        let tmp = TempDir::new().expect("tempdir");
+        let err = preflight_tokenizer_vocab_matches_model(tmp.path())
+            .expect_err("missing vocab.json must be rejected");
+        match err {
+            CliError::ValidationFailed(msg) => {
+                assert!(
+                    msg.contains("GATE-ARCH-370M-011"),
+                    "msg must cite gate: {msg}"
+                );
+                assert!(
+                    msg.contains("cannot read"),
+                    "msg must name I/O failure: {msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
     #[test]
     fn synthetic_pretrain_end_to_end_happy_path() {
         let tmp = TempDir::new().expect("tempdir");
@@ -450,10 +555,14 @@ mod tests {
         // When --synthetic is off, the real-corpus branch must surface a
         // clear error if the dataset directory has no .bin shards. This
         // supersedes the old "non-synthetic is not implemented" guard.
+        // Stage a valid vocab.json first so GATE-ARCH-370M-011 pre-flight
+        // passes — otherwise the shard-iterator error below is never reached.
         let tmp = TempDir::new().expect("tempdir");
+        let tok_dir = tmp.path().join("tok");
+        stage_vocab_json(&tok_dir, Llama370MConfig::VOCAB_SIZE);
         let err = run(
             tmp.path(),
-            tmp.path(),
+            &tok_dir,
             tmp.path(),
             PretrainMode::Finetune,
             Some(5.0e-5),
