@@ -31,12 +31,12 @@ jobs:
       # Highest expected sccache hit-rate lift — the signal that justifies
       # fleet-wide rollout (or shelves it).
       #
-      # 2026-04-19: temporarily disabled — sovereign-ci:stable container image
-      # is missing the `rustc-sccache` wrapper script, so every sccache-gated
-      # job fails at toolchain probe ("No such file or directory"). Re-enable
-      # once paiml/.github runner image ships the wrapper again (tracked in
-      # paiml/.github infra issue — not this repo).
-      enable_sccache: false
+      # 2026-04-21 (PMAT-159 canary): re-enabled. The `rustc-sccache` exec-script
+      # shim ships in sovereign-ci:stable since paiml/infra#66 (2026-04-19); the
+      # stale "missing wrapper" disablement has been lifted. Diagnostic: with
+      # `test_workspace: true` the 60-min ceiling binds without a warm cache
+      # (ci/test + ci/coverage both timed out on run 24685501433).
+      enable_sccache: true
       use_nextest: true
       # PMAT-159 (paiml/.github#29): opt-in to `cargo nextest run --workspace --lib`
       # so aprender's workspace-member lib tests actually run in ci/test (prior
