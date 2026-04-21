@@ -6,11 +6,11 @@
 
 metadata:
   id: CRUX-B-02
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "B — Inspection & Debugging"
@@ -80,6 +80,23 @@ falsification_tests:
       [ -f "$TMP/$f" ] || { echo "missing $f"; exit 1; }
     done
   if_fails: "converted directory is missing required HuggingFace files"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gguf_to_safetensors.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `hf_required_files()` is the
+      canonical trio HF transformers expects, and `missing_hf_files`
+      reports the exact subset absent from any candidate directory
+      listing. Without these filenames present, no downstream byte-
+      level load work can succeed.
+    tests:
+    - required_files_set_is_canonical
+    - missing_files_empty_on_complete_output
+    - missing_files_flags_each_omission
+    - missing_files_flags_all_when_empty
+    - required_files_set_is_deterministic
+    scope: output-directory file-layout (pure set)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: end-to-end `apr convert --format safetensors` fixture harness
 
 - id: FALSIFY-CRUX-B-02-002
   rule: dequant numerical bound
@@ -112,6 +129,28 @@ falsification_tests:
     assert m is not None
     "
   if_fails: "transformers cannot load the converted safetensors directory"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gguf_to_safetensors.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `translate_gguf_metadata`
+      produces a well-typed `HfLlamaConfig` with the four required
+      fields (architectures, hidden_size, num_hidden_layers,
+      num_attention_heads) and serializes round-trip clean through
+      serde_json. Missing keys return Err rather than silently
+      defaulting, which would hide upstream bugs and let
+      `from_pretrained` succeed with the wrong layer count.
+    tests:
+    - translate_full_metadata_succeeds
+    - translate_missing_architecture_errors
+    - translate_missing_hidden_size_errors
+    - translate_missing_layer_count_errors
+    - translate_missing_head_count_errors
+    - translate_wrong_type_errors
+    - translate_is_deterministic
+    - translate_config_roundtrips_through_json
+    scope: GGUF KV → HF config.json translator (pure function)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: uv run transformers AutoModelForCausalLM.from_pretrained harness
 
 - id: FALSIFY-CRUX-B-02-004
   rule: peft LoRA attaches without shape errors
@@ -127,6 +166,24 @@ falsification_tests:
     assert sum(p.numel() for p in m2.parameters() if p.requires_grad) > 0
     "
   if_fails: "PEFT LoRA attachment failed — converted output is not PEFT-ready"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gguf_to_safetensors.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `peft_target_modules_resolve`
+      checks that every target module name (q_proj, v_proj, etc.)
+      matches at least one tensor in the safetensors archive via
+      substring containment, mirroring PEFT's own name-matching rule.
+      If every target resolves, `peft.get_peft_model` has the
+      precondition it needs to attach LoRA adapters.
+    tests:
+    - peft_default_targets_resolve_on_llama_layout
+    - peft_unknown_target_module_flagged
+    - peft_empty_tensor_list_fails_all_targets
+    - peft_empty_target_list_trivially_resolves
+    - peft_resolution_is_deterministic
+    scope: PEFT target-module resolver (pure function over tensor names)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: uv run peft get_peft_model attach harness
 
 proof_obligations:
 - type: invariant
@@ -143,6 +200,19 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-B-02-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: end-to-end apr convert --format safetensors fixture harness
+  - falsify_id: FALSIFY-CRUX-B-02-002
+    discharge_status: NOT_DISCHARGED
+    blocked_on: Q4_K_M dequant numerical harness vs reference f32
+  - falsify_id: FALSIFY-CRUX-B-02-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: uv run transformers AutoModelForCausalLM.from_pretrained harness
+  - falsify_id: FALSIFY-CRUX-B-02-004
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: uv run peft get_peft_model attach harness
 
 pmat_work_tracking:
   # Managed by master contract §12. If intake_status == "missing", a ticket
