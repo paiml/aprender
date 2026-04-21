@@ -100,6 +100,7 @@ fn registered_commands() -> Vec<&'static str> {
         "typical-p-lint",
         "registry-quota-lint",
         "imatrix-lint",
+        "embeddings-lint",
         "oracle",
         "grad-norm",
         "encrypt",
