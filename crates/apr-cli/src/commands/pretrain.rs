@@ -16,13 +16,13 @@ use crate::error::{CliError, Result};
 use crate::output;
 use clap::ValueEnum;
 use colored::Colorize;
-use entrenar::models::llama_370m::{assert_tokenizer_vocab_matches_model, Llama370MConfig};
+use entrenar::models::llama_370m::{Llama370MConfig, assert_tokenizer_vocab_matches_model};
 use entrenar::train::pretrain::{
     CheckpointFn, LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus,
     ScriptedVal, StepFn, TrainingRegime, ValFn,
 };
 use entrenar::train::pretrain_real::{
-    build_shared_trainer, AprCheckpointFn, RealStepFn, RealValFn,
+    AprCheckpointFn, RealStepFn, RealValFn, build_shared_trainer,
 };
 use entrenar::train::shard_reader::ShardBatchIter;
 use entrenar::train::transformer_trainer::LMBatch;
@@ -473,14 +473,17 @@ mod tests {
 
     #[test]
     fn preflight_rejects_tokenizer_vocab_mismatch() {
-        // FALSIFY-ARCH-370M-011: a tokenizer at 50_257 paired with the
-        // 370M model (VOCAB_SIZE=50_000) MUST abort dispatch with an
-        // error message that names both values and the gate id, so the
-        // operator can see the mismatch without stepping through code.
+        // FALSIFY-ARCH-370M-011: a tokenizer whose vocab size drifts from
+        // the model's pinned VOCAB_SIZE MUST abort dispatch with an error
+        // message that names both values and the gate id, so the operator
+        // can see the mismatch without stepping through code. Task #131
+        // bumped VOCAB_SIZE to 50_257 (Option A) — the counter-example
+        // below now exercises a tokenizer one token short of contract.
         let tmp = TempDir::new().expect("tempdir");
-        stage_vocab_json(tmp.path(), 50_257);
+        let mismatch = Llama370MConfig::VOCAB_SIZE - 1;
+        stage_vocab_json(tmp.path(), mismatch);
         let err = preflight_tokenizer_vocab_matches_model(tmp.path())
-            .expect_err("50_257 vs 50_000 must be rejected");
+            .expect_err("tokenizer/model vocab mismatch must be rejected");
         match err {
             CliError::ValidationFailed(msg) => {
                 assert!(
@@ -488,10 +491,13 @@ mod tests {
                     "msg must cite gate: {msg}"
                 );
                 assert!(
-                    msg.contains("50257"),
+                    msg.contains(&mismatch.to_string()),
                     "msg must name tokenizer vocab: {msg}"
                 );
-                assert!(msg.contains("50000"), "msg must name model vocab: {msg}");
+                assert!(
+                    msg.contains(&Llama370MConfig::VOCAB_SIZE.to_string()),
+                    "msg must name model vocab: {msg}"
+                );
             }
             other => panic!("unexpected error: {other:?}"),
         }

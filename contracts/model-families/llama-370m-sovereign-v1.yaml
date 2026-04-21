@@ -36,14 +36,31 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-LLAMA-370M-SOVEREIGN
-version: 1.4.0
+version: 1.5.0
 status: ACTIVE
 
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
   created: "2026-04-18"
   updated: "2026-04-21"
   changelog:
+    - "1.5.0 (2026-04-21): Option-A vocab alignment (task #131).
+       Bumped vocab_size 50_000 → 50_257 to match the MODEL-2
+       tokenizer artifact (trained in task #118) and the GPT-2
+       industry convention (50_000 BPE merges + 256 byte-level
+       fallback tokens + 1 sentinel). Option B (retrain tokenizer
+       at 50_000) was rejected — it would have burned task #118
+       compute to honor a contract number that had no physical
+       grounding; Option A honors the actual artifact instead.
+       INV-ARCH-370M-006 description + falsifier updated in
+       lockstep; INV-ARCH-370M-009 example shape strings updated
+       from [50000, 1024] to [50257, 1024] (layout unchanged —
+       still row-major [vocab_size, hidden_dim]). Paired with
+       tokenizer-bpe-v1 v1.2.0 and Llama370MConfig::VOCAB_SIZE=50_257 —
+       all three artifacts move in lockstep via GATE-ARCH-370M-011
+       pre-flight. Parameter count shifts by
+       (257 × 1024) = 263_168 = 0.07%, well inside the
+       INV-ARCH-370M-001 [366M, 374M] band."
     - "1.4.0 (2026-04-21): Added GATE-ARCH-370M-011 operationalizing
        INV-ARCH-370M-006 as a pre-flight gate on the `apr pretrain`
        dispatch path. Motivation: first real-compute MODEL-2 dispatch
@@ -149,7 +166,7 @@ architecture:
   num_kv_heads: 4              # GQA — kv_heads = heads / 4
   head_dim: 64                 # hidden_dim / num_heads
   intermediate_dim: 2816       # ~2.75 × hidden (SwiGLU convention)
-  vocab_size: 50000            # BPE trained on Python corpus (see tokenizer-bpe-v1)
+  vocab_size: 50257            # BPE trained on Python corpus (see tokenizer-bpe-v1)
   max_position_embeddings: 4096
   rope_theta: 10000.0          # Llama-1 convention (not 500_000 like Llama-3 — short ctx)
   rms_norm_eps: 0.00001
@@ -291,12 +308,12 @@ invariants:
 
   - id: INV-ARCH-370M-006
     description: >
-      vocab_size == 50000 and exactly matches the paired BPE tokenizer
+      vocab_size == 50257 and exactly matches the paired BPE tokenizer
       (contracts/tokenizer-bpe-v1.yaml INV-BPE-001). Drift between
       tokenizer vocab and embedding row count produces silent garbage.
     falsifier: >
-      Load tokenizer, assert tokenizer.vocab_size() == 50000 AND load
-      model embedding, assert embedding.shape[0] == 50000. If either
+      Load tokenizer, assert tokenizer.vocab_size() == 50257 AND load
+      model embedding, assert embedding.shape[0] == 50257. If either
       differs, mark FAIL — refuse to start training.
 
   - id: INV-ARCH-370M-007
@@ -323,11 +340,11 @@ invariants:
   - id: INV-ARCH-370M-009
     description: >
       Row-major APR layout (LAYOUT-001). Embedding shape is
-      [vocab_size, hidden_dim] = [50000, 1024], NOT [1024, 50000].
+      [vocab_size, hidden_dim] = [50257, 1024], NOT [1024, 50257].
       This is the most-bitten bug in the project (100+ occurrences);
       import from column-major GGUF MUST transpose.
     falsifier: >
-      Assert APR header shape == [50000, 1024] for embedding tensor.
+      Assert APR header shape == [50257, 1024] for embedding tensor.
       Reversed shape triggers layout_contract::CONTRACT.validate_apr_shape
       failure at load time.
 

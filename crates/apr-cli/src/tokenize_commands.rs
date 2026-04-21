@@ -1,4 +1,3 @@
-
 /// Tokenizer training pipeline subcommands (forjar-style plan/apply).
 ///
 /// Thin CLI wrappers around aprender's BPE training infrastructure.
@@ -66,8 +65,10 @@ pub enum TokenizeCommands {
         /// Each line must be a JSON object with a `content` field.
         #[arg(long, value_name = "PATH")]
         corpus: PathBuf,
-        /// Target vocabulary size
-        #[arg(long, default_value = "50000")]
+        /// Target vocabulary size. Default 50_257 matches GPT-2 convention
+        /// (50_000 BPE merges + 256 byte-level fallback tokens + 1 sentinel)
+        /// and the MODEL-2 albor tokenizer contract (tokenizer-bpe-v1 v1.2.0).
+        #[arg(long, default_value = "50257")]
         vocab_size: usize,
         /// Minimum frequency a byte-pair must reach before BPE merges it into
         /// a new vocabulary token (honored by `entrenar::tokenizer::BPETokenizer`
