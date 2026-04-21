@@ -73,6 +73,7 @@ fn registered_commands() -> Vec<&'static str> {
         "probar",
         "diagnose",
         "ollama-chat-lint",
+        "tool-use-lint",
         "oracle",
         "encrypt",
         "decrypt",
