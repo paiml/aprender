@@ -1,11 +1,11 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.22.0
-**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures)
+**Version:** 2.23.0
+**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures); **task #132 BLOCKER surfaced 2026-04-21** on lambda-labs RTX 4090 — `apr pretrain --mode from-scratch` ran 14 min at 114% CPU + 0 MiB GPU memory because `TransformerTrainer::new` has no Device argument; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (task #132 Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006, ship-blocks task #126 real-compute dispatch
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched) / 2026-04-21 (v2.23.0 **task #132 CUDA training backend gap** surfaced on lambda-labs RTX 4090 real-compute dispatch at commit `f7ad11408` — `apr pretrain --mode from-scratch` 14min on CPU (0 MiB GPU memory) because `TransformerTrainer` has no Device awareness; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006 + FALSIFY-GPUTRAIN-001..007; production `CudaTransformerTrainer` already exists at `crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs` — gap is wiring, not kernels; task #126 real-compute dispatch BLOCKED until Phase 3 residency-proof evidence lands)
 
 **v2.21.0 amendment (2026-04-19):** Three MODEL-2 architecture + tokenizer
 gates landed in the same post-v2.19 evidence window, on branch
@@ -1644,6 +1644,8 @@ release without redoing training or re-evaluating the teacher.
 - `contracts/apr-cli-publish-extra-v1.yaml` v1.2.0 — **F-PUBLISH-EXTRA-001** (§12.7): manifest consumption, `--extra-file` passthrough, three-format ship, safetensors fp16 dtype, **preflight_validate_manifest** (FALSIFY-PUB-EXTRA-009/-010)
 - `contracts/eval-harness-humaneval-v1.yaml` — pass@1 harness / AC-EX-003 floor
 - `contracts/apr-model-qa-v1.yaml` — `apr qa` gate matrix / AC-EX-001/-002 (Golden Output hard-block)
+- `contracts/training-loop-pretrain-v1.yaml` v1.4.0 — MODEL-2 training loop (GATE-TRAIN-001..010), peer of the new GPU backend contract below
+- `contracts/entrenar/gpu-training-backend-v1.yaml` v1.0.0 PROPOSED — **§14 (v2.23.0)** task #132 GPU training backend dispatch (INV-GPUTRAIN-001..007, GATE-GPUTRAIN-001..006, FALSIFY-GPUTRAIN-001..007)
 
 ### 11.2 Related Specifications
 
@@ -1657,6 +1659,164 @@ release without redoing training or re-evaluating the teacher.
 - HumanEval: Chen et al. 2021, *Evaluating Large Language Models Trained on Code*
 - Qwen2.5-Coder: Hui et al. 2024, *Qwen2.5-Coder Technical Report*
 - The Stack v2: BigCode, CC-BY-4.0
+
+---
+
+## 14. Task #132 — CUDA training backend gap (v2.23.0 amendment, 2026-04-21)
+
+### 14.1 Surface (what broke)
+
+First MODEL-2 from-scratch real-compute dispatch on lambda-labs RTX 4090
+at commit `f7ad11408` (post-task-#131 vocab alignment):
+
+- `apr pretrain --mode from-scratch --dataset … --tokenizer …`
+- 14 minutes observed runtime
+- 114% CPU (single-thread), 0 MiB GPU memory per `nvidia-smi`
+- Empty run dir; no step logging; no checkpoints
+- Killed after observing no GPU activity
+
+The dispatch accepted flags, printed startup banner, and silently ran on
+CPU. No error surfaced because there was no contract binding "operator
+asked for GPU" to "training ran on GPU."
+
+### 14.2 Root cause
+
+`crates/aprender-train/src/train/transformer_trainer/trainer.rs:42`:
+
+```rust
+impl TransformerTrainer {
+    pub fn new(config: TransformerTrainConfig) -> Self {
+        let seed_guard = crate::transformer::init::lock_init_seed(config.seed);
+        let model = Transformer::new(&config.model_config);
+        drop(seed_guard);
+        Self::build(model, config)
+    }
+}
+```
+
+`TransformerTrainer::new` takes no `Device`. Everything downstream —
+`Transformer`, `AdamW`, autograd tape, `GradScaler` — uses CPU-backed
+`aprender::Tensor` (trueno SIMD). The `--features cuda` flag gates
+`realizar` inference kernels, **not** `aprender-train` training.
+
+Why this was not caught before task #126:
+
+1. `apr pretrain --synthetic` passes — the synthetic drive path never
+   instantiates the real model, so GPU residency was never exercised.
+2. Unit tests of the training path explicitly avoid the 370M scale
+   (allocating ~5 GB of parameters is too expensive per test). CPU is
+   tractable at toy scale, which masks the CPU-only dispatch.
+3. Task #119's "real-compute smoke test PASS" on lambda-labs used the
+   synthetic drive (or a toy config), not a 370M cold start.
+
+Scale math: 370M × CPU forward+backward ≈ 30–60 s/step → 10 k steps ≈
+100 + hours. Impractical. This is what task #126 actually dispatched,
+which is why the run sat at 114% CPU with no log output.
+
+### 14.3 Plan agent finding — existing GPU infrastructure
+
+Phase 0 input (Plan agent survey, 2026-04-21):
+
+| Artifact                                                             | Status        | LOC   |
+|----------------------------------------------------------------------|---------------|-------|
+| `crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs` | EXISTS        | 3,432 |
+| `CudaTransformerTrainer` AdamW + fused CE + gradient clip + pre-warmed kernels | EXISTS | — |
+| YAML training-config loader `loader/mod.rs:227`                      | EXISTS — HAS `if use_cuda { CudaTransformerTrainer::… → train_loop_cuda } else { CPU fallback }` | — |
+| `apr pretrain` CLI `drive_real` path (`pretrain.rs:230`)              | MISSING — unconditionally calls `TransformerTrainer::new` (CPU) | — |
+
+**The gap is wiring, not kernels.** The YAML-config path dispatches
+correctly; the CLI-flag path does not. Task #132 converges them.
+
+### 14.4 Contract (Phase 0 deliverable)
+
+`contracts/entrenar/gpu-training-backend-v1.yaml` v1.0.0 PROPOSED,
+kind: `training-loop`, peer of `training-loop-pretrain-v1.yaml`.
+
+**Invariants:**
+
+| ID                | Rule                                                                       |
+|-------------------|----------------------------------------------------------------------------|
+| INV-GPUTRAIN-001  | `--device` grammar: `^(cpu\|cuda(:[0-9]\|:1[0-5])?\|auto)$`, reject others |
+| INV-GPUTRAIN-002  | No silent CPU fallback when CUDA was explicitly requested                   |
+| INV-GPUTRAIN-003  | GPU residency proof: `nvidia-smi` shows `pid == training_pid AND used_memory > 0` within 5 s of step 0 |
+| INV-GPUTRAIN-004  | CPU fallback path remains fully functional (peer GATE-TRAIN-001..010 still PASS) |
+| INV-GPUTRAIN-005  | 370M step time < 500 ms on RTX 4090 (seq_len=2048, batch=1, sm_89 pre-compiled) |
+| INV-GPUTRAIN-006  | Same-device seed reproducibility holds (two `cuda:0` runs at seed=0, `\|Δloss[k]\| ≤ 1e-5`) |
+| INV-GPUTRAIN-007  | `apr --version --json` reports `{cuda_feature, cuda_runtime_available, visible_devices[]}` |
+
+**Ship-blocking gates:** GATE-GPUTRAIN-002 (no-silent-fallback) and
+GATE-GPUTRAIN-003 (residency proof). Both must land before task #126
+re-dispatches.
+
+### 14.5 Implementation plan (5 phases)
+
+| Phase | Deliverables                                                                                                   | Estimate |
+|-------|----------------------------------------------------------------------------------------------------------------|----------|
+| 0     | `contracts/entrenar/gpu-training-backend-v1.yaml` + this §14 amendment (PROPOSED status)                       | THIS PR  |
+| 1     | `Device` enum + `resolve_device()` in `crates/aprender-train/src/train/device.rs` + `--device` CLI flag + SharedTrainer enum extended with `CudaVariant` (NotImplemented stub) + FALSIFY-GPUTRAIN-001/002 | 1 day    |
+| 2     | Wire `SharedTrainer::CudaVariant` → existing `CudaTransformerTrainer`; mirror `loader/mod.rs:227` dispatch in `drive_real`; `nvidia-smi` residency probe + FALSIFY-GPUTRAIN-003 | 2 days   |
+| 3     | Lambda-labs re-dispatch: `apr pretrain --mode from-scratch --device cuda:0 --num-steps 50 --json` produces `evidence/task-132/rtx4090-370m-step-budget.json` with median step-wall < 500 ms; GATE-GPUTRAIN-001..006 all `verdict: pass` | 2 days   |
+| 4     | Promote `gpu-training-backend-v1.yaml` PROPOSED → ACTIVE; spec v2.23.0 → v2.23.1 records promotion; MEMORY.md pointer for task #132 flipped to CLOSED | 0.5 day  |
+
+Total estimate: **~6 days** (Plan agent), down from initial multi-week
+scope because `CudaTransformerTrainer` already exists.
+
+### 14.6 Critical path DAG
+
+Task #131 (vocab bump) CLOSED at `f7ad11408`. Previous DAG claimed
+task #126 was ready; the lambda-labs dispatch falsified that claim.
+Updated DAG:
+
+```
+#118 BPE train 50_257  ──► #131 vocab align  ──► ( #126 blocked by #132 )
+                                                        │
+                                                        ▼
+                                            #132 Phase 0 (this PR — contract + spec)
+                                                        │
+                                                        ▼
+                                            #132 Phase 1 (device enum + CLI flag)
+                                                        │
+                                                        ▼
+                                            #132 Phase 2 (wire existing CudaTransformerTrainer)
+                                                        │
+                                                        ▼
+                                            #132 Phase 3 (RTX 4090 evidence)
+                                                        │
+                                                        ▼
+                                                    #126 re-dispatches
+                                                        │
+                                                        ▼
+                                                AC-SHIP2-003 (target_val_loss ≤ 3.0)
+```
+
+### 14.7 Risks + mitigations
+
+| Risk                                                                 | Mitigation                                                                                   |
+|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
+| CudaTransformerTrainer API drift since last exercise                 | Phase 1 adds FALSIFY-GPUTRAIN-006 same-device seed-reproducibility test — exercises full forward/backward/AdamW cycle before Phase 2 wires drive_real |
+| `--features cuda` footgun (memory/feedback_cuda_feature_footgun.md)  | INV-GPUTRAIN-007 + GATE-GPUTRAIN-006 — `apr --version --json` must distinguish build-time feature from runtime availability |
+| Seed plumbing broken across device-dispatch layer                    | INV-GPUTRAIN-006 explicit counter-test; `lock_init_seed` mutex stays in place                |
+| Test cost for 370M × CUDA in unit tests                              | Keep INV-GPUTRAIN-005 as an evidence-file gate (JSONL from lambda-labs), not a unit test     |
+| CPU path regression during refactor                                  | INV-GPUTRAIN-004 + GATE-GPUTRAIN-005 — peer-contract GATE-TRAIN-001..010 must still PASS on `--device cpu` |
+
+### 14.8 Toyota Way — Five Whys
+
+1. **Why** did task #126 burn 14 minutes of compute? — The run was CPU-only.
+2. **Why** was the run CPU-only when the operator wanted GPU? — The CLI
+   path never selected CUDA.
+3. **Why** didn't the CLI select CUDA? — `TransformerTrainer::new` takes
+   no `Device` and `drive_real` unconditionally constructs it.
+4. **Why** was a CPU-only constructor accepted for a training CLI that
+   advertises `--features cuda`? — No contract bound "requested device"
+   to "actual device" at ship time.
+5. **Why** was there no such contract? — The YAML-config loader has
+   correct dispatch; no one noticed the CLI-flag path diverged. This
+   contract (§14.4) closes that loop so the two paths converge on the
+   same invariants.
+
+**Lesson codified:** `contracts/entrenar/gpu-training-backend-v1.yaml`
+GATE-GPUTRAIN-002 (ship-blocking: no silent CPU fallback when CUDA
+requested) — prevents future occurrence.
 
 ---
 
