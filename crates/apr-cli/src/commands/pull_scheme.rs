@@ -1,16 +1,21 @@
-//! Pull-source URL scheme classifier for `apr pull` (CRUX-A-15).
+//! Pull-source URL scheme classifier for `apr pull` (CRUX-A-14, CRUX-A-15).
 //!
-//! Contract: `contracts/crux-A-15-v1.yaml`.
+//! Contracts: `contracts/crux-A-14-v1.yaml` (multi-cloud object-store URIs) +
+//! `contracts/crux-A-15-v1.yaml` (file://, hf://, https:// transports).
 //!
 //! Pure classifier — takes the raw string passed to `apr pull` and returns
 //! the transport category the caller should use. No I/O, no filesystem,
 //! no network.
 //!
-//! The actual filesystem walk for `file://` paths, the HF cache lookup for
-//! `hf://` with `HF_HUB_OFFLINE=1`, and the byte-identical copy are all
-//! discharged by separate network/strace-gated harnesses (follow-up).
+//! CRUX-A-14 algorithm-level sub-claim discharged here: `s3://`, `gs://`,
+//! and `az://` are classified as their respective object-store transport
+//! (never routed to HTTP/HF). The paired
+//! `required_credential_env_for_scheme` helper names the standard credential
+//! env var so downstream transport code can honor the invariant "no
+//! aprender-specific auth". Actual network fetch + sha256 parity is gated by
+//! a MinIO/GCS/Azure live harness (follow-up).
 //!
-//! The algorithm-level sub-claim we DO discharge here: a `file://` URL is
+//! CRUX-A-15 algorithm-level sub-claim discharged here: a `file://` URL is
 //! classified as `Local(path)` and therefore will not be sent to any HTTP
 //! transport. This is a necessary (not sufficient) condition for the full
 //! "zero outbound TCP" invariant of FALSIFY-CRUX-A-15-001.
@@ -31,6 +36,21 @@ pub enum PullScheme {
     HfHub(String),
     /// `https://host/...` → direct HTTPS download.
     Https(String),
+    /// `s3://bucket/key` → AWS S3 (or S3-compatible: MinIO, Cloudflare R2).
+    S3 {
+        bucket: String,
+        key: String,
+    },
+    /// `gs://bucket/object` → Google Cloud Storage.
+    Gs {
+        bucket: String,
+        object: String,
+    },
+    /// `az://container/blob` → Azure Blob Storage.
+    Az {
+        container: String,
+        blob: String,
+    },
     /// `org/repo` (no scheme, contains slash) → treat as `hf://org/repo`.
     BareOrgRepo(String),
     /// Single token, no scheme, no slash → alias lookup required.
@@ -61,6 +81,18 @@ pub fn classify_pull_source(src: &str) -> Result<PullScheme, String> {
     }
     if trimmed.starts_with("https://") || trimmed.starts_with("http://") {
         return Ok(PullScheme::Https(trimmed.to_string()));
+    }
+    if let Some(rest) = trimmed.strip_prefix("s3://") {
+        let (bucket, key) = split_bucket_key(rest, "s3")?;
+        return Ok(PullScheme::S3 { bucket, key });
+    }
+    if let Some(rest) = trimmed.strip_prefix("gs://") {
+        let (bucket, object) = split_bucket_key(rest, "gs")?;
+        return Ok(PullScheme::Gs { bucket, object });
+    }
+    if let Some(rest) = trimmed.strip_prefix("az://") {
+        let (container, blob) = split_bucket_key(rest, "az")?;
+        return Ok(PullScheme::Az { container, blob });
     }
 
     // Scheme-bearing but unsupported? Any `scheme:` prefix that isn't one
@@ -94,6 +126,48 @@ pub fn classify_pull_source(src: &str) -> Result<PullScheme, String> {
 /// returns true". This is a necessary condition for zero outbound TCP.
 pub fn is_local_transport(scheme: &PullScheme) -> bool {
     matches!(scheme, PullScheme::Local(_))
+}
+
+/// True iff the classification corresponds to a cloud object-store transport
+/// (S3/GCS/Azure). Callers use this to dispatch to the right SDK client.
+///
+/// CRUX-A-14 ALGO-001 sub-claim of FALSIFY-CRUX-A-14-001/002: any
+/// well-formed `s3://`, `gs://`, or `az://` URI classifies as the
+/// corresponding object-store variant (never HTTPS, never HF, never local).
+/// Any *other* URL scheme (`ftp://`, `ssh://`, etc.) must error — a
+/// necessary condition for the "exit 2 on unsupported scheme" gate.
+pub fn is_object_store_transport(scheme: &PullScheme) -> bool {
+    matches!(
+        scheme,
+        PullScheme::S3 { .. } | PullScheme::Gs { .. } | PullScheme::Az { .. }
+    )
+}
+
+/// Name of the standard environment variable that downstream transport
+/// code should look up credentials from, for the given scheme. Returns
+/// `None` for transports that don't require credentials (local, https) or
+/// whose credentials are HF-specific (`HF_TOKEN`, handled elsewhere).
+///
+/// CRUX-A-14 INV-A-14-002: "credentials are pulled from standard env/config
+/// — no aprender-specific auth". This helper encodes that mapping so no
+/// downstream code ever invents an `APR_S3_KEY` or similar.
+pub fn required_credential_env_for_scheme(scheme: &PullScheme) -> Option<&'static str> {
+    match scheme {
+        PullScheme::S3 { .. } => Some("AWS_ACCESS_KEY_ID"),
+        PullScheme::Gs { .. } => Some("GOOGLE_APPLICATION_CREDENTIALS"),
+        PullScheme::Az { .. } => Some("AZURE_STORAGE_KEY"),
+        _ => None,
+    }
+}
+
+/// Split a bucket/key (or container/blob) tail into its two parts,
+/// erroring if the bucket or key is empty. Factored out so S3/GS/Azure
+/// share the same parser and error shape.
+fn split_bucket_key(rest: &str, scheme: &str) -> Result<(String, String), String> {
+    match rest.split_once('/') {
+        Some((b, k)) if !b.is_empty() && !k.is_empty() => Ok((b.to_string(), k.to_string())),
+        _ => Err(format!("{scheme}:// requires bucket/key form")),
+    }
 }
 
 #[cfg(test)]
@@ -152,10 +226,10 @@ mod tests {
 
     #[test]
     fn unsupported_scheme_is_error() {
-        let err = classify_pull_source("ftp://example.com/x").unwrap_err();
-        assert!(err.contains("ftp"), "error should name the scheme: {err}");
-        let err = classify_pull_source("s3://bucket/key").unwrap_err();
-        assert!(err.contains("s3"), "error should name the scheme: {err}");
+        for src in ["ftp://example.com/x", "ssh://host/x", "rsync://x/y"] {
+            let err = classify_pull_source(src).unwrap_err();
+            assert!(err.contains("unsupported"), "expect rejection: {err}");
+        }
     }
 
     #[test]
@@ -185,12 +259,149 @@ mod tests {
             "https://x/y",
             "openai/gpt2",
             "qwen2.5-coder",
+            "s3://b/k",
+            "gs://b/o",
+            "az://c/b",
         ] {
             let r = classify_pull_source(src).unwrap();
             assert!(
                 !is_local_transport(&r),
                 "{src:?} must not be classified as Local transport"
             );
+        }
+    }
+
+    // ===== CRUX-A-14 object-store classifier tests =====
+
+    #[test]
+    fn s3_scheme_classifies_as_s3() {
+        let r = classify_pull_source("s3://aprtest/model.gguf").unwrap();
+        assert_eq!(
+            r,
+            PullScheme::S3 {
+                bucket: "aprtest".to_string(),
+                key: "model.gguf".to_string()
+            }
+        );
+        assert!(is_object_store_transport(&r));
+        assert!(!is_local_transport(&r));
+        assert_eq!(
+            required_credential_env_for_scheme(&r),
+            Some("AWS_ACCESS_KEY_ID")
+        );
+    }
+
+    #[test]
+    fn gs_scheme_classifies_as_gcs() {
+        let r = classify_pull_source("gs://my-bucket/path/to/model.safetensors").unwrap();
+        assert_eq!(
+            r,
+            PullScheme::Gs {
+                bucket: "my-bucket".to_string(),
+                object: "path/to/model.safetensors".to_string()
+            }
+        );
+        assert!(is_object_store_transport(&r));
+        assert_eq!(
+            required_credential_env_for_scheme(&r),
+            Some("GOOGLE_APPLICATION_CREDENTIALS")
+        );
+    }
+
+    #[test]
+    fn az_scheme_classifies_as_azure() {
+        let r = classify_pull_source("az://models-container/qwen.gguf").unwrap();
+        assert_eq!(
+            r,
+            PullScheme::Az {
+                container: "models-container".to_string(),
+                blob: "qwen.gguf".to_string()
+            }
+        );
+        assert!(is_object_store_transport(&r));
+        assert_eq!(
+            required_credential_env_for_scheme(&r),
+            Some("AZURE_STORAGE_KEY")
+        );
+    }
+
+    #[test]
+    fn object_store_requires_bucket_and_key() {
+        for src in [
+            "s3://",
+            "s3://bucket",
+            "s3://bucket/",
+            "s3:///key",
+            "gs://",
+            "gs://bucket",
+            "az://",
+            "az://container",
+        ] {
+            let err = classify_pull_source(src).unwrap_err();
+            assert!(
+                err.contains("bucket/key"),
+                "expect bucket/key-shape rejection for {src:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn object_store_transports_never_local_or_hf() {
+        for src in ["s3://b/k", "gs://b/o", "az://c/b"] {
+            let r = classify_pull_source(src).unwrap();
+            assert!(!is_local_transport(&r), "{src} must not be local");
+            assert!(
+                !matches!(r, PullScheme::HfHub(_)),
+                "{src} must not be HF Hub"
+            );
+            assert!(
+                !matches!(r, PullScheme::Https(_)),
+                "{src} must not be HTTPS"
+            );
+        }
+    }
+
+    #[test]
+    fn is_object_store_transport_rejects_non_object_store() {
+        for src in [
+            "file:///tmp/x",
+            "hf://a/b",
+            "https://x/y",
+            "openai/gpt2",
+            "qwen",
+        ] {
+            let r = classify_pull_source(src).unwrap();
+            assert!(
+                !is_object_store_transport(&r),
+                "{src:?} must not be object-store transport"
+            );
+            assert_eq!(
+                required_credential_env_for_scheme(&r),
+                None,
+                "{src:?} must not require object-store credential"
+            );
+        }
+    }
+
+    #[test]
+    fn credential_env_names_are_standard_not_aprender_specific() {
+        // CRUX-A-14 INV-A-14-002: no aprender-specific auth env vars.
+        for src in ["s3://b/k", "gs://b/o", "az://c/b"] {
+            let r = classify_pull_source(src).unwrap();
+            let env = required_credential_env_for_scheme(&r).unwrap();
+            assert!(
+                !env.starts_with("APR_") && !env.starts_with("APRENDER_"),
+                "{src:?} -> {env}: credential must be a standard SDK env var"
+            );
+        }
+    }
+
+    #[test]
+    fn object_store_keys_preserve_path_separators() {
+        let r = classify_pull_source("s3://bucket/a/b/c/model.gguf").unwrap();
+        match r {
+            PullScheme::S3 { key, .. } => assert_eq!(key, "a/b/c/model.gguf"),
+            other => panic!("expected S3, got {other:?}"),
         }
     }
 
