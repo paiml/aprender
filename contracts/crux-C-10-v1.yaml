@@ -2,7 +2,7 @@
 
 metadata:
   id: CRUX-C-10
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
@@ -82,6 +82,8 @@ falsification_tests:
   if_fails: "Grammar-constrained output does not parse under the supplied GBNF (apr does not mask illegal tokens)"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/gbnf_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gbnf_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_10.rs
     sub_claim: |
       Two algorithm-level necessary conditions:
       (1) `classify_json_grammar_output(output, finish_reason)` accepts iff
@@ -97,6 +99,14 @@ falsification_tests:
           Length mismatch and an all-false mask are distinct defect
           classes (`LengthMismatch`, `NoLegalTokens`).
       Both classifiers are pure; deterministic.
+    e2e_tests:
+    - falsify_crux_c_10_001_json_ok_on_valid_json_with_stop
+    - falsify_crux_c_10_001_json_rejects_non_json_output
+    - falsify_crux_c_10_001_json_rejects_wrong_finish_reason
+    - falsify_crux_c_10_001_masking_ok_when_illegal_positions_are_null
+    - falsify_crux_c_10_001_masking_rejects_finite_at_illegal_position
+    - falsify_crux_c_10_001_masking_rejects_length_mismatch
+    - falsify_crux_c_10_json_output_shape
     tests:
     - json_grammar_ok_on_object_with_stop
     - json_grammar_ok_on_array_with_length
@@ -133,6 +143,8 @@ falsification_tests:
   if_fails: "apr accepted malformed GBNF silently or emitted no diagnostic"
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/gbnf_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gbnf_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_10.rs
     sub_claim: |
       Algorithm-level necessary condition:
       `classify_grammar_error_diagnostic(exit_code, stderr)` accepts iff
@@ -143,6 +155,10 @@ falsification_tests:
             with a deterministic 160-char snippet so the actionable error is
             visible without flooding the classifier's telemetry.
       Pure; deterministic.
+    e2e_tests:
+    - falsify_crux_c_10_002_diagnostic_ok_on_nonzero_exit_with_keyword
+    - falsify_crux_c_10_002_diagnostic_rejects_zero_exit
+    - falsify_crux_c_10_002_diagnostic_rejects_missing_keyword
     tests:
     - grammar_error_ok_on_nonzero_exit_with_keyword
     - grammar_error_ok_case_insensitive
@@ -176,6 +192,19 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-C-10-002
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: "apr run --grammar-file surface rejecting malformed GBNF with a tagged diagnostic"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/gbnf_classifier.rs
+    cli_wiring: "crates/apr-cli/src/extended_commands.rs + dispatch_analysis.rs + commands/gbnf_lint.rs (apr gbnf-lint --observation-file FILE)"
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_10.rs
+    contract: contracts/crux-C-10-v1.yaml
+  merge_gates:
+    g1_classifier_green: "gbnf_classifier unit tests pass (3 classifiers × determinism + boundary coverage)"
+    g2_cli_reachable: "apr gbnf-lint --help advertises --observation-file"
+    g3_e2e_runs: "14 falsification tests pass (falsification_crux_c_10) — help surface, bare-invocation reject, 3 gates × ok+reject, length-mismatch, empty/nonexistent file, --json shape"
+    g4_contract_discharged: "2 of 2 FALSIFY-CRUX-C-10-00{1,2} at PARTIAL_ALGORITHM_LEVEL under BLOCKER-UPSTREAM-MISSING (live apr run/serve --grammar-file surface); classifier + CLI + e2e paths all exercised end-to-end on captured JSON observations. Masking gate exercised at e2e via null-as-(-Infinity) JSON convention"
 
 pmat_work_tracking:
   ticket_tag: crux-crux-c-10
