@@ -42,6 +42,8 @@ pub(crate) mod kernel_explain;
 pub(crate) mod lint;
 pub(crate) mod mcp;
 pub(crate) mod merge;
+pub(crate) mod dry_sampling_classifier;
+pub(crate) mod dry_sampling_lint;
 pub(crate) mod multi_lora_classifier;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;
