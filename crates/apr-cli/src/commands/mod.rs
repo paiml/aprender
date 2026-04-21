@@ -41,6 +41,7 @@ pub(crate) mod inspect;
 pub(crate) mod kernel_explain;
 pub(crate) mod lint;
 pub(crate) mod lora_hotswap_classifier;
+pub(crate) mod lora_hotswap_lint;
 pub(crate) mod mcp;
 pub(crate) mod merge;
 pub(crate) mod multi_lora_classifier;

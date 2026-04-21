@@ -723,6 +723,11 @@ pub enum ExtendedCommands {
         #[arg(long)]
         stream: bool,
     },
+    /// Lint a LoRA hotswap observation (CRUX-C-16)
+    LoraHotswapLint {
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
