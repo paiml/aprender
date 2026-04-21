@@ -849,6 +849,13 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Perplexity classifier (CRUX-E-02)
+    Ppl {
+        /// JSON file containing an array of per-token natural-log
+        /// probabilities (e.g. `[-1.2, -0.5, -2.1, ...]`). Required.
+        #[arg(long, value_name = "FILE")]
+        log_probs_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
