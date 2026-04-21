@@ -2,8 +2,9 @@
 
 metadata:
   id: CRUX-A-21
-  version: "1.2.0"
+  version: "1.3.0"
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
   status: partial
@@ -79,6 +80,14 @@ falsification_tests:
     scope: registry-root resolution + content-addressed blob path (pure functions)
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: two-user integration harness on a shared filesystem with APR_MODELS set
+    cli_path: crates/apr-cli/src/commands/shared_cache_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_a_21.rs
+    e2e_tests:
+    - falsify_crux_a_21_001_dedup_env_wins_and_paths_collapse
+    - falsify_crux_a_21_001_dedup_home_fallback_when_env_absent
+    - falsify_crux_a_21_001_dedup_wrong_expected_root_fails
+    - falsify_crux_a_21_001_dedup_invalid_hex_fails
+    - falsify_crux_a_21_001_dedup_missing_home_errors
 - id: FALSIFY-CRUX-A-21-002
   rule: read-only user can still load, but pull fails with exit 13
   prediction: "unprivileged user gets EACCES with actionable hint"
@@ -109,6 +118,16 @@ falsification_tests:
     scope: EACCES → exit-13 classifier (pure function over ErrorKind)
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: end-to-end `apr pull` harness with a 0555-mode APR_MODELS dir asserting the process exits 13
+    cli_path: crates/apr-cli/src/commands/shared_cache_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_a_21.rs
+    e2e_tests:
+    - falsify_crux_a_21_002_permission_eacces_exit_13
+    - falsify_crux_a_21_002_permission_not_found_exit_1
+    - falsify_crux_a_21_002_permission_timed_out_is_other
+    - falsify_crux_a_21_002_permission_wrong_exit_code_fails
+    - falsify_crux_a_21_002_permission_wrong_hint_substring_fails
+    - falsify_crux_a_21_002_permission_declaring_ok_on_eacces_fails
+    - falsify_crux_a_21_002_permission_unknown_kind_fails
 proof_obligations:
 - type: equivalence
   property: "APR_MODELS honored exactly like OLLAMA_MODELS on systemd deploys"
@@ -129,6 +148,24 @@ verification_summary:
   - falsify_id: FALSIFY-CRUX-A-21-002
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     blocked_on: end-to-end apr pull EACCES exit-13 harness
+
+ship_discipline:
+  retrofit_applied: "2026-04-21"
+  merge_gates:
+    g1_classifier_green:
+      status: satisfied
+      evidence: crates/apr-cli/src/commands/shared_cache.rs
+    g2_cli_reachable:
+      status: satisfied
+      evidence: "apr shared-cache-lint --help advertises --observation-file"
+      dispatcher: crates/apr-cli/src/commands/shared_cache_lint.rs
+    g3_e2e_runs:
+      status: satisfied
+      evidence: crates/apr-cli/tests/falsification_crux_a_21.rs
+      test_count: 20
+    g4_contract_discharged:
+      status: satisfied
+      evidence: "both FALSIFY blocks carry cli_path + e2e_path + e2e_tests"
 
 pmat_work_tracking:
   ticket_tag: crux-crux-a-21
