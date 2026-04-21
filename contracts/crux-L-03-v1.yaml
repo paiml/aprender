@@ -1,0 +1,129 @@
+# CRUX-L-03 — Drop-in flash-attn3 dispatch via HF kernels-community
+# Authored under PMAT-657. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-03
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  - crux-L-02-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 5
+  intake_status: missing
+  description: >
+    Dispatch attention via flash-attn3 on Hopper+ (sm_90+) /
+    Blackwell (sm_100+) hardware. FA3 leverages WGMMA + TMA for
+    ~1.5-2× throughput over FA2. Mirrors L-02 but gates on arch.
+    Canonical reference: Dao-AILab/flash-attention FA3 release.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/Dao-AILab/flash-attention — flash-attn3'
+  - 'arXiv:2407.08608 — FlashAttention-3'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  flash_attn3_dispatch:
+    formula: |
+      Preconditions:
+          cuda_arch >= sm_90      # Hopper+; SM100 for Blackwell full speed
+          head_dim ∈ {64, 128, 256}
+      out_fa3 := flash_attn3_fwd(Q, K, V, causal=true) via HF .so
+      out_ref := naive_attention(...) f32 CPU reference
+      Parity: max_abs_diff <= 5e-3 AND cosine_sim >= 0.9999
+      Perf  : throughput(fa3) >= 1.4× throughput(fa2) on same (B,H,S,D) @ sm_90+
+    domain: "Q,K,V tensors"
+    codomain: "out tensor"
+    invariants:
+    - "arch-gated: sm_80 MUST reject with ARCH_MISMATCH, not silent FA2 fallback"
+    - "numerical parity tolerance identical to FA2 (FA3 is just faster, same math)"
+    - "perf claim is falsifiable via bench harness (not marketing)"
+
+  cli_contract:
+    formula: |
+      apr run <model> --attn flash3 --json
+        emits:
+          attn_impl: "flash3"
+          kernel_source: "hf-kernels-community:flash-attn3@<sha>"
+          fallback: null
+      On sm_80 (no FA3): attn_impl="naive" | "flash2", fallback="arch-mismatch"
+    domain: "(model, --attn flash3)"
+    codomain: "generation output + impl metadata"
+    invariants:
+    - "falls back to flash2 by default when --attn flash3 unavailable and flash2 available"
+    - "fallback reason always populated"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-03-001
+  rule: "--attn flash3 flag exists"
+  prediction: "apr run --help advertises flash3"
+  test: |
+    set -euo pipefail
+    apr run --help 2>&1 | grep -qE "flash3|flash-attn"
+  if_fails: "apr run lacks --attn flash3 — L-03 not wired"
+
+- id: FALSIFY-CRUX-L-03-002
+  rule: "arch-gated at load (sm_80 → ARCH_MISMATCH, not silent FA2)"
+  prediction: "Forcing host arch sm_80 on --attn flash3 produces fallback=arch-mismatch"
+  test: |
+    set -euo pipefail
+    APR_KERNEL_FAKE_HOST_ARCH=sm_80 apr run tests/fixtures/tiny.apr --prompt hi --max-tokens 1 --attn flash3 --json 2>/dev/null > /tmp/l03-arch.json || true
+    jq -e '.fallback | test("arch-mismatch|arch")' /tmp/l03-arch.json >/dev/null
+  if_fails: "FA3 silently uses FA2 on Ampere — perf parity claims become unverifiable"
+
+- id: FALSIFY-CRUX-L-03-003
+  rule: "numerical parity with naive reference"
+  prediction: "FA3 output within 5e-3 of naive on canary fixture"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl flash3 --ref naive --fixture fixtures/attn-canary.json --json > /tmp/l03-parity.json
+    jq -e '.max_abs_diff <= 5e-3 and .cosine_sim >= 0.9999' /tmp/l03-parity.json >/dev/null
+  if_fails: "FA3 numerically diverges — must not ship without re-verification"
+
+- id: FALSIFY-CRUX-L-03-004
+  rule: "perf >= 1.4× FA2 on sm_90+"
+  prediction: "Bench harness on sm_90 reports fa3_tok_s >= 1.4 × fa2_tok_s"
+  test: |
+    set -euo pipefail
+    apr kernel bench --impls flash2,flash3 --fixture fixtures/attn-canary.json --json > /tmp/l03-bench.json
+    jq -e '.flash3.tok_s >= 1.4 * .flash2.tok_s' /tmp/l03-bench.json >/dev/null
+  if_fails: "FA3 does not beat FA2 by 1.4× — paper claims unfalsifiable, ship is a placebo"
+
+- id: FALSIFY-CRUX-L-03-005
+  rule: "kernel_source pinned on success"
+  prediction: "On sm_90 with FA3 available, kernel_source matches 'hf-kernels-community:flash-attn3@<sha>'"
+  test: |
+    set -euo pipefail
+    apr run tests/fixtures/tiny.apr --prompt hi --max-tokens 1 --attn flash3 --json 2>/dev/null > /tmp/l03-prov.json || true
+    jq -e '(.attn_impl == "flash3" and (.kernel_source | test("^hf-kernels-community:flash-attn3@[0-9a-f]{40}$"))) or (.fallback != null)' /tmp/l03-prov.json >/dev/null
+  if_fails: "Unpinned FA3 source — supply-chain audit impossible"
+
+proof_obligations:
+- type: invariant
+  property: "Arch-gated at load; sm_80 → ARCH_MISMATCH, never silent FA2 fallback"
+- type: invariant
+  property: "Numerical parity max_abs_diff <= 5e-3 vs naive"
+- type: invariant
+  property: "Perf >= 1.4× FA2 on sm_90+ (falsifiable bench)"
+- type: invariant
+  property: "Kernel source pinned (pkg@sha) on success"
+- type: equivalence
+  property: "apr --attn flash3  ≅  HF attn_implementation='flash_attention_3' on Hopper+"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-03
+  ticket_id: PMAT-657
+  priority: high
+  auto_created: true
