@@ -768,6 +768,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a captured NF4 codebook/roundtrip/storage/parity observation (CRUX-B-10)
+    Nf4Lint {
+        /// Path to captured NF4 observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
