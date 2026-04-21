@@ -2,7 +2,7 @@
 
 metadata:
   id: CRUX-C-23
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
   updated: "2026-04-21"
   author: PAIML Engineering
@@ -54,6 +54,15 @@ falsification_tests:
   if_fails: rule 'multiplier=0 is identity' is violated — contract MUST be re-verified against competitor canonical reference
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/dry_sampling_classifier.rs
+    cli_path: crates/apr-cli/src/commands/dry_sampling_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_23.rs
+    e2e_tests:
+    - falsify_crux_c_23_001_params_ok_on_defaults
+    - falsify_crux_c_23_001_params_rejects_negative_multiplier
+    - falsify_crux_c_23_001_params_rejects_base_below_one
+    - falsify_crux_c_23_001_params_rejects_allowed_length_zero
+    - falsify_crux_c_23_001_identity_ok_when_unchanged
+    - falsify_crux_c_23_001_identity_rejects_changed_logit
     sub_claim: "multiplier=0 identity + parameter-range invariants captured by pure classifiers"
     tests:
     - identity_ok_when_logits_unchanged
@@ -95,6 +104,16 @@ falsification_tests:
   if_fails: rule 'DRY reduces exact-phrase repetition on adversarial prompt' is violated — contract MUST be re-verified against competitor canonical reference
   evidence_discharged_by:
     classifier_path: crates/apr-cli/src/commands/dry_sampling_classifier.rs
+    cli_path: crates/apr-cli/src/commands/dry_sampling_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_23.rs
+    e2e_tests:
+    - falsify_crux_c_23_002_match_len_ok_on_repeated_trigram
+    - falsify_crux_c_23_002_match_len_rejects_wrong_expected
+    - falsify_crux_c_23_002_match_len_seq_breaker_zero
+    - falsify_crux_c_23_002_penalty_ok_at_threshold
+    - falsify_crux_c_23_002_penalty_rejects_invalid_input
+    - falsify_crux_c_23_002_monotone_ok_non_decreasing
+    - falsify_crux_c_23_002_monotone_rejects_decreasing_args
     sub_claim: "suffix-match length, penalty formula, seq-breaker reset, and monotonicity-in-match_len captured by pure classifiers"
     tests:
     - match_len_zero_when_ctx_empty
@@ -134,6 +153,27 @@ verification_summary:
   proven: 0
   tested: 2
   status: partial
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/dry_sampling_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/dry_sampling_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_23.rs
+    contract: contracts/crux-C-23-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr dry-sampling-lint --observation-file <obs.json>` dispatches five
+    classifiers (params, identity, match_len, penalty, monotone) over
+    captured JSON. e2e suite (18 tests) exercises help surface,
+    bare-invocation rejection, per-gate ok+reject paths,
+    empty/nonexistent file rejection, and --json shape. Full ACTIVE
+    discharge remains blocked on `apr run --dry-*` identity test against
+    a real GGUF fixture + llama.cpp DRY sampler parity.
 
 pmat_work_tracking:
   ticket_tag: crux-crux-c-23
