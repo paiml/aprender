@@ -9,6 +9,7 @@
 pub mod classification;
 pub mod drift;
 pub mod evaluator;
+pub mod grad_norm;
 pub mod ranking;
 
 use crate::primitives::{Matrix, Vector};

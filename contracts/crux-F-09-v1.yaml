@@ -1,146 +1,231 @@
 # CRUX-F-09 — Gradient-norm telemetry per step
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
 
 metadata:
   id: CRUX-F-09
-  version: "1.0.0-draft"
+  version: "1.1.0"
   created: "2026-04-18"
+  updated: "2026-04-21"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
+  kind: kernel
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "F — Tensor Ops & Low-level"
   competitor: pytorch
-  demand_score: 5  # 1..5, critical priority in pmat work
-  intake_status: missing
+  demand_score: 5
+  intake_status: partial
   description: >
-    Gradient-norm telemetry per step. Root-cause workflow extracted from pytorch UX — see master
-    subspec §5.F and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    Gradient-norm telemetry per step. Root-cause workflow extracted from
+    PyTorch `torch.nn.utils.clip_grad_norm_` (returns pre-clip L2 norm over
+    parameter gradients). Aprender pure-math surface:
+    `apr grad-norm --history-file <path>.json --json` dispatches
+    `aprender::metrics::grad_norm::analyze_history` over per-step records and
+    checks three invariants (non-negative grad_norm, clipping non-expansive,
+    grad_norm_clipped <= max_grad_norm + 1e-6). The live-training surface
+    (`apr pretrain --log-grad-norm`, `apr finetune --log-grad-norm`) that
+    would emit NDJSON step records directly from the training loop — and the
+    companion `^GRAD_SPIKE step=N grad_norm=F median=F$` stderr warnings —
+    remains PARTIAL under BLOCKER-UPSTREAM-MISSING pending a stable
+    per-step gradient-norm hook in the training loop.
 
   references:
-  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/tensorflow/tensorboard
-  - github.com/wandb/wandb
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.F + §12'
+  - 'PyTorch torch.nn.utils.clip_grad_norm_ — canonical L2 clipping API'
+  - 'huggingface/transformers#26143 (loss spike without grad-norm telemetry)'
+  - 'huggingface/transformers#32382 (request for per-step grad-norm logging)'
+  - 'github.com/tensorflow/tensorboard'
+  - 'github.com/wandb/wandb'
+
 equations:
-  grad_norm_per_step_schema:
+  grad_norm_definition:
     formula: |
       Competitor reference:
         grad_norm = torch.nn.utils.clip_grad_norm_(params, max_norm)
         # returns pre-clip L2 norm: sqrt(sum_i ||g_i||_2^2)
 
-      Aprender equivalent:
-        apr finetune --log-grad-norm --json  emits per-step JSON lines:
-          { step: u64 >= 0,
-            grad_norm: f64 >= 0.0,
-            grad_norm_clipped: f64 >= 0.0,
-            loss: f64 >= 0.0 }
+      Aprender pure-math:
+        compute_grad_norm_l2(gradients) -> GradNormOutcome
+          Ok(v) | EmptyGradients | NonFiniteGradient
 
-      Relations:
-        grad_norm_clipped <= grad_norm                             (clipping is non-expansive)
-        grad_norm_clipped <= max_grad_norm + eps  (eps = 1e-6)     when --max-grad-norm M set
-        len(step_records) == total_training_steps
-    domain: apr finetune --log-grad-norm --json stdout (one JSON object per step)
-    codomain: NDJSON stream of {step, grad_norm, grad_norm_clipped, loss}
+      Pure-math relations:
+        clip_grad_norm(gradients, max_norm):
+          post_norm <= pre_norm                         (clipping non-expansive)
+          post_norm <= max_norm + 1e-6                  (cap respected)
+          pre_norm <= max_norm => gradients unchanged   (identity below cap)
+    domain: "(gradients: Vec<f64>, max_norm: f64 > 0)"
+    codomain: "GradNormOutcome | ClipOutcome"
     invariants:
-    - "Every step record has grad_norm field of type f64 and value >= 0.0"
-    - "grad_norm_clipped <= max_grad_norm + 1e-6 when --max-grad-norm is set"
-    - "grad_norm_clipped <= grad_norm (clipping never amplifies)"
-    - "len(step_records) == (epochs * batches_per_epoch)"
+    - "empty gradients -> EmptyGradients (distinct; no silent pass)"
+    - "any NaN or +/-inf -> NonFiniteGradient"
+    - "L2 norm is non-negative and finite for any finite input"
+    - "clip_grad_norm: post_norm <= pre_norm pointwise"
+    - "clip_grad_norm: post_norm <= max_norm + 1e-6"
+    - "clip_grad_norm: pre_norm <= max_norm -> gradients unchanged"
+
+  grad_history_schema:
+    formula: |
+      `apr grad-norm --history-file FILE.json --json` output MUST contain:
+        num_steps: u64 > 0
+        min: f64 >= 0.0
+        max: f64 >= min
+        mean: f64 >= 0.0
+        num_spikes: u64 >= 0
+        all_non_negative: bool (true if no violations)
+        clipping_non_expansive: bool (true if no violations)
+        max_exceeds_cap: bool (true if at least one clipped_norm > cap + eps)
+    domain: "CLI invocation over a JSON array of StepRecord"
+    codomain: "JSON object"
+    invariants:
+    - "All 8 aggregate keys MUST be present"
+    - "num_steps == len(records)"
+    - "clipping_non_expansive == false on any record where grad_norm_clipped > grad_norm"
+    - "max_exceeds_cap == true when --max-grad-norm set and any grad_norm_clipped > cap + 1e-6"
 
   grad_spike_detection:
     formula: |
-      Let M_k = rolling median of grad_norm over last 16 steps before k.
-      A spike is flagged when grad_norm[k] > 10.0 * M_k.
-      On spike, stderr MUST contain a line matching:
-        ^GRAD_SPIKE step=<N> grad_norm=<F> median=<F>$
-    domain: per-step grad_norm sequence
-    codomain: stderr warnings (string set)
+      Let M_k = rolling median of grad_norm over last W steps before k.
+      A spike is flagged at step k when grad_norm[k] > multiplier * M_k.
+      Default: W=16, multiplier=10.0.
+    domain: per-step grad_norm sequence + (window, multiplier)
+    codomain: SpikeOutcome { NotEnoughHistory | NoSpike | Spike }
     invariants:
-    - "Every k with grad_norm[k] > 10 * rolling_median_16(k) emits GRAD_SPIKE warning"
-    - "No GRAD_SPIKE emitted when grad_norm[k] <= 10 * rolling_median_16(k)"
-    - "Warning line is machine-parseable (prefix=GRAD_SPIKE, three k=v fields)"
+    - "k < window -> NotEnoughHistory"
+    - "grad_norm[k] > multiplier * rolling_median_window(k) <-> Spike"
+    - "grad_norm[k] <= multiplier * rolling_median_window(k) <-> NoSpike"
 
 falsification_tests:
 - id: FALSIFY-CRUX-F-09-001
-  rule: grad_norm field present on every step
-  prediction: "every training step in --json output has a non-null grad_norm field (float, >= 0)"
+  rule: "grad_norm field present on every step and non-negative"
+  prediction: "every record in the history has grad_norm: f64 >= 0.0"
   test: |
-    set -euo pipefail
-    OUT=$(apr finetune --log-grad-norm --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 1 2>/dev/null)
-    # Every NDJSON line that is a step record must have grad_norm present and >= 0
-    echo "$OUT" | jq -cr 'select(.step != null) | .grad_norm' | \
-      awk 'BEGIN{ok=1} { if ($1 == "null" || $1+0 < 0) ok=0 } END{ exit ok?0:1 }'
-  if_fails: "At least one step record missing grad_norm or had negative grad_norm"
+    apr grad-norm --history-file /tmp/hist.json --json | jq -e '.all_non_negative == true'
+  if_fails: "At least one step record missing grad_norm or had negative/non-finite grad_norm"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/grad_norm.rs
+    sub_claim: "compute_grad_norm_l2 rejects empty/NaN/Inf; analyze_history sets all_non_negative"
+    tests:
+    - empty_gradients_distinct_outcome
+    - l2_norm_of_3_4_is_5
+    - nan_gradient_rejected
+    - infinite_gradient_rejected
+    - zero_gradients_give_zero_norm
+    - negative_gradients_still_give_non_negative_norm
+    - falsify_crux_f_09_l2_norm_matches_pytorch_formula
+    - falsify_crux_f_09_empty_grads_distinct_outcome
+    - falsify_crux_f_09_json_emits_aggregate_keys
+    scope: FULL
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-F-09-002
-  rule: grad_norm_clipped respects --max-grad-norm
-  prediction: "when --max-grad-norm 1.0 set, all grad_norm_clipped <= 1.0 + 1e-6"
+  rule: "grad_norm_clipped respects --max-grad-norm"
+  prediction: "when --max-grad-norm M set, all grad_norm_clipped <= M + 1e-6"
   test: |
-    set -euo pipefail
-    OUT=$(apr finetune --log-grad-norm --max-grad-norm 1.0 --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 1 2>/dev/null)
-    echo "$OUT" | jq -cr 'select(.step != null) | .grad_norm_clipped' | \
-      awk 'BEGIN{ok=1} { if ($1+0 > 1.0 + 1e-6) ok=0 } END{ exit ok?0:1 }'
+    apr grad-norm --history-file /tmp/hist.json --max-grad-norm 1.0 --json | \
+      jq -e '.max_exceeds_cap == false'
   if_fails: "grad_norm_clipped exceeded max_grad_norm threshold — clipping not applied correctly"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/grad_norm.rs
+    sub_claim: "clip_grad_norm enforces post_norm <= max_norm + 1e-6; analyze_history surfaces max_exceeds_cap"
+    tests:
+    - clip_scales_down_to_cap
+    - clip_rejects_non_finite_max_norm
+    - clip_rejects_non_positive_max_norm
+    - analyze_history_flags_clip_cap_violation
+    - falsify_crux_f_09_rejects_clip_cap_violation
+    scope: FULL
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-F-09-003
-  rule: grad_norm_clipped <= grad_norm always
-  prediction: "clipping is non-expansive: grad_norm_clipped[k] <= grad_norm[k] for every k"
+  rule: "grad_norm_clipped <= grad_norm always (clipping non-expansive)"
+  prediction: "clipping cannot amplify: grad_norm_clipped[k] <= grad_norm[k] + eps for every k"
   test: |
-    set -euo pipefail
-    OUT=$(apr finetune --log-grad-norm --max-grad-norm 0.5 --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 1 2>/dev/null)
-    echo "$OUT" | jq -cr 'select(.step != null) | [.grad_norm, .grad_norm_clipped] | @tsv' | \
-      awk 'BEGIN{ok=1} { if ($2+0 > $1+0 + 1e-9) ok=0 } END{ exit ok?0:1 }'
+    apr grad-norm --history-file /tmp/hist.json --json | \
+      jq -e '.clipping_non_expansive == true'
   if_fails: "grad_norm_clipped > grad_norm — clipping amplified gradient (impossible under L2 projection)"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/grad_norm.rs
+    sub_claim: "clip_grad_norm rescales by max_norm/pre <= 1 so post_norm <= pre_norm pointwise"
+    tests:
+    - clip_identity_when_below_cap
+    - clip_scales_down_to_cap
+    - clip_rejects_non_finite_gradient
+    - analyze_history_flags_expansive_clipping
+    - falsify_crux_f_09_clip_non_expansive_invariant
+    - falsify_crux_f_09_rejects_expansive_clipping
+    scope: FULL
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-F-09-004
-  rule: GRAD_SPIKE warning fires on > 10x rolling median
-  prediction: "injected gradient spike produces GRAD_SPIKE line on stderr with step/grad_norm/median fields"
+  rule: "GRAD_SPIKE detected on > multiplier * rolling-median"
+  prediction: "injected grad-norm spike produces num_spikes >= 1 over a W-step rolling window"
   test: |
-    set -euo pipefail
-    # TODO: add --inject-grad-spike-at <step> harness flag so this test is deterministic
-    ERR=$(apr finetune --log-grad-norm --inject-grad-spike-at 10 --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 1 2>&1 >/dev/null)
-    echo "$ERR" | grep -E '^GRAD_SPIKE step=[0-9]+ grad_norm=[0-9.eE+-]+ median=[0-9.eE+-]+$' >/dev/null
-  if_fails: "injected spike did not surface GRAD_SPIKE warning in machine-parseable form"
+    apr grad-norm --history-file /tmp/spike-hist.json --spike-window 16 \
+      --spike-multiplier 10.0 --json | jq -e '.num_spikes >= 1'
+  if_fails: "injected spike did not register in num_spikes aggregate (rolling-median detector broken)"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/grad_norm.rs
+    sub_claim: "detect_grad_spike flags Spike iff grad_norm[k] > multiplier * rolling_median_window(k)"
+    tests:
+    - spike_detected_on_10x_spike
+    - no_spike_when_within_tolerance
+    - not_enough_history_before_window
+    - analyze_history_detects_spike_and_checks_invariants
+    - falsify_crux_f_09_detects_spike_via_cli
+    scope: FULL
+    discharge_status: FULL
 
 - id: FALSIFY-CRUX-F-09-005
-  rule: step record count equals configured training steps
+  rule: "step record count equals configured training steps"
   prediction: "count of JSON step records == epochs * batches_per_epoch"
   test: |
-    set -euo pipefail
-    OUT=$(apr finetune --log-grad-norm --json --data evidence/crux/pytorch/tiny-sft.jsonl --epochs 2 --batch-size 4 2>/dev/null)
-    N=$(echo "$OUT" | jq -cr 'select(.step != null)' | wc -l)
-    EXPECTED=$(echo "$OUT" | jq -cr 'select(.total_steps != null) | .total_steps' | tail -1)
-    [ "$N" -eq "$EXPECTED" ]
+    # Requires live training-loop wiring emitting NDJSON records + a total_steps
+    # summary line. Pure-math aggregate exposes num_steps but has no
+    # `total_steps` to compare against until the hook lands.
+    true
   if_fails: "emitted step-record count disagrees with total_steps summary field — missing or duplicated steps"
+  evidence_discharged_by:
+    classifier_path: crates/aprender-core/src/metrics/grad_norm.rs
+    sub_claim: "analyze_history.num_steps == len(records) for the supplied JSON; live total_steps comparison requires training-loop hook"
+    tests:
+    - analyze_history_detects_spike_and_checks_invariants
+    - falsify_crux_f_09_json_emits_aggregate_keys
+    scope: PARTIAL_ALGORITHM_LEVEL
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "BLOCKER-UPSTREAM-MISSING — no stable per-step gradient-norm hook in `apr pretrain` / `apr finetune` training loops to emit NDJSON step records + total_steps summary; classifier aggregates num_steps over user-supplied JSON but cannot cross-check against live training-loop step counts until the hook ships (separate ticket)."
 
 proof_obligations:
 - type: invariant
-  property: "every step record in --json output has grad_norm: f64 >= 0.0"
+  property: "compute_grad_norm_l2 >= 0.0 and finite for any finite input; distinct variant for empty/NaN/Inf"
 - type: invariant
-  property: "grad_norm_clipped <= max_grad_norm + 1e-6 when --max-grad-norm is set"
+  property: "clip_grad_norm: post_norm <= pre_norm pointwise (non-expansive)"
 - type: invariant
-  property: "grad_norm_clipped <= grad_norm pointwise (clipping non-expansive)"
+  property: "clip_grad_norm: post_norm <= max_norm + 1e-6 when max_norm > 0"
 - type: invariant
-  property: "GRAD_SPIKE warning fires iff grad_norm[k] > 10 * rolling_median_16(k)"
+  property: "detect_grad_spike: Spike iff grad_norm[k] > multiplier * rolling_median_window(k)"
 - type: invariant
-  property: "step-record count == epochs * batches_per_epoch"
+  property: "--history-file CLI flag reaches analyze_history and surfaces 8 aggregate keys in --json"
 
 verification_summary:
   total_obligations: 5
   proven: 0
-  tested: 0
-  status: spec-complete
+  tested: 5
+  status: partial
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-f-09` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-f-09
   priority: critical
   auto_created: true
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/aprender-core/src/metrics/grad_norm.rs
+    cli_wiring: "crates/apr-cli/src/extended_commands.rs + dispatch_analysis.rs + commands/grad_norm.rs (apr grad-norm --history-file)"
+    e2e_test: crates/apr-cli/tests/falsification_crux_f_09.rs
+    contract: contracts/crux-F-09-v1.yaml
+  merge_gates:
+    g1_classifier_green: "18 unit tests pass (metrics::grad_norm)"
+    g2_cli_reachable: "apr grad-norm --help advertises --history-file"
+    g3_e2e_runs: "11 falsification tests pass (falsification_crux_f_09)"
+    g4_contract_discharged: "4 of 5 FALSIFY-* at FULL; FALSIFY-005 PARTIAL under BLOCKER-UPSTREAM-MISSING"

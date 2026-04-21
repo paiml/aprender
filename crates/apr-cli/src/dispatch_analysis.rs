@@ -101,6 +101,19 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stream,
         } => commands::ollama_chat::run(response_file, *stream, cli.json),
 
+        ExtendedCommands::GradNorm {
+            history_file,
+            max_grad_norm,
+            spike_window,
+            spike_multiplier,
+        } => commands::grad_norm::run(
+            history_file,
+            *max_grad_norm,
+            *spike_window,
+            *spike_multiplier,
+            cli.json,
+        ),
+
         ExtendedCommands::Hex {
             file,
             tensor,

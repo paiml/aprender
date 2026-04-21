@@ -719,6 +719,21 @@ pub enum ExtendedCommands {
         #[arg(long)]
         stream: bool,
     },
+    /// Gradient-norm telemetry analysis (CRUX-F-09)
+    GradNorm {
+        /// Path to JSON file of per-step grad-norm records
+        #[arg(long, value_name = "FILE")]
+        history_file: PathBuf,
+        /// Maximum allowed clipped grad-norm (for cap-violation check)
+        #[arg(long, value_name = "M")]
+        max_grad_norm: Option<f64>,
+        /// Rolling-median window size for spike detection (in steps)
+        #[arg(long, default_value = "16")]
+        spike_window: usize,
+        /// Multiplier threshold for spike detection
+        #[arg(long, default_value = "10.0")]
+        spike_multiplier: f64,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),

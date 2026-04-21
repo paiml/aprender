@@ -74,6 +74,7 @@ fn registered_commands() -> Vec<&'static str> {
         "diagnose",
         "ollama-chat-lint",
         "oracle",
+        "grad-norm",
         "encrypt",
         "decrypt",
         "mcp",

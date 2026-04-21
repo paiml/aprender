@@ -21,7 +21,7 @@ metadata:
 kind: CLICommandContract
 name: apr-cli-commands
 version: "1.0.0"
-scope: "all apr CLI subcommands (60 commands — original 57 + `mcp` added 2026-04-17 via PR #864 + `registry` added 2026-04-20 via CRUX-A-01 + `ollama-chat-lint` added 2026-04-21 via CRUX-C-04 SHIP-001 retrofit)"
+scope: "all apr CLI subcommands (61 commands — original 57 + `mcp` added 2026-04-17 via PR #864 + `registry` added 2026-04-20 via CRUX-A-01 + `ollama-chat-lint` added 2026-04-21 via CRUX-C-04 SHIP-001 retrofit + `grad-norm` added 2026-04-21 via CRUX-F-09)"
 binary: "apr"
 install: "cargo install aprender"
 
@@ -399,6 +399,12 @@ commands:
   - name: oracle
     category: misc
     description: "RAG oracle — search Sovereign AI Stack documentation"
+    requires_model: false
+    side_effects: []
+
+  - name: grad-norm
+    category: inspection
+    description: "Gradient-norm telemetry classifier (CRUX-F-09)"
     requires_model: false
     side_effects: []
 
