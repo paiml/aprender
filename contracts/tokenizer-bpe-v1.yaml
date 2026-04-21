@@ -38,13 +38,13 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-TOK-BPE
-version: 1.1.0
+version: 1.2.0
 status: PROPOSED
 
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   created: "2026-04-18"
-  updated: "2026-04-19"
+  updated: "2026-04-21"
   changelog:
     - "1.0.0 (2026-04-18): Initial contract drafted as PROPOSED — froze
        albor 370M tokenizer choices (vocab=50K, 4 special tokens,
@@ -59,6 +59,24 @@ metadata:
        materialization) — when that data lands, the fixture swap is
        data-only, no harness rewrite. Status intentionally kept PROPOSED
        until the 10K corpus runs clean."
+    - "1.2.0 (2026-04-21): Option-A vocab alignment (task #131). Bumped
+       vocab_size 50_000 → 50_257 to match the actual MODEL-2 tokenizer
+       artifact trained in task #118 and the GPT-2 convention
+       (50_000 BPE merges + 256 byte-level fallback tokens +
+       1 sentinel, accommodating our 4 special tokens). The incident
+       that surfaced this (task #126: first real-compute MODEL-2
+       dispatch at commit 29607ed33 fired N-09 OOB escape on token
+       id 50_241 because tokenizer@50_257 disagreed with contract@50_000)
+       confirmed that the artifact, not the contract, was
+       industry-canonical. Option B (retrain tokenizer at 50_000) would
+       have burned task #118 compute. merge_rules_count_expected
+       updated 49_996 → 49_997 (vocab − 4 special − 256 byte-level
+       fallback); merge-rules tolerance window slid from [49992, 50000]
+       to [49993, 50001]. INV-BPE-001 / INV-BPE-004 / GATE-BPE-001 /
+       GATE-BPE-004 narratives updated in lockstep. Paired with
+       llama-370m-sovereign-v1 v1.5.0 (vocab_size=50_257) and
+       Llama370MConfig::VOCAB_SIZE=50_257 — all three artifacts move
+       byte-in-lockstep via GATE-ARCH-370M-011 pre-flight."
   author: PAIML Engineering
   description: >
     Concrete BPE tokenizer contract for SHIP-TWO-001 MODEL-2 (albor
@@ -99,11 +117,11 @@ motivation: >
 
 tokenizer:
   algorithm: bpe
-  vocab_size: 50000
+  vocab_size: 50257
   vocab_size_bounds:
     min: 32000          # below this, Python keyword coverage collapses
     max: 65536          # above this, u16 token-id optimization breaks
-  merge_rules_count_expected: 49996    # vocab_size - (4 special tokens)
+  merge_rules_count_expected: 49997    # vocab_size − 4 special − 256 byte-level fallback tokens
   merge_rules_count_tolerance: 4       # ± for byte-fallback edge cases
 
   required_special_tokens:
@@ -132,7 +150,9 @@ invariants:
     description: >
       vocab_size ∈ [32000, 65536] and matches the paired model's
       embedding row count (see llama-370m-sovereign-v1 INV-ARCH-370M-006).
-      Default: exactly 50000.
+      Default: exactly 50257 (GPT-2 canonical — 50_000 BPE merges
+      + 256 byte-level fallback tokens + 1 sentinel, with our 4
+      special tokens allocated from the non-mergeable slots).
     falsifier: >
       Load tokenizer, assert tokenizer.vocab_size() ∈ [32000, 65536].
       Further: if shipped with a 370M checkpoint, assert equality with
@@ -159,12 +179,13 @@ invariants:
 
   - id: INV-BPE-004
     description: >
-      Merge rules count equals (vocab_size − |special_tokens|) ± 4.
-      The ±4 slack covers byte-level fallback edge cases where a byte
-      ID is added directly without a merge.
+      Merge rules count equals (vocab_size − |special_tokens| − 256
+      byte-level fallback) ± 4. The ±4 slack covers byte-level
+      fallback edge cases where a byte ID is added directly without
+      a merge.
     falsifier: >
       Load merges.txt (or equivalent from tokenizer.json), count lines.
-      Assert |merges| ∈ [49992, 50000]. Outside range fails.
+      Assert |merges| ∈ [49993, 50001]. Outside range fails.
 
   - id: INV-BPE-005
     description: >
@@ -210,7 +231,7 @@ gates:
       Vocabulary size and bounds are satisfied (INV-BPE-001).
     evidence_required: >
       `apr tokenize --info tokenizer.json | jq '.vocab_size'` returns
-      50000; `.bounds_ok` is true.
+      50257; `.bounds_ok` is true.
     verdict: pass
     binds_to: AC-SHIP2-002
 
@@ -257,7 +278,7 @@ gates:
       Merge rules count is within expected tolerance (INV-BPE-004).
     evidence_required: >
       `apr tokenize --info tokenizer.json | jq '.merges_count'` returns
-      an integer in [49992, 50000].
+      an integer in [49993, 50001].
     verdict: pass
     binds_to: AC-SHIP2-002
 
