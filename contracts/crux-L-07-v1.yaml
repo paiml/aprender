@@ -1,0 +1,117 @@
+# CRUX-L-07 — fp8-fbgemm matmul dispatch via HF kernels-community
+# Authored under PMAT-661. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-07
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Dispatch fp8 E4M3 matmul via the `fbgemm-fp8` kernel from HF
+    kernels-community. Arch-gated at sm_90+ (Hopper) where fp8
+    Tensor Cores exist. Parity vs bf16 reference within 1e-2 (fp8
+    has higher quant noise than fp16). Powers fast fp8 inference
+    on H100/B200.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/huggingface/kernels-community — fp8-fbgemm'
+  - 'upstream: github.com/pytorch/FBGEMM'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  fp8_matmul:
+    formula: |
+      out_fp8 := fp8_e4m3_matmul(A_fp8, B_fp8, scale_a, scale_b) via HF kernel .so
+      out_ref := bf16_matmul(A_bf16, B_bf16)  # reference
+      Parity: max_abs_diff(out_fp8 * combined_scale, out_ref) <= 1e-2
+      cosine_sim >= 0.999
+    domain: "(A_fp8, B_fp8, scale_a, scale_b)"
+    codomain: "out_fp8 or out_bf16"
+    invariants:
+    - "requires sm_90+ (Hopper fp8 Tensor Cores) — sm_80 is hard error"
+    - "scale_a/scale_b are scalar or per-row — per-element scales rejected"
+    - "parity tolerance 1e-2 reflects E4M3 mantissa precision (NOT generous handwave)"
+
+  cli_contract:
+    formula: |
+      apr kernel parity --impl fp8-fbgemm --ref bf16-matmul --fixture fixtures/fp8-canary.json --json
+    domain: "(impl, fixture)"
+    codomain: "parity JSON"
+    invariants:
+    - "on sm_80 the CLI emits ARCH_MISMATCH and exits 1 (not silent fallback)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-07-001
+  rule: "parity within 1e-2 on sm_90+"
+  prediction: "fp8-fbgemm matches bf16 reference at 1e-2"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl fp8-fbgemm --ref bf16-matmul --fixture fixtures/fp8-canary.json --json > /tmp/l07.json
+    jq -e '.max_abs_diff <= 1e-2 and .cosine_sim >= 0.999' /tmp/l07.json >/dev/null
+  if_fails: "fp8-fbgemm exceeds E4M3 quant noise bound — broken"
+
+- id: FALSIFY-CRUX-L-07-002
+  rule: "sm_80 is hard error, not silent fallback"
+  prediction: "Forcing host arch sm_80 on fp8-fbgemm exits 1 with status=ARCH_MISMATCH"
+  test: |
+    set -euo pipefail
+    set +e
+    APR_KERNEL_FAKE_HOST_ARCH=sm_80 apr kernel parity --impl fp8-fbgemm --ref bf16-matmul --fixture fixtures/fp8-canary.json --json > /tmp/l07-arch.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "ARCH_MISMATCH" or (.error | test("sm_80|arch|hopper"))' /tmp/l07-arch.json >/dev/null
+  if_fails: "Silent fp8 fallback on Ampere — bf16 perf falsely attributed to fp8"
+
+- id: FALSIFY-CRUX-L-07-003
+  rule: "per-element scales rejected"
+  prediction: "apr kernel parity with per-element scale matrix errors"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl fp8-fbgemm --ref bf16-matmul --scale-mode per-element --fixture fixtures/fp8-canary.json --json > /tmp/l07-scale.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+  if_fails: "Per-element scales silently accepted — kernel path undefined"
+
+- id: FALSIFY-CRUX-L-07-004
+  rule: "kernel_source pinned"
+  prediction: "Successful dispatch emits kernel_source with fp8-fbgemm@<sha>"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl fp8-fbgemm --ref bf16-matmul --fixture fixtures/fp8-canary.json --json > /tmp/l07.json
+    jq -e '.kernel_source | test("^hf-kernels-community:fp8-fbgemm@[0-9a-f]{40}$")' /tmp/l07.json >/dev/null
+  if_fails: "Unpinned fp8-fbgemm source"
+
+proof_obligations:
+- type: invariant
+  property: "Parity max_abs_diff <= 1e-2 vs bf16 reference on sm_90+"
+- type: invariant
+  property: "sm_80 is hard error (ARCH_MISMATCH)"
+- type: invariant
+  property: "Only scalar or per-row scales accepted"
+- type: equivalence
+  property: "apr fp8-fbgemm matmul  ≅  HF kernels-community fp8-fbgemm"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-07
+  ticket_id: PMAT-661
+  priority: medium
+  auto_created: true

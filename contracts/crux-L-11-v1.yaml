@@ -1,0 +1,114 @@
+# CRUX-L-11 — megablocks MoE kernel dispatch via HF kernels-community
+# Authored under PMAT-665. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-11
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Dispatch Mixture-of-Experts block-sparse matmul via `megablocks`
+    kernel from HF kernels-community. Powers MoE architectures
+    (Qwen3-30B-A3B, Mixtral, DeepSeek-V3). Parity vs naive dense
+    expert loop within 1e-3 bf16.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/stanford-futuredata/megablocks'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  megablocks_dispatch:
+    formula: |
+      Given (x, gate_logits, experts_weights, topk=2):
+          routing := softmax(gate_logits, dim=-1).topk(topk)
+          out     := megablocks_sparse_moe(x, routing, experts_weights)
+          ref     := naive_dense_moe_loop(x, routing, experts_weights)
+      Parity: max_abs_diff(out, ref) <= 1e-3 (bf16)
+              per-expert token count matches routing topk
+    domain: "(x, gate_logits, expert_weights, topk)"
+    codomain: "out tensor"
+    invariants:
+    - "topk ∈ {1, 2, 4}; other values error"
+    - "token distribution to experts is deterministic given gate_logits + topk"
+    - "num_experts == gate_logits.shape[-1]"
+
+  cli_contract:
+    formula: |
+      apr kernel parity --impl megablocks --ref naive-moe --fixture fixtures/moe-canary.json --json
+    domain: "(impl, fixture)"
+    codomain: "parity JSON"
+    invariants:
+    - "fixture includes topk=2 (Mixtral-style) AND topk=8 (DeepSeek-style) if supported"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-11-001
+  rule: "megablocks parity within 1e-3 bf16"
+  prediction: "sparse MoE matches naive dense expert loop"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl megablocks --ref naive-moe --topk 2 --fixture fixtures/moe-canary.json --json > /tmp/l11.json
+    jq -e '.max_abs_diff <= 1e-3' /tmp/l11.json >/dev/null
+  if_fails: "MoE sparse path diverges from dense — expert routing corrupt"
+
+- id: FALSIFY-CRUX-L-11-002
+  rule: "unsupported topk errors"
+  prediction: "topk=3 (non-power-of-two, non-standard) exits 1"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl megablocks --topk 3 --fixture fixtures/moe-canary.json --json >/dev/null
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+  if_fails: "Unsupported topk silently accepted"
+
+- id: FALSIFY-CRUX-L-11-003
+  rule: "routing determinism (same gate_logits → same tokens to same experts)"
+  prediction: "Two runs with same inputs produce identical per-expert token counts"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl megablocks --ref naive-moe --topk 2 --fixture fixtures/moe-canary.json --emit-routing --json > /tmp/l11-A.json
+    apr kernel parity --impl megablocks --ref naive-moe --topk 2 --fixture fixtures/moe-canary.json --emit-routing --json > /tmp/l11-B.json
+    diff <(jq -S '.routing' /tmp/l11-A.json) <(jq -S '.routing' /tmp/l11-B.json)
+  if_fails: "Non-deterministic routing — breaks Gate-4 cross-format parity"
+
+- id: FALSIFY-CRUX-L-11-004
+  rule: "kernel_source pinned"
+  prediction: "Dispatch emits kernel_source='hf-kernels-community:megablocks@<sha>'"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl megablocks --ref naive-moe --topk 2 --fixture fixtures/moe-canary.json --json > /tmp/l11.json
+    jq -e '.kernel_source | test("^hf-kernels-community:megablocks@[0-9a-f]{40}$")' /tmp/l11.json >/dev/null
+  if_fails: "Unpinned megablocks source"
+
+proof_obligations:
+- type: invariant
+  property: "Sparse-MoE parity max_abs_diff <= 1e-3 bf16 vs naive dense"
+- type: invariant
+  property: "Routing deterministic given gate_logits + topk"
+- type: invariant
+  property: "topk ∈ {1,2,4} enforced"
+- type: equivalence
+  property: "apr megablocks kernel  ≅  HF kernels-community megablocks (MoE sparse matmul)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-11
+  ticket_id: PMAT-665
+  priority: medium
+  auto_created: true
