@@ -86,7 +86,7 @@ dashmap = "6.1"
 trueno-db = { version = "0.3.16" }
 
 # Graph database for causal analysis (Sprint 41)
-trueno-graph = { version = "0.1.17" }
+trueno-graph = { workspace = true }
 
 # SHA-256 hashing for state-based semantic equivalence (Sprint 42)
 sha2 = { version = "0.10", default-features = false, features = ["std"] }
