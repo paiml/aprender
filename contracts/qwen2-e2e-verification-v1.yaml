@@ -1,10 +1,26 @@
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-02-20'
   author: PAIML Engineering
   description: |
     Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
     into a complete model proof.
+
+    v1.2.0 (2026-04-22): Added FALSIFY-QW2E-SHIP-005 — binds MODEL-1
+    ship-blocking HumanEval pass@1 criterion (AC-SHIP1-005:
+    `apr eval --benchmark humaneval` reproduces ≥ 86.00% pass@1 on the
+    7B Q4_K teacher, with a 1.2 pp noise allowance → effective floor
+    84.80%) to a pure two-number threshold verdict fn
+    `verdict_from_pass_at_1(correct, total, threshold_pct)` in
+    `crates/aprender-core/src/metrics/ship_005.rs`. Algorithm-level
+    PARTIAL discharge: the decision rule (and the nominal / noise /
+    effective constants) is proven today; the compute-heavy discharge
+    (live `apr eval --benchmark humaneval paiml/qwen2.5-coder-7b-apache-q4k-v1`
+    on RTX 4090 across 3 seed=0 runs with median ≥ 86.00) remains blocked
+    on hardware evidence collection. Mirrors MODEL-2 SHIP-018 pattern
+    (50% floor for 370M sovereign) but adds a unique 1.2 pp noise
+    allowance carved by AC-SHIP1-005 that MODEL-2 does not have.
+    Authored self-contained because SHIP-018 branch is not yet on main.
 
     v1.1.0 (2026-04-22): Added FALSIFY-QW2E-SHIP-007 — binds MODEL-1
     ship-blocking decode throughput criterion (AC-SHIP1-007: `apr bench`
@@ -200,6 +216,61 @@ falsification_tests:
   - "relaxed_rule: ≥ replaced with > (unreachable floor)"
   - "nan_promoted: telemetry JSON emits `NaN` and is silently treated
     as Pass"
+- id: FALSIFY-QW2E-SHIP-005
+  rule: |
+    MODEL-1 ship-blocker — `apr eval --benchmark humaneval
+    paiml/qwen2.5-coder-7b-apache-q4k-v1` pass@1 (median of 3 seed=0
+    runs) must be at least AC_SHIP1_005_NOMINAL_HUMANEVAL_PASS_AT_1_PCT
+    = 86.00%, with a 1.2 pp noise allowance carved by spec §4.2
+    AC-SHIP1-005 → effective floor
+    AC_SHIP1_005_EFFECTIVE_HUMANEVAL_PASS_AT_1_PCT ≈ 84.80%. Decision
+    rule: `Pass` iff `correct / total * 100 ≥ threshold_pct` AND
+    inputs well-formed (`total > 0`, `correct ≤ total`, finite
+    `threshold_pct`). Non-well-formed inputs Fail conservatively.
+  prediction: |
+    verdict_from_pass_at_1(correct, total, threshold) ==
+    Ship005Verdict::Pass iff total > 0 AND correct ≤ total AND
+    threshold.is_finite() AND (correct as f32 / total as f32) * 100
+    >= threshold
+  test: |
+    cargo test -p aprender-core --lib
+    falsify_ship_005_humaneval_pass_at_1_threshold_logic
+  if_fails: |
+    MODEL-1 teacher cannot ship — either the 7B Q4_K checkpoint has
+    regressed below the spec's 86.00% (or noise-adjusted 84.80%)
+    pass@1 floor, or the contract constants have drifted from spec
+    §4.2 AC-SHIP1-005.
+  ship_blocking: true
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - crates/aprender-core/src/metrics/ship_005.rs
+    (verdict_from_pass_at_1 + AC_SHIP1_005_NOMINAL_HUMANEVAL_PASS_AT_1_PCT
+    + AC_SHIP1_005_NOISE_ALLOWANCE_PP +
+    AC_SHIP1_005_EFFECTIVE_HUMANEVAL_PASS_AT_1_PCT)
+  - 'test: falsify_ship_005_humaneval_pass_at_1_threshold_logic
+    (8 sections — safe-margin Pass above effective, above nominal,
+    noise-window Fail at nominal, below-effective Fail including
+    HumanEval-canonical 139/164 = 84.756%, monotonicity sweep
+    0..=164, div-safety + sanity guards, non-finite threshold Fail,
+    provenance pin on all three constants)'
+  full_discharge_blocks_on: |
+    Live `apr eval --benchmark humaneval
+    paiml/qwen2.5-coder-7b-apache-q4k-v1 --json` on RTX 4090 with
+    --features cuda; median pass@1 across 3 seed=0 runs must be ≥
+    86.00 (or ≥ 84.80 under spec's 1.2 pp noise allowance).
+  counter_example_classes:
+  - "regressed_teacher: distilled checkpoint lost a quantization
+    round-trip and HumanEval pass@1 fell from 87% to 82%"
+  - "drifted_nominal: spec AC-SHIP1-005 silently raised to 88% but
+    AC_SHIP1_005_NOMINAL_HUMANEVAL_PASS_AT_1_PCT left at 86.00"
+  - "widened_noise: noise allowance silently widened from 1.2 pp to
+    2.0 pp (effective floor slumps to ~84.00) without spec update"
+  - "relaxed_rule: ≥ replaced with > (unreachable floor for the
+    canonical 86/100 run)"
+  - "div_by_zero_pass: empty-corpus telemetry (total=0) silently
+    reported as Pass instead of Fail"
+  - "nan_promoted: pass@1 JSON emits `NaN` on parse glitch and is
+    silently treated as Pass"
 kani_harnesses:
 - id: KANI-QW2E-001
   obligation: QW2E-INV-001
