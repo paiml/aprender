@@ -48,7 +48,13 @@ pub struct FileChecksum {
     "apr-cli-operations-v1",
     equation = "mutating_output_contract"
 )]
-pub fn run(model_ref: &str, force: bool, dry_run: bool, revision: Option<&str>, offline: bool) -> Result<()> {
+pub fn run(
+    model_ref: &str,
+    force: bool,
+    dry_run: bool,
+    revision: Option<&str>,
+    offline: bool,
+) -> Result<()> {
     contract_pre_pull_cache_integrity!();
     println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
@@ -567,9 +573,7 @@ fn run_dry_run(model_ref: &str, revision: Option<&str>, offline_flag: bool) -> R
 
     let rev_spec = revision.unwrap_or(rev::DEFAULT_REVISION);
     let rev_kind = rev::classify_revision(rev_spec).map_err(|msg| {
-        CliError::ValidationFailed(format!(
-            "CRUX-A-03: invalid --revision {rev_spec:?}: {msg}"
-        ))
+        CliError::ValidationFailed(format!("CRUX-A-03: invalid --revision {rev_spec:?}: {msg}"))
     })?;
 
     // CRUX-A-20: resolve offline signal from CLI flag + env vars.
@@ -581,7 +585,14 @@ fn run_dry_run(model_ref: &str, revision: Option<&str>, offline_flag: bool) -> R
     println!("Model:    {}", model_ref.cyan());
     println!("Resolved: {}", resolved.green());
     println!("Revision: {} ({:?})", rev_spec.green(), rev_kind);
-    println!("Offline:  {}", if is_offline { "true".green() } else { "false".yellow() });
+    println!(
+        "Offline:  {}",
+        if is_offline {
+            "true".green()
+        } else {
+            "false".yellow()
+        }
+    );
     println!("Mode:     {} (no network I/O)", "dry-run".yellow());
     Ok(())
 }

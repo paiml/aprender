@@ -39,7 +39,10 @@ pub enum QualityRetention {
 #[must_use]
 pub fn classify_quality_retention(p_fp16: f64, p_awq: f64, threshold: f64) -> QualityRetention {
     if !p_fp16.is_finite() || p_fp16 <= 0.0 {
-        return QualityRetention::Degraded { ratio: f64::NAN, threshold };
+        return QualityRetention::Degraded {
+            ratio: f64::NAN,
+            threshold,
+        };
     }
     let ratio = p_awq / p_fp16;
     if ratio >= threshold {
@@ -65,7 +68,10 @@ pub fn classify_compression_ratio(
     max_ratio: f64,
 ) -> CompressionOutcome {
     if fp16_bytes == 0 {
-        return CompressionOutcome::Insufficient { ratio: f64::INFINITY, max_ratio };
+        return CompressionOutcome::Insufficient {
+            ratio: f64::INFINITY,
+            max_ratio,
+        };
     }
     let ratio = awq_bytes as f64 / fp16_bytes as f64;
     if ratio <= max_ratio {
@@ -148,8 +154,18 @@ pub fn validate_awq_flags(flags: &AwqFlags) -> AwqFlagValidation {
     }
     let bits = match flags.bits {
         Some(b) if AWQ_ALLOWED_BITS.contains(&b) => b,
-        Some(b) => return AwqFlagValidation::InvalidBits { got: b, allowed: AWQ_ALLOWED_BITS },
-        None => return AwqFlagValidation::InvalidBits { got: 0, allowed: AWQ_ALLOWED_BITS },
+        Some(b) => {
+            return AwqFlagValidation::InvalidBits {
+                got: b,
+                allowed: AWQ_ALLOWED_BITS,
+            }
+        }
+        None => {
+            return AwqFlagValidation::InvalidBits {
+                got: 0,
+                allowed: AWQ_ALLOWED_BITS,
+            }
+        }
     };
     let group_size = flags.group_size.unwrap_or(AWQ_DEFAULT_GROUP_SIZE);
     if !AWQ_ALLOWED_GROUP_SIZES.contains(&group_size) {
@@ -235,10 +251,14 @@ mod tests {
     #[test]
     fn parse_all_three_space_form() {
         let argv = &[
-            "quantize", "model.apr",
-            "--method", "awq",
-            "--bits", "4",
-            "--group-size", "128",
+            "quantize",
+            "model.apr",
+            "--method",
+            "awq",
+            "--bits",
+            "4",
+            "--group-size",
+            "128",
         ];
         let f = parse_awq_flags(argv);
         assert_eq!(f.method.as_deref(), Some("awq"));
@@ -264,50 +284,96 @@ mod tests {
 
     #[test]
     fn validate_ok_with_default_group_size() {
-        let f = AwqFlags { method: Some("awq".into()), bits: Some(4), group_size: None };
+        let f = AwqFlags {
+            method: Some("awq".into()),
+            bits: Some(4),
+            group_size: None,
+        };
         assert_eq!(
             validate_awq_flags(&f),
-            AwqFlagValidation::Ok { bits: 4, group_size: AWQ_DEFAULT_GROUP_SIZE }
+            AwqFlagValidation::Ok {
+                bits: 4,
+                group_size: AWQ_DEFAULT_GROUP_SIZE
+            }
         );
     }
 
     #[test]
     fn validate_ok_with_explicit_group_size() {
-        let f = AwqFlags { method: Some("awq".into()), bits: Some(4), group_size: Some(64) };
+        let f = AwqFlags {
+            method: Some("awq".into()),
+            bits: Some(4),
+            group_size: Some(64),
+        };
         assert_eq!(
             validate_awq_flags(&f),
-            AwqFlagValidation::Ok { bits: 4, group_size: 64 }
+            AwqFlagValidation::Ok {
+                bits: 4,
+                group_size: 64
+            }
         );
     }
 
     #[test]
     fn validate_rejects_missing_method() {
-        let f = AwqFlags { method: None, bits: Some(4), group_size: Some(128) };
+        let f = AwqFlags {
+            method: None,
+            bits: Some(4),
+            group_size: Some(128),
+        };
         assert_eq!(validate_awq_flags(&f), AwqFlagValidation::MissingMethod);
     }
 
     #[test]
     fn validate_rejects_unknown_method() {
-        let f = AwqFlags { method: Some("gptq".into()), bits: Some(4), group_size: Some(128) };
-        assert!(matches!(validate_awq_flags(&f), AwqFlagValidation::UnknownMethod { .. }));
+        let f = AwqFlags {
+            method: Some("gptq".into()),
+            bits: Some(4),
+            group_size: Some(128),
+        };
+        assert!(matches!(
+            validate_awq_flags(&f),
+            AwqFlagValidation::UnknownMethod { .. }
+        ));
     }
 
     #[test]
     fn validate_rejects_invalid_bits() {
-        let f = AwqFlags { method: Some("awq".into()), bits: Some(5), group_size: Some(128) };
-        assert!(matches!(validate_awq_flags(&f), AwqFlagValidation::InvalidBits { got: 5, .. }));
+        let f = AwqFlags {
+            method: Some("awq".into()),
+            bits: Some(5),
+            group_size: Some(128),
+        };
+        assert!(matches!(
+            validate_awq_flags(&f),
+            AwqFlagValidation::InvalidBits { got: 5, .. }
+        ));
     }
 
     #[test]
     fn validate_rejects_missing_bits() {
-        let f = AwqFlags { method: Some("awq".into()), bits: None, group_size: Some(128) };
-        assert!(matches!(validate_awq_flags(&f), AwqFlagValidation::InvalidBits { got: 0, .. }));
+        let f = AwqFlags {
+            method: Some("awq".into()),
+            bits: None,
+            group_size: Some(128),
+        };
+        assert!(matches!(
+            validate_awq_flags(&f),
+            AwqFlagValidation::InvalidBits { got: 0, .. }
+        ));
     }
 
     #[test]
     fn validate_rejects_invalid_group_size() {
-        let f = AwqFlags { method: Some("awq".into()), bits: Some(4), group_size: Some(96) };
-        assert!(matches!(validate_awq_flags(&f), AwqFlagValidation::InvalidGroupSize { got: 96, .. }));
+        let f = AwqFlags {
+            method: Some("awq".into()),
+            bits: Some(4),
+            group_size: Some(96),
+        };
+        assert!(matches!(
+            validate_awq_flags(&f),
+            AwqFlagValidation::InvalidGroupSize { got: 96, .. }
+        ));
     }
 
     #[test]
@@ -319,7 +385,11 @@ mod tests {
 
     #[test]
     fn validate_is_deterministic() {
-        let f = AwqFlags { method: Some("awq".into()), bits: Some(4), group_size: None };
+        let f = AwqFlags {
+            method: Some("awq".into()),
+            bits: Some(4),
+            group_size: None,
+        };
         let a = validate_awq_flags(&f);
         let b = validate_awq_flags(&f);
         assert_eq!(a, b);

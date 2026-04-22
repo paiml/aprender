@@ -71,19 +71,35 @@ mod tests {
 
     #[test]
     fn tty_no_quiet_no_env_emits_progress() {
-        assert!(progress_enabled(true, false, std::iter::empty::<(&str, &str)>()));
+        assert!(progress_enabled(
+            true,
+            false,
+            std::iter::empty::<(&str, &str)>()
+        ));
     }
 
     #[test]
     fn non_tty_always_suppresses() {
-        assert!(!progress_enabled(false, false, std::iter::empty::<(&str, &str)>()));
-        assert!(!progress_enabled(false, true, std::iter::empty::<(&str, &str)>()));
+        assert!(!progress_enabled(
+            false,
+            false,
+            std::iter::empty::<(&str, &str)>()
+        ));
+        assert!(!progress_enabled(
+            false,
+            true,
+            std::iter::empty::<(&str, &str)>()
+        ));
         assert!(!progress_enabled(false, false, [("APR_PROGRESS", "1")]));
     }
 
     #[test]
     fn quiet_flag_suppresses_on_tty() {
-        assert!(!progress_enabled(true, true, std::iter::empty::<(&str, &str)>()));
+        assert!(!progress_enabled(
+            true,
+            true,
+            std::iter::empty::<(&str, &str)>()
+        ));
     }
 
     #[test]
@@ -136,7 +152,11 @@ mod tests {
 
     #[test]
     fn unrelated_env_var_ignored() {
-        assert!(progress_enabled(true, false, [("HF_HUB_DISABLE_PROGRESS_BARS", "1")]));
+        assert!(progress_enabled(
+            true,
+            false,
+            [("HF_HUB_DISABLE_PROGRESS_BARS", "1")]
+        ));
     }
 
     #[test]

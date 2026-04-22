@@ -429,13 +429,11 @@ mod tests {
     /// short of contract) so the helper is still exercised on real mismatch.
     #[test]
     fn falsify_gate_arch_370m_011_helper_rejects_mismatch() {
-        assert!(
-            assert_tokenizer_vocab_matches_model(
-                Llama370MConfig::VOCAB_SIZE,
-                Llama370MConfig::VOCAB_SIZE,
-            )
-            .is_ok()
-        );
+        assert!(assert_tokenizer_vocab_matches_model(
+            Llama370MConfig::VOCAB_SIZE,
+            Llama370MConfig::VOCAB_SIZE,
+        )
+        .is_ok());
 
         let mismatch = Llama370MConfig::VOCAB_SIZE - 1;
         let err = assert_tokenizer_vocab_matches_model(mismatch, Llama370MConfig::VOCAB_SIZE)
@@ -448,13 +446,11 @@ mod tests {
         );
 
         assert!(assert_tokenizer_vocab_matches_model(0, 1).is_err());
-        assert!(
-            assert_tokenizer_vocab_matches_model(
-                Llama370MConfig::VOCAB_SIZE + 1,
-                Llama370MConfig::VOCAB_SIZE
-            )
-            .is_err()
-        );
+        assert!(assert_tokenizer_vocab_matches_model(
+            Llama370MConfig::VOCAB_SIZE + 1,
+            Llama370MConfig::VOCAB_SIZE
+        )
+        .is_err());
     }
 
     /// INV-ARCH-370M-001 — estimated param count within [366M, 374M].

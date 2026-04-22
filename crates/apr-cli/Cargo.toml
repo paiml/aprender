@@ -209,14 +209,6 @@ serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 unicode-normalization = "0.1"
 
 [[example]]
-name = "probar_tui_testing"
-required-features = ["inference"]
-
-[[example]]
-name = "federation_tui_demo"
-required-features = ["inference"]
-
-[[example]]
 name = "serve_with_tracing"
 required-features = ["inference"]
 

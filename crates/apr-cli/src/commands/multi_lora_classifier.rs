@@ -17,9 +17,20 @@ pub const MIN_MULTI_LORA_THROUGHPUT_ALPHA: f64 = 0.80;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BatchedParityOutcome {
     Ok,
-    CountMismatch { serial_len: usize, batched_len: usize },
-    EmptinessMismatch { at_index: usize, serial_empty: bool, batched_empty: bool },
-    LengthMismatch { at_index: usize, serial_len: usize, batched_len: usize },
+    CountMismatch {
+        serial_len: usize,
+        batched_len: usize,
+    },
+    EmptinessMismatch {
+        at_index: usize,
+        serial_empty: bool,
+        batched_empty: bool,
+    },
+    LengthMismatch {
+        at_index: usize,
+        serial_len: usize,
+        batched_len: usize,
+    },
     TokenDivergence {
         request_index: usize,
         at_token_index: usize,
@@ -38,7 +49,11 @@ pub fn classify_batched_parity(
             batched_len: batched_outputs.len(),
         };
     }
-    for (i, (s, b)) in serial_outputs.iter().zip(batched_outputs.iter()).enumerate() {
+    for (i, (s, b)) in serial_outputs
+        .iter()
+        .zip(batched_outputs.iter())
+        .enumerate()
+    {
         let s_empty = s.is_empty();
         let b_empty = b.is_empty();
         if s_empty != b_empty {
@@ -75,9 +90,16 @@ pub fn classify_batched_parity(
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MultiLoraThroughputOutcome {
-    Ok { observed_alpha: f64 },
-    InvalidInput { reason: &'static str },
-    BelowThreshold { observed_alpha: f64, required_alpha: f64 },
+    Ok {
+        observed_alpha: f64,
+    },
+    InvalidInput {
+        reason: &'static str,
+    },
+    BelowThreshold {
+        observed_alpha: f64,
+        required_alpha: f64,
+    },
 }
 
 pub fn classify_multi_lora_throughput(
@@ -86,13 +108,19 @@ pub fn classify_multi_lora_throughput(
     min_alpha: f64,
 ) -> MultiLoraThroughputOutcome {
     if !base_tps.is_finite() || !multi_tps.is_finite() || !min_alpha.is_finite() {
-        return MultiLoraThroughputOutcome::InvalidInput { reason: "non-finite input" };
+        return MultiLoraThroughputOutcome::InvalidInput {
+            reason: "non-finite input",
+        };
     }
     if base_tps <= 0.0 {
-        return MultiLoraThroughputOutcome::InvalidInput { reason: "base_tps <= 0" };
+        return MultiLoraThroughputOutcome::InvalidInput {
+            reason: "base_tps <= 0",
+        };
     }
     if multi_tps < 0.0 {
-        return MultiLoraThroughputOutcome::InvalidInput { reason: "multi_tps < 0" };
+        return MultiLoraThroughputOutcome::InvalidInput {
+            reason: "multi_tps < 0",
+        };
     }
     if !(0.0..=1.0).contains(&min_alpha) {
         return MultiLoraThroughputOutcome::InvalidInput {
@@ -222,7 +250,10 @@ mod tests {
         let b: Vec<&[u32]> = vec![&[1]];
         assert_eq!(
             classify_batched_parity(&s, &b),
-            BatchedParityOutcome::CountMismatch { serial_len: 2, batched_len: 1 }
+            BatchedParityOutcome::CountMismatch {
+                serial_len: 2,
+                batched_len: 1
+            }
         );
     }
 
@@ -304,7 +335,10 @@ mod tests {
     #[test]
     fn multi_lora_throughput_rejects_below_floor() {
         match classify_multi_lora_throughput(100.0, 70.0, 0.80) {
-            MultiLoraThroughputOutcome::BelowThreshold { observed_alpha, required_alpha } => {
+            MultiLoraThroughputOutcome::BelowThreshold {
+                observed_alpha,
+                required_alpha,
+            } => {
                 assert!((observed_alpha - 0.70).abs() < 1e-9);
                 assert_eq!(required_alpha, 0.80);
             }
@@ -399,7 +433,10 @@ mod tests {
     fn unknown_adapter_rejects_wrong_status_500() {
         assert_eq!(
             classify_unknown_adapter_response("missing", &["a1"], 500, "server error"),
-            UnknownAdapterResponseOutcome::WrongStatusCode { got: 500, expected: 404 }
+            UnknownAdapterResponseOutcome::WrongStatusCode {
+                got: 500,
+                expected: 404
+            }
         );
     }
 
@@ -408,7 +445,10 @@ mod tests {
         // Silent fallback to base model — a real defect, not a 404.
         assert_eq!(
             classify_unknown_adapter_response("missing", &["a1"], 200, "ok"),
-            UnknownAdapterResponseOutcome::WrongStatusCode { got: 200, expected: 404 }
+            UnknownAdapterResponseOutcome::WrongStatusCode {
+                got: 200,
+                expected: 404
+            }
         );
     }
 

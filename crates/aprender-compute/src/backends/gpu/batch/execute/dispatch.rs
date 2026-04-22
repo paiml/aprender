@@ -34,6 +34,7 @@ impl GpuCommandBatch {
     /// Encode a unary operation (one input, one output) into the command encoder.
     ///
     /// Pipeline is cached per shader source — first call compiles, subsequent calls reuse.
+    #[allow(clippy::map_entry)]
     pub(crate) fn encode_unary_op<T: bytemuck::Pod>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -167,6 +168,7 @@ impl GpuCommandBatch {
     /// Encode a matrix multiplication into the command encoder.
     ///
     /// Pipeline is cached — first matmul compiles the tiled shader, subsequent matmuls reuse it.
+    #[allow(clippy::map_entry)]
     pub(crate) fn encode_matmul_op(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -315,6 +317,7 @@ impl GpuCommandBatch {
     /// Encode a binary operation (two inputs, one output) into the command encoder.
     ///
     /// Pipeline is cached per shader source.
+    #[allow(clippy::map_entry)]
     pub(crate) fn encode_binary_op(
         &self,
         encoder: &mut wgpu::CommandEncoder,
