@@ -1,0 +1,138 @@
+# CRUX-L-02 — Drop-in flash-attn2 dispatch via HF kernels-community
+# Authored under PMAT-656. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-02
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 5
+  intake_status: missing
+  description: >
+    Dispatch attention via flash-attn2 pre-built kernel loaded under
+    CRUX-L-01. Parity target: HF Transformers `attn_implementation=
+    "flash_attention_2"`. aprender exposes `--attn flash2` to
+    dispatch FA2 on sm_80/sm_90 when available, with a falsifiable
+    numerical parity gate vs the naive CPU reference.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/Dao-AILab/flash-attention — flash-attn2 canonical'
+  - 'arXiv:2307.08691 — FlashAttention-2'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  flash_attn2_dispatch:
+    formula: |
+      Given Q, K, V ∈ R^{B × H × S × D}:
+          out_fa2   := flash_attn2_fwd(Q, K, V, causal=true)   # via HF kernel .so
+          out_ref   := naive_attention(Q, K, V, causal=true)   # CPU f32 reference
+      Numerical invariant: max_abs_diff(out_fa2 - out_ref) <= 5e-3  (bf16/fp16 tolerance)
+                           cosine_sim(out_fa2, out_ref)    >= 0.9999
+    domain: "Q,K,V tensors (bf16 or fp16)"
+    codomain: "out tensor (bf16 or fp16)"
+    invariants:
+    - "parity tolerance is the published FA2 bound — NOT handwaved"
+    - "causal mask invariant: out[i] depends only on K/V[<=i]"
+    - "head_dim must be ∈ {64, 128} — unsupported dims error at dispatch, not silent slow-path"
+
+  cli_contract:
+    formula: |
+      apr run <model> --prompt ... --attn flash2 --json
+        emits:
+          attn_impl: "flash2"
+          kernel_source: "hf-kernels-community:flash-attn2@<sha>"
+          fallback: null
+        Exit 0 on success
+      If flash2 unavailable (no GPU, ABI mismatch, arch unsupported):
+        emits:
+          attn_impl: "naive"
+          kernel_source: null
+          fallback: "reason: no-gpu|abi|arch"
+        Exit 0, but warn on stderr
+    domain: "(model, --attn flash2)"
+    codomain: "generation output + impl metadata"
+    invariants:
+    - "fallback reason is always populated when attn_impl != 'flash2'"
+    - "kernel_source is pinned (pkg@sha) — never 'flash2' without provenance"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-02-001
+  rule: "--attn flash2 flag exists on apr run"
+  prediction: "apr run --help advertises --attn flash2"
+  test: |
+    set -euo pipefail
+    apr run --help | grep -qE -- "--attn"
+    apr run --help 2>&1 | grep -qE "flash2|flash-attn"
+  if_fails: "apr run lacks --attn flash2 — L-02 not wired"
+
+- id: FALSIFY-CRUX-L-02-002
+  rule: "parity with naive reference within 5e-3"
+  prediction: "Running a fixed fixture through --attn flash2 and --attn naive produces max_abs_diff <= 5e-3"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl flash2 --ref naive --fixture fixtures/attn-canary.json --json > /tmp/l02-parity.json
+    jq -e '.max_abs_diff <= 5e-3 and .cosine_sim >= 0.9999' /tmp/l02-parity.json >/dev/null
+  if_fails: "FA2 numerically diverges from reference — FALSIFY-CRUX-L-02 MUST be re-verified"
+
+- id: FALSIFY-CRUX-L-02-003
+  rule: "provenance pinned (pkg@sha)"
+  prediction: "When flash2 dispatches successfully, kernel_source matches 'hf-kernels-community:flash-attn2@<40-hex>'"
+  test: |
+    set -euo pipefail
+    apr run tests/fixtures/tiny.apr --prompt hi --max-tokens 1 --attn flash2 --json 2>/dev/null > /tmp/l02-prov.json || true
+    jq -e '(.attn_impl == "flash2" and (.kernel_source | test("^hf-kernels-community:flash-attn2@[0-9a-f]{40}$"))) or (.attn_impl == "naive" and .fallback != null)' /tmp/l02-prov.json >/dev/null
+  if_fails: "Kernel source unpinned — supply-chain audit impossible"
+
+- id: FALSIFY-CRUX-L-02-004
+  rule: "unsupported head_dim (not in {64,128}) errors at dispatch, not silent slow-path"
+  prediction: "Head_dim 96 model with --attn flash2 exits 1 with reason=unsupported-head-dim"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl flash2 --ref naive --head-dim 96 --json > /tmp/l02-hd.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.error | test("unsupported-head-dim|head_dim")' /tmp/l02-hd.json >/dev/null
+  if_fails: "FA2 silently slow-paths unsupported head_dim — perf cliff ships unannounced"
+
+- id: FALSIFY-CRUX-L-02-005
+  rule: "fallback reason populated when flash2 unavailable"
+  prediction: "On a CPU-only box, --attn flash2 falls back with reason='no-gpu'"
+  test: |
+    set -euo pipefail
+    APR_KERNEL_FORCE_NO_GPU=1 apr run tests/fixtures/tiny.apr --prompt hi --max-tokens 1 --attn flash2 --json 2>/dev/null > /tmp/l02-fb.json || true
+    jq -e '.attn_impl == "naive" and .fallback | test("no-gpu")' /tmp/l02-fb.json >/dev/null
+  if_fails: "Silent fallback — user thinks they're running FA2 but aren't"
+
+proof_obligations:
+- type: invariant
+  property: "Numerical parity max_abs_diff <= 5e-3 vs naive reference"
+- type: invariant
+  property: "Causal mask invariant preserved"
+- type: invariant
+  property: "Kernel source pinned (pkg@sha) on success"
+- type: invariant
+  property: "Fallback reason populated on failure (no silent downgrade)"
+- type: equivalence
+  property: "apr --attn flash2  ≅  HF Transformers attn_implementation='flash_attention_2'"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-02
+  ticket_id: PMAT-656
+  priority: high
+  auto_created: true

@@ -1,0 +1,120 @@
+# CRUX-L-13 — activation fused kernels (gelu/silu/swiglu) via HF kernels-community
+# Authored under PMAT-667. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-13
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Dispatch element-wise activation fused kernels (gelu, silu, swiglu)
+    via HF kernels-community `activation` package. These are small but
+    ubiquitous; fusing saves a memory round-trip vs naive PyTorch-style
+    element-wise chains.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/huggingface/kernels-community — activation'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  activation_dispatch:
+    formula: |
+      gelu_exact(x)   := 0.5 * x * (1 + erf(x / sqrt(2)))
+      gelu_tanh(x)    := 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+      silu(x)         := x * sigmoid(x)
+      swiglu(x, y)    := silu(x) * y
+      Parity: max_abs_diff <= 1e-5 f32 ; 1e-3 bf16 ; 5e-3 fp16
+    domain: "(x, [y])"
+    codomain: "out tensor"
+    invariants:
+    - "gelu variants (exact vs tanh) are explicit — impl name includes the variant"
+    - "fused swiglu is the 2-arg path — never confused with silu-then-multiply"
+
+  cli_contract:
+    formula: |
+      apr kernel parity --impl <gelu-exact|gelu-tanh|silu|swiglu> --ref naive --dtype <f32|bf16|fp16> --fixture ... --json
+    domain: "(impl, dtype, fixture)"
+    codomain: "parity JSON"
+    invariants:
+    - "gelu variant MUST be specified — 'gelu' alone is rejected"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-13-001
+  rule: "silu parity within 1e-5 (f32)"
+  prediction: "silu fused matches x*sigmoid(x) reference"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl silu --ref naive --dtype f32 --fixture fixtures/activation-canary.json --json > /tmp/l13-silu.json
+    jq -e '.max_abs_diff <= 1e-5' /tmp/l13-silu.json >/dev/null
+  if_fails: "silu diverges"
+
+- id: FALSIFY-CRUX-L-13-002
+  rule: "gelu variants are explicit (not 'gelu' alone)"
+  prediction: "apr kernel parity --impl gelu exits 1 (ambiguous)"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl gelu --ref naive --fixture fixtures/activation-canary.json --json >/dev/null
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+  if_fails: "Ambiguous 'gelu' accepted — exact vs tanh variant selection is implicit"
+
+- id: FALSIFY-CRUX-L-13-003
+  rule: "gelu-exact vs gelu-tanh give different outputs"
+  prediction: "parity(gelu-exact, gelu-tanh) shows a diff > 1e-4 on a canary input"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl gelu-exact --ref gelu-tanh --dtype f32 --fixture fixtures/activation-canary.json --json > /tmp/l13-variant.json
+    jq -e '.max_abs_diff > 1e-4' /tmp/l13-variant.json >/dev/null
+  if_fails: "Two variants collapse — one variant is silently aliased to the other"
+
+- id: FALSIFY-CRUX-L-13-004
+  rule: "swiglu matches silu(x)*y reference"
+  prediction: "swiglu fused matches silu(x)*y unfused"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl swiglu --ref naive --dtype f32 --fixture fixtures/activation-canary.json --json > /tmp/l13-swiglu.json
+    jq -e '.max_abs_diff <= 1e-5' /tmp/l13-swiglu.json >/dev/null
+  if_fails: "swiglu fused path diverges from silu(x)*y"
+
+- id: FALSIFY-CRUX-L-13-005
+  rule: "kernel_source pinned"
+  prediction: "kernel_source='hf-kernels-community:activation@<sha>'"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl silu --ref naive --dtype f32 --fixture fixtures/activation-canary.json --json > /tmp/l13-silu.json
+    jq -e '.kernel_source | test("^hf-kernels-community:activation@[0-9a-f]{40}$")' /tmp/l13-silu.json >/dev/null
+  if_fails: "Unpinned activation source"
+
+proof_obligations:
+- type: invariant
+  property: "silu / gelu-exact / gelu-tanh / swiglu parity within dtype-specific tolerances"
+- type: invariant
+  property: "gelu variant must be explicit (no default guessing)"
+- type: invariant
+  property: "gelu-exact != gelu-tanh (variants are truly distinct)"
+- type: equivalence
+  property: "apr activation kernels  ≅  HF kernels-community activation"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-13
+  ticket_id: PMAT-667
+  priority: medium
+  auto_created: true

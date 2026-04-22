@@ -113,6 +113,24 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         )
         .map_err(crate::error::CliError::Aprender),
 
+        ExtendedCommands::OomLint {
+            report_file,
+            stderr_file,
+        } => commands::oom_lint::run(report_file, stderr_file.as_deref(), cli.json),
+
+        ExtendedCommands::ToolUseLint { observation_file } => {
+            commands::tool_use_lint::run(observation_file, cli.json)
+        }
+
+        ExtendedCommands::GbnfLint { observation_file } => {
+            commands::gbnf_lint::run(observation_file, cli.json)
+        }
+
+        ExtendedCommands::TypicalPLint { observation_file } => {
+            commands::typical_p_lint::run(observation_file, cli.json)
+        }
+
+
         ExtendedCommands::Hex {
             file,
             tensor,
