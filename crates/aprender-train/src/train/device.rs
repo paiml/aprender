@@ -108,7 +108,8 @@ impl std::error::Error for DeviceError {}
 ///   CUDA (or `auto` chose CUDA) but `cuda_training_available()`
 ///   returned `false`.
 pub fn resolve_device(spec: &str) -> Result<Device, DeviceError> {
-    let parsed = parse_device_spec(spec).ok_or_else(|| DeviceError::InvalidSpec(spec.to_string()))?;
+    let parsed =
+        parse_device_spec(spec).ok_or_else(|| DeviceError::InvalidSpec(spec.to_string()))?;
 
     match parsed {
         ParsedSpec::Cpu => Ok(Device::Cpu),
@@ -317,8 +318,7 @@ mod tests {
         let invalid = DeviceError::InvalidSpec("bogus".into()).to_string();
         assert!(invalid.contains("INV-GPUTRAIN-001"));
         assert!(invalid.contains("bogus"));
-        let unavail =
-            DeviceError::CudaNotAvailable { requested: "cuda:0".into() }.to_string();
+        let unavail = DeviceError::CudaNotAvailable { requested: "cuda:0".into() }.to_string();
         assert!(unavail.contains("GATE-GPUTRAIN-002"));
         assert!(unavail.contains("cuda:0"));
     }
