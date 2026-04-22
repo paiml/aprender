@@ -159,12 +159,12 @@ serde_yaml_ng = "0.10"
 [dev-dependencies]
 proptest = "1.6"
 criterion = { workspace = true }
-renacer = "0.10"
+renacer = { workspace = true }
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
 provable-contracts = "0.3"  # Contract enforcement (dev-only)
-entrenar = "0.7"  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
+entrenar = { workspace = true }  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
 
 [features]
 default = ["parallel"]

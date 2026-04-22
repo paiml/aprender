@@ -1,3 +1,18 @@
+// Integration tests: unwrap()/panic!() are idiomatic; strict workspace lints relaxed here.
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    clippy::format_collect,
+    clippy::format_push_string,
+    clippy::manual_assert,
+    clippy::uninlined_format_args,
+    clippy::unnecessary_debug_formatting,
+    clippy::unwrap_or_default,
+    clippy::expect_fun_call,
+    clippy::manual_repeat_n,
+    clippy::unnecessary_map_or
+)]
+
 //! APR CLI Commands Integration Tests
 //!
 //! Enforces: contracts/apr-cli-commands-v1.yaml

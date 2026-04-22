@@ -1,3 +1,18 @@
+// Integration tests: unwrap()/panic!() are idiomatic; strict workspace lints relaxed here.
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    clippy::format_collect,
+    clippy::format_push_string,
+    clippy::manual_assert,
+    clippy::uninlined_format_args,
+    clippy::unnecessary_debug_formatting,
+    clippy::unwrap_or_default,
+    clippy::expect_fun_call,
+    clippy::manual_repeat_n,
+    clippy::unnecessary_map_or
+)]
+
 //! Falsification tests for CRUX-A-01 — Pull model by short name.
 //!
 //! Contract: contracts/crux-A-01-v1.yaml
@@ -244,9 +259,9 @@ fn falsify_crux_a_01_004_registry_aliases_contains_canonical_names() {
         let val = obj.get(canonical).unwrap_or_else(|| {
             panic!("FALSIFY-CRUX-A-01-004: '{canonical}' missing from registry aliases --json")
         });
-        let url = val
-            .as_str()
-            .unwrap_or_else(|| panic!("FALSIFY-CRUX-A-01-004: '{canonical}' value is not a string"));
+        let url = val.as_str().unwrap_or_else(|| {
+            panic!("FALSIFY-CRUX-A-01-004: '{canonical}' value is not a string")
+        });
         assert!(
             url.starts_with("hf://") || url.starts_with("https://"),
             "FALSIFY-CRUX-A-01-004: '{canonical}' → '{url}' missing known scheme"
@@ -287,7 +302,10 @@ fn falsify_crux_a_01_005_cross_process_determinism() {
     let ua = extract(&a);
     let ub = extract(&b);
     let uc = extract(&c);
-    assert!(!ua.is_empty(), "FALSIFY-CRUX-A-01-005: no canonical URL:\n{a}");
+    assert!(
+        !ua.is_empty(),
+        "FALSIFY-CRUX-A-01-005: no canonical URL:\n{a}"
+    );
     assert_eq!(
         ua, ub,
         "FALSIFY-CRUX-A-01-005: invocation 1 vs 2 differ ({ua} vs {ub})"
