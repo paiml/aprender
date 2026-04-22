@@ -130,6 +130,19 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             commands::typical_p_lint::run(observation_file, cli.json)
         }
 
+        ExtendedCommands::GradNorm {
+            history_file,
+            max_grad_norm,
+            spike_window,
+            spike_multiplier,
+        } => commands::grad_norm::run(
+            history_file,
+            *max_grad_norm,
+            *spike_window,
+            *spike_multiplier,
+            cli.json,
+        ),
+
 
         ExtendedCommands::Hex {
             file,
