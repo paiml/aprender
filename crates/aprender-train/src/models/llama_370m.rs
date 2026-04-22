@@ -384,6 +384,54 @@ pub fn assert_tokenizer_vocab_matches_model(
 }
 
 // ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-017 / AC-SHIP2-007 / GATE-ARCH-370M-005
+// ─────────────────────────────────────────────────────────────
+
+/// Number of held-out prompts required by AC-SHIP2-007 / FALSIFY-SHIP-017
+/// (spec §6 Model 2: "`apr run` produces syntactically valid Python on
+/// 100 held-out prompts").
+pub const AC_SHIP2_007_HELDOUT_PROMPT_COUNT: usize = 100;
+
+/// Tolerance: `≤ 1` completion out of the 100 held-out prompts may fail
+/// to yield a Python-AST-parseable non-trivial statement prefix.
+/// Anything `≥ 2` is a ship-blocking FAIL per FALSIFY-SHIP-017.
+pub const AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS: usize = 1;
+
+/// Ship-017 verdict — the pure algorithmic result of evaluating whether
+/// a 100-prompt Python-AST-parse sweep meets AC-SHIP2-007.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship017Verdict {
+    /// `syntax_errors ≤ AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS`.
+    Pass,
+    /// `syntax_errors ≥ 2` on the 100-prompt sweep.
+    Fail,
+}
+
+/// Pure threshold function for FALSIFY-SHIP-017 (AC-SHIP2-007).
+///
+/// Given `syntax_errors` — the count of held-out completions (out of
+/// `AC_SHIP2_007_HELDOUT_PROMPT_COUNT`) that failed to yield a
+/// Python-AST-parseable non-trivial statement prefix — returns the
+/// FALSIFY-SHIP-017 verdict under the rule:
+///
+///   errors ≤ 1 → Pass   (tolerate one flaky completion)
+///   errors ≥ 2 → Fail   (ship-blocker)
+///
+/// This is the algorithm-level discharge of GATE-ARCH-370M-005: the
+/// threshold itself is proven correct at `cargo test` time; full
+/// discharge (a real 100-prompt `apr run` harness against a trained
+/// 370M .apr) remains PENDING on pretraining compute-dispatch
+/// (AC-SHIP2-003/004). Fixture swap is data-only once a trained
+/// artifact exists — no harness rewrite required.
+pub const fn verdict_from_syntax_error_count(syntax_errors: usize) -> Ship017Verdict {
+    if syntax_errors <= AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS {
+        Ship017Verdict::Pass
+    } else {
+        Ship017Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Unit tests
 // ─────────────────────────────────────────────────────────────
 
@@ -855,6 +903,155 @@ mod tests {
             gate["ship_blocking"].as_bool(),
             Some(true),
             "GATE-ARCH-370M-004 must advertise ship_blocking:true — the \
+             gate's `verdict:pass` alone is insufficient green while \
+             discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+    // ========================================================================
+    // GATE-ARCH-370M-005 / AC-SHIP2-007 / FALSIFY-SHIP-017
+    // ========================================================================
+
+    /// FALSIFY-SHIP-017 (AC-SHIP2-007) — algorithm-level proof of the
+    /// Python-AST-parse threshold function.
+    ///
+    /// The full-discharge harness (100 held-out prompts × `apr run` ×
+    /// Python AST parse) blocks on a real trained 370M .apr. But the
+    /// *decision rule* — "≥ 2 syntax errors on 100 prompts is a
+    /// ship-blocker, ≤ 1 tolerated" — is a pure integer threshold and
+    /// can be proven correct today. Any edit to `verdict_from_syntax_error_count`
+    /// that widens the tolerance (or flips the boundary) is caught here
+    /// before the artifact ships.
+    ///
+    /// Covers four invariants:
+    ///   1. **Zero errors** → Pass (the trivial unanimous-parse case).
+    ///   2. **Exactly-one error** → Pass (the tolerance boundary; matches
+    ///      the EX-06 harness' `tolerate ≤ 1 SyntaxError` rule and
+    ///      spec-§6 FALSIFY-SHIP-017 wording `tolerate ≤1`).
+    ///   3. **Exactly-two errors** → Fail (the ship-blocker boundary;
+    ///      FALSIFY-SHIP-017 says `≥ 2 SyntaxError`).
+    ///   4. **Monotonicity** — raising the error count can only worsen
+    ///      the verdict (Pass → Fail is one-way). This rules out any
+    ///      future threshold edit that accidentally promotes a high
+    ///      error count back to Pass.
+    #[test]
+    fn falsify_ship_017_syntax_error_count_threshold_logic() {
+        // (1) Zero errors — unanimous parse.
+        assert_eq!(
+            verdict_from_syntax_error_count(0),
+            Ship017Verdict::Pass,
+            "0 syntax errors must always Pass",
+        );
+
+        // (2) Tolerance boundary — 1 error still tolerated.
+        assert_eq!(
+            verdict_from_syntax_error_count(1),
+            Ship017Verdict::Pass,
+            "1 syntax error is the AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS \
+             boundary and must Pass",
+        );
+
+        // (3) Ship-blocker boundary — 2 errors flips to Fail.
+        assert_eq!(
+            verdict_from_syntax_error_count(2),
+            Ship017Verdict::Fail,
+            "2 syntax errors is the FALSIFY-SHIP-017 ship-blocker \
+             boundary and must Fail",
+        );
+
+        // (3b) Pathological cases — high error counts must still Fail.
+        assert_eq!(
+            verdict_from_syntax_error_count(AC_SHIP2_007_HELDOUT_PROMPT_COUNT),
+            Ship017Verdict::Fail,
+            "all-errors must Fail — trivial sanity",
+        );
+        assert_eq!(
+            verdict_from_syntax_error_count(AC_SHIP2_007_HELDOUT_PROMPT_COUNT / 2),
+            Ship017Verdict::Fail,
+            "50% errors on 100 prompts must Fail",
+        );
+
+        // (4) Monotonicity — once Fail, always Fail as errors rise.
+        let mut last_was_fail = false;
+        for errors in 0..=AC_SHIP2_007_HELDOUT_PROMPT_COUNT {
+            let verdict = verdict_from_syntax_error_count(errors);
+            if last_was_fail {
+                assert_eq!(
+                    verdict,
+                    Ship017Verdict::Fail,
+                    "monotonicity violation at errors={errors}: once Fail, \
+                     more errors cannot return to Pass",
+                );
+            }
+            if verdict == Ship017Verdict::Fail {
+                last_was_fail = true;
+            }
+        }
+
+        // Provenance sanity — the AC-SHIP2-007 prompt-count constant
+        // matches the spec's 100-prompt harness size. If this ever drifts,
+        // the threshold is still correct (it's count-agnostic) but the
+        // GATE-ARCH-370M-005 evidence no longer matches the spec wording.
+        assert_eq!(
+            AC_SHIP2_007_HELDOUT_PROMPT_COUNT, 100,
+            "AC-SHIP2-007 spec §6 pins the harness at 100 held-out prompts",
+        );
+        assert_eq!(
+            AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS, 1,
+            "FALSIFY-SHIP-017 (spec §8.3 row) tolerates ≤ 1 SyntaxError",
+        );
+    }
+
+    /// GATE-ARCH-370M-005 wiring check: once FALSIFY-SHIP-017 has an
+    /// algorithm-level PARTIAL discharge, the sovereign contract YAML
+    /// MUST record `discharge_status: PARTIAL_ALGORITHM_LEVEL` plus
+    /// `evidence_discharged_by` plus `full_discharge_blocks_on` on
+    /// GATE-ARCH-370M-005. Any edit that drops those fields fails this
+    /// test before the artifact ships.
+    #[test]
+    fn falsify_ship_017_gate_arch_370m_005_has_partial_discharge_marker() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+        let gates =
+            doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
+        let gate = gates
+            .iter()
+            .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-005"))
+            .expect("GATE-ARCH-370M-005 must exist in sovereign contract");
+
+        assert_eq!(
+            gate["falsification_id"].as_str(),
+            Some("FALSIFY-SHIP-017"),
+            "GATE-ARCH-370M-005 must bind FALSIFY-SHIP-017",
+        );
+        assert_eq!(
+            gate["binds_to"].as_str(),
+            Some("AC-SHIP2-007"),
+            "GATE-ARCH-370M-005 must bind AC-SHIP2-007",
+        );
+        assert_eq!(
+            gate["discharge_status"].as_str(),
+            Some("PARTIAL_ALGORITHM_LEVEL"),
+            "GATE-ARCH-370M-005 must advertise PARTIAL_ALGORITHM_LEVEL \
+             (full discharge blocks on real trained 370M .apr + 100-prompt \
+             `apr run` harness)",
+        );
+        let evidence = gate["evidence_discharged_by"]
+            .as_sequence()
+            .expect("GATE-ARCH-370M-005 must have evidence_discharged_by");
+        assert!(
+            !evidence.is_empty(),
+            "GATE-ARCH-370M-005 evidence_discharged_by must list \
+             at least one test function or artifact",
+        );
+        assert!(
+            gate["full_discharge_blocks_on"].as_str().is_some(),
+            "PARTIAL gate must document full_discharge_blocks_on",
+        );
+        assert_eq!(
+            gate["ship_blocking"].as_bool(),
+            Some(true),
+            "GATE-ARCH-370M-005 must advertise ship_blocking:true — the \
              gate's `verdict:pass` alone is insufficient green while \
              discharge_status == PARTIAL_ALGORITHM_LEVEL",
         );

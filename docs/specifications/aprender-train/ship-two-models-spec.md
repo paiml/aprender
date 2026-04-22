@@ -1,7 +1,7 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.23.0
+**Version:** 2.25.0
 **Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures); **task #132 BLOCKER surfaced 2026-04-21** on lambda-labs RTX 4090 — `apr pretrain --mode from-scratch` ran 14 min at 114% CPU + 0 MiB GPU memory because `TransformerTrainer::new` has no Device argument; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (task #132 Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006, ship-blocks task #126 real-compute dispatch
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
@@ -142,6 +142,36 @@ harness, or a wall-clock benchmark on RTX 4090, and will remain
 untouched until compute-dispatch lands — the pretrain loop driver + CLI
 from v2.19.0 are ready for them. Genuine algorithm-level PARTIAL
 harvesting is now exhausted for MODEL-2.
+
+**v2.25.0 amendment (2026-04-22):** Prior exhaustion verdict
+FALSIFIED a second time — **FALSIFY-SHIP-017 (AC-SHIP2-007) —
+PARTIAL_ALGORITHM_LEVEL** landed at task #149. The decision rule of
+SHIP-017 ("`apr run` produces syntactically valid Python on 100
+held-out prompts; ≥ 2 SyntaxError → FAIL, tolerate ≤ 1") is a pure
+integer threshold function that can be proven correct today, even
+though the full 100-prompt harness requires a trained 370M .apr.
+`contracts/model-families/llama-370m-sovereign-v1.yaml` bumped v1.5.0
+→ v1.6.0 (stays ACTIVE) with new GATE-ARCH-370M-005 binding
+AC-SHIP2-007 ↔ FALSIFY-SHIP-017 and `discharge_status:
+PARTIAL_ALGORITHM_LEVEL`. Algorithm proof = two unit tests in
+`crates/aprender-train/src/models/llama_370m.rs`:
+(1) `falsify_ship_017_syntax_error_count_threshold_logic` — covers
+Pass boundary (0, 1 errors), Fail boundary (2 errors), pathological
+cases (50, 100 errors all Fail), monotonicity over all errors ∈
+[0, 100], and provenance pinning
+(`AC_SHIP2_007_HELDOUT_PROMPT_COUNT == 100`,
+`AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS == 1`). (2)
+`falsify_ship_017_gate_arch_370m_005_has_partial_discharge_marker` —
+binds the sovereign contract YAML shape (falsification_id, binds_to,
+discharge_status, evidence_discharged_by, full_discharge_blocks_on,
+ship_blocking) to the Rust tests via `include_str!`. Full discharge
+blocks on real trained 370M .apr + 100-prompt `apr run` harness with
+EX-06-style Python AST parse pipeline — fixture swap only, no
+harness rewrite. Pattern confirmed: re-running the counter-example
+survey after a "PARTIAL harvesting exhausted" verdict continues to
+find new levers — SHIP-017 is the 4th PARTIAL found after two prior
+"exhausted" verdicts (SHIP-015 → SHIP-019 → SHIP-017). New combined
+status: **3/12 ACTIVE + 4/12 PARTIAL = 7/12 touched** (58.3%).
 
 **v2.20.0 amendment (2026-04-19):** Two MODEL-2 ship gates **DISCHARGED**
 in the post-v2.19 evidence window on branch `chore/post-v2.19-evidence`:
