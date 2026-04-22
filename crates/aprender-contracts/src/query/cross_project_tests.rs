@@ -69,14 +69,22 @@ fn repo_root() -> PathBuf {
 /// Returns true if sibling repos exist (local dev environment).
 /// In CI, only this repo is checked out so siblings are absent.
 ///
-/// We look for `provable-contracts` specifically, not `aprender`: GitHub
-/// checks repos out at `/__w/<repo>/<repo>`, so `parent.join("aprender")`
-/// false-positives against the workspace itself. `provable-contracts` is
-/// a distinct sibling that only exists in local dev trees.
+/// The original check `parent.join("aprender").exists()` was a self-match:
+/// both locally (`/home/user/src/aprender`) and in GitHub Actions
+/// (`/__w/aprender/aprender`), `parent.join("aprender")` resolves to the
+/// checkout root itself and always returns true. Probing for
+/// `provable-contracts` still false-positives on self-hosted runners that
+/// carry stale sibling checkouts. Instead we probe for other paiml repos
+/// that are only present in a dev workspace checkout (`trueno`, `bashrs`,
+/// `forjar`) — any one of them indicates a sibling layout.
 fn has_sibling_repos() -> bool {
     let root = repo_root();
-    root.parent()
-        .is_some_and(|p| p.join("provable-contracts").exists())
+    let Some(parent) = root.parent() else {
+        return false;
+    };
+    ["trueno", "bashrs", "forjar"]
+        .iter()
+        .any(|name| parent.join(name).exists())
 }
 
 /// Returns true if sibling repos have enough git history for commit-ref scanning.
