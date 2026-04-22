@@ -40,6 +40,7 @@ pub(crate) mod gbnf_classifier;
 pub(crate) mod gbnf_lint;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
+pub(crate) mod grad_norm;
 pub(crate) mod hex;
 pub(crate) mod hf_endpoint;
 pub(crate) mod import;
