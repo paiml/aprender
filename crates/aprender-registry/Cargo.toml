@@ -58,7 +58,7 @@ ed25519-dalek = { version = "2.1", features = ["rand_core"], optional = true }
 rand = { version = "0.8", optional = true }
 
 # Graph for lineage (optional)
-trueno-graph = { version = "0.1.17", optional = true }
+trueno-graph = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1.6"
