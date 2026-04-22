@@ -1,10 +1,26 @@
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-02-20'
   author: PAIML Engineering
   description: |
     Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
     into a complete model proof.
+
+    v1.3.0 (2026-04-22): Added FALSIFY-QW2E-SHIP-002 — binds MODEL-1
+    ship-blocking Python-syntax criterion (AC-SHIP1-002: `apr run
+    <model>.safetensors --prompt "def fib(n):"` emits syntactically
+    valid Python) to a pure `verdict_from_syntax_error_count(usize) ->
+    Ship002Verdict` const fn in `crates/aprender-core/src/qa/ship_002.rs`.
+    Tolerance constant `AC_SHIP1_002_MAX_TOLERATED_SYNTAX_ERRORS = 0`
+    mirrors the strict spec wording ("emits valid Python") with no
+    noise allowance — any non-zero parse-error count on the canonical
+    prompt is a ship-blocker. Algorithm-level PARTIAL discharge: the
+    decision rule is proven today; the compute-heavy discharge (live
+    `apr run` + `rustpython`/`ruff` AST parse) remains blocked on
+    hardware evidence collection. Mirrors MODEL-2 SHIP-017 pattern
+    (`verdict_from_syntax_error_count` const fn, 100-prompt sweep ≤ 1
+    tolerated) but with a tighter MODEL-1-specific zero-tolerance rule.
+    Authored self-contained because SHIP-017 PR #1004 not yet on main.
 
     v1.2.0 (2026-04-22): Added FALSIFY-QW2E-SHIP-005 — binds MODEL-1
     ship-blocking HumanEval pass@1 criterion (AC-SHIP1-005:
@@ -271,6 +287,52 @@ falsification_tests:
     reported as Pass instead of Fail"
   - "nan_promoted: pass@1 JSON emits `NaN` on parse glitch and is
     silently treated as Pass"
+- id: FALSIFY-QW2E-SHIP-002
+  rule: |
+    MODEL-1 ship-blocker — `apr run paiml/qwen2.5-coder-7b-apache-q4k-v1
+    --prompt "def fib(n):"` must emit syntactically valid Python, as
+    decided by parsing the completion via `rustpython`/`ruff` and
+    counting AST syntax errors. Decision rule: `Pass` iff
+    `syntax_errors ≤ AC_SHIP1_002_MAX_TOLERATED_SYNTAX_ERRORS` (= 0).
+    Any non-zero error count on the canonical prompt is a Fail —
+    MODEL-1 carries no noise allowance on this gate.
+  prediction: |
+    verdict_from_syntax_error_count(n) == Ship002Verdict::Pass
+    iff n == 0
+  test: |
+    cargo test -p aprender-core --lib
+    falsify_ship_002_python_syntax_error_threshold_logic
+  if_fails: |
+    MODEL-1 teacher cannot ship — either the 7B Q4_K sampling
+    pipeline has regressed and emits truncated/malformed Python on
+    the canonical prompt, or the tolerance constant has drifted
+    from spec §4.2 AC-SHIP1-002.
+  ship_blocking: true
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - crates/aprender-core/src/qa/ship_002.rs
+    (verdict_from_syntax_error_count + AC_SHIP1_002_MAX_TOLERATED_SYNTAX_ERRORS)
+  - 'test: falsify_ship_002_python_syntax_error_threshold_logic
+    (6 sections — zero-errors Pass / exactly-one-error Fail at
+    boundary / many-errors Fail band {2, 10, 100} / monotonicity
+    0..=256 / usize::MAX sanity Fail / provenance pin on tolerance
+    constant = 0)'
+  full_discharge_blocks_on: |
+    Live `apr run paiml/qwen2.5-coder-7b-apache-q4k-v1 --prompt
+    "def fib(n):"` on RTX 4090 with --features cuda; completion must
+    parse cleanly via `rustpython` or `ruff check --select=E` with
+    zero syntax errors.
+  counter_example_classes:
+  - "regressed_sampling: new sampler truncates mid-token and emits
+    half-formed def statement that fails AST parse"
+  - "widened_tolerance: AC_SHIP1_002_MAX_TOLERATED_SYNTAX_ERRORS
+    silently bumped from 0 to 1 without spec update"
+  - "relaxed_rule: ≤ replaced with < (boundary at 0 becomes
+    unreachable — can never Pass)"
+  - "flipped_inequality: Pass/Fail swap silently ships every run
+    with any error count as Pass"
+  - "mask_byte_malformed: tokenizer special-token bleed produces
+    u0000 bytes that crash the parser before emit"
 kani_harnesses:
 - id: KANI-QW2E-001
   obligation: QW2E-INV-001
