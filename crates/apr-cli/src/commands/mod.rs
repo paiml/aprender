@@ -36,6 +36,8 @@ pub(crate) mod export;
 pub(crate) mod finetune;
 pub(crate) mod flow;
 pub(crate) mod glob_filter;
+pub(crate) mod gbnf_classifier;
+pub(crate) mod gbnf_lint;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod hex;
@@ -97,6 +99,10 @@ pub(crate) mod tensors;
 pub(crate) mod token_redactor;
 pub(crate) mod tokenize;
 pub(crate) mod tp_pp_classifier;
+pub(crate) mod tool_use_classifier;
+pub(crate) mod tool_use_lint;
+pub(crate) mod typical_p_classifier;
+pub(crate) mod typical_p_lint;
 pub(crate) mod trace;
 #[cfg(feature = "training")]
 pub(crate) mod train;
