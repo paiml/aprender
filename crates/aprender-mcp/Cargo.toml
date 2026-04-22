@@ -10,6 +10,19 @@ description = "Model Context Protocol (MCP) server for aprender — exposes apr 
 keywords = ["mcp", "llm", "inference", "aprender", "claude"]
 categories = ["command-line-utilities", "science"]
 readme = "README.md"
+# FALSIFY-PUBLISH-001 (v0.31.2): bundle the contract YAML read by build.rs so
+# `cargo install aprender` works from a crates.io tarball. v0.31.1 build read
+# `../../contracts/apr-mcp-tool-schemas-v1.yaml` (outside the package) and
+# panicked at install time. In-crate copy is drift-guarded by
+# tests/falsify_mcp_008.rs (`contract_copy_matches_workspace_root`).
+include = [
+    "src/**/*",
+    "tests/**/*",
+    "build.rs",
+    "Cargo.toml",
+    "README.md",
+    "contracts/*.yaml",
+]
 
 [lib]
 name = "aprender_mcp"
@@ -18,11 +31,22 @@ path = "src/lib.rs"
 [features]
 default = ["native"]
 native = ["dep:anyhow"]
+# M5 scaffold: enables the pmcp v2.3 dispatcher path alongside the hand-rolled
+# stdio loop. Off by default — PR 1 wires the dep, PR 2 lands the parity test
+# (FALSIFY-MCP-009), PR 3 extends cancellation, PR 4/5 add SSE/WebSocket
+# transports. See docs/specifications/apr-mcp-server-spec.md §M5.
+pmcp-dispatcher = ["dep:pmcp"]
 
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true, optional = true }
+# M5 prep: pmcp 2.3 is PAIML's Rust MCP SDK, already pinned in
+# aprender-orchestrate for the MCP client side. Pulled in here as an optional
+# dep so PR 1 is a zero-behaviour-change patch — the dispatcher still runs on
+# the hand-rolled JSON-RPC loop in server.rs until PR 2 wires pmcp::Server
+# behind the `pmcp-dispatcher` feature flag.
+pmcp = { version = "2.3", optional = true }
 # FALSIFY-MCP-006: SIGTERM/SIGKILL for cancelling in-flight `apr.run` subprocesses.
 # nix 0.29 is already in the workspace lockfile (pulled in by other crates).
 [target.'cfg(unix)'.dependencies]
@@ -44,6 +68,10 @@ jsonschema = "0.28"
 # FALSIFY-MCP-008 harness reads the YAML contract directly to assert byte
 # identity between codegen output and live tools/list schemas.
 serde_yaml = { workspace = true }
+# FALSIFY-MCP-DOGFOOD-001: locate the workspace-built `apr` binary in the
+# end-to-end stdio conformance test. Already in the workspace lockfile via
+# aprender-profile dev-deps; no new transitive cost.
+assert_cmd = "2.0"
 
 [lints]
 workspace = true

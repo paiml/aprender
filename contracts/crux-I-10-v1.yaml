@@ -1,0 +1,146 @@
+# CRUX-I-10 — Tool-result injection chat history
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-I-10
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "I — Observability & Metrics"
+  competitor: ecosystem
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Tool-result injection chat history. Root-cause workflow extracted from ecosystem UX — see master
+    subspec §5.I and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
+equations:
+  tool_role_message_shape:
+    formula: |
+      OpenAI Chat Completions API canonical multi-turn tool flow:
+        turn 1: assistant.message.tool_calls = [{ id: "call_abc", type: "function",
+                                                   function: { name, arguments } }]
+        turn 2: { role: "tool", tool_call_id: "call_abc", content: "<tool output>" }
+        turn 3: assistant consumes tool result, replies with final text
+      apr serve /v1/chat/completions MUST accept role=="tool" messages with
+      tool_call_id pointing to a prior assistant tool_calls[*].id.
+    domain: "messages array containing role=='tool' with tool_call_id"
+    codomain: "ChatCompletion response conditioned on tool result"
+    invariants:
+    - "role=='tool' messages REQUIRE non-empty tool_call_id field"
+    - "tool_call_id MUST reference an id from a prior assistant.message.tool_calls[*]"
+    - "content for role=='tool' is a string (stringified tool return value)"
+    - "Reference: https://platform.openai.com/docs/guides/function-calling"
+
+  history_ordering_preserved:
+    formula: |
+      Let H = [user, assistant(tool_calls), tool(tool_call_id=X), ...]
+      apr must render templated prompt preserving this strict order.
+      In chat template (chatml): each tool message becomes
+        <|im_start|>tool name={name_of_call_X}
+        {content}<|im_end|>
+    domain: "chat history with interleaved tool calls and tool results"
+    codomain: "rendered prompt with tool-role turn blocks in original order"
+    invariants:
+    - "Order of messages in request array == order in rendered prompt"
+    - "tool-role turn carries the function name resolved from tool_call_id"
+    - "Missing tool_call_id → HTTP 400 with descriptive error"
+
+falsification_tests:
+- id: FALSIFY-CRUX-I-10-001
+  rule: "apr serve accepts role=='tool' + tool_call_id and returns ChatCompletion"
+  prediction: "POST /v1/chat/completions with tool result message returns HTTP 200 + assistant reply"
+  test: |
+    set -euo pipefail
+    apr serve --port 7820 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    CODE=$(curl -sS -o /tmp/resp.json -w '%{http_code}' http://127.0.0.1:7820/v1/chat/completions \
+             -H 'Content-Type: application/json' \
+             -d '{"model":"test","messages":[
+                   {"role":"user","content":"What is 2+3?"},
+                   {"role":"assistant","tool_calls":[{"id":"call_1","type":"function",
+                     "function":{"name":"add","arguments":"{\"a\":2,\"b\":3}"}}]},
+                   {"role":"tool","tool_call_id":"call_1","content":"5"}
+                 ]}')
+    test "$CODE" = "200"
+    jq -e '.choices[0].message.role == "assistant"' /tmp/resp.json
+  if_fails: "apr serve rejects or mis-handles role=='tool' messages with tool_call_id"
+
+- id: FALSIFY-CRUX-I-10-002
+  rule: "missing tool_call_id yields HTTP 400"
+  prediction: "role=='tool' without tool_call_id returns 400"
+  test: |
+    set -euo pipefail
+    apr serve --port 7821 --model test-model.apr &
+    SRV=$!
+    trap "kill $SRV 2>/dev/null || true" EXIT
+    sleep 2
+    CODE=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:7821/v1/chat/completions \
+             -H 'Content-Type: application/json' \
+             -d '{"model":"test","messages":[
+                   {"role":"user","content":"x"},
+                   {"role":"tool","content":"result-without-id"}
+                 ]}')
+    test "$CODE" = "400"
+  if_fails: "apr serve accepts role=='tool' without required tool_call_id (OpenAI parity violation)"
+
+- id: FALSIFY-CRUX-I-10-003
+  rule: "tool-role turn appears in rendered chat prompt in input order"
+  prediction: "apr debug chat-template preserves tool-role turn between assistant and next user"
+  test: |
+    set -euo pipefail
+    TMP=$(mktemp)
+    trap "rm -f $TMP" EXIT
+    cat > "$TMP" <<'EOF'
+    {"messages":[
+      {"role":"user","content":"2+3?"},
+      {"role":"assistant","tool_calls":[{"id":"c1","type":"function","function":{"name":"add","arguments":"{}"}}]},
+      {"role":"tool","tool_call_id":"c1","content":"5"},
+      {"role":"user","content":"thanks"}
+    ]}
+    EOF
+    OUT=$(apr debug chat-template --messages "$TMP" 2>/dev/null)
+    # order check: assistant line precedes tool line precedes final user line
+    AIDX=$(echo "$OUT" | grep -n '<|im_start|>assistant' | head -1 | cut -d: -f1)
+    TIDX=$(echo "$OUT" | grep -n '<|im_start|>tool'       | head -1 | cut -d: -f1)
+    UIDX=$(echo "$OUT" | grep -n 'thanks'                 | head -1 | cut -d: -f1)
+    test "$AIDX" -lt "$TIDX" && test "$TIDX" -lt "$UIDX"
+  if_fails: "tool-role message not preserved in order during chat template rendering"
+
+proof_obligations:
+- type: invariant
+  property: "role=='tool' messages require non-empty tool_call_id referencing prior assistant tool_calls[*].id"
+- type: invariant
+  property: "Chat history message order preserved in rendered prompt"
+- type: equivalence
+  property: "apr serve multi-turn tool-result injection matches OpenAI Chat Completions API canonical tool flow on golden (user/assistant/tool/user) conversation"
+  reference: "https://platform.openai.com/docs/guides/function-calling"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-i-10` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-i-10
+  priority: high
+  auto_created: false

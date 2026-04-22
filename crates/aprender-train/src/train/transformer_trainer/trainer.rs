@@ -40,7 +40,16 @@ pub struct TransformerTrainer {
 impl TransformerTrainer {
     /// Create a new transformer trainer
     pub fn new(config: TransformerTrainConfig) -> Self {
+        // GATE-TRAIN-006 / INV-TRAIN-006: honor config.seed before weight init
+        // AND hold the init-seed lock for the full Transformer::new call so
+        // concurrent callers (parallel tests, concurrent harnesses) cannot
+        // clobber INIT_SEED between set and read. Previously only the YAML
+        // loader set this; direct TransformerTrainer::new callers silently
+        // inherited the global default (42), breaking seed reproducibility
+        // for any non-default seed.
+        let seed_guard = crate::transformer::init::lock_init_seed(config.seed);
         let model = Transformer::new(&config.model_config);
+        drop(seed_guard);
         Self::build(model, config)
     }
 
@@ -519,5 +528,71 @@ impl TransformerTrainer {
         let config = SaveConfig::new(ModelFormat::SafeTensors);
 
         save_model(&model, path, &config)
+    }
+
+    /// Save model weights in the sovereign APR format.
+    ///
+    /// Mirror of `CudaTransformerTrainer::save_apr` for the CPU path.
+    /// APR is the row-major atomic single-file format shared across
+    /// training and inference (per aprender-train CLAUDE.md LAYOUT-002
+    /// mandate), so training checkpoints emitted by `PretrainLoop`
+    /// load directly in realizar / `apr run` with no re-transpose.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Output file path (should end in `.apr`)
+    /// * `name` - Model name for metadata
+    /// * `architecture` - Model architecture description
+    ///   (e.g., `"LlamaForCausalLM"`)
+    pub fn save_apr(
+        &self,
+        path: impl AsRef<Path>,
+        name: &str,
+        architecture: &str,
+    ) -> crate::Result<()> {
+        let params: Vec<(String, Tensor)> =
+            self.model.named_parameters().into_iter().map(|(n, t)| (n, t.clone())).collect();
+        let metadata = ModelMetadata::new(name, architecture);
+        let model = Model::new(metadata, params);
+        let config = SaveConfig::new(ModelFormat::Apr);
+        save_model(&model, path, &config)
+    }
+
+    /// sha256 over the AdamW optimizer state bytes (INV-TRAIN-003).
+    ///
+    /// Hashes `(t, m_buffers, v_buffers)` in fixed order so two runs
+    /// with matching hyperparameters, seed, and batch order produce
+    /// the same digest (GATE-TRAIN-006 reproducibility).
+    ///
+    /// Uninitialized buffers (before the first step) hash to the
+    /// tag `"none"` so they still participate deterministically in
+    /// the digest — missing `m[i]` is semantically distinct from
+    /// an all-zeros `m[i]`.
+    #[must_use]
+    pub fn optimizer_state_sha256(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(b"aprender-train:adamw:optstate:v1");
+        hasher.update(self.optimizer.step_count().to_le_bytes());
+        let moment_streams: [(&[u8], &[Option<ndarray::Array1<f32>>]); 2] =
+            [(b"m", self.optimizer.first_moments()), (b"v", self.optimizer.second_moments())];
+        for (tag, buffers) in moment_streams {
+            hasher.update(tag);
+            hasher.update((buffers.len() as u64).to_le_bytes());
+            for slot in buffers {
+                match slot {
+                    Some(arr) => {
+                        hasher.update(b"some");
+                        hasher.update((arr.len() as u64).to_le_bytes());
+                        let bytes: &[u8] = bytemuck::cast_slice(
+                            arr.as_slice().expect("AdamW buffers are contiguous"),
+                        );
+                        hasher.update(bytes);
+                    }
+                    None => hasher.update(b"none"),
+                }
+            }
+        }
+        format!("{:x}", hasher.finalize())
     }
 }

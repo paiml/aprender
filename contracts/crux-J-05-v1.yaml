@@ -1,0 +1,83 @@
+# CRUX-J-05 — OpenCLAW dashboard Control UI (loopback bind)
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-05
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 3
+  intake_status: missing
+  description: >
+    OpenCLAW exposes a local Control UI ("dashboard") at 127.0.0.1:18789.
+    It binds to loopback by default and never exposes the agent to LAN/WAN
+    without an explicit flag. Aprender parity: any apr TUI / dashboard
+    HTTP surface MUST bind to 127.0.0.1 by default and require `--host`
+    to change. Overlaps with `apr serve` / `apr tui`.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  loopback_default:
+    formula: |
+      serve(bind_default) : bind_default = "127.0.0.1"
+      serve(--host=H)     : bind = H        (explicit opt-in)
+      exposed_lan := (bind ∉ {127.0.0.1, ::1, localhost})
+      invariant: default_run → exposed_lan = false
+    domain: server start invocation
+    codomain: TCP bind address
+    invariants:
+    - "default bind is loopback (127.0.0.1 or ::1)"
+    - "non-loopback bind requires explicit --host flag"
+    - "port is configurable and documented"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-05-001
+  rule: apr HTTP surfaces bind to loopback by default
+  prediction: "`apr serve --help` documents 127.0.0.1 as default bind"
+  test: |
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr serve --help 2>&1 | grep -qE '(127\.0\.0\.1|localhost|loopback)' || {
+      echo "FAIL: apr serve lacks documented loopback default" >&2
+      exit 1
+    }
+  if_fails: CRUX-J-05 parity broken — apr serve MUST document loopback default bind
+- id: FALSIFY-CRUX-J-05-002
+  rule: host flag is explicit opt-in
+  prediction: "apr serve surfaces a --host flag"
+  test: |
+    set -euo pipefail
+    command -v apr >/dev/null || { echo "SKIP: apr not on PATH" >&2; exit 77; }
+    apr serve --help 2>&1 | grep -qE '(--host|--bind|--listen)' || {
+      echo "FAIL: apr serve has no --host flag" >&2
+      exit 1
+    }
+  if_fails: CRUX-J-05 bind invariant — non-loopback bind must require explicit flag
+
+proof_obligations:
+- type: invariant
+  property: "default bind is loopback"
+- type: invariant
+  property: "non-loopback requires explicit flag"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-05
+  priority: medium
+  auto_created: true

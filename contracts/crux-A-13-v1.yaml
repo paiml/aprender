@@ -1,0 +1,204 @@
+# CRUX-A-13 — apr stop unload model from VRAM
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-13
+  version: "1.1.0"
+  created: "2026-04-18"
+  last_updated: "2026-04-20"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: ollama
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    `apr stop <model>` — explicitly unload a model from VRAM/RAM without
+    shutting down the `apr serve` daemon. Parity target is `ollama stop MODEL`
+    (see https://github.com/ollama/ollama/blob/main/docs/api.md and
+    `POST /api/generate {"model": M, "keep_alive": 0}` which forces immediate
+    eviction). aprender equivalent: `apr stop <model>` sets keep_alive=0 via
+    the serve control socket and confirms the model is absent from `apr ps`
+    afterward. Idempotent when the model is already unloaded.
+  references:
+  - "https://github.com/ollama/ollama/blob/main/docs/api.md"
+  - "https://github.com/ollama/ollama/pull/6987"  # `ollama stop` CLI verb
+
+equations:
+  stop_postcondition:
+    formula: |
+      Let L(t) = set of resident models in `apr serve` at time t.
+      For any m ∈ L(t₀), after `apr stop m` returns with exit_code == 0,
+      there exists t₁ ≤ t₀ + grace_ms such that m ∉ L(t) for all t ≥ t₁.
+    domain: (resident_set, target_model)
+    codomain: resident_set'
+    invariants:
+    - "exit_code == 0 implies m evicted within grace_ms (default 5000)"
+    - "VRAM used by m's weights is reclaimed (observable via nvidia-smi)"
+    - "Subsequent `apr run m ...` must cold-load (no cached warm context)"
+
+  stop_idempotent:
+    formula: |
+      apply(stop, m) ∘ apply(stop, m) ≡ apply(stop, m)
+      Stopping an already-stopped or never-loaded model returns exit_code 0
+      with a clear message; it does NOT raise "model not found".
+    domain: apr stop invocation
+    codomain: exit_code
+    invariants:
+    - "Second `apr stop m` also exits 0"
+    - "stderr says 'already stopped' or 'not loaded', never ERROR"
+
+  ollama_stop_parity:
+    formula: |
+      `apr stop m` ↔ `ollama stop m` produce the same observable end state:
+        - ps listing no longer contains m
+        - freed VRAM ≥ 95% of pre-stop model footprint
+        - exit_code == 0 on both tools
+    domain: identical load state
+    codomain: (ps_delta, vram_delta, exit_code)
+    invariants:
+    - "Column-for-column identical post-stop ps listing"
+    - "VRAM delta within 5% of ollama's reclaim size"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-13-001
+  rule: stop removes model from ps
+  prediction: "model absent from `apr ps` after `apr stop`"
+  test: |
+    apr serve --daemon & PID=$!; sleep 1
+    apr run hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF --prompt "hi" --max-tokens 2 >/dev/null
+    apr ps --json | jq -e '.[] | select(.name|contains("Qwen2.5-Coder-7B"))' >/dev/null
+    apr stop "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
+    sleep 1
+    ! apr ps --json | jq -e '.[] | select(.name|contains("Qwen2.5-Coder-7B"))' >/dev/null
+    kill $PID
+  if_fails: "apr stop did NOT evict the target model from apr ps"
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/stop_op.rs
+    sub_claim: >
+      The pure state-transition classifier `plan_stop(set, target)` provably
+      returns a `new_set` that does not contain `target` whenever `target`
+      was in the input `set`. The `plan_removes_target` predicate witnesses
+      the post-condition directly.
+    tests:
+    - falsify_001_sub_claim_evicts_resident_target
+    - stop_preserves_other_models
+    - eviction_reduces_len_by_exactly_one
+    scope: >
+      PARTIAL_ALGORITHM_LEVEL. Classifier proves the set-minus-target sub-
+      claim. Full discharge requires a live `apr serve` daemon actually
+      removing the target from its resident registry after receiving the
+      stop RPC, deferred to integration.
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+
+- id: FALSIFY-CRUX-A-13-002
+  rule: idempotent
+  prediction: "second apr stop on same model also exits 0"
+  test: |
+    apr serve --daemon & PID=$!; sleep 1
+    apr stop some-never-loaded-model
+    apr stop some-never-loaded-model  # second call
+    kill $PID
+  if_fails: "apr stop is not idempotent (second call failed)"
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/stop_op.rs
+    sub_claim: >
+      `plan_is_idempotent` proves that applying `plan_stop` twice to any
+      (set, target) pair produces the same resulting resident set. The
+      second call always outcomes `NotLoaded` with exit code 0, never
+      `InvalidName` or an error, satisfying the shell-level idempotency
+      contract.
+    tests:
+    - falsify_002_sub_claim_idempotent_on_resident
+    - idempotent_on_never_loaded
+    - idempotent_on_empty
+    - not_loaded_exit_code_is_zero
+    - evicted_exit_code_is_zero
+    scope: >
+      PARTIAL_ALGORITHM_LEVEL. Classifier fully proves the idempotency sub-
+      claim on any resident-set snapshot. Full discharge requires wiring
+      `apr stop` into the live serve daemon and confirming exit code 0 on
+      the real second invocation.
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+
+- id: FALSIFY-CRUX-A-13-003
+  rule: VRAM reclaimed
+  prediction: "nvidia-smi reports ≥95% of model footprint freed after stop"
+  test: |
+    # TODO: gate on CUDA availability; record baseline without model
+    command -v nvidia-smi >/dev/null || { echo "no nvidia-smi"; exit 2; }
+    apr serve --daemon & PID=$!; sleep 1
+    BEFORE=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+    apr run hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF --prompt "hi" --max-tokens 2 >/dev/null
+    LOADED=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+    apr stop "Qwen2.5-Coder-7B-Instruct-Q4_K_M"; sleep 2
+    AFTER=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+    python3 -c "b=$BEFORE; l=$LOADED; a=$AFTER; assert (l-a) >= 0.95*(l-b), (b,l,a)"
+    kill $PID
+  if_fails: "apr stop left ≥5% of model weights resident in VRAM"
+
+- id: FALSIFY-CRUX-A-13-004
+  rule: parity with ollama stop
+  prediction: "apr stop and ollama stop yield the same post-state"
+  test: |
+    # TODO: record evidence/crux/ollama/stop-golden.json with (pre,post) ps+vram
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/ollama/stop-golden.json
+    [ -f "$GOLD" ] || { echo "golden absent"; exit 2; }
+    apr serve --daemon & PID=$!; sleep 1
+    apr run hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF --prompt "hi" --max-tokens 2 >/dev/null
+    apr stop "Qwen2.5-Coder-7B-Instruct-Q4_K_M"
+    APR_PS=$(apr ps --json)
+    python3 - <<PY
+    import json
+    gold=json.load(open("$GOLD"))
+    apr=json.loads('''$APR_PS''')
+    assert apr == gold["post_apr_ps"], (apr, gold["post_apr_ps"])
+    PY
+    kill $PID
+  if_fails: "apr stop post-state diverges from ollama stop golden"
+
+proof_obligations:
+- type: invariant
+  property: "After apr stop m (exit 0), m ∉ resident_set within grace_ms"
+- type: invariant
+  property: "apr stop is idempotent (second call on same target exits 0)"
+- type: invariant
+  property: "VRAM freed ≥ 95% of pre-stop model footprint"
+- type: equivalence
+  property: "apr stop end-state ≡ ollama stop end-state on golden"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 2
+  status: partial
+  evidence:
+    falsify_001: PARTIAL_ALGORITHM_LEVEL via commands::stop_op::plan_stop set-minus-target classifier
+    falsify_002: PARTIAL_ALGORITHM_LEVEL via commands::stop_op::plan_is_idempotent classifier
+    falsify_003: NOT_DISCHARGED — requires live `apr serve` + nvidia-smi VRAM observation
+    falsify_004: NOT_DISCHARGED — requires ollama stop golden at evidence/crux/ollama/stop-golden.json
+  coverage:
+  - "crates/apr-cli/src/commands/stop_op.rs: 22 unit tests, all passing"
+  - "sub-claim tests: falsify_001_sub_claim_evicts_resident_target, falsify_002_sub_claim_idempotent_on_resident"
+  scope_honesty: >
+    Contract status is `partial`. 2 of 4 FALSIFY gates reach
+    PARTIAL_ALGORITHM_LEVEL via a pure state-transition classifier;
+    FALSIFY-003 (VRAM reclaim) and FALSIFY-004 (ollama parity golden) are
+    integration-only and NOT discharged. Master contract
+    `crux-competitive-research-ux-v1` supported_count is NOT bumped;
+    `intake_status` stays `missing` until the real `apr stop` subcommand
+    ships and all 4 FALSIFY gates are fully discharged against a live
+    `apr serve` daemon with CUDA.
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-13` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-13
+  priority: high
+  auto_created: true

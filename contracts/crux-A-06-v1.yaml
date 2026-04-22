@@ -1,0 +1,141 @@
+# CRUX-A-06 — Authenticate with HF_TOKEN
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-06
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Authenticate with HF_TOKEN. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.A and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  auth_header_attached:
+    formula: |
+      HF_TOKEN=t ∧ apr pull hf://X/Y ⇒
+        every HTTP request to huggingface.co carries
+          Authorization: Bearer t
+      Equivalent to huggingface_hub passing token=os.environ['HF_TOKEN'].
+      Ref: https://huggingface.co/docs/hub/security-tokens
+    domain: outbound HTTPS requests
+    codomain: request headers
+    invariants:
+    - "Authorization header present iff HF_TOKEN is set (or --token provided)"
+    - "Token value is never written to stdout, stderr, logs, or cache files"
+
+  unauthorized_fails_cleanly:
+    formula: |
+      HF_TOKEN=∅ ∧ repo is gated/private ⇒
+        exit_code != 0 ∧ stderr matches /401|403|unauthorized|gated/i
+    domain: (auth state, repo visibility)
+    codomain: process exit code × stderr
+    invariants:
+    - "Unauthorized pull of gated/private repo MUST return non-zero"
+    - "Error message MUST indicate auth failure, not generic network error"
+
+  token_redaction:
+    formula: |
+      ∀ byte sequence B emitted to stdout/stderr/logs:
+        HF_TOKEN not a substring of B
+      Ref: https://huggingface.co/docs/hub/security-tokens#best-practices
+    domain: all process output streams
+    codomain: bool
+    invariants:
+    - "Token value never appears in apr output under any verbosity level"
+    - "Any logged 'Authorization: Bearer ...' is masked to 'Bearer ****'"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-06-001
+  rule: authorized pull of public repo succeeds with token
+  prediction: "HF_TOKEN set → apr pull of public repo succeeds identically"
+  test: |
+    [ -n "${HF_TOKEN:-}" ] || { echo "HF_TOKEN not set"; exit 1; }
+    DIR=$(mktemp -d)
+    HF_TOKEN="$HF_TOKEN" apr pull hf://hf-internal-testing/tiny-random-gpt2 -o "$DIR"
+    test -s "$DIR/config.json"
+  if_fails: "apr pull with HF_TOKEN set failed for public repo (auth header broke request)"
+
+- id: FALSIFY-CRUX-A-06-002
+  rule: unauthorized pull of gated repo fails with 401/403
+  prediction: "HF_TOKEN unset + gated repo → non-zero exit, stderr mentions auth"
+  test: |
+    DIR=$(mktemp -d)
+    # meta-llama/Llama-3-8B-Instruct is gated; without token this must 401/403
+    set +e
+    OUT=$(env -u HF_TOKEN apr pull hf://meta-llama/Llama-3-8B-Instruct -o "$DIR" 2>&1)
+    RC=$?
+    set -e
+    [ "$RC" -ne 0 ] || { echo "expected nonzero, got 0"; exit 1; }
+    echo "$OUT" | grep -Ei '401|403|unauthorized|gated|forbidden|access' >/dev/null
+  if_fails: "unauthorized pull of gated repo did not fail with auth-specific error"
+
+- id: FALSIFY-CRUX-A-06-003
+  rule: token never leaks to stdout/stderr
+  prediction: "apr pull -v with HF_TOKEN set must not print token value"
+  test: |
+    [ -n "${HF_TOKEN:-}" ] || { echo "HF_TOKEN not set"; exit 1; }
+    DIR=$(mktemp -d)
+    OUT=$(HF_TOKEN="$HF_TOKEN" apr pull hf://hf-internal-testing/tiny-random-gpt2 -o "$DIR" -v 2>&1 || true)
+    echo "$OUT" | grep -F "$HF_TOKEN" && { echo "TOKEN LEAKED"; exit 1; } || true
+  if_fails: "HF_TOKEN value found verbatim in apr output — token leak"
+
+- id: FALSIFY-CRUX-A-06-004
+  rule: parity with huggingface_hub token resolution
+  prediction: "apr resolves HF_TOKEN the same way huggingface_hub does"
+  test: |
+    [ -n "${HF_TOKEN:-}" ] || { echo "HF_TOKEN not set"; exit 1; }
+    # huggingface_hub.whoami() call with same token must succeed
+    uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import HfApi
+    import os
+    info = HfApi().whoami(token=os.environ['HF_TOKEN'])
+    assert 'name' in info, info
+    "
+    # apr pull of a private/gated-accessible repo with same token must work
+    DIR=$(mktemp -d)
+    HF_TOKEN="$HF_TOKEN" apr pull hf://hf-internal-testing/tiny-random-gpt2 -o "$DIR"
+  if_fails: "HF_TOKEN accepted by huggingface_hub but rejected by apr (or vice versa)"
+
+proof_obligations:
+- type: equivalence
+  property: "apr auth flow matches huggingface_hub token resolution and Bearer header construction"
+  competitor_function: "huggingface_hub.HfApi(token=...)"
+  reference: "https://huggingface.co/docs/hub/security-tokens"
+- type: invariant
+  property: "Authorization: Bearer $HF_TOKEN attached to every huggingface.co request when token present"
+- type: invariant
+  property: "Unauthorized pull of gated/private repo exits non-zero with 401/403-class error"
+- type: invariant
+  property: "HF_TOKEN value never appears in stdout/stderr/logs at any verbosity"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-06` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-06
+  priority: critical
+  auto_created: false

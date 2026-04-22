@@ -1,0 +1,164 @@
+# CRUX-D-23 — Gradient checkpointing for memory
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-23
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: pytorch
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Gradient checkpointing for memory. Root-cause workflow extracted from pytorch UX — see master
+    subspec §5.D and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  activation_memory_reduction:
+    formula: |
+      Without checkpointing: mem_act = O(L * B * S * H)  # every layer cached
+      With checkpointing   : mem_act = O(sqrt(L) * B * S * H)
+      where:
+        L : number of transformer layers
+        B : batch size
+        S : sequence length
+        H : hidden dimension
+      Ref: Chen et al., "Training Deep Nets with Sublinear Memory Cost"
+           (arXiv:1604.06174), §3. PyTorch API:
+           https://pytorch.org/docs/stable/checkpoint.html
+    domain: (model_config, batch_config)
+    codomain: "peak_activation_bytes: u64"
+    invariants:
+    - "peak_activation_memory_ckpt / peak_activation_memory_no_ckpt <= 0.5"
+    - "Reduction is asymptotic sqrt(L); for L=32, factor is ~5.7×"
+
+  wall_time_tradeoff:
+    formula: |
+      wall_time_ckpt = wall_time_no_ckpt * (1 + recompute_fraction)
+      recompute_fraction ~= 1/3 for uniform checkpointing (one extra forward pass
+      for the segment being recomputed)
+      => wall_time_ckpt / wall_time_no_ckpt in [1.0, 1.35]
+    domain: (training_step_config)
+    codomain: "wall_time_sec: f64"
+    invariants:
+    - "wall_time_ckpt / wall_time_no_ckpt <= 1.35 (35% slowdown ceiling)"
+    - "Slowdown ratio is deterministic for fixed batch+seq configuration"
+
+  loss_determinism:
+    formula: |
+      Gradient checkpointing is mathematically equivalent to non-checkpointed
+      training (recomputation produces identical activations modulo floating-point
+      rounding). For fixed seed:
+        |loss_ckpt(step_i) - loss_no_ckpt(step_i)| / loss_no_ckpt(step_i) <= 0.005
+    domain: (train_loss_trajectory)
+    codomain: "relative_loss_error: f64"
+    invariants:
+    - "Final train loss within ±0.5% of non-checkpointed baseline"
+    - "Checkpointing does not change gradient values (only their caching strategy)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-23-001
+  rule: peak activation memory reduction
+  prediction: "apr finetune --gradient-checkpointing uses <= 50% activation memory vs baseline"
+  test: |
+    # Measure peak CUDA memory during backward for matched configs
+    # TODO: requires apr finetune --report-memory-json (not yet landed)
+    MEM_NO_CKPT=$(apr finetune --data fixtures/tiny.jsonl --epochs 1 \
+      --batch-size 4 --seq-len 512 --report-memory-json 2>&1 | \
+      jq '.peak_activation_bytes')
+    MEM_CKPT=$(apr finetune --data fixtures/tiny.jsonl --epochs 1 \
+      --batch-size 4 --seq-len 512 --gradient-checkpointing \
+      --report-memory-json 2>&1 | jq '.peak_activation_bytes')
+    python3 -c "
+    import sys
+    ratio = $MEM_CKPT / $MEM_NO_CKPT
+    sys.exit(0 if ratio <= 0.5 else 1)
+    "
+  if_fails: "checkpointing does not cut activation memory by at least 2×"
+
+- id: FALSIFY-CRUX-D-23-002
+  rule: wall-time overhead bounded
+  prediction: "apr finetune --gradient-checkpointing wall-time <= 1.35× non-checkpointed"
+  test: |
+    T_NO_CKPT=$(apr finetune --data fixtures/tiny.jsonl --epochs 1 \
+      --batch-size 4 --json 2>&1 | jq '.wall_time_sec')
+    T_CKPT=$(apr finetune --data fixtures/tiny.jsonl --epochs 1 \
+      --batch-size 4 --gradient-checkpointing --json 2>&1 | \
+      jq '.wall_time_sec')
+    python3 -c "
+    import sys
+    ratio = $T_CKPT / $T_NO_CKPT
+    sys.exit(0 if ratio <= 1.35 else 1)
+    "
+  if_fails: "checkpointing overhead exceeds 35% ceiling (arXiv:1604.06174 predicts ~33%)"
+
+- id: FALSIFY-CRUX-D-23-003
+  rule: loss determinism
+  prediction: "final loss within ±0.5% of non-checkpointed run (same seed)"
+  test: |
+    LOSS_NO_CKPT=$(apr finetune --data fixtures/tiny.jsonl --epochs 2 \
+      --seed 42 --json 2>&1 | jq '.final_loss')
+    LOSS_CKPT=$(apr finetune --data fixtures/tiny.jsonl --epochs 2 \
+      --seed 42 --gradient-checkpointing --json 2>&1 | jq '.final_loss')
+    python3 -c "
+    import sys
+    rel = abs($LOSS_CKPT - $LOSS_NO_CKPT) / $LOSS_NO_CKPT
+    sys.exit(0 if rel <= 0.005 else 1)
+    "
+  if_fails: "checkpointing changes final loss by more than 0.5% — non-deterministic recomputation bug"
+
+- id: FALSIFY-CRUX-D-23-004
+  rule: larger batch becomes feasible
+  prediction: "checkpointing enables a batch size that OOMs without it"
+  test: |
+    # TODO: OOM detection via exit code + stderr regex
+    set +e
+    apr finetune --data fixtures/tiny.jsonl --epochs 1 --batch-size 32 \
+      --seq-len 2048 --json 2>&1 | grep -qi "out of memory"
+    OOM_NO_CKPT=$?
+    set -e
+    apr finetune --data fixtures/tiny.jsonl --epochs 1 --batch-size 32 \
+      --seq-len 2048 --gradient-checkpointing --json 2>&1 | \
+      jq -e '.status == "training_complete"'
+  if_fails: "checkpointing fails to unlock OOM-bound batch size"
+
+proof_obligations:
+- type: equivalence
+  property: "apr finetune --gradient-checkpointing matches torch.utils.checkpoint.checkpoint at ±0.5% final loss"
+- type: invariant
+  property: "peak_activation_memory_ckpt / peak_activation_memory_no_ckpt <= 0.5"
+- type: invariant
+  property: "wall_time_ckpt / wall_time_no_ckpt <= 1.35"
+- type: invariant
+  property: "|loss_ckpt - loss_no_ckpt| / loss_no_ckpt <= 0.005 for fixed seed"
+- type: invariant
+  property: "Gradient values identical modulo fp32 rounding (recomputation is deterministic)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-23` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-23
+  priority: critical
+  auto_created: false

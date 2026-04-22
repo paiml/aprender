@@ -303,6 +303,14 @@ mod tokenizer_vocab_contract {
             if !ext_ok || file_name.starts_with('_') {
                 continue;
             }
+            // Skip ModelFamilyVariant contracts (start with `contract_id:`).
+            let head = match std::fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            if head.lines().any(|l| l.starts_with("contract_id:")) {
+                continue;
+            }
             if let Ok(config) = load_family_yaml(&path) {
                 let name = file_name
                     .trim_end_matches(".yaml")

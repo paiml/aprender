@@ -1,0 +1,88 @@
+# CRUX-E-10 — Hallucination / drift detector
+
+metadata:
+  id: CRUX-E-10
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Evaluate hallucination rate and distribution drift during generation.
+    Canonical: HF `evaluate` metrics `bertscore`, `meteor`, plus
+    `hallucination-detector` (e.g. SelfCheckGPT, arXiv:2303.08896) and
+    PSI drift score against a reference corpus.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  drift_and_hallu:
+    formula: |
+      hallu_score(y, refs) = 1 - max_r cosine(sbert(y), sbert(r))     # SelfCheckGPT-style
+      psi(P, Q) = sum_b (P_b - Q_b) * log(P_b / Q_b)                  # bucketed PSI
+      pass = hallu_score ≤ tau_h AND psi ≤ tau_psi
+    domain: "(generations: [str], refs: [str], reference_corpus: Path, tau_h: f32, tau_psi: f32)"
+    codomain: "JSON {per_sample: [...], hallu_rate: f32, psi: f32, pass: bool}"
+    invariants:
+    - "identical gen == ref → hallu_score = 0"
+    - "psi(X, X) = 0 for any distribution X"
+    - "deterministic under fixed sentence-transformer version + seed"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-10-001
+  rule: identity generation scores zero hallucination
+  prediction: "feeding refs as generations yields hallu_rate == 0.0"
+  test: |
+    set -euo pipefail
+    cp tests/fixtures/refs.jsonl /tmp/gens.jsonl
+    apr eval-hallu /tmp/gens.jsonl --refs tests/fixtures/refs.jsonl \
+      --format json > /tmp/h.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/h.json')); assert d['hallu_rate']==0.0, d
+    "
+  if_fails: rule 'identity generation scores zero hallucination' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-10-002
+  rule: PSI against self is zero
+  prediction: "PSI(corpus, corpus) < 1e-9"
+  test: |
+    set -euo pipefail
+    apr eval-drift tests/fixtures/corpus.jsonl --ref tests/fixtures/corpus.jsonl \
+      --format json > /tmp/p.json
+    python3 -c "import json; d=json.load(open('/tmp/p.json')); assert d['psi'] < 1e-9, d"
+  if_fails: rule 'PSI against self is zero' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-10-003
+  rule: threshold failure emits non-zero exit
+  prediction: "--fail-on-hallu 0.1 with noisy generations returns non-zero"
+  test: |
+    set -euo pipefail
+    ! apr eval-hallu tests/fixtures/noisy-gens.jsonl --refs tests/fixtures/refs.jsonl \
+      --fail-on-hallu 0.1
+
+  if_fails: rule 'threshold failure emits non-zero exit' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr eval-hallu SelfCheckGPT variant matches HF `evaluate` + sentence-transformers reference within 1e-3"
+- type: invariant
+  property: "identity gen==ref → hallu_score = 0"
+- type: invariant
+  property: "psi(X, X) = 0"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-e-10
+  priority: medium
+  auto_created: true

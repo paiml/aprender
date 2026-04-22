@@ -1,0 +1,141 @@
+# CRUX-D-33 — Distributed optimizer ZeRO-1
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-33
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: pytorch
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    ZeRO-1 distributed optimizer — shards optimizer state (Adam m, v
+    moments, fp32 master weights) across DP ranks, reducing per-rank
+    memory by ~4× vs vanilla DDP without changing gradient math. PyTorch
+    exposes via `torch.distributed.optim.ZeroRedundancyOptimizer` and
+    DeepSpeed via `zero_optimization: {stage: 1}` in config. Map to
+    `apr finetune --dp-size N --zero-stage 1` with loss-curve parity vs
+    vanilla DDP and measurable per-rank optimizer-state memory reduction.
+  references:
+  - "https://pytorch.org/docs/stable/distributed.optim.html#torch.distributed.optim.ZeroRedundancyOptimizer"
+  - "Rajbhandari et al. 2020 — 'ZeRO: Memory Optimizations Toward Training Trillion Parameter Models'"
+  - "https://www.deepspeed.ai/tutorials/zero/"
+
+equations:
+  zero1_loss_parity:
+    formula: |
+      ∀ step s (with deterministic seed, identical data order):
+        loss_zero1(s) ≈ loss_ddp(s) within ±1e-4 (fp32) or ±1e-3 (bf16)
+      i.e. ZeRO-1 MUST NOT change gradient math — only optimizer state layout.
+    domain: (model, dataset, seed, dp_size, zero_stage)
+    codomain: per-step loss sequence
+    invariants:
+    - "ZeRO-1 final_loss matches DDP final_loss within noise threshold"
+    - "training curves converge to same val_loss (within 1% at final epoch)"
+    - "seed + data order controls determinism equally for both"
+
+  optimizer_state_memory_reduction:
+    formula: |
+      Adam optimizer state per rank:
+        DDP:    4 * param_count * 4 bytes (fp32 m, v, fp32 weights, fp32 grads)
+        ZeRO-1: 4 * param_count * 4 / DP_size bytes (sharded)
+      reduction_factor = DP_size
+    domain: (param_count, dp_size)
+    codomain: optimizer state footprint (bytes/rank)
+    invariants:
+    - "per-rank optimizer state for DP=N is ~1/N of DDP baseline"
+    - "peak VRAM reduction >= 0.8 * (N-1)/N of optimizer-only baseline"
+    - "model+activation memory unchanged vs DDP"
+
+  zero1_gradient_semantics:
+    formula: |
+      At each step:
+        allreduce(grads) → partition_optimizer_step(grad_shard_i, state_shard_i)
+        → allgather(fp32_master_weights)
+      Result: weights globally consistent across ranks post-step.
+    domain: (ranks, grads, optimizer_state_shards)
+    codomain: updated weights (consistent across ranks)
+    invariants:
+    - "post-step weights byte-identical across all DP ranks"
+    - "no rank holds stale weight view after optimizer step"
+    - "allgather completes before next forward pass"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-33-001
+  rule: ZeRO-1 loss parity with DDP
+  prediction: "ZeRO-1 final_loss matches DDP final_loss within 1e-4 (fp32)"
+  test: |
+    # TODO: blocked until apr finetune --zero-stage flag wired; requires 2+ GPUs
+    DDP_LOSS=$(apr finetune --data test.jsonl --epochs 1 --seed 42 \
+      --dp-size 2 --zero-stage 0 --dtype fp32 --json | jq '.final_loss')
+    Z1_LOSS=$(apr finetune --data test.jsonl --epochs 1 --seed 42 \
+      --dp-size 2 --zero-stage 1 --dtype fp32 --json | jq '.final_loss')
+    python3 -c "import sys; sys.exit(0 if abs($DDP_LOSS - $Z1_LOSS) < 1e-4 else 1)"
+  if_fails: "ZeRO-1 final_loss diverges from DDP — optimizer math bug"
+
+- id: FALSIFY-CRUX-D-33-002
+  rule: optimizer state memory reduction
+  prediction: "ZeRO-1 with DP=4 reduces per-rank optimizer VRAM ~4× vs DDP"
+  test: |
+    # TODO: blocked until --zero-stage + VRAM telemetry in --json
+    DDP_VRAM=$(apr finetune --data tiny.jsonl --epochs 1 --dp-size 4 --zero-stage 0 \
+      --profile-memory --json | jq '.peak_optimizer_vram_bytes')
+    Z1_VRAM=$(apr finetune --data tiny.jsonl --epochs 1 --dp-size 4 --zero-stage 1 \
+      --profile-memory --json | jq '.peak_optimizer_vram_bytes')
+    python3 -c "r = $Z1_VRAM / $DDP_VRAM; assert r <= 0.35, f'expected <=0.35, got {r:.3f}'"
+  if_fails: "ZeRO-1 optimizer state not properly sharded (per-rank VRAM >35% of DDP)"
+
+- id: FALSIFY-CRUX-D-33-003
+  rule: post-step weight consistency across ranks
+  prediction: "all ranks hold byte-identical weights after optimizer step"
+  test: |
+    # TODO: blocked until --zero-stage + rank-local checkpoint dump
+    apr finetune --data tiny.jsonl --epochs 1 --dp-size 2 --zero-stage 1 \
+      --debug-dump-rank-weights ./dumps
+    sha256sum ./dumps/rank0_step1.bin ./dumps/rank1_step1.bin | \
+      awk '{print $1}' | uniq | wc -l | grep -q '^1$'
+  if_fails: "ZeRO-1 allgather incomplete — ranks hold inconsistent weights"
+
+- id: FALSIFY-CRUX-D-33-004
+  rule: invalid zero-stage rejected
+  prediction: "--zero-stage 5 (out of range) exits non-zero with actionable error"
+  test: |
+    # TODO: blocked until --zero-stage flag
+    set +e
+    apr finetune --data tiny.jsonl --zero-stage 5 --dp-size 2 2>err.log
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] && grep -qiE "zero.?stage|0.*1.*2.*3|invalid" err.log
+  if_fails: "invalid zero-stage value silently accepted"
+
+proof_obligations:
+- type: equivalence
+  property: "ZeRO-1 per-step loss matches DDP within ±1e-4 (fp32) or ±1e-3 (bf16) at same seed"
+- type: invariant
+  property: "post-step weights byte-identical across all DP ranks (allgather complete)"
+- type: bound
+  property: "per-rank optimizer VRAM reduced ~DP_size× vs DDP baseline"
+- type: invariant
+  property: "--json output reports .distributed.{dp_size, zero_stage, peak_optimizer_vram_bytes}"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-33` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-33
+  priority: high
+  auto_created: true

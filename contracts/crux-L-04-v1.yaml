@@ -1,0 +1,112 @@
+# CRUX-L-04 — rmsnorm fused kernel dispatch via HF kernels-community
+# Authored under PMAT-658. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-04
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Standalone fused RMSNorm kernel (separate from Liger L-10 bundle)
+    via HF kernels-community `rmsnorm` package. Parity target: the
+    fused kernel matches the naive (1 / sqrt(mean(x²) + eps)) * x * w
+    reference at f32 tol 1e-5 / bf16 tol 1e-3.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/huggingface/kernels-community — rmsnorm'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  rmsnorm_dispatch:
+    formula: |
+      y := rmsnorm_fwd(x, weight, eps)  via HF kernel .so
+      ref := (1 / sqrt(mean(x², dim=-1) + eps)) * x * weight
+      Parity: max_abs_diff(y, ref) <= tol(dtype)
+            tol(f32)=1e-5, tol(bf16)=1e-3, tol(fp16)=5e-3
+    domain: "(x, weight, eps)"
+    codomain: "y tensor"
+    invariants:
+    - "eps must match the model config exactly (division-by-zero hazard if defaulted)"
+    - "weight.shape == (hidden_dim,) — rank >= 2 error at dispatch"
+    - "dtype supported set = {f32, bf16, fp16} — fp8 errors, not silent f32 cast"
+
+  cli_contract:
+    formula: |
+      apr kernel parity --impl rmsnorm --ref naive --dtype bf16 --json emits status/tolerances/diffs
+    domain: "(impl, dtype, fixture)"
+    codomain: "parity JSON"
+    invariants:
+    - "parity runner is self-contained (no external model required)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-04-001
+  rule: "parity within 1e-5 (f32)"
+  prediction: "rmsnorm kernel matches naive reference at f32 tolerance"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl rmsnorm --ref naive --dtype f32 --fixture fixtures/rms-norm-canary.json --json > /tmp/l04.json
+    jq -e '.max_abs_diff <= 1e-5' /tmp/l04.json >/dev/null
+  if_fails: "RMSNorm f32 diverges — contract re-verify required"
+
+- id: FALSIFY-CRUX-L-04-002
+  rule: "parity within 1e-3 (bf16)"
+  prediction: "rmsnorm kernel matches naive reference at bf16 tolerance"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl rmsnorm --ref naive --dtype bf16 --fixture fixtures/rms-norm-canary.json --json > /tmp/l04-bf16.json
+    jq -e '.max_abs_diff <= 1e-3' /tmp/l04-bf16.json >/dev/null
+  if_fails: "RMSNorm bf16 exceeds published tolerance"
+
+- id: FALSIFY-CRUX-L-04-003
+  rule: "unsupported dtype (fp8) errors, no silent cast"
+  prediction: "apr kernel parity --dtype fp8 on rmsnorm exits 1"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl rmsnorm --ref naive --dtype fp8 --fixture fixtures/rms-norm-canary.json --json > /tmp/l04-fp8.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.error | test("dtype|fp8|unsupported")' /tmp/l04-fp8.json >/dev/null
+  if_fails: "fp8 silently casts to f32 — perf claims false"
+
+- id: FALSIFY-CRUX-L-04-004
+  rule: "kernel_source pinned on dispatch"
+  prediction: "Successful rmsnorm dispatch emits kernel_source='hf-kernels-community:rmsnorm@<sha>'"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl rmsnorm --ref naive --dtype f32 --fixture fixtures/rms-norm-canary.json --json > /tmp/l04.json
+    jq -e '.kernel_source | test("^hf-kernels-community:rmsnorm@[0-9a-f]{40}$")' /tmp/l04.json >/dev/null
+  if_fails: "Unpinned rmsnorm source — audit blocked"
+
+proof_obligations:
+- type: invariant
+  property: "f32 parity max_abs_diff <= 1e-5"
+- type: invariant
+  property: "bf16/fp16 parity within published tolerances"
+- type: invariant
+  property: "Unsupported dtype errors, no silent cast"
+- type: equivalence
+  property: "apr rmsnorm kernel  ≅  HF kernels-community rmsnorm"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-04
+  ticket_id: PMAT-658
+  priority: medium
+  auto_created: true

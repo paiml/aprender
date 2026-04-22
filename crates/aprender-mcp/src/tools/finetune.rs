@@ -1,11 +1,12 @@
 //! apr.finetune — LoRA/full-finetune subprocess wrapper.
 //!
-//! M3 streaming slice (FALSIFY-MCP-PROGRESS-001): when the caller supplies a
-//! [`NotificationSink`] (because the originating `tools/call` included
-//! `params._meta.progressToken`), each stdout line from
-//! `apr finetune --json` is forwarded as an MCP `notifications/progress`
-//! message before the final `ToolCallResult` is returned. When the sink is
-//! absent, the call falls back to the synchronous path shipped in #881.
+//! Opt-in streaming (FALSIFY-MCP-PROGRESS-001, shipped M3 — PR #887): when the
+//! caller supplies a [`NotificationSink`] (because the originating
+//! `tools/call` included `params._meta.progressToken`), each non-empty stdout
+//! line from `apr finetune --json` is forwarded as an MCP
+//! `notifications/progress` message before the final `ToolCallResult` is
+//! returned. When the sink is absent — or when no progress token was supplied
+//! — the call falls back to the synchronous path shipped in #881.
 //!
 //! Wraps `apr finetune <base_model> --json [--data <path>] [--rank <N>]
 //! [--epochs <N>] [--method <m>] [--output <path>]`.
@@ -51,9 +52,7 @@ pub fn finetune_tool_definition() -> ToolDefinition {
         );
     ToolDefinition {
         name: NAME.to_string(),
-        description:
-            "Fine-tune a base model with LoRA/QLoRA. Wraps `apr finetune <base_model> --json` and blocks until training completes. Progress streaming lands in a follow-up M3 slice."
-                .to_string(),
+        description: crate::schemas::APR_FINETUNE_DESCRIPTION.to_string(),
         input_schema,
     }
 }

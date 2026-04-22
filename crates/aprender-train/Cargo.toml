@@ -77,7 +77,7 @@ ndarray = "0.16"
 trueno = { version = "0.17", features = ["parallel"] }  # SIMD-accelerated compute
 trueno-gpu = { version = "0.4", optional = true }  # CUDA compute
 realizar = { version = "0.8", optional = true }  # CUDA inference engine
-aprender = { path = "../aprender-core", version = "0.30.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
+aprender = { path = "../aprender-core", version = "0.31.2", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
 trueno-viz = { version = "0.2", features = ["terminal"] }  # Terminal visualization
 presentar-terminal = { version = "0.3.5", optional = true }  # Sovereign TUI framework (gated by "tui" feature)
 presentar-core = "0.3.4"  # Presentar core traits (crates.io — path removed, presentar restructured)
@@ -118,6 +118,7 @@ arrow = { version = "57", default-features = false, optional = true }  # Arrow a
 nvml-wrapper = { version = "0.10", optional = true }  # NVIDIA NVML bindings for GPU monitoring
 hostname = "0.4.2"
 ctrlc = "3.4"  # Signal handling for graceful shutdown (R-008)
+unicode-normalization = "0.1"  # NFC normalization for BPE tokenizer (C-TOK-BPE-001 INV-TOK-003)
 dhat = { version = "0.3", optional = true }  # Heap profiling
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

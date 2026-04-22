@@ -1,0 +1,100 @@
+# CRUX-H-15 — DatasetDict multi-split save
+
+metadata:
+  id: CRUX-H-15
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    DatasetDict multi-split save: write {train, validation, test} under a
+    single root with a manifest. Canonical: HF
+    `DatasetDict.save_to_disk(path)` which produces
+    `path/{train,validation,test}/dataset_info.json + data-*.arrow` and a
+    top-level `dataset_dict.json` listing the splits.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  dataset_dict_save:
+    formula: |
+      save_to_disk(dd, root) =
+        write(root/dataset_dict.json, { "splits": sorted(dd.keys()) }) ;
+        for s in dd.keys():
+          write(root/s/, dd[s])  # arrow shards + dataset_info.json
+      load_from_disk(root) then yields exactly the original splits.
+    domain: "(dd: DatasetDict, root: Path)"
+    codomain: "directory tree + manifest; round-trip idempotent"
+    invariants:
+    - "load_from_disk(save_to_disk(dd)) == dd (split names + row counts)"
+    - "top-level dataset_dict.json lists every split directory and nothing else"
+    - "split names are sorted lexicographically in the manifest"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-15-001
+  rule: round-trip preserves split names and row counts
+  prediction: "save then load yields same keys and |rows| per split"
+  test: |
+    set -euo pipefail
+    mkdir -p /tmp/dd_src
+    printf '{"text":"a"}\n{"text":"b"}\n' > /tmp/dd_src/train.jsonl
+    printf '{"text":"c"}\n' > /tmp/dd_src/validation.jsonl
+    apr dataset save-dict /tmp/dd_src --out /tmp/dd_out
+    apr dataset load-dict /tmp/dd_out --format json > /tmp/dd.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/dd.json'))
+    assert sorted(d['splits'].keys()) == ['train','validation'], d
+    assert d['splits']['train'] == 2 and d['splits']['validation'] == 1, d
+    "
+  if_fails: rule 'round-trip preserves split names and row counts' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-15-002
+  rule: manifest lists exactly the saved splits, sorted
+  prediction: "dataset_dict.json.splits == sorted(dir names)"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import json, os
+    m = json.load(open('/tmp/dd_out/dataset_dict.json'))
+    dirs = sorted([d for d in os.listdir('/tmp/dd_out') if os.path.isdir('/tmp/dd_out/'+d)])
+    assert m['splits'] == dirs, (m, dirs)
+    "
+  if_fails: rule 'manifest lists exactly the saved splits, sorted' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-15-003
+  rule: partial save is rejected (atomic write)
+  prediction: "interrupting save leaves no dataset_dict.json — load fails cleanly"
+  test: |
+    set -euo pipefail
+    rm -rf /tmp/dd_partial; mkdir -p /tmp/dd_partial/train
+    echo '{}' > /tmp/dd_partial/train/dataset_info.json
+    ! apr dataset load-dict /tmp/dd_partial 2>/tmp/err
+    grep -E "dataset_dict.json|manifest.*missing" /tmp/err
+
+  if_fails: rule 'partial save is rejected (atomic write)' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr dataset save-dict/load-dict round-trips HF `DatasetDict.save_to_disk` layout"
+- type: invariant
+  property: "manifest splits == sorted filesystem split dirs"
+- type: invariant
+  property: "missing manifest → load fails (no silent partial load)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-h-15
+  priority: medium
+  auto_created: false

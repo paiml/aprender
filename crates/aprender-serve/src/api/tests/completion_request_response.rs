@@ -180,6 +180,8 @@ fn test_health_response_serde() {
         status: "ok".to_string(),
         version: "1.0.0".to_string(),
         compute_mode: "cpu".to_string(),
+        model_loaded: true,
+        uptime_sec: 1.0,
     };
     let json = serde_json::to_string(&resp).expect("serialize");
     let parsed: crate::api::HealthResponse = serde_json::from_str(&json).expect("deserialize");

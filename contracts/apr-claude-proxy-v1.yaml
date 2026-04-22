@@ -1,0 +1,456 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-claude-proxy-v1
+#
+# SOURCE OF TRUTH for `apr serve anthropic` — the Claude Messages-API
+# provable-contract proxy. This contract pins BOTH the request shape accepted
+# from Anthropic-SDK clients AND the response shape emitted back, so that
+# Claude Code, Cursor, Zed's AI pane, anthropic-sdk-python, and anthropic-sdk-
+# typescript can all target a local aprender instance at ANTHROPIC_BASE_URL
+# with zero client-side code change.
+#
+# Scope: HTTP surface only (no MCP JSON-RPC here). For the MCP protocol
+# contract see apr-mcp-server-v1.yaml. For the agent-loop semantics powering
+# the backend see contracts/batuta/apr-code-v1.yaml.
+#
+# Direction: YAML IS AUTHORITATIVE. The translation layer
+# (`crates/aprender-serve/src/anthropic/`, to be added M6-α) and the SSE
+# serializer consume this contract; hand-editing request/response shapes in
+# Rust is rejected by the falsification suite (see gates below).
+#
+# Spec: docs/specifications/apr-mcp-server-spec.md § "Claude Messages-API
+# Provable-Contract Proxy (PLANNED M6)"
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 1.0.0
+  created: '2026-04-18'
+  last_modified: '2026-04-18'
+  author: PAIML Engineering
+  # kind is declared under metadata.kind per aprender-contracts schema
+  # (see crates/aprender-contracts/src/schema/kind.rs::ContractKind).
+  # The domain kind `AnthropicMessagesProxyContract` is preserved as
+  # metadata.claude_proxy_kind for semantic documentation, but the
+  # schema-dispatch kind (what `pv validate` uses to pick rule sets) is
+  # `pattern` — this is a cross-cutting Messages-API parity contract, not
+  # a mathematical kernel, so the Kernel provability invariant (requires
+  # equations, proof_obligations, falsification_tests, kani_harnesses) is
+  # not applicable. Follows the same approach as apr-code-parity-v1.yaml.
+  kind: pattern
+  claude_proxy_kind: AnthropicMessagesProxyContract
+  description: >
+    Anthropic Messages API request/response contract for `apr serve --compat
+    anthropic`. Pins input shape, output shape, SSE event sequence, default
+    model selection (Qwen3-Coder-30B-A3B-Instruct Q4_K_M), translation
+    semantics (Anthropic ↔ apr code agent loop), and six falsification gates
+    covering shape parity, tool-use round-trip, streaming, default-model
+    autoselect, and sovereignty.
+  references:
+    - 'Anthropic Messages API — https://docs.anthropic.com/en/api/messages (schema v2026-02-01)'
+    - 'Anthropic SDK (Python) — https://github.com/anthropics/anthropic-sdk-python v0.40+'
+    - 'Anthropic SDK (TypeScript) — https://github.com/anthropics/anthropic-sdk-typescript'
+    - 'Qwen3 release announcement — https://qwenlm.github.io/blog/qwen3/ (2025-04-29)'
+    - 'Qwen/Qwen3-Coder-30B-A3B-Instruct — Hugging Face'
+    - 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF — HF (Q4_K_M GGUF)'
+    - 'docs/specifications/apr-mcp-server-spec.md § Claude Messages-API Provable-Contract Proxy'
+    - 'crates/aprender-orchestrate/docs/specifications/components/apr-code.md'
+    - 'contracts/batuta/apr-code-v1.yaml — agent-loop contract powering the proxy backend'
+  depends_on:
+    - apr-code-v1            # agent-loop semantics
+    - tensor-layout-v1       # quantization/layout invariants reach through apr code
+  related:
+    - apr-mcp-server-v1      # sibling protocol surface (MCP, not Messages API)
+    - apr-mcp-tool-schemas-v1
+
+# Top-level `kind:` removed — `AnthropicMessagesProxyContract` is now captured
+# under metadata.claude_proxy_kind. `pv validate` reads ContractKind from
+# metadata.kind only (Contract::kind() in schema/types.rs).
+name: apr-claude-proxy
+version: "1.0.0"
+status: DRAFT   # promotes to ENFORCED at M6-α when the YAML-driven parser + 6 gates ship
+scope: "every request accepted by and every response emitted from `apr serve anthropic`"
+anthropic_schema_version: "v2026-02-01"
+spec: docs/specifications/apr-mcp-server-spec.md
+
+# ── Default model ──
+# The model resolver runs this chain in order, returning the first
+# cache-present entry. `apr pull` is invoked once on startup for the head of
+# the chain if and only if no cached entry exists. `--model <id>` bypasses
+# the chain entirely.
+
+default_model:
+  primary:
+    hf_id: 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+    quant: 'Q4_K_M'
+    approx_size_gb: 18.6
+    fits_vram_gb: 24
+    reference_throughput_tok_per_s: 196
+    reference_hardware: 'RTX 4090 (realizar fused Q4K + FlashDecoding)'
+  fallback_chain:
+    - hf_id: 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+      quant: 'Q4_K_M'
+      rationale: 'coder-specialized, 30.5B/3.3B-active MoE, Apache 2.0'
+    - hf_id: 'Qwen/Qwen3-30B-A3B-GGUF'
+      quant: 'Q4_K_M'
+      rationale: 'general-instruct sibling; same 30.5B/3.3B-active MoE, Apache 2.0'
+    - selector: 'APR_CODE_MODEL env var'
+      rationale: 'honour user-local apr code model selection'
+    - selector: 'manifest.default_model'
+      rationale: 'fall back to agent manifest default'
+  explicitly_not_default:
+    - hf_id: 'Qwen/Qwen3-Next-80B-A3B-GGUF'
+      reason: '~45 GB at Q4_K_M; does not fit a single 4090. Dual-GPU / A6000-Ada / H100 deployments may opt in via --model'
+
+# ── Input contract (request shape) ──
+# Consumed by the translation layer. Every field enumerated here MUST parse
+# successfully; a request that fails this schema returns HTTP 400 with the
+# Anthropic-shaped error envelope defined under `errors.invalid_request`.
+
+inputs:
+  messages_request:
+    http_method: POST
+    http_path: '/v1/messages'
+    content_type: 'application/json'
+    schema:
+      type: object
+      additionalProperties: false
+      required: [model, messages, max_tokens]
+      properties:
+        model:
+          type: string
+          description: 'Model selector. Unknown IDs fall back to default with x-apr-model-fallback header.'
+        messages:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, content]
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                oneOf:
+                  - type: string
+                  - type: array
+                    items: { $ref: '#/definitions/content_block' }
+        max_tokens:
+          type: integer
+          minimum: 1
+        system:
+          oneOf:
+            - type: string
+            - type: array
+              items: { $ref: '#/definitions/content_block' }
+        tools:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, description, input_schema]
+            properties:
+              name: { type: string }
+              description: { type: string }
+              input_schema: { type: object }
+        stream: { type: boolean }
+        temperature: { type: number, minimum: 0.0, maximum: 2.0 }
+        top_p: { type: number, minimum: 0.0, maximum: 1.0 }
+        top_k: { type: integer, minimum: 1 }
+        stop_sequences:
+          type: array
+          items: { type: string }
+          maxItems: 4
+        metadata: { type: object }
+    content_block_types_accepted:
+      - text         # normal textual content
+      - image        # base64 or URL reference
+      - tool_use     # assistant-emitted tool invocation (on replay)
+      - tool_result  # user-supplied tool output
+      - document     # PDF/doc content
+    content_block_types_ignored_on_input:
+      - thinking     # reasoning blocks on input are accepted but discarded;
+                     # reasoning is regenerated locally, consistent with
+                     # Anthropic's own re-derivation semantics
+
+# ── Output contract (response shape) ──
+# Emitted by the response serializer. Non-streaming responses are a single
+# JSON body; streaming responses are the SSE event sequence enumerated below.
+
+outputs:
+  messages_response:
+    http_status: 200
+    content_type: 'application/json'
+    schema:
+      type: object
+      additionalProperties: false
+      required: [id, type, role, model, content, stop_reason, usage]
+      properties:
+        id:
+          type: string
+          description: 'UUIDv7, locally generated; stable across retries of same request-hash (future work)'
+        type: { type: string, const: message }
+        role: { type: string, const: assistant }
+        model: { type: string, description: 'Resolved model ID after fallback' }
+        content:
+          type: array
+          items:
+            oneOf:
+              - { $ref: '#/definitions/content_block_text' }
+              - { $ref: '#/definitions/content_block_tool_use' }
+              - { $ref: '#/definitions/content_block_thinking' }
+        stop_reason:
+          type: string
+          enum: [end_turn, max_tokens, stop_sequence, tool_use]
+        stop_sequence:
+          oneOf:
+            - type: string
+            - type: 'null'
+        usage:
+          type: object
+          additionalProperties: false
+          required: [input_tokens, output_tokens]
+          properties:
+            input_tokens: { type: integer, minimum: 0 }
+            output_tokens: { type: integer, minimum: 0 }
+            cache_creation_input_tokens: { type: integer, minimum: 0 }
+            cache_read_input_tokens: { type: integer, minimum: 0 }
+
+  sse_events:
+    http_status: 200
+    content_type: 'text/event-stream'
+    sequence: 'message_start → (content_block_start → N × content_block_delta → content_block_stop)⁺ → message_delta → message_stop'
+    events:
+      - event: message_start
+        required_fields: [type, message]
+      - event: content_block_start
+        required_fields: [type, index, content_block]
+      - event: content_block_delta
+        required_fields: [type, index, delta]
+        delta_variants: [text_delta, input_json_delta, thinking_delta]
+      - event: content_block_stop
+        required_fields: [type, index]
+      - event: message_delta
+        required_fields: [type, delta, usage]
+        delta_carries: [stop_reason, stop_sequence]
+      - event: message_stop
+        required_fields: [type]
+      - event: ping
+        required_fields: [type]
+        emitted: 'heartbeat; optional; ignored by well-formed clients'
+      - event: error
+        required_fields: [type, error]
+        emitted: 'terminal; stream ends after'
+
+# ── Errors (Anthropic-shaped envelope) ──
+errors:
+  invalid_request:
+    http_status: 400
+    body:
+      type: object
+      required: [type, error]
+      properties:
+        type: { const: error }
+        error:
+          type: object
+          required: [type, message]
+          properties:
+            type: { const: invalid_request_error }
+            message: { type: string }
+  model_not_found:
+    http_status: 404
+    behaviour: 'soft — proxy prefers fallback chain and returns 200 with x-apr-model-fallback header. 404 is reserved for explicit --model values that are uninstallable.'
+  rate_limited:
+    http_status: 429
+    behaviour: 'not emitted by the local proxy (no rate limits). Reserved for future deployments behind a reverse proxy.'
+  server_error:
+    http_status: 500
+    body_shape: 'same envelope as invalid_request with error.type = api_error'
+
+# ── Translation semantics (Anthropic ↔ apr code) ──
+translation:
+  request:
+    - anthropic_field: messages[]
+      apr_code_mapping: 'Batuta Conversation::from_anthropic(&messages) — role + content-block fidelity'
+    - anthropic_field: tools[]
+      apr_code_mapping: 'Registered as AnthropicToolAdapter entries alongside build_code_tools output (FileRead/Write/Edit, Glob, Grep, Shell, Memory, PmatQuery, Rag)'
+    - anthropic_field: system
+      apr_code_mapping: 'Prepended as a system-role Batuta Message'
+    - anthropic_field: max_tokens
+      apr_code_mapping: 'realizar GenConfig.max_new_tokens'
+    - anthropic_fields: [temperature, top_p, top_k, stop_sequences]
+      apr_code_mapping: 'realizar GenConfig {temperature, top_p, top_k, stop_sequences}'
+    - anthropic_field: 'stream: true'
+      apr_code_mapping: 'SSE serializer subscribes to agent event channel; content_block_delta per token for text, per completed arg-json for tool_use'
+  response:
+    - apr_code_event: 'text token'
+      anthropic_block: '{type: text, text: <token>}'
+    - apr_code_event: 'tool call'
+      anthropic_block: '{type: tool_use, id, name, input}'
+    - apr_code_event: 'reasoning trace'
+      anthropic_block: '{type: thinking, thinking: <trace>}'
+    - apr_code_event: 'end-of-turn'
+      anthropic_stop_reason: end_turn
+    - apr_code_event: 'max_tokens reached'
+      anthropic_stop_reason: max_tokens
+    - apr_code_event: 'stop_sequence matched'
+      anthropic_stop_reason: stop_sequence
+    - apr_code_event: 'tool call pending client execution'
+      anthropic_stop_reason: tool_use
+  purity_guarantee: >
+    Translation is a pure function of (request_body, resolved_model, server_config).
+    No hidden state. No client-identity leakage (no ip, no key-hash, no timestamp
+    in response body). Property-tested round-trip via
+    `apr serve anthropic --dump-translation` against a fixture corpus.
+
+# ── Falsification conditions ──
+# Each gate MUST be mechanically asserted in CI before this contract promotes
+# from DRAFT to ENFORCED. Contract status is DRAFT until all six gates pass.
+
+falsification_conditions:
+  - id: FALSIFY-CLAUDE-PROXY-001
+    name: input_shape_parity
+    status: PLANNED_M6_ALPHA
+    assertion: >
+      Every request that passes Anthropic's published Messages-API JSON Schema
+      is accepted by the proxy; every request that fails that schema returns
+      HTTP 400 with body matching `errors.invalid_request`.
+    test_harness: 'crates/aprender-serve/tests/falsify_claude_proxy_001.rs (planned)'
+    corpus: 'captured anthropic-sdk-python fixtures + schema negative samples'
+
+  - id: FALSIFY-CLAUDE-PROXY-002
+    name: output_shape_parity
+    status: PLANNED_M6_BETA
+    assertion: >
+      Every non-streaming response body parses cleanly against
+      `outputs.messages_response.schema` (additionalProperties: false).
+      `stop_reason` is drawn from the closed enum. Every response also passes
+      `anthropic-sdk-python` v0.40+ `Message.model_validate(body)`.
+    test_harness: 'crates/aprender-serve/tests/falsify_claude_proxy_002.rs (planned)'
+
+  - id: FALSIFY-CLAUDE-PROXY-003
+    name: tool_use_round_trip
+    status: PLANNED_M6_BETA
+    assertion: >
+      A 4-turn fixture (user → tool_use → tool_result → assistant) exercising
+      the `Bash` tool produces a transcript whose stop_reason transitions
+      `tool_use → end_turn` across turns, matching the stop-reason order of
+      an identical fixture captured offline from api.anthropic.com. No live
+      network in CI.
+    test_harness: 'crates/aprender-serve/tests/falsify_claude_proxy_003.rs (planned)'
+    fixture_location: 'tests/fixtures/anthropic/bash_tool_round_trip.jsonl'
+
+  - id: FALSIFY-CLAUDE-PROXY-004
+    name: streaming_event_parity
+    status: PLANNED_M6_GAMMA
+    assertion: >
+      SSE event sequence on a short prompt is a valid prefix of the Anthropic
+      event schedule (`message_start` → ≥1 `content_block_*` cluster →
+      `message_delta` → `message_stop`). `event:` casing matches Anthropic.
+      Each `data:` payload parses against its declared sub-schema.
+    test_harness: 'crates/aprender-serve/tests/falsify_claude_proxy_004.rs (planned)'
+
+  - id: FALSIFY-CLAUDE-PROXY-005
+    name: default_model_autoselect
+    status: PLANNED_M6_DELTA
+    assertion: >
+      On startup with no `--model` and no cached model file, the HTTP
+      listener MUST NOT bind until `apr pull` completes. On startup with the
+      cached file present, time-to-listen < 3s (parity with `apr serve`).
+      Asserted via filesystem-state test, NOT via HF network.
+    test_harness: 'crates/aprender-serve/tests/falsify_claude_proxy_005.rs (planned)'
+
+  - id: FALSIFY-CLAUDE-PROXY-006
+    name: sovereignty
+    status: PLANNED_M6_DELTA
+    assertion: >
+      `apr serve anthropic` MUST NOT open outbound sockets to
+      api.anthropic.com under any combination of request headers, env vars,
+      or config. Asserted by blocking all outbound network in the CI test
+      container except 127.0.0.1.
+    test_harness: 'crates/aprender-serve/tests/falsify_claude_proxy_006.rs (planned)'
+    rationale: 'Sovereign-AI is aprender`s core value prop; any accidental egress to Anthropic is a ship-blocker bug, not a config option.'
+
+# ── Reusable content-block definitions ──
+definitions:
+  content_block:
+    oneOf:
+      - { $ref: '#/definitions/content_block_text' }
+      - { $ref: '#/definitions/content_block_image' }
+      - { $ref: '#/definitions/content_block_tool_use' }
+      - { $ref: '#/definitions/content_block_tool_result' }
+      - { $ref: '#/definitions/content_block_document' }
+      - { $ref: '#/definitions/content_block_thinking' }
+
+  content_block_text:
+    type: object
+    additionalProperties: false
+    required: [type, text]
+    properties:
+      type: { const: text }
+      text: { type: string }
+
+  content_block_image:
+    type: object
+    additionalProperties: false
+    required: [type, source]
+    properties:
+      type: { const: image }
+      source:
+        type: object
+        required: [type]
+        properties:
+          type: { type: string, enum: [base64, url] }
+          media_type: { type: string }
+          data: { type: string }
+          url: { type: string }
+
+  content_block_tool_use:
+    type: object
+    additionalProperties: false
+    required: [type, id, name, input]
+    properties:
+      type: { const: tool_use }
+      id: { type: string }
+      name: { type: string }
+      input: { type: object }
+
+  content_block_tool_result:
+    type: object
+    additionalProperties: false
+    required: [type, tool_use_id, content]
+    properties:
+      type: { const: tool_result }
+      tool_use_id: { type: string }
+      content:
+        oneOf:
+          - type: string
+          - type: array
+            items:
+              oneOf:
+                - { $ref: '#/definitions/content_block_text' }
+                - { $ref: '#/definitions/content_block_image' }
+      is_error: { type: boolean }
+
+  content_block_document:
+    type: object
+    additionalProperties: false
+    required: [type, source]
+    properties:
+      type: { const: document }
+      source:
+        type: object
+        required: [type]
+        properties:
+          type: { type: string, enum: [base64, url] }
+          media_type: { type: string }
+          data: { type: string }
+          url: { type: string }
+
+  content_block_thinking:
+    type: object
+    additionalProperties: false
+    required: [type, thinking]
+    properties:
+      type: { const: thinking }
+      thinking: { type: string }
+      signature: { type: string, description: 'Optional signature produced by realizar for reasoning verification' }

@@ -1,0 +1,90 @@
+# CRUX-J-15 — OpenCLAW auto-update / self-modify path
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-15
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 3
+  intake_status: missing
+  description: >
+    OpenCLAW ships a `openclaw update` verb that pulls the latest release
+    and restarts the daemon in place. Aprender parity: `apr` must offer a
+    documented upgrade path (cargo install --force, package manager, or
+    explicit update verb) with a known release channel. Overlaps with
+    apr-cli-commands-v1 release surface.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/apr-cli-commands-v1.yaml
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  upgrade_path:
+    formula: |
+      upgrade() := fetch(latest_release) ∘ replace_binary ∘ restart_daemon?
+      invariant: version(after_upgrade) ≥ version(before_upgrade)
+      invariant: no silent downgrade
+      invariant: in-flight requests drain before restart (if daemonized)
+    domain: current running apr binary + release channel
+    codomain: upgraded binary, optional daemon restart
+    invariants:
+    - "upgrade is documented (verb, package manager, or both)"
+    - "version monotonically non-decreasing post-upgrade"
+    - "daemon restart drains in-flight requests"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-15-001
+  rule: upgrade path is documented
+  prediction: "apr docs name an explicit upgrade verb or cargo install path"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "cargo install aprender OR apr upgrade OR release channel upgrade" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no documented upgrade path" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-15 parity broken — apr MUST document an upgrade path
+- id: FALSIFY-CRUX-J-15-002
+  rule: no silent downgrade
+  prediction: "release docs describe version monotonicity"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "aprender release version monotonic OR no downgrade invariant" --limit 1 --format json | grep -q '"matches"' || {
+        echo "SKIP: version-monotonicity evidence not yet indexed" >&2
+        exit 77
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-15 monotonic invariant — upgrade must never silently downgrade
+
+proof_obligations:
+- type: invariant
+  property: "upgrade path is documented"
+- type: invariant
+  property: "no silent downgrade"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-15
+  priority: medium
+  auto_created: true

@@ -1,0 +1,153 @@
+# CRUX-A-11 — apr cp copy model with new tag
+
+metadata:
+  id: CRUX-A-11
+  version: "1.2.0"
+  created: "2026-04-18"
+  last_updated: "2026-04-20"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: ollama
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Copy a local model under a new tag without re-downloading weights.
+    Canonical: `ollama cp llama3:latest my-llama3:v1` — hard-links blobs,
+    writes a new manifest pointing at the same blob sha256.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  copy_by_manifest:
+    formula: |
+      apr cp SRC DST creates manifest(DST) such that:
+        manifest(DST).blobs == manifest(SRC).blobs  (identical sha256 list)
+        stat(blob_path).st_ino == stat(blob_path_after_cp).st_ino  (hard-link)
+        disk_usage_delta ≈ sizeof(manifest_json)     (only JSON, no re-copy)
+    domain: "(src_tag: str, dst_tag: str) where src_tag ∈ local_registry"
+    codomain: "manifest file + 0 new blobs"
+    invariants:
+    - "blob count unchanged across registry; only manifest count increments"
+    - "`apr ls` lists both SRC and DST tags after cp"
+    - "removing DST leaves SRC blobs intact (refcount decrement, not delete)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-11-001
+  rule: copy is manifest-only; no new blob bytes land on disk
+  prediction: "du -b before vs after apr cp differs by ≤ 4 KiB (one manifest file)"
+  test: |
+    set -euo pipefail
+    REG="$HOME/.apr/models"
+    SRC="qwen2.5-0.5b:latest"
+    DST="qwen2.5-0.5b:mycopy"
+    before=$(du -sb "$REG" | cut -f1)
+    apr cp "$SRC" "$DST"
+    after=$(du -sb "$REG" | cut -f1)
+    delta=$((after - before))
+    [ "$delta" -le 4096 ] || { echo "cp allocated $delta bytes (expected ≤4096)"; exit 1; }
+    apr ls | grep -q "$DST"
+  if_fails: rule 'copy is manifest-only; no new blob bytes land on disk' is violated — contract MUST be re-verified against competitor canonical reference
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/copy_tag.rs
+    sub_claim: >
+      The pure `plan_copy(registry, src, dst) -> CopyPlan` classifier
+      proves that the planned op stream contains ZERO byte-copy
+      operations: every blob op is a `HardLink { sha }` and exactly one
+      `WriteManifest { tag }` op is emitted. This is the algorithm-level
+      precondition for the integration-level `du -b` delta ≤ 4 KiB
+      check — if no byte-copy op is ever scheduled, the only on-disk
+      delta is the manifest file itself (well under 4 KiB).
+    tests:
+    - commands::copy_tag::tests::falsify_001_sub_claim_zero_byte_copy_ops
+    - commands::copy_tag::tests::no_byte_copy_holds_for_all_plans
+    - commands::copy_tag::tests::ops_preserve_source_manifest_order
+    - commands::copy_tag::tests::write_manifest_op_is_last
+    - commands::copy_tag::tests::blob_count_matches_src_exactly
+    scope: >
+      Algorithm-level discharge: the planner implements the contract
+      `copy_by_manifest` equation at the op-stream layer. NOT YET
+      DISCHARGED: the integration check that `apr cp SRC DST` actually
+      runs with `du -b` delta ≤ 4 KiB on a real registry (requires the
+      CLI subcommand wired up, filesystem I/O, and a `du` probe).
+- id: FALSIFY-CRUX-A-11-002
+  rule: blobs are hard-linked, not bytewise copied
+  prediction: "blob inode is identical between SRC and DST manifest references"
+  test: |
+    set -euo pipefail
+    src_blob=$(apr inspect --blob-path "qwen2.5-0.5b:latest" | head -1)
+    dst_blob=$(apr inspect --blob-path "qwen2.5-0.5b:mycopy" | head -1)
+    [ "$(stat -c %i "$src_blob")" = "$(stat -c %i "$dst_blob")" ]
+
+  if_fails: rule 'blobs are hard-linked, not bytewise copied' is violated — contract MUST be re-verified against competitor canonical reference
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    classifier: crates/apr-cli/src/commands/copy_tag.rs
+    sub_claim: >
+      The classifier proves that SRC and DST manifests reference the
+      EXACT same sha256 list in the same order. For a content-addressed
+      blob store (one path per sha), this implies the DST manifest
+      resolves every blob to the same inode as SRC — `stat -c %i`
+      equality is a direct corollary.
+    tests:
+    - commands::copy_tag::tests::falsify_002_sub_claim_blob_shas_equal
+    - commands::copy_tag::tests::copy_produces_identical_blob_sha_list
+    - commands::copy_tag::tests::ops_preserve_source_manifest_order
+    - commands::copy_tag::tests::blob_count_matches_src_exactly
+    scope: >
+      Algorithm-level discharge: plan guarantees sha-list equality.
+      NOT YET DISCHARGED: filesystem-level inode equality after real
+      `apr cp` runs (requires `stat -c %i` over the resolved blob
+      paths on a live registry).
+proof_obligations:
+- type: equivalence
+  property: "apr cp matches `ollama cp` — identical blob sharing semantics"
+- type: invariant
+  property: "disk-usage delta ≤ 4 KiB per copy (manifest only)"
+- type: invariant
+  property: "removing DST does not affect SRC readability"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 2  # FALSIFY-001/002 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/copy_tag.rs
+    classifier: crates/apr-cli/src/commands/copy_tag.rs
+    commands:
+    - apr cp <src-tag> <dst-tag>  # classifier-observable via plan_copy
+    coverage:
+    - falsify-001: commands::copy_tag::tests::falsify_001_sub_claim_zero_byte_copy_ops
+    - falsify-001: commands::copy_tag::tests::no_byte_copy_holds_for_all_plans
+    - falsify-001: commands::copy_tag::tests::write_manifest_op_is_last
+    - falsify-002: commands::copy_tag::tests::falsify_002_sub_claim_blob_shas_equal
+    - falsify-002: commands::copy_tag::tests::copy_produces_identical_blob_sha_list
+    - falsify-002: commands::copy_tag::tests::blob_count_matches_src_exactly
+  scope_honesty: >
+    FALSIFY-CRUX-A-11-001/002 both discharged at PARTIAL_ALGORITHM_LEVEL.
+    The pure `plan_copy` classifier proves at the op-stream layer that
+    (a) zero byte-copy operations are scheduled — every blob op is a
+    HardLink and exactly one WriteManifest is emitted, and (b) the
+    destination manifest references the SAME sha256 list in the SAME
+    order as the source. 17 unit tests cover blob-sha preservation,
+    op-stream shape (no byte-copy, manifest-write-last), tag validity
+    (empty / path-separator / NUL rejected), error cases (src not found,
+    dst exists, empty manifest, copy-to-self), determinism, and single-
+    vs multi-blob manifests. NOT YET DISCHARGED: the integration-level
+    `du -b` delta ≤ 4 KiB and `stat -c %i` equality checks on a live
+    local registry (requires `apr cp` CLI subcommand, filesystem I/O,
+    and a real registry with blobs present). Contract stays
+    `status: partial`; master `supported_count` NOT bumped. `intake_status`
+    stays `missing` (feature is not yet observable end-to-end via `apr cp`).
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-a-11
+  priority: medium
+  auto_created: true

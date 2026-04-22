@@ -1,0 +1,92 @@
+# CRUX-J-14 — OpenCLAW onboard safety prompts for destructive ops
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-14
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 2
+  intake_status: missing
+  description: >
+    OpenCLAW prompts the user before enabling destructive capabilities
+    (file delete, shell exec, sudo) during first-run. Aprender parity:
+    `apr` first-run / `apr code` launch MUST default to deny for
+    destructive capabilities and require explicit user opt-in — never
+    auto-enable. Overlaps with SSC classifier (CRUX-J-08) and
+    hooks approval (PMAT-CODE-HOOKS-001).
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/crux-J-08-v1.yaml
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  destructive_op_consent:
+    formula: |
+      enable(cap) :=
+        if cap ∈ destructive_caps : require user_confirm()
+        else                      : enable_silently()
+      destructive_caps := {file_delete, shell_exec, sudo, net_egress_unbounded}
+      invariant: no destructive cap enabled without prior explicit user consent
+    domain: first-run onboarding step
+    codomain: set of enabled capabilities
+    invariants:
+    - "deny-by-default for destructive capabilities"
+    - "enable requires explicit per-capability user confirmation"
+    - "opt-in choices are persisted so subsequent runs don't re-prompt"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-14-001
+  rule: destructive capabilities are deny-by-default
+  prediction: "apr / aprender docs describe deny-by-default for destructive operations"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "deny-by-default destructive OR confirm before rm OR safety prompt onboard" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no deny-by-default destructive-op story" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-14 parity broken — destructive caps MUST be deny-by-default
+- id: FALSIFY-CRUX-J-14-002
+  rule: consent is persisted, not re-prompted
+  prediction: "opt-in choices persist across runs"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "opt-in persist across runs OR saved capability consent" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no persisted-consent story" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-14 persistence invariant — consent must persist across runs
+
+proof_obligations:
+- type: invariant
+  property: "destructive ops deny-by-default"
+- type: invariant
+  property: "consent persists across runs"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-14
+  priority: low
+  auto_created: true

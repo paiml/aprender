@@ -1,0 +1,217 @@
+# CRUX-A-16 — Modelfile recipe custom system prompt
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-16
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: ollama
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Modelfile-style recipe binding a SYSTEM prompt (and optional PARAMETER /
+    TEMPLATE overrides) to a base model, producing a new addressable model tag.
+    Parity target is ollama's Modelfile (https://github.com/ollama/ollama/blob/main/docs/modelfile.md)
+    + `ollama create mymodel -f Modelfile`. aprender equivalent: `apr create
+    <tag> -f Recipe.apr` — a declarative TOML/YAML recipe referencing a base
+    model plus SYSTEM/TEMPLATE/PARAMETER keys. The derived tag MUST inject the
+    SYSTEM prompt into every chat invocation that does not override it.
+  references:
+  - "https://github.com/ollama/ollama/blob/main/docs/modelfile.md"
+  - "https://github.com/ollama/ollama/blob/main/parser/parser.go"  # Modelfile grammar
+
+equations:
+  recipe_schema:
+    formula: |
+      Recipe ::= {
+        from:     string,              # base model ref (hf://, file://, registry tag)
+        system:   string?,             # default SYSTEM message injected at position 0
+        template: string?,             # chat-template override (Jinja2 / minijinja)
+        parameters: {                  # inference defaults
+          temperature: f32?, top_p: f32?, top_k: u32?, num_ctx: u32?, stop: [string]?
+        }?
+      }
+    domain: Recipe.apr file
+    codomain: DerivedModel
+    invariants:
+    - "`from` MUST resolve to a real base model at `apr create` time"
+    - "Unknown top-level keys REJECTED (strict schema, not lenient)"
+    - "parameters values type-check per the inference parameter table"
+
+  system_prompt_binding:
+    formula: |
+      For a derived tag T created from Recipe R with R.system = S:
+        ∀ prompt p, chat(T, p) prepends S as role=system at message[0]
+        unless the caller explicitly overrides with --system OTHER.
+    domain: (derived_tag, user_prompt)
+    codomain: rendered chat messages
+    invariants:
+    - "messages[0].role == 'system' and messages[0].content == R.system"
+    - "CLI --system flag overrides recipe SYSTEM (last-writer wins)"
+
+  ollama_modelfile_parity:
+    formula: |
+      For goldens in evidence/crux/ollama/modelfile-goldens/, the tokens emitted
+      by `apr run <derived>` (temperature=0, same seed) match tokens from
+      `ollama run <derived>` up to tokenizer-level equality on the first 64 tokens.
+    domain: (Modelfile, prompt, seed)
+    codomain: token stream prefix
+    invariants:
+    - "Token-for-token match on first 64 tokens at temperature=0"
+    - "SYSTEM injection position and content identical"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-16-001
+  rule: recipe creates an addressable tag
+  prediction: "`apr create` followed by `apr ls` shows the new tag"
+  test: |
+    TMP=$(mktemp -d)
+    cat > "$TMP/Recipe.apr" <<'R'
+    from: "hf://unsloth/Qwen2.5-Coder-7B-Instruct-GGUF"
+    system: "You are a Rust expert. Always answer in one sentence."
+    parameters:
+      temperature: 0.2
+    R
+    apr create myrust -f "$TMP/Recipe.apr"
+    apr ls --json | jq -e '.[] | select(.name == "myrust")' >/dev/null
+  if_fails: "derived tag not registered by `apr create`"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/recipe.rs
+    sub_claim: |
+      Necessary condition: the recipe body parses to a well-typed Recipe
+      (strict schema, from non-empty, known parameter keys only). Without
+      this, `apr create` cannot produce a derivable tag.
+    tests:
+    - minimal_recipe_parses
+    - full_recipe_parses
+    - missing_from_rejected
+    - empty_from_rejected
+    - unknown_top_level_key_rejected
+    - unknown_parameters_key_rejected
+    - wrong_type_for_temperature_rejected
+    scope: Recipe parser + strict-schema validator (pure, no I/O)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: apr create tag registry + apr ls listing integration harness
+
+- id: FALSIFY-CRUX-A-16-002
+  rule: SYSTEM prompt is injected
+  prediction: "chat(derived, p) prepends recipe.system as messages[0]"
+  test: |
+    apr run myrust --prompt "What is ownership?" --trace=tokenize --json > /tmp/trace.json
+    python3 - <<'PY'
+    import json
+    tr = json.load(open("/tmp/trace.json"))
+    msgs = tr["rendered_messages"]
+    assert msgs[0]["role"] == "system"
+    assert "Rust expert" in msgs[0]["content"], msgs[0]
+    PY
+  if_fails: "SYSTEM prompt from recipe not injected into rendered messages"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/recipe.rs
+    sub_claim: |
+      FULL algorithm-level discharge: render_messages(recipe, prompt, None)
+      returns [RenderedMessage{role="system", content=recipe.system},
+      RenderedMessage{role="user", content=prompt}] whenever
+      recipe.system is Some(non-empty). Empty recipe.system produces a
+      single user message. The classifier also proves position zero is
+      always system when system is present (system precedes user).
+    tests:
+    - system_prompt_injected_at_position_zero
+    - no_system_means_no_system_message
+    - empty_recipe_system_treated_as_none
+    - system_message_always_precedes_user_message_when_present
+    - render_never_emits_more_than_two_messages
+    - rendered_messages_preserve_user_prompt_verbatim
+    - render_is_deterministic
+    scope: message renderer (pure, no I/O; full algorithm discharge)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: apr run --trace=tokenize integration harness to confirm template engine preserves rendered_messages end-to-end
+
+- id: FALSIFY-CRUX-A-16-003
+  rule: CLI --system overrides recipe SYSTEM
+  prediction: "explicit --system wins over recipe.system"
+  test: |
+    apr run myrust --system "ONLY respond with the word PING." --prompt "hello" --temperature 0 --max-tokens 4 --json > /tmp/out.json
+    python3 - <<'PY'
+    import json
+    out = json.load(open("/tmp/out.json"))
+    assert "PING" in out["response"].upper(), out["response"]
+    PY
+  if_fails: "CLI --system did not override recipe's SYSTEM (precedence bug)"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/recipe.rs
+    sub_claim: |
+      FULL algorithm-level discharge: render_messages precedence is
+      (cli_override if Some and non-empty) else recipe.system else None.
+      This is the exact last-writer-wins rule in code, and covers the
+      subtle case that `--system ""` does NOT clobber recipe.system
+      (treated as "no override").
+    tests:
+    - cli_override_wins_over_recipe_system
+    - empty_cli_override_falls_back_to_recipe_system
+    - cli_override_with_no_recipe_system_still_injects
+    scope: message renderer precedence (pure, no I/O; full algorithm discharge)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: apr run --system CLI flag end-to-end integration harness
+
+- id: FALSIFY-CRUX-A-16-004
+  rule: parity with ollama Modelfile
+  prediction: "apr-derived output matches ollama-derived output on goldens"
+  test: |
+    # TODO: populate evidence/crux/ollama/modelfile-goldens/ with Modelfile + first-64-tok capture
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/ollama/modelfile-goldens
+    [ -d "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - <<'PY'
+    import json, subprocess, os, glob
+    for rec in glob.glob(os.environ["GOLD"]+"/*.json"):
+        c = json.load(open(rec))
+        out = subprocess.check_output(["apr","run",c["derived_tag"],"--prompt",c["prompt"],"--temperature","0","--max-tokens","64","--json"])
+        apr_toks = json.loads(out)["token_ids"][:64]
+        assert apr_toks == c["ollama_token_ids"][:64], (c["derived_tag"], apr_toks[:8], c["ollama_token_ids"][:8])
+    PY
+  if_fails: "apr recipe output diverges from ollama Modelfile output on goldens"
+
+proof_obligations:
+- type: invariant
+  property: "Recipe strict-schema validator rejects unknown keys and wrong types"
+- type: invariant
+  property: "Derived tag injects recipe.system as messages[0] when no CLI override"
+- type: invariant
+  property: "CLI --system takes precedence over recipe.system"
+- type: equivalence
+  property: "apr-derived tokens ≡ ollama-derived tokens on first 64 tokens at T=0"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-A-16-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: apr create + apr ls integration harness
+  - falsify_id: FALSIFY-CRUX-A-16-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: apr run --trace=tokenize end-to-end harness (algorithm fully proven)
+  - falsify_id: FALSIFY-CRUX-A-16-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: apr run --system CLI flag end-to-end harness (algorithm fully proven)
+  - falsify_id: FALSIFY-CRUX-A-16-004
+    discharge_status: NOT_DISCHARGED
+    blocked_on: ollama Modelfile golden corpus + token-level parity runner
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-16` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-16
+  priority: high
+  auto_created: true

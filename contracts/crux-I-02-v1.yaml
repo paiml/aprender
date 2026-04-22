@@ -1,0 +1,122 @@
+# CRUX-I-02 — MCP client consuming external
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-I-02
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "I — Observability & Metrics"
+  competitor: ecosystem
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    MCP client consuming external. Root-cause workflow extracted from ecosystem UX — see master
+    subspec §5.I and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
+equations:
+  mcp_client_handshake:
+    formula: |
+      Reference @modelcontextprotocol/sdk ClientSession flow:
+        1. transport.start() (stdio/http)
+        2. send initialize { protocolVersion, capabilities, clientInfo }
+        3. receive initialize result { protocolVersion, capabilities, serverInfo }
+        4. send notifications/initialized
+      apr code --mcp-server <cmd>  (or apr chat --mcp server=<url>):
+        MUST perform same handshake, echo server protocolVersion, log serverInfo
+    domain: "external MCP server command/URL (stdio or HTTP transport)"
+    codomain: "initialized MCP session + list of remote tool metadata"
+    invariants:
+    - "protocolVersion in response is one of the supported values (2024-11-05, 2025-03-26, 2025-06-18)"
+    - "notifications/initialized MUST be sent before any tools/list call"
+    - "clientInfo.name == 'aprender' and clientInfo.version == apr --version string"
+    - "Reference: https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle"
+
+  remote_tools_call_bridge:
+    formula: |
+      For every tool T returned by external server:
+        apr surface registers T as callable under namespace mcp/<server>/<T.name>
+        apr invocation of mcp/<server>/<T.name>(args):
+          → forwards JSON-RPC tools/call to remote server
+          → returns remote CallToolResult.content verbatim (no local rewriting)
+    domain: "(remote tool name, arguments matching remote inputSchema)"
+    codomain: "remote CallToolResult (content array + isError flag)"
+    invariants:
+    - "Remote tool inputSchema is NOT modified by apr (passthrough)"
+    - "isError=true propagates to apr exit code != 0"
+    - "Content array preserves block type {text, image, resource} with no coercion"
+
+falsification_tests:
+- id: FALSIFY-CRUX-I-02-001
+  rule: "apr MCP client completes initialize handshake vs reference server"
+  prediction: "apr --mcp-connect stdio:'npx -y @modelcontextprotocol/server-everything' reports protocolVersion"
+  test: |
+    set -euo pipefail
+    if ! command -v npx >/dev/null; then
+      echo "skip: npx not available" >&2; exit 0
+    fi
+    OUT=$(apr code --mcp-connect-probe 'npx -y @modelcontextprotocol/server-everything' --json 2>/dev/null)
+    echo "$OUT" | jq -e '.protocolVersion | test("^(2024-11-05|2025-03-26|2025-06-18)$")'
+  if_fails: "apr MCP client handshake fails or does not surface protocolVersion from reference server-everything"
+
+- id: FALSIFY-CRUX-I-02-002
+  rule: "remote tools enumerated under mcp/<server>/<name> namespace"
+  prediction: "tools/list on connected client returns at least one remote tool with namespaced id"
+  test: |
+    set -euo pipefail
+    if ! command -v npx >/dev/null; then
+      echo "skip: npx not available" >&2; exit 0
+    fi
+    N=$(apr code --mcp-connect-probe 'npx -y @modelcontextprotocol/server-everything' --list-tools --json 2>/dev/null \
+         | jq '[.tools[] | select(.name | startswith("mcp/"))] | length')
+    test "$N" -ge 1
+  if_fails: "remote MCP tools not registered with mcp/<server>/<name> namespace"
+
+- id: FALSIFY-CRUX-I-02-003
+  rule: "tools/call passthrough preserves remote content array"
+  prediction: "calling an echo tool via apr returns remote content block verbatim"
+  test: |
+    set -euo pipefail
+    if ! command -v npx >/dev/null; then
+      echo "skip: npx not available" >&2; exit 0
+    fi
+    RESP=$(apr code --mcp-connect-probe 'npx -y @modelcontextprotocol/server-everything' \
+                    --call-tool echo --args '{"message":"hello"}' --json 2>/dev/null)
+    echo "$RESP" | jq -e '.content | type == "array" and length >= 1'
+  if_fails: "remote tools/call response content array not forwarded verbatim"
+
+proof_obligations:
+- type: invariant
+  property: "MCP initialize handshake completes with supported protocolVersion"
+- type: invariant
+  property: "Remote tools registered under mcp/<server>/<name> namespace (no name collision with local apr tools)"
+- type: equivalence
+  property: "apr MCP client matches @modelcontextprotocol/sdk ClientSession reference behavior against server-everything test server"
+  reference: "https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-i-02` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-i-02
+  priority: high
+  auto_created: false

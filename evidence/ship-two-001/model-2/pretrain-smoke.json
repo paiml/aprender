@@ -1,0 +1,114 @@
+{
+  "task": "#119 — Real-compute pretrain smoke test on lambda-labs RTX 4090",
+  "host": "noah-Lambda-Vector",
+  "gpu": "NVIDIA GeForce RTX 4090 (24 GiB)",
+  "binary": "/mnt/nvme-raid0/targets/aprender/release/apr",
+  "binary_features": ["cuda", "training"],
+  "binary_built_from": "feat/task-118-bpe-priority-queue (working tree)",
+  "captured_at_utc": "2026-04-20",
+  "purpose": "Prove end-to-end dispatch: freshly-trained MODEL-2 tokenizer → encode-corpus → apr pretrain (real-compute) executes on RTX 4090. Not a convergence test.",
+  "assets": {
+    "tokenizer_dir": "/mnt/nvme-raid0/models/model-2-tokenizer-v1",
+    "tokenizer_vocab_size": 50257,
+    "tokenizer_source": "task #118 train_fast on CSN-Python 127MB (2026-04-20)",
+    "smoke_corpus": "/mnt/nvme-raid0/data/csn-python-jsonl-smoke/smoke.jsonl",
+    "smoke_corpus_docs": 2000,
+    "smoke_corpus_source": "head -2000 of /mnt/nvme-raid0/data/csn-python-jsonl/train-00000.jsonl",
+    "shards_dir": "/mnt/nvme-raid0/data/csn-python-smoke-shards",
+    "shard_count": 8,
+    "total_tokens_encoded": 384800,
+    "encode_elapsed_seconds": 23.2
+  },
+  "runs": [
+    {
+      "run_id": "smoke-real-v1",
+      "mode": "real-compute",
+      "pid": 2175836,
+      "config": {
+        "num_steps": 20,
+        "warmup_steps": 5,
+        "batch_size": 2,
+        "seq_length": 512,
+        "steps_per_epoch": 10,
+        "lr": 5e-5,
+        "target_val_loss_cli": 10.0,
+        "seed": 42
+      },
+      "result": {
+        "status": "ABORTED",
+        "detail": "DIVERGENCE at epoch 0: val_loss 18 is non-finite or > 10.0",
+        "steps_recorded": 10,
+        "val_loss_history": [18.0]
+      },
+      "interpretation": "Real-compute path executed (370M loaded on CUDA, forward+backward+AdamW ran on 10 real batches). Val_loss=18 after 10 steps exceeds INV-TRAIN-005 hardcoded 10.0 threshold, triggering GATE-TRAIN-005 ship-blocker. log(50257)≈10.82 is the uniform-random baseline for 50257-vocab; val_loss=18 is ~1.66× baseline, indicating LR drove weights worse-than-random in a handful of steps."
+    },
+    {
+      "run_id": "smoke-real-v2",
+      "mode": "real-compute",
+      "pid": 2178012,
+      "config": {
+        "num_steps": 60,
+        "warmup_steps": 10,
+        "batch_size": 2,
+        "seq_length": 512,
+        "steps_per_epoch": 20,
+        "lr": 5e-5,
+        "target_val_loss_cli": 30.0,
+        "seed": 42
+      },
+      "result": {
+        "status": "ABORTED",
+        "detail": "DIVERGENCE at epoch 0: val_loss 54 is non-finite or > 10.0",
+        "steps_recorded": 20,
+        "val_loss_history": [54.0]
+      },
+      "interpretation": "Same real-compute path. Val_loss worse (18→54) with 2× more steps confirms training is diverging, not converging. --target-val-loss CLI flag only controls GATE-TRAIN-003 (convergence target) — GATE-TRAIN-005 divergence guard uses INV-TRAIN-005 hardcoded 10.0 threshold from contract."
+    },
+    {
+      "run_id": "smoke-synthetic",
+      "mode": "synthetic",
+      "config": {
+        "num_steps": 50,
+        "warmup_steps": 10,
+        "batch_size": 2,
+        "seq_length": 512,
+        "steps_per_epoch": 10,
+        "lr": 5e-5,
+        "target_val_loss_cli": 2.2,
+        "seed": 42
+      },
+      "result": {
+        "status": "OK",
+        "final_val_loss": 2.552,
+        "epochs_completed": 5,
+        "steps_recorded": 50,
+        "val_loss_history": [3.96, 3.608, 3.256, 2.904, 2.552]
+      },
+      "interpretation": "Synthetic linear-decay drive passes end-to-end with the new MODEL-2 tokenizer dir as --tokenizer input. Proves CLI + loop + run-dir + gates are intact; divergence in the real-compute runs is NOT a loop-plumbing regression."
+    }
+  ],
+  "discharge_status": "PARTIAL — dispatch proven, convergence out of scope",
+  "what_is_discharged": [
+    "End-to-end asset chain: task #118 tokenizer → task #123 encode-corpus → task #105 apr pretrain real-compute",
+    "RTX 4090 real-compute path (370M model loaded on CUDA, forward + backward + AdamW on real corpus batches)",
+    "ShardBatchIter reads task #123 .bin shards correctly",
+    "GATE-TRAIN-005 divergence guard correctly fires on diverging training",
+    "Synthetic-drive regression baseline (val_loss decay 3.96→2.55 OK)"
+  ],
+  "what_is_NOT_discharged": [
+    "Convergence of from-scratch 370M on CSN-Python — requires proper pretrain HP (LR ~1e-4, warmup ~500, steps ~50K+, effective batch ~256)",
+    "AC-SHIP2-003/004/005 which need a real 370M APR checkpoint with val_loss ≤ 2.2"
+  ],
+  "followups": [
+    {
+      "ticket": "calibration — INV-TRAIN-005 for from-scratch pretraining",
+      "problem": "The 10.0 val_loss divergence threshold is calibrated for MODEL-1 QLoRA fine-tune (base weights already pretrained). For from-scratch 370M, uniform-random val_loss ≈ log(vocab_size) ≈ 10.82 for 50257-vocab — already over threshold before any training.",
+      "proposal": "Add a from-scratch regime to INV-TRAIN-005: allow val_loss ≤ 2× log(vocab_size) ≈ 22 for epoch 0-N where the model has not seen enough tokens to converge. Tighten threshold at epoch boundaries. OR: make the threshold a CLI flag separate from --target-val-loss."
+    },
+    {
+      "ticket": "pretrain HP defaults for from-scratch",
+      "problem": "apr pretrain --lr default 5e-5 is fine-tuning-tuned (MODEL-1 v2 remedy per CLI help). From-scratch 370M needs ~1e-4 peak + longer warmup.",
+      "proposal": "Add --mode {finetune|from-scratch} switch that flips LR default + warmup + target_val_loss together, OR document that defaults are fine-tune-only."
+    }
+  ]
+}

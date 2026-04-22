@@ -1,0 +1,127 @@
+{
+  "_comment": [
+    "F-PUB-LFS-001 Phase 2 wiring evidence — static, pre-live-upload.",
+    "This file proves the apr binary at /mnt/nvme-raid0/targets/aprender/release/apr",
+    "contains a fully-linked hf-xet 1.5.1 upload path for files > 5 GiB.",
+    "Does NOT discharge FALSIFY-PUB-LFS-010 (three-format dogfood) — that requires",
+    "HF_TOKEN against paiml/qwen2.5-coder-7b-apache-q4k-v1 and will be captured",
+    "in ex-04-xet-upload.log / ex-04-xet-upload.json when the live run executes."
+  ],
+  "timestamp": "2026-04-18T14:02:00Z",
+  "spec_version": "SPEC-SHIP-TWO-001 v2.8.1",
+  "contract_version": "apr-publish-hf-large-file-v1.yaml v1.1.0 IMPLEMENTED",
+  "feature_id": "F-PUB-LFS-001",
+  "phase": 2,
+  "phase_label": "implementation-landed-awaiting-live-dogfood",
+  "commits": {
+    "implementation": "18fd9536e",
+    "spec_amendment": "9b081e5c7",
+    "pr_number": 882,
+    "branch": "feat/pm-007-preflight-poka-yoke"
+  },
+  "binary": {
+    "path": "/mnt/nvme-raid0/targets/aprender/release/apr",
+    "size_mb": 55,
+    "version_tag": "0.31.0 (9b081e5c7)",
+    "features": ["cuda", "xet", "inference", "visualization", "zram", "training", "hf-hub"],
+    "build_target_dir": "/mnt/nvme-raid0/targets/aprender",
+    "build_command": "cargo build --release -p apr-cli --bin apr --features cuda,xet",
+    "build_duration_seconds": 89,
+    "build_exit_code": 0
+  },
+  "gates_discharged_statically": [
+    {
+      "gate": "FALSIFY-PUB-LFS-001",
+      "name": "file_size_dispatch",
+      "test": "crates/aprender-core/src/hf_hub/xet.rs::tests::dispatch_gate_partitions_exactly_at_5_gib",
+      "status": "PASS",
+      "evidence": "4 cases: 0, 5GiB-1, 5GiB, 5GiB+1 + 3 real SHIP-TWO-001 teacher sizes (8.0 / 15.2 / 8.0 GiB) all route correctly"
+    },
+    {
+      "gate": "FALSIFY-PUB-LFS-002",
+      "name": "token_endpoint",
+      "test": "crates/aprender-core/src/hf_hub/xet.rs::tests::token_refresh_url_matches_hf_protocol_shape (+3 boundary cases)",
+      "status": "PASS",
+      "evidence": "URL shape https://huggingface.co/api/models/{repo_id}/xet-write-token/{revision} verified for main, release-v1, and trailing-slash normalization"
+    }
+  ],
+  "gates_delegated_to_hf_xet": [
+    {
+      "gate": "FALSIFY-PUB-LFS-003",
+      "name": "xorb_chunking",
+      "delegation": "xet_data::processing::file_upload_session (1.5.1)"
+    },
+    {
+      "gate": "FALSIFY-PUB-LFS-004",
+      "name": "dedup_query",
+      "delegation": "xet_client CAS dedup API (1.5.1)"
+    },
+    {
+      "gate": "FALSIFY-PUB-LFS-005",
+      "name": "cas_upload",
+      "delegation": "xet_client::cas_client::remote_client::RemoteClient::upload_xorb (1.5.1)"
+    },
+    {
+      "gate": "FALSIFY-PUB-LFS-006",
+      "name": "shard_upload",
+      "delegation": "xet_client::cas_client::remote_client::RemoteClient::upload_shard (1.5.1)"
+    },
+    {
+      "gate": "FALSIFY-PUB-LFS-007",
+      "name": "hash_encoding",
+      "delegation": "xet-core-structures (1.5.1) merkle_hash + xorb_object_format"
+    },
+    {
+      "gate": "FALSIFY-PUB-LFS-008",
+      "name": "token_refresh_lifecycle",
+      "delegation": "xet::xet_session::session token-refresh callback machinery (1.5.1)"
+    },
+    {
+      "gate": "FALSIFY-PUB-LFS-009",
+      "name": "lfs_pointer_commit",
+      "delegation": "xet::xet_session::upload_commit::commit_blocking (1.5.1)"
+    }
+  ],
+  "gates_pending_live_dogfood": [
+    {
+      "gate": "FALSIFY-PUB-LFS-010",
+      "name": "three_format_dogfood",
+      "status": "PENDING_HF_TOKEN",
+      "blocker": "Requires HF_TOKEN with paiml org push rights in the ship environment; will upload: model.apr (8.0 GiB) + model.safetensors (15.2 GiB) + model.gguf (8.0 GiB) to paiml/qwen2.5-coder-7b-apache-q4k-v1",
+      "expected_evidence": "evidence/ship-two-001/ex-04-xet-upload.{log,json}"
+    }
+  ],
+  "symbol_linkage_proof": {
+    "method": "strings /mnt/nvme-raid0/targets/aprender/release/apr | grep -E 'xet_session|hf-xet|xorb'",
+    "symbols_found": [
+      "xet::xet_session::session::new_upload_commit",
+      "xet::xet_session::upload_commit::commit_blocking",
+      "xet::xet_session::upload_commit::upload_from_path_blocking",
+      "xet_data::processing::file_upload_session",
+      "xet_client::cas_client::remote_client::RemoteClient::upload_xorb",
+      "xet_client::cas_client::remote_client::RemoteClient::upload_shard",
+      "xet_runtime::error_printer",
+      "xet-core-structures-1.5.1/src/xorb_object/xorb_object_format.rs"
+    ],
+    "our_literal_confirmed": " GiB) via hf-xet (>5 GiB path)",
+    "conclusion": "Full hf-xet 1.5.1 runtime is statically linked into the canonical apr binary."
+  },
+  "test_result": {
+    "command": "cargo test -p aprender-core --features xet --lib hf_hub",
+    "passed": 36,
+    "failed": 0,
+    "ignored": 0,
+    "includes_phase_2_tests": [
+      "hf_hub::xet::tests::dispatch_gate_partitions_exactly_at_5_gib",
+      "hf_hub::xet::tests::token_refresh_url_matches_hf_protocol_shape",
+      "hf_hub::xet::tests::token_refresh_url_strips_trailing_slash",
+      "hf_hub::xet::tests::token_refresh_url_supports_non_main_revision"
+    ]
+  },
+  "next_action": {
+    "who": "user",
+    "what": "export HF_TOKEN=<paiml write token>",
+    "why": "Enables live three-format dogfood (FALSIFY-PUB-LFS-010) against paiml/qwen2.5-coder-7b-apache-q4k-v1",
+    "ship_unblock": "Closes SHIP-TWO-001 upload gate; enables EX-04..07 discharge + tag release"
+  }
+}

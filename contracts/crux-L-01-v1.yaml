@@ -1,0 +1,156 @@
+# CRUX-L-01 — Load pre-built HF kernels-community .so artifacts
+# Authored under PMAT-655. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-01
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 4
+  intake_status: missing
+  description: >
+    Load pre-built CUDA kernels from github.com/huggingface/kernels-community
+    as dlopen-able .so files at runtime. Parity feature: HF ships
+    pre-compiled Torch extensions (flash-attn, paged-attention,
+    rmsnorm, rotary, ...) so end-users skip a 15-minute nvcc build.
+    aprender must load these same .so files (ABI-compatible subset)
+    to offer the same "zero-compile" experience.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/huggingface/kernels-community'
+  - 'HF blog: "Pre-built CUDA kernels in Transformers" — 2025'
+  - 'contracts/tensor-layout-v1.yaml — LAYOUT invariants'
+
+equations:
+  load_prebuilt_kernel:
+    formula: |
+      apr_load_kernel(pkg: str, kernel: str, cuda_arch: "sm_80"|"sm_90"|"sm_100") -> Handle
+      Steps:
+        1. resolve_cache_dir := $APR_KERNELS ?? "$HOME/.apr/kernels"
+        2. download(pkg@tag) -> cache/{pkg}/{sha256}.so   # content-addressed like A-21
+        3. verify sha256 against manifest
+        4. verify ABI version (kernel_abi_v = 1)
+        5. dlopen(.so) -> resolve required symbols {init, dispatch, info}
+      Postcondition: Handle carries (name, abi_v, cuda_arch, so_path, sha256)
+    domain: "(pkg, kernel, cuda_arch)"
+    codomain: "Handle | LoadError"
+    invariants:
+    - "cache is content-addressed (dedup across projects); parity with A-21 blob layout"
+    - "sha256 verified before dlopen — tampered .so never executes"
+    - "ABI mismatch (kernel_abi_v != 1) is a hard error, never silent fall-through to CPU"
+    - "cuda_arch mismatch (sm_90 .so on sm_80 GPU) is a hard error, NOT a warn + crash at dispatch"
+
+  dispatcher_contract:
+    formula: |
+      apr kernel load --pkg flash-attn3 --kernel fwd_dispatch --arch sm_90 --json
+        emits:
+          status: "LOADED" | "CACHED" | "ABI_MISMATCH" | "ARCH_MISMATCH" | "DOWNLOAD_FAIL"
+          cache_path: "/home/u/.apr/kernels/flash-attn3/<sha>.so"
+          sha256: <hex>
+          abi_v: 1
+          symbol_count: N >= 3
+      exit 0 iff LOADED or CACHED ; exit 1 iff mismatch ; exit >= 2 on I/O
+    domain: "(pkg, kernel, arch)"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status"
+    - "CACHED is exit 0 (cache hit is success, not 'no-op')"
+    - "symbol_count is > 0 or status is never LOADED"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-01-001
+  rule: "apr kernel load subcommand exists"
+  prediction: "apr kernel --help advertises 'load' subcommand"
+  test: |
+    set -euo pipefail
+    apr kernel --help | grep -qE "^\\s*load"
+  if_fails: "apr kernel lacks load subcommand — L-01 not wired into CLI"
+
+- id: FALSIFY-CRUX-L-01-002
+  rule: "content-addressed cache at $APR_KERNELS / ~/.apr/kernels"
+  prediction: "Successive loads of same (pkg,kernel,arch) dedup to one .so"
+  test: |
+    set -euo pipefail
+    export APR_KERNELS=/tmp/apr-kernels-$$
+    mkdir -p "$APR_KERNELS"
+    apr kernel load --pkg flash-attn3 --kernel fwd_dispatch --arch sm_90 --dry-run --json >/dev/null
+    N1=$(find "$APR_KERNELS" -name "*.so" | wc -l)
+    apr kernel load --pkg flash-attn3 --kernel fwd_dispatch --arch sm_90 --dry-run --json >/dev/null
+    N2=$(find "$APR_KERNELS" -name "*.so" | wc -l)
+    [ "$N1" = "$N2" ]
+  if_fails: "Kernel cache not content-addressed — wastes disk, violates A-21 parity"
+
+- id: FALSIFY-CRUX-L-01-003
+  rule: "ABI mismatch is a hard error (not silent CPU fallback)"
+  prediction: "Attempting to load a kernel with kernel_abi_v != 1 exits 1 with status=ABI_MISMATCH"
+  test: |
+    set -euo pipefail
+    set +e
+    APR_KERNEL_FAKE_ABI=99 apr kernel load --pkg flash-attn3 --kernel fwd_dispatch --arch sm_90 --json > /tmp/l01-abi.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "ABI_MISMATCH"' /tmp/l01-abi.json >/dev/null
+  if_fails: "ABI mismatch silently falls back — corrupt kernels ship without warning"
+
+- id: FALSIFY-CRUX-L-01-004
+  rule: "arch mismatch is a hard error at load time, not at dispatch"
+  prediction: "Loading sm_90 .so on sm_80 GPU exits 1 with status=ARCH_MISMATCH before any dispatch"
+  test: |
+    set -euo pipefail
+    set +e
+    APR_KERNEL_FAKE_HOST_ARCH=sm_80 apr kernel load --pkg flash-attn3 --kernel fwd_dispatch --arch sm_90 --json > /tmp/l01-arch.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "ARCH_MISMATCH"' /tmp/l01-arch.json >/dev/null
+  if_fails: "Arch mismatch surfaces as CUDA_ERROR_ILLEGAL_INSTRUCTION at dispatch — debug nightmare"
+
+- id: FALSIFY-CRUX-L-01-005
+  rule: "sha256 verification before dlopen"
+  prediction: "Corrupting the cached .so by one byte causes status=DOWNLOAD_FAIL or sha256 re-verify failure, not a load"
+  test: |
+    set -euo pipefail
+    export APR_KERNELS=/tmp/apr-kernels-corrupt-$$
+    mkdir -p "$APR_KERNELS"
+    apr kernel load --pkg flash-attn3 --kernel fwd_dispatch --arch sm_90 --dry-run --json >/tmp/l01-ok.json
+    SO=$(jq -r '.cache_path' /tmp/l01-ok.json)
+    [ -f "$SO" ] && dd if=/dev/urandom of="$SO" bs=1 count=1 seek=1024 conv=notrunc 2>/dev/null || true
+    set +e
+    apr kernel load --pkg flash-attn3 --kernel fwd_dispatch --arch sm_90 --dry-run --json > /tmp/l01-corrupt.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status | test("DOWNLOAD_FAIL|ABI_MISMATCH|SHA_MISMATCH")' /tmp/l01-corrupt.json >/dev/null
+  if_fails: "Tampered .so loads anyway — supply-chain vector wide open"
+
+proof_obligations:
+- type: invariant
+  property: "Content-addressed cache dedup (parity with A-21)"
+- type: invariant
+  property: "sha256 verified before dlopen"
+- type: invariant
+  property: "ABI + arch mismatch are hard errors at load, never at dispatch"
+- type: invariant
+  property: "Exit codes align with status"
+- type: equivalence
+  property: "apr kernel load ≅ HF kernels-community install+import (minus Python runtime)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-01
+  ticket_id: PMAT-655
+  priority: high
+  auto_created: true

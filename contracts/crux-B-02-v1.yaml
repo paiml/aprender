@@ -1,0 +1,152 @@
+# CRUX-B-02 — GGUF → Safetensors for PEFT
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-B-02
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: llama_cpp
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    GGUF → Safetensors conversion for downstream PEFT (LoRA / QLoRA) training.
+    Canonical inverse of llama.cpp's `convert_hf_to_gguf.py`
+    (https://github.com/ggerganov/llama.cpp/blob/master/convert_hf_to_gguf.py);
+    llama.cpp itself lacks a clean gguf→safetensors path, so users fall back to
+    `llama.cpp` Python glue or `huggingface_hub` re-downloads. aprender
+    equivalent: `apr convert model.gguf --format safetensors -o out/` produces
+    a HuggingFace-loadable directory (`model.safetensors` + `config.json` +
+    `tokenizer.*`) ready for `peft.get_peft_model(...)`.
+  references:
+  - "https://github.com/ggerganov/llama.cpp/blob/master/convert_hf_to_gguf.py"
+  - "https://github.com/huggingface/safetensors"
+  - "https://huggingface.co/docs/peft/index"
+
+equations:
+  dequant_to_bf16:
+    formula: |
+      For every GGUF tensor T with ggml_type q:
+        W_bf16 = dequantize_q(T).to(bfloat16)
+      Safetensors record stores W_bf16 in row-major layout.
+      For Q4_K_M source, dequant MUST use llama.cpp's per-block super-block formula
+      (block size 256, 8 sub-blocks of 32 with 6-bit scale/min).
+    domain: gguf_tensor
+    codomain: bfloat16 tensor, row-major
+    invariants:
+    - "Output dtype is bfloat16 by default; --dtype f32|f16|bf16 overrides"
+    - "Shape preserved exactly (no silent transpose)"
+    - "Layout is row-major (HuggingFace convention)"
+
+  metadata_translation:
+    formula: |
+      gguf.metadata["general.architecture"]        → config.json["architectures"][0]
+      gguf.metadata["llama.embedding_length"]      → config.json["hidden_size"]
+      gguf.metadata["llama.block_count"]           → config.json["num_hidden_layers"]
+      gguf.metadata["llama.attention.head_count"]  → config.json["num_attention_heads"]
+      gguf.tokenizer.*                             → tokenizer.json / tokenizer_config.json
+    domain: gguf KV store
+    codomain: HuggingFace transformers config + tokenizer files
+    invariants:
+    - "config.json validates against the transformers schema for the arch"
+    - "tokenizer round-trips: encode(decode(ids)) == ids for golden strings"
+
+  peft_roundtrip_loadable:
+    formula: |
+      load_from_disk(out_dir) succeeds in `transformers.AutoModelForCausalLM.from_pretrained`
+      AND `peft.get_peft_model(model, LoraConfig(...))` attaches without shape errors.
+    domain: converted safetensors directory
+    codomain: loadable HF model
+    invariants:
+    - "Every linear layer in config.json has a corresponding safetensors tensor"
+    - "LoRA target_modules (q_proj, v_proj, …) resolve by name"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-02-001
+  rule: output dir contains required files
+  prediction: "{model.safetensors, config.json, tokenizer.json} all present"
+  test: |
+    TMP=$(mktemp -d)
+    apr convert test-data/tinyllama-q4km.gguf --format safetensors -o "$TMP"
+    for f in model.safetensors config.json tokenizer.json; do
+      [ -f "$TMP/$f" ] || { echo "missing $f"; exit 1; }
+    done
+  if_fails: "converted directory is missing required HuggingFace files"
+
+- id: FALSIFY-CRUX-B-02-002
+  rule: dequant numerical bound
+  prediction: "||W_bf16 - W_ref||_∞ < 1e-2 vs reference f32 dequant"
+  test: |
+    TMP=$(mktemp -d)
+    apr convert test-data/tinyllama-q4km.gguf --format safetensors --dtype bf16 -o "$TMP"
+    # TODO: ship test-data/tinyllama-ref-f32.safetensors as ground truth
+    python3 - <<'PY'
+    from safetensors import safe_open
+    import os, struct, math
+    with safe_open(os.environ.get("TMP","/tmp")+"/model.safetensors","pt") as f:
+        W = f.get_tensor("model.layers.0.self_attn.q_proj.weight").float()
+    # Reference load
+    with safe_open("test-data/tinyllama-ref-f32.safetensors","pt") as f:
+        Wref = f.get_tensor("model.layers.0.self_attn.q_proj.weight")
+    assert (W - Wref).abs().max().item() < 1e-2
+    PY
+  if_fails: "Q4_K_M dequant diverges from reference f32 by >1e-2"
+
+- id: FALSIFY-CRUX-B-02-003
+  rule: HuggingFace transformers can load the output
+  prediction: "AutoModelForCausalLM.from_pretrained(out) succeeds"
+  test: |
+    TMP=$(mktemp -d)
+    apr convert test-data/tinyllama-q4km.gguf --format safetensors -o "$TMP"
+    uv run --with transformers --with safetensors python3 -c "
+    from transformers import AutoModelForCausalLM
+    m = AutoModelForCausalLM.from_pretrained('$TMP', torch_dtype='auto')
+    assert m is not None
+    "
+  if_fails: "transformers cannot load the converted safetensors directory"
+
+- id: FALSIFY-CRUX-B-02-004
+  rule: peft LoRA attaches without shape errors
+  prediction: "peft.get_peft_model on q_proj/v_proj succeeds"
+  test: |
+    TMP=$(mktemp -d)
+    apr convert test-data/tinyllama-q4km.gguf --format safetensors -o "$TMP"
+    uv run --with transformers --with peft --with safetensors python3 -c "
+    from transformers import AutoModelForCausalLM
+    from peft import LoraConfig, get_peft_model
+    m = AutoModelForCausalLM.from_pretrained('$TMP', torch_dtype='auto')
+    m2 = get_peft_model(m, LoraConfig(r=8, target_modules=['q_proj','v_proj']))
+    assert sum(p.numel() for p in m2.parameters() if p.requires_grad) > 0
+    "
+  if_fails: "PEFT LoRA attachment failed — converted output is not PEFT-ready"
+
+proof_obligations:
+- type: invariant
+  property: "Output directory schema matches HF transformers expectations"
+- type: invariant
+  property: "Dequantization error ≤ 1e-2 (∞-norm) vs reference f32"
+- type: invariant
+  property: "Tokenizer round-trips on golden strings (encode∘decode ≡ id)"
+- type: equivalence
+  property: "Converted model loads under transformers + peft identically to reference safetensors"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-b-02` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-b-02
+  priority: high
+  auto_created: true

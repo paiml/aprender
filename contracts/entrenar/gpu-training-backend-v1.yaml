@@ -1,0 +1,473 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-GPUTRAIN-BACKEND
+# GPU backend dispatch for TransformerTrainer (task #132).
+# ─────────────────────────────────────────────────────────────
+# Codifies the device-dispatch semantics that `apr pretrain`
+# MUST honor before MODEL-2 (or any other ≥100M-parameter
+# model) can be pretrained on a host with a GPU.
+#
+# Root cause this contract eliminates (task #132, lambda-labs
+# dispatch 2026-04-21 at commit f7ad11408):
+#
+#   `apr pretrain --mode from-scratch` ran for 14 minutes at
+#   114% CPU and 0 MiB GPU memory on an RTX 4090. Empty run
+#   dir, no step logging, no checkpoints. Root cause:
+#   `TransformerTrainer::new(cfg)` instantiates `Transformer::
+#   new(&cfg.model_config)` with NO Device argument; the whole
+#   pretrain path (forward, backward, AdamW, autograd,
+#   GradScaler) is CPU-only `aprender::Tensor` (trueno SIMD).
+#   `--features cuda` gates `realizar` INFERENCE, not
+#   `aprender-train` training.
+#
+#   Scale math: 370M × CPU forward+backward ≈ 30-60s/step →
+#   10k steps ≈ 100+ hours. Impractical. MODEL-2 compute
+#   dispatch is blocked by this gap.
+#
+# Plan agent's finding (Phase 0 input): a production-grade
+# `CudaTransformerTrainer` (~3432 lines, AdamW + fused CE +
+# gradient clip + pre-warmed kernels) ALREADY EXISTS in
+# `crates/aprender-train/src/train/transformer_trainer/
+# cuda_trainer.rs`. The gap is wiring, not kernels. The YAML
+# training-config loader already has an `if use_cuda { … }`
+# branch at loader/mod.rs:227 that dispatches correctly; the
+# `apr pretrain` CLI drive_real path at pretrain.rs:230 does
+# not. This contract enforces that the CLI path converges on
+# the same dispatch discipline.
+#
+# Peer:   contracts/training-loop-pretrain-v1.yaml
+# Peer:   contracts/entrenar/cuda-graph-training-step-v1.yaml
+# Peer:   contracts/apr-cli-commands-v1.yaml
+#
+# References:
+#   - docs/specifications/aprender-train/ship-two-models-spec.md
+#     §v2.23.0 amendment (task #132)
+#   - memory/project_task_132_cuda_training_backend_gap.md
+#   - memory/feedback_cuda_feature_footgun.md
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-GPUTRAIN-BACKEND
+version: 1.0.0
+status: PROPOSED
+
+metadata:
+  id: C-GPUTRAIN-BACKEND
+  version: "1.0.0"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  description: >
+    GPU backend dispatch contract for `apr pretrain` real-compute.
+    Requires that when `--device cuda:N` (or equivalent env) is
+    requested, the TransformerTrainer path SHALL route through a
+    CUDA-resident trainer (weights + optimizer state live on the
+    selected GPU) and SHALL register a GPU process visible to
+    `nvidia-smi --query-compute-apps`. When CUDA is unavailable
+    OR not requested, the trainer falls back to the existing CPU
+    path with a single structured warning on stderr — never a
+    silent CPU fallback that masquerades as GPU training.
+  registry: true
+  kind: training-loop
+  peer_contracts:
+    - contracts/training-loop-pretrain-v1.yaml
+    - contracts/entrenar/cuda-graph-training-step-v1.yaml
+    - contracts/apr-cli-commands-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §v2.23.0"
+    - "memory/project_task_132_cuda_training_backend_gap.md"
+    - "memory/feedback_cuda_feature_footgun.md"
+
+summary: >
+  Train backend dispatch contract: when the operator requests
+  CUDA, the trainer MUST run on CUDA (weights, optimizer state,
+  forward/backward kernels all GPU-resident) AND MUST register a
+  GPU process. Silent CPU fallback when CUDA was requested is
+  FORBIDDEN — it produced task #126's 14-minute 0-GiB-VRAM
+  dispatch and wasted compute. CPU remains the default on hosts
+  without CUDA.
+
+motivation: >
+  Task #126 real-compute dispatch on lambda-labs RTX 4090
+  (2026-04-21, commit f7ad11408): 14 minutes at 114% single-
+  thread CPU, 0 MiB GPU memory, empty run dir, no checkpoints.
+  Root cause: CPU-only TransformerTrainer. The CLI accepted the
+  invocation and reported no error because there was no
+  contract binding "operator requested GPU training" to
+  "training actually ran on GPU". This contract closes that
+  loop so the next dispatch either proves GPU residency or
+  fails loudly.
+
+# ─────────────────────────────────────────────────────────────
+# Device dispatch matrix — the core invariant table
+# ─────────────────────────────────────────────────────────────
+
+device_dispatch:
+  # Operator-facing device selector (CLI flag or config field).
+  # Grammar:
+  #   "cpu"           — force CPU backend
+  #   "cuda"          — CUDA device 0
+  #   "cuda:N"        — CUDA device N (N ∈ [0, 15])
+  #   "auto"          — prefer CUDA if available, else CPU
+  requested_device:
+    grammar: '^(cpu|cuda(:[0-9]|:1[0-5])?|auto)$'
+    default: auto
+    sources_ranked:
+      - "CLI: apr pretrain --device <value>"
+      - "Env: APR_TRAIN_DEVICE=<value>"
+      - "Config: pretrain.device: <value> in YAML"
+
+  # Resolution rules — DETERMINISTIC, NO SILENT DOWNGRADES.
+  resolution_rules:
+    - "cpu            → CPU backend always (no probe)"
+    - "cuda / cuda:N  → CUDA on device N (default N=0); if unavailable, HARD-FAIL with exit=DEVICE_UNAVAILABLE"
+    - "auto           → probe cuda:0; if available, CUDA; else CPU with one structured warning"
+    - "For cuda:N where N is out of range (no such device), HARD-FAIL with exit=DEVICE_UNAVAILABLE — do NOT fall back"
+
+  gpu_residency_proof:
+    # When the resolved backend is CUDA, ALL of the following
+    # must hold for the duration of the training run.
+    - "Model weights allocated via cudaMalloc on the selected device"
+    - "Optimizer state (m, v tensors) allocated on the selected device"
+    - "At least one CUDA process visible in `nvidia-smi --query-compute-apps=pid,used_memory --format=csv` with pid == training_pid AND used_memory > 0 MiB"
+    - "gpu_util_pct metric in train.jsonl is > 0 for at least 50% of sampled steps after the first 10 warmup steps"
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — machine-checkable properties
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-GPUTRAIN-001
+    description: >
+      Device grammar: `requested_device` matches the regex in
+      device_dispatch.requested_device.grammar. Any other value
+      is rejected at parse time with a clear error.
+    falsifier: >
+      CLI parse test: `apr pretrain --device gpu` (wrong word) and
+      `apr pretrain --device cuda:99` (out-of-range) must both
+      exit nonzero with a parse error BEFORE any training state
+      is allocated.
+
+  - id: INV-GPUTRAIN-002
+    description: >
+      No silent CPU fallback when CUDA was explicitly requested.
+      If `--device cuda` (or `cuda:N`) is passed and CUDA is
+      unavailable on this host, the trainer MUST exit with status
+      = DEVICE_UNAVAILABLE (nonzero) before `TransformerTrainer::
+      new` is called. Never start a run that runs on CPU after
+      the operator asked for GPU.
+    falsifier: >
+      Harness test: force `probe_cuda()` to return Unavailable;
+      invoke the dispatch helper with `Requested::Cuda(0)`;
+      assert the helper returns Err(DeviceUnavailable) and that
+      the CLI entrypoint maps that to a nonzero exit without
+      constructing any trainer.
+
+  - id: INV-GPUTRAIN-003
+    description: >
+      When the resolved backend is CUDA, a GPU process MUST be
+      visible via `nvidia-smi --query-compute-apps`. A post-init
+      probe runs within 5 seconds of step 0 and asserts `pid ==
+      training_pid AND used_memory_mib > 0`. Failure aborts the
+      run with status = GPU_RESIDENCY_PROOF_FAILED.
+    falsifier: >
+      Two harness tests: (a) stub `nvidia_smi_query` to return
+      empty → assert init probe returns Err and training does NOT
+      proceed; (b) stub to return `[(pid, 0 MiB)]` → same Err;
+      only (c) `[(pid, > 0 MiB)]` allows training to proceed.
+
+  - id: INV-GPUTRAIN-004
+    description: >
+      CPU fallback path MUST remain fully functional. On a host
+      without CUDA (or with `--device cpu`), the existing
+      CPU-only TransformerTrainer path runs unchanged and all
+      pre-existing invariants (INV-TRAIN-001..010 of
+      training-loop-pretrain-v1) still hold. This contract does
+      not deprecate the CPU path.
+    falsifier: >
+      Integration test: `apr pretrain --device cpu --synthetic
+      --num-steps 4` completes successfully on a CUDA-less runner
+      AND on a CUDA-ful runner with identical scripted-loss
+      output. GATE-TRAIN-001..010 from the peer contract still
+      PASS on the cpu-device artifacts.
+
+  - id: INV-GPUTRAIN-005
+    description: >
+      Step-time budget on the reference host. On an RTX 4090
+      (sm_89, pre-compiled kernels) with the 370M scaffold at
+      seq_len=2048, batch=1, step time SHALL be < 500 ms after
+      the first 20 warmup steps. Stricter budgets can be adopted
+      on faster hosts but this ceiling is the ship gate for
+      task #126.
+    falsifier: >
+      On lambda-labs RTX 4090: `apr pretrain --mode from-scratch
+      --device cuda:0 --num-steps 50 --json` produces a
+      train.jsonl whose steps 20..49 have median wall_ms < 500.
+      Above 500 ms fails — the GPU path is not fast enough to
+      justify the engineering cost over CPU.
+
+  - id: INV-GPUTRAIN-006
+    description: >
+      Seed reproducibility across devices. Two runs at seed=0 on
+      DIFFERENT devices (cpu vs cuda:0) may diverge in per-step
+      loss (different RNG streams, different rounding) but a
+      single device replayed at seed=0 twice MUST still satisfy
+      INV-TRAIN-006 of the peer contract (100-step byte-identical
+      metrics). The device-dispatch layer is not allowed to break
+      seed plumbing.
+    falsifier: >
+      Harness test: two cuda:0 runs at seed=0 produce
+      per-step loss arrays whose abs diff ≤ 1e-5 for k in
+      0..99 (looser than CPU 1e-6 to allow cuBLAS non-
+      determinism, but still tight enough to catch real bugs).
+
+  - id: INV-GPUTRAIN-007
+    description: >
+      `--features cuda` is a build-time flag, not a run-time
+      claim. The binary's `apr --version` output MUST report
+      whether it was compiled with cuda feature AND whether it
+      found a runnable CUDA runtime at startup. Operators shall
+      be able to distinguish "compiled without CUDA" from
+      "compiled with CUDA but no GPU visible" without reading a
+      stack trace.
+    falsifier: >
+      `apr --version --json` emits `{"cuda_feature": bool,
+      "cuda_runtime_available": bool, "visible_devices":
+      [{"index": 0, "name": "..."}]}`. Both a CUDA-less build
+      and a CUDA-built-but-no-GPU host report cleanly.
+
+# ─────────────────────────────────────────────────────────────
+# Acceptance gates — bind to AC-SHIP2-* and task #126/#132
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-GPUTRAIN-001
+    rule: >
+      Device grammar enforced (INV-GPUTRAIN-001). CLI rejects
+      malformed --device values before any training state is
+      allocated.
+    evidence_required: >
+      apr-cli parse-level harness covers: valid grammar (cpu,
+      cuda, cuda:0, cuda:7, auto); invalid grammar (gpu, cuda:99,
+      cuda:-1, empty string). Invalids exit nonzero with a parse
+      error.
+    verdict: pending
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-GPUTRAIN-002
+    rule: >
+      No silent CPU fallback when CUDA requested
+      (INV-GPUTRAIN-002). Ship-blocking — this is the bug that
+      cost 14 minutes on lambda-labs.
+    evidence_required: >
+      Harness test stubs cuda_probe() to Unavailable; asserts
+      dispatch helper returns Err(DeviceUnavailable) and no
+      trainer is constructed. Integration test on a CUDA-less
+      runner: `apr pretrain --device cuda` exits nonzero within
+      2 seconds, emits exit_code=DEVICE_UNAVAILABLE, and does
+      NOT create a run dir.
+    verdict: pending
+    binds_to: AC-SHIP2-003
+    ship_blocking: true
+    motivation: "memory/project_task_132_cuda_training_backend_gap.md"
+
+  - id: GATE-GPUTRAIN-003
+    rule: >
+      GPU residency proof via nvidia-smi (INV-GPUTRAIN-003).
+      Ship-blocking — without this, `--features cuda` can't be
+      trusted to have wired through.
+    evidence_required: >
+      Live dispatch on lambda-labs RTX 4090 emits a
+      residency-proof JSON line:
+        {"pid": <training_pid>, "device_index": 0,
+         "used_memory_mib": >0, "sampled_at_step": 0}
+      AND `nvidia-smi --query-compute-apps=pid,used_memory
+      --format=csv` concurrently shows the same (pid,
+      used_memory > 0). Absence of either evidence FAILS.
+    verdict: pending
+    binds_to: AC-SHIP2-003
+    ship_blocking: true
+
+  - id: GATE-GPUTRAIN-004
+    rule: >
+      Step-time budget INV-GPUTRAIN-005. Median step wall
+      time over steps 20..49 must be < 500 ms on RTX 4090 at
+      the 370M scaffold (seq_len=2048, batch=1).
+    evidence_required: >
+      `apr pretrain --mode from-scratch --device cuda:0
+      --num-steps 50 --json` output on lambda-labs; compute
+      median wall_ms over step range [20, 49]; assert < 500.
+    verdict: pending
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-GPUTRAIN-005
+    rule: >
+      CPU path unchanged (INV-GPUTRAIN-004). All peer-contract
+      gates GATE-TRAIN-001..010 still PASS on a CPU-device run.
+    evidence_required: >
+      Full GATE-TRAIN-001..010 evidence captured from a
+      `--device cpu --synthetic` dispatch produces identical
+      artifacts to the pre-#132 baseline (byte-match on the
+      scripted-loss trace modulo timestamp fields).
+    verdict: pending
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-GPUTRAIN-006
+    rule: >
+      apr --version reports cuda wiring state (INV-GPUTRAIN-007).
+    evidence_required: >
+      `apr --version --json` on a CUDA-built + CUDA-visible host
+      reports `cuda_feature: true, cuda_runtime_available: true,
+      visible_devices: [{…}]`. On a CUDA-less build, reports
+      `cuda_feature: false, cuda_runtime_available: false,
+      visible_devices: []`. Both are structured and parseable.
+    verdict: pending
+    binds_to: AC-SHIP2-003
+
+# ─────────────────────────────────────────────────────────────
+# Falsification tests — ties each INV / GATE to a harness
+# ─────────────────────────────────────────────────────────────
+
+falsification_tests:
+
+  - id: FALSIFY-GPUTRAIN-001
+    title: "Grammar: valid --device values parse; invalid reject"
+    binds_to: INV-GPUTRAIN-001
+    harness: "crates/apr-cli/src/commands/pretrain.rs::tests::device_grammar_{valid,invalid}"
+    expected: "8 valid inputs PASS, 6 invalid inputs reject with parse error"
+    if_fails: "CLI --device grammar has drifted from the contract regex; re-align the clap value-parser with device_dispatch.requested_device.grammar before shipping."
+
+  - id: FALSIFY-GPUTRAIN-002
+    title: "Requested cuda on CPU-only host hard-fails"
+    binds_to: INV-GPUTRAIN-002
+    harness: "crates/aprender-train/src/train/device/tests.rs::cuda_request_without_runtime_hard_fails"
+    expected: "Err(DeviceUnavailable) — no trainer constructed, no run dir created"
+    if_fails: "Silent-CPU-fallback regression — the exact defect of task #126. Audit resolve_device() and any `if let Ok(...) else fallback_cpu()` helper; the requested-cuda branch must propagate Err."
+
+  - id: FALSIFY-GPUTRAIN-003
+    title: "GPU residency probe catches missing GPU process"
+    binds_to: INV-GPUTRAIN-003
+    harness: "crates/aprender-train/src/train/device/tests.rs::residency_probe_{empty,zero_mem,nonzero_mem}"
+    expected: "Empty and zero-mem cases fail init; nonzero-mem case proceeds"
+    if_fails: "nvidia-smi probe is passing cases where no GPU memory is actually allocated — weights never made it to device. Check CudaTransformerTrainer init order: weights must be cudaMalloc'd BEFORE the probe runs."
+
+  - id: FALSIFY-GPUTRAIN-004
+    title: "CPU path peer-contract gates still pass"
+    binds_to: INV-GPUTRAIN-004
+    harness: "crates/apr-cli/src/commands/pretrain.rs::tests::cpu_path_peer_gates_green"
+    expected: "GATE-TRAIN-001..010 from training-loop-pretrain-v1 all PASS on --device cpu"
+    if_fails: "Device-dispatch refactor broke the CPU path — the contract explicitly requires CPU fallback to remain functional. Diff drive_real before/after and restore the CPU branch to byte-identical behaviour."
+
+  - id: FALSIFY-GPUTRAIN-005
+    title: "370M step time < 500 ms on RTX 4090"
+    binds_to: INV-GPUTRAIN-005
+    harness: "evidence/task-132/rtx4090-370m-step-budget.json"
+    expected: "median wall_ms ∈ [steps 20..49] < 500 ms; raw JSONL attached"
+    if_fails: "GPU path is too slow — either kernels aren't fused (check rayon dispatch count vs reference), PCIe traffic is dominating (profile with apr profile --gpu), or a CPU-GPU sync is re-introduced per step."
+
+  - id: FALSIFY-GPUTRAIN-006
+    title: "Same-device seed reproducibility holds"
+    binds_to: INV-GPUTRAIN-006
+    harness: "crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs::tests::cuda_seed_0_100_step_reproducibility"
+    expected: "Two cuda:0 runs at seed=0 produce |Δloss[k]| ≤ 1e-5 for k in 0..99"
+    if_fails: "Seed plumbing broken across device-dispatch layer. Trace the seed from CLI → PretrainConfig → TransformerTrainer::new → CudaTransformerTrainer::new; each hop must forward the seed unchanged, and lock_init_seed must still gate parallel test races."
+
+  - id: FALSIFY-GPUTRAIN-007
+    title: "apr --version --json reports cuda state"
+    binds_to: INV-GPUTRAIN-007
+    harness: "crates/apr-cli/src/commands/version.rs::tests::version_json_reports_cuda_state"
+    expected: "Output matches schema {cuda_feature, cuda_runtime_available, visible_devices[]}"
+    if_fails: "Version reporting does not distinguish build-time cuda feature from runtime availability — operators can't tell `compiled without cuda` from `cuda present but no GPU`. Wire the probe into the --version JSON output."
+
+# ─────────────────────────────────────────────────────────────
+# Implementation plan — Phase 0..4 (maps to spec §v2.23.0)
+# ─────────────────────────────────────────────────────────────
+
+implementation_plan:
+  phase_0:
+    title: "Contract + spec (this PR)"
+    status: in_progress
+    deliverables:
+      - "contracts/entrenar/gpu-training-backend-v1.yaml (this file)"
+      - "docs/specifications/aprender-train/ship-two-models-spec.md §v2.23.0 amendment"
+
+  phase_1:
+    title: "Device enum + dispatch helper"
+    status: complete
+    deliverables:
+      - "crates/aprender-train/src/train/device.rs: Device enum + resolve_device() with FALSIFY-GPUTRAIN-001/002 tests (17 tests PASS)"
+      - "--device CLI flag wired in crates/apr-cli/src/extended_commands.rs (default `auto`, 3 cli_pretrain_device_* tests PASS)"
+      - "drive_real NotImplemented stub when Device::is_cuda() — GATE-GPUTRAIN-002 hard-fail before any trainer allocation"
+
+  phase_2:
+    title: "Wire existing CudaTransformerTrainer"
+    status: pending
+    prerequisites:
+      # Phase 2 design-surface audit (2026-04-21): CudaTransformerTrainer
+      # HAS train_batch() + save_apr() + model()/model_mut(), but is
+      # MISSING two methods the existing CPU adapter chain relies on:
+      #   1. forward_single(inp: &[u32], tgt: &[u32]) -> (f32, Tensor, Tensor)
+      #      — required by RealValFn::validate() for held-out forward-only
+      #        loss (INV-TRAIN-004).
+      #   2. optimizer_state_sha256() -> String
+      #      — required by StepFn::optimizer_state_sha256() override
+      #        (INV-TRAIN-003 reproducibility discharge).
+      # These MUST land on CudaTransformerTrainer before the Cuda* adapters
+      # can discharge the same invariants as their CPU counterparts.
+      - "Add CudaTransformerTrainer::forward_single (forward-only held-out eval; signature matches TransformerTrainer::forward_single)"
+      - "Add CudaTransformerTrainer::optimizer_state_sha256 (hash AdamW (t, m, v) buffers after D2H copy)"
+    deliverables:
+      - "Replace Phase 1 drive_real NotImplemented stub with SharedTrainer::CudaVariant dispatch (extend pretrain_real.rs with CudaRealStepFn / CudaRealValFn / CudaAprCheckpointFn)"
+      - "drive_real branches on Device in pretrain.rs (mirror loader/mod.rs:227)"
+      - "nvidia-smi residency probe + GATE-GPUTRAIN-003 harness"
+
+  phase_3:
+    title: "Evidence + lambda-labs redispatch"
+    status: pending
+    deliverables:
+      - "evidence/task-132/rtx4090-370m-step-budget.json (GATE-GPUTRAIN-004)"
+      - "GATE-GPUTRAIN-001..006 all transition to verdict: pass"
+      - "Task #126 re-dispatched to drive_real on cuda:0 with residency proof"
+
+  phase_4:
+    title: "Promote PROPOSED → ACTIVE"
+    status: pending
+    deliverables:
+      - "This contract status: PROPOSED → ACTIVE"
+      - "ship-two-models-spec v2.23.0 → v2.23.1 recording the promotion"
+      - "MEMORY.md pointer for project_task_132 flipped to CLOSED"
+
+# ─────────────────────────────────────────────────────────────
+# Failure modes (documented so operators can recognize them)
+# ─────────────────────────────────────────────────────────────
+
+failure_modes:
+  - id: FM-GPUTRAIN-SILENT-CPU
+    description: >
+      Operator passes --device cuda (or equivalent) but training
+      silently runs on CPU. This is the task #126 bug. Abort
+      signal: exit status = DEVICE_UNAVAILABLE or
+      GPU_RESIDENCY_PROOF_FAILED before step 1.
+  - id: FM-GPUTRAIN-STALE-BUILD
+    description: >
+      Binary was built without --features cuda but reports a
+      version string that looks current. Operator mis-attributes
+      CPU-only performance to a GPU code bug. Remedy: always run
+      `apr --version --json` and check `cuda_feature: true`
+      before dispatching.
+  - id: FM-GPUTRAIN-UNDER-BUDGET
+    description: >
+      Step time > 500 ms on RTX 4090. Signals a missed kernel-
+      fusion opportunity, CPU-GPU transfer regression, or PCIe
+      bottleneck. Remedy: profile with `apr profile --gpu` before
+      shipping.
+
+# ─────────────────────────────────────────────────────────────
+
+references:
+  - "contracts/training-loop-pretrain-v1.yaml"
+  - "contracts/entrenar/cuda-graph-training-step-v1.yaml"
+  - "contracts/apr-cli-commands-v1.yaml"
+  - "docs/specifications/aprender-train/ship-two-models-spec.md §v2.23.0"
+  - "memory/project_task_132_cuda_training_backend_gap.md"
+  - "memory/feedback_cuda_feature_footgun.md"
+  - "NVIDIA CUDA Runtime API — cudaGetDeviceCount / cudaSetDevice"

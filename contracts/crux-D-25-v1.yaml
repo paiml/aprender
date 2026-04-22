@@ -1,0 +1,94 @@
+# CRUX-D-25 — Weight tying across layers
+
+metadata:
+  id: CRUX-D-25
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: pytorch
+  demand_score: 3
+  intake_status: partial
+  description: >
+    Weight tying: LM-head shares parameters with the input embedding.
+    Canonical: PyTorch `model.tie_weights()` / HF `config.tie_word_embeddings=true`.
+    Tying halves vocab×hidden params and sums gradients through both paths.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  weight_tying:
+    formula: |
+      lm_head.weight := embed_tokens.weight  # same storage, not a copy
+      logits = x @ embed_tokens.weight.T     # forward
+      grad(embed_tokens.weight) += grad_embed_path + grad_lmhead_path  # sum on backward
+    domain: "(model with embed_tokens: Embedding(V,H), lm_head: Linear(H,V), tie: bool)"
+    codomain: "model with data_ptr(lm_head.weight) == data_ptr(embed_tokens.weight) when tie=true"
+    invariants:
+    - "tie=true reduces trainable params by exactly V*H"
+    - "data_ptr(lm_head.weight) == data_ptr(embed_tokens.weight) (same storage)"
+    - "gradient accumulation on embed_tokens.weight sums both paths (byte-equal to reference autograd)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-25-001
+  rule: tied model has exactly V*H fewer trainable params
+  prediction: "param_count(tied) == param_count(untied) - vocab*hidden"
+  test: |
+    set -euo pipefail
+    n_tied=$(apr inspect tests/fixtures/tinyllama-tied --format json | jq .trainable_params)
+    n_untie=$(apr inspect tests/fixtures/tinyllama-untied --format json | jq .trainable_params)
+    V=$(apr inspect tests/fixtures/tinyllama-tied --format json | jq .config.vocab_size)
+    H=$(apr inspect tests/fixtures/tinyllama-tied --format json | jq .config.hidden_size)
+    python3 -c "assert $n_untie - $n_tied == $V * $H, f'{$n_untie - $n_tied} != {$V * $H}'"
+  if_fails: rule 'tied model has exactly V*H fewer trainable params' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-25-002
+  rule: tied weights share storage (data_ptr equality)
+  prediction: "lm_head and embed_tokens point to the same tensor storage"
+  test: |
+    set -euo pipefail
+    apr inspect tests/fixtures/tinyllama-tied --dump-storage /tmp/storage.json
+    python3 -c "
+    import json; s=json.load(open('/tmp/storage.json'))
+    assert s['lm_head.weight']['data_ptr'] == s['model.embed_tokens.weight']['data_ptr']
+    "
+  if_fails: rule 'tied weights share storage (data_ptr equality)' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-25-003
+  rule: gradient sums both paths (matches PyTorch reference)
+  prediction: "grad(embed_tokens.weight) after 1 step matches PyTorch tie_weights reference to 1e-6"
+  test: |
+    set -euo pipefail
+    apr finetune tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-tied \
+      --steps 1 --dump-grads /tmp/apr-grads.safetensors
+    python3 - <<'PY'
+    import torch, safetensors.torch as st
+    apr = st.load_file("/tmp/apr-grads.safetensors")["model.embed_tokens.weight"]
+    ref = torch.load("tests/fixtures/tinyllama-tied/pytorch-ref-grads.pt")["embed.weight"]
+    assert torch.allclose(apr, ref, atol=1e-6), (apr - ref).abs().max()
+    PY
+
+  if_fails: rule 'gradient sums both paths (matches PyTorch reference)' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr tied-weights semantics match PyTorch `model.tie_weights()` (gradient accumulation + param count)"
+- type: invariant
+  property: "tie=true: data_ptr(lm_head.weight) == data_ptr(embed_tokens.weight)"
+- type: invariant
+  property: "tie=true reduces trainable params by exactly V*H"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-25
+  priority: medium
+  auto_created: true

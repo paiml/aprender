@@ -27,9 +27,7 @@ pub fn tensors_tool_definition() -> ToolDefinition {
         );
     ToolDefinition {
         name: NAME.to_string(),
-        description:
-            "List tensors in a model with shapes and dtypes. Wraps `apr tensors <model> --json`."
-                .to_string(),
+        description: crate::schemas::APR_TENSORS_DESCRIPTION.to_string(),
         input_schema,
     }
 }

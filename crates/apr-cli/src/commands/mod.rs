@@ -5,6 +5,10 @@
 //! - Jidoka: Stop on quality issues
 //! - Visualization: Make problems visible
 
+pub(crate) mod aliases;
+pub(crate) mod auto_quant;
+pub(crate) mod awq_classifier;
+pub(crate) mod awq_lint;
 pub mod bench;
 pub mod canary;
 pub mod cbtop;
@@ -13,6 +17,7 @@ pub mod check;
 pub mod compare_hf;
 pub(crate) mod compile;
 pub(crate) mod convert;
+pub(crate) mod copy_tag;
 pub(crate) mod debug;
 pub(crate) mod diff;
 pub(crate) mod distill;
@@ -20,6 +25,8 @@ pub(crate) mod distill;
 pub(crate) mod data;
 pub(crate) mod diagnose;
 
+pub(crate) mod dry_sampling_classifier;
+pub(crate) mod dry_sampling_lint;
 pub(crate) mod eval;
 #[cfg(feature = "training")]
 pub(crate) mod experiment;
@@ -28,9 +35,13 @@ pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;
 pub(crate) mod flow;
+pub(crate) mod glob_filter;
+pub(crate) mod gbnf_classifier;
+pub(crate) mod gbnf_lint;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod hex;
+pub(crate) mod hf_endpoint;
 pub(crate) mod import;
 pub(crate) mod inspect;
 pub(crate) mod kernel_explain;
@@ -43,21 +54,37 @@ pub(crate) mod model_config;
 pub(crate) mod monitor;
 #[cfg(feature = "dev")]
 pub mod mono;
+pub(crate) mod multi_lora_classifier;
+pub(crate) mod offline;
+pub(crate) mod ollama_chat;
+pub(crate) mod ollama_chat_classifier;
+pub(crate) mod oom_classifier;
+pub(crate) mod oom_lint;
 pub(crate) mod oracle;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
+#[cfg(feature = "training")]
+pub(crate) mod pretrain;
 pub(crate) mod probar;
 pub(crate) mod profile;
+pub(crate) mod progress;
 pub(crate) mod prune;
+pub(crate) mod ps_schema;
 #[cfg(feature = "full")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;
 pub(crate) mod publish;
 pub(crate) mod pull;
+pub(crate) mod pull_scheme;
 pub(crate) mod qa;
 pub(crate) mod qa_capability;
 pub(crate) mod qualify;
 pub(crate) mod quantize;
+pub(crate) mod recipe;
+pub(crate) mod registry;
+pub(crate) mod registry_schema;
+pub(crate) mod resume_paths;
+pub(crate) mod revision;
 pub(crate) mod rosetta;
 pub(crate) mod run;
 #[cfg(feature = "training")]
@@ -66,8 +93,14 @@ pub(crate) mod serve;
 pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
 pub(crate) mod showcase;
+pub(crate) mod sign_artifacts;
+pub(crate) mod stop_op;
 pub(crate) mod tensors;
+pub(crate) mod token_redactor;
 pub(crate) mod tokenize;
+pub(crate) mod tp_pp_classifier;
+pub(crate) mod tool_use_classifier;
+pub(crate) mod tool_use_lint;
 pub(crate) mod trace;
 #[cfg(feature = "training")]
 pub(crate) mod train;
@@ -76,3 +109,5 @@ pub(crate) mod tui;
 #[cfg(feature = "training")]
 pub(crate) mod tune;
 pub(crate) mod validate;
+pub(crate) mod validate_manifest;
+pub(crate) mod xet_mode;

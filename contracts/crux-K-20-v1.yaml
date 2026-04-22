@@ -1,0 +1,99 @@
+# CRUX-K-20 — TensorRT-LLM export
+
+metadata:
+  id: CRUX-K-20
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Deployment & Integration"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    TensorRT-LLM export: build a GPU-optimized engine plan from an apr
+    checkpoint. Canonical: NVIDIA TensorRT-LLM (github.com/NVIDIA/
+    TensorRT-LLM) `trtllm-build`. Output is a `.engine` per tensor-
+    parallel rank plus a `config.json`. Logit parity with apr native
+    must hold under fp16 within cosine ≥0.995 (looser than ONNX CPU
+    because fp16 kernel fusion introduces small numerical drift).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  trtllm_export:
+    formula: |
+      apr export --format trtllm --dtype fp16 --tp-size 1 model.apr -o engine_dir/
+      engine_dir/
+        rank0.engine            # one per TP rank
+        config.json             # has {builder, plugin_config, pretrained_config}
+      run_engine(x) produces logits with cos_sim ≥ 0.995 vs native fp16
+    domain: "(model: Path, tp_size: u32 ≥ 1, dtype ∈ {fp16, bf16, int8})"
+    codomain: "engine plan directory"
+    invariants:
+    - "config.json parses and lists builder.dtype == requested dtype"
+    - "exactly tp_size `.engine` files emitted"
+    - "logit cosine vs native fp16 ≥ 0.995"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-20-001
+  rule: engine count equals tp_size
+  prediction: "--tp-size 2 emits rank0.engine and rank1.engine"
+  test: |
+    set -euo pipefail
+    apr export tests/fixtures/tiny.apr --format trtllm --dtype fp16 \
+      --tp-size 2 -o /tmp/engine
+    test -f /tmp/engine/rank0.engine
+    test -f /tmp/engine/rank1.engine
+    test ! -f /tmp/engine/rank2.engine
+  if_fails: rule 'engine count equals tp_size' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-20-002
+  rule: config.json records requested dtype
+  prediction: "builder.dtype == fp16"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import json; c = json.load(open('/tmp/engine/config.json'))
+    assert c['builder']['dtype'] == 'fp16', c['builder']
+    "
+  if_fails: rule 'config.json records requested dtype' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-20-003
+  rule: logit parity vs native fp16
+  prediction: "cos_sim(trtllm_logits, native_fp16_logits) ≥ 0.995"
+  test: |
+    set -euo pipefail
+    apr trace tests/fixtures/tiny.apr --dtype fp16 --input hello \
+      --dump-logits /tmp/native_fp16.npy
+    apr run-trtllm /tmp/engine --input hello --dump-logits /tmp/trt.npy
+    uv run --with numpy python3 -c "
+    import numpy as np
+    y = np.load('/tmp/trt.npy'); n = np.load('/tmp/native_fp16.npy')
+    cos = float((y.flatten() @ n.flatten()) / (np.linalg.norm(y)*np.linalg.norm(n) + 1e-12))
+    assert cos >= 0.995, cos
+    "
+
+  if_fails: rule 'logit parity vs native fp16' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr export --format trtllm emits TensorRT-LLM runner-compatible engine dir"
+- type: invariant
+  property: "engine count == tp_size"
+- type: invariant
+  property: "logit cosine ≥ 0.995 vs native fp16"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-k-20
+  priority: medium
+  auto_created: true

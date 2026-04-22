@@ -1,0 +1,157 @@
+# CRUX-H-08 — Apply chat template per turn
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-H-08
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Apply chat template per turn. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.H and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  per_turn_template_application:
+    formula: |
+      Given conversation msgs = [(role_i, content_i)]_{i=0..n}:
+        rendered = apply_chat_template(template, msgs)
+        rendered = concat_{i=0..n} template.render(role_i, content_i)
+      Then:
+        tokens = apr tokenize --chat-template <T> --input msgs.jsonl
+        tokens == transformers.AutoTokenizer.apply_chat_template(
+                    msgs, tokenize=True, add_generation_prompt=False)
+    domain: (template T ∈ {chatml, llama3, mistral, qwen}, msgs)
+    codomain: List[int] token ids
+    invariants:
+    - "Template applied turn-by-turn (role markers + content for each message)"
+    - "Final token sequence identical to transformers apply_chat_template(tokenize=True)"
+    - "Reference: https://huggingface.co/docs/transformers/main/en/chat_templating"
+
+  special_token_integrity:
+    formula: |
+      For ChatML:
+        rendered CONTAINS  "<|im_start|>{role}\n{content}<|im_end|>\n"  for each turn.
+      For Llama-3:
+        rendered CONTAINS  "<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
+      For Mistral instruct:
+        rendered CONTAINS  "[INST] {content} [/INST]"  (user), "{content}</s>" (assistant).
+    domain: (template, msgs)
+    codomain: rendered string
+    invariants:
+    - "ChatML: exactly one <|im_start|> and <|im_end|> per turn"
+    - "Llama3: exactly one <|start_header_id|>...<|eot_id|> per turn"
+    - "No role/content escaping that loses information vs transformers reference"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-08-001
+  rule: "ChatML per-turn parity with transformers"
+  prediction: "apr chatml template tokens == AutoTokenizer.apply_chat_template(tokenize=True)"
+  test: |
+    cat > /tmp/crux-h-08-msgs.jsonl <<'JSONL'
+    {"role":"system","content":"You are helpful."}
+    {"role":"user","content":"What is 2+2?"}
+    {"role":"assistant","content":"4."}
+    JSONL
+    APR=$(apr tokenize model.apr --chat-template chatml \
+            --input /tmp/crux-h-08-msgs.jsonl --json | jq -c '.token_ids')
+    HF=$(uv run --with transformers python3 - <<'PY'
+    from transformers import AutoTokenizer
+    import json
+    msgs = [json.loads(l) for l in open('/tmp/crux-h-08-msgs.jsonl')]
+    tok = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-Coder-1.5B')
+    ids = tok.apply_chat_template(msgs, tokenize=True, add_generation_prompt=False)
+    print(json.dumps(ids))
+    PY
+    )
+    test "$APR" = "$HF"
+  if_fails: "apr chatml template diverges from transformers apply_chat_template"
+
+- id: FALSIFY-CRUX-H-08-002
+  rule: "Llama-3 template parity"
+  prediction: "apr llama3 template tokens == AutoTokenizer.apply_chat_template for meta-llama/Llama-3-*"
+  test: |
+    # TODO: evidence/crux/huggingface/h-08/llama3/ — needs gated model access
+    APR=$(apr tokenize model-llama3.apr --chat-template llama3 \
+            --input /tmp/crux-h-08-msgs.jsonl --json | jq -c '.token_ids')
+    HF=$(uv run --with transformers python3 - <<'PY'
+    from transformers import AutoTokenizer
+    import json
+    msgs = [json.loads(l) for l in open('/tmp/crux-h-08-msgs.jsonl')]
+    tok = AutoTokenizer.from_pretrained('meta-llama/Meta-Llama-3-8B-Instruct')
+    ids = tok.apply_chat_template(msgs, tokenize=True, add_generation_prompt=False)
+    print(json.dumps(ids))
+    PY
+    )
+    test "$APR" = "$HF"
+  if_fails: "apr llama3 template diverges from transformers reference"
+
+- id: FALSIFY-CRUX-H-08-003
+  rule: "Mistral template parity"
+  prediction: "apr mistral template tokens == AutoTokenizer.apply_chat_template for mistralai/Mistral-7B-Instruct"
+  test: |
+    # TODO: evidence/crux/huggingface/h-08/mistral/
+    APR=$(apr tokenize model-mistral.apr --chat-template mistral \
+            --input /tmp/crux-h-08-msgs.jsonl --json | jq -c '.token_ids')
+    HF=$(uv run --with transformers python3 - <<'PY'
+    from transformers import AutoTokenizer
+    import json
+    msgs = [json.loads(l) for l in open('/tmp/crux-h-08-msgs.jsonl')]
+    tok = AutoTokenizer.from_pretrained('mistralai/Mistral-7B-Instruct-v0.2')
+    ids = tok.apply_chat_template(msgs, tokenize=True, add_generation_prompt=False)
+    print(json.dumps(ids))
+    PY
+    )
+    test "$APR" = "$HF"
+  if_fails: "apr mistral template diverges from transformers reference"
+
+- id: FALSIFY-CRUX-H-08-004
+  rule: "ChatML special-token structure"
+  prediction: "Rendered text contains <|im_start|> and <|im_end|> exactly N_turns times each"
+  test: |
+    RENDERED=$(apr tokenize model.apr --chat-template chatml \
+                 --input /tmp/crux-h-08-msgs.jsonl --emit-rendered --json | jq -r '.rendered')
+    START=$(grep -o '<|im_start|>' <<<"$RENDERED" | wc -l)
+    END=$(grep -o '<|im_end|>' <<<"$RENDERED" | wc -l)
+    test "$START" -eq 3 && test "$END" -eq 3
+  if_fails: "ChatML rendering drops or duplicates <|im_start|>/<|im_end|> markers"
+
+proof_obligations:
+- type: invariant
+  property: "Template applied per-turn with role markers preserved"
+- type: invariant
+  property: "ChatML rendering has matched <|im_start|>/<|im_end|> pairs per turn"
+- type: equivalence
+  property: "Token output byte-identical to transformers.AutoTokenizer.apply_chat_template(tokenize=True) across chatml/llama3/mistral/qwen templates"
+  reference: "https://huggingface.co/docs/transformers/main/en/chat_templating"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-h-08` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-h-08
+  priority: critical
+  auto_created: false

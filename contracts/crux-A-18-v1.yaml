@@ -1,0 +1,138 @@
+# CRUX-A-18 — Gated-model interactive auth flow
+
+metadata:
+  id: CRUX-A-18
+  version: "1.2.0"
+  created: "2026-04-18"
+  last_updated: "2026-04-20"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: partial
+  description: >
+    When a pull hits a gated repo (HTTP 403 with `X-Error-Code: GatedRepo`),
+    re-prompt the user to `apr login` (token paste) and retry. Canonical:
+    `huggingface-cli login` + `hf_hub_download` retry after `use_auth_token`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  gated_retry_flow:
+    formula: |
+      pull(repo):
+        r = GET /{repo}/resolve/{rev}/{file}  (no auth)
+        if r.status == 403 and r.headers["X-Error-Code"] in {"GatedRepo", "RepoNotFound"}:
+            token = env["HF_TOKEN"] or prompt_user("hf token: ")
+            r = GET ...  with Authorization: Bearer {token}
+        return r.bytes
+    domain: "(repo: str, file: str, HF_TOKEN: Option<str>)"
+    codomain: "bytes on disk or exit 2 (still 403 after auth)"
+    invariants:
+    - "token is never logged (stderr/stdout scrub)"
+    - "token is stored in ~/.apr/token with mode 0600"
+    - "on still-403-after-auth, exit 2 with link to https://huggingface.co/{repo} access request"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-18-001
+  rule: 403 on gated repo triggers token prompt (not silent failure)
+  prediction: "apr pull hf://meta-llama/Llama-3-8B with no token prints 'access requires auth' and exits 2"
+  test: |
+    set -e
+    unset HF_TOKEN
+    printf "" | apr pull hf://meta-llama/Meta-Llama-3-8B --no-prompt 2>/tmp/err && exit 1 || [ $? -eq 2 ]
+    grep -E "gated|access|huggingface\.co/meta-llama" /tmp/err
+  if_fails: rule '403 on gated repo triggers token prompt (not silent failure)' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-18-002
+  rule: token file mode is 0600 after login
+  prediction: "stat -c %a ~/.apr/token == 600"
+  test: |
+    set -euo pipefail
+    echo "hf_dummy_token" | apr login --stdin
+    [ "$(stat -c %a ~/.apr/token)" = "600" ]
+  if_fails: rule 'token file mode is 0600 after login' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-18-003
+  rule: token is never echoed to stderr
+  prediction: "apr pull/login stderr does NOT contain the literal token"
+  test: |
+    set -euo pipefail
+    TOK="hf_test_$(openssl rand -hex 8)"
+    echo "$TOK" | apr login --stdin 2>/tmp/err
+    ! grep -qF "$TOK" /tmp/err
+
+  if_fails: rule 'token is never echoed to stderr' is violated — contract MUST be re-verified against competitor canonical reference
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    sub_claim: >
+      The sub-claim discharged is the redactor invariant: for any input
+      string containing any known secret, after `redact_secrets(input, secrets)`
+      the output provably contains zero occurrences of any of those secrets.
+      If every stderr write is routed through this redactor, the
+      full-system "stderr does not contain the literal token" invariant
+      reduces to a call-site audit. This is a NECESSARY (not sufficient)
+      condition for FALSIFY-003.
+    tests:
+    - file: crates/apr-cli/src/commands/token_redactor.rs
+      tests:
+      - commands::token_redactor::tests::redact_replaces_known_secret
+      - commands::token_redactor::tests::redact_removes_every_occurrence
+      - commands::token_redactor::tests::redact_handles_multiple_secrets
+      - commands::token_redactor::tests::redact_then_contains_is_false_on_any_input
+      - commands::token_redactor::tests::redact_is_idempotent
+      - commands::token_redactor::tests::contains_secret_is_true_iff_redact_changes_output
+    scope: >
+      ONLY the redactor logic is discharged. The actual routing of every
+      `eprintln!` / `tracing::warn!` / `error!` site through the redactor
+      is NOT discharged here — that requires a call-site audit follow-up.
+      The `apr login --stdin` stdin pipe, file-mode-0600 persistence
+      (FALSIFY-002), and 403 retry (FALSIFY-001) are also NOT discharged.
+proof_obligations:
+- type: equivalence
+  property: "apr pull matches `huggingface-cli login` + `hf_hub_download` retry semantics"
+- type: invariant
+  property: "token file is mode 0600; never logged in any code path"
+- type: invariant
+  property: "still-403-after-auth → exit 2 with actionable access-request URL"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 1  # FALSIFY-003 at PARTIAL_ALGORITHM_LEVEL (redactor sub-claim only)
+  status: partial
+  evidence:
+    unit_tests: crates/apr-cli/src/commands/token_redactor.rs
+    functions:
+    - commands::token_redactor::redact_secrets
+    - commands::token_redactor::contains_secret
+    - commands::token_redactor::looks_like_hf_token
+    coverage:
+    - falsify-003: commands::token_redactor::tests::redact_replaces_known_secret
+    - falsify-003: commands::token_redactor::tests::redact_removes_every_occurrence
+    - falsify-003: commands::token_redactor::tests::redact_handles_multiple_secrets
+    - falsify-003: commands::token_redactor::tests::redact_then_contains_is_false_on_any_input
+    - falsify-003: commands::token_redactor::tests::contains_secret_is_true_iff_redact_changes_output
+    - idempotence: commands::token_redactor::tests::redact_is_idempotent
+    - determinism: commands::token_redactor::tests::redact_is_deterministic
+    - negative-space: commands::token_redactor::tests::redact_is_identity_when_no_secret_present
+    - negative-space: commands::token_redactor::tests::redact_ignores_empty_and_short_secrets
+  scope_honesty: >
+    ONLY the pure REDACTOR LOGIC is discharged at PARTIAL_ALGORITHM_LEVEL.
+    The redactor provably removes every occurrence of every known secret
+    from an arbitrary input string; this is a NECESSARY condition for
+    FALSIFY-003's "stderr does not contain the literal token" invariant
+    but not sufficient on its own — every CLI write site still has to
+    route through the redactor. FALSIFY-001 (HTTP 403 gated retry) and
+    FALSIFY-002 (token file mode 0600) are NOT discharged. NO INTEGRATION
+    DISCHARGE — no call-site audit wiring has been done. Contract retains
+    `status: partial`.
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-a-18
+  priority: medium
+  auto_created: false

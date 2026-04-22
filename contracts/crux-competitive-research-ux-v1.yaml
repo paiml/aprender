@@ -1,0 +1,758 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: CRUX-001  (Competitive Research UX Workflows)
+# ─────────────────────────────────────────────────────────────
+# Master registry for the CRUX subspec. Binds 250 sub-contracts
+# (crux-{A..K}-{nn}-v1.yaml) under one roof so `pmat comply check`
+# can walk the tree, `apr qa --crux` emits per-story PASS/FAIL,
+# and `pmat work` tracks every ❌ missing story.
+#
+# Subspec:  docs/specifications/crux-competitive-research-ux-workflows.md
+# Version:  2.0 (expanded 100 → 250 per user request 2026-04-18)
+# Parent:   docs/specifications/aprender-monorepo-consolidation.md Rule 7
+# Peer:     contracts/apr-cli-commands-v1.yaml
+#
+# Maintenance rule: THIS FILE AND THE SUBSPEC MOVE AS ONE. Any
+# status flip or story addition updates both in the same commit.
+# ─────────────────────────────────────────────────────────────
+
+metadata:
+  version: "2.0.0"
+  created: "2026-04-18"
+  updated: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: DRAFT
+  subspec: "docs/specifications/crux-competitive-research-ux-workflows.md"
+  parent_contracts: []
+  description: >
+    Registry of 250 user stories derived from root-cause workflow
+    analysis of six dominant open-source ML projects. Each story
+    has a dedicated sub-contract (crux-{letter}-{nn}-v1.yaml) and
+    a demand_score (1..5). Every status=missing story gets a
+    pmat work ticket; demand_score maps directly to pmat priority.
+  references:
+    - "docs/specifications/crux-competitive-research-ux-workflows.md"
+    - "contracts/apr-cli-commands-v1.yaml"
+    - "https://github.com/ollama/ollama"
+    - "https://github.com/ggml-org/llama.cpp"
+    - "https://github.com/pytorch/pytorch"
+    - "https://github.com/huggingface/transformers"
+    - "https://github.com/vllm-project/vllm"
+    - "https://github.com/mlfoundations/open_clip"
+
+# ─────────────────────────────────────────────────────────────
+# Demand scoring rubric (see subspec §4)
+# ─────────────────────────────────────────────────────────────
+demand_rubric:
+  5: "Canonical verb; README fold; top-20 issue-volume; top-10 bug-label"
+  4: "High-traffic verb; common bug-label target"
+  3: "Documented power-user feature; moderate volume"
+  2: "Niche but real workflow"
+  1: "Edge case; included for completeness"
+
+# ─────────────────────────────────────────────────────────────
+# Demand → pmat work priority mapping
+# ─────────────────────────────────────────────────────────────
+priority_mapping:
+  5: critical
+  4: high
+  3: medium
+  2: low
+  1: low
+
+# ─────────────────────────────────────────────────────────────
+# Competitor evidence sources
+# ─────────────────────────────────────────────────────────────
+evidence_sources:
+  ollama:
+    readme_verbs: "evidence/crux/ollama/readme-verbs.txt"
+    top_issues: "evidence/crux/ollama/top-issues.json"
+    bug_histogram: "evidence/crux/ollama/bug-histogram.json"
+    help_transcript: "evidence/crux/ollama/help.txt"
+    canonical_flow: "evidence/crux/ollama/hello.sh"
+  llama_cpp:
+    readme_verbs: "evidence/crux/llama-cpp/readme-verbs.txt"
+    top_issues: "evidence/crux/llama-cpp/top-issues.json"
+    bug_histogram: "evidence/crux/llama-cpp/bug-histogram.json"
+    help_transcript: "evidence/crux/llama-cpp/help.txt"
+    canonical_flow: "evidence/crux/llama-cpp/hello.sh"
+  pytorch:
+    readme_verbs: "evidence/crux/pytorch/readme-verbs.txt"
+    top_issues: "evidence/crux/pytorch/top-issues.json"
+    bug_histogram: "evidence/crux/pytorch/bug-histogram.json"
+    canonical_flow: "evidence/crux/pytorch/hello.py"
+  huggingface:
+    readme_verbs: "evidence/crux/huggingface/readme-verbs.txt"
+    top_issues: "evidence/crux/huggingface/top-issues.json"
+    bug_histogram: "evidence/crux/huggingface/bug-histogram.json"
+    help_transcript: "evidence/crux/huggingface/help.txt"
+    canonical_flow: "evidence/crux/huggingface/hello.py"
+  vllm:
+    readme_verbs: "evidence/crux/vllm/readme-verbs.txt"
+    top_issues: "evidence/crux/vllm/top-issues.json"
+    bug_histogram: "evidence/crux/vllm/bug-histogram.json"
+    routes: "evidence/crux/vllm/routes.yaml"
+    canonical_flow: "evidence/crux/vllm/hello.py"
+  openclaw:
+    readme_verbs: "evidence/crux/openclaw/readme-verbs.txt"
+    config_schema: "evidence/crux/openclaw/config-schema.json5"
+    canonical_flow: "evidence/crux/openclaw/hello.sh"
+    capability_matrix: "evidence/crux/openclaw/capability-matrix.yaml"
+    gaps: "evidence/crux/openclaw/gaps.md"
+    interpretation_note: "Resolved 2026-04-18: OpenCLAW is openclaw.ai (local-first personal AI assistant / agent orchestration). NOT OpenCLIP. Category J rewritten accordingly."
+  openclip:
+    readme_verbs: "evidence/crux/openclip/readme-verbs.txt"
+    top_issues: "evidence/crux/openclip/top-issues.json"
+    canonical_flow: "evidence/crux/openclip/hello.py"
+    interpretation_note: "Vision-language stories E-25 and H-17 reference OpenCLIP directly. Category J no longer points here — see §10 in subspec."
+
+# ─────────────────────────────────────────────────────────────
+# Equations / invariants
+# ─────────────────────────────────────────────────────────────
+equations:
+  every_story_has_contract:
+    formula: |
+      ∀ story s in stories[]:
+        exists file at contracts/crux-{s.id}-v1.yaml
+        AND that file has metadata.status ∈ {draft, enforced}
+    domain: stories[] (exactly 250)
+    codomain: bool
+    invariants:
+      - "len(stories) == 250"
+      - "No story removed without a deprecation contract amendment"
+      - "Story IDs stable after v2.0.0 publish (gaps C-14,F-10,H-04,I-05,K-06 are intentional)"
+
+  coverage_non_regressive:
+    formula: |
+      count(stories where status == supported) is monotone non-decreasing
+      across subsequent master-contract versions.
+    domain: master contract version history
+    codomain: bool
+    invariants:
+      - "A story may move ❌→🔨→✅; never ✅→🔨 or ✅→❌ without a defect ticket"
+
+  pmat_work_coverage:
+    formula: |
+      ∀ story s with s.status == missing:
+        exists pmat work ticket t with tag = "crux-{s.id}"
+        AND priority(t) == priority_mapping[s.demand_score]
+    domain: stories[] where status == missing
+    codomain: bool
+    invariants:
+      - "Every missing story has exactly one pmat work ticket"
+      - "When status flips missing → partial/supported, ticket MUST be closed"
+
+  openclaw_interpretation_discipline:
+    formula: |
+      ∀ s in Category J:
+        s.interpretation == openclaw-agent-resolved (2026-04-18, openclaw.ai)
+        AND s.competitor == openclaw
+    domain: Category J (CRUX-J-01..CRUX-J-20)
+    codomain: bool
+    invariants:
+      - "Every Category J story carries interpretation == openclaw-agent-resolved"
+      - "Every Category J story carries competitor == openclaw"
+      - "Vision-language (OpenCLIP / SigLIP / LAION) is a separate category / sibling subspec, not Category J"
+
+# ─────────────────────────────────────────────────────────────
+# Story registry (250 entries)
+# ─────────────────────────────────────────────────────────────
+stories:
+  # Category A — Model Acquisition & Registry (25)
+  - { id: CRUX-A-01, title: "Pull model by short name",            competitor: ollama,      demand_score: 5, status: supported, contract: crux-A-01-v1.yaml }
+  - { id: CRUX-A-02, title: "Pull HF repo by hf://org/name",       competitor: huggingface, demand_score: 5, status: supported, contract: crux-A-02-v1.yaml }
+  - { id: CRUX-A-03, title: "Pin to revision/branch/SHA",          competitor: huggingface, demand_score: 4, status: partial,   contract: crux-A-03-v1.yaml }
+  - { id: CRUX-A-04, title: "Include/exclude file globs",          competitor: huggingface, demand_score: 4, status: missing,   contract: crux-A-04-v1.yaml }
+  - { id: CRUX-A-05, title: "Resume interrupted download",         competitor: huggingface, demand_score: 5, status: partial,   contract: crux-A-05-v1.yaml }
+  - { id: CRUX-A-06, title: "Authenticate with HF_TOKEN",          competitor: huggingface, demand_score: 5, status: supported, contract: crux-A-06-v1.yaml }
+  - { id: CRUX-A-07, title: "Xet-accelerated parallel download",   competitor: huggingface, demand_score: 4, status: partial,   contract: crux-A-07-v1.yaml }
+  - { id: CRUX-A-08, title: "Custom mirror / HF_ENDPOINT",         competitor: huggingface, demand_score: 3, status: missing,   contract: crux-A-08-v1.yaml }
+  - { id: CRUX-A-09, title: "Local registry list/show/rm",         competitor: ollama,      demand_score: 5, status: partial,   contract: crux-A-09-v1.yaml }
+  - { id: CRUX-A-10, title: "VRAM-aware quant auto-select",        competitor: ollama,      demand_score: 4, status: missing,   contract: crux-A-10-v1.yaml }
+  - { id: CRUX-A-11, title: "apr cp copy model with new tag",      competitor: ollama,      demand_score: 3, status: missing,   contract: crux-A-11-v1.yaml }
+  - { id: CRUX-A-12, title: "apr ps list running models",          competitor: ollama,      demand_score: 4, status: missing,   contract: crux-A-12-v1.yaml }
+  - { id: CRUX-A-13, title: "apr stop unload model from VRAM",     competitor: ollama,      demand_score: 4, status: missing,   contract: crux-A-13-v1.yaml }
+  - { id: CRUX-A-14, title: "Pull from S3/GCS/Azure URL",          competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-A-14-v1.yaml }
+  - { id: CRUX-A-15, title: "Pull from local directory (file://)", competitor: huggingface, demand_score: 4, status: partial,   contract: crux-A-15-v1.yaml }
+  - { id: CRUX-A-16, title: "Modelfile recipe custom system prompt", competitor: ollama,    demand_score: 4, status: missing,   contract: crux-A-16-v1.yaml }
+  - { id: CRUX-A-17, title: "Manifest signing cosign/sigstore",    competitor: ecosystem,   demand_score: 2, status: missing,   contract: crux-A-17-v1.yaml }
+  - { id: CRUX-A-18, title: "Gated-model interactive auth flow",   competitor: huggingface, demand_score: 3, status: partial,   contract: crux-A-18-v1.yaml }
+  - { id: CRUX-A-19, title: "Progress bar ETA + parallel chunks",  competitor: huggingface, demand_score: 4, status: partial,   contract: crux-A-19-v1.yaml }
+  - { id: CRUX-A-20, title: "Offline mode no network calls",       competitor: huggingface, demand_score: 4, status: partial,   contract: crux-A-20-v1.yaml }
+  - { id: CRUX-A-21, title: "Shared model cache across users",     competitor: ollama,      demand_score: 3, status: missing,   contract: crux-A-21-v1.yaml }
+  - { id: CRUX-A-22, title: "Disk-quota enforcement on registry",  competitor: ollama,      demand_score: 2, status: missing,   contract: crux-A-22-v1.yaml }
+  - { id: CRUX-A-23, title: "Model search Hub + local cache",      competitor: huggingface, demand_score: 3, status: missing,   contract: crux-A-23-v1.yaml }
+  - { id: CRUX-A-24, title: "Register custom local model",         competitor: ollama,      demand_score: 3, status: partial,   contract: crux-A-24-v1.yaml }
+  - { id: CRUX-A-25, title: "Garbage-collect unused models",       competitor: ollama,      demand_score: 3, status: missing,   contract: crux-A-25-v1.yaml }
+
+  # Category B — Format Conversion & Quantization (20)
+  - { id: CRUX-B-01, title: "Safetensors → GGUF preserving tokenizer", competitor: llama_cpp, demand_score: 5, status: supported, contract: crux-B-01-v1.yaml }
+  - { id: CRUX-B-02, title: "GGUF → Safetensors for PEFT",         competitor: llama_cpp,   demand_score: 4, status: missing,   contract: crux-B-02-v1.yaml }
+  - { id: CRUX-B-03, title: "PyTorch .bin → Safetensors sharded",  competitor: huggingface, demand_score: 4, status: partial,   contract: crux-B-03-v1.yaml }
+  - { id: CRUX-B-04, title: "HF → APR native with LAYOUT check",   competitor: huggingface, demand_score: 5, status: supported, contract: crux-B-04-v1.yaml }
+  - { id: CRUX-B-05, title: "Safetensors shard/merge weight-map",  competitor: huggingface, demand_score: 4, status: partial,   contract: crux-B-05-v1.yaml }
+  - { id: CRUX-B-06, title: "All K-quants Q2..Q8 + perplexity Δ",  competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-B-06-v1.yaml }
+  - { id: CRUX-B-07, title: "imatrix calibration",                 competitor: llama_cpp,   demand_score: 5, status: missing,   contract: crux-B-07-v1.yaml }
+  - { id: CRUX-B-08, title: "AWQ quantization",                    competitor: vllm,        demand_score: 5, status: missing,   contract: crux-B-08-v1.yaml }
+  - { id: CRUX-B-09, title: "GPTQ quantization",                   competitor: vllm,        demand_score: 5, status: missing,   contract: crux-B-09-v1.yaml }
+  - { id: CRUX-B-10, title: "BitsAndBytes NF4 4-bit",              competitor: huggingface, demand_score: 4, status: missing,   contract: crux-B-10-v1.yaml }
+  - { id: CRUX-B-11, title: "FP8 quantization H100+",              competitor: vllm,        demand_score: 3, status: missing,   contract: crux-B-11-v1.yaml }
+  - { id: CRUX-B-12, title: "INT8 dynamic quantization",           competitor: pytorch,     demand_score: 4, status: partial,   contract: crux-B-12-v1.yaml }
+  - { id: CRUX-B-13, title: "INT4 static weight-only",             competitor: llama_cpp,   demand_score: 4, status: supported, contract: crux-B-13-v1.yaml }
+  - { id: CRUX-B-14, title: "Q4_K_M / Q5_K_M / Q6_K variants",     competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-B-14-v1.yaml }
+  - { id: CRUX-B-15, title: "IQ-quants IQ3_XXS / IQ2_S",           competitor: llama_cpp,   demand_score: 3, status: missing,   contract: crux-B-15-v1.yaml }
+  - { id: CRUX-B-16, title: "Per-tensor layer-quant override",     competitor: llama_cpp,   demand_score: 3, status: missing,   contract: crux-B-16-v1.yaml }
+  - { id: CRUX-B-17, title: "Quantization-aware training (QAT)",   competitor: pytorch,     demand_score: 2, status: missing,   contract: crux-B-17-v1.yaml }
+  - { id: CRUX-B-18, title: "Calibration dataset loader",          competitor: llama_cpp,   demand_score: 4, status: missing,   contract: crux-B-18-v1.yaml }
+  - { id: CRUX-B-19, title: "Dequant + re-quant preserve metadata", competitor: llama_cpp,  demand_score: 3, status: partial,   contract: crux-B-19-v1.yaml }
+  - { id: CRUX-B-20, title: "Roundtrip quant diff report",         competitor: llama_cpp,   demand_score: 3, status: partial,   contract: crux-B-20-v1.yaml }
+
+  # Category C — Inference & Serving (35; gap at C-14)
+  - { id: CRUX-C-01, title: "apr run one-shot",                    competitor: ollama,      demand_score: 5, status: supported, contract: crux-C-01-v1.yaml }
+  - { id: CRUX-C-02, title: "apr chat interactive REPL",           competitor: ollama,      demand_score: 5, status: supported, contract: crux-C-02-v1.yaml }
+  - { id: CRUX-C-03, title: "OpenAI /v1/chat/completions",         competitor: vllm,        demand_score: 5, status: supported, contract: crux-C-03-v1.yaml }
+  - { id: CRUX-C-04, title: "Ollama /api/chat",                    competitor: ollama,      demand_score: 5, status: missing,   contract: crux-C-04-v1.yaml }
+  - { id: CRUX-C-05, title: "SSE streaming tokens [DONE]",         competitor: vllm,        demand_score: 5, status: supported, contract: crux-C-05-v1.yaml }
+  - { id: CRUX-C-06, title: "Continuous batching",                 competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-06-v1.yaml }
+  - { id: CRUX-C-07, title: "Paged-attention KV cache",            competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-07-v1.yaml }
+  - { id: CRUX-C-08, title: "Automatic prefix caching",            competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-08-v1.yaml }
+  - { id: CRUX-C-09, title: "Speculative decoding draft model",    competitor: vllm,        demand_score: 4, status: missing,   contract: crux-C-09-v1.yaml }
+  - { id: CRUX-C-10, title: "Grammar-constrained GBNF output",     competitor: llama_cpp,   demand_score: 4, status: partial,   contract: crux-C-10-v1.yaml }
+  - { id: CRUX-C-11, title: "OpenAI tool-use function calling",    competitor: vllm,        demand_score: 5, status: missing,   contract: crux-C-11-v1.yaml }
+  - { id: CRUX-C-12, title: "Multi-modal vision input LLaVA",      competitor: llama_cpp,   demand_score: 4, status: missing,   contract: crux-C-12-v1.yaml }
+  - { id: CRUX-C-13, title: "/v1/embeddings endpoint",             competitor: llama_cpp,   demand_score: 5, status: missing,   contract: crux-C-13-v1.yaml }
+  # CRUX-C-14 dropped pre-v1.0.0: rerank subsumed by C-13 embeddings
+  - { id: CRUX-C-15, title: "Tensor + pipeline parallelism",       competitor: vllm,        demand_score: 4, status: missing,   contract: crux-C-15-v1.yaml }
+  - { id: CRUX-C-16, title: "LoRA hotswap at runtime",             competitor: vllm,        demand_score: 4, status: missing,   contract: crux-C-16-v1.yaml }
+  - { id: CRUX-C-17, title: "Multi-LoRA serving N adapters",       competitor: vllm,        demand_score: 4, status: missing,   contract: crux-C-17-v1.yaml }
+  - { id: CRUX-C-18, title: "Stop-sequence strings",               competitor: ollama,      demand_score: 4, status: supported, contract: crux-C-18-v1.yaml }
+  - { id: CRUX-C-19, title: "Temperature top_p top_k sampling",    competitor: ollama,      demand_score: 5, status: supported, contract: crux-C-19-v1.yaml }
+  - { id: CRUX-C-20, title: "Repetition penalty",                  competitor: ollama,      demand_score: 4, status: supported, contract: crux-C-20-v1.yaml }
+  - { id: CRUX-C-21, title: "Mirostat sampling",                   competitor: llama_cpp,   demand_score: 3, status: missing,   contract: crux-C-21-v1.yaml }
+  - { id: CRUX-C-22, title: "Typical sampling",                    competitor: llama_cpp,   demand_score: 3, status: missing,   contract: crux-C-22-v1.yaml }
+  - { id: CRUX-C-23, title: "DRY sampling",                        competitor: llama_cpp,   demand_score: 3, status: missing,   contract: crux-C-23-v1.yaml }
+  - { id: CRUX-C-24, title: "Beam search decoding",                competitor: pytorch,     demand_score: 3, status: missing,   contract: crux-C-24-v1.yaml }
+  - { id: CRUX-C-25, title: "Logprobs output",                     competitor: vllm,        demand_score: 4, status: partial,   contract: crux-C-25-v1.yaml }
+  - { id: CRUX-C-26, title: "Context-window extension RoPE scale", competitor: llama_cpp,   demand_score: 4, status: partial,   contract: crux-C-26-v1.yaml }
+  - { id: CRUX-C-27, title: "GGUF lazy mmap loading",              competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-C-27-v1.yaml }
+  - { id: CRUX-C-28, title: "GPU layer offloading -ngl",           competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-C-28-v1.yaml }
+  - { id: CRUX-C-29, title: "NUMA-aware memory placement",         competitor: llama_cpp,   demand_score: 3, status: missing,   contract: crux-C-29-v1.yaml }
+  - { id: CRUX-C-30, title: "KV cache quantization Q8_0/Q4_0",     competitor: llama_cpp,   demand_score: 4, status: missing,   contract: crux-C-30-v1.yaml }
+  - { id: CRUX-C-31, title: "FlashAttention-2 enabled path",       competitor: vllm,        demand_score: 5, status: partial,   contract: crux-C-31-v1.yaml }
+  - { id: CRUX-C-32, title: "Chunked prefill long contexts",       competitor: vllm,        demand_score: 4, status: partial,   contract: crux-C-32-v1.yaml }
+  - { id: CRUX-C-33, title: "/v1/models endpoint",                 competitor: vllm,        demand_score: 5, status: supported, contract: crux-C-33-v1.yaml }
+  - { id: CRUX-C-34, title: "/health endpoint",                    competitor: vllm,        demand_score: 5, status: supported, contract: crux-C-34-v1.yaml }
+  - { id: CRUX-C-35, title: "Graceful shutdown in-flight drain",   competitor: vllm,        demand_score: 4, status: partial,   contract: crux-C-35-v1.yaml }
+  - { id: CRUX-C-36, title: "Cancel in-flight requests",           competitor: vllm,        demand_score: 4, status: partial,   contract: crux-C-36-v1.yaml }
+
+  # Category D — Fine-tuning & Training (35)
+  - { id: CRUX-D-01, title: "Full-parameter fine-tune single cmd", competitor: huggingface, demand_score: 5, status: partial,   contract: crux-D-01-v1.yaml }
+  - { id: CRUX-D-02, title: "LoRA fine-tune rank/alpha/dropout",   competitor: huggingface, demand_score: 5, status: partial,   contract: crux-D-02-v1.yaml }
+  - { id: CRUX-D-03, title: "QLoRA 4-bit + LoRA",                  competitor: huggingface, demand_score: 5, status: missing,   contract: crux-D-03-v1.yaml }
+  - { id: CRUX-D-04, title: "DPO preference training",             competitor: huggingface, demand_score: 5, status: missing,   contract: crux-D-04-v1.yaml }
+  - { id: CRUX-D-05, title: "SFT chat-template conversations",     competitor: huggingface, demand_score: 5, status: partial,   contract: crux-D-05-v1.yaml }
+  - { id: CRUX-D-06, title: "Load HF dataset + tokenize + pack",   competitor: huggingface, demand_score: 5, status: partial,   contract: crux-D-06-v1.yaml }
+  - { id: CRUX-D-07, title: "Checkpoint save/resume w/ opt state", competitor: huggingface, demand_score: 5, status: supported, contract: crux-D-07-v1.yaml }
+  - { id: CRUX-D-08, title: "Per-epoch eval JSON for CI",          competitor: huggingface, demand_score: 4, status: partial,   contract: crux-D-08-v1.yaml }
+  - { id: CRUX-D-09, title: "Gradient accumulation",               competitor: pytorch,     demand_score: 5, status: supported, contract: crux-D-09-v1.yaml }
+  - { id: CRUX-D-10, title: "Mixed precision bf16/fp16",           competitor: pytorch,     demand_score: 5, status: partial,   contract: crux-D-10-v1.yaml }
+  - { id: CRUX-D-11, title: "DDP multi-GPU single node",           competitor: pytorch,     demand_score: 5, status: missing,   contract: crux-D-11-v1.yaml }
+  - { id: CRUX-D-12, title: "FSDP / ZeRO sharding",                competitor: pytorch,     demand_score: 5, status: missing,   contract: crux-D-12-v1.yaml }
+  - { id: CRUX-D-13, title: "LR schedule cosine/linear-warmup",    competitor: pytorch,     demand_score: 5, status: supported, contract: crux-D-13-v1.yaml }
+  - { id: CRUX-D-14, title: "Early stopping + best ckpt",          competitor: huggingface, demand_score: 4, status: partial,   contract: crux-D-14-v1.yaml }
+  - { id: CRUX-D-15, title: "Merge LoRA + export GGUF",            competitor: huggingface, demand_score: 5, status: partial,   contract: crux-D-15-v1.yaml }
+  - { id: CRUX-D-16, title: "AdamW + 8-bit AdamW",                 competitor: huggingface, demand_score: 5, status: partial,   contract: crux-D-16-v1.yaml }
+  - { id: CRUX-D-17, title: "ORPO / KTO / IPO alignment",          competitor: huggingface, demand_score: 3, status: missing,   contract: crux-D-17-v1.yaml }
+  - { id: CRUX-D-18, title: "Reward-model training",               competitor: huggingface, demand_score: 3, status: missing,   contract: crux-D-18-v1.yaml }
+  - { id: CRUX-D-19, title: "PPO reinforcement learning",          competitor: huggingface, demand_score: 3, status: missing,   contract: crux-D-19-v1.yaml }
+  - { id: CRUX-D-20, title: "RoPE frequency scaling during SFT",   competitor: huggingface, demand_score: 3, status: missing,   contract: crux-D-20-v1.yaml }
+  - { id: CRUX-D-21, title: "Continue-pretraining raw corpus",     competitor: huggingface, demand_score: 4, status: partial,   contract: crux-D-21-v1.yaml }
+  - { id: CRUX-D-22, title: "Token-level loss masking",            competitor: huggingface, demand_score: 4, status: partial,   contract: crux-D-22-v1.yaml }
+  - { id: CRUX-D-23, title: "Gradient checkpointing for memory",   competitor: pytorch,     demand_score: 5, status: partial,   contract: crux-D-23-v1.yaml }
+  - { id: CRUX-D-24, title: "Activation checkpointing tags",       competitor: pytorch,     demand_score: 3, status: missing,   contract: crux-D-24-v1.yaml }
+  - { id: CRUX-D-25, title: "Weight tying across layers",          competitor: pytorch,     demand_score: 3, status: partial,   contract: crux-D-25-v1.yaml }
+  - { id: CRUX-D-26, title: "LR finder range test",                competitor: pytorch,     demand_score: 3, status: missing,   contract: crux-D-26-v1.yaml }
+  - { id: CRUX-D-27, title: "Hyperparameter sweep ray/optuna",     competitor: pytorch,     demand_score: 3, status: missing,   contract: crux-D-27-v1.yaml }
+  - { id: CRUX-D-28, title: "Adapter fusion combine N LoRAs",      competitor: huggingface, demand_score: 3, status: missing,   contract: crux-D-28-v1.yaml }
+  - { id: CRUX-D-29, title: "Pre-compiled dataset cache",          competitor: huggingface, demand_score: 3, status: missing,   contract: crux-D-29-v1.yaml }
+  - { id: CRUX-D-30, title: "Multi-task training loop",            competitor: huggingface, demand_score: 3, status: missing,   contract: crux-D-30-v1.yaml }
+  - { id: CRUX-D-31, title: "TensorBoard / wandb integration",     competitor: pytorch,     demand_score: 4, status: missing,   contract: crux-D-31-v1.yaml }
+  - { id: CRUX-D-32, title: "Resume from HF Hub ckpt URL",         competitor: huggingface, demand_score: 3, status: partial,   contract: crux-D-32-v1.yaml }
+  - { id: CRUX-D-33, title: "Distributed optimizer ZeRO-1",        competitor: pytorch,     demand_score: 4, status: missing,   contract: crux-D-33-v1.yaml }
+  - { id: CRUX-D-34, title: "Deepspeed config loader",             competitor: huggingface, demand_score: 3, status: missing,   contract: crux-D-34-v1.yaml }
+  - { id: CRUX-D-35, title: "accelerate launch wrapper",           competitor: huggingface, demand_score: 4, status: missing,   contract: crux-D-35-v1.yaml }
+
+  # Category E — Evaluation & Benchmark (25)
+  - { id: CRUX-E-01, title: "pass@1 HumanEval/MBPP sandboxed",     competitor: huggingface, demand_score: 5, status: partial,   contract: crux-E-01-v1.yaml }
+  - { id: CRUX-E-02, title: "Perplexity on held-out corpus",       competitor: llama_cpp,   demand_score: 5, status: missing,   contract: crux-E-02-v1.yaml }
+  - { id: CRUX-E-03, title: "lm-eval-harness tasks",               competitor: huggingface, demand_score: 5, status: missing,   contract: crux-E-03-v1.yaml }
+  - { id: CRUX-E-04, title: "A/B compare two models win rate",     competitor: huggingface, demand_score: 4, status: partial,   contract: crux-E-04-v1.yaml }
+  - { id: CRUX-E-05, title: "Ollama-parity decode 128-tok median", competitor: ollama,      demand_score: 5, status: supported, contract: crux-E-05-v1.yaml }
+  - { id: CRUX-E-06, title: "Peak RSS + VRAM during generate",     competitor: vllm,        demand_score: 5, status: partial,   contract: crux-E-06-v1.yaml }
+  - { id: CRUX-E-07, title: "Latency P50/P95/P99 under load",      competitor: vllm,        demand_score: 5, status: missing,   contract: crux-E-07-v1.yaml }
+  - { id: CRUX-E-08, title: "Golden-output regression gate",       competitor: huggingface, demand_score: 5, status: supported, contract: crux-E-08-v1.yaml }
+  - { id: CRUX-E-09, title: "Per-layer tensor cosine diff",        competitor: llama_cpp,   demand_score: 4, status: supported, contract: crux-E-09-v1.yaml }
+  - { id: CRUX-E-10, title: "Hallucination / drift detector",      competitor: huggingface, demand_score: 3, status: missing,   contract: crux-E-10-v1.yaml }
+  - { id: CRUX-E-11, title: "MT-Bench / arena judge eval",         competitor: huggingface, demand_score: 4, status: missing,   contract: crux-E-11-v1.yaml }
+  - { id: CRUX-E-12, title: "BBH/MMLU/HellaSwag per-task",         competitor: huggingface, demand_score: 4, status: missing,   contract: crux-E-12-v1.yaml }
+  - { id: CRUX-E-13, title: "RULER long-context eval",             competitor: huggingface, demand_score: 3, status: missing,   contract: crux-E-13-v1.yaml }
+  - { id: CRUX-E-14, title: "Needle-in-haystack recall",           competitor: vllm,        demand_score: 4, status: missing,   contract: crux-E-14-v1.yaml }
+  - { id: CRUX-E-15, title: "Speed vs llama.cpp head-to-head",     competitor: llama_cpp,   demand_score: 4, status: partial,   contract: crux-E-15-v1.yaml }
+  - { id: CRUX-E-16, title: "TTFT time to first token latency",    competitor: vllm,        demand_score: 5, status: partial,   contract: crux-E-16-v1.yaml }
+  - { id: CRUX-E-17, title: "Tokens/sec vs concurrency curve",     competitor: vllm,        demand_score: 5, status: partial,   contract: crux-E-17-v1.yaml }
+  - { id: CRUX-E-18, title: "Throughput at max batch",             competitor: vllm,        demand_score: 5, status: partial,   contract: crux-E-18-v1.yaml }
+  - { id: CRUX-E-19, title: "Perplexity per quant bit-budget",     competitor: llama_cpp,   demand_score: 4, status: missing,   contract: crux-E-19-v1.yaml }
+  - { id: CRUX-E-20, title: "KL divergence vs FP16 baseline",      competitor: llama_cpp,   demand_score: 4, status: missing,   contract: crux-E-20-v1.yaml }
+  - { id: CRUX-E-21, title: "Bias/toxicity eval harness",          competitor: huggingface, demand_score: 3, status: missing,   contract: crux-E-21-v1.yaml }
+  - { id: CRUX-E-22, title: "Code-eval sandbox Docker runner",     competitor: huggingface, demand_score: 4, status: missing,   contract: crux-E-22-v1.yaml }
+  - { id: CRUX-E-23, title: "Tool-use benchmark BFCL",             competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-E-23-v1.yaml }
+  - { id: CRUX-E-24, title: "RAG eval RAGAS/TruLens",              competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-E-24-v1.yaml }
+  - { id: CRUX-E-25, title: "Vision-language benchmark harness",   competitor: openclip,    demand_score: 2, status: missing,   contract: crux-E-25-v1.yaml }
+
+  # Category F — Debug & Analysis (20; gap at F-10)
+  - { id: CRUX-F-01, title: "apr tensors shape/dtype/stats",       competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-F-01-v1.yaml }
+  - { id: CRUX-F-02, title: "apr trace layer-by-layer",            competitor: pytorch,     demand_score: 4, status: supported, contract: crux-F-02-v1.yaml }
+  - { id: CRUX-F-03, title: "LAYOUT shape validation pre-load",    competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-F-03-v1.yaml }
+  - { id: CRUX-F-04, title: "Quantization error per tensor ranked", competitor: llama_cpp,  demand_score: 4, status: partial,   contract: crux-F-04-v1.yaml }
+  - { id: CRUX-F-05, title: "Roofline profiling",                  competitor: pytorch,     demand_score: 4, status: supported, contract: crux-F-05-v1.yaml }
+  - { id: CRUX-F-06, title: "KV-cache utilization timeline",       competitor: vllm,        demand_score: 4, status: missing,   contract: crux-F-06-v1.yaml }
+  - { id: CRUX-F-07, title: "GPU memory timeline Chrome trace",    competitor: pytorch,     demand_score: 4, status: missing,   contract: crux-F-07-v1.yaml }
+  - { id: CRUX-F-08, title: "Loss curve visualization",            competitor: pytorch,     demand_score: 4, status: partial,   contract: crux-F-08-v1.yaml }
+  - { id: CRUX-F-09, title: "Gradient-norm telemetry per step",    competitor: pytorch,     demand_score: 5, status: missing,   contract: crux-F-09-v1.yaml }
+  # CRUX-F-10 dropped pre-v1.0.0: activation histograms subsumed by F-04 + F-09
+  - { id: CRUX-F-11, title: "NaN/Inf detector in activations",     competitor: pytorch,     demand_score: 4, status: missing,   contract: crux-F-11-v1.yaml }
+  - { id: CRUX-F-12, title: "Tensor shape mismatch explainer",     competitor: pytorch,     demand_score: 4, status: supported, contract: crux-F-12-v1.yaml }
+  - { id: CRUX-F-13, title: "CUDA OOM postmortem report",          competitor: pytorch,     demand_score: 5, status: missing,   contract: crux-F-13-v1.yaml }
+  - { id: CRUX-F-14, title: "Deadlock/hang detector stack dump",   competitor: pytorch,     demand_score: 3, status: missing,   contract: crux-F-14-v1.yaml }
+  - { id: CRUX-F-15, title: "NCCL failure diagnostics",            competitor: pytorch,     demand_score: 3, status: missing,   contract: crux-F-15-v1.yaml }
+  - { id: CRUX-F-16, title: "Kernel timing nsys/nvprof export",    competitor: pytorch,     demand_score: 3, status: partial,   contract: crux-F-16-v1.yaml }
+  - { id: CRUX-F-17, title: "Attention pattern visualization",     competitor: pytorch,     demand_score: 3, status: missing,   contract: crux-F-17-v1.yaml }
+  - { id: CRUX-F-18, title: "Token embedding UMAP 2D",             competitor: pytorch,     demand_score: 2, status: missing,   contract: crux-F-18-v1.yaml }
+  - { id: CRUX-F-19, title: "apr explain token selection",         competitor: llama_cpp,   demand_score: 3, status: missing,   contract: crux-F-19-v1.yaml }
+  - { id: CRUX-F-20, title: "GGUF metadata dump",                  competitor: llama_cpp,   demand_score: 5, status: supported, contract: crux-F-20-v1.yaml }
+  - { id: CRUX-F-21, title: "apr qa 8-gate golden-test runner",    competitor: pytorch,     demand_score: 5, status: supported, contract: crux-F-21-v1.yaml }
+
+  # Category G — Publishing & Distribution (15)
+  - { id: CRUX-G-01, title: "Publish ≤5 GB model to HF Hub",       competitor: huggingface, demand_score: 5, status: supported, contract: crux-G-01-v1.yaml }
+  - { id: CRUX-G-02, title: "Publish large model via Xet/LFS",     competitor: huggingface, demand_score: 5, status: supported, contract: crux-G-02-v1.yaml }
+  - { id: CRUX-G-03, title: "Auto-generate model card",            competitor: huggingface, demand_score: 4, status: partial,   contract: crux-G-03-v1.yaml }
+  - { id: CRUX-G-04, title: "Auto-generate README with examples",  competitor: huggingface, demand_score: 3, status: missing,   contract: crux-G-04-v1.yaml }
+  - { id: CRUX-G-05, title: "Checksum manifest SHA256 per file",   competitor: huggingface, demand_score: 4, status: partial,   contract: crux-G-05-v1.yaml }
+  - { id: CRUX-G-06, title: "Reproducibility manifest env/seed",   competitor: huggingface, demand_score: 4, status: partial,   contract: crux-G-06-v1.yaml }
+  - { id: CRUX-G-07, title: "SemVer tag on apr publish",           competitor: huggingface, demand_score: 3, status: missing,   contract: crux-G-07-v1.yaml }
+  - { id: CRUX-G-08, title: "Private repo upload",                 competitor: huggingface, demand_score: 5, status: supported, contract: crux-G-08-v1.yaml }
+  - { id: CRUX-G-09, title: "Multi-file atomic commit",            competitor: huggingface, demand_score: 4, status: partial,   contract: crux-G-09-v1.yaml }
+  - { id: CRUX-G-10, title: "Org-scoped publish permissions",      competitor: huggingface, demand_score: 3, status: partial,   contract: crux-G-10-v1.yaml }
+  - { id: CRUX-G-11, title: "Ollama push to remote registry",      competitor: ollama,      demand_score: 4, status: missing,   contract: crux-G-11-v1.yaml }
+  - { id: CRUX-G-12, title: "Verify upload integrity via CAS",     competitor: huggingface, demand_score: 4, status: supported, contract: crux-G-12-v1.yaml }
+  - { id: CRUX-G-13, title: "Publish tokenizer/config bundle",     competitor: huggingface, demand_score: 5, status: partial,   contract: crux-G-13-v1.yaml }
+  - { id: CRUX-G-14, title: "License metadata validator",          competitor: huggingface, demand_score: 3, status: missing,   contract: crux-G-14-v1.yaml }
+  - { id: CRUX-G-15, title: "Duplicate-artifact detector pre-push", competitor: huggingface, demand_score: 3, status: missing,  contract: crux-G-15-v1.yaml }
+
+  # Category H — Data Pipeline (20; gap at H-04)
+  - { id: CRUX-H-01, title: "Load HF dataset + split select",      competitor: huggingface, demand_score: 5, status: partial,   contract: crux-H-01-v1.yaml }
+  - { id: CRUX-H-02, title: "Tokenize with truncation policy",     competitor: huggingface, demand_score: 5, status: supported, contract: crux-H-02-v1.yaml }
+  - { id: CRUX-H-03, title: "Packing for efficient SFT",           competitor: huggingface, demand_score: 5, status: missing,   contract: crux-H-03-v1.yaml }
+  # CRUX-H-04 dropped pre-v1.0.0: filter+dedupe subsumed by H-01 + H-21
+  - { id: CRUX-H-05, title: "Train/val/test split deterministic",  competitor: huggingface, demand_score: 5, status: supported, contract: crux-H-05-v1.yaml }
+  - { id: CRUX-H-06, title: "Streaming datasets no RAM mat",       competitor: huggingface, demand_score: 4, status: missing,   contract: crux-H-06-v1.yaml }
+  - { id: CRUX-H-07, title: "Shuffling DataLoader bucketed",       competitor: pytorch,     demand_score: 4, status: supported, contract: crux-H-07-v1.yaml }
+  - { id: CRUX-H-08, title: "Apply chat template per turn",        competitor: huggingface, demand_score: 5, status: supported, contract: crux-H-08-v1.yaml }
+  - { id: CRUX-H-09, title: "Parquet/Arrow ingest",                competitor: huggingface, demand_score: 4, status: partial,   contract: crux-H-09-v1.yaml }
+  - { id: CRUX-H-10, title: "JSONL dataset loader",                competitor: huggingface, demand_score: 5, status: supported, contract: crux-H-10-v1.yaml }
+  - { id: CRUX-H-11, title: "Instruction auto-format alpaca/sharegpt", competitor: huggingface, demand_score: 4, status: partial, contract: crux-H-11-v1.yaml }
+  - { id: CRUX-H-12, title: "ImageFolder loader",                  competitor: pytorch,     demand_score: 3, status: missing,   contract: crux-H-12-v1.yaml }
+  - { id: CRUX-H-13, title: "Audio dataset loader WAV/FLAC",       competitor: pytorch,     demand_score: 2, status: missing,   contract: crux-H-13-v1.yaml }
+  - { id: CRUX-H-14, title: "Dataset mixing per-source weights",   competitor: huggingface, demand_score: 3, status: missing,   contract: crux-H-14-v1.yaml }
+  - { id: CRUX-H-15, title: "DatasetDict multi-split save",        competitor: huggingface, demand_score: 3, status: partial,   contract: crux-H-15-v1.yaml }
+  - { id: CRUX-H-16, title: "Tokenizer-aware length bucketing",    competitor: huggingface, demand_score: 3, status: missing,   contract: crux-H-16-v1.yaml }
+  - { id: CRUX-H-17, title: "Contrastive pair sampler for CLIP",   competitor: openclip,    demand_score: 3, status: missing,   contract: crux-H-17-v1.yaml }
+  - { id: CRUX-H-18, title: "Negative sampling for ranking",       competitor: pytorch,     demand_score: 2, status: missing,   contract: crux-H-18-v1.yaml }
+  - { id: CRUX-H-19, title: "Synthetic data generation via LLM",   competitor: huggingface, demand_score: 3, status: missing,   contract: crux-H-19-v1.yaml }
+  - { id: CRUX-H-20, title: "PII redaction in datasets",           competitor: ecosystem,   demand_score: 2, status: missing,   contract: crux-H-20-v1.yaml }
+  - { id: CRUX-H-21, title: "Row-level dedup MinHash",             competitor: huggingface, demand_score: 3, status: missing,   contract: crux-H-21-v1.yaml }
+
+  # Category I — MCP, Agents & Tool Integration (15; gap at I-05)
+  - { id: CRUX-I-01, title: "MCP server exposing apr tools",       competitor: ecosystem,   demand_score: 5, status: supported, contract: crux-I-01-v1.yaml }
+  - { id: CRUX-I-02, title: "MCP client consuming external",      competitor: ecosystem,   demand_score: 4, status: partial,   contract: crux-I-02-v1.yaml }
+  - { id: CRUX-I-03, title: "OpenAI tool calls JSON-schema",       competitor: vllm,        demand_score: 5, status: partial,   contract: crux-I-03-v1.yaml }
+  - { id: CRUX-I-04, title: "Ollama function calling",             competitor: ollama,      demand_score: 5, status: missing,   contract: crux-I-04-v1.yaml }
+  # CRUX-I-05 dropped pre-v1.0.0: JSON-mode subsumed by C-10 grammar
+  - { id: CRUX-I-06, title: "ReAct agent loop + stop conditions",  competitor: ecosystem,   demand_score: 4, status: missing,   contract: crux-I-06-v1.yaml }
+  - { id: CRUX-I-07, title: "Claude Agent SDK compatibility",      competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-I-07-v1.yaml }
+  - { id: CRUX-I-08, title: "Streaming tool-call deltas",          competitor: vllm,        demand_score: 4, status: partial,   contract: crux-I-08-v1.yaml }
+  - { id: CRUX-I-09, title: "Parallel tool-calls one turn",        competitor: vllm,        demand_score: 4, status: missing,   contract: crux-I-09-v1.yaml }
+  - { id: CRUX-I-10, title: "Tool-result injection chat history",  competitor: ecosystem,   demand_score: 4, status: partial,   contract: crux-I-10-v1.yaml }
+  - { id: CRUX-I-11, title: "Schema-coerced JSON output",          competitor: vllm,        demand_score: 4, status: partial,   contract: crux-I-11-v1.yaml }
+  - { id: CRUX-I-12, title: "GBNF grammar from JSON-schema",       competitor: llama_cpp,   demand_score: 4, status: missing,   contract: crux-I-12-v1.yaml }
+  - { id: CRUX-I-13, title: "MCP resource provider",               competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-I-13-v1.yaml }
+  - { id: CRUX-I-14, title: "MCP prompt provider",                 competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-I-14-v1.yaml }
+  - { id: CRUX-I-15, title: "Agent memory plugin interface",       competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-I-15-v1.yaml }
+  - { id: CRUX-I-16, title: "Guardrails output filter pipeline",   competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-I-16-v1.yaml }
+
+  # Category J — OpenCLAW Agent Orchestration (20) — identity resolved 2026-04-18 (openclaw.ai)
+  - { id: CRUX-J-01, title: "OpenCLAW install + onboard one-liner",          competitor: openclaw, demand_score: 5, status: missing, contract: crux-J-01-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-02, title: "User config JSON5 round-trip",                  competitor: openclaw, demand_score: 5, status: missing, contract: crux-J-02-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-03, title: "Per-channel allowFrom sender allowlist",        competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-03-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-04, title: "Group-chat @mention trigger",                   competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-04-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-05, title: "Dashboard Control UI loopback bind",            competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-05-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-06, title: "Daemon install ∘ uninstall dual",               competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-06-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-07, title: "Per-sender session isolation",                  competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-07-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-08, title: "System-control shell.exec + SSC classifier gate", competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-08-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-09, title: "Browser automation via MCP client",             competitor: openclaw, demand_score: 5, status: missing, contract: crux-J-09-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-10, title: "Persistent memory put/get round-trip",          competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-10-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-11, title: "Skill system / extensible capabilities",        competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-11-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-12, title: "Multi-transport chat dispatch",                 competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-12-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-13, title: "LLM provider switching",                        competitor: openclaw, demand_score: 2, status: missing, contract: crux-J-13-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-14, title: "Onboard safety prompts for destructive ops",    competitor: openclaw, demand_score: 2, status: missing, contract: crux-J-14-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-15, title: "Auto-update / self-modify",                     competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-15-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-16, title: "Event log / audit trail",                       competitor: openclaw, demand_score: 2, status: missing, contract: crux-J-16-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-17, title: "Rate limiting per sender",                      competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-17-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-18, title: "Encrypted credentials (OS keychain)",           competitor: openclaw, demand_score: 3, status: missing, contract: crux-J-18-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-19, title: "Offline / local-first fallback",                competitor: openclaw, demand_score: 2, status: missing, contract: crux-J-19-v1.yaml, interpretation: openclaw-agent-resolved }
+  - { id: CRUX-J-20, title: "Claude-Code MCP tool-call envelope parity",     competitor: openclaw, demand_score: 4, status: missing, contract: crux-J-20-v1.yaml, interpretation: openclaw-agent-resolved }
+
+  # Category K — Ecosystem Interop (20; gap at K-06)
+  - { id: CRUX-K-01, title: "OpenAI Python SDK test suite",        competitor: ecosystem,   demand_score: 5, status: partial,   contract: crux-K-01-v1.yaml }
+  - { id: CRUX-K-02, title: "Ollama Python SDK test suite",        competitor: ecosystem,   demand_score: 5, status: missing,   contract: crux-K-02-v1.yaml }
+  - { id: CRUX-K-03, title: "Langchain ChatOpenAI backend",        competitor: ecosystem,   demand_score: 5, status: partial,   contract: crux-K-03-v1.yaml }
+  - { id: CRUX-K-04, title: "LlamaIndex LLM provider",             competitor: ecosystem,   demand_score: 4, status: partial,   contract: crux-K-04-v1.yaml }
+  - { id: CRUX-K-05, title: "apr ui Gradio web UI",                competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-05-v1.yaml }
+  # CRUX-K-06 dropped pre-v1.0.0: Jupyter %%apr magic deferred
+  - { id: CRUX-K-07, title: "Prometheus /metrics endpoint",        competitor: vllm,        demand_score: 4, status: missing,   contract: crux-K-07-v1.yaml }
+  - { id: CRUX-K-08, title: "OpenTelemetry traces",                competitor: ecosystem,   demand_score: 4, status: missing,   contract: crux-K-08-v1.yaml }
+  - { id: CRUX-K-09, title: "Safetensors metadata round-trip",     competitor: huggingface, demand_score: 5, status: supported, contract: crux-K-09-v1.yaml }
+  - { id: CRUX-K-10, title: "GGUF general.* metadata round-trip",  competitor: llama_cpp,   demand_score: 4, status: partial,   contract: crux-K-10-v1.yaml }
+  - { id: CRUX-K-11, title: "Modelfile DSL parser (Ollama)",       competitor: ollama,      demand_score: 3, status: missing,   contract: crux-K-11-v1.yaml }
+  - { id: CRUX-K-12, title: "VSCode extension for apr",            competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-12-v1.yaml }
+  - { id: CRUX-K-13, title: "Docker image apr-serve:latest",       competitor: ecosystem,   demand_score: 4, status: missing,   contract: crux-K-13-v1.yaml }
+  - { id: CRUX-K-14, title: "systemd unit for apr serve",          competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-14-v1.yaml }
+  - { id: CRUX-K-15, title: "Kubernetes Helm chart",               competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-15-v1.yaml }
+  - { id: CRUX-K-16, title: "Triton Inference Server backend",     competitor: ecosystem,   demand_score: 2, status: missing,   contract: crux-K-16-v1.yaml }
+  - { id: CRUX-K-17, title: "NVIDIA Dynamo integration",           competitor: ecosystem,   demand_score: 2, status: missing,   contract: crux-K-17-v1.yaml }
+  - { id: CRUX-K-18, title: "ONNX Runtime backend",                competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-18-v1.yaml }
+  - { id: CRUX-K-19, title: "CoreML export (Apple Silicon)",       competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-19-v1.yaml }
+  - { id: CRUX-K-20, title: "TensorRT-LLM export",                 competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-20-v1.yaml }
+  - { id: CRUX-K-21, title: "MLX backend (Apple Silicon native)",  competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-21-v1.yaml }
+
+# ─────────────────────────────────────────────────────────────
+# Coverage — intake v2.0.0 (verified by awk over §5 of subspec)
+# ─────────────────────────────────────────────────────────────
+coverage_intake:
+  supported: 43
+  partial:   67
+  missing:   140
+  unclear:    0
+  total:    250
+  notes: |
+    ID gaps at C-14, F-10, H-04, I-05, K-06 are intentional — those
+    five stories were dropped pre-v1.0.0 as duplicative (see inline
+    comments in stories[]).
+
+# ─────────────────────────────────────────────────────────────
+# Falsification conditions
+# ─────────────────────────────────────────────────────────────
+falsification:
+  - id: FALSIFY-CRUX-001
+    condition: "stories[] does not contain exactly 250 entries"
+    severity: P0
+    check: "yq '.stories | length' contracts/crux-competitive-research-ux-v1.yaml"
+    expected: "250"
+
+  - id: FALSIFY-CRUX-002
+    condition: "A story references a contract file that does not exist"
+    severity: P0
+    check: |
+      for s in $(yq '.stories[].contract' contracts/crux-competitive-research-ux-v1.yaml); do
+        test -f "contracts/$s" || { echo "MISSING: $s"; exit 1; }
+      done
+
+  - id: FALSIFY-CRUX-003
+    condition: "A story declares status=supported but no golden test exists"
+    severity: P0
+    check: "apr qa --crux --status supported --require-golden-output"
+    expected: "exit 0"
+
+  - id: FALSIFY-CRUX-004
+    condition: "Category J has any entry with interpretation != pending before OpenCLAW resolved"
+    severity: P1
+    check: |
+      yq '[.stories[] | select(.id | test("^CRUX-J-")) | .interpretation] | unique' \
+        contracts/crux-competitive-research-ux-v1.yaml
+    expected: '["pending"]'
+
+  - id: FALSIFY-CRUX-005
+    condition: "Coverage regressed: story moved ✅→🔨 or ✅→❌ without a defect ticket"
+    severity: P0
+    check: |
+      git diff HEAD~1 -- contracts/crux-competitive-research-ux-v1.yaml \
+        | scripts/check_crux_coverage_monotone.sh
+
+  - id: FALSIFY-CRUX-006
+    condition: "OpenAI/Ollama SDK compatibility stories claim supported but SDK tests fail"
+    severity: P0
+    applies_to: [CRUX-K-01, CRUX-K-02]
+    check: |
+      uv run --with openai pytest tests/crux/test_openai_sdk.py
+      uv run --with ollama pytest tests/crux/test_ollama_sdk.py
+
+  - id: FALSIFY-CRUX-007
+    condition: "A status=missing story has no corresponding pmat work ticket"
+    severity: P0
+    check: |
+      for id in $(yq '.stories[] | select(.status=="missing") | .id' \
+                    contracts/crux-competitive-research-ux-v1.yaml); do
+        pmat work list -t "crux-$id" --status open | grep -q "$id" \
+          || { echo "NO PMAT TICKET FOR $id"; exit 1; }
+      done
+
+  - id: FALSIFY-CRUX-008
+    condition: "pmat work ticket priority mismatches demand_score mapping"
+    severity: P1
+    check: |
+      scripts/check_crux_priority_alignment.sh
+
+  - id: FALSIFY-CRUX-009
+    condition: "demand_score not in [1..5] for any story"
+    severity: P0
+    check: |
+      yq '[.stories[].demand_score] | unique' \
+        contracts/crux-competitive-research-ux-v1.yaml
+    expected: "[2,3,4,5]  (1 permitted if any truly-niche story added later)"
+
+  - id: FALSIFY-CRUX-010
+    condition: "Subspec §6 coverage table drifts from stories[] status counts"
+    severity: P1
+    check: |
+      awk '/^\| CRUX-[A-K]-[0-9]+ \|/ { match($0, /\| (✅|🔨|❌|🤔) \|/, a); print a[1] }' \
+          docs/specifications/crux-competitive-research-ux-workflows.md \
+        | sort | uniq -c \
+        | diff - <(yq '.coverage_intake | to_entries | .[] | [.value, .key] | @tsv' \
+                     contracts/crux-competitive-research-ux-v1.yaml)
+
+# ─────────────────────────────────────────────────────────────
+# pmat work integration (mirrors subspec §12)
+# ─────────────────────────────────────────────────────────────
+pmat_work:
+  priority_mapping:
+    5: critical
+    4: high
+    3: medium
+    2: low
+    1: low
+
+  bulk_create_command: |
+    yq '.stories[] | select(.status == "missing")
+        | [.id, .title, .demand_score, .category, .competitor] | @tsv' \
+        contracts/crux-competitive-research-ux-v1.yaml |
+    while IFS=$'\t' read -r id title score cat competitor; do
+      case "$score" in
+        5) prio=critical ;;
+        4) prio=high ;;
+        3) prio=medium ;;
+        *) prio=low ;;
+      esac
+      pmat work add "CRUX gap: $id — $title" \
+        -d "Contract: contracts/crux-$id-v1.yaml | Competitor: $competitor" \
+        -p "$prio" \
+        -t "crux,gap,crux-$cat,competitor-$competitor,crux-$id"
+    done
+
+  expected_tickets: 140
+  tag_taxonomy:
+    per_story: "crux-<ID>"        # unique per story, closes with story
+    per_category: "crux-<letter>" # e.g. crux-C for all serving gaps
+    per_competitor: "competitor-<name>"
+    umbrella: "crux,gap"
+
+  closure_command: "pmat work complete <ticket-id>"
+  falsify_command: "pmat work falsify <ticket-id>"
+  checkpoint_command: "pmat work checkpoint <ticket-id>"
+
+  ci_trailer_invariant: |
+    Every PR that modifies contracts/crux-*.yaml MUST carry a
+    CRUX-Work: <ticket-id> trailer in the commit message. Enforced
+    by pre-push hook calling `pmat work validate`.
+
+# ─────────────────────────────────────────────────────────────
+# Shipping discipline (CRUX-SHIP-001, added 2026-04-21)
+# ─────────────────────────────────────────────────────────────
+shipping_discipline:
+  rule_id: CRUX-SHIP-001
+  status: ACTIVE
+  updated: "2026-04-21"
+  principle: >
+    A pure-Rust classifier without working CLI wiring is WASTE (muda).
+    Every CRUX PR MUST ship both the classifier AND end-to-end CLI wiring
+    in the SAME commit. Classifier-only (PARTIAL_ALGORITHM_LEVEL-only)
+    PRs produce well-documented empty promises: specs rot, follow-ups
+    never land, users can't reach the feature. Toyota Way: a PR that
+    doesn't pass value downstream to a real user hasn't completed.
+
+  default_path:
+    description: "What every CRUX PR MUST include by default"
+    deliverables:
+      - "crates/apr-cli/src/commands/<feature>_classifier.rs — pure-Rust falsification classifier"
+      - "crates/apr-cli/src/commands/<feature>.rs OR flag wiring on existing subcommand"
+      - "tests/<feature>_e2e.rs — at least one assert_cmd (or subprocess) end-to-end test"
+      - "contracts/crux-<ID>-v1.yaml — falsification_tests[].evidence_discharged_by populated"
+      - "pv validate contracts/crux-<ID>-v1.yaml — 0 errors, 0 warnings"
+
+  merge_gates:
+    g1_classifier_green:
+      check: "cargo test -p apr-cli --lib -- <feature>_classifier"
+      reason: "Pure-Rust invariants must hold"
+    g2_cli_reachable:
+      check: "apr <cmd> --help contains the new flag/subcommand"
+      reason: "User must be able to invoke the feature"
+    g3_e2e_runs:
+      check: "cargo test -p apr-cli --test <feature>_e2e"
+      reason: "Classifier + CLI integration must hold end-to-end"
+    g4_contract_discharged:
+      check: "pv validate 0/0 AND at least one FALSIFY-* sub-claim at FULL or declared-blocker PARTIAL"
+      reason: "Contract must bind to the implementation, not float free"
+
+  exceptions_allowing_partial_only:
+    description: "PARTIAL_ALGORITHM_LEVEL-only is acceptable ONLY under one of these named blockers"
+    allowed_blockers:
+      - id: BLOCKER-UPSTREAM-MISSING
+        meaning: "Required upstream (trueno kernel, realizar sampler, etc.) isn't merged yet"
+        evidence_required: "Link to upstream PR/issue + expected merge date"
+      - id: BLOCKER-FIXTURE-ABSENT
+        meaning: "Real fixture (.gguf model, dataset) needed for the e2e test doesn't exist"
+        evidence_required: "Link to fixture-creation ticket + estimated fixture size"
+      - id: BLOCKER-SPEC-OPEN
+        meaning: "Canonical competitor spec (OpenAI schema version, llama.cpp flag semantics) is under revision"
+        evidence_required: "Link to upstream spec discussion + our interpretation choice"
+    forbidden_blockers:
+      - "I didn't get to the CLI wiring"
+      - "The test harness is annoying"
+      - "I'll do it in a follow-up PR"
+      - "The classifier is the hard part"
+      - "CI was slow so I split the PR"
+    declaration_site:
+      - "PR description body — quote blocker id verbatim + evidence link"
+      - "contracts/crux-<ID>-v1.yaml — falsification_tests[].evidence_discharged_by.full_discharge_blocked_on references blocker id"
+
+  pr_title_template:
+    fully_wired: |
+      feat(crux-<ID>): <feature> classifier + CLI (<K> of <N> FALSIFY FULL, <M> of <N> PARTIAL)
+    partial_under_blocker: |
+      feat(crux-<ID>): <feature> classifier (<M> of <N> FALSIFY PARTIAL_ALGORITHM_LEVEL; blocked on BLOCKER-<X>)
+
+  backfill_obligation: >
+    Pre-2026-04-21 classifier-only PRs (grandfathered: C-15, C-16, C-17,
+    C-22, C-23 and any other classifier-only PRs that merged before this
+    rule landed) each require a follow-up ticket `crux-wireup-<id>` that
+    lands deliverables #2 (CLI wiring) and #3 (e2e test). These wire-up
+    tickets carry the same priority as the original CRUX ticket.
+
+  review_checklist:
+    reviewer_must_verify:
+      - "apr <subcommand> --help shows the new flag/subcommand"
+      - "tests/ contains at least one e2e test that invokes the real binary"
+      - "contract falsification_tests[].evidence_discharged_by has classifier_path AND tests[] AND scope AND discharge_status"
+      - "If discharge_status=PARTIAL_ALGORITHM_LEVEL, full_discharge_blocked_on names an allowed blocker"
+      - "No forbidden_blockers quoted anywhere in PR body or contract"
+
+  rationale: >
+    Toyota Way kaizen principle — every PR must pass value downstream to
+    a real user. A classifier that proves an invariant in pure Rust but
+    isn't reachable via `apr` is equivalent to a paper proof: mathematically
+    sound, operationally useless. The C-15/16/17/22/23 pattern of "ship
+    classifier, open follow-up ticket, never land the wiring" created
+    technical-promise-debt that this rule eliminates at the PR boundary.
+
+# ─────────────────────────────────────────────────────────────
+# Implementation phases (mirrors subspec §7)
+# ─────────────────────────────────────────────────────────────
+phases:
+  phase_0_skeletons:
+    description: "Create 250 sub-contract YAMLs at status=draft; create pmat work tickets for all missing"
+    exit_criteria: "pmat comply check passes with 250 CRUX draft contracts; 140 pmat tickets exist"
+    status: complete
+    completed_at: "2026-04-18"
+    artifacts:
+    - scripts/crux_scaffold_contracts.py
+    - scripts/crux_bulk_pmat_work.sh
+    - scripts/crux_missing_stories.py
+    - "contracts/crux-{A..K}-{01..35}-v1.yaml (250 files)"
+    evidence: "pmat work list --count -> 437 (+140 CRUX), `yq '.stories|length' -> 250"
+    blocks: [phase_1_evidence]
+
+  phase_1_evidence:
+    description: "Capture competitor evidence into evidence/crux/*/ and enrich contracts to spec-complete"
+    status: complete
+    completed_at: "2026-04-20"
+    completed_in_pr: 916
+    progress: "250 / 250 contracts spec-complete (2026-04-18 J-cohort republication landed the final 20 under openclaw-agent-resolved semantics)"
+    waves:
+    - { id: wave_1, stories: 18, target: "demand=5 missing", date: "2026-04-18" }
+    - { id: wave_2, stories: 24, target: "demand=5 partial", date: "2026-04-18" }
+    - { id: wave_3, stories: 29, target: "demand=5 supported (parity verification)", date: "2026-04-18" }
+    - { id: wave_4, stories: 37, target: "5 demand=5 partials + 32 demand=4 missing", date: "2026-04-18" }
+    - { id: wave_5, stories: 45, target: "all remaining demand=4 non-J (partials + supported + missing)", date: "2026-04-18" }
+    - { id: wave_6_batch_1, stories: 8, target: "A-series demand=3 (direct author, sub-agents rate-limited)", date: "2026-04-18" }
+    - { id: wave_6_batch_2, stories: 10, target: "B+C demand=3 (direct author)", date: "2026-04-18" }
+    - { id: wave_6_batch_3, stories: 13, target: "D-series demand=3 (direct author)", date: "2026-04-18" }
+    - { id: wave_6_batch_4, stories: 5, target: "E-series demand=3 (direct author)", date: "2026-04-18" }
+    - { id: wave_6_batch_5, stories: 5, target: "F-series demand=3 (direct author)", date: "2026-04-18" }
+    - { id: wave_6_batch_6, stories: 5, target: "G-series demand=3 (direct author)", date: "2026-04-18" }
+    - { id: wave_6_batch_7, stories: 7, target: "H-series demand=3 (direct author)", date: "2026-04-18" }
+    - { id: wave_6_batch_8, stories: 5, target: "I-series demand=3 (direct author)", date: "2026-04-18" }
+    - { id: wave_6_batch_9, stories: 9, target: "K-series demand=3 (direct author — final demand=3 cohort)", date: "2026-04-18" }
+    - { id: wave_6_batch_10, stories: 10, target: "all remaining non-J demand=2 (closes entire non-J cohort)", date: "2026-04-18" }
+    remaining_demand_5: 0  # J-01/02/09 resolved under openclaw-agent semantics in PR #916
+    remaining_demand_4: 0  # all demand=4 complete
+    remaining_demand_3: 0  # all demand=3 complete
+    remaining_demand_2: 0  # all demand=2 complete
+    exit_criteria: "apr qa --crux emits per-story PASS/FAIL/SKIP; pmat work tickets exist for all missing"
+    blocks: [phase_2_partials]
+
+  phase_2_partials:
+    description: "Upgrade 🔨 partial stories to ✅ supported, one PR each, priority by demand_score"
+    exit_criteria: "supported count ≥ 80 / 250"
+    blocks: [phase_3_missing]
+
+  phase_3_missing:
+    description: "Implement ❌ missing stories grouped by shared infra"
+    github_umbrella: 917
+    github_children:
+      M1_rest_parity:           918
+      M2_distributed_training:  919
+      M3_openclaw_agent:        920
+      M4_observability:         921
+      M5_advanced_quant:        922
+      M6_alignment:             923
+      M7_data_depth:            924
+      M8_deployment:            925
+    github_milestone: 1  # "CRUX Phase 3"
+    groups:
+      M1_rest_parity:           [CRUX-C-04, CRUX-C-11, CRUX-C-13, CRUX-I-04, CRUX-K-02, CRUX-K-11]
+      M2_distributed_training:  [CRUX-D-11, CRUX-D-12, CRUX-D-33, CRUX-D-34, CRUX-D-35]
+      M3_openclaw_agent:        [CRUX-J-01, CRUX-J-02, CRUX-J-03, CRUX-J-04, CRUX-J-05, CRUX-J-06, CRUX-J-07, CRUX-J-08, CRUX-J-09, CRUX-J-10, CRUX-J-11, CRUX-J-12, CRUX-J-13, CRUX-J-14, CRUX-J-15, CRUX-J-16, CRUX-J-17, CRUX-J-18, CRUX-J-19, CRUX-J-20]
+      M4_observability:         [CRUX-F-06, CRUX-F-07, CRUX-F-09, CRUX-F-11, CRUX-F-13, CRUX-F-14, CRUX-F-15, CRUX-F-17, CRUX-F-18, CRUX-F-19, CRUX-K-07, CRUX-K-08]
+      M5_advanced_quant:        [CRUX-B-02, CRUX-B-07, CRUX-B-08, CRUX-B-09, CRUX-B-10, CRUX-B-11, CRUX-B-15, CRUX-B-16, CRUX-B-17, CRUX-B-18]
+      M6_alignment:             [CRUX-D-03, CRUX-D-04, CRUX-D-17, CRUX-D-18, CRUX-D-19, CRUX-D-20]
+      M7_data_depth:            [CRUX-H-03, CRUX-H-06, CRUX-H-12, CRUX-H-13, CRUX-H-14, CRUX-H-16, CRUX-H-17, CRUX-H-18, CRUX-H-19, CRUX-H-20, CRUX-H-21]
+      M8_deployment:            [CRUX-K-05, CRUX-K-12, CRUX-K-13, CRUX-K-14, CRUX-K-15, CRUX-K-16, CRUX-K-17, CRUX-K-18, CRUX-K-19, CRUX-K-20, CRUX-K-21]
+    exit_criteria: "supported count == 250 / 250"
+
+  phase_4_aliases:
+    description: "RFC for competitor-verb aliases; create contracts/crux-aliases-v1.yaml"
+
+# ─────────────────────────────────────────────────────────────
+# Status
+# ─────────────────────────────────────────────────────────────
+status:
+  current: ACTIVE
+  next_milestone: phase_2_partials
+  owner: PAIML Engineering
+  openclaw_interpretation: openclaw-agent-resolved
+  openclaw_resolution_date: "2026-04-18"
+  openclaw_resolution_source: "https://openclaw.ai"
+  last_subspec_sync: "2026-04-18"
+  spec_complete_contracts: 250  # of 250 (waves 1..5 = 153 demand≥4; wave 6 batches 1-10 = 77 non-J demand=3+2 across A/B/C/D/E/F/G/H/I/K; J-01..J-20 republished 2026-04-18 at v1.1.0 under openclaw-agent-resolved)
+  pmat_tickets_created: 140    # one per missing story
+  phase_0_completed_at: "2026-04-18"
+  last_enrichment_wave: "2026-04-18 J-cohort republication — 20 J-stories rewritten from OpenCLIP draft to OpenCLAW agent-orchestration semantics (see §10 resolution); spec now 250/250 = 100% complete."

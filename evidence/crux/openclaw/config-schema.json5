@@ -1,0 +1,57 @@
+// ~/.openclaw/openclaw.json shape (JSON5 — comments allowed).
+// Used by CRUX-J-02 (config round-trip) and CRUX-J-03 (allowFrom gate).
+// Captured from openclaw.ai docs 2026-04-18.
+{
+  version: "1",
+
+  // Backend reasoning model (CRUX-J-13)
+  llm: {
+    provider: "claude",          // "claude" | "openai" | "local"
+    model: "claude-opus-4-7",    // provider-specific
+    apiKey: "env:ANTHROPIC_API_KEY",  // indirection — never plaintext
+  },
+
+  // Chat-app transports (CRUX-J-12). Each entry is a transport adapter.
+  channels: {
+    whatsapp: {
+      enabled: true,
+      allowFrom: ["+15551234567"],   // CRUX-J-03 — deny-by-default if empty
+      groupChat: { mentionRequired: true },  // CRUX-J-04
+    },
+    telegram: {
+      enabled: false,
+      allowFrom: [],
+    },
+    slack: {
+      enabled: true,
+      allowFrom: ["U01AB2CDEF"],
+      groupChat: { mentionRequired: true },
+    },
+  },
+
+  // System-control tool envelope (CRUX-J-08)
+  tools: {
+    shell: { enabled: false, sscGate: true },  // deny-by-default, SSC-gated
+    browser: { enabled: true, provider: "mcp://playwright-mcp" },  // CRUX-J-09
+    files:  { enabled: true, roots: ["~/Documents", "~/Downloads"] },
+  },
+
+  // Persistent memory (CRUX-J-10)
+  memory: {
+    backend: "sqlite",           // opaque — openclaw.ai does not document this
+    path: "~/.openclaw/memory.db",
+    defaultTtlSeconds: 604800,   // 7 days
+  },
+
+  // Dashboard (CRUX-J-05)
+  dashboard: { bind: "127.0.0.1", port: 18789 },
+
+  // Rate limits (CRUX-J-17)
+  rateLimit: { perSender: { msgsPerMin: 30 } },
+
+  // Credentials (CRUX-J-18)
+  credentials: { backend: "keychain" },  // keychain | libsecret | credman | plaintext (opt-in)
+
+  // Offline / local-first (CRUX-J-19)
+  offline: { enabled: true, fallbackProvider: "local" },
+}

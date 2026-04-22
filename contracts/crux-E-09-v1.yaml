@@ -1,0 +1,147 @@
+# CRUX-E-09 — Per-layer tensor cosine diff
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-E-09
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: llama_cpp
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: supported
+  description: >
+    Per-layer tensor cosine diff. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.E and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  per_tensor_cosine_similarity:
+    formula: |
+      Competitor (llama.cpp llama-quantize-stats):
+        ./llama-quantize-stats -m base.gguf -q quantized.gguf
+      outputs per-tensor error metrics (RMSE, KLD, cosine similarity).
+      apr parity:
+        apr diff BASE.apr QUANTIZED.apr --per-tensor --metric cosine --json
+      MUST output cosine similarity per matching tensor name:
+        cos_sim(W, W_q) = (flatten(W) . flatten(W_q)) / (||W||_2 * ||W_q||_2)
+      where both tensors are flattened to 1D in row-major order.
+    domain: "two models with identical tensor set T = {n_1, ..., n_k}"
+    codomain: "map {name -> cosine in [-1, 1]}"
+    invariants:
+    - "cos_sim(W, W) == 1.0 (±1e-6) for identical models"
+    - "cos_sim is computed in row-major order (LAYOUT-001 compliance)"
+    - "Tensor names match exactly between base and compared model"
+    - "Output sorted ascending by cosine (worst tensors first)"
+
+  ranked_error_output:
+    formula: |
+      Output list sorted by cosine ascending:
+        for i < j: cos[i] <= cos[j]
+      Identify "worst_tensor" = argmin_name cos_sim(name).
+    domain: "per-tensor cosine map"
+    codomain: "sorted array of {tensor_name, cosine, rmse, max_abs_error}"
+    invariants:
+    - "JSON output.per_tensor is sorted ascending by cosine"
+    - "worst_tensor field matches per_tensor[0].tensor_name"
+    - "Every tensor in base model appears in output (no silent drops)"
+
+  self_comparison_identity:
+    formula: |
+      apr diff M M --per-tensor --metric cosine
+      ==> every tensor has cosine == 1.0 (within f32 epsilon 1e-6).
+    domain: "single model path M"
+    codomain: "per-tensor cosine vector == 1 (ones)"
+    invariants:
+    - "Self-diff yields cosine == 1.0 (±1e-6) for every tensor"
+    - "Sanity: comparison is symmetric in the identity case"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-09-001
+  rule: "self-comparison yields cosine == 1.0 for every tensor"
+  prediction: "apr diff M M --per-tensor --metric cosine is all ones"
+  test: |
+    set -euo pipefail
+    M=fixtures/crux-e-09/tiny.apr
+    apr diff "$M" "$M" --per-tensor --metric cosine --json > /tmp/e09-self.json
+    python3 -c "
+    import json,sys
+    d=json.load(open('/tmp/e09-self.json'))
+    ok=all(abs(t['cosine'] - 1.0) < 1e-6 for t in d['per_tensor'])
+    sys.exit(0 if ok else 1)"
+  if_fails: "self-diff produced cosine != 1.0 — row-major flatten or arithmetic bug"
+
+- id: FALSIFY-CRUX-E-09-002
+  rule: "per-tensor list sorted ascending by cosine and worst_tensor matches"
+  prediction: "output sorted and worst_tensor == per_tensor[0].tensor_name"
+  test: |
+    set -euo pipefail
+    BASE=fixtures/crux-e-09/base.apr
+    QUANT=fixtures/crux-e-09/base-q4k.apr
+    apr diff "$BASE" "$QUANT" --per-tensor --metric cosine --json > /tmp/e09-cmp.json
+    python3 -c "
+    import json,sys
+    d=json.load(open('/tmp/e09-cmp.json'))
+    pt=d['per_tensor']
+    sorted_ok=all(pt[i]['cosine'] <= pt[i+1]['cosine'] for i in range(len(pt)-1))
+    worst_ok=d['worst_tensor'] == pt[0]['tensor_name']
+    sys.exit(0 if sorted_ok and worst_ok else 1)"
+  if_fails: "per_tensor not sorted ascending OR worst_tensor != first element"
+
+- id: FALSIFY-CRUX-E-09-003
+  rule: "llama-quantize-stats parity: cosine within 1e-4 on matching tensor"
+  prediction: "apr diff cosine per tensor matches llama-quantize-stats output"
+  test: |
+    set -euo pipefail
+    GOLDEN=evidence/crux/llama_cpp/e-09-quantize-stats.json
+    BASE=fixtures/crux-e-09/base.apr
+    QUANT=fixtures/crux-e-09/base-q4k.apr
+    apr diff "$BASE" "$QUANT" --per-tensor --metric cosine --json > /tmp/e09-apr.json
+    python3 -c "
+    import json,sys
+    apr={t['tensor_name']:t['cosine'] for t in json.load(open('/tmp/e09-apr.json'))['per_tensor']}
+    hf=json.load(open('$GOLDEN'))['per_tensor']
+    bad=[n for n in hf if n in apr and abs(apr[n]-hf[n]['cosine'])>1e-4]
+    sys.exit(0 if not bad else 1)"
+  if_fails: "apr diff per-tensor cosine diverges from llama-quantize-stats by >1e-4"
+
+proof_obligations:
+- type: invariant
+  property: "self-comparison yields cosine == 1.0 (±1e-6) for every tensor"
+- type: invariant
+  property: "per_tensor output sorted ascending by cosine and worst_tensor consistent"
+- type: invariant
+  property: "every tensor in base model appears in diff output (no silent drops)"
+- type: equivalence
+  property: "apr diff --per-tensor --metric cosine matches llama.cpp's llama-quantize-stats per-tensor cosine within 1e-4 on matching tensor names"
+
+# References:
+#   https://github.com/ggerganov/llama.cpp/blob/master/examples/quantize-stats/quantize-stats.cpp
+#   https://github.com/ggerganov/llama.cpp/tree/master/examples/quantize-stats
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-09` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-09
+  priority: high
+  auto_created: false

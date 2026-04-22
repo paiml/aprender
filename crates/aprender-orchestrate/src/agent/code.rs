@@ -76,23 +76,57 @@ pub fn cmd_code(
 
     // PMAT-160: Try AprServeDriver first (apr serve has full CUDA/GPU).
     // Falls back to embedded RealizarDriver if `apr` binary not found.
-    let driver: Box<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
+    // PMAT-CODE-SPAWN-PARITY-001: driver stored as Arc so TaskTool can
+    // share it with the AgentPool for sub-agent execution.
+    let driver: Arc<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
         match crate::agent::driver::apr_serve::AprServeDriver::launch(
             model_path,
             manifest.model.context_window,
         ) {
-            Ok(d) => Box::new(d),
+            Ok(d) => Arc::new(d),
             Err(e) => {
                 eprintln!("⚠ apr serve unavailable ({e}), using embedded inference");
-                build_fallback_driver(&manifest)?
+                Arc::from(build_fallback_driver(&manifest)?)
             }
         }
     } else {
-        build_fallback_driver(&manifest)?
+        Arc::from(build_fallback_driver(&manifest)?)
     };
 
     // Build tool registry with coding tools
-    let tools = build_code_tools(&manifest);
+    let mut tools = build_code_tools(&manifest);
+
+    // PMAT-CODE-MCP-CLIENT-001: register MCP client tools from manifest.mcp_servers.
+    // Synchronous wrapper over async discover_mcp_tools — a no-op when mcp_servers is
+    // empty (the default for `apr code` without a manifest).
+    register_mcp_client_tools(&mut tools, &manifest);
+
+    // PMAT-CODE-SPAWN-PARITY-001: register Task tool (Claude-Code Agent parity).
+    // `task` lets the agent delegate to typed subagents (general-purpose,
+    // explore, plan) with bounded recursion depth (Jidoka).
+    crate::agent::task_tool::register_task_tool(
+        &mut tools,
+        &manifest,
+        Arc::clone(&driver),
+        /* max_depth */ 3,
+    );
+
+    // PMAT-CODE-HOOKS-001: build hook registry from manifest and fire SessionStart.
+    // Returned Warn messages are surfaced to the user; a Block here aborts session
+    // startup (matching Claude Code's exit-code-2 semantics).
+    let hooks_reg = crate::agent::hooks::HookRegistry::from_configs(manifest.hooks.clone());
+    let hook_cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match hooks_reg.run(crate::agent::hooks::HookEvent::SessionStart, "", &hook_cwd) {
+        crate::agent::hooks::HookDecision::Allow => {}
+        crate::agent::hooks::HookDecision::Warn(msg) => {
+            if !msg.is_empty() {
+                eprintln!("⚠ SessionStart hook: {msg}");
+            }
+        }
+        crate::agent::hooks::HookDecision::Block(reason) => {
+            anyhow::bail!("SessionStart hook blocked session: {reason}");
+        }
+    }
 
     // Build memory
     let memory = crate::agent::memory::InMemorySubstrate::new();
@@ -356,6 +390,40 @@ fn build_default_manifest() -> AgentManifest {
     }
 }
 
+/// PMAT-CODE-MCP-CLIENT-001 — register external MCP servers declared in
+/// `manifest.mcp_servers[]` as tools in the `apr code` registry. Mirrors
+/// Claude Code's `.mcp.json` → agent-tool-provider wiring. Synchronous
+/// wrapper because `cmd_code` is sync; opens a scoped current-thread
+/// runtime for the discovery handshake. No-op when the feature is off
+/// or the manifest has no servers.
+#[allow(unused_variables)]
+fn register_mcp_client_tools(tools: &mut ToolRegistry, manifest: &AgentManifest) {
+    #[cfg(feature = "agents-mcp")]
+    {
+        if manifest.mcp_servers.is_empty() {
+            return;
+        }
+        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("⚠ failed to create MCP discovery runtime: {e}");
+                return;
+            }
+        };
+        let discovered = rt.block_on(crate::agent::tool::mcp_client::discover_mcp_tools(manifest));
+        let count = discovered.len();
+        for tool in discovered {
+            tools.register(Box::new(tool));
+        }
+        if count > 0 {
+            eprintln!(
+                "✓ Registered {count} MCP tool(s) from {} server(s)",
+                manifest.mcp_servers.len()
+            );
+        }
+    }
+}
+
 /// Register all coding tools.
 fn build_code_tools(manifest: &AgentManifest) -> ToolRegistry {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -383,7 +451,35 @@ fn build_code_tools(manifest: &AgentManifest) -> ToolRegistry {
         tools.register(Box::new(crate::agent::tool::rag::RagTool::new(oracle, 5)));
     }
 
+    // PMAT-CODE-WEB-TOOLS-001: register NetworkTool behind the privacy-tier
+    // gate. Sovereign tier always blocks (Poka-Yoke); Standard/Private
+    // tiers register iff `allowed_hosts` is non-empty (explicit opt-in).
+    register_web_tools(&mut tools, manifest);
+
     tools
+}
+
+/// Register NetworkTool (+ BrowserTool when the `agents-browser` feature is
+/// on) when the manifest declares a non-Sovereign privacy tier and a
+/// non-empty `allowed_hosts` list.
+fn register_web_tools(tools: &mut ToolRegistry, manifest: &AgentManifest) {
+    use crate::serve::backends::PrivacyTier;
+
+    if matches!(manifest.privacy, PrivacyTier::Sovereign) {
+        return;
+    }
+    if manifest.allowed_hosts.is_empty() {
+        return;
+    }
+
+    tools.register(Box::new(crate::agent::tool::network::NetworkTool::new(
+        manifest.allowed_hosts.clone(),
+    )));
+
+    #[cfg(feature = "agents-browser")]
+    {
+        tools.register(Box::new(crate::agent::tool::browser::BrowserTool::new(manifest.privacy)));
+    }
 }
 
 pub use super::code_prompts::exit_code;

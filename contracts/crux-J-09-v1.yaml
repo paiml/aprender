@@ -1,0 +1,90 @@
+# CRUX-J-09 — OpenCLAW browser automation via MCP client
+# Resolved 2026-04-18: category J competitor = openclaw.ai.
+
+metadata:
+  id: CRUX-J-09
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "J — OpenCLAW Agent Orchestration"
+  competitor: openclaw
+  demand_score: 5
+  intake_status: missing
+  description: >
+    OpenCLAW exposes browser automation (open URL, fill form, extract data)
+    as a tool in its skill catalog. Aprender parity: `apr code` must be
+    able to load an external browser-automation MCP server (e.g.
+    playwright-mcp, browser-use) through its MCP client layer, not
+    reimplement the browser. Overlaps with PMAT-CODE-MCP-CLIENT-001
+    (closed 2026-04-18) and the apr-code parity matrix.
+  openclaw_interpretation: openclaw-agent-resolved
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5.J'
+  - https://openclaw.ai/
+  - contracts/apr-code-parity-v1.yaml
+  - evidence/crux/openclaw/gaps.md
+
+equations:
+  browser_via_mcp:
+    formula: |
+      browser_action : MCP_tool_call
+        let server = mcp.clients["browser"] in
+        server.call_tool("browser.navigate" | "fill_form" | "extract", args)
+      invariant: aprender does NOT ship a browser engine itself
+      invariant: aprender MUST be able to consume an external browser MCP
+    domain: user intent referencing a URL or web form
+    codomain: MCP tool-call envelope routed to external server
+    invariants:
+    - "browser automation is delegated to an MCP tool, not inlined"
+    - "apr code can register at least one MCP client for browser tools"
+    - "failure to register a browser MCP is an observable skip, not a silent no-op"
+
+falsification_tests:
+- id: FALSIFY-CRUX-J-09-001
+  rule: apr code can load an external MCP server
+  prediction: "apr code docs reference MCP client registration or `.mcp.json` loader"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "MCP client aprender OR register_mcp_client_tools OR .mcp.json loader" --limit 1 --format json | grep -q '"matches"' || {
+        echo "FAIL: no MCP client story documented" >&2
+        exit 1
+      }
+    else
+      echo "SKIP: pmat not available" >&2; exit 77
+    fi
+  if_fails: CRUX-J-09 parity broken — apr code MUST support external MCP client registration
+- id: FALSIFY-CRUX-J-09-002
+  rule: browser automation is not re-implemented internally
+  prediction: "aprender does not ship a browser/DOM engine; it consumes one"
+  test: |
+    set -euo pipefail
+    if command -v pmat >/dev/null 2>&1; then
+      pmat query "playwright OR chromedriver OR browser-automation crate" --limit 1 --format json | grep -q '"matches"' || {
+        echo "SKIP: no browser engine documented (expected)" >&2
+        exit 77
+      }
+    fi
+  if_fails: CRUX-J-09 delegation invariant — browser automation must be delegated, not inlined
+
+proof_obligations:
+- type: invariant
+  property: "browser automation routes through MCP"
+- type: invariant
+  property: "no in-tree browser engine"
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: draft
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-j-09
+  priority: critical
+  auto_created: true
