@@ -1,0 +1,121 @@
+# CRUX-L-12 — punica-sgmv kernel for multi-LoRA serving
+# Authored under PMAT-666. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-12
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Dispatch Segmented Grouped Matrix-Vector (SGMV) kernel from the
+    Punica multi-LoRA system via HF kernels-community. Enables
+    serving N LoRA adapters simultaneously in one batched request
+    without padding-to-max-rank. Parity vs sequential per-adapter
+    matmul within 1e-3 bf16.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/punica-ai/punica'
+  - 'arXiv:2310.18547 — Punica: Multi-Tenant LoRA Serving'
+
+equations:
+  sgmv_dispatch:
+    formula: |
+      Given N LoRA adapters (A_i, B_i), request routing vector r[batch]:
+          out := sgmv_fwd(x, adapters_A, adapters_B, r, scaling)
+          ref := concat([ x @ A_r[i] @ B_r[i] * scaling for i in batch ])
+      Parity: max_abs_diff(out, ref) <= 1e-3 bf16
+              scales per-adapter are independent; no cross-contamination
+    domain: "(x, A_bank, B_bank, route, scale)"
+    codomain: "out tensor (bf16)"
+    invariants:
+    - "ranks per adapter can differ (unlike PEFT-bmm which requires pad-to-max)"
+    - "route[i] ∈ [0, N) ∪ {-1} (-1 means no LoRA for that sample)"
+    - "cross-adapter contamination is a contract violation (each sample sees only its route)"
+
+  cli_contract:
+    formula: |
+      apr kernel parity --impl punica-sgmv --ref per-adapter-matmul --fixture fixtures/multi-lora-canary.json --json
+    domain: "(impl, fixture)"
+    codomain: "parity JSON"
+    invariants:
+    - "fixture must include mixed-rank adapters (e.g. r=8 and r=16 side-by-side)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-12-001
+  rule: "sgmv parity within 1e-3 bf16"
+  prediction: "punica-sgmv matches per-adapter matmul reference"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl punica-sgmv --ref per-adapter-matmul --fixture fixtures/multi-lora-canary.json --json > /tmp/l12.json
+    jq -e '.max_abs_diff <= 1e-3' /tmp/l12.json >/dev/null
+  if_fails: "Punica SGMV diverges — multi-LoRA serving corrupt"
+
+- id: FALSIFY-CRUX-L-12-002
+  rule: "mixed-rank adapters supported (no pad-to-max)"
+  prediction: "Fixture with ranks {8, 16} concurrent produces correct per-sample output"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl punica-sgmv --ref per-adapter-matmul --mixed-rank --fixture fixtures/multi-lora-canary.json --json > /tmp/l12-mixed.json
+    jq -e '.max_abs_diff <= 1e-3' /tmp/l12-mixed.json >/dev/null
+  if_fails: "Mixed-rank support broken — reverts to padding, defeats memory win"
+
+- id: FALSIFY-CRUX-L-12-003
+  rule: "cross-adapter contamination detected"
+  prediction: "Swapping A_i ↔ A_j in adapter bank changes only samples routed to i/j, not others"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl punica-sgmv --ref per-adapter-matmul --isolation-check --fixture fixtures/multi-lora-canary.json --json > /tmp/l12-iso.json
+    jq -e '.isolation_ok == true' /tmp/l12-iso.json >/dev/null
+  if_fails: "Cross-adapter bleed — LoRA-A responses mix LoRA-B weights"
+
+- id: FALSIFY-CRUX-L-12-004
+  rule: "route=-1 (no-LoRA) preserves base output exactly"
+  prediction: "Samples with route=-1 match pure base-model matmul bit-for-bit"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl punica-sgmv --ref per-adapter-matmul --include-noop --fixture fixtures/multi-lora-canary.json --json > /tmp/l12-noop.json
+    jq -e '.noop_bitwise_ok == true' /tmp/l12-noop.json >/dev/null
+  if_fails: "No-LoRA route still perturbs output — base model contaminated"
+
+- id: FALSIFY-CRUX-L-12-005
+  rule: "kernel_source pinned"
+  prediction: "kernel_source='hf-kernels-community:punica-sgmv@<sha>'"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl punica-sgmv --ref per-adapter-matmul --fixture fixtures/multi-lora-canary.json --json > /tmp/l12.json
+    jq -e '.kernel_source | test("^hf-kernels-community:punica-sgmv@[0-9a-f]{40}$")' /tmp/l12.json >/dev/null
+  if_fails: "Unpinned punica source"
+
+proof_obligations:
+- type: invariant
+  property: "SGMV parity max_abs_diff <= 1e-3 bf16 vs per-adapter reference"
+- type: invariant
+  property: "Mixed-rank adapters supported (no pad-to-max)"
+- type: invariant
+  property: "Cross-adapter isolation: no contamination between routes"
+- type: invariant
+  property: "route=-1 preserves base output bitwise"
+- type: equivalence
+  property: "apr punica-sgmv  ≅  HF kernels-community punica-sgmv (multi-LoRA batched)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-12
+  ticket_id: PMAT-666
+  priority: medium
+  auto_created: true

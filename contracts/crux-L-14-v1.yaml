@@ -1,0 +1,114 @@
+# CRUX-L-14 — mamba-ssm selective state-space model kernel
+# Authored under PMAT-668. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-14
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Dispatch the Mamba selective SSM kernel (`mamba-ssm`) via HF
+    kernels-community. Supports Mamba / Mamba2 / Jamba architectures
+    that use state-space models instead of attention. Low-priority:
+    only matters once aprender supports a non-transformer arch, but
+    contract-ahead-of-code keeps the slot warm.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/state-spaces/mamba'
+  - 'arXiv:2312.00752 — Mamba (Gu + Dao)'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  mamba_ssm_dispatch:
+    formula: |
+      Given (u, Δ, A, B, C, D):
+          y := selective_scan(u, Δ, A, B, C, D)   via HF mamba-ssm .so
+          ref := naive_selective_scan_reference(u, Δ, A, B, C, D)
+      Parity: max_abs_diff(y, ref) <= 1e-3 bf16
+      Preserves causality: y[t] depends only on u[<=t]
+    domain: "(u, Δ, A, B, C, D)"
+    codomain: "y tensor"
+    invariants:
+    - "causality preserved (SSM is strictly causal)"
+    - "Δ (discretization step) stays positive — Δ<=0 is a hard error"
+    - "d_state (N) ∈ {16, 64, 128} per Mamba paper; other sizes error"
+
+  cli_contract:
+    formula: |
+      apr kernel parity --impl mamba-ssm --ref naive-ssm --fixture fixtures/mamba-canary.json --json
+    domain: "(impl, fixture)"
+    codomain: "parity JSON"
+    invariants:
+    - "fixture includes causality check (perturb u[T] and verify y[<T] unchanged)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-14-001
+  rule: "mamba-ssm parity within 1e-3 bf16"
+  prediction: "selective_scan matches naive reference"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl mamba-ssm --ref naive-ssm --fixture fixtures/mamba-canary.json --json > /tmp/l14.json
+    jq -e '.max_abs_diff <= 1e-3' /tmp/l14.json >/dev/null
+  if_fails: "Mamba SSM diverges — SSM-based model output corrupt"
+
+- id: FALSIFY-CRUX-L-14-002
+  rule: "causality invariant (u[T] perturbation ⟹ y[<T] unchanged)"
+  prediction: "Fixture causality-check returns ok=true"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl mamba-ssm --causality-check --fixture fixtures/mamba-canary.json --json > /tmp/l14-caus.json
+    jq -e '.causality_ok == true' /tmp/l14-caus.json >/dev/null
+  if_fails: "SSM causality broken — model looks at future tokens"
+
+- id: FALSIFY-CRUX-L-14-003
+  rule: "Δ<=0 is a hard error"
+  prediction: "Setting Δ=0 exits 1"
+  test: |
+    set -euo pipefail
+    set +e
+    apr kernel parity --impl mamba-ssm --delta 0 --fixture fixtures/mamba-canary.json --json >/dev/null
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+  if_fails: "Δ=0 silently accepted — division-by-zero or NaN in scan"
+
+- id: FALSIFY-CRUX-L-14-004
+  rule: "kernel_source pinned"
+  prediction: "kernel_source='hf-kernels-community:mamba-ssm@<sha>'"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl mamba-ssm --ref naive-ssm --fixture fixtures/mamba-canary.json --json > /tmp/l14.json
+    jq -e '.kernel_source | test("^hf-kernels-community:mamba-ssm@[0-9a-f]{40}$")' /tmp/l14.json >/dev/null
+  if_fails: "Unpinned mamba-ssm source"
+
+proof_obligations:
+- type: invariant
+  property: "Selective-scan parity max_abs_diff <= 1e-3 bf16 vs naive reference"
+- type: invariant
+  property: "Causality preserved (strictly causal scan)"
+- type: invariant
+  property: "Δ > 0 enforced; d_state ∈ {16, 64, 128}"
+- type: equivalence
+  property: "apr mamba-ssm kernel  ≅  HF kernels-community mamba-ssm"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-14
+  ticket_id: PMAT-668
+  priority: low
+  auto_created: true

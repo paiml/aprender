@@ -241,9 +241,13 @@ fn preflight_tokenizer_vocab_matches_model(tokenizer_dir: &Path) -> Result<()> {
         .map_err(CliError::ValidationFailed)
 }
 
-/// Real-corpus drive: build a shared 370M `TransformerTrainer`, split
+/// Real-corpus drive: build a shared 370M trainer (CPU or CUDA), split
 /// the shard stream head-off into a held-out validation set, and run a
 /// full forward + backward + AdamW step per training batch.
+///
+/// When `device.is_cuda()`, the `cuda` feature must be compiled in —
+/// otherwise this surfaces a clear error rather than silently falling
+/// back to CPU (GATE-GPUTRAIN-002, contract gpu-training-backend-v1).
 #[allow(clippy::too_many_arguments)]
 fn drive_real(
     config: PretrainConfig,
@@ -255,23 +259,6 @@ fn drive_real(
     device: Device,
     json_output: bool,
 ) -> Result<RunStatus> {
-    // Phase 1 stub (contract gpu-training-backend-v1 §implementation_plan
-    // phase 1 / peer_contracts apr-cli-commands-v1): CLI surface accepts
-    // `--device cuda[:N]` and resolves it, but the CUDA training path is
-    // not yet wired — Phase 2 will extend `SharedTrainer` to dispatch to
-    // `CudaTransformerTrainer`. Until then, any resolved CUDA device
-    // must surface a clear NotImplemented error rather than silently
-    // using the CPU path (GATE-GPUTRAIN-002).
-    if device.is_cuda() {
-        return Err(CliError::ValidationFailed(format!(
-            "--device {device} resolved, but the CUDA training backend \
-             is not yet wired in `apr pretrain` (contract \
-             gpu-training-backend-v1 phase 2 pending, task #132). \
-             Pass `--device cpu` to opt in to the CPU path, or wait for \
-             Phase 2 to land.",
-        )));
-    }
-
     // GATE-ARCH-370M-011 / INV-ARCH-370M-006 — refuse to dispatch a real
     // training step when the tokenizer vocab_size and the model vocab_size
     // disagree. The N-09 OOB escape guard in Embedding::forward masks the
@@ -306,16 +293,102 @@ fn drive_real(
         )));
     }
 
+    if device.is_cuda() {
+        drive_real_cuda(config, iter, held_out, lr, seq_length, seed, json_output)
+    } else {
+        drive_real_cpu(config, iter, held_out, lr, seq_length, seed, json_output)
+    }
+}
+
+/// CPU backend for `drive_real` — builds a `TransformerTrainer`
+/// (`aprender::Tensor` + trueno SIMD) and wires `RealStepFn` /
+/// `RealValFn` / `AprCheckpointFn`.
+#[allow(clippy::too_many_arguments)]
+fn drive_real_cpu(
+    config: PretrainConfig,
+    iter: entrenar::train::shard_reader::ShardBatchIter,
+    held_out: Vec<LMBatch>,
+    lr: f32,
+    seq_length: usize,
+    seed: u64,
+    json_output: bool,
+) -> Result<RunStatus> {
     let trainer = build_shared_trainer(lr, seq_length, seed);
     let step_fn = RealStepFn::new(trainer.clone(), Box::new(iter));
     let val_fn = RealValFn::new(trainer.clone(), held_out);
-    // Task #111 step 7: per-epoch APR checkpoint on GATE-TRAIN-005 pass.
     let ckpt: Box<dyn CheckpointFn> = Box::new(AprCheckpointFn::new(
         trainer,
         "llama-370m-pretrain",
         "LlamaForCausalLM",
     ));
     run_and_report(config, step_fn, val_fn, Some(ckpt), json_output)
+}
+
+/// CUDA backend for `drive_real` — builds a `CudaTransformerTrainer`
+/// and wires `CudaRealStepFn` / `CudaRealValFn` / `CudaAprCheckpointFn`
+/// (task #132 Phase 2, contract gpu-training-backend-v1).
+///
+/// When the `cuda` feature is NOT compiled in, this returns a clear
+/// build-time error so operators who asked for `--device cuda` do not
+/// silently get the CPU path (GATE-GPUTRAIN-002 / FM-GPUTRAIN-SILENT-CPU).
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn drive_real_cuda(
+    config: PretrainConfig,
+    iter: entrenar::train::shard_reader::ShardBatchIter,
+    held_out: Vec<LMBatch>,
+    lr: f32,
+    seq_length: usize,
+    seed: u64,
+    json_output: bool,
+) -> Result<RunStatus> {
+    use entrenar::train::pretrain_real_cuda::{
+        build_shared_cuda_trainer, CudaAprCheckpointFn, CudaRealStepFn, CudaRealValFn,
+    };
+    let trainer = build_shared_cuda_trainer(lr, seq_length, seed).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "GATE-GPUTRAIN-002: CUDA trainer allocation failed: {e}. \
+             See contracts/entrenar/gpu-training-backend-v1.yaml and \
+             memory/feedback_cuda_feature_footgun.md — this path is \
+             only reachable when the binary was built with `--features cuda`.",
+        ))
+    })?;
+    let step_fn = CudaRealStepFn::new(trainer.clone(), Box::new(iter));
+    let val_fn = CudaRealValFn::new(trainer.clone(), held_out);
+    let ckpt: Box<dyn CheckpointFn> = Box::new(CudaAprCheckpointFn::new(
+        trainer,
+        "llama-370m-pretrain",
+        "LlamaForCausalLM",
+    ));
+    run_and_report(config, step_fn, val_fn, Some(ckpt), json_output)
+}
+
+/// CUDA backend stub when the `cuda` feature is NOT compiled in.
+///
+/// This is the load-bearing gate that prevents FM-GPUTRAIN-SILENT-CPU:
+/// if a user passes `--device cuda` on an apr binary built without
+/// CUDA support, they see a clear "rebuild with --features cuda" error
+/// rather than a 14-minute CPU run masquerading as GPU training
+/// (task #132 lambda-labs incident, 2026-04-21).
+#[cfg(not(feature = "cuda"))]
+#[allow(clippy::too_many_arguments)]
+fn drive_real_cuda(
+    _config: PretrainConfig,
+    _iter: entrenar::train::shard_reader::ShardBatchIter,
+    _held_out: Vec<LMBatch>,
+    _lr: f32,
+    _seq_length: usize,
+    _seed: u64,
+    _json_output: bool,
+) -> Result<RunStatus> {
+    Err(CliError::ValidationFailed(
+        "GATE-GPUTRAIN-002: --device cuda was requested but this `apr` \
+         binary was built WITHOUT the `cuda` feature. \
+         Rebuild with `cargo build --release --features cuda` or use \
+         `--device cpu`. See memory/feedback_cuda_feature_footgun.md \
+         (contract gpu-training-backend-v1 / task #132 Phase 2)."
+            .into(),
+    ))
 }
 
 /// Shared helper: construct the `PretrainLoop`, run it, print the

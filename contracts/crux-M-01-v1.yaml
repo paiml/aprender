@@ -1,0 +1,183 @@
+# CRUX-M-01 — QA Gate-1: byte-identical vs safetensors ground truth
+# Authored under PMAT-670 (pmat work start). See docs/specifications/crux-competitive-research-ux-workflows.md §5.M + §13.2.
+# Canonicalizes apr-model-qa-playbook Gate-1 into the CRUX registry.
+
+metadata:
+  id: CRUX-M-01
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - apr-model-qa-v1
+  category: "M — APR-QA Playbook Canonicalization"
+  competitor: apr-qa-playbook
+  demand_score: 5
+  intake_status: partial
+  description: >
+    QA Gate-1 from apr-model-qa-playbook — byte-identical round-trip
+    against the safetensors ground truth. For every tensor T in a model
+    round-tripped through apr (safetensors → APR → safetensors), the
+    second serialization MUST match the first byte-for-byte. This gate
+    catches silent layout-transpose errors (LAYOUT-001/002 class) and
+    dequant/requant drift before they reach the user.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'sibling repo: github.com/paiml/apr-model-qa-playbook — Gate-1 definition'
+  - 'https://github.com/huggingface/safetensors — canonical safetensors spec'
+  - 'contracts/tensor-layout-v1.yaml — LAYOUT-001/002 source of truth'
+  - 'contracts/apr-format-invariants-v1.yaml — APR magic + header invariants'
+
+equations:
+  byte_identical_roundtrip:
+    formula: |
+      For a safetensors model S = { (name_i, tensor_i) } :
+          apr_import(S)        -> M_apr   ∈ .apr file
+          apr_export(M_apr)    -> S'      ∈ safetensors file
+          S'_bytes := read(S')
+          S_bytes  := read(S)
+      Gate pass := sha256(S_bytes) == sha256(S'_bytes)
+                   AND for every tensor T in S: bytes(T in S') == bytes(T in S)
+    domain: "safetensors file (on disk)"
+    codomain: "PASS if round-trip is byte-identical; FAIL on any divergent byte"
+    invariants:
+    - "sha256 over the full safetensors file is the *aggregate* invariant"
+    - "per-tensor bytes equality is the *load-bearing* invariant (catches reorder/pad bugs that aggregate sha256 would also catch, but pinpoints *which* tensor)"
+    - "tensor iteration order in S' must match iteration order in S (header stability)"
+    - "metadata block (__metadata__) must round-trip without reordering"
+
+  gate_contract:
+    formula: |
+      apr qa --gate byte-identical \
+             --safetensors model.safetensors \
+             --json
+        emits:
+          status ∈ {"PASS", "FAIL"}
+          ground_truth_sha256:   <hex>
+          roundtrip_sha256:      <hex>
+          per_tensor_divergences:
+            - { name, expected_sha256, observed_sha256, first_diff_offset }
+          total_tensors: N
+          divergent_tensors: K
+      Exit semantics:
+          exit 0 iff status == "PASS" AND K == 0
+          exit 1 iff status == "FAIL" OR K > 0
+          exit >= 2 on configuration / I/O error (missing file, bad header)
+    domain: "safetensors path"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status (0 ↔ PASS, 1 ↔ FAIL)"
+    - "a single divergent tensor flips aggregate status to FAIL"
+    - "missing safetensors file exits >= 2 — NEVER silent pass"
+    - "the ground-truth sha256 is pinned to the on-disk file, not a cached digest"
+
+falsification_tests:
+- id: FALSIFY-CRUX-M-01-001
+  rule: "--gate byte-identical flag exists and is documented"
+  prediction: "apr qa --help advertises --gate byte-identical"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "--gate[[:space:]]+byte-identical|byte-identical"
+  if_fails: "apr qa lacks the byte-identical gate — Gate-1 is not wired into the CLI"
+
+- id: FALSIFY-CRUX-M-01-002
+  rule: "PASS on safetensors → APR → safetensors round-trip"
+  prediction: "Round-tripping any safetensors file yields byte-identical output and PASS"
+  test: |
+    set -euo pipefail
+    SRC=/tmp/m01-src.safetensors
+    APR=/tmp/m01.apr
+    DST=/tmp/m01-dst.safetensors
+    # Minimal 1-tensor fixture via safetensors CLI or uv run python
+    uv run --with safetensors python - <<'PY' > "$SRC.py"
+    import torch
+    from safetensors.torch import save_file
+    save_file({"w": torch.arange(16, dtype=torch.float32).reshape(4,4)}, "$SRC")
+    PY
+    apr import --from "$SRC" --to "$APR"
+    apr export --from "$APR" --format safetensors --to "$DST"
+    apr qa --gate byte-identical --safetensors "$SRC" --roundtrip "$DST" --json > /tmp/m01.json
+    jq -e '.status == "PASS" and .divergent_tensors == 0' /tmp/m01.json >/dev/null
+  if_fails: "Round-trip is not byte-identical — layout transpose or header drift"
+
+- id: FALSIFY-CRUX-M-01-003
+  rule: "FAIL on a byte-mutated safetensors file (detection)"
+  prediction: "Flipping one byte in the roundtrip file flips the gate to FAIL with exit 1"
+  test: |
+    set -euo pipefail
+    DST=/tmp/m01-dst.safetensors
+    # Flip one byte well past the header
+    dd if=/dev/urandom of="$DST" bs=1 count=1 seek=1024 conv=notrunc 2>/dev/null
+    set +e
+    apr qa --gate byte-identical \
+           --safetensors /tmp/m01-src.safetensors \
+           --roundtrip "$DST" --json > /tmp/m01-fail.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || { echo "expected exit 1 on byte-divergence, got $EC"; exit 1; }
+    jq -e '.status == "FAIL" and .divergent_tensors >= 1' /tmp/m01-fail.json >/dev/null
+  if_fails: "Gate does not detect byte divergence — Gate-1 is a placebo"
+
+- id: FALSIFY-CRUX-M-01-004
+  rule: "determinism — two runs yield identical JSON reports"
+  prediction: "Two back-to-back `apr qa --gate byte-identical` runs on the same files produce identical reports"
+  test: |
+    set -euo pipefail
+    apr qa --gate byte-identical --safetensors /tmp/m01-src.safetensors \
+           --roundtrip /tmp/m01-dst.safetensors --json > /tmp/m01-A.json
+    apr qa --gate byte-identical --safetensors /tmp/m01-src.safetensors \
+           --roundtrip /tmp/m01-dst.safetensors --json > /tmp/m01-B.json
+    diff <(jq -S . /tmp/m01-A.json) <(jq -S . /tmp/m01-B.json)
+  if_fails: "Gate is non-deterministic — same inputs, different verdict (violates playbook Jidoka)"
+
+- id: FALSIFY-CRUX-M-01-005
+  rule: "missing safetensors file is a hard error (no silent pass)"
+  prediction: "Absent safetensors path → exit >= 2, not silent PASS"
+  test: |
+    set -euo pipefail
+    set +e
+    apr qa --gate byte-identical --safetensors /tmp/does-not-exist.safetensors \
+           --roundtrip /tmp/also-missing.safetensors --json >/dev/null 2>&1
+    EC=$?
+    set -e
+    [ "$EC" -ge 2 ] || { echo "expected exit >= 2 on missing file, got $EC (silent-pass hazard)"; exit 1; }
+  if_fails: "Missing safetensors file silently accepted — P0-QA-001 class regression"
+
+- id: FALSIFY-CRUX-M-01-006
+  rule: "per-tensor divergence is reported, not just aggregate"
+  prediction: "FAIL JSON carries at least one entry in per_tensor_divergences with {name, expected_sha256, observed_sha256}"
+  test: |
+    set -euo pipefail
+    jq -e '
+      .status == "FAIL"
+      and (.per_tensor_divergences | length) >= 1
+      and (.per_tensor_divergences[0] | has("name") and has("expected_sha256") and has("observed_sha256"))
+    ' /tmp/m01-fail.json >/dev/null
+  if_fails: "Gate reports FAIL but cannot pinpoint the offending tensor — debugging is blocked"
+
+proof_obligations:
+- type: invariant
+  property: "Aggregate sha256(safetensors) stable across import/export round-trip"
+- type: invariant
+  property: "Per-tensor bytes equality holds for every tensor; divergences listed"
+- type: invariant
+  property: "Exit code is 0 on PASS, 1 on FAIL, >= 2 on config/I-O error"
+- type: invariant
+  property: "Determinism — identical (src, dst) yields identical JSON report"
+- type: equivalence
+  property: "apr qa --gate byte-identical  ≅  apr-model-qa-playbook Gate-1 (byte-for-byte safetensors round-trip)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-m-01
+  ticket_id: PMAT-670
+  priority: critical
+  auto_created: true

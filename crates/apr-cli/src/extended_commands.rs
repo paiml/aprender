@@ -742,6 +742,32 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a captured CUDA OOM postmortem report (CRUX-F-13)
+    OomLint {
+        /// Path to captured OOM postmortem JSON (e.g. /tmp/apr-oom-<ts>.json)
+        #[arg(long, value_name = "FILE")]
+        report_file: PathBuf,
+        /// Optional captured stderr log to verify the OOM_REPORT breadcrumb
+        #[arg(long, value_name = "FILE")]
+        stderr_file: Option<PathBuf>,
+    },
+    /// Lint a captured OpenAI tool-use response (CRUX-C-11)
+    ToolUseLint {
+        /// Path to captured OpenAI tool-use response JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a GBNF grammar-constrained observation (CRUX-C-10)
+    GbnfLint {
+        /// Path to captured GBNF observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a typical-p sampling observation (CRUX-C-22)
+    TypicalPLint {
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
