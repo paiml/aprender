@@ -57,10 +57,10 @@ glob = { version = "0.3", optional = true }
 which = { version = "6.0", optional = true }
 
 # Syscall tracing (native-only)
-renacer = { version = "0.10", optional = true }
+renacer = { workspace = true, optional = true }
 
 # High-performance compute (SIMD/GPU, native-only)
-trueno = { version = "0.17", features = ["gpu"], optional = true }
+trueno = { workspace = true, features = ["gpu"], optional = true }
 
 # SIMD/GPU memory compression (LZ4/ZSTD, native-only)
 trueno-zram-core = { version = "0.3", optional = true }
@@ -72,7 +72,7 @@ trueno-ublk = { version = "0.3", optional = true }
 repartir = { version = "2.0", features = ["cpu", "remote"], optional = true }
 
 # Graph database for Oracle Mode knowledge graph (native-only)
-trueno-graph = { version = "0.1.17", optional = true }
+trueno-graph = { workspace = true, optional = true }
 
 # Vector database for similarity search (native-only)
 trueno-db = { version = "0.3.16", optional = true }
@@ -110,11 +110,11 @@ pacha = { version = "0.2", optional = true }
 
 # Realizar inference engine (GGUF/safetensors, native-only)
 # PMAT-159: local path dep with cuda feature for GPU-accelerated apr code
-realizar = { version = "0.8", optional = true, features = ["cuda"] }
+realizar = { workspace = true, optional = true, features = ["cuda"] }
 
 # ML algorithms and training (native-only)
 aprender = { path = "../aprender-core", version = "0.31.2", package = "aprender-core", optional = true }
-entrenar = { version = "0.7", optional = true }
+entrenar = { workspace = true, optional = true }
 alimentar = { version = "0.2", optional = true }
 
 # RAG and visualization (native-only)

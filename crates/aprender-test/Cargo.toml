@@ -79,7 +79,7 @@ syn = { version = "2.0", features = ["full", "visit", "parsing", "extra-traits"]
 bincode = "1.3"
 
 # GPU compute (trueno - SIMD-accelerated tensor operations)
-trueno = { version = "0.16.5", features = ["gpu"] }
+trueno = { workspace = true, features = ["gpu"] }
 
 # TUI Testing (EDD compliance)
 # Uses custom TextGrid/MockTty - no external TUI deps

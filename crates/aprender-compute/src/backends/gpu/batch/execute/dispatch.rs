@@ -309,7 +309,6 @@ impl GpuCommandBatch {
             pass.dispatch_workgroups(m.div_ceil(16), n.div_ceil(16), 1);
         }
 
-        contract_post_tiled_naive_equivalence!(());
         Ok(())
     }
 

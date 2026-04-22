@@ -263,6 +263,14 @@ presentar-test = { path = "crates/aprender-present-test", version = "0.31.2", pa
 presentar-test-macros = { path = "crates/aprender-present-test-macros", version = "0.31.2", package = "aprender-present-test-macros" }
 jugar-probar-derive = { path = "crates/aprender-test-derive", version = "0.31.2", package = "aprender-test-derive" }
 batuta-common = { path = "crates/aprender-common", version = "0.31.2", package = "aprender-common" }
+# APR-MONO sibling aliases — MUST use workspace refs, NEVER crates.io versions.
+# Hard-pinning these to crates.io creates a diamond: sub-crates pull older
+# aprender versions → multiple `aprender` crates in Cargo.lock = MUDA.
+renacer = { path = "crates/aprender-profile", version = "0.31.2", package = "aprender-profile" }
+entrenar-lora = { path = "crates/aprender-train-lora", version = "0.31.2", package = "aprender-train-lora" }
+batuta = { path = "crates/aprender-orchestrate", version = "0.31.2", package = "aprender-orchestrate" }
+trueno-graph = { path = "crates/aprender-graph", version = "0.31.2", package = "aprender-graph" }
+trueno-gpu = { path = "crates/aprender-gpu", version = "0.31.2", package = "aprender-gpu" }
 
 [workspace.lints.rust]
 # Safety

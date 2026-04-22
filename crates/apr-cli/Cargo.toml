@@ -111,7 +111,7 @@ batuta-common = "0.1"
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182
 # GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
-batuta = { version = "0.7", optional = true, default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
+batuta = { workspace = true, optional = true, default-features = false, features = ["agents", "agents-inference", "agents-mcp", "rag"] }
 
 # Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s
@@ -125,7 +125,7 @@ whisper-apr = { version = "0.2", optional = true }
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
 # 2026-04-05 PMAT-507: bumped 0.16.0→0.17 to match aprender root Cargo.toml (was diamond dep)
-trueno = { version = "0.19.1", optional = true }
+trueno = { workspace = true, optional = true }
 
 # Async runtime for server
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"], optional = true }
@@ -180,7 +180,7 @@ presentar-terminal = { workspace = true }
 presentar-core = { workspace = true }
 
 # Visualization (syscall tracing and charts)
-renacer = { version = "0.11", optional = true }
+renacer = { workspace = true, optional = true }
 trueno-viz = { version = "0.3", optional = true }
 
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)
@@ -193,7 +193,7 @@ pacha = { version = "0.2.4", default-features = false, features = ["remote"] }
 trueno-explain = { version = "0.2.2", optional = true }
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
-entrenar-lora = { version = "0.3.0", optional = true }
+entrenar-lora = { workspace = true, optional = true }
 # ML training engine (workspace path dep — enables cuda feature forwarding)
 entrenar = { workspace = true, optional = true }
 # Heap profiling (opt-in via --features dhat-heap)

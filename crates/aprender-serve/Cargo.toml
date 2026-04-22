@@ -36,10 +36,10 @@ name = "realizar"
 # OUR ecosystem - SIMD/GPU compute primitives (we control this)
 # High-performance SIMD compute library with GPU support
 # PAR-073: Using local path for development, version for crates.io
-trueno = { version = "0.17", features = ["gpu"] }
+trueno = { workspace = true, features = ["gpu"] }
 # CUDA PTX generation and runtime for NVIDIA GPUs (optional, pure Rust, no LLVM/nvcc)
 # v0.4.12: BatchedQ6K, MultiWarp, RopeNeox, FlashDecoding kernels
-trueno-gpu = { version = "0.4", optional = true, features = ["cuda"] }
+trueno-gpu = { workspace = true, optional = true, features = ["cuda"] }
 # KV cache storage (for attention caching)
 trueno-db = { version = "0.3.16", optional = true }
 # K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth

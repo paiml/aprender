@@ -6,7 +6,4 @@ publish = false
 
 [dependencies]
 burn = { version = "0.21.0-pre.2", features = ["wgpu"] }
-trueno = { version = "0.16", features = ["parallel", "gpu"] }
-
-[patch.crates-io]
-trueno = { path = "/home/noah/src/trueno" }
+trueno = { workspace = true, features = ["parallel", "gpu"] }

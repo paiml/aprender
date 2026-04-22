@@ -14,7 +14,7 @@ categories = ["visualization", "graphics", "science", "wasm"]
 
 [dependencies]
 # Core SIMD/GPU acceleration
-trueno = { version = "0.17", default-features = false }
+trueno = { workspace = true, default-features = false }
 
 # Shared Batuta stack utilities (display traits, formatting)
 batuta-common = "0.1"
@@ -32,13 +32,13 @@ thiserror = "2.0"
 aprender = { path = "../aprender-core", version = "0.31.2", package = "aprender-core", optional = true }
 
 # Optional: Graph integration
-trueno-graph = { version = "0.1.17", optional = true, default-features = false }
+trueno-graph = { workspace = true, optional = true, default-features = false }
 
 # Optional: Database integration
 trueno-db = { version = "0.3.16", optional = true }
 
 # Optional: Training integration and inference monitoring
-entrenar = { version = "0.6", optional = true }
+entrenar = { workspace = true, optional = true }
 
 # Optional: Serialization (for ML inference monitoring visualization)
 serde = { version = "1.0", features = ["derive"], optional = true }
@@ -56,7 +56,7 @@ rmp-serde = { version = "1.3", optional = true }
 rustls = { version = "0.23", optional = true }
 
 # Optional: Stack integration for monitoring
-realizar = { version = "0.7", optional = true }
+realizar = { workspace = true, optional = true }
 # trueno-zram = { version = "0.1", optional = true }  # Not yet on crates.io
 repartir = { version = "2.0", optional = true }
 

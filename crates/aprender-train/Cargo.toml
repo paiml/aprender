@@ -74,16 +74,16 @@ hub-publish = ["hub", "dep:reqwest"]  # HuggingFace Hub publishing + leaderboard
 provable-contracts-macros = { version = "0.2" }
 # Core PAIML stack
 ndarray = "0.16"
-trueno = { version = "0.17", features = ["parallel"] }  # SIMD-accelerated compute
-trueno-gpu = { version = "0.4", optional = true }  # CUDA compute
-realizar = { version = "0.8", optional = true }  # CUDA inference engine
+trueno = { workspace = true, features = ["parallel"] }  # SIMD-accelerated compute
+trueno-gpu = { workspace = true, optional = true }  # CUDA compute
+realizar = { workspace = true, optional = true }  # CUDA inference engine
 aprender = { path = "../aprender-core", version = "0.31.2", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
 trueno-viz = { version = "0.2", features = ["terminal"] }  # Terminal visualization
 presentar-terminal = { version = "0.3.5", optional = true }  # Sovereign TUI framework (gated by "tui" feature)
 presentar-core = "0.3.4"  # Presentar core traits (crates.io — path removed, presentar restructured)
 trueno-db = { version = "0.3.16", optional = true }  # Time-series storage
 chrono = { version = "0.4", features = ["serde"] }  # Timestamps for metric storage
-renacer = { version = "0.9", optional = true }  # Distributed tracing
+renacer = { workspace = true, optional = true }  # Distributed tracing
 wasm-bindgen = { version = "0.2", optional = true }  # WASM bindings
 getrandom = { version = "0.3", features = ["wasm_js"], optional = true }  # WASM random
 js-sys = { version = "0.3", optional = true }  # JavaScript types for WASM
