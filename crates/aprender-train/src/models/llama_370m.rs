@@ -479,6 +479,70 @@ pub fn verdict_from_decode_tps(measured_tps: f32) -> Ship020Verdict {
 }
 
 // ─────────────────────────────────────────────────────────────
+// AC-SHIP2-008 / FALSIFY-SHIP-018 — HumanEval pass@1 threshold
+// ─────────────────────────────────────────────────────────────
+//
+// Spec §5.2 AC-SHIP2-008 states: `apr eval --benchmark humaneval`
+// must report pass@1 ≥ 30.0% for the trained 370M `.apr` artifact.
+// The decision rule is a pure (correct, total) → pct comparison;
+// the compute-heavy harness (164 HumanEval tasks × `apr run` ×
+// greedy sampling) is fixture-swappable once a trained artifact
+// exists. Landing the threshold function today discharges
+// GATE-ARCH-370M-007 at PARTIAL_ALGORITHM_LEVEL and catches any
+// future drift in the 30.0 floor at `cargo test` time — before a
+// single HumanEval task is dispatched.
+
+/// Contract-frozen floor for AC-SHIP2-008: HumanEval pass@1 must
+/// reach **30.0%** on the trained 370M artifact. The numeric floor
+/// mirrors `contracts/model-families/llama-370m-sovereign-v1.yaml`
+/// GATE-ARCH-370M-007 rule body and spec §5.2 AC-SHIP2-008.
+pub const AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT: f32 = 30.0;
+
+/// Binary verdict emitted by [`verdict_from_pass_at_1`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship018Verdict {
+    /// `correct / total * 100 ≥ threshold_pct` and inputs are well-formed.
+    Pass,
+    /// Any of: ratio < threshold, `total == 0`, non-finite threshold.
+    Fail,
+}
+
+/// Decision function for AC-SHIP2-008 / FALSIFY-SHIP-018.
+///
+/// Returns [`Ship018Verdict::Pass`] iff `correct / total * 100`
+/// is ≥ `threshold_pct`. Conservative-Fail guards:
+///
+///   - `total == 0` → Fail (avoid division-by-zero; an empty run
+///     cannot satisfy a positive threshold).
+///   - `correct > total` → Fail (nonsensical input; a real
+///     harness can never report more passes than attempts).
+///   - `!threshold_pct.is_finite()` → Fail (NaN / ±∞ contract
+///     drift — no real contract floor can be non-finite).
+///
+/// Stored per-ULP ratio comparisons use f32 arithmetic to keep the
+/// verdict a pure function of its inputs with no harness state.
+#[must_use]
+pub fn verdict_from_pass_at_1(correct: usize, total: usize, threshold_pct: f32) -> Ship018Verdict {
+    if total == 0 {
+        return Ship018Verdict::Fail;
+    }
+    if correct > total {
+        return Ship018Verdict::Fail;
+    }
+    if !threshold_pct.is_finite() {
+        return Ship018Verdict::Fail;
+    }
+    // Safe: correct ≤ total ≤ usize::MAX; f32 cast preserves ordering
+    // within the humaneval range (total ≤ 164 for canonical HumanEval).
+    let ratio_pct = (correct as f32 / total as f32) * 100.0_f32;
+    if ratio_pct >= threshold_pct {
+        Ship018Verdict::Pass
+    } else {
+        Ship018Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Unit tests
 // ─────────────────────────────────────────────────────────────
 
@@ -951,6 +1015,7 @@ mod tests {
         );
     }
 
+
     // ========================================================================
     // GATE-ARCH-370M-005 / AC-SHIP2-007 / FALSIFY-SHIP-017
     // ========================================================================
@@ -1250,6 +1315,239 @@ mod tests {
             Some(true),
             "GATE-ARCH-370M-006 must advertise ship_blocking:true — the \
              gate's `verdict:pass` alone is insufficient green while \
+             discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-SHIP-018 / AC-SHIP2-008 / GATE-ARCH-370M-007 — pass@1 threshold
+    // ========================================================================
+
+    /// Algorithm-level proof that `verdict_from_pass_at_1` enforces the
+    /// spec §5.2 AC-SHIP2-008 rule "HumanEval pass@1 ≥ 30.0%" correctly:
+    ///
+    ///   1. Exactly-at-floor passes (30/100, 60/200, 1/1 at threshold 100).
+    ///   2. One f32 ULP below the floor fails.
+    ///   3. Generous-green (50/100, 164/164) passes.
+    ///   4. Hard-red (0/100, 1/100) fails.
+    ///   5. Monotonicity: sweeping `correct` upward from 0 with total fixed
+    ///      at 164 (canonical HumanEval) never flips Pass → Fail.
+    ///   6. Div-safety guard: `total == 0` always fails, even with 0 correct.
+    ///   7. Sanity guard: `correct > total` always fails (impossible harness).
+    ///   8. Non-finite threshold guard: NaN / ±∞ always fail.
+    ///   9. Provenance: the contract floor const is pinned to 30.0 (edit
+    ///      to the const without amending the contract is caught here).
+    ///
+    /// Full `apr eval --benchmark humaneval` discharge blocks on the trained
+    /// 370M .apr from AC-SHIP2-003/004 compute-dispatch — fixture swap only.
+    #[test]
+    fn falsify_ship_018_humaneval_pass_at_1_threshold_logic() {
+        // ── (1) Exactly-at-floor → Pass
+        assert_eq!(
+            verdict_from_pass_at_1(30, 100, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "30/100 = 30.0% must pass the 30.0 floor",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(60, 200, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "60/200 = 30.0% must pass the 30.0 floor",
+        );
+        // HumanEval canonical N=164 at-floor: ⌈0.3 × 164⌉ = 50 → 50/164 = 30.49%
+        assert_eq!(
+            verdict_from_pass_at_1(50, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "50/164 ≈ 30.49% must pass the 30.0 floor",
+        );
+
+        // ── (2a) Just below the floor → Fail.
+        //
+        // 49/164 ≈ 29.878% computes to a ratio strictly less than 30.0 in
+        // f32 (see below) and must therefore fail against the 30.0 floor.
+        // (Note: 30/100 in f32 rounds to ~30.000002, slightly *above* 30.0,
+        // so "exactly-at-floor" must be tested with ratios that are exact
+        // in f32 — see case (2b).)
+        assert_eq!(
+            verdict_from_pass_at_1(49, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "49/164 ≈ 29.88% must fail the 30.0 floor",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(29, 100, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "29/100 = 29.0% must fail the 30.0 floor",
+        );
+
+        // ── (2b) Inclusive-floor proof at an f32-exact ratio.
+        //
+        // 50/100 → exactly 50.0% in f32 (both operands integer-exact, the
+        // quotient 0.5 is a power of two, and 0.5 × 100.0 = 50.0 exactly).
+        // This lets us prove the comparison is `>=` (inclusive), not `>`:
+        //   - Threshold = 50.0              → Pass (exact equality).
+        //   - Threshold = 50.0 + one ULP    → Fail (strictly above ratio).
+        //   - Threshold = 50.0 - one ULP    → Pass (strictly below ratio).
+        let exact_50 = 50.0_f32;
+        assert_eq!(50.0_f32 * 2.0_f32, 100.0_f32, "sanity: 50.0 is exact in f32");
+        let fifty_plus_ulp = f32::from_bits(exact_50.to_bits() + 1);
+        let fifty_minus_ulp = f32::from_bits(exact_50.to_bits() - 1);
+        assert!(fifty_plus_ulp > exact_50, "sanity: +ULP is strictly above");
+        assert!(fifty_minus_ulp < exact_50, "sanity: −ULP is strictly below");
+        assert_eq!(
+            verdict_from_pass_at_1(50, 100, exact_50),
+            Ship018Verdict::Pass,
+            "inclusive floor: 50.0% ≥ 50.0 must Pass (proves `>=`, not `>`)",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(50, 100, fifty_plus_ulp),
+            Ship018Verdict::Fail,
+            "50/100 must fail when threshold is one ULP above 50.0",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(50, 100, fifty_minus_ulp),
+            Ship018Verdict::Pass,
+            "50/100 must pass when threshold is one ULP below 50.0",
+        );
+
+        // ── (3) Generous-green
+        assert_eq!(
+            verdict_from_pass_at_1(82, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "82/164 = 50% must pass",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(164, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "perfect score must pass",
+        );
+
+        // ── (4) Hard-red
+        assert_eq!(
+            verdict_from_pass_at_1(0, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "zero-correct run must fail",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(1, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "1/164 ≈ 0.6% must fail",
+        );
+
+        // ── (5) Monotonicity sweep: correct ∈ 0..=164, total = 164
+        //
+        // Over an increasing `correct` axis the verdict is allowed to flip
+        // Fail → Pass exactly once; it must never flip Pass → Fail.
+        let total = 164usize;
+        let mut already_passed = false;
+        for correct in 0..=total {
+            let v =
+                verdict_from_pass_at_1(correct, total, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT);
+            match v {
+                Ship018Verdict::Pass => {
+                    already_passed = true;
+                }
+                Ship018Verdict::Fail => {
+                    assert!(
+                        !already_passed,
+                        "monotonicity violated: correct={correct} reverted Pass→Fail",
+                    );
+                }
+            }
+        }
+
+        // ── (6) Div-safety: total=0 must always fail
+        assert_eq!(
+            verdict_from_pass_at_1(0, 0, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "empty run (total=0) must fail — a positive floor is unsatisfiable",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(0, 0, 0.0_f32),
+            Ship018Verdict::Fail,
+            "empty run must fail even with a zero threshold — the harness \
+             is broken if it reports an empty denominator",
+        );
+
+        // ── (7) Sanity guard: correct > total
+        assert_eq!(
+            verdict_from_pass_at_1(165, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "correct > total is a broken harness report; must fail closed",
+        );
+
+        // ── (8) Non-finite threshold → Fail
+        assert_eq!(
+            verdict_from_pass_at_1(164, 164, f32::NAN),
+            Ship018Verdict::Fail,
+            "NaN threshold must fail",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(164, 164, f32::INFINITY),
+            Ship018Verdict::Fail,
+            "+∞ threshold must fail",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(164, 164, f32::NEG_INFINITY),
+            Ship018Verdict::Fail,
+            "−∞ threshold must fail",
+        );
+
+        // ── (9) Provenance pin
+        assert!(
+            (AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT - 30.0_f32).abs() < f32::EPSILON,
+            "contract floor drift: AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT \
+             must stay pinned to 30.0 (spec §5.2 AC-SHIP2-008)",
+        );
+    }
+
+    /// Binds the YAML contract's `GATE-ARCH-370M-007` block to this test
+    /// binary: any rename, removal, or discharge_status regression in
+    /// `contracts/model-families/llama-370m-sovereign-v1.yaml` is caught
+    /// at `cargo test` time.
+    #[test]
+    fn falsify_ship_018_gate_arch_370m_007_has_partial_discharge_marker() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+
+        let gates = doc["gates"].as_sequence().expect("contract must have `gates:` sequence");
+
+        let gate = gates
+            .iter()
+            .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-007"))
+            .expect("GATE-ARCH-370M-007 (SHIP-018 humaneval pass@1) must be present");
+
+        assert_eq!(
+            gate["binds_to"].as_str(),
+            Some("AC-SHIP2-008"),
+            "GATE-ARCH-370M-007 must bind AC-SHIP2-008",
+        );
+        assert_eq!(
+            gate["falsification_id"].as_str(),
+            Some("FALSIFY-SHIP-018"),
+            "GATE-ARCH-370M-007 must bind FALSIFY-SHIP-018",
+        );
+        assert_eq!(
+            gate["discharge_status"].as_str(),
+            Some("PARTIAL_ALGORITHM_LEVEL"),
+            "GATE-ARCH-370M-007 must advertise PARTIAL_ALGORITHM_LEVEL — \
+             full discharge blocks on trained 370M .apr + real apr eval",
+        );
+        let evidence = gate["evidence_discharged_by"]
+            .as_sequence()
+            .expect("GATE-ARCH-370M-007 must have evidence_discharged_by");
+        assert!(
+            !evidence.is_empty(),
+            "GATE-ARCH-370M-007 evidence_discharged_by must list at least \
+             one test function or const pin",
+        );
+        assert!(
+            gate["full_discharge_blocks_on"].as_str().is_some(),
+            "PARTIAL gate must document full_discharge_blocks_on",
+        );
+        assert_eq!(
+            gate["ship_blocking"].as_bool(),
+            Some(true),
+            "GATE-ARCH-370M-007 must advertise ship_blocking:true — \
+             verdict:pass alone is insufficient green while \
              discharge_status == PARTIAL_ALGORITHM_LEVEL",
         );
     }
