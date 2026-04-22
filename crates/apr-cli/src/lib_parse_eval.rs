@@ -82,13 +82,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Flow {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Flow {
                 file,
                 layer,
                 component,
                 verbose,
                 json: _,
-            }) => {
+            })) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(layer, Some("encoder.0".to_string()));
                 assert_eq!(component, "encoder");
@@ -104,12 +104,12 @@
         let args = vec!["apr", "flow", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Flow {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Flow {
                 component,
                 verbose,
                 layer,
                 ..
-            }) => {
+            })) => {
                 assert_eq!(component, "full");
                 assert!(!verbose);
                 assert!(layer.is_none());
@@ -135,7 +135,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Hex {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Hex {
                 file,
                 tensor,
                 limit,
@@ -143,7 +143,7 @@
                 list,
                 json,
                 ..
-            }) => {
+            })) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(tensor, Some("embed.weight".to_string()));
                 assert_eq!(limit, 128);
@@ -161,14 +161,14 @@
         let args = vec!["apr", "hex", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Hex {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Hex {
                 limit,
                 stats,
                 list,
                 json,
                 tensor,
                 ..
-            }) => {
+            })) => {
                 assert_eq!(limit, 64);
                 assert!(!stats);
                 assert!(!list);
@@ -196,13 +196,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Tree {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Tree {
                 file,
                 filter,
                 format,
                 sizes,
                 depth,
-            }) => {
+            })) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(filter, Some("encoder".to_string()));
                 assert_eq!(format, "mermaid");
@@ -219,13 +219,13 @@
         let args = vec!["apr", "tree", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Tree {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Tree {
                 format,
                 sizes,
                 depth,
                 filter,
                 ..
-            }) => {
+            })) => {
                 assert_eq!(format, "ascii");
                 assert!(!sizes);
                 assert!(depth.is_none());
@@ -253,7 +253,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Probar {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Probar {
                 file,
                 output,
                 format,
@@ -261,7 +261,7 @@
                 layer,
                 assert,
                 tolerance,
-            }) => {
+            })) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(output, PathBuf::from("/tmp/probar"));
                 assert_eq!(format, "json");
@@ -280,13 +280,13 @@
         let args = vec!["apr", "probar", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Probar {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Probar {
                 output,
                 format,
                 golden,
                 layer,
                 ..
-            }) => {
+            })) => {
                 assert_eq!(output, PathBuf::from("./probar-export"));
                 assert_eq!(format, "both");
                 assert!(golden.is_none());

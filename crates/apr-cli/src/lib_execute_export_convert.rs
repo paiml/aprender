@@ -36,7 +36,7 @@
     /// Test execute_command: Hex with non-existent file returns error
     #[test]
     fn test_execute_hex_file_not_found() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::Hex {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Hex {
             file: PathBuf::from("/tmp/nonexistent_model_hex_test.apr"),
             tensor: None,
             limit: 64,
@@ -52,7 +52,7 @@
             offset: String::new(),
             width: 16,
             slice: None,
-        }));
+        })));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Hex should fail with non-existent file");
     }
@@ -60,13 +60,13 @@
     /// Test execute_command: Tree with non-existent file returns error
     #[test]
     fn test_execute_tree_file_not_found() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::Tree {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Tree {
             file: PathBuf::from("/tmp/nonexistent_model_tree_test.apr"),
             filter: None,
             format: "ascii".to_string(),
             sizes: false,
             depth: None,
-        }));
+        })));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Tree should fail with non-existent file");
     }
@@ -74,13 +74,13 @@
     /// Test execute_command: Flow with non-existent file returns error
     #[test]
     fn test_execute_flow_file_not_found() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::Flow {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Flow {
             file: PathBuf::from("/tmp/nonexistent_model_flow_test.apr"),
             layer: None,
             component: "full".to_string(),
             verbose: false,
             json: false,
-        }));
+        })));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Flow should fail with non-existent file");
     }
@@ -88,7 +88,7 @@
     /// Test execute_command: Probar with non-existent file returns error
     #[test]
     fn test_execute_probar_file_not_found() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Probar {
             file: PathBuf::from("/tmp/nonexistent_model_probar_test.apr"),
             output: PathBuf::from("/tmp/probar-out"),
             format: "both".to_string(),
@@ -96,7 +96,7 @@
             layer: None,
             assert: false,
             tolerance: 0.98,
-        }));
+        })));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Probar should fail with non-existent file");
     }

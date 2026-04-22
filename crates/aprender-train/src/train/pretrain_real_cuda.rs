@@ -30,6 +30,7 @@
 
 #![cfg(feature = "cuda")]
 
+use crate::train::cycling_iter::next_batch_or_panic;
 use crate::train::pretrain::{CheckpointFn, EpochArtifact, StepFn, ValFn};
 use crate::train::pretrain_real::llama_370m_train_config;
 use crate::train::transformer_trainer::{CudaTransformerTrainer, LMBatch};
@@ -82,12 +83,13 @@ impl CudaRealStepFn {
 
 impl StepFn for CudaRealStepFn {
     fn step(&mut self, _step: u64, _lr: f32, _batch_tokens: u64) -> (f32, f32) {
-        // Exhausted shard stream: emit a finite placeholder so the
-        // NaN/Inf guard (INV-TRAIN-007) doesn't mis-fire and the
-        // divergence guard (GATE-TRAIN-005) correctly does not abort.
-        let Some(batch) = self.batches.next() else {
-            return (1.0, 1.0);
-        };
+        // INV-TRAIN-011 / GATE-TRAIN-EXHAUST: same contract as the CPU
+        // peer (`RealStepFn::step`). Exhaustion must surface either as
+        // real cycled compute (caller wraps the iterator in
+        // `CyclingBatchIter`) or as a `GATE-TRAIN-EXHAUST` panic —
+        // never as the silent `(1.0, 1.0)` placeholder that was the
+        // task #141 defect.
+        let batch = next_batch_or_panic(&mut *self.batches);
         let mut trainer = self.trainer.borrow_mut();
         let loss = trainer.train_batch(&batch);
         // Real LM-head L2 norm — strictly more informative than the
@@ -165,5 +167,91 @@ impl CheckpointFn for CudaAprCheckpointFn {
         trainer
             .save_apr(&artifact.checkpoint_path, &self.model_name, &self.architecture)
             .map_err(|e| format!("save_apr (cuda) failed: {e}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! GATE-TRAIN-EXHAUST CUDA-peer discharge. These tests require a
+    //! real CUDA GPU because `CudaTransformerTrainer::new` allocates
+    //! on-device — they mirror `pretrain_real.rs` tests one-for-one
+    //! and are `#[ignore]`d by default, matching the project pattern
+    //! (`cuda_cublas_parity.rs`). Run with:
+    //!     cargo test -p aprender-train --features cuda -- --ignored cuda_stepfn
+    use super::*;
+    use crate::train::transformer_trainer::TransformerTrainConfig;
+    use crate::transformer::TransformerConfig;
+
+    fn tiny_cuda_trainer() -> SharedCudaTrainer {
+        // Bypass `build_shared_cuda_trainer` (370M debug_assert) and
+        // construct the GPU trainer with a minimum synthetic config.
+        let mut tiny = TransformerConfig::llama2_7b();
+        tiny.hidden_size = 64;
+        tiny.num_attention_heads = 4;
+        tiny.num_kv_heads = 4;
+        tiny.num_hidden_layers = 2;
+        tiny.intermediate_size = 128;
+        tiny.vocab_size = 256;
+        let cfg = TransformerTrainConfig::new(tiny);
+        let trainer = CudaTransformerTrainer::new(cfg)
+            .expect("tiny CUDA trainer init — requires real GPU, #[ignore]d test");
+        Rc::new(RefCell::new(trainer))
+    }
+
+    /// INV-TRAIN-011 / GATE-TRAIN-EXHAUST CUDA peer (a): confirm
+    /// `CudaRealStepFn::step` panics with `GATE-TRAIN-EXHAUST` on
+    /// shard-stream exhaustion — never returns the `(1.0, 1.0)`
+    /// placeholder tuple. Mirrors the CPU-peer assertion in
+    /// `pretrain_real.rs::tests::cpu_stepfn_exhaustion_does_not_emit_constant_placeholder`.
+    #[test]
+    #[ignore] // Requires GPU — run with: cargo test --features cuda -- --ignored
+    fn cuda_stepfn_exhaustion_does_not_emit_constant_placeholder() {
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+        let trainer = tiny_cuda_trainer();
+        let empty_iter: Box<dyn Iterator<Item = LMBatch>> = Box::new(std::iter::empty::<LMBatch>());
+        let mut step = CudaRealStepFn::new(trainer, empty_iter);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let _ = step.step(0, 1.0e-4, 128);
+        }));
+        let err = result.expect_err(
+            "INV-TRAIN-011 (cuda): exhausted shard stream MUST panic, \
+             not return a placeholder tuple",
+        );
+        let msg = err
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| err.downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        assert!(
+            msg.contains(crate::train::cycling_iter::EXHAUST_PANIC_PREFIX),
+            "panic must cite GATE-TRAIN-EXHAUST, got: {msg:?}"
+        );
+    }
+
+    /// INV-TRAIN-011 / GATE-TRAIN-EXHAUST CUDA peer (b): when the
+    /// caller opts into cycling via `CyclingBatchIter`, the CUDA
+    /// `StepFn` keeps emitting real GPU compute across the cycle
+    /// boundary. Mirrors `pretrain_real.rs::tests::cpu_stepfn_exhaustion_cycles_or_halts`.
+    #[test]
+    #[ignore] // Requires GPU — run with: cargo test --features cuda -- --ignored
+    fn cuda_stepfn_exhaustion_cycles_or_halts() {
+        use crate::train::cycling_iter::CyclingBatchIter;
+        let trainer = tiny_cuda_trainer();
+        let factory = || -> Box<dyn Iterator<Item = LMBatch>> {
+            let sequences: Vec<Vec<u32>> = vec![(0..5u32).collect()];
+            Box::new(vec![LMBatch::from_sequences(&sequences, 0, 0)].into_iter())
+        };
+        let cycling = CyclingBatchIter::new(factory);
+        let flag = cycling.has_cycled_flag();
+        let mut step = CudaRealStepFn::new(trainer, Box::new(cycling));
+        for i in 0..3 {
+            let (loss, grad_norm) = step.step(i, 1.0e-4, 128);
+            assert!(loss.is_finite(), "call {i}: loss must be finite");
+            assert!(grad_norm.is_finite() && grad_norm >= 0.0, "call {i}: grad_norm guard");
+        }
+        assert!(
+            flag.load(std::sync::atomic::Ordering::SeqCst),
+            "CyclingBatchIter must have cycled at least once in 3 calls",
+        );
     }
 }

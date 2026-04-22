@@ -22,8 +22,7 @@ use serde_json::Value;
 pub const REQUIRED_COLUMNS: &[&str] = &["NAME", "SIZE", "PROCESSOR"];
 
 /// Required JSON fields per row, with expected type category.
-pub const REQUIRED_FIELDS: &[&str] =
-    &["name", "id", "size_bytes", "processor", "until"];
+pub const REQUIRED_FIELDS: &[&str] = &["name", "id", "size_bytes", "processor", "until"];
 
 /// Reason a row (or header) is rejected.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,8 +94,12 @@ fn is_valid_processor(s: &str) -> bool {
         if parts.len() != 2 {
             return false;
         }
-        let a = parts[0].strip_suffix('%').and_then(|x| x.parse::<u32>().ok());
-        let b = parts[1].strip_suffix('%').and_then(|x| x.parse::<u32>().ok());
+        let a = parts[0]
+            .strip_suffix('%')
+            .and_then(|x| x.parse::<u32>().ok());
+        let b = parts[1]
+            .strip_suffix('%')
+            .and_then(|x| x.parse::<u32>().ok());
         return matches!((a, b), (Some(a), Some(b)) if a + b == 100);
     }
     false
@@ -175,12 +178,10 @@ pub fn validate_ps_row(v: &Value) -> Result<(), PsSchemaError> {
         return Err(PsSchemaError::IdTooShort(id.to_string()));
     }
 
-    let sb = obj["size_bytes"]
-        .as_u64()
-        .ok_or(PsSchemaError::WrongType {
-            field: "size_bytes".into(),
-            expected: "u64",
-        })?;
+    let sb = obj["size_bytes"].as_u64().ok_or(PsSchemaError::WrongType {
+        field: "size_bytes".into(),
+        expected: "u64",
+    })?;
     if sb == 0 {
         return Err(PsSchemaError::WrongType {
             field: "size_bytes".into(),
@@ -279,12 +280,7 @@ mod tests {
         // CRUX-A-12 ALGO-004 sub-claim of FALSIFY-004: the ollama-
         // parity header superset check passes on a canonical header.
         assert!(header_has_required_columns("NAME ID SIZE PROCESSOR UNTIL").is_ok());
-        assert!(
-            header_has_required_columns(
-                "NAME\tID\tSIZE\tPROCESSOR\tUNTIL"
-            )
-            .is_ok()
-        );
+        assert!(header_has_required_columns("NAME\tID\tSIZE\tPROCESSOR\tUNTIL").is_ok());
     }
 
     #[test]
@@ -434,8 +430,7 @@ mod tests {
 
     #[test]
     fn header_missing_name_rejected() {
-        let err =
-            header_has_required_columns("ID SIZE PROCESSOR UNTIL").unwrap_err();
+        let err = header_has_required_columns("ID SIZE PROCESSOR UNTIL").unwrap_err();
         assert_eq!(err, PsSchemaError::MissingColumn("NAME".into()));
     }
 
@@ -454,8 +449,7 @@ mod tests {
     #[test]
     fn header_named_not_a_name_match() {
         // "NAMED" is not "NAME" — whole-token match only.
-        let err =
-            header_has_required_columns("NAMED SIZE PROCESSOR").unwrap_err();
+        let err = header_has_required_columns("NAMED SIZE PROCESSOR").unwrap_err();
         assert_eq!(err, PsSchemaError::MissingColumn("NAME".into()));
     }
 
@@ -463,8 +457,7 @@ mod tests {
     fn header_case_matters() {
         // Columns are ALL-CAPS by convention — lowercase rejected
         // (matches ollama exactly).
-        let err =
-            header_has_required_columns("name size processor").unwrap_err();
+        let err = header_has_required_columns("name size processor").unwrap_err();
         assert!(matches!(err, PsSchemaError::MissingColumn(_)));
     }
 

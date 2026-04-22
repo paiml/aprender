@@ -9133,3 +9133,226 @@ roadmap:
   - competitor-apr-qa-playbook
   - crux-m-10
   notes: null
+- id: PMAT-679
+  github_issue: null
+  item_type: task
+  title: 'SHIP-TWO-002: GATE-GPUTRAIN-003 residency discharge on lambda-labs RTX 4090'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-22T05:44:25Z
+  updated: 2026-04-22T05:54:31Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 2 apr pretrain --device cuda:0 smoke dispatched on lambda-labs post-#998 main (commit 0b2b9f2ea, binary v0.31.2 built with --features cuda). 50-step MODEL-2 from-scratch on RTX 4090 sm_89 (batch=4 seq=256 vocab=50257). Peak 6400 MiB GPU (baseline 903), 99% util, 25 real steps in 1.45s, val_loss 11.14->10.83, grad_norm_max 2.26 (real GPU grad, not CPU 1.0 placeholder), optimizer_state_sha cb267627..., 1.49GB APR checkpoint. Evidence: evidence/gpu-training-backend/smoke-{gpu-trace,metadata,stdout}-2026-04-22.{csv,json,log}. Remaining: wire GATE-GPUTRAIN-003 harness + full 10k-step 370M via task #126.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - model-2
+  - cuda
+  - aprender-train
+  - gate-gputrain-003
+  notes: null
+- id: PMAT-680
+  github_issue: null
+  item_type: task
+  title: 'SHIP-TWO-003: Promote GATE-GPUTRAIN-003 PARTIAL → ACTIVE via per-PID residency probe'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-22T05:54:19Z
+  updated: 2026-04-22T06:00:57Z
+  spec: null
+  acceptance_criteria:
+  - 'PMAT-679 discharged GATE-GPUTRAIN-003 at PARTIAL_ALGORITHM_LEVEL using nvidia-smi --query-gpu (global device memory). Contract v1.1.0 §FALSIFY-GPUTRAIN-003 demands the stronger per-PID signal via nvidia-smi --query-compute-apps=pid,used_memory so the probe pins residency to the training PID, not global device memory. Remaining work: (1) add parse_nvidia_smi_compute_apps_csv() + assert_pid_residency_discharge() alongside the current --query-gpu probe in crates/aprender-train/src/train/device.rs, (2) re-dispatch the smoke capturing BOTH CSV formats in parallel, (3) bump contract to v1.2.0 ACTIVE once the PID-level binding is evidenced.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - model-2
+  - cuda
+  - aprender-train
+  - gate-gputrain-003
+  - follow-up
+  notes: null
+- id: PMAT-681
+  github_issue: null
+  item_type: task
+  title: Promote GATE-GPUTRAIN-001/002 pending → active (harness already green)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-22T06:17:06Z
+  updated: 2026-04-22T06:20:31Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract gpu-training-backend-v1 has GATE-GPUTRAIN-001 (device grammar) and GATE-GPUTRAIN-002 (no silent CPU fallback) marked verdict: pending, but the Phase 1 harness (17 tests in crates/aprender-train/src/train/device.rs) is green and the --device CLI flag integration tests (cli_pretrain_device_*) pass. Promote both to verdict: active with discharge_status: PARTIAL_ALGORITHM_LEVEL and evidence pointers to the test paths. Bump contract to v1.3.0. Cheap, no GPU needed, advances the contract''s Phase 4 PROPOSED→ACTIVE target.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - model-2
+  - gpu-training
+  - phase-2
+  notes: null
+- id: PMAT-682
+  github_issue: null
+  item_type: task
+  title: Wire apr --version --json cuda state (GATE-GPUTRAIN-006)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-22T06:20:52Z
+  updated: 2026-04-22T06:27:59Z
+  spec: null
+  acceptance_criteria:
+  - 'Implement --version --json output emitting {cuda_feature: bool, cuda_runtime_available: bool, visible_devices: [{index, name}]}. Distinguishes ''compiled without cuda'' from ''compiled with cuda but no GPU visible'' (FM-GPUTRAIN-STALE-BUILD). Discharges GATE-GPUTRAIN-006 via FALSIFY-GPUTRAIN-007. No GPU dispatch needed.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - model-2
+  - gpu-training
+  - cli
+  notes: null
+- id: PMAT-683
+  github_issue: null
+  item_type: task
+  title: 'GATE-GPUTRAIN-005 discharge: CPU path peer-gates green on --device cpu --synthetic'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-22T06:28:36Z
+  updated: 2026-04-22T06:30:47Z
+  spec: null
+  acceptance_criteria:
+  - 'Run apr pretrain --device cpu --synthetic on lambda-labs; verify GATE-TRAIN-001..010 from training-loop-pretrain-v1 stay green. Bump contract gpu-training-backend-v1.yaml: GATE-GPUTRAIN-005 verdict pending → active. Store run trace under evidence/gpu-training-backend/cpu-synthetic-smoke-2026-04-22.log. No 10k-step dispatch — this is the CPU-path smoke only.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - gputrain
+  - cpu-parity
+  - ship-two-001
+  notes: null
+- id: PMAT-684
+  github_issue: null
+  item_type: task
+  title: 'GATE-GPUTRAIN-004 discharge: 370M step time < 500ms on RTX 4090 (50-step smoke)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-22T06:28:42Z
+  updated: 2026-04-22T06:32:37Z
+  spec: null
+  acceptance_criteria:
+  - 'Run apr pretrain --device cuda:0 --synthetic or minimal real-corpus with max_steps=50; capture per-step wall_ms JSONL; assert median(steps[20..49]) < 500 ms. Evidence path: evidence/gpu-training-backend/rtx4090-370m-step-budget-2026-04-22.jsonl. Bump contract gpu-training-backend-v1.yaml: GATE-GPUTRAIN-004 verdict pending → active with evidence_discharged_by pointer. NOT a 10k-step dispatch — this is the step-time budget smoke.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - gputrain
+  - step-budget
+  - ship-two-001
+  notes: null
+- id: PMAT-685
+  github_issue: null
+  item_type: task
+  title: Port distill recipe into monorepo as binding contract
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-22T06:43:31Z
+  updated: 2026-04-22T06:48:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Create contracts/model-families/qwen2-distill-v1.yaml binding configs/distill/distill-32b-7b-text.yaml to the actual QLoRA run: (1) rank field (32, not 16 — closes config drift root cause), (2) per-epoch gate GATE-DISTILL-001: train_loss < 2.5 after epoch 0 else abort, (3) config hash binding INV-DISTILL-001: metadata.json.data_hash must match recipe hash, (4) corpus-size gate GATE-DISTILL-002: teacher-completions.jsonl must contain >= target_tokens completions. Port recipe + data pipeline from /home/noah/src/apr-leaderboard into aprender monorepo under crates/aprender-train/recipes/. No compute in this ticket — contract + code only.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - model-1
+  - distillation
+  - contract-first
+  notes: null
+- id: PMAT-686
+  github_issue: null
+  item_type: task
+  title: 'Stage 1: regenerate teacher completions (target=500K tokens, not 99)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-22T06:43:38Z
+  updated: 2026-04-22T07:49:06.713507246+00:00
+  spec: null
+  acceptance_criteria:
+  - Current data/distill/teacher-completions.jsonl has 99 completions — 10× undersized vs recipe target_tokens=500000. Root cause of overfitting divergence per MODEL-1 v2 post-mortem. Dispatch apr distill generate against checkpoints/qwen2.5-coder-32b-instruct-q4km.apr teacher on lambda-labs or gx10 until target hit (expected ~4-8 GPU-hours on RTX 4090 @ 150 tok/s Q4K). Capture sha256(teacher-completions.jsonl) for INV-DISTILL-001 binding. Blocks PMAT-687 (Stage 2 retry).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - model-1
+  - distillation
+  - compute-dispatch
+  notes: null
+- id: PMAT-687
+  github_issue: null
+  item_type: task
+  title: 'Stage 2: QLoRA retry with rank=32 + per-epoch gate + LR=5e-5'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-22T06:43:46Z
+  updated: 2026-04-22T06:43:46Z
+  spec: null
+  acceptance_criteria:
+  - 'Retry distillation with corrected hyperparameters (MODEL-1 v2 post-mortem task #86): rank=32 (match recipe), LR=5e-5 (down from 2e-4), per-epoch train_loss<2.5 gate (abort if violated), soft-label temperature review. Prerequisites: PMAT-685 contract + PMAT-686 full corpus. Expected ~8 GPU-hours per epoch × 3 epochs = 24 GPU-hours on RTX 4090; lambda-labs preferred. Output: checkpoints/qwen2.5-coder-7b-distilled-v3-q4k.apr. Evidence: per-epoch metadata.json + loss curve + eval against HumanEval (AC-SHIP1-005 gate: ≥30% pass@1). Also fix APR writer metadata heads bug: emits 56/8, should be 28/4 for Qwen2.5-7B.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - model-1
+  - distillation
+  - compute-dispatch
+  notes: null
+- id: PMAT-688
+  github_issue: null
+  item_type: task
+  title: 'TASK-141: No-silent-exhaustion in StepFn (CPU+CUDA)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-22T08:49:59Z
+  updated: 2026-04-22T08:50:03.428974448+00:00
+  spec: null
+  acceptance_criteria:
+  - Fix silent (1.0,1.0) placeholder on shard exhaustion in CudaRealStepFn::step and CPU peer RealStepFn. Discharges GATE-TRAIN-EXHAUST from training-loop-pretrain-v1 v1.5.0. Iterator-layer cycle with single INFO log OR hard-fail. 4 harness tests required.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-689
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-689'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-04-22T09:08:52.732634572+00:00
+  updated: 2026-04-22T09:08:52.732634572+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

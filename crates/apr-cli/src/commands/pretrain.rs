@@ -15,19 +15,26 @@
 use crate::error::{CliError, Result};
 use crate::output;
 use clap::ValueEnum;
-use colored::Colorize;
-use entrenar::models::llama_370m::{Llama370MConfig, assert_tokenizer_vocab_matches_model};
-use entrenar::train::device::{Device, resolve_device};
+use entrenar::train::cycling_iter::CyclingBatchIter;
+use entrenar::train::device::{resolve_device, Device};
 use entrenar::train::pretrain::{
-    CheckpointFn, LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus,
-    ScriptedVal, StepFn, TrainingRegime, ValFn,
+    CheckpointFn, LinearDecaySynthetic, PretrainConfig, PretrainLoop, RunStatus, ScriptedVal,
+    StepFn, TrainingRegime, ValFn,
 };
 use entrenar::train::pretrain_real::{
-    AprCheckpointFn, RealStepFn, RealValFn, build_shared_trainer,
+    build_shared_trainer, AprCheckpointFn, RealStepFn, RealValFn,
 };
 use entrenar::train::shard_reader::ShardBatchIter;
 use entrenar::train::transformer_trainer::LMBatch;
 use std::path::Path;
+
+#[path = "pretrain_preflight.rs"]
+mod preflight;
+use preflight::{preflight_dispatch_budget, preflight_tokenizer_vocab_matches_model};
+
+#[path = "pretrain_report.rs"]
+mod report_mod;
+use report_mod::{abort_to_err, print_header, report};
 
 /// Number of LMBatches pulled off the head of the shard stream and
 /// reserved as the held-out validation set. Chosen as a small constant
@@ -101,6 +108,7 @@ pub(crate) fn run(
     vocab_size: u32,
     synthetic: bool,
     device: &str,
+    allow_shard_cycle: bool,
     json_output: bool,
 ) -> Result<()> {
     // Contract gpu-training-backend-v1 INV-GPUTRAIN-001 / GATE-GPUTRAIN-002:
@@ -174,10 +182,12 @@ pub(crate) fn run(
             config.clone(),
             dataset,
             hp.lr_max,
+            num_steps,
             seq_length,
             batch_size,
             seed,
             resolved_device,
+            allow_shard_cycle,
             json_output,
         )?
     };
@@ -217,30 +227,6 @@ fn drive_synthetic(
     run_and_report(config, step_fn, val_fn, None, json_output)
 }
 
-/// GATE-ARCH-370M-011 pre-flight: count the tokenizer's vocabulary entries
-/// from `vocab.json` and assert the count matches `Llama370MConfig::VOCAB_SIZE`
-/// before any trainer allocation. Any mismatch aborts the dispatch with a
-/// clear error naming both values and the violated invariant — the N-09 OOB
-/// escape in `Embedding::forward` would otherwise silently corrupt training.
-fn preflight_tokenizer_vocab_matches_model(tokenizer_dir: &Path) -> Result<()> {
-    let vocab_path = tokenizer_dir.join("vocab.json");
-    let vocab_json = std::fs::read_to_string(&vocab_path).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "GATE-ARCH-370M-011 pre-flight: cannot read {} ({e})",
-            vocab_path.display()
-        ))
-    })?;
-    let vocab: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&vocab_json)
-        .map_err(|e| {
-            CliError::ValidationFailed(format!(
-                "GATE-ARCH-370M-011 pre-flight: {} is not a valid vocab.json: {e}",
-                vocab_path.display()
-            ))
-        })?;
-    assert_tokenizer_vocab_matches_model(vocab.len(), Llama370MConfig::VOCAB_SIZE)
-        .map_err(CliError::ValidationFailed)
-}
-
 /// Real-corpus drive: build a shared 370M trainer (CPU or CUDA), split
 /// the shard stream head-off into a held-out validation set, and run a
 /// full forward + backward + AdamW step per training batch.
@@ -253,10 +239,12 @@ fn drive_real(
     config: PretrainConfig,
     dataset: &Path,
     lr: f32,
+    num_steps: usize,
     seq_length: usize,
     batch_size: usize,
     seed: u64,
     device: Device,
+    allow_shard_cycle: bool,
     json_output: bool,
 ) -> Result<RunStatus> {
     // GATE-ARCH-370M-011 / INV-ARCH-370M-006 — refuse to dispatch a real
@@ -265,6 +253,18 @@ fn drive_real(
     // mismatch at runtime → silent garbage gradients otherwise. Synthetic
     // drive skips this check because it never touches the real model.
     preflight_tokenizer_vocab_matches_model(&config.tokenizer_dir)?;
+
+    // GATE-CORPUS-PREFLIGHT / FALSIFY-CORPUS-004 — refuse to dispatch
+    // when the planned token budget exceeds corpus total_tokens unless
+    // `--allow-shard-cycle` is set. Runs BEFORE trainer allocation so
+    // a wrong-sized corpus costs zero GPU time.
+    let (planned_tokens, total_tokens) = preflight_dispatch_budget(
+        dataset,
+        num_steps,
+        batch_size,
+        seq_length,
+        allow_shard_cycle,
+    )?;
 
     // MVP: pad_id/eos_id both 0. All sequences are uniform length
     // (seq_length + 1) so LMBatch::from_sequences takes the shared
@@ -293,20 +293,65 @@ fn drive_real(
         )));
     }
 
+    // Resolve the training iterator. When the operator opted into
+    // cycling AND the planned budget exceeds the corpus, wrap the
+    // shard reader in a `CyclingBatchIter` that re-opens the dir
+    // (skipping held-out batches) on each cycle boundary and emits a
+    // single INFO log at the first cycle. Otherwise use the plain
+    // iterator so `GATE-TRAIN-EXHAUST` fires on over-run.
+    let train_iter: Box<dyn Iterator<Item = LMBatch>> =
+        if allow_shard_cycle && planned_tokens > total_tokens {
+            let dataset_pb = dataset.to_path_buf();
+            let factory = move || -> Box<dyn Iterator<Item = LMBatch>> {
+                let mut fresh = ShardBatchIter::new(&dataset_pb, batch_size, seq_length, 0, 0)
+                    .expect("GATE-CORPUS-PREFLIGHT cycle factory: shard re-open failed");
+                // Keep the train/val split stable across cycles by
+                // skipping past the held-out prefix on every rebuild.
+                for _ in 0..HELD_OUT_BATCHES {
+                    if fresh.next().is_none() {
+                        break;
+                    }
+                }
+                Box::new(fresh)
+            };
+            Box::new(CyclingBatchIter::new(factory))
+        } else {
+            Box::new(iter)
+        };
+
     if device.is_cuda() {
-        drive_real_cuda(config, iter, held_out, lr, seq_length, seed, json_output)
+        drive_real_cuda(
+            config,
+            train_iter,
+            held_out,
+            lr,
+            seq_length,
+            seed,
+            json_output,
+        )
     } else {
-        drive_real_cpu(config, iter, held_out, lr, seq_length, seed, json_output)
+        drive_real_cpu(
+            config,
+            train_iter,
+            held_out,
+            lr,
+            seq_length,
+            seed,
+            json_output,
+        )
     }
 }
 
 /// CPU backend for `drive_real` — builds a `TransformerTrainer`
 /// (`aprender::Tensor` + trueno SIMD) and wires `RealStepFn` /
-/// `RealValFn` / `AprCheckpointFn`.
+/// `RealValFn` / `AprCheckpointFn`. Accepts a pre-boxed iterator so
+/// the caller can choose between a plain `ShardBatchIter` (INV-TRAIN-011
+/// hard-fail on exhaustion) and a `CyclingBatchIter` wrapper
+/// (INV-TRAIN-011 path a, `--allow-shard-cycle`).
 #[allow(clippy::too_many_arguments)]
 fn drive_real_cpu(
     config: PretrainConfig,
-    iter: entrenar::train::shard_reader::ShardBatchIter,
+    iter: Box<dyn Iterator<Item = LMBatch>>,
     held_out: Vec<LMBatch>,
     lr: f32,
     seq_length: usize,
@@ -314,7 +359,7 @@ fn drive_real_cpu(
     json_output: bool,
 ) -> Result<RunStatus> {
     let trainer = build_shared_trainer(lr, seq_length, seed);
-    let step_fn = RealStepFn::new(trainer.clone(), Box::new(iter));
+    let step_fn = RealStepFn::new(trainer.clone(), iter);
     let val_fn = RealValFn::new(trainer.clone(), held_out);
     let ckpt: Box<dyn CheckpointFn> = Box::new(AprCheckpointFn::new(
         trainer,
@@ -335,7 +380,7 @@ fn drive_real_cpu(
 #[allow(clippy::too_many_arguments)]
 fn drive_real_cuda(
     config: PretrainConfig,
-    iter: entrenar::train::shard_reader::ShardBatchIter,
+    iter: Box<dyn Iterator<Item = LMBatch>>,
     held_out: Vec<LMBatch>,
     lr: f32,
     seq_length: usize,
@@ -353,7 +398,7 @@ fn drive_real_cuda(
              only reachable when the binary was built with `--features cuda`.",
         ))
     })?;
-    let step_fn = CudaRealStepFn::new(trainer.clone(), Box::new(iter));
+    let step_fn = CudaRealStepFn::new(trainer.clone(), iter);
     let val_fn = CudaRealValFn::new(trainer.clone(), held_out);
     let ckpt: Box<dyn CheckpointFn> = Box::new(CudaAprCheckpointFn::new(
         trainer,
@@ -374,7 +419,7 @@ fn drive_real_cuda(
 #[allow(clippy::too_many_arguments)]
 fn drive_real_cuda(
     _config: PretrainConfig,
-    _iter: entrenar::train::shard_reader::ShardBatchIter,
+    _iter: Box<dyn Iterator<Item = LMBatch>>,
     _held_out: Vec<LMBatch>,
     _lr: f32,
     _seq_length: usize,
@@ -411,521 +456,6 @@ fn run_and_report<S: StepFn, V: ValFn>(
     Ok(status)
 }
 
-fn abort_to_err(abort: &PretrainAbort) -> CliError {
-    match abort {
-        PretrainAbort::Divergence { .. } | PretrainAbort::DivergenceAtEpochZero { .. } => {
-            CliError::ValidationFailed(format!(
-                "GATE-TRAIN-005 ship-blocker fired: {abort}. See \
-                 contracts/training-loop-pretrain-v1.yaml and \
-                 memory/project_ship_two_001_model1_qlora_divergence.md"
-            ))
-        }
-        PretrainAbort::NumericalInstability { .. } => {
-            CliError::ValidationFailed(format!("GATE-TRAIN-007 NaN/Inf guard fired: {abort}"))
-        }
-        PretrainAbort::ThroughputOutOfRange { .. } => CliError::ValidationFailed(format!(
-            "GATE-TRAIN-008 throughput-range guard fired: {abort}"
-        )),
-    }
-}
-
-fn print_header(cfg: &PretrainConfig) {
-    output::header("apr pretrain — SHIP-TWO-001 MODEL-2 training loop");
-    println!();
-    output::section("Configuration");
-    output::kv("  Dataset", cfg.dataset_path.display().to_string());
-    output::kv("  Tokenizer", cfg.tokenizer_dir.display().to_string());
-    output::kv("  Run dir", cfg.run_dir.display().to_string());
-    output::kv("  LR max", format!("{:.2e}", cfg.lr_max));
-    output::kv("  Total steps", cfg.total_steps.to_string());
-    output::kv("  Warmup steps", cfg.warmup_steps.to_string());
-    output::kv(
-        "  Batch × seq",
-        format!("{} × {}", cfg.batch_size, cfg.seq_length),
-    );
-    output::kv("  Steps / epoch", cfg.steps_per_epoch.to_string());
-    output::kv("  Seed", cfg.seed.to_string());
-    output::kv("  Target val_loss", format!("{:.2}", cfg.target_val_loss));
-    println!();
-}
-
-fn report<S: entrenar::train::pretrain::StepFn, V: entrenar::train::pretrain::ValFn>(
-    status: &RunStatus,
-    loop_: &PretrainLoop<S, V>,
-    json_output: bool,
-) -> Result<()> {
-    if json_output {
-        let report = PretrainReport::from(status, loop_);
-        let json = serde_json::to_string_pretty(&report)
-            .map_err(|e| CliError::InvalidFormat(e.to_string()))?;
-        println!("{json}");
-        return Ok(());
-    }
-
-    output::section("Run Result");
-    match status {
-        RunStatus::Ok {
-            final_val_loss,
-            epochs_completed,
-        } => {
-            println!(
-                "  {} CONVERGED  final val_loss={:.4} after {} epoch(s)",
-                "OK".green().bold(),
-                final_val_loss,
-                epochs_completed
-            );
-        }
-        RunStatus::EarlyStop {
-            best_val_loss,
-            epochs_completed,
-        } => {
-            println!(
-                "  {} EARLY_STOP  best val_loss={:.4} after {} epoch(s)",
-                "OK".yellow().bold(),
-                best_val_loss,
-                epochs_completed
-            );
-        }
-        RunStatus::Aborted(abort) => {
-            println!("  {} ABORTED  {}", "FAIL".red().bold(), abort);
-        }
-    }
-    output::kv("  Steps recorded", loop_.step_metrics().len().to_string());
-    output::kv(
-        "  Epochs recorded",
-        loop_.epoch_artifacts().len().to_string(),
-    );
-    println!();
-    Ok(())
-}
-
-#[derive(serde::Serialize)]
-struct PretrainReport {
-    status: String,
-    detail: Option<String>,
-    final_val_loss: Option<f32>,
-    epochs_completed: usize,
-    steps_recorded: usize,
-    val_loss_history: Vec<f32>,
-}
-
-impl PretrainReport {
-    fn from<S: entrenar::train::pretrain::StepFn, V: entrenar::train::pretrain::ValFn>(
-        status: &RunStatus,
-        loop_: &PretrainLoop<S, V>,
-    ) -> Self {
-        let (status_name, detail, final_val_loss, epochs_completed) = match status {
-            RunStatus::Ok {
-                final_val_loss,
-                epochs_completed,
-            } => (
-                "OK".to_string(),
-                None,
-                Some(*final_val_loss),
-                *epochs_completed,
-            ),
-            RunStatus::EarlyStop {
-                best_val_loss,
-                epochs_completed,
-            } => (
-                "EARLY_STOP".to_string(),
-                None,
-                Some(*best_val_loss),
-                *epochs_completed,
-            ),
-            RunStatus::Aborted(abort) => (
-                "ABORTED".to_string(),
-                Some(abort.to_string()),
-                None,
-                loop_.epoch_artifacts().len(),
-            ),
-        };
-        PretrainReport {
-            status: status_name,
-            detail,
-            final_val_loss,
-            epochs_completed,
-            steps_recorded: loop_.step_metrics().len(),
-            val_loss_history: loop_.val_loss_history().to_vec(),
-        }
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    /// Stage a `vocab.json` with exactly `n` distinct integer-string tokens at
-    /// `<dir>/vocab.json`. Used by pre-flight gate tests + by other tests that
-    /// need to get PAST the GATE-ARCH-370M-011 pre-flight to exercise a later
-    /// failure mode (e.g. empty dataset shards).
-    fn stage_vocab_json(dir: &std::path::Path, n: usize) {
-        std::fs::create_dir_all(dir).expect("mkdir tokenizer dir");
-        let mut obj = serde_json::Map::with_capacity(n);
-        for i in 0..n {
-            obj.insert(format!("t{i}"), serde_json::Value::from(i as u64));
-        }
-        let json = serde_json::to_string(&obj).expect("serialize");
-        std::fs::write(dir.join("vocab.json"), json).expect("write vocab.json");
-    }
-
-    #[test]
-    fn preflight_accepts_matching_vocab() {
-        // GATE-ARCH-370M-011 acceptance case: tokenizer vocab.json with
-        // exactly Llama370MConfig::VOCAB_SIZE entries must pass pre-flight.
-        let tmp = TempDir::new().expect("tempdir");
-        stage_vocab_json(tmp.path(), Llama370MConfig::VOCAB_SIZE);
-        preflight_tokenizer_vocab_matches_model(tmp.path())
-            .expect("matching vocab must pass GATE-ARCH-370M-011");
-    }
-
-    #[test]
-    fn preflight_rejects_tokenizer_vocab_mismatch() {
-        // FALSIFY-ARCH-370M-011: a tokenizer whose vocab size drifts from
-        // the model's pinned VOCAB_SIZE MUST abort dispatch with an error
-        // message that names both values and the gate id, so the operator
-        // can see the mismatch without stepping through code. Task #131
-        // bumped VOCAB_SIZE to 50_257 (Option A) — the counter-example
-        // below now exercises a tokenizer one token short of contract.
-        let tmp = TempDir::new().expect("tempdir");
-        let mismatch = Llama370MConfig::VOCAB_SIZE - 1;
-        stage_vocab_json(tmp.path(), mismatch);
-        let err = preflight_tokenizer_vocab_matches_model(tmp.path())
-            .expect_err("tokenizer/model vocab mismatch must be rejected");
-        match err {
-            CliError::ValidationFailed(msg) => {
-                assert!(
-                    msg.contains("GATE-ARCH-370M-011"),
-                    "msg must cite gate: {msg}"
-                );
-                assert!(
-                    msg.contains(&mismatch.to_string()),
-                    "msg must name tokenizer vocab: {msg}"
-                );
-                assert!(
-                    msg.contains(&Llama370MConfig::VOCAB_SIZE.to_string()),
-                    "msg must name model vocab: {msg}"
-                );
-            }
-            other => panic!("unexpected error: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn preflight_rejects_missing_vocab_json() {
-        // Missing vocab.json is a pre-flight failure (not a later shard
-        // error) — the operator should know the tokenizer layout is
-        // wrong, not that the dataset is empty.
-        let tmp = TempDir::new().expect("tempdir");
-        let err = preflight_tokenizer_vocab_matches_model(tmp.path())
-            .expect_err("missing vocab.json must be rejected");
-        match err {
-            CliError::ValidationFailed(msg) => {
-                assert!(
-                    msg.contains("GATE-ARCH-370M-011"),
-                    "msg must cite gate: {msg}"
-                );
-                assert!(
-                    msg.contains("cannot read"),
-                    "msg must name I/O failure: {msg}"
-                );
-            }
-            other => panic!("unexpected error: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn synthetic_pretrain_end_to_end_happy_path() {
-        let tmp = TempDir::new().expect("tempdir");
-        let dataset = tmp.path().join("data.jsonl");
-        let tokenizer = tmp.path().join("tok");
-        let run_dir = tmp.path().join("run");
-
-        let result = run(
-            &dataset,
-            &tokenizer,
-            &run_dir,
-            PretrainMode::Finetune,
-            Some(5.0e-5),
-            25,
-            Some(5),
-            2,
-            4,
-            5,
-            42,
-            Some(2.2),
-            50257,
-            true,
-            "cpu",
-            true,
-        );
-        assert!(
-            result.is_ok(),
-            "synthetic pretrain end-to-end must succeed: got {result:?}"
-        );
-    }
-
-    #[test]
-    fn real_mode_empty_dataset_dir_errors() {
-        // When --synthetic is off, the real-corpus branch must surface a
-        // clear error if the dataset directory has no .bin shards. This
-        // supersedes the old "non-synthetic is not implemented" guard.
-        // Stage a valid vocab.json first so GATE-ARCH-370M-011 pre-flight
-        // passes — otherwise the shard-iterator error below is never reached.
-        let tmp = TempDir::new().expect("tempdir");
-        let tok_dir = tmp.path().join("tok");
-        stage_vocab_json(&tok_dir, Llama370MConfig::VOCAB_SIZE);
-        let err = run(
-            tmp.path(),
-            &tok_dir,
-            tmp.path(),
-            PretrainMode::Finetune,
-            Some(5.0e-5),
-            10,
-            Some(2),
-            2,
-            4,
-            5,
-            42,
-            Some(2.2),
-            50257,
-            false,
-            "cpu",
-            true,
-        )
-        .expect_err("empty dataset dir must fail to initialise the shard iterator");
-        match err {
-            CliError::ValidationFailed(msg) => {
-                assert!(
-                    msg.contains("shard iterator init failed"),
-                    "unexpected message: {msg}"
-                );
-            }
-            other => panic!("unexpected error: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn invalid_target_val_loss_rejected() {
-        let tmp = TempDir::new().expect("tempdir");
-        let err = run(
-            tmp.path(),
-            tmp.path(),
-            tmp.path(),
-            PretrainMode::Finetune,
-            Some(5.0e-5),
-            10,
-            Some(2),
-            2,
-            4,
-            5,
-            42,
-            Some(-1.0),
-            50257,
-            true,
-            "cpu",
-            true,
-        )
-        .expect_err("negative target_val_loss must be rejected");
-        assert!(matches!(err, CliError::ValidationFailed(_)));
-    }
-
-    // ── GATE-TRAIN-009 / INV-TRAIN-009 falsifiers ──────────────────────
-    // Contract: training-loop-pretrain-v1 v1.3.0 §hyperparameter_defaults
-    //
-    // These tests bind the CLI's `mode_defaults` resolver to the
-    // hyperparameter_defaults YAML table. If the table is ever edited
-    // without also updating this resolver (or vice versa), the tests
-    // fail. That is exactly the drift INV-TRAIN-009 forbids.
-
-    #[test]
-    fn mode_finetune_is_default_and_matches_contract() {
-        // No overrides → resolved HP matches the `finetune` YAML row
-        // (lr_max=5e-5, warmup_steps=100, target_val_loss=2.2) AND the
-        // regime is Finetune so INV-TRAIN-005 epoch-zero cap = 10.0.
-        let hp = mode_defaults(PretrainMode::Finetune, 50257, None, None, None);
-        assert_eq!(hp.regime, TrainingRegime::Finetune);
-        assert!(
-            (hp.lr_max - 5.0e-5).abs() < 1.0e-12,
-            "lr_max={} must equal finetune default 5e-5",
-            hp.lr_max
-        );
-        assert_eq!(hp.warmup_steps, 100);
-        assert!(
-            (hp.target_val_loss - 2.2).abs() < 1.0e-6,
-            "target_val_loss={} must equal finetune default 2.2",
-            hp.target_val_loss
-        );
-    }
-
-    #[test]
-    fn mode_from_scratch_applies_all_four_defaults() {
-        // `--mode from-scratch` with no HP overrides MUST yield the full
-        // cold-start 4-tuple atomically — regime=FromScratch, lr=3e-4,
-        // warmup=1000, target=3.0. INV-TRAIN-009 falsifier (a).
-        let hp = mode_defaults(PretrainMode::FromScratch, 50257, None, None, None);
-        assert_eq!(hp.regime, TrainingRegime::FromScratch { vocab_size: 50257 });
-        assert!(
-            (hp.lr_max - 3.0e-4).abs() < 1.0e-12,
-            "lr_max={} must equal from_scratch default 3e-4",
-            hp.lr_max
-        );
-        assert_eq!(hp.warmup_steps, 1000);
-        assert!(
-            (hp.target_val_loss - 3.0).abs() < 1.0e-6,
-            "target_val_loss={} must equal from_scratch default 3.0",
-            hp.target_val_loss
-        );
-    }
-
-    #[test]
-    fn mode_from_scratch_honors_explicit_lr_override() {
-        // `--mode from-scratch --lr 1e-4` → regime still flips to
-        // FromScratch AND warmup/target keep the from_scratch defaults,
-        // but lr_max is the operator-supplied 1e-4. INV-TRAIN-009
-        // falsifier (b): overrides win, regime still moves.
-        let hp = mode_defaults(PretrainMode::FromScratch, 50257, Some(1.0e-4), None, None);
-        assert_eq!(hp.regime, TrainingRegime::FromScratch { vocab_size: 50257 });
-        assert!(
-            (hp.lr_max - 1.0e-4).abs() < 1.0e-12,
-            "lr_max={} must equal explicit override 1e-4",
-            hp.lr_max
-        );
-        // Remaining two fields retained their mode defaults.
-        assert_eq!(hp.warmup_steps, 1000);
-        assert!((hp.target_val_loss - 3.0).abs() < 1.0e-6);
-    }
-
-    // ── GATE-TRAIN-010 / INV-TRAIN-010 falsifiers ──────────────────────
-    // Contract: training-loop-pretrain-v1 v1.4.0 §INV-TRAIN-010
-    //
-    // Task #105's original wiring shipped `synthetic: bool` with
-    // `default_value = "true"`. The `--synthetic` flag had no
-    // companion to turn it off, so every invocation of `apr pretrain`
-    // silently routed to drive_synthetic. Tasks #119 / #124 / #125
-    // all captured scripted-loss output and mis-labeled it real
-    // compute. These two tests parse actual argv through clap and
-    // assert the routing discriminator byte-for-byte.
-
-    fn parse_pretrain_synthetic(extra: &[&str]) -> bool {
-        // The `Commands` enum is large enough in debug builds to overflow
-        // the default 2 MiB test-thread stack during clap's recursive
-        // destructuring. Run the parse on a worker thread with a 16 MiB
-        // stack so this falsifier passes in both debug and release.
-        let extra: Vec<String> = extra.iter().map(|s| (*s).to_string()).collect();
-        std::thread::Builder::new()
-            .stack_size(16 * 1024 * 1024)
-            .spawn(move || {
-                use clap::Parser;
-                let mut argv: Vec<String> = vec![
-                    "apr".to_string(),
-                    "pretrain".to_string(),
-                    "--dataset".to_string(),
-                    "/tmp/_gate_train_010/ds".to_string(),
-                    "--tokenizer".to_string(),
-                    "/tmp/_gate_train_010/tok".to_string(),
-                    "--run-dir".to_string(),
-                    "/tmp/_gate_train_010/run".to_string(),
-                ];
-                argv.extend(extra);
-                let cli = crate::Cli::try_parse_from(&argv).expect("clap parse must succeed");
-                match *cli.command {
-                    crate::Commands::Extended(crate::ExtendedCommands::Pretrain {
-                        synthetic,
-                        ..
-                    }) => synthetic,
-                    other => panic!("expected ExtendedCommands::Pretrain, got {other:?}"),
-                }
-            })
-            .expect("spawn parse thread")
-            .join()
-            .expect("parse thread must not panic")
-    }
-
-    #[test]
-    fn cli_pretrain_defaults_to_real_compute() {
-        // Absent `--synthetic` MUST parse to synthetic=false so the
-        // dispatcher routes through drive_real.
-        assert!(
-            !parse_pretrain_synthetic(&[]),
-            "INV-TRAIN-010: `apr pretrain` (no --synthetic) must parse to synthetic=false"
-        );
-    }
-
-    #[test]
-    fn cli_pretrain_synthetic_flag_routes_to_synthetic() {
-        // `--synthetic` present MUST parse to synthetic=true.
-        assert!(
-            parse_pretrain_synthetic(&["--synthetic"]),
-            "INV-TRAIN-010: `apr pretrain --synthetic` must parse to synthetic=true"
-        );
-    }
-
-    // ── FALSIFY-GPUTRAIN-001 / 002 CLI surface (contract phase 1) ────
-    // Contract: gpu-training-backend-v1 §device_dispatch
-    //
-    // These tests parse actual `apr pretrain --device …` argv through
-    // clap and assert the string is surfaced byte-for-byte to the
-    // dispatcher. `resolve_device()` itself is exercised by
-    // `aprender-train::train::device::tests` — these tests verify that
-    // the CLI flag exists and that its default is `auto` (the only
-    // spec allowed to fall back).
-
-    fn parse_pretrain_device(extra: &[&str]) -> String {
-        let extra: Vec<String> = extra.iter().map(|s| (*s).to_string()).collect();
-        std::thread::Builder::new()
-            .stack_size(16 * 1024 * 1024)
-            .spawn(move || {
-                use clap::Parser;
-                let mut argv: Vec<String> = vec![
-                    "apr".to_string(),
-                    "pretrain".to_string(),
-                    "--dataset".to_string(),
-                    "/tmp/_gputrain_device/ds".to_string(),
-                    "--tokenizer".to_string(),
-                    "/tmp/_gputrain_device/tok".to_string(),
-                    "--run-dir".to_string(),
-                    "/tmp/_gputrain_device/run".to_string(),
-                ];
-                argv.extend(extra);
-                let cli = crate::Cli::try_parse_from(&argv).expect("clap parse must succeed");
-                match *cli.command {
-                    crate::Commands::Extended(crate::ExtendedCommands::Pretrain {
-                        device,
-                        ..
-                    }) => device,
-                    other => panic!("expected ExtendedCommands::Pretrain, got {other:?}"),
-                }
-            })
-            .expect("spawn parse thread")
-            .join()
-            .expect("parse thread must not panic")
-    }
-
-    #[test]
-    fn cli_pretrain_device_defaults_to_auto() {
-        // Absent `--device`, the flag MUST parse to `"auto"` — the only
-        // spec allowed to silently fall back to CPU when CUDA is not
-        // available. Any other default would violate the contract's
-        // "explicit request → hard-fail" invariant.
-        assert_eq!(
-            parse_pretrain_device(&[]),
-            "auto",
-            "gpu-training-backend-v1 INV-GPUTRAIN-002: default --device must be `auto`",
-        );
-    }
-
-    #[test]
-    fn cli_pretrain_device_accepts_cpu() {
-        // `--device cpu` MUST round-trip through clap unchanged.
-        assert_eq!(parse_pretrain_device(&["--device", "cpu"]), "cpu");
-    }
-
-    #[test]
-    fn cli_pretrain_device_accepts_cuda_index() {
-        // `--device cuda:7` MUST round-trip unchanged; grammar
-        // enforcement happens in `resolve_device`, not at clap.
-        assert_eq!(parse_pretrain_device(&["--device", "cuda:7"]), "cuda:7");
-    }
-}
+#[path = "pretrain_tests.rs"]
+mod tests;

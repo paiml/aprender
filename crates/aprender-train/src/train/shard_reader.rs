@@ -59,6 +59,32 @@ impl ShardBatchIter {
         })
     }
 
+    /// Count the total u32 tokens across every `.bin` shard in
+    /// `dataset_dir` without opening a reader. Each token is 4 bytes
+    /// little-endian, so `token_count = Σ(file_size / 4)`.
+    ///
+    /// Used by the `apr pretrain` pre-flight gate
+    /// (`contracts/pretraining-corpus-v1.yaml` v2.0.0 §FALSIFY-CORPUS-004)
+    /// to compare the operator's planned token budget against the
+    /// actual corpus size and refuse over-dispatch unless
+    /// `--allow-shard-cycle` is set.
+    ///
+    /// Returns `Err` if `dataset_dir` is missing / unreadable. An
+    /// empty directory (no `.bin` files) returns `Ok(0)` — the caller
+    /// decides whether zero tokens is a refusal condition.
+    pub fn count_tokens(dataset_dir: &Path) -> io::Result<u64> {
+        let mut total: u64 = 0;
+        for entry in std::fs::read_dir(dataset_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "bin") {
+                let meta = std::fs::metadata(&path)?;
+                total = total.saturating_add(meta.len() / 4);
+            }
+        }
+        Ok(total)
+    }
+
     fn ensure_reader(&mut self) -> io::Result<bool> {
         if self.cursor_reader.is_some() {
             return Ok(true);
@@ -154,6 +180,42 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let res = ShardBatchIter::new(tmp.path(), 2, 4, 0, 0);
         assert!(res.is_err(), "empty dir must error");
+    }
+
+    #[test]
+    fn count_tokens_sums_bin_sizes_divided_by_four() {
+        // GATE-CORPUS-PREFLIGHT: count across 2 shards (10 + 20 = 30 u32
+        // tokens => 120 bytes). Non-.bin files must be ignored.
+        let tmp = TempDir::new().expect("tempdir");
+        write_shard(tmp.path(), "a.bin", &(0u32..10).collect::<Vec<_>>());
+        write_shard(tmp.path(), "b.bin", &(0u32..20).collect::<Vec<_>>());
+        std::fs::write(tmp.path().join("README.md"), b"ignore me").expect("write readme");
+        assert_eq!(
+            ShardBatchIter::count_tokens(tmp.path()).expect("count"),
+            30,
+            "count_tokens must sum .bin sizes/4 and skip non-.bin files"
+        );
+    }
+
+    #[test]
+    fn count_tokens_empty_dir_returns_zero() {
+        // An empty directory is NOT an error — the pre-flight caller
+        // decides whether zero tokens is acceptable.
+        let tmp = TempDir::new().expect("tempdir");
+        assert_eq!(
+            ShardBatchIter::count_tokens(tmp.path()).expect("count empty"),
+            0,
+            "empty dir must return Ok(0), not Err"
+        );
+    }
+
+    #[test]
+    fn count_tokens_missing_dir_errors() {
+        let missing = std::path::PathBuf::from("/nonexistent/_shardreader_count_tokens_missing");
+        assert!(
+            ShardBatchIter::count_tokens(&missing).is_err(),
+            "missing directory must surface io::Error"
+        );
     }
 
     #[test]

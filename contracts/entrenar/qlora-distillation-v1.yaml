@@ -1,0 +1,400 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-QLORA-DISTILL
+# QLoRA distillation loop gates — MODEL-1 v2 post-mortem binding.
+# ─────────────────────────────────────────────────────────────
+# Complements qlora-hyperparameters-v1.yaml (classification
+# finetune HP bounds). THIS contract binds the four distillation-
+# specific failure modes surfaced by the MODEL-1 v2 autopsy
+# (2026-04-17 ∙ task #84 ∙ memory/project_ship_two_001_model1_qlora_divergence.md).
+#
+# v2 failure signature (root-cause evidence):
+#   /home/noah/src/apr-leaderboard/checkpoints/instruct-qlora-7b/best/metadata.json
+#     { "epoch": 0, "train_loss": 15.41, "val_loss": 31.99,
+#       "train_perplexity": 1e6, "lora_rank": 16, "lora_alpha": 32 }
+#
+#   /home/noah/src/apr-leaderboard/configs/distill/distill-32b-7b-text.yaml
+#     finetune.rank: 32        ← RECIPE specified
+#     synthetic_data.target_tokens: 500000  ← RECIPE specified
+#
+#   /home/noah/src/apr-leaderboard/data/distill/teacher-completions.jsonl
+#     99 completions           ← 10× undersized vs recipe target
+#
+# Four independent failures compounded:
+#   (1) Rank drift: recipe=32, actual run=16 — no binding gate.
+#   (2) Corpus undersized: 99 completions instead of 500K tokens
+#       — no pre-flight gate; 99 samples overfit in epoch 0.
+#   (3) No per-epoch loss gate: train_loss=15.41 at epoch 0 is a
+#       divergence signature; run continued and wrote the best/
+#       checkpoint anyway, producing `ylkoylkoylko…` garbage.
+#   (4) LR=2e-4 hot for temperature=4.0 soft-label distillation;
+#       qlora-hyperparameters-v1 C-HP-001 bound (2e-4 for ≤13B)
+#       is calibrated for classification, NOT for high-temperature
+#       distillation. Distillation needs lr ≤ 5e-5 per task #86.
+#
+# Peer:   contracts/entrenar/qlora-hyperparameters-v1.yaml
+# Peer:   contracts/entrenar/lora-gradient-flow-v1.yaml
+# Peer:   contracts/apr-model-qa-v1.yaml
+#
+# References:
+#   - memory/project_ship_two_001_model1_qlora_divergence.md
+#   - memory/project_ship_two_001_model1_falsified.md
+#   - task #86 (MODEL-1 retry plan with converged QLoRA)
+#   - docs/specifications/aprender-train/ship-two-models-spec.md
+#     §MODEL-1 AC-SHIP1-005
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-QLORA-DISTILL
+version: 1.1.0
+status: PROPOSED
+
+# Revision history
+# ─────────────────
+# 1.0.0  2026-04-22  Initial: 5 INV-DISTILL invariants, 5 gates (verdict=pending),
+#                    5 falsification tests. Binds MODEL-1 v2 post-mortem failure chain.
+# 1.1.0  2026-04-22  PMAT-685 algorithm-level discharge: 14 harness tests wired in
+#                    crates/aprender-train/src/distill/{preflight,driver,apr_writer}.rs.
+#                    All 5 GATE-DISTILL gates promoted verdict pending → active with
+#                    discharge_status: PARTIAL_ALGORITHM_LEVEL. Full ACTIVE promotion
+#                    still blocks on PMAT-686 (500K-token corpus regen) + PMAT-687
+#                    (rank=32 retry with all 5 gates live).
+
+metadata:
+  id: C-QLORA-DISTILL
+  version: "1.1.0"
+  created: "2026-04-22"
+  author: PAIML Engineering
+  description: >
+    Four gates the MODEL-1 v2 run lacked: (a) recipe-to-run config
+    binding (closes rank-drift), (b) corpus-size pre-flight (closes
+    99-sample overfit), (c) per-epoch train_loss abort (closes
+    non-convergence continuing to write checkpoint), (d) distillation-
+    LR bound (lower cap when soft-label temperature > 2.0). Each gate
+    binds a specific step in the MODEL-1 v2 failure chain so no future
+    distillation can reproduce the ylkoylkoylko garbage mode.
+  registry: true
+  kind: training-loop
+  peer_contracts:
+    - contracts/entrenar/qlora-hyperparameters-v1.yaml
+    - contracts/entrenar/lora-gradient-flow-v1.yaml
+    - contracts/apr-model-qa-v1.yaml
+  references:
+    - "memory/project_ship_two_001_model1_qlora_divergence.md"
+    - "memory/project_ship_two_001_model1_falsified.md"
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §MODEL-1 AC-SHIP1-005"
+
+summary: >
+  Distillation gates: recipe-binding, corpus-size pre-flight,
+  per-epoch loss abort, distillation-LR bound. Enforces that the
+  config file an operator reads is the config the run executes,
+  that the input corpus is the one the recipe asked for, that a
+  diverging run aborts before writing a bad checkpoint, and that
+  high-temperature soft-label distillation does not reuse the
+  classification LR default.
+
+motivation: >
+  MODEL-1 v2 (qwen2.5-coder-7b-distilled-v2-q4k.apr) emitted
+  `ylkoylkoylko…` garbage. Autopsy found four independent gaps,
+  each of which would have caught the failure on its own: rank
+  drift (16≠32), corpus 10× undersized, no per-epoch loss abort
+  at train_loss=15.41, and a classification-calibrated LR=2e-4
+  applied to temperature=4.0 distillation. This contract codifies
+  the four gates so the retry cannot repeat the failure.
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — machine-checkable properties
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-DISTILL-001
+    description: >
+      Recipe-to-run binding. `metadata.json.data_hash` AND every
+      hyperparameter written to metadata.json MUST equal the value
+      in the recipe YAML, verified by sha256 over the canonicalised
+      recipe blob. In particular:
+        metadata.lora_rank     == recipe.finetune.rank
+        metadata.lora_alpha    == recipe.finetune.rank * 2.0
+        metadata.learning_rate == recipe.finetune.learning_rate
+        metadata.epochs_target == recipe.finetune.epochs
+    falsifier: >
+      Harness: load v2 metadata.json (lora_rank=16) against recipe
+      (finetune.rank=32); binding check MUST return Err(ConfigDrift)
+      — this is the exact check that would have caught v2 pre-flight.
+
+  - id: INV-DISTILL-002
+    description: >
+      Corpus size pre-flight. Before the first gradient step, the
+      number of tokens in `synthetic_data.output` (teacher-completions.jsonl)
+      MUST be >= recipe.synthetic_data.target_tokens. Tokens are
+      counted via the student's tokenizer on the `response` field
+      of every row.
+    falsifier: >
+      Harness: load v2 teacher-completions.jsonl (~50K tokens) against
+      recipe target_tokens=500000; pre-flight MUST return
+      Err(CorpusUndersized, have=X, need=500000).
+
+  - id: INV-DISTILL-003
+    description: >
+      Per-epoch train_loss abort. After every epoch boundary, if
+      metadata.train_loss > epoch_loss_ceiling[epoch_idx], the run
+      MUST halt BEFORE writing `best/model.safetensors` and MUST NOT
+      update any "best" pointer. Default ceilings (configurable in
+      recipe.gates.epoch_loss_ceiling):
+        epoch 0: train_loss < 4.0
+        epoch 1: train_loss < 2.8
+        epoch 2: train_loss < 2.2
+      Terminal state: exit=DIVERGENCE_DETECTED with structured JSON
+      report to stderr naming the offending (epoch, train_loss,
+      ceiling) triple.
+    falsifier: >
+      Harness: synthetic trainer that emits train_loss=15.41 at
+      epoch 0; driver MUST abort without writing best/ AND MUST NOT
+      emit a non-empty `final_val_loss` field (the v2 failure mode
+      wrote the checkpoint BEFORE aborting — this gate inverts that).
+
+  - id: INV-DISTILL-004
+    description: >
+      Distillation-temperature-aware LR bound. When the recipe
+      specifies soft-label distillation with `finetune.temperature > 2.0`,
+      the learning rate MUST satisfy lr <= 5e-5 regardless of model
+      size. This tightens qlora-hyperparameters-v1 C-HP-001 (which
+      permits 2e-4 for ≤13B) for the distillation sub-case where
+      softened targets produce a flatter loss landscape that needs
+      smaller steps.
+    falsifier: >
+      Harness: construct recipe with temperature=4.0 and
+      learning_rate=2e-4; pre-flight MUST return
+      Err(LRTooHotForDistillation, lr=2e-4, ceiling=5e-5, temp=4.0).
+      Second case: temperature=1.0 with lr=2e-4 → Ok (classification
+      path, C-HP-001 applies).
+
+  - id: INV-DISTILL-005
+    description: >
+      APR-writer head-count fidelity. The `Attention Heads` and
+      `KV Heads` fields in the emitted .apr metadata MUST equal the
+      teacher checkpoint's values. Cosmetic in v2 (shapes still
+      encode the true 28/4 for Qwen2.5-7B, so runtime falls back
+      correctly), but drift makes `apr inspect` misleading and
+      blocks downstream QA. Default: copy through from teacher.
+    falsifier: >
+      Harness: write a distilled APR for Qwen2.5-7B teacher with
+      56/8 in metadata; `apr inspect` + contract check MUST return
+      Err(HeadCountDrift, file=56/8, teacher=28/4).
+
+# ─────────────────────────────────────────────────────────────
+# Gates — what the driver enforces at runtime
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-DISTILL-001
+    rule: >
+      Pre-flight recipe-to-run binding PASS (INV-DISTILL-001).
+    evidence_required: >
+      `apr distill finetune --recipe <path> --dry-run` emits
+      config_hash_sha256 and asserts each sensitive HP matches
+      recipe value. Zero errors.
+    verdict: active
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "crates/aprender-train/src/distill/preflight.rs::tests::recipe_binding_rejects_rank_drift"
+      - "crates/aprender-train/src/distill/preflight.rs::tests::recipe_binding_accepts_matching_metadata"
+      - "crates/aprender-train/src/distill/preflight.rs::tests::recipe_binding_catches_alpha_drift"
+    full_discharge_blocked_by: >
+      PMAT-687: `apr distill finetune --recipe <recipe.yaml> --dry-run`
+      CLI subcommand does not yet exist. Wiring lands when Stage 2
+      QLoRA retry dispatches.
+    binds_to: AC-SHIP1-005
+
+  - id: GATE-DISTILL-002
+    rule: >
+      Pre-flight corpus-size PASS (INV-DISTILL-002).
+    evidence_required: >
+      Token count of `response` field in teacher-completions.jsonl
+      (via student tokenizer) is >= recipe.synthetic_data.target_tokens.
+      Captured as JSON artifact under run_dir/preflight-corpus.json.
+    verdict: active
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "crates/aprender-train/src/distill/preflight.rs::tests::corpus_preflight_rejects_99_samples"
+      - "crates/aprender-train/src/distill/preflight.rs::tests::corpus_preflight_accepts_500k_tokens"
+    full_discharge_blocked_by: >
+      PMAT-686: requires 500K-token teacher-completions.jsonl regen
+      on RTX 4090 (4-8 GPU-hours), then live token count over the
+      student's real BPE tokenizer. Harness uses a closure so the
+      algorithm is proven independent of the tokenizer choice.
+    binds_to: AC-SHIP1-005
+
+  - id: GATE-DISTILL-003
+    rule: >
+      Per-epoch divergence abort is wired (INV-DISTILL-003).
+    evidence_required: >
+      Harness test emits a synthetic trainer with train_loss=15.41
+      at epoch 0; the distill driver exits with
+      DIVERGENCE_DETECTED AND no best/ artifact exists on disk.
+    verdict: active
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "crates/aprender-train/src/distill/driver.rs::tests::epoch_0_train_loss_15_aborts"
+      - "crates/aprender-train/src/distill/driver.rs::tests::converging_epoch_0_continues"
+      - "crates/aprender-train/src/distill/driver.rs::tests::epoch_2_ceiling_tighter_than_epoch_0"
+      - "crates/aprender-train/src/distill/driver.rs::tests::epoch_beyond_ceiling_array_uses_last_bound"
+    full_discharge_blocked_by: >
+      PMAT-687: full wire-up in the TransformerTrainer step loop such
+      that `advance_epoch` is called before every best-pointer update.
+      Algorithm-level harness proves the predicate and the ordering
+      invariant (!best_dir.exists() on abort).
+    binds_to: AC-SHIP1-005
+
+  - id: GATE-DISTILL-004
+    rule: >
+      Distillation LR bound enforced (INV-DISTILL-004).
+    evidence_required: >
+      Harness: temperature=4.0 + lr=2e-4 → pre-flight Err;
+      temperature=4.0 + lr=5e-5 → Ok; temperature=1.0 + lr=2e-4 → Ok.
+    verdict: active
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "crates/aprender-train/src/distill/preflight.rs::tests::hot_temperature_rejects_2e4_lr"
+      - "crates/aprender-train/src/distill/preflight.rs::tests::hot_temperature_accepts_5e5_lr"
+      - "crates/aprender-train/src/distill/preflight.rs::tests::classification_temperature_accepts_2e4_lr"
+    full_discharge_blocked_by: >
+      PMAT-687: `apr distill finetune` CLI must consult
+      check_distill_lr_bound() during pre-flight; the retry recipe
+      ported into the monorepo (learning_rate=5e-5) demonstrates the
+      gate in situ.
+    binds_to: AC-SHIP1-005
+
+  - id: GATE-DISTILL-005
+    rule: >
+      APR-writer head-count fidelity (INV-DISTILL-005).
+    evidence_required: >
+      Harness writes distilled APR inheriting Qwen2.5-7B teacher
+      (28 heads, 4 KV heads); `apr inspect` on the output emits
+      matching values. v2 regression (56/8) rejected.
+    verdict: active
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "crates/aprender-train/src/distill/apr_writer.rs::tests::inherits_teacher_head_count"
+      - "crates/aprender-train/src/distill/apr_writer.rs::tests::fidelity_check_rejects_v2_drift"
+      - "crates/aprender-train/src/distill/apr_writer.rs::tests::fidelity_check_accepts_matching_heads"
+    full_discharge_blocked_by: >
+      PMAT-687: requires `apr inspect <distilled-v3.apr>` emitting
+      attention_heads=28, kv_heads=4 post-training. Algorithm-level
+      harness proves HeadCount equality predicate + v2 regression is
+      now rejected.
+    binds_to: AC-SHIP1-005
+
+# ─────────────────────────────────────────────────────────────
+# Falsification tests — ties each INV to a harness path
+# ─────────────────────────────────────────────────────────────
+
+falsification_tests:
+
+  - id: FALSIFY-DISTILL-001
+    title: "Recipe-to-run binding catches rank drift"
+    binds_to: INV-DISTILL-001
+    harness: "crates/aprender-train/src/distill/preflight.rs::tests::recipe_binding_rejects_rank_drift"
+    expected: "Err(ConfigDrift { field: \"lora_rank\", recipe: 32, run: 16 })"
+    if_fails: >
+      The recipe-to-run binding is not comparing lora_rank — this
+      is the EXACT defect MODEL-1 v2 had. Audit the preflight
+      struct to ensure every field the recipe declares is hashed
+      into the binding check, and that serde's defaulting behaviour
+      is not silently filling in missing fields with the recipe's
+      value (which would mask drift).
+
+  - id: FALSIFY-DISTILL-002
+    title: "Corpus pre-flight rejects 10× undersized distillation set"
+    binds_to: INV-DISTILL-002
+    harness: "crates/aprender-train/src/distill/preflight.rs::tests::corpus_preflight_rejects_99_samples"
+    expected: "Err(CorpusUndersized { have_tokens: ~50000, need_tokens: 500000 })"
+    if_fails: >
+      The pre-flight is counting rows instead of tokens, or using
+      a fixed-length heuristic. Token count MUST go through the
+      student's actual tokenizer on the `response` field.
+
+  - id: FALSIFY-DISTILL-003
+    title: "Per-epoch divergence abort halts before best/ write"
+    binds_to: INV-DISTILL-003
+    harness: "crates/aprender-train/src/distill/driver.rs::tests::epoch_0_train_loss_15_aborts"
+    expected: "exit=DIVERGENCE_DETECTED AND !Path::new(\"run_dir/best/\").exists()"
+    if_fails: >
+      The driver wrote best/ before checking the loss ceiling —
+      invert the ordering: ceiling check BEFORE best-pointer update.
+      This is the exact ordering bug that let v2's 15.41 loss
+      still produce a downloadable checkpoint.
+
+  - id: FALSIFY-DISTILL-004
+    title: "High-temperature distillation rejects classification LR"
+    binds_to: INV-DISTILL-004
+    harness: "crates/aprender-train/src/distill/preflight.rs::tests::hot_temperature_rejects_2e4_lr"
+    expected: "Err(LRTooHotForDistillation { lr: 2e-4, ceiling: 5e-5, temperature: 4.0 })"
+    if_fails: >
+      The LR gate is running the classification-path
+      qlora-hyperparameters-v1 C-HP-001 check before the
+      distillation override. Re-order: temperature > 2.0 ⇒ apply
+      the tighter 5e-5 ceiling BEFORE consulting C-HP-001.
+
+  - id: FALSIFY-DISTILL-005
+    title: "APR writer emits teacher head count, not student default"
+    binds_to: INV-DISTILL-005
+    harness: "crates/aprender-train/src/distill/apr_writer.rs::tests::inherits_teacher_head_count"
+    expected: "apr_metadata.attention_heads == 28 AND apr_metadata.kv_heads == 4"
+    if_fails: >
+      The APR writer is using a hardcoded or config-default head
+      count rather than copying from the teacher checkpoint. Wire
+      the writer to read teacher_manifest.heads explicitly.
+
+# ─────────────────────────────────────────────────────────────
+# Implementation plan — this contract alongside PMAT-685/686/687
+# ─────────────────────────────────────────────────────────────
+
+implementation_plan:
+  phase_0:
+    title: "Contract (this file) + binding docs"
+    status: completed
+    deliverables:
+      - "contracts/entrenar/qlora-distillation-v1.yaml v1.0.0 → v1.1.0 (this file)"
+      - "5 INV-DISTILL invariants + 5 GATE-DISTILL gates + 5 FALSIFY-DISTILL tests"
+      - "Cross-link memory/project_ship_two_001_model1_qlora_divergence.md"
+
+  phase_1:
+    title: "Algorithm-level harness for all 5 gates"
+    status: completed
+    prerequisites:
+      - "PMAT-685 complete (contract written + validated)"
+    deliverables:
+      - "crates/aprender-train/src/distill/preflight.rs (7 tests: INV-DISTILL-001/002/004)"
+      - "crates/aprender-train/src/distill/driver.rs (4 tests: INV-DISTILL-003)"
+      - "crates/aprender-train/src/distill/apr_writer.rs (3 tests: INV-DISTILL-005)"
+      - "14/14 cargo test -p aprender-train --lib distill:: PASS"
+      - "All 5 GATE-DISTILL verdicts → active with discharge_status PARTIAL_ALGORITHM_LEVEL"
+
+  phase_2:
+    title: "Stage 1 corpus regenerate (500K tokens)"
+    status: pending
+    prerequisites:
+      - "PMAT-686: Stage 1 regenerate teacher completions"
+    deliverables:
+      - "data/distill/teacher-completions.jsonl with token_count(response) >= 500000"
+      - "data/distill/sha256.json recording recipe_hash + corpus_sha256"
+
+  phase_3:
+    title: "Stage 2 retry under 5-gate contract"
+    status: pending
+    prerequisites:
+      - "PMAT-687: Stage 2 QLoRA retry (rank=32, LR=5e-5, per-epoch gate)"
+    deliverables:
+      - "checkpoints/qwen2.5-coder-7b-distilled-v3-q4k.apr"
+      - "evidence/ship-two-001/model-1-distilled-v3-metadata.json (per-epoch loss curve, all 5 gates PASS)"
+      - "evidence/ship-two-001/model-1-distilled-v3-humaneval.json (AC-SHIP1-005: pass@1 ≥ 30%)"
+
+  phase_4:
+    title: "Promote C-QLORA-DISTILL → ACTIVE"
+    status: pending
+    prerequisites:
+      - "All 5 GATE-DISTILL gates verdict: active with live evidence"
+    deliverables:
+      - "contracts/entrenar/qlora-distillation-v1.yaml version: 1.0.0 → 1.1.0 status: PROPOSED → ACTIVE"
+      - "Registry promotion via `pv lint contracts/`"

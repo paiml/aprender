@@ -2,13 +2,13 @@
     /// Test extract_model_paths: Tree is diagnostic (exempt)
     #[test]
     fn test_extract_paths_tree_exempt() {
-        let cmd = Commands::Extended(ExtendedCommands::Tree {
+        let cmd = Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Tree {
             file: PathBuf::from("model.apr"),
             filter: None,
             format: "ascii".to_string(),
             sizes: false,
             depth: None,
-        });
+        }));
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Tree is a diagnostic command (exempt)");
     }
@@ -16,13 +16,13 @@
     /// Test extract_model_paths: Flow is diagnostic (exempt)
     #[test]
     fn test_extract_paths_flow_exempt() {
-        let cmd = Commands::Extended(ExtendedCommands::Flow {
+        let cmd = Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Flow {
             file: PathBuf::from("model.apr"),
             layer: None,
             component: "full".to_string(),
             verbose: false,
             json: false,
-        });
+        }));
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Flow is a diagnostic command (exempt)");
     }

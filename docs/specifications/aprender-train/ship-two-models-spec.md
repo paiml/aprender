@@ -1,11 +1,11 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.23.0
-**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures); **task #132 BLOCKER surfaced 2026-04-21** on lambda-labs RTX 4090 — `apr pretrain --mode from-scratch` ran 14 min at 114% CPU + 0 MiB GPU memory because `TransformerTrainer::new` has no Device argument; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (task #132 Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006, ship-blocks task #126 real-compute dispatch
+**Version:** 2.24.0
+**Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures); task #132 CUDA training backend wired (commits proving real CUDA at 1.88 steps/s on RTX 4090 at batch=16 seq=1024); **MODEL-2 re-scoped 2026-04-22 (v2.24.0)** for world-class single-GPU (4090 / gx10) training — first 10 k-step dispatch surfaced task #141 (silent `(1.0, 1.0)` placeholder on shard exhaustion in `CudaRealStepFn`) + confirmed 18.1 M-token CSN-Python-only corpus is ~400× under-Chinchilla for 370M; new ship target: **Chinchilla-optimal 7.4 B–20 B mixed tokens** (Stack v2 + FineWeb-Edu + math) trained over ~10–28 days continuous on one 4090 or split 4090/gx10, with #141 fixed at the iterator layer before any multi-epoch dispatch
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched) / 2026-04-21 (v2.23.0 **task #132 CUDA training backend gap** surfaced on lambda-labs RTX 4090 real-compute dispatch at commit `f7ad11408` — `apr pretrain --mode from-scratch` 14min on CPU (0 MiB GPU memory) because `TransformerTrainer` has no Device awareness; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006 + FALSIFY-GPUTRAIN-001..007; production `CudaTransformerTrainer` already exists at `crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs` — gap is wiring, not kernels; task #126 real-compute dispatch BLOCKED until Phase 3 residency-proof evidence lands)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched) / 2026-04-21 (v2.23.0 **task #132 CUDA training backend gap** surfaced on lambda-labs RTX 4090 real-compute dispatch at commit `f7ad11408` — `apr pretrain --mode from-scratch` 14min on CPU (0 MiB GPU memory) because `TransformerTrainer` has no Device awareness; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006 + FALSIFY-GPUTRAIN-001..007; production `CudaTransformerTrainer` already exists at `crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs` — gap is wiring, not kernels; task #126 real-compute dispatch BLOCKED until Phase 3 residency-proof evidence lands) / 2026-04-22 (v2.24.0 **MODEL-2 re-scoped for world-class single-GPU** — first 10 k-step RTX 4090 dispatch at commit `8b425d79e` surfaced task #141 silent-placeholder defect (`CudaRealStepFn` returns exact `(1.0, 1.0)` on shard exhaustion → epochs 1-5 fake-converged after real epoch 0) + corpus inadequacy (18.1 M tokens = ~1.1 epochs of batch=16 × seq=1024 = ~400× under-Chinchilla for 370M). New target: Chinchilla-optimal 7.4 B-20 B mixed tokens (Stack v2 + FineWeb-Edu + math) over 10-28 days on one 4090 (30 M tok/hr measured) or parallel 4090/gx10; training-loop-pretrain-v1 amended with INV-TRAIN-011 no-silent-exhaustion + GATE-TRAIN-EXHAUST; pretraining-corpus-v1 target expanded 50 M → 10 B-20 B; AC-SHIP2-003/004 re-costed 10 k steps → ≥500 k steps × 16 k tokens = ≥8 B tokens)
 
 **v2.21.0 amendment (2026-04-19):** Three MODEL-2 architecture + tokenizer
 gates landed in the same post-v2.19 evidence window, on branch
@@ -1817,6 +1817,260 @@ Updated DAG:
 **Lesson codified:** `contracts/entrenar/gpu-training-backend-v1.yaml`
 GATE-GPUTRAIN-002 (ship-blocking: no silent CPU fallback when CUDA
 requested) — prevents future occurrence.
+
+---
+
+## 15. MODEL-2 re-scoped for world-class single-GPU (v2.24.0 amendment, 2026-04-22)
+
+### 15.1 Surface (what the first 10 k-step dispatch showed)
+
+At commit `8b425d79e`, on lambda-labs RTX 4090, task #126 finally ran
+with real CUDA compute wired through (task #132 closed). Command:
+
+```
+apr pretrain \
+  --dataset /mnt/nvme-raid0/data/csn-python-shards \
+  --tokenizer /mnt/nvme-raid0/models/model-2-tokenizer-v1 \
+  --run-dir /mnt/nvme-raid0/runs/model-2-from-scratch-10k-1776844258 \
+  --mode from-scratch --num-steps 10000 --warmup-steps 1000 \
+  --batch-size 16 --seq-length 1024 --seed 0 --device cuda
+```
+
+Observed timeline:
+
+| Epoch | train_loss | val_loss | wall_sec | grad_norm_max | interpretation          |
+|-------|-----------:|---------:|---------:|--------------:|-------------------------|
+| 0     |     10.083 |    9.926 |    532.6 |          1.85 | **real compute**         |
+| 1     |      1.919 |    9.907 |     55.9 |          1.25 | partial real + exhaustion |
+| 2     |      1.000 |    9.907 |      0.86 |          1.00 | placeholder              |
+| 3     |      1.000 |    9.907 |      0.85 |          1.00 | placeholder              |
+| 4     |      1.000 |    9.908 |      0.87 |          1.00 | placeholder              |
+| 5     |      1.000 |    9.908 |      0.85 |          1.00 | placeholder              |
+
+Run then early-stopped at epoch 5 / 10 on spurious `train_loss=1.0`
+crossing `target_val_loss=3.0`. Value fingerprints prove placeholder:
+`train_ppl = exp(1.0) = e = 2.7182817` exactly and `grad_norm = 1.0`
+exactly, reproducing across 4 consecutive epochs.
+
+### 15.2 Root cause (two defects stacked)
+
+**Defect A — task #141 silent placeholder.**
+`crates/aprender-train/src/train/pretrain_real_cuda.rs:84-97`:
+
+```rust
+fn step(&mut self, _step: u64, _lr: f32, _batch_tokens: u64) -> (f32, f32) {
+    // Exhausted shard stream: emit a finite placeholder so the
+    // NaN/Inf guard (INV-TRAIN-007) doesn't mis-fire and the
+    // divergence guard (GATE-TRAIN-005) correctly does not abort.
+    let Some(batch) = self.batches.next() else {
+        return (1.0, 1.0);
+    };
+    ...
+}
+```
+
+The author intended to keep INV-TRAIN-007 / GATE-TRAIN-005 from
+mis-firing once the corpus was exhausted. The effect is strictly worse:
+every subsequent step returns exact `(1.0, 1.0)`, `train_ppl`
+collapses to `e`, the divergence gate never trips, and the early-stop
+condition fires on fake convergence. The CPU peer `RealStepFn` has the
+same defect. There is no log line at the exhaustion boundary.
+
+This violates §3 Design Principle "No silent fallbacks" and
+INV-TRAIN-010 (real-compute switch must not silently degrade). Filed
+as task #141.
+
+**Defect B — corpus 400× under-Chinchilla for 370M.**
+Manifest: 18,143,273 tokens across 10 shards, all from CSN-Python
+`train-00000.jsonl`. One epoch at batch=16 × seq=1024 × 1000 steps
+demands 16,384,000 tokens, so a single epoch consumes ~90% of the
+corpus and the second epoch hits shard exhaustion within ~100 steps.
+
+Chinchilla-optimal for 370M params is 20 tokens/param = 7.4 B tokens;
+real peers overshoot Chinchilla by ~40–500×: Pythia-410M trained on
+300 B tokens, GPT-Neo-350M on 420 B, SmolLM2-360M on 4 T. 18.1 M is
+~400× below the Chinchilla *floor* and 5-6 orders of magnitude below
+world-class peers.
+
+### 15.3 Goal re-interpreted: world-class *on single-GPU*
+
+World-class dense 370M at SmolLM2 scale (4 T tokens) is unreachable on
+one 4090; Pythia-scale (300 B) is multi-year on one 4090. The feasible
+target on single-GPU hardware is **SOTA-per-FLOP** — Chinchilla-optimal
+(7.4 B tokens) with an above-floor safety margin (≤20 B tokens) and a
+high-quality mixed corpus. At the measured 30 M tokens/hour on RTX
+4090 (1.88 steps/s × 16,384 tokens/step):
+
+| Token budget | Wall time (1× 4090) | Wall time (4090 + gx10, parallel lanes, different seeds) |
+|-------------:|---------------------|----------------------------------------------------------|
+|        7.4 B | ~10.3 days          | ~5 days if both hosts at 4090 throughput                 |
+|        10 B  | ~13.9 days          | ~7 days                                                  |
+|        20 B  | ~27.8 days          | ~14 days                                                 |
+
+gx10 training throughput is presently blocked on trueno#200 Blackwell
+JIT; when trueno#203 ships pre-compiled kernels, gx10 is expected at
+≥2× 4090 throughput and the parallel-lane column collapses further.
+Inference-facing gx10 status (already-measured 38.0 tok/s decode at
+Q4_K via llama.cpp, task #104) is orthogonal — it uses cuBLAS, not
+custom PTX.
+
+### 15.4 Contract amendments
+
+**`contracts/training-loop-pretrain-v1.yaml` v1.4.0 → v1.5.0 (PROPOSED):**
+
+- **INV-TRAIN-011 — no-silent-exhaustion.** When the training stream
+  is exhausted mid-run, the loop MUST do exactly one of: (a) cycle
+  shards at the iterator layer and emit a single INFO log at the first
+  cycle boundary, OR (b) halt and surface an error naming
+  `GATE-TRAIN-EXHAUST`. Returning a constant placeholder
+  `(loss, grad_norm)` is forbidden.
+- **GATE-TRAIN-EXHAUST — ship-blocking.** Evidence: a unit test that
+  constructs a `StepFn` over an iterator of length N, calls `.step()`
+  N+1 times, and asserts the N+1st call either returns the cycled
+  first-batch output OR propagates an error — never `(1.0, 1.0)`.
+  Must cover both `CudaRealStepFn` and `RealStepFn` (CPU peer).
+
+**`contracts/pretraining-corpus-v1.yaml` v1.x → v2.0.0 (PROPOSED):**
+
+- `constraints.total_tokens_minimum` raised 50 M → 7.4 B
+  (Chinchilla-optimal floor for 370M).
+- `constraints.total_tokens_target` set to 10 B (above-floor margin).
+- `constraints.source_diversity_minimum` raised 1 → 3 distinct sources
+  (CSN-Python alone falsifies world-class goal).
+- `constraints.recommended_mix` = {Stack v2 code ≥40%, FineWeb-Edu or
+  C4-en prose ≥30%, math (MATH / OpenWebMath / arxiv-math) ≥5%, long
+  tail ≤25%}.
+- New FALSIFY-CORPUS-004 — pre-flight gate: `apr pretrain` refuses to
+  dispatch when `manifest.total_tokens < 7_400_000_000` unless
+  `--override-chinchilla-floor <ticket-id>` is passed (surfaces the
+  data inadequacy loudly).
+
+**`contracts/model-families/llama-370m-sovereign-v1.yaml` v1.5.0 → v1.6.0 (PROPOSED):**
+
+- `training.target_tokens_minimum` = 7.4 B (binds AC-SHIP2-003/004
+  to Chinchilla floor).
+- `training.hardware_profiles[]` = [
+  `{name: "rtx-4090-single", measured_tok_per_sec: 30_000_000,
+    estimated_days_7b4: 10.3, estimated_days_20b: 27.8}`,
+  `{name: "gx10-blackwell-single", status: "pending-trueno-203"}`].
+- `training.corpus_diversity_minimum` = 3 sources (binds to
+  corpus-v1 v2.0.0).
+
+### 15.5 AC-SHIP2 re-cost
+
+| AC        | Old                        | New (v2.24.0)                                                                         |
+|-----------|----------------------------|---------------------------------------------------------------------------------------|
+| SHIP2-003 | val_loss ≤ 3.0 at 10 k steps | val_loss ≤ 3.0 at ≥500 k steps (≥8 B tokens) from mixed ≥3-source corpus              |
+| SHIP2-004 | grad_norm_max ≤ 2 over run   | grad_norm_max ≤ 2 over ≥500 k steps; `tokens_seen` monotonic past 7.4 B               |
+| SHIP2-005 | param count ∈ [366M, 374M]   | unchanged (already PARTIAL via task #116)                                             |
+| new: SHIP2-013 | —                      | HumanEval pass@1 ≥ 30% on final checkpoint (binds to §2.1 albor target)               |
+| new: SHIP2-014 | —                      | corpus manifest sha256 recorded in APR metadata; `apr inspect` surfaces source split  |
+
+Existing DISCHARGED / PARTIAL gates (SHIP2-001/011/012/015/019/022)
+are unchanged — they bind to architecture and tokenizer, not token
+budget.
+
+### 15.6 Corpus expansion plan
+
+1. **Source inventory** — enumerate what is currently cached on
+   lambda-labs and gx10 (`/mnt/nvme-raid0/data/`). Expected to already
+   have partial Stack-v2 Python; needs verification.
+2. **Acquire** — `apr pull` the following HF datasets (or equivalent
+   curl path), pretokenize each to 50 257 vocab with
+   `apr tokenize encode-corpus` into per-source shard directories:
+   - `bigcode/the-stack-v2-dedup` (all mainstream languages, cap at
+     ~8 B tokens post-dedup)
+   - `HuggingFaceFW/fineweb-edu` (score ≥ 4, cap at ~8 B tokens)
+   - `open-web-math/open-web-math` (~2 B tokens) or the arxiv-math
+     subset.
+3. **Shuffle + weight** — implement a weighted round-robin shard
+   iterator at the `aprender-train` layer: for each step, pick the
+   next shard from source `s` with probability proportional to
+   `recommended_mix[s]`. This replaces the current single-directory
+   `ShardBatchIter`. Task #141 fix slots naturally here — cycling is
+   the default behavior of a round-robin iterator.
+4. **Validation** — pretokenize a 50 M-token holdout per source
+   (train/holdout disjoint), check vocab coverage ≥ 99.9% and
+   NFC-idempotent round-trip per source. Bumps FALSIFY-SHIP-012
+   (tokenizer holdout) from PARTIAL → ACTIVE once real sources are
+   used instead of the synthetic 20-doc fixture.
+5. **Disk budget** — ~20 B tokens × 4 bytes/token (u32 LE bin shards)
+   = ~80 GB on disk per copy. Within lambda-labs NVMe headroom.
+
+### 15.7 Updated critical path DAG
+
+```
+#132 CUDA wiring  CLOSED ──┐
+                           ▼
+            first 10 k-step dispatch (this amendment's evidence)
+                           │
+        surfaces ─────────► #141 (silent placeholder) + corpus inadequacy
+                           │
+                           ▼
+                  #141 fix (iterator cycle OR hard-fail, contract v1.5.0)
+                           │
+                           ▼
+         corpus expansion to 3+ sources, ≥10 B tokens, weighted iterator
+                           │
+                           ▼
+     500 k-step re-dispatch on 4090 (or parallel 4090/gx10 seeds)
+                           │
+                           ▼
+             AC-SHIP2-003/004/013/014 (val_loss ≤ 3.0, HumanEval ≥ 30%)
+                           │
+                           ▼
+                 MODEL-2 SHIP (tag: SHIP-TWO-001-MODEL-2)
+```
+
+### 15.8 Effort budget (v2.24.0)
+
+| Phase | Deliverable                                                                                               | Owner / estimate |
+|-------|-----------------------------------------------------------------------------------------------------------|------------------|
+| A     | Fix task #141 — iterator-level cycle + single-cycle INFO log; CPU + CUDA StepFn peer tests; contract v1.5.0 bump | ~1 dev-day       |
+| B     | Corpus-v2.0 contract + acquire/pretokenize Stack-v2 + FineWeb-Edu + math to ≥10 B tokens                  | ~3-5 dev-days + encode wall time |
+| C     | Weighted round-robin shard iterator + tokenizer-coverage holdout tests                                    | ~2 dev-days      |
+| D     | 500 k-step RTX 4090 dispatch; checkpoint every 10 k; eval (HumanEval / MMLU) every 50 k                   | **10-14 days wall** |
+| E     | Parallel gx10 lane (once trueno#203 lands) or second-seed 4090 lane for ensemble variance                 | ~10-14 days wall, overlaps D |
+| F     | Final eval + release tag `SHIP-TWO-001-MODEL-2` + HF push via `apr publish`                               | ~1 dev-day       |
+
+Phases A-C are code; D is compute; the 10-28 day range is dominated by
+D+E wall time.
+
+### 15.9 Risks + mitigations
+
+| Risk                                                                 | Mitigation                                                                                          |
+|----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| Weighted-mix corpus introduces new silent failures (source starvation, per-source exhaustion) | Round-robin iterator hard-fails on per-source exhaustion with source name in error; INV-TRAIN-011 peer test covers each source |
+| 10-28 day continuous run hit by host reboot / power event            | Checkpoint every 10 k steps + explicit `apr pretrain --resume` contract (follow-up ticket if not already covered by GATE-TRAIN-009) |
+| 4090 thermal / driver events on multi-week run                       | `nvidia-smi` watchdog script writes heartbeat; on thermal throttle the step-time gate trips first  |
+| Data-license audit rejects one source (Stack v2 opt-out list changes, FineWeb CC-BY terms) | Each source's license recorded in corpus manifest; `apr inspect` surfaces; swap plan per source   |
+| HumanEval contamination from Stack v2 code snippets                  | Holdout filter: remove any Stack v2 document matching HumanEval problem hashes (follow-up gate FALSIFY-SHIP-025) |
+| Chinchilla-optimal 370M still loses to 4090-scale distilled models   | Parallel path: keep MODEL-1 teacher-distill (already SHIPPED) as companion; MODEL-2 ships on "sovereign from-scratch" lane, not on absolute benchmark-max |
+
+### 15.10 Toyota Way — Five Whys
+
+1. **Why** did the 10 k-step run report OK early-stop after 6 epochs?
+   — `train_loss` hit 1.0 and the convergence check fired.
+2. **Why** did `train_loss` collapse to exactly 1.0 for 4 straight
+   epochs? — The step function returned a constant `(1.0, 1.0)` placeholder.
+3. **Why** did the step function return a placeholder? — The shard
+   iterator was exhausted (corpus had 18.1 M tokens; one epoch
+   demanded 16.4 M).
+4. **Why** did the corpus have only 18.1 M tokens for a 370M-param
+   from-scratch dispatch? — The spec's pretraining-corpus-v1 target
+   was 50 M tokens (smoke scope); no gate prevented a sub-Chinchilla
+   dispatch.
+5. **Why** did no gate prevent sub-Chinchilla dispatch? — The corpus
+   contract and the training-loop contract were written independently
+   of the model-family contract, so the constraint
+   `target_tokens ≥ 20 × param_count` was nowhere represented.
+
+**Lesson codified (v2.24.0):** bind corpus, loop, and model-family
+contracts via a **cross-contract invariant**
+`INV-CHINCHILLA-FLOOR` — `corpus.total_tokens ≥ 20 × model.param_count`
+— surfaced by the pre-flight gate (§15.4 FALSIFY-CORPUS-004) before
+any compute is dispatched. This is the first cross-contract invariant
+in SHIP-TWO-001; it is the right level for this class of defect.
 
 ---
 

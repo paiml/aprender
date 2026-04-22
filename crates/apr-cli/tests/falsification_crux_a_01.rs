@@ -244,9 +244,9 @@ fn falsify_crux_a_01_004_registry_aliases_contains_canonical_names() {
         let val = obj.get(canonical).unwrap_or_else(|| {
             panic!("FALSIFY-CRUX-A-01-004: '{canonical}' missing from registry aliases --json")
         });
-        let url = val
-            .as_str()
-            .unwrap_or_else(|| panic!("FALSIFY-CRUX-A-01-004: '{canonical}' value is not a string"));
+        let url = val.as_str().unwrap_or_else(|| {
+            panic!("FALSIFY-CRUX-A-01-004: '{canonical}' value is not a string")
+        });
         assert!(
             url.starts_with("hf://") || url.starts_with("https://"),
             "FALSIFY-CRUX-A-01-004: '{canonical}' → '{url}' missing known scheme"
@@ -287,7 +287,10 @@ fn falsify_crux_a_01_005_cross_process_determinism() {
     let ua = extract(&a);
     let ub = extract(&b);
     let uc = extract(&c);
-    assert!(!ua.is_empty(), "FALSIFY-CRUX-A-01-005: no canonical URL:\n{a}");
+    assert!(
+        !ua.is_empty(),
+        "FALSIFY-CRUX-A-01-005: no canonical URL:\n{a}"
+    );
     assert_eq!(
         ua, ub,
         "FALSIFY-CRUX-A-01-005: invocation 1 vs 2 differ ({ua} vs {ub})"

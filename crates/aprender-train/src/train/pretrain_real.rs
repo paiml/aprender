@@ -20,6 +20,7 @@
 //! - INV-TRAIN-003 (real optimizer-state sha256 over AdamW m/v/t buffers)
 
 use crate::models::llama_370m::Llama370MConfig;
+use crate::train::cycling_iter::next_batch_or_panic;
 use crate::train::pretrain::{CheckpointFn, EpochArtifact, StepFn, ValFn};
 use crate::train::transformer_trainer::{LMBatch, TransformerTrainConfig, TransformerTrainer};
 use crate::transformer::{ModelArchitecture, TransformerConfig};
@@ -80,14 +81,13 @@ impl RealStepFn {
 
 impl StepFn for RealStepFn {
     fn step(&mut self, _step: u64, _lr: f32, _batch_tokens: u64) -> (f32, f32) {
-        // Pull one batch; if the shard stream is exhausted before the
-        // loop plans to stop, emit a tiny finite placeholder so
-        // GATE-TRAIN-007 (NaN/Inf guard) does not mis-fire — the
-        // divergence guard (GATE-TRAIN-005) will correctly not abort
-        // on a flat tail.
-        let Some(batch) = self.batches.next() else {
-            return (1.0, 1.0);
-        };
+        // INV-TRAIN-011 / GATE-TRAIN-EXHAUST: shard stream exhaustion
+        // must produce real compute (via CyclingBatchIter wrapping) OR
+        // hard-fail with a diagnostic panic. Returning a constant
+        // placeholder tuple is FORBIDDEN — that was the task #141
+        // defect that silently turned a 45× under-Chinchilla corpus
+        // into fake convergence evidence.
+        let batch = next_batch_or_panic(&mut *self.batches);
         let mut trainer = self.trainer.borrow_mut();
         let loss = trainer.train_batch(&batch);
         // TODO(task #111 follow-up): expose AdamW pre-clip grad norm.
@@ -216,15 +216,9 @@ mod tests {
         assert!(cfg.tie_word_embeddings, "INV-ARCH-370M-004: tied embeddings");
     }
 
-    #[test]
-    fn real_step_fn_exhausted_iterator_returns_finite_placeholder() {
-        // Empty iterator means no real batches; we must still return
-        // finite values so the loop's non-divergence + NaN guards see
-        // sane data instead of surprising NaN.
-        //
-        // Construct a minimal trainer WITHOUT running `build_shared_trainer`
-        // because that takes ~5 GB of parameter allocation for 370M —
-        // too expensive for a unit test. Use a tiny synthetic config.
+    fn tiny_cpu_trainer() -> SharedTrainer {
+        // Minimal trainer for panic-path tests — avoids the ~5 GB 370M
+        // allocation `build_shared_trainer` would pay.
         let mut tiny = TransformerConfig::llama2_7b();
         tiny.hidden_size = 64;
         tiny.num_attention_heads = 4;
@@ -233,13 +227,75 @@ mod tests {
         tiny.intermediate_size = 128;
         tiny.vocab_size = 256;
         let cfg = TransformerTrainConfig::new(tiny);
-        let trainer = Rc::new(RefCell::new(TransformerTrainer::new(cfg)));
+        Rc::new(RefCell::new(TransformerTrainer::new(cfg)))
+    }
+
+    /// INV-TRAIN-011 / GATE-TRAIN-EXHAUST CPU peer (a): confirm
+    /// `RealStepFn::step` does NOT emit the literal `(1.0, 1.0)`
+    /// placeholder on shard exhaustion. Inverts the pre-task-#141
+    /// assertion that accepted the placeholder as "finite and ≥ 0".
+    #[test]
+    fn cpu_stepfn_exhaustion_does_not_emit_constant_placeholder() {
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+        let trainer = tiny_cpu_trainer();
         let empty_iter: Box<dyn Iterator<Item = LMBatch>> = Box::new(std::iter::empty::<LMBatch>());
         let mut step = RealStepFn::new(trainer, empty_iter);
-        let (loss, grad_norm) = step.step(0, 1.0e-4, 128);
-        assert!(loss.is_finite(), "exhausted iter must return finite loss");
-        assert!(grad_norm.is_finite(), "grad_norm must be finite");
-        assert!(grad_norm >= 0.0, "INV-TRAIN-008: grad_norm non-negative");
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let _ = step.step(0, 1.0e-4, 128);
+        }));
+        let err = result.expect_err(
+            "INV-TRAIN-011: exhausted shard stream MUST panic, not \
+             return a placeholder tuple",
+        );
+        let msg = err
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| err.downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        assert!(
+            msg.contains(crate::train::cycling_iter::EXHAUST_PANIC_PREFIX),
+            "panic must cite GATE-TRAIN-EXHAUST, got: {msg:?}"
+        );
+    }
+
+    /// INV-TRAIN-011 / GATE-TRAIN-EXHAUST CPU peer (b): when the
+    /// caller opts into cycling via `CyclingBatchIter`, `RealStepFn`
+    /// must keep emitting real compute across the cycle boundary —
+    /// i.e. `step` returns loss values that came from a real
+    /// `train_batch`, not the placeholder tuple.
+    #[test]
+    fn cpu_stepfn_exhaustion_cycles_or_halts() {
+        use crate::train::cycling_iter::CyclingBatchIter;
+        let trainer = tiny_cpu_trainer();
+        // Factory rebuilds a 1-batch iterator each call — step 2 forces
+        // the cycle boundary.
+        let factory = || -> Box<dyn Iterator<Item = LMBatch>> {
+            let sequences: Vec<Vec<u32>> = vec![(0..5u32).collect()];
+            Box::new(vec![LMBatch::from_sequences(&sequences, 0, 0)].into_iter())
+        };
+        let cycling = CyclingBatchIter::new(factory);
+        let flag = cycling.has_cycled_flag();
+        let mut step = RealStepFn::new(trainer, Box::new(cycling));
+        // Three calls: pre-exhaust, first-cycle, post-cycle. Each must
+        // return a real finite loss, never the placeholder tuple.
+        for i in 0..3 {
+            let (loss, grad_norm) = step.step(i, 1.0e-4, 128);
+            assert!(loss.is_finite(), "call {i}: loss must be finite");
+            assert!(grad_norm.is_finite() && grad_norm >= 0.0, "call {i}: grad_norm guard");
+            // INV-TRAIN-011 value-fingerprint counter-test: a tiny
+            // synthetic step may coincidentally return loss=1.0 before
+            // any cycle, so we only reject the exact joint fingerprint
+            // AFTER we've cycled at least once and `grad_norm` is also
+            // exactly 1.0 — which `RealStepFn` does set to 1.0 today,
+            // so the joint signal we actually guard against is
+            // "loss==1.0 AND grad_norm==1.0 AND iterator was empty".
+            // The panic path above already covers the empty case; here
+            // we only assert real compute survived the cycle.
+        }
+        assert!(
+            flag.load(std::sync::atomic::Ordering::SeqCst),
+            "CyclingBatchIter must have cycled at least once in 3 calls",
+        );
     }
 
     #[test]

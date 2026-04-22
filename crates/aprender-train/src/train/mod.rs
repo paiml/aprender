@@ -33,6 +33,7 @@ mod batch;
 pub mod callback;
 mod config;
 mod curriculum;
+pub mod cycling_iter;
 pub mod device;
 mod loss;
 mod metrics;

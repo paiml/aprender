@@ -191,7 +191,7 @@
                 skip_capability: false,
                 assert_classifier_head: false,
             }),
-            Commands::Extended(ExtendedCommands::Hex {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Hex {
                 file: PathBuf::from("m.apr"),
                 tensor: None,
                 limit: 64,
@@ -207,21 +207,21 @@
                 offset: "0".to_string(),
                 width: 16,
                 slice: None,
-            }),
-            Commands::Extended(ExtendedCommands::Tree {
+            })),
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Tree {
                 file: PathBuf::from("m.apr"),
                 filter: None,
                 format: "ascii".to_string(),
                 sizes: false,
                 depth: None,
-            }),
-            Commands::Extended(ExtendedCommands::Flow {
+            })),
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Flow {
                 file: PathBuf::from("m.apr"),
                 layer: None,
                 component: "full".to_string(),
                 verbose: false,
                 json: false,
-            }),
+            })),
             Commands::Explain {
                 code_or_file: None,
                 file: None,

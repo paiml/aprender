@@ -95,6 +95,136 @@ impl fmt::Display for DeviceError {
 
 impl std::error::Error for DeviceError {}
 
+/// One row of `nvidia-smi --query-gpu=timestamp,memory.used,memory.free,utilization.gpu --format=csv,noheader`.
+///
+/// Contract binding: `gpu-training-backend-v1` INV-GPUTRAIN-003. The live
+/// smoke run records these rows to a CSV; the discharge probe below
+/// collapses the trace into a single `residency_discharge` verdict.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GpuSample {
+    pub timestamp: String,
+    pub used_mib: u64,
+    pub free_mib: u64,
+    pub util_pct: u32,
+}
+
+/// Parse the `--query-gpu` CSV body (no header). Silently drops rows that
+/// fail to parse; returning an empty `Vec` is a legitimate "no evidence"
+/// signal that the discharge probe below rejects.
+#[must_use]
+pub fn parse_nvidia_smi_gpu_trace(csv: &str) -> Vec<GpuSample> {
+    csv.lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| {
+            let cols: Vec<&str> = line.split(',').map(str::trim).collect();
+            if cols.len() != 4 {
+                return None;
+            }
+            let used_mib = cols[1].strip_suffix("MiB").unwrap_or(cols[1]).trim().parse().ok()?;
+            let free_mib = cols[2].strip_suffix("MiB").unwrap_or(cols[2]).trim().parse().ok()?;
+            let util_pct = cols[3].strip_suffix('%').unwrap_or(cols[3]).trim().parse().ok()?;
+            Some(GpuSample { timestamp: cols[0].to_string(), used_mib, free_mib, util_pct })
+        })
+        .collect()
+}
+
+/// One row of `nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv`.
+///
+/// Contract binding: `gpu-training-backend-v1` INV-GPUTRAIN-003 *ACTIVE*
+/// discharge. This per-PID format is strictly stronger than the global
+/// `--query-gpu` delta (`GpuSample`): the latter can be polluted by any
+/// other process on the device, whereas this one reports exactly what the
+/// training PID allocated. Contract v1.2.0 promotes GATE-GPUTRAIN-003 to
+/// ACTIVE on this format.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ComputeAppsSample {
+    pub pid: u32,
+    pub process_name: String,
+    pub used_mib: u64,
+}
+
+/// Parse the `--query-compute-apps` CSV body. The first row is the header
+/// `pid, process_name, used_gpu_memory [MiB]` emitted by `nvidia-smi` when
+/// the header suffix is not suppressed; we detect and skip it. Silently
+/// drops rows that fail to parse.
+#[must_use]
+pub fn parse_nvidia_smi_compute_apps_csv(csv: &str) -> Vec<ComputeAppsSample> {
+    csv.lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| {
+            let cols: Vec<&str> = line.split(',').map(str::trim).collect();
+            if cols.len() != 3 {
+                return None;
+            }
+            // Header row carries literal "pid" in col 0 — skip it.
+            if cols[0].eq_ignore_ascii_case("pid") {
+                return None;
+            }
+            let pid: u32 = cols[0].parse().ok()?;
+            let process_name = cols[1].to_string();
+            let used_mib = cols[2].strip_suffix("MiB").unwrap_or(cols[2]).trim().parse().ok()?;
+            Some(ComputeAppsSample { pid, process_name, used_mib })
+        })
+        .collect()
+}
+
+/// Per-PID residency discharge for GATE-GPUTRAIN-003 ACTIVE promotion.
+///
+/// Returns the first sample matching `expected_pid` with at least
+/// `min_mib` of memory. Failure modes are enumerated so the operator can
+/// tell whether the probe ran, found the PID but saw no memory, or never
+/// saw the PID at all. This is the binding the contract's
+/// `blocks_active_promotion_on` clause names.
+///
+/// # Errors
+/// Returns `Err(&'static str)` diagnosing the first reason the trace does
+/// NOT constitute PID-level residency evidence.
+pub fn assert_pid_residency_discharge(
+    samples: &[ComputeAppsSample],
+    expected_pid: u32,
+    min_mib: u64,
+) -> Result<&ComputeAppsSample, &'static str> {
+    if samples.is_empty() {
+        return Err("empty trace — nvidia-smi --query-compute-apps captured no samples");
+    }
+    let pid_match = samples.iter().find(|s| s.pid == expected_pid).ok_or(
+        "expected PID not present — training process never appeared in compute-apps trace",
+    )?;
+    if pid_match.used_mib < min_mib {
+        return Err("training PID present but reported memory below threshold — \
+             weights likely never left CPU; check CudaTransformerTrainer init order");
+    }
+    Ok(pid_match)
+}
+
+/// Residency discharge for GATE-GPUTRAIN-003 / FALSIFY-GPUTRAIN-003.
+///
+/// Returns the peak `GpuSample` iff the trace records a memory rise of
+/// at least `min_delta_mib` above the first-sample baseline. A flat trace
+/// (all samples at baseline) is a FAILURE — it proves CUDA was compiled
+/// and nvidia-smi saw the card, but also proves weights never made it to
+/// device memory.
+///
+/// # Errors
+/// Returns `Err(&'static str)` diagnosing the first reason the trace does
+/// NOT constitute residency evidence.
+pub fn assert_residency_discharge(
+    samples: &[GpuSample],
+    min_delta_mib: u64,
+) -> Result<&GpuSample, &'static str> {
+    let baseline = samples.first().ok_or("empty trace — nvidia-smi captured no samples")?;
+    let peak = samples
+        .iter()
+        .max_by_key(|s| s.used_mib)
+        .expect("non-empty iter: baseline already unwrapped");
+    let delta = peak.used_mib.saturating_sub(baseline.used_mib);
+    if delta < min_delta_mib {
+        return Err("peak memory did not rise above baseline — weights likely never \
+             left CPU; check CudaTransformerTrainer init order");
+    }
+    Ok(peak)
+}
+
 /// Resolve a CLI `--device` string into a concrete `Device`.
 ///
 /// Contract: this function is THE single binding point for
@@ -108,7 +238,8 @@ impl std::error::Error for DeviceError {}
 ///   CUDA (or `auto` chose CUDA) but `cuda_training_available()`
 ///   returned `false`.
 pub fn resolve_device(spec: &str) -> Result<Device, DeviceError> {
-    let parsed = parse_device_spec(spec).ok_or_else(|| DeviceError::InvalidSpec(spec.to_string()))?;
+    let parsed =
+        parse_device_spec(spec).ok_or_else(|| DeviceError::InvalidSpec(spec.to_string()))?;
 
     match parsed {
         ParsedSpec::Cpu => Ok(Device::Cpu),
@@ -169,157 +300,5 @@ fn parse_device_spec(spec: &str) -> Option<ParsedSpec> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ─── FALSIFY-GPUTRAIN-001: grammar ──────────────────────────────────
-    //
-    // Binds contract `gpu-training-backend-v1` INV-GPUTRAIN-001. Any
-    // string that does NOT match
-    // `^(cpu|cuda(:[0-9]|:1[0-5])?|auto)$` MUST be rejected with
-    // `DeviceError::InvalidSpec`; any string that DOES match MUST parse.
-
-    #[test]
-    fn falsify_gputrain_001_accepts_cpu() {
-        assert_eq!(parse_device_spec("cpu"), Some(ParsedSpec::Cpu));
-    }
-
-    #[test]
-    fn falsify_gputrain_001_accepts_auto() {
-        assert_eq!(parse_device_spec("auto"), Some(ParsedSpec::Auto));
-    }
-
-    #[test]
-    fn falsify_gputrain_001_accepts_cuda_alias() {
-        assert_eq!(parse_device_spec("cuda"), Some(ParsedSpec::Cuda(0)));
-    }
-
-    #[test]
-    fn falsify_gputrain_001_accepts_cuda_single_digit() {
-        for i in 0..=9u8 {
-            let spec = format!("cuda:{i}");
-            assert_eq!(
-                parse_device_spec(&spec),
-                Some(ParsedSpec::Cuda(i)),
-                "grammar must accept {spec}",
-            );
-        }
-    }
-
-    #[test]
-    fn falsify_gputrain_001_accepts_cuda_10_through_15() {
-        for i in 10..=15u8 {
-            let spec = format!("cuda:{i}");
-            assert_eq!(
-                parse_device_spec(&spec),
-                Some(ParsedSpec::Cuda(i)),
-                "grammar must accept {spec}",
-            );
-        }
-    }
-
-    #[test]
-    fn falsify_gputrain_001_rejects_index_16() {
-        assert_eq!(parse_device_spec("cuda:16"), None);
-    }
-
-    #[test]
-    fn falsify_gputrain_001_rejects_index_99() {
-        assert_eq!(parse_device_spec("cuda:99"), None);
-    }
-
-    #[test]
-    fn falsify_gputrain_001_rejects_leading_zero() {
-        // Grammar allows one digit [0-9] or two chars 1[0-5]; "01"
-        // matches neither.
-        assert_eq!(parse_device_spec("cuda:01"), None);
-    }
-
-    #[test]
-    fn falsify_gputrain_001_rejects_empty_index() {
-        assert_eq!(parse_device_spec("cuda:"), None);
-    }
-
-    #[test]
-    fn falsify_gputrain_001_rejects_negative_index() {
-        assert_eq!(parse_device_spec("cuda:-1"), None);
-    }
-
-    #[test]
-    fn falsify_gputrain_001_rejects_typo() {
-        assert_eq!(parse_device_spec("gpu"), None);
-        assert_eq!(parse_device_spec("CUDA"), None);
-        assert_eq!(parse_device_spec("cudaa"), None);
-        assert_eq!(parse_device_spec(""), None);
-        assert_eq!(parse_device_spec(" cpu"), None);
-    }
-
-    #[test]
-    fn falsify_gputrain_001_resolve_wraps_invalid_as_device_error() {
-        let err = resolve_device("gpu").unwrap_err();
-        assert!(matches!(err, DeviceError::InvalidSpec(ref s) if s == "gpu"));
-    }
-
-    // ─── FALSIFY-GPUTRAIN-002: no silent CPU fallback ──────────────────
-    //
-    // Binds contract `gpu-training-backend-v1` INV-GPUTRAIN-002 /
-    // GATE-GPUTRAIN-002. Explicit `--device cuda` / `cuda:N` MUST hard-
-    // fail when the host has no CUDA runtime. `auto` is the ONLY spec
-    // allowed to fall back.
-
-    #[test]
-    fn falsify_gputrain_002_explicit_cuda_without_runtime_errors() {
-        if cuda_training_available() {
-            // On a CUDA host this branch is a positive assertion:
-            // explicit `cuda:0` must resolve successfully, and `auto`
-            // must choose CUDA (not silently downgrade).
-            assert_eq!(resolve_device("cuda:0"), Ok(Device::Cuda { index: 0 }));
-            assert_eq!(resolve_device("auto"), Ok(Device::Cuda { index: 0 }));
-        } else {
-            // On a CPU-only host:
-            // - explicit `cuda:0` MUST hard-fail (no silent fallback)
-            // - explicit `cuda` MUST hard-fail (alias for `cuda:0`)
-            // - `auto` MAY fall back to CPU (this is the documented
-            //   safe-default escape hatch)
-            let err = resolve_device("cuda:0").unwrap_err();
-            assert!(matches!(err, DeviceError::CudaNotAvailable { .. }));
-            let err = resolve_device("cuda").unwrap_err();
-            assert!(matches!(err, DeviceError::CudaNotAvailable { .. }));
-            assert_eq!(resolve_device("auto"), Ok(Device::Cpu));
-        }
-    }
-
-    #[test]
-    fn falsify_gputrain_002_cpu_always_resolves() {
-        // `--device cpu` must always return `Device::Cpu`, regardless of
-        // whether CUDA is available — it is an explicit opt-in to the
-        // CPU path (for falsification parity runs, reproducibility, or
-        // hosts without a usable GPU).
-        assert_eq!(resolve_device("cpu"), Ok(Device::Cpu));
-    }
-
-    #[test]
-    fn device_tag_round_trips() {
-        assert_eq!(Device::Cpu.tag(), "cpu");
-        assert_eq!(Device::Cuda { index: 0 }.tag(), "cuda:0");
-        assert_eq!(Device::Cuda { index: 7 }.tag(), "cuda:7");
-        assert_eq!(Device::Cuda { index: 15 }.tag(), "cuda:15");
-    }
-
-    #[test]
-    fn device_is_cuda_discriminator() {
-        assert!(!Device::Cpu.is_cuda());
-        assert!(Device::Cuda { index: 0 }.is_cuda());
-    }
-
-    #[test]
-    fn device_error_display_mentions_contract() {
-        let invalid = DeviceError::InvalidSpec("bogus".into()).to_string();
-        assert!(invalid.contains("INV-GPUTRAIN-001"));
-        assert!(invalid.contains("bogus"));
-        let unavail =
-            DeviceError::CudaNotAvailable { requested: "cuda:0".into() }.to_string();
-        assert!(unavail.contains("GATE-GPUTRAIN-002"));
-        assert!(unavail.contains("cuda:0"));
-    }
-}
+#[path = "device_tests.rs"]
+mod tests;

@@ -138,6 +138,22 @@ pub fn cli_main() -> std::process::ExitCode {
         colored::control::set_override(false);
     }
 
+    // GATE-GPUTRAIN-006 / INV-GPUTRAIN-007: `apr --version --json` must
+    // report structured cuda wiring state. clap's `--version` exits
+    // before our global `--json` flag is observed, so we peek raw args
+    // first. Only the combined `--version --json` form intercepts —
+    // plain `--version` falls through to clap unchanged.
+    if commands::version::should_emit_version_json(std::env::args().skip(1)) {
+        let report = commands::version::collect_version_report();
+        match commands::version::emit_version_json(&report) {
+            Ok(()) => return std::process::ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return std::process::ExitCode::FAILURE;
+            }
+        }
+    }
+
     let cli = Cli::parse();
     match execute_command(&cli) {
         Ok(()) => std::process::ExitCode::SUCCESS,

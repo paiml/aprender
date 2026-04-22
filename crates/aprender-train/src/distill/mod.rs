@@ -24,9 +24,12 @@
 //! assert!(loss > 0.0);
 //! ```
 
+pub mod apr_writer;
 pub mod checkpoint;
+pub mod driver;
 mod ensemble;
 mod loss;
+pub mod preflight;
 mod progressive;
 
 #[cfg(test)]

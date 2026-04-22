@@ -35,14 +35,33 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-TRAIN-PRETRAIN
-version: 1.4.0
+version: 1.5.0
 status: ACTIVE
 
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
   created: "2026-04-18"
-  updated: "2026-04-20"
+  updated: "2026-04-22"
   changelog:
+    - "1.5.0 (2026-04-22): No-silent-exhaustion gate. Adds
+       INV-TRAIN-011 / GATE-TRAIN-EXHAUST / FALSIFY-TRAIN-EXHAUST
+       closing the task #141 defect surfaced by the MODEL-2 10k
+       from-scratch dispatch on 2026-04-21. Symptom: epoch 0 real
+       (wall_seconds=532.6, tokens_seen=16.4M, val_loss=9.93),
+       epochs 2-5 placeholder (wall_seconds<1s, train_loss=1.0
+       EXACTLY, train_ppl=e EXACTLY, grad_norm_max=1.0 EXACTLY).
+       Root cause: crates/aprender-train/src/train/
+       pretrain_real_cuda.rs::CudaRealStepFn::step returns a
+       constant (1.0, 1.0) on shard-stream exhaustion. Symmetric
+       defect in peer RealStepFn (CPU). The gate forbids constant
+       placeholders; when the stream is exhausted mid-run the
+       loop MUST either (a) cycle shards at the iterator layer
+       with a single INFO log at first cycle boundary, OR (b)
+       halt and surface an error. Historical: this mis-firing
+       silently converted 400×-under-Chinchilla corpus into
+       fake convergence evidence — classic false-pass class
+       alongside MODEL-1 v2 (divergence) and PMAT-105
+       (synthetic-default) defects."
     - "1.1.0 (2026-04-19): GATE-TRAIN-006 / INV-TRAIN-006 discharged via
        falsify_ship_021_* Rust tests; seed-plumbing race fixed by
        lock_init_seed mutex in transformer/init.rs; status PROPOSED → ACTIVE"
@@ -391,6 +410,48 @@ invariants:
       `synthetic == true`. Any clap default that silently flips
       the absent case to `true` fails the first assert.
 
+  - id: INV-TRAIN-011
+    description: >
+      NO-SILENT-EXHAUSTION (the task #141 lesson). When the
+      training shard stream is exhausted mid-run, the StepFn
+      implementation MUST do EXACTLY one of:
+        (a) ITERATOR-LAYER CYCLE: wrap the shard iterator so
+            that exhaustion cycles back to the first shard AND
+            emit a single INFO-level log at the first cycle
+            boundary naming the token count at which the cycle
+            occurred. The step function continues returning real
+            (loss, grad_norm) computed from real forward+backward.
+        (b) HALT: return an error carrying
+            `TrainingError::StreamExhausted` which the driver
+            surfaces as a nonzero exit AND records as
+            `GATE-TRAIN-EXHAUST` failure in the run log.
+      It is FORBIDDEN for StepFn::step to return a constant
+      placeholder tuple (e.g. (1.0, 1.0)) when the underlying
+      iterator returns None. A constant placeholder silently
+      converts under-provisioned corpora into fake convergence
+      evidence — the exact defect observed in task #141 where
+      epochs 2..5 of the MODEL-2 10k run emitted
+      train_loss=1.0000, train_ppl=e, grad_norm_max=1.0 in
+      wall<1s. The invariant applies symmetrically to CPU
+      (RealStepFn) and CUDA (CudaRealStepFn) peers; one fixed
+      and one not leaves the defect class open.
+    falsifier: >
+      Two harnesses per peer (CPU and CUDA), four tests total:
+      (1) EXHAUSTION PRODUCES REAL COMPUTE OR HARD-FAIL: wrap
+          StepFn around a shard iterator of length 1; call
+          step() twice. First call returns a real finite
+          (loss, grad_norm); second call either returns another
+          real (loss, grad_norm) from the cycled first shard
+          (cycle policy) OR returns Err(StreamExhausted) (halt
+          policy). Returning literal (1.0, 1.0) fails.
+      (2) VALUE-FINGERPRINT COUNTER-TEST: assert that under the
+          cycle policy, no step in a 3-shard-cycling run produces
+          the exact tuple (1.0, 1.0) with train_ppl ==
+          std::f32::consts::E. (Real forward+backward on
+          non-degenerate data hits these values with negligible
+          probability; exact match is the placeholder
+          fingerprint.)
+
 # ─────────────────────────────────────────────────────────────
 # Acceptance gates (bind to AC-SHIP2-* in the spec)
 # ─────────────────────────────────────────────────────────────
@@ -541,6 +602,57 @@ gates:
       - "crates/apr-cli/src/commands/pretrain.rs::tests::cli_pretrain_defaults_to_real_compute"
       - "crates/apr-cli/src/commands/pretrain.rs::tests::cli_pretrain_synthetic_flag_routes_to_synthetic"
 
+  - id: GATE-TRAIN-EXHAUST
+    rule: >
+      Shard-stream exhaustion mid-run MUST resolve via (a)
+      iterator-layer cycle with a single INFO log at the first
+      cycle boundary, OR (b) hard-fail with
+      TrainingError::StreamExhausted surfaced as nonzero exit
+      from the driver. Constant placeholder tuples from
+      StepFn::step are forbidden (INV-TRAIN-011). Applies to
+      BOTH CPU (RealStepFn) and CUDA (CudaRealStepFn) peers.
+    evidence_required: >
+      Four harness tests (two per peer):
+      (1) cpu_stepfn_exhaustion_does_not_emit_constant_placeholder
+      (2) cpu_stepfn_exhaustion_cycles_or_halts
+      (3) cuda_stepfn_exhaustion_does_not_emit_constant_placeholder
+      (4) cuda_stepfn_exhaustion_cycles_or_halts
+      Each asserts the returned (loss, grad_norm) is NOT the
+      exact literal tuple (1.0_f32, 1.0_f32) when the underlying
+      iterator returns None AND (for cycle policy) that
+      train_ppl is not exactly std::f32::consts::E. Post-hoc
+      gate: `apr qa --check-no-placeholder-loss {run_dir}` scans
+      epoch metadata and fails if any epoch records the
+      fingerprint tuple with wall_seconds < (1.0 for CUDA, 10.0
+      for CPU).
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    ship_blocking: true
+    motivation: >
+      task #141 (MODEL-2 10k from-scratch dispatch, 2026-04-21):
+      epoch 0 real (wall=532.6s, tokens=16.4M, val_loss=9.93),
+      epochs 2..5 placeholder (train_loss=1.0 EXACT,
+      train_ppl=e EXACT, grad_norm=1.0 EXACT, wall<1s).
+      Root cause at crates/aprender-train/src/train/
+      pretrain_real_cuda.rs::CudaRealStepFn::step:
+      `let Some(batch) = self.batches.next() else { return
+      (1.0, 1.0); };`. Symmetric defect in RealStepFn (CPU).
+      The gate forbids the defect class; this is the
+      "fake-convergence" sibling of MODEL-1 v2 divergence and
+      PMAT-105 synthetic-default in the false-pass family.
+    falsification_id: FALSIFY-TRAIN-EXHAUST
+    evidence_discharged_by:
+      - "crates/aprender-train/src/train/pretrain_real.rs::tests::cpu_stepfn_exhaustion_does_not_emit_constant_placeholder"
+      - "crates/aprender-train/src/train/pretrain_real.rs::tests::cpu_stepfn_exhaustion_cycles_or_halts"
+      - "crates/aprender-train/src/train/pretrain_real_cuda.rs::tests::cuda_stepfn_exhaustion_does_not_emit_constant_placeholder"
+      - "crates/aprender-train/src/train/pretrain_real_cuda.rs::tests::cuda_stepfn_exhaustion_cycles_or_halts"
+    discharge_status: PENDING
+    discharge_notes: >
+      Rust harness tests + driver code change NOT YET LANDED
+      (task #141 open 2026-04-22). Contract v1.5.0 status
+      ACTIVE to make the gate blocking for downstream dispatch;
+      task #126 (MODEL-2 re-dispatch) is blocked by this gate.
+
 # ─────────────────────────────────────────────────────────────
 # Failure modes (documented so future operators can recognize them)
 # ─────────────────────────────────────────────────────────────
@@ -565,6 +677,17 @@ failure_modes:
       failure of THIS contract (clean early-stop is spec behavior),
       but is a SHIP failure if final val_loss > target_val_loss
       (see GATE-TRAIN-003).
+  - id: FM-TRAIN-EXHAUSTION
+    description: >
+      Shard stream exhausted mid-run and StepFn silently returned
+      a constant placeholder (e.g. (1.0, 1.0)). Fingerprint in
+      epoch metadata: train_loss==1.0 exact, train_ppl==e exact,
+      grad_norm_max==1.0 exact, wall_seconds < 1.0 (CUDA) or
+      < 10.0 (CPU). Operator remedy: verify shard manifest
+      total_tokens vs (epochs × steps/epoch × batch_tokens);
+      either enlarge the corpus to cover the planned budget OR
+      wrap the iterator in a cycling adapter AND emit a cycle
+      log — never a placeholder.
 
 references:
   - "contracts/model-families/llama-370m-sovereign-v1.yaml"

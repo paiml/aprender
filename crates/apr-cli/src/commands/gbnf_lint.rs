@@ -107,9 +107,9 @@ fn classify_masking(obs: &Value) -> Option<clf::IllegalTokenMaskingOutcome> {
 fn json_fail_reason(o: &clf::JsonGrammarOutputOutcome) -> Option<String> {
     match o {
         clf::JsonGrammarOutputOutcome::Ok => None,
-        clf::JsonGrammarOutputOutcome::EmptyOutput => Some(
-            "FALSIFY-CRUX-C-10-001 json: empty output string".to_string(),
-        ),
+        clf::JsonGrammarOutputOutcome::EmptyOutput => {
+            Some("FALSIFY-CRUX-C-10-001 json: empty output string".to_string())
+        }
         clf::JsonGrammarOutputOutcome::NotJson { error } => Some(format!(
             "FALSIFY-CRUX-C-10-001 json: output does not parse as JSON: {error}"
         )),

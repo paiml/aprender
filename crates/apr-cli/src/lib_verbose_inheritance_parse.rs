@@ -334,13 +334,13 @@
     /// Test execute_command: CompareHf with non-existent file returns error
     #[test]
     fn test_execute_compare_hf_file_not_found() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::CompareHf {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::CompareHf {
             file: PathBuf::from("/tmp/nonexistent_model_compare_hf_test.apr"),
             hf: "openai/whisper-tiny".to_string(),
             tensor: None,
             threshold: 1e-5,
             json: false,
-        }));
+        })));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),

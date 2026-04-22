@@ -250,13 +250,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::CompareHf {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::CompareHf {
                 file,
                 hf,
                 tensor,
                 threshold,
                 json,
-            }) => {
+            })) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(hf, "openai/whisper-tiny");
                 assert_eq!(tensor, Some("encoder.0".to_string()));
@@ -279,12 +279,12 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::CompareHf {
+            Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::CompareHf {
                 tensor,
                 threshold,
                 json,
                 ..
-            }) => {
+            })) => {
                 assert!(tensor.is_none());
                 assert!((threshold - 1e-5).abs() < f64::EPSILON);
                 assert!(!json);

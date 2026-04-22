@@ -36,14 +36,27 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-LLAMA-370M-SOVEREIGN
-version: 1.5.0
+version: 1.6.0
 status: ACTIVE
 
 metadata:
-  version: "1.5.0"
+  version: "1.6.0"
   created: "2026-04-18"
-  updated: "2026-04-21"
+  updated: "2026-04-22"
   changelog:
+    - "1.6.0 (2026-04-22): Chinchilla target_tokens_minimum + hardware
+       profiles (spec v2.24.0 amendment). Adds `training.target_tokens_minimum:
+       7_400_000_000` (20 × param_count per Hoffmann 2022) and a
+       `hardware_profiles` table covering the two single-GPU targets
+       (RTX 4090 24GB and gx10 Blackwell). Motivation: the MODEL-2
+       10k from-scratch dispatch on 2026-04-21 used 18.1M tokens
+       (400× under Chinchilla floor) — a mixture-corpus contract
+       (pretraining-corpus-v1 v2.0.0) is not sufficient on its own;
+       the model-family contract must also declare the floor so that
+       downstream `apr pretrain` pre-flight reads a single source of
+       truth. Adds INV-ARCH-370M-010 binding target_tokens_minimum to
+       20 × PARAMETERS_NOMINAL. No architectural constants change;
+       param count still lies in [366M, 374M]."
     - "1.5.0 (2026-04-21): Option-A vocab alignment (task #131).
        Bumped vocab_size 50_000 → 50_257 to match the MODEL-2
        tokenizer artifact (trained in task #118) and the GPT-2
@@ -239,6 +252,46 @@ quantizations:
   - f16
   - f32
 
+# ─────────────────────────────────────────────────────────────
+# Training budget — Chinchilla-anchored (v1.6.0)
+# ─────────────────────────────────────────────────────────────
+# Consumed by: pretraining-corpus-v1 (FALSIFY-CORPUS-001) +
+#              apr pretrain pre-flight (FALSIFY-CORPUS-004).
+# ─────────────────────────────────────────────────────────────
+
+training:
+  target_tokens_minimum: 7_400_000_000     # 20 × 370M (Chinchilla floor)
+  target_tokens_recommended: 10_000_000_000
+  target_tokens_stretch: 20_000_000_000
+  tokens_per_param_floor: 20
+  rationale: >
+    Chinchilla-optimal regime for 370M. Below 20 tok/param the model
+    is under-trained vs its capacity; corpus enlargement dominates
+    param-count enlargement in per-FLOP quality.
+
+# ─────────────────────────────────────────────────────────────
+# Hardware profiles — single-GPU training targets (v1.6.0)
+# ─────────────────────────────────────────────────────────────
+
+hardware_profiles:
+  rtx_4090_24gb:
+    device: "NVIDIA GeForce RTX 4090"
+    vram_gb: 24
+    measured_tokens_per_hour: 30_000_000      # 1.88 steps/s × 16_384 tokens/step
+    wall_hours_to_chinchilla_floor: 247       # 7.4B / 30M
+    wall_hours_to_recommended: 333            # 10B / 30M
+    wall_hours_to_stretch: 667                # 20B / 30M
+    notes: "Confirmed throughput from task #126 epoch-0 (532.6s × 16.4M tokens)."
+  gx10_blackwell:
+    device: "NVIDIA Blackwell GB10"
+    vram_gb: 128
+    measured_tokens_per_hour: null            # PENDING trueno#203 kernels
+    wall_hours_to_chinchilla_floor: null
+    notes: >
+      Training path blocked by trueno#200 JIT pre-warming bug. Must
+      await trueno#203 pre-compiled kernels before MODEL-2 gx10
+      dispatch. Inference path (cuBLAS) is unaffected.
+
 # Bare-prompt completion (no chat template — albor is a base code model).
 chat_template:
   format: none
@@ -347,6 +400,18 @@ invariants:
       Assert APR header shape == [50257, 1024] for embedding tensor.
       Reversed shape triggers layout_contract::CONTRACT.validate_apr_shape
       failure at load time.
+
+  - id: INV-ARCH-370M-010
+    description: >
+      CHINCHILLA FLOOR for 370M. training.target_tokens_minimum ==
+      20 × param_count_nominal == 7_400_000_000. Binds this
+      contract to pretraining-corpus-v1 INV-CORPUS-004.
+    falsifier: >
+      Static check against Llama370MConfig::PARAMETERS_NOMINAL:
+      assert training.target_tokens_minimum ==
+      20 * PARAMETERS_NOMINAL == 7_400_000_000. Any drift
+      between model-family floor and corpus floor → FAIL at
+      `pv validate`.
 
 # ─────────────────────────────────────────────────────────────
 # Acceptance gates (bind to AC-SHIP2-* in the spec)

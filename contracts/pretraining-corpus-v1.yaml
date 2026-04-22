@@ -1,0 +1,392 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-PRETRAIN-CORPUS
+# MODEL-2 mixture-corpus contract for SHIP-TWO-001 (albor sovereign 370M).
+# ─────────────────────────────────────────────────────────────
+# Closes the v2.24.0 spec amendment surfaced by the MODEL-2 10k
+# from-scratch dispatch (2026-04-21): the run used 18.1M tokens, which
+# is 400× under the Chinchilla floor (20 tok/param = 7.4B for 370M).
+# Even if task #141 fixes the silent-exhaustion placeholder, a
+# 18.1M-token corpus cannot produce a world-class 370M model — the
+# data is the ceiling, not the loop. This contract makes the data
+# budget a machine-checked pre-flight gate.
+#
+# Design principle: world-class-per-FLOP at single-GPU scale (RTX 4090
+# or gx10). Target regime is Chinchilla-optimal (7.4B floor, 20B
+# stretch). Multi-source mixture (≥3 domains) beats Python-only at
+# cross-domain reasoning while keeping the sovereign + permissive-
+# license posture. License filtering is inherited from each source
+# dataset's own contract; the mixture contract only verifies the
+# mixture-level invariants (tokens, diversity, determinism).
+#
+# Peers:
+#   - contracts/training-loop-pretrain-v1.yaml        (consumer, v1.5+)
+#   - contracts/model-families/llama-370m-sovereign-v1.yaml (target model)
+#   - contracts/tokenizer-bpe-v1.yaml                 (tokenizer)
+#   - contracts/dataset-thestack-python-v1.yaml       (source #1: code)
+#   (source #2 and #3 contracts filed alongside this one; see sources[])
+#
+# References:
+#   - Hoffmann et al. (2022). "Training Compute-Optimal Large Language
+#     Models." arXiv:2203.15556 (Chinchilla scaling law, 20 tok/param)
+#   - Penedo et al. (2024). "FineWeb: Decanting the Web for the
+#     Finest Text Data at Scale." (FineWeb-Edu filter)
+#   - Paster et al. (2023). "OpenWebMath" arXiv:2310.06786
+#   - docs/specifications/aprender-train/ship-two-models-spec.md §15
+#     (v2.24.0 amendment, AC-SHIP2-003/004 re-scoped)
+#   - memory/project_task_141_silent_exhaustion.md (fake-convergence class)
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-PRETRAIN-CORPUS
+version: 2.0.0
+status: PROPOSED
+
+metadata:
+  version: "2.0.0"
+  created: "2026-04-22"
+  updated: "2026-04-22"
+  changelog:
+    - "2.0.0 (2026-04-22): New mixture-corpus contract. Supersedes
+       the ad-hoc Python-only path used by the 10k dispatch. Sets
+       Chinchilla floor (7.4B tokens = 20 × 370M params), requires
+       diversity ≥ 3 sources, declares the weighted round-robin
+       shard iterator, and introduces FALSIFY-CORPUS-004 pre-flight
+       gate that refuses to start a pretraining run whose
+       (epochs × steps × batch_tokens) target exceeds the corpus's
+       total_tokens_minimum. Motivation: the 10k dispatch targeted
+       820.8M tokens (10k steps × 16.4k tokens) on an 18.1M-token
+       corpus — 45× over-dispatch that silently resolved to
+       placeholder (1.0, 1.0) loss via task #141 StepFn defect.
+       A pre-flight gate would have refused the dispatch."
+  author: PAIML Engineering
+  description: >
+    MODEL-2 mixture-corpus contract: defines the multi-source
+    pretraining mixture, the Chinchilla-floor token budget, the
+    weighted round-robin shard iterator, and the pre-flight gate
+    that refuses under-provisioned dispatches.
+  registry: true
+  kind: pretraining-corpus
+  peer_contracts:
+    - contracts/training-loop-pretrain-v1.yaml
+    - contracts/model-families/llama-370m-sovereign-v1.yaml
+    - contracts/tokenizer-bpe-v1.yaml
+    - contracts/dataset-thestack-python-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §15"
+    - "Hoffmann et al. (2022) — arXiv:2203.15556"
+    - "Penedo et al. (2024) — FineWeb-Edu"
+    - "Paster et al. (2023) — arXiv:2310.06786"
+
+summary: >
+  MODEL-2 mixture-corpus contract. Declares the token-budget floor
+  (20 tok/param = 7.4B for 370M), the source diversity minimum
+  (≥3 domains), the weighted round-robin iterator, and the
+  pre-flight gate (FALSIFY-CORPUS-004) that refuses a dispatch
+  whose token-budget target exceeds the corpus total_tokens.
+
+motivation: >
+  The MODEL-2 10k from-scratch dispatch on 2026-04-21 used an
+  18.1M-token Python-only corpus and targeted 820.8M training
+  tokens (10k steps × 81 docs × 2048 tokens/doc in practice).
+  The iterator exhausted at epoch 1; StepFn silently returned
+  (1.0, 1.0) placeholder for epochs 2..5. The epoch metadata
+  fingerprint (train_ppl=e exact, grad_norm=1.0 exact,
+  wall<1s) was unmistakable. This contract makes the
+  pre-flight gate machine-checked so the same mistake cannot
+  reach compute: `apr pretrain` refuses to start if the
+  planned token budget exceeds corpus.total_tokens.
+
+# ─────────────────────────────────────────────────────────────
+# Sources — mixture declaration (≥3 required)
+# ─────────────────────────────────────────────────────────────
+
+sources:
+  - id: code-python
+    contract: contracts/dataset-thestack-python-v1.yaml
+    weight: 0.40                      # 40% of mixture tokens
+    shard_dir: "{corpus_root}/code-python/"
+    description: "Permissive-license Python from The Stack v2."
+  - id: web-edu
+    contract: contracts/dataset-fineweb-edu-v1.yaml
+    weight: 0.40                      # 40% of mixture tokens
+    shard_dir: "{corpus_root}/web-edu/"
+    description: "FineWeb-Edu educational web crawl subset (permissive)."
+  - id: math
+    contract: contracts/dataset-open-web-math-v1.yaml
+    weight: 0.20                      # 20% of mixture tokens
+    shard_dir: "{corpus_root}/math/"
+    description: "OpenWebMath (math-dense web pages)."
+
+# Each source contract MUST exist and MUST itself validate via pv.
+# Sibling source-dataset contracts fineweb-edu and open-web-math are
+# tracked as follow-up work on task #141's same branch.
+
+# ─────────────────────────────────────────────────────────────
+# Token budget — Chinchilla-anchored for 370M
+# ─────────────────────────────────────────────────────────────
+
+budget:
+  model_param_count: 370_000_000
+  tokens_per_param_floor: 20          # Chinchilla-optimal (Hoffmann 2022)
+  total_tokens_minimum: 7_400_000_000 # = 20 × 370M; BELOW THIS = REJECT
+  total_tokens_recommended: 10_000_000_000
+  total_tokens_stretch: 20_000_000_000
+  rationale: >
+    20 tok/param is the Chinchilla-optimal floor for a
+    compute-constrained 370M model. Below this floor the model
+    is under-trained vs its capacity; increasing params rather
+    than tokens wastes FLOPs. At 7.4B tokens the 4090-hour
+    cost is ≈10.3 days (at 30M tok/hr); 10B ≈13.9 days;
+    20B ≈27.8 days.
+
+# ─────────────────────────────────────────────────────────────
+# Diversity minimum — cross-domain coverage
+# ─────────────────────────────────────────────────────────────
+
+diversity:
+  source_count_minimum: 3
+  max_single_source_weight: 0.50      # no single source ≥ 50% of mixture
+  rationale: >
+    Single-source pretraining overfits domain idiosyncrasies.
+    3+ sources with ≤50% each ensure cross-domain reasoning
+    (code + text + math) at 370M scale.
+
+# ─────────────────────────────────────────────────────────────
+# Iterator — weighted round-robin over source shard directories
+# ─────────────────────────────────────────────────────────────
+
+iterator:
+  kind: weighted-round-robin
+  token_format: u32-le-bin            # matches apr tokenize encode-corpus
+  shard_filename_glob: "shard-*.bin"
+  weights_from: sources[*].weight     # honored by the iterator
+  exhaustion_policy: cycle            # cycle at iterator layer (INV-TRAIN-011 path a)
+  cycle_log_level: info               # single INFO log at first cycle boundary
+  halt_on_cycle: false                # cycle is not an error; halt is explicit
+  determinism:
+    shard_order_seed: 42
+    within_shard_order: sequential
+    cross_host_identical: true        # same seed + same manifests → same emit sequence
+
+# ─────────────────────────────────────────────────────────────
+# Output artifacts (from apr corpus-ingest + apr tokenize encode-corpus)
+# ─────────────────────────────────────────────────────────────
+
+artifacts:
+  root: "{corpus_root}"
+  per_source_manifest: "{corpus_root}/{source_id}/manifest.json"
+  mixture_manifest: "{corpus_root}/mixture-manifest.yaml"
+  required_mixture_fields:
+    - total_tokens                    # sum across all sources
+    - source_count
+    - per_source_tokens               # map: source_id -> token_count
+    - per_source_weight_actual        # map: source_id -> realized fraction
+    - corpus_sha256                   # merkle over per-source corpus_sha256s
+    - chinchilla_ratio                # total_tokens / model_param_count
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — mixture-level (per-source invariants live in each source contract)
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-CORPUS-001
+    description: >
+      total_tokens ≥ total_tokens_minimum. A mixture below the
+      Chinchilla floor REJECTS pretraining dispatch at pre-flight.
+    falsifier: >
+      Read mixture-manifest.yaml; assert total_tokens ≥ 7_400_000_000.
+      Below floor → FAIL.
+
+  - id: INV-CORPUS-002
+    description: >
+      source_count ≥ 3 AND no source.weight > 0.50. Mixture
+      diversity floor.
+    falsifier: >
+      Count sources in mixture-manifest; assert ≥ 3 AND
+      max(per_source_weight_actual) ≤ 0.50. Below → FAIL.
+
+  - id: INV-CORPUS-003
+    description: >
+      per_source_weight_actual is within ±5% absolute of the
+      declared weight for every source. The iterator actually
+      honors the mixture weights.
+    falsifier: >
+      For each source, assert
+      |actual - declared| ≤ 0.05. Larger drift → FAIL (iterator
+      bug or under-provisioned source).
+
+  - id: INV-CORPUS-004
+    description: >
+      CHINCHILLA-FLOOR CROSS-CONTRACT INVARIANT. For any (corpus,
+      model, loop) triple, corpus.total_tokens ≥ 20 ×
+      model.param_count. Specifically, for 370M:
+      total_tokens ≥ 7.4B. This is the invariant surfaced by
+      task #141 + §15 v2.24.0 amendment.
+    falsifier: >
+      Pre-flight gate: read peer model-families contract's
+      param_count; read mixture-manifest's total_tokens; assert
+      total_tokens ≥ 20 × param_count. Below → REFUSE dispatch.
+
+  - id: INV-CORPUS-005
+    description: >
+      corpus_sha256 in mixture-manifest is the sha256 merkle over
+      per-source corpus_sha256s sorted by source id. Reproducible
+      across hosts.
+    falsifier: >
+      Recompute merkle; compare to manifest. Mismatch → FAIL.
+
+  - id: INV-CORPUS-006
+    description: >
+      The weighted round-robin iterator is pure and deterministic.
+      Given the same mixture-manifest and the same seed, two hosts
+      emit BYTE-IDENTICAL u32 token sequences for the first 1M
+      tokens.
+    falsifier: >
+      On two hosts (4090 + gx10), run iterator dry-run (no
+      forward/backward), capture first 1M u32 tokens to sha256.
+      Mismatch → FAIL.
+
+# ─────────────────────────────────────────────────────────────
+# Falsification gates — compound ship-blockers
+# ─────────────────────────────────────────────────────────────
+
+falsification:
+
+  - id: FALSIFY-CORPUS-001
+    name: "Chinchilla-floor compliance"
+    input: "mixture-manifest.yaml"
+    procedure: |
+      1. Read total_tokens from manifest.
+      2. Read model_param_count from peer llama-370m-sovereign-v1.
+      3. ASSERT total_tokens ≥ 20 × model_param_count.
+    falsifier: >
+      Below floor → mixture REJECTED; AC-SHIP2-003 (final val_loss)
+      target cannot be honestly reached.
+
+  - id: FALSIFY-CORPUS-002
+    name: "Diversity minimum"
+    input: "mixture-manifest.yaml"
+    procedure: |
+      1. Assert source_count ≥ 3.
+      2. Assert max(per_source_weight_actual) ≤ 0.50.
+    falsifier: "Mixture collapses to near-single-source → cross-domain reasoning goal unmet."
+
+  - id: FALSIFY-CORPUS-003
+    name: "Cross-host iterator determinism"
+    input: "Same mixture-manifest on 4090 + gx10"
+    procedure: |
+      1. Dry-run iterator (no model), capture first 1M u32 tokens.
+      2. Compare sha256.
+    falsifier: "Non-determinism → training data drift → AC-SHIP2-011 seed reproducibility broken at the data layer."
+
+  - id: FALSIFY-CORPUS-004
+    name: "Pre-flight dispatch-budget gate"
+    input: "planned (epochs × steps_per_epoch × batch_tokens) vs corpus.total_tokens"
+    procedure: |
+      1. Operator dispatches `apr pretrain --epochs E --steps-per-epoch S
+         --batch-size B --seq-len L`.
+      2. CLI computes planned_tokens = E × S × B × L.
+      3. CLI reads mixture-manifest total_tokens.
+      4. If planned_tokens > total_tokens, REFUSE to start:
+         exit nonzero with error naming GATE-CORPUS-PREFLIGHT.
+      5. Operator must either (a) enlarge the corpus, or (b) enable
+         `--allow-shard-cycle` which emits a single INFO log at first
+         cycle boundary and continues (per INV-TRAIN-011 path a).
+    falsifier: >
+      task #141 MODEL-2 10k: planned ≈ 820.8M tokens vs corpus
+      18.1M tokens — 45× over-dispatch silently resolved to
+      placeholder (1.0, 1.0). With FALSIFY-CORPUS-004 in place,
+      the dispatch refuses to start without operator opt-in.
+
+  - id: FALSIFY-CORPUS-005
+    name: "No-placeholder-loss epoch-metadata scan"
+    input: "{run_dir}/ckpt/epoch-*.metadata.json"
+    procedure: |
+      1. Parse every epoch-*.metadata.json file.
+      2. For each epoch record with train_loss == 1.0_f32 exact
+         AND train_ppl == std::f32::consts::E exact AND
+         grad_norm_max == 1.0_f32 exact AND wall_seconds < 1.0
+         (CUDA) or < 10.0 (CPU), FLAG as placeholder fingerprint.
+      3. ASSERT no flagged records.
+    falsifier: "Placeholder fingerprint detected → task #141 defect regressed OR dispatch exceeded corpus without --allow-shard-cycle."
+
+# ─────────────────────────────────────────────────────────────
+# Compound gates — ship-blocking before pretraining can start
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-CORPUS-CHINCHILLA
+    name: "Chinchilla-floor ship-blocker"
+    condition: "INV-CORPUS-001 PASS AND INV-CORPUS-004 PASS AND FALSIFY-CORPUS-001 PASS"
+    consequence_if_violated: >
+      pretraining dispatch REFUSED at pre-flight; AC-SHIP2-003/004
+      cannot be honestly targeted; mixture must be enlarged.
+    blocks_ac: "AC-SHIP2-003 + AC-SHIP2-004"
+    ship_blocking: true
+
+  - id: GATE-CORPUS-DIVERSITY
+    name: "Mixture diversity ship-blocker"
+    condition: "INV-CORPUS-002 PASS AND FALSIFY-CORPUS-002 PASS"
+    consequence_if_violated: >
+      mixture too narrow; AC-SHIP2-013 (HumanEval ≥ 30%)
+      unachievable without cross-domain reasoning.
+    blocks_ac: "AC-SHIP2-013"
+    ship_blocking: true
+
+  - id: GATE-CORPUS-PREFLIGHT
+    name: "Dispatch-budget pre-flight gate"
+    condition: "FALSIFY-CORPUS-004 PASS"
+    consequence_if_violated: >
+      `apr pretrain` exits nonzero before any compute starts;
+      operator must enlarge corpus OR opt-in to --allow-shard-cycle.
+    blocks_ac: "AC-SHIP2-003"
+    ship_blocking: true
+    motivation: >
+      task #141 root cause: 45× over-dispatch silently resolved
+      to fake convergence. Pre-flight gate prevents recurrence.
+
+  - id: GATE-CORPUS-DETERMINISM
+    name: "Cross-host iterator determinism"
+    condition: "INV-CORPUS-005 PASS AND INV-CORPUS-006 PASS AND FALSIFY-CORPUS-003 PASS"
+    consequence_if_violated: >
+      Same seed different tokens on 4090 vs gx10 → AC-SHIP2-011
+      seed reproducibility is broken at the data layer.
+    blocks_ac: "AC-SHIP2-011"
+
+  - id: GATE-CORPUS-NO-PLACEHOLDER
+    name: "No-placeholder post-hoc scan"
+    condition: "FALSIFY-CORPUS-005 PASS"
+    consequence_if_violated: >
+      task #141 placeholder fingerprint detected in epoch metadata
+      → ship blocked until root-caused.
+    blocks_ac: "AC-SHIP2-003"
+    ship_blocking: true
+
+# ─────────────────────────────────────────────────────────────
+# Failure modes
+# ─────────────────────────────────────────────────────────────
+
+failure_modes:
+  - id: FM-CORPUS-UNDERSIZED
+    description: >
+      total_tokens < total_tokens_minimum. Mixture is below
+      Chinchilla floor for the target model. Remedy: add sources
+      or add shards to existing sources until total_tokens ≥ 7.4B.
+  - id: FM-CORPUS-COLLAPSED
+    description: >
+      source_count < 3 OR single source weight > 0.50. Mixture
+      collapsed to near-single-source. Remedy: add a domain or
+      rebalance weights.
+  - id: FM-CORPUS-NONDETERMINISM
+    description: >
+      Iterator emits different token sequences across hosts at
+      the same seed. Usually a shard-ordering or filesystem-
+      listing bug. Remedy: sort shard filenames lexicographically
+      before opening; use fixed seed for shuffle.
+  - id: FM-CORPUS-OVERDISPATCH
+    description: >
+      Operator targets more tokens than the corpus holds. Remedy:
+      enlarge corpus OR pass --allow-shard-cycle to opt into
+      iterator-layer cycling (single INFO log at first cycle).
+      NEVER silent placeholder — that is task #141's defect.

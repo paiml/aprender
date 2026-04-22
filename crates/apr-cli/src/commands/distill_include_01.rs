@@ -324,4 +324,51 @@ mod tests {
         let student = create_student_from_teacher(&tensors, DistillStrategy::Standard);
         assert_eq!(student.len(), 2, "Standard copies all tensors");
     }
+
+    /// Regression: MODEL-1 v2 5th failure mode — `samples_per_prompt` was
+    /// silently ignored because `ResumeState` keyed only on prompt text, so
+    /// the second sample of the same prompt was always counted as already
+    /// done. The key is now `(prompt, sample_idx)`.
+    ///
+    /// Drop a JSONL where prompt "P" has only sample_idx=0; check that the
+    /// resume set contains (P, 0) but NOT (P, 1), so a run with
+    /// samples_per_prompt=2 would correctly re-request sample_idx=1.
+    #[test]
+    fn test_resume_state_keys_on_prompt_and_sample_idx() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let output_path = dir.path().join("out.jsonl");
+        {
+            let mut f = std::fs::File::create(&output_path).expect("create");
+            writeln!(
+                f,
+                r#"{{"prompt":"P","completion":"c0","tokens":10,"sample_idx":0,"source":"","kind":""}}"#
+            )
+            .unwrap();
+        }
+        let state = load_resume_state(&output_path).expect("load");
+        assert!(state.existing_samples.contains(&("P".to_string(), 0)));
+        assert!(!state.existing_samples.contains(&("P".to_string(), 1)));
+        assert_eq!(state.total_tokens, 10);
+        assert_eq!(state.generated_count, 1);
+    }
+
+    /// Back-compat: records written by the pre-patch binary had no
+    /// `sample_idx` field; they must be treated as sample_idx=0 so existing
+    /// teacher-completions.jsonl files resume correctly without being
+    /// re-generated.
+    #[test]
+    fn test_resume_state_legacy_missing_sample_idx_is_zero() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let output_path = dir.path().join("legacy.jsonl");
+        {
+            let mut f = std::fs::File::create(&output_path).expect("create");
+            writeln!(
+                f,
+                r#"{{"prompt":"P","completion":"c","tokens":7,"source":"","kind":""}}"#
+            )
+            .unwrap();
+        }
+        let state = load_resume_state(&output_path).expect("load");
+        assert!(state.existing_samples.contains(&("P".to_string(), 0)));
+    }
 }

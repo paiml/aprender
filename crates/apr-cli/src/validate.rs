@@ -7,8 +7,8 @@
 fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
     match command {
         // === ACTION COMMANDS (gated) ===
-        ExtendedCommands::Probar { file, .. }
-        | ExtendedCommands::CompareHf { file, .. }
+        ExtendedCommands::Forensics(ForensicsCommands::Probar { file, .. })
+        | ExtendedCommands::Forensics(ForensicsCommands::CompareHf { file, .. })
         | ExtendedCommands::Chat { file, .. }
         | ExtendedCommands::Bench { file, .. }
         | ExtendedCommands::Eval { file, .. }

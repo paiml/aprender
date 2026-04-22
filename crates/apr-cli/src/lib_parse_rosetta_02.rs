@@ -200,7 +200,7 @@
     /// Test extract_model_paths: Probar returns file path
     #[test]
     fn test_extract_paths_probar() {
-        let cmd = Commands::Extended(ExtendedCommands::Probar {
+        let cmd = Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Probar {
             file: PathBuf::from("model.apr"),
             output: PathBuf::from("./probar-export"),
             format: "both".to_string(),
@@ -208,7 +208,7 @@
             layer: None,
             assert: false,
             tolerance: 0.98,
-        });
+        }));
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
     }
@@ -216,13 +216,13 @@
     /// Test extract_model_paths: CompareHf returns file path
     #[test]
     fn test_extract_paths_compare_hf() {
-        let cmd = Commands::Extended(ExtendedCommands::CompareHf {
+        let cmd = Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::CompareHf {
             file: PathBuf::from("model.apr"),
             hf: "openai/whisper-tiny".to_string(),
             tensor: None,
             threshold: 1e-5,
             json: false,
-        });
+        }));
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
     }
@@ -434,7 +434,7 @@
     /// Test extract_model_paths: Hex is diagnostic (exempt)
     #[test]
     fn test_extract_paths_hex_exempt() {
-        let cmd = Commands::Extended(ExtendedCommands::Hex {
+        let cmd = Commands::Extended(ExtendedCommands::Forensics(ForensicsCommands::Hex {
             file: PathBuf::from("model.apr"),
             tensor: None,
             limit: 64,
@@ -450,7 +450,7 @@
             offset: "0".to_string(),
             width: 16,
             slice: None,
-        });
+        }));
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Hex is a diagnostic command (exempt)");
     }

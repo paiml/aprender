@@ -93,9 +93,9 @@ async fn falsify_crux_c_03_001_chat_completion_schema() {
         "FALSIFY-CRUX-C-03-001: model must be a non-empty string, got {v}"
     );
 
-    let choices = v["choices"].as_array().unwrap_or_else(|| {
-        panic!("FALSIFY-CRUX-C-03-001: choices must be an array, got {v}")
-    });
+    let choices = v["choices"]
+        .as_array()
+        .unwrap_or_else(|| panic!("FALSIFY-CRUX-C-03-001: choices must be an array, got {v}"));
     assert!(
         !choices.is_empty(),
         "FALSIFY-CRUX-C-03-001: choices must have length >= 1, got {v}"
