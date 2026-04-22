@@ -73,6 +73,7 @@ fn registered_commands() -> Vec<&'static str> {
         "probar",
         "diagnose",
         "ollama-chat-lint",
+        "ollama-tools-lint",
         "dry-sampling-lint",
         "awq-lint",
         "oom-lint",

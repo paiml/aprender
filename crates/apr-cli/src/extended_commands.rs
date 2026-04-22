@@ -730,8 +730,7 @@ pub enum ExtendedCommands {
         #[arg(long)]
         stream: bool,
     },
-    /// Lint an Ollama /api/chat function-calling response — tool_calls[] schema
-    /// and streaming atomicity (CRUX-I-04)
+    /// Lint an Ollama /api/chat function-calling response (CRUX-I-04)
     OllamaToolsLint {
         /// Path to captured /api/chat response (JSON object, or NDJSON if --stream)
         #[arg(long, value_name = "FILE")]
