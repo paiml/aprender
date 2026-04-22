@@ -20,6 +20,7 @@ pub mod docs;
 pub mod fairness;
 pub mod robustness;
 pub mod security;
+pub mod ship_002;
 pub mod ship_006;
 pub mod velocity;
 
