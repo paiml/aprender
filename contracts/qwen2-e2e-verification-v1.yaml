@@ -1,9 +1,22 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-20'
   author: PAIML Engineering
-  description: Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
-    into a complete model proof
+  description: |
+    Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
+    into a complete model proof.
+
+    v1.1.0 (2026-04-22): Added FALSIFY-QW2E-SHIP-007 — binds MODEL-1
+    ship-blocking decode throughput criterion (AC-SHIP1-007: `apr bench`
+    decode ≥ 30 tok/s on RTX 4090 for the 7B Q4_K teacher) to a pure f32
+    threshold verdict fn `verdict_from_decode_tps` in
+    `crates/aprender-core/src/bench/ship_007.rs`. Algorithm-level PARTIAL
+    discharge: the decision rule is proven today; the compute-heavy
+    discharge (live `apr bench --iterations 5 --max-tokens 128
+    paiml/qwen2.5-coder-7b-apache-q4k-v1` on RTX 4090 with median ≥ 30.0)
+    remains blocked on hardware evidence collection. Mirrors MODEL-2
+    SHIP-020 pattern (100 tok/s floor for 370M sovereign) but authored
+    self-contained because SHIP-020 branch is not yet on main.
   references:
   - Qwen2.5 Technical Report — full model architecture
   - Vaswani et al. (2017) Attention Is All You Need
@@ -150,6 +163,43 @@ falsification_tests:
   prediction: tokens -> [seq_len, 3584] -> ... -> [seq_len, 152064]
   test: 'proptest: trace shapes through mock pipeline'
   if_fails: Shape break in layer composition
+- id: FALSIFY-QW2E-SHIP-007
+  rule: |
+    MODEL-1 ship-blocker — `apr bench --iterations 5 --max-tokens 128
+    paiml/qwen2.5-coder-7b-apache-q4k-v1` median decode throughput must
+    be at least AC_SHIP1_007_MIN_DECODE_TPS_RTX4090_7B = 30.0 tok/s on
+    an RTX 4090 host. Decision rule: `Pass` iff measured tok/s is finite
+    AND ≥ 30.0. Non-finite values (NaN, ±∞) Fail conservatively.
+  prediction: |
+    verdict_from_decode_tps(measured) == Ship007Verdict::Pass
+    iff measured.is_finite() && measured >= 30.0
+  test: |
+    cargo test -p aprender-core --lib
+    falsify_ship_007_decode_tps_threshold_logic
+  if_fails: |
+    MODEL-1 teacher cannot ship — either the 7B Q4_K decode kernel has
+    regressed below the Ollama-parity-class floor, or the contract
+    constant has drifted from spec §4.2 AC-SHIP1-007.
+  ship_blocking: true
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - crates/aprender-core/src/bench/ship_007.rs
+    (verdict_from_decode_tps + AC_SHIP1_007_MIN_DECODE_TPS_RTX4090_7B)
+  - 'test: falsify_ship_007_decode_tps_threshold_logic (7 sections —
+    boundary at 30.0, ULP-below Fail, clear Pass/Fail bands,
+    monotonicity, non-finite guards, provenance pin)'
+  full_discharge_blocks_on: |
+    Live `apr bench --iterations 5 --max-tokens 128
+    paiml/qwen2.5-coder-7b-apache-q4k-v1` on RTX 4090 with --features
+    cuda; median of 5 iterations must be ≥ 30.0 tok/s.
+  counter_example_classes:
+  - "regressed_kernel: decode path shipped at 25 tok/s due to an
+    un-fused FFN dispatch"
+  - "drifted_constant: contract floor silently raised to 45 tok/s
+    without updating AC-SHIP1-007"
+  - "relaxed_rule: ≥ replaced with > (unreachable floor)"
+  - "nan_promoted: telemetry JSON emits `NaN` and is silently treated
+    as Pass"
 kani_harnesses:
 - id: KANI-QW2E-001
   obligation: QW2E-INV-001
