@@ -543,6 +543,61 @@ pub fn verdict_from_pass_at_1(correct: usize, total: usize, threshold_pct: f32) 
 }
 
 // ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-016 / AC-SHIP2-006 / GATE-ARCH-370M-008 — apr qa aggregate
+// ─────────────────────────────────────────────────────────────
+
+
+/// Number of canonical `apr qa` gates composing AC-SHIP2-006 /
+/// FALSIFY-SHIP-016. The spec row AC-SHIP2-006 reads
+/// "`apr qa <model>.apr` — all 8 gates PASS" and the matching
+/// FALSIFY row names the decision rule as "any gate FAIL" →
+/// Fail. The 8 canonical gates (matching `QaConfig::skip_*` in
+/// `crates/apr-cli/src/commands/qa.rs`) are:
+///   1. golden_output      — correctness gate (GH-202 regression)
+///   2. throughput         — tok/s ≥ configured floor
+///   3. ollama_parity      — speedup vs Ollama baseline
+///   4. gpu_vs_cpu_speedup — GPU ≥ 2× CPU (F-PERF-042)
+///   5. tensor_contract    — layout/dtype/shape validation
+///   6. cross_format_parity — argmax(GGUF) == argmax(SafeTensors)
+///   7. ptx_parity         — batched GPU kernels vs scalar refs
+///   8. probar             — property-based tests
+///
+/// Contract-drift guard: any change to this number must be matched
+/// in lockstep across the contract, spec, and CLI qa handler.
+pub const AC_SHIP2_006_REQUIRED_QA_GATE_COUNT: usize = 8;
+
+/// Ternary verdict for FALSIFY-SHIP-016 / GATE-ARCH-370M-008.
+/// `Pass` iff every one of the 8 canonical `apr qa` gates passed.
+/// `Fail` otherwise (any single gate failure, or wrong gate count).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship016Verdict {
+    Pass,
+    Fail,
+}
+
+/// Algorithm-level verdict rule for FALSIFY-SHIP-016 / GATE-ARCH-370M-008
+/// / AC-SHIP2-006: `apr qa <model>.apr` is an aggregate-AND over the
+/// 8 canonical QA gates. Verdict is `Pass` iff **exactly 8** gate
+/// results were supplied **and every one passed**. Any shorter/longer
+/// slice is a contract-drift Fail; any single `false` entry is a
+/// ship-blocking Fail. This proves the decision rule without running
+/// the compute-heavy gates themselves; the harness (realizar, cuda,
+/// tokenizer, corpus) is fixture-swappable once a real trained 370M
+/// .apr exists. Spec §7 row FALSIFY-SHIP-016 ("any gate FAIL") is
+/// the counter-example this fn is built to classify.
+#[must_use]
+pub fn verdict_from_qa_gates(gate_results: &[bool]) -> Ship016Verdict {
+    if gate_results.len() != AC_SHIP2_006_REQUIRED_QA_GATE_COUNT {
+        return Ship016Verdict::Fail;
+    }
+    if gate_results.iter().all(|&passed| passed) {
+        Ship016Verdict::Pass
+    } else {
+        Ship016Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Unit tests
 // ─────────────────────────────────────────────────────────────
 
@@ -1548,6 +1603,188 @@ mod tests {
             Some(true),
             "GATE-ARCH-370M-007 must advertise ship_blocking:true — \
              verdict:pass alone is insufficient green while \
+             discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+
+    /// FALSIFY-SHIP-016 algorithm-level PARTIAL discharge: the decision
+    /// rule of SHIP-016 — "`apr qa <model>.apr` passes iff all 8 gates
+    /// PASS; any gate FAIL fails the ship" — is a pure aggregate-AND
+    /// over a Boolean slice. This test proves the rule without running
+    /// the compute-heavy gates themselves. The rule separates from the
+    /// compute dependency: the gate-runner is fixture-swappable once
+    /// a trained 370M .apr exists; the decision is proven today.
+    #[test]
+    fn falsify_ship_016_apr_qa_aggregate_and_logic() {
+        // Section 1: canonical Pass — all 8 gates true → Pass.
+        let all_pass = [true; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT];
+        assert_eq!(
+            verdict_from_qa_gates(&all_pass),
+            Ship016Verdict::Pass,
+            "AC-SHIP2-006: all 8 gates PASS must yield Pass",
+        );
+
+        // Section 2: single-gate-fail must flip the aggregate to Fail —
+        // this is the "any gate FAIL" counter-example from FALSIFY-SHIP-016.
+        for flip_idx in 0..AC_SHIP2_006_REQUIRED_QA_GATE_COUNT {
+            let mut gates = [true; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT];
+            gates[flip_idx] = false;
+            assert_eq!(
+                verdict_from_qa_gates(&gates),
+                Ship016Verdict::Fail,
+                "flipping gate index {flip_idx} from Pass to Fail must yield aggregate Fail \
+                 — SHIP-016 is an AND, not a majority or threshold",
+            );
+        }
+
+        // Section 3: canonical Fail — all 8 gates false → Fail.
+        let all_fail = [false; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT];
+        assert_eq!(
+            verdict_from_qa_gates(&all_fail),
+            Ship016Verdict::Fail,
+            "all 8 gates FAIL must yield Fail",
+        );
+
+        // Section 4: exhaustive 2^8 = 256-combination proof — the ONLY
+        // input yielding Pass is the all-true vector; every other
+        // combination of 8 bools must yield Fail.
+        let mut pass_count = 0usize;
+        let mut fail_count = 0usize;
+        for mask in 0u32..(1u32 << AC_SHIP2_006_REQUIRED_QA_GATE_COUNT) {
+            let gates: [bool; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT] =
+                std::array::from_fn(|i| (mask >> i) & 1 == 1);
+            match verdict_from_qa_gates(&gates) {
+                Ship016Verdict::Pass => {
+                    pass_count += 1;
+                    assert!(
+                        gates.iter().all(|&p| p),
+                        "Pass verdict must only occur when all 8 gates are true; \
+                         got {gates:?} at mask {mask:#010b}",
+                    );
+                }
+                Ship016Verdict::Fail => {
+                    fail_count += 1;
+                    assert!(
+                        gates.iter().any(|&p| !p),
+                        "Fail verdict must only occur when at least one gate is false; \
+                         got {gates:?} at mask {mask:#010b}",
+                    );
+                }
+            }
+        }
+        assert_eq!(pass_count, 1, "exactly one of 256 combos (all-true) yields Pass");
+        assert_eq!(fail_count, 255, "the other 255 combos must yield Fail");
+
+        // Section 5: monotonicity — adding a Pass to a mixed slice can
+        // only move the verdict up (Fail→Pass) or keep it the same,
+        // never downgrade Pass→Fail. Pair each combo with the combo
+        // obtained by flipping one bit from false to true; assert
+        // the verdict never regresses.
+        for mask in 0u32..(1u32 << AC_SHIP2_006_REQUIRED_QA_GATE_COUNT) {
+            let before: [bool; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT] =
+                std::array::from_fn(|i| (mask >> i) & 1 == 1);
+            for flip_idx in 0..AC_SHIP2_006_REQUIRED_QA_GATE_COUNT {
+                if before[flip_idx] {
+                    continue;
+                }
+                let mut after = before;
+                after[flip_idx] = true;
+                let before_v = verdict_from_qa_gates(&before);
+                let after_v = verdict_from_qa_gates(&after);
+                assert!(
+                    !(before_v == Ship016Verdict::Pass && after_v == Ship016Verdict::Fail),
+                    "monotonicity violated: flipping gate {flip_idx} from false to true \
+                     regressed Pass→Fail at mask {mask:#010b}",
+                );
+            }
+        }
+
+        // Section 6: contract-drift guards — wrong gate count must Fail
+        // conservatively even when every supplied entry is true. This
+        // prevents a silent green from an out-of-sync harness that
+        // shipped 7 or 9 gates instead of the spec-mandated 8.
+        assert_eq!(
+            verdict_from_qa_gates(&[]),
+            Ship016Verdict::Fail,
+            "empty gate slice must Fail (contract drift)",
+        );
+        assert_eq!(
+            verdict_from_qa_gates(&[true; 7]),
+            Ship016Verdict::Fail,
+            "7 gates (short by one) must Fail even when all true (contract drift)",
+        );
+        assert_eq!(
+            verdict_from_qa_gates(&[true; 9]),
+            Ship016Verdict::Fail,
+            "9 gates (long by one) must Fail even when all true (contract drift)",
+        );
+        assert_eq!(
+            verdict_from_qa_gates(&[true; 16]),
+            Ship016Verdict::Fail,
+            "double-wide gate slice must Fail (contract drift)",
+        );
+
+        // Section 7: provenance pin — the 8-gate count is the
+        // contract number; drift on this constant fails lockstep-wise
+        // with the spec amendment and `QaConfig` skip flags.
+        assert_eq!(
+            AC_SHIP2_006_REQUIRED_QA_GATE_COUNT, 8,
+            "AC-SHIP2-006 is the 8-gate aggregate; any change requires \
+             contract + spec + CLI skip-flag edits in lockstep",
+        );
+    }
+
+    /// GATE-ARCH-370M-008 wiring check: once FALSIFY-SHIP-016 has an
+    /// algorithm-level PARTIAL discharge, the sovereign contract YAML
+    /// MUST record `discharge_status: PARTIAL_ALGORITHM_LEVEL` +
+    /// `evidence_discharged_by` + `full_discharge_blocks_on` on
+    /// GATE-ARCH-370M-008. Any edit that drops those fields fails this
+    /// test before the artifact ships.
+    #[test]
+    fn falsify_ship_016_gate_arch_370m_008_has_partial_discharge_marker() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+        let gates =
+            doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
+        let gate = gates
+            .iter()
+            .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-008"))
+            .expect("GATE-ARCH-370M-008 must exist in sovereign contract");
+
+        assert_eq!(
+            gate["falsification_id"].as_str(),
+            Some("FALSIFY-SHIP-016"),
+            "GATE-ARCH-370M-008 must bind FALSIFY-SHIP-016",
+        );
+        assert_eq!(
+            gate["binds_to"].as_str(),
+            Some("AC-SHIP2-006"),
+            "GATE-ARCH-370M-008 must bind AC-SHIP2-006",
+        );
+        assert_eq!(
+            gate["discharge_status"].as_str(),
+            Some("PARTIAL_ALGORITHM_LEVEL"),
+            "GATE-ARCH-370M-008 must advertise PARTIAL_ALGORITHM_LEVEL \
+             (full discharge blocks on real trained 370M .apr + `apr qa` harness)",
+        );
+        let evidence = gate["evidence_discharged_by"]
+            .as_sequence()
+            .expect("GATE-ARCH-370M-008 must have evidence_discharged_by");
+        assert!(
+            !evidence.is_empty(),
+            "GATE-ARCH-370M-008 evidence_discharged_by must list \
+             at least one test function or artifact",
+        );
+        assert!(
+            gate["full_discharge_blocks_on"].as_str().is_some(),
+            "PARTIAL gate must document full_discharge_blocks_on",
+        );
+        assert_eq!(
+            gate["ship_blocking"].as_bool(),
+            Some(true),
+            "GATE-ARCH-370M-008 must advertise ship_blocking:true — the \
+             gate's `verdict:pass` alone is insufficient green while \
              discharge_status == PARTIAL_ALGORITHM_LEVEL",
         );
     }

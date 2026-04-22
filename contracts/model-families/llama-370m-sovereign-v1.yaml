@@ -40,10 +40,27 @@ version: 1.6.0
 status: ACTIVE
 
 metadata:
-  version: "1.8.0"
+  version: "1.9.0"
   created: "2026-04-18"
   updated: "2026-04-23"
   changelog:
+    - "1.9.0 (2026-04-23): Added GATE-ARCH-370M-008 binding
+       AC-SHIP2-006 ↔ FALSIFY-SHIP-016 (`apr qa <model>.apr` — all 8
+       gates PASS) with `discharge_status: PARTIAL_ALGORITHM_LEVEL`.
+       Wired the pure aggregate-AND decision rule `verdict_from_qa_gates`
+       + `AC_SHIP2_006_REQUIRED_QA_GATE_COUNT = 8` in
+       `crates/aprender-train/src/models/llama_370m.rs`. Harness
+       proves the rule via exhaustive 2^8 = 256-combination sweep
+       (exactly one input — all-true — yields Pass; 255 others yield
+       Fail), single-gate-flip falsifiability (8 cases), monotonicity
+       (flipping false→true never regresses Pass→Fail), and three
+       contract-drift guards (wrong gate count — 0, 7, 9, 16 — all
+       Fail even when supplied entries are true). Full `apr qa
+       <model>.apr` harness (8 compute-heavy gates) remains
+       fixture-swappable once a real trained 370M .apr checkpoint
+       exists from AC-SHIP2-003/004 compute-dispatch — no harness
+       rewrite needed, only artifact swap. Restacked onto v2.36.0
+       SHIP-018. Sovereign contract stays ACTIVE."
     - "1.8.0 (2026-04-23): Added GATE-ARCH-370M-007 binding
        AC-SHIP2-008 ↔ FALSIFY-SHIP-018 (HumanEval pass@1 ≥ 30.0%)
        with `discharge_status: PARTIAL_ALGORITHM_LEVEL`. Wired pure
@@ -671,6 +688,69 @@ gates:
     verdict: pass
     binds_to: AC-SHIP2-008
     falsification_id: FALSIFY-SHIP-018
+    ship_blocking: true
+
+  - id: GATE-ARCH-370M-008
+    rule: >
+      `apr qa <model>.apr` returns exit 0 with all 8 canonical gates
+      PASS. Any single gate FAIL is a ship-blocker. The 8 canonical
+      gates (mirroring `QaConfig::skip_*` in apr-cli) are:
+      (1) golden_output — correctness gate / GH-202 regression proof,
+      (2) throughput — measured tok/s ≥ configured floor,
+      (3) ollama_parity — speedup ratio vs Ollama baseline,
+      (4) gpu_vs_cpu_speedup — F-PERF-042 ≥ 2× GPU-over-CPU,
+      (5) tensor_contract — layout/dtype/shape validation,
+      (6) cross_format_parity — argmax(GGUF) == argmax(SafeTensors),
+      (7) ptx_parity — batched GPU kernels vs scalar refs,
+      (8) probar — property-based tests.
+    evidence_required: >
+      A real 370M .apr checkpoint from AC-SHIP2-003/004
+      compute-dispatch + `apr qa <model>.apr` exit code 0 with
+      the JSON report advertising all 8 gates passed. Feed the
+      8 gate-result booleans into `verdict_from_qa_gates`
+      (aggregate-AND over an 8-element Boolean slice) and require
+      Ship016Verdict::Pass.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/models/llama_370m.rs::verdict_from_qa_gates"
+      - "crates/aprender-train/src/models/llama_370m.rs::AC_SHIP2_006_REQUIRED_QA_GATE_COUNT"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_016_apr_qa_aggregate_and_logic"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_016_gate_arch_370m_008_has_partial_discharge_marker"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Algorithm level proven today via `verdict_from_qa_gates` — a
+      pure fn over `&[bool]` that returns Pass iff length == 8 AND
+      every entry is true. Invariants proven today without running
+      the compute-heavy QA harness:
+        (1) **Aggregate-AND correctness** — exhaustive 2^8 = 256-
+        combination sweep: exactly one input (all-true) yields
+        Pass, the other 255 yield Fail. This is a complete
+        classification over the decision-rule's domain.
+        (2) **Single-gate-flip falsifiability** — flipping any one
+        of the 8 gates from true to false flips the aggregate to
+        Fail. Proves SHIP-016 is an AND, not a majority or
+        threshold. (The counter-example from spec §7 row
+        FALSIFY-SHIP-016 — "any gate FAIL" — classifies correctly.)
+        (3) **Monotonicity** — flipping any gate from false to
+        true cannot regress Pass→Fail. Proven by exhaustive
+        pairwise sweep over 2^8 states.
+        (4) **Contract-drift guards** — a gate slice of length
+        != 8 (empty, 7, 9, or 16) always yields Fail conservatively,
+        even when every supplied entry is true. Prevents silent
+        green from an out-of-sync harness.
+        (5) **Provenance pin** — `AC_SHIP2_006_REQUIRED_QA_GATE_COUNT`
+        is pinned to 8 with a provenance-assert test; any drift
+        requires contract + spec + `QaConfig` skip-flag edits in
+        lockstep.
+      Full discharge (`apr qa <model>.apr` with all 8 gates green on
+      a real trained 370M .apr checkpoint) remains PENDING on
+      AC-SHIP2-003/004 compute-dispatch (pretraining produces the
+      artifact) + golden-output fixtures compatible with AC-SHIP2-007
+      (syntactically valid Python). Fixture swap is artifact-only
+      once a trained model exists — no harness rewrite required.
+    full_discharge_blocks_on: "real 370M .apr checkpoint from pretraining compute-dispatch (AC-SHIP2-003/004) + Python-capable golden-output fixtures compatible with AC-SHIP2-007 + invocation of 8-gate `apr qa` harness with exit 0"
+    verdict: pass
+    binds_to: AC-SHIP2-006
+    falsification_id: FALSIFY-SHIP-016
     ship_blocking: true
 
   - id: GATE-ARCH-370M-011
