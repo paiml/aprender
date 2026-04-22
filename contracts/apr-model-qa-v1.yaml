@@ -1,7 +1,7 @@
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-04-04'
-  updated: '2026-04-17'
+  updated: '2026-04-22'
   author: PAIML Engineering
   registry: true
   description: >
@@ -16,6 +16,15 @@ metadata:
     falsification event 2026-04-17 where a distilled checkpoint emitting
     garbage ("ylkoylko...") passed Tensor Contract but failed Golden
     Output — a silent-skip path could have let it ship for 14 days.
+
+    v1.2.0 (2026-04-22): Adds FALSIFY-QA-SHIP-006 binding the MODEL-1
+    AC-SHIP1-006 "all 8 apr qa gates PASS" ship criterion to a pure
+    aggregate-AND verdict fn over the 8-gate boolean array (authoritative
+    per docs/specifications/components/qa.md §3: golden, throughput,
+    ollama parity, gpu speedup, tensor contracts, format parity, ptx
+    parity, metadata). Discharges FALSIFY-SHIP-008 / AC-SHIP1-006 at
+    PARTIAL_ALGORITHM_LEVEL; full discharge blocks on live
+    `apr qa paiml/qwen2.5-coder-7b-apache-q4k-v1 --json`.
   references:
   - 'apr-cli/src/commands/check.rs — run_check(), aggregate_results()'
   - 'apr-cli/src/commands/validate.rs — validate_model()'
@@ -275,6 +284,47 @@ falsification_tests:
   prediction: Running check twice on same model produces identical reports
   test: Run check twice, diff JSON outputs
   if_fails: Non-deterministic metadata or timestamp in report
+- id: FALSIFY-QA-SHIP-006
+  rule: >
+    MODEL-1 teacher (paiml/qwen2.5-coder-7b-apache-q4k-v1) must pass all
+    8 apr qa gates authoritative per docs/specifications/components/qa.md
+    §3 (golden, throughput, ollama parity, gpu speedup, tensor contracts,
+    format parity, ptx parity, metadata). The decision rule is
+    aggregate-AND: Pass iff all 8 gate booleans are true AND the array
+    has exactly 8 entries.
+  prediction: >
+    Given any [bool; 8] gate-result array, verdict_from_qa_gates yields
+    Pass iff every entry is true. A 7-long or 9-long input, or any
+    single false entry, yields Fail. Proves the gate count, the
+    aggregate shape, and the absence of "7-of-8 is close enough" drift.
+  test: |
+    crates/aprender-core/src/qa/ship_006.rs holds the const fn
+    verdict_from_qa_gates(&[bool]) -> Ship006Verdict and the 7-section
+    harness falsify_ship_006_apr_qa_eight_gates_aggregate:
+      Section 1: all-Pass → Pass
+      Section 2: all-Fail → Fail
+      Section 3: single-gate-flip (each of 8 positions) → Fail
+      Section 4: exhaustive 2^8=256 bitmask proof (mask==0xFF iff Pass)
+      Section 5: monotonicity — Pass→Fail under any single flip
+      Section 6: length drift — 0/7/9/16 all-true inputs → Fail
+      Section 7: provenance pin — AC_SHIP1_006_REQUIRED_QA_GATE_COUNT = 8
+    Run: cargo test -p aprender-core --lib
+      falsify_ship_006_apr_qa_eight_gates_aggregate
+  if_fails: >
+    A MODEL-1 teacher with fewer than 8 Pass gates can ship (contract
+    weakening) or the gate count drifts without spec update (schema
+    rot). Either is a publish-blocker.
+  spec_reference: ship-two-models-spec.md §4.2 AC-SHIP1-006
+  ship_blocking: true
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - 'crates/aprender-core/src/qa/ship_006.rs (verdict fn + 7-section mutation survey)'
+  - 'cargo test -p aprender-core --lib falsify_ship_006_apr_qa_eight_gates_aggregate'
+  full_discharge_blocks_on: >
+    Live `apr qa paiml/qwen2.5-coder-7b-apache-q4k-v1 --json` on an
+    RTX 4090 host producing 8 "pass": true entries. Algorithm-level
+    rule is dischargeable offline; compute-heavy harness awaits
+    SHIP-TWO-001 MODEL-1 post-ship evidence lane.
 - id: FALSIFY-EX-001
   rule: Golden Output is a hard ship-blocker under --require-golden-output
   prediction: |
