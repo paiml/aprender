@@ -59,6 +59,8 @@ pub(crate) mod multi_lora_classifier;
 pub(crate) mod offline;
 pub(crate) mod ollama_chat;
 pub(crate) mod ollama_chat_classifier;
+pub(crate) mod ollama_tool_call_classifier;
+pub(crate) mod ollama_tools_lint;
 pub(crate) mod oom_classifier;
 pub(crate) mod oom_lint;
 pub(crate) mod oracle;

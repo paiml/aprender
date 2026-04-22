@@ -101,6 +101,17 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stream,
         } => commands::ollama_chat::run(response_file, *stream, cli.json),
 
+        ExtendedCommands::OllamaToolsLint {
+            response_file,
+            request_file,
+            stream,
+        } => commands::ollama_tools_lint::run(
+            response_file,
+            request_file.as_deref(),
+            *stream,
+            cli.json,
+        ),
+
         ExtendedCommands::DrySamplingLint { observation_file } => {
             commands::dry_sampling_lint::run(observation_file, cli.json)
         }
