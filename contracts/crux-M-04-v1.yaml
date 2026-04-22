@@ -1,0 +1,167 @@
+# CRUX-M-04 — QA Gate-4: cross-format parity APR ↔ GGUF ↔ safetensors
+# Authored under PMAT-672. See docs/specifications/crux-competitive-research-ux-workflows.md §5.M.
+
+metadata:
+  id: CRUX-M-04
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - apr-model-qa-v1
+  - apr-format-invariants-v1
+  - tensor-layout-v1
+  category: "M — APR-QA Playbook Canonicalization"
+  competitor: apr-qa-playbook
+  demand_score: 5
+  intake_status: partial
+  description: >
+    QA Gate-4 from apr-model-qa-playbook — cross-format parity across
+    the three first-class aprender formats: APR (native), GGUF
+    (llama.cpp lineage), safetensors (HF ground truth). For a fixed
+    prompt and seed, generate(model) MUST yield the same token
+    sequence across all three formats. This gate binds LAYOUT-001/002
+    (tensor-layout-v1) enforcement: any format whose import path
+    transposes weights incorrectly will produce divergent tokens and
+    flip the gate to FAIL.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'sibling repo: github.com/paiml/apr-model-qa-playbook — Gate-4'
+  - 'contracts/tensor-layout-v1.yaml — LAYOUT source of truth'
+  - 'contracts/apr-format-invariants-v1.yaml'
+  - 'github.com/ggerganov/llama.cpp — GGUF canonical writer'
+
+equations:
+  cross_format_parity:
+    formula: |
+      Given fixed (prompt, seed, temp=0, top_k=1, max_tokens=N):
+          tokens_apr        := apr_generate(model.apr,          prompt, seed, ...)
+          tokens_gguf       := apr_generate(model.gguf,         prompt, seed, ...)
+          tokens_safetensor := apr_generate(model.safetensors,  prompt, seed, ...)
+      Gate pass := tokens_apr == tokens_gguf == tokens_safetensor
+                    (exact token-id equality, pairwise, for all N tokens)
+    domain: "{.apr, .gguf, .safetensors} × (prompt, seed)"
+    codomain: "PASS if all three pairwise sequences match; FAIL on any divergence"
+    invariants:
+    - "comparison is exact token-id equality, not cosine-similarity or fuzzy match"
+    - "seed is fixed; any non-determinism flips gate to FAIL (not EXEMPT)"
+    - "LAYOUT-001/002 violations manifest as divergent tokens here — Gate-4 is the user-facing enforcer"
+    - "APR is the row-major canonical; GGUF column-major is transposed at import boundary"
+
+  gate_contract:
+    formula: |
+      apr qa --gate cross-format \
+             --apr model.apr --gguf model.gguf --safetensors model.safetensors \
+             --prompt "..." --seed 42 --max-tokens 32 --json
+        emits:
+          status ∈ {"PASS", "FAIL"}
+          formats_tested: ["apr","gguf","safetensors"]
+          tokens_apr:         [...]
+          tokens_gguf:        [...]
+          tokens_safetensors: [...]
+          pairwise_divergences:
+            - { a: "apr", b: "gguf", first_diff_idx, expected_at_i, observed_at_i }
+      exit 0 on PASS; exit 1 on FAIL; exit >= 2 on I/O error
+    domain: "3 model paths + (prompt, seed, N)"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status"
+    - "pairwise_divergences lists every failing pair; empty list iff PASS"
+    - "first_diff_idx identifies the earliest divergent position (enables LAYOUT root-cause)"
+    - "missing format is exit >= 2 (config error), not silent skip"
+
+falsification_tests:
+- id: FALSIFY-CRUX-M-04-001
+  rule: "--gate cross-format flag exists"
+  prediction: "apr qa --help advertises --gate cross-format"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "cross-format"
+  if_fails: "apr qa lacks cross-format gate"
+
+- id: FALSIFY-CRUX-M-04-002
+  rule: "PASS across all three formats for the same model"
+  prediction: "qwen2.5-coder-1.5b imported to apr + gguf + safetensors generates identical 32-token output at seed=42"
+  test: |
+    set -euo pipefail
+    MODEL_ST=qwen2.5-coder-1.5b.safetensors
+    MODEL_APR=qwen2.5-coder-1.5b.apr
+    MODEL_GGUF=qwen2.5-coder-1.5b-q4k.gguf
+    apr qa --gate cross-format \
+           --apr "$MODEL_APR" --gguf "$MODEL_GGUF" --safetensors "$MODEL_ST" \
+           --prompt "2+2=" --seed 42 --max-tokens 32 --json > /tmp/m04.json
+    jq -e '.status == "PASS" and (.pairwise_divergences | length) == 0' /tmp/m04.json >/dev/null
+  if_fails: "Three formats diverge at seed=42 — LAYOUT-001/002 violation or import-boundary bug"
+
+- id: FALSIFY-CRUX-M-04-003
+  rule: "FAIL on a deliberately col-major-imported APR"
+  prediction: "Using --skip-layout-enforcement on import produces divergent tokens vs safetensors"
+  test: |
+    set -euo pipefail
+    apr import --from qwen2.5-coder-1.5b.gguf --to /tmp/m04-broken.apr --skip-layout-enforcement
+    set +e
+    apr qa --gate cross-format \
+           --apr /tmp/m04-broken.apr --gguf qwen2.5-coder-1.5b-q4k.gguf \
+           --safetensors qwen2.5-coder-1.5b.safetensors \
+           --prompt "2+2=" --seed 42 --max-tokens 32 --json > /tmp/m04-broken.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and (.pairwise_divergences | length) >= 1 and .pairwise_divergences[0].first_diff_idx >= 0' /tmp/m04-broken.json >/dev/null
+  if_fails: "Gate does not detect a deliberately broken import — Gate-4 is not LAYOUT-enforcing"
+
+- id: FALSIFY-CRUX-M-04-004
+  rule: "missing format is exit >= 2 (not silent skip)"
+  prediction: "Passing --gguf /does/not/exist exits >= 2"
+  test: |
+    set -euo pipefail
+    set +e
+    apr qa --gate cross-format \
+           --apr qwen2.5-coder-1.5b.apr --gguf /does/not/exist.gguf \
+           --safetensors qwen2.5-coder-1.5b.safetensors \
+           --prompt "hi" --seed 42 --max-tokens 4 --json >/dev/null 2>&1
+    EC=$?
+    set -e
+    [ "$EC" -ge 2 ] || { echo "expected exit >= 2 on missing GGUF, got $EC"; exit 1; }
+  if_fails: "Gate silently skips missing format — cross-format coverage is fake"
+
+- id: FALSIFY-CRUX-M-04-005
+  rule: "determinism — identical inputs produce identical JSON reports"
+  prediction: "Two back-to-back runs at seed=42 yield identical JSON"
+  test: |
+    set -euo pipefail
+    apr qa --gate cross-format --apr qwen2.5-coder-1.5b.apr \
+           --gguf qwen2.5-coder-1.5b-q4k.gguf --safetensors qwen2.5-coder-1.5b.safetensors \
+           --prompt "ok" --seed 42 --max-tokens 8 --json > /tmp/m04-A.json
+    apr qa --gate cross-format --apr qwen2.5-coder-1.5b.apr \
+           --gguf qwen2.5-coder-1.5b-q4k.gguf --safetensors qwen2.5-coder-1.5b.safetensors \
+           --prompt "ok" --seed 42 --max-tokens 8 --json > /tmp/m04-B.json
+    diff <(jq -S . /tmp/m04-A.json) <(jq -S . /tmp/m04-B.json)
+  if_fails: "Cross-format gate is non-deterministic — violates playbook Jidoka"
+
+proof_obligations:
+- type: invariant
+  property: "All three formats produce identical tokens at (prompt, seed) under temp=0, top_k=1"
+- type: invariant
+  property: "first_diff_idx surfaces the earliest divergent position (LAYOUT root-cause pin)"
+- type: invariant
+  property: "Missing format is a hard error (exit >= 2), never silent skip"
+- type: invariant
+  property: "Determinism — identical inputs yield identical JSON"
+- type: equivalence
+  property: "apr qa --gate cross-format  ≅  apr-model-qa-playbook Gate-4 (tri-format token parity)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-m-04
+  ticket_id: PMAT-672
+  priority: critical
+  auto_created: true

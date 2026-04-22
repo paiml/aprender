@@ -25,6 +25,8 @@ pub(crate) mod distill;
 pub(crate) mod data;
 pub(crate) mod diagnose;
 
+pub(crate) mod dry_sampling_classifier;
+pub(crate) mod dry_sampling_lint;
 pub(crate) mod eval;
 #[cfg(feature = "training")]
 pub(crate) mod experiment;
@@ -34,6 +36,8 @@ pub(crate) mod export;
 pub(crate) mod finetune;
 pub(crate) mod flow;
 pub(crate) mod glob_filter;
+pub(crate) mod gbnf_classifier;
+pub(crate) mod gbnf_lint;
 #[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod hex;
@@ -44,18 +48,18 @@ pub(crate) mod kernel_explain;
 pub(crate) mod lint;
 pub(crate) mod mcp;
 pub(crate) mod merge;
-pub(crate) mod dry_sampling_classifier;
-pub(crate) mod dry_sampling_lint;
-pub(crate) mod multi_lora_classifier;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;
 #[cfg(feature = "training")]
 pub(crate) mod monitor;
 #[cfg(feature = "dev")]
 pub mod mono;
+pub(crate) mod multi_lora_classifier;
 pub(crate) mod offline;
 pub(crate) mod ollama_chat;
 pub(crate) mod ollama_chat_classifier;
+pub(crate) mod oom_classifier;
+pub(crate) mod oom_lint;
 pub(crate) mod oracle;
 pub(crate) mod parity;
 pub(crate) mod pipeline;
@@ -95,6 +99,10 @@ pub(crate) mod tensors;
 pub(crate) mod token_redactor;
 pub(crate) mod tokenize;
 pub(crate) mod tp_pp_classifier;
+pub(crate) mod tool_use_classifier;
+pub(crate) mod tool_use_lint;
+pub(crate) mod typical_p_classifier;
+pub(crate) mod typical_p_lint;
 pub(crate) mod trace;
 #[cfg(feature = "training")]
 pub(crate) mod train;

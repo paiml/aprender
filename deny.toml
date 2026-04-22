@@ -36,6 +36,7 @@ ignore = [
     # the AWS SDK graph and can only move via a major SDK bump.
     { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101.7: transitive via aws-smithy-http-client (rustls 0.21), no drop-in fix" },
     { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101.7: transitive via aws-smithy-http-client (rustls 0.21), no drop-in fix" },
+    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.101.7: transitive via aws-smithy-http-client (rustls 0.21), no drop-in fix. Direct 0.103.x path bumped to 0.103.13." },
 ]
 
 [licenses]
