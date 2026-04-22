@@ -1,19 +1,26 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-13"
+  updated: "2026-04-22"
   author: PAIML Engineering
   registry: true
   references:
     - "HuggingFace tokenizers chat_template specification"
     - "Jinja2/minijinja template engine"
+    - "docs/specifications/aprender-train/ship-two-models-spec.md AC-SHIP1-008"
   description: |
     Chat template rendering contract. Defines correctness for Jinja2-style
     chat templates used by LLMs (ChatML, Llama, Qwen, Mistral formats).
 
+    v1.1.0 (2026-04-22): Added GATE-CHAT-SHIP-008 binding the ChatML
+    `format_conversation` render to a byte-exact golden string for the
+    canonical (system, user) Qwen2.5-Coder-7B teacher prompt. Discharges
+    FALSIFY-SHIP-008 / AC-SHIP1-008 at PARTIAL_ALGORITHM_LEVEL.
+
 kind: AlgorithmContract
 name: chat-template
-version: "1.0.0"
-scope: "crates/aprender-core/src/text/chat_template.rs + crates/aprender-serve/src/chat/"
+version: "1.1.0"
+scope: "crates/aprender-core/src/text/chat_template/ + crates/aprender-serve/src/chat/"
 
 description: |
   Chat templates convert structured messages [{role, content}] into
@@ -54,3 +61,31 @@ falsification:
     description: "Missing template produces error, not silent skip"
     test: "PMAT-237 lesson: process validation, not outcome validation"
     evidence: "cargo test -p aprender-core --lib chat_template"
+
+  - id: GATE-CHAT-SHIP-008
+    description: |
+      MODEL-1 teacher (Qwen2.5-Coder-7B-Instruct, ChatML family) renders
+      canonical (system, user) messages to a byte-exact golden string.
+      Binds `ChatMLTemplate::format_conversation` to the golden via a
+      pure `verdict_from_chat_template_render(rendered, golden) -> Pass|Fail`
+      decision rule. Any single-byte divergence — role, delimiter,
+      content, generation prompt, or whitespace — flips the verdict
+      to Fail before teacher inference runs.
+    discharges: "AC-SHIP1-008 / FALSIFY-SHIP-008"
+    ship_blocking: true
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "crates/aprender-core/src/text/chat_template/ship_008.rs (verdict fn + 5-section mutation survey)"
+      - "cargo test -p aprender-core --lib falsify_ship_008_chat_template_render_bind"
+    full_discharge_blocks_on: |
+      Live teacher render via `apr run paiml/qwen2.5-coder-7b-apache-q4k-v1
+      --prompt <canonical>` + byte-diff of generated completion against
+      spec-defined golden output. Algorithm-level rule is dischargeable
+      offline; compute-heavy harness awaits SHIP-TWO-001 evidence
+      collection lane.
+    counter_example_classes:
+      - "empty render (engine crash / returned empty string)"
+      - "missing trailing <|im_start|>assistant\\n generation prompt"
+      - "wrong special-token family (ChatML → Llama2 / <|user|> drift)"
+      - "role-order swap (user before system)"
+      - "single-byte flip at trailing newline (byte-equality, not approx)"

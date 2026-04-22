@@ -83,7 +83,7 @@ presentar-terminal = { version = "0.3.5", optional = true }  # Sovereign TUI fra
 presentar-core = "0.3.4"  # Presentar core traits (crates.io — path removed, presentar restructured)
 trueno-db = { version = "0.3.16", optional = true }  # Time-series storage
 chrono = { version = "0.4", features = ["serde"] }  # Timestamps for metric storage
-renacer = { version = "0.9", optional = true }  # Distributed tracing
+renacer = { workspace = true, optional = true }  # Distributed tracing
 wasm-bindgen = { version = "0.2", optional = true }  # WASM bindings
 getrandom = { version = "0.3", features = ["wasm_js"], optional = true }  # WASM random
 js-sys = { version = "0.3", optional = true }  # JavaScript types for WASM

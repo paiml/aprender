@@ -293,7 +293,7 @@ fn edges_consistent(
     pattern_adj: &HashMap<u32, HashSet<u32>>,
     mapping: &HashMap<u32, NodeId>,
 ) -> bool {
-    for (&p_src, &g_src) in mapping.iter() {
+    for (&p_src, &g_src) in mapping {
         let Some(p_targets) = pattern_adj.get(&p_src) else {
             continue;
         };
