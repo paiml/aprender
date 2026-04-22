@@ -396,6 +396,12 @@ commands:
     requires_model: false
     side_effects: []
 
+  - name: ollama-tools-lint
+    category: inspection
+    description: "Lint a captured Ollama /api/chat function-calling response (CRUX-I-04)"
+    requires_model: false
+    side_effects: []
+
   - name: dry-sampling-lint
     category: inspection
     description: "Lint a captured DRY-sampling observation (CRUX-C-23)"
