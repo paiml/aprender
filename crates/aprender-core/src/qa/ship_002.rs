@@ -62,6 +62,14 @@ pub enum Ship002Verdict {
 /// Declared `const fn` so the decision rule is evaluable at compile
 /// time, matching MODEL-2 SHIP-017's shape exactly (modulo the
 /// different tolerance constant).
+//
+// clippy::absurd_extreme_comparisons fires because
+// AC_SHIP1_002_MAX_TOLERATED_SYNTAX_ERRORS = 0 makes `<= 0` semantically
+// equivalent to `== 0` on an unsigned type. We keep the `<=` shape
+// intentionally: it mirrors MODEL-2 SHIP-017's `verdict_from_syntax_error_count`
+// (tolerance = 1, where `<=` is non-vacuous) so the two can be
+// deduplicated into a single parameterized helper once both PRs land.
+#[allow(clippy::absurd_extreme_comparisons)]
 #[must_use]
 pub const fn verdict_from_syntax_error_count(syntax_errors: usize) -> Ship002Verdict {
     if syntax_errors <= AC_SHIP1_002_MAX_TOLERATED_SYNTAX_ERRORS {
