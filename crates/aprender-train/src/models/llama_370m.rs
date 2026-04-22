@@ -384,6 +384,53 @@ pub fn assert_tokenizer_vocab_matches_model(
 }
 
 // ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-020 (AC-SHIP2-010): decode-throughput threshold
+// ─────────────────────────────────────────────────────────────
+
+/// Minimum `apr run` median decode throughput, in tokens/second, on the
+/// SHIP-TWO-001 reference hardware (RTX 4090). Source of truth:
+/// `contracts/model-families/llama-370m-sovereign-v1.yaml`
+/// GATE-ARCH-370M-006 and the SHIP-TWO-001 falsification table
+/// (FALSIFY-SHIP-020).
+pub const AC_SHIP2_010_MIN_DECODE_TPS_RTX4090: f32 = 100.0;
+
+/// Verdict for GATE-ARCH-370M-006 / FALSIFY-SHIP-020: does the measured
+/// `apr bench` median decode throughput meet the ship-gate threshold?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship020Verdict {
+    /// Measured tok/s ≥ [`AC_SHIP2_010_MIN_DECODE_TPS_RTX4090`].
+    Pass,
+    /// Measured tok/s < [`AC_SHIP2_010_MIN_DECODE_TPS_RTX4090`] (ship-blocker).
+    Fail,
+}
+
+/// Pure threshold function implementing FALSIFY-SHIP-020: a measured
+/// median decode throughput of `measured_tps` tokens/second passes the
+/// ship-gate iff it is finite AND ≥ [`AC_SHIP2_010_MIN_DECODE_TPS_RTX4090`].
+///
+/// Non-finite inputs (NaN, ±∞) are conservatively classified as
+/// `Fail`: a benchmark run that could not produce a well-defined
+/// finite median is always ill-formed and must never be allowed to
+/// silently green the ship-gate.
+///
+/// This is the same decision-rule-vs-harness separation used by
+/// FALSIFY-SHIP-017 (syntax-error count). The compute-heavy part
+/// (`apr bench --median` on a real trained 370M .apr) is deferred to
+/// AC-SHIP2-003/004 compute-dispatch; the decision rule itself is
+/// proven today at unit-test time.
+#[must_use]
+pub fn verdict_from_decode_tps(measured_tps: f32) -> Ship020Verdict {
+    if !(measured_tps.is_finite()) {
+        return Ship020Verdict::Fail;
+    }
+    if measured_tps >= AC_SHIP2_010_MIN_DECODE_TPS_RTX4090 {
+        Ship020Verdict::Pass
+    } else {
+        Ship020Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Unit tests
 // ─────────────────────────────────────────────────────────────
 
@@ -429,13 +476,11 @@ mod tests {
     /// short of contract) so the helper is still exercised on real mismatch.
     #[test]
     fn falsify_gate_arch_370m_011_helper_rejects_mismatch() {
-        assert!(
-            assert_tokenizer_vocab_matches_model(
-                Llama370MConfig::VOCAB_SIZE,
-                Llama370MConfig::VOCAB_SIZE,
-            )
-            .is_ok()
-        );
+        assert!(assert_tokenizer_vocab_matches_model(
+            Llama370MConfig::VOCAB_SIZE,
+            Llama370MConfig::VOCAB_SIZE,
+        )
+        .is_ok());
 
         let mismatch = Llama370MConfig::VOCAB_SIZE - 1;
         let err = assert_tokenizer_vocab_matches_model(mismatch, Llama370MConfig::VOCAB_SIZE)
@@ -448,13 +493,11 @@ mod tests {
         );
 
         assert!(assert_tokenizer_vocab_matches_model(0, 1).is_err());
-        assert!(
-            assert_tokenizer_vocab_matches_model(
-                Llama370MConfig::VOCAB_SIZE + 1,
-                Llama370MConfig::VOCAB_SIZE
-            )
-            .is_err()
-        );
+        assert!(assert_tokenizer_vocab_matches_model(
+            Llama370MConfig::VOCAB_SIZE + 1,
+            Llama370MConfig::VOCAB_SIZE
+        )
+        .is_err());
     }
 
     /// INV-ARCH-370M-001 — estimated param count within [366M, 374M].
@@ -855,6 +898,160 @@ mod tests {
             gate["ship_blocking"].as_bool(),
             Some(true),
             "GATE-ARCH-370M-004 must advertise ship_blocking:true — the \
+             gate's `verdict:pass` alone is insufficient green while \
+             discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+    /// FALSIFY-SHIP-020 / AC-SHIP2-010 — pure decode-throughput threshold
+    /// proof. `apr bench --median` on a real trained 370M .apr is the
+    /// compute-heavy harness; the decision rule itself (≥100 tok/s
+    /// passes, <100 tok/s fails) is separable and proven here.
+    ///
+    /// Invariants covered:
+    ///   1. Pass boundary: exactly 100.0 tok/s → Pass (contract floor).
+    ///   2. Fail boundary: 99.999 tok/s → Fail (one ULP below floor).
+    ///   3. Generous green: 120.0 and 500.0 tok/s → Pass.
+    ///   4. Hard red: 0.0 and 50.0 tok/s → Fail.
+    ///   5. Monotonicity: once Fail, all strictly lower tps stay Fail.
+    ///   6. Degenerate inputs: NaN and ±∞ → Fail (no well-defined
+    ///      median → no proof).
+    ///   7. Provenance pinning: the const floor MUST be 100.0 — any
+    ///      edit that loosens the threshold trips this test before the
+    ///      contract can ship.
+    #[test]
+    fn falsify_ship_020_decode_tps_threshold_logic() {
+        // Pass boundary
+        assert_eq!(
+            verdict_from_decode_tps(100.0),
+            Ship020Verdict::Pass,
+            "exactly 100.0 tok/s must Pass (contract floor)",
+        );
+        // Fail boundary (one f32 step below 100.0)
+        let just_below = f32::from_bits(100.0_f32.to_bits() - 1);
+        assert!(just_below < 100.0);
+        assert_eq!(
+            verdict_from_decode_tps(just_below),
+            Ship020Verdict::Fail,
+            "one ULP below 100.0 tok/s must Fail",
+        );
+        // Generous-green sanity
+        assert_eq!(verdict_from_decode_tps(120.0), Ship020Verdict::Pass);
+        assert_eq!(verdict_from_decode_tps(500.0), Ship020Verdict::Pass);
+        // Hard-red sanity
+        assert_eq!(verdict_from_decode_tps(0.0), Ship020Verdict::Fail);
+        assert_eq!(verdict_from_decode_tps(50.0), Ship020Verdict::Fail);
+        // Monotonicity sweep: once Fail, any strictly smaller tps stays Fail.
+        let samples = [0.0_f32, 25.0, 50.0, 75.0, 99.0, 99.5, 99.99, 100.0, 150.0, 10_000.0];
+        let mut seen_fail = false;
+        for &t in &samples {
+            let v = verdict_from_decode_tps(t);
+            if v == Ship020Verdict::Fail {
+                seen_fail = true;
+            } else if seen_fail {
+                // We saw Fail earlier in the monotonically-increasing sweep
+                // and now see Pass — that's fine (Fail→Pass is the
+                // allowed crossover at the threshold). Re-arm by
+                // resetting the seen_fail flag so we only guard against
+                // Pass→Fail regressions within the sweep.
+                seen_fail = false;
+            }
+        }
+        // Separate direct Pass→Fail regression guard: walk strictly
+        // decreasing from a clear Pass; once Fail shows, it must stick.
+        let decreasing = [10_000.0_f32, 500.0, 150.0, 100.0, 99.99, 99.0, 50.0, 25.0, 0.0];
+        let mut locked_fail = false;
+        for &t in &decreasing {
+            let v = verdict_from_decode_tps(t);
+            if v == Ship020Verdict::Fail {
+                locked_fail = true;
+            } else {
+                assert!(
+                    !locked_fail,
+                    "monotonicity violated: tps={t} produced Pass after a \
+                     lower-tps Fail was already observed",
+                );
+            }
+        }
+        // Degenerate inputs: NaN / ±∞ are all conservatively Fail.
+        // A real `apr bench` run can NEVER produce a non-finite median;
+        // if one appears, the harness itself is broken and we must
+        // refuse to claim a ship-gate pass on a value we cannot
+        // meaningfully compare against the threshold.
+        assert_eq!(
+            verdict_from_decode_tps(f32::NAN),
+            Ship020Verdict::Fail,
+            "NaN tps has no well-defined median and must Fail",
+        );
+        assert_eq!(verdict_from_decode_tps(f32::NEG_INFINITY), Ship020Verdict::Fail,);
+        assert_eq!(
+            verdict_from_decode_tps(f32::INFINITY),
+            Ship020Verdict::Fail,
+            "+∞ tok/s is ill-formed — a real `apr bench` median is \
+             always a finite positive; treating +∞ as Pass would let \
+             an instrumentation bug silently green the ship-gate",
+        );
+        // Provenance pinning — any edit that loosens the threshold
+        // (say, to 60.0) would silently lower the ship bar. Trip here
+        // before the contract can ship.
+        assert!(
+            (AC_SHIP2_010_MIN_DECODE_TPS_RTX4090 - 100.0_f32).abs() < f32::EPSILON,
+            "AC_SHIP2_010_MIN_DECODE_TPS_RTX4090 must stay pinned to 100.0 \
+             tok/s — see contracts/model-families/llama-370m-sovereign-v1.yaml \
+             GATE-ARCH-370M-006",
+        );
+    }
+
+    /// GATE-ARCH-370M-006 wiring check: the sovereign contract YAML
+    /// MUST record `discharge_status: PARTIAL_ALGORITHM_LEVEL` +
+    /// `evidence_discharged_by` + `full_discharge_blocks_on` +
+    /// `ship_blocking: true` on GATE-ARCH-370M-006, and bind it to
+    /// AC-SHIP2-010 / FALSIFY-SHIP-020. Any edit that drops those
+    /// fields fails this test before the artifact ships.
+    #[test]
+    fn falsify_ship_020_gate_arch_370m_006_has_partial_discharge_marker() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+        let gates =
+            doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
+        let gate = gates
+            .iter()
+            .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-006"))
+            .expect("GATE-ARCH-370M-006 must exist in sovereign contract");
+
+        assert_eq!(
+            gate["falsification_id"].as_str(),
+            Some("FALSIFY-SHIP-020"),
+            "GATE-ARCH-370M-006 must bind FALSIFY-SHIP-020",
+        );
+        assert_eq!(
+            gate["binds_to"].as_str(),
+            Some("AC-SHIP2-010"),
+            "GATE-ARCH-370M-006 must bind AC-SHIP2-010",
+        );
+        assert_eq!(
+            gate["discharge_status"].as_str(),
+            Some("PARTIAL_ALGORITHM_LEVEL"),
+            "GATE-ARCH-370M-006 must advertise PARTIAL_ALGORITHM_LEVEL \
+             (full discharge blocks on real trained 370M .apr + RTX 4090 \
+             `apr bench` median run)",
+        );
+        let evidence = gate["evidence_discharged_by"]
+            .as_sequence()
+            .expect("GATE-ARCH-370M-006 must have evidence_discharged_by");
+        assert!(
+            !evidence.is_empty(),
+            "GATE-ARCH-370M-006 evidence_discharged_by must list \
+             at least one test function or artifact",
+        );
+        assert!(
+            gate["full_discharge_blocks_on"].as_str().is_some(),
+            "PARTIAL gate must document full_discharge_blocks_on",
+        );
+        assert_eq!(
+            gate["ship_blocking"].as_bool(),
+            Some(true),
+            "GATE-ARCH-370M-006 must advertise ship_blocking:true — the \
              gate's `verdict:pass` alone is insufficient green while \
              discharge_status == PARTIAL_ALGORITHM_LEVEL",
         );

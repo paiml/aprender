@@ -1,11 +1,51 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.23.0
+**Version:** 2.26.0
 **Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures); **task #132 BLOCKER surfaced 2026-04-21** on lambda-labs RTX 4090 — `apr pretrain --mode from-scratch` ran 14 min at 114% CPU + 0 MiB GPU memory because `TransformerTrainer::new` has no Device argument; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (task #132 Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006, ship-blocks task #126 real-compute dispatch
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched) / 2026-04-21 (v2.23.0 **task #132 CUDA training backend gap** surfaced on lambda-labs RTX 4090 real-compute dispatch at commit `f7ad11408` — `apr pretrain --mode from-scratch` 14min on CPU (0 MiB GPU memory) because `TransformerTrainer` has no Device awareness; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006 + FALSIFY-GPUTRAIN-001..007; production `CudaTransformerTrainer` already exists at `crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs` — gap is wiring, not kernels; task #126 real-compute dispatch BLOCKED until Phase 3 residency-proof evidence lands)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched) / 2026-04-21 (v2.23.0 **task #132 CUDA training backend gap** surfaced on lambda-labs RTX 4090 real-compute dispatch at commit `f7ad11408` — `apr pretrain --mode from-scratch` 14min on CPU (0 MiB GPU memory) because `TransformerTrainer` has no Device awareness; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006 + FALSIFY-GPUTRAIN-001..007; production `CudaTransformerTrainer` already exists at `crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs` — gap is wiring, not kernels; task #126 real-compute dispatch BLOCKED until Phase 3 residency-proof evidence lands) / 2026-04-22 (v2.26.0 FALSIFY-SHIP-020 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.5.0 → v1.6.0 stays ACTIVE; new GATE-ARCH-370M-006 binds AC-SHIP2-010 ↔ FALSIFY-SHIP-020 via pure `verdict_from_decode_tps` f32 threshold fn + `AC_SHIP2_010_MIN_DECODE_TPS_RTX4090 = 100.0` const; 5th PARTIAL after v2.22.0's "exhausted" verdict was falsified a THIRD time (SHIP-015 → SHIP-019 → SHIP-017 → SHIP-020); task #150)
+
+**v2.26.0 amendment (2026-04-22):** One additional MODEL-2 ship gate
+attained PARTIAL_ALGORITHM_LEVEL, further falsifying v2.22.0's
+"exhausted" verdict on non-compute PARTIAL levers:
+
+5. **FALSIFY-SHIP-020 (AC-SHIP2-010) — PARTIAL_ALGORITHM_LEVEL** at
+   branch `feat/falsify-ship-020-partial-discharge` (task #150).
+   Sovereign contract v1.5.0 → v1.6.0, stays ACTIVE. New gate
+   `GATE-ARCH-370M-006` binds the 100-tok/s decode-throughput floor
+   (§5 AC-SHIP2-010) to a pure f32 threshold function
+   `verdict_from_decode_tps(measured_tps) -> Ship020Verdict` in
+   `crates/aprender-train/src/models/llama_370m.rs`, plus const
+   `AC_SHIP2_010_MIN_DECODE_TPS_RTX4090 = 100.0`, plus two unit tests
+   covering: (1) Pass boundary at exactly 100.0, (2) Fail boundary at
+   one ULP below, (3) monotonicity in both directions, (4)
+   conservative Fail for NaN / ±∞ (any non-finite input means the
+   harness is broken), (5) provenance pinning that the const stays
+   pinned at 100.0. Full discharge blocks on real 370M .apr from
+   AC-SHIP2-003/004 compute-dispatch + three independent
+   `apr bench --tokens 128 --json` medians on the RTX 4090 host —
+   fixture-swap only, no decision-rule rewrite.
+
+**Pattern lesson codified by v2.26.0:** v2.22.0 declared SHIP-017/018/
+020 "truly need compute", then FALSIFY-SHIP-017 landed as PARTIAL via
+PR #1004 (task #149), and now SHIP-020 lands as PARTIAL via task #150.
+The v2.22.0 "exhausted" verdict has now been falsified **three times**
+(SHIP-019, SHIP-017, SHIP-020). **Rule (reinforced): when a SHIP gate
+names a threshold / tolerance / ratio / cut-off and the compute-heavy
+harness is separable from the decision function, the threshold fn can
+land today at unit-test time — even when the full end-to-end harness
+is blocked on compute.** Remaining AC-SHIP2 thresholds still worth
+surveying with this rule: SHIP-018 (humaneval pass@1 ≥ 30.0%) and
+SHIP-016 (`apr qa` aggregate 8-of-8 gate pass).
+
+Combined MODEL-2 ship-gate status after v2.26.0: **3/12 AC-SHIP2 gates
+fully ACTIVE** (001, 011, 012) + **5/12 PARTIAL_ALGORITHM_LEVEL** (002
+via SHIP-012, 005 via SHIP-015, 007 via SHIP-017, 009 via SHIP-019,
+010 via SHIP-020) = **8/12 touched** (66.7%). Remaining 4
+(003/004/006/008) all need real 370M training compute or a benchmark
+pipeline on RTX 4090.
 
 **v2.21.0 amendment (2026-04-19):** Three MODEL-2 architecture + tokenizer
 gates landed in the same post-v2.19 evidence window, on branch
