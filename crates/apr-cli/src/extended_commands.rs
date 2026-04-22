@@ -730,6 +730,20 @@ pub enum ExtendedCommands {
         #[arg(long)]
         stream: bool,
     },
+    /// Lint an Ollama /api/chat function-calling response — tool_calls[] schema
+    /// and streaming atomicity (CRUX-I-04)
+    OllamaToolsLint {
+        /// Path to captured /api/chat response (JSON object, or NDJSON if --stream)
+        #[arg(long, value_name = "FILE")]
+        response_file: PathBuf,
+        /// Optional captured request JSON — enables tool-name allowlist gate
+        /// (every called tool name must appear in request.tools[*].function.name)
+        #[arg(long, value_name = "FILE")]
+        request_file: Option<PathBuf>,
+        /// Treat input as NDJSON stream (one frame per line)
+        #[arg(long)]
+        stream: bool,
+    },
     /// Lint a captured DRY-sampling observation (CRUX-C-23)
     DrySamplingLint {
         /// Path to observation JSON
