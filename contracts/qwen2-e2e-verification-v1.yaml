@@ -1,9 +1,18 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-20'
   author: PAIML Engineering
-  description: Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
-    into a complete model proof
+  description: |
+    Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
+    into a complete model proof.
+
+    v1.1.0 (2026-04-22) — Adds FALSIFY-QW2E-SHIP-002 binding AC-SHIP1-002
+    (MODEL-1 emits syntactically valid Python on canonical `def fib(n):`
+    prompt) to pure `const fn verdict_from_syntax_error_count(usize) ->
+    Ship002Verdict` in `crates/aprender-core/src/qa/ship_002.rs`. Zero-
+    tolerance threshold on the single canonical prompt (spec §4.2 has no
+    noise allowance); discharge_status PARTIAL_ALGORITHM_LEVEL — full
+    discharge blocks on live `apr run` + `rustpython`/`ruff` AST parse.
   references:
   - Qwen2.5 Technical Report — full model architecture
   - Vaswani et al. (2017) Attention Is All You Need
@@ -150,6 +159,40 @@ falsification_tests:
   prediction: tokens -> [seq_len, 3584] -> ... -> [seq_len, 152064]
   test: 'proptest: trace shapes through mock pipeline'
   if_fails: Shape break in layer composition
+- id: FALSIFY-QW2E-SHIP-002
+  rule: MODEL-1 teacher emits syntactically valid Python on canonical prompt
+  prediction: |
+    `apr run paiml/qwen2.5-coder-7b-apache-q4k-v1.safetensors --prompt "def fib(n):"`
+    emits a completion that parses as a valid Python AST with ≤ 0 syntax errors
+    (spec §4.2 AC-SHIP1-002 has no noise allowance).
+  test: |
+    Algorithm-level (PARTIAL): `const fn verdict_from_syntax_error_count(usize)
+    -> Ship002Verdict` in `crates/aprender-core/src/qa/ship_002.rs` locks the
+    zero-tolerance threshold at compile time; 6-section mutation survey
+    (zero-errors → Pass, exactly-one-error → Fail, many-errors Fail band
+    {2, 10, 100}, monotonicity sweep 0..=256, `usize::MAX` sanity Fail,
+    provenance pin tolerance = 0) exercised by
+    `falsify_ship_002_python_syntax_error_threshold_logic`.
+  if_fails: |
+    Silent tolerance widening (0 → 1) or inequality flip would accept a broken
+    completion on the canonical prompt; any single syntax error is a
+    ship-blocker for MODEL-1.
+  ship_blocking: true
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - crates/aprender-core/src/qa/ship_002.rs::AC_SHIP1_002_MAX_TOLERATED_SYNTAX_ERRORS
+  - crates/aprender-core/src/qa/ship_002.rs::verdict_from_syntax_error_count
+  - crates/aprender-core/src/qa/ship_002.rs::falsify_ship_002_python_syntax_error_threshold_logic
+  full_discharge_blocks_on: |
+    Live `apr run paiml/qwen2.5-coder-7b-apache-q4k-v1.safetensors --prompt
+    "def fib(n):"` on RTX 4090 + `rustpython`/`ruff` AST parse of the emitted
+    completion; any parse error count > 0 is a ship-blocker.
+  counter_example_classes:
+  - regressed_sampling
+  - widened_tolerance
+  - relaxed_rule
+  - flipped_inequality
+  - mask_byte_malformed
 kani_harnesses:
 - id: KANI-QW2E-001
   obligation: QW2E-INV-001
