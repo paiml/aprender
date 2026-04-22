@@ -21,14 +21,18 @@ use realizar::api::{
 #[test]
 fn test_health_response_creation() {
     let resp = HealthResponse {
-        status: "healthy".to_string(),
+        status: "ok".to_string(),
         version: "1.0.0".to_string(),
         compute_mode: "cpu".to_string(),
+        model_loaded: true,
+        uptime_sec: 1.5,
     };
 
-    assert_eq!(resp.status, "healthy");
+    assert_eq!(resp.status, "ok");
     assert_eq!(resp.version, "1.0.0");
     assert_eq!(resp.compute_mode, "cpu");
+    assert!(resp.model_loaded);
+    assert_eq!(resp.uptime_sec, 1.5);
 }
 
 #[test]
@@ -37,13 +41,16 @@ fn test_health_response_serialization() {
         status: "ok".to_string(),
         version: "2.0.0".to_string(),
         compute_mode: "cpu".to_string(),
+        model_loaded: true,
+        uptime_sec: 2.0,
     };
 
     let json = serde_json::to_string(&resp).unwrap();
-    assert!(json.contains("ok"));
+    assert!(json.contains("\"ok\""));
 
     let parsed: HealthResponse = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.status, "ok");
+    assert!(parsed.model_loaded);
 }
 
 proptest! {
@@ -52,13 +59,23 @@ proptest! {
     #[test]
     fn prop_health_response_roundtrip(
         status in "[a-z]{3,20}",
-        version in "[0-9]+\\.[0-9]+\\.[0-9]+"
+        version in "[0-9]+\\.[0-9]+\\.[0-9]+",
+        model_loaded in any::<bool>(),
+        uptime_sec in 0.0f64..1e6,
     ) {
-        let resp = HealthResponse { status: status.clone(), version: version.clone(), compute_mode: "cpu".to_string() };
+        let resp = HealthResponse {
+            status: status.clone(),
+            version: version.clone(),
+            compute_mode: "cpu".to_string(),
+            model_loaded,
+            uptime_sec,
+        };
         let json = serde_json::to_string(&resp).unwrap();
         let parsed: HealthResponse = serde_json::from_str(&json).unwrap();
         prop_assert_eq!(parsed.status, status);
         prop_assert_eq!(parsed.version, version);
+        prop_assert_eq!(parsed.model_loaded, model_loaded);
+        prop_assert!((parsed.uptime_sec - uptime_sec).abs() < 1e-9);
     }
 }
 

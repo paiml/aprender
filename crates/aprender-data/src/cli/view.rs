@@ -163,19 +163,41 @@ fn term_err(e: impl std::fmt::Display) -> crate::Error {
     crate::Error::storage(format!("Terminal error: {e}"))
 }
 
+/// Outcome of a single key press inside the search prompt.
+enum PromptStep {
+    /// Finish the prompt and return this optional query.
+    Finish(Option<String>),
+    /// Keep looping.
+    Continue,
+}
+
 /// Prompt for search query.
 pub(crate) fn prompt_search<W: Write>(stdout: &mut W) -> crate::Result<Option<String>> {
+    use crossterm::event::{self, Event};
+
+    let height = show_search_prompt(stdout)?;
+    let mut query = String::new();
+
+    loop {
+        if let Event::Key(key) = event::read().map_err(term_err)? {
+            if let PromptStep::Finish(result) =
+                handle_prompt_key(stdout, key.code, &mut query, height)?
+            {
+                return Ok(result);
+            }
+            stdout.flush().map_err(term_err)?;
+        }
+    }
+}
+
+fn show_search_prompt<W: Write>(stdout: &mut W) -> crate::Result<u16> {
     use crossterm::{
-        cursor,
-        event::{self, Event, KeyCode},
-        execute,
+        cursor, execute,
         style::Print,
         terminal::{self, Clear, ClearType},
     };
 
     let (_, height) = terminal::size().unwrap_or((80, 24));
-
-    // Move to bottom and show prompt
     execute!(
         stdout,
         cursor::MoveTo(0, height - 1),
@@ -185,37 +207,56 @@ pub(crate) fn prompt_search<W: Write>(stdout: &mut W) -> crate::Result<Option<St
     )
     .map_err(term_err)?;
     stdout.flush().map_err(term_err)?;
+    Ok(height)
+}
 
-    let mut query = String::new();
+fn handle_prompt_key<W: Write>(
+    stdout: &mut W,
+    code: crossterm::event::KeyCode,
+    query: &mut String,
+    height: u16,
+) -> crate::Result<PromptStep> {
+    use crossterm::{cursor, event::KeyCode, execute};
 
-    loop {
-        if let Event::Key(key) = event::read().map_err(term_err)? {
-            match key.code {
-                KeyCode::Enter => {
-                    execute!(stdout, cursor::Hide).map_err(term_err)?;
-                    return Ok(if query.is_empty() { None } else { Some(query) });
-                }
-                KeyCode::Esc => {
-                    execute!(stdout, cursor::Hide).map_err(term_err)?;
-                    return Ok(None);
-                }
-                KeyCode::Backspace => {
-                    query.pop();
-                    execute!(
-                        stdout,
-                        cursor::MoveTo(8, height - 1),
-                        Clear(ClearType::UntilNewLine),
-                        Print(&query)
-                    )
-                    .map_err(term_err)?;
-                }
-                KeyCode::Char(c) => {
-                    query.push(c);
-                    execute!(stdout, Print(c)).map_err(term_err)?;
-                }
-                _ => {}
-            }
-            stdout.flush().map_err(term_err)?;
+    match code {
+        KeyCode::Enter => {
+            execute!(stdout, cursor::Hide).map_err(term_err)?;
+            let out = if query.is_empty() {
+                None
+            } else {
+                Some(std::mem::take(query))
+            };
+            Ok(PromptStep::Finish(out))
         }
+        KeyCode::Esc => {
+            execute!(stdout, cursor::Hide).map_err(term_err)?;
+            Ok(PromptStep::Finish(None))
+        }
+        KeyCode::Backspace => {
+            query.pop();
+            redraw_query(stdout, query, height)?;
+            Ok(PromptStep::Continue)
+        }
+        KeyCode::Char(c) => {
+            query.push(c);
+            execute!(stdout, crossterm::style::Print(c)).map_err(term_err)?;
+            Ok(PromptStep::Continue)
+        }
+        _ => Ok(PromptStep::Continue),
     }
+}
+
+fn redraw_query<W: Write>(stdout: &mut W, query: &str, height: u16) -> crate::Result<()> {
+    use crossterm::{
+        cursor, execute,
+        style::Print,
+        terminal::{Clear, ClearType},
+    };
+    execute!(
+        stdout,
+        cursor::MoveTo(8, height - 1),
+        Clear(ClearType::UntilNewLine),
+        Print(query)
+    )
+    .map_err(term_err)
 }

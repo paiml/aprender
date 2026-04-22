@@ -347,6 +347,25 @@ pub fn apr_convert<P: AsRef<Path>>(
         (None, None)
     };
 
+    // GH-434 / ALB-093: Streaming Q4K path for large APR inputs (≥4 GiB).
+    // Avoids the ~3x file-size RAM requirement of the full-load path.
+    if !is_gguf
+        && options.quantize == Some(QuantizationType::Q4K)
+        && qualifies_for_streaming_q4k(input_path)
+    {
+        let tensor_count = streaming_quantize_apr_to_q4k(input_path, output_path)?;
+        let original_size = fs::metadata(input_path)
+            .map(|m| m.len() as usize)
+            .unwrap_or(0);
+        return Ok(ConvertReport::build(
+            original_size,
+            output_path,
+            tensor_count,
+            options.quantize,
+            options.compress,
+        ));
+    }
+
     // Step 1: Load tensors
     let tensors = load_model_tensors(input_path)?;
     // PMAT-274 FIX: Use input FILE size (not raw F32 tensor bytes) for fair comparison.
@@ -424,3 +443,4 @@ pub struct ConvertReport {
 include!("convert_report.rs");
 include!("f16_convert.rs");
 include!("infer_q4k_config.rs");
+include!("streaming_quantize.rs");

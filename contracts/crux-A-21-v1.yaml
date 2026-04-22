@@ -1,0 +1,84 @@
+# CRUX-A-21 — Shared model cache across users
+
+metadata:
+  id: CRUX-A-21
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: ollama
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Support `APR_MODELS=/var/lib/apr/models` (parity with `OLLAMA_MODELS`)
+    so multiple unix users / containers share one physical blob store.
+    Canonical: Ollama stores `/usr/share/ollama/.ollama/models` group-shared
+    on Linux systemd installs.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  shared_cache:
+    formula: |
+      registry_root = os.getenv("APR_MODELS", "$HOME/.apr/models")
+      pull(repo, file) writes to {registry_root}/blobs/sha256-{hash}
+      stat(blob).st_mode & 0o044 != 0   (world-readable when mode=shared)
+      stat(blob).st_uid == daemon_uid   (consistent ownership under systemd)
+    domain: "(APR_MODELS: Option<PathBuf>)"
+    codomain: "shared blob directory with deterministic permissions"
+    invariants:
+    - "two users running `apr pull` of the same repo dedup to one blob on disk"
+    - "blob mode is 0644 (files) / 0755 (dirs) under systemd-managed deploy"
+    - "user without write permission gets exit 13 with 'run as daemon user' hint"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-21-001
+  rule: two pulls to shared cache dedup to one blob
+  prediction: "user A pulls + user B pulls same repo → blob count increments by 1, not 2"
+  test: |
+    set -euo pipefail
+    export APR_MODELS=/tmp/apr-shared-$$
+    mkdir -p "$APR_MODELS"
+    chmod 0777 "$APR_MODELS"
+    apr pull hf://gpt2 --dry-run >/dev/null
+    count1=$(find "$APR_MODELS/blobs" -type f 2>/dev/null | wc -l)
+    apr pull hf://gpt2 --dry-run >/dev/null
+    count2=$(find "$APR_MODELS/blobs" -type f 2>/dev/null | wc -l)
+    [ "$count1" = "$count2" ]
+  if_fails: rule 'two pulls to shared cache dedup to one blob' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-21-002
+  rule: read-only user can still load, but pull fails with exit 13
+  prediction: "unprivileged user gets EACCES with actionable hint"
+  test: |
+    set -e
+    export APR_MODELS=/tmp/apr-ro-$$
+    mkdir -p "$APR_MODELS"
+    chmod 0555 "$APR_MODELS"
+    apr pull hf://gpt2 2>/tmp/err && exit 1 || [ $? -eq 13 ]
+    grep -E "permission|daemon" /tmp/err
+
+  if_fails: rule 'read-only user can still load, but pull fails with exit 13' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "APR_MODELS honored exactly like OLLAMA_MODELS on systemd deploys"
+- type: invariant
+  property: "two unix users pulling identical repo share exactly one blob"
+- type: invariant
+  property: "unprivileged pull fails with exit 13, never silently writes to $HOME"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-a-21
+  priority: medium
+  auto_created: true

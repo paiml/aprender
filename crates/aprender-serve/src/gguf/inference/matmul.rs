@@ -5,8 +5,8 @@
 
 use crate::error::{RealizarError, Result};
 use crate::gguf::types::{
-    GGUF_TYPE_BF16, GGUF_TYPE_F16, GGUF_TYPE_F32, GGUF_TYPE_Q4_0, GGUF_TYPE_Q4_1, GGUF_TYPE_Q4_K,
-    GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
+    APR_TYPE_Q4, APR_TYPE_Q8, GGUF_TYPE_BF16, GGUF_TYPE_F16, GGUF_TYPE_F32, GGUF_TYPE_Q4_0,
+    GGUF_TYPE_Q4_1, GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
 };
 use crate::gguf::{ops, OwnedQKVWeights, OwnedQuantizedModel, OwnedQuantizedTensor};
 

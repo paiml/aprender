@@ -33,6 +33,46 @@ fn test_build_code_tools_registers_all() {
 }
 
 #[test]
+fn test_web_tools_not_registered_on_sovereign_privacy() {
+    // Poka-Yoke: Sovereign tier always blocks network tools, even if
+    // the user specifies allowed_hosts (tier wins over config).
+    let mut m = build_default_manifest();
+    assert_eq!(m.privacy, PrivacyTier::Sovereign);
+    m.allowed_hosts = vec!["docs.anthropic.com".into(), "crates.io".into()];
+    let tools = build_code_tools(&m);
+    assert!(tools.get("network").is_none(), "Sovereign must block network");
+    assert!(tools.get("browser").is_none(), "Sovereign must block browser");
+}
+
+#[test]
+fn test_web_tools_not_registered_when_allowed_hosts_empty() {
+    // Explicit opt-in: even on Standard tier, empty allowed_hosts → no network tool.
+    let mut m = build_default_manifest();
+    m.privacy = PrivacyTier::Standard;
+    m.allowed_hosts = Vec::new();
+    let tools = build_code_tools(&m);
+    assert!(tools.get("network").is_none(), "empty allowed_hosts must block network");
+}
+
+#[test]
+fn test_web_tools_registered_on_standard_privacy_with_allowlist() {
+    let mut m = build_default_manifest();
+    m.privacy = PrivacyTier::Standard;
+    m.allowed_hosts = vec!["docs.anthropic.com".into()];
+    let tools = build_code_tools(&m);
+    assert!(tools.get("network").is_some(), "Standard + allowlist must register network tool");
+}
+
+#[test]
+fn test_web_tools_registered_on_private_privacy_with_allowlist() {
+    let mut m = build_default_manifest();
+    m.privacy = PrivacyTier::Private;
+    m.allowed_hosts = vec!["github.com".into()];
+    let tools = build_code_tools(&m);
+    assert!(tools.get("network").is_some(), "Private + allowlist must register network tool");
+}
+
+#[test]
 fn test_code_system_prompt_not_empty() {
     assert!(CODE_SYSTEM_PROMPT.len() > 200);
     assert!(CODE_SYSTEM_PROMPT.contains("tool_call"));
@@ -421,6 +461,30 @@ fn test_scale_prompt_large() {
     let prompt = scale_prompt_for_model(8.0);
     assert!(prompt.contains("## Tools"), "large model: full tool table");
     assert!(prompt.contains("Example input"), "large model: has examples");
+}
+
+/// PMAT-CODE-MCP-CLIENT-001: `register_mcp_client_tools` must be a no-op
+/// when the manifest has no `mcp_servers[]`, leaving the built-in tool
+/// roster untouched. The falsification condition: if registration silently
+/// *added* or *removed* builtin tools when mcp_servers is empty, this test
+/// catches it. Exercised under the `agents-mcp` feature because the
+/// `mcp_servers` field itself is gated there.
+#[cfg(feature = "agents-mcp")]
+#[test]
+fn test_register_mcp_client_tools_noop_when_empty() {
+    let manifest = build_default_manifest();
+    assert!(manifest.mcp_servers.is_empty(), "default manifest should declare zero mcp_servers");
+    let mut tools = build_code_tools(&manifest);
+    let before = tools.len();
+    register_mcp_client_tools(&mut tools, &manifest);
+    assert_eq!(
+        tools.len(),
+        before,
+        "register_mcp_client_tools must not mutate the registry when mcp_servers is empty"
+    );
+    // Still have all default builtins.
+    assert!(tools.get("file_read").is_some(), "file_read missing after MCP noop");
+    assert!(tools.get("shell").is_some(), "shell missing after MCP noop");
 }
 
 // Popperian falsification tests extracted to code_tests_falsification.rs

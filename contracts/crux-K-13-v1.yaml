@@ -1,0 +1,158 @@
+# CRUX-K-13 — Docker image apr-serve:latest
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-K-13
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Ecosystem & Integration"
+  competitor: ecosystem
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Docker image apr-serve:latest. Root-cause workflow extracted from ecosystem UX — see master
+    subspec §5.K and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  docker_image_smoke:
+    formula: |
+      Ecosystem reference: ollama/ollama:latest — a published Docker image on
+      Docker Hub that starts a serving daemon on a documented port with a
+      minimal `docker run` incantation:
+        docker run -d -p 11434:11434 ollama/ollama
+      Parity requirement for apr:
+        docker run -d -p 8080:8080 paiml/apr-serve:latest
+        → container healthy within 30s, HTTP GET http://127.0.0.1:8080/health
+          returns 200 with { "status": "ok" }
+        → HTTP GET http://127.0.0.1:8080/v1/models returns 200 with JSON list
+    domain: "`docker run -d -p 8080:8080 paiml/apr-serve:latest`"
+    codomain: "running container exposing /health and /v1/* endpoints"
+    invariants:
+    - "Image is published on Docker Hub as paiml/apr-serve:latest (pullable without auth)"
+    - "CMD entrypoint runs `apr serve --host 0.0.0.0 --port 8080`"
+    - "EXPOSE 8080 in Dockerfile matches runtime listen port"
+    - "Container health-check passes within 30s of start"
+    - "Reference: https://hub.docker.com/r/ollama/ollama"
+
+  image_labels_and_size:
+    formula: |
+      OCI image label standards (opencontainers/image-spec):
+        org.opencontainers.image.source     → github repo URL
+        org.opencontainers.image.version    → apr --version string
+        org.opencontainers.image.licenses   → SPDX identifier (Apache-2.0)
+        org.opencontainers.image.title      → "apr-serve"
+      Image size budget: compressed <= 500 MiB (CPU build).
+    domain: "docker image manifest (pulled from registry)"
+    codomain: "labels + compressed size"
+    invariants:
+    - "All four OCI labels present and non-empty"
+    - "Compressed image size (all layers) <= 500 MiB for CPU build"
+    - "Reference: https://github.com/opencontainers/image-spec/blob/main/annotations.md"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-13-001
+  rule: "paiml/apr-serve:latest can be pulled and starts healthy"
+  prediction: "docker run -d paiml/apr-serve:latest yields /health==200 within 30s"
+  test: |
+    set -euo pipefail
+    command -v docker >/dev/null || { echo "skip: docker unavailable"; exit 0; }
+    docker pull paiml/apr-serve:latest
+    CID=$(docker run -d --rm -p 18080:8080 paiml/apr-serve:latest)
+    trap "docker rm -f $CID >/dev/null 2>&1 || true" EXIT
+    for i in $(seq 1 30); do
+      if curl -sf http://127.0.0.1:18080/health >/dev/null; then
+        echo "ok after ${i}s"; exit 0
+      fi
+      sleep 1
+    done
+    echo "container did not become healthy"; exit 1
+  if_fails: "paiml/apr-serve:latest image is missing on Docker Hub or does not become healthy within 30s"
+
+- id: FALSIFY-CRUX-K-13-002
+  rule: "/v1/models endpoint returns JSON list on default image"
+  prediction: "GET /v1/models returns 200 with {\"data\":[...]} envelope"
+  test: |
+    set -euo pipefail
+    command -v docker >/dev/null || { echo "skip: docker unavailable"; exit 0; }
+    CID=$(docker run -d --rm -p 18081:8080 paiml/apr-serve:latest)
+    trap "docker rm -f $CID >/dev/null 2>&1 || true" EXIT
+    for i in $(seq 1 30); do
+      curl -sf http://127.0.0.1:18081/health >/dev/null && break
+      sleep 1
+    done
+    curl -sS http://127.0.0.1:18081/v1/models | jq -e '.data | type == "array"'
+  if_fails: "Docker image does not expose OpenAI-compatible /v1/models endpoint"
+
+- id: FALSIFY-CRUX-K-13-003
+  rule: "OCI labels present on published image"
+  prediction: "docker inspect reports all four required OCI labels"
+  test: |
+    set -euo pipefail
+    command -v docker >/dev/null || { echo "skip: docker unavailable"; exit 0; }
+    docker pull paiml/apr-serve:latest >/dev/null
+    LBLS=$(docker inspect paiml/apr-serve:latest \
+             | jq -r '.[0].Config.Labels // {}')
+    for K in \
+        org.opencontainers.image.source \
+        org.opencontainers.image.version \
+        org.opencontainers.image.licenses \
+        org.opencontainers.image.title; do
+      V=$(echo "$LBLS" | jq -r --arg k "$K" '.[$k] // empty')
+      [ -n "$V" ] || { echo "missing label: $K"; exit 1; }
+    done
+  if_fails: "published image missing one or more required OCI annotation labels"
+
+- id: FALSIFY-CRUX-K-13-004
+  rule: "compressed image size <= 500 MiB"
+  prediction: "sum of compressed layer sizes from registry manifest <= 500 MiB"
+  test: |
+    set -euo pipefail
+    command -v docker >/dev/null || { echo "skip: docker unavailable"; exit 0; }
+    # docker manifest inspect returns layer sizes in bytes
+    SUM=$(docker manifest inspect paiml/apr-serve:latest 2>/dev/null \
+            | jq '[.layers[].size] | add // 0')
+    LIMIT=$((500 * 1024 * 1024))
+    [ "$SUM" -le "$LIMIT" ]
+  if_fails: "paiml/apr-serve:latest compressed size exceeds 500 MiB budget"
+
+proof_obligations:
+- type: invariant
+  property: "Image paiml/apr-serve:latest is publicly pullable from Docker Hub"
+- type: invariant
+  property: "Container becomes healthy on /health within 30s of start"
+- type: invariant
+  property: "Required OCI labels (source, version, licenses, title) present"
+- type: invariant
+  property: "Compressed image size <= 500 MiB for CPU build"
+- type: equivalence
+  property: "paiml/apr-serve:latest provides the same `docker run -d -p` → healthy-serving-container UX as ollama/ollama:latest"
+  reference: "https://hub.docker.com/r/ollama/ollama"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-k-13` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-k-13
+  priority: high
+  auto_created: true

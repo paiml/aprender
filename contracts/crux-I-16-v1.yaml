@@ -1,0 +1,104 @@
+# CRUX-I-16 — Guardrails output filter pipeline
+
+metadata:
+  id: CRUX-I-16
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "I — Observability & Metrics"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Guardrails output filter pipeline: run a configurable chain of
+    validators (PII redaction, toxicity, JSON-schema, topic restriction)
+    over model output and either rewrite, annotate, or reject. Canonical:
+    NVIDIA NeMo-Guardrails `output rails` + Guardrails AI `Guard.use()`;
+    multiple validators compose; a single hard-fail short-circuits.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
+equations:
+  guardrails_pipeline:
+    formula: |
+      pipeline = [ v_1, v_2, ..., v_n ]  # ordered
+      output' = text
+      for v in pipeline:
+        r = v(output')
+        match r.action:
+          rewrite → output' = r.fixed
+          annotate → append(r.note)
+          reject → return { blocked: true, reason: r.reason, by: v.name } ; break
+      return { blocked: false, output: output', notes: [...] }
+    domain: "(text: str, pipeline: [Validator])"
+    codomain: "{ blocked: bool, output: str?, reason: str?, by: str? }"
+    invariants:
+    - "hard-fail short-circuits — no validators after reject run"
+    - "rewrite composition: pipeline = [v1,v2] and output' matches v2(v1(text))"
+    - "empty pipeline is identity (blocked=false, output=text unchanged)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-I-16-001
+  rule: hard-fail short-circuits — subsequent validators don't see the text
+  prediction: "reject-then-rewrite pipeline has by=toxicity, no rewrite run"
+  test: |
+    set -euo pipefail
+    apr guardrails run --pipeline toxicity,pii_redact --input "kill all humans" \
+      --format json > /tmp/g.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/g.json'))
+    assert d['blocked'] is True, d
+    assert d['by'] == 'toxicity', d
+    assert 'output' not in d or d.get('output') is None, d
+    "
+  if_fails: rule 'hard-fail short-circuits — subsequent validators don't see the text' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-I-16-002
+  rule: rewrites compose in order
+  prediction: "pipeline [pii_redact, upper] first redacts then uppercases"
+  test: |
+    set -euo pipefail
+    apr guardrails run --pipeline pii_redact,upper \
+      --input "my email is a@b.com" --format json > /tmp/g2.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/g2.json'))
+    assert d['blocked'] is False, d
+    assert '@B.COM' not in d['output']  # email was redacted first
+    assert d['output'] == d['output'].upper(), d
+    "
+  if_fails: rule 'rewrites compose in order' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-I-16-003
+  rule: empty pipeline is identity
+  prediction: "--pipeline '' returns blocked=false with input unchanged"
+  test: |
+    set -euo pipefail
+    apr guardrails run --pipeline "" --input "hello world" --format json > /tmp/g3.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/g3.json'))
+    assert d['blocked'] is False and d['output'] == 'hello world', d
+    "
+
+  if_fails: rule 'empty pipeline is identity' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr guardrails run matches NeMo-Guardrails + Guardrails AI ordered-validator semantics"
+- type: invariant
+  property: "reject short-circuits (no downstream side effects)"
+- type: invariant
+  property: "empty pipeline is identity"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-i-16
+  priority: medium
+  auto_created: true

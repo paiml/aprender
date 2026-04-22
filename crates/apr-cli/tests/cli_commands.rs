@@ -14,6 +14,7 @@ use std::process::Command;
 /// This is the Rust-side mirror of the YAML contract.
 /// Feature-gated commands are conditionally included.
 fn registered_commands() -> Vec<&'static str> {
+    #[cfg_attr(not(feature = "code"), allow(unused_mut))]
     let mut cmds = vec![
         "run",
         "serve",
@@ -21,6 +22,7 @@ fn registered_commands() -> Vec<&'static str> {
         "inspect",
         "debug",
         "validate",
+        "validate-manifest",
         "lint",
         "explain",
         "tensors",
@@ -39,11 +41,13 @@ fn registered_commands() -> Vec<&'static str> {
         "pull",
         "list",
         "rm",
+        "registry",
         "publish",
         "finetune",
         "prune",
         "distill",
         "train",
+        "pretrain",
         "tokenize",
         "tune",
         "bench",
@@ -68,9 +72,17 @@ fn registered_commands() -> Vec<&'static str> {
         "showcase",
         "probar",
         "diagnose",
+        "ollama-chat-lint",
+        "dry-sampling-lint",
+        "awq-lint",
+        "oom-lint",
+        "tool-use-lint",
+        "gbnf-lint",
+        "typical-p-lint",
         "oracle",
         "encrypt",
         "decrypt",
+        "mcp",
     ];
     // Feature-gated commands — only expected when feature is enabled
     #[cfg(feature = "code")]

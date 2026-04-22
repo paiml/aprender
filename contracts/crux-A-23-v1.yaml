@@ -1,0 +1,79 @@
+# CRUX-A-23 — Model search Hub + local cache
+
+metadata:
+  id: CRUX-A-23
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    `apr search QUERY` returns both Hub matches and already-cached local
+    models in one unified list. Canonical: `huggingface_hub.list_models`
+    (server-side full-text search) + local `~/.cache/huggingface/hub` enum.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  hybrid_search:
+    formula: |
+      search(q) = merge(
+        hub_results   = GET /api/models?search={q}&limit=25,
+        local_results = [m for m in list_cache() if q.lower() in m.repo.lower()]
+      )
+      sort by (match_score DESC, downloads DESC)
+      each row tagged with source ∈ {HUB, LOCAL, BOTH}
+    domain: "(query: str, limit: u32 = 25)"
+    codomain: "JSON [{repo, downloads, likes, source, cached: bool}, ...]"
+    invariants:
+    - "local models always appear, even with zero Hub matches"
+    - "cached-same-as-Hub rows marked source=BOTH (not double-listed)"
+    - "offline mode (no network) returns local-only results, never errors"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-23-001
+  rule: local cache entries appear without network
+  prediction: "apr search gpt --offline returns the cached gpt2 row with source=LOCAL"
+  test: |
+    set -euo pipefail
+    apr pull hf://gpt2 >/dev/null 2>&1 || true
+    apr search gpt --offline --format json > /tmp/res.json
+    jq -e '.[] | select(.repo=="gpt2") | .source=="LOCAL" or .source=="BOTH"' /tmp/res.json
+  if_fails: rule 'local cache entries appear without network' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-23-002
+  rule: hub + local merge is deduplicated
+  prediction: "a repo cached locally AND on Hub appears once with source=BOTH"
+  test: |
+    set -euo pipefail
+    apr pull hf://bert-base-uncased >/dev/null 2>&1 || true
+    apr search bert-base-uncased --format json > /tmp/res.json
+    count=$(jq '[.[] | select(.repo=="bert-base-uncased")] | length' /tmp/res.json)
+    [ "$count" = "1" ]
+
+  if_fails: rule 'hub + local merge is deduplicated' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr search matches `huggingface_hub.list_models(search=...)` for Hub half"
+- type: invariant
+  property: "merge dedups by repo; cached rows win (tagged BOTH)"
+- type: invariant
+  property: "--offline returns local results only; never raises NetworkError"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-a-23
+  priority: medium
+  auto_created: true

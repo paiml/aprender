@@ -1,0 +1,139 @@
+# CRUX-E-19 — Perplexity per quant bit-budget
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (spec-complete).
+# Evidence must land before ACTIVE promotion — see master §12.
+
+metadata:
+  id: CRUX-E-19
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: llama_cpp
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Perplexity per quant bit-budget. Root-cause workflow from llama.cpp's
+    `llama-perplexity` tool — sweeps quant types (Q2_K, Q3_K_M, Q4_K_M, Q5_K_M,
+    Q6_K, Q8_0, FP16) on WikiText-2 and emits ppl vs bits-per-weight (bpw) curve.
+    aprender equivalent: `apr qa --bench perplexity --quant-sweep --dataset wikitext2 --json`.
+  references:
+  - "https://github.com/ggerganov/llama.cpp/blob/master/examples/perplexity/perplexity.cpp"
+  - "https://github.com/ggerganov/llama.cpp/discussions/406"
+  - "https://huggingface.co/datasets/wikitext"
+
+equations:
+  ppl_sweep_schema:
+    formula: |
+      apr qa --bench perplexity --quant-sweep --json emits:
+        sweep: list of {quant: string, bpw: f64, ppl: f64, file_size_bytes: u64, wall_time_sec: f64}
+        dataset: "wikitext2-raw-v1"  (or user-specified)
+        num_tokens_scored: u64 > 0
+        fp16_baseline_ppl: f64 > 0  (reference)
+    domain: (model, quant_types[], dataset)
+    codomain: JSON sweep table
+    invariants:
+    - "Every sweep entry has ppl > 0, bpw > 0, file_size_bytes > 0"
+    - "num_tokens_scored is constant across sweep (same dataset slice)"
+    - "fp16_baseline_ppl == sweep entry where quant == 'FP16'"
+
+  ppl_ordering_monotone:
+    formula: |
+      For K-quant family at matching mixing (e.g., _K_M), perplexity decreases
+      monotonically with bit budget:
+        ppl(Q2_K) > ppl(Q3_K_M) > ppl(Q4_K_M) > ppl(Q5_K_M) > ppl(Q6_K) >= ppl(Q8_0) >= ppl(FP16) − ε
+      for ε = 0.02.
+    domain: quant_type ∈ K-family
+    codomain: bool
+    invariants:
+    - "Higher bpw → lower (or equal) ppl within K-family"
+    - "FP16 sets the floor; ppl(FP16) <= ppl(any_quant) + 0.02"
+
+  ppl_delta_within_tolerance:
+    formula: |
+      ppl_delta(q) = ppl(q) − fp16_baseline_ppl
+      Acceptance gates:
+        ppl_delta(Q4_K_M) < 0.10
+        ppl_delta(Q5_K_M) < 0.05
+        ppl_delta(Q8_0)   < 0.02
+    domain: quant_type
+    codomain: bool
+    invariants:
+    - "Q4_K_M ppl uplift vs FP16 < 0.10 (documented tolerance)"
+    - "Violation flags a quantization regression"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-19-001
+  rule: sweep schema completeness
+  prediction: "sweep contains entries for each requested quant with positive ppl/bpw"
+  test: |
+    # TODO: implement after `apr qa --bench perplexity --quant-sweep` lands (crux-crux-e-19)
+    apr qa --bench perplexity --quant-sweep Q4_K_M,Q5_K_M,Q8_0,FP16 \
+      --dataset wikitext2 --json > /tmp/ppl.json
+    jq '.sweep | map(select(.ppl <= 0 or .bpw <= 0)) | length == 0 and length == 4' /tmp/ppl.json \
+      | grep -q true
+  if_fails: "sweep missing entries or has non-positive ppl/bpw"
+
+- id: FALSIFY-CRUX-E-19-002
+  rule: K-family monotonicity
+  prediction: "ppl strictly decreases with bpw within K-quant family"
+  test: |
+    apr qa --bench perplexity --quant-sweep Q2_K,Q3_K_M,Q4_K_M,Q5_K_M,Q6_K --json > /tmp/ppl.json
+    python3 -c "
+    import json
+    s = sorted(json.load(open('/tmp/ppl.json'))['sweep'], key=lambda e: e['bpw'])
+    ppls = [e['ppl'] for e in s]
+    assert ppls == sorted(ppls, reverse=True), f'non-monotone: {ppls}'
+    "
+  if_fails: "ppl not monotonically decreasing with bpw inside K-family"
+
+- id: FALSIFY-CRUX-E-19-003
+  rule: Q4_K_M tolerance vs FP16
+  prediction: "ppl(Q4_K_M) − ppl(FP16) < 0.10"
+  test: |
+    apr qa --bench perplexity --quant-sweep Q4_K_M,FP16 --dataset wikitext2 --json > /tmp/ppl.json
+    python3 -c "
+    import json
+    s = {e['quant']: e['ppl'] for e in json.load(open('/tmp/ppl.json'))['sweep']}
+    delta = s['Q4_K_M'] - s['FP16']
+    assert delta < 0.10, f'Q4_K_M uplift {delta} >= 0.10'
+    "
+  if_fails: "Q4_K_M ppl uplift exceeds 0.10 tolerance — quantization regression"
+
+- id: FALSIFY-CRUX-E-19-004
+  rule: num_tokens_scored constant across sweep
+  prediction: "every quant scored on same token count"
+  test: |
+    apr qa --bench perplexity --quant-sweep Q4_K_M,Q5_K_M,Q8_0 --json > /tmp/ppl.json
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/ppl.json'))
+    assert isinstance(d['num_tokens_scored'], int) and d['num_tokens_scored'] > 0
+    "
+  if_fails: "num_tokens_scored not uniform or not reported"
+
+proof_obligations:
+- type: invariant
+  property: "sweep schema complete with ppl/bpw/size/time per quant"
+- type: invariant
+  property: "K-family monotone: higher bpw → lower ppl"
+- type: equivalence
+  property: "apr perplexity value matches llama.cpp llama-perplexity within ±0.05 on identical GGUF + wikitext2 slice"
+- type: invariant
+  property: "Q4_K_M ppl uplift vs FP16 < 0.10 (quantization quality gate)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-19` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-19
+  priority: high
+  auto_created: true

@@ -1,0 +1,148 @@
+# CRUX-F-11 — NaN/Inf detector in activations
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-F-11
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: pytorch
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    NaN/Inf detector in activations. Competitor
+    `torch.autograd.set_detect_anomaly(True)` + forward-hook wrappers that
+    `assert torch.isfinite(t).all()` (see
+    https://pytorch.org/docs/stable/autograd.html#anomaly-detection and
+    https://pytorch.org/tutorials/beginner/nn_tutorial.html#debugging) halt
+    training on the first non-finite tensor and report the offending layer
+    with a full Python traceback. Parity: `apr trace --check-finite` MUST
+    scan every layer's output for NaN/Inf during inference or a forward
+    pass, fail closed with exit code non-zero on first occurrence, and
+    report (layer_name, tensor_shape, first_bad_index, op) to stderr as
+    structured JSON.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  finite_check_invariant:
+    formula: |
+      For each layer L in forward pass with output tensor T:
+        assert all(isfinite(T[i])) for i in 0 .. len(T)-1
+      where isfinite(x) := x != NaN ∧ x != +Inf ∧ x != -Inf
+      On failure, apr trace --check-finite exits with code 2 and emits:
+        {"error": "non_finite", "layer": L.name, "shape": T.shape,
+         "first_bad_index": i*, "value": "nan"|"+inf"|"-inf", "op": L.kind}
+    domain: forward-pass activation tensors
+    codomain: exit_code ∈ {0, 2} ∪ structured JSON on stderr
+    invariants:
+    - "Clean run (all finite): exit 0, no error JSON"
+    - "Dirty run (any non-finite): exit 2, JSON identifies first offending layer"
+    - "Scan halts at first non-finite tensor (no spurious downstream errors)"
+
+  layer_coverage_complete:
+    formula: |
+      Let layers(model) = ordered list of forward-pass tensor-producing ops.
+      For every L in layers(model):
+        check_finite(L.output) is invoked
+      i.e. no layer is silently skipped.
+    domain: model forward pass
+    codomain: bool
+    invariants:
+    - "Coverage == 100% of layer outputs (attention_q, attention_k, attention_v, attention_out, ffn_gate, ffn_up, ffn_down, layernorm, residual)"
+    - "trace --check-finite --list emits one row per layer even on clean runs"
+
+  parity_with_torch_anomaly:
+    formula: |
+      For a model M with a known-bad weight (e.g. manually poisoned ffn_up.weight[0]=NaN):
+        apr trace --check-finite M → exit 2, layer name L_apr
+        torch anomaly mode on equivalent M → exception at layer L_torch
+        L_apr == L_torch  (same named module detects the fault first)
+    domain: (poisoned model, seed, prompt) triple
+    codomain: bool (layer identity match)
+    invariants:
+    - "First-fault layer name is identical to PyTorch anomaly mode"
+    - "Detection order follows forward-pass topological order"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-11-001
+  rule: clean model passes with exit 0
+  prediction: "healthy model emits no non_finite event, exit 0"
+  test: |
+    MODEL=/mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr
+    apr trace --check-finite "$MODEL" --prompt "hello" --max-tokens 4 2>/tmp/f11.err
+    RC=$?
+    [ "$RC" -eq 0 ] || { echo "FAIL: clean run exited $RC" >&2; cat /tmp/f11.err >&2; exit 1; }
+    ! grep -q non_finite /tmp/f11.err || { echo "FAIL: spurious non_finite on clean model" >&2; exit 1; }
+
+  if_fails: rule 'clean model passes with exit 0' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-11-002
+  rule: poisoned weight triggers exit 2 with layer name
+  prediction: "tensor with NaN injected reports first offending layer"
+  test: |
+    # TODO: write helper scripts/poison_apr_weight.py that flips one fp16 to NaN
+    MODEL=/tmp/poisoned.apr
+    python3 scripts/poison_apr_weight.py \
+      --in /mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr \
+      --out "$MODEL" --tensor "blk.0.ffn_up.weight" --index 0 --value nan
+    OUT=$(apr trace --check-finite "$MODEL" --prompt "hi" --max-tokens 1 2>&1 >/dev/null)
+    RC=$?
+    [ "$RC" -eq 2 ] || { echo "FAIL: expected exit 2 on NaN, got $RC" >&2; exit 1; }
+    echo "$OUT" | jq -e '.error == "non_finite" and .layer == "blk.0.ffn_up"' \
+      || { echo "FAIL: missing or wrong layer in error JSON: $OUT" >&2; exit 1; }
+
+  if_fails: rule 'poisoned weight triggers exit 2 with layer name' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-11-003
+  rule: layer coverage is complete
+  prediction: "--check-finite --list enumerates every tensor-producing op"
+  test: |
+    MODEL=/mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr
+    N=$(apr trace --check-finite --list "$MODEL" --prompt "hi" --max-tokens 1 2>/dev/null | jq '.layers | length')
+    # Qwen2.5-Coder-1.5B has 28 blocks × 9 tensor ops + embed + final norm + lm_head ≈ 255
+    [ "$N" -ge 100 ] || { echo "FAIL: only $N layers listed, expected >= 100" >&2; exit 1; }
+
+  if_fails: rule 'layer coverage is complete' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-11-004
+  rule: parity with torch anomaly detection
+  prediction: "apr and torch identify the same first-fault layer"
+  test: |
+    # TODO: reference pytorch harness at evidence/crux/pytorch/anomaly_parity.py
+    MODEL=/tmp/poisoned.apr
+    APR_LAYER=$(apr trace --check-finite "$MODEL" --prompt "hi" --max-tokens 1 2>&1 | jq -r '.layer // empty')
+    TORCH_LAYER=$(python3 evidence/crux/pytorch/anomaly_parity.py "$MODEL" 2>&1 | tail -1)
+    [ -n "$APR_LAYER" ] && [ "$APR_LAYER" = "$TORCH_LAYER" ] \
+      || { echo "FAIL: parity mismatch apr=$APR_LAYER torch=$TORCH_LAYER" >&2; exit 1; }
+
+  if_fails: rule 'parity with torch anomaly detection' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: invariant
+  property: "Clean model run with --check-finite exits 0 and emits no error JSON"
+- type: invariant
+  property: "First non-finite activation triggers exit 2 with structured JSON on stderr"
+- type: invariant
+  property: "All tensor-producing layers are scanned (no silent skips)"
+- type: equivalence
+  property: "First-fault layer name matches torch.autograd.set_detect_anomaly on same poisoned input"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-f-11` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-f-11
+  priority: high
+  auto_created: true

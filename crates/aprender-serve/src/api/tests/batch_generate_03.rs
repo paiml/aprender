@@ -80,7 +80,9 @@ async fn test_apr_explain_handler_via_http() {
 
 #[tokio::test]
 async fn test_health_endpoint() {
-    let app = create_test_app_shared();
+    // CRUX-C-34: /health returns 200 only when model is loaded.
+    // Use create_test_app() (demo state with model), not shared mock state.
+    let app = create_test_app();
     let response = app
         .oneshot(
             Request::builder()

@@ -497,6 +497,31 @@ impl RosettaStone {
             });
         }
 
+        // S1-FIX: Check file size covers the data section.
+        // A half-truncated file can have all tensor INFO parsed but DATA missing.
+        // The reader successfully parsed tensor metadata (offsets are relative to data_offset).
+        // If the file is smaller than data_offset + highest_tensor_offset, it's truncated.
+        let file_size = std::fs::metadata(path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let data_start = reader.data_offset as u64;
+        if let Some(last) = reader.tensors.iter().max_by_key(|t| t.offset) {
+            // The last tensor's data starts at data_offset + tensor.offset.
+            // We need at least 1 byte of data there for it to be valid.
+            let min_required = data_start + last.offset + 1;
+            if file_size < min_required {
+                return Err(crate::AprenderError::FormatError {
+                    message: format!(
+                        "Truncated GGUF: file is {} bytes but tensor data starts at byte {} \
+                         (file is {} bytes too short)",
+                        file_size,
+                        min_required - 1,
+                        min_required - file_size
+                    ),
+                });
+            }
+        }
+
         // Get tensor names from metadata
         let tensor_names: Vec<String> = reader.tensors.iter().map(|t| t.name.clone()).collect();
 

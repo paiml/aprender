@@ -1,0 +1,158 @@
+# CRUX-D-02 — LoRA fine-tune rank/alpha/dropout
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-02
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    LoRA fine-tune rank/alpha/dropout. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.D and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  lora_effective_weight:
+    formula: |
+      For each target linear layer with base weight W ∈ ℝ^{d_out × d_in}:
+        B ∈ ℝ^{d_out × r},  A ∈ ℝ^{r × d_in},  r ≪ min(d_out, d_in)
+        W_eff = W + (α / r) · B @ A
+      with B initialized to 0, A initialized via Kaiming-uniform,
+      so W_eff^{(t=0)} = W (inference-equivalent to base at step 0).
+    domain: (W, A, B, α, r) with r ∈ {4,8,16,32,64}, α ∈ ℝ_{>0}
+    codomain: W_eff ∈ ℝ^{d_out × d_in}
+    invariants:
+    - "B is zero-initialized → W_eff ≡ W at step 0"
+    - "Only A, B are trainable; base W frozen"
+    - "Scaling α/r absorbs rank sensitivity (HF-peft convention)"
+    - "Competitor parity: peft.LoraConfig(r, lora_alpha, lora_dropout, target_modules)"
+
+  adapter_size_bound:
+    formula: |
+      Trainable parameter count:
+        P_LoRA = Σ_{l ∈ targets} r · (d_out_l + d_in_l)
+      Adapter file on disk (fp16):
+        bytes ≤ 2 · P_LoRA + constant_header
+      Bound vs base: bytes(adapter) / bytes(base) ≤ 0.02 for r ≤ 16, targets={q,v}
+    domain: LoRA config × base model shape
+    codomain: file size in bytes
+    invariants:
+    - "Adapter file ≤ 2% of base model size for canonical (r=16, targets=q_proj,v_proj)"
+    - "Base model weights on disk are byte-identical pre/post train (sha256 unchanged)"
+
+  lora_dropout_train_only:
+    formula: |
+      During training:
+        y = W x + (α/r) · B @ dropout(A x, p=lora_dropout)
+      During eval/merge:
+        y = W x + (α/r) · B @ A x      (dropout disabled)
+    domain: forward pass (train_mode ∈ {true, false})
+    codomain: output activation
+    invariants:
+    - "Dropout applied to A-projection only during training"
+    - "Merged model (W + BA·α/r) is dropout-free and passes apr qa --require-golden-output"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-02-001
+  rule: "adapter ≤ 2% of base model size"
+  prediction: "LoRA r=16 on q_proj,v_proj produces adapter ≤ 0.02 · sizeof(base)"
+  test: |
+    BASE=fixtures/crux-d-02/qwen-1_5b-base.apr
+    ADAPTER=/tmp/crux-d-02-adapter.apr
+    apr finetune "$BASE" --method lora --lora-rank 16 --lora-alpha 32 \
+      --lora-dropout 0.05 --lora-targets q_proj,v_proj \
+      --data fixtures/crux-d-02/train.jsonl --epochs 1 \
+      --output "$ADAPTER" --json > /tmp/d02.json
+    BASE_SZ=$(stat -c%s "$BASE")
+    ADAPTER_SZ=$(stat -c%s "$ADAPTER")
+    python3 -c "assert $ADAPTER_SZ / $BASE_SZ <= 0.02, 'adapter too large'"
+  if_fails: "Adapter size exceeds 2% — likely saving full weights instead of low-rank factors"
+
+- id: FALSIFY-CRUX-D-02-002
+  rule: "base weights unchanged (sha256 identical)"
+  prediction: "LoRA does not mutate frozen base model file"
+  test: |
+    BASE=fixtures/crux-d-02/qwen-1_5b-base.apr
+    PRE=$(sha256sum "$BASE" | cut -d' ' -f1)
+    apr finetune "$BASE" --method lora --lora-rank 16 --lora-alpha 32 \
+      --data fixtures/crux-d-02/train.jsonl --epochs 1 \
+      --output /tmp/crux-d-02-adapter.apr --json > /dev/null
+    POST=$(sha256sum "$BASE" | cut -d' ' -f1)
+    [ "$PRE" = "$POST" ]
+  if_fails: "LoRA mutated base model file — base MUST be frozen and byte-stable"
+
+- id: FALSIFY-CRUX-D-02-003
+  rule: "merged model passes apr qa --require-golden-output"
+  prediction: "W_eff = W + (α/r)·BA produces sane inference"
+  test: |
+    apr finetune fixtures/crux-d-02/qwen-1_5b-base.apr --method lora \
+      --lora-rank 16 --lora-alpha 32 --data fixtures/crux-d-02/train.jsonl \
+      --epochs 1 --output /tmp/crux-d-02-adapter.apr --json > /dev/null
+    # TODO: expose `apr merge --strategy lora` for adapter+base composition
+    apr merge fixtures/crux-d-02/qwen-1_5b-base.apr /tmp/crux-d-02-adapter.apr \
+      --strategy lora -o /tmp/crux-d-02-merged.apr
+    apr qa /tmp/crux-d-02-merged.apr --require-golden-output --json \
+      | jq -e '.gates[] | select(.name=="golden_output") | .status == "PASS"'
+  if_fails: "Merged LoRA model emits garbage — α/r scaling or target-module mapping wrong"
+
+- id: FALSIFY-CRUX-D-02-004
+  rule: "peft canonical parity on effective weight"
+  prediction: "|W_eff_apr - W_eff_peft| / |W_eff_peft| < 1e-3 at init"
+  test: |
+    # TODO: golden adapter at evidence/crux/huggingface/d-02-peft-lora.safetensors
+    # captured via: get_peft_model(model, LoraConfig(r=16, lora_alpha=32, target_modules=["q_proj","v_proj"]))
+    GOLDEN=evidence/crux/huggingface/d-02-peft-lora.safetensors
+    apr finetune fixtures/crux-d-02/qwen-1_5b-base.apr --method lora \
+      --lora-rank 16 --lora-alpha 32 --lora-targets q_proj,v_proj \
+      --data fixtures/crux-d-02/train.jsonl --epochs 1 --seed 42 \
+      --output /tmp/crux-d-02-adapter.apr --json > /dev/null
+    apr diff /tmp/crux-d-02-adapter.apr "$GOLDEN" --tolerance 1e-3 --json \
+      | jq -e '.max_relative_error < 1e-3'
+  if_fails: "LoRA adapter diverges from peft reference — A/B init or scaling bug"
+
+proof_obligations:
+- type: invariant
+  property: "adapter file size ≤ 2% of base model for r=16 on {q_proj,v_proj}"
+- type: invariant
+  property: "base model sha256 identical pre/post train (frozen weights)"
+- type: invariant
+  property: "W_eff = W + (α/r) · B @ A; B zero-initialized so step-0 is inference-equivalent to base"
+- type: invariant
+  property: "merged model passes apr qa --require-golden-output"
+- type: equivalence
+  property: "apr finetune --method lora ≡ peft.LoraConfig + get_peft_model within 1e-3 relative"
+
+# References:
+#   LoRA: Hu et al., "LoRA: Low-Rank Adaptation of Large Language Models" — https://arxiv.org/abs/2106.09685
+#   HF PEFT: https://huggingface.co/docs/peft/main/en/package_reference/lora
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-02` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-02
+  priority: critical
+  auto_created: false

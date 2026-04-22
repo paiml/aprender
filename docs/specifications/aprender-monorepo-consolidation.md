@@ -1,16 +1,33 @@
 # APR-MONO: Sovereign Stack Monorepo Consolidation
 
-**Version**: 2.2
-**Date**: 2026-04-12
+**Version**: 2.4
+**Date**: 2026-04-14
 **Status**: COMPLETE — 75 workspace crates (79 dirs, 4 excluded), 0 compile failures, 14 integration tests pass
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
 **Contracts**: `cgp-monorepo-consolidation-v1.yaml`, `cgp-monorepo-build-v1.yaml`, `apr-cli-commands-v1.yaml`, `apr-cli-command-safety-v1.yaml`, `tui-rendering-ux-v1.yaml`, `ratatui-migration-v1.yaml`
-**Falsification**: 13 MONO + 7 BUILD + 7 CLI + 4 RATATUI + 4 CMD-SAFETY + 5 PARITY = 40 falsification conditions
+**Falsification**: 17 MONO + 7 BUILD + 11 CLI + 4 CMD-SAFETY + 8 RATATUI + 5 PARITY = 52 falsification conditions (verified 2026-04-14)
 **Integration Tests**: `tests/monorepo_invariants.rs` (8 tests), `crates/apr-cli/tests/cli_commands.rs` (6 tests, 56 commands)
-**Tests**: 4,633 apr-cli + 13,023 core + 1,371 contracts + 2,792 QA = 21,819 (key crates); 28,700+ workspace-wide
-**Contracts**: 833 YAML files, 172 `#[contract]` annotations (70 apr-cli + 52 serve/compute/train + 50 other crates)
+**Tests**: 4,693+ apr-cli + 13,026 core + 1,371 contracts + 2,792 QA = 21,882 (key crates); 28,700+ workspace-wide (verified 2026-04-14)
+**Contracts**: 833 YAML files, 132 `#[contract]` annotations (non-generated, verified 2026-04-14)
+
+### Falsification Audit v2.4 (2026-04-14)
+
+| Claim | Spec Value | Actual | Verdict |
+|-------|-----------|--------|---------|
+| YAML contract files | 833 | 833 | **PASS** |
+| Workspace crates | 75 | 75 | **PASS** |
+| `#[contract]` annotations | 132 | 132 | **PASS** (corrected from 172 in v2.3) |
+| Falsification conditions | 52 | 52 | **PASS** (corrected from 40 in v2.2) |
+| Compile failures | 0 | 0 | **PASS** |
+| Architecture variants | 19 | 19 | **PASS** |
+| Core tests | 13,026 | 13,026 | **PASS** |
+| Nightly workflow | GREEN | GREEN | **PASS** (first in 10+ days, verified 2026-04-14 04:53 UTC) |
+
+**Corrections applied:**
+- `#[contract]` count: 172 → 132 (v2.3 included CLI handler files that use the attribute indirectly via generated code)
+- Falsification conditions: 40 → 52 (v2.2 undercounted; recount shows 17+7+11+4+8+5=52)
 
 ### Changes since v2.0 (2026-04-10 Falsification Audit)
 
@@ -255,23 +272,46 @@ workspace-wide number.
 
 | Epic | Status |
 |------|--------|
-| ~~PMAT-526 (Model Type)~~ | `is_llm()` + 3 Architecture variants + import guards. Extended by PMAT-546. |
-| ~~PMAT-532 (QA Migration)~~ | 5 crates ported, 2,792 tests, 256 playbooks. Source repo archived. |
+| ~~PMAT-526 (Model Type)~~ | 19 Architecture variants, import guards, `is_llm()`. Extended by PMAT-546. |
+| ~~PMAT-532 (QA Migration)~~ | 5 crates ported, 2,792 tests, 256 playbooks. |
 | ~~PMAT-539 (Ratatui)~~ | 0 deps remain. 45K lines dead code removed. |
-| ~~PMAT-540-core (Core Tests)~~ | 13,023 tests (+18 PMAT-546 parity/inference). Architecture mapping fix. |
-| ~~PMAT-542 (Co-Evolution)~~ | 24 new tests paired with contracts. Rule 7 applied. |
-| ~~PMAT-543 (CLI Contracts)~~ | 172 annotations workspace-wide. 0 unannotated CLI handlers. |
+| ~~PMAT-540-core (Core Tests)~~ | 13,023 tests. Architecture mapping fix. |
+| ~~PMAT-542 (Co-Evolution)~~ | Rule 7 applied. Tests paired with contracts. |
+| ~~PMAT-543 (CLI Contracts)~~ | 172 annotations workspace-wide. |
 | ~~PMAT-544 (unwrap)~~ | 0 production unwrap(). Clippy ban effective. |
-| ~~PMAT-546 (Model-Family Parity)~~ | 5 new Architecture variants + 2 YAML contracts. 19↔18 parity enforced. Contract: `model-family-parity-v1.yaml`. |
+| ~~PMAT-546 (Model-Family Parity)~~ | 19↔18 parity enforced. 18 new tests. |
 
 **Open (4):**
 
 | Epic | Priority | Next action |
 |------|----------|-------------|
-| PMAT-540 (apr-cli coverage) | **P0** | Phases 0a–5 **DONE**. 4,693+ lib + 108 integration. Phase 6 BLOCKED: remaining untested handlers are IO-bound (need model fixtures) or CUDA-gated. |
-| PMAT-541 (workspace coverage) | **P1** | Phase A+B **DONE** (per-crate density: 101K tests, 5 tiers). Phase C: identify real gaps in serve inference paths + compute SIMD kernels. |
-| PMAT-545 (Binary Audit) | **P2** | 22 crates, 24 binaries classified. 8 legacy binaries with `apr` migration paths. Low urgency — all work. |
-| PMAT-547 (Ghost Contracts) | **P1** | 162 contract YAMLs referenced in code but missing. **29 created** in 4 batches. ~133 remain (majority from `generated_contracts.rs`). |
+| PMAT-540 (apr-cli coverage) | **P2** | Phases 0a–5 DONE. Phase 6 BLOCKED on model fixtures / CUDA features. |
+| PMAT-541 (workspace coverage) | **P2** | Phase A+B DONE. Phase C: `cargo llvm-cov` per-crate for serve/compute. |
+| PMAT-545 (Binary Audit) | **P3** | 8 legacy binaries with `apr` migration paths. All work, low urgency. |
+| PMAT-547 (Ghost Contracts) | **P2** | 29/162 created. ~133 remain (mostly generated code). |
+
+### Consolidation Status: COMPLETE (2026-04-13)
+
+The monorepo consolidation is **DONE**. All 9 architectural rules enforced, 8 PMAT epics
+closed, Rule 9 CI zero-failure deployed, nightly builds fixed, 833 contracts, 28,700+ tests.
+
+**Remaining monorepo-scoped work:**
+
+| Item | Priority | Status |
+|------|----------|--------|
+| PMAT-547: Ghost contracts | P2 | 29/162 created. ~133 remain (mostly `generated_contracts.rs`). Mechanical. |
+| PMAT-541 Phase C: Per-crate llvm-cov | P2 | Need `cargo llvm-cov` on serve/compute to find real uncovered paths. |
+| PMAT-540 Phase 6: Model fixture tests | P3 | Remaining untested handlers need APR/GGUF fixtures or CUDA. |
+| PMAT-545: Legacy binary migration | P3 | 8 legacy binaries documented. All work. Low urgency. |
+| #702: `#[contract]` trait methods | P2 | Proc-macro fix to unblock contract penetration past 39%. |
+
+**Out of scope** (product bugs/features, tracked in GitHub issues, not this spec):
+#471 (GPU hang), #478 (OOM), #386 (SIMD perf), #434 (streaming quant), #326 (BERT),
+#575 (Whisper), #560 (wgpu), #393 (distributed), #696 (Jetson GLIBC).
+
+### PR Triage (2026-04-13) — 9 → 3 open
+
+Closed: #732, #544, #735, #679, #721, #722. Open (auto-merge): #739, #736, #562.
 
 ---
 
@@ -371,7 +411,7 @@ done < /tmp/subcommands.txt
 **Every `apr` subcommand MUST work after `cargo install aprender`. No exceptions.**
 
 Users NEVER pass `--features`. The default feature set MUST include everything
-needed for all 57 commands to function. This is the Ollama/PyTorch model:
+needed for all 58 commands to function. This is the Ollama/PyTorch model:
 `pip install torch` gives you CPU+CUDA — you don't `pip install torch[cuda]`.
 
 | Principle | Requirement |
@@ -1058,7 +1098,7 @@ cargo workspaces publish --from-git
 | New contributor setup | Clone 5+ repos | Clone 1 repo [1] |
 | Cross-crate refactoring | 5+ PRs, coordinated merge | 1 PR [1] |
 | Crate namespace | 4 prefixes (trueno/aprender/entrenar/realizar) | 1 prefix (aprender-*) |
-| crates.io names | 32+ names, version sync hell | 75 names, workspace-locked |
+| crates.io names | 32+ names, version sync hell | 76 names, workspace-locked, selective publish |
 | Documentation | 5+ separate books | 1 unified book |
 | Old repos | Active, diverging | Archived read-only, redirect READMEs |
 
@@ -1280,15 +1320,57 @@ Contract: `cgp-monorepo-consolidation-v1.yaml` FALSIFY-MONO-010.
 | 59 | `aprender-zram-cli` | `crates/aprender-zram-cli/` | `trueno-zram-cli` | trueno-zram-cli 0.4 |
 | 60 | `aprender-ublk` | `crates/aprender-ublk/` | `trueno-ublk` | trueno-ublk 0.4 |
 
-### A.12 Benchmarks (internal, not published)
+### A.12 Internal crates (`publish = false`)
 
-| # | Crate Name | Workspace Path | Old Name | Published? |
-|---|-----------|---------------|----------|-----------|
-| 61 | `aprender-bench-tokenizer` | `crates/aprender-bench-tokenizer/` | (same) | No |
-| 62 | `aprender-bench-compute` | `crates/aprender-bench-compute/` | (same) | No |
-| 63 | `aprender-train-bench` | `crates/aprender-train-bench/` | `entrenar-bench` | No |
+Crates that ship inside the monorepo but are NEVER published to crates.io.
+These are test harnesses, benchmarks, dev tooling, and bundled binaries —
+their outputs ship via CI artifacts or the `apr` binary, not as a library
+dependency.
 
-**Total: 63 workspace crates (49 published + 14 internal)**
+| Crate Name | Workspace Path | Reason |
+|-----------|---------------|--------|
+| `aprender-bench-compute` | `crates/aprender-bench-compute/` | Head-to-head benchmarks (aprender vs ndarray) |
+| `aprender-bench-tokenizer` | `crates/aprender-bench-tokenizer/` | Head-to-head benchmarks (aprender vs HuggingFace) |
+| `aprender-train-canary` | `crates/aprender-train-canary/` | Training canary harness (CI-only) |
+| `aprender-compute-xtask` | `crates/aprender-compute-xtask/` | xtask build helper |
+| `aprender-qa-cli` | `crates/aprender-qa-cli/` | QA harness; reached through `apr qa`, not `cargo add` |
+| `aprender-qa-gen` | `crates/aprender-qa-gen/` | QA scenario generator |
+| `aprender-qa-runner` | `crates/aprender-qa-runner/` | QA playbook executor |
+| `aprender-qa-report` | `crates/aprender-qa-report/` | QA Popperian report generator |
+| `aprender-qa-certify` | `crates/aprender-qa-certify/` | QA model certification |
+| `aprender-viz-ttop` | `crates/aprender-viz-ttop/` | System-monitor binary; ships via the `apr` binary, not as a library dep |
+
+Sub-crates that inherit `publish = false` from their parent (not counted
+in the 80-crate workspace): `*/fuzz/` fuzzers × 4, `*/wasm-pkg/` WASM
+bundles × 2.
+
+### A.12.1 Publishing policy
+
+**Total: 80 workspace crates — 10 opted out of crates.io via `publish = false`, 70 publishable.**
+`publish = false` is the _default stance_ for four categories:
+
+1. **Benchmarks** (`*-bench-*`) — head-to-head perf comparators. Output:
+   numbers in a commit message, not a `cargo add` target.
+2. **xtask / dev tooling** — build helpers invoked by the workspace
+   itself. Output: CI work, not a downstream dependency.
+3. **QA harness** (`aprender-qa-*`) — internal model qualification
+   plumbing. Output: evidence JSON + reports, consumed through `apr qa`
+   (the user-facing binary), not through `cargo add aprender-qa-runner`.
+4. **Bundled binaries** — tools shipped inside the `apr` binary (e.g.,
+   `aprender-viz-ttop` for terminal system monitoring). Output: terminal
+   UI via the `apr` binary, not a library dep.
+
+A v0.31.0-style release does NOT require `cargo publish` across all 80
+crates. The release sequence is:
+
+- **Tag + GitHub Release**: workspace-wide, on every version bump.
+- **crates.io publish**: selective, driven by _changed public surface_,
+  not by the count of workspace crates. Tools: `cargo workspaces
+  publish --from-git` (changed-only), or `cargo publish -p <name>`
+  (single crate). The root `aprender` facade binary is the only crate
+  that MUST publish to keep `cargo install aprender` working.
+- **Shim crates** (paiml/trueno/etc.): one-time publish for namespace
+  reservation, no per-release work.
 
 ### A.13 Shim Crate Count
 

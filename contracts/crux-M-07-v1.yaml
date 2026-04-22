@@ -1,0 +1,171 @@
+# CRUX-M-07 — QA Gate-7: pass@1 canary (HumanEval-canary)
+# Authored under PMAT-675. See docs/specifications/crux-competitive-research-ux-workflows.md §5.M.
+
+metadata:
+  id: CRUX-M-07
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - apr-model-qa-v1
+  category: "M — APR-QA Playbook Canonicalization"
+  competitor: apr-qa-playbook
+  demand_score: 5
+  intake_status: partial
+  description: >
+    QA Gate-7 from apr-model-qa-playbook — pass@1 canary. A frozen
+    5-problem HumanEval slice (HumanEval/0..4) is evaluated at
+    temp=0, top_k=1, max_tokens=256 every ship candidate. A floor
+    pass@1 >= S (S is baked into the contract, default 0.60 for
+    7B-class models) MUST hold. This is the last-mile taste-test
+    that catches regressions Gate-1..Gate-6 can miss (e.g. a
+    dequant path that parses but hallucinates).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'sibling repo: github.com/paiml/apr-model-qa-playbook — Gate-7'
+  - 'upstream: github.com/openai/human-eval — canonical HumanEval'
+  - 'contracts/apr-model-qa-v1.yaml — parent QA playbook contract'
+
+equations:
+  pass_at_1_canary:
+    formula: |
+      Fix canary set C = {HumanEval/0, HumanEval/1, HumanEval/2, HumanEval/3, HumanEval/4}
+      For each problem p ∈ C, at temp=0, top_k=1, max_tokens=256:
+          completion_p := apr_generate(model, prompt_p, ...)
+          passes_p     := sandbox_run(canonical_solution_fixture, completion_p)  ∈ {0,1}
+      pass_at_1 := mean(passes_p  for p ∈ C)          ∈ [0,1]
+      Gate pass := pass_at_1 >= threshold(model_size)
+        where threshold(7B-class)  = 0.60
+              threshold(1.5B-class) = 0.30
+              threshold(<1B)       = 0.10
+    domain: "(.apr | .gguf | .safetensors) × canary_set"
+    codomain: "PASS if pass_at_1 >= threshold for the model size class; FAIL otherwise"
+    invariants:
+    - "canary set is FROZEN — any drift invalidates historical comparisons"
+    - "temp=0, top_k=1 (deterministic); any non-determinism flips gate to FAIL (not EXEMPT)"
+    - "sandbox executes completion in a subprocess with 10s wall-clock limit and no network"
+    - "threshold is pinned per model-size class — NOT per model (prevents 'tune the bar to the model' anti-pattern)"
+    - "per-problem verdict is emitted, not just aggregate — enables regression triage"
+
+  gate_contract:
+    formula: |
+      apr qa --gate pass-at-1-canary \
+             --model model.apr \
+             --size-class 7b \
+             --json
+        emits:
+          status ∈ {"PASS", "FAIL"}
+          canary_set: ["HumanEval/0", ..., "HumanEval/4"]
+          threshold: 0.60
+          pass_at_1:  0.80
+          per_problem:
+            - { id: "HumanEval/0", passed: true,  tokens: 128, elapsed_ms: 820 }
+            - { id: "HumanEval/1", passed: false, tokens: 256, elapsed_ms: 1630, first_failing_assert: "..." }
+      exit 0 iff PASS ; exit 1 iff FAIL ; exit >= 2 on I/O / sandbox error
+    domain: "(model path, size class)"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status"
+    - "per_problem length == |canary_set| exactly (no silent skips)"
+    - "threshold in the JSON equals threshold(size_class) — a mismatch is exit >= 2"
+    - "sandbox timeouts count as passed=false (NEVER passed=null / skipped)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-M-07-001
+  rule: "--gate pass-at-1-canary flag exists"
+  prediction: "apr qa --help advertises --gate pass-at-1-canary"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "pass-at-1-canary"
+  if_fails: "apr qa lacks pass-at-1-canary gate — Gate-7 is not wired"
+
+- id: FALSIFY-CRUX-M-07-002
+  rule: "frozen canary set — exactly 5 problems, IDs HumanEval/0..4"
+  prediction: "JSON report's canary_set is exactly these five IDs in order"
+  test: |
+    set -euo pipefail
+    apr qa --gate pass-at-1-canary --model qwen2.5-coder-7b.apr --size-class 7b --json > /tmp/m07.json
+    jq -e '.canary_set == ["HumanEval/0","HumanEval/1","HumanEval/2","HumanEval/3","HumanEval/4"]' /tmp/m07.json >/dev/null
+  if_fails: "Canary set drifted — comparisons across ship candidates are no longer apples-to-apples"
+
+- id: FALSIFY-CRUX-M-07-003
+  rule: "threshold is pinned per size class (not per model)"
+  prediction: "7b class → threshold 0.60; 1.5b class → threshold 0.30; <1b → 0.10"
+  test: |
+    set -euo pipefail
+    apr qa --gate pass-at-1-canary --model qwen2.5-coder-7b.apr   --size-class 7b   --json > /tmp/m07-7b.json
+    apr qa --gate pass-at-1-canary --model qwen2.5-coder-1.5b.apr --size-class 1.5b --json > /tmp/m07-1p5b.json
+    jq -e '.threshold == 0.60' /tmp/m07-7b.json >/dev/null
+    jq -e '.threshold == 0.30' /tmp/m07-1p5b.json >/dev/null
+  if_fails: "Threshold floats per-model — ship bar can be 'tuned to the model', defeats the gate"
+
+- id: FALSIFY-CRUX-M-07-004
+  rule: "PASS teacher model (7B-class) clears 0.60 floor"
+  prediction: "qwen2.5-coder-7b teacher at 85%+ HumanEval clears a 5-problem canary with pass_at_1 >= 0.60"
+  test: |
+    set -euo pipefail
+    apr qa --gate pass-at-1-canary --model qwen2.5-coder-7b.apr --size-class 7b --json > /tmp/m07-teacher.json
+    jq -e '.status == "PASS" and .pass_at_1 >= 0.60' /tmp/m07-teacher.json >/dev/null
+  if_fails: "Teacher-grade model fails Gate-7 — either gate has a runner bug or teacher regressed"
+
+- id: FALSIFY-CRUX-M-07-005
+  rule: "FAIL a known-broken model (below threshold)"
+  prediction: "An intentionally damaged APR (all-zero lm_head) scores pass_at_1 < threshold and exits 1"
+  test: |
+    set -euo pipefail
+    apr convert --in qwen2.5-coder-7b.apr --zero-tensor lm_head.weight --out /tmp/m07-broken.apr
+    set +e
+    apr qa --gate pass-at-1-canary --model /tmp/m07-broken.apr --size-class 7b --json > /tmp/m07-broken.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || { echo "expected exit 1 on broken model, got $EC"; exit 1; }
+    jq -e '.status == "FAIL" and .pass_at_1 < 0.60' /tmp/m07-broken.json >/dev/null
+  if_fails: "Gate does not detect a zeroed lm_head — Gate-7 is a placebo"
+
+- id: FALSIFY-CRUX-M-07-006
+  rule: "per_problem length equals canary_set length (no silent skips)"
+  prediction: "JSON report emits exactly 5 per_problem entries, even when some timeout"
+  test: |
+    set -euo pipefail
+    apr qa --gate pass-at-1-canary --model qwen2.5-coder-7b.apr --size-class 7b --json > /tmp/m07.json
+    jq -e '(.per_problem | length) == (.canary_set | length)' /tmp/m07.json >/dev/null
+  if_fails: "Gate silently skips problems — coverage of the canary is illusory"
+
+- id: FALSIFY-CRUX-M-07-007
+  rule: "sandbox timeout counts as passed=false (never passed=null)"
+  prediction: "No per_problem entry has passed=null; timeouts produce passed=false with an elapsed_ms >= 10000"
+  test: |
+    set -euo pipefail
+    apr qa --gate pass-at-1-canary --model qwen2.5-coder-7b.apr --size-class 7b --json > /tmp/m07.json
+    jq -e '[.per_problem[] | .passed] | all(. != null)' /tmp/m07.json >/dev/null
+  if_fails: "passed=null leaks through — Gate-7 has a tri-state verdict (violates binary pass/fail)"
+
+proof_obligations:
+- type: invariant
+  property: "Canary set is exactly HumanEval/0..4 (frozen)"
+- type: invariant
+  property: "Threshold is determined by size class, not by model identity"
+- type: invariant
+  property: "pass_at_1 >= threshold(size_class) ⇔ PASS"
+- type: invariant
+  property: "per_problem length equals canary_set length; no passed=null entries"
+- type: invariant
+  property: "Determinism at (temp=0, top_k=1); re-runs match byte-for-byte in verdicts"
+- type: equivalence
+  property: "apr qa --gate pass-at-1-canary  ≅  apr-model-qa-playbook Gate-7 (5-problem HumanEval pass@1 floor)"
+
+verification_summary:
+  total_obligations: 6
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-m-07
+  ticket_id: PMAT-675
+  priority: critical
+  auto_created: true

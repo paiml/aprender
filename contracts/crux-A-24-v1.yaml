@@ -1,0 +1,81 @@
+# CRUX-A-24 — Register custom local model
+
+metadata:
+  id: CRUX-A-24
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: ollama
+  demand_score: 3
+  intake_status: partial
+  description: >
+    Register an already-on-disk checkpoint under a local tag without
+    downloading. Canonical: `ollama create mymodel -f Modelfile` (FROM
+    /absolute/path.gguf) — copies blob into registry and writes a manifest.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  register_from_local:
+    formula: |
+      apr create TAG --from PATH:
+        blob_sha = sha256(PATH)
+        hardlink_or_copy(PATH, $APR_MODELS/blobs/sha256-{blob_sha})
+        write_manifest(TAG, blobs=[blob_sha], arch=detect(PATH))
+      post: apr ls | grep TAG
+      post: apr run TAG --prompt "..." produces output
+    domain: "(tag: str, path: PathBuf, modelfile: Option<PathBuf>)"
+    codomain: "registry entry usable by `apr run` / `apr serve`"
+    invariants:
+    - "if PATH on same filesystem as registry, hardlink (fast, zero-copy)"
+    - "if cross-FS, copy-then-fsync; sha256 of blob matches sha256(PATH)"
+    - "arch detection reads file magic (gguf/safetensors/apr) and stores in manifest"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-24-001
+  rule: register from .gguf produces runnable entry
+  prediction: "apr create + apr run round-trip works on a raw gguf file"
+  test: |
+    set -euo pipefail
+    apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF:qwen2.5-0.5b-instruct-q4_k_m.gguf -o /tmp/q.gguf
+    apr create local-qwen --from /tmp/q.gguf
+    apr ls | grep -q local-qwen
+    out=$(apr run local-qwen --prompt "hello" --max-tokens 5)
+    [ -n "$out" ]
+  if_fails: rule 'register from .gguf produces runnable entry' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-A-24-002
+  rule: hardlink used when same filesystem
+  prediction: "registry blob has same inode as source file"
+  test: |
+    set -euo pipefail
+    src=/tmp/q.gguf
+    apr create tst2 --from "$src"
+    blob=$(apr inspect --blob-path tst2 | head -1)
+    [ "$(stat -c %i "$src")" = "$(stat -c %i "$blob")" ]
+
+  if_fails: rule 'hardlink used when same filesystem' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr create --from matches `ollama create -f Modelfile(FROM path)` semantics"
+- type: invariant
+  property: "same-FS source is hardlinked (zero-copy); cross-FS is copy+sha256-verify"
+- type: invariant
+  property: "registered tag is loadable by apr run/serve without re-download"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-a-24
+  priority: medium
+  auto_created: false

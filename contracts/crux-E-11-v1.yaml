@@ -1,0 +1,124 @@
+# CRUX-E-11 — MT-Bench / arena judge eval
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (spec-complete).
+# Evidence must land before ACTIVE promotion — see master §12.
+
+metadata:
+  id: CRUX-E-11
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    MT-Bench / arena judge eval. Root-cause workflow from huggingface/FastChat — an
+    LLM-as-judge pairwise battle over 80 multi-turn prompts scored by GPT-4 on a
+    1–10 scale. aprender equivalent: `apr eval --benchmark mtbench --judge <model>`
+    emits a JSON summary with per-category scores and 95% bootstrap CI.
+  references:
+  - "https://huggingface.co/spaces/lmsys/chatbot-arena-leaderboard"
+  - "https://github.com/lm-sys/FastChat/blob/main/fastchat/llm_judge/gen_judgment.py"
+  - "https://arxiv.org/abs/2306.05685"
+
+equations:
+  mtbench_score_schema:
+    formula: |
+      apr eval --benchmark mtbench --json emits:
+        overall_score: f64 ∈ [1.0, 10.0]
+        per_category: map<string, f64>  # writing, roleplay, reasoning, math, coding, extraction, stem, humanities
+        turn_1_score, turn_2_score: f64 ∈ [1.0, 10.0]
+        num_questions: u64 == 80
+        ci_95_low, ci_95_high: f64 (bootstrap, n=1000)
+    domain: list of (prompt, response) pairs
+    codomain: JSON object
+    invariants:
+    - "num_questions == 80 for MT-Bench full run"
+    - "ci_95_low <= overall_score <= ci_95_high"
+    - "overall_score == mean(per_category.values())"
+
+  judge_determinism:
+    formula: |
+      Given (prompt, response, judge_seed, judge_model), re-running the judge
+      yields a score within ±0.3 points (temperature=0.0 judge).
+    domain: (prompt, response, seed, judge)
+    codomain: f64 score
+    invariants:
+    - "Judge temperature MUST be 0.0 for reproducibility"
+    - "Same (seed, model) → score delta < 0.3 across runs"
+
+  pairwise_battle_symmetry:
+    formula: |
+      P(A beats B | order A,B) ≈ P(A beats B | order B,A)
+      where positional bias |p_AB − p_BA| < 0.1 over n >= 50 battles.
+    domain: pairwise (A, B) battles with both orderings
+    codomain: bool
+    invariants:
+    - "Both orderings MUST be run to cancel positional bias"
+    - "|win_rate_AB − win_rate_BA| < 0.1 for valid judge"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-11-001
+  rule: mtbench score schema
+  prediction: "apr eval --benchmark mtbench --json emits full schema with 80 questions"
+  test: |
+    # TODO: implement after `apr eval --benchmark mtbench` lands (crux-crux-e-11)
+    apr eval --benchmark mtbench --judge gpt-4 --model teacher.apr --json > /tmp/mt.json
+    jq '.num_questions == 80 and (.overall_score >= 1 and .overall_score <= 10) and \
+        (.per_category | length == 8)' /tmp/mt.json | grep -q true
+  if_fails: "MT-Bench JSON missing required fields or wrong question count"
+
+- id: FALSIFY-CRUX-E-11-002
+  rule: judge determinism at T=0
+  prediction: "same (seed, judge) → score delta < 0.3 across two runs"
+  test: |
+    # TODO: implement; requires deterministic judge harness
+    S1=$(apr eval --benchmark mtbench --judge-seed 42 --judge-temp 0.0 --json | jq .overall_score)
+    S2=$(apr eval --benchmark mtbench --judge-seed 42 --judge-temp 0.0 --json | jq .overall_score)
+    python3 -c "assert abs($S1 - $S2) < 0.3, f'delta={abs($S1-$S2)}'"
+  if_fails: "judge not deterministic at temperature 0"
+
+- id: FALSIFY-CRUX-E-11-003
+  rule: pairwise battle symmetry
+  prediction: "|win_rate_AB − win_rate_BA| < 0.1 to cancel positional bias"
+  test: |
+    # TODO: implement after pairwise mode
+    apr eval --benchmark mtbench --pairwise --models A.apr,B.apr \
+      --both-orders --json > /tmp/pw.json
+    jq '(.win_rate_AB - .win_rate_BA) | fabs < 0.1' /tmp/pw.json | grep -q true
+  if_fails: "positional bias exceeds tolerance"
+
+- id: FALSIFY-CRUX-E-11-004
+  rule: bootstrap CI contains point estimate
+  prediction: "ci_95_low <= overall_score <= ci_95_high"
+  test: |
+    apr eval --benchmark mtbench --bootstrap 1000 --json > /tmp/mt.json
+    jq '.ci_95_low <= .overall_score and .overall_score <= .ci_95_high' /tmp/mt.json | grep -q true
+  if_fails: "bootstrap CI inverted or excludes point estimate"
+
+proof_obligations:
+- type: invariant
+  property: "MT-Bench JSON schema matches FastChat reference"
+- type: invariant
+  property: "judge determinism at temperature 0 (±0.3)"
+- type: equivalence
+  property: "apr eval --benchmark mtbench score matches FastChat gen_judgment.py within 0.5 on golden set"
+- type: invariant
+  property: "pairwise battles run both orderings to cancel positional bias"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-11` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-11
+  priority: high
+  auto_created: true

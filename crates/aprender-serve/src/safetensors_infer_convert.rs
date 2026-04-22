@@ -52,164 +52,29 @@ impl SafetensorsToAprConverter {
         source: &S,
         config: &SafetensorsConfig,
     ) -> Result<ValidatedAprTransformer> {
-        // Extract architecture parameters
-        let hidden_dim = config
-            .hidden_size
-            .ok_or_else(|| RealizarError::FormatError {
-                reason: "config.json missing hidden_size".to_string(),
-            })?;
-        let num_layers = config
-            .num_hidden_layers
-            .ok_or_else(|| RealizarError::FormatError {
-                reason: "config.json missing num_hidden_layers".to_string(),
-            })?;
-        let num_heads = config
-            .num_attention_heads
-            .ok_or_else(|| RealizarError::FormatError {
-                reason: "config.json missing num_attention_heads".to_string(),
-            })?;
-        let num_kv_heads = config.num_kv_heads();
-        let vocab_size = config
-            .vocab_size
-            .ok_or_else(|| RealizarError::FormatError {
-                reason: "config.json missing vocab_size".to_string(),
-            })?;
-        let intermediate_dim = config.intermediate_size.unwrap_or(hidden_dim * 4);
-        let context_length = config.max_position_embeddings.unwrap_or(0);
-        let architecture = config.architecture();
-        // R-02 (Meyer DbC): rope_theta from config, or architecture-specific default.
-        let rope_theta = config.rope_theta.unwrap_or_else(||
-            crate::gguf::default_rope_theta_for_architecture(&architecture));
-        let eps = config.rms_norm_eps.unwrap_or(1e-6);
+        let apr_config = Self::build_apr_config(config)?;
+        Self::log_phase2_warning(config);
+        Self::log_hybrid_attention_info(config);
 
-        // Phase 2: Validate model dimensions at construction boundary.
-        // Non-fatal: logs a warning for invalid configs but allows conversion to
-        // proceed. The final ValidatedAprTransformer::validate() at the end is
-        // the hard gate. This catches obvious dimension errors early.
-        if let Err(e) = crate::gguf::ValidatedModelConfig::from_safetensors_config(config) {
-            eprintln!(
-                "[Phase2-WARN] SafeTensors config validation: {e} — proceeding with conversion"
-            );
-        }
-
-        // GH-278: Log Qwen3.5 detection with hybrid attention info
-        if config.is_hybrid_attention() {
-            let layer_count = config.layer_types.as_ref().map_or(0, Vec::len);
-            let linear_count = config.layer_types.as_ref().map_or(0, |t| {
-                t.iter()
-                    .filter(|l| *l == "linear" || *l == "linear_attention")
-                    .count()
-            });
-            eprintln!(
-                "[GH-278] Hybrid attention model detected: {}/{} linear layers, head_dim={:?}",
-                linear_count,
-                layer_count,
-                config.head_dim,
-            );
-        }
-
-        // Build transformer config
-        let apr_config = AprTransformerConfig {
-            architecture,
-            hidden_dim,
-            num_layers,
-            num_heads,
-            num_kv_heads,
-            vocab_size,
-            intermediate_dim,
-            context_length,
-            rope_theta,
-            eps,
-            eos_token_id: config.eos_token_id,
-            // GH-278: Hybrid attention fields
-            explicit_head_dim: config.head_dim,
-            layer_types: config.layer_types.clone(),
-            linear_key_head_dim: config.linear_key_head_dim,
-            linear_value_head_dim: config.linear_value_head_dim,
-            linear_num_key_heads: config.linear_num_key_heads,
-            linear_num_value_heads: config.linear_num_value_heads,
-            linear_conv_kernel_dim: config.linear_conv_kernel_dim,
-            // ALB-010: MoE fields
-            num_experts: config.num_experts,
-            num_experts_per_tok: config.num_experts_per_tok,
-            expert_intermediate_size: config.moe_intermediate_size,
-        };
-
-        // ALB-010: Detect ConditionalGeneration wrapper prefix
         let model_prefix = Self::detect_model_prefix(source);
-        let is_moe = config.num_experts.is_some();
-
-        // Extract embeddings — use detected prefix for ConditionalGeneration wrapper
-        let embed_name = format!("{model_prefix}.embed_tokens.weight");
         let token_embedding = Self::get_tensor_with_fallback_generic(
             source,
-            &embed_name,
+            &format!("{model_prefix}.embed_tokens.weight"),
             "token_embd.weight",
         )?;
-
-        // Extract output norm
-        let norm_name = format!("{model_prefix}.norm.weight");
         let output_norm_weight = Self::get_tensor_with_fallback_generic(
             source,
-            &norm_name,
+            &format!("{model_prefix}.norm.weight"),
             "output_norm.weight",
         )?;
-
-        // F-GT-002 FIX: Check tie_word_embeddings config FIRST, not just tensor existence
-        // When tie_word_embeddings=true, HuggingFace may store a placeholder lm_head.weight
-        // that's all zeros - we MUST use the embedding matrix instead!
-        let use_tied_embeddings = config.tie_word_embeddings.unwrap_or(false);
-
-        let lm_head_weight = if use_tied_embeddings {
-            Self::transpose_weight(&token_embedding, vocab_size, hidden_dim)
-        } else if Self::has_tensor_with_fallback_generic(source, "lm_head.weight", "output.weight")
-        {
-            let raw =
-                Self::get_tensor_with_fallback_generic(source, "lm_head.weight", "output.weight")?;
-            Self::transpose_weight(&raw, vocab_size, hidden_dim)
-        } else {
-            // Fallback: assume tied if no lm_head tensor exists
-            Self::transpose_weight(&token_embedding, vocab_size, hidden_dim)
-        };
-
-        // Extract layers
-        let mut layers = Vec::with_capacity(num_layers);
-        for i in 0..num_layers {
-            // GH-278: Dispatch to linear layer extractor for Gated Delta Net layers
-            let is_linear = config
-                .layer_types
-                .as_ref()
-                .and_then(|lt| lt.get(i))
-                .is_some_and(|t| t == "linear" || t == "linear_attention");
-
-            let mut layer = if is_linear {
-                Self::extract_linear_layer_generic(
-                    source,
-                    i,
-                    hidden_dim,
-                    intermediate_dim,
-                    config,
-                    &model_prefix,
-                )?
-            } else {
-                Self::extract_layer_generic_with_prefix(
-                    source,
-                    i,
-                    hidden_dim,
-                    num_heads,
-                    num_kv_heads,
-                    intermediate_dim,
-                    &model_prefix,
-                )?
-            };
-
-            // ALB-010: Load MoE weights if this is an MoE model
-            if is_moe {
-                Self::load_moe_weights(source, i, &model_prefix, config, hidden_dim, &mut layer)?;
-            }
-
-            layers.push(layer);
-        }
+        let lm_head_weight = Self::resolve_lm_head_weight(
+            source,
+            config,
+            &token_embedding,
+            apr_config.vocab_size,
+            apr_config.hidden_dim,
+        )?;
+        let layers = Self::build_layers(source, config, &apr_config, &model_prefix)?;
 
         let transformer = AprTransformer {
             config: apr_config,
@@ -224,8 +89,169 @@ impl SafetensorsToAprConverter {
             lm_head_weight_q4k: None,
         };
 
-        // PMAT-235: Validate ALL tensors at construction time
         ValidatedAprTransformer::validate(transformer).map_err(Into::into)
+    }
+
+    /// Build `AprTransformerConfig` from SafeTensors config.json.
+    fn build_apr_config(config: &SafetensorsConfig) -> Result<AprTransformerConfig> {
+        let hidden_dim = Self::required_config_field(config.hidden_size, "hidden_size")?;
+        let num_layers = Self::required_config_field(config.num_hidden_layers, "num_hidden_layers")?;
+        let num_heads =
+            Self::required_config_field(config.num_attention_heads, "num_attention_heads")?;
+        let vocab_size = Self::required_config_field(config.vocab_size, "vocab_size")?;
+        let architecture = config.architecture();
+        // R-02 (Meyer DbC): rope_theta from config, or architecture-specific default.
+        let rope_theta = config
+            .rope_theta
+            .unwrap_or_else(|| crate::gguf::default_rope_theta_for_architecture(&architecture));
+
+        Ok(AprTransformerConfig {
+            architecture,
+            hidden_dim,
+            num_layers,
+            num_heads,
+            num_kv_heads: config.num_kv_heads(),
+            vocab_size,
+            intermediate_dim: config.intermediate_size.unwrap_or(hidden_dim * 4),
+            context_length: config.max_position_embeddings.unwrap_or(0),
+            rope_theta,
+            eps: config.rms_norm_eps.unwrap_or(1e-6),
+            eos_token_id: config.eos_token_id,
+            explicit_head_dim: config.head_dim,
+            layer_types: config.layer_types.clone(),
+            linear_key_head_dim: config.linear_key_head_dim,
+            linear_value_head_dim: config.linear_value_head_dim,
+            linear_num_key_heads: config.linear_num_key_heads,
+            linear_num_value_heads: config.linear_num_value_heads,
+            linear_conv_kernel_dim: config.linear_conv_kernel_dim,
+            num_experts: config.num_experts,
+            num_experts_per_tok: config.num_experts_per_tok,
+            expert_intermediate_size: config.moe_intermediate_size,
+        })
+    }
+
+    fn required_config_field(value: Option<usize>, field: &str) -> Result<usize> {
+        value.ok_or_else(|| RealizarError::FormatError {
+            reason: format!("config.json missing {field}"),
+        })
+    }
+
+    /// Phase 2: non-fatal dimension validation at construction boundary.
+    /// The final `ValidatedAprTransformer::validate()` is the hard gate; this
+    /// just surfaces obvious dimension errors early.
+    fn log_phase2_warning(config: &SafetensorsConfig) {
+        if let Err(e) = crate::gguf::ValidatedModelConfig::from_safetensors_config(config) {
+            eprintln!(
+                "[Phase2-WARN] SafeTensors config validation: {e} — proceeding with conversion"
+            );
+        }
+    }
+
+    /// GH-278: Log Qwen3.5 detection with hybrid attention info.
+    fn log_hybrid_attention_info(config: &SafetensorsConfig) {
+        if !config.is_hybrid_attention() {
+            return;
+        }
+        let layer_count = config.layer_types.as_ref().map_or(0, Vec::len);
+        let linear_count = config.layer_types.as_ref().map_or(0, |t| {
+            t.iter()
+                .filter(|l| *l == "linear" || *l == "linear_attention")
+                .count()
+        });
+        eprintln!(
+            "[GH-278] Hybrid attention model detected: {}/{} linear layers, head_dim={:?}",
+            linear_count, layer_count, config.head_dim,
+        );
+    }
+
+    /// Resolve the LM head weight, honoring `tie_word_embeddings` and falling
+    /// back to the embedding matrix when no `lm_head` tensor exists.
+    ///
+    /// F-GT-002 FIX: Check `tie_word_embeddings` config FIRST, not just tensor
+    /// existence — HuggingFace may store a placeholder all-zero `lm_head.weight`
+    /// when tying is in effect.
+    fn resolve_lm_head_weight<S: TensorSource>(
+        source: &S,
+        config: &SafetensorsConfig,
+        token_embedding: &[f32],
+        vocab_size: usize,
+        hidden_dim: usize,
+    ) -> Result<Vec<f32>> {
+        if config.tie_word_embeddings.unwrap_or(false) {
+            return Ok(Self::transpose_weight(token_embedding, vocab_size, hidden_dim));
+        }
+        if Self::has_tensor_with_fallback_generic(source, "lm_head.weight", "output.weight") {
+            let raw =
+                Self::get_tensor_with_fallback_generic(source, "lm_head.weight", "output.weight")?;
+            return Ok(Self::transpose_weight(&raw, vocab_size, hidden_dim));
+        }
+        // Fallback: assume tied if no lm_head tensor exists
+        Ok(Self::transpose_weight(token_embedding, vocab_size, hidden_dim))
+    }
+
+    /// Extract all transformer layers, dispatching to the linear (Gated Delta
+    /// Net) extractor or the standard attention extractor per-layer, and
+    /// layering MoE weights on top when configured.
+    fn build_layers<S: TensorSource>(
+        source: &S,
+        config: &SafetensorsConfig,
+        apr_config: &AprTransformerConfig,
+        model_prefix: &str,
+    ) -> Result<Vec<AprTransformerLayer>> {
+        let is_moe = config.num_experts.is_some();
+        let mut layers = Vec::with_capacity(apr_config.num_layers);
+        for i in 0..apr_config.num_layers {
+            let mut layer = Self::extract_single_layer(source, config, apr_config, i, model_prefix)?;
+            if is_moe {
+                Self::load_moe_weights(
+                    source,
+                    i,
+                    model_prefix,
+                    config,
+                    apr_config.hidden_dim,
+                    &mut layer,
+                )?;
+            }
+            layers.push(layer);
+        }
+        Ok(layers)
+    }
+
+    fn extract_single_layer<S: TensorSource>(
+        source: &S,
+        config: &SafetensorsConfig,
+        apr_config: &AprTransformerConfig,
+        layer_idx: usize,
+        model_prefix: &str,
+    ) -> Result<AprTransformerLayer> {
+        if Self::is_linear_attention_layer(config, layer_idx) {
+            Self::extract_linear_layer_generic(
+                source,
+                layer_idx,
+                apr_config.hidden_dim,
+                apr_config.intermediate_dim,
+                config,
+                model_prefix,
+            )
+        } else {
+            Self::extract_layer_generic_with_prefix(
+                source,
+                layer_idx,
+                apr_config.hidden_dim,
+                apr_config.num_heads,
+                apr_config.num_kv_heads,
+                apr_config.intermediate_dim,
+                model_prefix,
+            )
+        }
+    }
+
+    fn is_linear_attention_layer(config: &SafetensorsConfig, layer_idx: usize) -> bool {
+        config
+            .layer_types
+            .as_ref()
+            .and_then(|lt| lt.get(layer_idx))
+            .is_some_and(|t| t == "linear" || t == "linear_attention")
     }
 
     /// Extract a single transformer layer from SafeTensors (MappedSafeTensorsModel)
@@ -727,95 +753,127 @@ impl SafetensorsToAprConverter {
         layer: &mut AprTransformerLayer,
     ) -> Result<()> {
         let prefix = format!("{model_prefix}.layers.{layer_idx}");
+        Self::load_moe_router_gate(source, &prefix, layer);
+        Self::load_moe_expert_tensors(source, &prefix, config, hidden_dim, layer);
+        Self::load_moe_shared_expert_ffn(source, &prefix, config, layer);
+        Self::load_moe_shared_expert_gate(source, &prefix, layer);
+        Ok(())
+    }
 
-        // Router gate weight: [num_experts, hidden_dim]
-        let gate_name = format!("{prefix}.mlp.gate.weight");
-        if let Ok(gate) = source.get_tensor_auto(&gate_name) {
+    /// Router gate weight: `[num_experts, hidden_dim]`.
+    fn load_moe_router_gate<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        layer: &mut AprTransformerLayer,
+    ) {
+        if let Ok(gate) = source.get_tensor_auto(&format!("{prefix}.mlp.gate.weight")) {
             layer.moe_gate_weight = Some(gate);
         }
+    }
 
-        // Try Layout 1: packed expert tensors (no .weight suffix)
-        let gate_up_name = format!("{prefix}.mlp.experts.gate_up_proj");
-        if let Ok(gate_up) = source.get_tensor_auto(&gate_up_name) {
+    /// Expert `gate_up`/`down` tensors. Tries Layout 1 (packed `gate_up_proj` +
+    /// `down_proj`) first, then falls back to Layout 2 (per-expert weights,
+    /// Qwen3-Coder style), packing individual tensors into concatenated form.
+    fn load_moe_expert_tensors<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        config: &SafetensorsConfig,
+        hidden_dim: usize,
+        layer: &mut AprTransformerLayer,
+    ) {
+        if let Ok(gate_up) = source.get_tensor_auto(&format!("{prefix}.mlp.experts.gate_up_proj")) {
             layer.moe_expert_gate_up = Some(gate_up);
-
-            let down_name = format!("{prefix}.mlp.experts.down_proj");
-            if let Ok(down) = source.get_tensor_auto(&down_name) {
+            if let Ok(down) = source.get_tensor_auto(&format!("{prefix}.mlp.experts.down_proj")) {
                 layer.moe_expert_down = Some(down);
             }
-        } else {
-            // Layout 2: per-expert tensors (Qwen3-Coder style)
-            // Pack individual expert weights into concatenated tensors
-            let num_experts = config.num_experts.unwrap_or(0);
-            let moe_intermediate = config.moe_intermediate_size.unwrap_or(0);
-            if num_experts > 0 && moe_intermediate > 0 {
-                let mut gate_up_packed = Vec::with_capacity(
-                    num_experts * 2 * moe_intermediate * hidden_dim,
-                );
-                let mut down_packed = Vec::with_capacity(
-                    num_experts * hidden_dim * moe_intermediate,
-                );
-                let mut found_any = false;
+            return;
+        }
+        if let Some((gate_up_packed, down_packed)) =
+            Self::pack_per_expert_tensors(source, prefix, config, hidden_dim)
+        {
+            layer.moe_expert_gate_up = Some(gate_up_packed);
+            layer.moe_expert_down = Some(down_packed);
+        }
+    }
 
-                for e in 0..num_experts {
-                    let gate_name = format!("{prefix}.mlp.experts.{e}.gate_proj.weight");
-                    let up_name = format!("{prefix}.mlp.experts.{e}.up_proj.weight");
-                    let down_name = format!("{prefix}.mlp.experts.{e}.down_proj.weight");
+    /// Layout 2: walk per-expert `gate_proj`/`up_proj`/`down_proj` tensors and
+    /// concatenate them. Returns `None` when no complete expert was found.
+    /// A partial expert encountered after complete ones short-circuits the
+    /// loop (partial experts shouldn't happen, but handle gracefully).
+    fn pack_per_expert_tensors<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        config: &SafetensorsConfig,
+        hidden_dim: usize,
+    ) -> Option<(Vec<f32>, Vec<f32>)> {
+        let num_experts = config.num_experts.unwrap_or(0);
+        let moe_intermediate = config.moe_intermediate_size.unwrap_or(0);
+        if num_experts == 0 || moe_intermediate == 0 {
+            return None;
+        }
 
-                    match (
-                        source.get_tensor_auto(&gate_name),
-                        source.get_tensor_auto(&up_name),
-                        source.get_tensor_auto(&down_name),
-                    ) {
-                        (Ok(gate), Ok(up), Ok(down)) => {
-                            found_any = true;
-                            // Pack gate+up into [2*intermediate, hidden] per expert
-                            gate_up_packed.extend_from_slice(&gate);
-                            gate_up_packed.extend_from_slice(&up);
-                            down_packed.extend_from_slice(&down);
-                        }
-                        _ => {
-                            if found_any {
-                                // Partial experts — shouldn't happen, but handle gracefully
-                                break;
-                            }
-                        }
-                    }
-                }
+        let mut gate_up_packed = Vec::with_capacity(num_experts * 2 * moe_intermediate * hidden_dim);
+        let mut down_packed = Vec::with_capacity(num_experts * hidden_dim * moe_intermediate);
+        let mut found_any = false;
 
-                if found_any {
-                    layer.moe_expert_gate_up = Some(gate_up_packed);
-                    layer.moe_expert_down = Some(down_packed);
-                }
+        for e in 0..num_experts {
+            let gate = source.get_tensor_auto(&format!("{prefix}.mlp.experts.{e}.gate_proj.weight"));
+            let up = source.get_tensor_auto(&format!("{prefix}.mlp.experts.{e}.up_proj.weight"));
+            let down = source.get_tensor_auto(&format!("{prefix}.mlp.experts.{e}.down_proj.weight"));
+
+            if let (Ok(gate), Ok(up), Ok(down)) = (gate, up, down) {
+                found_any = true;
+                gate_up_packed.extend_from_slice(&gate);
+                gate_up_packed.extend_from_slice(&up);
+                down_packed.extend_from_slice(&down);
+            } else if found_any {
+                break;
             }
         }
 
-        // Shared expert FFN (only for models that have it, e.g. Qwen3.5)
-        let shared_intermediate = config.shared_expert_intermediate_size
+        found_any.then_some((gate_up_packed, down_packed))
+    }
+
+    /// Shared expert FFN (`gate_proj`/`up_proj`/`down_proj`), present on
+    /// models like Qwen3.5. Gated on a positive
+    /// `shared_expert_intermediate_size` (falling back to
+    /// `moe_intermediate_size`).
+    fn load_moe_shared_expert_ffn<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        config: &SafetensorsConfig,
+        layer: &mut AprTransformerLayer,
+    ) {
+        let shared_intermediate = config
+            .shared_expert_intermediate_size
             .or(config.moe_intermediate_size)
             .unwrap_or(0);
-        if shared_intermediate > 0 {
-            let shared_gate_name = format!("{prefix}.mlp.shared_expert.gate_proj.weight");
-            if let Ok(g) = source.get_tensor_auto(&shared_gate_name) {
-                layer.moe_shared_gate = Some(g);
-            }
-            let shared_up_name = format!("{prefix}.mlp.shared_expert.up_proj.weight");
-            if let Ok(u) = source.get_tensor_auto(&shared_up_name) {
-                layer.moe_shared_up = Some(u);
-            }
-            let shared_down_name = format!("{prefix}.mlp.shared_expert.down_proj.weight");
-            if let Ok(d) = source.get_tensor_auto(&shared_down_name) {
-                layer.moe_shared_down = Some(d);
-            }
+        if shared_intermediate == 0 {
+            return;
         }
+        if let Ok(g) = source.get_tensor_auto(&format!("{prefix}.mlp.shared_expert.gate_proj.weight"))
+        {
+            layer.moe_shared_gate = Some(g);
+        }
+        if let Ok(u) = source.get_tensor_auto(&format!("{prefix}.mlp.shared_expert.up_proj.weight"))
+        {
+            layer.moe_shared_up = Some(u);
+        }
+        if let Ok(d) = source.get_tensor_auto(&format!("{prefix}.mlp.shared_expert.down_proj.weight"))
+        {
+            layer.moe_shared_down = Some(d);
+        }
+    }
 
-        // Shared expert gate: sigmoid scaling weight [1, hidden_dim]
-        let shared_gate_name = format!("{prefix}.mlp.shared_expert_gate.weight");
-        if let Ok(sg) = source.get_tensor_auto(&shared_gate_name) {
+    /// Shared expert gate: sigmoid scaling weight `[1, hidden_dim]`.
+    fn load_moe_shared_expert_gate<S: TensorSource>(
+        source: &S,
+        prefix: &str,
+        layer: &mut AprTransformerLayer,
+    ) {
+        if let Ok(sg) = source.get_tensor_auto(&format!("{prefix}.mlp.shared_expert_gate.weight")) {
             layer.moe_shared_expert_gate_weight = Some(sg);
         }
-
-        Ok(())
     }
 
     /// Pass through weight in matvec-optimal [out_dim, in_dim] format

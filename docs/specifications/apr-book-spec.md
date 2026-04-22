@@ -241,7 +241,7 @@ oracle_verified:
 | 1.2 | Ownership, borrowing, and tensor safety | Jung et al., "RustBelt: Securing the Foundations of the Rust Programming Language," arXiv:1903.00982 |
 | 1.3 | Installing aprender: `cargo install aprender` | — |
 | 1.4 | First model: `apr run hf://Qwen/Qwen2.5-0.5B` | Qwen Team, "Qwen2 Technical Report," arXiv:2407.10671 |
-| 1.5 | The `apr` CLI: 57 commands, one binary | Potvin & Levenberg, "Why Google Stores Billions of Lines of Code in a Single Repository," CACM 2016 |
+| 1.5 | The `apr` CLI: 58 commands, one binary | Potvin & Levenberg, "Why Google Stores Billions of Lines of Code in a Single Repository," CACM 2016 |
 
 ```rust
 // examples/ch01_hello_apr.rs
@@ -1225,7 +1225,7 @@ unsloth uses 93% less VRAM than pytorch (3,515 vs 50,580 MB).
 | `aprender-zram` | Compressed RAM storage | — |
 | `aprender-quant` | Quantization algorithms | — |
 | `aprender-sparse` | Sparse tensor operations | — |
-| `apr-cli` | CLI binary (`apr`), 57 commands | — |
+| `apr-cli` | CLI binary (`apr`), 58 commands | — |
 
 **Note**: The "Old Name" column is intentionally blank. This book uses ONLY the unified
 `aprender-*` namespace. Legacy names are not referenced.

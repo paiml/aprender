@@ -1,0 +1,265 @@
+# CRUX-C-15 — Tensor + pipeline parallelism
+
+metadata:
+  id: CRUX-C-15
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 4
+  intake_status: missing
+  description: >
+    Tensor parallelism (shard attention/MLP across N GPUs) + pipeline
+    parallelism (shard layers across M stages). vLLM exposes as
+    `--tensor-parallel-size TP --pipeline-parallel-size PP` with total
+    world_size = TP * PP. Map to `apr serve --tp TP --pp PP` producing
+    identical output to single-GPU at temp=0 and delivering scaling
+    throughput (near-linear in TP for attention/FFN-bound workloads).
+  references:
+  - "https://docs.vllm.ai/en/latest/serving/distributed_serving.html"
+  - "Shoeybi et al. 2020 — 'Megatron-LM' tensor parallelism"
+  - "Huang et al. 2019 — 'GPipe' pipeline parallelism"
+
+equations:
+  tp_pp_parity_at_greedy:
+    formula: |
+      ∀ prompt p, TP ∈ {1,2,4,8}, PP ∈ {1,2,4}, temperature=0.0, top_k=1:
+        decode(model, p, TP=1, PP=1) ≡ decode(model, p, TP, PP)
+      (within numerical noise: cosine(logits_ref, logits_parallel) >= 0.9999)
+    domain: (model, prompt, TP, PP)
+    codomain: token sequence
+    invariants:
+    - "temp=0 top_k=1: token IDs byte-identical across TP/PP configs"
+    - "model.num_heads % TP == 0 (required divisibility)"
+    - "model.num_layers % PP == 0"
+    - "world_size = TP * PP <= available GPUs"
+
+  scaling_throughput:
+    formula: |
+      tok/s(TP=N) >= 0.7 * N * tok/s(TP=1)
+      (70% scaling efficiency floor for attention-heavy decode)
+    domain: (model, TP)
+    codomain: scaling efficiency ratio
+    invariants:
+    - "TP=2 achieves >=1.4× single-GPU throughput"
+    - "TP=4 achieves >=2.8× single-GPU throughput"
+    - "scaling efficiency reported in --json output"
+
+  divisibility_fail_fast:
+    formula: |
+      num_heads % TP != 0 OR num_layers % PP != 0 ⇒ exit non-zero
+    domain: (model_config, TP, PP)
+    codomain: exit_code ∈ {0, non-zero}
+    invariants:
+    - "invalid TP rejected at startup, not first decode step"
+    - "error message cites num_heads / num_layers and suggests valid values"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-15-001
+  rule: TP parity at greedy sampling
+  prediction: "TP=2 produces byte-identical tokens to TP=1 at temp=0"
+  test: |
+    REF=$(apr run model.gguf --prompt "The capital of France is" \
+      --max-tokens 32 --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
+    TP2=$(apr run model.gguf --tp 2 --prompt "The capital of France is" \
+      --max-tokens 32 --temperature 0.0 --top-k 1 --json | jq -r '.tokens | join(",")')
+    [ "$REF" = "$TP2" ]
+  if_fails: "tensor-parallel output diverges from single-GPU — allreduce bug or numerical precision"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/tp_pp_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_tp_parity(ref, parallel)`
+      accepts iff both token streams are byte-identical. Rejection paths
+      distinguish root causes deterministically:
+        (a) one-sided emptiness → `EmptinessMismatch{ref_empty, parallel_empty}`
+            (vs the harder-to-debug "silent divergence at position 0");
+        (b) unequal length → `LengthMismatch{ref_len, parallel_len}`;
+        (c) equal length but diverges at some index → `TokenDivergence
+            {at_index, ref_token, parallel_token}` at the FIRST mismatch
+            (deterministic; bisection-friendly for allreduce debugging).
+      Pure; deterministic.
+    tests:
+    - tp_parity_ok_on_identical_token_streams
+    - tp_parity_ok_on_two_empty
+    - tp_parity_rejects_emptiness_mismatch_ref_empty
+    - tp_parity_rejects_emptiness_mismatch_parallel_empty
+    - tp_parity_rejects_length_mismatch
+    - tp_parity_rejects_token_divergence_at_first_mismatch
+    - tp_parity_reports_first_divergence_not_last
+    - tp_parity_classifier_is_deterministic
+    scope: "(ref_tokens, parallel_tokens) → TpParityOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr serve --tp surface wired to a real multi-GPU allreduce runtime emitting .tokens in --json output"
+
+- id: FALSIFY-CRUX-C-15-002
+  rule: scaling efficiency floor
+  prediction: "TP=2 delivers >=1.4× single-GPU tok/s"
+  test: |
+    BASE=$(apr bench model.gguf --max-tokens 128 --json | jq '.tokens_per_sec')
+    TP2=$(apr bench model.gguf --tp 2 --max-tokens 128 --json | jq '.tokens_per_sec')
+    python3 -c "import sys; sys.exit(0 if $TP2 / $BASE >= 1.4 else 1)"
+  if_fails: "TP=2 scaling efficiency below 70% (<1.4× single-GPU throughput)"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/tp_pp_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition:
+      `classify_scaling_efficiency(base_tps, parallel_tps, tp, min_alpha)`
+      accepts iff `parallel_tps / (base_tps * tp) >= min_alpha` AND
+      `parallel_tps >= base_tps` AND inputs are finite, strictly positive,
+      with `tp >= 2` and `min_alpha ∈ [0.0, 1.0]`. Rejection paths:
+        (a) non-finite, non-positive, or out-of-range inputs →
+            `InvalidInput{reason}` so configuration errors cannot
+            masquerade as scaling failures;
+        (b) `parallel_tps < base_tps` → `Regression{base, parallel, alpha}`
+            (distinct from "slow but positive uplift" — a regression is a
+            different defect class);
+        (c) positive uplift but below linear floor → `BelowThreshold
+            {observed_alpha, required_alpha, tp}`.
+      MIN_TP_SCALING_ALPHA = 0.70 is the contract's 70% efficiency floor.
+      Pure; deterministic.
+    tests:
+    - scaling_ok_on_near_linear_uplift
+    - scaling_ok_exactly_at_threshold
+    - scaling_rejects_regression
+    - scaling_rejects_below_threshold
+    - scaling_rejects_zero_base_tps
+    - scaling_rejects_negative_parallel_tps
+    - scaling_rejects_tp_less_than_2
+    - scaling_rejects_min_alpha_out_of_range
+    - scaling_rejects_nan_input
+    - scaling_classifier_is_deterministic
+    - scaling_constants_are_canonical
+    scope: "(base_tps, parallel_tps, tp, min_alpha) → ScalingEfficiencyOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr bench --tp surface emitting tokens_per_sec on a real multi-GPU host"
+
+- id: FALSIFY-CRUX-C-15-003
+  rule: invalid TP divisibility fails fast
+  prediction: "num_heads=32, --tp 3 exits non-zero with actionable error before decode"
+  test: |
+    set +e
+    apr serve model-32head.gguf --tp 3 --port 18080 2>err.log &
+    sleep 3
+    rc=$?
+    set -e
+    kill %1 2>/dev/null || true
+    grep -qiE "num_heads|divisib|tensor.?parallel" err.log
+  if_fails: "invalid TP=3 with 32-head model silently accepted (will segfault at runtime)"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/tp_pp_classifier.rs
+    sub_claim: |
+      Algorithm-level necessary condition:
+      `classify_divisibility(num_heads, num_layers, tp, pp)` accepts iff
+      `tp >= 1` AND `pp >= 1` AND `num_heads >= 1` AND `num_layers >= 1`
+      AND `num_heads % tp == 0` AND `num_layers % pp == 0`. Rejection
+      paths distinguish:
+        (a) zero TP/PP → `ZeroTp` / `ZeroPp`;
+        (b) zero config fields → `ZeroNumHeads` / `ZeroNumLayers`
+            (separate from "not divisible" — a model with 0 heads is a
+            load bug, not a parallelism bug);
+        (c) non-divisible heads → `HeadsNotDivisible{num_heads, tp}`;
+        (d) non-divisible layers → `LayersNotDivisible{num_layers, pp}`.
+      Pure; deterministic.
+    tests:
+    - divisibility_ok_on_aligned_config
+    - divisibility_rejects_zero_tp
+    - divisibility_rejects_zero_pp
+    - divisibility_rejects_zero_num_heads
+    - divisibility_rejects_zero_num_layers
+    - divisibility_rejects_heads_not_divisible
+    - divisibility_rejects_layers_not_divisible
+    - divisibility_classifier_is_deterministic
+    scope: "(num_heads, num_layers, tp, pp) → DivisibilityOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr serve --tp surface invoking this classifier on model-config metadata BEFORE launching decoder workers"
+
+- id: FALSIFY-CRUX-C-15-004
+  rule: world_size metadata reported
+  prediction: "--json output includes .distributed.{tp, pp, world_size}"
+  test: |
+    apr run model.gguf --tp 2 --pp 2 --prompt "hi" --max-tokens 1 --json | \
+      jq -e '.distributed.tp == 2 and .distributed.pp == 2 and .distributed.world_size == 4'
+  if_fails: "distributed metadata missing from --json output"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/tp_pp_classifier.rs
+    sub_claim: |
+      Two algorithm-level necessary conditions:
+      (1) `classify_world_size(tp, pp, world_size)` accepts iff `tp >= 1`
+          AND `pp >= 1` AND `world_size == tp * pp`. Rejection paths
+          distinguish `ZeroTp`, `ZeroPp`, and `Mismatch{tp, pp, expected,
+          got}` (a wrong-world-size bug cannot be mistaken for a
+          degenerate-config bug).
+      (2) `classify_distributed_metadata(value)` inspects parsed JSON and
+          accepts iff `.distributed` exists as an object with u32 fields
+          `tp`, `pp`, `world_size` where `world_size == tp * pp`.
+          Rejection paths:
+            (a) non-object root → `NotObject`;
+            (b) missing `.distributed` → `MissingDistributed`;
+            (c) `.distributed` present but not an object →
+                `DistributedNotObject`;
+            (d) missing required subfield → `MissingField{field}`;
+            (e) wrong JSON type (string, negative, overflow) →
+                `TypeMismatch{field}` (distinct from missing —
+                a silent drop is different from a type coercion bug);
+            (f) consistent subfields but `world_size != tp * pp` →
+                `WorldSizeMismatch{tp, pp, got}`.
+      Both classifiers are pure; deterministic.
+    tests:
+    - world_size_ok_on_tp_times_pp
+    - world_size_rejects_zero_tp
+    - world_size_rejects_zero_pp
+    - world_size_rejects_mismatch
+    - world_size_classifier_is_deterministic
+    - distributed_metadata_ok_on_well_formed
+    - distributed_metadata_rejects_non_object_root
+    - distributed_metadata_rejects_missing_distributed
+    - distributed_metadata_rejects_non_object_distributed
+    - distributed_metadata_rejects_missing_tp
+    - distributed_metadata_rejects_missing_pp
+    - distributed_metadata_rejects_missing_world_size
+    - distributed_metadata_rejects_string_tp
+    - distributed_metadata_rejects_negative_tp
+    - distributed_metadata_rejects_world_size_mismatch
+    - distributed_metadata_classifier_is_deterministic
+    scope: "(tp, pp, world_size) and (&serde_json::Value) — both pure"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr run --tp --pp surface emitting .distributed.{tp,pp,world_size} in --json output"
+
+proof_obligations:
+- type: equivalence
+  property: "TP=N, PP=M output ≡ TP=1, PP=1 at temp=0 top_k=1 (byte-identical tokens)"
+- type: invariant
+  property: "num_heads % TP == 0 AND num_layers % PP == 0 enforced at startup"
+- type: bound
+  property: "TP scaling efficiency >= 70% (TP=2 >= 1.4×, TP=4 >= 2.8×)"
+- type: invariant
+  property: "--json output reports .distributed.{tp, pp, world_size}"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-C-15-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr serve --tp surface with real multi-GPU allreduce emitting .tokens"
+  - falsify_id: FALSIFY-CRUX-C-15-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr bench --tp surface on a real multi-GPU host"
+  - falsify_id: FALSIFY-CRUX-C-15-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr serve --tp invoking this classifier on model-config metadata before worker launch"
+  - falsify_id: FALSIFY-CRUX-C-15-004
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr run --tp --pp surface emitting .distributed.{tp,pp,world_size}"
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-c-15
+  priority: high
+  auto_created: true

@@ -1,0 +1,95 @@
+# CRUX-H-20 — PII redaction in datasets
+
+metadata:
+  id: CRUX-H-20
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: ecosystem
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Redact PII (emails, phone numbers, SSN, credit cards, IP addresses,
+    full names when NER model available) from text datasets. Canonical:
+    Microsoft Presidio (github.com/microsoft/presidio). Output
+    preserves row count; redaction is deterministic (same input + same
+    policy ⇒ same output bytes); no detected pattern survives redaction.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  pii_redact:
+    formula: |
+      detect(x)       = [ span_i : regex or NER match ]
+      redact(x, spans) = x with each span_i replaced by <TYPE>
+      forall span ∈ detect(redact(x)) : span.type == sentinel_token
+    domain: "(jsonl: Path, field: str, rules: [PiiRule], strategy ∈ {mask, hash, token})"
+    codomain: "jsonl with same schema, |output| == |input|"
+    invariants:
+    - "row count preserved (|output| == |input|)"
+    - "no raw pattern survives — running detector on output emits 0 PII hits"
+    - "deterministic under fixed --salt (same input ⇒ same output bytes)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-20-001
+  rule: row count preserved
+  prediction: "input N rows ⇒ output N rows"
+  test: |
+    set -euo pipefail
+    printf '{"text":"call me at 555-123-4567"}\n{"text":"a@b.com found"}\n' > /tmp/pii.jsonl
+    apr dataset redact /tmp/pii.jsonl --field text --rules email,phone \
+      --strategy mask -o /tmp/out.jsonl
+    python3 -c "
+    assert sum(1 for _ in open('/tmp/pii.jsonl')) == sum(1 for _ in open('/tmp/out.jsonl'))
+    "
+  if_fails: rule 'row count preserved' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-20-002
+  rule: no pattern survives redaction
+  prediction: "re-running detector on output finds 0 PII hits"
+  test: |
+    set -euo pipefail
+    apr dataset detect-pii /tmp/out.jsonl --field text --rules email,phone \
+      --format json > /tmp/scan.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/scan.json'))
+    assert d['hits'] == 0, d
+    "
+  if_fails: rule 'no pattern survives redaction' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-20-003
+  rule: deterministic under fixed salt
+  prediction: "two runs with --salt SAME produce byte-identical output"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr dataset redact /tmp/pii.jsonl --field text --rules email,phone \
+        --strategy hash --salt s42 -o /tmp/d$i.jsonl
+    done
+    diff /tmp/d1.jsonl /tmp/d2.jsonl
+
+  if_fails: rule 'deterministic under fixed salt' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr dataset redact matches Microsoft Presidio analyzer + anonymizer semantics"
+- type: invariant
+  property: "no PII pattern survives (fail-closed redaction)"
+- type: invariant
+  property: "determinism under fixed salt"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-h-20
+  priority: medium
+  auto_created: true

@@ -260,6 +260,49 @@ pub(crate) fn run(
 // Tensor Value Comparison
 // ============================================================================
 
+#[derive(Default)]
+struct DiffCounts {
+    identical: usize,
+    transposed: usize,
+    critical: usize,
+    large: usize,
+    medium: usize,
+}
+
+impl DiffCounts {
+    fn accumulate(&mut self, status: TensorDiffStatus) {
+        match status {
+            TensorDiffStatus::Critical => self.critical += 1,
+            TensorDiffStatus::LargeDiff => self.large += 1,
+            TensorDiffStatus::MediumDiff => self.medium += 1,
+            TensorDiffStatus::Transposed => self.transposed += 1,
+            TensorDiffStatus::Identical | TensorDiffStatus::NearlyIdentical => {
+                self.identical += 1;
+            }
+            TensorDiffStatus::SmallDiff => {}
+        }
+    }
+}
+
+fn select_common_tensors<T>(
+    tensors1: &HashMap<String, T>,
+    tensors2: &HashMap<String, T>,
+    filter: Option<&str>,
+    limit: usize,
+) -> Vec<String> {
+    let mut common: Vec<String> = tensors1
+        .keys()
+        .filter(|k| tensors2.contains_key(*k))
+        .cloned()
+        .collect();
+    common.sort();
+    if let Some(pattern) = filter {
+        common.retain(|n| n.contains(pattern));
+    }
+    common.truncate(limit);
+    common
+}
+
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
 fn run_tensor_value_diff(
@@ -271,8 +314,6 @@ fn run_tensor_value_diff(
     json_output: bool,
 ) -> Result<(), CliError> {
     let rosetta = RosettaStone::new();
-
-    // Inspect both models
     let report1 = rosetta
         .inspect(path1)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model 1: {e}")))?;
@@ -280,7 +321,6 @@ fn run_tensor_value_diff(
         .inspect(path2)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model 2: {e}")))?;
 
-    // Build tensor maps
     let tensors1: HashMap<String, _> = report1
         .tensors
         .iter()
@@ -292,87 +332,71 @@ fn run_tensor_value_diff(
         .map(|t| (normalize_tensor_name(&t.name), t))
         .collect();
 
-    // Find common tensors
-    let mut common_names: Vec<_> = tensors1
-        .keys()
-        .filter(|k| tensors2.contains_key(*k))
-        .cloned()
-        .collect();
-    common_names.sort();
-
-    // Apply filter
-    if let Some(pattern) = filter {
-        common_names.retain(|n| n.contains(pattern));
-    }
-
-    // Limit number of tensors to compare
-    common_names.truncate(limit);
+    let common_names = select_common_tensors(&tensors1, &tensors2, filter, limit);
 
     if !json_output {
         print_diff_header(path1, path2);
     }
 
+    let mut counts = DiffCounts::default();
     let mut results: Vec<TensorValueStats> = Vec::new();
-    let mut critical_count = 0;
-    let mut large_count = 0;
-    let mut medium_count = 0;
-    let mut transposed_count = 0;
-    let mut identical_count = 0;
 
     for name in &common_names {
         let t1 = tensors1.get(name).expect("tensor exists");
         let t2 = tensors2.get(name).expect("tensor exists");
-
-        // Load actual tensor data
-        let data1 = rosetta.load_tensor_f32(path1, &t1.name).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to load tensor {}: {e}", t1.name))
-        })?;
-        let data2 = rosetta.load_tensor_f32(path2, &t2.name).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to load tensor {}: {e}", t2.name))
-        })?;
-
+        let data1 = load_tensor_data(&rosetta, path1, &t1.name)?;
+        let data2 = load_tensor_data(&rosetta, path2, &t2.name)?;
         let stats =
             compute_tensor_diff_stats(name, &t1.shape, &t2.shape, &data1, &data2, transpose_aware);
-
-        match stats.status {
-            TensorDiffStatus::Critical => critical_count += 1,
-            TensorDiffStatus::LargeDiff => large_count += 1,
-            TensorDiffStatus::MediumDiff => medium_count += 1,
-            TensorDiffStatus::Transposed => transposed_count += 1,
-            TensorDiffStatus::Identical | TensorDiffStatus::NearlyIdentical => identical_count += 1,
-            TensorDiffStatus::SmallDiff => {}
-        }
-
+        counts.accumulate(stats.status);
         if !json_output {
             print_tensor_diff_row(&stats);
         }
-
         results.push(stats);
     }
 
+    emit_diff_report(json_output, path1, path2, &results, &counts);
+    Ok(())
+}
+
+fn load_tensor_data(
+    rosetta: &RosettaStone,
+    path: &Path,
+    tensor_name: &str,
+) -> Result<Vec<f32>, CliError> {
+    rosetta.load_tensor_f32(path, tensor_name).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to load tensor {tensor_name}: {e}"))
+    })
+}
+
+fn emit_diff_report(
+    json_output: bool,
+    path1: &Path,
+    path2: &Path,
+    results: &[TensorValueStats],
+    counts: &DiffCounts,
+) {
     if json_output {
         print_diff_json(
             path1,
             path2,
-            &results,
-            identical_count,
-            transposed_count,
-            critical_count,
-            large_count,
-            medium_count,
+            results,
+            counts.identical,
+            counts.transposed,
+            counts.critical,
+            counts.large,
+            counts.medium,
         );
     } else {
         print_diff_summary(
-            &results,
-            identical_count,
-            transposed_count,
-            critical_count,
-            large_count,
-            medium_count,
+            results,
+            counts.identical,
+            counts.transposed,
+            counts.critical,
+            counts.large,
+            counts.medium,
         );
     }
-
-    Ok(())
 }
 
 /// Print the diff box header.

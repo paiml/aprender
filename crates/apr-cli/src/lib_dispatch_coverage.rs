@@ -33,6 +33,9 @@
         let cli = make_cli(Commands::Pull {
             model_ref: "nonexistent-model-that-does-not-exist-xyz123".to_string(),
             force: false,
+            dry_run: false,
+            revision: None,
+            offline: false,
         });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Pull should be handled by dispatch_model_commands");
@@ -319,6 +322,7 @@
             prompt: None,
             fast: true,
             brick: None,
+            percentiles: vec![50.0, 95.0, 99.0],
         }));
         let result = dispatch_profiling_commands(&cli);
         assert!(result.is_some(), "Bench should be handled by profiling dispatcher");

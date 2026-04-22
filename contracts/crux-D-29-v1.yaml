@@ -1,0 +1,102 @@
+# CRUX-D-29 — Pre-compiled dataset cache
+
+metadata:
+  id: CRUX-D-29
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Pre-tokenized, pre-packed dataset cache keyed by (dataset_fingerprint,
+    tokenizer_hash, max_seq_len, pack_mode). Canonical: HF `datasets` Arrow
+    cache (`.cache/huggingface/datasets/...`); cache hits skip tokenize+pack.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  dataset_cache:
+    formula: |
+      cache_key = sha256(dataset_fp || tokenizer_hash || max_seq_len || pack_mode)
+      if exists(cache_dir/cache_key.arrow):
+        return mmap(cache_dir/cache_key.arrow)
+      else:
+        tokenized = tokenize(dataset, tokenizer, max_seq_len, pack_mode)
+        write_atomically(cache_dir/cache_key.arrow, tokenized)
+        return tokenized
+    domain: "(dataset: Path, tokenizer: Path, max_seq_len: u32, pack_mode ∈ {none, pack, pad})"
+    codomain: "Arrow file; cache-hit/miss on second run"
+    invariants:
+    - "cache_key deterministic: same inputs → same 64-hex key"
+    - "second run with identical args is a cache hit (no tokenize syscalls)"
+    - "changing tokenizer or max_seq_len invalidates cache (miss → new key)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-29-001
+  rule: second identical run is a cache hit
+  prediction: "second `apr prepare-dataset` run is ≥10× faster than first"
+  test: |
+    set -euo pipefail
+    export APR_CACHE_DIR=/tmp/apr-ds-cache && rm -rf "$APR_CACHE_DIR"
+    t1=$( { time apr prepare-dataset tests/fixtures/big.jsonl \
+              --tokenizer tests/fixtures/tokenizer.json --max-seq-len 2048 \
+              -o /tmp/ds1 ; } 2>&1 | grep real | awk '{print $2}')
+    t2=$( { time apr prepare-dataset tests/fixtures/big.jsonl \
+              --tokenizer tests/fixtures/tokenizer.json --max-seq-len 2048 \
+              -o /tmp/ds2 ; } 2>&1 | grep real | awk '{print $2}')
+    python3 -c "
+    def to_s(t): m,s = t.replace('m',' ').replace('s','').split(); return float(m)*60+float(s)
+    assert to_s('$t1') >= 10 * to_s('$t2'), f't1={$t1!s} t2={$t2!s}'
+    "
+  if_fails: rule 'second identical run is a cache hit' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-29-002
+  rule: changing tokenizer busts the cache
+  prediction: "different tokenizer → cache miss → fresh tokenization"
+  test: |
+    set -euo pipefail
+    apr prepare-dataset tests/fixtures/big.jsonl --tokenizer tests/fixtures/tok1.json \
+      --max-seq-len 2048 --format json > /tmp/a.json
+    apr prepare-dataset tests/fixtures/big.jsonl --tokenizer tests/fixtures/tok2.json \
+      --max-seq-len 2048 --format json > /tmp/b.json
+    key_a=$(jq -r .cache_key /tmp/a.json); key_b=$(jq -r .cache_key /tmp/b.json)
+    [ "$key_a" != "$key_b" ]
+  if_fails: rule 'changing tokenizer busts the cache' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-29-003
+  rule: cache key is deterministic (same inputs → same key)
+  prediction: "two distinct runs with identical inputs produce the same cache_key"
+  test: |
+    set -euo pipefail
+    k1=$(apr prepare-dataset tests/fixtures/big.jsonl --tokenizer tests/fixtures/tok1.json \
+         --max-seq-len 2048 --format json | jq -r .cache_key)
+    k2=$(apr prepare-dataset tests/fixtures/big.jsonl --tokenizer tests/fixtures/tok1.json \
+         --max-seq-len 2048 --format json | jq -r .cache_key)
+    [ "$k1" = "$k2" ]
+
+  if_fails: rule 'cache key is deterministic (same inputs → same key)' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr prepare-dataset cache semantics match HF `datasets` Arrow cache"
+- type: invariant
+  property: "cache_key is deterministic hash of (dataset_fp, tokenizer_hash, max_seq_len, pack_mode)"
+- type: invariant
+  property: "changing any cache-key input invalidates the entry"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-29
+  priority: medium
+  auto_created: true

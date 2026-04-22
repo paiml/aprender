@@ -187,56 +187,64 @@ impl CriticalPathResult {
 /// # }
 /// ```
 pub fn find_critical_path(graph: &CausalGraph) -> Result<CriticalPathResult> {
-    // Handle empty graph
     if graph.node_count() == 0 {
-        return Ok(CriticalPathResult {
-            path: Vec::new(),
-            total_duration: 0,
-            node_durations: HashMap::new(),
-            span_names: Vec::new(),
-        });
+        return Ok(empty_result());
     }
 
-    // Step 1: Topological sort (we'll use DFS-based approach)
     let topo_order = topological_sort(graph)?;
-
-    // Step 2: Dynamic programming - compute longest path to each node
     let mut dist: HashMap<NodeId, u64> = HashMap::new();
     let mut parent: HashMap<NodeId, Option<NodeId>> = HashMap::new();
 
-    // Initialize roots with their own durations
+    initialize_root_distances(graph, &mut dist, &mut parent)?;
+    relax_edges(graph, &topo_order, &mut dist, &mut parent)?;
+
+    let (&critical_end, &total_duration) =
+        dist.iter().max_by_key(|(_, &d)| d).context("No paths found in graph")?;
+
+    let (path, node_durations, span_names) = reconstruct_path(graph, critical_end, &parent);
+    Ok(CriticalPathResult { path, total_duration, node_durations, span_names })
+}
+
+fn empty_result() -> CriticalPathResult {
+    CriticalPathResult {
+        path: Vec::new(),
+        total_duration: 0,
+        node_durations: HashMap::new(),
+        span_names: Vec::new(),
+    }
+}
+
+fn initialize_root_distances(
+    graph: &CausalGraph,
+    dist: &mut HashMap<NodeId, u64>,
+    parent: &mut HashMap<NodeId, Option<NodeId>>,
+) -> Result<()> {
     for &root in graph.roots() {
         let span = graph.get_span(root).context("Root span not found in metadata")?;
         dist.insert(root, span.duration_nanos);
         parent.insert(root, None);
     }
+    Ok(())
+}
 
-    // Process nodes in topological order
-    for &node in &topo_order {
-        // Get children of this node
+fn relax_edges(
+    graph: &CausalGraph,
+    topo_order: &[NodeId],
+    dist: &mut HashMap<NodeId, u64>,
+    parent: &mut HashMap<NodeId, Option<NodeId>>,
+) -> Result<()> {
+    for &node in topo_order {
         let children = graph.children(node)?;
-
         for (child, _edge_weight) in children {
             let child_span = graph.get_span(child).context("Child span not found in metadata")?;
-
-            // dist[child] = max(dist[parent] + child.duration)
             let new_dist = dist.get(&node).unwrap_or(&0) + child_span.duration_nanos;
-
             if new_dist > *dist.get(&child).unwrap_or(&0) {
                 dist.insert(child, new_dist);
                 parent.insert(child, Some(node));
             }
         }
     }
-
-    // Step 3: Find the node with maximum distance (end of critical path)
-    let (&critical_end, &total_duration) =
-        dist.iter().max_by_key(|(_, &d)| d).context("No paths found in graph")?;
-
-    // Step 4: Reconstruct the critical path by following parent pointers
-    let (path, node_durations, span_names) = reconstruct_path(graph, critical_end, &parent);
-
-    Ok(CriticalPathResult { path, total_duration, node_durations, span_names })
+    Ok(())
 }
 
 /// Reconstruct the critical path by walking parent pointers from end to root.

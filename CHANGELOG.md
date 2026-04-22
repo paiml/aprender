@@ -7,15 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-04-19
+
 ### Fixed
+
+- **`apr qa` `format_parity` gate** now SKIPs when the primary model is non-GGUF (SafeTensors, APR, ONNX) instead of FAILing the overall QA run (#907). Matches the pre-existing SKIP semantics of the 5 other inference-only gates when golden-output / golden-input / reference tokenizer are unavailable. Regression tests assert `skipped=true && passed=true` for both SafeTensors and APR primaries.
+
+### Added
+
+- **MCP M5 scaffold** (#908) — optional `pmcp = "2.3"` dependency on `aprender-mcp` behind a new `pmcp-dispatcher` feature flag (default off). Zero behaviour change: the hand-rolled stdio dispatcher still runs by default. Unblocks the M5 migration path (pmcp::Server delegation + FALSIFY-MCP-009 byte-identical parity test + SSE/WebSocket transports).
+
+## [0.31.0] - 2026-04-19
+
+### Added
+
+#### MCP Server (Milestones M1–M3)
+- **`apr mcp`** — new subcommand exposing 9 apr tools over stdio JSON-RPC 2.0. M1 skeleton (#864), then progressively added `apr.validate` (#865), `apr.tensors` + `apr.bench` (#866), `apr.qa` + `apr.trace` (#867), `apr.run` (#870), `apr.serve` (#872), `apr.finetune` (#881). Dispatcher hardened under FALSIFY-MCP-005 + FALSIFY-MCP-007 (#868).
+- **Tool schemas codegen from YAML** — `crates/aprender-mcp/build.rs` emits `APR_<TOOL>_SCHEMA` + `APR_<TOOL>_DESCRIPTION` constants from `contracts/apr-mcp-tool-schemas-v1.yaml` (#871) so schema + description cannot be hand-edited out of sync with the contract (FALSIFY-MCP-008 — #880 kickoff, #884 completes migration for all 9 tools).
+- **MCP notifications** — `notifications/cancelled` for SIGTERM→SIGKILL on long-running jobs (FALSIFY-MCP-006 — #883) and `notifications/progress` for `apr.finetune` (FALSIFY-MCP-PROGRESS-001 — #887).
+- **JSON Schema Draft 7 meta-validation** on every tool input schema in CI (FALSIFY-MCP-002 strict — #869).
+- **MCP book chapter** documenting `.mcp.json` client config (#874, #885).
+
+#### apr code — Claude Code parity epic CLOSED
+`contracts/apr-code-parity-v1.yaml` v5.1 — 21 rows: **14 SHIPPED / 3 PARTIAL / 4 NONE**. Epic PMAT-CODE-PARITY-MATRIX-001 closure conditions met (SHIPPED ≥9 AND MISSING ≤4). 10 tickets closed in a single cycle:
+- **P0 (4)**: MCP client tool registration in `agent/code.rs` (PMAT-CODE-MCP-CLIENT-001, v4), SlashCommand enum 11→21 variants (PMAT-CODE-SLASH-PARITY-001, v4.2), hook surface + SessionStart runtime wiring (PMAT-CODE-HOOKS-001, v4.3), Task-tool subagent spawn (PMAT-CODE-SPAWN-PARITY-001, v4.4).
+- **P1 (5)**: custom agents discovery from `.apr/agents/` + `.claude/agents/` (PMAT-CODE-CUSTOM-AGENTS-001, v4.5), privacy-gated NetworkTool/BrowserTool (PMAT-CODE-WEB-TOOLS-001, v4.6), skills discovery from `.apr/skills/` + `.claude/skills/` (PMAT-CODE-SKILLS-001, v4.7), git worktree isolation primitives (PMAT-CODE-WORKTREE-001, v4.8), permission-mode lattice (PMAT-CODE-PERMISSIONS-001, v4.9).
+- **P2 epic-closing (2)**: REPL status-line primitive (PMAT-CODE-STATUS-LINE-001, v5.0), managed org policy loader at `/etc/apr-code/CLAUDE.md` with `/etc/claude-code/CLAUDE.md` fallback and UTF-8-safe size cap (PMAT-CODE-ORG-POLICY-001, v5.1 — epic-closing flip).
+
+#### Contracts harness
+- **`pv check-parity`** — SEMANTIC gate for parity-matrix contracts (FALSIFY-CODE-PARITY-001..005). Runs each row's `cross_check_command` with `expected_min_hits` / `expected_max_hits` and enforces the headline aggregate invariant (FALSIFY-CODE-PARITY-002). Dogfooded aprender-contracts-cli binary — bash/python scripts for contract validation are now explicitly forbidden by `CLAUDE.md`.
+- **`apr-claude-proxy-v1.yaml`** — new provable-contract proxy contract pinning `apr serve anthropic` (Claude Messages-API drop-in), model fallback chain, SSE event sequence, and six FALSIFY-CLAUDE-PROXY gates (DRAFT, promotes to ENFORCED at M6-α).
+
+#### SHIP-TWO-001 — first sovereign published model
+- **SPEC-SHIP-TWO-001 v2.0 — first sovereign published model.** `paiml/qwen2.5-coder-7b-apache-q4k-v1` (teacher checkpoint, 7.5 GB .apr, Apache-2.0) published to HuggingFace Hub. First artifact to pass the full apr publish contract (schema + sha256 + SPDX + recipe + parent-chain).
+- **`apr qa --require-golden-output`** — promotes the Golden Output gate from a soft skip to a hard ship-blocker. When set, a SKIPPED `golden_output` gate (tokenizer missing, `--skip-golden`, inference-feature-off build) becomes a FAIL instead of a silent pass. Closes the hole that let a distilled checkpoint emit garbage for 14 days before audit.
+- **`apr validate-manifest`** — new subcommand implementing `contracts/publish-manifest-v1.yaml` FALSIFY-PM-001..006 in pure Rust: schema conformance (12 top + 7 provenance), sha256 stream-hash vs local artifact, SPDX license allowlist, recipe_sha256 reproducibility, and parent-chain termination. Closes the AC-EX-004 tool-gap — prior pyyaml helper was not runnable from the canonical binary.
+- **`apr validate-manifest --live`** — discharges FALSIFY-PM-003 (URL HEAD + content-length match) and FALSIFY-PM-002-live (streaming GET + sha256) natively via `ureq`. Dogfoods F-PUBLISH-EXTRA-001::dogfood_ex05 — `scripts/ship-two-001/ex-05-verify-manifest.sh` no longer invokes external interpreters, eliminating the Python dependency from the ship path. Contract `apr-cli-publish-extra-v1.yaml` bumped to v1.1.0 with FALSIFY-PUB-EXTRA-008.
+- **FALSIFY-PM-007 safetensors header dtype Poka-Yoke** — `apr validate-manifest --artifact model.safetensors` parses the safetensors header JSON and verifies per-tensor dtype matches `manifest.quantization` (fp16→F16, bf16→BF16, fp32→F32). Weight tensors must match; norm/bias tensors may stay F32. Would have caught the 30.46 GiB F32 fp16-manifest bug at publish time. Contract `publish-manifest-v1.yaml` bumped to v1.1.0 with 8 unit tests (including the exact ship-blocker scenario from SHIP-TWO-001 §12.7.2).
+- **`contracts/publish-manifest-v1.yaml`** — schema + 6 falsification tests (PM-001..006) for model artifact publish manifests. Covers sha256 integrity, URL liveness, SPDX license validity, recipe reproducibility, and parent-chain termination.
+- **`contracts/eval-sharding-v1.yaml` + `scripts/ship-two-001/eval-shard.sh` + `eval-shard-merge.py`** — parallel eval lane for future multi-host HumanEval/MBPP/BigCodeBench runs. Round-robin stride sharding, Chen et al. unbiased merge, 4 falsification gates (completeness, disjointness, determinism parity, merged-score identity). FALSIFY-SHARD-004 empirically discharged: Δ=0.0039 pp on the real teacher eval JSON (inside 0.01 pp parity bar).
+
+#### Model / format
+- **ALB-093 / GH-434: streaming APR→Q4K path for ≥4 GiB models** — enables training/fine-tuning at model scales that previously OOM'd on the single-pass quantize path. (#749)
 - **GH-375: GGUF Q4_0/Q5_0/Q8_0 import fallback** — `apr import` of GGUF files with unsupported quantization types (Q4_0, Q5_0, Q8_0) now falls back to dequant-requant path instead of failing. Raw import preserves Q4_K/Q6_K exactly; legacy types go through f32 intermediate with optional `--quantize q4k`.
 - **GH-90: Honest brick benchmarks** — `apr bench --brick` no longer times a no-op `budget()` call (which reported 0.02us / 55M tok/s). Bricks without `run()` implementations now report their analytical budget estimate with a clear "ANALYTICAL" label. Use `apr bench --fast` for real measured throughput.
 
-### Changed
-- **GH-378: Priority-queue BPE merge algorithm** — Replaced O(n^2) greedy-rescan with priority-queue (BinaryHeap) + doubly-linked symbol list. 2.06x encode speedup (145us -> 70us on Qwen3 151K vocab). Beats HuggingFace tokenizers v0.22 reference (104us). Zero allocation in merge loop. All 117 BPE tests pass.
-- **GH-378: Optimized tokenizer.json loading** — Pre-sized HashMaps, moved vocab strings instead of cloning, eliminated 600K String/Vec allocations during merge loading. `from_file` 272ms -> 142ms (1.91x faster), now beats HuggingFace v0.22 by 1.43x. Applies to all tokenizer formats (Qwen2, Whisper, GPT-2, LLaMA) via shared `load_from_json` path.
-
-### Added
+#### New CLI surfaces
 - `apr serve plan` now accepts HuggingFace repo IDs (`hf://org/repo` or bare `org/repo`)
   - Fetches only ~2KB `config.json` — no weight download needed
   - Computes VRAM budget, throughput estimates, and contract checks from architecture params alone
@@ -40,8 +77,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--arch gemma` (and gemma2, gemma3) now accepted in `apr import`, maps to Llama architecture
 - `--arch falcon`, `--arch mamba`, `--arch t5` return clear "not yet supported" errors
 
+#### CI / infra
+- **sccache pilot** (APR-MONO heavy workload — #894).
+- **cargo nextest run** opt-in (PMAT-155 — #897).
+
 ### Changed
-- `apr finetune --task classify` now auto-detects and corrects class imbalance (via entrenar auto-balancing)
+- **`scripts/ship-two-001/ex-06-pull-and-rerun.sh` harness v2** — relaxed AC-EX-006 verification to match spec §12.3 literal ("emits syntactically valid Python"). Prior harness required `def fib` to appear in the completion, which is stricter than the spec; Instruct models greedy-decoding a raw prompt don't reliably autocomplete (teacher's 84.76% HumanEval works via the eval harness's instruction wrapper, not raw completion). v2 finds the longest leading-line prefix that `ast.parse`s and requires ≥ 1 non-trivial statement (regression-checked against garbage/empty/comment-only inputs). Pre-upload local dry-run PASSES.
+- **GH-478: per-layer dequant for native Q4/Q8 tensors** — `apr run` on native-quantized .apr files now dequantizes layer-at-a-time instead of up-front, reducing peak memory on large models. (#750)
+- **Decode hot-path hygiene (HP-001 / HP-002 / HP-003)** — removed per-token `/tmp` writes, realizar#198 diagnostic eprintlns, and PMAT-450 prefix-cache eprintlns from the GPU decode path. 1.5B Q4_K_M: **184 → 382 tok/s (2.07×)**. Short-prompt 32-tok bench: 442.8 → 479.9 tok/s.
+- **F-FLASH-DECODE-REGRESSION-001: auto-disable split-K for small models** — FlashDecoding was hurting 1.5B decode throughput; gated by model size. 383 → 412 tok/s median.
+- **F-ATTN-MULTIWARP-WARPS-001: tuned `num_warps_per_head`** — 4 warps/head is optimal for small-model decode (2-warp −1.3%, 1-warp −7%).
+- **F-PROFILE-010: separate graphed throughput from ungraphed per-op hotspots** — `apr profile` output now labels methodology; launch-overhead metric normalized per-token.
+- **GH-378: Priority-queue BPE merge algorithm** — Replaced O(n^2) greedy-rescan with priority-queue (BinaryHeap) + doubly-linked symbol list. 2.06x encode speedup (145us -> 70us on Qwen3 151K vocab). Beats HuggingFace tokenizers v0.22 reference (104us). Zero allocation in merge loop. All 117 BPE tests pass.
+- **GH-378: Optimized tokenizer.json loading** — Pre-sized HashMaps, moved vocab strings instead of cloning, eliminated 600K String/Vec allocations during merge loading. `from_file` 272ms -> 142ms (1.91x faster), now beats HuggingFace v0.22 by 1.43x. Applies to all tokenizer formats (Qwen2, Whisper, GPT-2, LLaMA) via shared `load_from_json` path.
+- `apr finetune --task classify` now auto-detects and corrects class imbalance (via entrenar auto-balancing).
+
+### Fixed
+- **F2 cosine parity gate (PMAT-PARITY-GATE-V2)** — CPU↔GPU parity now computed on logits cosine, not argmax-exact. Cuts false-positive parity failures from sampling-determinism drift.
+- **F-PUBLISH-EXTRA-001::safetensors_dtype_fp16 — fp16 dispatch in `apr export --format safetensors`** — the end-user `apr_export` → `dispatch_export` → `ExportFormat::SafeTensors` path (`format/converter/gguf_export_config.rs::export_safetensors_with_companions`) was ignoring `options.quantize` and always writing F32, silently producing a 30.46 GiB file when `--quantize fp16` was requested. Now routes through `save_safetensors_quantized`, producing the expected 14.19 GiB F16 artifact for Qwen2.5-Coder-7B. The unit-tested `save_model_tensors` path was correct but unreachable from `apr_export` — this was a missed wire between the two writers after they were split. Three ship manifests (`-apr`, `-safetensors`, `-gguf`) now validate PASS against `apr validate-manifest`.
+- **Flaky perf tests** — `tui_load` (warmup + best-of-3 — #878), F-203 SIMD timing (warmup + best-of-5 — #875), RP-002-prop fp32 tolerance widened (dim=8 noise floor — #879), citl-neural similarity tolerance (#828), zram-core F058 debug/CI budget 100µs → 500µs (#807).
+- **aprender-train** matmul `#[should_panic]` expected string (#862).
+
+### Falsified (documented, no code change)
+- **F-RMSNORM-FUSION-001 on 1.5B** — +0.55% (within noise) on 1.5B retest; 1-in-6 runs hit `CUDA_ERROR_ILLEGAL_ADDRESS`. FUSION-003 BLOCKED on both 7B (3× regress) and 1.5B (neutral). See `contracts/kernel-fusion-v1.yaml` v1.1.0.
+- **F-ATTN-FLASHDECODE-2WARP-001** — trueno#253 2-warp chunk kernel lost 0.9%; wrapper overhead dominates, not chunk occupancy.
+- **F-DECODE-GPU-RESIDENT-SAMPLING-001** — contract falsified; see `contracts/gpu-resident-sampling-v1.yaml`.
+- **SHIP-TWO-001 MODEL-1 distilled v2 checkpoint** — `qwen2.5-coder-7b-distilled-v2-q4k.apr` emits garbage ("ylkoylko..."); `apr qa` Golden Output FAIL despite Tensor Contract PASS. AC-SHIP1-005 falsified. v2.0.0 spec pivots to teacher-first ship.
+
+### MoE / PMAT-587 series
+- **PMAT-587 Phase 2c integrated** — `cuGraphExecKernelNodeSetParams` wired into MoE decode hotpath.
+- **PMAT-588** — event-based MoE stream sync (SHIPPED).
+- **PMAT-589** — resolved `apr trace --gpu` dispatch regression (unblocked PMAT-587).
+- **PMAT-592** — `cuda_layer_ffn` MoE detection guard.
+- **PMAT-593** — `apr run` ChatML special-token regression fix.
+- **`apr trace --json`** now emits per-layer tensors[] + param_count.
+
+### Refactored
+- `apr-cli::print_ollama_comparison` CC 15 → ≤10 (#861); batch of 90 Gate 10 V4 CC>10 refactors (#860); `aprender-qa-report::check_gateways` CC 11 → ≤10 (#857); bug-log comments rewritten as invariants, High SATD 5 → 0 (#758).
+
+### Dependencies
+- 13,026 tests passing (aprender-core); 25,300+ across workspace.
+- All 78 workspace crates at v0.31.0.
+
+## [0.30.0] - 2026-04-12
+
+### Changed
+- Monorepo consolidation complete (APR-MONO)
+- All trueno, presentar, entrenar, realizar crates merged into aprender workspace
+- Coordinated PAIML Sovereign AI Stack release
 
 ## [0.27.0] - 2026-02-26
 

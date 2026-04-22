@@ -334,23 +334,26 @@ impl ChatSession {
                 }
             }
 
-            // CPU path using AprTransformer (has temperature/top_p sampling + KV cache)
-            use realizar::apr_transformer::{AprTransformer, GenerateConfig};
+            // GH-479: CPU path now loads via MappedAprModel + OwnedQuantizedModel
+            // (per-tensor scratch dequant from GH-478) instead of eager F32 AprTransformer.
+            use realizar::apr::MappedAprModel;
+            use realizar::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
 
-            let transformer = AprTransformer::from_apr_bytes(&self.model_bytes)
-                .map_err(|e| format!("Failed to load APR transformer: {e}"))?;
+            let mapped = MappedAprModel::from_path(&self.model_path)
+                .map_err(|e| format!("Failed to mmap APR: {e}"))?;
+            let model = OwnedQuantizedModel::from_apr(&mapped)
+                .map_err(|e| format!("Failed to load APR model: {e}"))?;
 
-            let gen_config = GenerateConfig {
+            let gen_config = QuantizedGenerateConfig {
                 max_tokens: config.max_tokens,
                 temperature: config.temperature,
                 top_p: config.top_p,
-                top_k: 0,
-                repetition_penalty: 1.0,
+                top_k: if config.temperature == 0.0 { 1 } else { 40 },
                 trace: config.trace,
-                stop_tokens: vec![],
+                ..Default::default()
             };
 
-            transformer
+            model
                 .generate_with_cache(prompt, &gen_config)
                 .map_err(|e| format!("APR generate failed: {e}"))
         }

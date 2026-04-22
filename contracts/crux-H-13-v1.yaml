@@ -1,0 +1,94 @@
+# CRUX-H-13 — Audio dataset loader WAV/FLAC
+
+metadata:
+  id: CRUX-H-13
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: pytorch
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Audio dataset loader for WAV + FLAC. Canonical:
+    `torchaudio.datasets.LIBRISPEECH` + `torchaudio.load(path)` which
+    returns (waveform: Tensor[channels, samples], sample_rate: int).
+    Resampling must be optional but deterministic; unsupported formats
+    raise; channel count is preserved unless --mono is set.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  audio_loader:
+    formula: |
+      load(path) = (waveform: [channels, samples] in [-1, 1], sample_rate: int)
+      resample(x, src, dst) = torchaudio.sinc_interpolation(x, src, dst)
+      mono(x) = mean(x, dim=0, keepdim=True)
+    domain: "(path: Path, resample_to: u32?, mono: bool)"
+    codomain: "(waveform: f32[C, T], sample_rate: u32)"
+    invariants:
+    - "waveform values are finite and in [-1, 1]"
+    - "sample_rate == file header unless --resample-to provided"
+    - "unsupported ext raises IOError (never silent skip)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-13-001
+  rule: waveform in [-1, 1] and finite
+  prediction: "min ≥ -1, max ≤ 1, no NaN"
+  test: |
+    set -euo pipefail
+    apr dataset audio-inspect tests/fixtures/tiny.wav --format json > /tmp/a.json
+    python3 -c "
+    import json, math
+    d=json.load(open('/tmp/a.json'))
+    assert -1.0 <= d['min'] <= d['max'] <= 1.0, d
+    assert math.isfinite(d['min']) and math.isfinite(d['max'])
+    "
+  if_fails: rule 'waveform in [-1, 1] and finite' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-13-002
+  rule: resample respects target rate
+  prediction: "resample to 16000 Hz sets sample_rate=16000"
+  test: |
+    set -euo pipefail
+    apr dataset audio-inspect tests/fixtures/tiny.wav \
+      --resample-to 16000 --format json > /tmp/r.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/r.json'))
+    assert d['sample_rate'] == 16000, d
+    "
+  if_fails: rule 'resample respects target rate' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-13-003
+  rule: unsupported extension raises
+  prediction: ".mp3 without --decode-mp3 flag fails with IOError"
+  test: |
+    set -euo pipefail
+    echo fake > /tmp/fake.mp3
+    ! apr dataset audio-inspect /tmp/fake.mp3 2>/tmp/err
+    grep -E "unsupported|IOError|cannot decode" /tmp/err
+
+  if_fails: rule 'unsupported extension raises' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr dataset audio-inspect matches torchaudio.load return shape + dtype"
+- type: invariant
+  property: "waveform range + finite guarantees"
+- type: invariant
+  property: "unsupported format fails closed"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-h-13
+  priority: medium
+  auto_created: true

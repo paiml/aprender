@@ -687,18 +687,40 @@ fn count_layers(tensor_names: &[String]) -> usize {
 #[allow(clippy::disallowed_methods)]
 fn explain_file(path: &Path, json: bool) {
     if !path.exists() {
-        if json {
-            let err = serde_json::json!({ "error": format!("File not found: {}", path.display()) });
-            println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
-        } else {
-            println!("File not found: {}", path.display());
-        }
+        print_not_found(path, json);
         return;
     }
+    let Some(report) = inspect_or_report(path, json) else {
+        return;
+    };
+    let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
+    let (arch, examples) = detect_architecture(&tensor_names);
+    let n_layers = count_layers(&tensor_names);
+    if json {
+        print_json_summary(path, &report, arch, examples, n_layers);
+    } else {
+        print_text_summary(path, &report, arch, examples, n_layers);
+    }
+}
 
+#[allow(clippy::disallowed_methods)]
+fn print_not_found(path: &Path, json: bool) {
+    if json {
+        let err = serde_json::json!({ "error": format!("File not found: {}", path.display()) });
+        println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
+    } else {
+        println!("File not found: {}", path.display());
+    }
+}
+
+#[allow(clippy::disallowed_methods)]
+fn inspect_or_report(
+    path: &Path,
+    json: bool,
+) -> Option<aprender::format::rosetta::InspectionReport> {
     let rosetta = aprender::format::rosetta::RosettaStone::new();
-    let report = match rosetta.inspect(path) {
-        Ok(r) => r,
+    match rosetta.inspect(path) {
+        Ok(r) => Some(r),
         Err(e) => {
             if json {
                 let err = serde_json::json!({ "error": format!("Failed to inspect model: {e}") });
@@ -710,11 +732,12 @@ fn explain_file(path: &Path, json: bool) {
                     path.display()
                 );
             }
-            return;
+            None
         }
-    };
+    }
+}
 
-    let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
+fn detect_architecture(tensor_names: &[String]) -> (&'static str, &'static str) {
     let has_encoder = tensor_names
         .iter()
         .any(|n| n.starts_with("encoder") || n.starts_with("model.encoder"));
@@ -726,7 +749,7 @@ fn explain_file(path: &Path, json: bool) {
         .any(|n| n.starts_with("model.layers.") || n.starts_with("blk."));
     let has_transformer_h = tensor_names.iter().any(|n| n.starts_with("transformer.h."));
 
-    let (arch, examples) = if has_encoder && has_decoder {
+    if has_encoder && has_decoder {
         ("Encoder-Decoder Transformer", "Whisper, T5, BART")
     } else if has_encoder {
         ("Encoder-Only Transformer", "BERT, RoBERTa")
@@ -736,31 +759,42 @@ fn explain_file(path: &Path, json: bool) {
         ("Decoder-Only Transformer", "GPT-2")
     } else {
         ("Unknown", "")
-    };
-
-    let n_layers = count_layers(&tensor_names);
-
-    // GH-510: Respect --json flag for file explanations
-    if json {
-        let mut output = serde_json::json!({
-            "file": path.display().to_string(),
-            "format": format!("{}", report.format),
-            "tensor_count": report.tensors.len(),
-            "architecture": arch,
-        });
-        if !examples.is_empty() {
-            output["examples"] = serde_json::json!(examples);
-        }
-        if n_layers > 0 {
-            output["layers"] = serde_json::json!(n_layers);
-        }
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&output).unwrap_or_default()
-        );
-        return;
     }
+}
 
+#[allow(clippy::disallowed_methods)]
+fn print_json_summary(
+    path: &Path,
+    report: &aprender::format::rosetta::InspectionReport,
+    arch: &str,
+    examples: &str,
+    n_layers: usize,
+) {
+    let mut output = serde_json::json!({
+        "file": path.display().to_string(),
+        "format": format!("{}", report.format),
+        "tensor_count": report.tensors.len(),
+        "architecture": arch,
+    });
+    if !examples.is_empty() {
+        output["examples"] = serde_json::json!(examples);
+    }
+    if n_layers > 0 {
+        output["layers"] = serde_json::json!(n_layers);
+    }
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
+}
+
+fn print_text_summary(
+    path: &Path,
+    report: &aprender::format::rosetta::InspectionReport,
+    arch: &str,
+    examples: &str,
+    n_layers: usize,
+) {
     println!("Explain model architecture: {}", path.display());
     println!("- **Format**: {}", report.format);
     println!("- **Tensors**: {}", report.tensors.len());

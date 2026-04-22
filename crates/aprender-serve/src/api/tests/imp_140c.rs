@@ -314,14 +314,18 @@ fn test_parity022e_router_has_gpu_batch_routes() {
 #[test]
 fn test_health_response_serialize() {
     let response = HealthResponse {
-        status: "healthy".to_string(),
+        status: "ok".to_string(),
         version: "1.0.0".to_string(),
         compute_mode: "cpu".to_string(),
+        model_loaded: true,
+        uptime_sec: 1.0,
     };
     let json = serde_json::to_string(&response).expect("test");
-    assert!(json.contains("healthy"));
+    assert!(json.contains("\"ok\""));
     assert!(json.contains("1.0.0"));
     assert!(json.contains("cpu"));
+    assert!(json.contains("model_loaded"));
+    assert!(json.contains("uptime_sec"));
 }
 
 #[test]

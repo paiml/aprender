@@ -1,6 +1,7 @@
 // build.rs — provable-contracts binding + PRE/POST enforcement (L1)
 use serde::Deserialize;
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 #[derive(Deserialize)]
 struct BindingFile {
@@ -18,51 +19,46 @@ struct Binding {
     status: String,
 }
 
-#[allow(clippy::too_many_lines)]
+#[derive(Deserialize, Default)]
+struct ContractYaml {
+    #[serde(default)]
+    equations: BTreeMap<String, EquationYaml>,
+}
+
+#[derive(Deserialize, Default)]
+struct EquationYaml {
+    #[serde(default)]
+    preconditions: Vec<String>,
+    #[serde(default)]
+    postconditions: Vec<String>,
+}
+
 fn main() {
-    // Phase 1: binding env vars
     let contracts_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("contracts");
+    emit_binding_env(&contracts_dir);
+    emit_pre_post_env(&contracts_dir);
+}
 
-    // Scan all binding.yaml files in subdirectories
+fn emit_binding_env(contracts_dir: &Path) {
     let mut total_bindings = 0u32;
     let mut total_implemented = 0u32;
     let mut found_any = false;
 
-    if let Ok(entries) = std::fs::read_dir(&contracts_dir) {
+    if let Ok(entries) = std::fs::read_dir(contracts_dir) {
         for entry in entries.flatten() {
             let binding_path = entry.path().join("binding.yaml");
             if !binding_path.exists() {
                 continue;
             }
             println!("cargo:rerun-if-changed={}", binding_path.display());
-
-            let Ok(yaml) = std::fs::read_to_string(&binding_path) else {
+            let Some(bindings) = load_binding_file(&binding_path) else {
                 continue;
             };
-
-            let bindings: BindingFile = match serde_yaml::from_str(&yaml) {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
-
             found_any = true;
-            for b in &bindings.bindings {
-                let stem = b
-                    .contract
-                    .trim_end_matches(".yaml")
-                    .to_uppercase()
-                    .replace('-', "_");
-                let eq = b.equation.to_uppercase().replace('-', "_");
-                let var = format!("CONTRACT_{stem}_{eq}");
-                println!("cargo:rustc-env={var}={}", b.status);
-                total_bindings += 1;
-                if b.status == "implemented" {
-                    total_implemented += 1;
-                }
-            }
+            emit_binding_vars(&bindings, &mut total_bindings, &mut total_implemented);
         }
     }
 
@@ -73,76 +69,101 @@ fn main() {
     } else {
         println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
     }
+}
 
-    // Phase 2: contract PRE/POST env vars
-    {
-        let cdir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("contracts");
-        if let Ok(es) = std::fs::read_dir(&cdir) {
-            #[derive(Deserialize, Default)]
-            struct CY {
-                #[serde(default)]
-                equations: std::collections::BTreeMap<String, EY>,
-            }
-            #[derive(Deserialize, Default)]
-            struct EY {
-                #[serde(default)]
-                preconditions: Vec<String>,
-                #[serde(default)]
-                postconditions: Vec<String>,
-            }
-            let (mut tp, mut tq) = (0, 0);
-            for e in es.flatten() {
-                let p = e.path();
-                if p.extension().and_then(|x| x.to_str()) != Some("yaml") {
-                    continue;
-                }
-                if p.file_name()
-                    .is_some_and(|n| n.to_string_lossy().contains("binding"))
-                {
-                    continue;
-                }
-                println!("cargo:rerun-if-changed={}", p.display());
-                let s = p
-                    .file_stem()
-                    .and_then(|x| x.to_str())
-                    .unwrap_or("x")
-                    .to_uppercase()
-                    .replace('-', "_");
-                if let Ok(c) = std::fs::read_to_string(&p) {
-                    if let Ok(y) = serde_yaml::from_str::<CY>(&c) {
-                        for (n, eq) in &y.equations {
-                            let k =
-                                format!("CONTRACT_{}_{}", s, n.to_uppercase().replace('-', "_"));
-                            if !eq.preconditions.is_empty() {
-                                println!(
-                                    "cargo:rustc-env={k}_PRE_COUNT={}",
-                                    eq.preconditions.len()
-                                );
-                                for (i, v) in eq.preconditions.iter().enumerate() {
-                                    println!("cargo:rustc-env={k}_PRE_{i}={v}");
-                                }
-                                tp += eq.preconditions.len();
-                            }
-                            if !eq.postconditions.is_empty() {
-                                println!(
-                                    "cargo:rustc-env={k}_POST_COUNT={}",
-                                    eq.postconditions.len()
-                                );
-                                for (i, v) in eq.postconditions.iter().enumerate() {
-                                    println!("cargo:rustc-env={k}_POST_{i}={v}");
-                                }
-                                tq += eq.postconditions.len();
-                            }
-                        }
-                    }
-                }
-            }
-            println!(
-                "cargo:warning=[contract] Assertions: {tp} preconditions, {tq} postconditions from YAML"
-            );
+fn load_binding_file(binding_path: &Path) -> Option<BindingFile> {
+    let yaml = std::fs::read_to_string(binding_path).ok()?;
+    serde_yaml::from_str(&yaml).ok()
+}
+
+fn emit_binding_vars(bindings: &BindingFile, total: &mut u32, implemented: &mut u32) {
+    for b in &bindings.bindings {
+        let stem = b
+            .contract
+            .trim_end_matches(".yaml")
+            .to_uppercase()
+            .replace('-', "_");
+        let eq = b.equation.to_uppercase().replace('-', "_");
+        let var = format!("CONTRACT_{stem}_{eq}");
+        println!("cargo:rustc-env={var}={}", b.status);
+        *total += 1;
+        if b.status == "implemented" {
+            *implemented += 1;
         }
+    }
+}
+
+fn emit_pre_post_env(contracts_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(contracts_dir) else {
+        return;
+    };
+    let (mut total_pre, mut total_post) = (0usize, 0usize);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !is_contract_yaml(&path) {
+            continue;
+        }
+        emit_contract_file_pre_post(&path, &mut total_pre, &mut total_post);
+    }
+    println!(
+        "cargo:warning=[contract] Assertions: {total_pre} preconditions, {total_post} postconditions from YAML"
+    );
+}
+
+fn is_contract_yaml(path: &Path) -> bool {
+    if path.extension().and_then(|x| x.to_str()) != Some("yaml") {
+        return false;
+    }
+    !path
+        .file_name()
+        .is_some_and(|n| n.to_string_lossy().contains("binding"))
+}
+
+fn emit_contract_file_pre_post(path: &PathBuf, total_pre: &mut usize, total_post: &mut usize) {
+    println!("cargo:rerun-if-changed={}", path.display());
+    let stem = path
+        .file_stem()
+        .and_then(|x| x.to_str())
+        .unwrap_or("x")
+        .to_uppercase()
+        .replace('-', "_");
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let Ok(parsed) = serde_yaml::from_str::<ContractYaml>(&contents) else {
+        return;
+    };
+    for (eq_name, eq) in &parsed.equations {
+        let key = format!(
+            "CONTRACT_{}_{}",
+            stem,
+            eq_name.to_uppercase().replace('-', "_")
+        );
+        emit_pre_post_lists(&key, eq, total_pre, total_post);
+    }
+}
+
+fn emit_pre_post_lists(
+    key: &str,
+    eq: &EquationYaml,
+    total_pre: &mut usize,
+    total_post: &mut usize,
+) {
+    if !eq.preconditions.is_empty() {
+        println!("cargo:rustc-env={key}_PRE_COUNT={}", eq.preconditions.len());
+        for (i, v) in eq.preconditions.iter().enumerate() {
+            println!("cargo:rustc-env={key}_PRE_{i}={v}");
+        }
+        *total_pre += eq.preconditions.len();
+    }
+    if !eq.postconditions.is_empty() {
+        println!(
+            "cargo:rustc-env={key}_POST_COUNT={}",
+            eq.postconditions.len()
+        );
+        for (i, v) in eq.postconditions.iter().enumerate() {
+            println!("cargo:rustc-env={key}_POST_{i}={v}");
+        }
+        *total_post += eq.postconditions.len();
     }
 }

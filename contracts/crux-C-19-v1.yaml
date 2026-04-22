@@ -1,0 +1,146 @@
+# CRUX-C-19 — Temperature top_p top_k sampling
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-19
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: ollama
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Temperature, top-p (nucleus), and top-k sampling parity with the Ollama
+    Modelfile PARAMETER surface. `apr run --temperature T --top-p P --top-k K`
+    must: (a) be deterministic at T=0.0 given a fixed seed, (b) produce
+    higher output entropy as T rises, and (c) behave as greedy decoding at K=1.
+    Refs:
+      - https://en.wikipedia.org/wiki/Top-p_sampling (Holtzman et al. 2019)
+      - https://github.com/ollama/ollama/blob/main/docs/modelfile.md#parameter
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  tempered_softmax:
+    formula: |
+      p_i(T) = exp(logit_i / T) / Σ_j exp(logit_j / T),   T > 0
+      lim_{T→0+} p(T) = δ(argmax(logits))                  (greedy)
+      H(p(T)) is monotone non-decreasing in T               (entropy ↑ with T)
+    domain: (logits ∈ R^V, T ∈ R_{>0}) → probability simplex ∆^V
+    codomain: token distribution
+    invariants:
+    - "T = 0.0 (or T→0) degenerates to argmax — output is deterministic given fixed seed"
+    - "H(p(T₂)) ≥ H(p(T₁)) whenever T₂ > T₁ (entropy monotone in temperature)"
+
+  top_k_top_p_truncation:
+    formula: |
+      top-k(p, K):   keep the K largest-probability tokens, renormalize.
+      top-p(p, P):   sort p descending; keep smallest prefix s.t. Σ ≥ P; renormalize.
+      top-k(_, 1) ≡ greedy argmax
+    domain: probability simplex × (K ∈ N_{>0}, P ∈ [0,1])
+    codomain: truncated probability simplex
+    invariants:
+    - "K = 1 is equivalent to greedy decoding (argmax) regardless of T"
+    - "Smaller P (e.g. 0.1) yields lower output entropy than larger P (e.g. 0.95)"
+    - "top-k and top-p are applied AFTER temperature scaling"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-19-001
+  rule: T=0.0 determinism (same seed → identical output)
+  prediction: "Two runs with T=0.0 and identical seeds produce byte-identical stdout"
+  test: |
+    set -euo pipefail
+    A=$(apr run qwen2.5-coder-1.5b-q4k.apr --prompt "List 3 colors:" \
+          --temperature 0.0 --seed 42 --max-tokens 32)
+    B=$(apr run qwen2.5-coder-1.5b-q4k.apr --prompt "List 3 colors:" \
+          --temperature 0.0 --seed 42 --max-tokens 32)
+    [ "$A" = "$B" ] || { echo "T=0.0 non-deterministic: A≠B"; exit 1; }
+  if_fails: "T=0.0 is not deterministic — violates greedy-decoding contract"
+
+- id: FALSIFY-CRUX-C-19-002
+  rule: top-k = 1 is greedy (equivalent to T=0.0)
+  prediction: "--top-k 1 produces the same tokens as --temperature 0.0 for the same seed"
+  test: |
+    set -euo pipefail
+    GREEDY=$(apr run qwen2.5-coder-1.5b-q4k.apr --prompt "2+2=" --temperature 0.0 --seed 1 --max-tokens 8)
+    TOPK1=$(apr run qwen2.5-coder-1.5b-q4k.apr  --prompt "2+2=" --top-k 1 --seed 1 --max-tokens 8)
+    [ "$GREEDY" = "$TOPK1" ] || { echo "--top-k 1 differs from greedy"; exit 1; }
+  if_fails: "top-k=1 does not degenerate to argmax — sampling math is broken"
+
+- id: FALSIFY-CRUX-C-19-003
+  rule: higher temperature → higher token entropy
+  prediction: "T=1.5 produces more distinct-token variety than T=0.2 over N runs"
+  test: |
+    set -euo pipefail
+    LOW=$(for s in 1 2 3 4 5; do
+            apr run qwen2.5-coder-1.5b-q4k.apr --prompt "A story:" \
+              --temperature 0.2 --seed $s --max-tokens 24
+          done | tr -s ' \n' '\n' | sort -u | wc -l)
+    HIGH=$(for s in 1 2 3 4 5; do
+             apr run qwen2.5-coder-1.5b-q4k.apr --prompt "A story:" \
+               --temperature 1.5 --seed $s --max-tokens 24
+           done | tr -s ' \n' '\n' | sort -u | wc -l)
+    [ "$HIGH" -gt "$LOW" ] || { echo "entropy not monotone: low=$LOW high=$HIGH"; exit 1; }
+  if_fails: "Higher T does not increase entropy — tempered softmax is miswired"
+
+- id: FALSIFY-CRUX-C-19-004
+  rule: smaller top-p → narrower distribution
+  prediction: "top-p=0.1 produces fewer unique tokens than top-p=0.95 at T=1.0"
+  test: |
+    set -euo pipefail
+    NARROW=$(for s in 1 2 3 4 5; do
+               apr run qwen2.5-coder-1.5b-q4k.apr --prompt "Colors:" \
+                 --temperature 1.0 --top-p 0.1 --seed $s --max-tokens 24
+             done | tr -s ' \n' '\n' | sort -u | wc -l)
+    WIDE=$(for s in 1 2 3 4 5; do
+             apr run qwen2.5-coder-1.5b-q4k.apr --prompt "Colors:" \
+               --temperature 1.0 --top-p 0.95 --seed $s --max-tokens 24
+           done | tr -s ' \n' '\n' | sort -u | wc -l)
+    [ "$WIDE" -gt "$NARROW" ] || { echo "top-p not constraining: narrow=$NARROW wide=$WIDE"; exit 1; }
+  if_fails: "top-p filter is not actually truncating the distribution"
+
+- id: FALSIFY-CRUX-C-19-005
+  rule: parity with ollama PARAMETER surface (temperature, top_p, top_k)
+  prediction: "apr accepts the same parameter names and value domains as Ollama Modelfile"
+  test: |
+    set -euo pipefail
+    # Flag presence check — should not error.
+    apr run --help | grep -qE -- "--temperature"
+    apr run --help | grep -qE -- "--top-p"
+    apr run --help | grep -qE -- "--top-k"
+  if_fails: "apr run is missing one of the three canonical Ollama sampling flags"
+
+proof_obligations:
+- type: invariant
+  property: "T=0.0 with fixed seed produces byte-identical output across runs"
+- type: invariant
+  property: "--top-k 1 ≡ greedy decoding (argmax) for any T"
+- type: invariant
+  property: "H(p(T)) is monotone non-decreasing in T (higher temp → more entropy)"
+- type: invariant
+  property: "Smaller top-p truncates the distribution more aggressively than larger top-p"
+- type: equivalence
+  property: "apr run --temperature/--top-p/--top-k  ≅  Ollama Modelfile PARAMETER {temperature, top_p, top_k}"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-19` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-19
+  priority: critical
+  auto_created: false

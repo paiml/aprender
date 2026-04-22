@@ -40,7 +40,7 @@ struct ContractArgs {
 }
 
 impl Parse for ContractArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         // Parse the contract name (first positional string literal)
         let contract_lit: Lit = input.parse()?;
         let contract_name = match &contract_lit {

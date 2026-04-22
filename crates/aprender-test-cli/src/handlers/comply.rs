@@ -48,21 +48,51 @@ impl ComplianceResult {
     }
 }
 
+type CheckFn = Box<dyn Fn(&Path, &ComplyArgs) -> ComplianceResult>;
+
 /// Run all compliance checks
-#[allow(clippy::too_many_lines)]
 pub fn run_compliance_checks(config: &CliConfig, args: &ComplyArgs) -> CliResult<()> {
+    print_banner(config);
+
+    let all_checks = build_all_checks();
+    let filtered = filter_checks(all_checks, args.checks.as_ref());
+
     if config.verbosity != Verbosity::Quiet {
-        eprintln!("\n{}", "=".repeat(62));
-        eprintln!("  PROBAR COMPLY - WASM Compliance Checker");
-        eprintln!("{}\n", "=".repeat(62));
+        eprintln!(
+            "Running {} compliance check(s) on {}\n",
+            filtered.len(),
+            args.path.display()
+        );
     }
 
-    type CheckFn = Box<dyn Fn(&Path, &ComplyArgs) -> ComplianceResult>;
+    let (results, all_passed) = execute_checks(&filtered, config, args);
+    let passed_count = results.iter().filter(|r| r.passed).count();
+    let total_count = results.len();
 
-    let mut results: Vec<ComplianceResult> = Vec::new();
-    let mut all_passed = true;
+    print_summary(config, passed_count, total_count);
+    write_report_if_requested(args, config, &results)?;
+    print_machine_output(args, &results);
 
-    let checks_to_run: Vec<(&str, &str, CheckFn)> = vec![
+    if all_passed {
+        Ok(())
+    } else {
+        Err(CliError::test_execution(format!(
+            "Compliance check failed: {passed_count}/{total_count} checks passed"
+        )))
+    }
+}
+
+fn print_banner(config: &CliConfig) {
+    if config.verbosity == Verbosity::Quiet {
+        return;
+    }
+    eprintln!("\n{}", "=".repeat(62));
+    eprintln!("  PROBAR COMPLY - WASM Compliance Checker");
+    eprintln!("{}\n", "=".repeat(62));
+}
+
+fn build_all_checks() -> Vec<(&'static str, &'static str, CheckFn)> {
+    vec![
         (
             "C001",
             "Code execution verified",
@@ -113,87 +143,103 @@ pub fn run_compliance_checks(config: &CliConfig, args: &ComplyArgs) -> CliResult
             "No panic paths",
             Box::new(|path, _| check_c010_panic_paths(path)),
         ),
-    ];
+    ]
+}
 
-    let filtered_checks: Vec<(&str, &str, CheckFn)> = if let Some(ref requested) = args.checks {
-        checks_to_run
+fn filter_checks(
+    all: Vec<(&'static str, &'static str, CheckFn)>,
+    requested: Option<&Vec<String>>,
+) -> Vec<(&'static str, &'static str, CheckFn)> {
+    match requested {
+        Some(req) => all
             .into_iter()
-            .filter(|(id, _, _)| requested.iter().any(|r| r == id))
-            .collect()
-    } else {
-        checks_to_run
-    };
-
-    if config.verbosity != Verbosity::Quiet {
-        eprintln!(
-            "Running {} compliance check(s) on {}\n",
-            filtered_checks.len(),
-            args.path.display()
-        );
+            .filter(|(id, _, _)| req.iter().any(|r| r == id))
+            .collect(),
+        None => all,
     }
+}
 
-    for (id, description, check_fn) in &filtered_checks {
+fn execute_checks(
+    checks: &[(&'static str, &'static str, CheckFn)],
+    config: &CliConfig,
+    args: &ComplyArgs,
+) -> (Vec<ComplianceResult>, bool) {
+    let mut results = Vec::new();
+    let mut all_passed = true;
+    for (id, description, check_fn) in checks {
         let result = check_fn(&args.path, args);
-
-        let status = if result.passed { "Y" } else { "N" };
-        let color = if result.passed {
-            "\x1b[32m"
-        } else {
-            "\x1b[31m"
-        };
-        let reset = "\x1b[0m";
-
-        if config.verbosity != Verbosity::Quiet {
-            eprintln!("  {color}[{status}]{reset} {id}: {description}");
-            if args.detailed && !result.details.is_empty() {
-                for detail in &result.details {
-                    eprintln!("      - {detail}");
-                }
-            }
-        }
+        print_check_line(config, args, id, description, &result);
 
         if !result.passed {
             all_passed = false;
+            results.push(result);
             if args.fail_fast {
                 break;
             }
+        } else {
+            results.push(result);
         }
-
-        results.push(result);
     }
+    (results, all_passed)
+}
 
-    let passed_count = results.iter().filter(|r| r.passed).count();
-    let total_count = results.len();
+fn print_check_line(
+    config: &CliConfig,
+    args: &ComplyArgs,
+    id: &str,
+    description: &str,
+    result: &ComplianceResult,
+) {
+    if config.verbosity == Verbosity::Quiet {
+        return;
+    }
+    let status = if result.passed { "Y" } else { "N" };
+    let color = if result.passed {
+        "\x1b[32m"
+    } else {
+        "\x1b[31m"
+    };
+    let reset = "\x1b[0m";
+    eprintln!("  {color}[{status}]{reset} {id}: {description}");
+    if args.detailed && !result.details.is_empty() {
+        for detail in &result.details {
+            eprintln!("      - {detail}");
+        }
+    }
+}
 
+fn print_summary(config: &CliConfig, passed: usize, total: usize) {
+    if config.verbosity == Verbosity::Quiet {
+        return;
+    }
+    eprintln!("\n{}", "=".repeat(62));
+    eprintln!("  Result: {passed}/{total} checks passed");
+    eprintln!("{}\n", "=".repeat(62));
+}
+
+fn write_report_if_requested(
+    args: &ComplyArgs,
+    config: &CliConfig,
+    results: &[ComplianceResult],
+) -> CliResult<()> {
+    let Some(report_path) = args.report.as_ref() else {
+        return Ok(());
+    };
+    let report = generate_comply_report(results, &args.format);
+    std::fs::write(report_path, &report)
+        .map_err(|e| CliError::report_generation(format!("Failed to write report: {e}")))?;
     if config.verbosity != Verbosity::Quiet {
-        eprintln!("\n{}", "=".repeat(62));
-        eprintln!("  Result: {passed_count}/{total_count} checks passed");
-        eprintln!("{}\n", "=".repeat(62));
+        eprintln!("Report written to: {}", report_path.display());
     }
+    Ok(())
+}
 
-    if let Some(ref report_path) = args.report {
-        let report = generate_comply_report(&results, &args.format);
-        std::fs::write(report_path, &report)
-            .map_err(|e| CliError::report_generation(format!("Failed to write report: {e}")))?;
-        if config.verbosity != Verbosity::Quiet {
-            eprintln!("Report written to: {}", report_path.display());
-        }
-    }
-
+fn print_machine_output(args: &ComplyArgs, results: &[ComplianceResult]) {
     match args.format {
         ComplyOutputFormat::Json | ComplyOutputFormat::Junit => {
-            let report = generate_comply_report(&results, &args.format);
-            println!("{report}");
+            println!("{}", generate_comply_report(results, &args.format));
         }
         ComplyOutputFormat::Text => {}
-    }
-
-    if all_passed {
-        Ok(())
-    } else {
-        Err(CliError::test_execution(format!(
-            "Compliance check failed: {passed_count}/{total_count} checks passed"
-        )))
     }
 }
 

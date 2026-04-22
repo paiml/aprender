@@ -1,0 +1,156 @@
+# CRUX-D-11 — DDP multi-GPU single node
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-D-11
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: pytorch
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  description: >
+    DistributedDataParallel (DDP) multi-GPU single node training.
+    Competitor canonical:
+    `torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])`
+    launched via `torchrun --nproc_per_node=N`. Aprender surface:
+    `apr finetune model.apr --parallel ddp --num-gpus 4 --data train.jsonl`.
+    Reference: https://pytorch.org/docs/stable/notes/ddp.html.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  ddp_scaling_efficiency:
+    formula: |
+      Let T_1 = tokens_per_sec(ddp, num_gpus=1)
+      Let T_N = tokens_per_sec(ddp, num_gpus=N)
+      Scaling efficiency:
+        E(N) = T_N / (N * T_1) >= 0.85
+      Equivalently:
+        T_N >= 0.85 * N * T_1
+      e.g. N=4: T_4 >= 3.4 * T_1.
+    domain: (num_gpus, model, batch_size_per_gpu) → tokens_per_sec
+    codomain: bool (scaling acceptable)
+    invariants:
+    - "Each rank holds a full model replica"
+    - "Effective global batch size = batch_size_per_gpu * num_gpus"
+    - "Per-iter cost = forward + backward + allreduce(gradients); allreduce overlaps with backward"
+
+  ddp_loss_parity:
+    formula: |
+      Let L_1 = final_train_loss(ddp, num_gpus=1, seed=S, total_samples=T)
+      Let L_N = final_train_loss(ddp, num_gpus=N, seed=S, total_samples=T)
+      Loss parity invariant:
+        |L_N - L_1| / L_1 <= 0.01
+      at identical (seed, total_samples_seen, effective_batch_size, LR schedule).
+    domain: (num_gpus, seed, total_samples) → final_train_loss
+    codomain: bool (loss within ±1%)
+    invariants:
+    - "Deterministic data sampler partitions dataset across ranks without overlap"
+    - "Gradient all-reduce uses SUM then divides by world_size (mean reduction)"
+    - "Same effective batch size: batch_per_gpu_1 = batch_per_gpu_N * N"
+
+  gradient_allreduce_bandwidth:
+    formula: |
+      For each training step, measured NCCL/collective bandwidth satisfies:
+        bw_measured_gbps > 0.0
+        AND bw_measured_gbps / bw_peak_hw_gbps >= 0.5
+      Logged per-step in training metrics.
+    domain: (num_gpus, gradient_bytes_per_step) → measured_bandwidth_gbps
+    codomain: R>0
+    invariants:
+    - "All-reduce bandwidth logged per step in --json output"
+    - "Degenerate bw <0.5× peak indicates bucket misconfiguration or PCIe fallback"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-11-001
+  rule: DDP throughput scales ≥0.85× linearly
+  prediction: "T_N / (N * T_1) >= 0.85 for N in {2, 4}"
+  test: |
+    set -euo pipefail
+    T1=$(apr finetune model.apr --parallel ddp --num-gpus 1 --data tests/fixtures/train.jsonl \
+      --epochs 1 --json 2>/dev/null | jq '.tokens_per_sec')
+    T4=$(apr finetune model.apr --parallel ddp --num-gpus 4 --data tests/fixtures/train.jsonl \
+      --epochs 1 --json 2>/dev/null | jq '.tokens_per_sec')
+    python3 -c "
+    t1, t4 = $T1, $T4
+    eff = t4 / (4 * t1)
+    assert eff >= 0.85, f'DDP scaling efficiency {eff:.3f} < 0.85 (T1={t1}, T4={t4})'
+    "
+  if_fails: "DDP scaling below 0.85× — bucket size, overlap, or PCIe fallback issue"
+
+- id: FALSIFY-CRUX-D-11-002
+  rule: DDP final loss matches single-GPU within ±1%
+  prediction: "|final_loss(N=4) - final_loss(N=1)| / final_loss(N=1) <= 0.01 at same seed/total-samples"
+  test: |
+    set -euo pipefail
+    L1=$(apr finetune model.apr --parallel ddp --num-gpus 1 --seed 42 \
+      --data tests/fixtures/train.jsonl --epochs 2 --json 2>/dev/null | jq '.final_loss')
+    LN=$(apr finetune model.apr --parallel ddp --num-gpus 4 --seed 42 \
+      --data tests/fixtures/train.jsonl --epochs 2 --json 2>/dev/null | jq '.final_loss')
+    python3 -c "
+    l1, ln = $L1, $LN
+    rel = abs(ln - l1) / l1
+    assert rel <= 0.01, f'DDP loss parity failed: rel_diff={rel:.4f} (L1={l1}, LN={ln})'
+    "
+  if_fails: "DDP final loss diverges from single-GPU — reduction, sampler, or seeding bug"
+
+- id: FALSIFY-CRUX-D-11-003
+  rule: gradient all-reduce bandwidth logged and non-zero
+  prediction: "--json output contains per-step all-reduce bandwidth, all entries > 0"
+  test: |
+    set -euo pipefail
+    OUT=$(apr finetune model.apr --parallel ddp --num-gpus 2 --data tests/fixtures/train.jsonl \
+      --epochs 1 --json 2>/dev/null)
+    echo "$OUT" | jq -e '.ddp_metrics.allreduce_bandwidth_gbps | length > 0 and all(. > 0)'
+  if_fails: "All-reduce bandwidth not logged or reports zero — collective backend misconfigured"
+
+- id: FALSIFY-CRUX-D-11-004
+  rule: --num-gpus rejects values exceeding detected GPUs
+  prediction: "apr finetune --num-gpus N where N > available GPUs exits non-zero"
+  test: |
+    set -euo pipefail
+    # TODO: wire once apr reports cuda device count
+    AVAIL=$(apr devices --json 2>/dev/null | jq '.cuda_device_count // 0')
+    BAD=$((AVAIL + 1))
+    if apr finetune model.apr --parallel ddp --num-gpus "$BAD" \
+         --data tests/fixtures/train.jsonl --epochs 1 2>/tmp/err.log; then
+      echo "FAIL: --num-gpus $BAD accepted; only $AVAIL available" >&2
+      exit 1
+    fi
+    grep -qE "(insufficient|not enough|only [0-9]+ GPU)" /tmp/err.log
+  if_fails: "--num-gpus not validated against hardware availability"
+
+proof_obligations:
+- type: invariant
+  property: "Scaling efficiency E(N) = T_N / (N * T_1) >= 0.85 for N ∈ {2, 4}"
+- type: invariant
+  property: "Final training loss matches single-GPU within ±1% at identical seed and total samples"
+- type: invariant
+  property: "Gradient all-reduce uses mean reduction (sum / world_size), not sum"
+- type: invariant
+  property: "Per-step all-reduce bandwidth logged in --json output and non-zero"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-d-11` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-d-11
+  priority: critical
+  auto_created: true

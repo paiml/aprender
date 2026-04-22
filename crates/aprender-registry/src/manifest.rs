@@ -353,68 +353,35 @@ fn parse_parameter(params: &mut ManifestParameters, value: &str) -> Result<()> {
     if parts.len() != 2 {
         return Err(PachaError::Validation(format!("Invalid PARAMETER syntax: {}", value)));
     }
-
     let (name, val) = (parts[0].to_lowercase(), parts[1].trim());
+    apply_parameter(params, &name, val)
+}
 
-    match name.as_str() {
-        "temperature" => {
-            params.temperature =
-                Some(val.parse().map_err(|_| {
-                    PachaError::Validation(format!("Invalid temperature: {}", val))
-                })?);
-        }
-        "top_p" => {
-            params.top_p = Some(
-                val.parse()
-                    .map_err(|_| PachaError::Validation(format!("Invalid top_p: {}", val)))?,
-            );
-        }
-        "top_k" => {
-            params.top_k = Some(
-                val.parse()
-                    .map_err(|_| PachaError::Validation(format!("Invalid top_k: {}", val)))?,
-            );
-        }
-        "max_tokens" | "num_predict" => {
-            params.max_tokens = Some(
-                val.parse()
-                    .map_err(|_| PachaError::Validation(format!("Invalid max_tokens: {}", val)))?,
-            );
-        }
+fn apply_parameter(params: &mut ManifestParameters, name: &str, val: &str) -> Result<()> {
+    match name {
+        "temperature" => params.temperature = Some(parse_named(val, "temperature")?),
+        "top_p" => params.top_p = Some(parse_named(val, "top_p")?),
+        "top_k" => params.top_k = Some(parse_named(val, "top_k")?),
+        "max_tokens" | "num_predict" => params.max_tokens = Some(parse_named(val, "max_tokens")?),
         "stop" => {
             let stop = val.trim_matches('"').trim_matches('\'');
             params.stop.push(stop.to_string());
         }
-        "repeat_penalty" => {
-            params.repeat_penalty =
-                Some(val.parse().map_err(|_| {
-                    PachaError::Validation(format!("Invalid repeat_penalty: {}", val))
-                })?);
-        }
-        "repeat_last_n" => {
-            params.repeat_last_n =
-                Some(val.parse().map_err(|_| {
-                    PachaError::Validation(format!("Invalid repeat_last_n: {}", val))
-                })?);
-        }
+        "repeat_penalty" => params.repeat_penalty = Some(parse_named(val, "repeat_penalty")?),
+        "repeat_last_n" => params.repeat_last_n = Some(parse_named(val, "repeat_last_n")?),
         "context_length" | "num_ctx" => {
-            params.context_length =
-                Some(val.parse().map_err(|_| {
-                    PachaError::Validation(format!("Invalid context_length: {}", val))
-                })?);
+            params.context_length = Some(parse_named(val, "context_length")?);
         }
-        "seed" => {
-            params.seed = Some(
-                val.parse()
-                    .map_err(|_| PachaError::Validation(format!("Invalid seed: {}", val)))?,
-            );
-        }
+        "seed" => params.seed = Some(parse_named(val, "seed")?),
         _ => {
             // Ignore unknown parameters
         }
     }
-
     Ok(())
+}
+
+fn parse_named<T: std::str::FromStr>(val: &str, field: &str) -> Result<T> {
+    val.parse().map_err(|_| PachaError::Validation(format!("Invalid {field}: {val}")))
 }
 
 // ============================================================================

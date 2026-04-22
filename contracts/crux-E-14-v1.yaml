@@ -1,0 +1,129 @@
+# CRUX-E-14 — Needle-in-haystack recall
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (spec-complete).
+# Evidence must land before ACTIVE promotion — see master §12.
+
+metadata:
+  id: CRUX-E-14
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: vllm
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Needle-in-haystack (NIAH) recall. Root-cause workflow from vllm long-context
+    evaluation — a secret "needle" sentence is inserted at depth d into a distractor
+    "haystack" of length L; model must retrieve it. Produces a (depth × length)
+    recall heatmap. aprender equivalent:
+    `apr eval --benchmark niah --context-lens 4k,8k,16k,32k,128k --depths 10,50,90 --json`.
+  references:
+  - "https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
+  - "https://github.com/vllm-project/vllm/blob/main/benchmarks/benchmark_long_context.py"
+
+equations:
+  niah_grid_schema:
+    formula: |
+      apr eval --benchmark niah --json emits:
+        grid: list of {context_len: u64, depth_pct: f64, recall: f64}
+        recall ∈ {0.0, 1.0}  # exact-match recall per run; aggregated at grid cell
+        overall_recall: f64 ∈ [0.0, 1.0] == mean(grid[*].recall)
+        context_lens_tested: list<u64>  (user-specified)
+        depths_tested: list<f64>        (user-specified; percent ∈ [0, 100])
+    domain: (model, context_lens, depths, needle_template)
+    codomain: JSON grid
+    invariants:
+    - "|grid| == |context_lens_tested| * |depths_tested| * repeats"
+    - "Every cell has recall ∈ [0, 1]; never NaN"
+    - "overall_recall == mean of per-cell recall"
+
+  monotone_in_context:
+    formula: |
+      For a well-calibrated model, recall(c, d) >= recall(c', d) − ε
+      when c <= c' (shorter context ≥ longer context, same depth)
+      for ε = 0.1 tolerance.
+    domain: (context_len c, depth d)
+    codomain: bool
+    invariants:
+    - "Short context should not recall worse than long context at same depth"
+    - "Violation flags context-handling regression"
+
+  needle_template_parity:
+    formula: |
+      Default needle template MUST match upstream reference:
+        "The best thing to do in San Francisco is {secret}."
+      with {secret} drawn from a fixed list.
+    domain: needle template string
+    codomain: sha256
+    invariants:
+    - "sha256(default_needle_template) matches NIAH upstream reference"
+    - "--needle override allows custom templates but default is golden"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-14-001
+  rule: grid schema completeness
+  prediction: "grid has context_lens × depths × repeats cells"
+  test: |
+    # TODO: implement after `apr eval --benchmark niah` lands (crux-crux-e-14)
+    apr eval --benchmark niah --context-lens 4096,8192 --depths 10,50,90 \
+      --repeats 3 --json > /tmp/niah.json
+    jq '.grid | length == (2 * 3 * 3)' /tmp/niah.json | grep -q true
+  if_fails: "grid cardinality != context_lens × depths × repeats"
+
+- id: FALSIFY-CRUX-E-14-002
+  rule: recall in [0, 1]
+  prediction: "every grid cell has recall in [0, 1]"
+  test: |
+    apr eval --benchmark niah --context-lens 4096 --depths 50 --json > /tmp/niah.json
+    jq '.grid | map(select(.recall < 0 or .recall > 1)) | length == 0' /tmp/niah.json | grep -q true
+  if_fails: "recall out of range [0,1]"
+
+- id: FALSIFY-CRUX-E-14-003
+  rule: needle template parity
+  prediction: "default needle template sha256 matches upstream golden"
+  test: |
+    # TODO: requires --print-needle-template flag
+    HASH=$(apr eval --benchmark niah --print-needle-template | sha256sum | awk '{print $1}')
+    EXPECTED=$(cat evidence/crux/vllm/niah_default_needle.sha256)
+    [ "$HASH" = "$EXPECTED" ]
+  if_fails: "default needle template diverges from upstream NIAH reference"
+
+- id: FALSIFY-CRUX-E-14-004
+  rule: overall_recall == mean(grid.recall)
+  prediction: "overall_recall consistent with grid mean"
+  test: |
+    apr eval --benchmark niah --context-lens 4096,8192 --depths 10,50 --json > /tmp/niah.json
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/niah.json'))
+    m = sum(c['recall'] for c in d['grid']) / len(d['grid'])
+    assert abs(d['overall_recall'] - m) < 1e-6
+    "
+  if_fails: "overall_recall not equal to grid mean"
+
+proof_obligations:
+- type: invariant
+  property: "grid cardinality == context_lens × depths × repeats"
+- type: invariant
+  property: "recall ∈ [0, 1] for every cell"
+- type: equivalence
+  property: "apr niah heatmap matches gkamradt/LLMTest_NeedleInAHaystack reference within 5pp on a golden model"
+- type: invariant
+  property: "default needle template sha256 matches upstream reference"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-14` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-14
+  priority: high
+  auto_created: true

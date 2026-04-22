@@ -1,0 +1,175 @@
+# CRUX-G-13 — Publish tokenizer/config bundle
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-G-13
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "G — Format Conversion"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  description: >
+    Publish tokenizer/config bundle. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.G and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/trl
+  - arXiv:2305.18290 — DPO
+equations:
+  bundle_manifest_completeness:
+    formula: |
+      apr publish --include-tokenizer --include-config hf://user/repo model.apr
+      => HF repo /tree/main MUST list:
+        { config.json, tokenizer.json, tokenizer_config.json,
+          special_tokens_map.json, model.{apr|gguf|safetensors} }
+      Ref: https://huggingface.co/docs/transformers/tokenizer_summary#saving-a-tokenizer
+           https://huggingface.co/docs/huggingface_hub/guides/upload
+    domain: (apr_model, repo_name, include_flags)
+    codomain: "hf_tree: list[string]"
+    invariants:
+    - "config.json is present and parseable JSON"
+    - "tokenizer.json is present and parseable JSON (Tokenizers library format)"
+    - "tokenizer_config.json is present (controls chat template + special tokens)"
+    - "Model weight file sha256 matches local apr artifact"
+
+  tokenizer_canonical_fields:
+    formula: |
+      tokenizer.json MUST be loadable by Tokenizers library and contain:
+        { version: string,
+          model: { type: string ∈ {"BPE","Unigram","WordPiece",...}, ...},
+          pre_tokenizer: object | null,
+          added_tokens: array,
+          normalizer: object | null,
+          decoder: object | null }
+      Ref: https://github.com/huggingface/tokenizers (file format spec)
+    domain: tokenizer.json
+    codomain: "canonical_schema: bool"
+    invariants:
+    - "Top-level 'model' object has 'type' field"
+    - "added_tokens is an array (possibly empty)"
+    - "AutoTokenizer.from_pretrained() loads without ValueError"
+
+  autotokenizer_roundtrip:
+    formula: |
+      For all text T in test corpus:
+        decode(encode(T)) == T  (lossless for in-vocab text)
+      And across local vs uploaded repo:
+        encode_local(T) == encode_remote(T)  (byte-identical token IDs)
+    domain: (tokenizer_bundle, text_corpus)
+    codomain: "token_ids: list[u32]"
+    invariants:
+    - "AutoTokenizer.from_pretrained(uploaded_repo).encode(T) matches local encode"
+    - "BOS/EOS/PAD special token IDs match across local and remote"
+
+falsification_tests:
+- id: FALSIFY-CRUX-G-13-001
+  rule: bundle manifest complete
+  prediction: "HF /tree/main lists {config.json, tokenizer.json, tokenizer_config.json}"
+  test: |
+    REPO=paiml/crux-g13-test
+    apr publish "hf://$REPO" fixtures/tiny.apr \
+      --include-tokenizer --include-config --dry-run=false
+    # TODO: pin hf_hub CLI or use raw API
+    FILES=$(curl -sSfL "https://huggingface.co/api/models/$REPO" | \
+      jq -r '.siblings[].rfilename' | sort)
+    echo "$FILES" | grep -qx config.json
+    echo "$FILES" | grep -qx tokenizer.json
+    echo "$FILES" | grep -qx tokenizer_config.json
+  if_fails: "tokenizer/config bundle incomplete on HF repo"
+
+- id: FALSIFY-CRUX-G-13-002
+  rule: AutoTokenizer loads without error
+  prediction: "transformers.AutoTokenizer.from_pretrained(uploaded_repo) succeeds"
+  test: |
+    REPO=paiml/crux-g13-test
+    uv run --with transformers --with tokenizers python3 -c "
+    from transformers import AutoTokenizer
+    tok = AutoTokenizer.from_pretrained('$REPO')
+    assert tok is not None
+    ids = tok.encode('Hello world')
+    assert len(ids) > 0
+    print('OK', len(ids))
+    "
+  if_fails: "AutoTokenizer.from_pretrained failed — tokenizer bundle malformed"
+
+- id: FALSIFY-CRUX-G-13-003
+  rule: tokenizer.json has canonical fields
+  prediction: "tokenizer.json has model.type, added_tokens, and either pre_tokenizer or normalizer"
+  test: |
+    REPO=paiml/crux-g13-test
+    curl -sSfL "https://huggingface.co/$REPO/resolve/main/tokenizer.json" \
+      -o /tmp/tok.json
+    python3 -c "
+    import json, sys
+    t = json.load(open('/tmp/tok.json'))
+    assert 'model' in t and 'type' in t['model'], 'missing model.type'
+    assert isinstance(t.get('added_tokens', []), list), 'added_tokens not array'
+    assert t['model']['type'] in ('BPE','Unigram','WordPiece','WordLevel'), \
+      f'unknown model.type: {t[\"model\"][\"type\"]}'
+    print('canonical')
+    "
+  if_fails: "tokenizer.json missing canonical fields (non-Tokenizers-compatible)"
+
+- id: FALSIFY-CRUX-G-13-004
+  rule: local vs remote encode byte-identical
+  prediction: "AutoTokenizer on uploaded repo produces same ids as local apr tokenize"
+  test: |
+    REPO=paiml/crux-g13-test
+    LOCAL=$(apr tokenize fixtures/tiny.apr --text "The quick brown fox" --json | \
+      jq -c '.ids')
+    REMOTE=$(uv run --with transformers python3 -c "
+    from transformers import AutoTokenizer
+    import json
+    t = AutoTokenizer.from_pretrained('$REPO')
+    print(json.dumps(t.encode('The quick brown fox')))
+    ")
+    [ "$LOCAL" = "$REMOTE" ]
+  if_fails: "local apr tokenize diverges from remote AutoTokenizer — bundle encodes different BPE state"
+
+- id: FALSIFY-CRUX-G-13-005
+  rule: competitor parity — HfApi.upload_folder
+  prediction: "apr publish bundle matches HfApi.upload_folder manifest"
+  test: |
+    # Canonical reference: huggingface_hub.HfApi().upload_folder(...)
+    # TODO: evidence/crux/huggingface/publish_tokenizer_bundle/ transcript pending
+    echo "TODO: HF upload_folder parity transcript" >&2
+    test -d evidence/crux/huggingface/publish_tokenizer_bundle/
+  if_fails: "apr publish missing files that HfApi.upload_folder would include"
+
+proof_obligations:
+- type: equivalence
+  property: "apr publish --include-tokenizer --include-config matches HfApi.upload_folder bundle manifest"
+- type: invariant
+  property: "HF /tree/main contains config.json + tokenizer.json + tokenizer_config.json"
+- type: invariant
+  property: "AutoTokenizer.from_pretrained(uploaded_repo) returns non-null tokenizer"
+- type: invariant
+  property: "tokenizer.json has canonical Tokenizers fields (model.type, added_tokens)"
+- type: invariant
+  property: "encode(T) byte-identical between local apr and remote AutoTokenizer"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-g-13` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-g-13
+  priority: critical
+  auto_created: false

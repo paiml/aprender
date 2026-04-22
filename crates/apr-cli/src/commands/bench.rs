@@ -164,6 +164,7 @@ pub(crate) fn run(
     fast: bool,
     brick: Option<&str>,
     json: bool,
+    percentiles: &[f64],
 ) -> Result<()> {
     // GH-512: Warn on deprecated --fast flag instead of silently ignoring
     if fast && !json {
@@ -216,7 +217,7 @@ pub(crate) fn run(
 
     // GH-254: JSON output mode — always exit 0 with results in JSON body
     if json {
-        return print_bench_json(path, &result);
+        return print_bench_json(path, &result, percentiles);
     }
 
     // Print results
@@ -238,10 +239,11 @@ pub(crate) fn run(
 
 /// Print benchmark results as JSON (machine-parseable output).
 /// GH-254→GH-601: Exit code matches `passed` field — non-zero when failed.
+/// CRUX-E-07: emits `latency_p<N>_ms` key per requested percentile point.
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
-fn print_bench_json(path: &Path, result: &BenchResult) -> Result<()> {
-    let output = serde_json::json!({
+fn print_bench_json(path: &Path, result: &BenchResult, percentiles: &[f64]) -> Result<()> {
+    let mut output = serde_json::json!({
         "model": path.display().to_string(),
         "tokens_per_second": (result.tokens_per_second * 10.0).round() / 10.0,
         "total_tokens": result.total_tokens,
@@ -253,6 +255,23 @@ fn print_bench_json(path: &Path, result: &BenchResult) -> Result<()> {
         "std_dev_ms": result.std_dev.as_secs_f64() * 1000.0,
         "passed": result.passed,
     });
+    if let Some(obj) = output.as_object_mut() {
+        let samples_ms: Vec<f64> = result
+            .iteration_times
+            .iter()
+            .map(|d| d.as_secs_f64() * 1000.0)
+            .collect();
+        for &p in percentiles {
+            let key = format!("latency_p{}_ms", p.round() as u64);
+            let v = match aprender::metrics::percentile::compute_percentile(&samples_ms, p) {
+                aprender::metrics::percentile::PercentileOutcome::Ok(v) => {
+                    serde_json::json!(v)
+                }
+                _ => serde_json::Value::Null,
+            };
+            obj.insert(key, v);
+        }
+    }
     println!(
         "{}",
         serde_json::to_string_pretty(&output).unwrap_or_default()
@@ -502,30 +521,38 @@ fn print_brick_results(
 ) {
     output::section("Results");
     println!();
+    maybe_print_analytical_notice(report);
+    print_mean_latency_line(report.mean_us, budget_target);
+    print_cv_line(report.cv);
+    print_stats_block(report, elapsed);
+    print_throughput_line(report.tokens_per_sec);
+    print_performance_grade(report.mean_us, budget_target);
+    print_statistical_validity(report.statistically_valid);
+}
 
-    let mean_us = report.mean_us;
-    let cv = report.cv;
-    let budget_met = mean_us <= budget_target;
-    let cv_stable = cv <= 0.05;
-
+#[cfg(feature = "inference")]
+fn maybe_print_analytical_notice(report: &realizar::brick::BenchmarkReport) {
     // GH-90: Indicate when results are analytical (not measured)
     let is_analytical =
         report.std_us == 0.0 && report.p50_us == report.p99_us && report.p50_us == report.mean_us;
-    if is_analytical {
-        println!(
-            "{}",
-            "NOTE: This is an ANALYTICAL budget estimate (no run() implementation).".yellow()
-        );
-        println!(
-            "{}",
-            "Use `apr bench <model> --fast` for real measured throughput.".yellow()
-        );
-        println!();
+    if !is_analytical {
+        return;
     }
+    println!(
+        "{}",
+        "NOTE: This is an ANALYTICAL budget estimate (no run() implementation).".yellow()
+    );
+    println!(
+        "{}",
+        "Use `apr bench <model> --fast` for real measured throughput.".yellow()
+    );
+    println!();
+}
 
-    // Mean latency
+#[cfg(feature = "inference")]
+fn print_mean_latency_line(mean_us: f64, budget_target: f64) {
     let mean_str = format!("{:.2}µs", mean_us);
-    if budget_met {
+    if mean_us <= budget_target {
         println!(
             "{} {} {}",
             "Mean Latency:".white().bold(),
@@ -540,10 +567,12 @@ fn print_brick_results(
             format!("(FAIL: > {:.1}µs)", budget_target).red()
         );
     }
+}
 
-    // Coefficient of variation (stability)
+#[cfg(feature = "inference")]
+fn print_cv_line(cv: f64) {
     let cv_str = format!("{:.2}%", cv * 100.0);
-    if cv_stable {
+    if cv <= 0.05 {
         println!(
             "{} {} {}",
             "CV (stability):".white().bold(),
@@ -558,7 +587,10 @@ fn print_brick_results(
             "(WARN: > 5%)".yellow()
         );
     }
+}
 
+#[cfg(feature = "inference")]
+fn print_stats_block(report: &realizar::brick::BenchmarkReport, elapsed: Duration) {
     println!();
     output::kv("P50", format!("{:.2}µs", report.p50_us));
     output::kv("P99", format!("{:.2}µs", report.p99_us));
@@ -566,11 +598,16 @@ fn print_brick_results(
     output::kv("Budget", format!("{:.2}µs", report.budget_us));
     output::kv("Benchmark Time", format!("{:.2}s", elapsed.as_secs_f32()));
     println!();
+}
 
-    output::kv("Throughput", format!("{:.0} tok/s", report.tokens_per_sec));
+#[cfg(feature = "inference")]
+fn print_throughput_line(tokens_per_sec: f64) {
+    output::kv("Throughput", format!("{:.0} tok/s", tokens_per_sec));
     println!();
+}
 
-    // Performance grade
+#[cfg(feature = "inference")]
+fn print_performance_grade(mean_us: f64, budget_target: f64) {
     let grade = if mean_us <= budget_target * 0.5 {
         "A+ (Excellent: < 50% of budget)".green()
     } else if mean_us <= budget_target * 0.75 {
@@ -584,9 +621,11 @@ fn print_brick_results(
     };
     output::kv("Performance Grade", grade);
     println!();
+}
 
-    // Statistical validity check
-    if report.statistically_valid {
+#[cfg(feature = "inference")]
+fn print_statistical_validity(valid: bool) {
+    if valid {
         println!("{}", "Statistical validity: PASS (CV < 5%)".green());
     } else {
         println!("{}", "Statistical validity: WARN (CV >= 5%)".yellow());

@@ -250,9 +250,17 @@
 
     #[test]
     fn coverage_map_enrichment() {
-        // Coverage map requires sibling repos (aprender) for binding data
+        // Coverage map requires sibling repos for binding data. The prior
+        // `parent.join("aprender")` check was a self-match (both locally and
+        // in GHA's `/__w/aprender/aprender` layout). Probing for
+        // `provable-contracts` still false-positives on self-hosted runners
+        // that carry stale sibling checkouts. Probe for other paiml repos
+        // that only exist in a dev workspace checkout.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-        if !root.parent().is_some_and(|p| p.join("aprender").exists()) { return; }
+        let has_sibling = root.parent().is_some_and(|p| {
+            ["trueno", "bashrs", "forjar"].iter().any(|name| p.join(name).exists())
+        });
+        if !has_sibling { return; }
         let index = test_index();
         let params = QueryParams {
             query: "softmax".to_string(),

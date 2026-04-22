@@ -1,4 +1,4 @@
-use provable_contracts_macros::{ensures, requires};
+use provable_contracts_macros::{ensures, invariant, requires};
 
 #[requires(x > 0.0)]
 fn sqrt_positive(x: f64) -> f64 {
@@ -51,4 +51,96 @@ fn test_ensures_catches_violation() {
         0
     }
     bad_abs(5);
+}
+
+// ====================================================================
+// GH-702: Trait impl methods — verify macros work on trait methods
+// ====================================================================
+
+trait Validator {
+    fn validate(&self, x: i32) -> bool;
+    fn transform(&mut self, x: i32) -> i32;
+}
+
+struct RangeValidator {
+    min: i32,
+    max: i32,
+    call_count: u32,
+}
+
+impl Validator for RangeValidator {
+    #[requires(x >= 0)]
+    fn validate(&self, x: i32) -> bool {
+        x >= self.min && x <= self.max
+    }
+
+    #[ensures(ret >= 0)]
+    fn transform(&mut self, x: i32) -> i32 {
+        self.call_count += 1;
+        x.clamp(self.min, self.max)
+    }
+}
+
+#[test]
+fn test_requires_on_trait_impl() {
+    let v = RangeValidator {
+        min: 0,
+        max: 100,
+        call_count: 0,
+    };
+    assert!(v.validate(50));
+    assert!(!v.validate(200));
+}
+
+#[test]
+fn test_ensures_on_trait_impl() {
+    let mut v = RangeValidator {
+        min: 0,
+        max: 100,
+        call_count: 0,
+    };
+    assert_eq!(v.transform(50), 50);
+    assert_eq!(v.transform(-10), 0); // clamped to min
+    assert_eq!(v.transform(200), 100); // clamped to max
+    assert_eq!(v.call_count, 3);
+}
+
+#[test]
+#[should_panic(expected = "Pre-condition violated")]
+fn test_requires_on_trait_impl_catches_violation() {
+    let v = RangeValidator {
+        min: 0,
+        max: 100,
+        call_count: 0,
+    };
+    v.validate(-1); // violates requires(x >= 0)
+}
+
+// Invariant on trait impl method
+trait Counter {
+    fn increment(&mut self);
+    fn count(&self) -> u32;
+}
+
+struct SafeCounter {
+    value: u32,
+}
+
+impl Counter for SafeCounter {
+    #[invariant(self.value < u32::MAX)]
+    fn increment(&mut self) {
+        self.value += 1;
+    }
+
+    fn count(&self) -> u32 {
+        self.value
+    }
+}
+
+#[test]
+fn test_invariant_on_trait_impl() {
+    let mut c = SafeCounter { value: 0 };
+    c.increment();
+    c.increment();
+    assert_eq!(c.count(), 2);
 }

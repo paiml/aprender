@@ -1,0 +1,233 @@
+# CRUX-A-03 — Pin to revision/branch/SHA
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-03
+  version: "1.1.0"
+  created: "2026-04-18"
+  last_updated: "2026-04-20"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Pin to revision/branch/SHA. Parity target is HuggingFace's
+    `hf_hub_download(repo_id, filename, revision=...)` /
+    `snapshot_download(repo_id, revision=...)` and the equivalent
+    `huggingface-cli download REPO --revision REV`, which accept a branch
+    name, tag, or full/short git SHA and resolve to an immutable commit
+    before download. Aprender parity: `apr pull hf://<repo> --revision <REV>`
+    MUST resolve REV against the HF Hub `/api/models/<repo>/revision/<REV>`
+    endpoint, record the resolved 40-char SHA in the local manifest, and
+    produce byte-identical output across invocations pinned to the same
+    SHA. See
+    https://huggingface.co/docs/huggingface_hub/v0.24.0/en/package_reference/file_download#huggingface_hub.hf_hub_download
+    and https://huggingface.co/docs/huggingface_hub/guides/download#download-from-a-specific-revision
+  references:
+  - "https://huggingface.co/docs/huggingface_hub/guides/download#download-from-a-specific-revision"
+  - "https://huggingface.co/docs/huggingface_hub/v0.24.0/en/package_reference/file_download"
+  - "https://huggingface.co/docs/hub/api#get-apimodelsrepoidrevisionrevision"
+
+equations:
+  revision_resolution:
+    formula: |
+      resolve_revision(repo_id, rev) -> sha256_commit
+        where rev ∈ {branch_name, tag_name, short_sha (>=7 hex), full_sha (40 hex)}
+        and sha256_commit is the 40-char hex commit on HF Hub.
+      apr pull hf://REPO --revision REV:
+        hits GET https://huggingface.co/api/models/REPO/revision/REV
+        records resolved sha in <cache>/<repo>/manifest.json as "revision_sha"
+        exit_code == 0 iff HTTP 200
+    domain: "(repo_id, revision_spec) where revision_spec ∈ string"
+    codomain: "40-char hex commit SHA + local manifest entry"
+    invariants:
+    - "Resolved SHA is always 40 hex chars (no truncation)"
+    - "Default revision is 'main' when --revision omitted (HF CLI parity)"
+    - "Short SHA (>=7 chars) resolves to the unique matching full SHA or fails non-zero"
+    - "Unknown branch/tag/SHA exits non-zero with HTTP status in stderr"
+
+  pin_immutability:
+    formula: |
+      For a fixed full-SHA REV, ∀ n invocations:
+        sha256(file_bytes_i) == sha256(file_bytes_j)  ∀ i,j ∈ [1..n]
+      AND local manifest["revision_sha"] == REV  (no drift to branch HEAD).
+    domain: "(repo_id, full_sha_revision, filename) tuple"
+    codomain: "byte-identical local file across invocations"
+    invariants:
+    - "Pinning to a full SHA is immutable across time (even if branch moves)"
+    - "Pinning to 'main' records the resolved SHA at download time"
+    - "Re-pull with same SHA is a cache hit (no redownload)"
+
+  parity_with_huggingface_cli:
+    formula: |
+      ∀ (REPO, REV) in evidence/crux/huggingface/revision-goldens.json:
+        sha256(apr pull hf://REPO --revision REV output) ==
+        sha256(huggingface-cli download REPO --revision REV output)
+    domain: "(repo, revision) tuples"
+    codomain: "sha256 file digest equality"
+    invariants:
+    - "Byte-for-byte parity with huggingface-cli on every golden tuple"
+    - "Manifest revision_sha matches HF API /revision/REV response"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-03-001
+  rule: revision spec resolves to full 40-char SHA
+  prediction: "apr pull --revision main records a 40-hex commit sha in local manifest"
+  test: |
+    TMP=$(mktemp -d)
+    apr pull hf://openai-community/gpt2 --revision main --out "$TMP" --include 'config.json' >/dev/null
+    MAN="$TMP/manifest.json"
+    [ -f "$MAN" ] || { echo "FAIL: manifest.json missing" >&2; exit 1; }
+    SHA=$(python3 -c "import json; print(json.load(open('$MAN'))['revision_sha'])")
+    echo "$SHA" | grep -qE '^[0-9a-f]{40}$' || {
+      echo "FAIL: revision_sha not 40-hex ($SHA)" >&2; exit 1
+    }
+  if_fails: "apr pull did not record a canonical full-SHA revision in manifest"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_03.rs
+    tests:
+    - falsify_crux_a_03_algo_001_dry_run_echoes_revision_main
+    - falsify_crux_a_03_algo_001_dry_run_echoes_full_sha
+    - falsify_crux_a_03_algo_001_dry_run_echoes_tag
+    - falsify_crux_a_03_algo_001_dry_run_is_deterministic
+    classifier: crates/apr-cli/src/commands/revision.rs
+    scope: >
+      Algorithm-level discharge: the CLI parser accepts `--revision <REV>`,
+      classifies the form (FullSha vs ShortSha vs RefName) with a
+      deterministic pure function, and echoes the spec in `--dry-run` output
+      without network I/O. NOT YET DISCHARGED at full scope: the live HTTP
+      GET /api/models/<repo>/revision/<REV> call and the manifest write of
+      the resolved 40-hex SHA. Both require a follow-up network-gated harness.
+
+- id: FALSIFY-CRUX-A-03-002
+  rule: pin to full SHA is byte-identical across invocations
+  prediction: "two pulls at the same SHA produce byte-identical config.json"
+  test: |
+    REPO=openai-community/gpt2
+    SHA=$(curl -sS "https://huggingface.co/api/models/$REPO/revision/main" | jq -r '.sha')
+    [ -n "$SHA" ] && [ "${#SHA}" -eq 40 ] || { echo "FAIL: could not resolve SHA via HF API" >&2; exit 1; }
+    A=$(mktemp -d); B=$(mktemp -d)
+    apr pull hf://$REPO --revision "$SHA" --include 'config.json' --out "$A" >/dev/null
+    apr pull hf://$REPO --revision "$SHA" --include 'config.json' --out "$B" >/dev/null
+    SA=$(sha256sum "$A/config.json" | awk '{print $1}')
+    SB=$(sha256sum "$B/config.json" | awk '{print $1}')
+    [ "$SA" = "$SB" ] || { echo "FAIL: non-deterministic pinned pull ($SA vs $SB)" >&2; exit 1; }
+  if_fails: "apr pull of same SHA produced divergent bytes — pin is not immutable"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_03.rs
+    tests:
+    - falsify_crux_a_03_algo_002_default_revision_is_main
+    - falsify_crux_a_03_algo_002_default_matches_explicit_main
+    - falsify_crux_a_03_algo_001_dry_run_is_deterministic
+    scope: >
+      Algorithm-level discharge: default revision is "main" when `--revision`
+      is omitted (HF CLI parity), and back-to-back dry-runs at the same
+      revision emit byte-identical `Revision:` lines. NOT YET DISCHARGED at
+      full scope: byte-equality of downloaded file contents across
+      invocations pinned to the same full SHA (network-gated).
+
+- id: FALSIFY-CRUX-A-03-003
+  rule: unknown revision exits non-zero
+  prediction: "apr pull --revision deadbeefdeadbeefdeadbeefdeadbeefdeadbeef (fake SHA) fails"
+  test: |
+    TMP=$(mktemp -d)
+    set +e
+    apr pull hf://openai-community/gpt2 --revision deadbeefdeadbeefdeadbeefdeadbeefdeadbeef --include 'config.json' --out "$TMP" 2>/dev/null
+    RC=$?
+    set -e
+    [ "$RC" -ne 0 ] || { echo "FAIL: fake SHA should have errored" >&2; exit 1; }
+  if_fails: "apr pull accepted a non-existent revision"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_03.rs
+    tests:
+    - falsify_crux_a_03_algo_003_empty_revision_rejected
+    - falsify_crux_a_03_algo_003_url_in_revision_rejected
+    - falsify_crux_a_03_algo_003_whitespace_rejected
+    classifier: crates/apr-cli/src/commands/revision.rs
+    scope: >
+      Algorithm-level discharge of the offline precondition: malformed
+      `--revision` specs (empty, URL-shaped, whitespace, control chars)
+      are rejected locally with a non-zero exit before any network call.
+      NOT YET DISCHARGED at full scope: "valid-format but unknown on remote"
+      case (e.g. deadbeef…beef fake SHA) still requires the live HF HTTP 404
+      path. Follow-up network-gated harness.
+
+- id: FALSIFY-CRUX-A-03-004
+  rule: parity with huggingface-cli on golden revisions
+  prediction: "apr pull output sha256 == huggingface-cli download output sha256 at same REV"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/huggingface/revision-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, hashlib, sys, pathlib
+    gold = json.load(open(sys.argv[1]))
+    for c in gold:
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["apr","pull",f"hf://{c['repo']}","--revision",c["revision"],
+                           "--include",c["filename"],"--out",d], check=True)
+            got = hashlib.sha256(open(pathlib.Path(d)/c["filename"],"rb").read()).hexdigest()
+            assert got == c["expected_sha256"], (c, got)
+    PY
+  if_fails: "apr pinned-revision bytes diverge from huggingface-cli golden sha256"
+
+proof_obligations:
+- type: equivalence
+  property: "apr pull --revision matches huggingface-cli download --revision on evidence/crux/huggingface/revision-goldens.json tuples"
+- type: invariant
+  property: "Resolved revision_sha is always 40-hex and recorded in local manifest"
+- type: invariant
+  property: "Pinning to a full SHA is immutable: byte-identical output across invocations and over time"
+- type: invariant
+  property: "Unknown revision exits non-zero with HTTP status surfaced in stderr"
+- type: invariant
+  property: "resolve_revision(REPO, REV) == HF API GET /api/models/REPO/revision/REV .sha"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 3  # FALSIFY-001/002/003 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    rust_tests: crates/apr-cli/tests/falsification_crux_a_03.rs
+    unit_tests: crates/apr-cli/src/commands/revision.rs
+    commands:
+    - apr pull <short> --dry-run --revision <REV>
+    coverage:
+    - falsify-001: falsify_crux_a_03_algo_001_dry_run_echoes_revision_main
+    - falsify-001: falsify_crux_a_03_algo_001_dry_run_echoes_full_sha
+    - falsify-001: falsify_crux_a_03_algo_001_dry_run_echoes_tag
+    - falsify-001: falsify_crux_a_03_algo_001_dry_run_is_deterministic
+    - falsify-002: falsify_crux_a_03_algo_002_default_revision_is_main
+    - falsify-002: falsify_crux_a_03_algo_002_default_matches_explicit_main
+    - falsify-003: falsify_crux_a_03_algo_003_empty_revision_rejected
+    - falsify-003: falsify_crux_a_03_algo_003_url_in_revision_rejected
+    - falsify-003: falsify_crux_a_03_algo_003_whitespace_rejected
+  scope_honesty: >
+    FALSIFY-CRUX-A-03-001/002/003 are ALL discharged at
+    PARTIAL_ALGORITHM_LEVEL — the Rust harness proves the offline
+    sub-claims (CLI parsing, revision-form classification, default=main,
+    local rejection of malformed specs). The network-level sub-claims
+    (HF Hub GET /api/models/<repo>/revision/<REV>, manifest
+    revision_sha persistence, byte-identical file downloads, HTTP 404
+    for unknown refs) remain TODO and will be discharged by a separate
+    network-gated harness. FALSIFY-CRUX-A-03-004 (byte-for-byte parity
+    with huggingface-cli on golden tuples) is NOT yet discharged.
+    Contract stays `status: partial`.
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-03` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-03
+  priority: high
+  auto_created: false

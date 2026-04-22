@@ -1,0 +1,102 @@
+# CRUX-K-05 — apr ui Gradio web UI
+
+metadata:
+  id: CRUX-K-05
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Deployment & Integration"
+  competitor: ecosystem
+  demand_score: 3
+  intake_status: missing
+  description: >
+    apr ui — local browser UI for chat/inference. Canonical: HF
+    `gradio.ChatInterface` — `pip install gradio` then
+    `gr.ChatInterface(fn=infer).launch(server_port=7860)`. Must expose
+    POST `/api/predict` JSON endpoint AND a GET `/` HTML page on the
+    same port and survive browser refresh without losing bound model.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  gradio_ui:
+    formula: |
+      launch(model, host, port) opens:
+        GET  /             → text/html (chat page)
+        POST /api/predict  → {data:[prompt,history]} → {data:[reply,history']}
+      # state: model is loaded once per process and shared across requests
+      # determinism: temperature=0 + seed=fixed ⇒ same reply
+    domain: "(model: Path, port: u16, host: IpAddr)"
+    codomain: "HTTP server serving HTML + predict endpoint"
+    invariants:
+    - "GET / returns Content-Type: text/html; 200 OK"
+    - "POST /api/predict with same payload + temp=0 returns same reply"
+    - "process model load count == 1 (not per-request)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-05-001
+  rule: HTML + predict endpoints live on same port
+  prediction: "GET /→HTML and POST /api/predict both reachable on ${port}"
+  test: |
+    set -euo pipefail
+    apr ui tests/fixtures/tiny.apr --port 17860 --host 127.0.0.1 &
+    UI=$!; trap "kill $UI" EXIT
+    sleep 2
+    curl -sf -o /tmp/page.html http://127.0.0.1:17860/
+    grep -qi "<html" /tmp/page.html
+    curl -sf -X POST http://127.0.0.1:17860/api/predict \
+      -H 'content-type: application/json' \
+      -d '{"data":["hello",[]]}' > /tmp/pred.json
+    python3 -c "import json; d=json.load(open('/tmp/pred.json')); assert 'data' in d, d"
+  if_fails: rule 'HTML + predict endpoints live on same port' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-05-002
+  rule: determinism at temperature=0
+  prediction: "two identical predict calls yield byte-identical reply"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      curl -sf -X POST http://127.0.0.1:17860/api/predict \
+        -H 'content-type: application/json' \
+        -d '{"data":["2+2=?",[]],"temperature":0,"seed":42}' > /tmp/p$i.json
+    done
+    diff <(jq -S .data /tmp/p1.json) <(jq -S .data /tmp/p2.json)
+  if_fails: rule 'determinism at temperature=0' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-05-003
+  rule: model loaded once (not per-request)
+  prediction: "second predict latency much lower than first (no reload cost)"
+  test: |
+    set -euo pipefail
+    t1=$(curl -o /dev/null -s -w '%{time_total}' -X POST \
+      http://127.0.0.1:17860/api/predict -H 'content-type: application/json' \
+      -d '{"data":["first",[]]}')
+    t2=$(curl -o /dev/null -s -w '%{time_total}' -X POST \
+      http://127.0.0.1:17860/api/predict -H 'content-type: application/json' \
+      -d '{"data":["second",[]]}')
+    python3 -c "t1=$t1; t2=$t2; assert t2 < 0.2*t1 or t1<0.5, (t1,t2)"
+
+  if_fails: rule 'model loaded once (not per-request)' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr ui predict JSON shape matches gradio.ChatInterface /api/predict contract"
+- type: invariant
+  property: "determinism at temperature=0"
+- type: invariant
+  property: "single model load per process"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-k-05
+  priority: medium
+  auto_created: true

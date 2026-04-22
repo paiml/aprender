@@ -48,10 +48,20 @@ pub struct FileChecksum {
     "apr-cli-operations-v1",
     equation = "mutating_output_contract"
 )]
-pub fn run(model_ref: &str, force: bool) -> Result<()> {
+pub fn run(model_ref: &str, force: bool, dry_run: bool, revision: Option<&str>, offline: bool) -> Result<()> {
     contract_pre_pull_cache_integrity!();
     println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
+
+    // CRUX-A-01 FALSIFY-CRUX-A-01-001: --dry-run resolves short name to
+    // canonical URL and exits with zero network I/O.
+    // CRUX-A-03 ALGO-001..003: --dry-run echoes the revision spec the user
+    // supplied (or the default "main") and validates its local form.
+    // CRUX-A-20 ALGO-001..005: --dry-run also echoes the resolved offline
+    // mode so callers can assert CLI-flag / env-var equivalence offline.
+    if dry_run {
+        return run_dry_run(model_ref, revision, offline);
+    }
 
     // GH-213: Resolve HuggingFace URI — detect single vs sharded models
     let resolved = resolve_hf_model(model_ref)?;
@@ -104,6 +114,41 @@ fn run_single_file(model_ref: &str, force: bool) -> Result<()> {
 /// which consumed ~4.5 GB for a 7B GGUF. This function streams with a 64KB
 /// chunked read, computes BLAKE3 incrementally, and saves to the pacha cache.
 fn run_single_file_streaming(model_ref: &str, force: bool) -> Result<()> {
+    let (org, repo, filename) = parse_hf_single_uri(model_ref)?;
+    let url = format!("https://huggingface.co/{org}/{repo}/resolve/main/{filename}");
+
+    let cache_dir = get_pacha_cache_dir()?;
+    std::fs::create_dir_all(&cache_dir)?;
+    let (extension, cache_path) = build_single_cache_path(&cache_dir, model_ref, &filename);
+
+    if !force && cache_path.exists() {
+        return report_cached_single(&cache_path);
+    }
+
+    stream_and_post_process(&url, &cache_path, model_ref, &extension)?;
+    print_pull_usage(&cache_path, true);
+    Ok(())
+}
+
+fn stream_and_post_process(
+    url: &str,
+    cache_path: &std::path::Path,
+    model_ref: &str,
+    extension: &str,
+) -> Result<()> {
+    println!();
+    println!("{}", "Downloading (streaming)...".yellow());
+    let checksum = download_file_with_progress(url, cache_path)?;
+    report_downloaded_single(cache_path, &checksum);
+
+    if extension == "safetensors" {
+        fetch_safetensors_companions(cache_path, model_ref)?;
+        convert_safetensors_formats(cache_path)?;
+    }
+    Ok(())
+}
+
+fn parse_hf_single_uri(model_ref: &str) -> Result<(String, String, String)> {
     let path = model_ref.strip_prefix("hf://").unwrap_or(model_ref);
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() < 3 {
@@ -111,54 +156,44 @@ fn run_single_file_streaming(model_ref: &str, force: bool) -> Result<()> {
             "HuggingFace URI must include a filename: {model_ref}"
         )));
     }
+    Ok((
+        parts[0].to_string(),
+        parts[1].to_string(),
+        parts[2..].join("/"),
+    ))
+}
 
-    let filename = parts[2..].join("/");
-    let url = format!(
-        "https://huggingface.co/{}/{}/resolve/main/{}",
-        parts[0], parts[1], filename
-    );
-
-    // Determine cache path in pacha cache dir
-    let cache_dir = get_pacha_cache_dir()?;
-    std::fs::create_dir_all(&cache_dir)?;
-
-    // Check if already cached (by URI hash)
+fn build_single_cache_path(
+    cache_dir: &std::path::Path,
+    model_ref: &str,
+    filename: &str,
+) -> (String, std::path::PathBuf) {
     let uri_hash = blake3::hash(model_ref.as_bytes()).to_hex().to_string();
-    let extension = std::path::Path::new(&filename)
+    let extension = std::path::Path::new(filename)
         .extension()
         .and_then(|e| e.to_str())
-        .unwrap_or("bin");
-    let cache_filename = format!("{}.{}", &uri_hash[..16], extension);
+        .unwrap_or("bin")
+        .to_string();
+    let cache_filename = format!("{}.{extension}", &uri_hash[..16]);
     let cache_path = cache_dir.join(&cache_filename);
+    (extension, cache_path)
+}
 
-    if !force && cache_path.exists() {
-        let metadata = std::fs::metadata(&cache_path)?;
-        println!("{} Model already cached", "✓".green());
-        println!("  Path: {}", cache_path.display());
-        println!("  Size: {}", format_bytes(metadata.len()));
-        print_pull_usage(&cache_path, true);
-        return Ok(());
-    }
+fn report_cached_single(cache_path: &std::path::Path) -> Result<()> {
+    let metadata = std::fs::metadata(cache_path)?;
+    println!("{} Model already cached", "✓".green());
+    println!("  Path: {}", cache_path.display());
+    println!("  Size: {}", format_bytes(metadata.len()));
+    print_pull_usage(cache_path, true);
+    Ok(())
+}
 
-    println!();
-    println!("{}", "Downloading (streaming)...".yellow());
-
-    let checksum = download_file_with_progress(&url, &cache_path)?;
-
+fn report_downloaded_single(cache_path: &std::path::Path, checksum: &FileChecksum) {
     println!();
     println!("{} Downloaded successfully", "✓".green());
     println!("  Path: {}", cache_path.display().to_string().green());
     println!("  Size: {}", format_bytes(checksum.size).yellow());
     println!("  Hash: {}", &checksum.blake3[..16]);
-
-    // Handle SafeTensors companions
-    if extension == "safetensors" {
-        fetch_safetensors_companions(&cache_path, model_ref)?;
-        convert_safetensors_formats(&cache_path)?;
-    }
-
-    print_pull_usage(&cache_path, true);
-    Ok(())
 }
 
 /// Get the pacha model cache directory.
@@ -500,6 +535,78 @@ fn write_shard_manifest(
     std::fs::write(manifest_path, manifest_json)?;
     println!("  {} .apr-manifest.json (integrity checksums)", "✓".green());
     Ok(())
+}
+
+/// CRUX-A-01 FALSIFY-CRUX-A-01-001: `--dry-run` resolver.
+///
+/// Emits the resolved canonical URL on stdout and returns `Ok(())` with zero
+/// network I/O. Short names are resolved via the embedded alias map
+/// (`configs/aliases.yaml`); scheme-qualified inputs (`hf://…`,
+/// `https://…`) and bare `org/repo` inputs echo as their canonical forms.
+///
+/// CRUX-A-01 FALSIFY-CRUX-A-01-003: unknown short names (no scheme, no `/`)
+/// return an error that includes a Levenshtein ≤ 2 "did you mean …" hint.
+/// CRUX-A-03 ALGO-001..003: `--revision` is classified locally and echoed
+/// in the dry-run output. Malformed revisions (empty, whitespace, URL)
+/// fail fast without touching the network.
+///
+/// CRUX-A-20 ALGO-001..005: the effective offline signal (CLI flag OR
+/// `APR_OFFLINE` OR `HF_HUB_OFFLINE` truthy) is echoed too.
+fn run_dry_run(model_ref: &str, revision: Option<&str>, offline_flag: bool) -> Result<()> {
+    use super::aliases;
+    use super::offline;
+    use super::revision as rev;
+
+    let resolved = if let Some(url) = aliases::resolve_short_name(model_ref) {
+        url
+    } else if !model_ref.contains("://") && model_ref.contains('/') {
+        format!("hf://{model_ref}")
+    } else {
+        return Err(unknown_short_name_error(model_ref));
+    };
+
+    let rev_spec = revision.unwrap_or(rev::DEFAULT_REVISION);
+    let rev_kind = rev::classify_revision(rev_spec).map_err(|msg| {
+        CliError::ValidationFailed(format!(
+            "CRUX-A-03: invalid --revision {rev_spec:?}: {msg}"
+        ))
+    })?;
+
+    // CRUX-A-20: resolve offline signal from CLI flag + env vars.
+    let env = offline::read_offline_env();
+    let env_borrowed: Vec<(&str, &str)> =
+        env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let is_offline = offline::is_offline(offline_flag, env_borrowed.iter().copied());
+
+    println!("Model:    {}", model_ref.cyan());
+    println!("Resolved: {}", resolved.green());
+    println!("Revision: {} ({:?})", rev_spec.green(), rev_kind);
+    println!("Offline:  {}", if is_offline { "true".green() } else { "false".yellow() });
+    println!("Mode:     {} (no network I/O)", "dry-run".yellow());
+    Ok(())
+}
+
+/// CRUX-A-01 FALSIFY-CRUX-A-01-003: build an error carrying a did-you-mean
+/// hint derived from Levenshtein ≤ 2 matches against the alias map.
+fn unknown_short_name_error(name: &str) -> CliError {
+    use super::aliases;
+
+    let suggestions = aliases::did_you_mean(name, 2);
+    let hint = if suggestions.is_empty() {
+        "Run `apr registry aliases --json` to list known short names.".to_string()
+    } else {
+        format!(
+            "did you mean {}? (run `apr registry aliases --json` for the full list)",
+            suggestions
+                .iter()
+                .map(|s| format!("`{s}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    CliError::ValidationFailed(format!(
+        "CRUX-A-01: unknown short name '{name}' and not a fully-qualified URI. {hint}"
+    ))
 }
 
 include!("pull_list.rs");

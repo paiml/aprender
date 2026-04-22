@@ -1,1 +1,0 @@
-{"content_hash":"7d19bfee7904a28a","findings":[{"rule_id":"PV-PRV-001","severity":"error","message":"PROVABILITY-001: falsification_tests (4) < proof_obligations (6)","file":"contracts/cli-transpile-v1.yaml","line":null,"contract_stem":"cli-transpile-v1","suppressed":false,"is_new":true}]}

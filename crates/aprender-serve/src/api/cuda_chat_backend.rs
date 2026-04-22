@@ -409,10 +409,30 @@ fn registry_fallback(
 // Handlers
 // ============================================================================
 
+/// Process-wide model-load timestamp (Unix seconds).
+///
+/// CRUX-C-33 §created_timestamp_domain: `created` must represent model load
+/// time — it MUST be stable across requests (not `SystemTime::now()` at each
+/// call). First access latches the current wall clock; subsequent accesses
+/// return the latched value. Discharges FALSIFY-CRUX-C-33-004.
+fn model_loaded_at_unix_secs() -> i64 {
+    static LOADED_AT: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+    *LOADED_AT.get_or_init(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(1)
+    })
+}
+
 /// OpenAI-compatible models listing handler
 ///
 /// Returns available models in OpenAI API format (GET /v1/models).
+/// Contract: `contracts/crux-C-33-v1.yaml` — envelope `{object:"list",data:[...]}`;
+/// per-model `{id, object:"model", created>0, owned_by}`; `created` stable
+/// across requests (model-load time, not request time).
 pub async fn openai_models_handler(State(state): State<AppState>) -> Json<OpenAIModelsResponse> {
+    let created = model_loaded_at_unix_secs();
     let models = if let Some(registry) = &state.registry {
         registry
             .list()
@@ -420,10 +440,7 @@ pub async fn openai_models_handler(State(state): State<AppState>) -> Json<OpenAI
             .map(|m| OpenAIModel {
                 id: m.id,
                 object: "model".to_string(),
-                created: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0),
+                created,
                 owned_by: "realizar".to_string(),
             })
             .collect()
@@ -432,10 +449,7 @@ pub async fn openai_models_handler(State(state): State<AppState>) -> Json<OpenAI
         vec![OpenAIModel {
             id: "default".to_string(),
             object: "model".to_string(),
-            created: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0),
+            created,
             owned_by: "realizar".to_string(),
         }]
     };

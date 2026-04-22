@@ -1,0 +1,154 @@
+# CRUX-E-05 — Ollama-parity decode 128-tok median
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-E-05
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: ollama
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Ollama-parity decode throughput on a 128-token decode window, measured
+    as median tokens/sec over N trials on identical model + hardware.
+    CLAUDE.md canonical methodology: prompt-len=32, decode-len=128+,
+    decode-only, same GGUF/Q4_K_M variant as Ollama.
+    Memory reference: RTX 4090 1.5B Q4_K_M Ollama 0.5.7 DIRECT baseline = 307.17 tok/s.
+    Ref: aprender CLAUDE.md §Performance Reference + Ollama README.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  median_decode_throughput:
+    formula: |
+      For N trials (N ≥ 5) on the same model + hardware:
+          tok_per_sec_i = 128 / decode_wall_time_i
+          median_tok_s_decode = median({ tok_per_sec_i }_{i=1..N})
+      Parity contract:
+          | apr.median − ollama.median | / ollama.median ≤ 0.10   (within 10%)
+    domain: N bench trials
+    codomain: (median, p50_latency_ms)
+    invariants:
+    - "median_tok_s_decode > 0 and matches 128 / p50_decode_wall_time"
+    - "apr bench --json emits both `median_tok_s_decode` and `p50_latency_ms`"
+    - "Parity gap to Ollama ≤ 10% on same model + GPU"
+
+  hardware_invariance:
+    formula: |
+      Both runs MUST use:
+        - Same GPU (or CPU-only SIMD build)
+        - Same quantization (Q4_K_M)
+        - Same prompt-len (32) and decode-len (128)
+        - Decode-only timing (exclude prefill wall time)
+    domain: bench harness
+    codomain: bool (apples-to-apples)
+    invariants:
+    - "Prefill time is reported separately and excluded from decode median"
+    - "First-token latency is not counted in decode tokens/sec"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-05-001
+  rule: --json emits median_tok_s_decode and p50_latency_ms
+  prediction: "apr bench --json output contains both parity fields"
+  test: |
+    set -euo pipefail
+    apr bench --model qwen2.5-coder-1.5b-q4k.apr \
+      --prompt-len 32 --decode-len 128 --trials 5 --json > /tmp/bench-e05.json
+    jq -e '.median_tok_s_decode and .p50_latency_ms' /tmp/bench-e05.json >/dev/null
+  if_fails: "apr bench --json missing parity-required fields"
+
+- id: FALSIFY-CRUX-E-05-002
+  rule: decode-only measurement (prefill excluded)
+  prediction: "apr bench reports prefill_ms separately from decode_ms"
+  test: |
+    set -euo pipefail
+    apr bench --model qwen2.5-coder-1.5b-q4k.apr \
+      --prompt-len 32 --decode-len 128 --trials 5 --json > /tmp/bench-e05.json
+    jq -e '.prefill_ms != null and .decode_ms != null' /tmp/bench-e05.json >/dev/null
+    # Derived consistency: median_tok_s_decode ≈ 128 / (decode_ms/1000)
+    uv run python - <<PY
+    import json, sys
+    j = json.load(open("/tmp/bench-e05.json"))
+    derived = 128.0 / (j["decode_ms"]/1000.0)
+    if abs(derived - j["median_tok_s_decode"]) / derived > 0.05:
+        print(f"derived {derived:.2f} vs reported {j['median_tok_s_decode']:.2f}", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "apr bench does not separate prefill from decode — methodology breach"
+
+- id: FALSIFY-CRUX-E-05-003
+  rule: median over N=5+ trials (not single-shot)
+  prediction: "Trial count in JSON is >= 5"
+  test: |
+    set -euo pipefail
+    apr bench --model qwen2.5-coder-1.5b-q4k.apr \
+      --prompt-len 32 --decode-len 128 --trials 5 --json > /tmp/bench-e05.json
+    N=$(jq '.trials | length // .n_trials // 0' /tmp/bench-e05.json)
+    [ "$N" -ge 5 ] || { echo "only $N trials"; exit 1; }
+  if_fails: "apr bench records < 5 trials — median is not statistically meaningful"
+
+- id: FALSIFY-CRUX-E-05-004
+  rule: within-10% parity vs Ollama on same model + hardware
+  prediction: "| apr.median - ollama.median | / ollama.median <= 0.10"
+  test: |
+    set -euo pipefail
+    command -v ollama >/dev/null || { echo "# TODO: capture evidence/crux/ollama/bench-1.5b-q4k-rtx4090.json via ollama run --verbose" >&2; exit 0; }
+    apr bench --model qwen2.5-coder-1.5b-q4k.apr \
+      --prompt-len 32 --decode-len 128 --trials 5 --json > /tmp/apr-e05.json
+    APR_MED=$(jq '.median_tok_s_decode' /tmp/apr-e05.json)
+    # Ollama DIRECT baseline captured in evidence/crux/ollama/.
+    OLLAMA_MED=$(jq '.median_tok_s_decode' evidence/crux/ollama/bench-1.5b-q4k-rtx4090.json 2>/dev/null \
+                  || echo 307.17)
+    uv run python - <<PY
+    import sys
+    a, o = $APR_MED, $OLLAMA_MED
+    if abs(a - o) / o > 0.10:
+        print(f"parity gap {abs(a-o)/o:.2%} > 10% (apr={a}, ollama={o})", file=sys.stderr); sys.exit(1)
+    PY
+  if_fails: "apr bench median drifted > 10% from Ollama DIRECT baseline"
+
+- id: FALSIFY-CRUX-E-05-005
+  rule: JSON is parseable and schema-stable
+  prediction: "jq can extract median_tok_s_decode, p50_latency_ms, prefill_ms, decode_ms"
+  test: |
+    set -euo pipefail
+    apr bench --model qwen2.5-coder-1.5b-q4k.apr \
+      --prompt-len 32 --decode-len 128 --trials 5 --json \
+      | jq -e '.median_tok_s_decode, .p50_latency_ms, .prefill_ms, .decode_ms' >/dev/null
+  if_fails: "apr bench --json schema regressed — breaks downstream parity scripts"
+
+proof_obligations:
+- type: invariant
+  property: "apr bench --json emits median_tok_s_decode and p50_latency_ms"
+- type: invariant
+  property: "Prefill and decode wall times are reported separately"
+- type: invariant
+  property: "Median is computed over ≥5 trials"
+- type: equivalence
+  property: "apr bench median_tok_s_decode within 10% of Ollama 0.5.7 DIRECT on same model + GPU"
+- type: invariant
+  property: "Derived 128/decode_ms matches reported median within 5% (internal consistency)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-05` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-05
+  priority: critical
+  auto_created: false

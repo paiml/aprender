@@ -1,7 +1,15 @@
 /// Load a quantized tensor from APR format, trying multiple names.
 ///
-/// Handles APR native q8/q4 formats by dequantizing to f32.
-/// For Conv1D architectures, transposes weights to [out, in] layout.
+/// GH-478: For native APR q4/q8, raw quantized bytes are stored in the
+/// `OwnedQuantizedTensor` (no F32 expansion at load) and tagged with
+/// `APR_TYPE_Q4` / `APR_TYPE_Q8` so `fused_matmul` can dequant per-tensor
+/// during forward instead of holding the full F32 working set in RAM.
+/// This bounds peak RAM at *one tensor's worth* of F32 scratch instead of
+/// `4 × num_params` bytes (128 GB for a 32B model).
+///
+/// For Conv1D architectures (`transpose=true`), the legacy dequant→transpose
+/// path is retained because re-laying-out quantized blocks would require a
+/// dedicated routine. Conv1D models are small enough that F32 expansion is fine.
 fn apr_load_quantized_tensor(
     apr: &crate::apr::MappedAprModel,
     data: &[u8],
@@ -12,6 +20,7 @@ fn apr_load_quantized_tensor(
     transpose: bool,
 ) -> Result<OwnedQuantizedTensor> {
     use crate::apr::MappedAprModel;
+    use crate::gguf::types::{APR_TYPE_Q4, APR_TYPE_Q8};
 
     let (tensor, found_name) = names
         .iter()
@@ -31,18 +40,22 @@ fn apr_load_quantized_tensor(
     let num_elements = in_dim * out_dim;
 
     match dtype {
+        "q8" if !transpose => Ok(OwnedQuantizedTensor {
+            data: raw.to_vec(),
+            in_dim,
+            out_dim,
+            qtype: APR_TYPE_Q8,
+        }),
+        "q4" if !transpose => Ok(OwnedQuantizedTensor {
+            data: raw.to_vec(),
+            in_dim,
+            out_dim,
+            qtype: APR_TYPE_Q4,
+        }),
         "q8" => {
-            // GH-285: APR native q8 requires CPU dequant → F32 (slow).
-            // Re-import with `apr import` for GPU-optimal Q4K loading.
-            eprintln!(
-                "[GH-285] APR native q8 tensor '{}': CPU dequant to F32 \
-                 (slow — re-import with `apr import` for GPU-optimal Q4K)",
-                found_name
-            );
+            // Conv1D fallback: dequant → transpose (rare; small models only).
             let mut f32_data = crate::apr::dequant::dequantize_apr_q8(raw, num_elements);
-            if transpose {
-                f32_data = transpose_f32_matrix(&f32_data, in_dim, out_dim);
-            }
+            f32_data = transpose_f32_matrix(&f32_data, in_dim, out_dim);
             let f32_bytes: Vec<u8> = f32_data.iter().flat_map(|v| v.to_le_bytes()).collect();
             Ok(OwnedQuantizedTensor {
                 data: f32_bytes,
@@ -52,17 +65,9 @@ fn apr_load_quantized_tensor(
             })
         },
         "q4" => {
-            // GH-285: APR native q4 requires CPU dequant → F32 (slow).
-            // Re-import with `apr import` for GPU-optimal Q4K loading.
-            eprintln!(
-                "[GH-285] APR native q4 tensor '{}': CPU dequant to F32 \
-                 (slow — re-import with `apr import` for GPU-optimal Q4K)",
-                found_name
-            );
+            // Conv1D fallback: dequant → transpose (rare; small models only).
             let mut f32_data = crate::apr::dequant::dequantize_apr_q4(raw, num_elements);
-            if transpose {
-                f32_data = transpose_f32_matrix(&f32_data, in_dim, out_dim);
-            }
+            f32_data = transpose_f32_matrix(&f32_data, in_dim, out_dim);
             let f32_bytes: Vec<u8> = f32_data.iter().flat_map(|v| v.to_le_bytes()).collect();
             Ok(OwnedQuantizedTensor {
                 data: f32_bytes,
@@ -445,5 +450,252 @@ impl OwnedQuantizedModel {
                 .or_else(|| apr_try_load_f32(apr, data, data_offset,
                     &format!("blk.{layer_idx}.attn_k_norm.weight"))),
         })
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod gh478_per_layer_dequant_tests {
+    //! GH-478: Falsifiable invariant — native APR q4/q8 tensors MUST stay
+    //! quantized at load time. This test fails if the loader regresses to
+    //! F32 expansion (would OOM 32B models on 128 GB hosts).
+
+    use crate::apr::{HEADER_SIZE, MAGIC, MappedAprModel};
+    use crate::gguf::types::{APR_TYPE_Q4, APR_TYPE_Q8};
+    use std::io::Write;
+
+    /// Build a minimal APR v2 file with a single quantized tensor.
+    ///
+    /// `dtype_byte` = 128 for APR q4, 129 for APR q8. `payload` is the raw
+    /// quantized bytes the test wants to round-trip.
+    fn build_single_tensor_apr(name: &str, dtype_byte: u8, shape: &[u64], payload: &[u8]) -> Vec<u8> {
+        let metadata = b"{}";
+        let metadata_padded = metadata.len().div_ceil(64) * 64;
+
+        // Tensor index entry: name_len(u16) + name + dtype(u8) + rank(u8) +
+        //                     shape(u64 × rank) + offset(u64) + size(u64)
+        let mut entry = Vec::new();
+        entry.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        entry.extend_from_slice(name.as_bytes());
+        entry.push(dtype_byte);
+        entry.push(shape.len() as u8);
+        for &d in shape {
+            entry.extend_from_slice(&d.to_le_bytes());
+        }
+        entry.extend_from_slice(&0u64.to_le_bytes()); // offset within data
+        entry.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+
+        let tensor_index_offset = (HEADER_SIZE + metadata_padded) as u64;
+        let data_offset = tensor_index_offset + entry.len() as u64;
+        let total = data_offset as usize + payload.len();
+
+        let mut out = vec![0u8; total];
+        out[0..4].copy_from_slice(&MAGIC);
+        out[4] = 2; // version major
+        out[5] = 0; // version minor
+        out[8..12].copy_from_slice(&1u32.to_le_bytes()); // tensor_count
+        out[12..20].copy_from_slice(&(HEADER_SIZE as u64).to_le_bytes()); // metadata_offset
+        out[20..24].copy_from_slice(&(metadata.len() as u32).to_le_bytes()); // metadata_size
+        out[24..32].copy_from_slice(&tensor_index_offset.to_le_bytes());
+        out[32..40].copy_from_slice(&data_offset.to_le_bytes());
+
+        out[HEADER_SIZE..HEADER_SIZE + metadata.len()].copy_from_slice(metadata);
+        let idx = tensor_index_offset as usize;
+        out[idx..idx + entry.len()].copy_from_slice(&entry);
+        let data_start = data_offset as usize;
+        out[data_start..data_start + payload.len()].copy_from_slice(payload);
+        out
+    }
+
+    fn write_tempfile(bytes: &[u8]) -> tempfile::NamedTempFile {
+        let mut f = tempfile::NamedTempFile::new().expect("tempfile");
+        f.write_all(bytes).expect("write apr");
+        f
+    }
+
+    #[test]
+    fn apr_q4_load_keeps_raw_bytes_not_f32_expansion() {
+        // 32×4 = 128 elements. q4 block = 18 bytes per 32 elems → 4 blocks = 72 bytes.
+        let in_dim = 32usize;
+        let out_dim = 4usize;
+        let num_elements = in_dim * out_dim;
+        let raw_q4 = vec![0u8; 4 * 18]; // 4 blocks of 18 bytes
+
+        let file = write_tempfile(&build_single_tensor_apr(
+            "ffn_up.weight",
+            128, // APR-native q4
+            &[out_dim as u64, in_dim as u64],
+            &raw_q4,
+        ));
+        let apr = MappedAprModel::from_path(file.path()).expect("load apr");
+
+        let tensor = super::apr_load_quantized_tensor(
+            &apr,
+            apr.data(),
+            apr.data_offset() as usize,
+            &["ffn_up.weight"],
+            in_dim,
+            out_dim,
+            false, // transpose=false: per-layer dequant path
+        )
+        .expect("load tensor");
+
+        // INVARIANT: raw quantized bytes, NOT F32 expansion.
+        assert_eq!(tensor.data.len(), raw_q4.len(),
+            "APR q4 loaded tensor must keep raw quantized bytes (got {}, expected {})",
+            tensor.data.len(), raw_q4.len());
+        assert_ne!(tensor.data.len(), num_elements * 4,
+            "APR q4 loaded tensor must NOT be F32-expanded ({}B = 4×{})",
+            num_elements * 4, num_elements);
+        assert_eq!(tensor.qtype, APR_TYPE_Q4, "qtype must tag as APR_TYPE_Q4");
+        assert_eq!(tensor.in_dim, in_dim);
+        assert_eq!(tensor.out_dim, out_dim);
+    }
+
+    #[test]
+    fn apr_q8_load_keeps_raw_bytes_not_f32_expansion() {
+        // q8 layout = 4-byte scale + 1 byte/elem. 32×4 = 128 elems → 4 + 128 = 132 bytes.
+        let in_dim = 32usize;
+        let out_dim = 4usize;
+        let num_elements = in_dim * out_dim;
+        let raw_q8 = vec![0u8; 4 + num_elements];
+
+        let file = write_tempfile(&build_single_tensor_apr(
+            "ffn_up.weight",
+            129, // APR-native q8
+            &[out_dim as u64, in_dim as u64],
+            &raw_q8,
+        ));
+        let apr = MappedAprModel::from_path(file.path()).expect("load apr");
+
+        let tensor = super::apr_load_quantized_tensor(
+            &apr,
+            apr.data(),
+            apr.data_offset() as usize,
+            &["ffn_up.weight"],
+            in_dim,
+            out_dim,
+            false,
+        )
+        .expect("load tensor");
+
+        assert_eq!(tensor.data.len(), raw_q8.len(),
+            "APR q8 loaded tensor must keep raw quantized bytes");
+        assert_ne!(tensor.data.len(), num_elements * 4,
+            "APR q8 loaded tensor must NOT be F32-expanded");
+        assert_eq!(tensor.qtype, APR_TYPE_Q8, "qtype must tag as APR_TYPE_Q8");
+    }
+
+    #[test]
+    fn apr_q4_conv1d_transpose_still_dequants_to_f32() {
+        // Conv1D path (transpose=true) is intentionally kept on the legacy
+        // dequant→transpose fallback. Assert that contract.
+        let in_dim = 32usize;
+        let out_dim = 4usize;
+        let num_elements = in_dim * out_dim;
+        let raw_q4 = vec![0u8; 4 * 18];
+
+        let file = write_tempfile(&build_single_tensor_apr(
+            "ffn_up.weight",
+            128,
+            &[out_dim as u64, in_dim as u64],
+            &raw_q4,
+        ));
+        let apr = MappedAprModel::from_path(file.path()).expect("load apr");
+
+        let tensor = super::apr_load_quantized_tensor(
+            &apr,
+            apr.data(),
+            apr.data_offset() as usize,
+            &["ffn_up.weight"],
+            in_dim,
+            out_dim,
+            true, // Conv1D path
+        )
+        .expect("load tensor");
+
+        assert_eq!(tensor.data.len(), num_elements * 4,
+            "Conv1D (transpose=true) path keeps legacy F32 expansion");
+        assert_eq!(tensor.qtype, 0, "Conv1D path flattens qtype to F32");
+    }
+
+    /// GH-478: End-to-end memory-bound check on a real APR-native q4/q8 model.
+    ///
+    /// Iterates all q4/q8 tensors via `apr_load_quantized_tensor` and asserts
+    /// the total stored byte count stays at the on-disk raw-quantized size,
+    /// never inflating to 4× (F32) — which would OOM large models.
+    ///
+    /// Gated on `GH478_APR_Q4_MODEL` so CI/regular `cargo test` skip it.
+    /// Run:
+    ///   GH478_APR_Q4_MODEL=/tmp/gh478-qwen-1.5b-aprq4.apr \
+    ///   cargo test -p aprender-serve --lib \
+    ///     gh478_real_model_load_stays_bounded -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn gh478_real_model_load_stays_bounded() {
+        let path = match std::env::var("GH478_APR_Q4_MODEL") {
+            Ok(p) => p,
+            Err(_) => return, // gated
+        };
+        let apr = MappedAprModel::from_path(&path).expect("mmap apr");
+        let data = apr.data();
+        let data_offset = apr.data_offset() as usize;
+
+        let mut total_raw_bytes: u64 = 0;
+        let mut total_stored_bytes: u64 = 0;
+        let mut total_elements: u64 = 0;
+        let mut qtensor_count = 0usize;
+
+        for tensor in &apr.tensors {
+            let dtype = tensor.dtype.as_str();
+            if dtype != "q4" && dtype != "q8" {
+                continue;
+            }
+            if tensor.shape.len() != 2 {
+                continue; // skip 1-D and Conv1D-transpose edge cases
+            }
+            let out_dim = tensor.shape[0] as usize;
+            let in_dim = tensor.shape[1] as usize;
+            let raw_size = tensor.size;
+            let expected_f32_size = (in_dim * out_dim * 4) as u64;
+
+            let loaded = super::apr_load_quantized_tensor(
+                &apr, data, data_offset, &[tensor.name.as_str()],
+                in_dim, out_dim, false,
+            ).expect("load tensor");
+
+            total_raw_bytes += raw_size;
+            total_stored_bytes += loaded.data.len() as u64;
+            total_elements += (in_dim * out_dim) as u64;
+            qtensor_count += 1;
+
+            // Per-tensor invariant: raw bytes, not F32 expansion.
+            assert_eq!(loaded.data.len() as u64, raw_size,
+                "tensor {}: data.len()={} raw_size={} expected_f32={} — regression!",
+                tensor.name, loaded.data.len(), raw_size, expected_f32_size);
+        }
+
+        let stored_gb = total_stored_bytes as f64 / 1e9;
+        let would_be_f32_gb = (total_elements * 4) as f64 / 1e9;
+        eprintln!(
+            "[GH-478] {} q-tensors  stored={:.3} GB  would-be-F32={:.3} GB  ratio={:.1}×",
+            qtensor_count, stored_gb, would_be_f32_gb, would_be_f32_gb / stored_gb
+        );
+        assert!(qtensor_count > 0, "no q4/q8 tensors found — wrong model?");
+        assert_eq!(total_stored_bytes, total_raw_bytes,
+            "total stored bytes must equal on-disk raw quant bytes");
+        assert!(would_be_f32_gb > stored_gb * 2.0,
+            "falsification sanity: F32 expansion must be ≥2× the stored size");
+    }
+
+    fn read_rss_gb() -> f64 {
+        let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+        for line in status.lines() {
+            if let Some(rest) = line.strip_prefix("VmRSS:") {
+                let kb: f64 = rest.trim().trim_end_matches(" kB")
+                    .parse().unwrap_or(0.0);
+                return kb / 1_048_576.0; // KiB → GiB (close enough)
+            }
+        }
+        0.0
     }
 }

@@ -1,26 +1,20 @@
 
 /// Run Ollama and collect baseline performance
 fn run_ollama_comparison(path: &Path, tokens: usize) -> Option<OllamaBaseline> {
-    // Determine model name from path
     let filename = path
         .file_stem()
         .and_then(|f| f.to_str())
         .unwrap_or("unknown");
 
-    // Map common filenames to Ollama model names
-    let ollama_model = if filename.contains("qwen2.5-coder-7b") {
-        "qwen2.5-coder:7b"
-    } else if filename.contains("qwen2.5-coder-1.5b") {
-        "qwen2.5-coder:1.5b"
-    } else if filename.contains("TinyLlama") || filename.contains("tinyllama") {
-        "tinyllama"
-    } else {
-        // Can't auto-detect — skip
-        output::warn(&format!(
-            "Cannot auto-detect Ollama model name for '{}'. Use known model files.",
-            filename
-        ));
-        return None;
+    let ollama_model = match map_filename_to_ollama_model(filename) {
+        Some(m) => m,
+        None => {
+            output::warn(&format!(
+                "Cannot auto-detect Ollama model name for '{}'. Use known model files.",
+                filename
+            ));
+            return None;
+        }
     };
 
     println!(
@@ -32,8 +26,6 @@ fn run_ollama_comparison(path: &Path, tokens: usize) -> Option<OllamaBaseline> {
         .dimmed()
     );
 
-    // Run ollama with --verbose to get timing stats
-    // Use a prompt that generates many tokens for accurate eval rate measurement
     let result = std::process::Command::new("ollama")
         .args([
             "run",
@@ -46,46 +38,115 @@ fn run_ollama_comparison(path: &Path, tokens: usize) -> Option<OllamaBaseline> {
     match result {
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
-
-            // Parse eval rate from Ollama output
-            // IMPORTANT: "prompt eval rate:" also contains "eval rate:", so
-            // we must match decode line as "eval rate:" but NOT "prompt eval rate:"
-            let decode_tok_s = stderr
-                .lines()
-                .find(|l| l.contains("eval rate:") && !l.contains("prompt eval rate:"))
-                .and_then(|l| {
-                    l.split_whitespace()
-                        .find(|w| w.parse::<f64>().is_ok())
-                        .and_then(|w| w.parse::<f64>().ok())
-                })
-                .unwrap_or(0.0);
-
-            let prefill_tok_s = stderr
-                .lines()
-                .find(|l| l.contains("prompt eval rate:"))
-                .and_then(|l| {
-                    l.split_whitespace()
-                        .find(|w| w.parse::<f64>().is_ok())
-                        .and_then(|w| w.parse::<f64>().ok())
-                })
-                .unwrap_or(0.0);
-
-            if decode_tok_s > 0.0 {
-                Some(OllamaBaseline {
-                    decode_tok_s,
-                    prefill_tok_s,
-                    model_name: ollama_model.to_string(),
-                })
-            } else {
-                output::warn("Failed to parse Ollama output. Is Ollama running?");
-                None
-            }
+            parse_ollama_baseline(&stderr, ollama_model)
         }
         Err(e) => {
             output::warn(&format!("Ollama not available: {e}"));
             None
         }
     }
+}
+
+/// Map a model filename to its registered Ollama model tag.
+fn map_filename_to_ollama_model(filename: &str) -> Option<&'static str> {
+    if filename.contains("qwen2.5-coder-7b") {
+        Some("qwen2.5-coder:7b")
+    } else if filename.contains("qwen2.5-coder-1.5b") {
+        Some("qwen2.5-coder:1.5b")
+    } else if filename.contains("TinyLlama") || filename.contains("tinyllama") {
+        Some("tinyllama")
+    } else {
+        None
+    }
+}
+
+/// Parse decode/prefill eval-rate lines from `ollama run --verbose` stderr.
+///
+/// IMPORTANT: "prompt eval rate:" also contains "eval rate:", so the decode
+/// predicate must match "eval rate:" while rejecting "prompt eval rate:".
+fn parse_ollama_baseline(stderr: &str, ollama_model: &str) -> Option<OllamaBaseline> {
+    let decode_tok_s = parse_eval_rate(stderr, |l| {
+        l.contains("eval rate:") && !l.contains("prompt eval rate:")
+    });
+    let prefill_tok_s = parse_eval_rate(stderr, |l| l.contains("prompt eval rate:"));
+
+    if decode_tok_s > 0.0 {
+        Some(OllamaBaseline {
+            decode_tok_s,
+            prefill_tok_s,
+            model_name: ollama_model.to_string(),
+        })
+    } else {
+        output::warn("Failed to parse Ollama output. Is Ollama running?");
+        None
+    }
+}
+
+/// Find the first line matching `pred` and return its first parseable f64, or 0.0.
+fn parse_eval_rate(stderr: &str, pred: impl Fn(&&str) -> bool) -> f64 {
+    stderr
+        .lines()
+        .find(pred)
+        .and_then(|l| {
+            l.split_whitespace()
+                .find(|w| w.parse::<f64>().is_ok())
+                .and_then(|w| w.parse::<f64>().ok())
+        })
+        .unwrap_or(0.0)
+}
+
+/// Grade an Ollama parity ratio on the A+/A/B/C/D/F scale.
+///
+/// C = parity (1.0x), A = 2.0x, F = <0.5x.
+fn parity_grade(parity_ratio: f64) -> (&'static str, &'static str, &'static str) {
+    match parity_ratio {
+        r if r >= 2.0 => ("A+", "Excellent — 2x+ Ollama", "green"),
+        r if r >= 1.5 => ("A", "Great — 1.5x+ Ollama", "green"),
+        r if r >= 1.0 => ("B", "Good — Ollama parity achieved", "cyan"),
+        r if r >= 0.75 => ("C", "Passing — within 75% of Ollama", "yellow"),
+        r if r >= 0.5 => ("D", "Below parity — 50-75% of Ollama", "yellow"),
+        _ => ("F", "Critical — less than 50% of Ollama", "red"),
+    }
+}
+
+/// Print the decode + optional prefill throughput rows inside the parity table.
+fn print_parity_table(
+    results: &RealProfileResults,
+    baseline: &OllamaBaseline,
+    parity_ratio: f64,
+) {
+    println!("  ┌────────────┬──────────────┬──────────────┬───────────┐");
+    println!("  │ Metric     │ apr          │ Ollama       │ Ratio     │");
+    println!("  ├────────────┼──────────────┼──────────────┼───────────┤");
+
+    let decode_ratio_str = format!("{:.2}x", parity_ratio);
+    println!(
+        "  │ Decode     │ {:>8.1} t/s │ {:>8.1} t/s │ {:>9} │",
+        results.decode_tok_s, baseline.decode_tok_s, decode_ratio_str
+    );
+
+    if baseline.prefill_tok_s > 0.0 && results.prefill_tok_s > 0.0 {
+        let prefill_ratio = results.prefill_tok_s / baseline.prefill_tok_s;
+        println!(
+            "  │ Prefill    │ {:>8.1} t/s │ {:>8.1} t/s │ {:>8.2}x │",
+            results.prefill_tok_s, baseline.prefill_tok_s, prefill_ratio
+        );
+    }
+
+    println!("  └────────────┴──────────────┴──────────────┴───────────┘");
+}
+
+/// Print the methodology citations block.
+fn print_methodology_citations() {
+    println!("  {}", "Methodology:".dimmed());
+    println!(
+        "  {}",
+        "  Pope et al. (2023) 'Efficiently Scaling Transformer Inference'".dimmed()
+    );
+    println!(
+        "  {}",
+        "  Williams et al. (2009) 'Roofline: An Insightful Visual Performance Model'".dimmed()
+    );
 }
 
 /// Print Ollama comparison report
@@ -99,22 +160,7 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
     } else {
         0.0
     };
-
-    // Grade based on Ollama parity
-    // C = parity (1.0x), A = 2.0x, F = <0.5x
-    let grade = if parity_ratio >= 2.0 {
-        ("A+", "Excellent — 2x+ Ollama", "green")
-    } else if parity_ratio >= 1.5 {
-        ("A", "Great — 1.5x+ Ollama", "green")
-    } else if parity_ratio >= 1.0 {
-        ("B", "Good — Ollama parity achieved", "cyan")
-    } else if parity_ratio >= 0.75 {
-        ("C", "Passing — within 75% of Ollama", "yellow")
-    } else if parity_ratio >= 0.5 {
-        ("D", "Below parity — 50-75% of Ollama", "yellow")
-    } else {
-        ("F", "Critical — less than 50% of Ollama", "red")
-    };
+    let grade = parity_grade(parity_ratio);
 
     println!(
         "  {} ({})",
@@ -122,27 +168,8 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
         results.backend.to_uppercase()
     );
     println!();
-    println!("  ┌────────────┬──────────────┬──────────────┬───────────┐");
-    println!("  │ Metric     │ apr          │ Ollama       │ Ratio     │");
-    println!("  ├────────────┼──────────────┼──────────────┼───────────┤");
 
-    // Decode throughput
-    let decode_ratio_str = format!("{:.2}x", parity_ratio);
-    println!(
-        "  │ Decode     │ {:>8.1} t/s │ {:>8.1} t/s │ {:>9} │",
-        results.decode_tok_s, baseline.decode_tok_s, decode_ratio_str
-    );
-
-    // Prefill throughput
-    if baseline.prefill_tok_s > 0.0 && results.prefill_tok_s > 0.0 {
-        let prefill_ratio = results.prefill_tok_s / baseline.prefill_tok_s;
-        println!(
-            "  │ Prefill    │ {:>8.1} t/s │ {:>8.1} t/s │ {:>8.2}x │",
-            results.prefill_tok_s, baseline.prefill_tok_s, prefill_ratio
-        );
-    }
-
-    println!("  └────────────┴──────────────┴──────────────┴───────────┘");
+    print_parity_table(results, baseline, parity_ratio);
     println!();
 
     println!("  Grade: {} — {}", grade.0.bold(), grade.1);
@@ -152,16 +179,7 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
     );
     println!();
 
-    // Citations for methodology
-    println!("  {}", "Methodology:".dimmed());
-    println!(
-        "  {}",
-        "  Pope et al. (2023) 'Efficiently Scaling Transformer Inference'".dimmed()
-    );
-    println!(
-        "  {}",
-        "  Williams et al. (2009) 'Roofline: An Insightful Visual Performance Model'".dimmed()
-    );
+    print_methodology_citations();
 }
 
 // ============================================================================
@@ -289,24 +307,11 @@ fn compute_category_summary(hotspots: &[Hotspot]) -> CategorySummary {
     }
 }
 
-/// Compute roofline analysis using trueno hardware detection.
-///
-/// F-BRICKPARITY-01: subtracts kernel launch overhead from
-/// inference time so that efficiency percentages reflect
-/// per-kernel throughput (matching ncu --set roofline), not
-/// pipeline throughput (which includes idle between launches).
+/// Resolve (peak_gflops, peak_bw_gbps, ai_threshold, hardware_model) for the backend.
 #[cfg(feature = "inference")]
-pub(crate) fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis {
-    let is_gpu = results.backend == "cuda";
-
-    // Hardware detection: use GPU specs for CUDA, CPU specs for CPU
-    let (peak_compute, peak_bw, ai_threshold, hardware_model) = if is_gpu {
-        // GPU roofline: detect via CUDA device properties or use known specs
-        // RTX 4090: 82.6 TFLOPS FP32, 1008 GB/s GDDR6X
-        // RTX 3090: 35.6 TFLOPS FP32, 936 GB/s GDDR6X
-        // For Q4K decode (int4 dequant + FP16/FP32 GEMV), effective AI is very low
-        let gpu_info = detect_gpu_hardware();
-        (gpu_info.0, gpu_info.1, gpu_info.2, gpu_info.3)
+fn roofline_hardware_specs(is_gpu: bool) -> (f64, f64, f64, String) {
+    if is_gpu {
+        detect_gpu_hardware()
     } else {
         let hw = trueno::hardware::HardwareCapability::detect();
         (
@@ -321,77 +326,72 @@ pub(crate) fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis
                 hw.cpu.simd.bits()
             ),
         )
-    };
+    }
+}
 
-    // Estimate FLOPs for one forward pass:
-    // Dominant: matmul = 2 * M * N * K per matmul
-    // For Q4K, each weight element is ~0.5 bytes, so bytes >> FLOPs → memory bound
+/// FLOPs and bytes for one forward pass, estimated from transformer dims.
+///
+/// Per-layer FLOPs: `QKV(2·h·3h) + OutProj(2·h·h) + 3×FFN(2·h·4h) = 32·h²`.
+/// Bytes assume Q4K weights (≈0.5 B/element).
+#[cfg(feature = "inference")]
+fn roofline_flops_bytes(results: &RealProfileResults) -> (f64, f64) {
     let hidden = results.hidden_dim as f64;
     let vocab = results.vocab_size as f64;
     let layers = results.num_layers as f64;
 
-    // Per-layer FLOPs: QKV(2*h*3h) + OutProj(2*h*h) + Gate(2*h*4h) + Up(2*h*4h) + Down(2*h*4h)
-    // = 2h² * (3 + 1 + 4 + 4 + 4) = 32h²
     let flops_per_layer = 32.0 * hidden * hidden;
     let flops_lm_head = 2.0 * hidden * vocab;
     let total_flops = flops_per_layer * layers + flops_lm_head;
 
-    // Bytes transferred (Q4K = 0.5 bytes per weight element)
-    let bytes_per_layer = 16.0 * hidden * hidden * 0.5; // all matmul weights
+    let bytes_per_layer = 16.0 * hidden * hidden * 0.5;
     let bytes_lm_head = hidden * vocab * 0.5;
     let total_bytes = bytes_per_layer * layers + bytes_lm_head;
 
-    // For GPU: use per-token decode time, not total inference
-    // (which includes prefill overhead).
-    //
-    // F-BRICKPARITY-01 FIX: subtract kernel launch overhead so
-    // roofline reports *per-kernel* efficiency, not pipeline
-    // efficiency. Without this, idle time between kernel launches
-    // (83.8% for Q4K M=1 decode) deflates the achieved BW/GFLOPS
-    // by ~5x, causing apr profile to report 20% mem / 1% compute
-    // while ncu measures 55% mem / 29% compute on the same kernel.
-    let inference_sec = if is_gpu && results.decode_tok_s > 0.0 {
-        let pipeline_sec = 1.0 / results.decode_tok_s;
-        // Subtract idle/launch overhead to get kernel-active time
-        let overhead_frac = results.kernel_launch_overhead_pct / 100.0;
-        let kernel_active_sec = pipeline_sec * (1.0 - overhead_frac);
-        // Guard: if overhead >= 100%, fall back to pipeline time
-        if kernel_active_sec > 0.0 {
-            kernel_active_sec
-        } else {
-            pipeline_sec
-        }
-    } else {
-        results.total_inference_us / 1_000_000.0
-    };
+    (total_flops, total_bytes)
+}
 
-    let achieved_gflops = if inference_sec > 0.0 {
-        (total_flops / 1e9) / inference_sec
+/// Effective per-forward-pass seconds. GPU path subtracts kernel launch
+/// overhead (F-BRICKPARITY-01) so efficiency reflects per-kernel throughput,
+/// not pipeline throughput (which would double-count idle between launches).
+#[cfg(feature = "inference")]
+fn roofline_inference_seconds(results: &RealProfileResults, is_gpu: bool) -> f64 {
+    if !is_gpu || results.decode_tok_s <= 0.0 {
+        return results.total_inference_us / 1_000_000.0;
+    }
+    let pipeline_sec = 1.0 / results.decode_tok_s;
+    let overhead_frac = results.kernel_launch_overhead_pct / 100.0;
+    let kernel_active_sec = pipeline_sec * (1.0 - overhead_frac);
+    if kernel_active_sec > 0.0 {
+        kernel_active_sec
     } else {
-        0.0
-    };
-    let achieved_bw = if inference_sec > 0.0 {
-        (total_bytes / 1e9) / inference_sec
-    } else {
-        0.0
-    };
+        pipeline_sec
+    }
+}
 
-    let ai = if total_bytes > 0.0 {
-        total_flops / total_bytes
-    } else {
-        0.0
-    };
+/// `num / denom` with 0.0 short-circuit when `denom <= 0.0`.
+#[cfg(feature = "inference")]
+fn safe_ratio(num: f64, denom: f64) -> f64 {
+    if denom > 0.0 { num / denom } else { 0.0 }
+}
 
-    let compute_eff = if peak_compute > 0.0 {
-        (achieved_gflops / peak_compute) * 100.0
-    } else {
-        0.0
-    };
-    let memory_eff = if peak_bw > 0.0 {
-        (achieved_bw / peak_bw) * 100.0
-    } else {
-        0.0
-    };
+/// Compute roofline analysis using trueno hardware detection.
+///
+/// F-BRICKPARITY-01: subtracts kernel launch overhead from
+/// inference time so that efficiency percentages reflect
+/// per-kernel throughput (matching ncu --set roofline), not
+/// pipeline throughput (which includes idle between launches).
+#[cfg(feature = "inference")]
+pub(crate) fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis {
+    let is_gpu = results.backend == "cuda";
+    let (peak_compute, peak_bw, ai_threshold, hardware_model) = roofline_hardware_specs(is_gpu);
+    let (total_flops, total_bytes) = roofline_flops_bytes(results);
+    let inference_sec = roofline_inference_seconds(results, is_gpu);
+
+    let achieved_gflops = safe_ratio(total_flops / 1e9, inference_sec);
+    let achieved_bw = safe_ratio(total_bytes / 1e9, inference_sec);
+    let ai = safe_ratio(total_flops, total_bytes);
+    let compute_eff = safe_ratio(achieved_gflops, peak_compute) * 100.0;
+    let memory_eff = safe_ratio(achieved_bw, peak_bw) * 100.0;
 
     let bottleneck = if ai < ai_threshold {
         "MEMORY BOUND"

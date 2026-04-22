@@ -1,0 +1,95 @@
+# CRUX-D-30 — Multi-task training loop
+
+metadata:
+  id: CRUX-D-30
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Multi-task training: interleave batches from N datasets with per-task
+    sampling weights and per-task loss reduction. Canonical: HF
+    `interleave_datasets(datasets, probabilities=[...], stopping_strategy="all_exhausted")`
+    inside a Trainer loop with task-id-aware loss.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  multitask_loop:
+    formula: |
+      task_t ~ Categorical(probabilities)     # sample task per step
+      batch_t = next(task_t.iter)
+      loss_t = sum_k w_k * L_k(batch_t | task_id == k)
+      grad_step(loss_t)
+    domain: "(datasets: [Path], probabilities: [f32] summing to 1, task_weights: [f32])"
+    codomain: "single trained model with task-id-aware loss history"
+    invariants:
+    - "observed task frequencies → probabilities as n_steps → inf (law of large numbers)"
+    - "N=1 multitask loop is byte-equal to single-task training (identity check)"
+    - "deterministic under --seed (same task sequence)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-30-001
+  rule: single-dataset multitask run ≡ single-task baseline
+  prediction: "apr train --datasets a.jsonl --probs 1.0 == apr train a.jsonl byte-for-byte (same seed)"
+  test: |
+    set -euo pipefail
+    apr train --datasets tests/fixtures/tiny-sft.jsonl --probs 1.0 --seed 42 \
+      --model tests/fixtures/tinyllama-hf --steps 5 -o /tmp/mt.out
+    apr train tests/fixtures/tiny-sft.jsonl --seed 42 \
+      --model tests/fixtures/tinyllama-hf --steps 5 -o /tmp/st.out
+    diff <(apr inspect /tmp/mt.out/model.safetensors --format json | jq -S .) \
+         <(apr inspect /tmp/st.out/model.safetensors --format json | jq -S .)
+  if_fails: rule 'single-dataset multitask run ≡ single-task baseline' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-30-002
+  rule: observed task frequencies track probabilities
+  prediction: "with --probs 0.7,0.3 over 1000 steps, task-0 count in [650, 750]"
+  test: |
+    set -euo pipefail
+    apr train --datasets tests/fixtures/a.jsonl,tests/fixtures/b.jsonl \
+      --probs 0.7,0.3 --seed 42 --steps 1000 --dump-task-trace /tmp/trace.json \
+      --model tests/fixtures/tinyllama-hf -o /tmp/mt2
+    c0=$(jq '[.trace[] | select(.task_id==0)] | length' /tmp/trace.json)
+    python3 -c "assert 650 <= $c0 <= 750, $c0"
+  if_fails: rule 'observed task frequencies track probabilities' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-30-003
+  rule: deterministic task sequence under fixed seed
+  prediction: "two runs with --seed 42 produce identical task-id sequences"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr train --datasets tests/fixtures/a.jsonl,tests/fixtures/b.jsonl \
+        --probs 0.5,0.5 --seed 42 --steps 50 --dump-task-trace /tmp/tr$i.json \
+        --model tests/fixtures/tinyllama-hf -o /tmp/mt$i
+    done
+    diff <(jq '[.trace[].task_id]' /tmp/tr1.json) <(jq '[.trace[].task_id]' /tmp/tr2.json)
+
+  if_fails: rule 'deterministic task sequence under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr train --datasets matches HF `interleave_datasets(probabilities=[...])` sampling distribution"
+- type: invariant
+  property: "N=1 multitask is byte-equal to single-task"
+- type: invariant
+  property: "task sequence deterministic under fixed seed"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-30
+  priority: medium
+  auto_created: true

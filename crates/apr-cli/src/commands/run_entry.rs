@@ -1,11 +1,13 @@
-
 /// Run command entry point
 ///
 /// Per Section 9.2 (Sovereign AI), the `offline` flag enforces strict network isolation:
 /// - When `true`, all network access is blocked at the type level
 /// - Production deployments MUST use `--offline` mode
 #[allow(clippy::too_many_arguments)]
-#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "long_running_graceful")]
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "long_running_graceful"
+)]
 pub(crate) fn run(
     source: &str,
     input: Option<&Path>,
@@ -129,7 +131,12 @@ pub(crate) fn run(
 /// F-CLIPARITY-01 / PMAT-386: Chrome trace JSON output.
 /// Integrates layer trace + brick profile into chrome://tracing format.
 /// Output file: trace-{timestamp}.json (matches Candle's --tracing output).
-fn print_chrome_trace(result: &super::run::RunResult, source: &str, max_tokens: usize, include_profile: bool) {
+fn print_chrome_trace(
+    result: &super::run::RunResult,
+    source: &str,
+    max_tokens: usize,
+    include_profile: bool,
+) {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let timestamp = SystemTime::now()
@@ -186,7 +193,11 @@ fn print_chrome_trace(result: &super::run::RunResult, source: &str, max_tokens: 
     // Token generation events (decode + sample per token)
     if let Some(count) = result.tokens_generated {
         let gen_dur = load_dur - ts_us;
-        let per_token = if count > 0 { gen_dur / count as u64 } else { gen_dur };
+        let per_token = if count > 0 {
+            gen_dur / count as u64
+        } else {
+            gen_dur
+        };
         for i in 0..count {
             let token_start = ts_us + (i as u64 * per_token);
             // Layer forward pass (~90% of per-token time)
@@ -236,7 +247,10 @@ fn print_chrome_trace(result: &super::run::RunResult, source: &str, max_tokens: 
         }
     });
 
-    match std::fs::write(&filename, serde_json::to_string_pretty(&trace).unwrap_or_default()) {
+    match std::fs::write(
+        &filename,
+        serde_json::to_string_pretty(&trace).unwrap_or_default(),
+    ) {
         Ok(()) => eprintln!("Chrome trace written to: {filename} (load in chrome://tracing)"),
         Err(e) => eprintln!("Failed to write chrome trace: {e}"),
     }
@@ -267,6 +281,23 @@ fn print_trace_config(
 }
 
 /// Print the final run output (benchmark, stream, or batch mode).
+///
+/// # Streaming mode (`--stream`)
+///
+/// When `stream` is true, output becomes a JSONL stream:
+/// - One `{"event":"token", "index":N, "token_id":U, "text":"..."}` line per
+///   generated token, in order.
+/// - One terminal `{"event":"final", ...}` line carrying the same fields the
+///   `--json` output mode emits today (model, text, tokens, tok_per_sec, ...).
+///
+/// # Implementation note
+///
+/// The current realizar `run_inference()` API returns the full token sequence
+/// only after generation completes — there is no per-token callback hook
+/// today. This function therefore emits all token events post-hoc just before
+/// the final blob. The JSONL wire contract is identical to what a true
+/// streaming implementation would produce; when realizar grows a callback the
+/// emit point can move into the decode loop without touching consumers.
 fn print_run_output(
     result: &RunResult,
     source: &str,
@@ -275,29 +306,16 @@ fn print_run_output(
     benchmark: bool,
     stream: bool,
 ) -> Result<()> {
+    // --stream takes precedence — emit JSONL stream. This implies json-style
+    // structured output regardless of --format. (--stream --json is the same
+    // as --stream alone.)
+    if stream && !benchmark {
+        return print_stream_output(result, source, max_tokens);
+    }
+
     // GH-240/GH-250: JSON output mode with accurate token counts
     if output_format == "json" && !benchmark {
-        let tokens_generated = result.tokens_generated.unwrap_or(0);
-        let tok_per_sec = result.tok_per_sec.unwrap_or_else(|| {
-            if result.duration_secs > 0.0 {
-                tokens_generated as f64 / result.duration_secs
-            } else {
-                0.0
-            }
-        });
-        // GH-250: Include generated token IDs for parity checking
-        let tokens_json = result.generated_tokens.as_deref().unwrap_or(&[]);
-        let json = serde_json::json!({
-            "model": source,
-            "text": result.text,
-            "tokens": tokens_json,
-            "tokens_generated": tokens_generated,
-            "max_tokens": max_tokens,
-            "tok_per_sec": (tok_per_sec * 10.0).round() / 10.0,
-            "inference_time_ms": (result.duration_secs * 1000.0 * 100.0).round() / 100.0,
-            "used_gpu": result.used_gpu.unwrap_or(false),
-            "cached": result.cached,
-        });
+        let json = build_final_json(result, source, max_tokens);
         println!(
             "{}",
             serde_json::to_string_pretty(&json).unwrap_or_default()
@@ -307,12 +325,6 @@ fn print_run_output(
 
     if benchmark {
         print_benchmark_results(result, source, output_format, max_tokens);
-    } else if stream {
-        for word in result.text.split_whitespace() {
-            print!("{word} ");
-            std::io::Write::flush(&mut std::io::stdout())?;
-        }
-        println!();
     } else {
         println!();
         println!("{}", "Output:".green().bold());
@@ -332,6 +344,89 @@ fn print_run_output(
         );
     }
     Ok(())
+}
+
+/// Build the terminal JSON blob shared by `--json` and `--stream` final events.
+fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serde_json::Value {
+    let tokens_generated = result.tokens_generated.unwrap_or(0);
+    let tok_per_sec = result.tok_per_sec.unwrap_or_else(|| {
+        if result.duration_secs > 0.0 {
+            tokens_generated as f64 / result.duration_secs
+        } else {
+            0.0
+        }
+    });
+    // GH-250: Include generated token IDs for parity checking
+    let tokens_json = result.generated_tokens.as_deref().unwrap_or(&[]);
+    serde_json::json!({
+        "model": source,
+        "text": result.text,
+        "tokens": tokens_json,
+        "tokens_generated": tokens_generated,
+        "max_tokens": max_tokens,
+        "tok_per_sec": (tok_per_sec * 10.0).round() / 10.0,
+        "inference_time_ms": (result.duration_secs * 1000.0 * 100.0).round() / 100.0,
+        "used_gpu": result.used_gpu.unwrap_or(false),
+        "cached": result.cached,
+    })
+}
+
+/// Emit one JSON line per generated token plus a terminal `final` blob.
+///
+/// Wire format (one JSON object per line, NDJSON):
+/// ```text
+/// {"event":"token","index":0,"token_id":1234,"text":""}
+/// {"event":"token","index":1,"token_id":5678,"text":""}
+/// ...
+/// {"event":"final","model":"...","text":"...","tokens":[...],"tok_per_sec":42.0,...}
+/// ```
+///
+/// Per-token `text` is best-effort: when no per-token decoded text is
+/// available (today, always — see `print_run_output` doc) the field is an
+/// empty string. The token id is always present and exact.
+fn print_stream_output(result: &RunResult, source: &str, max_tokens: usize) -> Result<()> {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    write_stream_output(&mut out, result, source, max_tokens)?;
+    out.flush()?;
+    Ok(())
+}
+
+/// Write the stream NDJSON to a generic `Write` sink. Extracted from
+/// [`print_stream_output`] for direct testing without stdout capture.
+pub(crate) fn write_stream_output<W: std::io::Write>(
+    out: &mut W,
+    result: &RunResult,
+    source: &str,
+    max_tokens: usize,
+) -> std::io::Result<()> {
+    if let Some(tokens) = result.generated_tokens.as_deref() {
+        for (index, token_id) in tokens.iter().copied().enumerate() {
+            let evt = serde_json::json!({
+                "event": "token",
+                "index": index as u32,
+                "token_id": token_id,
+                // Per-token decoded text isn't available from realizar yet;
+                // stream consumers should fall back to the final `text` field.
+                "text": "",
+            });
+            writeln!(out, "{}", serde_json::to_string(&evt).unwrap_or_default())?;
+        }
+    }
+
+    let mut final_blob = build_final_json(result, source, max_tokens);
+    if let Some(obj) = final_blob.as_object_mut() {
+        obj.insert(
+            "event".to_string(),
+            serde_json::Value::String("final".to_string()),
+        );
+    }
+    writeln!(
+        out,
+        "{}",
+        serde_json::to_string(&final_blob).unwrap_or_default()
+    )
 }
 
 /// Batch inference: load model once, process JSONL prompts.
@@ -364,9 +459,8 @@ pub(crate) fn run_batch(
         stop_tokens: vec![],
     };
 
-    let file = std::fs::File::open(batch_file).map_err(|_| {
-        CliError::FileNotFound(batch_file.to_path_buf())
-    })?;
+    let file = std::fs::File::open(batch_file)
+        .map_err(|_| CliError::FileNotFound(batch_file.to_path_buf()))?;
     let reader = std::io::BufReader::new(file);
     let stdout = std::io::stdout();
     let writer = std::io::BufWriter::new(stdout.lock());

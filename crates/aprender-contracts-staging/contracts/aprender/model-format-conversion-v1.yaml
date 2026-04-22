@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-03'
   author: PAIML Engineering
+  registry: true
   description: >
     Model format conversion safety — apr convert/quantize/merge/import/export
     operations preserve tensor integrity, maintain weight equivalence,
@@ -187,6 +188,14 @@ proof_obligations:
   property: APR files embed tokenizer at write time
   formal: for all APR creation paths, output.metadata contains tokenizer data
   applies_to: apr_tokenizer_embedding
+- type: invariant
+  property: Streaming Q4K quantization preserves tensor set and produces finite values (GH-434)
+  formal: |
+    for APR inputs with size >= 4 GiB:
+      streaming_quantize_apr_to_q4k(input, output) => reader(output).tensor_names == reader(input).tensor_names
+      AND forall name: dequant(reader(output)[name]) are all finite
+      AND reader(output).metadata.quantization.quant_type == "q4_k"
+  applies_to: quantization_bounds
 falsification_tests:
 - id: FALSIFY-CONV-001
   rule: Format conversion preserves tensor count
@@ -223,6 +232,30 @@ falsification_tests:
   prediction: Every APR creation path (Q4K passthrough, Q4K fallback, non-Q4K, SafeTensors) produces APR with tokenizer.merges or tokenizer.vocabulary in metadata
   test: Convert GGUF to APR via each code path; scan first 64KB of output for tokenizer.merges or tokenizer.vocabulary; assert present
   if_fails: APR file without tokenizer — inference fails with opaque "Tokenizer encode failed" error instead of working. P0 catastrophic — the APR format promise of self-contained models is broken.
+- id: FALSIFY-CONV-008
+  rule: Streaming Q4K quantization preserves tensor count and produces finite values (GH-434 / ALB-093)
+  prediction: streaming_quantize_apr_to_q4k(src, dst) yields a Q4K APR with the same tensor_names set as src, every tensor dequantizes to all-finite f32, and metadata.quantization.quant_type == "q4_k"
+  test: Build pygmy APR, call streaming_quantize_apr_to_q4k directly, read output via AprV2Reader, assert tensor_names equality, iterate dequant values for NaN/Inf, assert quant_type.
+  if_fails: Streaming path silently drops tensors OR introduces NaN/Inf during per-tensor dequant→quantize OR writes wrong metadata — the full-load fallback would hide this because it's only used for ≥ 4 GiB models in practice.
+- id: FALSIFY-CONV-009
+  rule: Streaming Q4K threshold gate rejects small or non-APR inputs and apr_convert short-circuits when qualified
+  prediction: |
+    qualifies_for_streaming_q4k returns false for inputs below the effective threshold OR for
+    files without APR magic bytes. When the gate returns true, apr_convert must take the
+    streaming path (not the full-load path). The effective threshold is, in precedence order:
+    (1) cfg(test) override STREAMING_THRESHOLD_TEST_OVERRIDE, (2) env var APR_STREAMING_THRESHOLD,
+    (3) compile-time default STREAMING_THRESHOLD_BYTES (4 GiB).
+  test: |
+    (a) Write a small APR file and a non-APR blob; assert qualifies_for_streaming_q4k returns
+    false for both under the default threshold. (b) Lower the threshold via the cfg(test)
+    override, call apr_convert(pygmy, …, Q4K), and assert the output's metadata.model_type
+    preserves the source value (streaming fingerprint — the full-load Q4K builder hardcodes
+    "qwen2", so a mismatch proves the streaming path was taken).
+  if_fails: |
+    Streaming path is engaged for small production models (regressing the full-load fast path
+    that all existing tests depend on) OR non-APR inputs hit APR parse logic (confusing
+    errors) OR apr_convert's short-circuit is bypassed so ≥ 4 GiB models OOM on commodity
+    hosts even though the streaming implementation exists.
 kani_harnesses:
 - id: KANI-CONV-001
   obligation: Format conversion preserves tensor count
@@ -266,6 +299,12 @@ kani_harnesses:
   bound: 4
   strategy: exhaustive
   harness: verify_apr_tokenizer_embedded
+- id: KANI-CONV-008
+  obligation: Streaming Q4K preserves tensor set + finite values
+  property: tensor_names(streaming_q4k(src)) == tensor_names(src) ∧ all dequant values finite
+  bound: 8
+  strategy: stub_float
+  harness: verify_streaming_q4k_roundtrip
 qa_gate:
   id: F-CONV-GATE
   name: Model Format Conversion Safety Contract
@@ -276,7 +315,7 @@ qa_gate:
   - merge_weight_algebra
   - import_integrity
   - export_fidelity
-  pass_criteria: All 7 falsification tests pass
+  pass_criteria: All 9 falsification tests pass
   falsification: >
     Convert a model, count tensors, verify all preserved.
     Quantize with extreme values, check error bounds.

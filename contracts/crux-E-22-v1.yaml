@@ -1,0 +1,144 @@
+# CRUX-E-22 — Code-eval sandbox Docker runner
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (spec-complete).
+# Evidence must land before ACTIVE promotion — see master §12.
+
+metadata:
+  id: CRUX-E-22
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Code-eval sandbox Docker runner. Root-cause workflow from huggingface
+    `bigcode-evaluation-harness` — executes HumanEval/MBPP candidate code inside a
+    Docker sandbox (default image: `ghcr.io/bigcode-project/evaluation-harness:latest`)
+    with network off, CPU+memory+time caps, read-only FS. aprender equivalent:
+    `apr eval --benchmark humaneval --executor docker --image IMG --timeout S --json`.
+  references:
+  - "https://github.com/bigcode-project/bigcode-evaluation-harness"
+  - "https://arxiv.org/abs/2107.03374  # HumanEval"
+  - "https://huggingface.co/docs/trl/stack_llama_2"
+
+equations:
+  sandbox_isolation:
+    formula: |
+      Execution contract for each candidate program:
+        network_disabled: true          (--network=none)
+        filesystem_readonly: true       (--read-only)
+        cpu_limit: f64 > 0 (cores)      (--cpus)
+        memory_limit_mb: u64 > 0        (--memory)
+        timeout_sec: f64 > 0            (per-problem wall clock)
+        uid: non-root
+    domain: (candidate_code, limits)
+    codomain: 'pass: None, fail: None, timeout: None, error: None'
+    invariants:
+    - "Network syscalls MUST be blocked (no outbound)"
+    - "Process cannot write outside scratch tmpfs"
+    - "Wall-clock timeout MUST kill the container"
+
+  humaneval_schema:
+    formula: |
+      apr eval --benchmark humaneval --executor docker --json emits:
+        pass_at_1: f64 ∈ [0.0, 1.0]
+        pass_at_k: map<k: int, f64>      (k ∈ {1, 10, 100} typically)
+        num_problems: u64 == 164         (HumanEval fixed)
+        per_problem: list of {task_id, status ∈ {pass, fail, timeout, error}, wall_time_sec}
+        executor_image: string           (sha256 or tag)
+    domain: (model, image, k)
+    codomain: JSON object
+    invariants:
+    - "num_problems == 164 for HumanEval"
+    - "pass_at_1 == count(status == pass at k=1) / num_problems"
+    - "executor_image reported for reproducibility"
+
+  timeout_kill_guarantee:
+    formula: |
+      For any candidate with runtime T > timeout_sec,
+      apr eval MUST record status == 'timeout' and kill container
+      within timeout_sec + grace (5s default).
+    domain: (candidate_code, timeout_sec)
+    codomain: 'status: None, wall_time_sec: None'
+    invariants:
+    - "No candidate exceeds timeout_sec + 5s in wall_time_sec"
+    - "Infinite loop does NOT hang the harness"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-22-001
+  rule: HumanEval schema complete (164 problems)
+  prediction: "apr eval --benchmark humaneval --json reports 164 problems"
+  test: |
+    # TODO: implement after sandbox docker runner lands (crux-crux-e-22)
+    apr eval --benchmark humaneval --executor docker --model teacher.apr --json > /tmp/he.json
+    jq '.num_problems == 164 and (.per_problem | length == 164)' /tmp/he.json | grep -q true
+  if_fails: "HumanEval num_problems != 164"
+
+- id: FALSIFY-CRUX-E-22-002
+  rule: network isolation
+  prediction: "a candidate that opens a socket MUST fail (network disabled)"
+  test: |
+    # TODO: inject a network-probing candidate via --golden-candidate
+    apr eval --benchmark humaneval --executor docker \
+      --golden-candidate 'import socket; socket.create_connection(("example.com", 80))' \
+      --json > /tmp/he.json
+    jq '.per_problem[0].status == "error" or .per_problem[0].status == "fail"' /tmp/he.json | grep -q true
+  if_fails: "sandbox network NOT disabled — candidate succeeded in opening socket"
+
+- id: FALSIFY-CRUX-E-22-003
+  rule: timeout enforced
+  prediction: "infinite-loop candidate is killed within timeout+grace"
+  test: |
+    # TODO: inject an infinite-loop candidate
+    START=$(date +%s)
+    apr eval --benchmark humaneval --executor docker \
+      --golden-candidate 'while True: pass' --timeout 3 --json > /tmp/he.json
+    END=$(date +%s)
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/he.json'))
+    assert d['per_problem'][0]['status'] == 'timeout'
+    assert ($END - $START) < 3 + 5 + 2, 'timeout+grace exceeded'
+    "
+  if_fails: "infinite loop NOT killed — sandbox timeout broken"
+
+- id: FALSIFY-CRUX-E-22-004
+  rule: pass_at_1 consistency
+  prediction: "pass_at_1 == count(pass @ k=1) / num_problems"
+  test: |
+    apr eval --benchmark humaneval --executor docker --model teacher.apr --json > /tmp/he.json
+    python3 -c "
+    import json
+    d = json.load(open('/tmp/he.json'))
+    p = sum(1 for x in d['per_problem'] if x['status'] == 'pass') / d['num_problems']
+    assert abs(d['pass_at_1'] - p) < 1e-6, f'{d[\"pass_at_1\"]} vs {p}'
+    "
+  if_fails: "pass_at_1 not consistent with per_problem pass rate"
+
+proof_obligations:
+- type: invariant
+  property: "sandbox has network off, FS read-only, CPU+memory+time caps, non-root uid"
+- type: invariant
+  property: "HumanEval num_problems == 164; pass_at_1 consistent with per_problem"
+- type: equivalence
+  property: "apr HumanEval pass@1 matches bigcode-evaluation-harness within ±1pp on identical model + image"
+- type: invariant
+  property: "timeout kills container within timeout_sec + grace (5s)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-22` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-22
+  priority: high
+  auto_created: true

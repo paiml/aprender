@@ -1,0 +1,78 @@
+# CRUX-B-19 — Dequant + re-quant preserve metadata
+
+metadata:
+  id: CRUX-B-19
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: llama_cpp
+  demand_score: 3
+  intake_status: partial
+  description: >
+    Dequantize to fp16 and re-quantize under a different qtype, preserving
+    all `general.*` metadata (arch, name, license, tokenizer config).
+    Canonical: `llama-quantize model.q4_0.gguf out.fp16.gguf F16` then
+    `llama-quantize out.fp16.gguf out.q6_k.gguf Q6_K` preserves metadata.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
+equations:
+  metadata_preservation:
+    formula: |
+      meta(requant(dequant(M))) = meta(M) modulo {general.quantization_version, general.file_type}
+      specifically:  general.architecture, general.name, tokenizer.*, llama.*
+                     (all preserved byte-for-byte)
+    domain: "(M: GGUF, from_qtype, to_qtype)"
+    codomain: "GGUF with new qtype + preserved metadata"
+    invariants:
+    - "keys outside the quantization group are byte-identical before/after round-trip"
+    - "file_type field is updated to reflect new qtype, never stale"
+    - "tokenizer vocab/scores/merges preserved under all round-trips"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-19-001
+  rule: general.* metadata preserved across dequant→requant
+  prediction: "all general.* keys (except quantization_version/file_type) identical"
+  test: |
+    set -euo pipefail
+    apr dequant tests/fixtures/tinyllama-q4_0.gguf -o /tmp/fp16.gguf
+    apr quantize /tmp/fp16.gguf --format q6_k -o /tmp/q6k.gguf
+    apr inspect tests/fixtures/tinyllama-q4_0.gguf --format json | jq '.metadata | to_entries | map(select(.key|startswith("general."))) | map(select(.key|IN("general.quantization_version","general.file_type")|not))' > /tmp/before.json
+    apr inspect /tmp/q6k.gguf --format json | jq '.metadata | to_entries | map(select(.key|startswith("general."))) | map(select(.key|IN("general.quantization_version","general.file_type")|not))' > /tmp/after.json
+    diff /tmp/before.json /tmp/after.json
+  if_fails: rule 'general.* metadata preserved across dequant→requant' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-B-19-002
+  rule: tokenizer vocab/merges preserved byte-for-byte
+  prediction: "sha256 of tokenizer.ggml.tokens + tokenizer.ggml.merges unchanged"
+  test: |
+    set -euo pipefail
+    h_before=$(apr inspect tests/fixtures/tinyllama-q4_0.gguf --export-key tokenizer.ggml.tokens | sha256sum | cut -c1-64)
+    h_after=$(apr inspect /tmp/q6k.gguf --export-key tokenizer.ggml.tokens | sha256sum | cut -c1-64)
+    [ "$h_before" = "$h_after" ]
+
+  if_fails: rule 'tokenizer vocab/merges preserved byte-for-byte' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr dequant + apr quantize round-trip metadata matches llama-quantize semantics"
+- type: invariant
+  property: "general.* preserved except quantization_version/file_type which reflect new qtype"
+- type: invariant
+  property: "tokenizer.* preserved byte-identical under all round-trips"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-b-19
+  priority: medium
+  auto_created: false

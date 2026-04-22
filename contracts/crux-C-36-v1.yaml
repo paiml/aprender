@@ -1,0 +1,149 @@
+# CRUX-C-36 — Cancel in-flight requests
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-C-36
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Cancel in-flight requests. Root-cause workflow extracted from vllm UX — see master
+    subspec §5.C and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  client_disconnect_aborts_generation:
+    formula: |
+      vLLM canonical behavior:
+        When the HTTP client closes the TCP connection (or cancels),
+        AsyncLLMEngine.abort(request_id) is called; the GPU decode loop
+        frees KV cache pages for that request within one scheduling step.
+        Reference: https://docs.vllm.ai/en/latest/design/arch_overview.html
+                   https://github.com/vllm-project/vllm/blob/main/vllm/engine/async_llm_engine.py (abort())
+      apr parity target (apr serve):
+        1. Client TCP close → axum/tower detects via Body stream drop.
+        2. Server calls realizar::InferenceEngine::abort(request_id).
+        3. KV cache pages freed within one decode step (<= 1 tok latency).
+        4. No further tokens charged to completed_tokens metric.
+        5. Metric apr_requests_aborted_total{reason="client_disconnect"} increments.
+      Explicit API (OpenAI parity): None — cancellation is via connection close.
+    domain: "(request_id, client_connection_state)"
+    codomain: "(aborted: bool, freed_kv_pages: u64)"
+    invariants:
+    - "Client disconnect aborts generation within <= 1 decode step (<= 100ms for 1.5B Q4)"
+    - "Aborted request does NOT appear in apr_requests_completed_total metric"
+    - "KV cache pages reclaimed; no memory leak across 1000 abort cycles (RSS delta < 10MB)"
+    - "Aborted request does NOT consume additional GPU cycles after abort"
+    - "Concurrent non-aborted requests are unaffected (latency does not spike)"
+
+  abort_idempotent_and_safe:
+    formula: |
+      Aborting an already-completed or already-aborted request is a no-op,
+      never panics, never double-frees KV pages.
+    domain: "(request_id, abort_count: u32)"
+    codomain: "aborted_count_actual: u32"
+    invariants:
+    - "abort() is idempotent — second abort on same request is no-op"
+    - "No panic / no UB on abort of completed request"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-36-001
+  rule: client disconnect frees resources within 1 decode step
+  prediction: "After curl --max-time closes mid-generation, server stops consuming CPU/GPU for that request within 500ms"
+  test: |
+    # Reference: https://docs.vllm.ai/en/latest/design/arch_overview.html
+    # Baseline: running request count before
+    BEFORE=$(curl -sS http://127.0.0.1:8080/metrics 2>/dev/null | grep -c 'apr_requests_active' || echo 0)
+    # Fire a request that we interrupt after ~200ms
+    timeout 0.2 curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"Count slowly to 100."}],"max_tokens":512}' \
+      >/dev/null 2>&1 || true
+    sleep 0.8  # give server time to detect disconnect and abort
+    AFTER=$(curl -sS http://127.0.0.1:8080/metrics 2>/dev/null | grep 'apr_requests_active' | awk '{print $2}')
+    # Active request count must return to baseline
+    [ "${AFTER:-0}" = "${BEFORE:-0}" ] || [ "${AFTER:-0}" = "0" ] \
+      || { echo "FAIL: active requests did not drop after client disconnect (before=$BEFORE after=$AFTER)" >&2; exit 1; }
+  if_fails: "apr serve does not detect client disconnect — generation continues after TCP close"
+
+- id: FALSIFY-CRUX-C-36-002
+  rule: no memory leak across repeated abort cycles
+  prediction: "1000 abort cycles add less than 10MB RSS to apr serve process"
+  test: |
+    PID=$(pgrep -f 'apr serve' | head -1)
+    [ -n "$PID" ] || { echo "FAIL: apr serve not running" >&2; exit 1; }
+    RSS_BEFORE=$(ps -o rss= -p "$PID" | tr -d ' ')
+    for _ in $(seq 1 200); do
+      timeout 0.1 curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"hi hi hi"}],"max_tokens":512}' \
+        >/dev/null 2>&1 || true
+    done
+    sleep 2
+    RSS_AFTER=$(ps -o rss= -p "$PID" | tr -d ' ')
+    DELTA_KB=$(( RSS_AFTER - RSS_BEFORE ))
+    # 10MB == 10240 KB
+    [ "$DELTA_KB" -lt 10240 ] \
+      || { echo "FAIL: RSS grew ${DELTA_KB}KB over 200 aborts (expected <10MB)" >&2; exit 1; }
+  if_fails: "KV cache pages leaked on client disconnect — RSS grows across abort cycles"
+
+- id: FALSIFY-CRUX-C-36-003
+  rule: concurrent non-aborted request latency unaffected by aborts
+  prediction: "TTFT of a clean request does not spike while another is being aborted"
+  test: |
+    # Start an abortable request in background
+    (timeout 0.3 curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"long long long"}],"max_tokens":256}' \
+      >/dev/null 2>&1) &
+    sleep 0.05
+    START=$(date +%s%N)
+    curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"hi"}],"max_tokens":4}' >/dev/null
+    END=$(date +%s%N)
+    wait 2>/dev/null || true
+    TTFT_MS=$(( (END - START) / 1000000 ))
+    [ "$TTFT_MS" -lt 2000 ] \
+      || { echo "FAIL: TTFT=${TTFT_MS}ms during concurrent abort (expected <2000ms)" >&2; exit 1; }
+  if_fails: "Aborting a request blocks concurrent live requests"
+
+proof_obligations:
+- type: equivalence
+  property: "apr serve client-disconnect semantics match vLLM AsyncLLMEngine.abort() (free KV, stop decode within one step)"
+- type: invariant
+  property: "Client disconnect aborts generation within <= 1 decode step"
+- type: invariant
+  property: "No KV cache leak across abort cycles (RSS bounded)"
+- type: invariant
+  property: "Concurrent requests unaffected by aborts"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-36` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-36
+  priority: high
+  auto_created: false

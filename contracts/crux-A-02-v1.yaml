@@ -1,0 +1,144 @@
+# CRUX-A-02 — Pull HF repo by hf://org/name
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-02
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: huggingface
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    Pull HF repo by hf://org/name. Root-cause workflow extracted from huggingface UX — see master
+    subspec §5.A and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/transformers — Trainer
+  - docs.python.org — packaging, signatures, supply chain
+equations:
+  url_parsing:
+    formula: |
+      parse_hf_url("hf://{org}/{name}[@{rev}]") ==
+        HfRepoRef { org, name, revision: rev.unwrap_or("main") }
+      Equivalent to huggingface_hub.snapshot_download(repo_id=f"{org}/{name}", revision=rev).
+      Ref: https://huggingface.co/docs/huggingface_hub/main/en/package_reference/file_download
+    domain: hf://org/name[@rev] URL string
+    codomain: (org, name, revision) tuple
+    invariants:
+    - "org and name MUST be non-empty; revision defaults to 'main'"
+    - "apr pull hf://X/Y and hf CLI 'huggingface-cli download X/Y' resolve to the same repo_id"
+
+  manifest_completeness:
+    formula: |
+      local_files(apr pull hf://X/Y) ⊇
+        { f : f ∈ HF_API.repo_files(X/Y) ∧ f.size <= max_file_size_bytes }
+    domain: HuggingFace repo tree
+    codomain: local cache directory
+    invariants:
+    - "Every non-LFS and LFS file listed by /api/models/{repo}/tree/{rev} is downloaded"
+    - "sha256(local_file) == sha256 reported by HF API for each file"
+
+  sha256_parity:
+    formula: |
+      ∀ f ∈ downloaded_files:
+        sha256(f.bytes) == HF_API.file_metadata(repo, f.path).sha256
+      Ref: https://huggingface.co/docs/hub/api#get-apimodelsrepo_idtreerevisionpath
+    domain: downloaded file bytes
+    codomain: bool
+    invariants:
+    - "No file may be truncated, corrupted, or modified relative to HF manifest"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-02-001
+  rule: URL parsing parity
+  prediction: "apr pull hf://org/name resolves the same repo_id as huggingface-cli download"
+  test: |
+    REPO="hf-internal-testing/tiny-random-gpt2"
+    APR_DIR=$(mktemp -d)
+    HF_DIR=$(mktemp -d)
+    apr pull "hf://${REPO}" -o "$APR_DIR" >/dev/null
+    uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import snapshot_download
+    snapshot_download('${REPO}', local_dir='${HF_DIR}')
+    "
+    # Compare file sets
+    (cd "$APR_DIR" && find . -type f | sort) > /tmp/apr.list
+    (cd "$HF_DIR" && find . -type f | sort) > /tmp/hf.list
+    diff /tmp/apr.list /tmp/hf.list
+  if_fails: "apr pull file set diverges from huggingface_hub.snapshot_download"
+
+- id: FALSIFY-CRUX-A-02-002
+  rule: sha256 parity with HF manifest
+  prediction: "sha256(local file) == HF API blob sha256 for every downloaded file"
+  test: |
+    REPO="hf-internal-testing/tiny-random-gpt2"
+    DIR=$(mktemp -d)
+    apr pull "hf://${REPO}" -o "$DIR" >/dev/null
+    uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import HfApi
+    import hashlib, os, sys
+    api = HfApi()
+    info = api.repo_info('${REPO}', files_metadata=True)
+    bad = 0
+    for s in info.siblings:
+        p = os.path.join('${DIR}', s.rfilename)
+        if not os.path.exists(p) or s.lfs is None: continue
+        h = hashlib.sha256(open(p,'rb').read()).hexdigest()
+        if h != s.lfs.sha256:
+            print(f'MISMATCH {s.rfilename}: {h} vs {s.lfs.sha256}'); bad += 1
+    sys.exit(1 if bad else 0)
+    "
+  if_fails: "sha256 mismatch between local file and HF manifest entry"
+
+- id: FALSIFY-CRUX-A-02-003
+  rule: revision pin honored
+  prediction: "hf://org/name@{rev} downloads the commit {rev}, not main"
+  test: |
+    REPO="hf-internal-testing/tiny-random-gpt2"
+    REV=$(uv run --with 'huggingface_hub' python -c "
+    from huggingface_hub import HfApi
+    print(HfApi().list_repo_commits('${REPO}')[-1].commit_id)")
+    DIR=$(mktemp -d)
+    apr pull "hf://${REPO}@${REV}" -o "$DIR" >/dev/null
+    # HF stores commit SHA in cache metadata — assert present
+    grep -r "$REV" "$DIR/.huggingface" >/dev/null || \
+      grep -r "$REV" "$DIR" >/dev/null
+  if_fails: "revision pin not honored; downloaded HEAD instead of @rev"
+
+proof_obligations:
+- type: equivalence
+  property: "apr pull hf://X/Y matches huggingface_hub.snapshot_download('X/Y') file set and bytes"
+  competitor_function: "huggingface_hub.snapshot_download"
+  reference: "https://huggingface.co/docs/huggingface_hub/main/en/package_reference/file_download"
+- type: invariant
+  property: "URL parser: hf://org/name[@rev] → (org, name, rev || 'main')"
+- type: invariant
+  property: "sha256(local) == HF API sha256 for every file in manifest"
+- type: invariant
+  property: "revision pin @{sha} downloads that exact commit, not HEAD"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-02` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-02
+  priority: critical
+  auto_created: false

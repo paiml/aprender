@@ -1,0 +1,106 @@
+# CRUX-F-19 — apr explain token selection
+
+metadata:
+  id: CRUX-F-19
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: llama_cpp
+  demand_score: 3
+  intake_status: missing
+  description: >
+    For each sampled token, dump the full candidate list with pre/post-sampler
+    probabilities and the sampler chain that fired. Canonical: llama.cpp
+    `--logit-bias`, `--logprobs N`, `llama-cli -lv` verbose sampling; HF
+    `generate(..., output_scores=True, return_dict_in_generate=True)`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  explain_token:
+    formula: |
+      for step s = 0..N-1:
+        logits_s = forward(prefix_s)
+        scored_s = softmax(logits_s / temperature)
+        after_top_k = apply_top_k(scored_s, k)
+        after_top_p = apply_top_p(after_top_k, p)
+        after_temp  = apply_temp(after_top_p, T)  # canonical HF chain order
+        sampled_s   = multinomial(after_temp)
+      dump (step, token_id, token_str, pre_prob, post_prob, rank)
+    domain: "(model, prompt: str, top_k: u32, top_p: f32, temp: f32, seed: u64)"
+    codomain: "JSONL with one record per sampled token + logprobs top-K alternatives"
+    invariants:
+    - "sum of post-sampler probs across candidates ≈ 1.0 (±1e-5)"
+    - "sampled token is always present in the top-K output with rank > 0"
+    - "sum of top_k probabilities before temp is ≤ 1.0 (probs, not logits)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-19-001
+  rule: post-sampler probs normalize
+  prediction: "each step's probs sum to 1.0 ± 1e-5"
+  test: |
+    set -euo pipefail
+    apr explain tests/fixtures/tinyllama-hf --prompt "The capital is" \
+      --max-tokens 3 --top-k 10 --format jsonl > /tmp/ex.jsonl
+    python3 - <<'PY'
+    import json
+    for line in open("/tmp/ex.jsonl"):
+      r = json.loads(line)
+      total = sum(c["post_prob"] for c in r["candidates"])
+      assert abs(total - 1.0) < 1e-5, (r["step"], total)
+    PY
+  if_fails: rule 'post-sampler probs normalize' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-19-002
+  rule: sampled token always present in candidate list
+  prediction: "for each step, sampled_token in {c.token for c in candidates}"
+  test: |
+    set -euo pipefail
+    python3 - <<'PY'
+    import json
+    for line in open("/tmp/ex.jsonl"):
+      r = json.loads(line)
+      ids = {c["token_id"] for c in r["candidates"]}
+      assert r["sampled_id"] in ids, r
+    PY
+  if_fails: rule 'sampled token always present in candidate list' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-19-003
+  rule: temp=0 always picks rank-0 candidate
+  prediction: "--temp 0 --top-k 1 → sampled == argmax(logits)"
+  test: |
+    set -euo pipefail
+    apr explain tests/fixtures/tinyllama-hf --prompt hi --max-tokens 3 \
+      --temp 0 --top-k 1 --format jsonl > /tmp/g.jsonl
+    python3 - <<'PY'
+    import json
+    for line in open("/tmp/g.jsonl"):
+      r = json.loads(line)
+      top = max(r["candidates"], key=lambda c: c["pre_prob"])
+      assert r["sampled_id"] == top["token_id"], r
+    PY
+
+  if_fails: rule 'temp=0 always picks rank-0 candidate' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr explain output matches HF `generate(output_scores=True)` token probabilities within 1e-5"
+- type: invariant
+  property: "post-sampler probs sum to 1.0"
+- type: invariant
+  property: "sampled token present in emitted candidate list"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-f-19
+  priority: medium
+  auto_created: true

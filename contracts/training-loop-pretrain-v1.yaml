@@ -1,0 +1,576 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-TRAIN-PRETRAIN
+# Pretraining loop contract for SHIP-TWO-001 MODEL-2 (albor sovereign).
+# ─────────────────────────────────────────────────────────────
+# Discharges AC-SHIP2-003 (pretraining loop reaches target loss) and
+# AC-SHIP2-011 (seed reproducibility of first 100 steps). Crucially,
+# this contract encodes the MODEL-1 v2 QLoRA divergence lesson
+# (2026-04-17) as a first-class compile-time / runtime gate: if
+# val_loss at any epoch boundary exceeds 2× the previous epoch's
+# val_loss, the run ABORTS. No silent divergence. No epoch-0-only
+# checkpoints that pass Tensor Contract but fail Golden Output.
+#
+# Historical root cause (MODEL-1 v2, memory/project_ship_two_001_
+# model1_qlora_divergence.md): train_loss=15.41, val_loss=31.99,
+# PPL≈1e6, only epoch-0 completed, but the pipeline kept going
+# because there was no non-divergence gate. That is the defect
+# this contract eliminates.
+#
+# Peer:   contracts/model-families/llama-370m-sovereign-v1.yaml
+# Peer:   contracts/tokenizer-bpe-v1.yaml
+# Peer:   contracts/checkpoint-apr-native-v1.yaml          (sibling NEW)
+# Peer:   contracts/dataset-thestack-python-v1.yaml        (sibling NEW)
+# Peer:   contracts/distributed-training-v1.yaml
+# Peer:   contracts/adamw-kernel-v1.yaml
+#
+# References:
+#   - docs/specifications/aprender-train/ship-two-models-spec.md §5
+#     (AC-SHIP2-003, FALSIFY-SHIP-013, FALSIFY-SHIP-021)
+#   - Loshchilov & Hutter (2019). Decoupled Weight Decay
+#     Regularization. arXiv:1711.05101 (AdamW)
+#   - Radford et al. (2018/2019). GPT-1/GPT-2 pretraining
+#     methodology — CE loss, wall-clock budgets, val splits
+#   - memory/project_ship_two_001_model1_qlora_divergence.md
+#     (motivation for INV-TRAIN-005 / GATE-TRAIN-005)
+# ─────────────────────────────────────────────────────────────
+
+contract_id: C-TRAIN-PRETRAIN
+version: 1.4.0
+status: ACTIVE
+
+metadata:
+  version: "1.4.0"
+  created: "2026-04-18"
+  updated: "2026-04-20"
+  changelog:
+    - "1.1.0 (2026-04-19): GATE-TRAIN-006 / INV-TRAIN-006 discharged via
+       falsify_ship_021_* Rust tests; seed-plumbing race fixed by
+       lock_init_seed mutex in transformer/init.rs; status PROPOSED → ACTIVE"
+    - "1.2.0 (2026-04-20): INV-TRAIN-005 / GATE-TRAIN-005 epoch-zero cap
+       becomes regime-dependent — `finetune` keeps the MODEL-1 literal
+       10.0, `from_scratch` uses 2.0 × ln(vocab_size). Motivation: task
+       #119 smoke run tripped the guard because uniform-random baseline
+       for vocab=50257 is ln(50257) ≈ 10.82, already over a hardcoded
+       10.0. The doubling rule at N ≥ 1 is unchanged across regimes.
+       Falsifier FALSIFY-SHIP-021B covers the from_scratch regime."
+    - "1.3.0 (2026-04-20): HP defaults + --mode flag. Adds
+       hyperparameter_defaults table (finetune vs from_scratch) and
+       INV-TRAIN-009 / GATE-TRAIN-009: `apr pretrain --mode={finetune|
+       from-scratch}` atomically flips (regime, lr_max, warmup_steps,
+       target_val_loss) together so operators can't ship a run with
+       MODEL-1 finetune LR on a from-scratch regime. Explicit CLI
+       overrides (--lr, --warmup-steps, --target-val-loss) always win
+       over mode defaults. Motivation: task #119 used MODEL-1 finetune
+       defaults (lr=5e-5, target=2.2) for a cold-start run — wrong LR
+       band AND unreachable target. INV-TRAIN-005 is unchanged."
+    - "1.4.0 (2026-04-20): CLI default-routing gate. Adds
+       INV-TRAIN-010 / GATE-TRAIN-010 / FALSIFY-TRAIN-010 binding the
+       `apr pretrain` clap surface to its two drive paths:
+       `apr pretrain` (no --synthetic) MUST route to drive_real;
+       `apr pretrain --synthetic` MUST route to drive_synthetic.
+       Motivation: task #105's extended_commands.rs shipped
+       `#[arg(long, default_value = \"true\")] synthetic: bool` and
+       no `--synthetic=false` companion, so EVERY `apr pretrain`
+       invocation silently routed to the scripted-loss synthetic
+       path. Tasks #119 / #124 / #125 captured val_loss values that
+       exactly match the synthetic formula `target × 1.8` linear-
+       decayed — their 'real-compute' claims were actually synthetic.
+       Fix: `synthetic` becomes an explicit clap::ArgAction::SetTrue
+       flag (absent = false = real, present = true = synthetic)."
+  author: PAIML Engineering
+  description: >
+    Pretraining loop contract: required per-step metrics, required
+    per-epoch artifacts, convergence gates, and — most importantly —
+    an explicit NON-DIVERGENCE gate that ABORTS training if val_loss
+    doubles between epochs. Encodes the MODEL-1 v2 QLoRA divergence
+    lesson as a machine-checked invariant.
+  registry: true
+  kind: training-loop
+  peer_contracts:
+    - contracts/model-families/llama-370m-sovereign-v1.yaml
+    - contracts/tokenizer-bpe-v1.yaml
+    - contracts/distributed-training-v1.yaml
+    - contracts/adamw-kernel-v1.yaml
+  references:
+    - "docs/specifications/aprender-train/ship-two-models-spec.md §5"
+    - "Loshchilov & Hutter (2019) — AdamW (arXiv:1711.05101)"
+    - "memory/project_ship_two_001_model1_qlora_divergence.md"
+
+summary: >
+  Pretraining loop contract: required per-step metrics, required
+  per-epoch artifacts, convergence gates, and — most importantly —
+  an explicit NON-DIVERGENCE gate that ABORTS training if val_loss
+  doubles between epochs. Encodes the MODEL-1 v2 QLoRA divergence
+  lesson as a machine-checked invariant.
+
+motivation: >
+  MODEL-1 v2 (2026-04-17): the distilled checkpoint emitted garbage
+  ("ylkoylko…"), passed Tensor Contract, failed Golden Output. Root
+  cause: train_loss=15.41, val_loss=31.99 at epoch 0, no subsequent
+  epochs, no divergence guard. Only a post-hoc forensic read of loss
+  logs revealed the disaster. Any future run MUST abort the moment
+  val_loss exceeds 2× its prior value — no human-in-the-loop needed,
+  no ambiguity, no "let's see if it recovers."
+
+# ─────────────────────────────────────────────────────────────
+# Required per-step metrics (every optimizer step emits ALL of these)
+# ─────────────────────────────────────────────────────────────
+
+per_step_metrics:
+  required:
+    - name: step
+      type: u64
+      description: "Global step counter, monotonically increasing from 0."
+    - name: train_loss
+      type: f32
+      description: "Cross-entropy loss on the training micro-batch."
+    - name: grad_norm
+      type: f32
+      description: "Global L2 norm of gradients BEFORE clipping."
+    - name: lr
+      type: f32
+      description: "Current learning rate after scheduler update."
+    - name: tokens_per_sec
+      type: f32
+      description: "Throughput over the last step window (token count / wall seconds)."
+    - name: gpu_util_pct
+      type: f32
+      description: "GPU utilization percent (0.0..=100.0) sampled during the step."
+  sampling_period_steps: 1  # metrics emitted every step, not every-N
+
+# ─────────────────────────────────────────────────────────────
+# Required per-epoch artifacts
+# ─────────────────────────────────────────────────────────────
+
+per_epoch_artifacts:
+  checkpoint:
+    format: apr          # native APR (not PyTorch — see AC-SHIP2-005)
+    path_template: "{run_dir}/ckpt/epoch-{epoch:03d}.apr"
+  metadata_json:
+    path_template: "{run_dir}/ckpt/epoch-{epoch:03d}.metadata.json"
+    required_fields:
+      - epoch                    # integer, >= 0
+      - train_loss               # final train CE for the epoch (mean over last 100 steps)
+      - val_loss                 # held-out validation CE
+      - train_ppl                # exp(train_loss)
+      - val_ppl                  # exp(val_loss)
+      - optimizer_state_sha      # sha256 of optimizer state dict (for resumption audit)
+      - wall_seconds             # epoch wall time
+      - tokens_seen              # cumulative tokens across all completed steps
+      - grad_norm_max            # max grad norm observed in the epoch
+
+# ─────────────────────────────────────────────────────────────
+# Convergence policy
+# ─────────────────────────────────────────────────────────────
+
+convergence:
+  target_val_loss: 2.2                  # AC-SHIP2-003 / FALSIFY-SHIP-013 gate
+  require_epoch_over_epoch_improvement: true
+  patience_epochs: 2                    # allow 2 consecutive non-improvements
+  early_stop_on_patience_exhausted: true
+  min_epochs_before_early_stop: 3       # never early-stop before epoch 3
+
+# ─────────────────────────────────────────────────────────────
+# NON-NEGOTIABLE divergence gate (MODEL-1 v2 lesson)
+# ─────────────────────────────────────────────────────────────
+
+non_divergence:
+  rule: |
+    At every epoch boundary N ≥ 1:
+      if val_loss[N] > 2.0 * val_loss[N-1]:
+        abort_training(reason = "DIVERGENCE")
+        status = FAIL
+        exit_code = nonzero
+
+    Special case for N == 0 (regime-dependent, v1.2.0):
+      FINETUNE regime (base weights already pretrained):
+        if val_loss[0] > 10.0 OR val_loss[0] is NaN/Inf:
+          abort immediately after epoch 0
+      FROM_SCRATCH regime (random init, vocab-dependent baseline):
+        if val_loss[0] > 2.0 * ln(vocab_size) OR val_loss[0] is NaN/Inf:
+          abort immediately after epoch 0
+
+    Rationale for the regime split: uniform-random baseline for a
+    vocab_size-V next-token predictor is ln(V). For V=50257 that is
+    10.82 — already over the MODEL-1 literal 10.0 before any training.
+    A finetune start should be much lower than ln(V) (base weights
+    already learned token distribution); a from-scratch start should
+    be within 2× ln(V) for the init to be considered usable. The 2×
+    safety margin catches truly broken inits (val_loss[0] > 2·ln(V)
+    means the model is worse than random by a log-factor).
+
+    The check is MANDATORY. The regime is configurable (operator
+    picks finetune vs from_scratch) but the thresholds for each
+    regime are not. There is NO "warning" mode. Exceeding the
+    chosen-regime threshold is always fatal.
+
+    Historical context: MODEL-1 v2 was a FINETUNE run (base weights
+    were Qwen2.5-Coder-7B-Instruct, already pretrained) and crossed
+    val_loss=31.99 — 3× the finetune threshold. The regime split
+    here does not weaken the MODEL-1 lesson: a finetune with
+    val_loss[0] > 10.0 still aborts. It only permits the from-scratch
+    case (MODEL-2 370M) to start above 10.0 without false abort.
+
+# ─────────────────────────────────────────────────────────────
+# Hyperparameter defaults per regime (v1.3.0)
+# Consumed by: crates/apr-cli/src/commands/pretrain.rs::mode_defaults
+# ─────────────────────────────────────────────────────────────
+
+hyperparameter_defaults:
+  finetune:
+    regime: finetune
+    lr_max: 5.0e-5
+    warmup_steps: 100
+    target_val_loss: 2.2
+    rationale: >
+      MODEL-1 v2 remedy (task #86): post-divergence rerun
+      hyperparameters that converged the distilled 7B Qwen lane.
+  from_scratch:
+    regime: from_scratch
+    lr_max: 3.0e-4
+    warmup_steps: 1000
+    target_val_loss: 3.0
+    rationale: >
+      Standard 370M cold-start band (GPT-2/Llama-2 scaling) — linear
+      warmup over 1000 steps, cosine decay, realistic Python-code CE
+      floor around 3.0 for ~370M params on CSN-Python-2048.
+
+# ─────────────────────────────────────────────────────────────
+# Invariants — machine-checkable properties of the training loop
+# ─────────────────────────────────────────────────────────────
+
+invariants:
+
+  - id: INV-TRAIN-001
+    description: >
+      Every optimizer step emits a log line with ALL 6 required
+      per-step metrics (step, train_loss, grad_norm, lr,
+      tokens_per_sec, gpu_util_pct). No field may be null or
+      absent.
+    falsifier: >
+      Parse the training log JSONL; for each record, assert all
+      6 required keys are present and none is null/NaN. Any missing
+      field on any step fails.
+
+  - id: INV-TRAIN-002
+    description: >
+      Every completed epoch produces both a checkpoint file at
+      {run_dir}/ckpt/epoch-{N:03d}.apr AND a sibling metadata.json
+      with all 9 required fields populated.
+    falsifier: >
+      For every completed epoch N in the run log, assert both files
+      exist AND metadata.json parses AND all 9 required_fields keys
+      are present. Missing either file or key fails.
+
+  - id: INV-TRAIN-003
+    description: >
+      optimizer_state_sha in metadata.json is the sha256 of the
+      on-disk optimizer state at checkpoint time. Used to verify
+      resumption audit trails.
+    falsifier: >
+      Recompute sha256 over the optimizer state at checkpoint path;
+      compare to metadata.json value. Mismatch fails.
+
+  - id: INV-TRAIN-004
+    description: >
+      Convergence: for epochs 2..=K, val_loss[N] ≤ val_loss[N-1]
+      OR the patience counter increments. If patience_epochs is
+      exceeded without a new best, training early-stops cleanly
+      (exit 0, status = EARLY_STOP).
+    falsifier: >
+      Walk the epoch-metadata sequence; track best-so-far val_loss
+      and patience counter. Assert either: (a) a new best was set
+      within patience, or (b) early-stop status recorded at the
+      correct epoch. Deviation fails.
+
+  - id: INV-TRAIN-005
+    description: >
+      NON-DIVERGENCE (the MODEL-1 lesson, regime-aware in v1.2.0):
+      for every epoch boundary N ≥ 1, val_loss[N] ≤ 2.0 × val_loss[N-1].
+      For N == 0, val_loss[0] is finite AND ≤ regime-dependent cap:
+        - finetune    regime: 10.0 (MODEL-1 literal)
+        - from_scratch regime: 2.0 × ln(vocab_size)
+      Any violation triggers an immediate abort with exit status =
+      DIVERGENCE.
+    falsifier: >
+      Two harnesses (regime coverage):
+      (a) finetune regime: inject `[3.5, 7.1]` as val-loss trace,
+          assert `check_non_divergence(1, trace, Finetune)` returns
+          Err(Divergence). Inject `[11.0]`, assert epoch-0 abort.
+      (b) from_scratch regime: for vocab_size=50257 (ln ≈ 10.82,
+          2·ln ≈ 21.64), assert `check_non_divergence(0, [18.0],
+          FromScratch{vocab_size: 50257})` returns Ok (below cap)
+          but `check_non_divergence(0, [25.0], FromScratch{...})`
+          returns Err. Same doubling rule at N ≥ 1 in both regimes.
+
+  - id: INV-TRAIN-006
+    description: >
+      Reproducibility: given a fixed seed, two runs produce
+      BYTE-IDENTICAL per-step metrics for the first 100 steps
+      (train_loss to 1e-6, grad_norm to 1e-6, lr exact).
+    falsifier: >
+      Spec AC-SHIP2-011 / FALSIFY-SHIP-021. Run twice with seed
+      fixed; diff per-step JSONL; assert abs diff ≤ 1e-6 for floats,
+      exact for integers, over 0..=99. Any larger delta fails.
+    harness:
+      - name: falsify_ship_021_seed_0_100_step_reproducibility
+        kind: rust-test
+        path: crates/aprender-train/src/train/transformer_trainer/tests.rs
+        asserts:
+          - "loss_a[k] and loss_b[k] both finite for k in 0..100"
+          - "|loss_a[k] - loss_b[k]| ≤ 1e-6 for all k in 0..100"
+          - "trainer_a.optimizer_state_sha256() == trainer_b.optimizer_state_sha256() after 100 steps"
+      - name: falsify_ship_021_different_seeds_do_diverge
+        kind: rust-test
+        path: crates/aprender-train/src/train/transformer_trainer/tests.rs
+        asserts:
+          - "seed=0 and seed=1 trainers produce |loss_a[k] - loss_b[k]| > 1e-4 for at least one k in 0..10 (counter-test: seed plumbing not a no-op)"
+
+  - id: INV-TRAIN-007
+    description: >
+      No NaN/Inf in train_loss or grad_norm at ANY step. NaN/Inf
+      is treated identically to divergence — abort with exit status
+      = NUMERICAL_INSTABILITY.
+    falsifier: >
+      Per-step guard: assert train_loss.is_finite() &&
+      grad_norm.is_finite(). First non-finite value aborts. Harness
+      test: inject a synthetic NaN; assert abort occurs within 1 step.
+
+  - id: INV-TRAIN-008
+    description: >
+      tokens_per_sec and gpu_util_pct are non-negative and finite
+      on every step. Enables throughput regressions to be detected
+      by downstream analysis without NaN poisoning.
+    falsifier: >
+      For each step record, assert tokens_per_sec ≥ 0 && finite AND
+      0 ≤ gpu_util_pct ≤ 100.
+
+  - id: INV-TRAIN-009
+    description: >
+      HP defaults are ATOMIC per regime. When an operator invokes
+      `apr pretrain --mode={finetune|from-scratch}` without also
+      passing --lr / --warmup-steps / --target-val-loss, the CLI
+      MUST apply the full 4-tuple (regime, lr_max, warmup_steps,
+      target_val_loss) from the regime's default row:
+        finetune:     (Finetune,    lr_max=5e-5, warmup=100,  target=2.2)
+        from_scratch: (FromScratch, lr_max=3e-4, warmup=1000, target=3.0)
+      If the operator DOES pass an explicit override, that override
+      wins unchanged (the regime still flips). No silent drift
+      between regime and HPs: the CLI cannot construct a
+      PretrainConfig where regime is FromScratch but lr_max/warmup/
+      target came from the finetune default row.
+    falsifier: >
+      CLI-level harness (apr-cli pretrain unit tests):
+      (a) `--mode from-scratch` with no other HP flags → resolved
+          PretrainConfig has regime=FromScratch{vocab_size}, lr_max≈3e-4,
+          warmup_steps=1000, target_val_loss≈3.0.
+      (b) `--mode from-scratch --lr 1e-4` → regime=FromScratch, lr_max=1e-4,
+          warmup_steps=1000, target_val_loss≈3.0 (explicit --lr wins).
+      (c) `--mode finetune` (or no --mode) → regime=Finetune, lr_max=5e-5,
+          warmup_steps=100, target_val_loss=2.2.
+
+  - id: INV-TRAIN-010
+    description: >
+      CLI default routing MUST reach drive_real. `apr pretrain`
+      without the `--synthetic` flag MUST parse to a Pretrain
+      command whose `synthetic` field is `false`, which routes
+      execution through drive_real (real 370M forward + backward +
+      AdamW over the dataset shards). `apr pretrain --synthetic`
+      MUST parse to `synthetic=true`, which routes through
+      drive_synthetic (scripted-loss sequence, no compute). No
+      intermediate CLI shape may silently coerce `--synthetic`
+      absent into `synthetic=true` — this was the defect that
+      caused tasks #119 / #124 / #125 to capture scripted-loss
+      values and mis-label them "real compute".
+    falsifier: >
+      CLI-parse-level harness: build an `apr pretrain --dataset X
+      --tokenizer Y --run-dir Z` argv, parse via `Cli::parse_from`,
+      destructure the resulting `ExtendedCommands::Pretrain`
+      variant, and assert `synthetic == false`. Then parse the
+      same argv with `--synthetic` appended and assert
+      `synthetic == true`. Any clap default that silently flips
+      the absent case to `true` fails the first assert.
+
+# ─────────────────────────────────────────────────────────────
+# Acceptance gates (bind to AC-SHIP2-* in the spec)
+# ─────────────────────────────────────────────────────────────
+
+gates:
+
+  - id: GATE-TRAIN-001
+    rule: >
+      All 6 per-step metrics are present on every step (INV-TRAIN-001).
+    evidence_required: >
+      `apr inspect --train-log {run_dir}/train.jsonl` exits 0 and
+      reports missing_fields: 0 over N steps (N > 0).
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-002
+    rule: >
+      Every completed epoch has both checkpoint and metadata.json
+      with all 9 required fields (INV-TRAIN-002, INV-TRAIN-003).
+    evidence_required: >
+      `apr qa --epoch-artifacts {run_dir}` exits 0 with a report
+      showing epochs_completed == checkpoints_found ==
+      metadata_files_found AND required_field_coverage == 100%.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-003
+    rule: >
+      Final val_loss ≤ 2.2 (AC-SHIP2-003 target / FALSIFY-SHIP-013).
+    evidence_required: >
+      `apr inspect --final-metrics {run_dir}` returns
+      val_loss ≤ 2.2. Above threshold fails the ship gate.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    falsification_id: FALSIFY-SHIP-013
+
+  - id: GATE-TRAIN-004
+    rule: >
+      Epoch-over-epoch val_loss improvement OR clean early-stop
+      within patience (INV-TRAIN-004).
+    evidence_required: >
+      Walk epoch metadata sequence; assert either monotone decrease
+      in val_loss OR early-stop event at expected epoch with exit 0.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-005
+    rule: >
+      NON-DIVERGENCE (regime-aware in v1.2.0): val_loss[N] ≤ 2.0 ×
+      val_loss[N-1] at every epoch boundary N ≥ 1; val_loss[0] finite
+      AND ≤ regime-dependent cap (finetune: 10.0; from_scratch: 2·ln
+      vocab_size). INV-TRAIN-005. MODEL-1 v2 ship-blocker retained.
+    evidence_required: >
+      (1) Live: the training CLI exits nonzero with status =
+      DIVERGENCE the moment the threshold is crossed — proven by a
+      harness test that synthesizes a doubling val_loss trace AND
+      by regime-specific epoch-0 tests (finetune over 10.0 aborts,
+      from_scratch over 2·ln(vocab_size) aborts but within cap passes).
+      (2) Post-hoc: `apr qa --check-non-divergence {run_dir}` over
+      the real training run exits 0 for a shipped checkpoint.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    ship_blocking: true
+    motivation: "memory/project_ship_two_001_model1_qlora_divergence.md"
+    evidence_discharged_by:
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_aborts_on_doubling_val_loss"
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_aborts_on_epoch_zero_blowup"
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_from_scratch_permits_near_random_baseline"
+      - "crates/aprender-train/src/train/pretrain.rs::tests::gate_train_005_from_scratch_aborts_above_2_ln_vocab"
+
+  - id: GATE-TRAIN-006
+    rule: >
+      Seed-fixed reproducibility across two runs for the first
+      100 steps (INV-TRAIN-006).
+    evidence_required: >
+      CI harness runs entrenar twice with seed=42, diffs steps 0..99
+      of train.jsonl, asserts abs(delta) ≤ 1e-6 for floats, exact
+      equality for integer fields.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/train/transformer_trainer/tests.rs::falsify_ship_021_seed_0_100_step_reproducibility"
+      - "crates/aprender-train/src/train/transformer_trainer/tests.rs::falsify_ship_021_different_seeds_do_diverge"
+    verdict: pass
+    binds_to: AC-SHIP2-011
+    falsification_id: FALSIFY-SHIP-021
+
+  - id: GATE-TRAIN-007
+    rule: >
+      No NaN/Inf in loss or gradient norm (INV-TRAIN-007).
+    evidence_required: >
+      `apr qa --numerical-stability {run_dir}/train.jsonl` exits 0
+      with nan_count: 0, inf_count: 0.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-008
+    rule: >
+      Throughput metrics non-negative and finite on every step
+      (INV-TRAIN-008).
+    evidence_required: >
+      Same train.jsonl QA report; assert no record has
+      tokens_per_sec < 0 or gpu_util_pct outside [0, 100].
+    verdict: pass
+    binds_to: AC-SHIP2-003
+
+  - id: GATE-TRAIN-009
+    rule: >
+      `apr pretrain --mode={finetune|from-scratch}` atomically flips
+      (regime, lr_max, warmup_steps, target_val_loss) per the
+      hyperparameter_defaults table. Explicit CLI overrides win.
+      INV-TRAIN-009.
+    evidence_required: >
+      apr-cli unit tests call the flag-resolution helper with three
+      shapes — (a) from-scratch defaults, (b) from-scratch with --lr
+      override, (c) finetune defaults — and assert the resolved
+      PretrainConfig matches the contract's HP rows byte-for-byte.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    evidence_discharged_by:
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::mode_from_scratch_applies_all_four_defaults"
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::mode_from_scratch_honors_explicit_lr_override"
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::mode_finetune_is_default_and_matches_contract"
+
+  - id: GATE-TRAIN-010
+    rule: >
+      `apr pretrain` (no --synthetic flag) routes execution through
+      drive_real (real 370M forward + backward + AdamW on dataset
+      shards). `apr pretrain --synthetic` routes through
+      drive_synthetic. INV-TRAIN-010. Ship-blocking: without this
+      gate, every real-compute claim is falsifiable as scripted-
+      loss output.
+    evidence_required: >
+      apr-cli parse-level harness: build argv for
+      `apr pretrain --dataset … --tokenizer … --run-dir …`, parse
+      with `Cli::parse_from`, destructure the Pretrain variant,
+      and assert `synthetic == false`. Add `--synthetic` to the
+      argv, re-parse, assert `synthetic == true`.
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    ship_blocking: true
+    motivation: >
+      task #105 shipped `default_value = "true"` on the synthetic
+      flag with no `--synthetic=false` companion, so every
+      `apr pretrain` ran the scripted-loss path. The reported
+      val_loss values (e.g. 18 at target=10, 4.2 at target=3)
+      match the synthetic formula target × 1.8 linear-decayed,
+      proving no real compute happened.
+    evidence_discharged_by:
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::cli_pretrain_defaults_to_real_compute"
+      - "crates/apr-cli/src/commands/pretrain.rs::tests::cli_pretrain_synthetic_flag_routes_to_synthetic"
+
+# ─────────────────────────────────────────────────────────────
+# Failure modes (documented so future operators can recognize them)
+# ─────────────────────────────────────────────────────────────
+
+failure_modes:
+  - id: FM-TRAIN-DIVERGENCE
+    description: >
+      val_loss doubles between epochs. This is what MODEL-1 v2 did
+      (val_loss 31.99 at epoch 0, no recovery). Abort signal:
+      exit status = DIVERGENCE. Operator remedy: reduce learning
+      rate by 10×, verify LoRA rank matches recipe, re-check
+      temperature (MODEL-1 v2 used temp=4.0 — too high).
+  - id: FM-TRAIN-NAN
+    description: >
+      train_loss or grad_norm becomes NaN/Inf. Abort signal:
+      exit status = NUMERICAL_INSTABILITY. Operator remedy: enable
+      gradient clipping at 1.0, lower lr, check for corrupted
+      inputs in the data pipeline.
+  - id: FM-TRAIN-PLATEAU
+    description: >
+      val_loss fails to improve within patience_epochs. Not a
+      failure of THIS contract (clean early-stop is spec behavior),
+      but is a SHIP failure if final val_loss > target_val_loss
+      (see GATE-TRAIN-003).
+
+references:
+  - "contracts/model-families/llama-370m-sovereign-v1.yaml"
+  - "contracts/tokenizer-bpe-v1.yaml"
+  - "contracts/distributed-training-v1.yaml"
+  - "contracts/adamw-kernel-v1.yaml"
+  - "docs/specifications/aprender-train/ship-two-models-spec.md §5 (AC-SHIP2-003, -011)"
+  - "memory/project_ship_two_001_model1_qlora_divergence.md"
+  - "Loshchilov & Hutter (2019) arXiv:1711.05101"

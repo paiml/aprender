@@ -1,0 +1,61 @@
+{
+  "timestamp_utc": "2026-04-17T16:08:41Z",
+  "manifest_path": "contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1.yaml",
+  "schema_path": "contracts/publish-manifest-v1.yaml",
+  "falsification_results": [
+    {
+      "id": "FALSIFY-PM-001",
+      "name": "manifest_schema_conforms",
+      "verdict": "PASS",
+      "top_level_missing": [],
+      "provenance_missing": [],
+      "method": "pyyaml schema check (apr validate-manifest NOT YET IMPLEMENTED)"
+    },
+    {
+      "id": "FALSIFY-PM-002",
+      "name": "sha256_matches_artifact",
+      "verdict": "PASS",
+      "declared_sha256": "0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666",
+      "computed_sha256": "0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666",
+      "declared_size_bytes": 8035635524,
+      "on_disk_size_bytes": 8035635524,
+      "method": "local sha256 of canonical artifact"
+    },
+    {
+      "id": "FALSIFY-PM-003",
+      "name": "url_resolves_with_matching_size",
+      "verdict": "DEFERRED",
+      "reason": "URL HEAD required; artifact not yet uploaded (blocked on EX-04)"
+    },
+    {
+      "id": "FALSIFY-PM-004",
+      "name": "spdx_identifiers_valid",
+      "verdict": "PASS",
+      "checked": {
+        "license": "Apache-2.0",
+        "provenance.parent_license": "Apache-2.0",
+        "provenance.data_license": "Apache-2.0"
+      },
+      "invalid": {},
+      "method": "local allowlist (apr validate-manifest --check-spdx NOT YET IMPLEMENTED)"
+    },
+    {
+      "id": "FALSIFY-PM-005",
+      "name": "recipe_sha256_matches_checked_in_file",
+      "verdict": "PASS",
+      "recipe_path": "contracts/model-families/qwen2.yaml",
+      "declared": "f098ac0813515b669389d4317fff442cf0812b18a181d446d170e182a3689d8b",
+      "computed": "f098ac0813515b669389d4317fff442cf0812b18a181d446d170e182a3689d8b"
+    },
+    {
+      "id": "FALSIFY-PM-006",
+      "name": "parent_chain_terminates",
+      "verdict": "PASS",
+      "method": "manual: parent=Qwen/Qwen2.5-Coder-7B-Instruct is documented public model (Apache-2.0, HuggingFace). Chain depth 1, terminates at public license.",
+      "parent": "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "parent_license": "Apache-2.0"
+    }
+  ],
+  "overall": "PASS",
+  "note": "AC-EX-004 passes the runnable subset; FALSIFY-PM-003 requires EX-04 upload. No ship until PM-003 PASS."
+}

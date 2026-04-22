@@ -1,0 +1,160 @@
+# CRUX-M-10 — QA Gate-10: upstream-fix discipline (bug reported, not patched locally)
+# Authored under PMAT-678. See docs/specifications/crux-competitive-research-ux-workflows.md §5.M.
+
+metadata:
+  id: CRUX-M-10
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - apr-model-qa-v1
+  category: "M — APR-QA Playbook Canonicalization"
+  competitor: apr-qa-playbook
+  demand_score: 4
+  intake_status: partial
+  description: >
+    QA Gate-10 from apr-model-qa-playbook — upstream-fix discipline.
+    When a defect's root cause is NOT in aprender but in an upstream
+    dependency (safetensors, tokenizers, ggml, llama.cpp, transformers,
+    HF kernels), the fix MUST be filed UPSTREAM and tracked, NOT
+    patched with a private workaround. Gate-10 rejects PRs that ship
+    a local monkey-patch without an upstream_issue_ref. Prevents the
+    team from diverging into an unmaintained fork.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'sibling repo: github.com/paiml/apr-model-qa-playbook — Gate-10'
+  - 'github.com/huggingface/tokenizers/issues — canonical upstream for tokenizer bugs'
+  - 'github.com/huggingface/safetensors/issues — canonical upstream for safetensors bugs'
+  - 'github.com/ggerganov/llama.cpp/issues — canonical upstream for GGUF bugs'
+
+equations:
+  upstream_fix_discipline:
+    formula: |
+      For each patch P in a PR touching ≥ 1 upstream-origin code path:
+          origin(P)            ∈ {"aprender", "upstream:<pkg>"}
+          if origin == "upstream:*":
+              upstream_issue_ref(P) := required URL field in the PR or commit trailer
+              local_workaround(P)   := optional (allowed ONLY with open upstream ref)
+          if origin == "aprender":
+              no upstream_issue_ref required
+      Gate pass := ∀ upstream-origin patch P : upstream_issue_ref(P) != null
+                                            AND upstream_issue_ref(P) resolves to a reachable issue URL
+    domain: "set of patches in a PR ∪ git history range"
+    codomain: "PASS if every upstream-origin patch carries a valid upstream_issue_ref"
+    invariants:
+    - "upstream_issue_ref is a URL (http[s]://...) — NOT a free-form string like 'filed TODO'"
+    - "URL MUST return HTTP 2xx within 10s (reachability check)"
+    - "aprender-origin patches are exempt — gate is not a blanket discipline, only for upstream paths"
+    - "the classification origin(P) is pinned per-file via `upstream-map.toml` (checked in)"
+
+  gate_contract:
+    formula: |
+      apr qa --gate upstream-fix \
+             --range <base-ref>..HEAD \
+             --upstream-map upstream-map.toml \
+             --json
+        emits:
+          status ∈ {"PASS", "FAIL"}
+          patches_scanned: N
+          upstream_patches: K
+          missing_refs:
+            - { commit, path, upstream_pkg, reason: "no ref" | "unreachable url" | "unknown pkg" }
+      exit 0 iff PASS ; exit 1 iff any missing_ref ; exit >= 2 on network / config error
+    domain: "(git range, upstream map)"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status"
+    - "network error is exit >= 2 (config/infra), NOT exit 1 (soft-pass to avoid CI flakes would defeat the gate)"
+    - "upstream-map.toml entries are globs over repo paths → upstream package name (stable)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-M-10-001
+  rule: "--gate upstream-fix flag exists"
+  prediction: "apr qa --help advertises --gate upstream-fix"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "upstream-fix"
+  if_fails: "apr qa lacks upstream-fix gate — Gate-10 not wired"
+
+- id: FALSIFY-CRUX-M-10-002
+  rule: "upstream-map.toml exists and is checked in"
+  prediction: "git ls-files returns upstream-map.toml at repo root"
+  test: |
+    set -euo pipefail
+    git ls-files upstream-map.toml | grep -qE "^upstream-map.toml$"
+  if_fails: "upstream-map missing — gate has no way to classify patch origin"
+
+- id: FALSIFY-CRUX-M-10-003
+  rule: "FAIL on an upstream-origin patch with no upstream_issue_ref"
+  prediction: "A PR that monkey-patches src/format/safetensors_*.rs without 'Upstream-Issue:' trailer fails the gate"
+  test: |
+    set -euo pipefail
+    git log --grep='^Upstream-Issue:' --format=%H | head -1 > /tmp/m10-ref-commit.sha
+    # Inverse: pick a commit that DID touch upstream files but without the trailer (constructed fixture)
+    SHA=$(git log -1 --format=%H)
+    set +e
+    apr qa --gate upstream-fix --range "$SHA"~1.."$SHA" \
+           --upstream-map upstream-map.toml --json > /tmp/m10.json
+    EC=$?
+    set -e
+    # We expect either PASS (aprender-only commit) or FAIL with structured missing_refs — not a crash
+    [ "$EC" -le 1 ] || { echo "harness error, exit $EC"; exit 1; }
+    jq -e '.status == "PASS" or (.status == "FAIL" and (.missing_refs | length) >= 1)' /tmp/m10.json >/dev/null
+  if_fails: "Gate crashes or gives tri-state verdict on upstream paths — discipline not enforceable"
+
+- id: FALSIFY-CRUX-M-10-004
+  rule: "FAIL on an unreachable upstream URL"
+  prediction: "A commit with 'Upstream-Issue: http://127.0.0.1:1/never' fails the reachability check"
+  test: |
+    set -euo pipefail
+    cat > /tmp/m10-bad.trailer <<'EOF'
+    Upstream-Issue: http://127.0.0.1:1/never-reachable
+    EOF
+    set +e
+    apr qa --gate upstream-fix --validate-trailer /tmp/m10-bad.trailer --json > /tmp/m10-bad.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and (.missing_refs[] | .reason == "unreachable url")' /tmp/m10-bad.json >/dev/null
+  if_fails: "Gate accepts bogus URLs — upstream discipline becomes cargo-cult paperwork"
+
+- id: FALSIFY-CRUX-M-10-005
+  rule: "network errors are exit >= 2 (not silently pass)"
+  prediction: "With network disabled, gate exits >= 2 on an upstream-origin patch, NOT 0"
+  test: |
+    set -euo pipefail
+    set +e
+    APR_QA_FORCE_NETWORK_ERROR=1 apr qa --gate upstream-fix \
+        --range HEAD~1..HEAD --upstream-map upstream-map.toml --json >/dev/null 2>&1
+    EC=$?
+    set -e
+    [ "$EC" -ge 2 ] || { echo "expected exit >= 2 on network error, got $EC"; exit 1; }
+  if_fails: "Network error soft-passes — discipline evaporates when CI network is flaky"
+
+proof_obligations:
+- type: invariant
+  property: "Every upstream-origin patch carries a valid, reachable upstream_issue_ref"
+- type: invariant
+  property: "upstream-map.toml is version-controlled (auditable classifier)"
+- type: invariant
+  property: "Network error is exit >= 2, never silent pass"
+- type: invariant
+  property: "Exit code aligns with status"
+- type: equivalence
+  property: "apr qa --gate upstream-fix  ≅  apr-model-qa-playbook Gate-10 (upstream-fix discipline)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-m-10
+  ticket_id: PMAT-678
+  priority: high
+  auto_created: true

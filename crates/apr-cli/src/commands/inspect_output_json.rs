@@ -101,38 +101,7 @@ fn flags_from_header(header: &HeaderData) -> FlagsInfo {
 }
 
 fn output_flags(header: &HeaderData) {
-    let mut flag_list = Vec::new();
-    if header.flags.is_lz4_compressed() {
-        flag_list.push("LZ4");
-    }
-    if header.flags.is_zstd_compressed() {
-        flag_list.push("ZSTD");
-    }
-    if header.flags.is_encrypted() {
-        flag_list.push("ENCRYPTED");
-    }
-    if header.flags.contains(AprV2Flags::SIGNED) {
-        flag_list.push("SIGNED");
-    }
-    if header.flags.is_sharded() {
-        flag_list.push("SHARDED");
-    }
-    if header.flags.is_quantized() {
-        flag_list.push("QUANTIZED");
-    }
-    if header.flags.contains(AprV2Flags::HAS_VOCAB) {
-        flag_list.push("HAS_VOCAB");
-    }
-    if header.flags.contains(AprV2Flags::HAS_FILTERBANK) {
-        flag_list.push("HAS_FILTERBANK");
-    }
-    if header.flags.contains(AprV2Flags::HAS_MODEL_CARD) {
-        flag_list.push("HAS_MODEL_CARD");
-    }
-    if header.flags.contains(AprV2Flags::STREAMING) {
-        flag_list.push("STREAMING");
-    }
-
+    let flag_list = collect_flag_labels(header);
     if flag_list.is_empty() {
         output::kv("Flags", "(none)");
     } else {
@@ -140,12 +109,31 @@ fn output_flags(header: &HeaderData) {
     }
 }
 
+/// Ordered list of (predicate, label) pairs. Order here is the display order.
+fn collect_flag_labels(header: &HeaderData) -> Vec<&'static str> {
+    type Pred = fn(&HeaderData) -> bool;
+    const TABLE: &[(Pred, &str)] = &[
+        (|h| h.flags.is_lz4_compressed(), "LZ4"),
+        (|h| h.flags.is_zstd_compressed(), "ZSTD"),
+        (|h| h.flags.is_encrypted(), "ENCRYPTED"),
+        (|h| h.flags.contains(AprV2Flags::SIGNED), "SIGNED"),
+        (|h| h.flags.is_sharded(), "SHARDED"),
+        (|h| h.flags.is_quantized(), "QUANTIZED"),
+        (|h| h.flags.contains(AprV2Flags::HAS_VOCAB), "HAS_VOCAB"),
+        (|h| h.flags.contains(AprV2Flags::HAS_FILTERBANK), "HAS_FILTERBANK"),
+        (|h| h.flags.contains(AprV2Flags::HAS_MODEL_CARD), "HAS_MODEL_CARD"),
+        (|h| h.flags.contains(AprV2Flags::STREAMING), "STREAMING"),
+    ];
+    TABLE
+        .iter()
+        .filter_map(|(pred, label)| pred(header).then_some(*label))
+        .collect()
+}
+
 fn output_architecture(metadata: &MetadataInfo) {
-    // Only show architecture section if we have transformer config
     let has_arch_info = metadata.architecture.is_some()
         || metadata.hidden_size.is_some()
         || metadata.num_layers.is_some();
-
     if !has_arch_info {
         return;
     }
@@ -157,26 +145,22 @@ fn output_architecture(metadata: &MetadataInfo) {
     if let Some(p) = metadata.param_count {
         println!("    Parameters: {}", format_param_count(p));
     }
-    if let Some(h) = metadata.hidden_size {
-        println!("    Hidden Size: {h}");
-    }
-    if let Some(n) = metadata.num_layers {
-        println!("    Layers: {n}");
-    }
-    if let Some(n) = metadata.num_heads {
-        println!("    Attention Heads: {n}");
-    }
-    if let Some(n) = metadata.num_kv_heads {
-        println!("    KV Heads: {n}");
-    }
-    if let Some(i) = metadata.intermediate_size {
-        println!("    Intermediate Size: {i}");
-    }
-    if let Some(v) = metadata.vocab_size {
-        println!("    Vocab Size: {v}");
-    }
-    if let Some(m) = metadata.max_position_embeddings {
-        println!("    Max Position: {m}");
+    print_arch_numeric_fields(metadata);
+}
+
+fn print_arch_numeric_fields(metadata: &MetadataInfo) {
+    for (label, value) in [
+        ("Hidden Size", metadata.hidden_size),
+        ("Layers", metadata.num_layers),
+        ("Attention Heads", metadata.num_heads),
+        ("KV Heads", metadata.num_kv_heads),
+        ("Intermediate Size", metadata.intermediate_size),
+        ("Vocab Size", metadata.vocab_size),
+        ("Max Position", metadata.max_position_embeddings),
+    ] {
+        if let Some(v) = value {
+            println!("    {label}: {v}");
+        }
     }
     if let Some(r) = metadata.rope_theta {
         println!("    RoPE Theta: {r}");
@@ -237,11 +221,36 @@ fn output_metadata_text(metadata: &MetadataInfo) {
         }
     }
 
+    // C-APR-PROVENANCE / AC-SHIP2-012 / FALSIFY-SHIP-022:
+    // always emit the three provenance keys so auditors never see a
+    // silent skip (INV-APR-PROV-002 / FM-APR-PROV-SILENT-SKIP).
+    print!("{}", format_provenance_block(metadata));
+
     output_chat_template_info(metadata);
 
     if let Some(source_meta) = &metadata.source_metadata {
         print_json_object("\n  Source Metadata (PMAT-223):", source_meta, "    ");
     }
+}
+
+/// Render the provenance block for `apr inspect` text output.
+///
+/// C-APR-PROVENANCE / INV-APR-PROV-002: always emits a "Provenance:" header
+/// followed by `license`, `data_source`, `data_license`, each as either the
+/// stored value or the literal `(missing)` — NEVER silently skipped.
+fn format_provenance_block(metadata: &MetadataInfo) -> String {
+    let mut out = String::new();
+    out.push('\n');
+    out.push_str("  Provenance:\n");
+    for (label, value) in [
+        ("license", &metadata.license),
+        ("data_source", &metadata.data_source),
+        ("data_license", &metadata.data_license),
+    ] {
+        let display = value.as_deref().unwrap_or("(missing)");
+        out.push_str(&format!("    {label}: {display}\n"));
+    }
+    out
 }
 
 fn format_param_count(count: u64) -> String {

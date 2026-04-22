@@ -1,4 +1,3 @@
-
 /// Tokenizer training pipeline subcommands (forjar-style plan/apply).
 ///
 /// Thin CLI wrappers around aprender's BPE training infrastructure.
@@ -52,5 +51,72 @@ pub enum TokenizeCommands {
         /// Maximum number of lines to read from corpus (0 = all)
         #[arg(long, default_value = "0")]
         max_lines: usize,
+    },
+
+    /// Train BPE on a JSONL corpus per contracts/tokenizer-bpe-v1.yaml (MODEL-2).
+    ///
+    /// Walks `--corpus` (file or directory of `.jsonl` files), extracting the
+    /// `content` field from each line, applies `--normalization` (NFC default),
+    /// and trains a BPE tokenizer with the target vocab size. Writes
+    /// `vocab.json` (token→id) and `merges.txt` (one `a b` pair per line, in
+    /// merge order) to `--output`.
+    Train {
+        /// Path to corpus: a `.jsonl` file or a directory containing `.jsonl` files.
+        /// Each line must be a JSON object with a `content` field.
+        #[arg(long, value_name = "PATH")]
+        corpus: PathBuf,
+        /// Target vocabulary size. Default 50_257 matches GPT-2 convention
+        /// (50_000 BPE merges + 256 byte-level fallback tokens + 1 sentinel)
+        /// and the MODEL-2 albor tokenizer contract (tokenizer-bpe-v1 v1.2.0).
+        #[arg(long, default_value = "50257")]
+        vocab_size: usize,
+        /// Minimum frequency a byte-pair must reach before BPE merges it into
+        /// a new vocabulary token (honored by `entrenar::tokenizer::BPETokenizer`
+        /// per task #103). Pairs below this threshold are left unmerged —
+        /// contract INV-TOK-002 of `contracts/tokenizer-bpe-v1.yaml`.
+        #[arg(long, default_value = "2")]
+        min_frequency: usize,
+        /// Output directory; will contain vocab.json and merges.txt.
+        #[arg(long, default_value = "./tokenizer-output")]
+        output: PathBuf,
+        /// Unicode normalization form applied to each document before training.
+        #[arg(long, default_value = "nfc")]
+        normalization: String,
+    },
+
+    /// Encode a JSONL corpus into `.bin` shards per contracts/pretokenize-bin-v1.yaml.
+    ///
+    /// Loads a trained BPE tokenizer (vocab.json + merges.txt) from `--tokenizer`,
+    /// reads `--corpus` (file or directory of `.jsonl` files), encodes the
+    /// `--content-field` of each line to u32 tokens, and writes
+    /// `shard-NNNN.bin` files (flat little-endian u32 streams) into `--output`.
+    /// The output format is precisely what `ShardBatchIter` (aprender-train)
+    /// expects at MODEL-2 pretrain read time.
+    ///
+    /// Root-cause fix for the pretokenize-to-bin gap documented in
+    /// memory/project_shard_reader_bin_format.md — replaces a Python shim
+    /// that was flagged as MUDA on 2026-04-19.
+    EncodeCorpus {
+        /// Path to JSONL corpus file or directory of `.jsonl` files.
+        #[arg(long, value_name = "PATH")]
+        corpus: PathBuf,
+        /// Directory containing vocab.json + merges.txt from `apr tokenize train`.
+        #[arg(long, value_name = "DIR")]
+        tokenizer: PathBuf,
+        /// Output directory for shard-NNNN.bin + manifest.json.
+        #[arg(long, value_name = "DIR")]
+        output: PathBuf,
+        /// Target tokens per shard (shard closes once this limit is reached).
+        #[arg(long, default_value = "10000000")]
+        shard_tokens: usize,
+        /// JSONL field to encode (default: `content`).
+        #[arg(long, default_value = "content")]
+        content_field: String,
+        /// Unicode normalization (must match tokenizer training).
+        #[arg(long, default_value = "nfc")]
+        normalization: String,
+        /// EOS insertion policy: none|between|after.
+        #[arg(long, default_value = "between")]
+        eos_policy: String,
     },
 }

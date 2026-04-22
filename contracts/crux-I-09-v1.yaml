@@ -1,0 +1,172 @@
+# CRUX-I-09 — Parallel tool-calls one turn
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-I-09
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "I — Observability & Metrics"
+  competitor: vllm
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Parallel tool-calls in one turn. Competitor vLLM's OpenAI-compatible
+    `/v1/chat/completions` endpoint with `tools=[...]` returns an assistant
+    message whose `tool_calls` array contains multiple entries in a single
+    response turn (see
+    https://docs.vllm.ai/en/latest/features/tool_calling.html and
+    https://platform.openai.com/docs/guides/function-calling#parallel-function-calling).
+    Parity: `apr serve` OpenAI-compatible endpoint MUST, when
+    `parallel_tool_calls=true` and the model emits multiple `tool_calls`
+    in a single generation, return them all as distinct entries with
+    unique `id` values, and the client submits corresponding `tool` role
+    messages in any order in the next turn.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - spec.modelcontextprotocol.io
+  - github.com/anthropics/anthropic-sdk-python — Agent SDK
+equations:
+  multi_tool_call_response_schema:
+    formula: |
+      POST /v1/chat/completions  with  tools=T, parallel_tool_calls=true
+      →  200 OK, body.choices[0].message = {
+           "role": "assistant",
+           "content": null or str,
+           "tool_calls": [ TC_1, TC_2, ..., TC_k ]  (k ≥ 1)
+         }
+      each TC_j = { "id": "call_<unique>",
+                    "type": "function",
+                    "function": { "name": str ∈ T.names,
+                                  "arguments": json_string (parses to valid object) } }
+      choices[0].finish_reason == "tool_calls"
+    domain: single /v1/chat/completions request with parallel_tool_calls=true
+    codomain: OpenAI chat-completion response
+    invariants:
+    - "All tool_calls[j].id values are pairwise distinct"
+    - "Every tool_calls[j].function.name is in the submitted tools list"
+    - "tool_calls[j].function.arguments is a JSON string that parses to an object"
+    - "finish_reason == 'tool_calls' when any tool_calls are present"
+
+  parallel_vs_sequential_equivalence:
+    formula: |
+      For the same prompt P and tool set T, at temperature=0:
+        parallel: one response R_par with R_par.tool_calls = [A_1, ..., A_k]
+        sequential: k responses R_seq_1..k each with one tool_call
+      { A_1.function, ..., A_k.function } (as a set)
+        == { R_seq_1.function, ..., R_seq_k.function } (as a set)
+    domain: (prompt P, tool set T, parallel_tool_calls ∈ {true, false})
+    codomain: multiset of function calls invoked
+    invariants:
+    - "Parallel mode yields the same set of intended function calls as sequential"
+    - "Temperature=0 makes this equality deterministic"
+
+  follow_up_submission_order_agnostic:
+    formula: |
+      After receiving tool_calls = [TC_1, ..., TC_k]:
+        Client submits k messages with role="tool" and tool_call_id ∈ {TC_j.id}.
+        Submission order is IRRELEVANT:
+          response(submit order π_1) ≡ response(submit order π_2) at temperature=0
+        for any permutations π_1, π_2.
+    domain: (tool_calls response, submission order π)
+    codomain: assistant final message (at temperature=0)
+    invariants:
+    - "Next-turn completion is invariant under permutation of tool-result submissions"
+    - "Every TC_j.id MUST be echoed back in exactly one role='tool' message"
+
+falsification_tests:
+- id: FALSIFY-CRUX-I-09-001
+  rule: multi tool_calls response schema is valid
+  prediction: "a 'get weather in SF and NYC' prompt returns ≥2 distinct tool_calls"
+  test: |
+    apr serve --port 18309 --model /mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr &
+    SPID=$!
+    trap "kill $SPID 2>/dev/null" EXIT
+    sleep 3
+    RESP=$(curl -sf http://localhost:18309/v1/chat/completions \
+      -H 'content-type: application/json' \
+      -d '{"model":"local","parallel_tool_calls":true,
+           "messages":[{"role":"user","content":"Get weather for SF and NYC in one turn."}],
+           "tools":[{"type":"function","function":{"name":"get_weather",
+             "parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}]}')
+    echo "$RESP" | jq -e '.choices[0].message.tool_calls | length >= 2' \
+      || { echo "FAIL: expected >=2 tool_calls: $RESP" >&2; exit 1; }
+    echo "$RESP" | jq -e '.choices[0].finish_reason == "tool_calls"' \
+      || { echo "FAIL: finish_reason != tool_calls" >&2; exit 1; }
+
+  if_fails: rule 'multi tool_calls response schema is valid' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-I-09-002
+  rule: tool_call ids are unique and arguments parse as JSON
+  prediction: "every TC has a unique id and valid JSON arguments"
+  test: |
+    RESP_FILE=/tmp/apr-par-tc.json
+    # (reuse RESP from prior step or re-run)
+    jq -e '
+      (.choices[0].message.tool_calls | map(.id) | length ==
+       (.choices[0].message.tool_calls | map(.id) | unique | length))
+      and
+      (.choices[0].message.tool_calls | all(.function.arguments | fromjson | type == "object"))
+    ' "$RESP_FILE" \
+      || { echo "FAIL: duplicate ids or non-object arguments" >&2; exit 1; }
+
+  if_fails: rule 'tool_call ids are unique and arguments parse as JSON' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-I-09-003
+  rule: follow-up submission order is irrelevant at temp=0
+  prediction: "two permutations of tool-result submissions yield identical assistant message"
+  test: |
+    # TODO: two-turn harness that submits tool results in order [a,b] and [b,a]
+    FWD_A=$(python3 evidence/crux/vllm/par_tool_followup.py --order ab --temperature 0)
+    FWD_B=$(python3 evidence/crux/vllm/par_tool_followup.py --order ba --temperature 0)
+    [ "$FWD_A" = "$FWD_B" ] \
+      || { echo "FAIL: order-dependent assistant message: $FWD_A vs $FWD_B" >&2; exit 1; }
+
+  if_fails: rule 'follow-up submission order is irrelevant at temp=0' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-I-09-004
+  rule: parity with vLLM parallel_tool_calls response shape
+  prediction: "apr serve response matches vLLM's schema byte-for-byte on required fields"
+  test: |
+    # TODO: reference golden from evidence/crux/vllm/parallel_tool_calls_golden.json
+    GOLDEN=evidence/crux/vllm/parallel_tool_calls_golden.json
+    RESP=/tmp/apr-par-tc.json
+    python3 - "$GOLDEN" "$RESP" <<'PY'
+    import json, sys
+    g = json.load(open(sys.argv[1])); a = json.load(open(sys.argv[2]))
+    required = ["id", "type", "function"]
+    for tc in a["choices"][0]["message"]["tool_calls"]:
+        assert all(k in tc for k in required), f"FAIL: missing keys in {tc}"
+        assert tc["type"] == "function"
+    # Field-by-field parity with vLLM keys
+    assert set(a["choices"][0]["message"].keys()) >= set(g["choices"][0]["message"].keys())
+    PY
+
+  if_fails: rule 'parity with vLLM parallel_tool_calls response shape' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: invariant
+  property: "Response tool_calls ids are pairwise distinct"
+- type: invariant
+  property: "finish_reason == 'tool_calls' iff any tool_calls are returned"
+- type: invariant
+  property: "At temperature=0, assistant reply is invariant under permutation of tool-result submission order"
+- type: equivalence
+  property: "Response schema matches vLLM OpenAI-compatible parallel_tool_calls shape (required field set superset)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-i-09` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-i-09
+  priority: high
+  auto_created: true

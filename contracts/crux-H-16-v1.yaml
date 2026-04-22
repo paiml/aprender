@@ -1,0 +1,106 @@
+# CRUX-H-16 — Tokenizer-aware length bucketing
+
+metadata:
+  id: CRUX-H-16
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Tokenizer-aware length bucketing: group samples by token count so each
+    batch has minimal padding. Canonical: HF `LengthGroupedSampler`
+    (transformers.trainer_pt_utils). Buckets are chosen so mean padding
+    overhead per batch drops below a target threshold (typically ≤10%).
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  length_bucket:
+    formula: |
+      lengths = [ len(tokenize(x)) for x in dataset ]
+      sort_idx = argsort(lengths)  # ascending
+      batches = [ sort_idx[i:i+B] for i in range(0, N, B) ]
+      pad_overhead(batch) = 1 - mean(lengths[batch]) / max(lengths[batch])
+    domain: "(dataset: [str], tokenizer: Tokenizer, batch_size: int ≥ 1)"
+    codomain: "batches of indices with reduced padding vs random shuffle"
+    invariants:
+    - "every sample appears in exactly one batch"
+    - "sum(|batch|) == N (no duplicates, no drops unless --drop-last)"
+    - "mean pad_overhead ≤ random-shuffle overhead (on n≥1000)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-16-001
+  rule: every sample assigned to exactly one batch
+  prediction: "concat(batches) is a permutation of 0..N-1"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import json, random
+    random.seed(0)
+    lines = [json.dumps({'text': 'x ' * random.randint(1, 64)}) for _ in range(500)]
+    open('/tmp/len.jsonl','w').write('\n'.join(lines))
+    "
+    apr dataset bucket /tmp/len.jsonl --tokenizer hf://gpt2 --batch-size 8 \
+      --format json > /tmp/b.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/b.json'))
+    all_idx = [i for batch in d['batches'] for i in batch]
+    assert sorted(all_idx) == list(range(500)), 'not a permutation'
+    "
+  if_fails: rule 'every sample assigned to exactly one batch' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-16-002
+  rule: bucketing reduces padding vs random shuffle
+  prediction: "mean pad_overhead(bucketed) < mean pad_overhead(random) by ≥20%"
+  test: |
+    set -euo pipefail
+    apr dataset bucket /tmp/len.jsonl --tokenizer hf://gpt2 --batch-size 8 \
+      --format json > /tmp/b.json
+    apr dataset bucket /tmp/len.jsonl --tokenizer hf://gpt2 --batch-size 8 \
+      --mode random --seed 42 --format json > /tmp/r.json
+    python3 -c "
+    import json
+    b=json.load(open('/tmp/b.json'))['mean_pad_overhead']
+    r=json.load(open('/tmp/r.json'))['mean_pad_overhead']
+    assert b < 0.8 * r, (b, r)
+    "
+  if_fails: rule 'bucketing reduces padding vs random shuffle' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-16-003
+  rule: determinism under fixed seed
+  prediction: "two runs with --seed S produce identical batch lists"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr dataset bucket /tmp/len.jsonl --tokenizer hf://gpt2 --batch-size 8 \
+        --seed 123 --format json > /tmp/b$i.json
+    done
+    diff <(jq -S . /tmp/b1.json) <(jq -S . /tmp/b2.json)
+
+  if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr dataset bucket matches HF LengthGroupedSampler ordering semantics"
+- type: invariant
+  property: "sample-coverage (permutation of 0..N-1)"
+- type: invariant
+  property: "padding overhead strictly lower than random baseline"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-h-16
+  priority: medium
+  auto_created: true

@@ -1,0 +1,82 @@
+# CRUX-B-11 — FP8 quantization H100+
+
+metadata:
+  id: CRUX-B-11
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: vllm
+  demand_score: 3
+  intake_status: missing
+  description: >
+    FP8 (E4M3/E5M2) quantization targeted at Hopper/Blackwell GPUs.
+    Canonical: `vllm serve --quantization fp8` dispatches TransformerEngine
+    FP8 GEMM; llama.cpp has `--type f8_e4m3` in experimental branches.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
+equations:
+  fp8_scaled_roundtrip:
+    formula: |
+      W_fp8 = round(W_fp16 / scale, E4M3_ULP) with scale = max(|W|) / 448.0
+      dequant(W_fp8) = W_fp8 * scale
+      invariant: |dequant(W_fp8) - W_fp16| / |W_fp16| ≤ 0.01  (1% Frobenius relative err)
+    domain: "(W: Tensor<f16>, fmt ∈ {E4M3, E5M2})"
+    codomain: "Tensor<fp8> + scalar scale (per-tensor or per-channel)"
+    invariants:
+    - "E4M3 range [−448, +448], 7-bit mantissa; E5M2 range [−57344, +57344]"
+    - "relative Frobenius err ≤ 1% vs fp16 on all linear weights"
+    - "on non-Hopper GPU, apr quantize --fp8 exits 2 with capability-required msg"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-11-001
+  rule: fp8 round-trip preserves within 1% Frobenius
+  prediction: "|W_fp16 - dequant(quant_fp8(W_fp16))|_F / |W_fp16|_F ≤ 0.01"
+  test: |
+    set -euo pipefail
+    apr quantize tests/fixtures/small-fp16.safetensors --format fp8-e4m3 -o /tmp/fp8.apr
+    python3 - <<'PY'
+    import numpy as np, safetensors.numpy as st
+    orig = st.load_file("tests/fixtures/small-fp16.safetensors")
+    dequant = __import__("subprocess").check_output(["apr","dequant","/tmp/fp8.apr","--format","npz","-o","/tmp/deq.npz"])
+    deq = np.load("/tmp/deq.npz")
+    for k, w in orig.items():
+      err = np.linalg.norm(w - deq[k]) / np.linalg.norm(w)
+      assert err <= 0.01, f"{k}: err={err:.4f}"
+    PY
+  if_fails: rule 'fp8 round-trip preserves within 1% Frobenius' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-B-11-002
+  rule: non-Hopper GPU rejected with exit 2
+  prediction: "apr quantize --fp8 on sm<90 prints 'requires Hopper/Blackwell' and exits 2"
+  test: |
+    set -e
+    # Simulate by forcing capability detection off
+    APR_CUDA_SM_OVERRIDE=80 apr quantize tests/fixtures/small-fp16.safetensors --format fp8-e4m3 -o /tmp/bad.apr 2>/tmp/err && exit 1 || [ $? -eq 2 ]
+    grep -Ei "hopper|sm_?90|capability" /tmp/err
+
+  if_fails: rule 'non-Hopper GPU rejected with exit 2' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr quantize --fp8 matches `vllm serve --quantization fp8` numerical envelope (≤1% Frobenius)"
+- type: invariant
+  property: "FP8 quantize on sm<90 fails fast with actionable capability msg"
+- type: invariant
+  property: "per-tensor scale stored in metadata; dequant is exact inverse modulo FP8 ULP"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-b-11
+  priority: medium
+  auto_created: true
