@@ -96,6 +96,37 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             })
         }
 
+        ExtendedCommands::OllamaChatLint {
+            response_file,
+            stream,
+        } => commands::ollama_chat::run(response_file, *stream, cli.json),
+
+        ExtendedCommands::DrySamplingLint { observation_file } => {
+            commands::dry_sampling_lint::run(observation_file, cli.json)
+        }
+
+        ExtendedCommands::AwqLint { observation_file } => commands::awq_lint::run(
+            commands::awq_lint::AwqLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
+        ExtendedCommands::OomLint {
+            report_file,
+            stderr_file,
+        } => commands::oom_lint::run(report_file, stderr_file.as_deref(), cli.json),
+
+        ExtendedCommands::ToolUseLint { observation_file } => {
+            commands::tool_use_lint::run(observation_file, cli.json)
+        }
+
+        ExtendedCommands::GbnfLint { observation_file } => {
+            commands::gbnf_lint::run(observation_file, cli.json)
+        }
+
+
         ExtendedCommands::Hex {
             file,
             tensor,
@@ -217,6 +248,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             dataset,
             tokenizer,
             run_dir,
+            mode,
             lr,
             num_steps,
             warmup_steps,
@@ -225,11 +257,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             steps_per_epoch,
             seed,
             target_val_loss,
+            vocab_size,
             synthetic,
+            device,
         } => commands::pretrain::run(
             dataset,
             tokenizer,
             run_dir,
+            *mode,
             *lr,
             *num_steps,
             *warmup_steps,
@@ -238,7 +273,9 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *steps_per_epoch,
             *seed,
             *target_val_loss,
+            *vocab_size,
             *synthetic,
+            device,
             cli.json,
         ),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
@@ -732,6 +769,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             prompt,
             fast,
             brick,
+            percentiles,
         } => crate::error::resolve_model_path(file).and_then(|r| {
             bench::run(
                 &r,
@@ -742,6 +780,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *fast,
                 brick.as_deref(),
                 cli.json,
+                percentiles,
             )
         }),
 

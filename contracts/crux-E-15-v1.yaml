@@ -1,0 +1,148 @@
+# CRUX-E-15 — Speed vs llama.cpp head-to-head
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-E-15
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: llama_cpp
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Speed vs llama.cpp head-to-head. Root-cause workflow extracted from llama_cpp UX — see master
+    subspec §5.E and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  decode_tokens_per_second:
+    formula: |
+      Competitor (llama.cpp llama-bench):
+        ./llama-bench -m model.gguf -p 0 -n 128 -r 5 -o json
+      reports decode throughput as "t/s" over N output tokens across R repeats.
+      apr parity:
+        apr bench MODEL.gguf --n-predict 128 --n-prompt 0 --repeats 5 --json
+      MUST measure decode-only tok/s:
+        tok_per_sec = n_predict / (decode_end_time - prefill_end_time)
+      reported as median over R repeats (matches llama-bench default).
+    domain: "model path, n_predict in N, repeats R in N"
+    codomain: "decode_tok_per_sec: f64 > 0, median of R samples"
+    invariants:
+    - "decode_tok_per_sec > 0 for any non-empty generation"
+    - "prefill and decode phases timed separately"
+    - "n_predict >= 128 per CLAUDE.md parity methodology"
+    - "Competitor parity: matches llama-bench `n_predict` column tok/s within ±10%"
+
+  head_to_head_ratio:
+    formula: |
+      Speedup = apr_decode_tok_per_sec / llamacpp_decode_tok_per_sec
+      Target (per MEMORY.md): Speedup >= 1.5 for 1.5B Q4_K_M on RTX 4090.
+    domain: "paired apr and llama.cpp bench runs on same model and hardware"
+    codomain: "speedup: f64 > 0"
+    invariants:
+    - "same model file, same n_predict, same hardware"
+    - "apr bench must report speedup_vs_llamacpp field when --compare-llamacpp used"
+    - "speedup computed from median, not single run"
+
+  prefill_decode_separated:
+    formula: |
+      Output JSON MUST report prefill_ms and decode_ms separately:
+        total_ms == prefill_ms + decode_ms  (within 1%)
+        prefill_tok_per_sec = n_prompt / (prefill_ms / 1000)
+        decode_tok_per_sec  = n_predict / (decode_ms / 1000)
+    domain: "bench run with n_prompt > 0 and n_predict > 0"
+    codomain: "JSON timing fields"
+    invariants:
+    - "prefill_ms and decode_ms both present and positive"
+    - "decode phase does not include prefill time (CLAUDE.md parity rule)"
+    - "total_ms ~ prefill_ms + decode_ms (1% wall tolerance)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-15-001
+  rule: "decode throughput is positive and timed separately from prefill"
+  prediction: "apr bench emits decode_tok_per_sec > 0 with prefill_ms + decode_ms ~ total"
+  test: |
+    set -euo pipefail
+    MODEL=fixtures/crux-e-15/tiny-q4km.gguf
+    apr bench "$MODEL" --n-prompt 32 --n-predict 128 --repeats 3 --json \
+      > /tmp/e15-bench.json
+    python3 -c "
+    import json,sys
+    d=json.load(open('/tmp/e15-bench.json'))
+    ok = d['decode_tok_per_sec'] > 0 \
+         and d['prefill_ms'] > 0 \
+         and d['decode_ms'] > 0 \
+         and abs((d['prefill_ms']+d['decode_ms']) - d['total_ms']) / d['total_ms'] < 0.01
+    sys.exit(0 if ok else 1)"
+  if_fails: "apr bench missing prefill/decode split or decode_tok_per_sec == 0"
+
+- id: FALSIFY-CRUX-E-15-002
+  rule: "head-to-head speedup reported when --compare-llamacpp set"
+  prediction: "apr bench --compare-llamacpp populates speedup_vs_llamacpp field"
+  test: |
+    set -euo pipefail
+    MODEL=fixtures/crux-e-15/tiny-q4km.gguf
+    apr bench "$MODEL" --n-predict 128 --repeats 3 --compare-llamacpp --json \
+      > /tmp/e15-cmp.json
+    jq -e '
+      .decode_tok_per_sec > 0
+      and .llamacpp_decode_tok_per_sec > 0
+      and .speedup_vs_llamacpp > 0
+      and (.speedup_vs_llamacpp - (.decode_tok_per_sec / .llamacpp_decode_tok_per_sec) | fabs) < 1e-3
+    ' /tmp/e15-cmp.json
+  if_fails: "apr bench --compare-llamacpp did not produce consistent speedup field"
+
+- id: FALSIFY-CRUX-E-15-003
+  rule: "llama-bench JSON parity: tok/s within ±10% on same model/hardware"
+  prediction: "apr decode_tok_per_sec matches golden llama-bench run within 10%"
+  test: |
+    set -euo pipefail
+    GOLDEN=evidence/crux/llama_cpp/e-15-llama-bench.json
+    MODEL=fixtures/crux-e-15/tiny-q4km.gguf
+    APR_TPS=$(apr bench "$MODEL" --n-predict 128 --repeats 5 --json \
+      | jq -r '.decode_tok_per_sec')
+    HF_TPS=$(jq -r '.decode_tok_per_sec' "$GOLDEN")
+    python3 -c "import sys; a=float('$APR_TPS'); b=float('$HF_TPS'); sys.exit(0 if abs(a-b)/b < 0.10 else 1)"
+  if_fails: "apr bench decode_tok_per_sec diverges from llama-bench canonical by >10%"
+
+proof_obligations:
+- type: invariant
+  property: "prefill_ms and decode_ms separately reported; decode_tok_per_sec > 0"
+- type: invariant
+  property: "n_predict >= 128 for fair head-to-head comparison"
+- type: invariant
+  property: "speedup_vs_llamacpp = decode_tok_per_sec / llamacpp_decode_tok_per_sec (exact)"
+- type: equivalence
+  property: "apr bench --n-predict 128 matches llama.cpp's llama-bench -m MODEL -n 128 decode tok/s on same model and hardware within ±10%"
+
+# References:
+#   https://github.com/ggerganov/llama.cpp/tree/master/examples/llama-bench
+#   https://github.com/ggerganov/llama.cpp/blob/master/examples/llama-bench/llama-bench.cpp
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-e-15` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-e-15
+  priority: high
+  auto_created: false

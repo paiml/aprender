@@ -289,11 +289,13 @@ fn test_batch_process_result_debug_cov() {
 
 #[test]
 fn test_health_response_roundtrip_ext_cov() {
-    let json = r#"{"status":"ok","version":"2.0.0","compute_mode":"gpu"}"#;
+    let json = r#"{"status":"ok","version":"2.0.0","compute_mode":"gpu","model_loaded":true,"uptime_sec":1.5}"#;
     let resp: HealthResponse = serde_json::from_str(json).expect("parse failed");
     assert_eq!(resp.status, "ok");
     assert_eq!(resp.version, "2.0.0");
     assert_eq!(resp.compute_mode, "gpu");
+    assert!(resp.model_loaded);
+    assert_eq!(resp.uptime_sec, 1.5);
 }
 
 #[test]

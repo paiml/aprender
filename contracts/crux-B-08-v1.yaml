@@ -1,0 +1,224 @@
+# CRUX-B-08 — AWQ quantization
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml.
+
+metadata:
+  id: CRUX-B-08
+  version: "1.2.0"
+  created: "2026-04-18"
+  updated: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: vllm
+  demand_score: 5
+  intake_status: missing
+  description: >
+    AWQ (Activation-aware Weight Quantization) parity. vllm exposes
+    `python -m awq.quantize --model-path M --w-bit 4 --q-group-size 128`;
+    the aprender surface is `apr quantize M.apr --method awq --bits 4
+    --group-size 128 -o out.apr`. Per Lin et al. 2023 (arXiv:2306.00978),
+    salient-weight-aware scaling preserves >=80% of fp16 quality at <=0.30x
+    the file size on HumanEval-style tasks.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - "https://arxiv.org/abs/2306.00978 — AWQ paper"
+  - "https://github.com/mit-han-lab/llm-awq — reference implementation"
+  - "https://docs.vllm.ai/en/latest/quantization/auto_awq.html"
+
+equations:
+  awq_quality_retention:
+    formula: |
+      Let P_fp16 = pass@1(M_fp16, HumanEval[0..9])
+      Let P_awq  = pass@1(quantize(M, method=AWQ, w_bit=4, q_group_size=128), HumanEval[0..9])
+      Contract: P_awq >= 0.80 * P_fp16
+      (AWQ 4-bit MUST retain >= 80% of fp16 baseline pass@1 on HumanEval/0..9)
+    domain: (model M, HumanEval prompts[0..9])
+    codomain: pass@1 score ∈ [0,1]
+    invariants:
+    - "AWQ output MUST pass `apr qa --require-golden-output` on HumanEval/0..9"
+    - "Per-group scale is stored per 128-channel tile (q_group_size=128 default)"
+    - "AWQ runs salient-weight activation calibration before scaling"
+
+  awq_cli_parity:
+    formula: |
+      vllm   : python -m awq.quantize --model-path M --w-bit 4 --q-group-size 128 --output out
+      aprender: apr quantize M.apr --method awq --bits 4 --group-size 128 -o out.apr
+      Artifact sizes MUST agree to within 5% of the vllm AWQ reference.
+    domain: (model M, bits ∈ {3,4,8}, group_size ∈ {64,128})
+    codomain: quantized APR file
+    invariants:
+    - "apr quantize --method awq accepts --bits and --group-size flags"
+    - "Group size default = 128 (matches vllm/awq reference)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-08-001
+  rule: AWQ retains >=80% of fp16 pass@1
+  prediction: "pass@1(AWQ, HumanEval/0..9) >= 0.80 * pass@1(fp16, HumanEval/0..9)"
+  test: |
+    set -euo pipefail
+    apr quantize model.apr --method awq --bits 4 --group-size 128 -o /tmp/model-awq.apr
+    P_FP16=$(apr qa model.apr --eval humaneval --shard 0..9 --json | jq '.pass_at_1')
+    P_AWQ=$(apr qa /tmp/model-awq.apr --eval humaneval --shard 0..9 --require-golden-output --json | jq '.pass_at_1')
+    python3 -c "import sys; sys.exit(0 if $P_AWQ >= 0.80 * $P_FP16 else 1)"
+  if_fails: "AWQ 4-bit degraded quality below 80% of fp16 baseline; salient-weight scaling ineffective"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/awq_classifier.rs
+    cli_path: crates/apr-cli/src/commands/awq_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_08.rs
+    e2e_tests:
+    - falsify_crux_b_08_001_quality_retained_ok
+    - falsify_crux_b_08_001_quality_rejects_degraded
+    - falsify_crux_b_08_001_quality_rejects_zero_baseline
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_quality_retention`
+      computes the retention ratio ρ = P_awq / P_fp16 and admits only
+      ρ >= `AWQ_MIN_QUALITY_RETENTION` (0.80) as the `Retained` verdict.
+      Below-threshold retention and zero-baseline inputs return
+      `Degraded` rather than panicking, so a broken fp16 baseline fails
+      the gate visibly instead of being silently masked.
+    tests:
+    - retention_above_threshold_is_retained
+    - retention_exactly_at_threshold_is_retained
+    - retention_below_threshold_is_degraded
+    - retention_zero_baseline_is_degraded_not_panic
+    - retention_is_deterministic
+    scope: pass@1 retention threshold (pure ratio classifier)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: real AWQ quantizer + HumanEval/0..9 scoring harness
+
+- id: FALSIFY-CRUX-B-08-002
+  rule: CLI surface matches vllm
+  prediction: "apr quantize --method awq --bits --group-size all accepted"
+  test: |
+    apr quantize --help 2>&1 | grep -qE -- '--method[[:space:]<]'
+    apr quantize --help 2>&1 | grep -qE -- '--bits[[:space:]<]'
+    apr quantize --help 2>&1 | grep -qE -- '--group-size[[:space:]<]'
+  if_fails: "apr quantize missing AWQ-equivalent flags; competitor parity broken"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/awq_classifier.rs
+    cli_path: crates/apr-cli/src/commands/awq_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_08.rs
+    e2e_tests:
+    - falsify_crux_b_08_002_flags_ok_canonical
+    - falsify_crux_b_08_002_flags_ok_equals_form
+    - falsify_crux_b_08_002_flags_rejects_wrong_method
+    - falsify_crux_b_08_002_flags_rejects_invalid_bits
+    - falsify_crux_b_08_002_flags_rejects_missing_bits
+    - falsify_crux_b_08_002_flags_rejects_invalid_group_size
+    - falsify_crux_b_08_002_flags_observer_can_assert_expected_failure
+    sub_claim: |
+      Algorithm-level necessary condition: `parse_awq_flags` extracts
+      all three flags (`--method`, `--bits`, `--group-size`) in both
+      space and `=` forms; `validate_awq_flags` enforces the full
+      contract envelope — bits ∈ {3,4,8}, group_size ∈ {64,128},
+      default group_size = `AWQ_DEFAULT_GROUP_SIZE` (128, matching
+      vllm/awq reference). Missing method, unknown method, and invalid
+      bits/group_size each map to a distinct error variant.
+    tests:
+    - parse_all_three_space_form
+    - parse_all_three_equals_form
+    - parse_absent_bits_yields_none
+    - validate_ok_with_default_group_size
+    - validate_ok_with_explicit_group_size
+    - validate_rejects_missing_method
+    - validate_rejects_unknown_method
+    - validate_rejects_invalid_bits
+    - validate_rejects_missing_bits
+    - validate_rejects_invalid_group_size
+    - allowed_sets_include_reference_values
+    - validate_is_deterministic
+    scope: argv → AwqFlags → AwqFlagValidation (pure)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "clap `apr quantize --help` subcommand surface"
+
+- id: FALSIFY-CRUX-B-08-003
+  rule: AWQ artifact size <= 0.3x fp16
+  prediction: "4-bit AWQ file <= 30% of fp16 source size"
+  test: |
+    FP16=$(stat -c%s model.apr)
+    AWQ=$(stat -c%s /tmp/model-awq.apr)
+    python3 -c "import sys; sys.exit(0 if $AWQ <= 0.30 * $FP16 else 1)"
+  if_fails: "AWQ output not compressed to ~4 bits/weight; packing bug"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/awq_classifier.rs
+    cli_path: crates/apr-cli/src/commands/awq_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_08.rs
+    e2e_tests:
+    - falsify_crux_b_08_003_compression_ok
+    - falsify_crux_b_08_003_compression_rejects_over_ceiling
+    - falsify_crux_b_08_003_compression_rejects_zero_source
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_compression_ratio`
+      computes ρ = awq_bytes / fp16_bytes and admits only ρ <=
+      `AWQ_MAX_COMPRESSION_RATIO` (0.30) as `Compressed`. Zero-byte
+      fp16 source is handled as `Insufficient { ratio: ∞ }` rather
+      than a division-by-zero panic.
+    tests:
+    - compression_well_under_ceiling_is_compressed
+    - compression_exactly_at_ceiling_is_compressed
+    - compression_over_ceiling_is_insufficient
+    - compression_zero_source_is_insufficient
+    scope: byte-ratio ceiling (pure comparator)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: real AWQ 4-bit packer + fp16 source pair on disk
+
+proof_obligations:
+- type: invariant
+  property: "AWQ pass@1 >= 80% of fp16 pass@1 on HumanEval/0..9"
+- type: invariant
+  property: "apr quantize --method awq --bits --group-size flags present on CLI"
+- type: invariant
+  property: "AWQ 4-bit artifact <= 0.30x fp16 source bytes"
+- type: invariant
+  property: "AWQ calibration uses activation statistics (not weight-only RTN)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-B-08-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: real AWQ quantizer + HumanEval/0..9 scoring harness
+  - falsify_id: FALSIFY-CRUX-B-08-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "clap `apr quantize --help` subcommand surface"
+  - falsify_id: FALSIFY-CRUX-B-08-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: real AWQ 4-bit packer + fp16 source pair on disk
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/awq_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/awq_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_b_08.rs
+    contract: contracts/crux-B-08-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr awq-lint --observation-file <obs.json>` dispatches three
+    classifiers (quality, compression, flags) over captured JSON; each
+    missing top-level key is skipped so observations can exercise any
+    subset of FALSIFY-CRUX-B-08-001/002/003 independently. e2e suite
+    (19 tests) covers help surface, bare-invocation rejection, per-gate
+    ok+reject paths (quality retained/degraded/zero-baseline,
+    compression under/over-ceiling/zero-source, flags
+    canonical/equals/wrong-method/invalid-bits/missing-bits/invalid-gs
+    + observer-asserts-expected-failure), empty/nonexistent/unknown-keys
+    input rejection, and --json shape. Full ACTIVE discharge remains
+    blocked on a real AWQ 4-bit quantizer + HumanEval/0..9 scorer +
+    `apr quantize --help` surface.
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-b-08
+  priority: critical
+  auto_created: true

@@ -390,14 +390,17 @@ fn test_embedding_request_fields_cov() {
 #[test]
 fn test_health_response_serialize_cov() {
     let resp = HealthResponse {
-        status: "healthy".to_string(),
+        status: "ok".to_string(),
         version: "1.0.0".to_string(),
         compute_mode: "cpu".to_string(),
+        model_loaded: true,
+        uptime_sec: 2.5,
     };
     let json = serde_json::to_string(&resp).expect("serialize");
-    assert!(json.contains("healthy"));
+    assert!(json.contains("\"ok\""));
     assert!(json.contains("1.0.0"));
     assert!(json.contains("cpu"));
+    assert!(json.contains("model_loaded"));
 }
 
 // =========================================================================

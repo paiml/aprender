@@ -1,0 +1,169 @@
+# CRUX-K-07 — Prometheus /metrics endpoint
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-K-07
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Ecosystem & Integration"
+  competitor: vllm
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  description: >
+    Prometheus /metrics endpoint. Competitor vLLM exposes
+    `GET /metrics` on the OpenAI server returning Prometheus text format
+    0.0.4 (see
+    https://docs.vllm.ai/en/latest/serving/metrics.html and
+    https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
+    Core metrics: `vllm:num_requests_running`,
+    `vllm:num_requests_waiting`, `vllm:gpu_cache_usage_perc`,
+    `vllm:time_to_first_token_seconds` (histogram),
+    `vllm:time_per_output_token_seconds`, `vllm:e2e_request_latency_seconds`.
+    Parity: `apr serve` MUST expose `GET /metrics` returning Prometheus
+    text format with equivalent gauges/counters/histograms prefixed
+    `apr_*`, scrapable by `prometheus` without config overrides.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  prometheus_text_format_v004:
+    formula: |
+      GET /metrics → 200 OK
+        Content-Type: text/plain; version=0.0.4; charset=utf-8
+        body: a sequence of lines
+          # HELP <name> <description>
+          # TYPE <name> (counter|gauge|histogram|summary)
+          <name>[{label="value", ...}] <float> [<unix_timestamp_ms>]
+      parses without error through any Prometheus client library
+      (e.g. prometheus_client.parser.text_string_to_metric_families).
+    domain: /metrics HTTP response
+    codomain: parsed metric family list
+    invariants:
+    - "Content-Type header matches Prometheus text format v0.0.4 exactly"
+    - "Every exposed metric has both # HELP and # TYPE comment lines"
+    - "Every metric name matches ^[a-zA-Z_:][a-zA-Z0-9_:]*$ regex (Prometheus convention)"
+
+  required_metric_set:
+    formula: |
+      MUST_EXPORT = {
+        apr_num_requests_running            (gauge),
+        apr_num_requests_waiting            (gauge),
+        apr_gpu_cache_usage_perc            (gauge, 0..1),
+        apr_time_to_first_token_seconds     (histogram),
+        apr_time_per_output_token_seconds   (histogram),
+        apr_e2e_request_latency_seconds     (histogram),
+        apr_prompt_tokens_total             (counter),
+        apr_generation_tokens_total         (counter),
+      }
+      ∀ m ∈ MUST_EXPORT, m appears in /metrics response.
+    domain: metric family set parsed from /metrics
+    codomain: bool (MUST_EXPORT ⊆ exported_set)
+    invariants:
+    - "All required metrics present on a running apr serve"
+    - "Histogram metrics include _bucket, _sum, _count series"
+    - "Counters are monotonically non-decreasing across scrapes"
+
+  scrape_is_side_effect_free:
+    formula: |
+      Two sequential scrapes S1, S2 with no intervening inference:
+        gauge values may change only by concurrent system state (not by scraping itself)
+        counter values: S2.counter >= S1.counter (monotone)
+        histogram _count: S2._count >= S1._count
+      Scraping /metrics does NOT alter model state, KV cache, or request queue.
+    domain: (scrape_1, scrape_2) pair with no intervening request traffic
+    codomain: bool (monotone counters/histograms, stable non-traffic gauges)
+    invariants:
+    - "Scrape is a pure read; no write to model or queue state"
+    - "Counters never decrease across scrapes (Prometheus monotonicity contract)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-07-001
+  rule: /metrics returns valid Prometheus text v0.0.4
+  prediction: "response parses via prometheus_client parser"
+  test: |
+    apr serve --port 18407 --model /mnt/nvme-raid0/models/qwen2.5-coder-1.5b-q4k.apr &
+    SPID=$!
+    trap "kill $SPID 2>/dev/null" EXIT
+    sleep 3
+    curl -si http://localhost:18407/metrics > /tmp/m.txt
+    head -1 /tmp/m.txt | grep -q '200 OK' || { echo "FAIL: non-200 /metrics" >&2; exit 1; }
+    grep -qi 'Content-Type:.*text/plain.*version=0.0.4' /tmp/m.txt \
+      || { echo "FAIL: wrong Content-Type" >&2; exit 1; }
+    sed '1,/^\r\?$/d' /tmp/m.txt > /tmp/body.txt
+    python3 - /tmp/body.txt <<'PY'
+    from prometheus_client.parser import text_string_to_metric_families
+    fams = list(text_string_to_metric_families(open(__import__('sys').argv[1]).read()))
+    assert fams, "FAIL: no metric families parsed"
+    PY
+
+  if_fails: rule '/metrics returns valid Prometheus text v0.0.4' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-07-002
+  rule: required metric set is exported
+  prediction: "all MUST_EXPORT metric names appear in /metrics"
+  test: |
+    BODY=/tmp/body.txt
+    for M in apr_num_requests_running apr_num_requests_waiting \
+             apr_gpu_cache_usage_perc apr_time_to_first_token_seconds \
+             apr_time_per_output_token_seconds apr_e2e_request_latency_seconds \
+             apr_prompt_tokens_total apr_generation_tokens_total; do
+      grep -q "^# TYPE $M " "$BODY" \
+        || { echo "FAIL: missing required metric $M" >&2; exit 1; }
+    done
+
+  if_fails: rule 'required metric set is exported' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-07-003
+  rule: counters are monotone across scrapes after inference
+  prediction: "apr_generation_tokens_total strictly increases after a /v1/completions call"
+  test: |
+    B1=$(curl -s http://localhost:18407/metrics | grep '^apr_generation_tokens_total ' | awk '{print $2}')
+    curl -sf http://localhost:18407/v1/completions -H 'content-type: application/json' \
+      -d '{"model":"local","prompt":"hi","max_tokens":8}' > /dev/null
+    B2=$(curl -s http://localhost:18407/metrics | grep '^apr_generation_tokens_total ' | awk '{print $2}')
+    python3 -c "assert float('$B2') > float('$B1'), 'FAIL: counter did not increase ($B1 -> $B2)'"
+
+  if_fails: rule 'counters are monotone across scrapes after inference' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-07-004
+  rule: parity with vLLM metric shape
+  prediction: "Prometheus can scrape apr and vLLM with the same scrape_configs"
+  test: |
+    # TODO: reference prom config evidence/crux/vllm/prometheus.yml
+    CFG=evidence/crux/vllm/prometheus.yml
+    promtool check config "$CFG" || { echo "FAIL: prom config invalid" >&2; exit 1; }
+    # Simulate scrape via promtool test rules against apr's output
+    promtool check metrics < /tmp/body.txt \
+      || { echo "FAIL: apr /metrics fails promtool lint" >&2; exit 1; }
+
+  if_fails: rule 'parity with vLLM metric shape' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: invariant
+  property: "/metrics response is valid Prometheus text format v0.0.4 (promtool lint clean)"
+- type: invariant
+  property: "MUST_EXPORT metric set is fully present with correct TYPE declarations"
+- type: invariant
+  property: "Counter metrics are monotone non-decreasing across scrapes"
+- type: equivalence
+  property: "apr /metrics output passes the same prometheus/promtool linter that accepts vLLM /metrics"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-k-07` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-k-07
+  priority: high
+  auto_created: true

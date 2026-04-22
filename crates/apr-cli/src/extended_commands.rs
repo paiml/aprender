@@ -1,4 +1,3 @@
-
 /// Extended CLI commands (analysis, profiling, QA, benchmarks, and advanced tools).
 ///
 /// Flattened into `Commands` via `#[command(flatten)]` so all subcommands remain
@@ -76,6 +75,10 @@ pub enum ExtendedCommands {
         /// Benchmark specific brick
         #[arg(long)]
         brick: Option<String>,
+        /// Comma-separated latency percentile points for JSON output
+        /// (CRUX-E-07). Default: `50,95,99`. Values must be in (0, 100].
+        #[arg(long, value_delimiter = ',', default_value = "50,95,99")]
+        percentiles: Vec<f64>,
     },
     /// Evaluate model perplexity (spec H13: PPL <= 20) or classification metrics
     Eval {
@@ -639,15 +642,23 @@ pub enum ExtendedCommands {
         /// Run output directory — checkpoints + metadata go to `{run_dir}/ckpt/`.
         #[arg(long, value_name = "DIR")]
         run_dir: PathBuf,
-        /// Peak learning rate after warmup (MODEL-1 v2 remedy default = 5e-5).
-        #[arg(long, default_value = "5e-5")]
-        lr: f32,
+        /// Training regime — finetune (MODEL-1) or from-scratch (MODEL-2 cold start).
+        /// Per contract training-loop-pretrain-v1 §hyperparameter_defaults,
+        /// this atomically flips (regime, lr_max, warmup_steps, target_val_loss)
+        /// unless explicit --lr / --warmup-steps / --target-val-loss override.
+        #[arg(long, value_enum, default_value = "finetune")]
+        mode: PretrainMode,
+        /// Peak learning rate after warmup. Omit to inherit mode default
+        /// (finetune: 5e-5, from-scratch: 3e-4).
+        #[arg(long)]
+        lr: Option<f32>,
         /// Warmup + cosine decay total steps.
         #[arg(long, default_value = "1000")]
         num_steps: usize,
-        /// Number of warmup steps.
-        #[arg(long, default_value = "100")]
-        warmup_steps: usize,
+        /// Number of warmup steps. Omit to inherit mode default
+        /// (finetune: 100, from-scratch: 1000).
+        #[arg(long)]
+        warmup_steps: Option<usize>,
         /// Micro-batch size.
         #[arg(long, default_value = "16")]
         batch_size: usize,
@@ -660,12 +671,25 @@ pub enum ExtendedCommands {
         /// GATE-TRAIN-006 fixed RNG seed.
         #[arg(long, default_value = "42")]
         seed: u64,
-        /// GATE-TRAIN-003 target val_loss (≤ 2.2 per spec).
-        #[arg(long, default_value = "2.2")]
-        target_val_loss: f32,
+        /// Target val_loss. Omit to inherit mode default
+        /// (finetune: 2.2, from-scratch: 3.0).
+        #[arg(long)]
+        target_val_loss: Option<f32>,
+        /// Vocabulary size (required for `--mode from-scratch` INV-TRAIN-005
+        /// regime-dependent cap: 2·ln(vocab_size)). MODEL-2 uses 50257.
+        #[arg(long, default_value = "50257")]
+        vocab_size: u32,
         /// Synthetic-drive only — do not attempt real compute, exercise loop gates only.
-        #[arg(long, default_value = "true")]
+        /// INV-TRAIN-010: absent = real compute (drive_real), present = synthetic (drive_synthetic).
+        #[arg(long, action = clap::ArgAction::SetTrue)]
         synthetic: bool,
+        /// Training backend. Grammar (contract gpu-training-backend-v1
+        /// INV-GPUTRAIN-001): `^(cpu|cuda(:[0-9]|:1[0-5])?|auto)$`.
+        /// Default `auto` uses CUDA if available, else CPU (the only
+        /// spelling that may fall back silently — all other values
+        /// hard-fail on missing runtime per GATE-GPUTRAIN-002).
+        #[arg(long, default_value = "auto")]
+        device: String,
     },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {
@@ -696,6 +720,48 @@ pub enum ExtendedCommands {
         /// Number of output classes (default: 5)
         #[arg(long, default_value = "5")]
         num_classes: usize,
+    },
+    /// Lint an Ollama /api/chat response for schema + NDJSON invariants (CRUX-C-04)
+    OllamaChatLint {
+        /// Path to captured /api/chat response (JSON object, or NDJSON if --stream)
+        #[arg(long, value_name = "FILE")]
+        response_file: PathBuf,
+        /// Treat input as NDJSON stream (one frame per line)
+        #[arg(long)]
+        stream: bool,
+    },
+    /// Lint a captured DRY-sampling observation (CRUX-C-23)
+    DrySamplingLint {
+        /// Path to observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured AWQ quality/compression/flags observation (CRUX-B-08)
+    AwqLint {
+        /// Path to captured AWQ observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured CUDA OOM postmortem report (CRUX-F-13)
+    OomLint {
+        /// Path to captured OOM postmortem JSON (e.g. /tmp/apr-oom-<ts>.json)
+        #[arg(long, value_name = "FILE")]
+        report_file: PathBuf,
+        /// Optional captured stderr log to verify the OOM_REPORT breadcrumb
+        #[arg(long, value_name = "FILE")]
+        stderr_file: Option<PathBuf>,
+    },
+    /// Lint a captured OpenAI tool-use response (CRUX-C-11)
+    ToolUseLint {
+        /// Path to captured OpenAI tool-use response JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a GBNF grammar-constrained observation (CRUX-C-10)
+    GbnfLint {
+        /// Path to captured GBNF observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
     },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]

@@ -1,0 +1,95 @@
+# CRUX-H-12 — ImageFolder loader
+
+metadata:
+  id: CRUX-H-12
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "H — Data & Datasets"
+  competitor: pytorch
+  demand_score: 3
+  intake_status: missing
+  description: >
+    ImageFolder-style loader: a root directory with `class_name/` subdirs and
+    image files is loaded as (x: Image, y: int) pairs. Canonical:
+    `torchvision.datasets.ImageFolder` (pytorch.org/vision/stable/generated/
+    torchvision.datasets.ImageFolder.html). Classes are sorted
+    lexicographically; label 0 = first class.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/datasets
+  - github.com/pytorch/vision — ImageFolder
+  - github.com/microsoft/presidio
+equations:
+  imagefolder:
+    formula: |
+      classes = sorted([d for d in listdir(root) if isdir(root/d)])
+      class_to_idx = { c: i for i, c in enumerate(classes) }
+      samples = [ (root/c/f, class_to_idx[c])
+                  for c in classes
+                  for f in sorted(listdir(root/c))
+                  if ext(f) ∈ {.png, .jpg, .jpeg, .bmp, .webp} ]
+    domain: "(root: Path, exts: [str], image_mode ∈ {RGB, L})"
+    codomain: "dataset with __len__ == |samples| and __getitem__(i) == (img, label)"
+    invariants:
+    - "class labels are dense 0..K-1 (no gaps)"
+    - "class 0 = lexicographically first directory"
+    - "unreadable files (EXIF/corrupt) raise IOError, never silently skip"
+
+falsification_tests:
+- id: FALSIFY-CRUX-H-12-001
+  rule: lexicographic label ordering matches torchvision
+  prediction: "classes 'apple','banana','cherry' → labels 0,1,2"
+  test: |
+    set -euo pipefail
+    mkdir -p /tmp/if/{cherry,apple,banana}
+    for c in cherry apple banana; do cp tests/fixtures/tiny.png /tmp/if/$c/a.png; done
+    apr dataset inspect /tmp/if --loader imagefolder --format json > /tmp/s.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/s.json'))
+    m = d['class_to_idx']
+    assert m == {'apple':0,'banana':1,'cherry':2}, m
+    "
+  if_fails: rule 'lexicographic label ordering matches torchvision' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-12-002
+  rule: dense labels (no gaps)
+  prediction: "labels cover exactly {0,...,K-1}"
+  test: |
+    set -euo pipefail
+    labels=$(apr dataset inspect /tmp/if --loader imagefolder --format json | jq -r '.samples[] | .label' | sort -u | tr '\n' ',')
+    python3 -c "assert '$labels'.rstrip(',') == '0,1,2', '$labels'"
+  if_fails: rule 'dense labels (no gaps)' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-H-12-003
+  rule: corrupt image raises IOError, not silent skip
+  prediction: "reading a corrupt png yields non-zero + I/O error message"
+  test: |
+    set -euo pipefail
+    cp /dev/urandom /tmp/if/apple/bad.png
+    dd if=/dev/urandom of=/tmp/if/apple/bad.png bs=1k count=1 conv=notrunc
+    ! apr dataset iter /tmp/if --loader imagefolder --index 0 2>/tmp/err
+    grep -E "corrupt|decode|IOError" /tmp/err
+
+  if_fails: rule 'corrupt image raises IOError, not silent skip' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr imagefolder class_to_idx matches torchvision.datasets.ImageFolder exactly"
+- type: invariant
+  property: "labels are dense 0..K-1"
+- type: invariant
+  property: "corrupt images raise errors (no silent skip)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-h-12
+  priority: medium
+  auto_created: true

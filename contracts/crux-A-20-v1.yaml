@@ -1,0 +1,257 @@
+# CRUX-A-20 — Offline mode no network calls
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-A-20
+  version: "1.1.0"
+  created: "2026-04-18"
+  last_updated: "2026-04-20"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "A — Model Intake & Discovery"
+  competitor: huggingface
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  description: >
+    Offline mode — zero network calls. Parity target is HuggingFace's
+    `HF_HUB_OFFLINE=1` environment variable and the `local_files_only=True`
+    kwarg, which cause `hf_hub_download` / `snapshot_download` to resolve
+    every request from the local cache (`HF_HOME`) and raise
+    `LocalEntryNotFoundError` on a miss, with zero outbound HTTPS
+    requests. Aprender parity: any apr subcommand that can resolve an
+    hf://<repo> URL (pull, run, serve, validate, inspect, tensors, …)
+    MUST, when `APR_OFFLINE=1` OR `HF_HUB_OFFLINE=1` is set OR
+    `--offline` is passed, execute with ZERO outbound TCP connect()
+    syscalls and exit non-zero on cache miss with a clear
+    `"offline: not found in cache"` message. See
+    https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhuboffline
+  references:
+  - "https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhuboffline"
+  - "https://huggingface.co/docs/huggingface_hub/guides/manage-cache"
+  - "https://github.com/huggingface/huggingface_hub/blob/main/src/huggingface_hub/file_download.py"
+
+equations:
+  zero_network_guarantee:
+    formula: |
+      Let T = set of strace-observed outbound TCP connect() syscalls
+              with family ∈ {AF_INET, AF_INET6} during apr invocation.
+      With APR_OFFLINE=1 OR HF_HUB_OFFLINE=1 OR --offline:
+        |T| == 0    (strict equality)
+      AND DNS resolver calls via getaddrinfo are either zero or resolve only to loopback.
+    domain: "apr subcommand invocation with offline flag/env"
+    codomain: "set of TCP connects (must be empty)"
+    invariants:
+    - "No outbound TCP connect() regardless of cache state"
+    - "No DNS lookups for non-loopback hosts (getaddrinfo for huggingface.co never called)"
+    - "Env var, CLI flag, and HF-compatible env all equivalent"
+
+  cache_miss_error:
+    formula: |
+      offline_mode AND cache_miss(hf://REPO) →
+        exit_code != 0
+        AND stderr contains case-insensitive substring "offline" AND "cache"
+        AND stderr names the missing file (repo or filename substring).
+    domain: "(offline flag set, missing repo)"
+    codomain: "(exit_code, stderr message)"
+    invariants:
+    - "Cache miss is a hard error (no silent network fallback)"
+    - "Error message is actionable (names what is missing)"
+
+  offline_cache_hit_parity:
+    formula: |
+      ∀ (REPO, REV, FILE) ∈ evidence/crux/huggingface/offline-goldens.json:
+        populate_cache(REPO, REV)
+        then APR_OFFLINE=1 apr {pull|inspect|tensors} produces same output bytes/metadata
+        as the online invocation
+    domain: "(repo, revision, filename) tuples with populated cache"
+    codomain: "sha256(output) equality + zero network trace"
+    invariants:
+    - "Offline output == online output on cache hit (byte-for-byte)"
+    - "All offline invocations produce empty TCP connect trace"
+
+falsification_tests:
+- id: FALSIFY-CRUX-A-20-001
+  rule: APR_OFFLINE=1 issues zero outbound TCP connects
+  prediction: "strace on offline pull of a cached repo shows zero AF_INET connects"
+  test: |
+    OUT=$(mktemp -d)
+    # Prime cache
+    apr pull hf://openai-community/gpt2 --include 'config.json' --out "$OUT" >/dev/null
+    OUT2=$(mktemp -d); TRACE=$(mktemp)
+    command -v strace >/dev/null || { echo "strace unavailable, skipping" >&2; exit 2; }
+    APR_OFFLINE=1 strace -f -e trace=connect -o "$TRACE" \
+      apr pull hf://openai-community/gpt2 --include 'config.json' --out "$OUT2" 2>/dev/null
+    # Must not see any non-loopback connect
+    BAD=$(grep -E 'connect\(.*sin_(addr|port)' "$TRACE" | grep -vE '127\.0\.0\.1|::1|AF_UNIX' | wc -l)
+    [ "$BAD" -eq 0 ] || {
+      echo "FAIL: offline mode issued $BAD non-loopback TCP connects" >&2
+      head -20 "$TRACE" >&2; exit 1
+    }
+  if_fails: "APR_OFFLINE=1 did not prevent outbound network I/O"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_20.rs
+    tests:
+    - falsify_crux_a_20_algo_002_apr_offline_env_triggers_offline
+    - falsify_crux_a_20_algo_002_apr_offline_env_zero_is_false
+    - falsify_crux_a_20_algo_001_dry_run_offline_flag_accepted
+    classifier: crates/apr-cli/src/commands/offline.rs
+    scope: >
+      Algorithm-level discharge: `APR_OFFLINE=1` is observed by the CLI
+      dry-run path and produces `Offline: true` without network I/O;
+      `APR_OFFLINE=0` / empty / unrelated values leave the signal off.
+      NOT YET DISCHARGED: strace-verified zero outbound TCP connects in
+      the full pull path (requires primed cache + real download path).
+
+- id: FALSIFY-CRUX-A-20-002
+  rule: HF_HUB_OFFLINE=1 env var is honored (HF compat)
+  prediction: "HF_HUB_OFFLINE=1 behaves same as APR_OFFLINE=1"
+  test: |
+    OUT=$(mktemp -d)
+    apr pull hf://openai-community/gpt2 --include 'config.json' --out "$OUT" >/dev/null
+    OUT2=$(mktemp -d); TRACE=$(mktemp)
+    command -v strace >/dev/null || { echo "strace unavailable, skipping" >&2; exit 2; }
+    HF_HUB_OFFLINE=1 strace -f -e trace=connect -o "$TRACE" \
+      apr pull hf://openai-community/gpt2 --include 'config.json' --out "$OUT2" 2>/dev/null
+    BAD=$(grep -E 'connect\(.*sin_(addr|port)' "$TRACE" | grep -vE '127\.0\.0\.1|::1|AF_UNIX' | wc -l)
+    [ "$BAD" -eq 0 ] || { echo "FAIL: HF_HUB_OFFLINE=1 not honored ($BAD connects)" >&2; exit 1; }
+  if_fails: "HF-compatible env var did not trigger offline mode"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_20.rs
+    tests:
+    - falsify_crux_a_20_algo_003_hf_hub_offline_env_triggers_offline
+    - falsify_crux_a_20_algo_004_all_three_offline_signals_equivalent
+    classifier: crates/apr-cli/src/commands/offline.rs
+    scope: >
+      Algorithm-level discharge: `HF_HUB_OFFLINE=1` is observed by the
+      CLI dry-run path and is observationally equivalent to both
+      `APR_OFFLINE=1` and `--offline` (byte-identical `Offline:` line).
+      NOT YET DISCHARGED: strace-verified zero TCP connects under
+      `HF_HUB_OFFLINE=1` in the full pull path (follow-up network harness).
+
+- id: FALSIFY-CRUX-A-20-003
+  rule: offline cache miss exits non-zero with actionable message
+  prediction: "APR_OFFLINE=1 on empty cache exits non-zero with offline+cache keywords"
+  test: |
+    CACHE=$(mktemp -d); OUT=$(mktemp -d)
+    LOG=$(mktemp)
+    set +e
+    HF_HOME="$CACHE" APR_OFFLINE=1 apr pull hf://openai-community/gpt2 \
+      --include 'config.json' --out "$OUT" 2>"$LOG"
+    RC=$?
+    set -e
+    [ "$RC" -ne 0 ] || { echo "FAIL: cache miss should exit non-zero" >&2; exit 1; }
+    grep -qi 'offline' "$LOG" || { echo "FAIL: no 'offline' in error" >&2; exit 1; }
+    grep -qiE 'cache|not.?found|missing' "$LOG" || { echo "FAIL: no cache-miss keyword" >&2; exit 1; }
+    grep -qi 'gpt2\|config.json' "$LOG" || { echo "FAIL: error does not name missing repo/file" >&2; exit 1; }
+  if_fails: "offline cache miss lacked non-zero exit or actionable message"
+  # No algorithm-level sub-claim: this gate requires a real cache layer +
+  # populated/empty cache states + actual pull path execution. Discharge
+  # deferred to the follow-up network-gated harness.
+
+- id: FALSIFY-CRUX-A-20-004
+  rule: --offline flag is equivalent to APR_OFFLINE=1
+  prediction: "apr pull --offline on cached repo succeeds with no network I/O"
+  test: |
+    OUT=$(mktemp -d)
+    apr pull hf://openai-community/gpt2 --include 'config.json' --out "$OUT" >/dev/null
+    OUT2=$(mktemp -d); TRACE=$(mktemp)
+    command -v strace >/dev/null || { echo "strace unavailable, skipping" >&2; exit 2; }
+    strace -f -e trace=connect -o "$TRACE" \
+      apr pull --offline hf://openai-community/gpt2 --include 'config.json' --out "$OUT2" 2>/dev/null
+    BAD=$(grep -E 'connect\(.*sin_(addr|port)' "$TRACE" | grep -vE '127\.0\.0\.1|::1|AF_UNIX' | wc -l)
+    [ "$BAD" -eq 0 ] || { echo "FAIL: --offline flag made $BAD network calls" >&2; exit 1; }
+    [ -f "$OUT2/config.json" ] || { echo "FAIL: cached file not materialized" >&2; exit 1; }
+  if_fails: "--offline flag did not behave equivalently to env var"
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+    harness: crates/apr-cli/tests/falsification_crux_a_20.rs
+    tests:
+    - falsify_crux_a_20_algo_001_dry_run_offline_flag_accepted
+    - falsify_crux_a_20_algo_004_all_three_offline_signals_equivalent
+    - falsify_crux_a_20_algo_001_dry_run_offline_is_deterministic
+    classifier: crates/apr-cli/src/commands/offline.rs
+    scope: >
+      Algorithm-level discharge: `--offline` CLI flag is parsed, plumbed
+      through dispatch, and produces a byte-identical `Offline:` line
+      to the env-var paths. Back-to-back invocations are deterministic.
+      NOT YET DISCHARGED: strace-verified zero TCP connects under
+      `--offline` in the full pull path with a primed cache (follow-up).
+
+- id: FALSIFY-CRUX-A-20-005
+  rule: parity with huggingface_hub on cache-hit offline reads
+  prediction: "bytes from offline apr pull == bytes from huggingface_hub local_files_only=True"
+  test: |
+    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/huggingface/offline-goldens.json
+    [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
+    python3 - "$GOLD" <<'PY'
+    import json, subprocess, tempfile, hashlib, os, sys, pathlib
+    for c in json.load(open(sys.argv[1])):
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["apr","pull",f"hf://{c['repo']}","--include",c["filename"],"--out",d], check=True)
+        with tempfile.TemporaryDirectory() as d2:
+            env = {**os.environ, "APR_OFFLINE": "1"}
+            subprocess.run(["apr","pull",f"hf://{c['repo']}","--include",c["filename"],"--out",d2],
+                          check=True, env=env)
+            got = hashlib.sha256(open(pathlib.Path(d2)/c["filename"],"rb").read()).hexdigest()
+            assert got == c["expected_sha256"], (c, got)
+    PY
+  if_fails: "offline bytes diverged from online huggingface_hub golden"
+
+proof_obligations:
+- type: equivalence
+  property: "apr --offline matches huggingface_hub(local_files_only=True) / HF_HUB_OFFLINE=1 on evidence/crux/huggingface/offline-goldens.json"
+- type: invariant
+  property: "Zero outbound non-loopback TCP connects under APR_OFFLINE=1, HF_HUB_OFFLINE=1, or --offline (strace-verified)"
+- type: invariant
+  property: "Cache miss in offline mode is a hard error with 'offline' + cache-miss context in stderr"
+- type: invariant
+  property: "HF_HUB_OFFLINE=1, APR_OFFLINE=1, and --offline are observationally equivalent"
+- type: invariant
+  property: "|TCP_connect_trace(offline invocation)| == 0 (strict equality)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 3  # FALSIFY-001/002/004 at PARTIAL_ALGORITHM_LEVEL
+  status: partial
+  evidence:
+    rust_tests: crates/apr-cli/tests/falsification_crux_a_20.rs
+    unit_tests: crates/apr-cli/src/commands/offline.rs
+    commands:
+    - apr pull <short> --dry-run --offline
+    - APR_OFFLINE=1 apr pull <short> --dry-run
+    - HF_HUB_OFFLINE=1 apr pull <short> --dry-run
+    coverage:
+    - falsify-001: falsify_crux_a_20_algo_002_apr_offline_env_triggers_offline
+    - falsify-001: falsify_crux_a_20_algo_002_apr_offline_env_zero_is_false
+    - falsify-002: falsify_crux_a_20_algo_003_hf_hub_offline_env_triggers_offline
+    - falsify-002: falsify_crux_a_20_algo_004_all_three_offline_signals_equivalent
+    - falsify-004: falsify_crux_a_20_algo_001_dry_run_offline_flag_accepted
+    - falsify-004: falsify_crux_a_20_algo_001_dry_run_offline_is_deterministic
+    - algo-005: falsify_crux_a_20_algo_005_default_offline_is_false
+  scope_honesty: >
+    FALSIFY-CRUX-A-20-001/002/004 are discharged at PARTIAL_ALGORITHM_LEVEL
+    — the Rust harness proves the offline sub-claims (CLI flag / env var
+    parsing, observational equivalence of `--offline` vs `APR_OFFLINE=1`
+    vs `HF_HUB_OFFLINE=1`, default-online behavior). The network-level
+    sub-claims (strace-verified zero non-loopback TCP connect() syscalls,
+    DNS suppression) remain TODO and require a separate strace-gated
+    harness with a primed cache. FALSIFY-CRUX-A-20-003 (cache-miss hard
+    error) and FALSIFY-CRUX-A-20-005 (huggingface_hub byte parity) are
+    NOT yet discharged — both need cache-layer + real pull-path wiring.
+    Contract stays `status: partial`.
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-a-20` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-a-20
+  priority: high
+  auto_created: false

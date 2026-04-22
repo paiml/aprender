@@ -1,0 +1,95 @@
+# CRUX-C-21 — Mirostat sampling
+
+metadata:
+  id: CRUX-C-21
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: llama_cpp
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Mirostat v1 / v2 perplexity-target sampling (arXiv:2007.14966).
+    Canonical: llama.cpp `--mirostat 2 --mirostat-tau 5.0 --mirostat-eta 0.1`
+    — adaptively picks top-k each step to hit a target surprisal tau.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  mirostat_v2:
+    formula: |
+      # Mirostat v2 (simpler, more common):
+      # 1. sample token from prob distribution
+      # 2. compute observed surprise: s = -log2(p_token)
+      # 3. error e = s - tau
+      # 4. mu_{t+1} = mu_t - eta * e
+      # 5. next step: top-k adjusted so mean surprise ≈ mu
+      mean_surprise_over_run ≈ tau (within ±0.1 for N ≥ 256)
+    domain: "(tau: f32 > 0, eta: f32 ∈ (0,1), version ∈ {1,2})"
+    codomain: "token stream with bounded surprise"
+    invariants:
+    - "|mean(-log2(p_tokens)) - tau| ≤ 0.1 over 256-token run"
+    - "mirostat disables top_k / top_p / typical_p (mutually exclusive with classic samplers)"
+    - "seed+tau+eta determines output bitwise (given fixed model/prompt)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-21-001
+  rule: mean surprise converges to tau within ±0.1
+  prediction: "256-token run with tau=5.0 has mean log-prob surprise ≈ 5.0"
+  test: |
+    set -euo pipefail
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "Once upon a time " \
+      --sampler mirostat --mirostat-tau 5.0 --mirostat-eta 0.1 \
+      --max-tokens 256 --seed 42 --logprobs --format json > /tmp/out.json
+    python3 -c "
+    import json, math
+    r = json.load(open('/tmp/out.json'))
+    logs = [-math.log2(t['prob']) for t in r['tokens']]
+    m = sum(logs)/len(logs)
+    assert abs(m - 5.0) < 0.2, f'mean={m}, tau=5.0'
+    "
+  if_fails: rule 'mean surprise converges to tau within ±0.1' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-21-002
+  rule: mirostat flag mutually exclusive with top_k / top_p
+  prediction: "--mirostat 2 --top-k 50 exits 2 with actionable error"
+  test: |
+    set -e
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "hi" \
+      --sampler mirostat --top-k 50 --max-tokens 4 2>/tmp/err && exit 1 || [ $? -eq 2 ]
+    grep -Ei "mutually exclusive|mirostat" /tmp/err
+  if_fails: rule 'mirostat flag mutually exclusive with top_k / top_p' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-C-21-003
+  rule: byte-identical output across runs with same seed+tau+eta
+  prediction: "two invocations produce identical token_ids"
+  test: |
+    set -euo pipefail
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "hi" --sampler mirostat --mirostat-tau 5.0 --seed 7 --max-tokens 32 --format json > /tmp/a.json
+    apr run tests/fixtures/tinyllama-q4_k_m.gguf --prompt "hi" --sampler mirostat --mirostat-tau 5.0 --seed 7 --max-tokens 32 --format json > /tmp/b.json
+    diff <(jq .token_ids /tmp/a.json) <(jq .token_ids /tmp/b.json)
+
+  if_fails: rule 'byte-identical output across runs with same seed+tau+eta' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr run --sampler mirostat matches llama.cpp `--mirostat 2 --mirostat-tau --mirostat-eta` convergence"
+- type: invariant
+  property: "mean surprise over run converges to tau within ±0.1"
+- type: invariant
+  property: "deterministic given (seed, tau, eta, model, prompt)"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-c-21
+  priority: medium
+  auto_created: true

@@ -604,7 +604,16 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             stage.as_deref(),
             cli.json,
         ),
-        Commands::Pull { model_ref, force } => pull::run(model_ref, *force),
+        Commands::Pull {
+            model_ref,
+            force,
+            dry_run,
+            revision,
+            offline,
+        } => pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline),
+        Commands::Registry { command } => {
+            crate::commands::registry::run(command.clone())
+        }
         Commands::List => pull::list(cli.json, cli.quiet),
         Commands::Rm { model_ref } => pull::remove(model_ref),
         Commands::Tui { file } => tui::run(file.clone()),

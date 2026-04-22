@@ -1,0 +1,82 @@
+# CRUX-D-20 — RoPE frequency scaling during SFT
+
+metadata:
+  id: CRUX-D-20
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Context extension during SFT via RoPE rescaling (linear, dynamic, NTK,
+    YaRN). Canonical: HF `--rope-theta 1e6`, `rope_scaling={"type":"linear","factor":4}`
+    in config.json; YaRN per arXiv:2309.00071.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  rope_scaling:
+    formula: |
+      linear:  theta_i' = theta_i / factor
+      dynamic: factor = max(1, seq_len / orig_max_pos)
+      ntk:     theta_base' = theta_base * factor^(d/(d-2))
+      yarn:    piecewise blend of NTK-by-parts + attention-scale temperature
+    domain: "(rope_type ∈ {linear, dynamic, ntk, yarn}, factor: f32 ≥ 1, orig_max_pos: u32)"
+    codomain: "modified rotary freqs applied in all attention layers + stored in config"
+    invariants:
+    - "config.json + apr inspect round-trip preserves rope_scaling{}"
+    - "factor=1 on any rope_type is identity (RMS-equal logits)"
+    - "long-context ppl after scaled-SFT is lower than without scaling at seq_len>orig_max_pos"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-20-001
+  rule: factor=1 is identity — logits byte-equal
+  prediction: "apr finetune with --rope-scaling linear:1.0 is equivalent to no scaling"
+  test: |
+    set -euo pipefail
+    apr finetune tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --rope-type linear --rope-factor 1.0 --steps 1 -o /tmp/s1
+    apr finetune tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --steps 1 -o /tmp/s0
+    # compare logits on a held-out prompt
+    h1=$(apr run /tmp/s1 --prompt "hello" --max-tokens 1 --logprobs --format json | jq -r .tokens[0].prob)
+    h0=$(apr run /tmp/s0 --prompt "hello" --max-tokens 1 --logprobs --format json | jq -r .tokens[0].prob)
+    python3 -c "assert abs($h1 - $h0) < 1e-6"
+  if_fails: rule 'factor=1 is identity — logits byte-equal' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-20-002
+  rule: config round-trips rope_scaling exactly
+  prediction: "apr save → apr inspect shows the scaling spec verbatim"
+  test: |
+    set -euo pipefail
+    apr finetune ... --rope-type yarn --rope-factor 4.0 --original-max-position 2048 \
+      --steps 1 -o /tmp/yarn
+    apr inspect /tmp/yarn --format json | jq -e '.metadata.rope_scaling | .type=="yarn" and .factor==4.0'
+
+  if_fails: rule 'config round-trips rope_scaling exactly' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr --rope-scaling matches HF config rope_scaling for {linear, dynamic, ntk, yarn}"
+- type: invariant
+  property: "factor=1.0 is identity (byte-equal logits)"
+- type: invariant
+  property: "config round-trip preserves rope_scaling block"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-20
+  priority: medium
+  auto_created: true

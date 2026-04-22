@@ -1,0 +1,135 @@
+# CRUX-L-06 — paged-attention dispatch via HF kernels-community
+# Authored under PMAT-660. See docs/specifications/crux-competitive-research-ux-workflows.md §5.L.
+
+metadata:
+  id: CRUX-L-06
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - crux-L-01-v1
+  category: "L — HF kernels-community integration"
+  competitor: hf-kernels-community
+  demand_score: 4
+  intake_status: missing
+  description: >
+    Dispatch attention via PagedAttention kernel (vLLM-lineage) loaded
+    from HF kernels-community. PagedAttention enables KV-cache paging
+    for high-throughput batched serving. Parity target: vLLM's
+    `PagedAttention` kernel invoked under `apr serve` for batch>1.
+    Contract binds block_size ∈ {16, 32} and enforces KV-cache
+    page-table integrity.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'upstream: github.com/vllm-project/vllm — PagedAttention origin'
+  - 'arXiv:2309.06180 — Efficient Memory Management for LLM Serving (PagedAttention)'
+  - 'contracts/crux-L-01-v1.yaml — kernel loader prereq'
+
+equations:
+  paged_attention_dispatch:
+    formula: |
+      KV cache is tiled into blocks of size B ∈ {16, 32}:
+          kv_pages: Tensor[num_blocks, B, H_kv, D]
+          block_table: Tensor[num_seqs, max_blocks_per_seq]   # indices
+          context_lens: Tensor[num_seqs]
+      out := paged_attention_fwd(Q, kv_pages, block_table, context_lens, scale, B)
+      Numerical parity: max_abs_diff(out, naive_ref) <= 5e-3 AND cosine_sim >= 0.9999
+    domain: "Q + kv_pages + block_table"
+    codomain: "out tensor"
+    invariants:
+    - "block_size ∈ {16, 32} — unsupported sizes error at load (not dispatch)"
+    - "block_table indices < num_blocks (bounds-checked); OOB is a hard error, not corrupt memory"
+    - "context_lens[i] <= max_blocks_per_seq * block_size ∀ i"
+    - "per-sequence context isolation: seq_j's attention never reads seq_k's pages"
+
+  cli_contract:
+    formula: |
+      apr serve <model> --attn paged --block-size 16 --max-seqs 8 --json
+        emits:
+          attn_impl: "paged"
+          kernel_source: "hf-kernels-community:paged-attention@<sha>"
+          block_size: 16
+          max_seqs: 8
+      apr serve accepts batch>1 with paged KV; rejects batch>1 with --attn naive
+    domain: "(model, serving params)"
+    codomain: "HTTP server state"
+    invariants:
+    - "block_size <> {16,32} fails at server start, not per-request"
+    - "page-table OOB request returns 500 with structured error, not UB"
+
+falsification_tests:
+- id: FALSIFY-CRUX-L-06-001
+  rule: "--attn paged flag exists on apr serve"
+  prediction: "apr serve --help advertises --attn paged"
+  test: |
+    set -euo pipefail
+    apr serve --help 2>&1 | grep -qE -- "paged"
+  if_fails: "apr serve lacks --attn paged — L-06 not wired"
+
+- id: FALSIFY-CRUX-L-06-002
+  rule: "numerical parity with naive reference"
+  prediction: "paged output within 5e-3 of naive on canary fixture"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl paged --ref naive --block-size 16 --fixture fixtures/attn-canary.json --json > /tmp/l06-parity.json
+    jq -e '.max_abs_diff <= 5e-3 and .cosine_sim >= 0.9999' /tmp/l06-parity.json >/dev/null
+  if_fails: "PagedAttention diverges numerically — contract re-verification required"
+
+- id: FALSIFY-CRUX-L-06-003
+  rule: "unsupported block_size fails at load, not dispatch"
+  prediction: "apr serve --attn paged --block-size 24 exits 1 on startup"
+  test: |
+    set -euo pipefail
+    set +e
+    timeout 10 apr serve tests/fixtures/tiny.apr --attn paged --block-size 24 --max-seqs 2 --json 2>/tmp/l06-bs.log
+    EC=$?
+    set -e
+    [ "$EC" -ne 0 ] || { echo "expected non-zero exit on block_size=24"; exit 1; }
+    grep -qE "block_size|unsupported|16|32" /tmp/l06-bs.log
+  if_fails: "Unsupported block_size silently accepted — misconfigured server ships garbage"
+
+- id: FALSIFY-CRUX-L-06-004
+  rule: "per-sequence isolation (seq_j attention never reads seq_k pages)"
+  prediction: "Parity gate with 2 concurrent sequences produces identical output to 2 single-sequence runs"
+  test: |
+    set -euo pipefail
+    apr kernel parity --impl paged --ref single-seq --block-size 16 --concurrent 2 --fixture fixtures/attn-canary.json --json > /tmp/l06-iso.json
+    jq -e '.max_abs_diff <= 5e-3' /tmp/l06-iso.json >/dev/null
+  if_fails: "Cross-sequence contamination — PagedAttention returns wrong tokens under batch>1"
+
+- id: FALSIFY-CRUX-L-06-005
+  rule: "kernel_source pinned"
+  prediction: "On startup, kernel_source matches 'hf-kernels-community:paged-attention@<sha>'"
+  test: |
+    set -euo pipefail
+    apr serve tests/fixtures/tiny.apr --attn paged --block-size 16 --max-seqs 2 --dry-run --json > /tmp/l06-prov.json 2>/dev/null || true
+    jq -e '.kernel_source | test("^hf-kernels-community:paged-attention@[0-9a-f]{40}$")' /tmp/l06-prov.json >/dev/null
+  if_fails: "Unpinned paged source — supply-chain audit impossible"
+
+proof_obligations:
+- type: invariant
+  property: "Numerical parity max_abs_diff <= 5e-3 vs naive reference"
+- type: invariant
+  property: "Block size ∈ {16, 32}; enforced at load"
+- type: invariant
+  property: "Per-sequence isolation under batch>1"
+- type: invariant
+  property: "Kernel source pinned (pkg@sha)"
+- type: equivalence
+  property: "apr serve --attn paged  ≅  vLLM PagedAttention (batched KV-cache serving)"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-l-06
+  ticket_id: PMAT-660
+  priority: high
+  auto_created: true

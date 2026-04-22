@@ -1,0 +1,93 @@
+# CRUX-B-20 — Roundtrip quant diff report
+
+metadata:
+  id: CRUX-B-20
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "B — Inspection & Debugging"
+  competitor: llama_cpp
+  demand_score: 3
+  intake_status: partial
+  description: >
+    `apr diff --quant-roundtrip` shows per-tensor quantization error
+    (RMSE / cosine / max-abs-err) between fp16 original and dequant of the
+    quantized output. Canonical: `llama-quantize-stats -v -m model.gguf`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/peft — LoRA/PEFT
+  - arXiv:2106.09685 — LoRA
+equations:
+  per_tensor_error_metrics:
+    formula: |
+      for tensor t in model:
+        err[t] = W_fp16[t] - dequant(quant(W_fp16[t]))
+        rmse[t]  = sqrt(mean(err[t]^2))
+        cos[t]   = dot(W_fp16[t].flat, dequant(...).flat) / (|W_fp16[t]||dequant|)
+        max[t]   = max(|err[t]|)
+      report: rank by rmse DESC; cos ≥ 0.999 flagged green, ≥ 0.99 yellow, else red
+    domain: "(model_fp16: GGUF, model_quant: GGUF)"
+    codomain: "TSV/JSON table: tensor, rmse, cosine, max_abs, qtype, verdict"
+    invariants:
+    - "sum(err^2) monotone non-decreasing with quant bitwidth decrease"
+    - "JSON output schema stable: keys tensor/rmse/cosine/max_abs/qtype/verdict"
+    - "exit code ≠ 0 if any tensor cosine < 0.95 (unless --no-threshold)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-B-20-001
+  rule: report includes per-tensor RMSE ranked descending
+  prediction: "JSON rows sorted by rmse DESC; all have qtype + cosine fields"
+  test: |
+    set -euo pipefail
+    apr diff --quant-roundtrip tests/fixtures/tinyllama-fp16.gguf tests/fixtures/tinyllama-q4_0.gguf --format json > /tmp/diff.json
+    jq -e '. | length > 0 and all(has("rmse") and has("cosine") and has("qtype"))' /tmp/diff.json
+    jq -e '[.[].rmse] | . == (sort | reverse)' /tmp/diff.json
+  if_fails: rule 'report includes per-tensor RMSE ranked descending' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-B-20-002
+  rule: exit nonzero when any cosine < 0.95
+  prediction: "deliberately-bad quant (Q2_K) triggers exit code ≠ 0 without --no-threshold"
+  test: |
+    set -e
+    apr quantize tests/fixtures/tinyllama-fp16.gguf --format q2_k -o /tmp/q2k.gguf
+    apr diff --quant-roundtrip tests/fixtures/tinyllama-fp16.gguf /tmp/q2k.gguf --threshold 0.95 && exit 1 || true
+  if_fails: rule 'exit nonzero when any cosine < 0.95' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-B-20-003
+  rule: matches llama-quantize-stats within numerical tolerance
+  prediction: "per-tensor rmse agrees with llama-quantize-stats to ± 1e-5"
+  test: |
+    set -euo pipefail
+    apr diff --quant-roundtrip tests/fixtures/tinyllama-fp16.gguf tests/fixtures/tinyllama-q4_0.gguf --format json | jq '.[] | {tensor, rmse}' > /tmp/apr.jsonl
+    llama-quantize-stats -v -m tests/fixtures/tinyllama-q4_0.gguf --fp16 tests/fixtures/tinyllama-fp16.gguf --json > /tmp/ref.json
+    python3 - <<'PY'
+    import json
+    apr = {r["tensor"]: r["rmse"] for r in map(json.loads, open("/tmp/apr.jsonl"))}
+    ref = {r["name"]: r["rmse"] for r in json.load(open("/tmp/ref.json"))["tensors"]}
+    for k in apr:
+      if k in ref:
+        assert abs(apr[k]-ref[k]) < 1e-5, f"{k}: apr={apr[k]} ref={ref[k]}"
+    PY
+
+  if_fails: rule 'matches llama-quantize-stats within numerical tolerance' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr diff --quant-roundtrip matches `llama-quantize-stats -v` per-tensor RMSE ± 1e-5"
+- type: invariant
+  property: "output rows sorted by rmse DESC; schema stable across versions"
+- type: invariant
+  property: "threshold-gate default 0.95; exit ≠ 0 on any tensor below"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-b-20
+  priority: medium
+  auto_created: false

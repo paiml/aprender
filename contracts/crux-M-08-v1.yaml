@@ -1,0 +1,198 @@
+# CRUX-M-08 — QA Gate-8: 5-Whys root-cause artifact per defect
+# Authored under PMAT-676. See docs/specifications/crux-competitive-research-ux-workflows.md §5.M.
+
+metadata:
+  id: CRUX-M-08
+  version: "1.0.0-draft"
+  created: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  - apr-model-qa-v1
+  category: "M — APR-QA Playbook Canonicalization"
+  competitor: apr-qa-playbook
+  demand_score: 4
+  intake_status: partial
+  description: >
+    QA Gate-8 from apr-model-qa-playbook — Toyota Production
+    System "5-Whys" Jidoka gate. Every defect that causes a
+    Gate-1..Gate-7 FAIL MUST ship a structured 5-Whys artifact
+    under evidence/qa/5-whys/<defect-id>.yaml before the fix is
+    merged. Stops "fix the symptom, ship it" pattern that caused
+    recurrent LAYOUT-001/002 regressions. Gate-8 enforces the
+    process: fix without artifact = PR rejected.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'sibling repo: github.com/paiml/apr-model-qa-playbook — Gate-8'
+  - 'Ohno, T. — Toyota Production System (Jidoka + 5-Whys)'
+  - 'CLAUDE.md — §"Toyota Way: all defects are your defects"'
+
+equations:
+  five_whys_artifact_shape:
+    formula: |
+      For each defect-id D triggering a QA gate FAIL and later fixed:
+          artifact := evidence/qa/5-whys/D.yaml
+      shape(artifact) := {
+          defect_id:         string matching [A-Z]+-[A-Z]+-\d+
+          gate_that_failed:  "Gate-1".."Gate-7"
+          failing_commit:    sha      # the bad HEAD
+          fixing_commit:     sha      # the merge that fixed it
+          whys:              list[string] len == 5
+          countermeasure:    string  # 1-line what changed
+          poka_yoke:         string  # compile-time or CI guard added so recurrence is impossible
+      }
+      Gate pass := ∀ fixing_commit C on main : exists(artifact) AND shape(artifact) is complete
+    domain: "set of defect-id ↔ fixing-commit pairs"
+    codomain: "PASS if every fixing commit has a conforming 5-Whys artifact"
+    invariants:
+    - "whys is a list of exactly 5 entries — fewer than 5 fails (playbook rule)"
+    - "poka_yoke is NOT 'added a code comment' — it must be a test, a type, or a CI gate"
+    - "defect_id pattern is PMAT-###|CB-###|GH-###|LAYOUT-###|P0-* to cross-link PMAT/GitHub"
+    - "fixing_commit sha is pinned — the artifact travels with the fix, not written later"
+
+  gate_contract:
+    formula: |
+      apr qa --gate five-whys \
+             --since <base-ref> --head HEAD \
+             --artifact-root evidence/qa/5-whys \
+             --json
+        emits:
+          status ∈ {"PASS", "FAIL"}
+          commits_scanned: N
+          qa_fix_commits:  K   # commits in range that fixed a gate FAIL
+          missing_artifacts:
+            - { commit, defect_id, reason: "no artifact" | "missing whys" | "poka_yoke trivial" }
+      exit 0 iff PASS and missing_artifacts == [] ; exit 1 iff FAIL ; exit >= 2 on I/O error
+    domain: "(base_ref, head_ref, artifact_root)"
+    codomain: "(exit_code, JSON report)"
+    invariants:
+    - "exit code aligns with status"
+    - "commits that didn't touch a qa-gate-failing path are skipped (no false-positive burden)"
+    - "reasons are classified, not freeform — enables aggregate dashboards"
+
+falsification_tests:
+- id: FALSIFY-CRUX-M-08-001
+  rule: "--gate five-whys flag exists"
+  prediction: "apr qa --help advertises --gate five-whys"
+  test: |
+    set -euo pipefail
+    apr qa --help | grep -qE -- "five-whys"
+  if_fails: "apr qa lacks five-whys gate — Gate-8 is not wired into CI"
+
+- id: FALSIFY-CRUX-M-08-002
+  rule: "FAIL on a commit range with a QA fix but no artifact"
+  prediction: "Revert-adding a commit labeled 'fix(qa):' without an artifact flips the gate to FAIL"
+  test: |
+    set -euo pipefail
+    # Simulate a qa-fix commit without artifact, verify gate catches it
+    git log --grep='^fix(qa):' -1 --format=%H > /tmp/m08-fix.sha
+    SHA=$(cat /tmp/m08-fix.sha)
+    [ -n "$SHA" ] || { echo "no fix(qa): commit in history — fixture precondition unmet"; exit 1; }
+    rm -f evidence/qa/5-whys/"$SHA".yaml 2>/dev/null || true
+    set +e
+    apr qa --gate five-whys --since "$SHA"~1 --head "$SHA" \
+           --artifact-root evidence/qa/5-whys --json > /tmp/m08-fail.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and (.missing_artifacts | length) >= 1' /tmp/m08-fail.json >/dev/null
+  if_fails: "Gate does not detect a missing artifact — Jidoka discipline is unenforced"
+
+- id: FALSIFY-CRUX-M-08-003
+  rule: "FAIL on an artifact with fewer than 5 whys"
+  prediction: "A 4-why artifact is rejected with reason='missing whys'"
+  test: |
+    set -euo pipefail
+    mkdir -p evidence/qa/5-whys
+    cat > evidence/qa/5-whys/M08-SHORT.yaml <<YAML
+    defect_id: M08-SHORT
+    gate_that_failed: Gate-1
+    failing_commit: deadbeef
+    fixing_commit: cafebabe
+    whys:
+    - only
+    - four
+    - whys
+    - here
+    countermeasure: n/a
+    poka_yoke: added CI gate
+    YAML
+    set +e
+    apr qa --gate five-whys --validate-artifact evidence/qa/5-whys/M08-SHORT.yaml --json > /tmp/m08-short.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and (.missing_artifacts[] | .reason == "missing whys")' /tmp/m08-short.json >/dev/null
+    rm -f evidence/qa/5-whys/M08-SHORT.yaml
+  if_fails: "Gate accepts an under-budgeted artifact — 5-Whys requirement is a suggestion, not enforcement"
+
+- id: FALSIFY-CRUX-M-08-004
+  rule: "FAIL on a trivial poka_yoke (code comment, README, etc.)"
+  prediction: "poka_yoke: 'added a code comment' is rejected"
+  test: |
+    set -euo pipefail
+    cat > evidence/qa/5-whys/M08-TRIVIAL.yaml <<YAML
+    defect_id: M08-TRIVIAL
+    gate_that_failed: Gate-2
+    failing_commit: deadbeef
+    fixing_commit: cafebabe
+    whys: [a,b,c,d,e]
+    countermeasure: x
+    poka_yoke: added a code comment
+    YAML
+    set +e
+    apr qa --gate five-whys --validate-artifact evidence/qa/5-whys/M08-TRIVIAL.yaml --json > /tmp/m08-triv.json
+    EC=$?
+    set -e
+    [ "$EC" -eq 1 ] || exit 1
+    jq -e '.status == "FAIL" and (.missing_artifacts[] | .reason == "poka_yoke trivial")' /tmp/m08-triv.json >/dev/null
+    rm -f evidence/qa/5-whys/M08-TRIVIAL.yaml
+  if_fails: "Gate accepts 'added a comment' as poka-yoke — Toyota Way is decoration"
+
+- id: FALSIFY-CRUX-M-08-005
+  rule: "PASS when a qa fix ships with a complete artifact"
+  prediction: "Complete artifact (5 whys + real poka_yoke) passes gate for that commit"
+  test: |
+    set -euo pipefail
+    cat > /tmp/m08-full.yaml <<YAML
+    defect_id: M08-FULL
+    gate_that_failed: Gate-3
+    failing_commit: deadbeef
+    fixing_commit: cafebabe
+    whys:
+    - symptom
+    - immediate cause
+    - contributing cause
+    - root cause
+    - systemic cause
+    countermeasure: fix the import boundary transpose
+    poka_yoke: added compile-time LayoutContract newtype guard
+    YAML
+    apr qa --gate five-whys --validate-artifact /tmp/m08-full.yaml --json > /tmp/m08-ok.json
+    jq -e '.status == "PASS"' /tmp/m08-ok.json >/dev/null
+  if_fails: "Gate rejects a good-faith complete artifact — false-positive burden causes team to bypass"
+
+proof_obligations:
+- type: invariant
+  property: "Every qa-fix commit on main is accompanied by a conforming 5-Whys artifact"
+- type: invariant
+  property: "Artifact shape enforced: defect_id, 5 whys (exactly), real poka_yoke"
+- type: invariant
+  property: "Exit code aligns with status; trivial poka_yoke classified"
+- type: equivalence
+  property: "apr qa --gate five-whys  ≅  apr-model-qa-playbook Gate-8 (Jidoka 5-Whys)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-m-08
+  ticket_id: PMAT-676
+  priority: high
+  auto_created: true

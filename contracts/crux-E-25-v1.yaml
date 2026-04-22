@@ -1,0 +1,98 @@
+# CRUX-E-25 — Vision-language benchmark harness
+
+metadata:
+  id: CRUX-E-25
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Benchmarks & Evaluation"
+  competitor: openclip
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Vision-language benchmark harness: zero-shot ImageNet-1k top-1/top-5
+    + MS-COCO retrieval (image→text, text→image R@1/R@5/R@10). Canonical:
+    OpenCLIP `src/training/zero_shot.py` + LAION CLIP_benchmark
+    (github.com/LAION-AI/CLIP_benchmark). Official ViT-B/32 LAION-2B
+    baseline: ImageNet top-1 ≈ 66.5%, MSCOCO text→image R@1 ≈ 40.5%.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  vlm_bench:
+    formula: |
+      zero_shot(classes) = argmax_i cos(img_emb, txt_emb(template(class_i)))
+      top_k(logits, k) includes true label ⇒ hit
+      retrieval_R_at_k(queries, gallery) = |{q : rank(q) ≤ k}| / |queries|
+      # metrics: ImageNet top-1/5, MSCOCO i2t/t2i R@{1,5,10}
+    domain: "(model: Path, task ∈ {imagenet_zs, mscoco_retr}, split: str)"
+    codomain: "JSON {task: str, metrics: {top1: f32, top5: f32, ...}}"
+    invariants:
+    - "metrics ∈ [0, 1]"
+    - "top5 ≥ top1 (monotonicity)"
+    - "seeded eval is deterministic (same model + same seed ⇒ same metrics)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-25-001
+  rule: top5 ≥ top1 (monotonicity)
+  prediction: "zero-shot imagenet top5 ≥ top1 across runs"
+  test: |
+    set -euo pipefail
+    apr eval-vlm /tmp/clip-vit-b32.apr --task imagenet_zs \
+      --split val --seed 42 --format json > /tmp/zs.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/zs.json'))
+    t1=d['metrics']['top1']; t5=d['metrics']['top5']
+    assert 0.0 <= t1 <= t5 <= 1.0, (t1, t5)
+    "
+  if_fails: rule 'top5 ≥ top1 (monotonicity)' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-25-002
+  rule: retrieval recalls are nested (R@1 ≤ R@5 ≤ R@10)
+  prediction: "MSCOCO t2i R@1 ≤ R@5 ≤ R@10"
+  test: |
+    set -euo pipefail
+    apr eval-vlm /tmp/clip-vit-b32.apr --task mscoco_retr \
+      --split val --seed 42 --format json > /tmp/r.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/r.json'))
+    t2i = d['metrics']['t2i']
+    assert t2i['R@1'] <= t2i['R@5'] <= t2i['R@10'], t2i
+    "
+  if_fails: rule 'retrieval recalls are nested (R@1 ≤ R@5 ≤ R@10)' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-25-003
+  rule: determinism under fixed seed
+  prediction: "two runs with --seed 42 produce identical metrics"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr eval-vlm /tmp/clip-vit-b32.apr --task imagenet_zs \
+        --split val --seed 42 --format json > /tmp/d$i.json
+    done
+    diff <(jq -S .metrics /tmp/d1.json) <(jq -S .metrics /tmp/d2.json)
+
+  if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr eval-vlm matches OpenCLIP zero_shot + LAION CLIP_benchmark metric definitions"
+- type: invariant
+  property: "top5 ≥ top1; R@1 ≤ R@5 ≤ R@10"
+- type: invariant
+  property: "determinism under fixed seed"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-e-25
+  priority: medium
+  auto_created: true

@@ -1,0 +1,92 @@
+# CRUX-D-26 — LR finder range test
+
+metadata:
+  id: CRUX-D-26
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "D — Inference & Generation"
+  competitor: pytorch
+  demand_score: 3
+  intake_status: missing
+  description: >
+    LR range test (Smith, arXiv:1506.01186): sweep LR exponentially across
+    a short run, record loss per step, pick LR at steepest-descent point.
+    Canonical: fastai `Learner.lr_find()`, PyTorch-Lightning `Tuner.lr_find()`.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/vllm-project/vllm
+  - github.com/ggerganov/llama.cpp
+  - github.com/ollama/ollama
+equations:
+  lr_range_test:
+    formula: |
+      lr_i = lr_min * (lr_max / lr_min) ** (i / n_steps)
+      loss_i = forward_backward(batch_i, lr=lr_i)
+      # suggested lr = argmin(smoothed_grad(loss)) / 10  (fastai heuristic)
+    domain: "(lr_min: f32 = 1e-7, lr_max: f32 = 10, n_steps: u32 = 100, smoothing: f32 = 0.98)"
+    codomain: "JSON {curve: [(lr, loss)], suggested_lr: f32, steepest_lr: f32}"
+    invariants:
+    - "curve is monotone in lr (strictly increasing x-axis)"
+    - "suggested_lr lies within [lr_min, lr_max]"
+    - "rerunning with identical seed produces byte-identical curve"
+
+falsification_tests:
+- id: FALSIFY-CRUX-D-26-001
+  rule: lr-finder output is deterministic under fixed seed
+  prediction: "two invocations with --seed 42 produce byte-identical JSON"
+  test: |
+    set -euo pipefail
+    apr lr-find tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --seed 42 --lr-min 1e-7 --lr-max 10 --steps 50 --format json > /tmp/a.json
+    apr lr-find tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --seed 42 --lr-min 1e-7 --lr-max 10 --steps 50 --format json > /tmp/b.json
+    diff /tmp/a.json /tmp/b.json
+  if_fails: rule 'lr-finder output is deterministic under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-26-002
+  rule: suggested lr is within swept range
+  prediction: "lr_min ≤ suggested_lr ≤ lr_max"
+  test: |
+    set -euo pipefail
+    apr lr-find tests/fixtures/tiny-sft.jsonl --model tests/fixtures/tinyllama-hf \
+      --lr-min 1e-6 --lr-max 1.0 --steps 30 --format json > /tmp/lr.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/lr.json'))
+    assert 1e-6 <= d['suggested_lr'] <= 1.0, d['suggested_lr']
+    "
+  if_fails: rule 'suggested lr is within swept range' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-D-26-003
+  rule: curve is monotone in lr
+  prediction: "lr values are strictly increasing along the swept range"
+  test: |
+    set -euo pipefail
+    jq -r '.curve[].lr' /tmp/lr.json | python3 -c "
+    import sys
+    lrs = [float(x) for x in sys.stdin]
+    assert all(b > a for a,b in zip(lrs, lrs[1:])), 'not monotone'
+    "
+
+  if_fails: rule 'curve is monotone in lr' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr lr-find matches fastai `Learner.lr_find()` / Lightning `Tuner.lr_find()` output schema"
+- type: invariant
+  property: "deterministic under fixed seed (byte-identical JSON)"
+- type: invariant
+  property: "suggested_lr lies within [lr_min, lr_max]"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-d-26
+  priority: medium
+  auto_created: true

@@ -56,8 +56,10 @@ pub fn create_router(state: AppState) -> Router {
 /// * `config` - Router configuration (controls which route groups are enabled)
 pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Router {
     let mut router = Router::new()
-        // Health and metrics
+        // Health and metrics (CRUX-C-34: /health, /health/live, /health/ready)
         .route("/health", get(health_handler))
+        .route("/health/live", get(health_live_handler))
+        .route("/health/ready", get(health_ready_handler))
         .route("/metrics", get(metrics_handler))
         .route("/metrics/dispatch", get(dispatch_metrics_handler))
         .route("/metrics/dispatch/reset", post(dispatch_reset_handler))
@@ -156,42 +158,116 @@ async fn sanitize_json_rejection(
     response
 }
 
-/// Health check handler
-async fn health_handler(State(state): State<AppState>) -> Json<HealthResponse> {
-    // GH-152: Verbose request logging
-    if state.is_verbose() {
-        eprintln!("[VERBOSE] GET /health");
-    }
+/// Process-wide server start instant.
+///
+/// Initialised lazily on the first `/health*` hit. `Instant` is
+/// monotonic in `std` — see `std::time::Instant` docs — which
+/// discharges FALSIFY-CRUX-C-34-003 (monotonic `uptime_sec`).
+fn server_uptime_sec() -> f64 {
+    static SERVER_START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    SERVER_START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_secs_f64()
+}
 
-    // Determine compute mode based on what's available
-    // BUG-HEALTH-001: Must check all GPU dispatch paths.
-    // - has_gpu_model(): legacy wgpu path
-    // - cached_model: batched GPU inference
-    // - has_cuda_model(): PAR-111 CUDA path (stores in AppState.cuda_model)
+/// Test-only hook: force the health handler to report `status = "loading"`.
+///
+/// Wired by `APR_TEST_FORCE_LOADING=1`. Present in all builds so
+/// FALSIFY-CRUX-C-34-005 can drive the loading/503 branch without a
+/// separate test-only feature.
+fn force_loading() -> bool {
+    std::env::var("APR_TEST_FORCE_LOADING").is_ok_and(|v| v == "1")
+}
+
+/// Build a `HealthResponse` consistent with the CRUX-C-34 contract.
+///
+/// Caller picks the HTTP status via `health_status_code(&response)`.
+fn build_health_response(state: &AppState) -> HealthResponse {
+    // BUG-HEALTH-001: all GPU dispatch paths must register as "gpu".
     let mut compute_mode = "cpu";
-
     #[cfg(feature = "gpu")]
-    if state.has_gpu_model() || state.cached_model.is_some() {
+    if state.has_gpu_model() || state.has_cached_model() {
         compute_mode = "gpu";
     }
-
     #[cfg(feature = "cuda")]
     if state.has_cuda_model() {
         compute_mode = "gpu";
     }
 
-    let response = HealthResponse {
-        status: "healthy".to_string(),
-        version: crate::VERSION.to_string(),
-        compute_mode: compute_mode.to_string(),
+    let model_loaded = state.model_loaded();
+    // Contract §health_response_schema:
+    //   status == "ok"       ⇒ ready to serve (HTTP 200)
+    //   status == "loading"  ⇒ model not yet resident (HTTP 503)
+    //   status == "degraded" ⇒ reserved for partial failure modes
+    let status = if force_loading() || !model_loaded {
+        "loading"
+    } else {
+        "ok"
     };
 
-    // GH-152: Verbose response logging
-    if state.is_verbose() {
-        eprintln!("[VERBOSE] GET /health -> status={}", response.status);
+    HealthResponse {
+        status: status.to_string(),
+        version: crate::VERSION.to_string(),
+        compute_mode: compute_mode.to_string(),
+        model_loaded,
+        uptime_sec: server_uptime_sec(),
     }
+}
 
-    Json(response)
+/// HTTP status derived from the body's `status` field.
+///
+/// Contract §health_response_schema: 200 iff `status == "ok"`; 503 for
+/// every non-`ok` status (loading, degraded).
+fn health_status_code(body: &HealthResponse) -> StatusCode {
+    if body.status == "ok" {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    }
+}
+
+/// `GET /health` — vLLM / llama.cpp-parity liveness probe.
+///
+/// Discharges FALSIFY-CRUX-C-34-001/002/003.
+async fn health_handler(State(state): State<AppState>) -> (StatusCode, Json<HealthResponse>) {
+    if state.is_verbose() {
+        eprintln!("[VERBOSE] GET /health");
+    }
+    let body = build_health_response(&state);
+    let code = health_status_code(&body);
+    if state.is_verbose() {
+        eprintln!("[VERBOSE] GET /health -> {} status={}", code, body.status);
+    }
+    (code, Json(body))
+}
+
+/// `GET /health/live` — k8s liveness probe.
+///
+/// Always returns 200 once the HTTP port is bound (CRUX-C-34
+/// §liveness_vs_readiness). Body mirrors `/health` for debuggability.
+async fn health_live_handler(State(state): State<AppState>) -> (StatusCode, Json<HealthResponse>) {
+    if state.is_verbose() {
+        eprintln!("[VERBOSE] GET /health/live");
+    }
+    (StatusCode::OK, Json(build_health_response(&state)))
+}
+
+/// `GET /health/ready` — k8s readiness probe.
+///
+/// 200 iff `status == "ok"` AND `model_loaded == true`; 503 otherwise.
+/// Discharges FALSIFY-CRUX-C-34-004.
+async fn health_ready_handler(State(state): State<AppState>) -> (StatusCode, Json<HealthResponse>) {
+    if state.is_verbose() {
+        eprintln!("[VERBOSE] GET /health/ready");
+    }
+    let body = build_health_response(&state);
+    let code = if body.status == "ok" && body.model_loaded {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (code, Json(body))
 }
 
 /// Metrics handler - returns Prometheus-formatted metrics

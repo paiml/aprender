@@ -1,0 +1,212 @@
+# CRUX-C-10 — Grammar-constrained GBNF output
+
+metadata:
+  id: CRUX-C-10
+  version: "1.2.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: llama_cpp
+  demand_score: 4
+  intake_status: partial
+  description: >
+    Grammar-constrained GBNF output. llama.cpp canonical:
+    `llama-cli --grammar-file grammar.gbnf --prompt "..."`. apr parity:
+    `apr run <model> --grammar-file grammar.gbnf --prompt "..."` and
+    HTTP POST /v1/chat/completions with `{"grammar": "<gbnf-string>"}`.
+    Output MUST parse as the grammar's start symbol; every emitted token
+    MUST be drawn from the legal set at the current parser state, which
+    requires illegal-position logits to be masked to -INFINITY before
+    sampling. Malformed grammars MUST fail with a `grammar`-tagged
+    diagnostic on stderr.
+
+  references:
+  - "https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md"
+  - "https://github.com/ggerganov/llama.cpp/blob/master/grammars/json.gbnf"
+
+equations:
+  gbnf_grammar_constraint:
+    formula: |
+      llama.cpp canonical:
+        llama-cli --grammar-file grammar.gbnf --prompt "..."
+      apr parity target:
+        apr run <model> --grammar-file grammar.gbnf --prompt "..." [--json]
+        apr serve HTTP: POST /v1/chat/completions with "grammar": "<gbnf-string>"
+      Output MUST parse as the grammar's start symbol (root ::= ...).
+      Every emitted token MUST be drawn from the token set legal at the
+      current grammar parser state; tokens outside that set have their
+      logits masked to -INFINITY before sampling.
+    domain: "(model, prompt, gbnf_grammar_string)"
+    codomain: generated_text:string
+    invariants:
+    - "Output string is accepted by a conforming GBNF parser for the supplied grammar"
+    - "Rejected tokens (outside legal set at state s) have logit == -INFINITY"
+    - "If grammar is unsatisfiable/malformed, apr returns non-zero exit and stderr contains 'grammar'"
+
+  gbnf_json_output_wellformed:
+    formula: |
+      Given the canonical llama.cpp grammars/json.gbnf applied to any prompt,
+      the generated completion MUST parse via json.loads() without exception.
+    domain: "(model, prompt, grammar=json.gbnf)"
+    codomain: bool
+    invariants:
+    - "For grammar=json.gbnf, python3 -c 'import json,sys; json.loads(sys.stdin.read())' returns 0"
+    - "finish_reason is 'stop' (grammar accept state) or 'length' (max_tokens hit)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-10-001
+  rule: grammar-constrained output parses as JSON when grammar=json.gbnf
+  prediction: "apr run --grammar-file json.gbnf emits text that json.loads() accepts"
+  test: |
+    GRAMMAR=/tmp/crux-c-10-json.gbnf
+    cat >"$GRAMMAR" <<'EOF'
+    root   ::= object
+    value  ::= object | array | string | number | ("true" | "false" | "null") ws
+    object ::= "{" ws ( string ":" ws value ("," ws string ":" ws value)* )? "}" ws
+    array  ::= "[" ws ( value ("," ws value)* )? "]" ws
+    string ::= "\"" ( [^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}) )* "\"" ws
+    number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+    ws     ::= [ \t\n]*
+    EOF
+    OUT=$(apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \
+           --grammar-file "$GRAMMAR" \
+           --prompt "Emit a JSON object with keys a,b,c." \
+           --max-tokens 64 --temperature 0 2>/dev/null) \
+      || { echo "FAIL: apr run exited non-zero" >&2; exit 1; }
+    python3 -c "import json,sys; json.loads(sys.argv[1])" "$OUT" \
+      || { echo "FAIL: output not valid JSON: $OUT" >&2; exit 1; }
+  if_fails: "Grammar-constrained output does not parse under the supplied GBNF (apr does not mask illegal tokens)"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gbnf_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gbnf_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_10.rs
+    sub_claim: |
+      Two algorithm-level necessary conditions:
+      (1) `classify_json_grammar_output(output, finish_reason)` accepts iff
+          `output` is non-empty, `finish_reason ∈ {"stop", "length"}`, and
+          `serde_json::from_str::<Value>(output)` succeeds. Rejection paths
+          distinguish `EmptyOutput`, `NotJson{error}`, and
+          `WrongFinishReason{got}` so a wrong-cause bug cannot be mistaken
+          for a JSON parse bug.
+      (2) `classify_illegal_token_masking(logits, legal_mask)` is the
+          mechanism condition behind (1): every illegal-at-state-s position
+          must have logit == -INFINITY (finite values, +INF, and NaN are
+          all rejected as `IllegalTokenNotMasked{token_index, logit}`).
+          Length mismatch and an all-false mask are distinct defect
+          classes (`LengthMismatch`, `NoLegalTokens`).
+      Both classifiers are pure; deterministic.
+    e2e_tests:
+    - falsify_crux_c_10_001_json_ok_on_valid_json_with_stop
+    - falsify_crux_c_10_001_json_rejects_non_json_output
+    - falsify_crux_c_10_001_json_rejects_wrong_finish_reason
+    - falsify_crux_c_10_001_masking_ok_when_illegal_positions_are_null
+    - falsify_crux_c_10_001_masking_rejects_finite_at_illegal_position
+    - falsify_crux_c_10_001_masking_rejects_length_mismatch
+    - falsify_crux_c_10_json_output_shape
+    tests:
+    - json_grammar_ok_on_object_with_stop
+    - json_grammar_ok_on_array_with_length
+    - json_grammar_rejects_empty_output
+    - json_grammar_rejects_non_json_text
+    - json_grammar_rejects_wrong_finish_reason
+    - json_grammar_rejects_content_filter_reason
+    - json_grammar_classifier_is_deterministic
+    - masking_ok_when_illegal_positions_are_neg_infinity
+    - masking_ok_when_all_positions_legal
+    - masking_rejects_length_mismatch
+    - masking_rejects_empty_legal_mask
+    - masking_rejects_finite_logit_at_illegal_position
+    - masking_rejects_positive_infinity_at_illegal_position
+    - masking_rejects_nan_at_illegal_position
+    - masking_classifier_is_deterministic
+    - allowed_finish_reasons_are_stop_or_length
+    scope: "(output, finish_reason) and (logits, legal_mask) — both pure"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr run --grammar-file surface integrating a real GBNF parser + sampler that consults legal_mask"
+
+- id: FALSIFY-CRUX-C-10-002
+  rule: malformed grammar surfaces a non-zero exit with 'grammar' diagnostic
+  prediction: "apr run with malformed grammar exits non-zero and mentions 'grammar' in stderr"
+  test: |
+    BAD=/tmp/crux-c-10-bad.gbnf
+    echo 'root ::= @@@invalid@@@' > "$BAD"
+    if apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF \
+         --grammar-file "$BAD" --prompt "x" --max-tokens 4 2>/tmp/crux-c-10-err.log; then
+      echo "FAIL: expected non-zero exit on malformed grammar" >&2; exit 1
+    fi
+    grep -i grammar /tmp/crux-c-10-err.log >/dev/null \
+      || { echo "FAIL: stderr missing 'grammar' diagnostic" >&2; exit 1; }
+  if_fails: "apr accepted malformed GBNF silently or emitted no diagnostic"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gbnf_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gbnf_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_10.rs
+    sub_claim: |
+      Algorithm-level necessary condition:
+      `classify_grammar_error_diagnostic(exit_code, stderr)` accepts iff
+      `exit_code != 0` AND the lowercased stderr contains the substring
+      "grammar". Rejection paths:
+        (a) `exit_code == 0` → `ZeroExitCode` (silent accept bug);
+        (b) non-zero but no keyword → `MissingGrammarDiagnostic{stderr_snippet}`
+            with a deterministic 160-char snippet so the actionable error is
+            visible without flooding the classifier's telemetry.
+      Pure; deterministic.
+    e2e_tests:
+    - falsify_crux_c_10_002_diagnostic_ok_on_nonzero_exit_with_keyword
+    - falsify_crux_c_10_002_diagnostic_rejects_zero_exit
+    - falsify_crux_c_10_002_diagnostic_rejects_missing_keyword
+    tests:
+    - grammar_error_ok_on_nonzero_exit_with_keyword
+    - grammar_error_ok_case_insensitive
+    - grammar_error_rejects_zero_exit
+    - grammar_error_rejects_missing_keyword
+    - grammar_error_snippet_is_truncated_to_160_chars
+    - grammar_error_classifier_is_deterministic
+    scope: "(exit_code: i32, stderr: &str) → GrammarErrorDiagnosticOutcome (pure)"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "apr run --grammar-file surface that actually rejects malformed GBNF with a 'grammar'-tagged diagnostic"
+
+proof_obligations:
+- type: equivalence
+  property: "apr run --grammar-file matches llama.cpp llama-cli --grammar-file json.gbnf on the golden prompt (both emit parseable JSON)"
+- type: invariant
+  property: "Generated text parses under supplied GBNF grammar (root accept state reached or max_tokens)"
+- type: invariant
+  property: "Illegal-at-state-s tokens have logit == -INFINITY"
+- type: invariant
+  property: "Malformed grammar produces non-zero exit with 'grammar' diagnostic in stderr"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-C-10-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr run --grammar-file surface + real GBNF parser wired to sampler"
+  - falsify_id: FALSIFY-CRUX-C-10-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "apr run --grammar-file surface rejecting malformed GBNF with a tagged diagnostic"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/gbnf_classifier.rs
+    cli_wiring: "crates/apr-cli/src/extended_commands.rs + dispatch_analysis.rs + commands/gbnf_lint.rs (apr gbnf-lint --observation-file FILE)"
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_10.rs
+    contract: contracts/crux-C-10-v1.yaml
+  merge_gates:
+    g1_classifier_green: "gbnf_classifier unit tests pass (3 classifiers × determinism + boundary coverage)"
+    g2_cli_reachable: "apr gbnf-lint --help advertises --observation-file"
+    g3_e2e_runs: "14 falsification tests pass (falsification_crux_c_10) — help surface, bare-invocation reject, 3 gates × ok+reject, length-mismatch, empty/nonexistent file, --json shape"
+    g4_contract_discharged: "2 of 2 FALSIFY-CRUX-C-10-00{1,2} at PARTIAL_ALGORITHM_LEVEL under BLOCKER-UPSTREAM-MISSING (live apr run/serve --grammar-file surface); classifier + CLI + e2e paths all exercised end-to-end on captured JSON observations. Masking gate exercised at e2e via null-as-(-Infinity) JSON convention"
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-c-10
+  priority: high
+  auto_created: false

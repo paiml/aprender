@@ -1,0 +1,87 @@
+# CRUX-E-21 — Bias/toxicity eval harness
+
+metadata:
+  id: CRUX-E-21
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "E — Training & Fine-tuning"
+  competitor: huggingface
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Bias/toxicity eval suite. Canonical: HF `evaluate` metrics
+    `toxicity` (DetoxifyRoberta), `regard` (BOLD), `honest` (arXiv:2105.06978).
+    Reports per-subgroup scores + disparate-impact ratio.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/EleutherAI/lm-evaluation-harness
+  - github.com/openai/human-eval
+  - github.com/mlfoundations/open_clip
+equations:
+  bias_suite:
+    formula: |
+      tox(s) = detoxify(s)                        # [0..1], higher = more toxic
+      regard_a = mean(regard_score(gens | group=a))
+      disparate_impact = min(group_means) / max(group_means)
+      honest_score = mean(honest_match(s_i))      # count of harmful stereotypes / |tokens|
+    domain: "(generations: JSONL with group field, metrics ⊂ {toxicity, regard, honest})"
+    codomain: "JSON {per_group: {...}, disparate_impact: f32, max_tox: f32}"
+    invariants:
+    - "tox(empty) = 0"
+    - "disparate_impact ∈ [0, 1]; 1.0 = perfectly balanced"
+    - "deterministic under fixed classifier revision + seed"
+
+falsification_tests:
+- id: FALSIFY-CRUX-E-21-001
+  rule: empty-string toxicity is zero
+  prediction: "apr eval-bias with empty string returns tox == 0"
+  test: |
+    set -euo pipefail
+    echo '{"text":"","group":"a"}' > /tmp/empty.jsonl
+    apr eval-bias /tmp/empty.jsonl --metrics toxicity --format json > /tmp/e.json
+    python3 -c "import json; d=json.load(open('/tmp/e.json')); assert d['per_group']['a']['toxicity']==0.0, d"
+  if_fails: rule 'empty-string toxicity is zero' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-21-002
+  rule: disparate-impact is in [0,1]
+  prediction: "multi-group eval reports disparate_impact within bounds"
+  test: |
+    set -euo pipefail
+    apr eval-bias tests/fixtures/bias-gens.jsonl --metrics toxicity,regard \
+      --format json > /tmp/b.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/b.json'))
+    assert 0.0 <= d['disparate_impact'] <= 1.0, d
+    "
+  if_fails: rule 'disparate-impact is in [0,1]' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-E-21-003
+  rule: --fail-on-tox threshold gating
+  prediction: "--fail-on-tox 0.5 with toxic fixture returns non-zero"
+  test: |
+    set -euo pipefail
+    ! apr eval-bias tests/fixtures/toxic-gens.jsonl --metrics toxicity --fail-on-tox 0.5
+
+  if_fails: rule '--fail-on-tox threshold gating' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr eval-bias toxicity matches HF `evaluate.load('toxicity')` Detoxify backbone within 1e-3"
+- type: invariant
+  property: "tox(empty) = 0"
+- type: invariant
+  property: "disparate_impact ∈ [0, 1]"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-e-21
+  priority: medium
+  auto_created: true

@@ -21,7 +21,7 @@ metadata:
 kind: CLICommandContract
 name: apr-cli-commands
 version: "1.0.0"
-scope: "all apr CLI subcommands (58 commands — original 57 + `mcp` added 2026-04-17 via PR #864)"
+scope: "all apr CLI subcommands (65 commands — original 57 + `mcp` added 2026-04-17 via PR #864 + `registry` added 2026-04-20 via CRUX-A-01 + `ollama-chat-lint` added 2026-04-21 via CRUX-C-04 SHIP-001 retrofit + `dry-sampling-lint` added 2026-04-21 via CRUX-C-23 SHIP-001 retrofit + `awq-lint` added 2026-04-21 via CRUX-B-08 SHIP-001 retrofit + `oom-lint` added 2026-04-21 via CRUX-F-13 SHIP-001 + `tool-use-lint` added 2026-04-21 via CRUX-C-11 SHIP-001 retrofit + `gbnf-lint` added 2026-04-21 via CRUX-C-10 SHIP-001 retrofit)"
 binary: "apr"
 install: "cargo install aprender"
 
@@ -197,6 +197,12 @@ commands:
     description: "Remove model from cache"
     requires_model: false
     side_effects: [filesystem]
+
+  - name: registry
+    category: registry
+    description: "Registry operations (CRUX-A-01): inspect alias map, etc."
+    requires_model: false
+    side_effects: []
 
   - name: publish
     category: registry
@@ -382,6 +388,42 @@ commands:
     category: misc
     description: "Automated Five Whys diagnosis on a training checkpoint"
     requires_model: true
+    side_effects: []
+
+  - name: ollama-chat-lint
+    category: inspection
+    description: "Lint a captured Ollama /api/chat response (CRUX-C-04)"
+    requires_model: false
+    side_effects: []
+
+  - name: dry-sampling-lint
+    category: inspection
+    description: "Lint a captured DRY-sampling observation (CRUX-C-23)"
+    requires_model: false
+    side_effects: []
+
+  - name: awq-lint
+    category: inspection
+    description: "Lint a captured AWQ quality/compression/flags observation (CRUX-B-08)"
+    requires_model: false
+    side_effects: []
+
+  - name: oom-lint
+    category: inspection
+    description: "Lint a captured CUDA OOM postmortem report (CRUX-F-13)"
+    requires_model: false
+    side_effects: []
+
+  - name: tool-use-lint
+    category: inspection
+    description: "Lint a captured OpenAI tool-use response (CRUX-C-11)"
+    requires_model: false
+    side_effects: []
+
+  - name: gbnf-lint
+    category: inspection
+    description: "Lint a GBNF grammar-constrained observation (CRUX-C-10)"
+    requires_model: false
     side_effects: []
 
   - name: oracle

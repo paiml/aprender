@@ -1,0 +1,247 @@
+# CRUX-C-04 — Ollama /api/chat
+
+metadata:
+  id: CRUX-C-04
+  version: "1.2.0"
+  created: "2026-04-18"
+  updated: "2026-04-21"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  kind: kernel
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: ollama
+  demand_score: 5
+  intake_status: partial
+  description: >
+    Ollama /api/chat. Non-streaming responses MUST contain all 10 Ollama-required
+    top-level keys (model, created_at, message, done, total_duration,
+    load_duration, prompt_eval_count, prompt_eval_duration, eval_count,
+    eval_duration), `message.role == "assistant"`, and `done == true`. For any
+    non-empty completion, `eval_count >= 1` AND `eval_duration > 0`. When
+    `stream=true`, the response is application/x-ndjson with exactly one
+    terminal `done=true` frame, and that frame is the last frame.
+    v1.2.0: adds CRUX-SHIP-001 retrofit — `apr ollama-chat-lint --response-file
+    FILE [--stream]` dispatches the classifiers over any captured /api/chat
+    response (12 e2e tests). Live handler in aprender-serve remains the only
+    path still PARTIAL_ALGORITHM_LEVEL under BLOCKER-UPSTREAM-MISSING.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion'
+
+equations:
+  ollama_chat_response_schema:
+    formula: |
+      POST http://localhost:11434/api/chat
+      Request: {"model": str, "messages": [{"role": str, "content": str}, ...], "stream": bool}
+      Response (stream=false) MUST contain ALL top-level keys:
+        model           : string
+        created_at      : string (RFC3339)
+        message         : {role: "assistant", content: string}
+        done            : bool (true when complete)
+        total_duration  : u64 (nanoseconds)
+        load_duration   : u64
+        prompt_eval_count : u64
+        prompt_eval_duration : u64
+        eval_count      : u64
+        eval_duration   : u64
+    domain: POST /api/chat JSON request
+    codomain: JSON response body
+    invariants:
+    - "response.message.role == 'assistant'"
+    - "response.done == true when stream=false"
+    - "response.eval_count >= 1 for any non-empty reply"
+    - "response.eval_duration > 0 for any non-empty reply"
+    - "Schema keys are a SUPERSET of Ollama's required set (no missing keys)"
+
+  streaming_ndjson_contract:
+    formula: |
+      When stream=true, response MUST be application/x-ndjson with one
+      JSON object per line. Last line MUST have done=true. All non-final
+      lines MUST have done=false and contain message.content delta.
+    domain: POST /api/chat with stream=true
+    codomain: NDJSON byte stream
+    invariants:
+    - "Exactly one terminal frame with done=true"
+    - "The terminal done=true frame is the last frame"
+    - "Non-final frames have done=false"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-04-001
+  rule: schema parity with real Ollama
+  prediction: "apr serve --ollama-compat returns same top-level keys as real ollama"
+  test: |
+    set -euo pipefail
+    APR_RESP=$(curl -s http://localhost:11434/api/chat \
+      -d '{"model":"tiny","messages":[{"role":"user","content":"hi"}],"stream":false}')
+    for k in model created_at message done total_duration load_duration \
+             prompt_eval_count prompt_eval_duration eval_count eval_duration; do
+      echo "$APR_RESP" | jq -e --arg k "$k" 'has($k)' >/dev/null || { echo "missing $k" >&2; exit 1; }
+    done
+    echo "$APR_RESP" | jq -e '.message.role == "assistant"' >/dev/null
+    echo "$APR_RESP" | jq -e '.done == true' >/dev/null
+  if_fails: "apr /api/chat response missing Ollama-required keys; client compatibility broken"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ollama_chat_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ollama_chat.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_04.rs
+    sub_claim: |
+      Algorithm-level necessary conditions on an already-parsed non-streaming
+      /api/chat response:
+        (a) response is a JSON object (else `NotAnObject`);
+        (b) every key in the 10-item OLLAMA_CHAT_REQUIRED_KEYS list is present
+            (else `MissingRequiredKey{key}`);
+        (c) `message` is itself a JSON object (else `MessageNotAnObject`);
+        (d) `message.role == "assistant"` (else `WrongMessageRole{got}`);
+        (e) `done == true` as a boolean (else `NotDone{got}`).
+      Classifier is a pure function of the parsed response; deterministic.
+      CLI surface: `apr ollama-chat-lint --response-file FILE` reads a
+      captured non-streaming response and dispatches the classifier end-to-end.
+    tests:
+    - schema_ok_on_well_formed_response
+    - schema_rejects_non_object
+    - schema_rejects_missing_each_required_key
+    - schema_rejects_non_object_message
+    - schema_rejects_wrong_role
+    - schema_rejects_missing_role
+    - schema_rejects_done_false
+    - schema_rejects_done_non_bool
+    - schema_classifier_is_deterministic
+    - required_keys_has_expected_count_and_order
+    - falsify_crux_c_04_non_streaming_accepts_well_formed_response
+    - falsify_crux_c_04_non_streaming_rejects_missing_required_key
+    - falsify_crux_c_04_non_streaming_rejects_wrong_message_role
+    - falsify_crux_c_04_non_streaming_rejects_done_false
+    scope: "(parsed_json_response) → OllamaSchemaOutcome (pure) + CLI e2e over captured response"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live /api/chat handler in aprender-serve emitting the 10 Ollama-shaped top-level keys"
+
+- id: FALSIFY-CRUX-C-04-002
+  rule: eval_count / eval_duration non-zero for non-empty completions
+  prediction: "response.eval_count >= 1 AND eval_duration > 0 for non-empty completions"
+  test: |
+    set -euo pipefail
+    R=$(curl -s http://localhost:11434/api/chat \
+      -d '{"model":"tiny","messages":[{"role":"user","content":"say ok"}],"stream":false}')
+    python3 -c "
+    import json,sys
+    r=json.loads('''$R''')
+    assert r['eval_count']>=1, 'eval_count must be >=1'
+    assert r['eval_duration']>0, 'eval_duration must be >0'
+    "
+  if_fails: "eval_count/eval_duration zero despite non-empty reply; metrics surface wrong"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ollama_chat_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ollama_chat.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_04.rs
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_eval_metrics(eval_count,
+      eval_duration, message_content_nonempty)` rejects
+      `eval_count == 0` (`EvalCountZeroWithContent`) and `eval_duration == 0`
+      (`EvalDurationZeroWithContent`) whenever `message_content_nonempty`.
+      Empty replies are accepted with zero metrics (the only pass path
+      when content is empty). Pure; deterministic. CLI surface exercises
+      this gate end-to-end over a captured non-streaming response.
+    tests:
+    - eval_metrics_ok_on_nonempty_reply
+    - eval_metrics_ok_on_empty_reply_even_with_zero_metrics
+    - eval_metrics_rejects_eval_count_zero_with_content
+    - eval_metrics_rejects_eval_duration_zero_with_content
+    - eval_metrics_is_deterministic
+    - falsify_crux_c_04_non_streaming_rejects_zero_eval_count_with_content
+    scope: "(eval_count, eval_duration, message_content_nonempty) → EvalMetricsOutcome (pure) + CLI e2e"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live /api/chat handler producing real (non-zero) eval_count / eval_duration instrumentation"
+
+- id: FALSIFY-CRUX-C-04-003
+  rule: NDJSON streaming terminal frame
+  prediction: "stream=true yields NDJSON with exactly one done=true frame at end"
+  test: |
+    set -euo pipefail
+    curl -sN http://localhost:11434/api/chat \
+      -d '{"model":"tiny","messages":[{"role":"user","content":"hi"}],"stream":true}' \
+      > /tmp/apr-stream.ndjson
+    DONE_COUNT=$(jq -s '[.[] | select(.done==true)] | length' < /tmp/apr-stream.ndjson)
+    [ "$DONE_COUNT" = "1" ]
+    tail -n1 /tmp/apr-stream.ndjson | jq -e '.done == true' >/dev/null
+  if_fails: "Streaming NDJSON does not terminate with exactly one done=true frame"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/ollama_chat_classifier.rs
+    cli_path: crates/apr-cli/src/commands/ollama_chat.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_c_04.rs
+    sub_claim: |
+      Algorithm-level necessary conditions on the already-parsed ordered
+      frame list:
+        (a) frame list is non-empty (else `NoFrames`);
+        (b) every frame is a JSON object with a boolean `done` field
+            (else `FrameNotAnObject` / `MissingDoneField` / `DoneNotBool`);
+        (c) no non-final frame has `done == true` (else `EarlyDoneFrame`);
+        (d) the last frame has `done == true` (else `TerminalFrameNotDone`).
+      The only pass path is: non-empty, all frames well-typed, exactly the
+      last frame has `done == true`. Pure; deterministic. CLI surface reads
+      captured NDJSON and dispatches the classifier end-to-end.
+    tests:
+    - ndjson_ok_on_well_formed_stream
+    - ndjson_ok_on_single_terminal_frame
+    - ndjson_rejects_empty_stream
+    - ndjson_rejects_non_object_frame
+    - ndjson_rejects_missing_done_field
+    - ndjson_rejects_non_bool_done
+    - ndjson_rejects_early_done_true
+    - ndjson_rejects_no_terminal_frame
+    - ndjson_classifier_is_deterministic
+    - ndjson_first_frame_done_true_alone_is_ok
+    - falsify_crux_c_04_stream_accepts_well_formed_ndjson
+    - falsify_crux_c_04_stream_rejects_early_done_true
+    - falsify_crux_c_04_stream_rejects_missing_terminal_done
+    - falsify_crux_c_04_stream_rejects_empty_file
+    scope: "(ordered_ndjson_frames) → NdjsonStreamOutcome (pure) + CLI e2e over captured NDJSON"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "live /api/chat handler emitting application/x-ndjson stream with a real terminal done=true frame"
+
+proof_obligations:
+- type: invariant
+  property: "/api/chat non-streaming response has all 10 Ollama-required top-level keys"
+- type: invariant
+  property: "response.message.role == 'assistant' and response.done == true"
+- type: invariant
+  property: "eval_count >= 1 and eval_duration > 0 for non-empty replies"
+- type: invariant
+  property: "Streaming response has exactly one terminal done=true frame (last frame)"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-C-04-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /api/chat handler emitting Ollama-shaped top-level keys"
+  - falsify_id: FALSIFY-CRUX-C-04-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /api/chat handler instrumenting non-zero eval metrics"
+  - falsify_id: FALSIFY-CRUX-C-04-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "live /api/chat NDJSON stream with real terminal done=true frame"
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-c-04
+  priority: critical
+  auto_created: true
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/ollama_chat_classifier.rs
+    cli_wiring: "crates/apr-cli/src/extended_commands.rs + dispatch_analysis.rs + commands/ollama_chat.rs (apr ollama-chat-lint --response-file FILE [--stream])"
+    e2e_test: crates/apr-cli/tests/falsification_crux_c_04.rs
+    contract: contracts/crux-C-04-v1.yaml
+  merge_gates:
+    g1_classifier_green: "25 unit tests pass (commands::ollama_chat_classifier)"
+    g2_cli_reachable: "apr ollama-chat-lint --help advertises --response-file and --stream"
+    g3_e2e_runs: "12 falsification tests pass (falsification_crux_c_04)"
+    g4_contract_discharged: "3 of 3 FALSIFY-* at PARTIAL_ALGORITHM_LEVEL under BLOCKER-UPSTREAM-MISSING (live /api/chat handler); classifier + CLI paths end-to-end exercised"

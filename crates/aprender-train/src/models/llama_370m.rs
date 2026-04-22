@@ -29,7 +29,7 @@
 //!                          `TIED_EMBEDDINGS` const.
 //! - **INV-ARCH-370M-005**  `rope_theta == 10000.0` exactly (Llama-1 convention).
 //!                          Compile-time enforced as a `const f32`.
-//! - **INV-ARCH-370M-006**  `vocab_size == 50_000` and matches the paired
+//! - **INV-ARCH-370M-006**  `vocab_size == 50_257` and matches the paired
 //!                          tokenizer-bpe-v1 contract. Tokenizer coupling
 //!                          cannot be checked at compile time — runtime
 //!                          `debug_assert_eq!` at model load.
@@ -185,7 +185,7 @@ impl Llama370MConfig {
     pub const NUM_KV_HEADS: usize = 4; // GQA: heads / 4
     pub const HEAD_DIM: usize = 64; // hidden_dim / num_heads
     pub const INTERMEDIATE_DIM: usize = 2816; // ~2.75 * hidden
-    pub const VOCAB_SIZE: usize = 50_000;
+    pub const VOCAB_SIZE: usize = 50_257;
     pub const MAX_POSITION_EMBEDDINGS: usize = 4096;
 
     /// RoPE base frequency — Llama-1 convention (INV-ARCH-370M-005).
@@ -210,7 +210,7 @@ impl Llama370MConfig {
     ///   INV-ARCH-370M-003  num_kv_heads divides num_heads
     ///   INV-ARCH-370M-004  tied_embeddings == true
     ///   INV-ARCH-370M-005  rope_theta == 10000.0
-    ///   INV-ARCH-370M-006  vocab_size == 50_000
+    ///   INV-ARCH-370M-006  vocab_size == 50_257
     ///   INV-ARCH-370M-008  has_bias == false
     ///
     /// Invariants NOT encodable at compile time (documented as runtime
@@ -253,8 +253,8 @@ impl Llama370MConfig {
 
         // INV-ARCH-370M-006
         assert!(
-            Self::VOCAB_SIZE == 50_000,
-            "INV-ARCH-370M-006 violated: vocab_size must equal 50_000",
+            Self::VOCAB_SIZE == 50_257,
+            "INV-ARCH-370M-006 violated: vocab_size must equal 50_257",
         );
 
         // INV-ARCH-370M-008
@@ -361,6 +361,28 @@ pub const fn estimated_stored_param_count() -> usize {
     embedding + l * per_layer + final_norm
 }
 
+/// Pure helper that enforces GATE-ARCH-370M-011 / INV-ARCH-370M-006:
+/// the tokenizer's vocabulary size MUST exactly match the model's
+/// `vocab_size` before pretraining dispatches. Returns `Ok(())` when
+/// they match, `Err(String)` with a machine-diffable message when they
+/// do not. The caller is expected to surface the error to the user
+/// and abort the dispatch before any forward pass.
+pub fn assert_tokenizer_vocab_matches_model(
+    tokenizer_vocab_size: usize,
+    model_vocab_size: usize,
+) -> Result<(), String> {
+    if tokenizer_vocab_size == model_vocab_size {
+        return Ok(());
+    }
+    Err(format!(
+        "GATE-ARCH-370M-011 (INV-ARCH-370M-006) violated: \
+         tokenizer vocab_size ({tokenizer_vocab_size}) != model vocab_size \
+         ({model_vocab_size}). See contracts/model-families/llama-370m-sovereign-v1.yaml \
+         and contracts/tokenizer-bpe-v1.yaml — retrain the tokenizer or amend both contracts \
+         in lockstep before resuming pretraining."
+    ))
+}
+
 // ─────────────────────────────────────────────────────────────
 // Unit tests
 // ─────────────────────────────────────────────────────────────
@@ -379,7 +401,7 @@ mod tests {
         assert_eq!(Llama370MConfig::NUM_KV_HEADS, 4);
         assert_eq!(Llama370MConfig::HEAD_DIM, 64);
         assert_eq!(Llama370MConfig::INTERMEDIATE_DIM, 2816);
-        assert_eq!(Llama370MConfig::VOCAB_SIZE, 50_000);
+        assert_eq!(Llama370MConfig::VOCAB_SIZE, 50_257);
         assert_eq!(Llama370MConfig::MAX_POSITION_EMBEDDINGS, 4096);
         assert!((Llama370MConfig::ROPE_THETA - 10_000.0_f32).abs() < 1e-6);
         assert!((Llama370MConfig::RMS_NORM_EPS - 1.0e-5_f32).abs() < 1e-9);
@@ -394,6 +416,45 @@ mod tests {
             Llama370MConfig::HIDDEN_DIM,
         );
         assert_eq!(Llama370MConfig::NUM_HEADS % Llama370MConfig::NUM_KV_HEADS, 0);
+    }
+
+    /// GATE-ARCH-370M-011 / INV-ARCH-370M-006 — pure vocab-parity helper
+    /// MUST reject any mismatch between tokenizer vocab_size and model
+    /// vocab_size, and MUST accept equal values. The real-compute MODEL-2
+    /// dispatch at commit 29607ed33 surfaced this when a tokenizer at
+    /// vocab=50_257 was paired with a model pinned at VOCAB_SIZE=50_000;
+    /// the N-09 OOB escape masked the mismatch → garbage gradients.
+    /// Task #131 bumped VOCAB_SIZE to 50_257 (Option A); the counter-example
+    /// value below now exercises the opposite drift (a tokenizer one token
+    /// short of contract) so the helper is still exercised on real mismatch.
+    #[test]
+    fn falsify_gate_arch_370m_011_helper_rejects_mismatch() {
+        assert!(
+            assert_tokenizer_vocab_matches_model(
+                Llama370MConfig::VOCAB_SIZE,
+                Llama370MConfig::VOCAB_SIZE,
+            )
+            .is_ok()
+        );
+
+        let mismatch = Llama370MConfig::VOCAB_SIZE - 1;
+        let err = assert_tokenizer_vocab_matches_model(mismatch, Llama370MConfig::VOCAB_SIZE)
+            .expect_err("mismatch must return Err");
+        assert!(
+            err.contains("GATE-ARCH-370M-011")
+                && err.contains(&mismatch.to_string())
+                && err.contains(&Llama370MConfig::VOCAB_SIZE.to_string()),
+            "error must name the gate and both vocab sizes for forensics, got: {err}",
+        );
+
+        assert!(assert_tokenizer_vocab_matches_model(0, 1).is_err());
+        assert!(
+            assert_tokenizer_vocab_matches_model(
+                Llama370MConfig::VOCAB_SIZE + 1,
+                Llama370MConfig::VOCAB_SIZE
+            )
+            .is_err()
+        );
     }
 
     /// INV-ARCH-370M-001 — estimated param count within [366M, 374M].
@@ -468,7 +529,7 @@ mod tests {
         assert_eq!(Head::VALUE, 64);
         assert_eq!(Inter::VALUE, 2816);
         assert_eq!(Layers::VALUE, 24);
-        assert_eq!(Vocab::VALUE, 50_000);
+        assert_eq!(Vocab::VALUE, 50_257);
 
         // Zero-sized: all shape newtypes cost nothing at runtime.
         assert_eq!(std::mem::size_of::<Hidden>(), 0);

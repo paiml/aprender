@@ -47,15 +47,44 @@ jobs:
       image: localhost:5000/sovereign-ci:stable
       volumes:
         - /home/noah/.cargo/registry:/usr/local/cargo/registry
-        - /mnt/nvme-raid0/targets/aprender-ci:/workspace/target
+        # Per-PR (or per-branch) target dir. Before task #134, ALL concurrent PRs
+        # bind-mounted the same /workspace/target and stomped each other's
+        # incremental cache, pushing every run to the 45-min timeout. Isolating
+        # the target dir per PR number removes the contention at the source.
+        # Push-to-main uses ref_name ("main"); PRs use PR number.
+        - /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}:/workspace/target
     timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: /workspace/target
-      CARGO_INCREMENTAL: 1
+      # CARGO_INCREMENTAL intentionally disabled in CI: incremental compilation
+      # tracks per-function dirty state for dev-loop speed, but on PR-scale
+      # diffs that touch many files the overhead outweighs savings, and the
+      # state file is a further contention point under parallelism.
+      CARGO_INCREMENTAL: 0
+      # Self-cap parallelism to align with infra build-performance.md §4.2
+      # "build" class (J=8). The intel host has 32 cores, and the labeled
+      # runner classes (test/build/lint) that would apply cgroup slices do
+      # NOT exist yet — all 16 self-hosted runners are `clean-room` labeled
+      # and uncapped. Without this cap, N parallel PRs each spawn 32 rustc
+      # processes → N×32 on 32 cores → thrash → every run hits the 45min
+      # timeout simultaneously (observed on #991/#992/#993, 2026-04-21).
+      # J=8 means 3 parallel PRs = 24 active rustc ≤ 1.2 × 32 cores = 38 budget.
+      # Single-run wall-time regresses ~22→35min but completes reliably.
+      # Remove this cap once forjar apply lands cgroup slices on intel (PMAT-156).
+      CARGO_BUILD_JOBS: 8
+      # Reduce debug info to line-tables-only per infra spec §4.4 — keeps
+      # stack traces on test failure, strips type info, ~15-20% faster link.
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
-      - name: Workspace check (all 70 crates)
-        run: cargo check --workspace
+      # Removed redundant `cargo check --workspace`: the subsequent
+      # `cargo test --workspace --lib` does strictly more work (type-check +
+      # codegen + link + run), and the test profile doesn't share artifacts
+      # with the check profile, so the check was pure duplicated compilation.
+      # Loses the "fail-fast on type error in 3-5min" signal, gains ~3-5min
+      # back on every successful run. Typecheck-only fail-fast is covered
+      # by the reusable `ci / test` job upstream.
       - name: Workspace lib tests (25,300+)
         # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
         run: cargo test --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute

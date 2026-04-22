@@ -1,0 +1,111 @@
+# CRUX-K-11 — Modelfile DSL parser (Ollama)
+
+metadata:
+  id: CRUX-K-11
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "K — Deployment & Integration"
+  competitor: ollama
+  demand_score: 3
+  intake_status: missing
+  description: >
+    Parse Ollama-style `Modelfile` DSL (FROM, PARAMETER, TEMPLATE,
+    SYSTEM, LICENSE, MESSAGE, ADAPTER) and produce a stable apr model
+    config. Canonical: github.com/ollama/ollama/blob/main/docs/modelfile.md.
+    Case-insensitive directives; multi-line strings use triple quotes;
+    unknown directive raises parse error.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/triton-inference-server/server
+  - github.com/ai-dynamo/dynamo
+  - github.com/NVIDIA/TensorRT-LLM
+equations:
+  modelfile_parse:
+    formula: |
+      Modelfile grammar:
+        stmt   := directive value
+        directive ∈ {FROM, PARAMETER, TEMPLATE, SYSTEM, LICENSE, MESSAGE, ADAPTER}
+        value  := single-line | triple-quoted-block
+      parse(text) → { from: str, parameters: dict, template: str, system: str,
+                      license: str?, messages: [(role, content)], adapter: str? }
+    domain: "(modelfile: Path|str)"
+    codomain: "apr config JSON"
+    invariants:
+    - "directive case-insensitive: FROM == from == From"
+    - "unknown directive → exit != 0 with file:line:col"
+    - "FROM is required (missing → parse error)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-K-11-001
+  rule: canonical Modelfile round-trips
+  prediction: "parse produces expected parameters + system text"
+  test: |
+    set -euo pipefail
+    cat > /tmp/Modelfile <<'MF'
+    FROM tinyllama
+    PARAMETER temperature 0.7
+    PARAMETER top_p 0.9
+    SYSTEM """
+    You are a helpful assistant.
+    """
+    MF
+    apr modelfile parse /tmp/Modelfile --format json > /tmp/mf.json
+    python3 -c "
+    import json; d=json.load(open('/tmp/mf.json'))
+    assert d['from'] == 'tinyllama', d
+    assert abs(d['parameters']['temperature'] - 0.7) < 1e-9, d
+    assert abs(d['parameters']['top_p'] - 0.9) < 1e-9, d
+    assert 'helpful assistant' in d['system'], d
+    "
+  if_fails: rule 'canonical Modelfile round-trips' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-11-002
+  rule: case-insensitive directives
+  prediction: "From/from/FROM all parse identically"
+  test: |
+    set -euo pipefail
+    for d in FROM from From fRoM; do
+      echo "$d tinyllama" > /tmp/mf_case
+      apr modelfile parse /tmp/mf_case --format json | jq -r .from
+    done | sort -u | python3 -c "
+    import sys
+    lines = [l.strip() for l in sys.stdin if l.strip()]
+    assert lines == ['tinyllama'], lines
+    "
+  if_fails: rule 'case-insensitive directives' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-K-11-003
+  rule: unknown directive errors with file:line:col
+  prediction: "BOGUS directive fails with line number in stderr"
+  test: |
+    set -euo pipefail
+    cat > /tmp/bad <<'MF'
+    FROM tinyllama
+    BOGUS 42
+    MF
+    ! apr modelfile parse /tmp/bad 2>/tmp/err
+    grep -E ":2:" /tmp/err
+
+  if_fails: rule 'unknown directive errors with file:line:col' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr modelfile parse matches ollama Modelfile directive set + case rules"
+- type: invariant
+  property: "FROM required (missing ⇒ parse error)"
+- type: invariant
+  property: "unknown directive ⇒ exit != 0 with location"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-k-11
+  priority: medium
+  auto_created: true

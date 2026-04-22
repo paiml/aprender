@@ -1,0 +1,93 @@
+# CRUX-F-18 — Token embedding UMAP 2D
+
+metadata:
+  id: CRUX-F-18
+  version: "1.1.0"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Profiling & Debugging"
+  competitor: pytorch
+  demand_score: 2
+  intake_status: missing
+  description: >
+    Project token embeddings to 2D for debugging via UMAP. Canonical:
+    `umap-learn` (arXiv:1802.03426) with n_components=2, metric='cosine',
+    n_neighbors=15. Output: CSV of (token_id, token_str, x, y) + optional
+    PNG. Seeded UMAP is deterministic; token_str decoding round-trips
+    through the tokenizer.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  umap_embed:
+    formula: |
+      E = embed_matrix(model)  ∈ R^{V × d}
+      Z = UMAP(n_components=2, metric='cosine', random_state=seed).fit_transform(E)
+      out = [ (i, decode(i), Z[i,0], Z[i,1]) for i in 0..V-1 ]
+    domain: "(model: Path, seed: u64, n_neighbors: u32, metric ∈ {cosine, euclidean})"
+    codomain: "CSV with V rows and 4 columns (token_id, token_str, x, y)"
+    invariants:
+    - "|output_rows| == vocab_size(model)"
+    - "token_str at row i equals tokenizer.decode([i])"
+    - "seeded UMAP is deterministic (same seed ⇒ same coordinates)"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-18-001
+  rule: one row per vocab entry
+  prediction: "output row count == vocab_size"
+  test: |
+    set -euo pipefail
+    apr debug embed-viz tests/fixtures/tiny.apr --seed 42 -o /tmp/emb.csv
+    vs=$(apr inspect tests/fixtures/tiny.apr --format json | jq -r .vocab_size)
+    rows=$(tail -n +2 /tmp/emb.csv | wc -l)
+    python3 -c "assert $vs == $rows, ($vs, $rows)"
+  if_fails: rule 'one row per vocab entry' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-18-002
+  rule: token_str round-trips through tokenizer
+  prediction: "row i token_str decodes to tokenizer.decode([i])"
+  test: |
+    set -euo pipefail
+    python3 -c "
+    import csv, subprocess, json
+    for i, row in enumerate(list(csv.DictReader(open('/tmp/emb.csv')))[:20]):
+        r = subprocess.check_output(['apr','tokenize','decode','--model',
+            'tests/fixtures/tiny.apr','--ids',str(row['token_id']),
+            '--format','json'])
+        assert json.loads(r)['text'] == row['token_str'], (i, row, r)
+    "
+  if_fails: rule 'token_str round-trips through tokenizer' is violated — contract MUST be re-verified against competitor canonical reference
+- id: FALSIFY-CRUX-F-18-003
+  rule: determinism under fixed seed
+  prediction: "two runs with --seed 42 produce byte-identical CSV"
+  test: |
+    set -euo pipefail
+    for i in 1 2; do
+      apr debug embed-viz tests/fixtures/tiny.apr --seed 42 -o /tmp/emb$i.csv
+    done
+    diff /tmp/emb1.csv /tmp/emb2.csv
+
+  if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
+proof_obligations:
+- type: equivalence
+  property: "apr debug embed-viz matches umap-learn n_components=2 cosine fit_transform"
+- type: invariant
+  property: "|rows| == vocab_size; token_str matches tokenizer.decode"
+- type: invariant
+  property: "determinism under fixed seed"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  ticket_tag: crux-crux-f-18
+  priority: medium
+  auto_created: true

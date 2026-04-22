@@ -1,0 +1,204 @@
+# CRUX-C-05 — SSE streaming tokens [DONE]
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# Promoted 2026-04-20 — 4 FALSIFY gates discharged by in-process axum harness.
+
+metadata:
+  id: CRUX-C-05
+  version: "1.0.0"
+  created: "2026-04-18"
+  promoted: "2026-04-20"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: vllm
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    SSE streaming tokens [DONE] (OpenAI-compatible). Competitors OpenAI and
+    vLLM expose POST /v1/chat/completions with {"stream": true} returning
+    text/event-stream framed as
+    `data: <chat.completion.chunk>\n\n` ... `data: [DONE]\n\n`.
+    Aprender parity: canonical `/v1/chat/completions` with stream=true
+    dispatches to `pregenerated_sse_response` (demo path) or
+    `true_streaming_sse_response` (CUDA/GPU path), both using
+    `sse_event()` which emits single-prefix `data: <json>\n\n` frames.
+    Refs:
+    https://platform.openai.com/docs/api-reference/chat/streaming ;
+    https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/huggingface/accelerate
+  - github.com/pytorch/pytorch — DDP/FSDP
+equations:
+  sse_framing:
+    formula: |
+      POST /v1/chat/completions  (stream=true)  response:
+        Content-Type: text/event-stream
+        Body = sequence of frames:
+          "data: " <json_chunk> "\n\n"   (1..N)
+          "data: [DONE]\n\n"             (terminal, exactly once, last)
+        Each <json_chunk>.object == "chat.completion.chunk"
+        Each <json_chunk>.choices[0].delta.{role?, content?} present
+    domain: HTTP response body for stream=true
+    codomain: ordered sequence of SSE frames
+    invariants:
+    - "Content-Type header MUST be text/event-stream"
+    - "Every data line (except terminal) parses as JSON with object=='chat.completion.chunk'"
+    - "Terminal frame MUST be literal 'data: [DONE]\\n\\n'"
+    - "No frames emitted after [DONE]"
+    - "Reference: https://platform.openai.com/docs/api-reference/chat/streaming"
+
+  delta_concatenation_parity:
+    formula: |
+      concat(frame_i.choices[0].delta.content for i=1..N)
+        == non_stream_response.choices[0].message.content
+      (for identical request with deterministic sampling: temperature=0, same seed)
+    domain: streamed deltas vs non-stream full message
+    codomain: string equality
+    invariants:
+    - "Concatenated content deltas MUST equal non-stream content (deterministic sampling)"
+    - "First chunk MAY include delta.role='assistant'; subsequent chunks MAY omit role"
+
+  finish_reason_terminal:
+    formula: |
+      Exactly ONE frame prior to [DONE] has choices[0].finish_reason != null
+      All prior frames have finish_reason == null
+    domain: SSE stream frames
+    codomain: bool
+    invariants:
+    - "finish_reason appears exactly once, in the last JSON chunk before [DONE]"
+    - "finish_reason ∈ {stop, length, content_filter, tool_calls}"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-05-001
+  rule: SSE Content-Type and [DONE] terminator
+  prediction: "stream=true yields text/event-stream terminated by 'data: [DONE]'"
+  test: |
+    # Reference: https://platform.openai.com/docs/api-reference/chat/streaming
+    HDRS=$(curl -sS -N -D - -o /tmp/crux-c-05-stream.txt -X POST \
+      http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"Count: 1 2 3"}],"stream":true,"max_tokens":16}')
+    echo "$HDRS" | grep -iE '^content-type:\s*text/event-stream' >/dev/null \
+      || { echo "FAIL: Content-Type != text/event-stream" >&2; exit 1; }
+    # Last non-empty line must be 'data: [DONE]'
+    LAST=$(grep -E '^data: ' /tmp/crux-c-05-stream.txt | tail -1)
+    [ "$LAST" = "data: [DONE]" ] \
+      || { echo "FAIL: terminal frame is '$LAST' not 'data: [DONE]'" >&2; exit 1; }
+  if_fails: "Stream missing text/event-stream Content-Type or [DONE] terminator"
+
+- id: FALSIFY-CRUX-C-05-002
+  rule: every non-terminal frame is chat.completion.chunk
+  prediction: "each 'data: ' JSON frame has object=='chat.completion.chunk'"
+  test: |
+    curl -sS -N -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"hi"}],"stream":true,"max_tokens":8}' \
+      > /tmp/crux-c-05-stream.txt
+    # Extract JSON payloads (skip [DONE])
+    grep -E '^data: ' /tmp/crux-c-05-stream.txt | sed 's/^data: //' \
+      | grep -v '^\[DONE\]$' \
+      | while read -r CHUNK; do
+          echo "$CHUNK" | jq -e '.object == "chat.completion.chunk"' >/dev/null \
+            || { echo "FAIL: chunk object != chat.completion.chunk: $CHUNK" >&2; exit 1; }
+        done
+  if_fails: "A streamed frame has object != 'chat.completion.chunk'"
+
+- id: FALSIFY-CRUX-C-05-003
+  rule: delta concatenation equals non-stream content
+  prediction: "Σ delta.content == non_stream.choices[0].message.content (temperature=0)"
+  test: |
+    REQ='{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"Say exactly: hello"}],"max_tokens":12,"temperature":0}'
+    # Non-stream
+    NS=$(curl -sS -X POST http://127.0.0.1:8080/v1/chat/completions \
+         -H "Content-Type: application/json" \
+         -d "$(echo "$REQ" | jq '. + {stream:false}')")
+    NS_CONTENT=$(echo "$NS" | jq -r '.choices[0].message.content')
+    # Stream
+    curl -sS -N -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d "$(echo "$REQ" | jq '. + {stream:true}')" \
+      > /tmp/crux-c-05-stream.txt
+    S_CONTENT=$(grep -E '^data: ' /tmp/crux-c-05-stream.txt | sed 's/^data: //' \
+                | grep -v '^\[DONE\]$' \
+                | jq -r 'select(.choices[0].delta.content != null) | .choices[0].delta.content' \
+                | tr -d '\n' | awk '{printf "%s", $0}')
+    # The stream concatenation should equal non-stream content byte-for-byte
+    [ "$S_CONTENT" = "$NS_CONTENT" ] \
+      || { echo "FAIL: stream='$S_CONTENT' != nonstream='$NS_CONTENT'" >&2; exit 1; }
+  if_fails: "Concatenated stream deltas != non-stream message content (deterministic)"
+
+- id: FALSIFY-CRUX-C-05-004
+  rule: finish_reason appears exactly once, before [DONE]
+  prediction: "Exactly one chunk carries a non-null finish_reason"
+  test: |
+    curl -sS -N -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model":"qwen2.5-coder-1.5b","messages":[{"role":"user","content":"ok"}],"stream":true,"max_tokens":6}' \
+      > /tmp/crux-c-05-stream.txt
+    N=$(grep -E '^data: ' /tmp/crux-c-05-stream.txt | sed 's/^data: //' \
+         | grep -v '^\[DONE\]$' \
+         | jq -r '.choices[0].finish_reason' \
+         | grep -vc '^null$' || true)
+    [ "$N" -eq 1 ] \
+      || { echo "FAIL: expected exactly 1 non-null finish_reason, got $N" >&2; exit 1; }
+  if_fails: "finish_reason not emitted exactly once in stream"
+
+proof_obligations:
+- type: invariant
+  property: "Content-Type: text/event-stream for stream=true"
+- type: invariant
+  property: "Terminal frame is literal 'data: [DONE]\\n\\n'"
+- type: invariant
+  property: "Every JSON chunk has object=='chat.completion.chunk'"
+- type: invariant
+  property: "Σ delta.content == non-stream content under deterministic sampling"
+- type: invariant
+  property: "finish_reason emitted exactly once, on the last JSON chunk"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 5
+  status: discharged
+
+discharge_evidence:
+  harness: crates/aprender-serve/tests/falsification_crux_c_05.rs
+  framework: tokio::test + tower::ServiceExt::oneshot (in-process axum)
+  test_count: 4
+  falsify_crux_c_05_001:
+  - falsify_crux_c_05_001_content_type_and_done_terminator
+  falsify_crux_c_05_002:
+  - falsify_crux_c_05_002_every_chunk_is_chat_completion_chunk
+  falsify_crux_c_05_003:
+  - falsify_crux_c_05_003_delta_concat_equals_nonstream_content
+  falsify_crux_c_05_004:
+  - falsify_crux_c_05_004_finish_reason_exactly_once_before_done
+  implementation:
+  - crates/aprender-serve/src/api/openai_handlers.rs  # sse_event + pregenerated_sse_response + true_streaming_sse_response
+  - crates/aprender-serve/src/api/cuda_chat_backend.rs  # registry_fallback (demo path) + try_quantized_backend (GGUF path)
+  scope_honesty: |
+    Tests hit the canonical `/v1/chat/completions` route with `{stream:true}`
+    via in-process axum (`tower::ServiceExt::oneshot`); TCP/TLS/HTTP wire
+    semantics and network keep-alive behaviour are not exercised.
+    The legacy alternate route `/v1/chat/completions/stream`
+    (crates/aprender-serve/src/api/chat_completions_stream.rs) has a known
+    double-`data: ` prefix bug in its hand-rolled Event formatting and is
+    NOT part of this contract — OpenAI parity is the canonical
+    stream-via-body-flag route, which correctly uses `sse_event()`.
+    FALSIFY-003 uses temperature=0.01 (near-greedy) because the server-side
+    sampler rejects strictly 0.0 ("Temperature must be positive"); the demo
+    model produces identical token streams across repeated requests at this
+    temperature, which is sufficient to detect any divergence between the
+    streaming delta concatenation and the non-streaming full message.
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-c-05` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-c-05
+  priority: critical
+  auto_created: false

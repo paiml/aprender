@@ -1,0 +1,160 @@
+# CRUX-F-21 — apr qa 8-gate golden-test runner
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
+# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
+# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
+# tracked in pmat work (see master §12).
+
+metadata:
+  id: CRUX-F-21
+  version: "1.0.0-draft"
+  created: "2026-04-18"
+  author: PAIML Engineering
+  registry: true
+  status: active
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "F — Tensor Ops & Low-level"
+  competitor: pytorch
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: supported
+  description: >
+    apr qa 8-gate golden-test runner. Root-cause workflow extracted from pytorch UX — see master
+    subspec §5.F and §2 Five Whys methodology for rationale. This
+    draft contract exists to satisfy the Iron Rule "no contract → no user
+    story"; the falsification body below is a placeholder and MUST be
+    replaced with the competitor's canonical CLI transcript before promotion.
+
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - github.com/tensorflow/tensorboard
+  - github.com/wandb/wandb
+equations:
+  eight_gates_schema:
+    formula: |
+      apr qa model.apr --json emits:
+        {
+          gates: [Gate; 8],
+          overall: { status: "PASS" | "FAIL", duration_ms: u64 },
+          model: { path: string, format: string, size_bytes: u64 }
+        }
+      where each Gate is:
+        {
+          name:        string ∈ CANONICAL_GATE_NAMES,
+          status:      "PASS" | "FAIL" | "SKIPPED",
+          duration_ms: u64 >= 0,
+          message:     string (optional diagnostic)
+        }
+      and CANONICAL_GATE_NAMES = {
+        tensor_contract, golden_output, layout, metadata,
+        tokenizer, quantization, inference_smoke, performance
+      }
+    domain: apr qa --json output
+    codomain: JSON object
+    invariants:
+    - "Exactly 8 gates are always present (never fewer, never more)"
+    - "Every gate has one of the canonical names; no ad-hoc names leak in"
+    - "Every gate has status ∈ {PASS, FAIL, SKIPPED} and duration_ms >= 0"
+
+  exit_code_iff_all_pass:
+    formula: |
+      exit_code(apr qa) == 0  ⇔  ∀ g ∈ gates. g.status == PASS
+      exit_code(apr qa) != 0  ⇔  ∃ g ∈ gates. g.status ∈ {FAIL, SKIPPED}
+      (per MEMORY: feedback_safetensors_export_quantize — SKIPPED is NOT a pass;
+       FALSIFY-EX-001 already forbids silent SKIPPED-as-PASS.)
+    domain: apr qa process
+    codomain: i32 (POSIX exit code)
+    invariants:
+    - "Exit 0 requires every gate to be PASS (SKIPPED is not a pass)"
+    - "Any FAIL gate forces non-zero exit"
+    - "--require-golden-output promotes SKIPPED golden_output → FAIL"
+
+falsification_tests:
+- id: FALSIFY-CRUX-F-21-001
+  rule: exactly 8 canonical gates
+  prediction: "apr qa --json emits exactly 8 gates with canonical names"
+  test: |
+    EXPECTED='["tensor_contract","golden_output","layout","metadata","tokenizer","quantization","inference_smoke","performance"]'
+    ACTUAL=$(apr qa tests/fixtures/tinyllama-q4k.gguf --json | \
+              jq -c '[.gates[].name] | sort')
+    EXPECTED_SORTED=$(echo "$EXPECTED" | jq -c 'sort')
+    [ "$ACTUAL" = "$EXPECTED_SORTED" ]
+  if_fails: "gate set diverges from canonical 8-gate contract"
+
+- id: FALSIFY-CRUX-F-21-002
+  rule: gate status domain
+  prediction: "every gate has status ∈ {PASS,FAIL,SKIPPED} and duration_ms >= 0"
+  test: |
+    apr qa tests/fixtures/tinyllama-q4k.gguf --json | \
+      jq -e 'all(.gates[];
+        (.status | test("^(PASS|FAIL|SKIPPED)$"))
+        and (.duration_ms >= 0)
+        and has("name"))'
+  if_fails: "gate record violates status/duration_ms schema"
+
+- id: FALSIFY-CRUX-F-21-003
+  rule: exit 0 iff all PASS
+  prediction: "exit 0 requires every gate PASS (SKIPPED alone should fail)"
+  test: |
+    # Good model: expect exit 0 and all PASS
+    apr qa tests/fixtures/tinyllama-q4k.gguf --json > /tmp/qa-good.json
+    GOOD_EC=$?
+    GOOD_ALL_PASS=$(jq -e 'all(.gates[]; .status == "PASS")' /tmp/qa-good.json >/dev/null && echo 1 || echo 0)
+    [ "$GOOD_EC" = "0" ] && [ "$GOOD_ALL_PASS" = "1" ] || exit 1
+
+    # Corrupt model: expect non-zero exit and at least one FAIL
+    apr qa tests/fixtures/corrupt.gguf --json > /tmp/qa-bad.json
+    BAD_EC=$?
+    BAD_HAS_FAIL=$(jq -e 'any(.gates[]; .status == "FAIL")' /tmp/qa-bad.json >/dev/null && echo 1 || echo 0)
+    [ "$BAD_EC" != "0" ] && [ "$BAD_HAS_FAIL" = "1" ]
+  if_fails: "exit code and gate aggregate status disagree"
+
+- id: FALSIFY-CRUX-F-21-004
+  rule: require-golden-output promotes SKIPPED to FAIL
+  prediction: "--require-golden-output forces SKIPPED golden_output gate to FAIL"
+  test: |
+    # Run against a model with no golden fixture, with the flag
+    apr qa tests/fixtures/nogolden.gguf --require-golden-output --json > /tmp/qa.json
+    EC=$?
+    GOLDEN_STATUS=$(jq -r '.gates[] | select(.name=="golden_output") | .status' /tmp/qa.json)
+    [ "$EC" != "0" ] && [ "$GOLDEN_STATUS" = "FAIL" ]
+  if_fails: "SKIPPED golden_output passed despite --require-golden-output (ship-blocker regression)"
+
+- id: FALSIFY-CRUX-F-21-005
+  rule: parity with pytest-style reporting
+  prediction: "overall.duration_ms == sum(gates[].duration_ms) (±5% wall-clock noise)"
+  test: |
+    OUT=$(apr qa tests/fixtures/tinyllama-q4k.gguf --json)
+    SUM=$(echo "$OUT" | jq '[.gates[].duration_ms] | add')
+    TOTAL=$(echo "$OUT" | jq '.overall.duration_ms')
+    python3 -c "
+    s, t = $SUM, $TOTAL
+    assert abs(t - s) <= max(50, 0.05 * s), f'sum={s} total={t}'
+    "
+  if_fails: "overall duration inconsistent with per-gate durations"
+
+proof_obligations:
+- type: invariant
+  property: "exactly 8 gates with canonical names always present"
+- type: invariant
+  property: "every gate has status ∈ {PASS,FAIL,SKIPPED} and duration_ms >= 0"
+- type: invariant
+  property: "exit code 0 ⇔ every gate is PASS"
+- type: invariant
+  property: "--require-golden-output promotes SKIPPED golden_output to FAIL"
+- type: equivalence
+  property: "pytest-style PASS/FAIL/SKIPPED semantics with per-test duration reporting match pytorch/pytest test runner behavior"
+  competitor: pytorch
+  reference: "https://docs.pytest.org/en/stable/reference/exit-codes.html; aprender CLAUDE.md §Tool Priorities; contracts/apr-model-qa-v1.yaml v1.1.0"
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 0
+  status: spec-complete
+
+pmat_work_tracking:
+  # Managed by master contract §12. If intake_status == "missing", a ticket
+  # tagged `crux-crux-f-21` is auto-created by scripts/crux_bulk_pmat_work.sh.
+  ticket_tag: crux-crux-f-21
+  priority: critical
+  auto_created: false
