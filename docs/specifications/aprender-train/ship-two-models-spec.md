@@ -1,11 +1,11 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.23.0
+**Version:** 2.24.0
 **Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures); **task #132 BLOCKER surfaced 2026-04-21** on lambda-labs RTX 4090 — `apr pretrain --mode from-scratch` ran 14 min at 114% CPU + 0 MiB GPU memory because `TransformerTrainer::new` has no Device argument; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (task #132 Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006, ship-blocks task #126 real-compute dispatch
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
-**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched) / 2026-04-21 (v2.23.0 **task #132 CUDA training backend gap** surfaced on lambda-labs RTX 4090 real-compute dispatch at commit `f7ad11408` — `apr pretrain --mode from-scratch` 14min on CPU (0 MiB GPU memory) because `TransformerTrainer` has no Device awareness; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006 + FALSIFY-GPUTRAIN-001..007; production `CudaTransformerTrainer` already exists at `crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs` — gap is wiring, not kernels; task #126 real-compute dispatch BLOCKED until Phase 3 residency-proof evidence lands)
+**Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched) / 2026-04-21 (v2.23.0 **task #132 CUDA training backend gap** surfaced on lambda-labs RTX 4090 real-compute dispatch at commit `f7ad11408` — `apr pretrain --mode from-scratch` 14min on CPU (0 MiB GPU memory) because `TransformerTrainer` has no Device awareness; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006 + FALSIFY-GPUTRAIN-001..007; production `CudaTransformerTrainer` already exists at `crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs` — gap is wiring, not kernels; task #126 real-compute dispatch BLOCKED until Phase 3 residency-proof evidence lands) / 2026-04-22 (v2.24.0 **first MODEL-1 PARTIAL**: FALSIFY-SHIP-009 (AC-SHIP1-009) PARTIAL_ALGORITHM_LEVEL via `apr-provenance-v1` v1.0.0 → v1.1.0 (stays ACTIVE); GATE-APR-PROV-004 added as a second gate on the SAME contract that already discharges AC-SHIP2-012, proving the AprV2Metadata + serde-JSON decision rule is model-agnostic; task #153; teacher-representative round-trip + YAML-binding harness tests green; full ACTIVE blocks on teacher .apr republish (PMAT-686) populating license="apache-2.0" + data_source="qwen2.5-coder-7b-instruct" + data_license="apache-2.0" as named fields — fixture-swap only, no code change)
 
 **v2.21.0 amendment (2026-04-19):** Three MODEL-2 architecture + tokenizer
 gates landed in the same post-v2.19 evidence window, on branch
@@ -91,6 +91,82 @@ MUST still block `apr publish` until full discharge lands. Downstream
 auditors must treat `evidence_discharged_by` alone (without checking
 `discharge_status`) as **not** sufficient green — the two fields
 together are the authoritative read.
+
+**v2.24.0 amendment (2026-04-22):** First **MODEL-1** PARTIAL discharge
+lands on branch `feat/falsify-ship-009-partial-discharge` — and it does
+so by reusing the exact contract that already discharges MODEL-2's
+AC-SHIP2-012, proving the decision-rule / compute-harness separation
+pattern extends across model families:
+
+1. **FALSIFY-SHIP-009 (AC-SHIP1-009) — PARTIAL_ALGORITHM_LEVEL** (task
+   #153). `contracts/apr-provenance-v1.yaml` v1.0.0 → v1.1.0, status
+   **stays ACTIVE** (no downgrade — v1.0.0's MODEL-2 discharge is
+   unaffected). A new `GATE-APR-PROV-004` block is appended alongside
+   GATE-APR-PROV-001/002/003, binding `AC-SHIP1-009` / `FALSIFY-SHIP-009`
+   with `discharge_status: PARTIAL_ALGORITHM_LEVEL`. The gate's rule
+   declares that the SAME AprV2Metadata + serde-JSON decision rule
+   proved for MODEL-2 also applies to MODEL-1, and the two new harness
+   tests in `crates/aprender-core/src/format/tests/provenance_tests.rs`
+   confirm it:
+
+   - `falsify_ship_009_apr_metadata_applies_to_model_1_teacher` —
+     constructs a teacher-representative `AprV2Metadata { license:
+     Some("apache-2.0"), data_source:
+     Some("qwen2.5-coder-7b-instruct"), data_license:
+     Some("apache-2.0"), .. }`, round-trips it through `to_json` /
+     `from_json`, and asserts byte-identical recovery of all three
+     provenance fields with NO leak into the `custom` HashMap.
+   - `falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker`
+     — `include_str!()`s the updated contract YAML, parses via
+     `serde_yaml`, and asserts the new gate has
+     `binds_to: AC-SHIP1-009`,
+     `falsification_id: FALSIFY-SHIP-009`,
+     `discharge_status: PARTIAL_ALGORITHM_LEVEL`,
+     `ship_blocking: true`, non-empty `evidence_discharged_by`, and
+     both `partial_discharge_note` and `full_discharge_blocks_on` set.
+
+   The algorithm is model-agnostic — only the input string values
+   differ between the MODEL-1 teacher test and the MODEL-2 SHIP-022
+   test. `full_discharge_blocks_on: "teacher .apr republish (planned
+   regen lane, PMAT-686) with AprV2Metadata.license / data_source /
+   data_license populated as named fields; apr inspect --json must
+   emit each as non-null. Fixture-swap only — no code change, no
+   contract change."` The teacher is already shipped on HF
+   (paiml/qwen2.5-coder-7b-apache-q4k-v1) under Apache-2.0, distilled
+   from Qwen2.5-Coder-7B-Instruct — the provenance fact is known; only
+   embedding it in a .apr binary remains.
+
+**Pattern extensions from v2.24.0:**
+
+- **First MODEL-1 PARTIAL.** All prior algorithm-level PARTIAL work
+  (SHIP-015, -017, -018, -019, -020, -016) targeted MODEL-2 ship
+  gates. SHIP-009 is the first MODEL-1 gate to be PARTIAL-discharged
+  via the decision-rule/compute-harness split pattern, demonstrating
+  the pattern is not MODEL-2-specific.
+- **First multi-model multi-bind on ONE contract.** Prior PARTIAL
+  discharges each had their own contract. SHIP-009 attaches a second
+  gate to `apr-provenance-v1` — a second binding to AC-SHIP1-009 sits
+  alongside the existing v1.0.0 bindings to AC-SHIP2-012. Because the
+  decision rule is literally the same code, one YAML file cleanly
+  carries both discharges with no schema extension.
+- **"Exhausted" verdict now falsified SIX times.** Counter-example
+  hunting after v2.22.0's "exhausted" verdict has now found genuine
+  PARTIAL levers six times: SHIP-019 → SHIP-017 → SHIP-020 → SHIP-018
+  → SHIP-016 → SHIP-009. The sixth falsification is cross-model (a
+  MODEL-1 gate discharged by a MODEL-2 contract) — strictly more
+  surprising than the prior five.
+
+Combined ship-gate status after v2.24.0:
+
+- **MODEL-2:** 3/12 fully ACTIVE (001, 011, 012) + 7/12 PARTIAL (002,
+  005, 006, 007, 008, 009, 010) = **10/12 touched (83.3%)**. Remaining
+  2 truly compute-blocked: AC-SHIP2-003 (val loss ≤ 2.2), AC-SHIP2-004
+  (≤21-day wall-clock).
+- **MODEL-1:** 1/10 PARTIAL (009), with the remaining 9 gates already
+  DISCHARGED via the tagged teacher release
+  `SHIP-TWO-001-MODEL-1-TEACHER`. MODEL-1 provenance will flip to
+  fully ACTIVE the moment teacher.apr republish (PMAT-686) populates
+  the three named fields.
 
 **v2.22.0 amendment (2026-04-19):** One additional MODEL-2 ship gate
 attained PARTIAL_ALGORITHM_LEVEL in the same post-v2.19 evidence window,

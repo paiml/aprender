@@ -165,6 +165,7 @@ jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec Â
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
 provable-contracts = "0.3"  # Contract enforcement (dev-only)
 entrenar = "0.7"  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
+serde_yaml = "0.9"  # YAML contract binding in tests (FALSIFY-SHIP-009 GATE-APR-PROV-004)
 
 [features]
 default = ["parallel"]
