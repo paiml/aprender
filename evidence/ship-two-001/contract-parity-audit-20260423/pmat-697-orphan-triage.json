@@ -125,10 +125,13 @@
       "id": 8,
       "name": "parity",
       "count": 1,
-      "disposition": "MERGE-INTO-EXISTING (contracts/entrenar/apr-training-parity-v1.yaml)",
+      "disposition_original": "MERGE-INTO-EXISTING (contracts/entrenar/apr-training-parity-v1.yaml)",
+      "disposition_corrected": "PROMOTE-NEW into contracts/entrenar/backward-parity-v1.yaml v1.1.0 (2026-04-23 per PMAT-705 per-file read)",
       "sub_ticket": "PMAT-705",
+      "status": "SHIPPED",
+      "reclassification_reason": "apr-training-parity-v1 covers throughput parity vs unsloth; backward-parity-v1 covers gradient numerical parity vs PyTorch. Disjoint subjects despite filename overlap.",
       "contracts": [
-        {"name": "backward-parity-v1.yaml", "merge_target": "contracts/entrenar/apr-training-parity-v1.yaml"}
+        {"name": "backward-parity-v1.yaml", "shipped_at": "contracts/entrenar/backward-parity-v1.yaml", "shipped_version": "1.1.0"}
       ]
     },
     {

@@ -9669,11 +9669,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: SHIP-TWO-001 PMAT-706 albor orphan Category 8 backward-parity MERGE into apr-training-parity-v1
-  status: planned
+  status: inprogress
   priority: low
   assigned_to: null
   created: 2026-04-23T12:37:32Z
-  updated: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:44:03.731723761+00:00
   spec: null
   acceptance_criteria:
   - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'

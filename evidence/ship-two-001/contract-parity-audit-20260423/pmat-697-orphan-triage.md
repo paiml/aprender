@@ -110,10 +110,21 @@ This batch justifies creating one:
 4. `resource-budget-v1.yaml`
 5. `q4k-inference-sync-budget-v1.yaml`
 
-### Category 8 — parity (1) → MERGE-INTO-EXISTING
+### Category 8 — parity (1) → PROMOTE-NEW (correction 2026-04-23 via PMAT-705)
 
-1. `backward-parity-v1.yaml` — merge with `contracts/entrenar/apr-training-parity-v1.yaml`
-   (monorepo already has training-parity infrastructure)
+1. `backward-parity-v1.yaml` — ORIGINAL disposition (first-pass) was
+   "merge with `contracts/entrenar/apr-training-parity-v1.yaml`". PMAT-705
+   per-file read found the two cover disjoint subjects:
+   - `apr-training-parity-v1.yaml` — **throughput parity** vs unsloth
+     (tok/s, GPU util, perf hypotheses)
+   - `backward-parity-v1.yaml` — **gradient numerical parity** vs PyTorch
+     (per-layer gnorm ratios in [0.5, 2.0], golden reference)
+   Corrected disposition: PROMOTE-NEW into `contracts/entrenar/backward-parity-v1.yaml` v1.1.0.
+   SHIPPED 2026-04-23. Albor-side cleanup blocks on PMAT-691 hygiene bundle.
+
+   **Lesson:** filename overlap does NOT imply subject overlap. Triage
+   pass 1 relied on filenames + descriptions only. Each sub-ticket's
+   per-file read may reclassify — this was the first such correction.
 
 ### Category 9 — other (2) → CASE-BY-CASE
 
