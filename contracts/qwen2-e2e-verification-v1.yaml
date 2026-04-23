@@ -1,10 +1,32 @@
 metadata:
-  version: 1.4.0
+  version: 1.5.0
   created: '2026-02-20'
   author: PAIML Engineering
   description: |
     Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
     into a complete model proof.
+
+    v1.5.0 (2026-04-23): Added FALSIFY-QW2E-SHIP-004 — binds MODEL-1
+    ship-blocking GGUF export criterion (AC-SHIP1-004:
+    `apr export --format gguf` loads in llama.cpp) to three pure
+    verdict fns in `crates/aprender-core/src/format/ship_004.rs`:
+    `verdict_from_llama_cli_exit(code) -> Ship004Verdict` (POSIX
+    zero-tolerance exit-code boundary), `verdict_from_gguf_magic_bytes(&[u8])
+    -> Ship004Verdict` (canonical 4-byte `b"GGUF"` magic with
+    single-byte-flip and short-slice rejection), and
+    `verdict_from_gguf_version(u32) -> Ship004Verdict` (set-membership
+    over `{2, 3}` with Fail-closed above-band rejection).
+    Algorithm-level PARTIAL discharge: the three format-boundary
+    decision rules, the 0-exit POSIX sentinel, the `b"GGUF"` byte
+    literal, and the supported-versions set are proven today; the
+    compute-heavy discharge (live `apr export --format gguf` + shell
+    out to `llama-cli` on the exported file) remains blocked on
+    hardware evidence collection. MODEL-1 coverage 8/10 → 9/10
+    touched. Ninth compute-free MODEL-1 PARTIAL lever; first MODEL-1
+    discharge to bind three independent verdict fns in one AC (mirrors
+    MODEL-2 SHIP-016 aggregate decomposition but without the aggregate
+    combinator — each of the three fns is an independent gate on a
+    different format boundary).
 
     v1.4.0 (2026-04-23): Added FALSIFY-QW2E-SHIP-003 — binds MODEL-1
     ship-blocking quantization-round-trip criterion (AC-SHIP1-003:
@@ -389,6 +411,91 @@ falsification_tests:
     is silently reported as Pass via NaN comparison semantics"
   - "sign_flipped_quantizer: a symmetry bug inverts one weight tile
     (cosine −1.0) and the aggregate silently reports Pass"
+- id: FALSIFY-QW2E-SHIP-004
+  rule: |
+    MODEL-1 ship-blocker — `apr export --format gguf` must emit a
+    file that (a) starts with the canonical 4-byte magic
+    `AC_SHIP1_004_GGUF_MAGIC_BYTES = b"GGUF"`, (b) carries a GGUF
+    version u32 in `AC_SHIP1_004_GGUF_SUPPORTED_VERSIONS = {2, 3}`
+    immediately after the magic, and (c) loads in upstream
+    llama.cpp such that `llama-cli` exits with
+    `AC_SHIP1_004_LLAMA_CLI_SUCCESS_EXIT_CODE = 0`. Spec §4.2
+    AC-SHIP1-004 falsification is phrased "llama.cpp exit ≠ 0";
+    this contract decomposes the round-trip into three
+    independent format-boundary gates so the harness can isolate
+    the failure mode before shelling out.
+  prediction: |
+    verdict_from_llama_cli_exit(code) == Ship004Verdict::Pass iff
+    code == 0.
+    verdict_from_gguf_magic_bytes(bytes) == Ship004Verdict::Pass
+    iff bytes.len() >= 4 AND &bytes[..4] == b"GGUF".
+    verdict_from_gguf_version(ver) == Ship004Verdict::Pass iff
+    ver == 2 OR ver == 3.
+  test: |
+    cargo test -p aprender-core --lib format::ship_004
+  if_fails: |
+    MODEL-1 teacher cannot ship — either `apr export --format gguf`
+    has regressed (magic-byte drift, version drift, or a broken
+    serializer writing the wrong header), or llama.cpp itself
+    rejects the file at load. The three verdict fns make the
+    failure class machine-readable: magic-Fail means serializer
+    wrote the wrong type, version-Fail means GGUF version drift,
+    exit-Fail means llama.cpp's reader rejected something deeper
+    (tensor shape, metadata, quantization block).
+  ship_blocking: true
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - crates/aprender-core/src/format/ship_004.rs
+    (verdict_from_llama_cli_exit + verdict_from_gguf_magic_bytes +
+    verdict_from_gguf_version +
+    AC_SHIP1_004_LLAMA_CLI_SUCCESS_EXIT_CODE +
+    AC_SHIP1_004_GGUF_MAGIC_BYTES +
+    AC_SHIP1_004_GGUF_SUPPORTED_VERSIONS)
+  - 'test: falsify_ship_004_llama_cli_exit_code_logic
+    (6 sections — POSIX success boundary, adjacent-value Fail,
+    classic failure bands {2, 127, 137, 139, 255}, i32 extrema,
+    monotonicity sweep -256..=256, provenance pin on success
+    sentinel)'
+  - 'test: falsify_ship_004_gguf_magic_bytes_logic
+    (6 sections — canonical magic Pass, magic+version header Pass,
+    6 single-byte-flip Fails {b"GGUE", b"GGTF", b"GFUF", b"FUGG",
+    b"GGU ", b"gguf"}, short-slice Fail {0, 1, 2, 3 bytes},
+    wrong-format magic Fail {b"APR\0", b"APRN", zeros}, provenance
+    pin on all 4 bytes)'
+  - 'test: falsify_ship_004_gguf_version_logic
+    (5 sections — supported {2, 3} Pass, predecessor {0, 1} Fail,
+    above-band Fail {4, 5, 10, 100, 1M, u32::MAX}, exhaustive
+    sweep 0..=64, provenance pin on supported set)'
+  full_discharge_blocks_on: |
+    Live `apr export --format gguf
+    paiml/qwen2.5-coder-7b-apache-q4k-v1.safetensors -o
+    qwen2.5-coder-7b.gguf` followed by shelling out to upstream
+    `llama-cli` on the exported file: read first 4 bytes and
+    assert == b"GGUF"; read next 4 bytes LE and assert ∈ {2, 3};
+    run `llama-cli -m qwen2.5-coder-7b.gguf --prompt "hello"
+    --n-predict 4` and assert exit code == 0. All three gates
+    must Pass.
+  counter_example_classes:
+  - "silent_header_corruption: serializer writes b\"APR\\0\" or
+    b\"APRN\" into a file named .gguf — magic-Fail catches this
+    before llama.cpp is even invoked"
+  - "version_drift: GGUF V1 (pre-llama.cpp GGJT) or V4+
+    (uncommitted future revision) silently emitted — version-Fail
+    catches this at the format boundary"
+  - "llama_cpp_reject: magic and version pass but llama.cpp's
+    reader rejects deeper (bad tensor shape, bad metadata key,
+    unsupported quantization block) — exit-Fail catches this at
+    the tool boundary"
+  - "tolerance_widened: POSIX success sentinel silently relaxed
+    from 0 to allow exit codes {0, 1} — provenance pin catches"
+  - "magic_byte_flip: one byte of b\"GGUF\" silently flipped to
+    b\"GGU \" or b\"gguf\" — byte-literal provenance pin catches"
+  - "version_set_widened: AC_SHIP1_004_GGUF_SUPPORTED_VERSIONS
+    silently expanded to &[1, 2, 3] (accepting GGJT) — set-length
+    provenance pin catches"
+  - "signal_exit_masked: llama.cpp crashed with SIGSEGV (exit
+    139) but harness silently mapped it to 0 — adjacent-value
+    Fail catches"
 kani_harnesses:
 - id: KANI-QW2E-001
   obligation: QW2E-INV-001
