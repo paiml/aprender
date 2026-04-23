@@ -35,13 +35,14 @@ status:
     phase_complete: [0, 1, 2]
     phase_open: [3, 4]
   model_2_ship2_gates:
+    total: 13  # 12 original + AC-SHIP2-013 added v2.29.4
     on_main_discharged:
       count: 3
-      of: 12
+      of: 13
       ids: [AC-SHIP2-001, AC-SHIP2-011, AC-SHIP2-012]
     on_main_partial:
       count: 3
-      of: 12
+      of: 13
       ids: [AC-SHIP2-002, AC-SHIP2-005, AC-SHIP2-009]
     pending_open_pr:
       - { id: SHIP-016, pr: 1008 }
@@ -50,6 +51,8 @@ status:
       - { id: SHIP-020, pr: 1005 }
     blocked_on_task_132_phase_3:
       ids: [AC-SHIP2-003, AC-SHIP2-004]
+    blocked_on_trueno_203:
+      ids: [AC-SHIP2-013]  # gx10 backend parity + pretrain residency (PMAT-696)
   spec_document:
     version_on_main: 2.29.1
     pending_amendment: null  # PR #1024 was for v2.30.0; superseded by this branch's v2.29.1/.2 corrections
@@ -992,10 +995,11 @@ Leverages 28 existing contracts from the apr-leaderboard POC, promoted into the 
 
 | ID            | Criterion                                                                 | Verification           |
 |---------------|---------------------------------------------------------------------------|------------------------|
-**On-main status** (last audited 2026-04-23 vs `601c0740f`): 6/12
+**On-main status** (last audited 2026-04-23 vs `601c0740f`): 6/13
 touched on main (3 DISCHARGED + 3 PARTIAL); 4 pending in open PRs
 (#1004/1005/1006/1008); 2 blocked on task #132 Phase 3 RTX 4090
-compute dispatch. See `ship-two-models-spec-audit.md` §1.2.
+compute dispatch; AC-SHIP2-013 (added v2.29.4) blocked on trueno#203
+pre-compiled sm_121 cubins. See `ship-two-models-spec-audit.md` §1.2.
 
 | ID            | Criterion                                                                 | Verification           | On-main status (2026-04-23)  |
 |---------------|---------------------------------------------------------------------------|------------------------|------------------------------|
@@ -1011,6 +1015,7 @@ compute dispatch. See `ship-two-models-spec-audit.md` §1.2.
 | AC-SHIP2-010  | `apr bench` decode ≥100 tok/s on RTX 4090 (370M target)                   | FALSIFY-SHIP-020       | ✗ PR #1005 OPEN (`feat/falsify-ship-020-partial-discharge`) |
 | AC-SHIP2-011  | Training reproducible: seed fixed, two runs produce identical first 100 steps | FALSIFY-SHIP-021   | ✓ DISCHARGED on main (PR #898) |
 | AC-SHIP2-012  | Weights + tokenizer + config published with CC-BY-4.0 data provenance     | FALSIFY-SHIP-022       | ✓ DISCHARGED on main (PR #898) |
+| AC-SHIP2-013  | Backend parity + gx10 pretrain residency (§5.6 multi-backend policy)      | FALSIFY-SHIP-025/026   | ⏸ blocked on trueno#203 (PMAT-696) |
 
 ### 5.3 Critical Path (MODEL-2)
 
@@ -1350,6 +1355,8 @@ All gates are binary; any failure blocks publish.
 | GATE-SHIP-010    | `cargo deny check advisories` — zero vulnerabilities in weight/tokenizer dependencies | merge |
 | GATE-SHIP-011    | PMAT quality score ≥ A- (project), TDG ≥ 90                    | merge           |
 | GATE-SHIP-012    | Coverage ≥ 95% line on new modules (per `.pmat-gates.toml`)    | merge           |
+| GATE-SHIP-013    | **Multi-backend selection parity** (§5.6): `apr bench --backends all --json` produces a row per available backend; winning backend passes `apr qa --parity-check` against cuBLAS reference | AC-SHIP2-013, dispatch  |
+| GATE-SHIP-014    | **gx10 pretrain residency** (AC-SHIP2-013): `apr pretrain --device cuda:0` on gx10 GB10 produces `evidence/gx10-pretrain-50step.json` with step-wall ≤ 2× lambda-labs baseline AND GATE-GPUTRAIN-003 PASS (discharges trueno#200/#203) | MODEL-2 ship on non-sm_89 |
 
 ---
 
@@ -1390,6 +1397,12 @@ Each test is named, executable, and has a defined failure signal.
 | FALSIFY-SHIP-020   | `apr bench` median tok/s on RTX 4090                              | < 100                                  |
 | FALSIFY-SHIP-021   | Run training 100 steps × 2 with seed=0; diff loss trajectories    | any step diff > 1e-6                   |
 | FALSIFY-SHIP-022   | `apr inspect`; check `license`, `data_source`, `data_license`     | any field missing                      |
+| FALSIFY-SHIP-025   | **Backend parity** (§5.6): `apr qa --parity-check` for every backend pair (PTX↔cuBLAS, cuBLAS↔WGPU) on canonical 100-prompt set | any pair ULP-relative diff > 1e-3        |
+| FALSIFY-SHIP-026   | **gx10 pretrain smoke** (AC-SHIP2-013, PMAT-696): `apr pretrain --device cuda:0` on gx10 produces 50 steps, step-wall P50 ≤ 2× lambda-labs, `nvidia-smi` residency > 0 MiB within 5 s | any guard FAIL, crash, or wall > 2× lambda-labs |
+
+*Note:* FALSIFY-SHIP-023/024 already appear in §7.1 for MODEL-1
+(post-ship drift, prompt injection). SHIP-025/026 are MODEL-2 extensions
+introduced by v2.29.4 §5.6 multi-backend policy.
 
 ---
 
