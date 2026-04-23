@@ -96,6 +96,7 @@ pub enum TokenizeCommands {
     /// Root-cause fix for the pretokenize-to-bin gap documented in
     /// memory/project_shard_reader_bin_format.md — replaces a Python shim
     /// that was flagged as MUDA on 2026-04-19.
+    #[cfg(feature = "training")]
     EncodeCorpus {
         /// Path to JSONL corpus file or directory of `.jsonl` files.
         #[arg(long, value_name = "PATH")]
