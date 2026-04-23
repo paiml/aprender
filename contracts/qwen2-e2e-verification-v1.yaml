@@ -1,10 +1,20 @@
 metadata:
-  version: 1.2.0
+  version: 1.3.0
   created: '2026-02-20'
   author: PAIML Engineering
   description: |
     Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
     into a complete model proof.
+
+    v1.3.0 (2026-04-23) — Adds FALSIFY-QW2E-SHIP-007 binding AC-SHIP1-007
+    (MODEL-1 `apr bench` decode ≥ 30 tok/s on RTX 4090 for 7B Q4_K teacher)
+    to pure `verdict_from_decode_tps(f32) -> Ship007Verdict` in
+    `crates/aprender-core/src/bench/ship_007.rs`. Non-finite values (NaN,
+    ±∞) Fail conservatively. discharge_status PARTIAL_ALGORITHM_LEVEL —
+    full discharge blocks on live `apr bench --iterations 5 --max-tokens
+    128` on RTX 4090 + median ≥ 30.0. MODEL-1 twin of MODEL-2 SHIP-020
+    (same f32-threshold shape, floor 30 vs 100 — 7B Q4_K is bandwidth-
+    bound at ~3.5× the size of the 370M target).
 
     v1.2.0 (2026-04-22): Added FALSIFY-QW2E-SHIP-005 — binds MODEL-1
     ship-blocking HumanEval pass@1 criterion (AC-SHIP1-005:
@@ -264,6 +274,38 @@ falsification_tests:
     reported as Pass instead of Fail"
   - "nan_promoted: pass@1 JSON emits `NaN` on parse glitch and is
     silently treated as Pass"
+- id: FALSIFY-QW2E-SHIP-007
+  rule: |
+    MODEL-1 ship-blocker — `apr bench --iterations 5 --max-tokens 128
+    paiml/qwen2.5-coder-7b-apache-q4k-v1` median decode throughput must
+    be at least AC_SHIP1_007_MIN_DECODE_TPS_RTX4090_7B = 30.0 tok/s on
+    an RTX 4090 host. Decision rule: `Pass` iff measured tok/s is finite
+    AND ≥ 30.0. Non-finite values (NaN, ±∞) Fail conservatively.
+  prediction: |
+    verdict_from_decode_tps(measured) == Ship007Verdict::Pass
+    iff measured.is_finite() && measured >= 30.0
+  test: |
+    cargo test -p aprender-core --lib
+    falsify_ship_007_decode_tps_threshold_logic
+  if_fails: |
+    MODEL-1 teacher cannot ship — either the 7B Q4_K decode kernel has
+    regressed below the Ollama-parity-class floor, or the contract
+    constant has drifted from spec §4.2 AC-SHIP1-007.
+  ship_blocking: true
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - crates/aprender-core/src/bench/ship_007.rs::AC_SHIP1_007_MIN_DECODE_TPS_RTX4090_7B
+  - crates/aprender-core/src/bench/ship_007.rs::verdict_from_decode_tps
+  - crates/aprender-core/src/bench/ship_007.rs::falsify_ship_007_decode_tps_threshold_logic
+  full_discharge_blocks_on: |
+    Live `apr bench --iterations 5 --max-tokens 128
+    paiml/qwen2.5-coder-7b-apache-q4k-v1` on RTX 4090 with --features
+    cuda; median of 5 iterations must be ≥ 30.0 tok/s.
+  counter_example_classes:
+  - regressed_kernel
+  - drifted_constant
+  - relaxed_rule
+  - nan_promoted
 kani_harnesses:
 - id: KANI-QW2E-001
   obligation: QW2E-INV-001
