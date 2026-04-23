@@ -653,6 +653,7 @@ fn dispatch_tokenize_command(
             normalization,
             cli.json,
         ),
+        #[cfg(feature = "training")]
         TokenizeCommands::EncodeCorpus {
             corpus,
             tokenizer,
