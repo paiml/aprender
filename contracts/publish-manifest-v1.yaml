@@ -3,10 +3,10 @@ contract_id: F-PUBLISH-MANIFEST-001
 title: "Model artifact publish manifest — schema + verification (SHIP-TWO-001 shared)"
 status: DRAFT
 created: 2026-04-17
-updated: 2026-04-18
+updated: 2026-04-23
 
 metadata:
-  version: 1.3.0
+  version: 1.4.0
   description: |
     Model artifact publish manifest — schema + verification protocol.
     Binds SHA-256 identity, license chain, and provenance to every published
@@ -19,6 +19,7 @@ metadata:
     - "AC-SHIP2-012 (weights + tokenizer + config with provenance)"
 
 changelog:
+  - v1.4.0 (2026-04-23): Added FALSIFY-SHIP-010 algorithm-level PARTIAL discharge (GATE-PM-010) for MODEL-1 AC-SHIP1-010. Binds the published-artifact ship gate to two pure decision rules in `crates/aprender-core/src/format/ship_010.rs` — (1) `verdict_from_sha256_match(expected, actual)` Pass iff both strings are exactly 64 lowercase-hex chars AND byte-identical (rejects uppercase, mixed case, wrong length, non-hex, whitespace, and all-zero-vs-real); (2) `verdict_from_manifest_url(url)` Pass iff URL starts_with `https://`, host non-empty, no whitespace or control chars (rejects http://, scheme-less, bare slug, empty host, trailing \\n). Covers the decision-rule layer of FALSIFY-PM-002 (sha256 matches artifact) + FALSIFY-PM-003 (URL resolves) that previously lived only in shell-pipeline tests. Full discharge still blocks on live curl + sha256sum on the published ~5GiB teacher artifact. Brings MODEL-1 touched count to 7/10 AC-SHIP1 items (SHIP-002 + 005 + 006 + 007 + 008 + 009 + 010).
   - v1.3.0 (2026-04-18): Added FALSIFY-PM-009 APR magic-bytes Poka-Yoke. Closes the three-format ship symmetry (PM-007 safetensors + PM-008 gguf + PM-009 apr). v1.0 scope = verify first 4 bytes match one of `APR\0` / `APRN` / `APR1` / `APR2`. Catches the "wrong file staged under format=apr manifest" ship-blocker class (e.g., a GGUF renamed `.apr`) at publish time. Tensor-index quant validation deferred to v1.1.
   - v1.2.1 (2026-04-18): PM-008 revised — predominant GGML tensor type is now the authoritative signal (real llama.cpp quantize output has shipped with stale `general.file_type=0` despite fully Q4_K tensors; tensor dtypes are what inference engines actually use). `general.file_type` retained as fallback when tensor metadata is absent.
   - v1.2.0 (2026-04-18): Added FALSIFY-PM-008 GGUF `general.file_type` Poka-Yoke. Parses GGUF metadata_kv and verifies the u32 file_type enum against the manifest's quantization string (q4_k_m→15, q6_k→18, etc.). Mirrors PM-007 for the third shipped format.
@@ -337,6 +338,64 @@ falsification_tests:
       The staged file's first 4 bytes are not one of `APR\0`, `APRN`,
       `APR1`, or `APR2`. Unit tests cover the GGUF-staged-as-APR scenario
       (`pm009_gguf_magic_staged_as_apr_fails`) and the empty-file scenario.
+
+  # ───────────────────────────────────────────────────────────
+  # FALSIFY-SHIP-010 — algorithm-level PARTIAL discharge.
+  # Binds SHIP-TWO-001 AC-SHIP1-010 ("Published artifact URL resolves;
+  # SHA-256 matches manifest") to pure decision rules in Rust, separately
+  # from the live-network FALSIFY-PM-002 + FALSIFY-PM-003 gates that
+  # shell out to curl + sha256sum.
+  # ───────────────────────────────────────────────────────────
+  - id: FALSIFY-SHIP-010
+    name: "ship_010_partial_sha256_and_url_verdict_rule"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    binds_to: AC-SHIP1-010
+    ship_blocking: true
+    description: |
+      Pure-function decision rules for the publish gate:
+
+        1. `verdict_from_sha256_match(expected_hex, actual_hex) -> Ship010Verdict`
+           — Pass iff both strings are exactly
+           `AC_SHIP1_010_SHA256_HEX_LEN = 64` lowercase hex chars AND
+           byte-identical. Fails for wrong length, non-hex, uppercase /
+           mixed-case, whitespace, or any single-byte mismatch.
+        2. `verdict_from_manifest_url(url) -> Ship010Verdict`
+           — Pass iff url starts with
+           `AC_SHIP1_010_REQUIRED_URL_SCHEME = "https://"`, has a non-
+           empty host (at least one char before the first `/`), and
+           contains no ASCII whitespace or control characters.
+
+      Together these two rules discharge the algorithm half of
+      FALSIFY-PM-002 (sha256 matches artifact) + FALSIFY-PM-003 (URL
+      resolves) without needing any network I/O. A publish pipeline
+      that edits either constant (weakening to a 32-char hash, relaxing
+      to plaintext HTTP, accepting uppercase sha256sum output) breaks
+      the proof here at compile+test time, not at HF Hub publish time.
+
+      Full discharge of AC-SHIP1-010 still requires the live path:
+      `curl -sI $artifact_url` → 200 OK with matching content-length,
+      and `sha256sum` of the ~5GiB downloaded teacher artifact matching
+      the manifest's declared hash byte-identically. Those belong to
+      FALSIFY-PM-002 + FALSIFY-PM-003 at publish time and are not
+      duplicated here.
+    evidence_required: |
+      `cargo test -p aprender-core --lib falsify_ship_010_sha256_match_threshold_logic`
+      exits 0 AND
+      `cargo test -p aprender-core --lib falsify_ship_010_manifest_url_well_formedness`
+      exits 0 AND
+      `cargo test -p aprender-core --lib is_canonical_lowercase_hex_rejects_uppercase`
+      exits 0.
+    evidence_discharged_by:
+      - "crates/aprender-core/src/format/ship_010.rs::ship_010_tests::falsify_ship_010_sha256_match_threshold_logic"
+      - "crates/aprender-core/src/format/ship_010.rs::ship_010_tests::falsify_ship_010_manifest_url_well_formedness"
+      - "crates/aprender-core/src/format/ship_010.rs::ship_010_tests::is_canonical_lowercase_hex_rejects_uppercase"
+    expected: "PASS at the pure-function level; live-network discharge deferred to FALSIFY-PM-002/003."
+    fails_if: |
+      Any edit that (a) makes the sha256 comparison case-insensitive,
+      (b) accepts non-64-char hashes, (c) accepts non-hex characters,
+      (d) accepts plaintext http://, (e) accepts whitespace in the URL,
+      or (f) accepts an empty host.
+    falsification_id: FALSIFY-SHIP-010
 
 # ─────────────────────────────────────────────────────────────
 # PROOF OBLIGATIONS
