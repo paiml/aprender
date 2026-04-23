@@ -9501,11 +9501,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: SHIP-TWO-001 PMAT-698 reconcile 2 silent-fork MoE contracts (moe-expert-dispatch, moe-router)
-  status: planned
+  status: inprogress
   priority: critical
   assigned_to: null
   created: 2026-04-23T09:52:13Z
-  updated: 2026-04-23T09:52:13Z
+  updated: 2026-04-23T09:57:15.066452919+00:00
   spec: null
   acceptance_criteria:
   - 'Audit found moe-expert-dispatch-v1.yaml and moe-router-v1.yaml exist in BOTH ~/src/albor/contracts/ and /home/noah/src/aprender/contracts/ with DIFFERENT md5 hashes (silent-fork divergence class). Diff the two pairs; decide which is authoritative per §3 row #9; sync the other. Highest-priority same-name divergence because it''s the case CI was most likely to miss.'

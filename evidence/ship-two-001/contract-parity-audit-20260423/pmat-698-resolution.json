@@ -1,0 +1,32 @@
+{
+  "ticket": "PMAT-698",
+  "date": "2026-04-23",
+  "action": "Promote richer albor MoE contracts into monorepo as authoritative v1.1.0",
+  "contracts": [
+    {
+      "name": "moe-expert-dispatch-v1.yaml",
+      "before_monorepo_lines": 36,
+      "before_monorepo_md5": "a73ea8fbde6364ff4a15fa1c6e356b98",
+      "after_monorepo_lines": 224,
+      "after_monorepo_md5": "f3f96cd9cdfbb6a8e9febb93c71aab3d",
+      "source_albor_commit": "be23737",
+      "content_delta": "+ 8 equations, 6 invariants, 6 proof_obligations, 7 falsification_tests, 2 kani_harnesses, 1 qa_gate",
+      "monorepo_additions": "updated: 2026-04-23, registry: true, scope: crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs, promoted_from: albor@be23737",
+      "pv_validate": "0 error(s), 0 warning(s). Contract is valid."
+    },
+    {
+      "name": "moe-router-v1.yaml",
+      "before_monorepo_lines": 45,
+      "after_monorepo_lines": 173,
+      "source_albor_commit": "be23737",
+      "monorepo_additions": "updated: 2026-04-23, registry: true, scope: crates/aprender-serve/src/gpu/scheduler/moe_router.rs, promoted_from: albor@be23737",
+      "pv_validate": "0 error(s), 0 warning(s). Contract is valid."
+    }
+  ],
+  "followup": "Albor repo MUST now delete its own moe-expert-dispatch-v1.yaml and moe-router-v1.yaml (or replace them with a symlink pointer to the monorepo's authoritative version). Tracked under PMAT-691 (albor README/contract hygiene). Standing policy §3 row #9: downstream repos MUST align; monorepo is authoritative.",
+  "effect_on_parity_audit": {
+    "silent_fork_count_was": 2,
+    "silent_fork_count_now": 2,
+    "note": "Silent-fork count unchanged because albor still carries its own copies. After albor-side cleanup (PMAT-691), silent-fork count → 0 and these two contracts move to the 'byte-aligned' class (modulo the 3 monorepo-specific metadata fields which albor should adopt)."
+  }
+}

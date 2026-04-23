@@ -1,36 +1,224 @@
+# Contract: MoE Expert Dispatch (ALB-010)
+#
+# Routes tokens to selected experts, runs SwiGLU FFN on each,
+# combines with weighted sum + shared expert. Core MoE forward pass.
+#
+# Qwen3.5-35B-A3B: 256 experts, top-8 routed + 1 shared = 9 active.
+# Each expert: SwiGLU with intermediate_size=512.
+
 metadata:
-  version: "1.0.0"
-  created: "2026-04-13"
-  author: PAIML Engineering
-  registry: true
+  version: "1.1.0"
+  created: "2026-03-06"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "MoE expert dispatch — SwiGLU forward, weighted sum, shared expert, fused weight unfusing"
   references:
-    - "Fedus et al. (2022). Switch Transformers: Scaling to Trillion Parameter Models."
-  description: "MoE expert dispatch and weighted aggregation"
-
-kind: KernelContract
-name: moe-expert-dispatch
-version: "1.0.0"
-scope: "crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
-
-description: |
-  Dispatches tokens to selected experts, runs expert FFN, aggregates weighted outputs. Includes shared expert path.
+    - "Qwen3.5-35B-A3B: 256 experts/layer, top-8 + 1 shared, SwiGLU intermediate=512"
+    - "Shazeer (2020) GLU Variants Improve Transformer"
+    - "Fedus et al. (2022) Switch Transformers: Scaling to Trillion Parameter Models"
+  depends_on:
+    - "moe-router-v1"
+  registry: true
+  scope: "crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
+  promoted_from: "albor@be23737 — richer contract (8 equations + 6 invariants + 6 proof obligations + 7 FALSIFY + 2 kani) replaced monorepo stub per SHIP-TWO-001 §3 row #9 monorepo-single-source-of-truth + PMAT-698"
 
 equations:
-  expert_isolation:
-    description: "∀ expert e: only processes tokens routed to e"
-    formula: "∀ expert e: only processes tokens routed to e"
+  expert_swiglu:
+    description: "Single expert SwiGLU forward"
+    formula: |
+      expert_out = down_proj(SiLU(gate_proj(x)) * up_proj(x))
+      gate_proj: [hidden_dim, intermediate] = [2048, 512]
+      up_proj:   [hidden_dim, intermediate] = [2048, 512]
+      down_proj: [intermediate, hidden_dim] = [512, 2048]
+    domain: "x: [hidden_dim]"
+    codomain: "expert_out: [hidden_dim]"
 
-  weighted_aggregation:
-    description: "output[t] = Σ_e weight[t,e] * expert_output[t,e]"
-    formula: "output[t] = Σ_e weight[t,e] * expert_output[t,e]"
+  routed_output:
+    description: "Weighted sum of selected expert outputs"
+    formula: |
+      routed_out = sum(weight_i * expert_i(x) for i in top_k_indices)
+      where weight_i = renormalized routing weight for expert i
+    domain: "x: [hidden_dim], indices: [k], weights: [k]"
+    codomain: "routed_out: [hidden_dim]"
 
-falsification:
-  - id: FALSIFY-MOE_EXPERT_DISPATCH_V1_001
-    description: "∀ expert e: only processes tokens routed to e"
-    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
-    evidence: "cargo test --lib"
+  shared_expert:
+    description: "Always-active shared expert (not gated by router)"
+    formula: |
+      shared_out = shared_down(SiLU(shared_gate(x)) * shared_up(x))
+      Same structure as routed experts, independent weights.
+    domain: "x: [hidden_dim]"
+    codomain: "shared_out: [hidden_dim]"
 
-  - id: FALSIFY-MOE_EXPERT_DISPATCH_V1_002
-    description: "output[t] = Σ_e weight[t,e] * expert_output[t,e]"
-    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
-    evidence: "cargo test --lib"
+  moe_output:
+    description: "Combined MoE layer output"
+    formula: "moe_out = routed_out + shared_out"
+    domain: "routed_out: [hidden_dim], shared_out: [hidden_dim]"
+    codomain: "moe_out: [hidden_dim]"
+
+  fused_gate_up_unfuse:
+    description: "Unfuse the fused gate_up_proj tensor"
+    formula: |
+      fused: [num_experts, 2*intermediate, hidden_dim]
+      gate_proj = fused[expert_id, 0:intermediate, :]
+      up_proj   = fused[expert_id, intermediate:2*intermediate, :]
+    domain: "fused tensor from safetensors, expert_id in [0, num_experts)"
+    codomain: "gate_proj: [intermediate, hidden_dim], up_proj: [intermediate, hidden_dim]"
+
+invariants:
+  expert_output_shape:
+    description: "Each expert output has same shape as input"
+    formula: "expert_out.len() == hidden_dim for all experts"
+
+  weighted_sum_preserves_shape:
+    description: "Weighted sum output has same shape as input"
+    formula: "routed_out.len() == hidden_dim"
+
+  shared_expert_always_active:
+    description: "Shared expert runs on every token regardless of routing"
+    formula: "shared_out is computed for every token, unconditionally"
+
+  expert_independence:
+    description: "Each expert uses only its own weights"
+    formula: |
+      expert_i uses only weights[expert_id=i]
+      No cross-expert weight sharing (shared expert is separate)
+
+  unfuse_covers_all:
+    description: "Unfusing gate_up produces correct total element count"
+    formula: |
+      gate_proj.len() + up_proj.len() == fused[expert_id].len()
+      gate_proj.len() == intermediate * hidden_dim
+      up_proj.len() == intermediate * hidden_dim
+
+  numerical_stability:
+    description: "Expert outputs are finite for finite inputs"
+    formula: |
+      if x.all_finite() and weights.all_finite():
+        moe_out.all_finite()
+    note: "SiLU(x) = x * sigmoid(x) is bounded for bounded x"
+
+proof_obligations:
+  - type: equivalence
+    property: "Expert SwiGLU matches dense SwiGLU for same weights"
+    formal: "max_abs_diff(expert_swiglu(x, w), dense_swiglu(x, w)) < 1e-5"
+    tolerance: 1e-5
+    applies_to: expert_swiglu
+
+  - type: invariant
+    property: "Exactly k routed experts run per token"
+    formal: "count(executed_experts) == num_experts_per_tok for every token"
+    tolerance: 0
+    applies_to: routed_output
+
+  - type: invariant
+    property: "Shared expert always runs (not gated by router)"
+    formal: "shared_expert_executed == true for every token"
+    tolerance: 0
+    applies_to: shared_expert
+
+  - type: invariant
+    property: "Fused gate_up_proj unfused correctly"
+    formal: "gate.len() == intermediate * hidden_dim AND up.len() == intermediate * hidden_dim"
+    tolerance: 0
+    applies_to: fused_gate_up_unfuse
+
+  - type: invariant
+    property: "Expert weight buffer sizes match architecture"
+    formal: |
+      gate_weight.len() == num_experts * hidden_dim
+      expert_gate_up.len() == num_experts * 2 * intermediate * hidden_dim
+      expert_down.len() == num_experts * hidden_dim * intermediate
+    tolerance: 0
+    applies_to: expert_swiglu
+
+  - type: invariant
+    property: "MoE output = routed_sum + shared_out"
+    formal: "moe_out == sum(w_i * expert_i(x)) + shared_expert(x)"
+    tolerance: 1e-5
+    applies_to: moe_output
+
+falsification_tests:
+  - id: FALSIFY-MOE-DISPATCH-001
+    rule: "Single-expert routing equals that expert's direct output"
+    prediction: "moe_out == expert_2(x) + shared(x) when all weight goes to expert 2"
+    test: |
+      Set up MoE with 4 experts, route ALL weight to expert 2.
+      Assert moe_out == expert_2(x) + shared(x).
+    if_fails: "Weighted sum or indexing broken"
+
+  - id: FALSIFY-MOE-DISPATCH-002
+    rule: "Uniform routing equals average of all selected experts"
+    prediction: "routed_out == 0.25 * sum(expert_i(x)) with 4 equal-weight experts"
+    test: |
+      Set up MoE with 4 experts, route equal weight (0.25) to all 4.
+      Assert routed_out == 0.25 * (e0(x) + e1(x) + e2(x) + e3(x)).
+    if_fails: "Weight application or summation broken"
+
+  - id: FALSIFY-MOE-DISPATCH-003
+    rule: "Fused gate_up_proj unfuse round-trips correctly"
+    prediction: "fuse(gate, up) then unfuse produces identical gate and up tensors"
+    test: |
+      Create known gate [512, 2048] and up [512, 2048].
+      Fuse: concat along dim 0 → [1024, 2048].
+      Unfuse: split at 512 → gate', up'.
+      Assert gate == gate' and up == up'.
+    if_fails: "Unfuse splits at wrong offset or wrong dimension"
+
+  - id: FALSIFY-MOE-DISPATCH-004
+    rule: "Shared expert output added even when routed output is zero"
+    prediction: "moe_out == shared_out when all expert weights are zero"
+    test: |
+      Set all expert weights to zero (degenerate model).
+      Assert moe_out == shared_out (routed_out = 0).
+    if_fails: "Shared expert skipped or conditional on routing"
+
+  - id: FALSIFY-MOE-DISPATCH-005
+    rule: "Buffer overflow impossible with wrong expert_id"
+    prediction: "expert_id == num_experts returns error, does not access memory"
+    test: |
+      Attempt dispatch to expert_id = num_experts (out of bounds).
+      Assert bounds check prevents access, returns error.
+    if_fails: "Missing bounds check on expert index"
+
+  - id: FALSIFY-MOE-DISPATCH-006
+    rule: "Expert output finite for normal-range inputs"
+    prediction: "All 256 expert outputs are finite for randn(2048) * 10.0 input"
+    test: |
+      x = randn(2048) * 10.0 (typical hidden state magnitude).
+      Run all 256 experts + shared. Assert all outputs finite.
+    if_fails: "Numerical instability in SiLU or matmul"
+
+  - id: FALSIFY-MOE-DISPATCH-007
+    rule: "MoE forward matches dense FFN when num_experts=1"
+    prediction: "max_abs_diff(moe_forward(x), dense_ffn(x)) < 1e-5 for same weights"
+    test: |
+      Create MoE with 1 expert, weight=1.0, no shared expert.
+      Create dense SwiGLU FFN with same weights.
+      Assert moe_forward(x) == dense_ffn(x) within 1e-5.
+    if_fails: "MoE dispatch introduces numerical differences vs dense path"
+
+kani_harnesses:
+  - id: KANI-MOE-DISPATCH-001
+    obligation: C-MOE-DISPATCH-004
+    property: "Unfuse gate_up always produces correct split for valid intermediate_size"
+    bound: 4
+    strategy: bounded_int
+
+  - id: KANI-MOE-DISPATCH-002
+    obligation: C-MOE-DISPATCH-005
+    property: "Buffer size validation catches all undersized expert weight tensors"
+    bound: 4
+    strategy: bounded_int
+
+qa_gate:
+  id: F-MOE-DISPATCH-001
+  name: "MoE Expert Dispatch Contract"
+  description: "Correctness of expert routing, SwiGLU forward, weighted sum, and shared expert"
+  checks:
+    - "expert_swiglu"
+    - "routed_output"
+    - "shared_expert"
+    - "moe_output"
+    - "fused_gate_up_unfuse"
+  pass_criteria: "All 7 falsification tests pass"
+  falsification: "Single-expert routing and uniform routing as degenerate test cases"

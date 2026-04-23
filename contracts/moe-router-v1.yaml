@@ -1,45 +1,173 @@
+# Contract: MoE Router Forward (ALB-010)
+#
+# Softmax → top-k → renormalize routing for Qwen3.5-35B-A3B inference.
+# The router selects which 8 of 256 experts process each token.
+# Correctness here is critical: wrong routing = wrong model output.
+
 metadata:
-  version: "1.0.0"
-  created: "2026-04-13"
-  author: PAIML Engineering
-  registry: true
+  version: "1.1.0"
+  created: "2026-03-06"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "MoE router forward pass — softmax, top-k selection, weight renormalization"
   references:
-    - "Shazeer et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer."
-  description: "MoE router: softmax → top-k → renormalize"
-
-kind: KernelContract
-name: moe-router
-version: "1.0.0"
-scope: "crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
-
-description: |
-  Mixture of Experts router. Computes expert selection via softmax over router logits, selects top-k experts per token, renormalizes weights.
+    - "Fedus et al. (2022) Switch Transformers"
+    - "Qwen3.5-35B-A3B config: 256 experts, top-8, softmax routing"
+    - "moe-expert-dispatch-v1 (dispatch contract)"
+  depends_on: []
+  registry: true
+  scope: "crates/aprender-serve/src/gpu/scheduler/moe_router.rs"
+  promoted_from: "albor@be23737 — richer contract replaced monorepo stub per SHIP-TWO-001 §3 row #9 monorepo-single-source-of-truth + PMAT-698"
 
 equations:
+  router_logits:
+    description: "Gate projects hidden states to expert scores"
+    formula: "logits = x @ gate_weight.T, shape [seq_len, num_experts]"
+    domain: "x: [seq_len, hidden_dim], gate_weight: [num_experts, hidden_dim]"
+    codomain: "logits: [seq_len, num_experts]"
+
   softmax_normalization:
-    description: "∀ token: Σ router_probs[token] = 1.0"
-    formula: "∀ token: Σ router_probs[token] = 1.0"
+    description: "Softmax over all experts BEFORE top-k selection"
+    formula: |
+      probs[i] = exp(logits[i] - max(logits)) / sum(exp(logits[j] - max(logits)))
+      sum(probs) = 1.0
+    domain: "logits: [num_experts] per token"
+    codomain: "probs: [num_experts], all >= 0, sum = 1"
 
   topk_selection:
-    description: "∀ token: exactly k experts selected where k = num_experts_per_token"
-    formula: "∀ token: exactly k experts selected where k = num_experts_per_token"
+    description: "Select top-k experts by probability"
+    formula: |
+      indices, weights = topk(probs, k=num_experts_per_tok)
+      len(indices) = k
+      for all i in indices: probs[i] >= probs[j] for all j not in indices
+    domain: "probs: [num_experts], k: usize"
+    codomain: "indices: [k], weights: [k]"
 
   weight_renormalization:
-    description: "∀ token: Σ selected_weights[token] = 1.0 after renorm"
-    formula: "∀ token: Σ selected_weights[token] = 1.0 after renorm"
+    description: "Selected weights renormalized to sum to 1"
+    formula: |
+      weights_renorm[i] = weights[i] / sum(weights)
+      sum(weights_renorm) = 1.0
+    domain: "weights: [k], all > 0"
+    codomain: "weights_renorm: [k], sum = 1.0"
 
-falsification:
-  - id: FALSIFY-MOE_ROUTER_V1_001
-    description: "∀ token: Σ router_probs[token] = 1.0"
-    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
-    evidence: "cargo test --lib"
+invariants:
+  softmax_valid:
+    description: "Softmax output is a valid probability distribution"
+    formula: "for all i: probs[i] >= 0 AND abs(sum(probs) - 1.0) < 1e-5"
 
-  - id: FALSIFY-MOE_ROUTER_V1_002
-    description: "∀ token: exactly k experts selected where k = num_experts_per_token"
-    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
-    evidence: "cargo test --lib"
+  topk_ordered:
+    description: "Selected experts have highest probabilities"
+    formula: "min(selected_probs) >= max(unselected_probs)"
 
-  - id: FALSIFY-MOE_ROUTER_V1_003
-    description: "∀ token: Σ selected_weights[token] = 1.0 after renorm"
-    test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
-    evidence: "cargo test --lib"
+  renorm_sum_one:
+    description: "Renormalized weights sum to 1"
+    formula: "abs(sum(weights_renorm) - 1.0) < 1e-6"
+
+  expert_count:
+    description: "Exactly k experts selected per token"
+    formula: "len(indices) == num_experts_per_tok"
+
+  index_bounds:
+    description: "All selected indices are valid expert IDs"
+    formula: "for all i in indices: 0 <= i < num_experts"
+
+  deterministic:
+    description: "Same input produces same routing"
+    formula: "route(x) == route(x) for identical x"
+
+proof_obligations:
+  - type: invariant
+    property: "Softmax output sums to 1.0 within f32 tolerance"
+    formal: "abs(sum(softmax(logits)) - 1.0) < 1e-5 for all finite logits"
+    tolerance: 1e-5
+    applies_to: softmax_normalization
+
+  - type: invariant
+    property: "Top-k selection returns exactly k indices"
+    formal: "len(topk(probs, k).indices) == k for all valid probs"
+    tolerance: 0
+    applies_to: topk_selection
+
+  - type: invariant
+    property: "Renormalized weights sum to 1.0"
+    formal: "abs(sum(renormalize(weights)) - 1.0) < 1e-6"
+    tolerance: 1e-6
+    applies_to: weight_renormalization
+
+  - type: invariant
+    property: "Gate weight shape matches [num_experts, hidden_dim]"
+    formal: "gate_weight.len() == num_experts * hidden_dim"
+    tolerance: 0
+    applies_to: router_logits
+
+  - type: invariant
+    property: "Router is deterministic (no random component in inference)"
+    formal: "route(x) == route(x) for identical x, any number of calls"
+    tolerance: 0
+    applies_to: router_logits
+
+falsification_tests:
+  - id: FALSIFY-MOE-ROUTER-001
+    rule: "Softmax stability with large logits"
+    prediction: "Softmax of [1000.0, 999.0, 0.0, ...] produces finite probs with correct ordering"
+    test: |
+      Set logits = [1000.0, 999.0, 0.0, ...] (256 experts).
+      Compute softmax. Assert no NaN, no Inf.
+      Assert probs[0] > probs[1] > probs[2].
+    if_fails: "Missing max subtraction in softmax → exp overflow"
+
+  - id: FALSIFY-MOE-ROUTER-002
+    rule: "Top-8 returns correct experts"
+    prediction: "Top-8 of sparse probs returns the 8 highest-probability experts"
+    test: |
+      Set probs = [0.0; 256] except probs[42]=0.5, probs[17]=0.3, probs[99]=0.1, ...
+      Assert indices contains 42, 17, 99 (top 3 at minimum).
+      Assert len(indices) == 8.
+    if_fails: "Sorting or partial sort implementation wrong"
+
+  - id: FALSIFY-MOE-ROUTER-003
+    rule: "Renormalization preserves relative order"
+    prediction: "Renormalized weights maintain ordering and sum to 1.0"
+    test: |
+      weights = [0.4, 0.3, 0.15, 0.05, 0.03, 0.03, 0.02, 0.02]
+      renorm = renormalize(weights)
+      Assert renorm[0] > renorm[1] > renorm[2] > ...
+      Assert abs(sum(renorm) - 1.0) < 1e-6
+    if_fails: "Renormalization changes relative ordering"
+
+  - id: FALSIFY-MOE-ROUTER-004
+    rule: "Zero gate weight produces uniform routing"
+    prediction: "All 8 selected experts have equal weight (0.125 each)"
+    test: |
+      Set gate_weight = zeros([256, 2048]).
+      Compute forward(x). All logits = 0 → softmax = 1/256 for each.
+      Top-8 selection arbitrary but valid (any 8 experts).
+      Assert all 8 weights equal after renormalization.
+    if_fails: "Special case handling wrong for degenerate inputs"
+
+  - id: FALSIFY-MOE-ROUTER-005
+    rule: "Gate weight shape mismatch rejected"
+    prediction: "Constructor returns error for [128, 2048] gate weight when num_experts=256"
+    test: |
+      Attempt to create MoeRouter with gate_weight [128, 2048] (wrong num_experts).
+      Assert constructor returns error, not panic.
+    if_fails: "Missing shape validation in constructor"
+
+qa_gate:
+  id: F-MOE-ROUTER-001
+  name: "MoE Router Forward Contract"
+  description: "Correctness of softmax routing, top-k selection, and weight renormalization"
+  checks:
+    - "softmax_normalization"
+    - "topk_selection"
+    - "weight_renormalization"
+  pass_criteria: "All 5 falsification tests pass"
+  falsification: "Degenerate inputs (zero weights, large logits) as edge cases"
+
+kani_harnesses:
+  - id: KANI-MOE-ROUTER-001
+    obligation: C-MOE-ROUTER-001
+    property: "Softmax output in [0,1] and sums to 1 for arbitrary f32 inputs"
+    bound: 4
+    strategy: stub_float
