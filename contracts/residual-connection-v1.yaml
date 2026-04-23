@@ -1,0 +1,142 @@
+# residual-connection-v1.yaml — C-RESIDUAL-001
+#
+# Provable contract for transformer residual connection backward pass.
+# The identity skip gradient MUST bypass the RMSNorm backward — it flows
+# AROUND the norm, not through it.
+#
+# Root cause of ALB-126/ALB-127: vanishing gradients across blocks.
+# Without this contract, 20/24 blocks received zero gradients.
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-27"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "Residual connection backward pass — identity skip bypasses norm"
+  registry: true
+  scope: "crates/aprender-train/src/transformer/block.rs + backward kernels in aprender-compute"
+  promoted_from: "albor@be23737 contracts/residual-connection-v1.yaml per PMAT-703 Cat 6 + SHIP-TWO-001 §3 row #9. Root cause of ALB-126/127 (20/24 blocks received zero gradients); PROMOTE-NEW because no monorepo counterpart. Research anchor §2.3: ~/src/pytorch transformer block autograd."
+  references:
+    - "entrenar#313: missing residual skip gradients"
+    - "He et al. 2016: Deep Residual Learning for Image Recognition"
+    - "Vaswani et al. 2017: Attention Is All You Need (Pre-LN variant)"
+
+equations:
+  pre_ln_residual_forward:
+    formula: |
+      Pre-LN transformer block forward:
+        norm_out = RMSNorm(input, gamma)
+        block_out = SubLayer(norm_out)          # Attention or FFN
+        output = input + block_out              # Residual connection
+    domain: "input: [S, H], gamma: [H]"
+    codomain: "output: [S, H]"
+
+  pre_ln_residual_backward:
+    formula: |
+      Backward through pre-LN residual connection:
+        grad_block_out = grad_output            # From residual add
+        grad_input_skip = grad_output           # Identity shortcut
+        grad_norm_out = SubLayer_backward(grad_block_out)
+        grad_input_norm = RMSNorm_backward(grad_norm_out, input, gamma)
+        grad_input = grad_input_norm + grad_input_skip
+
+      CRITICAL INVARIANT:
+        grad_input_skip MUST bypass RMSNorm_backward entirely.
+        grad_input_skip is NOT an argument to RMSNorm_backward.
+
+      WRONG (vanishing gradients):
+        grad_input = RMSNorm_backward(grad_norm_out + grad_output)
+        # This transforms the skip gradient through the norm!
+
+      CORRECT (gradient highway):
+        grad_input = RMSNorm_backward(grad_norm_out) + grad_output
+        # Skip bypasses the norm — gradient flows unchanged.
+    domain: "grad_output: [S, H] from next layer"
+    codomain: "grad_input: [S, H] to previous layer"
+    invariants:
+      - "||grad_input|| >= ||grad_output|| - epsilon (skip preserves magnitude)"
+      - "grad_input contains grad_output as an additive component"
+      - "RMSNorm_backward is applied ONLY to the SubLayer path gradient"
+
+  gradient_highway:
+    formula: |
+      For an L-layer transformer with correct residual connections:
+        grad_input[0] = sum_{l=0}^{L-1} (prod_{k=0}^{l-1} J_k) @ grad_loss
+                      + grad_loss  (direct path through all skips)
+
+      The identity shortcut creates a "gradient highway" — grad_loss
+      reaches EVERY layer without attenuation. Each layer's gradient
+      is the sum of the direct path plus the transformed paths.
+
+      Without the highway (missing/broken skip):
+        grad_input[l] ∝ prod_{k=l}^{L-1} ||J_k|| × grad_loss
+        If ||J_k|| < 1 for each layer, gradients vanish exponentially.
+    domain: "L-layer transformer"
+    codomain: "Per-layer gradient magnitudes"
+    invariants:
+      - "No block has zero weight gradient (all blocks trainable)"
+      - "Activation gradient gnorm does not decay by more than 10x across all L blocks"
+
+proof_obligations:
+  - type: invariant
+    property: "All blocks receive non-zero gradients"
+    formal: "forall l in [0, L): ||grad_weights[l]|| > 0"
+    tolerance: 0
+    applies_to: gradient_highway
+
+  - type: bound
+    property: "Activation gradient stable across blocks"
+    formal: "max(act_gnorm) / min(act_gnorm) < 100"
+    tolerance: 0
+    applies_to: gradient_highway
+
+  - type: invariant
+    property: "Skip bypasses norm"
+    formal: "grad_input = RMSNorm_bwd(sublayer_grad) + grad_output"
+    tolerance: 0
+    applies_to: pre_ln_residual_backward
+
+falsification_tests:
+  - id: FALSIFY-RESIDUAL-001
+    rule: "No block has zero gradient"
+    prediction: "All 24 blocks have weight_gnorm > 1e-8"
+    test: |
+      Run with ENTRENAR_TRACE_GRADIENTS=1.
+      Parse [grad-trace] lines. Assert weight_gnorm > 0 for all blocks.
+    if_fails: "Residual skip is broken — gradient highway interrupted"
+
+  - id: FALSIFY-RESIDUAL-002
+    rule: "Activation gradient stable"
+    prediction: "act_gnorm ratio (max/min) < 100 across all blocks"
+    test: |
+      Same trace. Compute max(act_gnorm)/min(act_gnorm).
+      Assert < 100.
+    if_fails: "Vanishing gradients — skip not bypassing norm"
+
+  - id: FALSIFY-RESIDUAL-003
+    rule: "Skip adds identity"
+    prediction: |
+      With SubLayer returning zero gradient (zeroed weights),
+      grad_input == grad_output exactly.
+    test: |
+      Set all attention/FFN weights to zero.
+      Run one forward+backward. Assert grad_input == grad_output per element.
+    if_fails: "Skip gradient is being transformed, not added as identity"
+
+kani_harnesses:
+  - id: KANI-RESIDUAL-001
+    obligation: pre_ln_residual_backward
+    property: "grad_input contains grad_output as additive component"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_skip_bypasses_norm
+
+qa_gate:
+  id: F-RESIDUAL-001
+  name: "Residual Connection Correctness"
+  min_coverage: 0.95
+  max_complexity: 8
+  required_tests:
+    - "all_blocks_nonzero_gradient"
+    - "activation_gradient_stable"
+    - "skip_bypasses_norm"

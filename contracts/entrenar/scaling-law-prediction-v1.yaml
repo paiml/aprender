@@ -1,0 +1,186 @@
+# Contract: Scaling Law Loss Prediction (ALB-082)
+#
+# After 3+ validation eval checkpoints, fit Kaplan scaling law
+# L(D) = a - b × ln(D) and predict final val_ppl. Warn if predicted
+# improvement < 10% — indicates data poverty, not infra problem.
+#
+# Motivated by: v4 training ran 2,425 steps (~20 GPU-hours) before
+# manual analysis revealed val_ppl would only reach ~876 at 1B tokens.
+# This predictor would have flagged it at step 1,500.
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-06"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "Scaling law loss prediction — early detection of convergence ceiling"
+  references:
+    - "ALB-082"
+    - "Kaplan et al. (2020) Scaling Laws for Neural Language Models"
+    - "Hoffmann et al. (2022) Training Compute-Optimal Large Language Models"
+    - "~/src/pytorch/torch/distributed (tooling patterns) + ~/src/vllm eval harnesses — research anchor §2.3"
+  registry: true
+  scope: "crates/aprender-train/src/train/scaling_law.rs (predicted) + apr train --scaling-law-warn"
+  promoted_from: "albor@be23737 contracts/scaling-law-prediction-v1.yaml per PMAT-703 Cat 6 + SHIP-TWO-001 §3 row #9. Motivation: v4 albor run wasted 20 GPU-hours before manual analysis revealed val_ppl ceiling ~876 at 1B tokens. This predictor flags the same at step 1,500 via Kaplan log-linear fit. PROMOTE-NEW into contracts/entrenar/ — training-convergence concern."
+
+equations:
+  log_linear_scaling_law:
+    formula: "L(D) = a - b × ln(D)"
+    domain: "D: cumulative tokens processed (positive integer), L: validation loss (f32)"
+    codomain: "Predicted validation loss at D tokens"
+    invariants:
+      - "b > 0 (loss decreases with more data)"
+      - "Fit requires >= 3 (D, L) data points"
+      - "D is cumulative tokens, not steps (D = step × tokens_per_step)"
+
+  ols_fit:
+    formula: |
+      Given n data points (x_i, y_i) where x_i = ln(D_i), y_i = L_i:
+        b_raw = (n × Σ(x_i × y_i) - Σx_i × Σy_i) / (n × Σ(x_i²) - (Σx_i)²)
+        a = (Σy_i - b_raw × Σx_i) / n
+        b = -b_raw (negated so b > 0 in L = a - b × ln(D))
+    domain: "n >= 3 (D, L) pairs from eval checkpoints"
+    codomain: "(a, b) parameters for log-linear fit"
+    invariants:
+      - "Denominator != 0 (requires distinct D values)"
+      - "No external dependencies (pure arithmetic, no scipy)"
+      - "f64 precision for accumulation (avoid f32 cancellation)"
+
+  predicted_ppl:
+    formula: "predicted_ppl = exp(a - b × ln(D_target))"
+    domain: "D_target: tokens at max_steps (or 2x current if max_steps unset)"
+    codomain: "Predicted validation perplexity at end of training"
+    invariants:
+      - "predicted_ppl > 0 (exp is always positive)"
+      - "predicted_ppl < current_ppl (training should improve)"
+
+  improvement_ratio:
+    formula: "improvement = (current_ppl - predicted_ppl) / current_ppl"
+    domain: "current_ppl: measured val_ppl at latest eval"
+    codomain: "Fractional improvement [0, 1]"
+    invariants:
+      - "If improvement < 0.10 after 4+ eval points, emit warning"
+      - "Warning text includes actionable advice (more data, stop, etc.)"
+
+proof_obligations:
+  - type: invariant
+    property: "OLS fit produces valid parameters for 3+ data points with distinct D"
+    formal: "Given 3+ (D_i, L_i) with D_i distinct: fit() returns Some((a, b)) with b > 0"
+
+  - type: equivalence
+    property: "OLS fit matches scipy.optimize.curve_fit for same data"
+    formal: "max_abs_diff(a_ours, a_scipy) < 1e-6 AND max_abs_diff(b_ours, b_scipy) < 1e-6"
+    tolerance: 1.0e-6
+
+  - type: bound
+    property: "Prediction at current tokens matches last measured val_loss within fit residual"
+    formal: "abs(predict(D_last) - L_last) < max_residual(fit)"
+
+  - type: invariant
+    property: "Warning emitted when improvement < 10% after 4+ eval points"
+    formal: "If history.len() >= 4 AND improvement < 0.10: println contains '[WARN]'"
+
+  - type: invariant
+    property: "Prediction logged to JSONL with fit parameters"
+    formal: "JSONL entry contains predicted_final_ppl, scaling_slope, target_steps fields"
+
+  - type: bound
+    property: "No measurable overhead from scaling law fit"
+    formal: "fit() runtime < 1ms for <= 100 data points (pure arithmetic on Vec<(f64,f64)>)"
+
+falsification_tests:
+  - id: FALSIFY-SCALING-001
+    rule: "Fit matches known analytical solution"
+    prediction: "For points (e^1, 7.0), (e^2, 6.5), (e^3, 6.0): a=7.5, b=0.5"
+    test: |
+      Data: [(e, 7.0), (e^2, 6.5), (e^3, 6.0)]
+      These satisfy L = 7.5 - 0.5*ln(D) exactly.
+      Assert: abs(a - 7.5) < 1e-10 AND abs(b - 0.5) < 1e-10
+    if_fails: "OLS arithmetic is wrong"
+
+  - id: FALSIFY-SCALING-002
+    rule: "Prediction matches v4 measured trajectory"
+    prediction: "Fit to v4 steps 500-2000 predicts val_ppl ~876 at 1B tokens"
+    test: |
+      Data: [(65M, 6.8935), (131M, 6.8906), (197M, 6.8592), (262M, 6.8226)]
+      Predict at 983M tokens (step 7500).
+      Assert: abs(predicted_ppl - 876) < 20
+    if_fails: "Log-linear model doesn't fit this training curve"
+
+  - id: FALSIFY-SCALING-003
+    rule: "Warning fires for v4-like plateau"
+    prediction: "After 4 evals with < 10% predicted improvement, warning emitted"
+    test: |
+      Feed v4 data points. At 4th eval, predicted improvement from
+      ppl=918 to ppl=876 is 4.6% < 10%.
+      Assert: warning message contains '[WARN]' and 'improvement'
+    if_fails: "Warning threshold or evaluation logic incorrect"
+
+  - id: FALSIFY-SCALING-004
+    rule: "Returns None with fewer than 3 data points"
+    prediction: "fit() returns None with 0, 1, or 2 data points"
+    test: |
+      predictor = ScalingLawPredictor::new()
+      Assert: predictor.fit() == None
+      predictor.record(1000, 7.0)
+      Assert: predictor.fit() == None
+      predictor.record(2000, 6.8)
+      Assert: predictor.fit() == None
+      predictor.record(3000, 6.7)
+      Assert: predictor.fit() == Some(...)
+    if_fails: "Minimum data point guard is missing"
+
+  - id: FALSIFY-SCALING-005
+    rule: "Rapidly improving model does NOT trigger warning"
+    prediction: "A model with 30% predicted improvement does not warn"
+    test: |
+      Data: [(10M, 8.0), (20M, 7.0), (40M, 6.0), (80M, 5.0)]
+      This is a steep curve (b ~= 1.44).
+      Predicted improvement at 160M >> 10%.
+      Assert: no warning emitted.
+    if_fails: "Warning fires on healthy training curves"
+
+  - id: FALSIFY-SCALING-006
+    rule: "Prediction logged to JSONL with fit parameters"
+    prediction: "After fit, JSONL entry contains predicted_final_ppl, scaling_slope, target_steps"
+    test: |
+      Feed 4 data points, call predict().
+      Capture JSONL output.
+      Assert: entry contains predicted_final_ppl (float > 0),
+              scaling_slope (float > 0), target_steps (int > 0).
+    if_fails: "JSONL logging is missing or fields renamed"
+
+kani_harnesses:
+  - id: KANI-SCALING-001
+    obligation: ols_fit
+    property: "OLS fit denominator is non-zero for distinct D values"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_ols_denominator_nonzero
+
+  - id: KANI-SCALING-002
+    obligation: predicted_ppl
+    property: "Predicted ppl is always positive (exp is always positive)"
+    bound: 8
+    strategy: stub_float
+    harness: verify_predicted_ppl_positive
+
+  - id: KANI-SCALING-003
+    obligation: improvement_ratio
+    property: "Improvement ratio is in [0, 1] when predicted_ppl < current_ppl"
+    bound: 4
+    strategy: bounded_int
+    harness: verify_improvement_ratio_bounded
+
+qa_gate:
+  id: F-SCALING-001
+  name: "Scaling Law Loss Prediction Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "fit_known_analytical"
+    - "prediction_matches_v4"
+    - "warning_fires_plateau"
+    - "returns_none_insufficient_points"
+    - "no_warning_healthy_curve"
+    - "jsonl_logging_fields"

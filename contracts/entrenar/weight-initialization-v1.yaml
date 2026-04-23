@@ -1,0 +1,193 @@
+# weight-initialization-v1.yaml — C-INIT-001
+#
+# Provable contract for transformer weight initialization.
+# Ensures weights are initialized from proper random distributions,
+# not deterministic placeholders.
+#
+# Motivation: entrenar#309 — ALL 16 albor training runs used degenerate
+# sinusoidal init (sin(i * const) * scale) instead of random normal.
+# PyTorch canary with normal(0, 0.02) reaches val_ppl=50 at step 1K;
+# entrenar reaches 805. Root cause: 16x convergence gap.
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-26"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "Weight initialization parity with HuggingFace LLaMA — prevents degenerate sinusoidal init"
+  registry: true
+  scope: "crates/aprender-train/src/transformer/init.rs"
+  promoted_from: "albor@be23737 contracts/weight-initialization-v1.yaml per PMAT-703 Cat 6 + SHIP-TWO-001 §3 row #9. Root cause of entrenar#309 (16x convergence gap from degenerate sinusoidal init). PROMOTE-NEW into contracts/entrenar/ — training-side concern. Research anchor §2.3: ~/src/pytorch torch.nn.init + HuggingFace transformers LlamaPreTrainedModel._init_weights."
+  references:
+    - "entrenar#309: CRITICAL convergence gap"
+    - "Touvron et al. (2023) LLaMA: arxiv 2302.13971"
+    - "Radford et al. (2019) GPT-2: residual scaling 1/sqrt(2N)"
+    - "He et al. (2015) Kaiming init: arxiv 1502.01852"
+    - "HuggingFace LlamaPreTrainedModel._init_weights: normal(0, 0.02)"
+  depends_on:
+    - "training-gpu-kernel-v1"
+
+equations:
+  normal_initialization:
+    formula: |
+      For all weight matrices W in {embed_tokens, q_proj, k_proj, v_proj,
+      o_proj, gate_proj, up_proj, down_proj, lm_head}:
+        W[i,j] ~ N(0, sigma)
+        sigma = initializer_range = 0.02 (default)
+
+      For RMSNorm gamma:
+        gamma[i] = 1.0
+
+      For biases (if present):
+        b[i] = 0.0
+    domain: |
+      initializer_range: float > 0 (default 0.02)
+      seed: u64 (for reproducibility)
+    codomain: "Weight tensors with proper random distribution"
+    invariants:
+      - "E[W[i,j]] ≈ 0 (mean approximately zero)"
+      - "Var[W[i,j]] ≈ sigma^2 (variance approximately initializer_range^2)"
+      - "W[i,j] values are independent (no sinusoidal structure)"
+      - "Same seed produces identical weights (reproducibility)"
+
+  residual_scaling:
+    formula: |
+      For output projections (o_proj, down_proj) — optional GPT-2 scaling:
+        sigma_residual = initializer_range / sqrt(2 * num_layers)
+      This prevents activation variance from growing with depth.
+    domain: "num_layers: number of transformer layers"
+    codomain: "Scaled std for residual projections"
+    invariants:
+      - "sigma_residual < sigma (scaling reduces variance)"
+      - "sigma_residual > 0 (never zero)"
+
+  seed_propagation:
+    formula: |
+      Global seed S propagates to per-parameter sub-seeds:
+        param_seed = hash(S, layer_idx, param_name)
+      Each parameter matrix uses its own deterministic RNG stream.
+    domain: "Global seed S (u64), layer index, parameter name"
+    codomain: "Deterministic per-parameter seed"
+    invariants:
+      - "Different (layer, param) pairs get different seeds"
+      - "Same global seed always produces same per-parameter seeds"
+
+proof_obligations:
+  - type: invariant
+    property: "No sinusoidal patterns in initialized weights"
+    formal: |
+      forall W in model.parameters():
+        autocorrelation(W.flatten(), lag=1) < 0.1
+    tolerance: 0.05
+    applies_to: normal_initialization
+
+  - type: bound
+    property: "Weight statistics match N(0, 0.02)"
+    formal: |
+      For each weight matrix W with n elements:
+        |mean(W)| < 3 * sigma / sqrt(n)
+        |std(W) - sigma| < sigma * 0.1
+    tolerance: 0.1
+    applies_to: normal_initialization
+
+  - type: invariant
+    property: "Reproducibility with same seed"
+    formal: |
+      For seed S:
+        init(S).parameters() == init(S).parameters()
+    tolerance: 0
+    applies_to: seed_propagation
+
+  - type: invariant
+    property: "Different seeds produce different weights"
+    formal: |
+      For seeds S1 != S2:
+        init(S1).parameters() != init(S2).parameters()
+    tolerance: 0
+    applies_to: seed_propagation
+
+  - type: bound
+    property: "Canary parity: entrenar step-0 loss within 5% of PyTorch"
+    formal: |
+      |loss_entrenar(step=0) - loss_pytorch(step=0)| / loss_pytorch(step=0) < 0.05
+    tolerance: 0.02
+    applies_to: normal_initialization
+
+falsification_tests:
+  - id: FALSIFY-INIT-001
+    rule: "Weights are NOT sinusoidal"
+    prediction: |
+      For any weight matrix W, the autocorrelation at lag 1 should be < 0.1.
+      Sinusoidal init produces autocorrelation > 0.9.
+    test: |
+      Create Transformer::new(config).
+      For each named parameter, compute autocorrelation(flatten(W), lag=1).
+      Assert all < 0.1.
+    if_fails: "Weights still use sin(i * const) pattern — init not fixed"
+
+  - id: FALSIFY-INIT-002
+    rule: "Weight statistics match N(0, 0.02)"
+    prediction: |
+      For each weight matrix: |mean| < 0.001, |std - 0.02| < 0.005
+    test: |
+      Create Transformer::new(config) with seed=42.
+      For each named parameter, compute mean and std.
+      Assert mean within [-0.001, 0.001], std within [0.015, 0.025].
+    if_fails: "Initialization distribution is wrong — not N(0, 0.02)"
+
+  - id: FALSIFY-INIT-003
+    rule: "Same seed produces identical weights"
+    prediction: |
+      Two Transformer::new(config, seed=42) calls produce identical parameters
+    test: |
+      model_a = Transformer::new(config, seed=42)
+      model_b = Transformer::new(config, seed=42)
+      For each parameter pair: assert element-wise equality
+    if_fails: "Seeded init is not deterministic"
+
+  - id: FALSIFY-INIT-004
+    rule: "Different seeds produce different weights"
+    prediction: |
+      Transformer::new(config, seed=42) != Transformer::new(config, seed=123)
+    test: |
+      model_a = Transformer::new(config, seed=42)
+      model_b = Transformer::new(config, seed=123)
+      Assert at least one parameter differs
+    if_fails: "Seed has no effect on initialization"
+
+  - id: FALSIFY-INIT-005
+    rule: "Step-0 loss parity with PyTorch canary"
+    prediction: |
+      Entrenar step-0 loss within 5% of PyTorch step-0 loss on same data
+    test: |
+      Run canary_pytorch.py --steps 0 --seed 123
+      Run entrenar train --steps 0 --seed 123
+      Assert |loss_e - loss_p| / loss_p < 0.05
+    if_fails: "Forward pass produces different loss — architecture or loss bug"
+
+kani_harnesses:
+  - id: KANI-INIT-001
+    obligation: normal_initialization
+    property: "No weight element exceeds 6 sigma"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_weight_bounds
+
+  - id: KANI-INIT-002
+    obligation: seed_propagation
+    property: "Same seed → same first 8 weights"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_seed_determinism
+
+qa_gate:
+  id: F-INIT-001
+  name: "Weight Initialization Correctness"
+  min_coverage: 0.90
+  max_complexity: 10
+  required_tests:
+    - "weights_not_sinusoidal"
+    - "weight_statistics_match_normal"
+    - "seed_reproducibility"
+    - "different_seeds_differ"
+    - "step_zero_loss_parity"

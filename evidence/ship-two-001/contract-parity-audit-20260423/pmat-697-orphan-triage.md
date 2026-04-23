@@ -94,13 +94,22 @@ This batch justifies creating one:
 5. `v28-humaneval-eval-v1.yaml` — likely RETIRE (experiment-specific)
 6. `teacher-completions-pipeline-v1.yaml` — NEW (distillation-adjacent)
 
-### Category 6 — architecture (5) → PROMOTE; check layout contract overlap
+### Category 6 — architecture (5) → PROMOTE-NEW (resolved 2026-04-23 via PMAT-703)
 
-1. `causal-attention-mask-v1.yaml` — NEW under `contracts/`
-2. `residual-connection-v1.yaml` — NEW under `contracts/`
-3. `weight-initialization-v1.yaml` — NEW under `contracts/entrenar/`
-4. `lm-head-layout-parity-v1.yaml` — merge with `tensor-layout-v1.yaml`
-5. `scaling-law-prediction-v1.yaml` — NEW under `contracts/`
+All 5 SHIPPED as PROMOTE-NEW. Per-file read during PMAT-703 execution
+reclassified item 4 (`lm-head-layout-parity-v1`) away from the
+first-pass "merge with tensor-layout-v1" — the two cover disjoint
+layers (APR on-disk [vocab, hidden] vs GPU runtime [hidden, vocab]).
+Second PMAT-705-class reclassification; lesson holds.
+
+1. `causal-attention-mask-v1.yaml` → SHIPPED `contracts/causal-attention-mask-v1.yaml` v1.1.0
+2. `residual-connection-v1.yaml` → SHIPPED `contracts/residual-connection-v1.yaml` v1.1.0
+3. `weight-initialization-v1.yaml` → SHIPPED `contracts/entrenar/weight-initialization-v1.yaml` v1.1.0
+4. `lm-head-layout-parity-v1.yaml` → SHIPPED `contracts/realizar/lm-head-layout-parity-v1.yaml` v1.1.0
+   (NOT merged with tensor-layout-v1 — disjoint layers)
+5. `scaling-law-prediction-v1.yaml` → SHIPPED `contracts/entrenar/scaling-law-prediction-v1.yaml` v1.1.0
+
+All 5 pass `pv validate`. Albor-side cleanup blocks on PMAT-691.
 
 ### Category 7 — hpo / budgeting (5) → PROMOTE as new contracts/training/hpo/
 

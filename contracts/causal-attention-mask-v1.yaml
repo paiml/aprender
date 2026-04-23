@@ -1,0 +1,201 @@
+# causal-attention-mask-v1.yaml — C-CAUSAL-001
+#
+# Provable contract for causal (autoregressive) attention masking.
+# Ensures that during training, position i can only attend to positions
+# j <= i, preventing information flow from future tokens.
+#
+# Motivation: entrenar#310 — CudaTransformerBlock applies softmax to
+# full [seq, seq] attention scores WITHOUT causal masking. Combined with
+# the init bug (entrenar#309, C-INIT-001), this caused a 14.6x
+# convergence gap vs PyTorch at step 1K.
+#
+# References:
+#   Vaswani et al. (2017) "Attention Is All You Need" arxiv:1706.03762 §3.1
+#   Dao et al. (2022) "FlashAttention" arxiv:2205.14135 — fused causal softmax
+#   PyTorch F.scaled_dot_product_attention(is_causal=True)
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-26"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "Causal attention mask for autoregressive transformer training"
+  registry: true
+  scope: "crates/aprender-train/src/transformer/attention.rs + crates/aprender-serve/src/gpu/attention.rs"
+  promoted_from: "albor@be23737 contracts/causal-attention-mask-v1.yaml per PMAT-703 Cat 6 (architecture) + SHIP-TWO-001 §3 row #9. Research anchor §2.3: ~/src/pytorch F.scaled_dot_product_attention(is_causal=True)."
+  references:
+    - "entrenar#310: No causal attention mask in CUDA forward pass"
+    - "entrenar#309: Combined root cause with init bug"
+    - "Vaswani et al. (2017) Attention Is All You Need: arxiv 1706.03762"
+    - "Dao et al. (2022) FlashAttention: arxiv 2205.14135"
+    - "PyTorch SDPA: torch.nn.functional.scaled_dot_product_attention"
+  depends_on:
+    - "attention-kernel-v1"
+    - "weight-initialization-v1"
+
+equations:
+  causal_mask_definition:
+    formula: |
+      Given attention scores S ∈ R^{seq × seq} (per attention head):
+        M[i,j] = 0      if j <= i  (token i can attend to token j)
+        M[i,j] = -∞      if j > i   (token i cannot see future token j)
+
+      Masked scores: S' = S + M
+      Attention weights: A = softmax(S', dim=-1)
+
+      Equivalently: A[i,j] = 0 for all j > i (after softmax, future
+      positions have zero attention weight).
+    domain: |
+      S: attention scores [num_heads, seq_len, seq_len]
+      i: query position in [0, seq_len)
+      j: key position in [0, seq_len)
+    codomain: "Masked attention scores where future positions are -inf"
+    invariants:
+      - "A[i,j] = 0 for all j > i (no future attention)"
+      - "sum(A[i,:]) = 1.0 for all i (valid probability distribution)"
+      - "A[i,j] >= 0 for all j <= i (non-negative attention to past)"
+      - "The mask is the same for all heads (shared causal structure)"
+
+  causal_attention_output:
+    formula: |
+      output[i] = sum_{j=0}^{i} A[i,j] * V[j]
+
+      Token i's output is a weighted combination of ONLY tokens 0..i.
+      No information from tokens i+1..seq_len-1 can flow to token i.
+    domain: "A: attention weights [seq, seq], V: values [seq, head_dim]"
+    codomain: "Output [seq, head_dim] with causal information flow"
+    invariants:
+      - "output[0] depends only on V[0] (first token sees only itself)"
+      - "output[i] depends on V[0..i] (token i sees past and self)"
+      - "Changing V[j] for j > i does not change output[i]"
+
+  fused_causal_softmax:
+    formula: |
+      For efficiency, the mask and softmax can be fused:
+        For each row i:
+          max_val = max(S[i, 0..i])          (only past+self positions)
+          exp_sum = sum_{j=0}^{i} exp(S[i,j] - max_val)
+          A[i,j] = exp(S[i,j] - max_val) / exp_sum   for j <= i
+          A[i,j] = 0                                   for j > i
+
+      This avoids materializing the mask matrix and skips computation
+      for masked positions (2x speedup per Dao et al. 2022).
+    domain: "S: raw attention scores [seq, seq]"
+    codomain: "A: causal attention weights [seq, seq]"
+    invariants:
+      - "Numerically equivalent to separate mask + softmax"
+      - "Skips computation for j > i positions"
+
+proof_obligations:
+  - type: invariant
+    property: "No future attention"
+    formal: "forall i, j: j > i → A[i,j] = 0"
+    tolerance: 0
+    applies_to: causal_mask_definition
+
+  - type: invariant
+    property: "Valid probability distribution per row"
+    formal: "forall i: |sum_{j=0}^{seq-1} A[i,j] - 1.0| < 1e-5"
+    tolerance: 0.00001
+    applies_to: causal_mask_definition
+
+  - type: invariant
+    property: "Causal information flow"
+    formal: |
+      For any perturbation δV[j] where j > i:
+        |output[i](V) - output[i](V + δV)| = 0
+    tolerance: 0
+    applies_to: causal_attention_output
+
+  - type: bound
+    property: "PyTorch parity — attention weights match"
+    formal: |
+      For identical input Q, K, V:
+        max|A_entrenar[i,j] - A_pytorch[i,j]| < 1e-3
+    tolerance: 0.001
+    applies_to: causal_mask_definition
+
+  - type: bound
+    property: "Step-1K convergence parity with PyTorch canary"
+    formal: |
+      |val_ppl_entrenar(step=1000) / val_ppl_pytorch(step=1000) - 1.0| < 0.5
+      (within 50% — currently 14.6x gap, target < 1.5x)
+    tolerance: 0.5
+
+falsification_tests:
+  - id: FALSIFY-CAUSAL-001
+    rule: "Future tokens have zero attention weight"
+    prediction: |
+      For seq_len=8: A[0,1] = A[0,2] = ... = A[0,7] = 0.0
+      Token 0 can only attend to itself.
+    test: |
+      Create 8-token input. Run forward pass through one attention layer.
+      Extract attention weights. Assert A[0, j] = 0 for all j > 0.
+    if_fails: "Causal mask not applied — model sees future tokens"
+
+  - id: FALSIFY-CAUSAL-002
+    rule: "Last token sees all positions"
+    prediction: |
+      For seq_len=8: A[7,j] >= 0 for j=0..7 and sum(A[7,:]) ≈ 1.0
+    test: |
+      Same as FALSIFY-CAUSAL-001 but check last row.
+      Assert all values non-negative and sum to 1.0.
+    if_fails: "Last token's attention is malformed"
+
+  - id: FALSIFY-CAUSAL-003
+    rule: "Changing future token does not affect past output"
+    prediction: |
+      output[0] is identical whether token 7 is ID=100 or ID=200
+    test: |
+      Run forward with input [1,2,3,4,5,6,7,100].
+      Run forward with input [1,2,3,4,5,6,7,200].
+      Assert output[0] is identical in both cases.
+    if_fails: "Causal information flow violated — future leaks to past"
+
+  - id: FALSIFY-CAUSAL-004
+    rule: "Attention matrix is lower triangular after softmax"
+    prediction: |
+      For any input, the attention weight matrix A should satisfy:
+      A[i,j] = 0 for all j > i (upper triangle is zero)
+    test: |
+      Run forward pass. Extract attention weights for each head.
+      Assert upper triangle is all zeros (within fp tolerance).
+    if_fails: "Attention matrix has non-zero values above diagonal"
+
+  - id: FALSIFY-CAUSAL-005
+    rule: "Step-1K convergence matches PyTorch within 2x"
+    prediction: |
+      After fixing causal mask + init: entrenar step-1K val_ppl
+      should be within 2x of PyTorch canary (50 ± 50)
+    test: |
+      Run entrenar 1K steps with same config as canary.
+      Run canary 1K steps.
+      Assert ratio < 2.0.
+    if_fails: "Additional training correctness bug beyond init + causal mask"
+
+kani_harnesses:
+  - id: KANI-CAUSAL-001
+    obligation: causal_mask_definition
+    property: "Upper triangle of mask is -inf"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_causal_mask_upper_triangle
+
+  - id: KANI-CAUSAL-002
+    obligation: causal_attention_output
+    property: "Row sums to 1.0 after causal softmax"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_causal_softmax_row_sum
+
+qa_gate:
+  id: F-CAUSAL-001
+  name: "Causal Attention Mask Correctness"
+  min_coverage: 0.95
+  max_complexity: 15
+  required_tests:
+    - "future_tokens_zero_attention"
+    - "attention_lower_triangular"
+    - "causal_information_flow"
+    - "pytorch_parity_attention_weights"
+    - "convergence_parity_step_1k"

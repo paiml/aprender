@@ -1,0 +1,137 @@
+# Contract: LM Head Weight Layout Parity — ALB-108
+#
+# GpuModel expects lm_head_weight in [hidden_dim, vocab_size] row-major
+# (row-stride = vocab_size). Both APR and GGUF adapters must produce
+# this layout. The ALB-108 bug was caused by APR adapter storing the
+# weight in [vocab_size, hidden_dim] — the transpose of what GPU GEMV
+# expects. PMAT-216 runtime check failed to catch it because transposed
+# matrices share element [0,0].
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-11"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "LM head weight layout invariant — prevents adapter weight swap bugs"
+  changelog:
+    - "v1.0.0: Initial from ALB-108 (lm_head_weight layout swap in APR adapter)"
+    - "v1.1.0: Promoted into monorepo contracts/realizar/ (2026-04-23, PMAT-703)"
+  references:
+    - "ALB-108"
+    - "albor#80"
+    - "PMAT-216: Original runtime check (insufficient — only checks [0,0])"
+    - "contracts/tensor-layout-v1.yaml (peer — governs APR on-disk layout, while this contract governs GPU runtime layout — disjoint layers)"
+  depends_on:
+    - "checkpoint-inference-bridge-v1"
+  registry: true
+  scope: "crates/aprender-serve/src/gpu/gpu_model.rs (GpuModel.lm_head_weight)"
+  promoted_from: "albor@be23737 contracts/lm-head-layout-parity-v1.yaml per PMAT-703 Cat 6 + SHIP-TWO-001 §3 row #9. PROMOTE-NEW (not merge with tensor-layout-v1) because layers are disjoint: tensor-layout-v1 governs APR on-disk [vocab, hidden], this contract governs GPU runtime [hidden, vocab]. PMAT-216 runtime check was insufficient (transposed matrices share element [0,0]); this contract adds cross-adapter parity tests."
+
+equations:
+  lm_head_gpu_layout:
+    formula: |
+      GpuModel.lm_head_weight has shape [hidden_dim, vocab_size] row-major.
+      For a weight matrix W stored as a flat Vec<f32>:
+        W[i * vocab_size + j] = element at row i, column j
+        where i ∈ [0, hidden_dim), j ∈ [0, vocab_size)
+      Row-stride = vocab_size (contiguous rows of vocab_size elements).
+    domain: "hidden_dim: usize, vocab_size: usize, lm_head_weight: Vec<f32>"
+    codomain: "bool — layout is [hidden_dim, vocab_size]"
+    invariants:
+      - "lm_head_weight.len() == hidden_dim * vocab_size"
+      - "Row-stride == vocab_size (not hidden_dim)"
+      - "lm_head_weight[1] != lm_head_weight[vocab_size] (non-symmetric → distinguishes layouts)"
+
+  lm_head_transposed_layout:
+    formula: |
+      GpuModel.lm_head_weight_t has shape [vocab_size, hidden_dim] row-major.
+      This is the transpose of lm_head_weight:
+        lm_head_weight_t[j * hidden_dim + i] == lm_head_weight[i * vocab_size + j]
+    domain: "hidden_dim: usize, vocab_size: usize"
+    codomain: "bool — weight_t is the transpose of weight"
+    invariants:
+      - "lm_head_weight_t.len() == hidden_dim * vocab_size"
+      - "lm_head_weight_t[1] == lm_head_weight[vocab_size] (transpose property)"
+
+  cross_adapter_parity:
+    formula: |
+      For the same model weights loaded via APR adapter and GGUF adapter:
+        apr_gpu_model.lm_head_weight[0..N] == gguf_gpu_model.lm_head_weight[0..N]
+      Both adapters must produce identical GpuModel field values.
+    domain: "model_weights: same underlying parameters"
+    codomain: "bool — adapters produce identical GpuModel"
+    invariants:
+      - "APR lm_head_weight layout == GGUF lm_head_weight layout"
+      - "max |apr[i] - gguf[i]| < 1e-5 for all i"
+
+proof_obligations:
+  - type: invariant
+    property: "LM head weight is [hidden_dim, vocab_size] not [vocab_size, hidden_dim]"
+    formal: "lm_head_weight[1] != lm_head_weight[vocab_size] AND lm_head_weight_t[1] == lm_head_weight[vocab_size]"
+    tolerance: 1e-5
+    applies_to: lm_head_gpu_layout
+
+  - type: invariant
+    property: "Transpose relationship holds between weight and weight_t"
+    formal: "forall i,j: weight_t[j * hidden_dim + i] == weight[i * vocab_size + j]"
+    tolerance: 1e-5
+    applies_to: lm_head_transposed_layout
+
+  - type: equivalence
+    property: "APR and GGUF adapters produce identical lm_head layout"
+    formal: "max_diff(apr.lm_head_weight, gguf.lm_head_weight) < 1e-5"
+    tolerance: 1e-5
+    applies_to: cross_adapter_parity
+
+falsification_tests:
+  - id: FALSIFY-LMHEAD-001
+    rule: "LM head weight distinguishes [H,V] from [V,H]"
+    prediction: "For non-symmetric weights, W[1] != W[vocab_size]"
+    test: |
+      Load GpuModel from APR checkpoint.
+      Assert: lm_head_weight[1] != lm_head_weight[vocab_size]
+      Assert: lm_head_weight_t[1] == lm_head_weight[vocab_size] (within 1e-5)
+    if_fails: "lm_head_weight and lm_head_weight_t are swapped (ALB-108 regression)"
+
+  - id: FALSIFY-LMHEAD-002
+    rule: "Transpose relationship verified on sample elements"
+    prediction: "weight_t[j * H + i] == weight[i * V + j] for random i,j"
+    test: |
+      Sample 100 random (i,j) pairs where i < hidden_dim, j < vocab_size.
+      For each: Assert |weight_t[j*H+i] - weight[i*V+j]| < 1e-5
+    if_fails: "Transpose computation is incorrect"
+
+  - id: FALSIFY-LMHEAD-003
+    rule: "GPU GEMV output matches CPU matmul on same input"
+    prediction: "For hidden vector x, GPU y = x @ lm_head == CPU y = lm_head_t @ x"
+    test: |
+      Create random x[hidden_dim].
+      GPU: y_gpu = matmul_refcell(x, lm_head_weight, 1, H, V)
+      CPU: y_cpu = cpu_matmul_transposed_simd(x, lm_head_weight_t, bias, H, V)
+      Assert: max |y_gpu[i] - y_cpu[i]| < 1e-3
+    if_fails: "GPU and CPU LM head paths produce different logits"
+
+kani_harnesses:
+  - id: KANI-LMHEAD-001
+    obligation: lm_head_gpu_layout
+    property: "Weight layout distinguishes [H,V] from [V,H] for non-symmetric matrices"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_lm_head_layout_distinguishable
+
+  - id: KANI-LMHEAD-002
+    obligation: lm_head_transposed_layout
+    property: "Transpose relationship is bijective"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_transpose_bijective
+
+qa_gate:
+  id: F-LMHEAD-001
+  name: "LM Head Layout Parity Validation"
+  min_coverage: 0.95
+  max_complexity: 10
+  required_tests:
+    - "lm_head_layout_distinguishes_transpose"
+    - "transpose_relationship_holds"
+    - "gpu_cpu_lm_head_parity"

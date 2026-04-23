@@ -97,14 +97,16 @@
       "id": 6,
       "name": "architecture",
       "count": 5,
-      "disposition": "PROMOTE; check tensor-layout-v1 overlap",
+      "disposition": "PROMOTE-NEW (all 5, 2026-04-23)",
       "sub_ticket": "PMAT-703",
+      "status": "SHIPPED",
+      "reclassification_note": "First-pass suggested lm-head-layout-parity-v1 MERGE with tensor-layout-v1; per-file read found disjoint layers (APR on-disk vs GPU runtime) — corrected to PROMOTE-NEW.",
       "contracts": [
-        "causal-attention-mask-v1.yaml",
-        "residual-connection-v1.yaml",
-        "weight-initialization-v1.yaml",
-        {"name": "lm-head-layout-parity-v1.yaml", "merge_target": "tensor-layout-v1.yaml"},
-        "scaling-law-prediction-v1.yaml"
+        {"name": "causal-attention-mask-v1.yaml", "shipped_at": "contracts/causal-attention-mask-v1.yaml", "shipped_version": "1.1.0"},
+        {"name": "residual-connection-v1.yaml", "shipped_at": "contracts/residual-connection-v1.yaml", "shipped_version": "1.1.0"},
+        {"name": "weight-initialization-v1.yaml", "shipped_at": "contracts/entrenar/weight-initialization-v1.yaml", "shipped_version": "1.1.0"},
+        {"name": "lm-head-layout-parity-v1.yaml", "shipped_at": "contracts/realizar/lm-head-layout-parity-v1.yaml", "shipped_version": "1.1.0", "note": "Disjoint-layer from tensor-layout-v1, not a merge"},
+        {"name": "scaling-law-prediction-v1.yaml", "shipped_at": "contracts/entrenar/scaling-law-prediction-v1.yaml", "shipped_version": "1.1.0"}
       ]
     },
     {
