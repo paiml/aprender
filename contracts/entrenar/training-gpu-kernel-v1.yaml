@@ -1,0 +1,296 @@
+# training-gpu-kernel-v1.yaml — ALB-040
+#
+# Provable contract for GPU-resident pretraining via CudaTransformerTrainer.
+# Validates numerical equivalence, transfer efficiency, and GPU utilization.
+
+metadata:
+  version: "2.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/cuda/kernel.rs"
+  promoted_from: "albor@be23737 contracts/training-gpu-kernel-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-02"
+  updated: "2026-03-02"
+  author: "PAIML Engineering"
+  description: "GPU-resident pretraining kernel — CudaTransformerBlock wired into TransformerTrainer"
+  changelog:
+    - "v2.0.0: Add training stability obligations (C-TRAINSTABLE-001, C-EMBED-GRAD-001, C-HYPERPARAMS-001) from ALB-044 dogfooding"
+  references:
+    - "classify_pipeline.rs GPU training pattern (ENT-151, ENT-152)"
+    - "training-memory-kernel-v1.yaml (VRAM estimation)"
+    - "ALB-044: Unclipped activation gradients + CPU optimizer mismatch"
+    - "ALB-065: Missing stream.synchronize() before D2H gradient transfers"
+  depends_on:
+    - "training-memory-kernel-v1"
+
+equations:
+  pcie_transfers_per_step:
+    formula: |
+      T = 3 (constant)
+      Transfer 1 (H2D): hidden = S × H × 4 bytes
+      Transfer 2 (D2H): logits = S × V × 4 bytes
+      Transfer 3 (H2D): grad_logits = S × V × 4 bytes
+      Total bytes per step = S × (H + 2V) × 4
+    domain: |
+      S: seq_len, H: hidden_size, V: vocab_size
+    codomain: "T = 3: exactly 3 PCIe transfers per training step"
+    invariants:
+      - "Embedding lookup stays on CPU (scatter-gather, not matmul)"
+      - "Cross-entropy loss + softmax backward stays on CPU"
+      - "All transformer block forward/backward/optimizer on GPU"
+      - "RMSNorm forward/backward on GPU"
+      - "LM head GEMM forward/backward on GPU"
+
+  transfer_overhead:
+    formula: |
+      overhead_ms = total_bytes / bandwidth
+      For PCIe 4.0 x16: bandwidth = 32 GB/s
+      For 350M model (H=1024, V=32K, S=2048):
+        total = 2048 × (1024 + 2×32768) × 4 = 544 MB
+        overhead = 544 MB / 32 GB/s = 17 ms
+    domain: "Architecture params + PCIe bandwidth"
+    codomain: "Transfer overhead in milliseconds (theoretical)"
+    invariants:
+      - "Transfer overhead < 5% of compute time for models >= 350M params"
+      - "GPU compute time dominates for large models"
+
+  gpu_utilization:
+    formula: |
+      util = compute_time / (compute_time + transfer_time + sync_time)
+    domain: "Measured via nvidia-smi dmon or CUDA events"
+    codomain: "GPU utilization ratio [0, 1]"
+    invariants:
+      - "util > 0.70 for models >= 350M params with batch_size >= 4"
+      - "Previous CPU autograd achieved ~0.07 (7%) due to 16K transfers/step"
+
+  activation_gradient_clipping:
+    formula: |
+      grad_norm = sqrt(sum(activation_grad[i]^2))
+      if grad_norm > max_grad_norm:
+          activation_grad *= max_grad_norm / grad_norm
+    domain: |
+      activation_grad: GPU backward output (grad_buf_a or grad_buf_b)
+      max_grad_norm: from config.base.max_grad_norm (YAML grad_clip)
+    codomain: "Clipped activation gradient with L2 norm <= max_grad_norm"
+    invariants:
+      - "Per-block weight gradient clipping does NOT clip activation gradients"
+      - "Activation gradient flows from block[0] backward to CPU embedding optimizer"
+      - "For L-layer random init, activation gradient magnitude grows as ~O(L) or worse"
+      - "Without clipping, 24-layer 350M produces ~1e35 activation gradients"
+
+  hyperparameter_propagation:
+    formula: |
+      For every optimizer O in the training loop:
+        O.lr == config.lr (or warmup-adjusted)
+        O.beta1 == config.beta1
+        O.beta2 == config.beta2
+        O.weight_decay == config.weight_decay
+    domain: "YAML config → bridge → TransformerTrainConfig → optimizer constructor"
+    codomain: "All optimizers use identical hyperparameters from config"
+    invariants:
+      - "GPU block optimizer: beta1, beta2, wd passed to adamw_step_cuda()"
+      - "GPU LM head optimizer: beta1, beta2, wd passed to adamw_step_cuda()"
+      - "CPU embedding optimizer: AdamW::new(lr, beta1, beta2, eps, wd)"
+      - "NEVER use AdamW::default_params() — hides beta2=0.999 and wd=0.01"
+
+  stream_synchronization:
+    formula: |
+      For every cuMemcpyDtoH(host_dst, device_src, size) call
+      where device_src was written by a kernel on stream S:
+        if S was created with CU_STREAM_NON_BLOCKING:
+          stream.synchronize() MUST precede the cuMemcpyDtoH call
+    domain: |
+      S: CudaStream (trueno CU_STREAM_NON_BLOCKING)
+      device_src: GpuBuffer written by backward kernels (grad_w_q, grad_w_k, etc.)
+    codomain: "cuMemcpyDtoH reads completed kernel output, not stale VRAM"
+    invariants:
+      - "cuMemcpyDtoH only synchronizes with the default (null) stream"
+      - "CU_STREAM_NON_BLOCKING streams are NOT synchronized by cuMemcpyDtoH"
+      - "Without sync, gradient clipping reads garbage → NaN → crash (ALB-065)"
+      - "With CUDA_LAUNCH_BLOCKING=1, all operations are serialized (masks the bug)"
+
+proof_obligations:
+  - type: equivalence
+    property: "GPU training loss matches CPU training loss"
+    formal: "|loss_gpu(step=N) - loss_cpu(step=N)| < epsilon for all N in [1, 100]"
+    tolerance: 1e-3
+    applies_to: numerical_equivalence
+
+  - type: invariant
+    property: "Exactly 3 PCIe transfers per step"
+    formal: "count(H2D) + count(D2H) = 3 per train_step_single() call"
+    tolerance: 0
+    applies_to: pcie_transfers_per_step
+
+  - type: bound
+    property: "GPU utilization exceeds 70%"
+    formal: "gpu_util >= 0.70 during training (measured over 100+ steps)"
+    applies_to: gpu_utilization
+
+  - type: invariant
+    property: "Weight sync preserves values"
+    formal: "sync_weights_to_cpu() => |w_cpu[i] - w_gpu[i]| == 0 for all i"
+    tolerance: 0
+    applies_to: weight_sync
+
+  - type: invariant
+    property: "Graceful fallback on CUDA failure"
+    formal: "CudaTransformerTrainer::new() Err => TransformerTrainer used instead"
+    tolerance: 0
+    applies_to: fallback
+
+  - type: invariant
+    property: "Training stability — all weights and loss finite"
+    formal: "loss.is_finite() AND weight[i].is_finite() for all i, all steps"
+    tolerance: 0
+    applies_to: training_stability
+
+  - type: invariant
+    property: "Activation gradient clipped at GPU-CPU boundary"
+    formal: "L2_norm(activation_grad) <= max_grad_norm before CPU scatter-add"
+    tolerance: 0
+    applies_to: activation_gradient_clipping
+
+  - type: invariant
+    property: "Stream synchronized before D2H gradient transfers"
+    formal: "stream.synchronize() called before every cuMemcpyDtoH that reads kernel output"
+    tolerance: 0
+    applies_to: stream_synchronization
+
+  - type: invariant
+    property: "Optimizer hyperparameters match YAML config"
+    formal: "optimizer.beta2 == config.beta2 AND optimizer.weight_decay == config.weight_decay for all optimizers"
+    tolerance: 0
+    applies_to: hyperparameter_propagation
+
+  - type: invariant
+    property: "Gradient flow to all trainable parameters"
+    formal: "max(|grad(param)|) > 0 for all trainable params after 1 step"
+    tolerance: 0
+    applies_to: gradient_flow
+
+falsification_tests:
+  - id: FALSIFY-GPU-001
+    rule: "GPU and CPU training produce equivalent loss"
+    prediction: "After 10 steps with identical init, |loss_gpu - loss_cpu| < 1e-3"
+    test: |
+      Build TransformerConfig::tiny(), create both CudaTransformerTrainer
+      and TransformerTrainer with same weights. Run 10 steps on same data.
+      Compare final loss values.
+    if_fails: "Numerical divergence in GPU kernels or incorrect gradient flow"
+
+  - id: FALSIFY-GPU-002
+    rule: "Saved weights differ from init after GPU training"
+    prediction: "model.safetensors weights != init weights after 10+ steps"
+    test: |
+      Train 10 steps on GPU, save, reload weights.
+      Verify at least one layer's weights changed from initialization.
+    if_fails: "Weight sync broken or optimizer not updating GPU weights"
+
+  - id: FALSIFY-GPU-003
+    rule: "Fallback works when CUDA unavailable"
+    prediction: "train_from_yaml succeeds with use_cuda=true but no GPU"
+    test: "Run with CUDA feature disabled, verify CPU training executes"
+    if_fails: "Fallback path broken or non-CUDA stub missing"
+
+  - id: FALSIFY-GPU-004
+    rule: "GPU utilization > 70% for 350M model"
+    prediction: "nvidia-smi dmon shows >70% GPU utilization during training"
+    test: |
+      Start training with albor-base-350m.yaml config.
+      Sample nvidia-smi every 1s for 60s.
+      Compute average GPU utilization.
+    if_fails: "Unexpected PCIe bottleneck, kernel launch overhead, or memory contention"
+
+  - id: FALSIFY-GPU-005
+    rule: "350M training stable for 50+ steps (no NaN)"
+    prediction: "Loss is finite at every step for 50 steps on random init"
+    test: |
+      Train 350M model (24 layers) with pretrain-350m-cuda-test.yaml for 50 steps.
+      Assert loss.is_finite() at every callback. Assert no NaN in saved checkpoint.
+    if_fails: "Gradient explosion, unclipped activation gradients, or optimizer misconfiguration"
+
+  - id: FALSIFY-GPU-006
+    rule: "CPU embedding optimizer uses YAML hyperparameters"
+    prediction: "embed_optimizer.beta2 == config.beta2 (not AdamW default 0.999)"
+    test: |
+      Construct CudaTransformerTrainer with beta2=0.95, weight_decay=0.1.
+      Verify embed_optimizer internal state matches (not 0.999 / 0.01).
+    if_fails: "AdamW::default_params() used instead of AdamW::new() with config values"
+
+  - id: FALSIFY-GPU-007
+    rule: "All 110 parameters of 50M model receive gradients"
+    prediction: "max(|grad|) > 0 for every trainable parameter after 1 step"
+    test: |
+      Train 50M model (12 layers) for 1 step. Check gradient of every parameter tensor.
+      Count params with zero gradient — must be 0.
+    if_fails: "Missing backward op, requires_grad=false, or broken gradient chain"
+
+  - id: FALSIFY-GPU-008
+    rule: "Training stable WITHOUT CUDA_LAUNCH_BLOCKING=1"
+    prediction: "350M training survives 50+ steps without crashes or NaN in async mode"
+    test: |
+      Run 350M training (pretrain-350m-cuda-test.yaml) for 50 steps without
+      CUDA_LAUNCH_BLOCKING=1. Verify process stays alive, loss is finite at
+      every step, and no CUDA errors in dmesg/nvidia-smi Xid log.
+    if_fails: "Missing stream.synchronize() or new async race condition (ALB-065 regression)"
+
+  - id: FALSIFY-GPU-009
+    rule: "Exactly 3 PCIe transfers per training step"
+    prediction: "Each train_step_single() call issues exactly 3 PCIe transfers (1 H2D + 1 D2H + 1 H2D)"
+    test: |
+      Instrument CudaTransformerTrainer with transfer counters.
+      Run 10 training steps on a tiny model.
+      Assert h2d_count == 20 (2 H2D per step * 10 steps).
+      Assert d2h_count == 10 (1 D2H per step * 10 steps).
+      Assert total transfers == 30 (3 per step * 10 steps).
+    if_fails: "Extra transfers from debug logging, redundant syncs, or missing transfer coalescing"
+
+  - id: FALSIFY-GPU-010
+    rule: "Weight sync preserves values exactly"
+    prediction: "sync_weights_to_cpu() produces CPU weights bitwise identical to GPU weights"
+    test: |
+      Train 5 steps on GPU. Call sync_weights_to_cpu().
+      Read GPU weights via cuMemcpyDtoH into reference buffer.
+      Compare reference buffer to CPU weight tensors element-wise.
+      Assert max absolute difference == 0.0 (exact, not approximate).
+    if_fails: "Weight sync has dtype conversion, truncation, or partial copy bug"
+
+kani_harnesses:
+  - id: KANI-GPU-001
+    obligation: pcie_transfers_per_step
+    property: "Exactly 3 PCIe transfers per training step"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_three_pcie_transfers
+
+  - id: KANI-GPU-002
+    obligation: activation_gradient_clipping
+    property: "Clipped gradient L2 norm never exceeds max_grad_norm"
+    bound: 8
+    strategy: stub_float
+    harness: verify_activation_grad_clipped
+
+  - id: KANI-GPU-003
+    obligation: hyperparameter_propagation
+    property: "All optimizers receive config hyperparameters, not defaults"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_hyperparams_propagated
+
+qa_gate:
+  id: F-GPU-001
+  name: "GPU-Resident Pretraining Contract"
+  description: "CudaTransformerTrainer correctness, stability, and efficiency"
+  checks:
+    - "numerical_equivalence"
+    - "transfer_count_invariant"
+    - "gpu_utilization_bound"
+    - "weight_sync_exact"
+    - "graceful_fallback"
+    - "training_stability"
+    - "activation_gradient_clipping"
+    - "hyperparameter_propagation"
+    - "gradient_flow"
+  pass_criteria: "All 7 falsification tests pass"
+  falsification: "Use mismatched hidden_size to detect weight shape errors"

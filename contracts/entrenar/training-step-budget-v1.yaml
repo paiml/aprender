@@ -1,0 +1,144 @@
+# training-step-budget-v1.yaml — ALB-075
+#
+# Provable contract for training step performance budget.
+# Defines per-brick SLAs with Jidoka gates enforced by probador.
+# Write BEFORE implementation (CLAUDE.md Rule 7: contracts before code).
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/step_budget.rs"
+  promoted_from: "albor@be23737 contracts/training-step-budget-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-05"
+  author: "PAIML Engineering"
+  description: "Training step performance budget — brick-level SLAs with Jidoka gates"
+  references:
+    - "training-gpu-kernel-v1.yaml"
+    - "ALB-067: CPU-side gradient clipping bottleneck"
+    - "ALB-075: cuBLAS tensor core GEMM integration"
+  depends_on:
+    - "training-gpu-kernel-v1"
+    - "cublas-gemm-v1"
+
+equations:
+  step_time_budget:
+    formula: |
+      T_step = T_gemm + T_optimizer + T_embedding + T_pcie + T_elementwise
+             + T_cross_entropy + T_stream_sync + T_overhead
+    domain: "Per-component timing measured by renacer BrickTracer"
+    codomain: "T_step: total step time in milliseconds"
+    invariants:
+      - "T_step is sum of brick times (no unaccounted gaps > 5% of total)"
+      - "Every component maps to exactly one probador brick"
+      - "Brick budget violation (> 2x) triggers Jidoka alert (training pause)"
+
+  gemm_throughput:
+    formula: |
+      TFLOP_per_gemm(m, n, k) = 2 * m * n * k / 1e12
+      TFLOP_per_step = sum(TFLOP_per_gemm for all ~555 GEMMs)
+      T_gemm = TFLOP_per_step / achieved_tflops
+    domain: "GEMM shapes from 350M architecture"
+    codomain: "T_gemm: total GEMM time per step in milliseconds"
+    invariants:
+      - "PTX baseline: achieved_tflops ~= 2 TFLOP/s (FP32 scalar)"
+      - "cuBLAS target: achieved_tflops >= 100 TFLOP/s (FP16 tensor core)"
+
+  mfu_definition:
+    formula: |
+      MFU = (6 * P * tokens_per_step) / (T_step * peak_flops)
+      P = 370M, tokens_per_step = batch * seq_len = 4096
+      peak_flops(FP16) = 148 TFLOP/s (sustained), peak_flops(FP32) = 82.6 TFLOP/s
+    domain: "Measured step_time from profiling run (>= 50 steps, warm cache)"
+    codomain: "MFU ratio [0, 1]"
+    invariants:
+      - "MFU is measured over >= 50 steps (excluding first 5 for warmup)"
+      - "Report both FP16 and FP32 MFU for clarity"
+      - "Use sustained peak (148 TFLOP/s), not marketing peak (165)"
+
+proof_obligations:
+  - type: bound
+    property: "Brick budgets account for full step time"
+    formal: "sum(brick_budgets) >= 0.95 * T_step_measured"
+    applies_to: step_time_budget
+
+  - type: bound
+    property: "GEMM brick dominates baseline"
+    formal: "T_gemm / T_step > 0.50 in PTX baseline"
+    applies_to: gemm_throughput
+
+  - type: bound
+    property: "cuBLAS reduces GEMM brick time by >= 5x"
+    formal: "T_gemm(cublas) < T_gemm(ptx) / 5"
+    applies_to: gemm_throughput
+
+  - type: bound
+    property: "MFU improves monotonically across phases"
+    formal: "MFU(phase_N+1) > MFU(phase_N) for each optimization phase"
+    applies_to: mfu_definition
+
+falsification_tests:
+  - id: FALSIFY-BUDGET-001
+    rule: "Brick budgets cover >= 95% of step time"
+    prediction: "T_step - sum(bricks) < 0.05 * T_step"
+    test: |
+      Run 50-step profiling with BrickTracer on 350M model.
+      Sum all brick durations. Compare to total step time.
+    if_fails: "Unaccounted overhead — missing brick or hidden synchronization"
+
+  - id: FALSIFY-BUDGET-002
+    rule: "GEMM is the primary bottleneck in PTX baseline"
+    prediction: "T_gemm > 50% of T_step in PTX mode"
+    test: |
+      Profile 50 steps with PTX backend, isolate GEMM brick time.
+    if_fails: "Bottleneck is elsewhere — revisit optimization target"
+
+  - id: FALSIFY-BUDGET-003
+    rule: "Jidoka gate fires on 2x budget violation"
+    prediction: "If T_gemm > 2 * budget_gemm, training pauses with alert"
+    test: |
+      Inject artificial 10s delay in GEMM kernel. Verify Jidoka gate
+      fires and training loop emits Andon alert.
+    if_fails: "Budget enforcement not wired into training loop"
+
+  - id: FALSIFY-BUDGET-004
+    rule: "Phase 0 baseline matches estimated breakdown"
+    prediction: "Measured GEMM fraction is 50-65% of step time"
+    test: |
+      Run BrickTracer profiling for 50 steps on PTX backend.
+      T_gemm / T_step must be in [0.50, 0.65].
+    if_fails: "Estimated breakdown is wrong; re-derive all phase projections"
+
+kani_harnesses:
+  - id: KANI-BUDGET-001
+    obligation: step_time_budget
+    property: "Brick budgets sum to >= 95% of total step time"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_brick_coverage
+
+  - id: KANI-BUDGET-002
+    obligation: gemm_throughput
+    property: "GEMM TFLOP computation is correct for all valid matrix shapes"
+    bound: 16
+    strategy: exhaustive
+    harness: verify_gemm_tflop_computation
+
+  - id: KANI-BUDGET-003
+    obligation: mfu_definition
+    property: "MFU ratio is in [0, 1] for all valid step times and model sizes"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_mfu_bounded
+
+qa_gate:
+  id: F-BUDGET-001
+  name: "Training Step Performance Budget Contract"
+  description: "Brick-level SLAs with Jidoka enforcement"
+  checks:
+    - "brick_coverage"
+    - "gemm_dominance"
+    - "cublas_improvement"
+    - "jidoka_enforcement"
+  pass_criteria: "All 4 falsification tests pass"
+  falsification: "Inject delay to test Jidoka gate response"

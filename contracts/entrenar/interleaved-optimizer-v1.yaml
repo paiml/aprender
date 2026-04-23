@@ -1,0 +1,131 @@
+# interleaved-optimizer-v1.yaml — C-INTERLEAVED-001
+#
+# Provable contract for interleaved per-block optimizer LR bound.
+#
+# When backward and optimizer are interleaved (update block N before computing
+# block N-1 backward), each block's backward uses stale weights from subsequent
+# blocks. This creates within-step weight staleness analogous to pipeline
+# parallelism staleness (PipeDream, SOSP 2019).
+#
+# The square root rule (De Sa et al. 2015) bounds the stable LR:
+#   lr_adj = lr_chinchilla / sqrt(1 + avg_staleness)
+#
+# For L interleaved blocks, avg_staleness = (L-1)/2.
+#
+# References:
+#   - De Sa et al. 2015: "Convergence rate O(1/sqrt(1+tau)) for delayed updates"
+#   - Narayanan et al. (PipeDream, SOSP 2019): "Weight staleness degrades convergence"
+#   - Huang et al. (GPipe, NeurIPS 2019): "Synchronous pipeline avoids staleness"
+#   - v25 training: val_ppl spike 69→314 at step 4K with lr=3e-4, 24 blocks
+#   - v26 training: val_ppl=15.13 at step 3K with lr=1e-4 (validated)
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/optim/interleaved.rs"
+  promoted_from: "albor@be23737 contracts/interleaved-optimizer-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-28"
+  author: "PAIML Engineering"
+  description: "Interleaved optimizer — LR bound from weight staleness"
+  references:
+    - "ALB-128: Interleaved per-block optimizer instability"
+    - "De Sa et al. 2015: Global convergence of SGD with delayed updates"
+    - "PipeDream (Narayanan et al., SOSP 2019): Weight stashing"
+    - "v25 val_ppl=314 at step 4K (lr=3e-4, unstable)"
+    - "v26 val_ppl=15.13 at step 3K (lr=1e-4, stable)"
+
+equations:
+  staleness_bound:
+    formula: |
+      For L transformer blocks with interleaved backward+optimizer:
+
+      Weight staleness per block:
+        staleness(block_i) = L - 1 - i    (block 0 sees L-1 stale updates)
+
+      Average staleness:
+        d_avg = (L-1)/2                    (= 11.5 for L=24)
+
+      LR adjustment (square root rule):
+        lr_adj = lr_chinchilla / sqrt(1 + d_avg)
+
+      For L=24, lr_chinchilla=3e-4:
+        lr_adj = 3e-4 / sqrt(1 + 11.5)
+               = 3e-4 / sqrt(12.5)
+               = 3e-4 / 3.536
+               = 8.49e-5
+
+      Practical bound (validated by v26):
+        lr_max = 1e-4    (slightly above theoretical, works empirically)
+
+    domain: "L: positive integer (num_layers), lr_chinchilla: positive real"
+    codomain: "lr_adj: positive real, lr_adj < lr_chinchilla"
+    invariants:
+      - "lr_adj decreases monotonically with L"
+      - "lr_adj = lr_chinchilla when L=1 (no interleaving)"
+      - "For L=24: lr_adj in [6e-5, 1.2e-4]"
+      - "Training val_ppl must not spike >2x between consecutive evals"
+
+proof_obligations:
+  - type: bound
+    property: "LR within staleness-adjusted bound"
+    formal: "config.lr <= lr_chinchilla / sqrt(1 + (num_layers - 1) / 2)"
+    tolerance: 0.5  # Allow up to 50% above theoretical bound
+    applies_to: staleness_bound
+
+  - type: invariant
+    property: "No val_ppl regression >2x between consecutive evals"
+    formal: "val_ppl[step_k+1] / val_ppl[step_k] < 2.0 for all k after warmup"
+    tolerance: 0
+    applies_to: staleness_bound
+
+  - type: bound
+    property: "Scaling law slope remains positive after warmup"
+    formal: "scaling_law_slope > 0 for step > warmup_steps"
+    tolerance: 0
+    applies_to: staleness_bound
+
+falsification_tests:
+  - id: FALSIFY-INTERLEAVED-001
+    rule: "LR above bound causes instability"
+    prediction: "lr=3e-4 with 24 interleaved blocks will produce val_ppl spike >2x"
+    test: |
+      Train with lr=3e-4, 24 blocks, interleaved optimizer.
+      Check val_ppl at steps 1K, 2K, 3K, 4K.
+      Expect val_ppl[4K] / val_ppl[2K] > 2.0.
+    if_fails: "Square root rule is too conservative — interleaved optimizer is more stable than expected"
+
+  - id: FALSIFY-INTERLEAVED-002
+    rule: "LR at or below bound produces clean convergence"
+    prediction: "lr=1e-4 with 24 interleaved blocks will show monotonic val_ppl improvement"
+    test: |
+      Train with lr=1e-4, 24 blocks, interleaved optimizer.
+      Check val_ppl at steps 1K, 2K, 3K.
+      Expect val_ppl[3K] < val_ppl[1K] (no regression).
+    if_fails: "LR=1e-4 is still too high, or instability has a different root cause"
+
+  - id: FALSIFY-INTERLEAVED-003
+    rule: "Decoupled optimizer removes LR constraint"
+    prediction: "If optimizer is decoupled from backward, lr=3e-4 should work (no staleness)"
+    test: |
+      Implement decoupled backward+optimizer. Train with lr=3e-4, 24 blocks.
+      Check val_ppl trajectory matches lr=1e-4 interleaved or better.
+    if_fails: "Instability has additional causes beyond weight staleness"
+
+kani_harnesses:
+  - id: KANI-INTERLEAVED-001
+    obligation: staleness_bound
+    property: "LR bound computation is correct for any num_layers 1..128"
+    bound: 128
+    strategy: exhaustive
+    harness: verify_interleaved_lr_bound
+
+qa_gate:
+  id: F-INTERLEAVED-001
+  name: "Interleaved Optimizer LR Stability"
+  min_coverage: 0.90
+  max_complexity: 8
+  required_tests:
+    - "lr_bound_computed_correctly"
+    - "val_ppl_no_regression_at_bounded_lr"
+    - "scaling_law_positive_slope"

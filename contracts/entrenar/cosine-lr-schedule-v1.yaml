@@ -1,0 +1,173 @@
+# Contract: Cosine Learning Rate Schedule (ALB-079)
+#
+# Ensures the CUDA trainer applies cosine decay after warmup.
+# Written because ALB-079 identified constant lr in CUDA path.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/optim/scheduler/cosine.rs"
+  promoted_from: "albor@be23737 contracts/cosine-lr-schedule-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  description: "Cosine LR schedule — warmup then cosine decay to zero"
+  references:
+    - "ALB-079"
+    - "Loshchilov & Hutter (2017) SGDR: Stochastic Gradient Descent with Warm Restarts"
+
+equations:
+  warmup_lr:
+    formula: "lr(step) = lr_max * (step / warmup_steps)"
+    domain: "0 <= step < warmup_steps"
+    invariants:
+      - "LR is monotonically increasing during warmup"
+      - "lr(0) = 0"
+
+  cosine_decay_lr:
+    formula: "lr(step) = 0.5 * lr_max * (1 + cos(pi * (step - warmup_steps) / (max_steps - warmup_steps)))"
+    domain: "warmup_steps <= step < max_steps"
+    invariants:
+      - "LR is always in [0, lr_max]"
+      - "LR is continuous at warmup boundary"
+      - "lr(max_steps) = 0"
+
+  lr_propagation:
+    formula: "adamw_kernel.lr == embed_optimizer.lr == current_lr(step)"
+    domain: "Every training step"
+    invariants:
+      - "GPU AdamW kernel receives same lr as current_lr()"
+      - "CPU embedding optimizer lr matches current_lr() at each step"
+
+proof_obligations:
+  - type: invariant
+    property: "current_lr() returns cosine-decayed lr after warmup"
+    formal: "For step >= warmup_steps: lr = 0.5 * lr_max * (1 + cos(pi * progress))"
+
+  - type: bound
+    property: "lr at step 0 is 0 (or near 0)"
+    formal: "current_lr(0) < 1e-10"
+
+  - type: invariant
+    property: "lr at warmup_steps equals lr_max"
+    formal: "abs(current_lr(warmup_steps) - lr_max) < 1e-10"
+
+  - type: bound
+    property: "lr at max_steps is 0"
+    formal: "current_lr(max_steps) < 1e-10"
+
+  - type: invariant
+    property: "CPU embedding optimizer receives updated lr before each step"
+    formal: "embed_optimizer.lr == current_lr(step) at every optimizer_step()"
+
+  - type: invariant
+    property: "max_steps calibrated to actual training horizon"
+    formal: "max_steps == ceil(total_train_batches / gradient_accumulation) when epochs is finite"
+    rationale: |
+      ALB-129: v26 and v27 both used max_steps=155000 (4 epochs) with epochs=1
+      (actual ~38K steps). Cosine denominator of 155K meant LR only decayed 1%
+      over 10K steps — effectively constant. Model peaked at step 2K (val_ppl
+      9.39) then diverged to 82 because LR was too high to stay in the basin.
+      Both train and val loss oscillated together, ruling out overfitting.
+
+falsification_tests:
+  - id: FALSIFY-COSINE-001
+    rule: "lr at midpoint of cosine decay equals 0.5 * lr_max"
+    prediction: "At step 550 (midpoint), lr = 1.5e-4 for lr_max=3e-4"
+    test: |
+      Given: warmup_steps=100, max_steps=1000, lr_max=3e-4
+      At step 550 (midpoint of decay phase):
+        expected_lr = 0.5 * 3e-4 * (1 + cos(pi * 450/900))
+                    = 0.5 * 3e-4 * (1 + cos(pi/2))
+                    = 0.5 * 3e-4 * 1.0
+                    = 1.5e-4
+      Assert: abs(current_lr() - 1.5e-4) < 1e-8
+    if_fails: "Cosine decay formula is incorrect"
+
+  - id: FALSIFY-COSINE-002
+    rule: "lr is NOT constant after warmup"
+    prediction: "lr at step 200 > lr at step 800"
+    test: |
+      Given: warmup_steps=100, max_steps=1000, lr_max=3e-4
+      At step 200: lr1 = current_lr()
+      At step 800: lr2 = current_lr()
+      Assert: lr1 != lr2
+      Assert: lr1 > lr2 (cosine decay is monotonically decreasing)
+    if_fails: "Regression to constant lr after warmup (ALB-079 recurrence)"
+
+  - id: FALSIFY-COSINE-003
+    rule: "lr forms decreasing sequence after warmup through max_steps"
+    prediction: "lr(999) < 0.01 * lr_max"
+    test: |
+      Given: warmup_steps=100, max_steps=1000, lr_max=3e-4
+      Run 1000 steps. Collect all lr values.
+      Assert: lr values form decreasing sequence after step 100
+      Assert: lr(999) < 0.01 * lr_max
+    if_fails: "Cosine decay not monotonically decreasing"
+
+  - id: FALSIFY-COSINE-004
+    rule: "Fallback to constant lr when max_steps is None"
+    prediction: "Without max_steps, lr stays at lr_max after warmup"
+    test: |
+      Given: warmup_steps=100, max_steps=None, lr_max=3e-4
+      At step 200: Assert current_lr() == 3e-4
+      At step 1000: Assert current_lr() == 3e-4
+    if_fails: "Missing fallback for unset max_steps"
+
+  - id: FALSIFY-COSINE-005
+    rule: "CPU embedding optimizer lr matches current_lr at every step"
+    prediction: "embed_optimizer.lr == current_lr(step) for all steps 0..1000"
+    test: |
+      Given: warmup_steps=100, max_steps=1000, lr_max=3e-4
+      Run 1000 steps. At each step, verify:
+        embed_optimizer.lr == current_lr(step)
+      Assert: all 1000 checks pass with no mismatch.
+    if_fails: "Embedding optimizer lr not updated — ALB-079 regression in CPU path"
+
+  - id: FALSIFY-COSINE-006
+    rule: "max_steps matches actual training horizon for cosine schedule"
+    prediction: |
+      For epochs=1 training: lr at final step < 0.05 * lr_max.
+      If max_steps >> actual_steps, lr at final step ≈ lr_max (schedule incomplete).
+    test: |
+      Given: epochs=1, total_train_batches=1227172, GA=32
+        actual_steps = 1227172 / 32 = 38349
+
+      Miscalibrated (v27): max_steps=155000
+        lr_final = 0.5 * lr_max * (1 + cos(pi * 38349 / 155000))
+                 = 0.5 * lr_max * (1 + cos(0.777))
+                 = 0.5 * lr_max * 1.716
+                 = 0.858 * lr_max   ← 86% of peak, effectively constant
+
+      Calibrated (v28): max_steps=38349
+        lr_final = 0.5 * lr_max * (1 + cos(pi * 38349 / 38349))
+                 = 0.5 * lr_max * (1 + cos(pi))
+                 = 0.0             ← full decay
+
+      Assert: lr(actual_final_step) < 0.05 * lr_max
+    if_fails: "max_steps not calibrated to training horizon — ALB-129 recurrence"
+
+kani_harnesses:
+  - id: KANI-COSINE-001
+    obligation: warmup_lr
+    property: "Warmup lr is monotonically increasing and lr(0) = 0"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_warmup_lr_monotonic
+
+  - id: KANI-COSINE-002
+    obligation: cosine_decay_lr
+    property: "Cosine decay lr stays in [0, lr_max] for all valid step values"
+    bound: 16
+    strategy: bounded_int
+    harness: verify_cosine_lr_bounded
+
+qa_gate:
+  id: F-COSINE-001
+  name: "Cosine Learning Rate Schedule Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "cosine_midpoint_value"
+    - "lr_not_constant_after_warmup"
+    - "lr_decreasing_sequence"
+    - "constant_lr_fallback"
+    - "embedding_optimizer_lr_sync"

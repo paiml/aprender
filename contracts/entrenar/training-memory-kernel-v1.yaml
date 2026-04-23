@@ -1,0 +1,174 @@
+# training-memory-kernel-v1.yaml — ALB-039
+#
+# Provable contract for training VRAM estimation.
+# All formulas are exact closed-form functions of architecture parameters.
+# Activation estimate uses upper bound from entrenar's per-item processing.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/memory.rs"
+  promoted_from: "albor@be23737 contracts/training-memory-kernel-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-02"
+  author: "PAIML Engineering"
+  description: "Training memory estimation kernel — closed-form VRAM projection from architecture"
+  references:
+    - "Korthikanti et al. (2022) Reducing Activation Recomputation in Large Transformer Models"
+    - "Rajbhandari et al. (2020) ZeRO: Memory Optimizations Toward Training Trillion Parameter Models"
+  depends_on: []
+
+equations:
+  parameter_count:
+    formula: |
+      P_embed = V × H
+      P_layer = 2H + H² + H×D_kv + H×D_kv + H² + H×I + H×I + I×H
+             = 2H + 2H² + 2H×D_kv + 3H×I
+      P_norm  = H
+      P_total = P_embed + L × P_layer + P_norm
+    domain: |
+      V: vocab_size, H: hidden_size, L: num_hidden_layers,
+      D_kv: num_kv_heads × head_dim, I: intermediate_size,
+      head_dim: H / num_attention_heads
+    codomain: "P_total: total trainable parameter count (exact)"
+    invariants:
+      - "P_total is deterministic given architecture — no randomness"
+      - "P_embed dominates for large vocab; P_layer dominates for deep models"
+
+  weight_memory:
+    formula: "M_weights = P_total × B_w"
+    domain: "P_total: parameter count, B_w: bytes per weight (4 for f32, 2 for fp16/bf16)"
+    codomain: "M_weights: weight memory in bytes (exact)"
+    invariants:
+      - "Mixed precision stores master weights in f32 + fp16 copy: M_weights = P × (4 + 2)"
+      - "entrenar current impl: always f32 storage, fp16 cast at matmul site"
+
+  gradient_memory:
+    formula: "M_grad = P_total × 4"
+    domain: "P_total: parameter count"
+    codomain: "M_grad: gradient memory in bytes (exact)"
+    invariants:
+      - "Gradients always f32 regardless of mixed precision mode"
+      - "One gradient tensor per parameter"
+
+  optimizer_memory:
+    formula: "M_opt = P_total × 8"
+    domain: "P_total: parameter count"
+    codomain: "M_opt: AdamW optimizer state memory in bytes (exact)"
+    invariants:
+      - "AdamW stores first moment (m) and second moment (v), both f32"
+      - "M_opt = P × 4 (m) + P × 4 (v) = P × 8"
+
+  activation_memory:
+    formula: |
+      M_act = L × S × H × K × 4
+      K = 10 (Q, K, V, attn_scores, attn_out, gate, up, down, 2×residual)
+    domain: |
+      L: num_layers, S: seq_len, H: hidden_size,
+      K: activation tensor count per layer (upper bound),
+      4: bytes per f32 element
+    codomain: "M_act: peak activation memory in bytes (upper bound)"
+    invariants:
+      - "entrenar processes batch items sequentially — activation memory is per single sequence"
+      - "K=10 is conservative upper bound; actual depends on tensor lifetime overlap"
+      - "Gradient checkpointing reduces M_act to O(sqrt(L)) but is not default"
+
+  total_memory:
+    formula: "M_total = M_weights + M_grad + M_opt + M_act + M_cuda"
+    domain: "M_cuda ≈ 512 MB (CUDA context, cuBLAS workspace, allocator overhead)"
+    codomain: "M_total: total estimated memory in bytes"
+    invariants:
+      - "M_total is an upper bound — actual usage may be lower due to tensor reuse"
+      - "Does not include KV cache (inference only, not training)"
+      - "entrenar hybrid mode: weights/grads/optimizer live in CPU RAM; only matmul operands transfer to GPU"
+      - "In hybrid mode, VRAM ≈ M_cuda + max(matmul_operand_pair); CPU RAM ≈ M_weights + M_grad + M_opt + M_act"
+      - "M_total represents peak system memory (CPU+GPU) needed, not VRAM alone"
+
+proof_obligations:
+  - type: equivalence
+    property: "Parameter count is exact"
+    formal: "P_total = P_embed + L × P_layer + P_norm for LLaMA architecture"
+    tolerance: 0
+    applies_to: parameter_count
+
+  - type: equivalence
+    property: "Weight memory is exact"
+    formal: "M_weights = P_total × sizeof(dtype)"
+    tolerance: 0
+    applies_to: weight_memory
+
+  - type: equivalence
+    property: "Gradient memory is exact"
+    formal: "M_grad = P_total × 4 (always f32)"
+    tolerance: 0
+    applies_to: gradient_memory
+
+  - type: equivalence
+    property: "Optimizer memory is exact for AdamW"
+    formal: "M_opt = P_total × 8 (two f32 state tensors)"
+    tolerance: 0
+    applies_to: optimizer_memory
+
+  - type: bound
+    property: "Activation memory is upper bound"
+    formal: "M_act_actual <= L × S × H × K × 4"
+    applies_to: activation_memory
+
+falsification_tests:
+  - id: FALSIFY-MEM-001
+    rule: "Parameter count matches model"
+    prediction: "P_total from formula equals Transformer::parameters().len() sum of element counts"
+    test: "Build TransformerConfig, count actual params, compare to formula"
+    if_fails: "Architecture equation wrong or model has extra parameters"
+
+  - id: FALSIFY-MEM-002
+    rule: "Activation upper bound holds"
+    prediction: "Peak RSS during forward pass <= M_act formula"
+    test: "Measure peak allocation during single forward pass, compare to formula"
+    if_fails: "K factor too low, or hidden intermediate tensors not counted"
+
+  - id: FALSIFY-MEM-003
+    rule: "Total estimate covers actual GPU usage"
+    prediction: "nvidia-smi peak memory <= M_total"
+    test: "Run 10-step training, measure peak GPU memory, compare to estimate"
+    if_fails: "Missing memory component or CUDA overhead underestimated"
+
+  - id: FALSIFY-MEM-004
+    rule: "Weight memory is exact"
+    prediction: "M_weights = P_total * sizeof(dtype) matches actual weight allocation"
+    test: |
+      Build TransformerConfig for 350M model (H=1024, L=24, V=32000).
+      Compute P_total from parameter_count formula.
+      Compute M_weights = P_total * 4 (f32).
+      Sum actual byte sizes of all weight tensors in the model.
+      Assert formula result == actual byte size (exact, zero tolerance).
+    if_fails: "Parameter count formula misses a weight tensor or sizeof(dtype) assumption is wrong"
+
+  - id: FALSIFY-MEM-005
+    rule: "Optimizer memory is exact for AdamW"
+    prediction: "M_opt = P_total * 8 matches actual AdamW state allocation"
+    test: |
+      Build AdamW optimizer for 350M model.
+      Compute M_opt = P_total * 8 (two f32 state tensors: m and v).
+      Measure actual memory allocated for optimizer state (first moment + second moment).
+      Assert formula result == actual allocation (exact, zero tolerance).
+    if_fails: "AdamW stores additional state (e.g., step counter per param, amsgrad buffer) not accounted for"
+
+kani_harnesses:
+  - id: KANI-MEM-001
+    obligation: MEM-EXACT-001
+    property: "Parameter count overflow safety"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_param_count_no_overflow
+
+qa_gate:
+  id: F-MEM-001
+  name: "Training Memory Estimation Contract"
+  description: "VRAM estimation correctness for apr train plan"
+  checks:
+    - "parameter_count_exact"
+    - "activation_upper_bound"
+    - "total_covers_actual"
+  pass_criteria: "All 3 falsification tests pass"
+  falsification: "Use wrong head_dim to verify param count detection"

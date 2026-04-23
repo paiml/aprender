@@ -1,0 +1,307 @@
+# training-config-kernel-v1.yaml — ALB-060
+#
+# Provable contract for training configuration invariants.
+# Validates the algebraic relationship between epochs, steps, data size,
+# batch size, gradient accumulation, and learning rate schedule coverage.
+#
+# Motivation: ALB-060 — 350M training ran only 43/5000 steps because
+# epochs=1 exhausted data before max_steps was reached. LR at step 43
+# was still in early warmup (6.45e-6 vs target 3e-4), loss flat at ~10.39.
+# The model checkpoint contains effectively untrained weights.
+#
+# This contract ensures that training configuration parameters are
+# algebraically consistent BEFORE any GPU time is consumed.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/config.rs"
+  promoted_from: "albor@be23737 contracts/training-config-kernel-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-02"
+  author: "PAIML Engineering"
+  description: "Training configuration kernel — epoch/step/data/LR invariants for pre-training configs"
+  changelog:
+    - "v1.0.0: Initial from ALB-060 (epoch exhaustion before max_steps)"
+  references:
+    - "Goyal et al. (2017) Accurate, Large Minibatch SGD — linear scaling rule"
+    - "Loshchilov & Hutter (2019) Decoupled Weight Decay — cosine LR schedule"
+    - "Chinchilla (Hoffmann et al., 2022) — optimal tokens/params ratio"
+    - "ALB-060: epochs=1 exhausts data before max_steps reached"
+  depends_on:
+    - "gradient-accumulation-kernel-v1"
+    - "training-gpu-kernel-v1"
+
+equations:
+  steps_per_epoch:
+    formula: |
+      steps_per_epoch = floor(num_sequences / micro_batch_size / gradient_accumulation_steps)
+    domain: |
+      num_sequences: total training sequences (rows in Parquet)
+      micro_batch_size: per-GPU batch size (config.data.batch_size)
+      gradient_accumulation_steps: optimizer steps per micro-batch cycle (config.training.gradient_accumulation)
+    codomain: "Integer: number of optimizer steps per full pass through the data"
+    invariants:
+      - "steps_per_epoch >= 1 (at least one optimizer step per epoch)"
+      - "steps_per_epoch is deterministic given fixed data size and config"
+      - "Remainder batches (num_sequences mod (micro_batch_size * grad_accum)) are dropped"
+
+  total_achievable_steps:
+    formula: |
+      total_achievable_steps = num_epochs * steps_per_epoch
+    domain: |
+      num_epochs: config.training.epochs
+      steps_per_epoch: from steps_per_epoch equation
+    codomain: "Integer: maximum optimizer steps the config can produce"
+    invariants:
+      - "total_achievable_steps >= max_steps when max_steps is set"
+      - "If total_achievable_steps < max_steps, training ends early (BUG — ALB-060)"
+      - "If max_steps not set, total_achievable_steps = num_epochs * steps_per_epoch exactly"
+
+  effective_batch_size:
+    formula: |
+      effective_batch_size = micro_batch_size * gradient_accumulation_steps
+      tokens_per_step = effective_batch_size * seq_len
+    domain: |
+      micro_batch_size: config.data.batch_size
+      gradient_accumulation_steps: config.training.gradient_accumulation
+      seq_len: config.data.seq_len
+    codomain: "Integer: sequences and tokens consumed per optimizer step"
+    invariants:
+      - "tokens_per_step is the actual compute budget per weight update"
+      - "For Albor 350M: 4 * 128 * 1024 = 524,288 tokens/step"
+
+  total_training_tokens:
+    formula: |
+      total_tokens = min(max_steps, total_achievable_steps) * tokens_per_step
+    domain: |
+      max_steps: config.training.max_steps (may be None)
+      total_achievable_steps: from total_achievable_steps equation
+      tokens_per_step: from effective_batch_size equation
+    codomain: "Integer: total tokens the model will see during training"
+    invariants:
+      - "total_tokens should approximate Chinchilla-optimal: ~20 * num_params"
+      - "For 350M model: Chinchilla-optimal ≈ 7B tokens"
+      - "Minimum viable: 10× num_params ≈ 3.5B tokens"
+
+  lr_warmup_coverage:
+    formula: |
+      warmup_fraction = warmup_steps / actual_total_steps
+      where actual_total_steps = min(max_steps, total_achievable_steps)
+    domain: |
+      warmup_steps: config.training.warmup_steps
+      actual_total_steps: effective number of steps training will run
+    codomain: "Ratio [0, 1]: fraction of training spent in warmup"
+    invariants:
+      - "warmup_steps <= actual_total_steps (warmup must complete)"
+      - "warmup_fraction <= 0.10 (warmup should be ≤10% of total training)"
+      - "If warmup_steps > actual_total_steps, peak LR is NEVER reached (BUG — ALB-060)"
+      - "LR at step t during warmup: lr(t) = lr_peak * (t / warmup_steps)"
+
+  cosine_schedule:
+    formula: |
+      lr(t) = lr_min + 0.5 * (lr_peak - lr_min) * (1 + cos(pi * (t - warmup_steps) / (total_steps - warmup_steps)))
+      for t in [warmup_steps, total_steps]
+    domain: |
+      t: current step
+      lr_peak: config.optimizer.lr
+      lr_min: lr_peak * 0.1 (convention: 10% of peak)
+      warmup_steps: config.training.warmup_steps
+      total_steps: actual_total_steps
+    codomain: "Learning rate at step t, in [lr_min, lr_peak]"
+    invariants:
+      - "lr(warmup_steps) = lr_peak (cosine starts at peak)"
+      - "lr(total_steps) = lr_min (cosine ends at minimum)"
+      - "lr is monotonically non-increasing for t >= warmup_steps"
+
+  minimum_epochs_for_steps:
+    formula: |
+      min_epochs = ceil(max_steps / steps_per_epoch)
+    domain: |
+      max_steps: target number of optimizer steps
+      steps_per_epoch: from steps_per_epoch equation
+    codomain: "Integer: minimum epochs needed to reach max_steps"
+    invariants:
+      - "config.training.epochs >= min_epochs (HARD REQUIREMENT)"
+      - "Setting epochs < min_epochs guarantees early termination (ALB-060)"
+
+proof_obligations:
+  - type: invariant
+    property: "Epoch count sufficient for max_steps"
+    formal: "num_epochs * steps_per_epoch >= max_steps"
+    tolerance: 0
+    applies_to: total_achievable_steps
+
+  - type: invariant
+    property: "Warmup completes before training ends"
+    formal: "warmup_steps < actual_total_steps"
+    tolerance: 0
+    applies_to: lr_warmup_coverage
+
+  - type: bound
+    property: "Warmup fraction bounded"
+    formal: "warmup_steps / actual_total_steps <= 0.10"
+    applies_to: lr_warmup_coverage
+
+  - type: invariant
+    property: "Peak learning rate reached"
+    formal: "exists step t: lr(t) == lr_peak (t = warmup_steps)"
+    tolerance: 0
+    applies_to: cosine_schedule
+
+  - type: invariant
+    property: "Effective batch size matches config"
+    formal: "tokens_per_step == batch_size * grad_accum * seq_len"
+    tolerance: 0
+    applies_to: effective_batch_size
+
+  - type: bound
+    property: "Training tokens sufficient"
+    formal: "total_training_tokens >= 10 * num_params (minimum viable)"
+    applies_to: total_training_tokens
+
+  - type: invariant
+    property: "Steps per epoch positive"
+    formal: "steps_per_epoch >= 1"
+    tolerance: 0
+    applies_to: steps_per_epoch
+
+  - type: invariant
+    property: "Data-step relationship is algebraically exact"
+    formal: "actual_steps == min(max_steps, num_epochs * floor(num_sequences / (batch_size * grad_accum)))"
+    tolerance: 0
+    applies_to: total_achievable_steps
+
+kernel_structure:
+  phases:
+    - name: config_validation
+      description: "Validate YAML config algebraic consistency before training"
+      invariant: "All equations satisfied — reject config that violates any proof obligation"
+    - name: epoch_loop
+      description: "Outer loop iterates over epochs, inner loop over batches"
+      invariant: "step counter increments exactly once per grad_accum micro-batches"
+    - name: lr_schedule
+      description: "Learning rate warmup then cosine decay"
+      invariant: "lr(t) follows piecewise: linear warmup [0, warmup_steps), cosine [warmup_steps, total_steps]"
+    - name: early_stop
+      description: "Training terminates when max_steps reached or epochs exhausted"
+      invariant: "If max_steps set: stop at min(max_steps, total_achievable_steps)"
+
+falsification_tests:
+  - id: FALSIFY-CFG-001
+    rule: "Epoch count must be sufficient for max_steps"
+    prediction: "With 22079 seqs, batch=4, accum=128: steps_per_epoch=43. epochs=1 gives 43 steps. max_steps=5000 UNREACHABLE."
+    test: |
+      Compute steps_per_epoch = floor(22079 / 4 / 128) = 43.
+      Compute total_achievable_steps = 1 * 43 = 43.
+      Assert total_achievable_steps (43) < max_steps (5000).
+      This MUST fail validation — it proves ALB-060.
+    if_fails: "Config validation does not check epoch/step sufficiency"
+
+  - id: FALSIFY-CFG-002
+    rule: "LR warmup completes within training duration"
+    prediction: "warmup_steps=2000, actual_total_steps=43: warmup NEVER completes. Peak LR never reached."
+    test: |
+      Compute actual_total_steps = min(5000, 43) = 43.
+      Assert warmup_steps (2000) > actual_total_steps (43).
+      Compute max LR reached = 3e-4 * (43/2000) = 6.45e-6.
+      Assert max LR reached (6.45e-6) << lr_peak (3e-4).
+    if_fails: "LR schedule not validated against achievable steps"
+
+  - id: FALSIFY-CFG-003
+    rule: "Fixed config reaches max_steps"
+    prediction: "With epochs=117, same data/batch/accum: total_achievable_steps=117*43=5031 >= 5000"
+    test: |
+      Set epochs=ceil(5000/43)=117.
+      Compute total_achievable_steps = 117 * 43 = 5031.
+      Assert total_achievable_steps (5031) >= max_steps (5000).
+      Assert warmup_steps (2000) < 5031.
+    if_fails: "Epoch calculation for min_epochs is wrong"
+
+  - id: FALSIFY-CFG-004
+    rule: "Training tokens sufficient for model size"
+    prediction: "43 steps * 524288 tokens/step = 22.5M tokens. 350M model needs >> 22.5M."
+    test: |
+      Compute total_tokens = 43 * 4 * 128 * 1024 = 22,544,384.
+      Compute chinchilla_min = 10 * 370_000_000 = 3,700,000,000.
+      Assert total_tokens (22.5M) << chinchilla_min (3.7B).
+      The model is undertrained by 164×.
+    if_fails: "No data sufficiency check in training config validation"
+
+  - id: FALSIFY-CFG-005
+    rule: "Corrected config produces meaningful training"
+    prediction: "epochs=117, max_steps=5000: LR reaches peak, loss decreases significantly"
+    test: |
+      Set epochs=117 in pretrain-350m.yaml.
+      Run 50 steps of 350M training.
+      Assert loss at step 50 < loss at step 0 (learning is occurring).
+      Assert lr at step 50 > 1e-5 (warmup is progressing).
+    if_fails: "Training loop has additional bugs beyond config (check ALB-042)"
+
+  - id: FALSIFY-CFG-006
+    rule: "Warmup fraction bounded at 10%"
+    prediction: "warmup_steps / actual_total_steps <= 0.10 for valid configs"
+    test: |
+      Config: warmup_steps=500, max_steps=5000, epochs=117, steps_per_epoch=43.
+      actual_total_steps = min(5000, 117*43) = 5000.
+      warmup_fraction = 500 / 5000 = 0.10.
+      Assert warmup_fraction <= 0.10.
+      Config: warmup_steps=2000, max_steps=5000. warmup_fraction = 0.40.
+      Assert validation REJECTS this config (warmup > 10% of training).
+    if_fails: "No upper bound check on warmup fraction — excessive warmup wastes training budget"
+
+  - id: FALSIFY-CFG-007
+    rule: "Peak learning rate is reached"
+    prediction: "LR schedule reaches lr_peak at exactly step warmup_steps"
+    test: |
+      Config: lr_peak=3e-4, warmup_steps=500, max_steps=5000.
+      Compute lr(500) using warmup formula: lr = 3e-4 * (500/500) = 3e-4.
+      Assert lr(500) == lr_peak within 1e-8.
+      Assert lr(499) < lr_peak (still in warmup).
+      Assert lr(501) <= lr_peak (cosine decay has begun).
+    if_fails: "Warmup formula has off-by-one or cosine schedule starts at wrong step"
+
+  - id: FALSIFY-CFG-008
+    rule: "Steps per epoch is positive"
+    prediction: "steps_per_epoch >= 1 for any valid config"
+    test: |
+      Config: num_sequences=1, batch_size=1, grad_accum=1.
+      steps_per_epoch = floor(1 / 1 / 1) = 1.
+      Assert steps_per_epoch >= 1.
+      Config: num_sequences=3, batch_size=4, grad_accum=1.
+      steps_per_epoch = floor(3 / 4) = 0.
+      Assert validation REJECTS this config (zero steps per epoch means no training).
+    if_fails: "Config allows zero steps per epoch — training loop runs with no optimizer updates"
+
+kani_harnesses:
+  - id: KANI-CFG-001
+    obligation: CFG-INV-001
+    property: "Epoch sufficiency invariant holds for all valid configs"
+    bound: 100
+    strategy: stub_float
+    solver: cadical
+    harness: verify_epoch_sufficiency
+
+  - id: KANI-CFG-002
+    obligation: CFG-INV-002
+    property: "Warmup steps always less than achievable steps for valid configs"
+    bound: 100
+    strategy: stub_float
+    solver: cadical
+    harness: verify_warmup_coverage
+
+qa_gate:
+  id: F-CFG-001
+  name: "Training Configuration Contract"
+  description: "Pre-training config algebraic consistency — epochs, steps, LR schedule, data sufficiency"
+  checks:
+    - "epoch_step_sufficiency"
+    - "warmup_coverage"
+    - "warmup_fraction_bounded"
+    - "peak_lr_reached"
+    - "effective_batch_size"
+    - "training_tokens_sufficient"
+    - "steps_per_epoch_positive"
+    - "data_step_algebraic"
+  pass_criteria: "All 5 falsification tests pass + 2 Kani harnesses verify. FALSIFY-CFG-001 and FALSIFY-CFG-002 MUST detect ALB-060."
+  falsification: "Set epochs=1 with large max_steps to verify detection of insufficient epochs"

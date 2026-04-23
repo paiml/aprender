@@ -1,0 +1,184 @@
+# gradient-accumulation-kernel-v1.yaml — ALB-017
+#
+# Provable contract for gradient accumulation.
+# Accumulating over N micro-batches must be numerically equivalent to full-batch gradient.
+
+metadata:
+  version: "2.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/grad_accum.rs"
+  promoted_from: "albor@be23737 contracts/gradient-accumulation-kernel-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-01"
+  updated: "2026-03-03"
+  author: "PAIML Engineering"
+  description: "Gradient accumulation kernel — numerical equivalence of micro-batch accumulation"
+  changelog:
+    - "v2.0.0: Add CUDA trainer conformance gap (ALB-066). CudaTransformerTrainer does per-sequence optimizer updates, so gradient_accumulation config parameter just increases sequences per step without changing optimization granularity."
+  references:
+    - "Goyal et al. (2017) Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour"
+    - "ALB-066: gradient_accumulation semantics in CudaTransformerTrainer"
+  depends_on:
+    - "adamw-kernel-v1"
+
+equations:
+  accumulation:
+    formula: "G_accum = (1/N) * sum_{i=1}^{N} g_i"
+    domain: "g_i: gradient from micro-batch i, N: accumulation steps"
+    codomain: "G_accum: accumulated gradient tensor"
+    invariants:
+      - "G_accum approximates G_full within fp tolerance"
+      - "N=1 => G_accum = g_1 exactly"
+
+  loss_scaling:
+    formula: "L_scaled = (1/N) * L_micro"
+    domain: "L_micro: micro-batch loss, N: accumulation steps"
+    codomain: "L_scaled: scaled loss for backward pass"
+    invariants:
+      - "Total loss = mean of micro-batch losses (not sum)"
+      - "Gradients are correctly scaled by 1/N"
+
+proof_obligations:
+  - type: equivalence
+    property: "Numerical equivalence"
+    formal: "||G_accum - G_full|| < epsilon (1e-5 fp32, 1e-3 fp16)"
+    tolerance: 1.0e-5
+    applies_to: all
+
+  - type: invariant
+    property: "Loss scaling correctness"
+    formal: "Total loss = mean(micro_batch_losses)"
+    applies_to: all
+
+  - type: invariant
+    property: "Gradient zeroing between cycles"
+    formal: "No stale gradients from previous accumulation cycle"
+    applies_to: all
+
+  - type: invariant
+    property: "Optimizer step frequency"
+    formal: "optimizer.step() called once per N micro-batches"
+    applies_to: all
+
+  - type: invariant
+    property: "Mixed precision accumulation in fp32"
+    formal: "Accumulation buffer dtype is fp32 even when forward uses fp16"
+    applies_to: all
+
+  - type: invariant
+    property: "Gradient clipping after accumulation"
+    formal: "Clipping applied to accumulated gradient, not per micro-batch"
+    applies_to: all
+
+kernel_structure:
+  phases:
+    - name: zero_gradients
+      description: "Zero gradient buffers at start of accumulation cycle"
+      invariant: "all gradient values are 0.0"
+    - name: accumulate
+      description: "Add scaled micro-batch gradients: G += (1/N) * g_i"
+      invariant: "accumulation buffer is fp32"
+    - name: clip
+      description: "Apply gradient clipping to accumulated gradient"
+      invariant: "||G_clipped|| <= max_norm"
+    - name: step
+      description: "Optimizer updates parameters using accumulated gradient"
+      invariant: "called exactly once per N micro-batches"
+
+falsification_tests:
+  - id: FALSIFY-GA-001
+    rule: "Numerical equivalence"
+    prediction: "Accumulated gradient matches full-batch gradient within tolerance"
+    test: "Compute both ways on 1000 random inputs, assert max diff < 1e-5"
+    if_fails: "Scaling factor (1/N) not applied, or accumulation buffer wrong dtype"
+
+  - id: FALSIFY-GA-002
+    rule: "Gradient zeroing"
+    prediction: "No gradient leakage between accumulation cycles"
+    test: "Run two cycles, verify cycle 2 gradients independent of cycle 1"
+    if_fails: "Gradient buffers not zeroed before new cycle"
+
+  - id: FALSIFY-GA-003
+    rule: "Step count"
+    prediction: "Exactly 3 optimizer steps for 3N micro-batches"
+    test: "Track step count over 3 full cycles"
+    if_fails: "Step called per micro-batch instead of per cycle"
+
+  - id: FALSIFY-GA-004
+    rule: "Clip after accumulate"
+    prediction: "One large micro-batch gradient triggers clipping once on total"
+    test: "Inject gradient > max_norm in one micro-batch, verify single clip"
+    if_fails: "Clipping applied per micro-batch instead of on accumulated total"
+
+  - id: FALSIFY-GA-005
+    rule: "Mixed precision accumulation in fp32"
+    prediction: "Accumulation buffer dtype is fp32 even when forward pass uses fp16"
+    test: |
+      Configure mixed-precision training with fp16 forward pass.
+      Run N=4 micro-batches of gradient accumulation.
+      Inspect accumulation buffer dtype — assert it is f32, not f16.
+      Verify no precision loss by comparing accumulated result to f32 reference.
+    if_fails: "Accumulation buffer uses fp16, causing catastrophic cancellation in gradient sums"
+
+  - id: FALSIFY-GA-006
+    rule: "Loss scaling correctness"
+    prediction: "Total loss equals mean of micro-batch losses, not sum"
+    test: |
+      Run N=4 micro-batches with known per-micro-batch losses [1.0, 2.0, 3.0, 4.0].
+      Assert reported total loss = mean(1.0, 2.0, 3.0, 4.0) = 2.5.
+      Assert total loss != sum (10.0) — if sum, scaling factor 1/N was not applied.
+    if_fails: "Loss not divided by N, causing gradient magnitudes to scale with accumulation steps"
+
+kani_harnesses:
+  - id: KANI-GA-001
+    obligation: GA-EQ-001
+    property: "Accumulation equivalence for small batch"
+    bound: 4
+    strategy: stub_float
+    solver: cadical
+    harness: verify_accumulation_equivalence
+
+  - id: KANI-GA-002
+    obligation: GA-INV-001
+    property: "Gradient zeroing invariant"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_gradient_zeroing
+
+conformance:
+  cpu_trainer:
+    status: "UNKNOWN"
+    notes: "TransformerTrainer (CPU path) may implement true gradient accumulation. Not verified."
+  cuda_trainer:
+    status: "NON-CONFORMANT"
+    notes: |
+      CudaTransformerTrainer does per-sequence optimizer updates via per-block
+      interleaved backward+optimize (CudaGradWorkspace shared across blocks,
+      overwritten per block). Each sequence triggers N_blocks optimizer steps.
+
+      The `gradient_accumulation` config parameter increases the number of
+      sequences processed per reported "step" but does NOT:
+        - Accumulate gradients across sequences (workspace overwritten per block)
+        - Apply 1/N scaling
+        - Defer optimizer step to end of cycle
+
+      Effect: `gradient_accumulation: K` processes K sequences per step,
+      each with independent per-block optimizer updates. This is NOT
+      gradient accumulation — it's just a larger "step" counter stride.
+
+      Fix: Implement true accumulation by (1) zeroing workspace at cycle start,
+      (2) accumulating scaled gradients across sequences, (3) single optimizer
+      step at cycle end. Blocked by CudaGradWorkspace being shared per block.
+    gap_ref: "ALB-066"
+
+qa_gate:
+  id: F-GA-001
+  name: "Gradient Accumulation Contract"
+  description: "Gradient accumulation correctness for Albor training"
+  checks:
+    - "numerical_equivalence"
+    - "gradient_zeroing"
+    - "step_count"
+    - "clip_after_accumulate"
+  pass_criteria: "All 4 falsification tests pass + 2 Kani harnesses verify"
+  falsification: "Remove 1/N scaling to verify equivalence detection"

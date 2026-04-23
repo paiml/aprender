@@ -1,0 +1,120 @@
+# Contract: GPU-Resident Gradient Accumulation (ALB-091)
+#
+# Root cause: CudaTransformerTrainer with ga>1 downloads gradients to CPU
+# every micro-batch via stream.synchronize() + D2H. 24 blocks × ga syncs
+# per optimizer step = massive pipeline stalls.
+#
+# Measured impact: ga=1 → 7.6K tok/s (22% MFU), ga=16 → 2.9K tok/s (8.5% MFU).
+# Same model, same GPU, same tokens/micro-batch. 2.6x throughput regression.
+#
+# Fix: Accumulate gradients in GPU memory. Run optimizer from GPU accum buffers.
+# Zero D2H during accumulation phase. Only stream sync at optimizer step boundary.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/cuda/grad_accum.rs"
+  promoted_from: "albor@be23737 contracts/gpu-gradient-accumulation-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  description: "GPU-resident gradient accumulation — eliminate D2H bottleneck for ga>1"
+  references:
+    - "ALB-091"
+    - "entrenar cuda_trainer.rs download_workspace_to_accum()"
+
+equations:
+  accumulation_pipeline:
+    formula: |
+      For each optimizer step (ga micro-batches):
+        for micro_batch in 0..ga:
+          forward(input_ids[micro_batch])              # GPU
+          backward(loss)                                # GPU → workspace grads
+          for block in 0..num_blocks:
+            gpu_accum[block] += workspace[block]        # GPU saxpy (NO D2H)
+        stream.synchronize()                            # ONE sync per optimizer step
+        for block in 0..num_blocks:
+          optimizer_step(weights[block], gpu_accum[block] / ga)  # GPU
+          gpu_accum[block] = 0                          # GPU memset
+    domain: "ga >= 1, num_blocks = 24 for 350M model"
+    codomain: "Weights updated once per ga micro-batches"
+    invariants:
+      - "Zero D2H transfers during accumulation (only at optimizer step boundary)"
+      - "One stream.synchronize() per optimizer step (not per micro-batch)"
+      - "GPU accum buffers sized identically to CudaGradWorkspace weight buffers"
+      - "Accumulated gradients divided by ga before optimizer step"
+      - "Numerical equivalence: GPU accum matches CPU accum within fp32 tolerance"
+
+  vram_budget:
+    formula: |
+      Per block: 9 weight buffers × elements × 4 bytes
+      Total: num_blocks × per_block + lm_head_grad + final_norm_grad + embed_grad
+      For 350M: 24 × (4×H² + 3×H×I + 2×H) × 4 ≈ 335 MB
+    domain: "350M model: H=1024, I=4096, layers=24"
+    codomain: "~335 MB additional VRAM (2.3% of 24 GB)"
+    invariants:
+      - "VRAM overhead < 500 MB for 350M model"
+      - "Total training VRAM < 20 GB (current 14.4 + 0.335 = 14.7 GB)"
+
+proof_obligations:
+  - type: invariant
+    property: "Throughput recovery with ga>1"
+    formal: "tok/s(ga=16) >= 0.85 × tok/s(ga=1) for same model and batch_size"
+    tolerance: 0.1
+
+  - type: invariant
+    property: "Numerical equivalence to CPU accumulation"
+    formal: "max(|gpu_accum_grads - cpu_accum_grads|) < 1e-4 after ga micro-batches"
+
+  - type: invariant
+    property: "Zero D2H during accumulation"
+    formal: "cuMemcpyDtoH count == 0 between optimizer steps (excluding loss reporting)"
+
+falsification_tests:
+  - id: FALSIFY-GPUACCUM-001
+    rule: "GPU accumulation matches CPU accumulation"
+    prediction: "After ga=4 micro-batches, GPU and CPU accumulated gradients agree within fp32"
+    test: |
+      Run 4 micro-batches with both GPU accum and CPU accum (current path).
+      Compare all block gradients element-wise.
+      Assert: max absolute difference < 1e-4
+    if_fails: "GPU accumulation has a numerical bug (ordering, missing zero-init, etc.)"
+
+  - id: FALSIFY-GPUACCUM-002
+    rule: "Throughput scales with ga=1 baseline"
+    prediction: "ga=16 with GPU accum achieves >= 85% of ga=1 throughput"
+    test: |
+      Run 100 steps with ga=1 and ga=16 (GPU accum) on same model.
+      Compare tok/s. Assert: ratio >= 0.85.
+    if_fails: "GPU accumulation adds unexpected overhead (extra kernel launches, sync)"
+
+  - id: FALSIFY-GPUACCUM-003
+    rule: "VRAM fits within budget"
+    prediction: "350M model with GPU accum buffers uses < 20 GB total VRAM"
+    test: |
+      Initialize CudaTransformerTrainer with GPU accum for 350M model.
+      Check nvidia-smi. Assert: VRAM < 20 GB.
+    if_fails: "Buffer allocation is larger than expected"
+
+kani_harnesses:
+  - id: KANI-GPUACCUM-001
+    obligation: accumulation_pipeline
+    property: "GPU accum buffers zeroed before each optimizer step and divided by ga"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_accum_zero_and_divide
+
+  - id: KANI-GPUACCUM-002
+    obligation: vram_budget
+    property: "Accum buffer allocation does not exceed per-block weight buffer size"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_accum_vram_bounded
+
+qa_gate:
+  id: F-GPUACCUM-001
+  name: "GPU-Resident Gradient Accumulation Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "gpu_cpu_accum_equivalence"
+    - "throughput_recovery_ga16"
+    - "vram_within_budget"

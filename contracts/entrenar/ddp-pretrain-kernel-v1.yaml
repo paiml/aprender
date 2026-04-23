@@ -1,0 +1,208 @@
+# ddp-pretrain-kernel-v1.yaml — C-DDP-001
+#
+# Provable contract for data-parallel distributed pretraining.
+# Validates weight consistency across workers after per-block AllReduce.
+#
+# Motivation: CudaTransformerTrainer uses interleaved backward+optimizer
+# with shared CudaGradWorkspace. DDP must accumulate per-block gradients
+# into dedicated buffers, AllReduce them, then run optimizer_step with
+# averaged gradients. This contract proves workers remain synchronized.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/ddp/pretrain.rs"
+  promoted_from: "albor@be23737 contracts/ddp-pretrain-kernel-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-03"
+  author: "PAIML Engineering"
+  description: "DDP pretrain weight consistency — per-block AllReduce correctness"
+  references:
+    - "CudaTransformerTrainer::gpu_backward() — per-block interleaved optimizer"
+    - "ALB-040: GPU-resident training architecture"
+    - "training-gpu-kernel-v1.yaml (single-GPU contract)"
+  depends_on:
+    - "training-gpu-kernel-v1"
+    - "ring-allreduce-kernel-v1"
+
+equations:
+  per_block_gradient_averaging:
+    formula: |
+      For each block b in [0, L):
+        avg_grad_b = (1/N) * sum_{w=0}^{N-1} grad_b_w
+      where grad_b_w is worker w's gradient for block b
+    domain: |
+      L: num_hidden_layers (24 for 350M)
+      N: world_size (number of workers)
+      grad_b_w: 9-component gradient set {w_q, w_k, w_v, w_o, gate, up, down, input_norm, post_attn_norm}
+    codomain: "Averaged gradient per block, identical on all workers"
+    invariants:
+      - "AllReduce is deterministic: same inputs produce bitwise-identical outputs"
+      - "Block gradients are accumulated before AllReduce, not streamed"
+      - "Optimizer step uses averaged gradients, not local gradients"
+
+  weight_consistency:
+    formula: |
+      After step t, for all workers w1, w2 in [0, N):
+        weights_t(w1) == weights_t(w2)
+      Proof: initial weights identical (broadcast from rank 0) +
+             averaged gradients identical (AllReduce) +
+             deterministic optimizer (AdamW with identical states) →
+             weights remain identical by induction
+    domain: "All trainable parameters: blocks, LM head, final norm, embeddings"
+    codomain: "Boolean: all workers have identical weights"
+    invariants:
+      - "Initial weights broadcast from rank 0 to all workers"
+      - "AllReduce produces identical averaged gradients on all workers"
+      - "AdamW state (m, v, step) initialized identically on all workers"
+      - "f32 arithmetic is deterministic given identical inputs and order"
+
+  non_block_gradient_averaging:
+    formula: |
+      For each non-block component c in {lm_head, final_norm, embedding}:
+        avg_grad_c = (1/N) * sum_{w=0}^{N-1} grad_c_w
+    domain: "Non-block trainable parameters"
+    codomain: "Averaged gradient for non-block components"
+    invariants:
+      - "LM head, final norm, and embedding gradients AllReduced separately"
+      - "Embedding gradient aggregated on CPU after GPU backward"
+      - "C-EMBED-GRAD-001 clipping applied after AllReduce, before optimizer"
+
+  communication_overlap:
+    formula: |
+      AllReduce(block[i]) overlaps with backward(block[i-1])
+      Timeline: backward(b[i]) → start_allreduce(b[i]) → backward(b[i-1]) → wait_allreduce(b[i]) → optim(b[i])
+      Overlap ratio = backward_time / allreduce_time
+    domain: "Block indices in reverse order [L-1, L-2, ..., 0]"
+    codomain: "Overlap ratio >= 0.5 for 350M model on localhost"
+    invariants:
+      - "AllReduce of block[i] starts immediately after its backward"
+      - "AllReduce of block[i] must complete before optimizer_step(block[i])"
+      - "No data dependency between AllReduce(block[i]) and backward(block[i-1])"
+
+proof_obligations:
+  - type: invariant
+    property: "Weight consistency after N steps"
+    formal: "forall w1 w2 in workers, forall t in [0, max_steps]: weights_t(w1) == weights_t(w2)"
+    tolerance: 0
+    applies_to: weight_consistency
+
+  - type: invariant
+    property: "AllReduce output is mean of inputs"
+    formal: "avg_grad = (1/N) * sum(local_grads)"
+    tolerance: 1.0e-6
+
+  - type: bound
+    property: "Gradient buffer size matches block parameters"
+    formal: "accum_buf[b].len() == sum(param_sizes(block[b])) for all b in [0, L)"
+    tolerance: 0
+    applies_to: per_block_gradient_averaging
+
+  - type: invariant
+    property: "Jidoka halt on NaN gradient from any worker"
+    formal: "if has_nan(grad_b_w) for any w, b: halt all workers"
+    tolerance: 0
+    applies_to: per_block_gradient_averaging
+
+  - type: bound
+    property: "DDP overhead < 5% of step time on localhost"
+    formal: "allreduce_time / step_time < 0.05"
+    tolerance: 0.02
+
+kernel_structure:
+  phases:
+    - name: init
+      description: "Broadcast weights from rank 0 to all workers"
+      invariant: "All workers have identical initial weights (broadcast from rank 0)"
+    - name: forward
+      description: "Each worker runs forward pass on its disjoint data shard"
+      invariant: "Each worker runs forward on disjoint data shard"
+    - name: backward_allreduce
+      description: "Per-block backward, gradient accumulation, AllReduce, optimizer step"
+      invariant: "Per-block: accumulate → AllReduce → optimizer (reverse order)"
+    - name: non_block_allreduce
+      description: "AllReduce and apply non-block gradients (LM head, norm, embeddings)"
+      invariant: "LM head, final norm, embedding gradients AllReduced and applied"
+    - name: consistency_check
+      description: "Periodic weight hash comparison across all workers"
+      invariant: "Periodic BLAKE3 weight hash comparison across workers"
+
+falsification_tests:
+  - id: FALSIFY-DDP-001
+    rule: "Local gradients must not be used for optimizer step"
+    prediction: "If worker skips AllReduce and uses local gradients, weights diverge after 1 step"
+    test: |
+      2 workers, same data shard → gradients identical → weights identical
+      2 workers, different shards → local gradients differ → if no AllReduce, weights diverge
+      Assert weight divergence > 0 when AllReduce is skipped
+    if_fails: "Optimizer uses local gradients instead of AllReduced averages"
+
+  - id: FALSIFY-DDP-002
+    rule: "Gradient accumulation buffer must be zeroed between steps"
+    prediction: "If buffer not zeroed, step N+1 includes stale gradients from step N"
+    test: |
+      Run 2 steps. After step 1, verify accum buffer is zeroed.
+      If not zeroed, loss diverges from single-GPU baseline.
+    if_fails: "Stale gradients contaminate subsequent steps"
+
+  - id: FALSIFY-DDP-003
+    rule: "NaN in any worker's gradient must halt all workers"
+    prediction: "Inject NaN into worker 1's gradient. All workers must detect and halt."
+    test: |
+      Worker 0: valid gradients
+      Worker 1: replace grad[0] with NaN
+      Assert: coordinator detects NaN in averaged gradient
+      Assert: all workers receive halt signal
+    if_fails: "NaN propagates silently through training"
+
+  - id: FALSIFY-DDP-004
+    rule: "AllReduce output is arithmetic mean of inputs"
+    prediction: "For N=2 workers with known gradients, AllReduce output equals element-wise mean"
+    test: |
+      Worker 0 gradient: [2.0, 4.0, 6.0]
+      Worker 1 gradient: [8.0, 10.0, 12.0]
+      Expected AllReduce output on both workers: [5.0, 7.0, 9.0]
+      Assert max absolute difference < 1e-6 on both workers.
+    if_fails: "AllReduce computes sum instead of mean, or division by N is missing"
+
+  - id: FALSIFY-DDP-005
+    rule: "DDP overhead < 5% of step time on localhost"
+    prediction: "AllReduce communication time is < 5% of total step time for 350M model on localhost"
+    test: |
+      Train 350M model with N=2 workers on localhost for 20 steps.
+      Measure total step time and AllReduce time separately using CUDA events.
+      Compute overhead ratio = allreduce_time / step_time.
+      Assert overhead ratio < 0.05 (with 0.02 tolerance).
+    if_fails: "TCP ring AllReduce has excessive latency, or communication-computation overlap is broken"
+
+kani_harnesses:
+  - id: KANI-DDP-001
+    obligation: weight_consistency
+    property: "Weights identical across workers after AllReduce + optimizer step"
+    bound: 4
+    strategy: stub_float
+    harness: verify_weight_consistency_after_step
+
+  - id: KANI-DDP-002
+    obligation: per_block_gradient_averaging
+    property: "Gradient buffer size matches block parameter count"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_gradient_buffer_size
+
+  - id: KANI-DDP-003
+    obligation: per_block_gradient_averaging
+    property: "NaN in any worker gradient triggers halt on all workers"
+    bound: 4
+    strategy: stub_float
+    harness: verify_nan_gradient_halts_all
+
+qa_gate:
+  id: F-DDP-001
+  name: "DDP Pretrain Weight Consistency"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "weight_consistency_after_allreduce"
+    - "gradient_buffer_zeroed_between_steps"
+    - "nan_gradient_halts_all_workers"

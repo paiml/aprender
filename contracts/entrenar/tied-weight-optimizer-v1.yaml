@@ -1,0 +1,103 @@
+# tied-weight-optimizer-v1.yaml — C-TIEDOPT-001
+#
+# Provable contract for tied weight (embedding ↔ LM head) optimizer parity.
+#
+# When tie_word_embeddings=True, PyTorch shares ONE nn.Parameter between
+# embed_tokens.weight and lm_head.weight. Autograd accumulates gradients
+# from BOTH paths to this single parameter. The optimizer runs ONE step
+# with the combined gradient.
+#
+# Reference: HuggingFace transformers modeling_utils.py:2533
+#   setattr(parent, name, source_param)  # lm_head.weight = embed_tokens.weight
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/optim/tied_weights.rs"
+  promoted_from: "albor@be23737 contracts/tied-weight-optimizer-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-27"
+  author: "PAIML Engineering"
+  description: "Tied weight optimizer — single step with combined gradient"
+  references:
+    - "entrenar#314: tied weight gradient not accumulated"
+    - "HuggingFace transformers tie_weights() — modeling_utils.py:2533"
+    - "PyTorch autograd: shared parameters accumulate gradients"
+    - "Press & Wolf 2017: Using the Output Embedding to Improve Language Models"
+
+equations:
+  tied_weight_gradient:
+    formula: |
+      For tied weights W = embed_tokens.weight = lm_head.weight:
+
+      Forward:
+        h = W[input_ids]                    # Embedding lookup
+        logits = hidden @ W^T               # LM head projection (tied)
+
+      Backward:
+        grad_lm = ∂L/∂W via LM head path   # From cross-entropy → logits → W
+        grad_embed = ∂L/∂W via embedding    # From block[0] → input hidden → W
+
+      Combined gradient (PyTorch behavior):
+        grad_W = grad_lm + grad_embed       # Accumulated to same parameter
+
+      Optimizer step (ONE step, ONE set of m/v):
+        m = β₁·m + (1-β₁)·grad_W
+        v = β₂·v + (1-β₂)·grad_W²
+        W = W - lr · m̂/(√v̂ + ε) - lr·wd·W
+
+    domain: "W: [V, H], grad_lm: [V, H], grad_embed: [V, H]"
+    codomain: "Updated W with combined gradient signal"
+    invariants:
+      - "ONE optimizer step, not two"
+      - "ONE set of m/v buffers, not two"
+      - "grad_W = grad_lm + grad_embed (both paths contribute)"
+      - "GPU and CPU copies of W are identical after step"
+
+proof_obligations:
+  - type: invariant
+    property: "Single optimizer state for tied weight"
+    formal: "count(optimizer_states[W]) == 1"
+    tolerance: 0
+    applies_to: tied_weight_gradient
+
+  - type: bound
+    property: "Combined gradient matches PyTorch"
+    formal: "|grad_W_entrenar - (grad_lm + grad_embed)| < epsilon"
+    tolerance: 0.001
+    applies_to: tied_weight_gradient
+
+falsification_tests:
+  - id: FALSIFY-TIED-001
+    rule: "Combined gradient larger than either alone"
+    prediction: "||grad_lm + grad_embed|| > max(||grad_lm||, ||grad_embed||) in general"
+    test: |
+      Run one step. Compare ||combined|| vs ||lm_only|| and ||embed_only||.
+      The combined gradient should generally be larger (unless they cancel).
+    if_fails: "Gradients not being combined — separate optimizer paths"
+
+  - id: FALSIFY-TIED-002
+    rule: "GPU and CPU weight copies identical after step"
+    prediction: "max(|lm_head_gpu - embed_cpu|) < 1e-6 after each step"
+    test: |
+      After optimizer step, download lm_head_weight_gpu.
+      Compare element-wise with embed_tokens.weight.
+    if_fails: "Re-upload from CPU to GPU is not happening"
+
+kani_harnesses:
+  - id: KANI-TIED-001
+    obligation: tied_weight_gradient
+    property: "Single optimizer step produces correct update"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_tied_weight_single_step
+
+qa_gate:
+  id: F-TIEDOPT-001
+  name: "Tied Weight Optimizer Correctness"
+  min_coverage: 0.95
+  max_complexity: 10
+  required_tests:
+    - "combined_gradient_test"
+    - "gpu_cpu_weight_sync"
+    - "single_optimizer_state"

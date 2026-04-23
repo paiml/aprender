@@ -1,0 +1,103 @@
+# Contract: Bitwise Deterministic Training (C-DETERM-001)
+#
+# When deterministic mode is enabled, two training runs with identical
+# configuration and seed produce bitwise-identical outputs at every step.
+# Ticket: entrenar #139 (R-084), Survey practice: #84
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/deterministic.rs"
+  promoted_from: "albor@be23737 contracts/deterministic-training-kernel-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  description: "Bitwise deterministic training — identical config+seed produces identical outputs"
+  references:
+    - "entrenar #139 (R-084)"
+    - "Survey practice #84"
+
+equations:
+  output_determinism:
+    formula: "forall step in [0, N]: loss(run_1, step) == loss(run_2, step)"
+    domain: "Two runs with identical config, seed, and data"
+    invariants:
+      - "Loss values are bitwise equal across two independent runs"
+
+  weight_determinism:
+    formula: "W_run1(t) == W_run2(t) for all t"
+    domain: "After any step t, all model weights"
+    invariants:
+      - "Weights are bitwise identical across runs at every step"
+
+  prng_chain:
+    formula: "RNG(t+1) = f(RNG(t), seed)"
+    domain: "PRNG state evolution"
+    invariants:
+      - "PRNG state evolves deterministically from seed — no external entropy"
+      - "CUBLAS_WORKSPACE_CONFIG is set to ':4096:8' before any cuBLAS call"
+      - "CUDNN_DETERMINISTIC=1 when deterministic mode is active"
+      - "CUDNN_BENCHMARK=0 when deterministic mode is active"
+      - "Data shuffle uses deterministic LCG PRNG seeded from config seed + epoch"
+      - "Weight initialization uses deterministic PRNG seeded from config seed"
+
+proof_obligations:
+  - type: invariant
+    property: "ReproducibilityConfig::apply() sets all required CUDA environment variables"
+    formal: "After apply(): CUBLAS_WORKSPACE_CONFIG == ':4096:8' AND CUDNN_DETERMINISTIC == '1' AND CUDNN_BENCHMARK == '0'"
+
+  - type: invariant
+    property: "TransformerTrainConfig propagates deterministic flag from YAML"
+    formal: "config.deterministic == true implies ReproducibilityConfig::apply() is called"
+
+  - type: invariant
+    property: "Data shuffling with same seed + epoch produces identical ordering"
+    formal: "shuffle(files, seed=S, epoch=E) == shuffle(files, seed=S, epoch=E) across runs"
+
+falsification_tests:
+  - id: FALSIFY-DETERM-001
+    rule: "Two deterministic runs produce identical loss"
+    prediction: "loss vectors are bitwise equal at step 10"
+    test: |
+      Train 10 steps twice with same config/data/seed, compare loss vectors.
+      Assert: loss_run1 == loss_run2 at every step.
+    if_fails: "Non-deterministic operation in forward or backward pass"
+
+  - id: FALSIFY-DETERM-002
+    rule: "Different seeds produce different loss sequences"
+    prediction: "seed=42 and seed=123 yield different losses"
+    test: |
+      Train 10 steps with seed=42 and seed=123, verify different losses.
+      Assert: loss_seed42 != loss_seed123 at step > 0.
+    if_fails: "Seed not actually used in computation"
+
+  - id: FALSIFY-DETERM-003
+    rule: "CUBLAS_WORKSPACE_CONFIG env var is set after apply()"
+    prediction: "Value is ':4096:8'"
+    test: |
+      Call ReproducibilityConfig::apply(), read env var.
+      Assert: CUBLAS_WORKSPACE_CONFIG == ':4096:8'
+    if_fails: "apply() broken or not called before cuBLAS operations"
+
+kani_harnesses:
+  - id: KANI-DETERM-001
+    obligation: output_determinism
+    property: "Identical config and seed produce identical loss at bounded steps"
+    bound: 8
+    strategy: stub_float
+    harness: verify_deterministic_loss
+
+  - id: KANI-DETERM-002
+    obligation: prng_chain
+    property: "PRNG state evolves deterministically from seed with no external entropy"
+    bound: 16
+    strategy: exhaustive
+    harness: verify_prng_determinism
+
+qa_gate:
+  id: F-DETERM-001
+  name: "Bitwise Deterministic Training"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "two_runs_identical_loss"
+    - "different_seeds_different_loss"
+    - "cublas_workspace_config_set"

@@ -1,0 +1,106 @@
+# gradient-clipping-v1.yaml — C-CLIP-001
+#
+# Provable contract for gradient clipping parity with PyTorch.
+#
+# Motivation: entrenar#311 — gradient clipping uses ||g||⁴ instead of ||g||,
+# causing 2.7x convergence gap. squared_sum_collect returns ||g||² but the
+# code squares it again, then divides max_norm by this value.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/grad_clip.rs"
+  promoted_from: "albor@be23737 contracts/gradient-clipping-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-27"
+  author: "PAIML Engineering"
+  description: "Gradient clipping L2 norm correctness — prevents over-clipping"
+  references:
+    - "entrenar#311: gradient clipping uses ||g||⁴"
+    - "entrenar#309: parent convergence gap issue"
+    - "PyTorch clip_grad_norm_: torch.nn.utils.clip_grad_norm_"
+
+equations:
+  l2_gradient_clipping:
+    formula: |
+      Given parameter gradients g_1, ..., g_n:
+        total_norm = sqrt(sum_i ||g_i||²)
+        clip_coef = min(max_norm / total_norm, 1.0)
+        g_i_clipped = g_i * clip_coef
+
+      After clipping: ||g_clipped|| <= max_norm
+    domain: "g_i: gradient tensors, max_norm: float > 0"
+    codomain: "Clipped gradients with L2 norm <= max_norm"
+    invariants:
+      - "total_norm = sqrt(sum(||g_i||²)), NOT sum(||g_i||²)"
+      - "clip_coef uses total_norm (L2), NOT total_norm² (squared L2)"
+      - "When total_norm <= max_norm: clip_coef = 1.0 (no clipping)"
+      - "When total_norm > max_norm: ||g_clipped|| = max_norm exactly"
+
+proof_obligations:
+  - type: invariant
+    property: "Clipped norm does not exceed max_norm"
+    formal: "||g_clipped|| <= max_norm + epsilon"
+    tolerance: 0.001
+    applies_to: l2_gradient_clipping
+
+  - type: invariant
+    property: "No clipping when norm is small"
+    formal: "||g|| <= max_norm → g_clipped == g"
+    tolerance: 0
+    applies_to: l2_gradient_clipping
+
+  - type: bound
+    property: "PyTorch parity"
+    formal: "|clip_coef_entrenar - clip_coef_pytorch| < 0.01"
+    tolerance: 0.01
+
+falsification_tests:
+  - id: FALSIFY-CLIP-001
+    rule: "clip_coef uses L2 norm, not squared norm"
+    prediction: |
+      For gradients with ||g|| = 10.0 and max_norm = 1.0:
+        clip_coef = 1.0 / 10.0 = 0.1 (NOT 1.0 / 100 = 0.01)
+    test: |
+      Create gradient buffer with known L2 norm = 10.0.
+      Compute clip_coef. Assert clip_coef ≈ 0.1.
+    if_fails: "clip_coef computed from squared norm — entrenar#311"
+
+  - id: FALSIFY-CLIP-002
+    rule: "squared_sum result not re-squared"
+    prediction: |
+      compute_workspace_clip_scale_gpu accumulates sum(x²) directly,
+      not sum(x²)² = sum(x⁴)
+    test: |
+      Set up gradient workspace with known values.
+      Call compute_workspace_clip_scale_gpu.
+      Assert total_sq == sum of individual ||g_i||².
+    if_fails: "squared_sum result is squared again — line 121 bug"
+
+  - id: FALSIFY-CLIP-003
+    rule: "Convergence parity at step 100"
+    prediction: |
+      After fixing clipping: entrenar loss at step 100 within 10%
+      of PyTorch (currently 26% gap)
+    test: |
+      Run entrenar 100 steps, run PyTorch canary 100 steps.
+      Assert |loss_e - loss_p| / loss_p < 0.10.
+    if_fails: "Additional backward pass bugs beyond clipping"
+
+kani_harnesses:
+  - id: KANI-CLIP-001
+    obligation: l2_gradient_clipping
+    property: "clip_coef = min(max_norm / sqrt(sum_sq), 1.0)"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_clip_coef_uses_sqrt
+
+qa_gate:
+  id: F-CLIP-001
+  name: "Gradient Clipping Correctness"
+  min_coverage: 0.95
+  max_complexity: 10
+  required_tests:
+    - "clip_coef_uses_l2_not_squared"
+    - "no_re_squaring_of_squared_sum"
+    - "convergence_parity_step_100"

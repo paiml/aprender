@@ -1,0 +1,107 @@
+# contracts/fresh-training-step-v1.yaml — ALB-117
+# C-FRESH-TRAIN-001: Initial step is 0 when loading weights from model_path
+#
+# When output_dir has no checkpoint (no model-step-N.apr, no model-best.apr),
+# training MUST start at step=0 regardless of the step encoded in model_path.
+# This prevents the LR schedule, AdamW bias correction, and max_steps check
+# from inheriting stale state from a source checkpoint.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/step_counter.rs"
+  promoted_from: "albor@be23737 contracts/fresh-training-step-v1.yaml per PMAT-698 Cat 1 training-kernel + SHIP-TWO-001 §3 row #9"
+  description: "Fresh training step counter starts at zero when no checkpoint in output_dir"
+  references:
+    - "ALB-117"
+    - "https://github.com/paiml/entrenar/issues/273"
+
+equations:
+  fresh_step:
+    formula: "initial_step = 0 when no checkpoint in output_dir"
+    domain: "output_dir contains no model-step-N.apr or model-best.apr"
+    invariants:
+      - "initial_step = 0 regardless of checkpoint_step in model_path APR metadata"
+      - "LR schedule, AdamW bias correction, max_steps check start from step 0"
+
+  resume_step:
+    formula: "initial_step = N when output_dir contains model-step-N.apr"
+    domain: "output_dir contains a checkpoint"
+    invariants:
+      - "checkpoint_step preserved from output_dir resume"
+
+falsification:
+  - name: "model_path with step does not leak"
+    given: "model.path = dir containing model-step-14500.apr, output_dir = empty"
+    when: "load_transformer_model(model_path, config, output_dir)"
+    then: "checkpoint_step = 0"
+
+  - name: "output_dir resume preserves step"
+    given: "output_dir = dir containing model-step-500.apr"
+    when: "load_transformer_model(model_path, config, output_dir)"
+    then: "checkpoint_step = 500"
+
+  - name: "max_steps not prematurely reached"
+    given: "model_path has step=14500, max_steps=5, output_dir empty"
+    when: "training loop starts"
+    then: "trainer.step() = 0 AND at least 5 train_batch() calls execute"
+
+proof_obligations:
+  - type: invariant
+    id: PO-FRESH-001
+    equation: fresh_step
+    property: "initial_step = 0 when output_dir has no checkpoint"
+    formal: "For all model_path with step S: if output_dir has no checkpoint, then initial_step = 0"
+    proof_level: L1
+
+  - type: invariant
+    id: PO-FRESH-002
+    equation: resume_step
+    property: "initial_step = N when output_dir has model-step-N.apr"
+    formal: "For output_dir containing model-step-N.apr: initial_step = N"
+    proof_level: L1
+
+falsification_tests:
+  - id: F-FRESH-001
+    rule: "Fresh training always starts at step 0 regardless of source checkpoint step"
+    obligation: PO-FRESH-001
+    prediction: "Loading model-step-14500.apr into empty output_dir yields initial_step=0"
+    test: |
+      Given: model_path contains model-step-14500.apr, output_dir is empty
+      When: load_transformer_model(model_path, config, output_dir)
+      Then: checkpoint_step = 0, LR = warmup_lr(0), AdamW bias_correction uses t=1
+    if_fails: "Step counter leaks from source checkpoint — LR schedule and optimizer are wrong"
+
+  - id: F-FRESH-002
+    rule: "Resume from output_dir preserves the checkpoint step"
+    obligation: PO-FRESH-002
+    prediction: "output_dir with model-step-500.apr yields initial_step=500"
+    test: |
+      Given: output_dir contains model-step-500.apr
+      When: load_transformer_model(model_path, config, output_dir)
+      Then: checkpoint_step = 500, LR = schedule_lr(500)
+    if_fails: "Resume step not preserved — training restarts from step 0 losing schedule state"
+
+kani_harnesses:
+  - id: KANI-FRESH-001
+    obligation: PO-FRESH-001
+    property: "Fresh step is always 0 when no checkpoint exists"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_fresh_step_zero
+
+qa_gate:
+  id: F-FRESH-GATE
+  name: "Fresh Training Step Contract"
+  min_coverage: 0.90
+  max_complexity: 10
+  required_tests:
+    - "test_fresh_step_from_model_path"
+    - "test_resume_preserves_step"
+    - "test_max_steps_not_prematurely_reached"
+
+bindings:
+  - function: "load_transformer_model"
+    file: "entrenar/src/config/train/loader.rs"
+    evidence: "Override checkpoint_step to 0 when loading from model_path (lines 2365-2372)"
