@@ -1,0 +1,145 @@
+# Contract: Checkpoint → Inference Bridge Validation — ALB-086
+#
+# entrenar saves checkpoints in SafeTensors format with config.json.
+# realizar loads these checkpoints for inference.
+# This contract verifies the bridge: saved tensors match expected
+# architecture and can be loaded by realizar's inference pipeline.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/checkpoint/inference_bridge.rs"
+  promoted_from: "albor@be23737 contracts/checkpoint-inference-bridge-v1.yaml per PMAT-700 Cat 3 checkpoint + SHIP-TWO-001 §3 row #9"
+  description: "Verify entrenar checkpoints load correctly in realizar for inference"
+  references:
+    - "ALB-086"
+    - "albor#66"
+
+equations:
+  checkpoint_completeness:
+    formula: |
+      A valid checkpoint directory contains:
+        model.safetensors — SafeTensors file with all model weights
+        config.json — HuggingFace-format architecture config
+        tokenizer.json — ByteLevel BPE tokenizer
+    domain: "checkpoint_dir: Path"
+    codomain: "bool — all three files exist and are non-empty"
+    invariants:
+      - "model.safetensors size > 0"
+      - "config.json parses as valid JSON with 'model_type' field"
+      - "tokenizer.json parses as valid HuggingFace tokenizer"
+
+  tensor_key_coverage:
+    formula: |
+      For a LlamaForCausalLM with L layers:
+        Required keys = {
+          "model.embed_tokens.weight",           # [V, H]
+          "lm_head.weight",                       # [V, H]
+        } ∪ for l in 0..L: {
+          "model.layers.{l}.self_attn.q_proj.weight",    # [H, H]
+          "model.layers.{l}.self_attn.k_proj.weight",    # [H/R, H]  (R = num_heads/num_kv_heads)
+          "model.layers.{l}.self_attn.v_proj.weight",    # [H/R, H]
+          "model.layers.{l}.self_attn.o_proj.weight",    # [H, H]
+          "model.layers.{l}.mlp.gate_proj.weight",       # [I, H]
+          "model.layers.{l}.mlp.up_proj.weight",         # [I, H]
+          "model.layers.{l}.mlp.down_proj.weight",       # [H, I]
+          "model.layers.{l}.input_layernorm.weight",     # [H]
+          "model.layers.{l}.post_attention_layernorm.weight",  # [H]
+        } ∪ {
+          "model.norm.weight",                    # [H]
+        }
+      Assert: saved_keys ⊇ required_keys
+    domain: "L: num_layers, H: hidden_size, I: intermediate_size, V: vocab_size"
+    codomain: "bool — all required tensor keys present"
+    invariants:
+      - "No missing keys vs LlamaForCausalLM specification"
+      - "Each tensor has expected shape (dims match config.json)"
+
+  tensor_shape_consistency:
+    formula: |
+      For each tensor key in model.safetensors:
+        shape = safetensors.get(key).shape
+        expected = lookup_expected_shape(key, config)
+        assert shape == expected
+    domain: "config: {hidden_size, num_layers, intermediate_size, vocab_size, num_attention_heads, num_key_value_heads}"
+    codomain: "bool — all shapes match"
+    invariants:
+      - "embed_tokens and lm_head are [vocab_size, hidden_size]"
+      - "q_proj is [hidden_size, hidden_size]"
+      - "k_proj and v_proj are [kv_dim, hidden_size] where kv_dim = hidden_size * num_kv_heads / num_attention_heads"
+      - "gate_proj and up_proj are [intermediate_size, hidden_size]"
+      - "down_proj is [hidden_size, intermediate_size]"
+
+proof_obligations:
+  - type: invariant
+    property: "Checkpoint is loadable — all required files exist and are valid"
+    formal: "exists(config.json) AND exists(model.safetensors) AND exists(tokenizer.json)"
+    tolerance: 0
+    applies_to: checkpoint_completeness
+
+  - type: invariant
+    property: "All LlamaForCausalLM tensor keys present"
+    formal: "len(missing_keys(saved, required)) == 0"
+    tolerance: 0
+    applies_to: tensor_key_coverage
+
+  - type: invariant
+    property: "Tensor shapes match config.json architecture"
+    formal: "forall key in saved_keys: shape(key) == expected_shape(key, config)"
+    tolerance: 0
+    applies_to: tensor_shape_consistency
+
+falsification_tests:
+  - id: FALSIFY-BRIDGE-001
+    rule: "Checkpoint directory is complete"
+    prediction: "v5 checkpoint has model.safetensors, config.json, tokenizer.json — all non-empty"
+    test: |
+      dir = "checkpoints/albor-base-350m-v5"
+      Assert: exists(dir/model.safetensors) AND size > 0
+      Assert: exists(dir/config.json) AND parses as JSON
+      Assert: exists(dir/tokenizer.json) AND parses as JSON
+    if_fails: "Missing checkpoint file — training or symlink setup incomplete"
+
+  - id: FALSIFY-BRIDGE-002
+    rule: "All 218 tensor keys present for 24-layer LlamaForCausalLM"
+    prediction: "24 layers × 9 keys + embed + lm_head + final_norm = 218 tensors"
+    test: |
+      Load model.safetensors, enumerate keys.
+      Assert: len(keys) == 218
+      Assert: all required keys present (embed, lm_head, norm, per-layer attn+mlp+norms)
+    if_fails: "entrenar checkpoint missing tensors — weight saving incomplete"
+
+  - id: FALSIFY-BRIDGE-003
+    rule: "Tensor shapes match config.json for 350M architecture"
+    prediction: "H=1024, L=24, I=4096, V=32768, heads=16, kv_heads=4"
+    test: |
+      config = load(config.json)
+      For each tensor in model.safetensors:
+        Assert: shape matches config (e.g. q_proj=[1024,1024], k_proj=[256,1024])
+    if_fails: "Shape mismatch between config.json and saved tensors"
+
+kani_harnesses:
+  - id: KANI-BRIDGE-001
+    obligation: tensor_key_coverage
+    property: "Required keys formula covers all LlamaForCausalLM parameters"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_required_keys_complete
+
+  - id: KANI-BRIDGE-002
+    obligation: tensor_shape_consistency
+    property: "Shape lookup is consistent with config"
+    bound: 8
+    strategy: stub_float
+    harness: verify_shape_consistency
+
+qa_gate:
+  id: F-BRIDGE-001
+  name: "Checkpoint to Inference Bridge Validation"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "checkpoint_directory_complete"
+    - "all_tensor_keys_present"
+    - "tensor_shapes_match_config"
