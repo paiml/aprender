@@ -1,0 +1,151 @@
+# wgpu-q4k-gemv-v1.yaml — C-WGPU-Q4K-001
+#
+# Provable contract for Q4K WGSL GEMV compute shader.
+#
+# Five Whys (2026-04-03):
+#   1. Why 0.51 tok/s on W5700X wgpu? → Each token reads 28 GB F32 from VRAM
+#   2. Why 28 GB? → Q4K (4 GB) dequantized to F32 before GPU upload
+#   3. Why dequant to F32? → No Q4K compute shaders in wgpu path
+#   4. Why no Q4K shaders? → Only F32 WGSL GEMV exists in trueno
+#   5. Why? → CUDA prioritized for training; wgpu deferred (ALB-005)
+#
+# Root cause: Missing Q4K dequant-on-the-fly WGSL compute shader.
+# Fix: GEMV shader that reads raw Q4K super-blocks, dequantizes per-thread,
+#      computes dot product without materializing F32 weights.
+#
+# Expected: 7x memory reduction (28 GB F32 → 4 GB Q4K), ~5-10x throughput
+# improvement from reduced memory bandwidth on W5700X (16 GB VRAM, 448 GB/s).
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-compute/src/backends/gpu/ (WGSL Q4K GEMV)"
+  promoted_from: "albor@be23737 contracts/wgpu-q4k-gemv-v1.yaml per PMAT-699 Cat 2 backend-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-04-03"
+  author: "PAIML Engineering"
+  description: "Q4K WGSL GEMV — dequantize on-the-fly in wgpu compute shader, bypass F32 materialization"
+  references:
+    - "ALB-005: wgpu backward pass (gradient WGSL shaders)"
+    - "GH-560: Q4K raw upload infrastructure in trueno"
+    - "GGML Q4_K format: 144-byte super-blocks, 256 elements each"
+  depends_on:
+    - "gpu-weight-pool-v1"
+
+equations:
+  q4k_dequant:
+    formula: |
+      For Q4_K super-block (144 bytes → 256 f32 values):
+        d = f16_to_f32(bytes[0:2])        // global scale
+        dmin = f16_to_f32(bytes[2:4])     // global min scale
+        scales[0..7], mins[0..7] = unpack_6bit(bytes[4:16])
+
+        For each sub-block i ∈ [0,8), each element j ∈ [0,32):
+          nibble = extract_4bit(bytes[16:144], i, j)
+          value[i*32 + j] = d * scales[i] * nibble - dmin * mins[i]
+    domain: "All Q4_K quantized weight tensors in GGUF models"
+    invariants:
+      - "144 bytes in, 256 f32 values out per super-block"
+      - "Dequantized values match CPU reference within f32 epsilon"
+      - "No intermediate F32 buffer allocation for weights"
+
+  q4k_gemv:
+    formula: |
+      output[row] = Σ_col dequant(W_q4k[row, col]) × input[col]
+
+      Where W_q4k is stored as raw Q4K bytes on GPU, dequantization
+      happens per-thread during the dot product, and input is f32.
+
+      Workgroup: 256 threads per row
+      Dispatch: N_rows workgroups
+      Each thread processes K/256 elements with tree reduction
+    domain: "Matrix-vector product for autoregressive decode (M=1)"
+    invariants:
+      - "VRAM usage = Q4K weight bytes (not F32)"
+      - "output[row] matches CPU Q4K GEMV within relative error 1e-3"
+
+  vram_bound:
+    formula: |
+      vram_q4k = num_params × 144 / 256 bytes
+      vram_f32 = num_params × 4 bytes
+      compression = vram_f32 / vram_q4k = 4 × 256 / 144 ≈ 7.1x
+
+      For 7B model: vram_q4k ≈ 4 GB, vram_f32 ≈ 28 GB
+      W5700X (16 GB) fits Q4K but NOT F32
+    domain: "VRAM capacity planning for AMD/Intel/Apple discrete GPUs"
+    invariants:
+      - "7B Q4K model fits in 16 GB VRAM without spilling"
+      - "No CPU-side F32 weight allocation during model load"
+
+proof_obligations:
+  - type: invariant
+    property: "Q4K WGSL dequantization matches CPU reference"
+    formal: "∀ super-block: max_abs_error(wgsl_dequant(sb), cpu_dequant(sb)) < 1e-5"
+
+  - type: invariant
+    property: "GEMV output matches F32 GEMV within tolerance"
+    formal: "cosine_similarity(q4k_gemv(W, x), f32_gemv(dequant(W), x)) >= 0.98"
+
+  - type: bound
+    property: "VRAM usage is Q4K size, not F32 size"
+    formal: "gpu_memory_allocated <= num_params * 144/256 * 1.1"
+
+falsification_tests:
+  - id: FALSIFY-WGPU-Q4K-001
+    rule: "Q4K WGSL dequant matches CPU dequant for all super-block patterns"
+    prediction: "Max absolute error < 1e-5 across 1000 random super-blocks"
+    test: |
+      1. Generate 1000 random Q4K super-blocks (144 bytes each)
+      2. Dequantize on CPU via dequantize_q4k_to_f32()
+      3. Dequantize on GPU via Q4K WGSL shader
+      4. Compare element-wise
+      Assert: max_abs_error < 1e-5
+    if_fails: "WGSL f16-to-f32 conversion or nibble extraction has a bug"
+
+  - id: FALSIFY-WGPU-Q4K-002
+    rule: "Q4K GEMV produces correct output for real model weights"
+    prediction: "Cosine similarity >= 0.98 vs F32 GEMV on same input"
+    test: |
+      1. Load Qwen2.5-Coder-7B layer 0 q_proj weight (Q4K)
+      2. Generate random input vector [hidden_dim]
+      3. Compute F32 GEMV: dequant weight to F32, multiply
+      4. Compute Q4K GEMV: raw Q4K bytes on GPU, WGSL shader
+      Assert: cosine_similarity(q4k_output, f32_output) >= 0.98
+    if_fails: "Scale/min unpacking or reduction accumulation error"
+
+  - id: FALSIFY-WGPU-Q4K-003
+    rule: "7B Q4K model fits in 16 GB VRAM without F32 allocation"
+    prediction: "Peak GPU memory < 5 GB for 7B Q4K model load"
+    test: |
+      1. Load Qwen2.5-Coder-7B-GGUF via wgpu Q4K path
+      2. Measure GPU memory after all weights uploaded
+      Assert: gpu_memory < 5 GB (vs 28 GB for F32 path)
+    if_fails: "F32 intermediate allocation not eliminated"
+
+  - id: FALSIFY-WGPU-Q4K-004
+    rule: "Q4K wgpu inference is faster than CPU Q4K inference"
+    prediction: "tok/s(wgpu Q4K) > tok/s(CPU Q4K) on W5700X"
+    test: |
+      1. Generate 100 tokens with CPU Q4K path, measure tok/s
+      2. Generate 100 tokens with wgpu Q4K path, measure tok/s
+      Assert: wgpu_tok_s > cpu_tok_s
+    if_fails: "Shader dispatch overhead or memory bandwidth bottleneck"
+
+kani_harnesses:
+  - id: KANI-WGPU-Q4K-001
+    obligation: q4k_dequant
+    property: "Super-block dequant produces exactly 256 elements"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_q4k_superblock_count
+
+qa_gate:
+  id: F-WGPU-Q4K-GATE
+  name: "Q4K WGSL GEMV Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "test_q4k_dequant_parity"
+    - "test_q4k_gemv_cosine_similarity"
+    - "test_vram_fits_16gb"
+    - "test_faster_than_cpu"

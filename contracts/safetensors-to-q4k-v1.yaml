@@ -1,0 +1,168 @@
+# Contract: SafeTensors → Q4K APR Streaming Pipeline (ALB-093)
+#
+# Foundational pipeline for the sovereign stack. Converts sharded HuggingFace
+# SafeTensors models directly to Q4K APR format using single-piece flow.
+# No intermediate files. Peak memory = O(max_single_tensor).
+#
+# Toyota Way principles:
+# - Single-piece flow: One tensor flows through load→validate→quantize→validate→write
+# - Heijunka: Constant memory pressure, no spike-and-release
+# - Jidoka: Stop-the-line on NaN, shape mismatch, reconstruction error
+# - Pull system: Tensor precision pulled by downstream requirements
+# - Poka-Yoke: Type-safe dtype handling, compile-time tensor validation
+#
+# Five Whys:
+# 1. Why can't we quantize the teacher model? — OOM during `apr quantize`
+# 2. Why OOM? — `load_model_tensors()` reads entire file + dequants to f32 (~170 GB)
+# 3. Why full load? — Quantize path designed for small models, no streaming
+# 4. Why create 57 GB intermediate? — Two-step pipeline: import→APR then APR→Q4K
+# 5. Why two steps? — No direct SafeTensors→Q4K path exists. Must be single-piece flow.
+#
+# References:
+# - llama.cpp: LazyTorchTensor pattern for O(max_tensor) peak memory
+# - EfficientQAT (arxiv 2407.11062): Block-wise single-piece quantization
+# - GGUF: mmap serving format, quantized at rest, single file
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-core/src/format/converter/ (safetensors import + Q4K quantize)"
+  promoted_from: "albor@be23737 contracts/safetensors-to-q4k-v1.yaml per PMAT-699 Cat 2 backend-kernel + SHIP-TWO-001 §3 row #9"
+  description: "Direct SafeTensors shard → Q4K APR conversion via single-piece flow"
+  references:
+    - "GH-434"
+    - "ALB-093"
+    - "ALB-010 Step 7"
+
+equations:
+  peak_memory:
+    formula: "M_peak = T_max_f32 + T_max_q4k + I + S"
+    domain: >
+      T_max_f32 = largest tensor dequantized to f32 (e.g., embed_tokens [151936,2048] = 1.2 GB)
+      T_max_q4k = Q4K output of that tensor (~0.35 GB at 4.5 bits/weight)
+      I = tensor index entries (~100 bytes × N_tensors, ~1.8 MB for 18K tensors)
+      S = SafeTensors shard header (~64 KB per shard)
+
+  throughput:
+    formula: "T = bytes_written / wall_time"
+    domain: "Target: >= 100 MB/s on NVMe (bottleneck is Q4K quantization, not I/O)"
+
+  compression_ratio:
+    formula: "R = input_f16_size / output_q4k_size"
+    domain: "F16 → Q4K: R ≈ 3.6x (16 bits → 4.5 bits effective)"
+
+  reconstruction_error:
+    formula: "E = ||W - dequant(quant(W))|| / ||W||"
+    domain: "Per-tensor relative reconstruction error"
+
+proof_obligations:
+  - type: invariant
+    property: "No intermediate file created — direct shard-to-output streaming"
+    formal: "disk_writes = {output.apr, output.apr.tmp}  # streaming writer temp only"
+
+  - type: invariant
+    property: "Peak RSS bounded by largest single tensor, not model size"
+    formal: "RSS_peak < 2 * T_max_f32 + 100 MB  # for any model size"
+
+  - type: invariant
+    property: "Every tensor validated before and after quantization (Jidoka)"
+    formal: >
+      for_all t in tensors:
+        pre_validate(t) AND post_validate(quant(t))
+        where validate = !has_nan AND !has_inf AND shape_matches_arch
+
+  - type: invariant
+    property: "Shard files opened lazily, one at a time (Heijunka)"
+    formal: "open_file_handles <= 2  # current shard + output"
+
+  - type: invariant
+    property: "Tensor precision determined by role, not blanket policy (Pull)"
+    formal: >
+      norm_tensors → F32 passthrough
+      embedding_tensors → F32 passthrough
+      bias_tensors → F32 passthrough
+      weight_tensors (>= 256 elements, 2D+) → Q4K quantization
+
+  - type: equivalence
+    property: "Output matches two-step pipeline bit-for-bit"
+    formal: >
+      streaming_q4k(safetensors_shards) == apr_quantize(apr_import(safetensors_shards))
+      # modulo metadata differences (source field)
+
+falsification_tests:
+  - id: FALSIFY-STQ4K-001
+    rule: "57 GB F16 model quantized with < 2 GB peak RSS"
+    prediction: "Peak RSS < 2 GB (was 170 GB with monolithic path)"
+    test: |
+      Given: Qwen3-Coder-30B-A3B-Instruct (16 shards, 18867 tensors, 57 GB F16)
+      When: `apr quantize --scheme q4k --from-safetensors`
+      Then: peak RSS < 2 GB, output ~18 GB
+      Measurement: /proc/PID/status VmRSS sampled every 100ms
+    if_fails: "Tensor memory not released after processing — leak in single-piece flow"
+
+  - id: FALSIFY-STQ4K-002
+    rule: "NaN in any tensor halts pipeline (Jidoka)"
+    prediction: "Pipeline exits with error, partial output deleted"
+    test: |
+      Given: SafeTensors file with one NaN-poisoned tensor
+      When: streaming quantize processes it
+      Then: error logged with tensor name, partial output cleaned up
+    if_fails: "Jidoka validation missing — corrupt tensors written silently"
+
+  - id: FALSIFY-STQ4K-003
+    rule: "Output readable by realizar for inference"
+    prediction: "realizar loads Q4K APR, runs forward pass, produces non-garbage logits"
+    test: |
+      Given: Q4K APR from streaming pipeline
+      When: realizar loads model and runs inference on "def hello():"
+      Then: logits are finite, top-k tokens are Python-related
+    if_fails: "Tensor packing or metadata wrong — realizar can't interpret Q4K APR"
+
+  - id: FALSIFY-STQ4K-004
+    rule: "Reconstruction error within Q4K tolerance"
+    prediction: "Per-tensor relative error < 0.05 for weight tensors"
+    test: |
+      Given: Known F16 tensor [shape 2048x2048]
+      When: quantize to Q4K then dequantize
+      Then: relative reconstruction error < 5%
+    if_fails: "Q4K quantization quality regression"
+
+  - id: FALSIFY-STQ4K-005
+    rule: "All 18867 tensors accounted for in output"
+    prediction: "Output tensor count matches input tensor count"
+    test: |
+      Given: SafeTensors index with N tensors
+      When: streaming quantize completes
+      Then: output APR has exactly N tensors, all names present
+    if_fails: "Tensor dropped during shard iteration — index.json not fully traversed"
+
+  - id: FALSIFY-STQ4K-006
+    rule: "MoE expert tensors quantized correctly"
+    prediction: "Per-expert gate/up/down tensors individually quantized, not fused"
+    test: |
+      Given: MoE model with mlp.experts.{e}.{gate,up,down}_proj.weight
+      When: streaming quantize processes experts
+      Then: each expert tensor appears separately in output with Q4K dtype
+    if_fails: "Expert tensor name pattern not matched by should_quantize"
+
+kani_harnesses:
+  - id: KANI-STQ4K-001
+    obligation: peak_memory
+    property: "Memory bounded by single tensor, not model size"
+    bound: 4
+    strategy: bounded_int
+    harness: verify_memory_bounded
+
+qa_gate:
+  id: F-STQ4K-001
+  name: "SafeTensors to Q4K APR Streaming Contract"
+  min_coverage: 0.95
+  max_complexity: 20
+  required_tests:
+    - "large_model_low_rss"
+    - "nan_stops_pipeline"
+    - "output_loadable_by_realizar"
+    - "reconstruction_error_bounded"
+    - "tensor_count_preserved"
+    - "moe_experts_individually_quantized"

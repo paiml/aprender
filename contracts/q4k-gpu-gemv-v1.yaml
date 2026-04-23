@@ -1,0 +1,209 @@
+# Q4_K GPU GEMV Kernel Contract — ALB-095
+#
+# Enables GPU inference for Q4K-quantized models by implementing
+# on-device dequantization during matrix-vector multiply.
+# 17 GB Q4K data stays on GPU (fits 24 GB VRAM), dequantized per-kernel-call.
+#
+# Five Whys:
+#   1. Why can't we run Qwen3-Coder-30B on GPU? — F32 weights = 120 GB, exceeds 24 GB VRAM
+#   2. Why F32? — AprF32ToGpuAdapter dequantizes Q4K→F32 on CPU before upload
+#   3. Why not keep Q4K on GPU? — No Q4_K GPU kernel exists (only Q4_0)
+#   4. Why no Q4_K kernel? — Q4_0 was sufficient for GGUF models; Q4K APR is new
+#   5. Why now? — ALB-093 created 17 GB Q4K APR; must enable GPU inference
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-compute/src/backends/q4k/cuda/"
+  promoted_from: "albor@be23737 contracts/q4k-gpu-gemv-v1.yaml per PMAT-699 Cat 2 backend-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-08"
+  author: "PAIML Engineering"
+  description: "Q4_K superblock GEMV CUDA kernel for GPU-resident quantized inference"
+  references:
+    - "GGML Q4_K format: 144-byte superblocks, 256 elements, 4.5 bits/weight"
+    - "ALB-095: Q4_K GPU GEMV kernel for quantized inference"
+    - "ALB-093: SafeTensors → Q4K APR streaming pipeline (prerequisite)"
+    - "BUG-GGUF-001: Q4_0 candle layout fix (pattern to follow)"
+  depends_on:
+    - "q4k-q6k-superblock-v1"
+    - "safetensors-to-q4k-v1"
+
+equations:
+  q4k_superblock_layout:
+    formula: |
+      Superblock S (144 bytes, 256 elements):
+        d    = f16_to_f32(S[0:2])       // global scale
+        dmin = f16_to_f32(S[2:4])       // global minimum
+        scales[12] = S[4:16]            // packed 6-bit sub-block scales/mins
+        qs[128] = S[16:144]             // packed 4-bit quantized values
+
+      For sub-block j ∈ {0..7}, 32 elements each:
+        (sc_j, m_j) = extract_scale_min(scales, j)
+
+      Elements are grouped in 64-element chunks (2 sub-blocks):
+        chunk g ∈ {0..3}: qs_base = g * 32
+        Low 32: value[g*64 + i] = d * sc_{2g} * (qs[qs_base + i] & 0xF) - dmin * m_{2g}
+        High 32: value[g*64 + 32 + i] = d * sc_{2g+1} * (qs[qs_base + i] >> 4) - dmin * m_{2g+1}
+    domain: "Q4_K superblock bytes (144 bytes per 256 elements)"
+    codomain: "F32 dequantized values"
+    invariants:
+      - "superblock_bytes = 144"
+      - "elements_per_superblock = 256"
+      - "bits_per_weight ≈ 4.5"
+      - "All dequantized values are finite (no NaN, no Inf)"
+
+  q4k_gemv_correctness:
+    formula: |
+      y[i] = Σ_j dequant_q4k(W_q4k[i, j]) * x[j]
+
+      Where W_q4k is stored as Q4_K superblocks, row-major:
+        row i occupies ceil(K/256) superblocks × 144 bytes
+        num_superblocks_per_row = ceil(K / 256)
+        row_bytes = num_superblocks_per_row * 144
+
+      GPU thread mapping (32 threads per output element):
+        Each warp (32 threads) computes one y[i]
+        Thread tid processes elements tid, tid+32, tid+64, ..., tid+224
+        within each superblock (8 elements per thread per superblock)
+        Warp shuffle reduction sums across 32 threads
+    domain: "W: Q4_K [N, K], x: F32 [K] — K must be multiple of 256"
+    codomain: "y: F32 [N]"
+    invariants:
+      - "max_abs_diff(y_gpu, y_cpu) < 1e-2 for all shapes"
+      - "Grid: N blocks, 32 threads per block"
+
+  extract_scale_min_gpu:
+    formula: |
+      For sub-block index j ∈ {0..7}:
+        if j < 4:
+          sc = scales[j] & 0x3F
+          m  = scales[j+4] & 0x3F
+        else:
+          sc = (scales[j+4] & 0x0F) | ((scales[j-4] >> 6) << 4)
+          m  = (scales[j+4] >> 4)   | ((scales[j]   >> 6) << 4)
+    domain: "scales: 12 bytes, j: 0..7"
+    codomain: "sc: u8 (6-bit scale), m: u8 (6-bit min)"
+    invariants:
+      - "sc ∈ [0, 63] for j < 4"
+      - "sc ∈ [0, 63] for j >= 4 (6-bit packed)"
+      - "GPU extract_scale_min matches CPU extract_scale_min for all j"
+
+proof_obligations:
+  - type: equivalence
+    property: "Q4_K GPU GEMV matches CPU dequant+matmul"
+    formal: "max_abs_diff(gemv_q4k_gpu(W, x), matmul(dequant_q4k_cpu(W), x)) < 1e-2"
+    tolerance: 1e-2
+    applies_to: q4k_gemv_correctness
+
+  - type: invariant
+    property: "Q4_K superblock size is exactly 144 bytes"
+    formal: "sizeof(block_q4_K) == 144"
+    tolerance: 0
+    applies_to: q4k_superblock_layout
+
+  - type: invariant
+    property: "Q4_K dequantized values are finite"
+    formal: "∀ elem ∈ dequant(superblock): !is_nan(elem) && !is_inf(elem)"
+    tolerance: 0
+    applies_to: q4k_superblock_layout
+
+  - type: bound
+    property: "VRAM fits 30B Q4K model"
+    formal: "Q4K_model_bytes(30B_params) <= 18 GB < 24 GB VRAM"
+    tolerance: 0
+    applies_to: q4k_gemv_correctness
+
+  - type: equivalence
+    property: "GPU scale extraction matches CPU"
+    formal: "extract_scale_min_gpu(scales, j) == extract_scale_min_cpu(scales, j) ∀ j ∈ 0..7"
+    tolerance: 0
+    applies_to: extract_scale_min_gpu
+
+falsification_tests:
+  - id: FALSIFY-Q4KGPU-001
+    rule: "Q4_K GEMV matches F32 matmul on identity-like input"
+    prediction: "max_abs_diff < 1e-2 for [256, 256] identity matrix"
+    test: |
+      Create Q4K-quantized identity matrix [256, 256].
+      Run GPU GEMV with x = [1, 0, 0, ..., 0].
+      Compare y against expected [1, 0, 0, ..., 0].
+    if_fails: "Superblock layout or nibble extraction wrong"
+
+  - id: FALSIFY-Q4KGPU-002
+    rule: "Scale extraction matches CPU for packed indices"
+    prediction: "GPU sc/m matches CPU sc/m for all 8 sub-blocks"
+    test: |
+      Create superblock with known scale bytes.
+      Run GPU dequant for all 256 elements.
+      Compare against CPU dequant_q4_k() element-wise.
+    if_fails: "Packed scale bit-shifting wrong for j >= 4"
+
+  - id: FALSIFY-Q4KGPU-003
+    rule: "K dimension not multiple of 256 handled correctly"
+    prediction: "Bounds check prevents out-of-bounds x[] access"
+    test: |
+      Create Q4K matrix with K=768 (3 superblocks).
+      Thread tid accesses x[sb_idx*256 + group*64 + tid].
+      Verify last superblock doesn't read past K.
+    if_fails: "Missing bounds check in inner loop"
+
+  - id: FALSIFY-Q4KGPU-004
+    rule: "dmin subtraction applied correctly"
+    prediction: "All-zero quantized values produce -dmin*m, not 0"
+    test: |
+      Create superblock with d=1.0, dmin=0.5, sc=1, m=1, all qs=0.
+      Expected: value = 1.0 * 1.0 * 0 - 0.5 * 1.0 = -0.5 for all elements.
+    if_fails: "dmin subtraction missing or sign error"
+
+  - id: FALSIFY-Q4KGPU-005
+    rule: "Warp reduction produces correct sum"
+    prediction: "32-thread shuffle reduction matches sequential sum"
+    test: |
+      Create 256-element superblock with all nibbles=1, d=1, dmin=0, sc=1.
+      x = [1.0; 256]. Expected y = 256.0.
+      Run GPU GEMV, verify y[0] ≈ 256.0.
+    if_fails: "Warp shuffle reduction incorrect"
+
+  - id: FALSIFY-Q4KGPU-006
+    rule: "Multi-superblock rows accumulate correctly"
+    prediction: "K=1024 (4 superblocks) accumulates across all 4"
+    test: |
+      Create Q4K row with K=1024, uniform quantization.
+      Verify GPU y matches CPU sum across all 4 superblocks.
+    if_fails: "Superblock loop bounds or accumulator reset wrong"
+
+  - id: FALSIFY-Q4KGPU-007
+    rule: "Real Qwen3 layer weight produces correct output"
+    prediction: "GPU GEMV on layer 0 q_proj matches CPU dequant+matmul within 1e-2"
+    test: |
+      Load model.layers.0.self_attn.q_proj.weight from Q4K APR.
+      Create random input x [2048].
+      Compare GPU GEMV vs CPU dequant_q4_k + F32 matmul.
+    if_fails: "Production weight shape or scale handling wrong"
+
+kani_harnesses:
+  - id: KANI-Q4KGPU-001
+    obligation: q4k_superblock_layout
+    property: "Superblock size invariant — 144 bytes for 256 elements"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_superblock_size
+
+  - id: KANI-Q4KGPU-002
+    obligation: extract_scale_min_gpu
+    property: "All extracted scale/min values are 6-bit (0..63)"
+    bound: 16
+    strategy: bounded_int
+    harness: verify_extract_scale_min_bounds
+
+qa_gate:
+  id: F-Q4KGPU-001
+  name: "Q4_K GPU GEMV Kernel Contract"
+  description: "Correctness and performance for GPU-resident Q4K inference"
+  checks:
+    - "q4k_superblock_layout"
+    - "q4k_gemv_correctness"
+    - "extract_scale_min_gpu"
+  pass_criteria: "All 7 falsification tests pass"
+  falsification: "Use wrong nibble offset to detect layout errors"

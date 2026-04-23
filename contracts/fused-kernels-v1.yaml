@@ -1,0 +1,318 @@
+# fused-kernels-v1.yaml — ALB-075 Phase 4+
+#
+# Provable contract for fused kernel optimizations inspired by unsloth.
+# Covers: fused CE loss, RMS norm activation reuse, SwiGLU in-place backward,
+# RoPE head grouping, fused tiled attention.
+# Write BEFORE implementation (CLAUDE.md Rule 7: contracts before code).
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-compute/src/backends/cuda/ (fused NF4 + matmul)"
+  promoted_from: "albor@be23737 contracts/fused-kernels-v1.yaml per PMAT-699 Cat 2 backend-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-05"
+  author: "PAIML Engineering"
+  description: "Fused kernel optimizations — CE loss, RMS norm reuse, SwiGLU in-place, fused attention"
+  references:
+    - "unslothai/unsloth — Triton fused kernels (2024-2026)"
+    - "Milakov & Gimelshein (2018) Online Normalizer Calculation for Softmax"
+    - "Dao et al. (2022) FlashAttention: Fast and Memory-Efficient Exact Attention"
+    - "training-gpu-kernel-v1.yaml (parent contract)"
+    - "cublas-gemm-v1.yaml (prerequisite — cuBLAS GEMMs)"
+    - "ALB-075: Training performance optimization"
+  depends_on:
+    - "cublas-gemm-v1"
+    - "training-gpu-kernel-v1"
+    - "training-step-budget-v1"
+
+equations:
+  fused_cross_entropy:
+    formula: |
+      For each row r in logits [B*S, V]:
+        logsumexp_r = log(sum(exp(logit[r, i]) for i in [0, V)))
+        loss_r = logsumexp_r - logit[r, label_r]
+        grad_r[i] = exp(logit[r, i] - logsumexp_r) - delta(i, label_r)
+      All computed in single kernel pass. FP32 accumulation for logsumexp.
+    domain: "Logits [B*S, V] in FP32, labels [B*S] as u32 indices"
+    codomain: "loss: scalar FP32, grad: [B*S, V] in FP32 (overwritten in-place)"
+    invariants:
+      - "logsumexp computed in FP32 (no FP16 overflow risk on V=32768)"
+      - "Softmax tensor never materialized (only exp(logit - logsumexp) per element)"
+      - "Numerically equivalent to separate softmax + nll_loss within 1e-5"
+      - "Backward grad overwrites logits buffer in-place (zero extra allocation)"
+
+  rmsnorm_activation_reuse:
+    formula: |
+      Forward:
+        inv_var = rsqrt(mean(X^2) + eps)
+        normed = X * inv_var
+        output = normed * W
+        SAVE: only inv_var [B*S] (not normed, not X — X from activation cache)
+      Backward (recompute):
+        normed = X_cached * inv_var_saved   # Recomputed, not loaded
+        d_weight = sum(grad_output * normed, dim=0)
+        d_input = (grad_output * W - normed * mean(grad_output * normed)) * inv_var
+    domain: "X [B*S, H] FP32, W [H] FP32, inv_var [B*S] FP32"
+    codomain: "output [B*S, H] FP32, inv_var [B*S] FP32 (saved for backward)"
+    invariants:
+      - "normed recomputed from X_cached * inv_var is bit-exact (same FP32 multiply)"
+      - "Memory savings: 24 layers * B * S * H * 4 bytes (384 MB for B=4, S=1024, H=1024)"
+      - "No numerical difference — recomputation uses identical FP32 arithmetic"
+
+  swiglu_inplace_backward:
+    formula: |
+      Forward: h = silu(gate) * up
+        where silu(x) = x * sigmoid(x)
+      Backward (in-place):
+        d_up = grad_output * silu(gate)          # Written to up buffer
+        d_gate = grad_output * up * silu'(gate)  # Written to gate buffer
+        where silu'(x) = sigmoid(x) * (1 + x * (1 - sigmoid(x)))
+      Buffers gate and up are overwritten with d_gate and d_up.
+    domain: "gate [B*S, I], up [B*S, I], grad_output [B*S, I] all FP32"
+    codomain: "d_gate [B*S, I] in gate buffer, d_up [B*S, I] in up buffer"
+    invariants:
+      - "gate and up values consumed before overwrite (order matters)"
+      - "d_gate uses original up value (must read up BEFORE writing d_up)"
+      - "Numerically identical to separate-buffer backward within 1e-5"
+      - "Peak workspace reduced by B * S * I * 4 * 2 bytes (128 MB for B=4, S=1024, I=4096)"
+
+  rope_head_grouping:
+    formula: |
+      sin_cos = precomputed [S, head_dim/2] (shared across all heads)
+      For group of G heads (G=4 for Q, G=4 for K):
+        Load sin_cos once
+        For h in [0, G):
+          Q[h, :, 0:half] = Q[h, :, 0:half] * cos - Q[h, :, half:] * sin
+          Q[h, :, half:] = Q[h, :, half:] * cos + Q[h, :, 0:half] * sin
+    domain: "Q [B, n_heads, S, head_dim], K [B, n_kv_heads, S, head_dim], sin/cos [S, head_dim/2]"
+    codomain: "Q_rotated, K_rotated (in-place)"
+    invariants:
+      - "Bit-exact with per-head RoPE (same arithmetic, just batched memory access)"
+      - "sin/cos loaded once per group (4 heads), not per head"
+      - "n_heads=16, n_kv_heads=4 → Q: 4 groups of 4, K: 1 group of 4"
+
+  fused_tiled_attention:
+    formula: |
+      For tile_q in [0, S, tile_size):
+        For tile_k in [0, S, tile_size):
+          if causal and tile_k_start > tile_q_end: skip
+          scores_tile = Q[tile_q] @ K[tile_k]^T / sqrt(d_k)
+          Apply causal mask to scores_tile
+          Update running softmax (online normalizer):
+            m_new = max(m_old, max(scores_tile))
+            l_new = l_old * exp(m_old - m_new) + sum(exp(scores_tile - m_new))
+          Accumulate: O += exp(scores_tile - m_new) @ V[tile_k]
+        Final: O = O / l_new
+    domain: "Q, K, V [B, H, S, d_k] in FP16/FP32, causal mask"
+    codomain: "O [B, H, S, d_k], logsumexp [B, H, S] (saved for backward)"
+    invariants:
+      - "Full attention score matrix [S, S] never materialized"
+      - "Online softmax is numerically stable (Milakov & Gimelshein 2018)"
+      - "Output equivalent to unfused attention within 1e-3 (FP32) or 1e-2 (FP16)"
+      - "Memory: O(B*H*S*d_k) instead of O(B*H*S*S)"
+      - "tile_size chosen for shared memory capacity (typically 64 or 128)"
+
+  chunked_cross_entropy:
+    formula: |
+      For vocab V > MAX_CHUNK (65536):
+        chunks = split(logits, chunk_size=MAX_CHUNK)
+        partial_logsumexp[c] = logsumexp(chunks[c]) for each chunk c
+        global_logsumexp = logsumexp(partial_logsumexp)  # Associative
+        loss = global_logsumexp - logit[label]
+    domain: "Logits [B*S, V] where V > 65536"
+    codomain: "loss scalar, grad [B*S, V]"
+    invariants:
+      - "logsumexp decomposition is mathematically exact (not approximate)"
+      - "Per-chunk computation fits in GPU registers (no spill for V <= 65536)"
+      - "Current V=32768: single chunk, no overhead"
+      - "Deferred until vocab > 65536"
+
+proof_obligations:
+  - type: equivalence
+    property: "Fused CE matches separate CE"
+    formal: "max_abs_diff(loss_fused, loss_separate) < 1e-5"
+    tolerance: 1e-5
+    applies_to: fused_cross_entropy
+
+  - type: invariant
+    property: "Fused CE never allocates softmax tensor"
+    formal: "peak_memory(fused_ce) < B * S * V * sizeof(f32)"
+    tolerance: 0
+    applies_to: fused_cross_entropy
+
+  - type: equivalence
+    property: "RMS norm recompute is bit-exact"
+    formal: "normed_recomputed == normed_original (bitwise)"
+    tolerance: 0
+    applies_to: rmsnorm_activation_reuse
+
+  - type: bound
+    property: "Activation memory reduced by >= 300 MB"
+    formal: "activation_peak(optimized) <= activation_peak(baseline) - 300_000_000"
+    applies_to: rmsnorm_activation_reuse
+
+  - type: equivalence
+    property: "SwiGLU in-place backward correct"
+    formal: "max_abs_diff(d_gate_inplace, d_gate_separate) < 1e-5"
+    tolerance: 1e-5
+    applies_to: swiglu_inplace_backward
+
+  - type: equivalence
+    property: "RoPE grouped matches individual"
+    formal: "Q_rotated_grouped == Q_rotated_individual (bitwise)"
+    tolerance: 0
+    applies_to: rope_head_grouping
+
+  - type: equivalence
+    property: "Fused attention matches separate attention"
+    formal: "max_abs_diff(output_fused, output_separate) < 1e-3 (FP32)"
+    tolerance: 1e-3
+    applies_to: fused_tiled_attention
+
+  - type: bound
+    property: "Fused attention memory < separate attention memory / 4"
+    formal: "peak_attn_memory(fused) < peak_attn_memory(separate) / 4"
+    applies_to: fused_tiled_attention
+
+  - type: invariant
+    property: "Training stability preserved with all fusions"
+    formal: "loss.is_finite() for all steps in 100-step run"
+    tolerance: 0
+    applies_to: training_stability
+
+  - type: invariant
+    property: "Gradient flow preserved with all fusions"
+    formal: "max(|grad(param)|) > 0 for all trainable params after 1 step"
+    tolerance: 0
+    applies_to: gradient_flow
+
+falsification_tests:
+  - id: FALSIFY-FUSED-001
+    rule: "Fused CE matches separate CE"
+    prediction: "max_abs_diff(loss) < 1e-5 on 50M model, 50 steps"
+    test: |
+      Build TransformerConfig::tiny(), run 50 steps with fused CE.
+      Run same 50 steps with separate softmax + nll_loss.
+      Compare per-step loss values.
+    if_fails: "Fused CE has numerical bug — logsumexp or grad computation wrong"
+
+  - id: FALSIFY-FUSED-002
+    rule: "RMS norm recompute is bit-exact"
+    prediction: "normed_recomputed == normed_original for all 24 layers"
+    test: |
+      Run 1 forward pass on 350M, saving both normed and inv_var.
+      Recompute normed from X * inv_var. Compare bitwise.
+    if_fails: "Recomputation uses different FP32 rounding — should be impossible"
+
+  - id: FALSIFY-FUSED-003
+    rule: "SwiGLU in-place backward correct"
+    prediction: "max_abs_diff(d_gate) < 1e-5, max_abs_diff(d_up) < 1e-5"
+    test: |
+      Run FFN backward with separate buffers (reference).
+      Run FFN backward with in-place overwrite.
+      Compare d_gate, d_up element-wise.
+    if_fails: "In-place overwrite order wrong — reading after overwrite"
+
+  - id: FALSIFY-FUSED-004
+    rule: "RoPE grouped matches individual"
+    prediction: "Bit-exact Q_rotated for all 16 Q heads and 4 K heads"
+    test: |
+      Apply RoPE per-head (reference). Apply RoPE grouped (G=4).
+      Compare Q, K tensors bitwise.
+    if_fails: "Head indexing or sin/cos offset wrong in grouped version"
+
+  - id: FALSIFY-FUSED-005
+    rule: "Fused attention matches separate attention"
+    prediction: "max_abs_diff(output) < 1e-3 (FP32) for all 24 layers"
+    test: |
+      Run attention with 3 separate steps (QK^T, softmax, V).
+      Run fused tiled attention. Compare output tensors.
+    if_fails: "Online softmax accumulation or tiling boundary wrong"
+
+  - id: FALSIFY-FUSED-006
+    rule: "Memory savings measurable"
+    prediction: "Activation peak reduced by >= 300 MB on 350M model"
+    test: |
+      Profile peak GPU memory with baseline kernels.
+      Profile peak GPU memory with RMS norm reuse + SwiGLU in-place.
+      Difference must be >= 300 MB.
+    if_fails: "Memory not actually freed (still referenced) or measurement wrong"
+
+  - id: FALSIFY-FUSED-007
+    rule: "Fused CE never materializes softmax"
+    prediction: "Peak memory during CE < B * S * V * 4 bytes (512 MB)"
+    test: |
+      Profile CE forward+backward memory allocation.
+      No single allocation >= B * S * V * sizeof(f32) during CE.
+    if_fails: "Fused kernel still allocates full softmax — fusion incomplete"
+
+  - id: FALSIFY-FUSED-008
+    rule: "Gradient checkpointing is bit-exact"
+    prediction: "grad(checkpointed) == grad(full_save) for all params"
+    test: |
+      Run 1 step with full activation save. Run 1 step with checkpointing.
+      Compare all parameter gradients bitwise.
+    if_fails: "Recomputation introduces different computation order — FP32 should be exact"
+
+  - id: FALSIFY-FUSED-009
+    rule: "Fused attention backward produces correct gradients"
+    prediction: "All params get gradients, loss within 1% of separate attention"
+    test: |
+      Train 50M for 10 steps with fused attention.
+      Train 50M for 10 steps with separate attention.
+      |loss_fused - loss_separate| / loss_separate < 0.01 at step 10.
+      All trainable params have non-zero gradients.
+    if_fails: "Fused attention backward has missing or wrong gradient path"
+
+  - id: FALSIFY-FUSED-010
+    rule: "No training instability from kernel fusions"
+    prediction: "100-step run: loss finite every step, gnorm < 100"
+    test: |
+      Train 350M for 100 steps with ALL fusions enabled.
+      loss.is_finite() at every step. max(gnorm) < 100.
+    if_fails: "Fused kernels introduce numerical instability — bisect to identify which fusion"
+
+kani_harnesses:
+  - id: KANI-FUSED-001
+    obligation: fused_cross_entropy
+    property: "Fused CE loss matches separate softmax + nll_loss within tolerance"
+    bound: 8
+    strategy: stub_float
+    harness: verify_fused_ce_equivalence
+
+  - id: KANI-FUSED-002
+    obligation: rmsnorm_activation_reuse
+    property: "RMS norm recompute from cached X and inv_var is bit-exact"
+    bound: 4
+    strategy: stub_float
+    harness: verify_rmsnorm_recompute_exact
+
+  - id: KANI-FUSED-003
+    obligation: swiglu_inplace_backward
+    property: "In-place SwiGLU backward reads gate/up before overwrite"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_swiglu_inplace_order
+
+  - id: KANI-FUSED-004
+    obligation: fused_tiled_attention
+    property: "Online softmax produces correct output for bounded tile sizes"
+    bound: 4
+    strategy: stub_float
+    harness: verify_fused_attention_softmax
+
+qa_gate:
+  id: F-FUSED-001
+  name: "Fused Kernel Optimizations Contract"
+  description: "Correctness, memory reduction, and stability for all kernel fusions"
+  checks:
+    - "fused_cross_entropy"
+    - "rmsnorm_activation_reuse"
+    - "swiglu_inplace_backward"
+    - "rope_head_grouping"
+    - "fused_tiled_attention"
+    - "training_stability"
+    - "gradient_flow"
+  pass_criteria: "All 10 falsification tests pass"
+  falsification: "Bisect fusions individually if combined run shows instability"

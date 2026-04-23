@@ -1,0 +1,135 @@
+# Contract: CUDA Inference Engine (ALB-089)
+#
+# GPU-accelerated forward pass for text generation. Reuses entrenar's
+# CUDA transformer blocks but strips training infrastructure (backward,
+# optimizer, gradient accumulation). For eval benchmarks (HumanEval, MBPP).
+#
+# Expected: 10-20x throughput vs CPU inference (realizar AprTransformer).
+# 350M model: GPU ~200 tok/s generation vs CPU ~14 tok/s.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-compute/src/backends/cuda/ + crates/aprender-serve/src/gpu/"
+  promoted_from: "albor@be23737 contracts/cuda-inference-v1.yaml per PMAT-699 Cat 2 backend-kernel + SHIP-TWO-001 §3 row #9"
+  description: "CUDA inference engine — forward-only GPU path for text generation"
+  references:
+    - "ALB-089"
+    - "entrenar cuda_trainer.rs gpu_forward()"
+
+equations:
+  forward_pass:
+    formula: |
+      Given input_ids [S] and GPU-resident weights:
+        hidden = embedding_lookup(input_ids)           # CPU, [S, H]
+        gpu_hidden = H2D(hidden)                       # PCIe transfer
+        for block in cuda_blocks:
+          gpu_hidden = block.forward(gpu_hidden)       # GPU GEMM + attention
+        gpu_hidden = rms_norm(gpu_hidden)              # GPU final norm
+        gpu_logits = gpu_hidden @ lm_head_weight       # GPU LM head GEMM
+        last_logits = D2H(gpu_logits[S-1])             # Only last position
+        next_token = sample(last_logits, temperature)  # CPU sampling
+    domain: "Token sequence [S] with S <= max_position_embeddings"
+    codomain: "Logits [vocab_size] for last position"
+    invariants:
+      - "Forward-only: no backward pass, no gradient computation"
+      - "No optimizer state allocated (saves ~4 GB VRAM for 350M model)"
+      - "Only last-position logits downloaded (128 KB vs S×128 KB)"
+      - "Reuses CudaTransformerBlock::forward() — same GEMM kernels as training"
+
+  vram_budget:
+    formula: |
+      weights = num_layers × (4×H² + 3×H×I + 2×H) × 4 bytes     # Block weights
+      lm_head = vocab × H × 4 bytes                                # LM head
+      final_norm = H × 4 bytes                                     # Final norm
+      scratch = 2 × max_seq × H × 4 bytes                          # Ping-pong buffers
+      norm_out = max_seq × H × 4 bytes                             # Norm output
+      logits = max_seq × vocab × 4 bytes                            # Logits buffer
+      total = weights + lm_head + final_norm + scratch + norm_out + logits
+    domain: "350M model: H=1024, I=4096, layers=24, vocab=32768, max_seq=1024"
+    codomain: "~1.8 GB (vs ~5.8 GB training with optimizer state)"
+    invariants:
+      - "VRAM < 3 GB for 350M model (vs 16 GB training)"
+      - "No layer_inputs saved (no backward)"
+      - "No optimizer moments allocated"
+
+proof_obligations:
+  - type: invariant
+    property: "Forward output matches CPU reference"
+    formal: "max(|gpu_logits - cpu_logits|) < 1e-3 for same input"
+
+  - type: invariant
+    property: "No training state allocated"
+    formal: "CudaInferenceEngine has no GradWorkspace, no optimizer, no grad_accum"
+
+  - type: bound
+    property: "Throughput improvement over CPU"
+    formal: "GPU tok/s > 5x CPU tok/s for 350M model generation"
+    tolerance: 0.5
+
+  - type: invariant
+    property: "Weights loaded from SafeTensors checkpoint"
+    formal: "Loads config.json + model.safetensors + tokenizer.json from checkpoint dir"
+
+falsification_tests:
+  - id: FALSIFY-CUDA-INF-001
+    rule: "GPU forward produces valid logits"
+    prediction: "Same input tokens → GPU and CPU logits agree within fp32 tolerance"
+    test: |
+      Load model on CPU (realizar) and GPU (CudaInferenceEngine).
+      Run same input through both. Compare last-position logits.
+      Assert: max absolute difference < 1e-3
+    if_fails: "GPU forward path has a bug"
+
+  - id: FALSIFY-CUDA-INF-002
+    rule: "VRAM usage is inference-only"
+    prediction: "350M model uses < 3 GB VRAM (no optimizer state)"
+    test: |
+      Load model with CudaInferenceEngine.
+      Check nvidia-smi VRAM usage.
+      Assert: VRAM < 3 GB
+    if_fails: "Training state is being allocated unnecessarily"
+
+  - id: FALSIFY-CUDA-INF-003
+    rule: "Generation produces different output than CPU at temperature > 0"
+    prediction: "Greedy (temp=0) GPU matches CPU exactly. Sampled (temp>0) differs."
+    test: |
+      Load same model on CPU and GPU.
+      Generate 10 tokens greedy. Assert: identical sequences.
+    if_fails: "GPU forward path produces wrong logits"
+
+  - id: FALSIFY-CUDA-INF-004
+    rule: "Weights loaded from SafeTensors checkpoint"
+    prediction: "CudaInferenceEngine loads config.json, model.safetensors, tokenizer.json"
+    test: |
+      Point CudaInferenceEngine at a valid checkpoint directory.
+      Assert: weights loaded match SafeTensors file contents.
+      Remove config.json and assert constructor returns error.
+    if_fails: "Checkpoint loading is incomplete or does not validate required files"
+
+kani_harnesses:
+  - id: KANI-CUDA-INF-001
+    obligation: forward_pass
+    property: "Forward pass produces finite logits for all valid input token sequences"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_forward_logits_finite
+
+  - id: KANI-CUDA-INF-002
+    obligation: vram_budget
+    property: "Inference VRAM allocation does not include optimizer state or grad workspace"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_no_training_state_allocated
+
+qa_gate:
+  id: F-CUDA-INF-001
+  name: "CUDA Inference Engine Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "gpu_cpu_logit_equivalence"
+    - "vram_inference_only"
+    - "greedy_generation_deterministic"
+    - "checkpoint_loading_validation"
