@@ -210,6 +210,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             .map_err(crate::error::CliError::Aprender)
         }
 
+        ExtendedCommands::RmGcLint { observation_file } => commands::rm_gc_lint::run(
+            commands::rm_gc_lint::RmGcLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
         ExtendedCommands::Hex {
             file,
             tensor,
