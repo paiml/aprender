@@ -1,0 +1,162 @@
+# Contract: Q4K Inference Sync Budget (ALB-111)
+#
+# Controls the number of cuStreamSynchronize calls per token in the
+# Q4K GPU inference forward pass. Excessive sync causes CUDA driver
+# state pathology after sustained request volume (~2,250 requests).
+#
+# Root cause: forward_token_apr_q4k calls q4k_gemv_cached (sync variant)
+# ~1,345 times per token. Each call does cuStreamSynchronize. After
+# ~3.1B sync calls, the driver hangs indefinitely.
+#
+# Fix: Batch kernel launches and sync at operation-group boundaries
+# (attention Q/K/V, MoE expert gate/up/down) instead of per-GEMV.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  description: "Q4K inference forward pass — sync point budget per token"
+  references:
+    - "ALB-111"
+    - "realizar/src/gpu/adapters/apr_q4k.rs: forward_token_apr_q4k"
+    - "realizar/src/cuda/executor/q4k_gemv_cached.rs: q4k_gemv_cached"
+  registry: true
+  scope: "crates/aprender-serve/src/gpu/ (Q4K inference sync)"
+  promoted_from: "albor@be23737 contracts/q4k-inference-sync-budget-v1.yaml per PMAT-704 Cat 7 HPO + SHIP-TWO-001 §3 row #9"
+
+equations:
+  sync_budget:
+    formula: |
+      For a model with L layers, E experts (top-K), the sync budget per token:
+
+      BEFORE (current — sync variant):
+        attn_syncs = L × 4                    # Q, K, V, O projections
+        moe_syncs = L × (1 + K × 3)          # gate + K experts × (gate, up, down)
+        lm_head_syncs = 1
+        total_syncs = L × (4 + 1 + K × 3) + 1 = L × (5 + 3K) + 1
+
+        Qwen3-Coder-30B: L=48, K=8 → 48 × 29 + 1 = 1,393 syncs/token
+
+      AFTER (batched — gpu-to-gpu variant):
+        attn_syncs = L × 2                    # 1 batch sync for Q/K/V, 1 for O
+        moe_syncs = L × 2                     # 1 for gate routing, 1 for expert batch
+        lm_head_syncs = 1
+        total_syncs = L × 4 + 1
+
+        Qwen3-Coder-30B: L=48 → 48 × 4 + 1 = 193 syncs/token
+
+    domain: "Single-token forward pass through L-layer MoE transformer"
+    codomain: "Count of cuStreamSynchronize calls"
+    invariants:
+      - "C-Q4KSYNC-001: total_syncs_per_token <= 4L + 1"
+      - "C-Q4KSYNC-002: No cuStreamSynchronize inside q4k_gemv_gpu_to_gpu"
+      - "C-Q4KSYNC-003: All syncs happen at operation-group boundaries only"
+
+  gpu_buffer_lifecycle:
+    formula: |
+      GPU activation buffers are pre-allocated at model load time
+      and reused across all tokens and all requests. No per-GEMV
+      allocation (cuMemAlloc) or deallocation (cuMemFree).
+
+      Required buffers:
+        hidden_buf:   [max(hidden_dim, q_dim, vocab_size)]   # input/output
+        normed_buf:   [hidden_dim]                            # post-RMSNorm
+        proj_buf_a:   [max(q_dim, intermediate_dim)]          # projection output A
+        proj_buf_b:   [max(kv_dim, intermediate_dim)]         # projection output B
+        proj_buf_c:   [max(kv_dim, intermediate_dim)]         # projection output C
+
+      All buffers grow-only (same semantics as existing gemv_input_buffer).
+    domain: "CudaExecutor activation buffer pool"
+    codomain: "Fixed GPU memory, no per-request allocation"
+    invariants:
+      - "C-Q4KSYNC-004: Zero cuMemAlloc calls during inference (after model load)"
+      - "C-Q4KSYNC-005: GPU buffers reused across requests (no cross-request leak)"
+
+  sustained_inference:
+    formula: |
+      The server must sustain N sequential requests without hang,
+      where each request generates up to max_tokens tokens.
+
+      hang_free_threshold >= 10,000 requests
+    domain: "Sequential /v1/completions requests with max_tokens=256"
+    codomain: "Boolean: all requests complete within timeout"
+    invariants:
+      - "C-Q4KSYNC-006: 10,000 sequential requests complete without server hang"
+      - "C-Q4KSYNC-007: VRAM usage stable (±50 MB) across all requests"
+
+proof_obligations:
+  - type: bound
+    property: "Sync budget per token"
+    formal: "cuStreamSynchronize_count(forward_one_token) <= 4 * num_layers + 1"
+    tolerance: 0.0
+
+  - type: invariant
+    property: "No sync in GPU-to-GPU GEMV"
+    formal: "q4k_gemv_gpu_to_gpu contains zero calls to stream.synchronize()"
+
+  - type: invariant
+    property: "Zero allocation during inference"
+    formal: "After model load, cuMemAlloc call count == 0 during forward pass"
+
+  - type: bound
+    property: "Sustained request threshold"
+    formal: "server handles >= 10,000 sequential requests without hang"
+    tolerance: 0.0
+
+falsification_tests:
+  - id: FALSIFY-Q4KSYNC-001
+    rule: "Sync budget enforced"
+    prediction: "Forward one token on Qwen3-Coder-30B uses <= 193 sync calls"
+    test: |
+      Add sync counter to CudaExecutor. Run forward_token_apr_q4k once.
+      Assert: counter <= 4 * 48 + 1 = 193.
+    if_fails: "A GEMV path is still using per-call synchronization"
+
+  - id: FALSIFY-Q4KSYNC-002
+    rule: "GPU-to-GPU GEMV is sync-free"
+    prediction: "q4k_gemv_gpu_to_gpu never calls stream.synchronize()"
+    test: |
+      Code audit: search q4k_gemv_gpu_to_gpu for synchronize().
+      Assert: zero occurrences.
+    if_fails: "GPU-to-GPU path has unnecessary synchronization"
+
+  - id: FALSIFY-Q4KSYNC-003
+    rule: "Output correctness preserved"
+    prediction: "Batched path produces same logits as sync path (within fp32 tolerance)"
+    test: |
+      Run same prompt through sync and batched forward paths.
+      Assert: max(|logits_sync - logits_batched|) < 1e-4
+    if_fails: "Batching changed operation ordering or precision"
+
+  - id: FALSIFY-Q4KSYNC-004
+    rule: "Sustained inference without hang"
+    prediction: "10,000 requests complete with 100% success rate"
+    test: |
+      probador llm load --requests 10000 --max-tokens 256
+      Assert: 0 failures, 0 timeouts
+    if_fails: "Sync reduction insufficient or different resource leak exists"
+
+kani_harnesses:
+  - id: KANI-Q4KSYNC-001
+    obligation: sync_budget
+    property: "Sync count is bounded by 4L + 1 for any number of layers"
+    bound: 96
+    strategy: bounded_int
+    harness: verify_sync_budget_bound
+
+  - id: KANI-Q4KSYNC-002
+    obligation: gpu_buffer_lifecycle
+    property: "Buffer pool never shrinks — grow-only semantics"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_buffer_pool_grow_only
+
+qa_gate:
+  id: F-Q4KSYNC-001
+  name: "Q4K Inference Sync Budget Contract"
+  min_coverage: 0.85
+  max_complexity: 20
+  required_tests:
+    - "sync_budget_per_token"
+    - "gpu_to_gpu_gemv_no_sync"
+    - "output_correctness_parity"
+    - "sustained_10k_requests"

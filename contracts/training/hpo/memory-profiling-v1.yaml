@@ -1,0 +1,197 @@
+# memory-profiling-v1.yaml — ALB-099
+#
+# Provable contract for dhat-rs memory profiling across sovereign stack.
+# All 4 repos (realizar, aprender, trueno, entrenar) get identical
+# feature-gated dhat-rs integration for heap profiling.
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-09"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "dhat-rs heap profiling — feature-gated, zero-overhead when disabled"
+  references:
+    - "dhat crate: https://crates.io/crates/dhat"
+    - "dhat-rs docs: #[global_allocator] + Profiler::new_heap()"
+    - "dh_view.html: https://nnethercote.github.io/dh_view/dh_view.html"
+  registry: true
+  scope: "crates/apr-cli/src/commands/profile.rs + apr profile"
+  promoted_from: "albor@be23737 contracts/memory-profiling-v1.yaml per PMAT-704 Cat 7 HPO + SHIP-TWO-001 §3 row #9"
+
+equations:
+  zero_overhead:
+    formula: |
+      Without feature flag:
+        binary_size(release) ≈ binary_size(release, no dhat)
+        runtime(release) = runtime(release, no dhat)
+      With feature flag:
+        overhead ≈ 2× runtime (acceptable for profiling)
+        output: dhat-heap.json with allocation tree
+    domain: "All 4 repos: realizar, aprender, trueno, entrenar"
+    codomain: "Profiling data when enabled, zero cost when disabled"
+    invariants:
+      - "Feature flag is 'dhat-heap' in all repos"
+      - "dhat = { version = '0.3', optional = true } in all repos"
+      - "#[global_allocator] guarded by #[cfg(feature = 'dhat-heap')]"
+      - "Profiler::new_heap() in main() guarded by same cfg"
+
+  integration_pattern:
+    formula: |
+      For each binary crate B:
+        1. Cargo.toml: dhat-heap = ["dep:dhat"], dhat = { optional = true }
+        2. main.rs: #[cfg(feature = "dhat-heap")] #[global_allocator]
+        3. main.rs: #[cfg(feature = "dhat-heap")] let _profiler = dhat::Profiler::new_heap();
+      For each library crate L:
+        1. Cargo.toml: dhat-heap = ["dep:dhat"], dhat = { optional = true }
+        2. Tests can use dhat::Profiler::builder().testing().build()
+    domain: "4 repos, each with ≥1 binary or library crate"
+    codomain: "Consistent profiling interface across sovereign stack"
+
+obligations:
+  - id: C-DHAT-001
+    description: "All 4 repos compile with --features dhat-heap"
+    falsification: |
+      For each repo in {realizar, aprender, trueno, entrenar}:
+        cargo check --features dhat-heap
+        Exit code must be 0.
+
+  - id: C-DHAT-002
+    description: "Binary crates produce dhat-heap.json on exit when feature enabled"
+    falsification: |
+      rm -f dhat-heap.json
+      cargo run --features dhat-heap -- <minimal args>
+      test -f dhat-heap.json  # must exist
+
+  - id: C-DHAT-003
+    description: "Zero overhead when feature disabled"
+    falsification: |
+      cargo build --release 2>&1
+      SIZE_NORMAL=$(stat -c%s target/release/<binary>)
+      cargo build --release --features dhat-heap 2>&1
+      SIZE_DHAT=$(stat -c%s target/release/<binary>)
+      # SIZE_NORMAL should be within 1% of SIZE_DHAT when feature OFF
+      # (both builds without feature should be identical)
+
+  - id: C-DHAT-004
+    description: "Feature flag is 'dhat-heap' in all repos (convention)"
+    falsification: |
+      For each repo:
+        grep -q 'dhat-heap' Cargo.toml || exit 1
+
+proof_obligations:
+  - type: invariant
+    property: "All 5 repos compile with --features dhat-heap"
+    formal: "cargo check --features dhat-heap exits 0 in all 5 repos"
+    tolerance: 0
+    applies_to: zero_overhead
+
+  - type: invariant
+    property: "Binary crates produce dhat-heap.json on exit"
+    formal: "test -f dhat-heap.json after cargo run --features dhat-heap"
+    tolerance: 0
+    applies_to: integration_pattern
+
+  - type: bound
+    property: "Zero overhead when feature disabled"
+    formal: "binary_size(release) = binary_size(release, no dhat) within 1%"
+    applies_to: zero_overhead
+
+  - type: invariant
+    property: "Feature flag is 'dhat-heap' in all repos"
+    formal: "grep 'dhat-heap' Cargo.toml succeeds in all 5 repos"
+    tolerance: 0
+    applies_to: integration_pattern
+
+falsification_tests:
+  - id: FALSIFY-DHAT-001
+    rule: "All repos compile with dhat-heap feature"
+    prediction: "cargo check --features dhat-heap exits 0"
+    test: "For each repo in {realizar, aprender, trueno, entrenar, alimentar}: cargo check --features dhat-heap"
+    if_fails: "dhat dependency missing or feature flag not wired"
+
+  - id: FALSIFY-DHAT-002
+    rule: "Binary crates produce heap profile on exit"
+    prediction: "dhat-heap.json exists after profiled run"
+    test: "rm -f dhat-heap.json && cargo run --features dhat-heap -- <args> && test -f dhat-heap.json"
+    if_fails: "Profiler not instantiated in main() or program crashed before drop"
+
+  - id: FALSIFY-DHAT-003
+    rule: "Zero overhead without feature"
+    prediction: "Release binary identical with and without dhat dep (feature off)"
+    test: "Compare binary sizes: cargo build --release vs baseline (no dhat dep in Cargo.toml)"
+    if_fails: "dhat linked unconditionally or cfg guard missing"
+
+  - id: FALSIFY-DHAT-004
+    rule: "Feature flag name is dhat-heap in all repos"
+    prediction: "grep 'dhat-heap' Cargo.toml succeeds in all 5 repos"
+    test: "For each repo: grep -q 'dhat-heap' Cargo.toml || exit 1"
+    if_fails: "Feature flag renamed or missing in a repo"
+
+kani_harnesses:
+  - id: KANI-DHAT-001
+    obligation: C-DHAT-001
+    property: "Feature-gated cfg guard prevents dhat in release binary"
+    bound: 1
+    strategy: exhaustive
+
+qa_gate:
+  id: F-DHAT-001
+  name: "dhat-rs Memory Profiling Contract"
+  coverage_threshold: 0.90
+  complexity_threshold: 15
+
+gap_register:
+  - id: ALB-099
+    title: "dhat-rs heap profiling across sovereign stack"
+    status: FIXED
+    root_cause: |
+      Zero heap profiling in any of the 4 repos. Memory issues (ALB-081 OOM,
+      ALB-098 CUDA fragmentation) were caught by symptoms (swap storm, CUDA error)
+      not by proactive measurement.
+    fix: |
+      Feature-gated dhat-rs in all 5 repos. Same pattern: optional dep,
+      #[global_allocator], Profiler::new_heap() in main(). Zero overhead
+      when disabled. Fifteen issues found and fixed across 3 rounds:
+      1. realizar: 17.4 GB wasted std::fs::read → early-out for GPU Q4K.
+         Peak host RAM: 19.6 GB → 1.3 GB (93% reduction).
+      2. realizar: PMAT-045 variable scoping — vars declared inside
+         if !self.is_capturing block but used outside. Compile error.
+      3. aprender: RosettaStone::validate_gguf dequantized every tensor to f32
+         during apr run contract gate — 8.2 GB heap. Fixed with
+         validate_metadata_only() reading 24-byte GGUF header only.
+         Total heap: 8.2 GB → 6.0 GB.
+      4. entrenar: Global TRACER accumulated TraceMeasurement records in
+         unbounded Vec — would reach ~2.8 GB at 28K training steps. Fixed
+         with aggregated HashMap<TraceStep, (count, duration)>, O(1) memory.
+      5. alimentar: cmd_info and cmd_head loaded entire dataset. info: 73 MB
+         → 0.2 MB (348x reduction via Parquet footer metadata). head: 70 MB
+         → 6 MB (11x reduction via with_limit()).
+      6. trueno: TunerFeatures::to_vector() caused 140K tiny Vec<f32>
+         allocations in tests. Added to_array() returning [f32; 42] on stack.
+      Round 2 (deeper workloads):
+      7. trueno: BLIS gemm_blis() allocated+freed 4.3 MB workspace buffers
+         (packed_a, packed_b, c_micro) on every call. Fixed with thread-local
+         high-water-mark buffers — zero allocation after first call.
+      8. alimentar: Unique::apply() created O(rows×cols) String allocations
+         for row keys. Switched to u64 hash keys (DefaultHasher) — zero
+         String allocations in the hot path.
+      9. aprender+entrenar: APR checkpoint save copied 450 MB model weights
+         twice (add_tensor_f32 to_vec + V2Writer f32→bytes flat_map).
+         Added add_tensor_f32_owned, into_bytes, write_into consuming pipeline.
+         350M checkpoint save: ~900 MB redundant copies eliminated.
+      Round 3 (code analysis):
+      10. aprender: resolve_f32_tied_embeddings cloned entire BTreeMap
+          unconditionally (~1.4 GB for 350M model). Fixed with Cow —
+          only clones when tied embeddings need synthesis.
+      11. aprender: AprV2Writer::write() output Vec had no capacity hint.
+          Added with_capacity(total_size) — eliminates reallocation.
+      12. entrenar: ArrowDataset stayed alive during LMBatch construction
+          (triple materialization: Arrow + Vec<Vec<u32>> + LMBatch).
+          Scoped dataset to drop before batch creation (~1 GB/shard saved).
+      13. entrenar: 3 Vec allocations without with_capacity in hot data
+          loading path. Added capacity hints.
+      14. realizar: detect_model() read entire model file via std::fs::read
+          just to detect 8-byte magic. Fixed with File::open + read (8 bytes).
+      15. realizar: run_inference() read entire model file via std::fs::read
+          for format detection. Fixed with File::open + read_exact (8 bytes).
+          Peak host RAM for 17 GB model: 17+ GB → ~0 bytes for detection.
