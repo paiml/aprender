@@ -35,6 +35,8 @@ pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;
 pub(crate) mod flow;
+pub(crate) mod fp8_classifier;
+pub(crate) mod fp8_lint;
 pub(crate) mod glob_filter;
 pub(crate) mod gbnf_classifier;
 pub(crate) mod gbnf_lint;

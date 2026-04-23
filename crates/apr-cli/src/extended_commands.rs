@@ -755,6 +755,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a captured FP8 (E4M3) round-trip + SM-capability observation (CRUX-B-11)
+    Fp8Lint {
+        /// Path to captured observation JSON (frobenius, capability blocks)
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Lint a captured CUDA OOM postmortem report (CRUX-F-13)
     OomLint {
         /// Path to captured OOM postmortem JSON (e.g. /tmp/apr-oom-<ts>.json)

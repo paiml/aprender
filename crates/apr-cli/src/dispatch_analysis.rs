@@ -124,6 +124,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         )
         .map_err(crate::error::CliError::Aprender),
 
+        ExtendedCommands::Fp8Lint { observation_file } => {
+            commands::fp8_lint::run(commands::fp8_lint::Fp8LintArgs {
+                observation_file: observation_file.to_string_lossy().into_owned(),
+                json: cli.json,
+            })
+            .map_err(crate::error::CliError::Aprender)
+        }
+
         ExtendedCommands::OomLint {
             report_file,
             stderr_file,
