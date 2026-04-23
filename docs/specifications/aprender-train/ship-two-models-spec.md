@@ -1750,16 +1750,19 @@ re-dispatches.
 
 ### 14.5 Implementation plan (5 phases)
 
-| Phase | Deliverables                                                                                                   | Estimate |
-|-------|----------------------------------------------------------------------------------------------------------------|----------|
-| 0     | `contracts/entrenar/gpu-training-backend-v1.yaml` + this §14 amendment (PROPOSED status)                       | THIS PR  |
-| 1     | `Device` enum + `resolve_device()` in `crates/aprender-train/src/train/device.rs` + `--device` CLI flag + SharedTrainer enum extended with `CudaVariant` (NotImplemented stub) + FALSIFY-GPUTRAIN-001/002 | 1 day    |
-| 2     | Wire `SharedTrainer::CudaVariant` → existing `CudaTransformerTrainer`; mirror `loader/mod.rs:227` dispatch in `drive_real`; `nvidia-smi` residency probe + FALSIFY-GPUTRAIN-003 | 2 days   |
-| 3     | Lambda-labs re-dispatch: `apr pretrain --mode from-scratch --device cuda:0 --num-steps 50 --json` produces `evidence/task-132/rtx4090-370m-step-budget.json` with median step-wall < 500 ms; GATE-GPUTRAIN-001..006 all `verdict: pass` | 2 days   |
-| 4     | Promote `gpu-training-backend-v1.yaml` PROPOSED → ACTIVE; spec v2.23.0 → v2.23.1 records promotion; MEMORY.md pointer for task #132 flipped to CLOSED | 0.5 day  |
+| Phase | Deliverables                                                                                                   | Status      |
+|-------|----------------------------------------------------------------------------------------------------------------|-------------|
+| 0     | `contracts/entrenar/gpu-training-backend-v1.yaml` + this §14 amendment (PROPOSED status)                       | **SHIPPED** (PR #989 `a5fee06b6`) |
+| 1     | `Device` enum + `resolve_device()` in `crates/aprender-train/src/train/device.rs` + `--device` CLI flag + SharedTrainer enum extended with `CudaVariant` (NotImplemented stub) + FALSIFY-GPUTRAIN-001/002 | **SHIPPED** — `crates/aprender-train/src/train/device.rs` on main; `--device` parsed by `apr pretrain` through `resolve_device()`; see `apr-cli/src/commands/pretrain.rs` (search `// parse --device BEFORE any trainer allocation`) |
+| 2     | Wire `SharedTrainer::CudaVariant` → existing `CudaTransformerTrainer`; mirror `loader/mod.rs:227` dispatch in `drive_real`; `nvidia-smi` residency probe + FALSIFY-GPUTRAIN-003 | **SHIPPED** — `drive_real` now branches `if device.is_cuda() { drive_real_cuda(…) } else { drive_real_cpu(…) }` (`apr-cli/src/commands/pretrain.rs`); `drive_real_cuda` builds `CudaTransformerTrainer` via `build_shared_cuda_trainer`; `#[cfg(not(feature = "cuda"))]` stub surfaces `GATE-GPUTRAIN-002` byte-for-byte as the contract mandates. `CudaTransformerTrainer` is 3 432 LOC on main. `nvidia-smi` residency probe (FALSIFY-GPUTRAIN-003) remains an evidence-file gate discharged in Phase 3 |
+| 3     | Lambda-labs re-dispatch: `apr pretrain --mode from-scratch --device cuda:0 --num-steps 50 --json` produces `evidence/task-132/rtx4090-370m-step-budget.json` with median step-wall < 500 ms; GATE-GPUTRAIN-001..006 all `verdict: pass` | **OPEN** — `evidence/task-132/` does not yet exist; this is the sole remaining code-path-touching blocker for AC-SHIP2-003/004 and for full discharge of SHIP-016/017/018/020 |
+| 4     | Promote `gpu-training-backend-v1.yaml` PROPOSED → ACTIVE; spec v2.23.0 → next records promotion; MEMORY.md pointer for task #132 flipped to CLOSED | **OPEN** — trivial once Phase 3 evidence lands |
 
-Total estimate: **~6 days** (Plan agent), down from initial multi-week
-scope because `CudaTransformerTrainer` already exists.
+Total estimate: **~2 days remaining** (Phase 3 dispatch + Phase 4
+promotion), down from initial multi-week scope because Phases 0–2
+have landed on main. The `CudaTransformerTrainer` existed already
+and the CLI dispatch gap is now closed. Audited 2026-04-23 against
+commit `601c0740f` (main).
 
 ### 14.6 Critical path DAG
 
@@ -1768,19 +1771,22 @@ task #126 was ready; the lambda-labs dispatch falsified that claim.
 Updated DAG:
 
 ```
-#118 BPE train 50_257  ──► #131 vocab align  ──► ( #126 blocked by #132 )
+#118 BPE train 50_257  ──► #131 vocab align  ──► ( #126 blocked by #132 Phase 3 )
                                                         │
                                                         ▼
-                                            #132 Phase 0 (this PR — contract + spec)
+                                            #132 Phase 0 ✓ SHIPPED (contract + spec)
                                                         │
                                                         ▼
-                                            #132 Phase 1 (device enum + CLI flag)
+                                            #132 Phase 1 ✓ SHIPPED (device enum + CLI flag)
                                                         │
                                                         ▼
-                                            #132 Phase 2 (wire existing CudaTransformerTrainer)
+                                            #132 Phase 2 ✓ SHIPPED (wire CudaTransformerTrainer)
                                                         │
                                                         ▼
-                                            #132 Phase 3 (RTX 4090 evidence)
+                                            #132 Phase 3 (RTX 4090 evidence — OPEN)
+                                                        │
+                                                        ▼
+                                            #132 Phase 4 (PROPOSED → ACTIVE — OPEN)
                                                         │
                                                         ▼
                                                     #126 re-dispatches

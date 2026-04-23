@@ -9133,3 +9133,122 @@ roadmap:
   - competitor-apr-qa-playbook
   - crux-m-10
   notes: null
+- id: PMAT-679
+  github_issue: null
+  item_type: task
+  title: 'SHIP-TWO-001 spec §14 amendment: reflect task #132 Phase 1+2 shipped on main'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T08:51:48Z
+  updated: 2026-04-23T08:52:26.128872607+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Audit found that contracts/entrenar/gpu-training-backend-v1.yaml Phase 1 (device.rs, --device CLI flag) and Phase 2 (drive_real_cuda, GATE-GPUTRAIN-002 error surface) already shipped on main (commit a5fee06b6 and follow-ups), but spec §14 still says task #132 is at Phase 0. Edit §14.5 to record Phase 1+2 as SHIPPED, leaving only Phase 3 evidence dispatch + Phase 4 PROPOSED→ACTIVE promotion open. Reference audit doc docs/specifications/aprender-train/ship-two-models-spec-audit.md §1.3.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - spec-drift
+  - doc-edit
+  notes: null
+- id: PMAT-680
+  github_issue: null
+  item_type: task
+  title: 'SHIP-TWO-001 PR #1024 wrap-text correction: MODEL-1 is 6/10 on main, not 7/10'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T08:51:54Z
+  updated: 2026-04-23T08:51:54Z
+  spec: null
+  acceptance_criteria:
+  - 'Audit found that v2.30.0 wrap text asserts ''MODEL-1 coverage 7/10 now live on main (joins SHIP-002/005/006/008/009/010 + this SHIP-007)'' but SHIP-009 PR #1009 is OPEN and unmerged. No GATE-APR-PROV-004 exists in contracts/apr-provenance-v1.yaml on main. Either (a) merge PR #1009 first then #1024''s claim becomes true, or (b) amend #1024 wrap text to ''6/10 on main + SHIP-009 pending #1009''. This violates spec §3 row #8 Zero-Tolerance. Reference audit §1.1 + §3.1.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - spec-drift
+  - pr-1024
+  notes: null
+- id: PMAT-681
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 spec distinguish 'on-main' from 'across-branches' counts
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T08:51:59Z
+  updated: 2026-04-23T08:51:59Z
+  spec: null
+  acceptance_criteria:
+  - 'Audit found spec v2.23.x running claim ''MODEL-2 10/12 touched'' conflates branch-state with main-state. Actual MODEL-2 on main = 6/12 (3 DISCHARGED + 3 PARTIAL). SHIP-016/017/018/020 live only in open PRs #1004, #1005, #1006, #1008. Revise §4.2 + §5.2 tables + all amendment paragraphs to use two explicit columns: ''on-main'' and ''in-open-PR''. Prevents future drift. Reference audit §1.2 + §3.1.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - spec-drift
+  - doc-edit
+  notes: null
+- id: PMAT-682
+  github_issue: null
+  item_type: task
+  title: 'SHIP-TWO-001 spec refactor: amendment log → appendix; Status → YAML block'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T08:52:04Z
+  updated: 2026-04-23T08:52:04Z
+  spec: null
+  acceptance_criteria:
+  - Spec has 28 amendments in 6 days consuming first 600 lines. The **Status:** field is a 1,900-char run-on sentence. AC status is triplicated across §4.2 + §7.1 + amendment paragraphs and has fallen out of sync. Move amendment history to Appendix A. Replace prose Status with a 10-line YAML block (model_1_teacher/model_1_distilled/model_2_sovereign/spec_version_on_main/pending_amendment). Buys constant-cost readability for next 6 months. Reference audit §3.2.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - spec-refactor
+  notes: null
+- id: PMAT-683
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 add cargo xtask audit-ship-two CI gate (Zero-Tolerance enforcement)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T08:52:09Z
+  updated: 2026-04-23T08:52:09Z
+  spec: null
+  acceptance_criteria:
+  - 'Audit §3.3 shows spec §3 row #8 Zero-Tolerance is unenforced: the spec itself carries factual misstatements (''7/10 on main'' when 6/10). Add cargo xtask audit-ship-two that on every push: (1) parses docs/specifications/aprender-train/ship-two-models-spec.md, (2) extracts ''N/M on main'' claims, (3) fails CI unless matching evidence_discharged_by path is ancestor of main for N AC-SHIP-*. Structural enforcement of Zero-Tolerance on the spec document itself.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - ci
+  - zero-tolerance
+  notes: null
+- id: PMAT-684
+  github_issue: null
+  item_type: task
+  title: 'SHIP-TWO-001 MODEL-1 v2 distilled: close the deferral decision'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-23T08:52:13Z
+  updated: 2026-04-23T08:52:13Z
+  spec: null
+  acceptance_criteria:
+  - 'MODEL-1 v2 distilled has been DEFERRED since v2.10.0 (2026-04-18) under task #86 retry plan. Four weeks later it is still in the ''planned but not done'' shadow. Either (a) dispatch the retry per docs/specifications/aprender-train/model-1-qlora-retry-plan.md (LR 2e-4→5e-5, rank 16→32, temp 4.0→2.0), or (b) formally cut it from v2.x scope. Status: blocked on decision, not blocked on engineering. Reference audit §5.6.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - governance
+  - model-1-v2
+  notes: null
