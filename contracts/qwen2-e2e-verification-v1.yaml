@@ -1,10 +1,31 @@
 metadata:
-  version: 1.3.0
+  version: 1.4.0
   created: '2026-02-20'
   author: PAIML Engineering
   description: |
     Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
     into a complete model proof.
+
+    v1.4.0 (2026-04-23): Added FALSIFY-QW2E-SHIP-003 — binds MODEL-1
+    ship-blocking quantization-round-trip criterion (AC-SHIP1-003:
+    `apr convert --quantize q4_k_m` preserves every per-layer weight
+    tensor's cosine similarity ≥ 0.999 between original f32/f16 and
+    dequantized q4_k_m) to two pure verdict fns in
+    `crates/aprender-core/src/format/ship_003.rs`:
+    `verdict_from_cosine_similarity(sim, threshold) -> Ship003Verdict`
+    (single-layer threshold + cosine-range guard + non-finite guard)
+    and `verdict_from_per_layer_cosines(sims, threshold) -> Ship003Verdict`
+    (aggregate-AND combinator, conservative Fail on empty input).
+    Algorithm-level PARTIAL discharge: the threshold rule, the range
+    guard `[-1.0, 1.0]`, the aggregate-AND shape, and the 0.999 const
+    are proven today; the compute-heavy discharge (live
+    `apr convert --quantize q4_k_m` + per-layer cosine harness across
+    28 × 7 = 196 projection matrices on the 7B teacher) remains
+    blocked on hardware evidence collection. MODEL-1 coverage 7/10 →
+    8/10 touched. Eighth compute-free MODEL-1 PARTIAL lever; first
+    to combine a single-number threshold (mirrors SHIP-007/SHIP-020
+    decode-tps shape) with an aggregate-AND combinator (mirrors
+    SHIP-016 `verdict_from_qa_gates`) in one discharge.
 
     v1.3.0 (2026-04-23) — Adds FALSIFY-QW2E-SHIP-007 binding AC-SHIP1-007
     (MODEL-1 `apr bench` decode ≥ 30 tok/s on RTX 4090 for 7B Q4_K teacher)
@@ -306,6 +327,68 @@ falsification_tests:
   - drifted_constant
   - relaxed_rule
   - nan_promoted
+- id: FALSIFY-QW2E-SHIP-003
+  rule: |
+    MODEL-1 ship-blocker — `apr convert --quantize q4_k_m` round-trip
+    must preserve every per-layer weight tensor's cosine similarity
+    between the original f32/f16 value and the dequantized q4_k_m
+    value at AC_SHIP1_003_MIN_COSINE_SIMILARITY ≥ 0.999 (spec §4.2
+    AC-SHIP1-003). The falsification is phrased "any layer cos < 0.999"
+    → aggregate-AND over the per-layer cosine vector: Pass iff every
+    layer Passes AND the vector is non-empty.
+  prediction: |
+    verdict_from_cosine_similarity(sim, threshold) == Ship003Verdict::Pass
+    iff sim.is_finite() AND threshold.is_finite() AND
+    sim ∈ [-1.0, 1.0] AND threshold ∈ [-1.0, 1.0] AND sim >= threshold.
+    verdict_from_per_layer_cosines(sims, threshold) == Pass iff sims
+    is non-empty AND every layer's single-layer verdict is Pass.
+  test: |
+    cargo test -p aprender-core --lib format::ship_003
+  if_fails: |
+    MODEL-1 teacher cannot ship — either the q4_k_m quantizer has
+    regressed below the 0.999 per-layer cosine floor, or the contract
+    constants / aggregate combinator have drifted from spec §4.2
+    AC-SHIP1-003.
+  ship_blocking: true
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - crates/aprender-core/src/format/ship_003.rs
+    (verdict_from_cosine_similarity + verdict_from_per_layer_cosines +
+    AC_SHIP1_003_MIN_COSINE_SIMILARITY)
+  - 'test: falsify_ship_003_cosine_similarity_threshold_logic
+    (8 sections — exact boundary 0.999 Pass, ULP-below 0x3F7FBE76
+    Fail, safe-above {0.9999, 1.0} Pass, safe-below {0.998, 0.5, 0.0,
+    −1.0} Fail, monotonicity sweep [0.990..=1.000] step 1e-4, non-
+    finite sim+threshold Fail, out-of-range sim+threshold Fail,
+    provenance pin 0.999)'
+  - 'test: falsify_ship_003_per_layer_aggregate_and (7 sections —
+    all-Pass aggregate Pass, single-Fail-in-196 aggregate Fail,
+    all-Fail aggregate Fail, empty aggregate Fail conservatively,
+    single-element both directions, first-layer NaN/out-of-range
+    short-circuit Fail, last-layer Fail not short-circuited away)'
+  full_discharge_blocks_on: |
+    Live `apr convert --quantize q4_k_m
+    paiml/qwen2.5-coder-7b-apache-q4k-v1.safetensors -o
+    qwen2.5-coder-7b-q4km.apr` on RTX 4090 + `apr diff` per-layer
+    cosine harness walking all 28 transformer blocks × 7 projection
+    matrices; the minimum observed cosine similarity across the 196
+    tensor comparisons must be ≥ 0.999.
+  counter_example_classes:
+  - "regressed_quantizer: q4_k_m super-block scale rounding introduces
+    a systematic bias that slumps one attention layer's cosine to 0.995"
+  - "drifted_floor: spec AC-SHIP1-003 silently raised to 0.9995 but
+    AC_SHIP1_003_MIN_COSINE_SIMILARITY left at 0.999"
+  - "relaxed_rule: ≥ replaced with > (unreachable at boundary — a
+    quantizer that lands exactly at 0.999 would be silently Failed)"
+  - "empty_vector_pass: round-trip harness emits zero per-layer
+    measurements (tensor walker crashed) and the aggregate silently
+    reports Pass"
+  - "range_guard_bypass: broken inner-product routine returns 1.0001
+    (no normalization) and the aggregate silently treats it as Pass"
+  - "nan_promoted: layer-norm-divide-by-zero produces NaN cosine and
+    is silently reported as Pass via NaN comparison semantics"
+  - "sign_flipped_quantizer: a symmetry bug inverts one weight tile
+    (cosine −1.0) and the aggregate silently reports Pass"
 kani_harnesses:
 - id: KANI-QW2E-001
   obligation: QW2E-INV-001
