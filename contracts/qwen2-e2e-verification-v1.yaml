@@ -1,10 +1,33 @@
 metadata:
-  version: 1.4.0
+  version: 1.5.0
   created: '2026-02-20'
   author: PAIML Engineering
   description: |
     Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
     into a complete model proof.
+
+    v1.5.0 (2026-04-23): Added FALSIFY-QW2E-SHIP-001 — binds MODEL-1
+    ship-blocking safetensors-load criterion (AC-SHIP1-001:
+    `realizar::Model::load_safetensors(path)` returns `Ok(_)`) to
+    three pure verdict fns in `crates/aprender-core/src/format/ship_001.rs`:
+    `verdict_from_load_result(bool) -> Ship001Verdict` (Result-boundary
+    collapse to Pass-on-Ok), `verdict_from_safetensors_header_size(u64,
+    u64) -> Ship001Verdict` (header-size invariant 0 < N <= file_len - 8
+    bound at `AC_SHIP1_001_SAFETENSORS_HEADER_PREFIX_LEN = 8`), and
+    `verdict_from_safetensors_json_open_byte(u8) -> Ship001Verdict`
+    (byte-literal check that the JSON header starts with
+    `AC_SHIP1_001_SAFETENSORS_JSON_OPEN_BYTE = b'{' = 0x7B`).
+    Algorithm-level PARTIAL discharge: the three format-boundary
+    decision rules, the 8-byte prefix constant, and the 0x7B open-brace
+    byte are proven today; the compute-heavy discharge (actually
+    calling `realizar::Model::load_safetensors` on the real 7B teacher
+    file) remains blocked on hardware evidence collection. MODEL-1
+    coverage 8/10 → 9/10 touched — SHIP-001 is the last in-scope
+    MODEL-1 PARTIAL lever (SHIP-013/014 do not exist in the AC table).
+    Ninth compute-free MODEL-1 PARTIAL lever; second triple-verdict
+    decomposition after SHIP-004, reinforcing the pattern where a
+    tool-accepted-the-artifact rule is split into independent
+    format-boundary gates.
 
     v1.4.0 (2026-04-23): Added FALSIFY-QW2E-SHIP-004 — binds MODEL-1
     ship-blocking GGUF export criterion (AC-SHIP1-004:
