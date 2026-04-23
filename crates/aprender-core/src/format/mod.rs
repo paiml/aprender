@@ -386,6 +386,13 @@ pub mod ship_003;
 // docs/specifications/aprender-train/ship-two-models-spec.md §4.2 AC-SHIP1-004.
 pub mod ship_004;
 
+// FALSIFY-SHIP-001 / AC-SHIP1-001 — safetensors load boundary verdict fns:
+// Result<Model, _> → bool, safetensors header size invariant, JSON-object
+// open-brace byte. See contracts/qwen2-e2e-verification-v1.yaml
+// FALSIFY-QW2E-SHIP-001 and docs/specifications/aprender-train/ship-two-
+// models-spec.md §4.2 AC-SHIP1-001.
+pub mod ship_001;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
