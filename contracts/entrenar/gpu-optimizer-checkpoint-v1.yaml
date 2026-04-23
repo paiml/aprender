@@ -1,0 +1,123 @@
+# gpu-optimizer-checkpoint-v1.yaml — ALB-118
+#
+# Provable contract for GPU optimizer state checkpoint/resume.
+# Ensures GPU-resident AdamW first/second moment buffers survive
+# checkpoint save/load round-trip for all parameter groups.
+#
+# Motivation: ALB-118 — v10/v11/v12 failed because GPU block optimizer
+# state (18 buffers × 24 blocks + LM head + final norm ≈ 2.3 GB) was
+# not saved in APR checkpoints. Only CPU embedding optimizer was preserved.
+# Result: resume produced fresh zero-initialized AdamW state → loss spike
+# → plateau (v10: ppl=660, v11: ppl=750) or weight destruction (v12: ppl=5639).
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-17"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/cuda/optimizer_checkpoint.rs"
+  promoted_from: "albor@be23737 contracts/gpu-optimizer-checkpoint-v1.yaml per PMAT-700 Cat 3 checkpoint + SHIP-TWO-001 §3 row #9"
+  author: "PAIML Engineering"
+  description: "GPU optimizer state checkpoint/resume contract — prevents ALB-118 class of continuation failures"
+  changelog:
+    - "v1.0.0: Initial from ALB-118 (v10/v11/v12 continuation failures)"
+    - "v1.1.0: Promoted from albor to aprender monorepo per PMAT-700"
+  references:
+    - "ALB-118: GPU block optimizer state not checkpointed"
+    - "entrenar#287: GitHub issue"
+    - "Kingma & Ba (2014) Adam — first/second moment bias correction requires step count"
+  depends_on:
+    - "training-gpu-kernel-v1"
+
+equations:
+  round_trip_invariant:
+    formula: |
+      For every GPU-resident optimizer buffer:
+        ∀ layer ∈ [0, num_layers),
+        ∀ param ∈ {w_q, w_k, w_v, w_o, w_gate, w_up, w_down, input_norm, post_attn_norm},
+        ∀ moment ∈ {m, v}:
+          |loaded[layer][param][moment] - saved[layer][param][moment]| < ε
+        where ε = f32 machine epsilon (~1.19e-7)
+    domain: "All GPU-resident AdamW optimizer state in CudaTransformerTrainer"
+    invariants:
+      - "D2H transfer at save preserves all bits (stream sync before memcpy)"
+      - "H2D transfer at resume restores exact values"
+      - "No re-initialization of optimizer buffers after restore"
+
+  checkpoint_completeness:
+    formula: |
+      tensor_count("__training__.block_optimizer.*") == 18 * num_layers
+      tensor_count("__training__.lm_head_optimizer.*") == 2
+      tensor_count("__training__.final_norm_optimizer.*") == 2
+      tensor_count("__training__.embed_optimizer.*") >= 2
+      Total = 18 * num_layers + 6 (for 24 layers: 438 optimizer tensors)
+    domain: "APR checkpoint files saved by CudaTransformerTrainer"
+    invariants:
+      - "Every GPU parameter group has both m and v tensors saved"
+      - "CPU embedding optimizer state is also saved"
+      - "No partial saves — all or nothing"
+
+proof_obligations:
+  - type: invariant
+    property: "Round-trip preserves optimizer values within f32 epsilon"
+    formal: "∀ buf ∈ gpu_optimizer_buffers: max_abs_error(save_load_roundtrip(buf)) < 1e-6"
+
+  - type: invariant
+    property: "Checkpoint contains all optimizer tensor groups"
+    formal: "count(apr.tensors matching '__training__.block_optimizer.*') == 18 * num_layers"
+
+  - type: bound
+    property: "Resumed training converges within 5% of uninterrupted baseline"
+    formal: "|val_ppl_resumed(N+K) - val_ppl_continuous(N+K)| < 0.05 * val_ppl_continuous(N+K)"
+
+falsification_tests:
+  - id: FALSIFY-GPUOPT-001
+    rule: "GPU optimizer round-trip preserves all values within f32 precision"
+    prediction: "Save at step N, load, compare: max absolute error < 1e-6 across all 438 tensors"
+    test: |
+      1. Train 100 steps with 24-layer model
+      2. Save checkpoint (triggers D2H for all optimizer buffers)
+      3. Load checkpoint into fresh trainer (triggers H2D restore)
+      4. Compare all optimizer buffers element-wise
+      Assert: max_abs_error < 1e-6 for all 438 optimizer tensors
+    if_fails: "D2H/H2D transfer corrupts optimizer state — check stream.synchronize() before D2H"
+
+  - id: FALSIFY-GPUOPT-002
+    rule: "Checkpoint contains exactly 18 optimizer tensors per transformer block"
+    prediction: "APR file contains 432 block optimizer tensors + 2 LM head + 2 final norm + 2 embed = 438"
+    test: |
+      1. Save checkpoint after any training step
+      2. Open with AprReader, enumerate all __training__.* tensor names
+      3. Count tensors by prefix
+      Assert: block_optimizer count == 432 (18 × 24)
+      Assert: lm_head_optimizer count == 2
+      Assert: final_norm_optimizer count == 2
+      Assert: embed_optimizer count >= 2
+    if_fails: "Incomplete save — some parameter groups missing from checkpoint"
+
+  - id: FALSIFY-GPUOPT-003
+    rule: "Resumed training loss matches continuous training within noise bounds"
+    prediction: "val_ppl within ±5% of uninterrupted baseline after 100 post-resume steps"
+    test: |
+      1. Train continuously to step N+100, record val_ppl_continuous
+      2. Save checkpoint at step N, load, train 100 steps, record val_ppl_resumed
+      Assert: |val_ppl_resumed - val_ppl_continuous| / val_ppl_continuous < 0.05
+    if_fails: "Optimizer state not fully restored — training trajectory diverges after resume"
+
+kani_harnesses:
+  - id: KANI-GPUOPT-001
+    obligation: round_trip_invariant
+    property: "Save and load are inverse operations for optimizer buffers"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_optimizer_roundtrip
+
+qa_gate:
+  id: F-GPUOPT-GATE
+  name: "GPU Optimizer Checkpoint Contract"
+  min_coverage: 0.90
+  max_complexity: 10
+  required_tests:
+    - "test_optimizer_roundtrip_precision"
+    - "test_checkpoint_tensor_completeness"
+    - "test_resume_convergence_parity"

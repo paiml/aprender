@@ -1,0 +1,81 @@
+# Contract: Checkpoint Resume Integrity (ALB-132)
+#
+# Resume from checkpoint must not corrupt the source checkpoint.
+# The training loop must not re-save at the resume step, and GPU
+# optimizer restore must report actual restore counts.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/checkpoint/resume.rs"
+  promoted_from: "albor@be23737 contracts/checkpoint-resume-v1.yaml per PMAT-700 Cat 3 checkpoint + SHIP-TWO-001 §3 row #9"
+  description: "Checkpoint resume must preserve source checkpoint and report restore status"
+  references:
+    - "ALB-132"
+    - "ALB-118"
+
+equations:
+  resume_idempotency:
+    formula: |
+      For checkpoint C at step S loaded for resume:
+        eval(model_from(C), val_set) on resume_1 == eval(model_from(C), val_set) on resume_2
+        (within numerical tolerance of 1e-3 relative error)
+
+      Requires:
+        - C is not overwritten during resume
+        - GPU optimizer state is fully restored
+
+    domain: "All resume operations from APR checkpoints"
+    invariants:
+      - "Checkpoint file at resume step is never overwritten before next step completes"
+      - "GPU block optimizer restore count equals total block count"
+      - "val_ppl variance across consecutive resumes from same checkpoint < 1%"
+
+proof_obligations:
+  - type: invariant
+    property: "No checkpoint save at resume step"
+    formal: "do_save == false when current_step == resume_step"
+
+  - type: invariant
+    property: "GPU block optimizer restore reports actual count"
+    formal: "load_optimizer_state_apr() prints blocks_restored/total and warns if blocks_restored == 0"
+
+falsification_tests:
+  - id: FALSIFY-RESUME-001
+    rule: "Consecutive resumes from same checkpoint produce same val_ppl"
+    prediction: "val_ppl difference < 1% between first and second resume"
+    test: |
+      1. Train to step 5000, save checkpoint
+      2. Resume from checkpoint, record val_ppl at step 5000
+      3. Kill process, resume again from same checkpoint
+      4. Record val_ppl at step 5000
+      Assert: |val_ppl_1 - val_ppl_2| / val_ppl_1 < 0.01
+    if_fails: "Checkpoint corruption on resume — ALB-132 regression"
+
+  - id: FALSIFY-RESUME-002
+    rule: "Checkpoint file not modified at resume step"
+    prediction: "model-step-5000.apr mtime unchanged after resume at step 5000"
+    test: |
+      1. Record mtime of model-step-5000.apr
+      2. Resume training from step 5000
+      3. After first eval, check mtime
+      Assert: mtime unchanged (save skipped at resume step)
+    if_fails: "Resume step save guard not working"
+
+kani_harnesses:
+  - id: KANI-RESUME-001
+    obligation: resume_idempotency
+    property: "is_resume_step guard prevents save at resume step"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_resume_step_skip
+
+qa_gate:
+  id: F-RESUME-001
+  name: "Checkpoint Resume Integrity"
+  min_coverage: 0.90
+  max_complexity: 10
+  required_tests:
+    - "consecutive_resume_parity"
+    - "no_save_at_resume_step"

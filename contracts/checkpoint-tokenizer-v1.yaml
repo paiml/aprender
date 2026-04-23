@@ -1,0 +1,92 @@
+# Contract: Checkpoint Embedded Tokenizer (ALB-130)
+#
+# Training checkpoints must embed the tokenizer for standalone inference.
+# Without this, `apr eval --task humaneval` falls back to structural validation
+# (fake 100% pass rate) instead of actual code generation.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/train/checkpoint/tokenizer.rs"
+  promoted_from: "albor@be23737 contracts/checkpoint-tokenizer-v1.yaml per PMAT-700 Cat 3 checkpoint + SHIP-TWO-001 §3 row #9"
+  description: "Training checkpoints must embed tokenizer for inference"
+  references:
+    - "ALB-130"
+    - "PMAT-172"
+
+equations:
+  tokenizer_embedding:
+    formula: |
+      For every APR checkpoint saved during training:
+        metadata["tokenizer.vocabulary"].len() == config.vocab_size
+        metadata["tokenizer.merges"].len() > 0 (for BPE models)
+        metadata["tokenizer.eos_token_id"] is present
+
+    domain: "All training checkpoints (step, best, final)"
+    invariants:
+      - "Tokenizer vocabulary size matches model vocab_size"
+      - "BPE merges are non-empty for BPE tokenizers"
+      - "EOS token ID is present for generation stopping"
+
+proof_obligations:
+  - type: invariant
+    property: "Every training checkpoint embeds tokenizer metadata"
+    formal: |
+      For all checkpoint files C saved by prepare_async_apr_save_with_tokenizer:
+        C.metadata["tokenizer.vocabulary"] is non-empty array
+        C.metadata["tokenizer.vocabulary"].len() == spec.model.architecture.vocab_size
+
+  - type: invariant
+    property: "Embedded tokenizer enables inference without external files"
+    formal: |
+      For checkpoint C with embedded tokenizer:
+        load_embedded_bpe_tokenizer(C) returns Some(tokenizer)
+        tokenizer.encode("def foo():") returns non-empty token sequence
+
+falsification_tests:
+  - id: FALSIFY-TOKCPT-001
+    rule: "Checkpoint tokenizer vocab matches model vocab_size"
+    prediction: "vocab count == 32768 for albor-base-350m"
+    test: |
+      Save a checkpoint with tokenizer_path = models/albor-tokenizer-v2/tokenizer.json.
+      Load APR file, read metadata["tokenizer.vocabulary"].
+      Assert: len(vocab) == 32768
+    if_fails: "Tokenizer embedding is truncating or corrupting vocabulary"
+
+  - id: FALSIFY-TOKCPT-002
+    rule: "Checkpoint without tokenizer_path has no tokenizer metadata"
+    prediction: "tokenizer.vocabulary is absent when tokenizer_path is None"
+    test: |
+      Save a checkpoint with tokenizer_path = None.
+      Load APR file, check metadata["tokenizer.vocabulary"].
+      Assert: key is absent (backward compatible with old checkpoints)
+    if_fails: "Tokenizer metadata leaking from previous save"
+
+  - id: FALSIFY-TOKCPT-003
+    rule: "apr eval uses embedded tokenizer for HumanEval generation"
+    prediction: "mode == 'inference' (not 'structural') when tokenizer is embedded"
+    test: |
+      Save checkpoint with embedded tokenizer.
+      Run: apr eval --task humaneval --data humaneval.jsonl <checkpoint>
+      Assert: JSON output contains "mode": "inference"
+      Assert: pass@1 rate < 1.0 (real eval, not structural 100%)
+    if_fails: "Inference path not using embedded tokenizer — still falling back"
+
+kani_harnesses:
+  - id: KANI-TOKCPT-001
+    obligation: tokenizer_embedding
+    property: "Embedded vocab size matches model config"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_tokenizer_vocab_matches_model
+
+qa_gate:
+  id: F-TOKCPT-001
+  name: "Checkpoint Tokenizer Embedding Contract"
+  min_coverage: 0.90
+  max_complexity: 10
+  required_tests:
+    - "vocab_matches_model"
+    - "no_tokenizer_when_none"
+    - "inference_mode_with_embedded"
