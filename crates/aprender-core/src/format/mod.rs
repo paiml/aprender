@@ -177,6 +177,12 @@ pub mod model_family;
 // Fallback path; build.rs codegen (PMAT-250) is preferred.
 pub mod model_family_loader;
 
+// SHIP-TWO-001 AC-SHIP1-010 / FALSIFY-SHIP-010 algorithm-level PARTIAL
+// discharge: pure decision rules for the published-artifact ship gate
+// (SHA-256 byte-identity + manifest URL well-formedness).
+// See: contracts/publish-manifest-v1.yaml v1.4.0 GATE-PM-010.
+pub mod ship_010;
+
 // Special tokens registry contract falsification (FALSIFY-ST-001..006)
 #[cfg(test)]
 mod special_tokens_contract_falsify;
