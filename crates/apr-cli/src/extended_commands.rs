@@ -796,6 +796,12 @@ pub enum ExtendedCommands {
         #[arg(long, default_value = "10.0")]
         spike_multiplier: f64,
     },
+    /// Lint a captured registry byte-quota observation (CRUX-A-22)
+    RegistryQuotaLint {
+        /// Path to captured quota/atomic/ceiling observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
