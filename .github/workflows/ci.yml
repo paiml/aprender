@@ -110,11 +110,32 @@ jobs:
           # (as root) restoring host ownership for subsequent bare-metal jobs.
           chown -R 1000:1000 "$GITHUB_WORKSPACE" || true
 
+  # PMAT-683 / C-APR-AUDIT-SHIP-TWO v1.0.0: structural gate for the
+  # SHIP-TWO-001 spec YAML status block claims. Runs on every PR that
+  # touches the spec or the gate itself. Fails CI if any count/of/ids
+  # tuple is internally inconsistent (the exact class of drift the
+  # v2.29.1 correction cycle surfaced — count=7 when ids had 6 entries).
+  audit-ship-two:
+    runs-on: [self-hosted, X64, Linux]
+    container:
+      image: localhost:5000/sovereign-ci:stable
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build apr-audit-ship-two
+        run: cargo build --bin apr-audit-ship-two -p apr-cli --release
+      - name: Run SHIP-TWO-001 spec structural gate
+        run: |
+          ./target/release/apr-audit-ship-two \
+            --spec docs/specifications/aprender-train/ship-two-models-spec.md
+      - name: Run apr-audit-ship-two FALSIFY tests
+        run: cargo test --bin apr-audit-ship-two -p apr-cli --release
+
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
   gate:
     runs-on: [self-hosted, X64, Linux]
-    needs: [ci, workspace-test]
+    needs: [ci, workspace-test, audit-ship-two]
     if: always()
     steps:
       - name: Check required jobs
@@ -125,6 +146,10 @@ jobs:
           fi
           if [ "${{ needs.workspace-test.result }}" != "success" ]; then
             echo "workspace-test failed: ${{ needs.workspace-test.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.audit-ship-two.result }}" != "success" ]; then
+            echo "audit-ship-two failed: ${{ needs.audit-ship-two.result }}"
             exit 1
           fi
           echo "All required jobs passed"
