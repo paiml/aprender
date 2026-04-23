@@ -1,33 +1,32 @@
 # CRUX-B-09 — GPTQ quantization
-# Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
-# DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
-# body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# Auto-scaffolded from crux-competitive-research-ux-v1.yaml.
 
 metadata:
   id: CRUX-B-09
-  version: "1.0.0-draft"
+  version: "1.2.0"
   created: "2026-04-18"
   author: PAIML Engineering
   registry: true
-  status: draft
+  status: partial
   parent_contracts:
   - crux-competitive-research-ux-v1
   category: "B — Inspection & Debugging"
   competitor: vllm
-  demand_score: 5  # 1..5, critical priority in pmat work
+  demand_score: 5
   intake_status: missing
   description: >
-    GPTQ quantization. Root-cause workflow extracted from vllm UX — see master
-    subspec §5.B and §2 Five Whys methodology for rationale. This
-    draft contract exists to satisfy the Iron Rule "no contract → no user
-    story"; the falsification body below is a placeholder and MUST be
-    replaced with the competitor's canonical CLI transcript before promotion.
+    GPTQ (Generative Pre-trained Transformer Quantization, Frantar et al. 2022,
+    arXiv:2210.17323) parity. auto-gptq and vllm expose
+    `python -m auto_gptq --model-path M --bits 4 --group-size 128`; the
+    aprender surface is `apr quantize M.apr --method gptq --bits 4
+    --group-size 128 -o out.apr`. OBS-based layer-wise quantization
+    preserves fp16 logit direction at >= 0.98 cosine on held-out prompts.
 
   references:
   - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
-  - github.com/huggingface/peft — LoRA/PEFT
-  - arXiv:2106.09685 — LoRA
+  - "https://arxiv.org/abs/2210.17323 — GPTQ paper"
+  - "https://github.com/AutoGPTQ/AutoGPTQ — reference implementation"
+
 equations:
   gptq_size_and_cosine:
     formula: |
@@ -39,7 +38,6 @@ equations:
       Contract:
         (1) size(GPTQ) / size(fp16) <= 0.30
         (2) mean(cos_i) >= 0.98 across all 64 prompts
-      Ref: Frantar et al. 2022 (arXiv:2210.17323) — OBS-based layer-wise quantization.
     domain: (model M, 64 held-out prompts P)
     codomain: (size_ratio ∈ ℝ+, mean_cosine ∈ [-1,1])
     invariants:
@@ -69,19 +67,70 @@ falsification_tests:
     GPTQ=$(stat -c%s /tmp/model-gptq.apr)
     python3 -c "import sys; sys.exit(0 if $GPTQ <= 0.30 * $FP16 else 1)"
   if_fails: "GPTQ 4-bit artifact not compressed to expected 4 bits/weight; packing or metadata bloat bug"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gptq_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gptq_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_09.rs
+    e2e_tests:
+    - falsify_crux_b_09_001_compression_ok_under_ceiling
+    - falsify_crux_b_09_001_compression_rejects_over_ceiling
+    - falsify_crux_b_09_001_compression_rejects_zero_source
+    sub_claim: |
+      Algorithm-level necessary condition: `classify_compression_ratio`
+      computes ρ = gptq_bytes / fp16_bytes and admits only
+      ρ <= `GPTQ_MAX_COMPRESSION_RATIO` (0.30). Zero-byte source
+      returns `Insufficient { ratio: ∞ }` rather than divide-by-zero.
+    tests:
+    - compression_under_ceiling_ok
+    - compression_at_exact_ceiling_ok
+    - compression_over_ceiling_flagged
+    - compression_zero_source_is_insufficient
+    scope: byte-ratio ceiling (pure comparator)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: real GPTQ 4-bit packer + fp16 source pair on disk
 
 - id: FALSIFY-CRUX-B-09-002
   rule: GPTQ logit cosine >= 0.98
   prediction: "mean cosine(logits_fp16, logits_gptq) >= 0.98 on 64 random prompts"
   test: |
     set -euo pipefail
-    # TODO: evidence/crux/vllm/gptq/prompts-64.jsonl — 64 held-out prompts
     apr diff model.apr /tmp/model-gptq.apr \
       --prompts evidence/crux/vllm/gptq/prompts-64.jsonl \
       --metric logit-cosine --json > /tmp/gptq-cos.json
     MEAN=$(jq '.mean_cosine' /tmp/gptq-cos.json)
     python3 -c "import sys; sys.exit(0 if $MEAN >= 0.98 else 1)"
   if_fails: "GPTQ logit cosine below 0.98; Hessian-driven calibration is broken or omitted"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gptq_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gptq_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_09.rs
+    e2e_tests:
+    - falsify_crux_b_09_002_cosine_ok_on_identical_logits
+    - falsify_crux_b_09_002_cosine_rejects_orthogonal_pair
+    - falsify_crux_b_09_002_cosine_rejects_all_mismatched_lengths
+    - falsify_crux_b_09_002_cosine_rejects_missing_pairs_key
+    sub_claim: |
+      Algorithm-level necessary condition: `cosine_similarity` implements
+      the standard <a,b>/(‖a‖·‖b‖) formula (verified on identical,
+      orthogonal, and opposite-direction pairs); `classify_mean_cosine`
+      filters length-mismatched pairs, computes the arithmetic mean over
+      the valid subset, and admits only mean >= `GPTQ_MIN_MEAN_COSINE`
+      (0.98) as `Ok`. Zero-norm inputs yield `None` from
+      `cosine_similarity`; if every pair is invalid the classifier
+      returns `NoSamples` instead of silently passing.
+    tests:
+    - cosine_identical_vectors_is_one
+    - cosine_orthogonal_is_zero
+    - cosine_opposite_is_negative_one
+    - cosine_mismatched_length_is_none
+    - cosine_zero_norm_is_none
+    - mean_cosine_all_perfect_meets_threshold
+    - mean_cosine_degraded_below_threshold
+    - mean_cosine_no_valid_pairs_is_no_samples
+    - mean_cosine_skips_invalid_pairs_but_counts_rest
+    scope: cosine + mean-threshold classifier (pure vector math)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "evidence/crux/vllm/gptq/prompts-64.jsonl + `apr diff --metric logit-cosine` harness"
 
 - id: FALSIFY-CRUX-B-09-003
   rule: GPTQ CLI surface parity with vllm/auto-gptq
@@ -90,6 +139,39 @@ falsification_tests:
     apr quantize --help 2>&1 | grep -qE -- '--method[[:space:]<]'
     apr quantize --help 2>&1 | grep -qE 'gptq'
   if_fails: "apr quantize lacks --method gptq; vllm/auto-gptq path not exposed"
+  evidence_discharged_by:
+    classifier_path: crates/apr-cli/src/commands/gptq_classifier.rs
+    cli_path: crates/apr-cli/src/commands/gptq_lint.rs
+    e2e_path: crates/apr-cli/tests/falsification_crux_b_09.rs
+    e2e_tests:
+    - falsify_crux_b_09_003_flags_ok_on_canonical_argv
+    - falsify_crux_b_09_003_flags_ok_on_equals_form
+    - falsify_crux_b_09_003_flags_rejects_wrong_method
+    - falsify_crux_b_09_003_flags_rejects_invalid_bits
+    - falsify_crux_b_09_003_flags_rejects_missing_bits
+    - falsify_crux_b_09_003_flags_observer_can_assert_expected_failure
+    sub_claim: |
+      Algorithm-level necessary condition: `parse_gptq_flags` handles
+      both `--method gptq` and `--method=gptq`; accepts the auto-gptq
+      convention `--group-size=-1` (per-tensor). `validate_gptq_flags`
+      enforces bits ∈ {2,3,4,8}, group_size ∈ {-1,32,64,128}, default
+      = `GPTQ_DEFAULT_GROUP_SIZE` (128). Missing method, wrong method,
+      missing/invalid bits, and invalid group_size each map to a
+      distinct error variant.
+    tests:
+    - parse_all_three_space_form
+    - parse_group_size_neg_one_is_per_tensor
+    - validate_ok_with_default_group_size
+    - validate_ok_with_per_tensor_group_size
+    - validate_rejects_wrong_method
+    - validate_rejects_missing_bits
+    - validate_rejects_invalid_bits
+    - validate_rejects_invalid_group_size
+    - validate_is_deterministic
+    - reference_constants_match_spec
+    scope: argv → GptqFlags → GptqFlagValidation (pure)
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    full_discharge_blocked_on: "clap `apr quantize --help` subcommand surface + gptq method enum"
 
 proof_obligations:
 - type: invariant
@@ -106,10 +188,45 @@ verification_summary:
   proven: 0
   tested: 0
   status: spec-complete
+  discharge_ledger:
+  - falsify_id: FALSIFY-CRUX-B-09-001
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: real GPTQ 4-bit packer + fp16 source pair on disk
+  - falsify_id: FALSIFY-CRUX-B-09-002
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "evidence/crux/vllm/gptq/prompts-64.jsonl + `apr diff --metric logit-cosine` harness"
+  - falsify_id: FALSIFY-CRUX-B-09-003
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    blocked_on: "clap `apr quantize --help` subcommand surface + gptq method enum"
+
+ship_discipline:
+  ship_rule: CRUX-SHIP-001
+  deliverables_present:
+    classifier: crates/apr-cli/src/commands/gptq_classifier.rs
+    cli_wiring: crates/apr-cli/src/commands/gptq_lint.rs
+    e2e_test: crates/apr-cli/tests/falsification_crux_b_09.rs
+    contract: contracts/crux-B-09-v1.yaml
+  merge_gates:
+    g1_classifier_green: true
+    g2_cli_reachable: true
+    g3_e2e_runs: true
+    g4_contract_discharged: PARTIAL_ALGORITHM_LEVEL
+  notes: >
+    `apr gptq-lint --observation-file <obs.json>` dispatches three GPTQ
+    classifiers (compression ratio, logit-cosine fidelity, CLI flag
+    validation) over a captured JSON observation. e2e suite (19 tests)
+    exercises help surface, bare-invocation rejection, ok+reject paths
+    on all three gates (under-ceiling/over-ceiling/zero-source
+    compression; identical-logits/orthogonal/length-mismatch/missing-pairs
+    cosine; canonical/equals-form/wrong-method/invalid-bits/missing-bits
+    flags + observer-asserted negative case), empty/nonexistent file
+    rejection, observation-without-known-keys rejection, and --json
+    shape. Full ACTIVE discharge remains blocked on real GPTQ 4-bit
+    packer, `evidence/crux/vllm/gptq/prompts-64.jsonl`, `apr diff
+    --metric logit-cosine` harness, and `apr quantize --method gptq`
+    clap surface.
 
 pmat_work_tracking:
-  # Managed by master contract §12. If intake_status == "missing", a ticket
-  # tagged `crux-crux-b-09` is auto-created by scripts/crux_bulk_pmat_work.sh.
   ticket_tag: crux-crux-b-09
   priority: critical
   auto_created: true

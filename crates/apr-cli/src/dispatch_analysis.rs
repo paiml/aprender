@@ -124,6 +124,30 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         )
         .map_err(crate::error::CliError::Aprender),
 
+        ExtendedCommands::Fp8Lint { observation_file } => {
+            commands::fp8_lint::run(commands::fp8_lint::Fp8LintArgs {
+                observation_file: observation_file.to_string_lossy().into_owned(),
+                json: cli.json,
+            })
+            .map_err(crate::error::CliError::Aprender)
+        }
+
+        ExtendedCommands::Nf4Lint { observation_file } => commands::nf4_lint::run(
+            commands::nf4_lint::Nf4LintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
+        ExtendedCommands::GptqLint { observation_file } => commands::gptq_lint::run(
+            commands::gptq_lint::GptqLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
+
         ExtendedCommands::OomLint {
             report_file,
             stderr_file,
@@ -162,6 +186,13 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             .map_err(crate::error::CliError::Aprender)
         }
 
+        ExtendedCommands::ImatrixLint { observation_file } => commands::imatrix_lint::run(
+            commands::imatrix_lint::ImatrixLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            },
+        )
+        .map_err(crate::error::CliError::Aprender),
 
         ExtendedCommands::Hex {
             file,

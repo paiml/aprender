@@ -755,6 +755,24 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a captured FP8 (E4M3) round-trip + SM-capability observation (CRUX-B-11)
+    Fp8Lint {
+        /// Path to captured observation JSON (frobenius, capability blocks)
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured NF4 codebook/roundtrip/storage/parity observation (CRUX-B-10)
+    Nf4Lint {
+        /// Path to captured NF4 observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured GPTQ compression/cosine/flags observation (CRUX-B-09)
+    GptqLint {
+        /// Path to captured GPTQ observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Lint a captured CUDA OOM postmortem report (CRUX-F-13)
     OomLint {
         /// Path to captured OOM postmortem JSON (e.g. /tmp/apr-oom-<ts>.json)
@@ -799,6 +817,12 @@ pub enum ExtendedCommands {
     /// Lint a captured registry byte-quota observation (CRUX-A-22)
     RegistryQuotaLint {
         /// Path to captured quota/atomic/ceiling observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
+    /// Lint a captured imatrix calibration observation (CRUX-B-07)
+    ImatrixLint {
+        /// Path to captured imatrix observation JSON
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
