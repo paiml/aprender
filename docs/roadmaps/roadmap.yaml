@@ -9252,3 +9252,44 @@ roadmap:
   - governance
   - model-1-v2
   notes: null
+- id: PMAT-685
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 albor v29 config diverges from monorepo llama_370m scaffold — decision needed
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-23T09:25:10Z
+  updated: 2026-04-23T09:25:10Z
+  spec: null
+  acceptance_criteria:
+  - 'Audit found albor (~/src/albor) is the LIVE training lab running MODEL-2 in parallel (v28 STOPPED after divergence at step 11K; v29 filtered-data retry in configs/). Its v29 arch config diverges materially from the monorepo llama_370m.rs scaffold: vocab_size=32768 vs 50257, intermediate_size=4096 vs 2816, max_pos_embeddings=1024 vs 4096, tokenizer=albor-tokenizer-v2 vs 50257-BPE, target params=350M vs 370M. They are NOT the same model. Decision required: (A) align monorepo scaffold to albor v29 live; (B) align albor v29 to monorepo scaffold; (C) formally declare two variants MODEL-2a (albor 350M v32k) and MODEL-2b (monorepo 370M v50k). Blocking: any future training dispatch ambiguous until resolved.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - spec-drift
+  - albor
+  - decision-required
+  notes: null
+- id: PMAT-686
+  github_issue: null
+  item_type: task
+  title: 'SHIP-TWO-001 spec: update §5.4 Contract Registry to list monorepo crate locations'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T09:25:14Z
+  updated: 2026-04-23T09:25:14Z
+  spec: null
+  acceptance_criteria:
+  - Spec §5.4 lists MODEL-2 contracts but does not map them to the monorepo crate layout (crates/aprender-train/, crates/aprender-compute/, crates/aprender-serve/, crates/apr-cli/). Add a 'Crate' column to the registry + a call-graph diagram showing 'apr pretrain' → aprender-train::pretrain → CudaTransformerTrainer → trueno kernels → aprender-core APR write.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - spec-drift
+  - monorepo-layout
+  notes: null

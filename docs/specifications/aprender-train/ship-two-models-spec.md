@@ -1,7 +1,7 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.29.1
+**Version:** 2.29.2
 
 **Current status** (machine-parseable; source of truth for CI gates and
 `pmat work audit-ship-two`):
@@ -52,8 +52,17 @@ status:
       ids: [AC-SHIP2-003, AC-SHIP2-004]
   spec_document:
     version_on_main: 2.29.1
-    pending_amendment: null  # PR #1024 was for v2.30.0; superseded by this branch's v2.29.1 correction
+    pending_amendment: null  # PR #1024 was for v2.30.0; superseded by this branch's v2.29.1/.2 corrections
     last_audit: 2026-04-23 (docs/specifications/aprender-train/ship-two-models-spec-audit.md @ 601c0740f)
+  parallel_training_lab:
+    name: albor
+    path: ~/src/albor (separate repo, not a monorepo crate)
+    state: v28 STOPPED @ step 11K (2026-04-05); v29 filtered-data retry planned
+    relationship: uses the monorepo `apr` binary via `bin/apr-train`; owns corpus + HPO configs
+    config_divergence_vs_monorepo: critical (PMAT-685) — vocab_size 32768 vs 50257,
+                                   intermediate_size 4096 vs 2816, max_pos 1024 vs 4096,
+                                   tokenizer file different, param count 350M vs 370M
+    decision_required: PMAT-685 (reconcile Option A / B / C before next compute dispatch)
 ```
 
 **Author:** PAIML Engineering
@@ -983,19 +992,128 @@ compute dispatch. See `ship-two-models-spec-audit.md` §1.2.
                                                                       AC-012 publish
 ```
 
-### 5.4 Contract Registry (MODEL-2)
+### 5.4 Contract Registry (MODEL-2) + monorepo crate layout
 
-Leverages 54 contracts from the albor POC, promoted into the monorepo:
+Originally 54 contracts from the albor POC were planned for promotion into the
+monorepo. Audit 2026-04-23 shows that promotion is partial (see §5.5). The
+contracts active for the on-main training path and the crates that implement
+them:
 
-| Kind             | Contract                                                   | Status  |
-|------------------|------------------------------------------------------------|---------|
-| model-family     | `contracts/model-families/llama.yaml` (add 370m variant)   | AMEND   |
-| tokenizer        | `contracts/tokenizer-bpe-v1.yaml`                          | **NEW** |
-| dataset          | `contracts/dataset-thestack-python-v1.yaml`                | **NEW** |
-| training-loop    | `contracts/training-loop-pretrain-v1.yaml`                 | **NEW** |
-| checkpoint       | `contracts/checkpoint-apr-native-v1.yaml`                  | **NEW** |
-| eval-harness     | `contracts/eval-harness-humaneval-v1.yaml` (shared)        | SHARED  |
-| publish-manifest | `contracts/publish-manifest-v1.yaml` (shared)              | SHARED  |
+| Kind             | Contract (monorepo path)                                   | Status on main    | Implementing crate(s)                                                       |
+|------------------|------------------------------------------------------------|-------------------|------------------------------------------------------------------------------|
+| model-family     | `contracts/model-families/llama-370m-sovereign-v1.yaml`    | ACTIVE v1.5.0     | `crates/aprender-train/src/models/llama_370m.rs` (byte-equal to contract)    |
+| tokenizer        | `contracts/tokenizer-bpe-v1.yaml`                          | PROPOSED v1.2.0   | `crates/aprender-train/src/tokenizer/bpe.rs`, CLI `apr tokenize train/encode-corpus` |
+| dataset          | `contracts/dataset-thestack-python-v1.yaml`                | PROPOSED          | `crates/apr-cli/src/bin/apr-corpus-ingest.rs`                                |
+| pretokenize-bin  | `contracts/pretokenize-bin-v1.yaml`                        | PROPOSED v1.0.0   | `crates/apr-cli/src/commands/tokenize_commands.rs` (`encode-corpus`), `entrenar::train::shard_reader::ShardBatchIter` |
+| training-loop    | `contracts/training-loop-pretrain-v1.yaml`                 | ACTIVE v1.1.0     | `crates/aprender-train/src/train/pretrain.rs` + `.../transformer_trainer/{trainer,cuda_trainer}.rs` |
+| gpu-backend      | `contracts/entrenar/gpu-training-backend-v1.yaml`          | PROPOSED v1.0.0   | `crates/aprender-train/src/train/device.rs`, `apr-cli::commands::pretrain::drive_real_{cpu,cuda}` |
+| checkpoint       | `contracts/apr-provenance-v1.yaml` (APR v2 inline fields)  | ACTIVE v1.0.0     | `crates/aprender-core/src/format/{write,metadata}.rs`, `AprCheckpointFn`     |
+| eval-harness     | `contracts/eval-harness-humaneval-v1.yaml` (shared)        | SHARED            | `crates/apr-cli/src/commands/eval/mod.rs`, inference via `crates/aprender-serve/` |
+| publish-manifest | `contracts/publish-manifest-v1.yaml` (shared)              | DRAFT v1.4.0      | `crates/aprender-core/src/hf_hub/` + `crates/apr-cli/src/commands/publish.rs`|
+
+**Runtime call graph** when `apr pretrain --mode from-scratch --device cuda:0` runs:
+
+```
+apr (root binary, cargo install aprender)
+ └─ apr-cli::commands::pretrain::execute                     [crates/apr-cli]
+     ├─ resolve_device() + preflight_tokenizer_vocab_matches_model()
+     └─ drive_real() → drive_real_cuda()
+         ├─ entrenar::train::pretrain_real_cuda::build_shared_cuda_trainer
+         │   └─ CudaTransformerTrainer::new                  [crates/aprender-train]
+         │       └─ trueno CUDA kernels (cuBLAS GEMM, NF4 dequant, fused CE)
+         │                                                    [crates/aprender-compute]
+         ├─ ShardBatchIter over *.bin shards                  [crates/aprender-train]
+         └─ PretrainLoop::run() (GATE-TRAIN-005 divergence abort)
+             └─ AprCheckpointFn writes .apr per epoch         [crates/aprender-core]
+```
+
+Legacy naming: `crates/aprender-train/` was once the standalone `entrenar`
+repo; `crates/aprender-compute/` was `trueno`; `crates/aprender-serve/` was
+`realizar`. The `[lib] name` fields preserve the old identifiers for
+backward-compat — e.g. `use entrenar::...`. See
+`docs/specifications/aprender-monorepo-consolidation.md` for the full
+70-crate layout.
+
+### 5.5 Relationship to the albor parallel training lab
+
+**Status note (added v2.29.2, 2026-04-23):** the spec until this amendment
+treated MODEL-2 as an artifact *to be built inside the monorepo*. Audit
+(`ship-two-models-spec-audit.md`) and direct inspection of `~/src/albor`
+found that albor is a **live, independent training lab** that has been
+running MODEL-2-class pretraining experiments for weeks and is the
+authoritative source of trained checkpoints — not the monorepo scaffold.
+
+**Albor today (`~/src/albor`, last commit `be23737` 2026-04-05):**
+
+- 350M-parameter decoder, Python code completion target
+- 29 pretrain configs on disk (`configs/train/pretrain-350m-v01..v29.yaml`)
+- v28 ran to step 11K on gx10 / RTX 4090, peaked 38.53 HumanEval, diverged
+  to 75.65 val loss → STOPPED
+- v29 planned on filtered data (2.04B clean tokens, codeparrot-quality-filtered)
+- 54 contracts in `~/src/albor/contracts/`, 129+ gaps in the Sovereign AI stack
+  identified during dogfooding
+- Drives the monorepo `apr` binary via `bin/apr-train` — albor uses the
+  consolidated CLI, not its own training code. The actual training logic
+  sits in `crates/aprender-train/` (this repo).
+
+**Material config divergence** between albor v29 (live) and the monorepo's
+`Llama370MConfig` scaffold + `llama-370m-sovereign-v1.yaml` contract:
+
+| Field                   | Monorepo `Llama370MConfig` + contract | Albor v29 live config            | Impact                                                            |
+|-------------------------|----------------------------------------|----------------------------------|-------------------------------------------------------------------|
+| `hidden_size`           | 1024                                   | 1024                             | same ✓                                                             |
+| `num_hidden_layers`     | 24                                     | 24                               | same ✓                                                             |
+| `num_attention_heads`   | 16                                     | 16                               | same ✓                                                             |
+| `num_key_value_heads`   | 4 (GQA)                                | 4 (GQA)                          | same ✓                                                             |
+| `intermediate_size`     | **2816** (2.75 × hidden)               | **4096** (4.0 × hidden)          | **DIFFERENT** — changes per-layer FFN params and compute ratio    |
+| `vocab_size`            | **50,257** (GPT-2 aligned, task #131)  | **32,768** (albor-tokenizer-v2)  | **DIFFERENT** — incompatible embedding + lm_head shape            |
+| `max_position_embeddings` | **4096**                             | **1024**                         | **DIFFERENT** — albor trained on seq_len=1024 only                |
+| `rope_theta`            | 10000                                  | 10000                            | same ✓                                                             |
+| `rms_norm_eps`          | 1e-5                                   | 1e-5                             | same ✓                                                             |
+| Target parameter count  | 370M                                   | 350M                             | **DIFFERENT** — follows from vocab + FFN deltas                   |
+| Tokenizer file          | 50,257-BPE Python (monorepo-trained)   | `models/albor-tokenizer-v2/…`    | **DIFFERENT** — incompatible vocab spaces                         |
+
+**Conclusion: they are NOT the same model.** Any future dispatch of
+`apr pretrain` that loads a monorepo `.apr` checkpoint into albor's
+inference path (or vice versa) will fail the tokenizer vocab preflight
+gate (`preflight_tokenizer_vocab_matches_model`) immediately.
+
+**Decision required (tracked as PMAT-685, priority: critical):** pick
+exactly one reconciliation strategy. The spec is blocked on this choice
+before any further MODEL-2 compute dispatch.
+
+| Option | Action                                                                                                                                         | Cost                                                | Proof-of-sovereignty impact                      |
+|--------|------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|--------------------------------------------------|
+| A      | Align monorepo scaffold to albor v29 (vocab 50257→32768, intermediate 2816→4096, max_pos 4096→1024).                                           | 1 PR to `Llama370MConfig` + contract bump v1.5.0→v2.0.0 + re-run 6 MODEL-2 PARTIAL gate tests                       | No impact — albor is already proving the path     |
+| B      | Align albor v29 to monorepo scaffold (vocab 32768→50257, intermediate 4096→2816, max_pos 1024→4096). Requires retraining albor's tokenizer + re-pretokenizing the 5 B-token corpus. | ~3–5 days of compute re-dispatch on lambda-labs    | Same — MODEL-2 ships the monorepo's arch          |
+| C      | Declare two formal variants: `MODEL-2a` (albor 350M / vocab 32768 / intermediate 4096) as the canary that proves the stack; `MODEL-2b` (monorepo 370M / vocab 50257 / intermediate 2816) as the SHIP-TWO-001 artifact once task #132 Phase 3 lands. | Amends 12 AC-SHIP2-* gates to split a/b; doubles the ship gate count    | Clearest; honest about parallel work              |
+
+Tentative recommendation (pending your decision): **Option A**. Rationale:
+albor is running live on hardware, producing evidence, and has already
+surfaced divergence failure modes (v28 STOPPED) that the monorepo scaffold
+has never seen. Aligning downward to what the training lab is proving is
+cheaper than aligning upward to a scaffold nothing has trained.
+Option C is the honest default if a single canonical MODEL-2 can't be
+agreed.
+
+**Action list regardless of A/B/C choice:**
+
+1. **Albor repo needs its own spec update** — its README still cites
+   "350M" + "phi-1-small target" framing that pre-dates the SHIP-TWO-001
+   contract-gated pipeline. The albor → monorepo dependency direction
+   should be stated explicitly (albor uses `apr` binary; monorepo owns
+   training logic; albor owns corpus + hyperparameters + v-configs).
+2. **Cross-reference the 54 albor contracts against the monorepo's
+   contracts/ tree.** Audit note: only ~7 MODEL-2 contracts exist in the
+   monorepo today (§5.4 table); the other ~47 albor contracts either
+   have not been promoted or have been renamed. `pv validate` against
+   `~/src/albor/contracts/` vs `contracts/` surfaces the delta.
+3. **Pick a canonical tokenizer.** `models/albor-tokenizer-v2/tokenizer.json`
+   lives in albor; monorepo `tokenizer-bpe-v1.yaml` specifies a different
+   vocab. Only one can be the source-of-truth per Option A/B/C.
+4. **Update `aprender-train/CLAUDE.md`** — currently says "Specification
+   phase - implementation not yet started" which is obviously stale given
+   3,432 LOC of `CudaTransformerTrainer`.
 
 ---
 
@@ -1969,6 +2087,7 @@ descriptive, not normative.
 | v2.28.0  | 2026-04-23 | FALSIFY-SHIP-010 PARTIAL_ALGORITHM_LEVEL (artifact URL + SHA-256)                            |
 | v2.29.0  | 2026-04-23 | FALSIFY-SHIP-007 PARTIAL_ALGORITHM_LEVEL (apr bench ≥30 tok/s)                               |
 | v2.29.1  | 2026-04-23 | Spec-vs-main audit correction — MODEL-1 6/10 on main (not 7/10); on-main/PR/stacked columns  |
+| v2.29.2  | 2026-04-23 | §5.4 gains crate/call-graph; new §5.5 documents material divergence between monorepo `Llama370MConfig` and live albor v29 training config; PMAT-685 reconciliation decision required |
 
 **Note on amendment density:** 28 amendments over 6 days (2026-04-17
 to 2026-04-23) is a high rate. Most amendments record discharge of
