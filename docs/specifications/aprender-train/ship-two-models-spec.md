@@ -1,7 +1,7 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.29.3
+**Version:** 2.29.4
 
 **Current status** (machine-parseable; source of truth for CI gates and
 `pmat work audit-ship-two`):
@@ -851,6 +851,42 @@ the other demonstrates the stack can start AND finish without PyTorch in the loo
 - Not targeting: chat tuning, multimodal, tool use, >10B params.
 - Not blocking on: full leaderboard automation (post-SHIP), wandb integration, distributed training.
 
+### 2.3 Research Catalog — Reference Implementations (v2.29.4)
+
+**The purpose of SHIP-TWO-001 is to find gaps in the Sovereign AI Stack
+and fix them.** Every unexpected-slow path, crash, numerical drift, or
+missing kernel surfaced during MODEL-2 work is a **bug to fix at root**,
+not a reason to route around. When a fix requires understanding how
+established projects solved the same problem, check these four reference
+implementations first, cite the relevant file/commit in the fix, and
+record the insight in the contract that governs the fix.
+
+| Repo            | Path             | Primary value for SHIP-TWO-001                                                                          |
+|-----------------|------------------|---------------------------------------------------------------------------------------------------------|
+| **unsloth**     | `~/src/unsloth`  | Triton / CUDA kernels for LoRA / QLoRA / 4-bit quantized training; optimized RoPE + Swiglu + RMSNorm    |
+| **vllm**        | `~/src/vllm`     | PagedAttention + paged KV cache; efficient continuous batching; prefix caching; tensor-parallel serving |
+| **pytorch**     | `~/src/pytorch`  | Reference autograd semantics; numerical precision ground truth for backward pass parity                 |
+| **candle**      | `~/src/candle`   | Rust-native reference: compare our API ergonomics + perf; validate our tensor abstraction choices       |
+
+Usage rules:
+
+1. **Read before you write a custom kernel.** If our path is slow or
+   crashes, a reference impl has probably solved it. Cite
+   `~/src/<repo>/path/to/file.py:LINE` (or `.cu`, `.cpp`, `.rs`) in
+   the commit message AND in the provable contract's `references:`
+   block.
+2. **Translate, don't copy.** License / attribution matters; each
+   reference repo has its own license. Use reference impls as
+   algorithmic guides, not source for verbatim copy.
+3. **Regression tests parity-check against the reference.** When a
+   kernel is rewritten for correctness or speed, add a test that
+   asserts `|ours(x) − reference(x)| < ε` on a canonical input set.
+   For pytorch this is a direct numerical anchor; for candle it's a
+   Rust-to-Rust sanity check; for unsloth it's a CUDA-to-CUDA check.
+4. **The reference repos do NOT constrain SHIP-TWO-001 scope.** We
+   don't have to match their API; we use them as oracles for what's
+   possible and what's correct, not as targets.
+
 ---
 
 ## 3. Design Principles
@@ -866,6 +902,7 @@ the other demonstrates the stack can start AND finish without PyTorch in the loo
 | 7  | Five-Whys on failure        | Any FALSIFY-* failure triggers documented Hansei (§10) before retry   |
 | 8  | Zero tolerance              | We never accept bugs or poor performance. Defects and perf regressions are both blockers, not trade-offs. All work improves or holds the line; never degrades it. No "pre-existing" carve-outs. No `#[ignore]` as a release valve. |
 | 9  | Monorepo single source of truth | The monorepo is canonical for architecture, contracts, and tooling conventions. All downstream repos (albor, apr-leaderboard, etc.) MUST stay in sync with the monorepo. Divergence is a defect, not a parallel track. Downstream repos may own corpus, HPO, configs, and evidence — they MAY NOT fork the architectural contract. Enforcement: PMAT-693 `cargo xtask audit-ship-two --include-albor` CI gate. Ratified 2026-04-23 per PMAT-685 Option B decision. |
+| 10 | Fix root causes, never route around | The purpose of SHIP-TWO-001 is to **find and fix** bugs / perf gaps in the Sovereign AI Stack. Any crash, numerical drift, silent slowdown, or missing kernel surfaced during MODEL-2 work is a bug that MUST be fixed at root, not worked around by host-skipping, feature-disabling, or "good enough" fallback paths. Each fix gets (a) a five-whys commit analysis, (b) a provable contract binding the invariant, (c) a regression test (parity-check against ../unsloth /vllm /pytorch /candle where applicable). Ratified 2026-04-23 per user directive: "the entire point of spec is to find bugs/performance gaps and fix along the way." |
 
 ---
 
@@ -1205,6 +1242,93 @@ rests on honor. Two interim stopgaps:
 - The v2.29.2 audit doc (`ship-two-models-spec-audit.md`) recorded the
   drift; PMAT-685 memorialized the decision. Future contributors who
   read either will see the reasoning without re-litigating the choice.
+
+### 5.6 Backend selection policy (v2.29.4 amendment, 2026-04-23)
+
+The Sovereign AI Stack has **three NVIDIA backends + one cross-platform
+backend** available for training/inference kernels, each shipping today
+in `crates/aprender-compute/`. Backend selection is **"fastest wins
+initially"** with hard contract gates on correctness and an explicit
+"no host skipping" discipline per §3 row #10.
+
+#### 5.6.1 Backend matrix
+
+| Backend | Scope                 | Supported hardware                                         | Current status on `main`                                                                                         |
+|---------|-----------------------|------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| **PTX** (custom CUDA kernels) | Inference forward + backward training | NVIDIA sm_80 (A100), sm_86, sm_89 (RTX 4090) — pre-compiled cubins. sm_121 (Blackwell GB10) BLOCKED by trueno#200 at JIT compile during backward. | Forward path works on all; backward crashes on Blackwell. Pre-compiled kernel-bank fix tracked as **trueno#203**. |
+| **cuBLAS** (NVIDIA vendor)    | GEMM forward + training-backward GEMM | All NVIDIA, all architectures (no JIT). 4 of 5 parity tests PASS vs fused PTX kernels.   | Production-ready. Already the fallback when trueno#200 fires. 298 tok/s forward. Preferred initial choice on Blackwell. |
+| **WGPU** (WGSL shaders)       | Forward + backward training           | AMD, Intel, NVIDIA — anything with a WebGPU driver. Tested on AMD Radeon Pro W5700X.     | Phase 2 COMPLETE — forward/backward works via trueno's WGSL backward shaders; FALSIFY-WGPU-002 PASS. Phase 3 (full LoRA training loop integration) pending. Cross-platform sovereignty. |
+| **SIMD CPU**                  | Forward only (too slow for training)  | AVX2 / AVX512 / NEON / scalar                                                             | Production. Used by `apr pretrain --device cpu` for deterministic / debugging runs. |
+
+Reference: `crates/aprender-train/CLAUDE.md` §"cuBLAS Training
+Integration Status" + §"WGPU Training Support".
+
+#### 5.6.2 Selection policy — fastest wins initially
+
+At the start of every compute dispatch `apr pretrain --device X`:
+
+1. **Measure, don't assume.** On a new host or after any kernel PR,
+   run `apr bench --backends all --json` to benchmark every backend
+   that compiles on that host.
+2. **Pick the fastest that passes correctness.** The backend with
+   highest tok/s that ALSO passes `apr qa --parity-check` against a
+   reference backend (typically cuBLAS) is the default for the host
+   for that session.
+3. **Record the choice in the contract.** The training run's
+   `evidence/<run-id>/backend-selection.json` names the backend chosen
+   plus the benchmark results that justified it. Reviewers audit by
+   reading this file.
+
+No backend is intrinsically "better" — Blackwell may favor cuBLAS today
+and PTX tomorrow when trueno#203 lands; AMD hosts use WGPU. The policy
+is about **measurement + evidence**, not brand loyalty.
+
+#### 5.6.3 No host skipping — root-cause fix discipline
+
+**Per §3 row #10:** a crashed backend on a host is a bug to fix, not
+a reason to exclude the host. Concrete ongoing work:
+
+| Bug / gap                                              | Host affected    | Fix owner (contract / ticket)                                                         |
+|--------------------------------------------------------|------------------|---------------------------------------------------------------------------------------|
+| **trueno#200** — Blackwell PTX JIT crash on backward   | gx10 GB10 sm_121 | Fix via trueno#203 (pre-compiled sm_121 cubins for all backward kernels); **NOT a host-exclusion** |
+| **trueno#200 workaround** — fused NF4 fallback 15.5 tok/s | gx10 steady state | §3 row #8 Zero-Tolerance rejects this as a ship baseline; must converge to sm_121 parity with sm_89 |
+| **aprender-train CUDA trainer device plumbing**        | any NVIDIA       | task #132 Phase 1+2 SHIPPED; Phase 3 evidence is the next dispatch (see §14)          |
+| **WGPU LoRA training-loop integration (Phase 3)**      | AMD / Intel      | trueno WGSL backward shaders already work; wiring into `CudaTransformerTrainer` analog pending |
+
+Research anchors (§2.3) for each class:
+
+- **PTX/sm_121 JIT issue** — study `~/src/unsloth/unsloth/kernels/*.py`
+  for how unsloth handles multi-architecture Triton cubins; compare
+  with `~/src/pytorch/torch/cuda/` JIT policy.
+- **cuBLAS GEMM parity** — `~/src/candle/candle-core/src/cuda_backend/`
+  has Rust-native cuBLAS bindings with a clean API surface; parity-test
+  the SGEMM + GEMM_EX paths we use.
+- **WGPU backward shaders** — no large-scale reference; this is stack
+  novel. Cite trueno's own `src/backends/gpu/*.wgsl` in all fix
+  commits and bind to `wgpu-production-training-v1.yaml`.
+- **PagedAttention inference** (post-training serving) —
+  `~/src/vllm/vllm/attention/backends/` is canonical; we have
+  `realizar` KV cache code to parity-test.
+
+#### 5.6.4 gx10 role — training target, not eval-only
+
+Prior spec language (and prior drafts of §5.5) implicitly treated gx10
+as eval-only because of trueno#200. That framing is **retracted**:
+gx10 IS a training target, blocked today by trueno#200/#203, and the
+fix is on the critical path — not a "later, maybe" concern. Parallel
+eval lane (§12.6) is one use; once trueno#203 lands, gx10 joins
+lambda-labs as a pretraining host for AC-SHIP2-003/004 dispatches,
+doubling the compute pool.
+
+Acceptance criterion (new AC-SHIP2-013, added v2.29.4):
+
+> `apr pretrain --mode from-scratch --device cuda:0` on gx10 produces
+> `evidence/gx10-pretrain-50step.json` with median step-wall <= 2× the
+> lambda-labs RTX 4090 result AND GATE-GPUTRAIN-003 residency proof
+> PASS. Discharges trueno#200/#203 end-to-end.
+
+Tracking: **PMAT-696** (gx10 backend convergence smoke). Blocked by
+trueno#203 (pre-compiled sm_121 kernel bank).
 
 ---
 
@@ -2180,6 +2304,7 @@ descriptive, not normative.
 | v2.29.1  | 2026-04-23 | Spec-vs-main audit correction — MODEL-1 6/10 on main (not 7/10); on-main/PR/stacked columns  |
 | v2.29.2  | 2026-04-23 | §5.4 gains crate/call-graph; new §5.5 documents material divergence between monorepo `Llama370MConfig` and live albor v29 training config; PMAT-685 reconciliation decision required |
 | v2.29.3  | 2026-04-23 | PMAT-685 CLOSED with Option B (albor aligns to monorepo); **monorepo-single-source-of-truth policy ratified**; §5.5.1/.2/.3 add decision + albor action list (PMAT-687..694) + enforcement plan |
+| v2.29.4  | 2026-04-23 | §2.3 research catalog (../unsloth /vllm /pytorch /candle) + §3 row #10 **fix root causes, never route around** + §5.6 multi-backend selection policy (PTX/cuBLAS/WGPU, fastest wins) + new AC-SHIP2-013 gx10 pretrain gate (PMAT-696); trueno#200 elevated from workaround to fix-required bug |
 
 **Note on amendment density:** 28 amendments over 6 days (2026-04-17
 to 2026-04-23) is a high rate. Most amendments record discharge of

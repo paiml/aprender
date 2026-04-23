@@ -9456,3 +9456,24 @@ roadmap:
   - ship-two-001
   - doc-edit
   notes: null
+- id: PMAT-695
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-696 gx10 backend convergence smoke (AC-SHIP2-013)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T09:45:03Z
+  updated: 2026-04-23T09:45:03Z
+  spec: null
+  acceptance_criteria:
+  - 'Verify apr pretrain --device cuda:0 on gx10 GB10 Blackwell produces evidence/gx10-pretrain-50step.json with median step-wall <= 2x lambda-labs RTX 4090 baseline AND GATE-GPUTRAIN-003 residency proof PASS. Discharges trueno#200/#203 end-to-end per spec §5.6.4 + §3 row #10 ''fix root causes never route around''. Blocked by trueno#203 (pre-compiled sm_121 kernel bank).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - gx10
+  - blackwell
+  - root-cause-fix
+  notes: null
