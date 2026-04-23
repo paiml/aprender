@@ -69,17 +69,37 @@ Compute-backend primitives. Disposition per kernel:
 4. `gpu-optimizer-checkpoint-v1.yaml` — NEW under `contracts/entrenar/`
 5. `gpu-weight-pool-v1.yaml` — NEW under `contracts/entrenar/`
 
-### Category 4 — data-pipeline (5) → MERGE-INTO-EXISTING
+### Category 4 — data-pipeline (5) → 4 PROMOTE-NEW + 1 RETIRE (resolved 2026-04-23 via PMAT-701 + PMAT-707)
 
-Monorepo already has `tokenizer-bpe-v1.yaml`, `dataset-thestack-python-v1.yaml`,
-`pretokenize-bin-v1.yaml`. Diff each albor contract's invariants into the
-monorepo counterpart:
+**First-pass MERGE classification was 5 of 5 wrong.** Per-file reads
+during PMAT-701 + PMAT-707 execution found that the monorepo targets
+(`pretokenize-bin-v1.yaml` file-format, `tokenizer-bpe-v1.yaml` v1.2.0
+tokenizer) already cover the needed subjects OR cover disjoint adjacent
+subjects. 4 of 5 PROMOTE-NEW, 1 RETIRE:
 
-1. `data-quality-filtering-v1.yaml` → merge into `dataset-thestack-python-v1.yaml`
-2. `data-resume-position-v1.yaml` → merge into `pretokenize-bin-v1.yaml`
-3. `data-shard-kernel-v1.yaml` → merge into `pretokenize-bin-v1.yaml`
-4. `streaming-reader-v1.yaml` → merge into `pretokenize-bin-v1.yaml`
-5. `bpe-tokenizer-kernel-v1.yaml` → merge into `tokenizer-bpe-v1.yaml`
+1. `data-quality-filtering-v1.yaml` → PROMOTE-NEW `contracts/data-quality-filtering-v1.yaml` v1.1.0 (PMAT-701)
+   Subject: AST-validated Python filter stage. Disjoint from dataset selection.
+2. `data-resume-position-v1.yaml` → PROMOTE-NEW `contracts/entrenar/data-resume-position-v1.yaml` v1.1.0 (PMAT-701)
+   Subject: training-loop resume state (ALB-120). Disjoint from .bin format.
+3. `data-shard-kernel-v1.yaml` → PROMOTE-NEW `contracts/entrenar/data-shard-kernel-v1.yaml` v1.1.0 (PMAT-701)
+   Subject: distributed shard disjointness + completeness. Disjoint from .bin format.
+4. `streaming-reader-v1.yaml` → PROMOTE-NEW `contracts/streaming-reader-v1.yaml` v1.1.0 (PMAT-701)
+   Subject: APR mmap read path (89 GB OOM fix). Disjoint from pretokenize output format.
+5. `bpe-tokenizer-kernel-v1.yaml` → **RETIRE** (PMAT-707)
+   Per-file diff vs `contracts/tokenizer-bpe-v1.yaml` v1.2.0: every invariant
+   from albor's file is ALREADY COVERED in the monorepo contract —
+   roundtrip lossless, byte-level completeness (256 fallback tokens),
+   determinism / idempotency (INV-BPE-005 NFC idempotence + "encode is pure
+   function of text"), vocab size correctness (merge_rules_count_expected),
+   merge ordering deterministic. Net-new content: zero. Redundant. RETIRE.
+
+**Lessons (now 5 occurrences this session):** first-pass MERGE dispositions
+are systematically over-counted; per-file read reveals (a) adjacent-but-
+disjoint subjects (PMAT-705, 703, 701 items 1-4, 702), or (b) true
+redundancy that should RETIRE (PMAT-707 above). Merge-in-place was the
+correct disposition for ZERO of the 7 Cat 4/8/6/9/5 MERGE candidates
+examined. The monorepo-single-source-of-truth policy manifests in
+practice as mostly PROMOTE-NEW; true MERGE is rarer than triage suggested.
 
 ### Category 5 — eval (6) → PROMOTE as new contracts/eval/ family
 
