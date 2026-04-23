@@ -1,0 +1,106 @@
+# Contract: Teacher Completions Pipeline Resilience (ALB-133)
+#
+# Sequence-level distillation data generation must be resilient to
+# server crashes, resumable from last completion, and produce
+# deduplicated, quality-filtered JSONL output.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/distill/teacher_pipeline.rs (resume + dedup + retry) + crates/apr-cli/src/commands/distill.rs (teacher-gen subcommand)"
+  promoted_from: "albor@be23737 contracts/teacher-completions-pipeline-v1.yaml per PMAT-702 Cat 5 eval + SHIP-TWO-001 §3 row #9"
+  description: "Teacher completions pipeline — resilient generation with retry, resume, and quality filtering"
+  references:
+    - "ALB-133"
+    - "Textbooks Are All You Need (Gunasekar et al. 2023)"
+
+equations:
+  pipeline_resilience:
+    formula: |
+      For a prompt set P of size N and output file O:
+        completions(O) = {c : c = teacher(p), p in P, valid(c)}
+        |completions(O)| = N - failures after max_retries exhausted
+
+      Resume invariant:
+        restart(pipeline, O) produces completions only for P \ completed(O)
+        |final(O)| = |unique_prompts(O)| (no duplicates)
+
+    domain: "All teacher completion generation runs"
+    invariants:
+      - "Individual prompt failure does not terminate pipeline (try/except per prompt)"
+      - "Output JSONL is append-mode with per-record flush"
+      - "Resume skips prompts already in output file (hash-based dedup)"
+      - "max_retries (default 3) with exponential backoff before marking prompt as failed"
+      - "Completion must have len(strip()) > 10 to be accepted"
+
+  progress_observability:
+    formula: |
+      Every 10 completions, pipeline emits:
+        [i/N] completed ok, failed fail, rate/h, ETA Xh
+
+      On exit (normal or interrupt):
+        summary with total completed, failed, elapsed, output path
+
+    domain: "All pipeline runs"
+    invariants:
+      - "Progress logged every 10 completions"
+      - "Summary emitted on normal exit and SIGINT/SIGTERM"
+
+proof_obligations:
+  - type: invariant
+    property: "Server disconnect does not terminate pipeline"
+    formal: "for all prompts p_i: failure(generate(p_i)) => log_warning AND continue to p_{i+1}"
+
+  - type: invariant
+    property: "Resume skips completed prompts"
+    formal: "restart(pipeline, O) => skip first |lines(O)| prompts"
+
+  - type: invariant
+    property: "No duplicate prompts in output"
+    formal: "for all i,j in output: i != j => prompt(i) != prompt(j)"
+
+falsification_tests:
+  - id: FALSIFY-TEACHER-001
+    rule: "Pipeline resumes correctly after crash"
+    prediction: "Output has 20 unique completions after kill-at-10 + restart"
+    test: |
+      1. Run pipeline with limit=20
+      2. Kill after 10 completions
+      3. Restart with same args
+      4. Verify output has 20 unique completions (no duplicates, no gaps)
+    if_fails: "Resume logic broken — completions lost or duplicated"
+
+  - id: FALSIFY-TEACHER-002
+    rule: "Server disconnect does not crash pipeline"
+    prediction: "Pipeline logs warning and continues to next prompt"
+    test: |
+      1. Start pipeline
+      2. Kill teacher server mid-generation
+      3. Verify pipeline logs warning and continues to next prompt
+    if_fails: "Unhandled exception in generate_completion — ALB-133 regression"
+
+  - id: FALSIFY-TEACHER-003
+    rule: "Output contains no duplicate prompts"
+    prediction: "All prompts in output are unique"
+    test: |
+      1. Run pipeline with limit=50
+      2. Count unique prompts in output: jq -r .prompt output.jsonl | sort -u | wc -l
+      3. Assert count equals total lines in output
+    if_fails: "Dedup logic broken — duplicate training data will degrade SFT"
+
+kani_harnesses:
+  - id: KANI-TEACHER-001
+    obligation: pipeline_resilience
+    property: "Resume index monotonically advances — no prompt revisited"
+    bound: 100
+    strategy: exhaustive
+
+qa_gate:
+  id: F-TEACHER-001
+  name: "Teacher Completions Pipeline Resilience"
+  min_coverage: 0.0
+  max_complexity: 15
+  required_tests:
+    - "FALSIFY-TEACHER-001"
+    - "FALSIFY-TEACHER-002"

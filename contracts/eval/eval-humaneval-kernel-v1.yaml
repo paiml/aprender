@@ -1,0 +1,154 @@
+# Contract: HumanEval Code Evaluation (ALB-084)
+#
+# End-to-end evaluation: load model → generate completions → execute
+# Python tests → compute pass@k. Replaces structural validation stub.
+#
+# Motivated by: eval infrastructure is 100% stub code. Cannot measure
+# model quality, cannot submit to leaderboards, cannot validate that
+# training is producing useful models.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-serve/src/eval/humaneval.rs (kernel pipeline) + crates/apr-cli/src/commands/eval.rs (harness wiring)"
+  promoted_from: "albor@be23737 contracts/eval-humaneval-v1.yaml per PMAT-702 Cat 5 eval + SHIP-TWO-001 §3 row #9"
+  reclassification_note: |
+    First-pass PMAT-702 triage proposed RECONCILE/MERGE into the monorepo's
+    existing contracts/eval-harness-humaneval-v1.yaml. On read, the two
+    contracts are DISJOINT by subject:
+      - monorepo eval-harness-humaneval-v1.yaml is an audit contract
+        (F-EVAL-HUMANEVAL-AUDIT-001) that pins specific Qwen2.5-Coder-7B
+        checkpoints, 86.0% threshold, and records a FALSIFIED validation
+        result for SHIP-TWO-001 MODEL-1 (AC-SHIP1-005).
+      - this albor eval-humaneval-v1.yaml is a generic kernel contract
+        (ALB-084) defining pass@k formula, completion pipeline, sandboxing,
+        timeout semantics — model-agnostic and benchmark-run-agnostic.
+    Promote-NEW path chosen with "-kernel" suffix under contracts/eval/ to
+    keep the audit contract and the kernel-pipeline contract separately
+    discoverable. Mirrors the PMAT-703 lm-head-layout-parity-v1 reclass.
+  description: "HumanEval pass@k evaluation kernel — model inference + Python test execution pipeline (benchmark-run-agnostic; specific SHIP audits live in eval-harness-humaneval-v1.yaml)"
+  references:
+    - "ALB-084"
+    - "Chen et al. (2021) Evaluating Large Language Models Trained on Code"
+    - "contracts/eval-harness-humaneval-v1.yaml (disjoint sibling — audit contract)"
+
+equations:
+  pass_at_k:
+    formula: "pass@k = 1 - C(n-c, k) / C(n, k)"
+    domain: "n: total samples per problem, c: correct samples, k: target k"
+    codomain: "Probability that at least one of k samples passes [0, 1]"
+    invariants:
+      - "pass@k >= pass@1 for k > 1"
+      - "pass@k = 1.0 if c >= k"
+      - "pass@k = 0.0 if c = 0"
+      - "Uses unbiased estimator from Chen et al. (2021)"
+
+  completion_pipeline:
+    formula: |
+      Given prompt P and model M:
+        tokens = tokenize(P)
+        completion_tokens = M.generate(tokens, max_new_tokens=256, temperature=0.8)
+        completion_text = detokenize(completion_tokens[len(tokens):])
+        full_program = P + completion_text
+        result = execute_python(full_program + test_code, timeout=5s)
+        passed = (result.exit_code == 0)
+    domain: "HumanEval problem with prompt, test, entry_point"
+    codomain: "Boolean pass/fail per sample"
+    invariants:
+      - "Completion is generated from model, not from canonical_solution"
+      - "Python execution is sandboxed (no network, no filesystem writes)"
+      - "Timeout prevents infinite loops (5 second default)"
+      - "Temperature=0.8 for pass@k>1, temperature=0.0 for pass@1"
+
+proof_obligations:
+  - type: invariant
+    property: "pass@k computation matches Chen et al. unbiased estimator"
+    formal: "For n=200, c=50, k=1: abs(pass_at_k - 0.25) < 1e-6"
+
+  - type: invariant
+    property: "Completion stops at function boundary"
+    formal: "Generated text does not contain 'def ' after first newline at indent level 0"
+
+  - type: invariant
+    property: "Python execution is sandboxed"
+    formal: "Subprocess runs with no network access, tmp-only filesystem, 5s timeout"
+
+  - type: bound
+    property: "Eval completes in reasonable time"
+    formal: "164 HumanEval problems × 1 sample × 350M CPU inference < 2 hours"
+    tolerance: 0.5
+
+  - type: invariant
+    property: "JSON output contains all required fields"
+    formal: "Output has: benchmark, model, problems, passed, pass_at_k, per_problem_results"
+
+falsification_tests:
+  - id: FALSIFY-EVAL-001
+    rule: "pass@k formula matches known values"
+    prediction: "n=10, c=3, k=1 → pass@1 = 0.3; k=10 → pass@10 = 1.0"
+    test: |
+      Assert: abs(pass_at_k(10, 3, 1) - 0.3) < 1e-6
+      Assert: pass_at_k(10, 3, 10) == 1.0
+      Assert: pass_at_k(10, 0, 1) == 0.0
+    if_fails: "pass@k computation is wrong"
+
+  - id: FALSIFY-EVAL-002
+    rule: "Trivial program passes test execution"
+    prediction: "prompt='def add(a,b):\\n', completion='  return a+b', test='assert add(1,2)==3' → PASS"
+    test: |
+      Construct full program: "def add(a,b):\n  return a+b\nassert add(1,2)==3"
+      Execute via subprocess with 5s timeout.
+      Assert: exit_code == 0, passed == true
+    if_fails: "Python execution sandbox is broken"
+
+  - id: FALSIFY-EVAL-003
+    rule: "Infinite loop is caught by timeout"
+    prediction: "completion='  while True: pass' with 5s timeout → FAIL with timeout error"
+    test: |
+      Execute "while True: pass" with timeout=5s.
+      Assert: exit_code != 0, error contains "timeout"
+    if_fails: "Timeout enforcement is broken"
+
+  - id: FALSIFY-EVAL-004
+    rule: "Empty completion fails"
+    prediction: "Model generates empty string → test assertion fails"
+    test: |
+      prompt="def f():\n", completion="", test="assert f() is not None"
+      Assert: passed == false
+    if_fails: "Empty completions incorrectly marked as passing"
+
+  - id: FALSIFY-EVAL-005
+    rule: "Random model gets ~0% pass@1"
+    prediction: "Randomly initialized 350M model gets pass@1 < 1% on HumanEval"
+    test: |
+      Run eval on fresh random-init checkpoint (no training).
+      Assert: pass@1 < 0.01 (less than 1%)
+    if_fails: "Eval is measuring something other than model quality"
+
+kani_harnesses:
+  - id: KANI-EVAL-001
+    obligation: pass_at_k
+    property: "pass@k formula satisfies boundary conditions: c=0 yields 0, c>=k yields 1"
+    bound: 10
+    strategy: exhaustive
+    harness: verify_pass_at_k_boundaries
+
+  - id: KANI-EVAL-002
+    obligation: completion_pipeline
+    property: "Completion pipeline never uses canonical_solution as output"
+    bound: 4
+    strategy: bounded_int
+    harness: verify_completion_from_model
+
+qa_gate:
+  id: F-EVAL-001
+  name: "HumanEval Code Evaluation Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "pass_at_k_known_values"
+    - "trivial_program_passes"
+    - "infinite_loop_timeout"
+    - "empty_completion_fails"
+    - "random_model_near_zero"

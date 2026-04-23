@@ -1,0 +1,108 @@
+# Contract: Multi-Sample pass@k Evaluation — ALB-088
+#
+# Single-sample pass@k (n=1) makes pass@10/100 meaningless.
+# Proper pass@k requires n >> k samples per problem with temperature>0.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-serve/src/eval/pass_at_k.rs (Chen et al. unbiased estimator + multi-sample sampler) + crates/apr-cli/src/commands/eval.rs (--num-samples / --temperature flags)"
+  promoted_from: "albor@be23737 contracts/multi-sample-passk-v1.yaml per PMAT-702 Cat 5 eval + SHIP-TWO-001 §3 row #9"
+  description: "Multi-sample pass@k with unbiased estimator (Chen et al. 2021)"
+  references:
+    - "ALB-088"
+    - "albor#68"
+    - "contracts/eval/eval-humaneval-kernel-v1.yaml (single-sample path)"
+    - "contracts/eval/eval-mbpp-v1.yaml (shared estimator)"
+
+equations:
+  unbiased_pass_at_k:
+    formula: |
+      For each problem i with n samples and c_i correct:
+        pass_at_k_i = 1 - C(n - c_i, k) / C(n, k)
+      Overall pass@k = (1/P) * sum_{i=1}^{P} pass_at_k_i
+    domain: "n: samples per problem (n >= k), c_i: correct count, P: total problems"
+    codomain: "pass@k in [0, 1] — average probability of at least one correct in k samples"
+    invariants:
+      - "pass@k monotonically non-decreasing in k"
+      - "pass@k = 0 when c_i = 0 for all i"
+      - "pass@k = 1 when c_i >= k for all i"
+      - "Matches Chen et al. (2021) unbiased estimator exactly"
+
+  sampling:
+    formula: |
+      For each problem, generate n independent completions using:
+        logits = model.forward(prompt_tokens)
+        next_token = sample(softmax(logits / temperature))
+    domain: "temperature > 0 for n > 1, temperature = 0 (greedy) for n = 1"
+    codomain: "n completions per problem"
+    invariants:
+      - "Each sample is independent (no beam search coupling)"
+      - "temperature=0 is greedy argmax (deterministic)"
+
+proof_obligations:
+  - type: invariant
+    property: "Unbiased estimator matches Chen et al."
+    formal: "pass_at_k(n=10, c=3, k=1) = 0.3, pass_at_k(n=10, c=0, k=1) = 0.0"
+    tolerance: 1e-6
+    applies_to: unbiased_pass_at_k
+
+  - type: invariant
+    property: "Multi-sample results are per-problem, not global"
+    formal: "Each problem has its own (n, c_i) pair for pass@k computation"
+    tolerance: 0
+    applies_to: unbiased_pass_at_k
+
+falsification_tests:
+  - id: FALSIFY-PASSK-001
+    rule: "Unbiased estimator matches known values"
+    prediction: "n=10, c=3, k=1 → 0.3; k=10 → 1.0; c=0, k=1 → 0.0"
+    test: |
+      Assert: abs(pass_at_k(10, 3, 1) - 0.3) < 1e-6
+      Assert: pass_at_k(10, 3, 10) == 1.0
+      Assert: pass_at_k(10, 0, 1) == 0.0
+    if_fails: "pass@k formula implementation is wrong"
+
+  - id: FALSIFY-PASSK-002
+    rule: "Multi-sample produces different pass@k than single-sample"
+    prediction: "With n=10, pass@10 can be > 0 even if pass@1 < 1.0"
+    test: |
+      For a problem where 3/10 samples pass:
+      pass@1 = 0.3, pass@10 = 1.0 (since c=3 >= 0, and C(7,10) < C(10,10))
+      Assert: pass@10 > pass@1
+    if_fails: "Multi-sample not producing meaningful pass@k distinction"
+
+  - id: FALSIFY-PASSK-003
+    rule: "Temperature=0 is deterministic"
+    prediction: "All n samples with temperature=0 produce identical completion"
+    test: |
+      Run 5 samples with temperature=0 on the same prompt.
+      Assert: all completions are identical.
+    if_fails: "Greedy sampling has randomness bug"
+
+kani_harnesses:
+  - id: KANI-PASSK-001
+    obligation: unbiased_pass_at_k
+    property: "pass@k formula matches Chen et al. for known values"
+    bound: 16
+    strategy: stub_float
+    solver: cadical
+    harness: verify_pass_at_k_known_values
+
+  - id: KANI-PASSK-002
+    obligation: unbiased_pass_at_k
+    property: "pass@k monotonically non-decreasing in k"
+    bound: 10
+    strategy: exhaustive
+    harness: verify_pass_at_k_monotone
+
+qa_gate:
+  id: F-PASSK-001
+  name: "Multi-Sample pass@k Evaluation"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "unbiased_estimator_matches_known_values"
+    - "multi_sample_pass_at_k_greater_than_single"
+    - "temperature_zero_is_deterministic"

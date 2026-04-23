@@ -1,0 +1,117 @@
+# Contract: Auto Eval Scheduling + Best-Model Tracking — ALB-087
+#
+# v3 wasted 65% compute post-plateau because there was no early stopping.
+# v5 is training with 20K steps but may plateau by step 5K.
+#
+# Fix: Decouple eval_interval from save_interval, track best val_loss,
+# save model-best.safetensors on improvement, early stop on patience.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/trainer/scheduler.rs (eval loop tick + best-model bookkeeping) + crates/apr-cli/src/commands/pretrain.rs (--eval-interval / --patience flags)"
+  promoted_from: "albor@be23737 contracts/auto-eval-scheduling-v1.yaml per PMAT-702 Cat 5 eval + SHIP-TWO-001 §3 row #9"
+  description: "Auto eval scheduling with best-model tracking and early stopping"
+  references:
+    - "ALB-087"
+    - "albor#67"
+
+equations:
+  should_eval:
+    formula: |
+      should_eval = (step % eval_interval == 0) && (step > 0)
+    domain: "step: usize, eval_interval: usize > 0"
+    codomain: "bool"
+    invariants:
+      - "eval_interval defaults to save_interval if not set"
+      - "Eval never runs at step 0"
+
+  best_model_tracking:
+    formula: |
+      if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        save model-best.safetensors
+        evals_without_improvement = 0
+      else:
+        evals_without_improvement += 1
+    domain: "val_loss: f32, best_val_loss: f32 (init = f32::INFINITY)"
+    codomain: "best_val_loss updated, model-best.safetensors overwritten on improvement"
+    invariants:
+      - "best_val_loss is monotonically non-increasing"
+      - "model-best.safetensors always contains weights from global minimum val_loss step"
+
+  early_stopping:
+    formula: |
+      should_stop = (patience > 0) && (evals_without_improvement >= patience)
+    domain: "patience: usize, evals_without_improvement: usize"
+    codomain: "bool"
+    invariants:
+      - "patience=0 disables early stopping unconditionally"
+      - "Counter resets to 0 on every improvement"
+
+proof_obligations:
+  - type: invariant
+    property: "Best model is always the one with lowest val_loss"
+    formal: "forall eval_step t: model-best.safetensors contains weights from argmin_{s<=t}(val_loss(s))"
+    tolerance: 0
+    applies_to: best_model_tracking
+
+  - type: invariant
+    property: "Early stopping fires only after patience evals without improvement"
+    formal: "should_stop => (evals_without_improvement >= patience) AND (patience > 0)"
+    tolerance: 0
+    applies_to: early_stopping
+
+falsification_tests:
+  - id: FALSIFY-AUTOEVAL-001
+    rule: "Best model saved on every improvement"
+    prediction: "Given val_losses [7.0, 6.5, 6.8, 6.3, 6.9], model-best written 3 times"
+    test: |
+      Run 5 eval points with val_losses [7.0, 6.5, 6.8, 6.3, 6.9].
+      Assert best_val_loss updates at evals 1 (7.0), 2 (6.5), 4 (6.3).
+      Assert model-best.safetensors written exactly 3 times.
+    if_fails: "Best model tracking missed an improvement or saved on non-improvement"
+
+  - id: FALSIFY-AUTOEVAL-002
+    rule: "Early stopping triggers at patience boundary"
+    prediction: "With patience=3 and val_losses [7.0, 6.5, 6.8, 6.9, 7.0, 7.1], stop at eval 5"
+    test: |
+      Set patience=3. Run eval points with val_losses [7.0, 6.5, 6.8, 6.9, 7.0, 7.1].
+      Best is 6.5 (eval 2). Counter: [0, 0, 1, 2, 3, 4].
+      Assert training stops at eval 5 (counter=3 >= patience=3).
+    if_fails: "Early stopping counter logic is wrong — off-by-one or reset bug"
+
+  - id: FALSIFY-AUTOEVAL-003
+    rule: "Patience=0 disables early stopping"
+    prediction: "With patience=0, training runs to max_steps regardless of val_loss"
+    test: |
+      Set patience=0. Run 10 eval points with monotonically increasing val_loss.
+      Assert training completes all max_steps without early stop.
+    if_fails: "Early stopping fires when patience=0 — guard condition broken"
+
+kani_harnesses:
+  - id: KANI-AUTOEVAL-001
+    obligation: best_model_tracking
+    property: "best_val_loss monotonically non-increasing"
+    bound: 8
+    strategy: stub_float
+    solver: cadical
+    harness: verify_best_val_loss_monotone
+
+  - id: KANI-AUTOEVAL-002
+    obligation: early_stopping
+    property: "patience=0 never triggers early stop"
+    bound: 16
+    strategy: exhaustive
+    harness: verify_patience_zero_disabled
+
+qa_gate:
+  id: F-AUTOEVAL-001
+  name: "Auto Eval Scheduling and Best-Model Tracking"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "best_model_saved_on_every_improvement"
+    - "early_stopping_triggers_at_patience_boundary"
+    - "patience_zero_disables_early_stopping"

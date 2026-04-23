@@ -1,0 +1,148 @@
+# Contract: MBPP Code Evaluation (ALB-085)
+#
+# End-to-end evaluation: load model → generate completions from natural
+# language descriptions → execute Python tests → compute pass@k.
+#
+# MBPP differs from HumanEval:
+#   - Prompt is natural language description (text), not function signature
+#   - Model must write complete function (not just body)
+#   - Tests are direct assert statements (test_list), not check(candidate) pattern
+#   - 974 problems (vs 164 for HumanEval)
+#
+# Motivated by: HumanEval alone is insufficient for leaderboard submission.
+# MBPP provides complementary coverage (description → code vs signature → body).
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-serve/src/eval/mbpp.rs + crates/apr-cli/src/commands/eval.rs (--benchmark mbpp dispatch)"
+  promoted_from: "albor@be23737 contracts/eval-mbpp-v1.yaml per PMAT-702 Cat 5 eval + SHIP-TWO-001 §3 row #9"
+  description: "MBPP pass@k evaluation — model inference + Python test execution"
+  references:
+    - "ALB-085"
+    - "Austin et al. (2021) Program Synthesis with Large Language Models"
+    - "contracts/eval/eval-humaneval-kernel-v1.yaml (shared pass@k estimator)"
+
+equations:
+  pass_at_k:
+    formula: "pass@k = 1 - C(n-c, k) / C(n, k)"
+    domain: "n: total samples per problem, c: correct samples, k: target k"
+    codomain: "Probability that at least one of k samples passes [0, 1]"
+    invariants:
+      - "Reuses same unbiased estimator as eval-humaneval-v1"
+
+  completion_pipeline:
+    formula: |
+      Given text description T and model M:
+        prompt = T + "\n"
+        tokens = tokenize(prompt)
+        completion_tokens = M.generate(tokens, max_new_tokens=512, temperature=0.8)
+        completion_text = detokenize(completion_tokens[len(tokens):])
+        test_code = test_setup_code + "\n" + join(test_list, "\n")
+        full_program = completion_text + "\n" + test_code
+        result = execute_python(full_program, timeout=10s)
+        passed = (result.exit_code == 0)
+    domain: "MBPP problem with text, code, test_list, test_setup_code"
+    codomain: "Boolean pass/fail per sample"
+    invariants:
+      - "Completion generated from model, not from canonical code"
+      - "Python execution sandboxed (no network, no filesystem writes)"
+      - "Timeout 10s (longer than HumanEval — MBPP has costlier test cases)"
+      - "test_setup_code prepended to test assertions when non-empty"
+      - "max_new_tokens=512 (MBPP solutions longer than HumanEval)"
+
+proof_obligations:
+  - type: invariant
+    property: "MBPP JSONL schema parsed correctly"
+    formal: "Each line has: text (string), code (string), task_id (int), test_list (array of strings)"
+
+  - type: invariant
+    property: "Test assembly matches MBPP format"
+    formal: "full_program = completion + '\\n' + test_setup_code + '\\n' + join(test_list, '\\n')"
+
+  - type: invariant
+    property: "Reuses same inference bridge as HumanEval"
+    formal: "SafetensorsToAprConverter + forward_with_cache + sample_token + execute_python_test"
+
+  - type: bound
+    property: "Eval completes in reasonable time"
+    formal: "974 MBPP problems × 1 sample × 350M CPU inference < 6 hours"
+    tolerance: 0.5
+
+  - type: invariant
+    property: "JSON output contains all required fields"
+    formal: "Output has: benchmark, model, problems, passed, pass_at_k, per_problem_results, elapsed_secs"
+
+falsification_tests:
+  - id: FALSIFY-MBPP-001
+    rule: "MBPP JSONL parses all 974 problems"
+    prediction: "974 problems parsed from mbpp.jsonl, all have text, code, test_list"
+    test: |
+      Parse mbpp.jsonl.
+      Assert: problems.len() == 974
+      Assert: all problems have non-empty text and test_list
+    if_fails: "MBPP parser is broken"
+
+  - id: FALSIFY-MBPP-002
+    rule: "Test assembly produces runnable Python"
+    prediction: "canonical code + test_list assertions → exit_code 0"
+    test: |
+      Take MBPP task_id=3 (is_not_prime).
+      full_program = code + "\n" + join(test_list, "\n")
+      Execute via subprocess with 10s timeout.
+      Assert: exit_code == 0
+    if_fails: "Test assembly format is wrong"
+
+  - id: FALSIFY-MBPP-003
+    rule: "Random model gets ~0% pass@1"
+    prediction: "Untrained 350M model gets pass@1 < 1% on MBPP"
+    test: |
+      Run eval on v4 checkpoint (effectively random for code tasks).
+      Assert: pass@1 < 0.01
+    if_fails: "Eval is measuring something other than model quality"
+
+  - id: FALSIFY-MBPP-004
+    rule: "Empty completion fails test execution"
+    prediction: "Model generates empty string → assertions fail"
+    test: |
+      text="Write a function...", completion="", test_list=["assert f(1)==2"]
+      Assert: passed == false
+    if_fails: "Empty completions incorrectly marked as passing"
+
+  - id: FALSIFY-MBPP-005
+    rule: "JSON output contains all required fields"
+    prediction: "Output JSON has benchmark, model, problems, passed, pass_at_k, per_problem_results, elapsed_secs"
+    test: |
+      Run MBPP eval on a small subset (10 problems).
+      Parse output JSON.
+      Assert: all required fields present (benchmark, model, problems, passed, pass_at_k, per_problem_results, elapsed_secs).
+      Assert: problems == 10, pass_at_k is a valid float in [0, 1].
+    if_fails: "JSON output schema is incomplete or field names changed"
+
+kani_harnesses:
+  - id: KANI-MBPP-001
+    obligation: pass_at_k
+    property: "pass@k unbiased estimator matches Chen et al. for all valid n, c, k"
+    bound: 10
+    strategy: exhaustive
+    harness: verify_mbpp_pass_at_k
+
+  - id: KANI-MBPP-002
+    obligation: completion_pipeline
+    property: "Test assembly concatenates completion + test_setup_code + test_list correctly"
+    bound: 4
+    strategy: bounded_int
+    harness: verify_test_assembly_format
+
+qa_gate:
+  id: F-MBPP-001
+  name: "MBPP Code Evaluation Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "mbpp_jsonl_parse_all"
+    - "test_assembly_runnable"
+    - "random_model_near_zero"
+    - "empty_completion_fails"
+    - "json_output_schema"
