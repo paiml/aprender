@@ -78,6 +78,37 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v4
+      # Intel runners bind-mount /home/noah/.cargo/registry into every
+      # container (line 49 above). 16 clean-room runners write the SAME
+      # directory simultaneously. Failure class observed on PR #987 (five
+      # consecutive workspace-test failures 2026-04-23): a crate's `src/`
+      # extraction is partially removed by a concurrent job while its
+      # `.crate` tarball in `registry/cache/` stays intact, so cargo thinks
+      # the crate is cached but fails with `couldn't read .../lib.rs`.
+      #
+      # Self-heal: every extraction directory cargo trusts has both
+      # `.cargo-ok` and `Cargo.toml`. Walk registry/src/*/*/ and remove
+      # any dir missing either marker — cargo will re-extract from the
+      # `.crate` tarball on next use (cheap; no network). Idempotent.
+      - name: Self-heal cargo registry cache (intel-runner race guard)
+        run: |
+          set +e
+          base=/usr/local/cargo/registry/src
+          if [ ! -d "$base" ]; then
+            echo "no registry src/ yet — nothing to heal"
+            exit 0
+          fi
+          healed=0
+          for crate_dir in "$base"/*/*/; do
+            crate_dir=${crate_dir%/}
+            [ -d "$crate_dir" ] || continue
+            if [ ! -f "$crate_dir/.cargo-ok" ] || [ ! -f "$crate_dir/Cargo.toml" ]; then
+              echo "HEAL: $crate_dir (missing .cargo-ok or Cargo.toml)"
+              rm -rf "$crate_dir"
+              healed=$((healed + 1))
+            fi
+          done
+          echo "self-heal: removed $healed incomplete crate extractions"
       # Removed redundant `cargo check --workspace`: the subsequent
       # `cargo test --workspace --lib` does strictly more work (type-check +
       # codegen + link + run), and the test profile doesn't share artifacts
