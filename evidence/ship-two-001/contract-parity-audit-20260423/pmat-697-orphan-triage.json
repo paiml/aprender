@@ -1,0 +1,149 @@
+{
+  "ticket": "PMAT-697",
+  "date": "2026-04-23",
+  "input": "52 orphan albor contracts from contract-parity-audit-20260423/albor-orphans.txt",
+  "totals": {
+    "promote": 44,
+    "merge_into_existing": 6,
+    "case_by_case": 2,
+    "total": 52
+  },
+  "categories": [
+    {
+      "id": 1,
+      "name": "training-kernel",
+      "count": 15,
+      "disposition": "PROMOTE into contracts/entrenar/",
+      "sub_ticket": "PMAT-698",
+      "contracts": [
+        "fresh-training-step-v1.yaml",
+        "deterministic-training-kernel-v1.yaml",
+        "gradient-accumulation-kernel-v1.yaml",
+        "gpu-gradient-accumulation-v1.yaml",
+        "interleaved-optimizer-v1.yaml",
+        "tied-weight-optimizer-v1.yaml",
+        "ddp-pretrain-kernel-v1.yaml",
+        "ring-allreduce-kernel-v1.yaml",
+        "cosine-lr-schedule-v1.yaml",
+        "gradient-clipping-v1.yaml",
+        "training-config-kernel-v1.yaml",
+        "training-gpu-kernel-v1.yaml",
+        "training-memory-kernel-v1.yaml",
+        "training-step-budget-v1.yaml",
+        "knowledge-distillation-kernel-v1.yaml"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "backend-kernel",
+      "count": 8,
+      "disposition": "PROMOTE — per-kernel destination",
+      "sub_ticket": "PMAT-699",
+      "contracts": [
+        {"name": "cublas-gemm-v1.yaml", "dest": "contracts/entrenar/"},
+        {"name": "cuda-inference-v1.yaml", "dest": "contracts/"},
+        {"name": "q4k-gpu-gemv-v1.yaml", "dest": "contracts/"},
+        {"name": "wgpu-q4k-gemv-v1.yaml", "dest": "contracts/"},
+        {"name": "fused-kernels-v1.yaml", "dest": "TBD (split or pin)"},
+        {"name": "model-merging-kernel-v1.yaml", "dest": "contracts/entrenar/"},
+        {"name": "pruning-kernel-v1.yaml", "dest": "contracts/entrenar/"},
+        {"name": "safetensors-to-q4k-v1.yaml", "dest": "contracts/"}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "checkpoint",
+      "count": 5,
+      "disposition": "PROMOTE; partial merge with apr-provenance-v1",
+      "sub_ticket": "PMAT-700",
+      "contracts": [
+        "checkpoint-resume-v1.yaml",
+        "checkpoint-tokenizer-v1.yaml",
+        "checkpoint-inference-bridge-v1.yaml",
+        "gpu-optimizer-checkpoint-v1.yaml",
+        "gpu-weight-pool-v1.yaml"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "data-pipeline",
+      "count": 5,
+      "disposition": "MERGE-INTO-EXISTING (dataset-thestack-python-v1 / pretokenize-bin-v1 / tokenizer-bpe-v1)",
+      "sub_ticket": "PMAT-701",
+      "contracts": [
+        {"name": "data-quality-filtering-v1.yaml", "merge_target": "dataset-thestack-python-v1.yaml"},
+        {"name": "data-resume-position-v1.yaml", "merge_target": "pretokenize-bin-v1.yaml"},
+        {"name": "data-shard-kernel-v1.yaml", "merge_target": "pretokenize-bin-v1.yaml"},
+        {"name": "streaming-reader-v1.yaml", "merge_target": "pretokenize-bin-v1.yaml"},
+        {"name": "bpe-tokenizer-kernel-v1.yaml", "merge_target": "tokenizer-bpe-v1.yaml"}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "eval",
+      "count": 6,
+      "disposition": "PROMOTE as new contracts/eval/ family",
+      "sub_ticket": "PMAT-702",
+      "contracts": [
+        {"name": "eval-humaneval-v1.yaml", "note": "reconcile with monorepo eval-harness-humaneval-v1.yaml"},
+        "eval-mbpp-v1.yaml",
+        "auto-eval-scheduling-v1.yaml",
+        "multi-sample-passk-v1.yaml",
+        {"name": "v28-humaneval-eval-v1.yaml", "note": "likely RETIRE — experiment-specific"},
+        "teacher-completions-pipeline-v1.yaml"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "architecture",
+      "count": 5,
+      "disposition": "PROMOTE; check tensor-layout-v1 overlap",
+      "sub_ticket": "PMAT-703",
+      "contracts": [
+        "causal-attention-mask-v1.yaml",
+        "residual-connection-v1.yaml",
+        "weight-initialization-v1.yaml",
+        {"name": "lm-head-layout-parity-v1.yaml", "merge_target": "tensor-layout-v1.yaml"},
+        "scaling-law-prediction-v1.yaml"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "hpo",
+      "count": 5,
+      "disposition": "PROMOTE as new contracts/training/hpo/",
+      "sub_ticket": "PMAT-704",
+      "contracts": [
+        "hyperparameter-tuning-v1.yaml",
+        "batch-size-scaling-v1.yaml",
+        "memory-profiling-v1.yaml",
+        "resource-budget-v1.yaml",
+        "q4k-inference-sync-budget-v1.yaml"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "parity",
+      "count": 1,
+      "disposition": "MERGE-INTO-EXISTING (contracts/entrenar/apr-training-parity-v1.yaml)",
+      "sub_ticket": "PMAT-705",
+      "contracts": [
+        {"name": "backward-parity-v1.yaml", "merge_target": "contracts/entrenar/apr-training-parity-v1.yaml"}
+      ]
+    },
+    {
+      "id": 9,
+      "name": "other",
+      "count": 2,
+      "disposition": "CASE-BY-CASE",
+      "sub_ticket": "PMAT-706",
+      "contracts": [
+        {"name": "gguf-openai-completions-v1.yaml", "note": "serving-side; likely contracts/realizar/"},
+        {"name": "wire-protocol-v2-kernel.yaml", "note": "read before disposition"}
+      ]
+    }
+  ],
+  "policy_reference": "SHIP-TWO-001 spec v2.29.3 §3 row #9 (monorepo single source of truth)",
+  "validation_gate": "pv validate on every promoted file before commit",
+  "next_action": "Fan out PMAT-698..706 one per category; each lands a PR that imports + validates + adds promoted_from: metadata"
+}

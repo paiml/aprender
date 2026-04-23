@@ -9518,3 +9518,192 @@ roadmap:
   - contracts
   - silent-fork
   notes: null
+- id: PMAT-698
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-699 albor orphan Category 1 training-kernel (15 contracts) PROMOTE to contracts/entrenar/
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:37:32Z
+  spec: null
+  acceptance_criteria:
+  - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - pmat-697-fanout
+  notes: null
+- id: PMAT-699
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-700 albor orphan Category 2 backend-kernel (8) PROMOTE per-kernel destination
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:37:32Z
+  spec: null
+  acceptance_criteria:
+  - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - pmat-697-fanout
+  notes: null
+- id: PMAT-700
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-701 albor orphan Category 3 checkpoint (5) PROMOTE + merge overlap
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:37:32Z
+  spec: null
+  acceptance_criteria:
+  - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - pmat-697-fanout
+  notes: null
+- id: PMAT-701
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-702 albor orphan Category 4 data-pipeline (5) MERGE-INTO-EXISTING
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:37:32Z
+  spec: null
+  acceptance_criteria:
+  - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - pmat-697-fanout
+  notes: null
+- id: PMAT-702
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-703 albor orphan Category 5 eval family (6) PROMOTE as contracts/eval/
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:37:32Z
+  spec: null
+  acceptance_criteria:
+  - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - pmat-697-fanout
+  notes: null
+- id: PMAT-703
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-704 albor orphan Category 6 architecture (5) PROMOTE; tensor-layout merge
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:37:32Z
+  spec: null
+  acceptance_criteria:
+  - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - pmat-697-fanout
+  notes: null
+- id: PMAT-704
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-705 albor orphan Category 7 hpo/budgeting (5) PROMOTE as contracts/training/hpo/
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:37:32Z
+  spec: null
+  acceptance_criteria:
+  - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - pmat-697-fanout
+  notes: null
+- id: PMAT-705
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-706 albor orphan Category 8 backward-parity MERGE into apr-training-parity-v1
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:37:32Z
+  spec: null
+  acceptance_criteria:
+  - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - pmat-697-fanout
+  notes: null
+- id: PMAT-706
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-707 albor orphan Category 9 other (gguf-openai-completions, wire-protocol-v2) CASE-BY-CASE
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-23T12:37:32Z
+  updated: 2026-04-23T12:37:32Z
+  spec: null
+  acceptance_criteria:
+  - 'Sub-ticket of PMAT-697 orphan triage. See evidence/ship-two-001/contract-parity-audit-20260423/pmat-697-orphan-triage.{md,json} for full list + destinations. Disposition per §3 row #9 monorepo-single-source-of-truth.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - pmat-697-fanout
+  notes: null
