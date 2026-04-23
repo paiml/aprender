@@ -1,0 +1,117 @@
+# Contract: Data Quality Filtering Hypothesis (ALB-134)
+#
+# Hypothesis: quality-filtered codeparrot-clean (2.04B tokens, 850K files)
+# produces lower val_ppl than raw codeparrot-clean (5.08B tokens, 2.9M files)
+# at the same compute budget (same model, optimizer, hardware).
+#
+# This is a falsifiable claim — v29 will either confirm or refute it.
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-06"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "Data quality filtering — AST-validated Python with docstrings and import diversity"
+  references:
+    - "ALB-134"
+    - "Textbooks Are All You Need (Gunasekar et al. 2023)"
+    - "scripts/filter_codeparrot.py"
+  registry: true
+  scope: "crates/apr-cli/src/bin/apr-corpus-ingest.rs (quality-filter stage)"
+  promoted_from: "albor@be23737 contracts/data-quality-filtering-v1.yaml per PMAT-701 Cat 4. First-pass triage said MERGE into dataset-thestack-python-v1; per-file read found subject disjoint (quality-filter stage, not dataset selection) — PROMOTE-NEW."
+
+equations:
+  quality_filter:
+    formula: |
+      For input file f from codeparrot-clean:
+        passes(f) = ast_valid(f) AND has_docstrings(f) AND has_imports(f) AND not_generated(f)
+
+      Where:
+        ast_valid(f): ast.parse(f) succeeds (valid Python syntax)
+        has_docstrings(f): ≥1 docstring per 50 lines
+        has_imports(f): ≥2 unique import statements
+        not_generated(f): no auto-generated markers in first 5 lines
+
+      Measured: 850K / 2.95M files passed (28.7%)
+      Output: 2.04B tokens in 40 shards at data/pretokenized-1024-v4/train/
+
+    domain: "All Python files in codeparrot-clean"
+    invariants:
+      - "Every file in filtered output passes ast.parse() (100% syntax validity)"
+      - "Filter is deterministic: same input always produces same output"
+      - "No files are added — filter only removes, never synthesizes"
+
+  quality_hypothesis:
+    formula: |
+      For models M_raw (v28) and M_filtered (v29) with identical architecture,
+      optimizer, and hardware:
+        val_ppl(M_filtered, step=15530) < val_ppl(M_raw, step=15530)
+
+      Stronger claim (phi-1 analogy):
+        val_ppl(M_filtered, step=15530) < val_ppl(M_raw, step=38349)
+        (2B clean tokens beat 5B raw tokens)
+
+    domain: "Comparison of v28 and v29 training runs"
+    invariants:
+      - "v28 and v29 use identical model architecture (1024/24/16/4/4096)"
+      - "v28 and v29 use identical optimizer (AdamW, lr=7.35e-5, wd=0.012)"
+      - "v28 and v29 use identical gradient accumulation (ga=32)"
+      - "v28 val data = v29 val data (same held-out set for fair comparison)"
+
+proof_obligations:
+  - type: invariant
+    property: "Filter output is subset of input"
+    formal: "for all f in output: f in input AND passes(f)"
+
+  - type: invariant
+    property: "Identical training configuration"
+    formal: "config(v28).model == config(v29).model AND config(v28).optimizer == config(v29).optimizer"
+
+  - type: bound
+    property: "Filter pass rate within expected range"
+    formal: "0.20 <= |output| / |input| <= 0.35"
+
+falsification_tests:
+  - id: FALSIFY-FILTER-001
+    rule: "Filtered data has 100% AST validity"
+    prediction: "ast.parse() succeeds on random sample of 100 filtered files"
+    test: |
+      Sample 100 random files from data/filtered/train/*.parquet
+      Run ast.parse() on each
+      Assert: 100/100 pass
+    if_fails: "Filter has a bug — syntax-invalid files leak through"
+
+  - id: FALSIFY-FILTER-002
+    rule: "v29 val_ppl < v28 val_ppl at matched steps"
+    prediction: "At step 15530, v29 val_ppl < v28 val_ppl"
+    test: |
+      1. Run v29 to completion (15530 steps)
+      2. Compare val_ppl at step 15530 with v28's val_ppl at step 15530
+      Assert: v29_val_ppl < v28_val_ppl
+    if_fails: "Data quality hypothesis falsified — raw data wins, add more filters or use ML classifier"
+
+  - id: FALSIFY-FILTER-003
+    rule: "Filter is deterministic"
+    prediction: "Re-running filter produces identical output"
+    test: |
+      1. Run filter on first 1000 files
+      2. Compare output hash with stored reference
+      Assert: hashes match
+    if_fails: "Non-determinism in filter — likely randomness in ast.parse or file ordering"
+
+kani_harnesses:
+  - id: KANI-FILTER-001
+    obligation: quality_filter
+    property: "Filter pass rate bounded — never passes >35% of input"
+    bound: 1000
+    strategy: exhaustive
+
+qa_gate:
+  id: F-FILTER-001
+  name: "Data Quality Filtering"
+  min_coverage: 0.0
+  max_complexity: 10
+  required_tests:
+    - "FALSIFY-FILTER-001"
+    - "FALSIFY-FILTER-002"
+    - "FALSIFY-FILTER-003"

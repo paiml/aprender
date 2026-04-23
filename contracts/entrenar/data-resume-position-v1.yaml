@@ -1,0 +1,155 @@
+# data-resume-position-v1.yaml — ALB-120 / C-DATARESUME-001
+#
+# Provable contract for data loader position checkpointing.
+# Ensures training resumes from the correct batch position after
+# checkpoint restore, preventing data overlap and distribution shift.
+#
+# Motivation: ALB-120 — v13 training was killed by system reboot at
+# step 25,671. Resume restarted data loader from shard 1, causing 2x
+# data overlap on shards 1-4. At step ~50,662 model hit genuinely new
+# data → val_ppl collapsed from 239 to 782 (13 consecutive >500 evals),
+# gnorm collapsed 0.08→0.01. Training stopped by early stopping at 62K.
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-21"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "Data loader position checkpoint/resume — prevents ALB-120 class of data overlap failures"
+  references:
+    - "ALB-120: Data loader position not checkpointed (entrenar#294)"
+    - "ALB-121: Sequential shard processing amplifies distribution shift (entrenar#295)"
+    - "v13 post-mortem: system reboot → data overlap → gradient collapse"
+  depends_on:
+    - "data-shard-kernel-v1"
+    - "gpu-optimizer-checkpoint-v1"
+  registry: true
+  scope: "crates/aprender-train/src/train/shard_reader.rs (data loader state)"
+  promoted_from: "albor@be23737 contracts/data-resume-position-v1.yaml per PMAT-701 Cat 4. First-pass said MERGE into pretokenize-bin-v1; per-file read: subject is training-loop resume (not .bin file format) — PROMOTE-NEW under contracts/entrenar/."
+
+equations:
+  batch_position_invariant:
+    formula: |
+      resume_batch_idx = checkpoint_step × gradient_accumulation
+      On resume, training loop skips batches [0, resume_batch_idx)
+      and starts processing from batch resume_batch_idx onward.
+    domain: |
+      checkpoint_step: optimizer step saved in APR metadata
+      gradient_accumulation: number of micro-batches per optimizer step
+    codomain: "Batch index to resume from"
+    invariants:
+      - "No batch is processed twice across save/resume boundary"
+      - "No batch is skipped (missed) across save/resume boundary"
+      - "resume_batch_idx == 0 when checkpoint_step == 0 (fresh start)"
+
+  batch_order_determinism:
+    formula: |
+      batch_order = shuffled_batch_order(num_batches, shuffle, seed, epoch)
+      Given the same (num_batches, shuffle, seed, epoch), batch_order
+      is identical before and after checkpoint restore.
+    domain: "Batch count, shuffle flag, seed, epoch number"
+    codomain: "Deterministic permutation of batch indices"
+    invariants:
+      - "Same seed + epoch always produces same batch order"
+      - "Resume sees the same batch_order as original run"
+
+  metadata_persistence:
+    formula: |
+      APR checkpoint metadata includes:
+        data_batch_idx: current iter_idx at checkpoint time
+      On restore:
+        resume_batch_idx = max(checkpoint_step × grad_accum, data_batch_idx)
+    domain: "APR file metadata"
+    codomain: "Persisted batch position"
+    invariants:
+      - "data_batch_idx is written to every APR checkpoint"
+      - "data_batch_idx monotonically increases within an epoch"
+
+proof_obligations:
+  - type: invariant
+    property: "No data overlap on resume"
+    formal: |
+      forall batches b processed before checkpoint at step S:
+        b is NOT processed again after resume from step S
+    tolerance: 0
+    applies_to: batch_position_invariant
+
+  - type: invariant
+    property: "No data gap on resume"
+    formal: |
+      forall batches b in [resume_batch_idx, num_batches):
+        b is processed exactly once after resume
+    tolerance: 0
+    applies_to: batch_position_invariant
+
+  - type: invariant
+    property: "Fresh start equivalence"
+    formal: |
+      If checkpoint_step == 0: resume_batch_idx == 0
+      Training from fresh start and from step-0 checkpoint produce
+      identical batch sequences.
+    tolerance: 0
+    applies_to: batch_position_invariant
+
+falsification_tests:
+  - id: FALSIFY-DATARESUME-001
+    rule: "Resume skips already-processed batches"
+    prediction: |
+      checkpoint_step=100, grad_accum=8 → resume_batch_idx=800
+      First batch processed after resume is batch_order[800], not batch_order[0]
+    test: |
+      Create trainer with checkpoint_step=100, grad_accum=8.
+      Verify training loop skips first 800 iterations.
+      First processed batch index matches batch_order[800].
+    if_fails: "Training loop ignores checkpoint step for data position calculation"
+
+  - id: FALSIFY-DATARESUME-002
+    rule: "APR metadata contains data_batch_idx"
+    prediction: |
+      After saving checkpoint at step 1000 with grad_accum=8,
+      APR metadata["data_batch_idx"] is present and equals the
+      iter_idx at save time.
+    test: |
+      Save APR checkpoint at step 1000.
+      Load APR metadata.
+      Assert "data_batch_idx" key exists.
+      Assert value is a valid integer.
+    if_fails: "prepare_async_apr_save does not write data_batch_idx to metadata"
+
+  - id: FALSIFY-DATARESUME-003
+    rule: "No data overlap reproduces v13 failure"
+    prediction: |
+      With ALB-120 fix: resume from step 25000 checkpoint processes
+      batches starting at index 200000 (25000 × 8), NOT from index 0.
+      val_ppl does not collapse at step 50K.
+    test: |
+      Simulate: num_batches=1227172, checkpoint_step=25000, grad_accum=8.
+      Verify resume_batch_idx=200000.
+      Verify batch_order[200000] != batch_order[0] (different data region).
+    if_fails: "ALB-120 fix not applied — data loader restarts from beginning"
+
+kani_harnesses:
+  - id: KANI-DATARESUME-001
+    obligation: batch_position_invariant
+    property: "resume_batch_idx = step × grad_accum for all valid inputs"
+    bound: 16
+    strategy: exhaustive
+    harness: verify_resume_batch_idx_calculation
+
+  - id: KANI-DATARESUME-002
+    obligation: batch_position_invariant
+    property: "resume_batch_idx == 0 when checkpoint_step == 0"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_fresh_start_equivalence
+
+qa_gate:
+  id: F-DATARESUME-001
+  name: "Data Resume Position Correctness"
+  min_coverage: 0.90
+  max_complexity: 10
+  required_tests:
+    - "resume_skips_processed_batches"
+    - "apr_metadata_contains_data_batch_idx"
+    - "fresh_start_equivalence"
+    - "no_overlap_after_resume"

@@ -1,0 +1,119 @@
+# Contract: Streaming APR Reader (realizar#136)
+#
+# Ensures APR file reading uses mmap for constant-memory access.
+# Written because `apr tensors` on 67GB file consumed 89GB RSS → swap storm.
+#
+# Five Whys:
+# 1. Why did `apr tensors` swap? — 89GB RSS on 125GB machine
+# 2. Why 89GB? — `reader.read_to_end(&mut data)` loads entire 67GB into Vec<u8>
+# 3. Why read_to_end? — `list_tensors()` only had mmap path for SafeTensors
+# 4. Why no APR mmap path? — AprV2ReaderRef existed but wasn't wired in
+# 5. Why not wired? — Original code predates large APR files
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-06"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "APR v2 file reading via mmap — no full-file read into heap"
+  references:
+    - "realizar#136"
+    - "ALB-010"
+  registry: true
+  scope: "crates/aprender-core/src/format/read.rs (AprV2ReaderRef) + aprender-serve inference loader"
+  promoted_from: "albor@be23737 contracts/streaming-reader-v1.yaml per PMAT-701 Cat 4. First-pass said MERGE into pretokenize-bin-v1; per-file read: subject is APR-format mmap read path (not pretokenize output format) — PROMOTE-NEW. Fixes 89GB RSS on 125GB machine class of OOM bug."
+
+equations:
+  mmap_peak_memory:
+    formula: "M_peak = H + I + W"
+    domain: "H = header (64B), I = index (~180KB for 1811 tensors), W = OS page cache working set"
+
+  read_all_peak_memory:
+    formula: "M_read = file_size"
+    domain: "Entire file loaded into Vec<u8>"
+
+  memory_ratio:
+    formula: "R = file_size / (H + I)"
+    domain: "For 67GB file: R ≈ 67GB / 180KB ≈ 372,000x improvement"
+
+proof_obligations:
+  - type: invariant
+    property: "list_tensors() uses mmap for APR v2 files, not read_to_end"
+    formal: "detect(magic == APR0) → MappedFile + AprV2ReaderRef path"
+
+  - type: invariant
+    property: "AprV2ReaderRef borrows mmap slice, does not copy file to Vec<u8>"
+    formal: "heap_alloc(list_tensors, APR_v2) < 1MB for any file size"
+
+  - type: equivalence
+    property: "mmap path returns same results as read_to_end path"
+    formal: "list_tensors_v2_mmap(path) == list_tensors_v2(read_all(path))"
+    tolerance: 0.0
+
+  - type: invariant
+    property: "GGUF files still work via read_to_end fallback"
+    formal: "detect(magic == GGUF) → read_to_end → list_tensors_gguf"
+
+falsification_tests:
+  - id: FALSIFY-MMAP-001
+    rule: "67GB APR file must not cause >10GB RSS"
+    prediction: "peak RSS < 10 GB (was 89 GB before fix)"
+    test: |
+      Given: 67GB APR v2 file (1811 tensors, Qwen3.5-35B-A3B)
+      When: `apr tensors model.apr` runs
+      Then: peak RSS < 10 GB
+      Measurement: /proc/PID/status VmRSS
+    if_fails: "mmap path not wired — read_to_end still active for APR"
+
+  - id: FALSIFY-MMAP-002
+    rule: "Small APR files still work correctly"
+    prediction: "Correct tensor count, names, shapes, dtypes"
+    test: |
+      Given: APR v2 file < 1MB (unit test)
+      When: list_tensors(path, default_options)
+      Then: returns correct tensor metadata
+    if_fails: "mmap path broke small file handling"
+
+  - id: FALSIFY-MMAP-003
+    rule: "APR v1 files fall through to read_to_end"
+    prediction: "v1 files still readable via fallback"
+    test: |
+      Given: APR v1 file (magic APRN or APR1)
+      When: list_tensors(path, default_options)
+      Then: works via read_to_end → list_tensors_v1
+    if_fails: "APR v1 backward compat broken by early mmap return"
+
+  - id: FALSIFY-MMAP-004
+    rule: "Tensor stats correct via mmap path"
+    prediction: "mean, std, min, max match expected values"
+    test: |
+      Given: APR v2 file with known f32 tensor [1.0, 2.0, 3.0, 4.0]
+      When: list_tensors(path, { compute_stats: true })
+      Then: mean=2.5, std≈1.118, min=1.0, max=4.0
+    if_fails: "AprV2ReaderRef::get_tensor_as_f32 not wired to stats"
+
+kani_harnesses:
+  - id: KANI-MMAP-001
+    obligation: mmap_peak_memory
+    property: "Mmap path heap allocation bounded by header + index size, not file size"
+    bound: 4
+    strategy: bounded_int
+    harness: verify_mmap_heap_bounded
+
+  - id: KANI-MMAP-002
+    obligation: roundtrip_equivalence
+    property: "Mmap path returns identical results to read_to_end path"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_mmap_read_equivalence
+
+qa_gate:
+  id: F-MMAP-001
+  name: "Streaming APR Reader Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "large_file_low_rss"
+    - "small_file_correct"
+    - "v1_backward_compat"
+    - "tensor_stats_via_mmap"

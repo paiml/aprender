@@ -1,0 +1,203 @@
+# data-shard-kernel-v1.yaml — C-SHARD-001
+#
+# Provable contract for data sharding in distributed training.
+# Validates disjointness (no duplicate samples) and completeness
+# (all samples seen exactly once per epoch).
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-03"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "Data shard disjointness and completeness for distributed pretraining"
+  references:
+    - "StreamingParquetLoader file-level sharding"
+    - "training-config-kernel-v1.yaml (epoch/step calculations)"
+    - "ALB-060: Epoch exhaustion from insufficient data coverage"
+  registry: true
+  scope: "crates/aprender-train/src/train/shard_reader.rs (ShardBatchIter + distributed sharding)"
+  promoted_from: "albor@be23737 contracts/data-shard-kernel-v1.yaml per PMAT-701 Cat 4. First-pass said MERGE into pretokenize-bin-v1; per-file read: subject is distributed shard disjointness (not file format) — PROMOTE-NEW under contracts/entrenar/."
+  depends_on:
+    - "training-config-kernel-v1"
+
+equations:
+  file_level_sharding:
+    formula: |
+      Given F files and N workers:
+        Worker w loads files: {f | f mod N == w, f in [0, F)}
+        files_per_worker = ceil(F / N) or floor(F / N)
+
+      For F=10, N=3:
+        w0: [0, 3, 6, 9]
+        w1: [1, 4, 7]
+        w2: [2, 5, 8]
+    domain: |
+      F: number of data files (parquet shards)
+      N: world_size
+      w: worker rank in [0, N)
+    codomain: "Partition of file indices into N disjoint sets"
+    invariants:
+      - "Every file is assigned to exactly one worker"
+      - "No file is assigned to multiple workers"
+      - "File assignment is deterministic given (F, N, w)"
+
+  sequence_coverage:
+    formula: |
+      Total sequences = sum_{f in files} num_sequences(f)
+      Worker w's sequences = sum_{f in w's files} num_sequences(f)
+      Effective batch per step (global) = N * batch_size
+      Steps per epoch = floor(total_sequences / (N * batch_size * grad_accum))
+    domain: "Parquet files with sequence counts"
+    codomain: "Per-worker and global sequence counts"
+    invariants:
+      - "total_sequences = sum of all workers' sequences (completeness)"
+      - "No sequence appears in two workers' shards (disjointness)"
+      - "steps_per_epoch accounts for world_size in denominator"
+
+  epoch_shuffle:
+    formula: |
+      At epoch boundary:
+        Each worker shuffles its own file list with seed = base_seed + epoch
+        Within each file, sequences are shuffled with seed = base_seed + epoch + file_idx
+      Cross-worker shuffle is NOT needed — file assignment is fixed.
+    domain: "Epoch number, base seed, file list"
+    codomain: "Shuffled iteration order within each worker"
+    invariants:
+      - "Shuffle is deterministic given seed"
+      - "Shuffle does not change file-to-worker assignment"
+      - "Different epochs see different orderings (seed varies)"
+
+  shard_balance:
+    formula: |
+      imbalance = max_worker_seqs / min_worker_seqs
+      For file-level sharding: imbalance depends on file size variance
+      Worst case: F=N, one file has 10x more sequences → 10x imbalance
+      Mitigation: use many small files (F >> N) to reduce variance
+    domain: "File sizes (sequence counts)"
+    codomain: "Imbalance ratio >= 1.0"
+    invariants:
+      - "imbalance < 1.1 when F >= 10*N and files are roughly equal size"
+      - "Workers with fewer sequences finish their epoch earlier"
+      - "Coordinator must handle straggler workers (wait for slowest)"
+
+  min_files_for_sharding:
+    formula: |
+      Required: F >= N (at least one file per worker)
+      If F < N: some workers get zero files → error
+      Recommended: F >= 4*N for reasonable balance
+    domain: "File count F, worker count N"
+    codomain: "Boolean: sharding is feasible"
+    invariants:
+      - "F < N is a fatal configuration error, not a silent degradation"
+      - "F == N is allowed but may be highly imbalanced"
+
+proof_obligations:
+  - type: invariant
+    property: "Shard disjointness"
+    formal: "forall w1 != w2: files(w1) ∩ files(w2) == ∅"
+    tolerance: 0
+    applies_to: file_level_sharding
+
+  - type: invariant
+    property: "Shard completeness"
+    formal: "union_{w=0}^{N-1} files(w) == {0, 1, ..., F-1}"
+    tolerance: 0
+    applies_to: file_level_sharding
+
+  - type: bound
+    property: "Shard balance for albor data"
+    formal: "For F=22 files, N=2 workers: imbalance < 1.2"
+    tolerance: 0.1
+
+  - type: invariant
+    property: "Deterministic sharding"
+    formal: "Same (F, N, w, seed) always produces same file assignment and order"
+    tolerance: 0
+    applies_to: file_level_sharding
+
+  - type: invariant
+    property: "F < N is a fatal error"
+    formal: "If F < N, return Err, do not silently assign empty shards"
+    tolerance: 0
+    applies_to: min_files_for_sharding
+
+falsification_tests:
+  - id: FALSIFY-SHARD-001
+    rule: "File indices are disjoint across workers"
+    prediction: "For F=10, N=3: w0∩w1==∅, w0∩w2==∅, w1∩w2==∅"
+    test: |
+      F=10, N=3
+      w0 = {0,3,6,9}, w1 = {1,4,7}, w2 = {2,5,8}
+      Assert pairwise intersection is empty
+      Assert union = {0,1,2,3,4,5,6,7,8,9}
+    if_fails: "File assignment algorithm has modular arithmetic error"
+
+  - id: FALSIFY-SHARD-002
+    rule: "F < N is rejected"
+    prediction: "F=1, N=2 returns Err"
+    test: |
+      Attempt to create StreamingParquetLoader with 1 file and 2 workers
+      Assert Result is Err with message containing "insufficient files"
+    if_fails: "Missing validation allows empty worker shards"
+
+  - id: FALSIFY-SHARD-003
+    rule: "Epoch shuffle changes order but not assignment"
+    prediction: "Same files assigned in epoch 0 and epoch 1, different iteration order"
+    test: |
+      F=10, N=2, epoch 0: w0 gets files {0,2,4,6,8} in some order
+      epoch 1: w0 gets files {0,2,4,6,8} in different order
+      Assert same set, different permutation
+    if_fails: "Shuffle incorrectly reassigns files across workers"
+
+  - id: FALSIFY-SHARD-004
+    rule: "Steps per epoch accounts for world_size"
+    prediction: "N=2 workers each see half the data → steps_per_epoch halved vs N=1"
+    test: |
+      total_seqs=22079, batch=4, accum=1
+      N=1: steps_per_epoch = floor(22079/4) = 5519
+      N=2: steps_per_epoch = floor(22079/(2*4)) = 2759
+      Assert N=2 steps is approximately half of N=1 steps
+    if_fails: "Steps calculation ignores world_size"
+
+  - id: FALSIFY-SHARD-005
+    rule: "Shard balance for albor data"
+    prediction: "For F=22 files, N=2 workers: imbalance ratio < 1.2"
+    test: |
+      Load 22 Parquet files with known sequence counts.
+      Assign files to 2 workers via modular sharding.
+      Compute imbalance = max_worker_seqs / min_worker_seqs.
+      Assert imbalance < 1.2 (within 10% tolerance).
+    if_fails: "File size variance too high or sharding algorithm does not distribute evenly"
+
+kani_harnesses:
+  - id: KANI-SHARD-001
+    obligation: file_level_sharding
+    property: "Shard disjointness — no file assigned to two workers"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_shard_disjointness
+
+  - id: KANI-SHARD-002
+    obligation: file_level_sharding
+    property: "Shard completeness — union of all shards equals full file set"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_shard_completeness
+
+  - id: KANI-SHARD-003
+    obligation: min_files_for_sharding
+    property: "F < N returns error, never silent empty shard"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_insufficient_files_error
+
+qa_gate:
+  id: F-SHARD-001
+  name: "Data Shard Disjointness and Completeness"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "shard_disjointness_for_all_worker_pairs"
+    - "shard_completeness_union_equals_full_set"
+    - "insufficient_files_returns_error"
+    - "epoch_shuffle_preserves_assignment"
