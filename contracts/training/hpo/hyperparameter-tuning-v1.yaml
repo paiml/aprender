@@ -1,0 +1,220 @@
+# hyperparameter-tuning-v1.yaml — C-HPO-001
+#
+# Provable contract for automatic hyperparameter tuning via μTransfer
+# scaling, successive halving, and WSD schedule.
+#
+# The sovereign stack provides reproducible HPO via:
+#   apr train sweep  → config generation (grid/random)
+#   apr train apply  → short proxy runs with ScalingLawPredictor
+#   pv validate      → contract validation
+#
+# References:
+#   - Yang et al. 2022: "Tensor Programs V" (μTransfer)
+#     https://arxiv.org/abs/2203.03466
+#   - Hoffmann et al. 2022: "Training Compute-Optimal LLMs" (Chinchilla)
+#     https://arxiv.org/abs/2203.15556
+#   - Hu et al. 2024: "MiniCPM" (WSD schedule, LR scaling formula)
+#     https://arxiv.org/abs/2404.06395
+#   - Li et al. 2018: "Hyperband" (successive halving)
+#     https://arxiv.org/abs/1603.06560
+#   - Kaplan et al. 2020: "Scaling Laws for Neural Language Models"
+#     https://arxiv.org/abs/2001.08361
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-29"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "Automatic hyperparameter tuning — μTransfer, successive halving, WSD"
+  references:
+    - "Yang et al. 2022: https://arxiv.org/abs/2203.03466"
+    - "Hoffmann et al. 2022: https://arxiv.org/abs/2203.15556"
+    - "Hu et al. 2024: https://arxiv.org/abs/2404.06395"
+    - "Li et al. 2018: https://arxiv.org/abs/1603.06560"
+    - "Predictable Scale 2025: https://arxiv.org/abs/2503.04715"
+    - "Cramming 2022: https://arxiv.org/abs/2212.14034"
+  registry: true
+  scope: "crates/apr-cli/src/commands/train.rs + apr train sweep / apr train halving"
+  promoted_from: "albor@be23737 contracts/hyperparameter-tuning-v1.yaml per PMAT-704 Cat 7 HPO + SHIP-TWO-001 §3 row #9"
+
+equations:
+  mutransfer_lr_scaling:
+    formula: |
+      μTransfer (standard parametrization):
+        lr_target = lr_proxy × (width_proxy / width_target)
+
+      For Albor 50M→350M:
+        width_proxy  = 512  (hidden_size of 50M model)
+        width_target = 1024 (hidden_size of 350M model)
+        lr_target = lr_proxy × 0.5
+
+      Example: if 50M optimal lr = 6e-4, then 350M lr = 3e-4
+
+    domain: "lr_proxy: (0, 1), width_proxy: Z+, width_target: Z+"
+    codomain: "lr_target: (0, 1)"
+    invariants:
+      - "lr_target < lr_proxy when width_target > width_proxy"
+      - "lr_target = lr_proxy when width_target = width_proxy"
+      - "Transfer ratio is width_proxy / width_target"
+
+  minicpm_lr_formula:
+    formula: |
+      MiniCPM empirical scaling (Hu et al. 2024):
+        lr_opt = 0.01 × (N / 1e7)^(-0.25)
+
+      For N = 350M:
+        lr_opt = 0.01 × (3.5e8 / 1e7)^(-0.25)
+               = 0.01 × 35^(-0.25)
+               = 0.01 / 2.43
+               = 4.1e-3
+
+      Note: This is 41x higher than v26's lr=1e-4.
+      The formula is derived from empirical scaling studies and
+      assumes standard (non-interleaved) optimizer.
+
+    domain: "N: positive integer (total parameters)"
+    codomain: "lr_opt: positive real"
+    invariants:
+      - "lr_opt decreases with model size (power law)"
+      - "lr_opt in [1e-4, 1e-1] for models in [1M, 100B]"
+
+  step_law_lr:
+    formula: |
+      Predictable Scale "Step Law" (2025, arXiv:2503.04715):
+        lr_opt = 1.79 × N^(-0.713) × D^(0.307)
+        B_opt  = 0.58 × D^(0.571)
+
+      Where N = non-embedding parameters, D = dataset tokens.
+
+      For Albor 350M on 7B tokens:
+        lr_opt = 1.79 × (350e6)^(-0.713) × (7e9)^(0.307) ≈ 3.2e-3
+        B_opt  = 0.58 × (7e9)^(0.571) ≈ 183K tokens
+
+    domain: "N: positive integer, D: positive integer"
+    codomain: "lr_opt: positive real, B_opt: positive real"
+    invariants:
+      - "lr_opt decreases with N (power law)"
+      - "lr_opt increases with D (more data tolerates higher LR)"
+      - "B_opt increases with D (power law)"
+
+  successive_halving:
+    formula: |
+      Hyperband successive halving (Li et al. 2018):
+
+      Input: N configs, R max resource per config, η=2 (halving rate)
+      Rounds: k = 0, 1, ..., floor(log_η(N))
+
+      For each round k:
+        n_k = ceil(N / η^k)          (surviving configs)
+        r_k = R × η^(k - K)          (resource per config, K = max round)
+
+      For N=16, η=2:
+        Round 0: 16 configs × 500 steps
+        Round 1: 8 configs × 1000 steps
+        Round 2: 4 configs × 2000 steps
+        Round 3: 2 configs × 4000 steps
+        Winner:  1 config  (total: ~80 min on 50M proxy)
+
+    domain: "N: positive integer, R: positive integer, η: integer ≥ 2"
+    codomain: "Winner config with optimal hyperparameters"
+    invariants:
+      - "Total resource ≤ N × R × (1 + 1/η + 1/η² + ...)"
+      - "Winner val_ppl < median(all configs) at final round"
+
+  wsd_schedule:
+    formula: |
+      Warmup-Stable-Decay (MiniCPM, Hu et al. 2024):
+
+      Phase 1 — Warmup (linear, steps 0..w):
+        lr(t) = peak_lr × (t / w)
+
+      Phase 2 — Stable (constant, steps w..s):
+        lr(t) = peak_lr
+
+      Phase 3 — Decay (cosine, steps s..T):
+        lr(t) = min_lr + (peak_lr - min_lr) × 0.5 × (1 + cos(π × (t-s)/(T-s)))
+
+      Default phase fractions: warmup=5%, stable=75%, decay=20%
+      Advantage over cosine: anytime checkpointing during stable phase,
+      extension-friendly (extend stable, add new decay).
+
+    domain: "t: [0, T], peak_lr: R+, min_lr: R+, w: Z+, s: Z+"
+    codomain: "lr(t): [min_lr, peak_lr]"
+    invariants:
+      - "lr(0) = 0"
+      - "lr(w) = peak_lr"
+      - "lr(t) = peak_lr for t in [w, s]"
+      - "lr(T) = min_lr"
+
+proof_obligations:
+  - type: bound
+    property: "μTransfer LR prediction within 2x of empirical optimal"
+    formal: "0.5 × lr_optimal ≤ lr_mutransfer ≤ 2.0 × lr_optimal"
+    tolerance: 2.0
+    applies_to: mutransfer_lr_scaling
+
+  - type: invariant
+    property: "Successive halving winner beats random selection"
+    formal: "val_ppl(winner) < median(val_ppl(all_configs))"
+    tolerance: 0
+    applies_to: successive_halving
+
+  - type: bound
+    property: "WSD stable phase LR is constant"
+    formal: "|lr(t) - peak_lr| < epsilon for t in [warmup_end, stable_end]"
+    tolerance: 1e-7
+    applies_to: wsd_schedule
+
+falsification_tests:
+  - id: FALSIFY-HPO-001
+    rule: "μTransfer LR from 50M proxy predicts 350M optimal"
+    prediction: "Transferred LR within 2x of manually-found 350M optimal"
+    test: |
+      1. Sweep LR on 50M proxy (16 configs, 2K steps each)
+      2. Identify best LR for 50M
+      3. Transfer: lr_350m = lr_50m × (512/1024)
+      4. Compare with best known 350M LR from v22-v26 experiments
+    if_fails: "μTransfer scaling doesn't hold for this architecture — use direct sweep on 350M"
+
+  - id: FALSIFY-HPO-002
+    rule: "MiniCPM formula predicts reasonable LR"
+    prediction: "lr=4.1e-3 from MiniCPM formula produces val_ppl < 100 at step 2K on 350M"
+    test: |
+      Run 350M training with lr=4.1e-3, eval at step 2K.
+      Compare val_ppl with v26 (lr=1e-4, val_ppl=61.6 at step 2K).
+    if_fails: "MiniCPM formula doesn't apply to interleaved/small-batch training"
+
+  - id: FALSIFY-HPO-003
+    rule: "Successive halving identifies better config than default"
+    prediction: "Halving winner achieves lower val_ppl than base config on 50M proxy"
+    test: |
+      Run 16-config successive halving on 50M proxy.
+      Compare winner's val_ppl at step 4K with base config's val_ppl.
+    if_fails: "Default config is already near-optimal — HPO adds no value"
+
+  - id: FALSIFY-HPO-004
+    rule: "WSD matches or beats cosine for equivalent compute"
+    prediction: "WSD val_ppl at step N ≤ cosine val_ppl at step N (within 5%)"
+    test: |
+      Train two identical 50M configs: one cosine, one WSD.
+      Compare val_ppl at step 2K.
+    if_fails: "Cosine is better for this architecture — keep cosine"
+
+kani_harnesses:
+  - id: KANI-HPO-001
+    obligation: mutransfer_lr_scaling
+    property: "μTransfer LR ratio is always width_proxy/width_target"
+    bound: 16
+    strategy: exhaustive
+    harness: verify_mutransfer_lr_scaling
+
+qa_gate:
+  id: F-HPO-001
+  name: "Hyperparameter Tuning Correctness"
+  min_coverage: 0.90
+  max_complexity: 10
+  required_tests:
+    - "mutransfer_lr_computation"
+    - "successive_halving_convergence"
+    - "wsd_schedule_phases"
+    - "sweep_config_generation"

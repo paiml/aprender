@@ -1,0 +1,138 @@
+# Contract: Resource Budget Discipline (§0.2)
+#
+# No component may be introduced that explodes compute, memory, or storage.
+# Every operation declares its resource budget. >2x violation = Jidoka stop.
+#
+# Motivated by: ALB-076 (97% GPU time in dispatch), ALB-078 (864 D2H/step),
+# ALB-081 (89GB RSS reading 67GB file), ALB-072 (65536x unnecessary scaling).
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  description: "Resource budget discipline — prevent compute/memory/storage explosions"
+  references:
+    - "ALB-076"
+    - "ALB-078"
+    - "ALB-081"
+  registry: true
+  scope: "crates/aprender-train/src/train/ (resource budget enforcement)"
+  promoted_from: "albor@be23737 contracts/resource-budget-v1.yaml per PMAT-704 Cat 7 HPO + SHIP-TWO-001 §3 row #9"
+
+equations:
+  heap_budget_readonly:
+    formula: "M_heap < file_size / 10"
+    domain: "Read-only operations (list, inspect, validate)"
+
+  heap_budget_write:
+    formula: "M_heap < max(file_size, output_size)"
+    domain: "Write operations (import, convert, quantize)"
+
+  vram_budget:
+    formula: "V_total < 24 GB - 2 GB = 22 GB"
+    domain: "RTX 4090 with 2GB headroom"
+
+  storage_budget:
+    formula: "output_size <= input_size * dtype_ratio + 0.01 * input_size"
+    domain: "Format conversion (alignment padding < 1%)"
+
+  step_time_budget:
+    formula: "T_new < 0.05 * T_step"
+    domain: "New component < 5% of total step time"
+
+  throughput_budget:
+    formula: "tok_s_after >= 0.95 * tok_s_before"
+    domain: "No >5% throughput regression"
+
+proof_obligations:
+  - type: bound
+    property: "Read-only heap usage bounded by file_size/10"
+    formal: "VmRSS(apr tensors, file) < file_size / 10"
+
+  - type: bound
+    property: "VRAM usage bounded by 22GB on RTX 4090"
+    formal: "nvidia-smi memory.used < 22528 MiB"
+
+  - type: bound
+    property: "Storage overhead bounded by 1% for format conversion"
+    formal: "output_bytes <= input_bytes * dtype_ratio * 1.01"
+
+  - type: invariant
+    property: "No throughput regression beyond 5%"
+    formal: "tok_s_after / tok_s_before >= 0.95"
+
+  - type: invariant
+    property: "All internal pipeline configs use .apr format"
+    formal: "grep -r '.safetensors|.gguf' configs/{train,pipeline}/ excludes export stage only"
+
+falsification_tests:
+  - id: FALSIFY-RESOURCE-001
+    rule: "apr tensors on 67GB file uses <50MB RSS"
+    prediction: "Mmap path returns <50MB peak RSS"
+    test: |
+      Given: /mnt/nvme-raid0/models/qwen35-moe.apr (67 GB)
+      When: /usr/bin/time -v apr tensors model.apr
+      Then: Maximum resident set size < 50000 kbytes
+    if_fails: "Mmap path not wired — read_to_end regression"
+
+  - id: FALSIFY-RESOURCE-002
+    rule: "apr import streaming writer uses <6GB RSS for 67GB model"
+    prediction: "Peak RAM = 1 shard (~5GB)"
+    test: |
+      Given: 67GB sharded SafeTensors (14 shards)
+      When: /usr/bin/time -v apr import --streaming model/
+      Then: Maximum resident set size < 6291456 kbytes (6 GB)
+    if_fails: "Streaming writer regression — loading multiple shards"
+
+  - id: FALSIFY-RESOURCE-003
+    rule: "Training step time has no >5% regression between releases"
+    prediction: "tok/s within 5% of baseline"
+    test: |
+      Given: Same config, same hardware, same data
+      When: Run 100 steps, measure avg tok/s
+      Then: tok_s_new / tok_s_baseline >= 0.95
+    if_fails: "Performance regression in new component"
+
+  - id: FALSIFY-RESOURCE-004
+    rule: "No non-APR format in internal pipeline configs"
+    prediction: "grep finds .safetensors/.gguf only in export step"
+    test: |
+      Given: configs/train/*.yaml, configs/pipeline/*.yaml
+      When: grep -rn '.safetensors|.gguf' configs/
+      Then: Only matches are in export/release commands
+    if_fails: "Format policy violation — internal checkpoint using non-APR"
+
+  - id: FALSIFY-RESOURCE-005
+    rule: "VRAM usage bounded by 22GB on RTX 4090"
+    prediction: "350M training with all optimizations uses < 22 GB VRAM"
+    test: |
+      Given: 350M model, batch_size=4, seq_len=1024, ga=16
+      When: Train for 10 steps on RTX 4090
+      Then: nvidia-smi peak memory.used < 22528 MiB
+    if_fails: "VRAM budget exceeded — new component allocates too much GPU memory"
+
+kani_harnesses:
+  - id: KANI-RESOURCE-001
+    obligation: heap_budget_readonly
+    property: "Read-only operations heap usage bounded by file_size / 10"
+    bound: 4
+    strategy: bounded_int
+    harness: verify_readonly_heap_bound
+
+  - id: KANI-RESOURCE-002
+    obligation: storage_budget
+    property: "Format conversion output size bounded by input_size * dtype_ratio * 1.01"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_storage_overhead_bound
+
+qa_gate:
+  id: F-RESOURCE-001
+  name: "Resource Budget Discipline Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "readonly_heap_bounded"
+    - "streaming_writer_bounded"
+    - "throughput_no_regression"
+    - "apr_format_policy"
+    - "vram_bounded"

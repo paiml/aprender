@@ -1,0 +1,86 @@
+# Contract: Batch Size Scaling (ALB-080)
+#
+# Ensures effective batch size is appropriate for model scale.
+# Written because ALB-080 identified 48-128x undersized batch.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  description: "Batch size scaling — effective batch meets minimum for model scale"
+  references:
+    - "ALB-080"
+    - "Chinchilla scaling laws (Hoffmann et al., 2022)"
+  registry: true
+  scope: "crates/aprender-train/src/train/pretrain.rs (batch_size HPO sweep)"
+  promoted_from: "albor@be23737 contracts/batch-size-scaling-v1.yaml per PMAT-704 Cat 7 HPO + SHIP-TWO-001 §3 row #9"
+
+equations:
+  effective_batch_tokens:
+    formula: "B_eff = batch_size * gradient_accumulation * seq_len"
+    domain: "Training config hyperparameters"
+
+  chinchilla_optimal_tokens:
+    formula: "T_opt = 20 * N_params"
+    domain: "Model parameter count"
+
+  min_effective_batch:
+    formula: "B_min = 64 * 1024 (65,536 tokens) for N >= 100M params"
+    domain: "Model scale thresholds"
+    invariants:
+      - "Effective batch size meets minimum for model scale: B_eff >= B_min"
+      - "Warmup is 1-10% of total steps: 0.01 <= warmup_steps / max_steps <= 0.10"
+      - "Enough optimizer steps for convergence: max_steps >= 1000"
+
+proof_obligations:
+  - type: bound
+    property: "Effective batch >= 64K tokens for 350M model"
+    formal: "B_eff = batch_size * gradient_accumulation * seq_len >= 65536"
+
+  - type: invariant
+    property: "Training config includes pre-flight batch size validation"
+    formal: "Config loader rejects B_eff < B_min with error, not silent default"
+
+falsification_tests:
+  - id: FALSIFY-BATCH-001
+    rule: "Undersized batch is rejected for 350M model"
+    prediction: "batch_size=4, grad_accum=1, seq_len=1024 yields B_eff=4096 < 65536"
+    test: |
+      Given: batch_size=4, gradient_accumulation=1, seq_len=1024
+      B_eff = 4 * 1 * 1024 = 4,096
+      Assert: B_eff < B_min (4,096 < 65,536)
+      This config MUST be flagged as undersized.
+    if_fails: "Config validation does not check effective batch size"
+
+  - id: FALSIFY-BATCH-002
+    rule: "Correctly sized batch is accepted for 350M model"
+    prediction: "batch_size=4, grad_accum=32, seq_len=1024 yields B_eff=131072 >= 65536"
+    test: |
+      Given: batch_size=4, gradient_accumulation=32, seq_len=1024
+      B_eff = 4 * 32 * 1024 = 131,072
+      Assert: B_eff >= B_min (131,072 >= 65,536)
+      This config is acceptable.
+    if_fails: "Config validation rejects valid batch sizes"
+
+kani_harnesses:
+  - id: KANI-BATCH-001
+    obligation: effective_batch_tokens
+    property: "Effective batch computation is correct for all valid hyperparameter ranges"
+    bound: 8
+    strategy: exhaustive
+    harness: verify_effective_batch_computation
+
+  - id: KANI-BATCH-002
+    obligation: min_effective_batch
+    property: "Config loader rejects B_eff < B_min for models >= 100M params"
+    bound: 4
+    strategy: bounded_int
+    harness: verify_batch_size_validation
+
+qa_gate:
+  id: F-BATCH-001
+  name: "Batch Size Scaling Contract"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "undersized_batch_rejected"
+    - "valid_batch_accepted"
