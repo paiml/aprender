@@ -1,0 +1,140 @@
+# model-merging-kernel-v1.yaml — ALB-015
+#
+# Provable contract for model merging: SLERP, TIES, DARE.
+
+metadata:
+  version: "1.1.0"
+  updated: "2026-04-23"
+  registry: true
+  scope: "crates/aprender-train/src/merging/mod.rs"
+  promoted_from: "albor@be23737 contracts/model-merging-kernel-v1.yaml per PMAT-699 Cat 2 backend-kernel + SHIP-TWO-001 §3 row #9"
+  created: "2026-03-01"
+  author: "PAIML Engineering"
+  description: "Model merging kernel — SLERP, TIES, and DARE weight interpolation"
+  references:
+    - "Shoemake (1985) Animating Rotation with Quaternion Curves (SLERP)"
+    - "Yadav et al. (2023) TIES-Merging: Resolving Interference When Merging Models"
+    - "Yu et al. (2023) Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE)"
+
+equations:
+  slerp:
+    formula: "SLERP(w1, w2, t) = sin((1-t)*Omega)/sin(Omega) * w1 + sin(t*Omega)/sin(Omega) * w2"
+    domain: "w1, w2 in R^n (weight vectors), t in [0, 1], cos(Omega) = w1.w2 / (||w1|| * ||w2||)"
+    codomain: "result in R^n with ||result|| approximately ||w1||"
+    invariants:
+      - "SLERP(w1, w2, 0) = w1 (left boundary)"
+      - "SLERP(w1, w2, 1) = w2 (right boundary)"
+      - "||SLERP(w1, w2, t)|| approximately ||w1|| for normalized inputs"
+
+  ties:
+    formula: "w_merged = w_base + lambda * elect(trim(tau_1, ..., tau_n))"
+    domain: "tau_i = w_i - w_base (task vectors), trim ratio k in [0,1]"
+    codomain: "w_merged in R^n"
+    invariants:
+      - "After trim(k%), exactly k% of delta weights are zeroed per layer"
+      - "Sign election resolves conflicts by majority vote"
+
+  dare:
+    formula: "tau_tilde_i = m_i * tau_i / (1-p) where m_i ~ Bernoulli(1-p)"
+    domain: "tau_i (task vector), p in [0, 1) (drop probability)"
+    codomain: "tau_tilde_i: rescaled sparse task vector"
+    invariants:
+      - "E[tau_tilde] = tau (unbiased estimator)"
+      - "Sparsity approximately p"
+
+proof_obligations:
+  - type: bound
+    property: "SLERP interpolation bound"
+    formal: "||SLERP(w1, w2, t)|| within 1% of ||w1|| for normalized inputs"
+    applies_to: all
+
+  - type: invariant
+    property: "SLERP boundary conditions"
+    formal: "SLERP(w1, w2, 0) = w1 and SLERP(w1, w2, 1) = w2"
+    applies_to: all
+
+  - type: invariant
+    property: "TIES trim sparsity"
+    formal: "After trim(k%), exactly k% of deltas are zero"
+    applies_to: all
+
+  - type: invariant
+    property: "DARE unbiased estimator"
+    formal: "E[tau_tilde] = tau over many samples"
+    applies_to: all
+
+  - type: invariant
+    property: "Architecture compatibility check"
+    formal: "Merge rejects incompatible architectures with clear error"
+    applies_to: all
+
+kernel_structure:
+  phases:
+    - name: validate_architectures
+      description: "Verify all input models have same architecture"
+      invariant: "hidden_size, num_layers, vocab_size match"
+    - name: compute_task_vectors
+      description: "Compute delta from base: tau_i = w_i - w_base"
+      invariant: "tau has same shape as w"
+    - name: merge_weights
+      description: "Apply SLERP/TIES/DARE to combine weights"
+      invariant: "output weights are finite"
+
+falsification_tests:
+  - id: FALSIFY-MERGE-001
+    rule: "SLERP interpolation bound"
+    prediction: "||SLERP(w1, w2, t)|| within 1% of ||w1|| for normalized inputs"
+    test: "proptest with 10000 random weight pairs and t values"
+    if_fails: "SLERP uses LERP instead, or normalization missing"
+
+  - id: FALSIFY-MERGE-002
+    rule: "SLERP boundary"
+    prediction: "SLERP(w1, w2, 0) = w1 exactly (within fp tolerance)"
+    test: "proptest with random weights, assert element-wise equality within 1e-6"
+    if_fails: "Off-by-one in interpolation parameter"
+
+  - id: FALSIFY-MERGE-003
+    rule: "DARE unbiased"
+    prediction: "Average of 10000 DARE samples within 1e-2 of original"
+    test: "Monte Carlo estimation of E[tau_tilde]"
+    if_fails: "Rescaling factor (1-p) not applied correctly"
+
+  - id: FALSIFY-MERGE-004
+    rule: "TIES trim sparsity"
+    prediction: "After trim(k%), exactly k% of delta weights are zeroed per layer"
+    test: |
+      Compute task vector tau = w_finetuned - w_base for a 4-layer model.
+      Apply TIES trim with k=20%.
+      For each layer, count zeroed elements in trimmed tau.
+      Assert zeroed fraction == 0.20 +/- 0.01 per layer.
+    if_fails: "Trim threshold computed globally instead of per-layer, or rounding error in percentile selection"
+
+  - id: FALSIFY-MERGE-005
+    rule: "Architecture compatibility check"
+    prediction: "Merging models with different hidden_size returns error"
+    test: |
+      Model A: hidden_size=1024, num_layers=24, vocab_size=32000.
+      Model B: hidden_size=2048, num_layers=24, vocab_size=32000.
+      Attempt SLERP merge of A and B.
+      Assert Result is Err with message indicating architecture mismatch.
+    if_fails: "Missing pre-merge validation allows mismatched weight shapes, causing runtime panic"
+
+kani_harnesses:
+  - id: KANI-MERGE-001
+    obligation: MERGE-BND-001
+    property: "SLERP interpolation bound for small vectors"
+    bound: 4
+    strategy: stub_float
+    solver: cadical
+    harness: verify_slerp_bound
+
+qa_gate:
+  id: F-MERGE-001
+  name: "Model Merging Contract"
+  description: "Weight merging correctness for Albor post-training"
+  checks:
+    - "slerp_bound"
+    - "slerp_boundary"
+    - "dare_unbiased"
+  pass_criteria: "All 3 falsification tests pass + Kani SLERP harness verifies"
+  falsification: "Replace SLERP with LERP to verify bound detection"
