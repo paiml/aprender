@@ -1,7 +1,7 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.29.4
+**Version:** 2.29.5
 
 **Current status** (machine-parseable; source of truth for CI gates and
 `pmat work audit-ship-two`):
@@ -1046,9 +1046,25 @@ pre-compiled sm_121 cubins. See `ship-two-models-spec-audit.md` §1.2.
 ### 5.4 Contract Registry (MODEL-2) + monorepo crate layout
 
 Originally 54 contracts from the albor POC were planned for promotion into the
-monorepo. Audit 2026-04-23 shows that promotion is partial (see §5.5). The
-contracts active for the on-main training path and the crates that implement
-them:
+monorepo. **Cross-repo audit 2026-04-23** (evidence:
+`evidence/ship-two-001/contract-parity-audit-20260423/audit.json`) confirmed
+the promotion claim was aspirational, not executed:
+
+| Metric                                             | Count |
+|----------------------------------------------------|-------|
+| Albor contracts total                              | 54    |
+| Byte-identical to monorepo counterpart             | **0** |
+| Same filename, different bytes (silent-fork)       | 2 (`moe-expert-dispatch-v1.yaml`, `moe-router-v1.yaml`) |
+| No monorepo counterpart at all (orphan)            | 52    |
+
+All 52 orphans are tracked by **PMAT-697** (promote-or-retire decision);
+the 2 silent-fork duplicates are tracked by **PMAT-698**
+(critical-priority because same-name-different-bytes is the class a
+naive file-count parity check would miss). See evidence dir for the
+full orphan list.
+
+The contracts active for the on-main training path and the crates that
+implement them:
 
 | Kind             | Contract (monorepo path)                                   | Status on main    | Implementing crate(s)                                                       |
 |------------------|------------------------------------------------------------|-------------------|------------------------------------------------------------------------------|
@@ -1212,13 +1228,17 @@ depends on the previous artifact:
    "350M" → "370M" and any spec-book chapter that cites the old
    arithmetic. Update `~/src/albor/CLAUDE.md` to include the
    monorepo-single-source rule at the top.
-6. **[PMAT-692] Cross-repo contract parity audit.** `pv validate
-   ~/src/albor/contracts/*.yaml` and cross-reference every albor
-   contract ID against the monorepo's `contracts/` tree. Any albor
-   contract with a monorepo counterpart must be pinned to the
-   monorepo's version; any orphan albor contract either gets promoted
-   into the monorepo or retired. Result: one canonical contract per
-   responsibility, no duplicates.
+6. **[PMAT-692] Cross-repo contract parity audit.** First pass
+   COMPLETED 2026-04-23; evidence at
+   `evidence/ship-two-001/contract-parity-audit-20260423/`. Finding:
+   0/54 albor contracts byte-identical to monorepo, 2/54 share a
+   filename but diverge in bytes (silent-fork), 52/54 are orphans.
+   Follow-ups dispatched: **PMAT-697** (promote-or-retire the 52
+   orphans), **PMAT-698** (reconcile the 2 silent-fork MoE duplicates,
+   critical-priority). `pv validate` of the albor contract tree
+   against monorepo schema is still open as part of PMAT-697
+   triage — some albor contracts may fail monorepo schema and need
+   schema uplift before promotion.
 7. **[PMAT-693] Bidirectional sync CI gate.** Extend the
    `cargo xtask audit-ship-two` gate from PMAT-683 with an
    `--include-albor` mode that reads `~/src/albor/configs/train/*.yaml`
@@ -2318,6 +2338,7 @@ descriptive, not normative.
 | v2.29.2  | 2026-04-23 | §5.4 gains crate/call-graph; new §5.5 documents material divergence between monorepo `Llama370MConfig` and live albor v29 training config; PMAT-685 reconciliation decision required |
 | v2.29.3  | 2026-04-23 | PMAT-685 CLOSED with Option B (albor aligns to monorepo); **monorepo-single-source-of-truth policy ratified**; §5.5.1/.2/.3 add decision + albor action list (PMAT-687..694) + enforcement plan |
 | v2.29.4  | 2026-04-23 | §2.3 research catalog (../unsloth /vllm /pytorch /candle) + §3 row #10 **fix root causes, never route around** + §5.6 multi-backend selection policy (PTX/cuBLAS/WGPU, fastest wins) + new AC-SHIP2-013 gx10 pretrain gate (PMAT-696); trueno#200 elevated from workaround to fix-required bug |
+| v2.29.5  | 2026-04-23 | §5.4 cross-repo contract parity audit evidence landed (0/54 byte-identical, 2 silent-fork, 52 orphans); PMAT-697 + PMAT-698 filed; AC-SHIP2-013 wired through §5.2 / §6 (GATE-SHIP-013/014) / §7.2 (FALSIFY-SHIP-025/026); aprender-train/CLAUDE.md unstaled (PMAT-694) |
 
 **Note on amendment density:** 28 amendments over 6 days (2026-04-17
 to 2026-04-23) is a high rate. Most amendments record discharge of

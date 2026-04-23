@@ -1,0 +1,31 @@
+{
+  "audit_id": "PMAT-692 cross-repo contract parity",
+  "audit_date": "2026-04-23",
+  "monorepo_commit": "3da65e3b4",
+  "albor_commit": "be23737",
+  "monorepo_contracts_path": "/home/noah/src/aprender/contracts/",
+  "albor_contracts_path": "/home/noah/src/albor/contracts/",
+  "counts": {
+    "albor_total": 54,
+    "monorepo_total_unique_names": 981,
+    "shared_filename_different_bytes": 2,
+    "shared_filename_identical_bytes": 0,
+    "albor_orphans_no_monorepo_counterpart": 52
+  },
+  "shared_filename_different_bytes": [
+    {
+      "name": "moe-expert-dispatch-v1.yaml",
+      "albor_md5": "874462d298946ebe55b7eaa1f2e0790d",
+      "monorepo_md5": "a73ea8fbde6364ff4a15fa1c6e356b98",
+      "divergence_class": "silent-fork"
+    },
+    {
+      "name": "moe-router-v1.yaml",
+      "albor_md5": "183f1ddf08c9ae2c169dea48f8e4941c",
+      "monorepo_md5": "37263574df8850306dfc25aafda9ab03",
+      "divergence_class": "silent-fork"
+    }
+  ],
+  "finding": "The spec §5.4 claim 'Leverages 54 contracts from the albor POC, promoted into the monorepo' is unsubstantiated. Byte-level check shows 0/54 byte-identical, 2/54 same-name-different-bytes, 52/54 orphan in albor. Per standing policy §3 row #9 (monorepo single source of truth), every albor contract MUST either: (a) align to the monorepo counterpart, (b) promote into the monorepo as authoritative, or (c) retire.",
+  "followup_tickets": ["PMAT-692 (parity audit - this)", "PMAT-697 (promote or retire 52 orphans)", "PMAT-698 (reconcile 2 silent-fork duplicates)"]
+}

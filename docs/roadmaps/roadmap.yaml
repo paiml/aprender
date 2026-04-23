@@ -9477,3 +9477,44 @@ roadmap:
   - blackwell
   - root-cause-fix
   notes: null
+- id: PMAT-696
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-697 promote-or-retire 52 albor contract orphans
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T09:52:13Z
+  updated: 2026-04-23T09:52:13Z
+  spec: null
+  acceptance_criteria:
+  - 'Cross-repo audit (evidence/ship-two-001/contract-parity-audit-20260423/) found 52 of 54 albor contracts have no monorepo counterpart. Per §3 row #9 monorepo-single-source policy, each orphan must either (a) promote into monorepo as authoritative or (b) formally retire. Categorize the 52 into those two buckets; dispatch sub-tickets. Blocks PMAT-693 CI gate (can''t enforce parity until orphan population is zero).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  notes: null
+- id: PMAT-697
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-698 reconcile 2 silent-fork MoE contracts (moe-expert-dispatch, moe-router)
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-23T09:52:13Z
+  updated: 2026-04-23T09:52:13Z
+  spec: null
+  acceptance_criteria:
+  - 'Audit found moe-expert-dispatch-v1.yaml and moe-router-v1.yaml exist in BOTH ~/src/albor/contracts/ and /home/noah/src/aprender/contracts/ with DIFFERENT md5 hashes (silent-fork divergence class). Diff the two pairs; decide which is authoritative per §3 row #9; sync the other. Highest-priority same-name divergence because it''s the case CI was most likely to miss.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - contracts
+  - silent-fork
+  notes: null
