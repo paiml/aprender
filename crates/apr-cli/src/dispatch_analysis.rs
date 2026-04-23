@@ -202,6 +202,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             .map_err(crate::error::CliError::Aprender)
         }
 
+        ExtendedCommands::UnifiedSearchLint { observation_file } => {
+            commands::unified_search_lint::run(commands::unified_search_lint::UnifiedSearchLintArgs {
+                observation_file: observation_file.to_string_lossy().to_string(),
+                json: cli.json,
+            })
+            .map_err(crate::error::CliError::Aprender)
+        }
+
         ExtendedCommands::Hex {
             file,
             tensor,
