@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **SHIP-TWO-001 MODEL-1 algorithm-level discharges (7 of 10 now ACTIVE on main)** — each wires a pure verdict function + mutation survey to a MODEL-1 ship-gate acceptance criterion, all landing at `discharge_status: PARTIAL_ALGORITHM_LEVEL` pending the corresponding live-compute harness invocation:
+  - **FALSIFY-SHIP-008** (#1012) — MODEL-1 chat-template render gate; binds `ChatMLTemplate::format_conversation` to the canonical Qwen2.5-Coder-7B golden via a pure `verdict_from_chat_template_render` const fn + 5-section mutation survey.
+  - **FALSIFY-SHIP-002** (#1017) — MODEL-1 `def fib(n):` Python-syntax gate; zero-tolerance `verdict_from_syntax_error_count(usize)` in `crates/aprender-core/src/qa/ship_002.rs` + 6-section survey.
+  - **FALSIFY-SHIP-005** (#1021) — MODEL-1 HumanEval pass@1 ≥86.00% gate with 1.2 pp noise allowance (effective 84.80%); `verdict_from_pass_at_1(correct, total, threshold)` in `crates/aprender-core/src/metrics/ship_005.rs` + 8-section survey.
+  - **FALSIFY-SHIP-006** (#1013) — MODEL-1 `apr qa` 8-gate aggregate; `verdict_from_qa_gates(&[bool])` in `crates/aprender-core/src/qa/ship_006.rs` + 7-section survey incl. exhaustive 2⁸=256-combo proof.
+  - **FALSIFY-SHIP-010** (#1022) — MODEL-1 published-artifact SHA-256 + HTTPS URL gate; twin verdict fns in `crates/aprender-core/src/format/ship_010.rs` + twin 7-section surveys (64-char hex + TLS-floor byte-literal).
+  - **FALSIFY-SHIP-007** (#1019) — MODEL-1 `apr bench` decode ≥30 tok/s on RTX 4090; `verdict_from_decode_tps(f32)` in `crates/aprender-core/src/bench/ship_007.rs` + 7-section survey.
+
+### Infrastructure
+
+- **Fleet-wide CI concurrency fix** (paiml/.github#31 + paiml/infra#75) — ported aprender's per-PR `CARGO_TARGET_DIR` isolation pattern (task #134) into the reusable `paiml/.github::sovereign-ci.yml` across the 4 container jobs (`test` / `lint` / `coverage` / `bench`); mounts `/mnt/nvme-raid0/targets/sovereign-ci-<repo>/<pr>:/workspace/target`. Closes a class of **15 consecutive disk-guard collisions** observed on aprender PR #1019 where shared `/__w/<repo>/<repo>/target/` corrupted cargo fingerprint dirs under concurrent PR builds on the same self-hosted runner. Verified: PR #1019 `ci / test` went 15× red → green in 8 min on first post-fix rerun.
+
 ## [0.31.1] - 2026-04-19
 
 ### Fixed
