@@ -1,0 +1,89 @@
+# Contract: GGUF OpenAI Completions Endpoint (ALB-136 / realizar#184)
+#
+# Five Whys Root Cause:
+# 1. /v1/completions returns "No model available" for GGUF models
+# 2. openai_completions_handler tries: cached→quantized→gpu→apr_q4k→registry
+# 3. CUDA GGUF stores model in `state.cuda_model`, not checked by any path
+# 4. `with_cuda_model_and_vocab()` sets `model: None` (line 207)
+# 5. No try_cuda_completions() in the handler chain
+#
+# The /generate endpoint works because it reads `state.cuda_model` directly.
+# The /v1/completions endpoint only checks older model storage fields.
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-06"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "GGUF models must be accessible via OpenAI /v1/completions endpoint"
+  references:
+    - "ALB-136"
+    - "paiml/realizar#184"
+    - "~/src/vllm/vllm/entrypoints/openai/ — reference oracle per SHIP-TWO-001 §2.3"
+  registry: true
+  scope: "crates/aprender-serve/src/handlers/openai_completions.rs"
+  promoted_from: |
+    albor@be23737 contracts/gguf-openai-completions-v1.yaml.
+    PROMOTE-NEW to contracts/realizar/ per SHIP-TWO-001 §3 row #9 +
+    PMAT-706 per-file read (Cat 9 case-by-case). Subject is serving-side
+    OpenAI-compat endpoint for CUDA GGUF models — target crate is
+    aprender-serve (realizar).
+
+equations:
+  endpoint_consistency:
+    formula: |
+      For a server S started with `realizar serve --model M.gguf --gpu --openai-api`:
+        healthy(S) ∧ completable(S, /generate) → completable(S, /v1/completions)
+
+      Where completable(S, endpoint) means:
+        POST endpoint with valid prompt returns non-error response with generated text.
+
+    domain: "All GGUF models served with --openai-api flag"
+    invariants:
+      - "If /health reports healthy AND --openai-api is enabled, /v1/completions must work"
+      - "If /generate returns token_ids, /v1/completions must return decoded text"
+      - "/health must report unhealthy if no model can serve completions"
+
+proof_obligations:
+  - type: invariant
+    property: "/v1/completions works for CUDA GGUF models"
+    formal: "state.cuda_model.is_some() => try_cuda_completions returns Some(response)"
+
+  - type: invariant
+    property: "/health reflects completion readiness"
+    formal: "healthy(S) => exists endpoint E: completable(S, E)"
+
+falsification_tests:
+  - id: FALSIFY-GGUF-OAI-001
+    rule: "CUDA GGUF model serves OpenAI completions"
+    prediction: "/v1/completions returns valid JSON with generated text"
+    test: |
+      1. Start: realizar serve --model test.gguf --gpu --openai-api --port 8091
+      2. POST /v1/completions {"model":"test","prompt":"def x():\n","max_tokens":5}
+      3. Assert: response has choices[0].text with non-empty string
+    if_fails: "CUDA GGUF model not wired to OpenAI completions handler — realizar#184"
+
+  - id: FALSIFY-GGUF-OAI-002
+    rule: "Health endpoint reflects model readiness"
+    prediction: "/health includes model_loaded or completions_ready field"
+    test: |
+      1. Start server without model
+      2. GET /health
+      3. Assert: status != "healthy" OR models_loaded == 0
+    if_fails: "Health endpoint lies about readiness — silent failures for clients"
+
+kani_harnesses:
+  - id: KANI-GGUF-OAI-001
+    obligation: endpoint_consistency
+    property: "Handler chain always reaches a CUDA GGUF fallback before registry error"
+    bound: 5
+    strategy: exhaustive
+
+qa_gate:
+  id: F-GGUF-OAI-001
+  name: "GGUF OpenAI Completions"
+  min_coverage: 0.0
+  max_complexity: 15
+  required_tests:
+    - "FALSIFY-GGUF-OAI-001"
+    - "FALSIFY-GGUF-OAI-002"

@@ -138,11 +138,12 @@
       "id": 9,
       "name": "other",
       "count": 2,
-      "disposition": "CASE-BY-CASE",
+      "disposition": "PROMOTE (both, 2026-04-23)",
       "sub_ticket": "PMAT-706",
+      "status": "SHIPPED",
       "contracts": [
-        {"name": "gguf-openai-completions-v1.yaml", "note": "serving-side; likely contracts/realizar/"},
-        {"name": "wire-protocol-v2-kernel.yaml", "note": "read before disposition"}
+        {"name": "gguf-openai-completions-v1.yaml", "shipped_at": "contracts/realizar/gguf-openai-completions-v1.yaml", "shipped_version": "1.1.0", "subject": "OpenAI /v1/completions endpoint for CUDA GGUF models"},
+        {"name": "wire-protocol-v2-kernel.yaml", "shipped_at": "contracts/entrenar/wire-protocol-v2-kernel.yaml", "shipped_version": "1.1.0", "subject": "DDP pretraining wire protocol (per-block gradient messages 0x08-0x0B)", "dependency_note": "depends_on ddp-pretrain-kernel-v1 still orphan under Cat 1 PMAT-698"}
       ]
     }
   ],

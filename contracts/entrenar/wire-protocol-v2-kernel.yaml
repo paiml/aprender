@@ -1,0 +1,200 @@
+# wire-protocol-v2-kernel.yaml — C-WIRE-002
+#
+# Provable contract for extended wire protocol with per-block gradient messages.
+# Validates round-trip fidelity for the 4 new message types added for DDP pretraining.
+
+metadata:
+  version: "1.1.0"
+  created: "2026-03-03"
+  updated: "2026-04-23"
+  author: "PAIML Engineering"
+  description: "Wire protocol v2 — per-block gradient message round-trip fidelity"
+  references:
+    - "distributed.rs WireMessage enum (tags 0x01-0x07 = v1)"
+    - "SPEC-DIST-2026-001 Phase 2"
+    - "~/src/pytorch/torch/distributed — reference oracle per SHIP-TWO-001 §2.3"
+  depends_on:
+    - "ddp-pretrain-kernel-v1"
+  registry: true
+  scope: "crates/aprender-train/src/train/distributed/"
+  promoted_from: |
+    albor@be23737 contracts/wire-protocol-v2-kernel.yaml.
+    PROMOTE-NEW to contracts/entrenar/ per SHIP-TWO-001 §3 row #9 +
+    PMAT-706 per-file read. Subject is DDP pretraining wire protocol
+    (4 new message types, binary round-trip fidelity) — target crate is
+    aprender-train. Note: depends_on ddp-pretrain-kernel-v1 still lives
+    in albor (orphan Cat 1, PMAT-698); dependency chain closes when
+    Cat 1 promotes.
+
+equations:
+  message_format:
+    formula: |
+      Wire format: [u32 big-endian length][tag byte][payload bytes]
+      v1 tags: 0x01-0x07 (JoinRequest through Shutdown)
+      v2 tags: 0x08-0x0B (per-block gradient messages)
+
+      0x08: BlockGradientPayload
+        [step: u64][worker_id: u32][block_idx: u32][num_blocks: u32]
+        [num_components: u32][component_sizes: u32 × num_components]
+        [gradients: f32 × sum(component_sizes)]
+
+      0x09: AveragedBlockGradient
+        [step: u64][block_idx: u32]
+        [num_components: u32][component_sizes: u32 × num_components]
+        [gradients: f32 × sum(component_sizes)]
+
+      0x0A: NonBlockGradientPayload
+        [step: u64][worker_id: u32][component: u8]
+        [grad_len: u64][gradients: f32 × grad_len]
+
+      0x0B: AveragedNonBlockGradient
+        [step: u64][component: u8]
+        [grad_len: u64][gradients: f32 × grad_len]
+    domain: "Binary TCP stream"
+    codomain: "Structured WireMessage variants"
+    invariants:
+      - "All integers are little-endian except the length prefix (big-endian)"
+      - "Length prefix excludes its own 4 bytes"
+      - "Tag byte uniquely identifies message type"
+      - "v1 tags (0x01-0x07) remain unchanged — backward compatible"
+
+  component_encoding:
+    formula: |
+      BlockGradientPayload encodes 9 gradient components per block:
+        0: w_q (hidden_size × hidden_size)
+        1: w_k (hidden_size × kv_dim)
+        2: w_v (hidden_size × kv_dim)
+        3: w_o (hidden_size × hidden_size)
+        4: gate (hidden_size × intermediate_size)
+        5: up (hidden_size × intermediate_size)
+        6: down (intermediate_size × hidden_size)
+        7: input_norm (hidden_size)
+        8: post_attn_norm (hidden_size)
+
+      component_sizes[i] gives element count for component i.
+      Total gradient length = sum(component_sizes)
+    domain: "Block gradient workspace components"
+    codomain: "Flattened f32 vector with component size metadata"
+    invariants:
+      - "num_components == 9 for standard transformer block"
+      - "component_sizes[i] matches CudaGradWorkspace tensor dimensions"
+      - "Gradients are concatenated in component order"
+
+  non_block_components:
+    formula: |
+      NonBlockGradientPayload component IDs:
+        0: lm_head_weight (vocab_size × hidden_size)
+        1: final_norm (hidden_size)
+        2: embedding (vocab_size × hidden_size)
+    domain: "Non-block trainable parameters"
+    codomain: "Single component gradient as flattened f32"
+    invariants:
+      - "component ID uniquely identifies the parameter"
+      - "Embedding gradient aggregated on CPU before send"
+
+  roundtrip_fidelity:
+    formula: |
+      For any WireMessage m:
+        decode(encode(m)) == m
+      Specifically: f32 values are bit-exact after round-trip
+      (no lossy compression, no normalization)
+    domain: "Any valid WireMessage"
+    codomain: "Boolean: decoded message equals original"
+    invariants:
+      - "f32 encoding: IEEE 754 little-endian, no NaN canonicalization"
+      - "String encoding: UTF-8 with u32 length prefix"
+      - "Vec<f32> encoding: u64 element count + contiguous f32 bytes"
+
+proof_obligations:
+  - type: invariant
+    property: "Round-trip fidelity for all message types"
+    formal: "forall m in WireMessage: decode(encode(m)) == m"
+    tolerance: 0
+    applies_to: roundtrip_fidelity
+
+  - type: invariant
+    property: "v1 backward compatibility"
+    formal: "v2 decoder correctly handles all v1 messages (tags 0x01-0x07)"
+    tolerance: 0
+    applies_to: message_format
+
+  - type: bound
+    property: "BlockGradientPayload size for 350M model"
+    formal: "payload_size(block_grad) <= 9 * 4096 * 4096 * 4 = ~600 MB (theoretical max)"
+    tolerance: 0
+    applies_to: component_encoding
+
+  - type: invariant
+    property: "Gradient element count matches component_sizes sum"
+    formal: "gradients.len() == sum(component_sizes)"
+    tolerance: 0
+    applies_to: component_encoding
+
+falsification_tests:
+  - id: FALSIFY-WIRE-001
+    rule: "BlockGradientPayload round-trips correctly"
+    prediction: "Encode then decode preserves all fields including f32 gradients"
+    test: |
+      block_idx=5, num_blocks=24, 9 components
+      component_sizes = [1048576, 262144, 262144, 1048576, 4194304, 4194304, 4194304, 1024, 1024]
+      gradients = random f32 × sum(component_sizes)
+      Assert decode(encode(msg)) field-by-field equality
+    if_fails: "Binary serialization has offset or endianness error"
+
+  - id: FALSIFY-WIRE-002
+    rule: "Unknown tag returns error, does not panic"
+    prediction: "Tag 0xFF returns Err, not crash"
+    test: |
+      Craft payload [0xFF, 0x00, 0x00]
+      Assert from_payload() returns Err("unknown message tag: 0xff")
+    if_fails: "Missing match arm or index-out-of-bounds panic"
+
+  - id: FALSIFY-WIRE-003
+    rule: "Truncated payload returns error"
+    prediction: "BlockGradientPayload with insufficient bytes returns Err"
+    test: |
+      Craft valid tag 0x08 followed by only 4 bytes
+      Assert from_payload() returns Err containing "truncated"
+    if_fails: "Panic on slice index or unwrap failure"
+
+  - id: FALSIFY-WIRE-004
+    rule: "NaN and Inf f32 values survive round-trip"
+    prediction: "f32::NAN, f32::INFINITY, f32::NEG_INFINITY encoded and decoded correctly"
+    test: |
+      gradients = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0, -0.0]
+      After round-trip: NaN is still NaN, Inf still Inf, etc.
+      (NaN bit pattern may differ — check is_nan(), not bit equality)
+    if_fails: "f32 special values are incorrectly handled"
+
+kani_harnesses:
+  - id: KANI-WIRE-001
+    obligation: roundtrip_fidelity
+    property: "Round-trip fidelity for BlockGradientPayload with bounded components"
+    bound: 4
+    strategy: exhaustive
+    harness: verify_block_gradient_roundtrip
+
+  - id: KANI-WIRE-002
+    obligation: component_encoding
+    property: "Gradient element count equals sum of component_sizes"
+    bound: 9
+    strategy: exhaustive
+    harness: verify_component_sizes_sum
+
+  - id: KANI-WIRE-003
+    obligation: message_format
+    property: "Unknown tag returns error, does not panic"
+    bound: 256
+    strategy: exhaustive
+    harness: verify_unknown_tag_returns_error
+
+qa_gate:
+  id: F-WIRE-001
+  name: "Wire Protocol v2 Round-Trip Fidelity"
+  min_coverage: 0.90
+  max_complexity: 15
+  required_tests:
+    - "block_gradient_payload_roundtrip"
+    - "unknown_tag_returns_error"
+    - "truncated_payload_returns_error"
+    - "nan_inf_f32_survive_roundtrip"

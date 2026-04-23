@@ -126,12 +126,20 @@ This batch justifies creating one:
    pass 1 relied on filenames + descriptions only. Each sub-ticket's
    per-file read may reclassify — this was the first such correction.
 
-### Category 9 — other (2) → CASE-BY-CASE
+### Category 9 — other (2) → PROMOTE (resolved 2026-04-23 via PMAT-706)
 
-1. `gguf-openai-completions-v1.yaml` — serving-side OpenAI-compat endpoint
-   spec; belongs in `contracts/realizar/` or monorepo root; NEW
-2. `wire-protocol-v2-kernel.yaml` — name suggests in-flight protocol work;
-   read before deciding promote vs retire
+1. `gguf-openai-completions-v1.yaml` — **SHIPPED** to
+   `contracts/realizar/gguf-openai-completions-v1.yaml` v1.1.0.
+   Subject: OpenAI `/v1/completions` must work for CUDA GGUF models.
+2. `wire-protocol-v2-kernel.yaml` — **SHIPPED** to
+   `contracts/entrenar/wire-protocol-v2-kernel.yaml` v1.1.0.
+   Subject: DDP pretraining wire protocol, 4 new message types (tags
+   0x08-0x0B) for per-block gradient messages.
+   Note: `depends_on: ddp-pretrain-kernel-v1` chains into Cat 1
+   orphan (PMAT-698); dependency closes when Cat 1 promotes.
+
+Both PROMOTE-NEW; no RETIRE calls in this category. pv validate
+PASS (0 errors, 0 warnings each).
 
 ## Next actions
 
