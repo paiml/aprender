@@ -374,6 +374,12 @@ pub const MAX_UNCOMPRESSED_SIZE: u32 = 1024 * 1024 * 1024;
 // docs/specifications/aprender-train/ship-two-models-spec.md §4.2 AC-SHIP1-003.
 pub mod ship_003;
 
+// FALSIFY-SHIP-004 / AC-SHIP1-004 — GGUF export boundary verdict fns:
+// llama-cli exit code + GGUF magic bytes + GGUF version.
+// See contracts/qwen2-e2e-verification-v1.yaml FALSIFY-QW2E-SHIP-004 and
+// docs/specifications/aprender-train/ship-two-models-spec.md §4.2 AC-SHIP1-004.
+pub mod ship_004;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
