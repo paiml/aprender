@@ -1,7 +1,7 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.29.2
+**Version:** 2.29.3
 
 **Current status** (machine-parseable; source of truth for CI gates and
 `pmat work audit-ship-two`):
@@ -57,12 +57,20 @@ status:
   parallel_training_lab:
     name: albor
     path: ~/src/albor (separate repo, not a monorepo crate)
-    state: v28 STOPPED @ step 11K (2026-04-05); v29 filtered-data retry planned
-    relationship: uses the monorepo `apr` binary via `bin/apr-train`; owns corpus + HPO configs
-    config_divergence_vs_monorepo: critical (PMAT-685) — vocab_size 32768 vs 50257,
-                                   intermediate_size 4096 vs 2816, max_pos 1024 vs 4096,
-                                   tokenizer file different, param count 350M vs 370M
-    decision_required: PMAT-685 (reconcile Option A / B / C before next compute dispatch)
+    state: v28 STOPPED @ step 11K (2026-04-05); v29 SUPERSEDED by v30 per PMAT-685 Option B decision
+    relationship: uses the monorepo `apr` binary via `bin/apr-train`; owns corpus + HPO configs (NOT arch config)
+    config_divergence_vs_monorepo: decided — albor aligns to monorepo (Option B, 2026-04-23)
+    standing_policy: monorepo is single source of truth; all downstream repos MUST sync
+    decision: PMAT-685 CLOSED (Option B chosen); execution tracked as PMAT-687..694
+    v30_implementation_chain:
+      - PMAT-688 retrain tokenizer at vocab 50257 (step 1 — serial)
+      - PMAT-689 re-pretokenize corpus (step 2 — serial)
+      - PMAT-690 replace v29 config with monorepo-compliant v30 config (step 3 — serial)
+      - PMAT-687 dispatch v30 on lambda-labs (step 4, doubles as task #132 Phase 3)
+      - PMAT-691 albor README/CLAUDE.md text updates (parallel post-687)
+      - PMAT-692 cross-repo contract parity audit (parallel post-687)
+      - PMAT-693 `cargo xtask audit-ship-two --include-albor` enforcement CI gate (parallel post-687)
+      - PMAT-694 aprender-train/CLAUDE.md "spec phase" staleness fix (parallel post-687)
 ```
 
 **Author:** PAIML Engineering
@@ -857,6 +865,7 @@ the other demonstrates the stack can start AND finish without PyTorch in the loo
 | 6  | Binary gates                | Every GATE-SHIP-* is pass/fail; no partial credit                     |
 | 7  | Five-Whys on failure        | Any FALSIFY-* failure triggers documented Hansei (§10) before retry   |
 | 8  | Zero tolerance              | We never accept bugs or poor performance. Defects and perf regressions are both blockers, not trade-offs. All work improves or holds the line; never degrades it. No "pre-existing" carve-outs. No `#[ignore]` as a release valve. |
+| 9  | Monorepo single source of truth | The monorepo is canonical for architecture, contracts, and tooling conventions. All downstream repos (albor, apr-leaderboard, etc.) MUST stay in sync with the monorepo. Divergence is a defect, not a parallel track. Downstream repos may own corpus, HPO, configs, and evidence — they MAY NOT fork the architectural contract. Enforcement: PMAT-693 `cargo xtask audit-ship-two --include-albor` CI gate. Ratified 2026-04-23 per PMAT-685 Option B decision. |
 
 ---
 
@@ -1078,42 +1087,124 @@ authoritative source of trained checkpoints — not the monorepo scaffold.
 inference path (or vice versa) will fail the tokenizer vocab preflight
 gate (`preflight_tokenizer_vocab_matches_model`) immediately.
 
-**Decision required (tracked as PMAT-685, priority: critical):** pick
-exactly one reconciliation strategy. The spec is blocked on this choice
-before any further MODEL-2 compute dispatch.
+### 5.5.1 Decision — Option B (DECIDED 2026-04-23)
 
-| Option | Action                                                                                                                                         | Cost                                                | Proof-of-sovereignty impact                      |
-|--------|------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|--------------------------------------------------|
-| A      | Align monorepo scaffold to albor v29 (vocab 50257→32768, intermediate 2816→4096, max_pos 4096→1024).                                           | 1 PR to `Llama370MConfig` + contract bump v1.5.0→v2.0.0 + re-run 6 MODEL-2 PARTIAL gate tests                       | No impact — albor is already proving the path     |
-| B      | Align albor v29 to monorepo scaffold (vocab 32768→50257, intermediate 4096→2816, max_pos 1024→4096). Requires retraining albor's tokenizer + re-pretokenizing the 5 B-token corpus. | ~3–5 days of compute re-dispatch on lambda-labs    | Same — MODEL-2 ships the monorepo's arch          |
-| C      | Declare two formal variants: `MODEL-2a` (albor 350M / vocab 32768 / intermediate 4096) as the canary that proves the stack; `MODEL-2b` (monorepo 370M / vocab 50257 / intermediate 2816) as the SHIP-TWO-001 artifact once task #132 Phase 3 lands. | Amends 12 AC-SHIP2-* gates to split a/b; doubles the ship gate count    | Clearest; honest about parallel work              |
+**Standing policy (ratified 2026-04-23):**
 
-Tentative recommendation (pending your decision): **Option A**. Rationale:
-albor is running live on hardware, producing evidence, and has already
-surfaced divergence failure modes (v28 STOPPED) that the monorepo scaffold
-has never seen. Aligning downward to what the training lab is proving is
-cheaper than aligning upward to a scaffold nothing has trained.
-Option C is the honest default if a single canonical MODEL-2 can't be
-agreed.
+> **The monorepo is the single source of truth. All downstream repos
+> — including albor — MUST align to monorepo conventions, contracts,
+> and architecture. Divergence is a defect, not a parallel track.
+> Keep all repos in sync with the monorepo at all times.**
 
-**Action list regardless of A/B/C choice:**
+This is now a durable rule; it outranks any ad-hoc local choice in
+a downstream repo. Memory pointer: `feedback_monorepo_single_source_of_truth.md`.
 
-1. **Albor repo needs its own spec update** — its README still cites
-   "350M" + "phi-1-small target" framing that pre-dates the SHIP-TWO-001
-   contract-gated pipeline. The albor → monorepo dependency direction
-   should be stated explicitly (albor uses `apr` binary; monorepo owns
-   training logic; albor owns corpus + hyperparameters + v-configs).
-2. **Cross-reference the 54 albor contracts against the monorepo's
-   contracts/ tree.** Audit note: only ~7 MODEL-2 contracts exist in the
-   monorepo today (§5.4 table); the other ~47 albor contracts either
-   have not been promoted or have been renamed. `pv validate` against
-   `~/src/albor/contracts/` vs `contracts/` surfaces the delta.
-3. **Pick a canonical tokenizer.** `models/albor-tokenizer-v2/tokenizer.json`
-   lives in albor; monorepo `tokenizer-bpe-v1.yaml` specifies a different
-   vocab. Only one can be the source-of-truth per Option A/B/C.
-4. **Update `aprender-train/CLAUDE.md`** — currently says "Specification
-   phase - implementation not yet started" which is obviously stale given
-   3,432 LOC of `CudaTransformerTrainer`.
+**Chosen reconciliation: Option B — albor aligns to monorepo.**
+
+| Field                   | Monorepo (canonical)            | Albor v30 (required)             | Change vs albor v29                     |
+|-------------------------|----------------------------------|----------------------------------|-----------------------------------------|
+| `hidden_size`           | 1024                             | 1024                             | no change                               |
+| `num_hidden_layers`     | 24                               | 24                               | no change                               |
+| `num_attention_heads`   | 16                               | 16                               | no change                               |
+| `num_key_value_heads`   | 4                                | 4                                | no change                               |
+| `intermediate_size`     | **2816**                         | **2816**                         | 4096 → 2816 (FFN slimmed)               |
+| `vocab_size`            | **50,257**                       | **50,257**                       | 32,768 → 50,257 (GPT-2 aligned)         |
+| `max_position_embeddings` | **4096**                       | **4096**                         | 1024 → 4096 (4× context)                |
+| `rope_theta`            | 10,000                           | 10,000                           | no change                               |
+| `rms_norm_eps`          | 1e-5                             | 1e-5                             | no change                               |
+| Tokenizer               | monorepo 50,257-BPE (per `tokenizer-bpe-v1.yaml`) | monorepo 50,257-BPE | `albor-tokenizer-v2` DEPRECATED         |
+| Target parameter count  | 370M                             | 370M                             | 350M → 370M (follows from vocab + FFN)  |
+
+Rationale (why Option B over A/C):
+
+- **Sovereignty integrity.** Option A would have forced the monorepo to
+  absorb a downstream fork's arithmetic choices; that breaks the "monorepo
+  is canonical" property at exactly the moment the stack is trying to
+  prove sovereignty. Option B preserves that property.
+- **No multi-variant drift.** Option C's MODEL-2a / MODEL-2b split would
+  require maintaining two contract registries, two ship gate matrices,
+  and two publish pipelines for an arbitrary pair of architectural
+  choices that differ only in FFN ratio + vocab. That is ongoing tax
+  for zero product value.
+- **Standing policy prevents recurrence.** The monorepo-single-source
+  rule above means that any future downstream repo (not just albor)
+  inheriting divergence is a defect the monorepo-sync audit catches, not
+  a decision to be relitigated per incident.
+
+Cost accepted: ~3–5 days of compute re-dispatch on lambda-labs (retrain
+the albor tokenizer at vocab=50,257 via `apr tokenize train`, re-pretokenize
+the filtered 2.04 B-token corpus with `apr tokenize encode-corpus`,
+launch v30 pretraining against `Llama370MConfig`). v28's 5.08 B-token
+run and v29's planned run are effectively sunk; the compute artifacts
+survive as training-dynamics data but not as ship-path evidence.
+
+### 5.5.2 Albor action list (Option B implementation)
+
+Tracked as follow-up tickets; must complete in order because each step
+depends on the previous artifact:
+
+1. **[PMAT-688] Align `~/src/albor` tokenizer to monorepo.** Delete
+   `models/albor-tokenizer-v2/`. Run `apr tokenize train
+   --corpus data/filtered-codeparrot --vocab-size 50257
+   --normalization nfc -o models/monorepo-bpe-v1/` (the
+   monorepo command, dogfooded). Output must pass `pv validate
+   contracts/tokenizer-bpe-v1.yaml` (the monorepo contract).
+2. **[PMAT-689] Re-pretokenize the filtered corpus at vocab 50,257.**
+   `apr tokenize encode-corpus --tokenizer models/monorepo-bpe-v1/
+   --input data/filtered-codeparrot/ -o data/pretokenized-1024-v5/`.
+   Result is `.bin` shards (u32 LE per `pretokenize-bin-v1.yaml`);
+   `apr-corpus-ingest validate-contract` against
+   `dataset-thestack-python-v1.yaml` must PASS.
+3. **[PMAT-690] Update `configs/train/pretrain-350m-v30.yaml`** to
+   mirror monorepo `Llama370MConfig` exactly (vocab 50257, intermediate
+   2816, max_pos 4096). Drop the "350m" label — the resulting model is
+   370M; rename the config `pretrain-370m-v30.yaml` and all downstream
+   references. File name is now a monorepo-compliant identifier.
+4. **[PMAT-687] Dispatch albor v30 pretraining** via `apr pretrain
+   --mode from-scratch --device cuda:0 --config configs/train/pretrain-370m-v30.yaml`
+   on lambda-labs RTX 4090. Concurrent with task #132 Phase 3 smoke — v30's
+   first 50 steps ARE the Phase 3 residency proof. (Note: ticket ID
+   out-of-order at 687 due to parallel-create race when tickets were
+   first filed; scope unchanged.)
+5. **[PMAT-691] Albor repo hygiene.** Update `~/src/albor/README.md`
+   "350M" → "370M" and any spec-book chapter that cites the old
+   arithmetic. Update `~/src/albor/CLAUDE.md` to include the
+   monorepo-single-source rule at the top.
+6. **[PMAT-692] Cross-repo contract parity audit.** `pv validate
+   ~/src/albor/contracts/*.yaml` and cross-reference every albor
+   contract ID against the monorepo's `contracts/` tree. Any albor
+   contract with a monorepo counterpart must be pinned to the
+   monorepo's version; any orphan albor contract either gets promoted
+   into the monorepo or retired. Result: one canonical contract per
+   responsibility, no duplicates.
+7. **[PMAT-693] Bidirectional sync CI gate.** Extend the
+   `cargo xtask audit-ship-two` gate from PMAT-683 with an
+   `--include-albor` mode that reads `~/src/albor/configs/train/*.yaml`
+   and `~/src/albor/contracts/*.yaml` and fails CI on any field that
+   disagrees with the monorepo contract of the same `contract_id`.
+   Structurally enforces the standing policy.
+8. **[PMAT-694] Update `aprender-train/CLAUDE.md`** — current text says
+   "Status: Specification phase - implementation not yet started"
+   which is obviously stale given 3,432 LOC of `CudaTransformerTrainer`
+   and the live `apr pretrain` CLI path.
+
+Ticket dependencies: 688 → 689 → 690 → 687 (dispatch); 691/692/693/694
+run in parallel once 687 closes. Step 4 (PMAT-687) discharges
+task #132 Phase 3 + AC-SHIP2-003 target-loss gate in one dispatch.
+
+### 5.5.3 Enforcement (how the policy survives staff turnover)
+
+The standing monorepo-single-source rule is only durable if CI enforces
+it. PMAT-693 is the enforcement mechanism; until it lands, the policy
+rests on honor. Two interim stopgaps:
+
+- `scripts/ship-two-001/check-monorepo-sync.sh` (to be added) — a bash
+  harness that `git -C ~/src/albor log -1 --format=%H` + diffs the
+  current monorepo-relevant albor configs against the monorepo contracts.
+  Run manually before every MODEL-2 compute dispatch.
+- The v2.29.2 audit doc (`ship-two-models-spec-audit.md`) recorded the
+  drift; PMAT-685 memorialized the decision. Future contributors who
+  read either will see the reasoning without re-litigating the choice.
 
 ---
 
@@ -2088,6 +2179,7 @@ descriptive, not normative.
 | v2.29.0  | 2026-04-23 | FALSIFY-SHIP-007 PARTIAL_ALGORITHM_LEVEL (apr bench ≥30 tok/s)                               |
 | v2.29.1  | 2026-04-23 | Spec-vs-main audit correction — MODEL-1 6/10 on main (not 7/10); on-main/PR/stacked columns  |
 | v2.29.2  | 2026-04-23 | §5.4 gains crate/call-graph; new §5.5 documents material divergence between monorepo `Llama370MConfig` and live albor v29 training config; PMAT-685 reconciliation decision required |
+| v2.29.3  | 2026-04-23 | PMAT-685 CLOSED with Option B (albor aligns to monorepo); **monorepo-single-source-of-truth policy ratified**; §5.5.1/.2/.3 add decision + albor action list (PMAT-687..694) + enforcement plan |
 
 **Note on amendment density:** 28 amendments over 6 days (2026-04-17
 to 2026-04-23) is a high rate. Most amendments record discharge of

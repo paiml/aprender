@@ -9293,3 +9293,166 @@ roadmap:
   - spec-drift
   - monorepo-layout
   notes: null
+- id: PMAT-687
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-690 dispatch albor v30 pretraining on lambda-labs
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T09:33:21Z
+  updated: 2026-04-23T09:33:21Z
+  spec: null
+  acceptance_criteria:
+  - 'apr pretrain --mode from-scratch --device cuda:0 --config configs/train/pretrain-370m-v30.yaml on lambda-labs RTX 4090. First 50 steps double as task #132 Phase 3 residency evidence. Blocked by PMAT-689.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - option-b
+  - compute-dispatch
+  notes: null
+- id: PMAT-688
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-688 retrain albor tokenizer at vocab=50257
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-04-23T09:33:38Z
+  updated: 2026-04-23T09:33:38Z
+  spec: null
+  acceptance_criteria:
+  - Delete models/albor-tokenizer-v2/. Run 'apr tokenize train --corpus data/filtered-codeparrot --vocab-size 50257 --normalization nfc -o models/monorepo-bpe-v1/'. Output passes pv validate contracts/tokenizer-bpe-v1.yaml. Per spec §5.5.2 step 1.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - option-b
+  notes: null
+- id: PMAT-689
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-689 re-pretokenize albor corpus at vocab 50257
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T09:33:44Z
+  updated: 2026-04-23T09:33:44Z
+  spec: null
+  acceptance_criteria:
+  - apr tokenize encode-corpus --tokenizer models/monorepo-bpe-v1/ --input data/filtered-codeparrot/ -o data/pretokenized-1024-v5/. Output is .bin shards u32 LE per pretokenize-bin-v1.yaml. Blocked by PMAT-688. Per spec §5.5.2 step 2.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - option-b
+  notes: null
+- id: PMAT-690
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-690 rename albor v29 config to v30 monorepo-compliant
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-23T09:33:50Z
+  updated: 2026-04-23T09:33:50Z
+  spec: null
+  acceptance_criteria:
+  - Replace configs/train/pretrain-350m-v29.yaml with pretrain-370m-v30.yaml mirroring Llama370MConfig exactly. Drop '350m' label. Blocked by PMAT-689. Per spec §5.5.2 step 3.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - option-b
+  notes: null
+- id: PMAT-691
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-691 albor README + CLAUDE.md update (350M→370M, monorepo rule)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T09:34:05Z
+  updated: 2026-04-23T09:34:05Z
+  spec: null
+  acceptance_criteria:
+  - Update ~/src/albor/README.md '350M' → '370M' everywhere; add monorepo-single-source rule to top of ~/src/albor/CLAUDE.md. Per spec §5.5.2 step 5.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - option-b
+  - doc-edit
+  notes: null
+- id: PMAT-692
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-692 cross-repo contract parity audit (albor vs monorepo)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T09:34:05Z
+  updated: 2026-04-23T09:34:05Z
+  spec: null
+  acceptance_criteria:
+  - pv validate ~/src/albor/contracts/*.yaml; cross-ref every albor contract_id against monorepo contracts/; pin duplicates to monorepo version, retire orphans. Per spec §5.5.2 step 6.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - option-b
+  - contracts
+  notes: null
+- id: PMAT-693
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-693 cargo xtask audit-ship-two --include-albor CI gate
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-23T09:34:05Z
+  updated: 2026-04-23T09:34:05Z
+  spec: null
+  acceptance_criteria:
+  - Extend PMAT-683 gate with --include-albor mode that reads ~/src/albor/configs/train/*.yaml + contracts/*.yaml, fails CI on any field disagreeing with monorepo contract of same contract_id. Structurally enforces standing monorepo-single-source policy. Per spec §5.5.2 step 7.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - albor-sync
+  - ci
+  - zero-tolerance
+  notes: null
+- id: PMAT-694
+  github_issue: null
+  item_type: task
+  title: SHIP-TWO-001 PMAT-694 aprender-train/CLAUDE.md spec-phase staleness fix
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-04-23T09:34:05Z
+  updated: 2026-04-23T09:34:05Z
+  spec: null
+  acceptance_criteria:
+  - 'crates/aprender-train/CLAUDE.md says ''Status: Specification phase - implementation not yet started'' which is stale. CudaTransformerTrainer is 3432 LOC, apr pretrain CLI ships. Rewrite to reflect current state. Per spec §5.5.2 step 8.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ship-two-001
+  - doc-edit
+  notes: null
