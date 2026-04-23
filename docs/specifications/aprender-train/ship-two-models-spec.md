@@ -2,6 +2,63 @@
 
 **Document ID:** SPEC-SHIP-TWO-001
 **Version:** 2.29.1
+
+**Current status** (machine-parseable; source of truth for CI gates and
+`pmat work audit-ship-two`):
+
+```yaml
+status:
+  model_1_teacher:
+    state: RELEASED
+    date: 2026-04-18
+    artifact: paiml/qwen2.5-coder-7b-apache-q4k-v1
+    formats: [apr, gguf, safetensors]
+    tag: SHIP-TWO-001-MODEL-1-TEACHER
+  model_1_distilled:
+    state: DEFERRED
+    tracker: task #86 retry plan (docs/specifications/aprender-train/model-1-qlora-retry-plan.md)
+    blocking_decision: PMAT-684
+  model_1_ship1_gates:
+    on_main:
+      count: 6
+      of: 10
+      ids: [SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008, SHIP-010]
+    pending_open_pr:
+      - { id: SHIP-009, pr: 1009, branch: feat/falsify-ship-009-partial-discharge, commit: 90598277a }
+    pending_stacked_branch:
+      branch: feat/falsify-ship-001-partial-discharge
+      ahead_of_main: 3
+      ids: [SHIP-001, SHIP-003, SHIP-004]
+  model_2_sovereign:
+    state: BLOCKED
+    blocker: task #132 Phase 3 evidence (lambda-labs RTX 4090 dispatch)
+    phase_complete: [0, 1, 2]
+    phase_open: [3, 4]
+  model_2_ship2_gates:
+    on_main_discharged:
+      count: 3
+      of: 12
+      ids: [AC-SHIP2-001, AC-SHIP2-011, AC-SHIP2-012]
+    on_main_partial:
+      count: 3
+      of: 12
+      ids: [AC-SHIP2-002, AC-SHIP2-005, AC-SHIP2-009]
+    pending_open_pr:
+      - { id: SHIP-016, pr: 1008 }
+      - { id: SHIP-017, pr: 1004 }
+      - { id: SHIP-018, pr: 1006 }
+      - { id: SHIP-020, pr: 1005 }
+    blocked_on_task_132_phase_3:
+      ids: [AC-SHIP2-003, AC-SHIP2-004]
+  spec_document:
+    version_on_main: 2.29.1
+    pending_amendment: null  # PR #1024 was for v2.30.0; superseded by this branch's v2.29.1 correction
+    last_audit: 2026-04-23 (docs/specifications/aprender-train/ship-two-models-spec-audit.md @ 601c0740f)
+```
+
+Legacy prose status (retained during Appendix A migration —
+PMAT-682 Step 2 removes this):
+
 **Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures); **task #132 BLOCKER surfaced 2026-04-21** on lambda-labs RTX 4090 — `apr pretrain --mode from-scratch` ran 14 min at 114% CPU + 0 MiB GPU memory because `TransformerTrainer::new` has no Device argument; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (task #132 Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006, ship-blocks task #126 real-compute dispatch
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift

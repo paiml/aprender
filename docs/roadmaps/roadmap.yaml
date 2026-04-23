@@ -9197,11 +9197,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'SHIP-TWO-001 spec refactor: amendment log → appendix; Status → YAML block'
-  status: planned
+  status: inprogress
   priority: medium
   assigned_to: null
   created: 2026-04-23T08:52:04Z
-  updated: 2026-04-23T08:52:04Z
+  updated: 2026-04-23T09:01:04.586736585+00:00
   spec: null
   acceptance_criteria:
   - Spec has 28 amendments in 6 days consuming first 600 lines. The **Status:** field is a 1,900-char run-on sentence. AC status is triplicated across §4.2 + §7.1 + amendment paragraphs and has fallen out of sync. Move amendment history to Appendix A. Replace prose Status with a 10-line YAML block (model_1_teacher/model_1_distilled/model_2_sovereign/spec_version_on_main/pending_amendment). Buys constant-cost readability for next 6 months. Reference audit §3.2.
