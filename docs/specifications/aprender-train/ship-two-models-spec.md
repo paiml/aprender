@@ -1,11 +1,49 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.29.0
+**Version:** 2.29.1
 **Status:** SHIP-TWO-001-MODEL-1-TEACHER **RELEASED**; MODEL-2 pretraining **loop driver landed** (task #105 CLOSED — commit `9a5af3ac2`); 370M Llama scaffold + pretrain loop + `apr pretrain` CLI all dogfood-ready; Zero-Tolerance design principle codified (§3 row #8); `pv validate` dogfooded across all 760 contracts (task #101); 8 legacy contracts backfilled with kani_harnesses + falsification parity (task #102 CLOSED); MODEL-2 `--min-frequency` threaded end-to-end through aprender-train BPE (task #103 CLOSED); gx10 third-party framework capacity gate PASS at 38.0 tok/s decode with 26.7% margin (task #104 CLOSED); loader hardened to ignore co-located ModelFamilyVariant contracts (task #108 CLOSED — 32→0 workspace-test failures); **task #132 BLOCKER surfaced 2026-04-21** on lambda-labs RTX 4090 — `apr pretrain --mode from-scratch` ran 14 min at 114% CPU + 0 MiB GPU memory because `TransformerTrainer::new` has no Device argument; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (task #132 Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006, ship-blocks task #126 real-compute dispatch
 **Author:** PAIML Engineering
 **Reviewer:** Noah Gift
 **Date:** 2026-04-17 (v1.0.0) / 2026-04-17 (v2.0.0 audit + pivot) / 2026-04-18 (v2.5.0 pre-flight Poka-Yoke) / 2026-04-18 (v2.6.0 PM-008 GGUF tensor-type Poka-Yoke) / 2026-04-18 (v2.7.0 PM-009 APR magic-bytes Poka-Yoke) / 2026-04-18 (v2.8.0 HF Hub Xet large-file upload contract) / 2026-04-18 (v2.8.1 Xet impl landed) / 2026-04-18 (v2.9.0 EX-04 DISCHARGED via NDJSON lfsFile schema) / 2026-04-18 (v2.10.0 MODEL-1 v2 QLoRA divergence root cause — teacher-only ship) / 2026-04-18 (v2.11.0 EX-05/06/07 DISCHARGED — teacher tagged SHIP-TWO-001-MODEL-1-TEACHER) / 2026-04-18 (v2.12.0 post-ship artifacts — MODEL-2 contracts + MODEL-1 retry plan + SHARD-003 probe) / 2026-04-18 (v2.13.0 FALSIFY-SHARD-003 DISCHARGED live yoga vs gx10) / 2026-04-18 (v2.14.0 MODEL-2 dataset contract drafted + BPE NFC gap identified) / 2026-04-18 (v2.15.0 MODEL-2 scaffold LANDED — BPE NFC + tokenizer CLI + corpus ingest binary) / 2026-04-18 (v2.16.0 Zero-Tolerance design principle codified — no bugs, no perf regressions, no carve-outs) / 2026-04-18 (v2.17.0 contracts schema harmonization shipped — pv validate works across all 760 contracts, unblocks dogfooded gate) / 2026-04-18 (v2.18.0 parallel dispatch lanes #102/#103/#104 all closed — 8 contracts backfilled + MODEL-2 --min-frequency plumbed + gx10 38.0 tok/s PASS) / 2026-04-18 (v2.19.0 MODEL-2 pretrain loop driver landed via task #105 sub-agent — GATE-TRAIN-005 + INV-TRAIN-007 wired; `apr pretrain` CLI gated by `training` feature; loader hardened for ModelFamilyVariant contracts via task #108) / 2026-04-19 (v2.20.0 FALSIFY-SHIP-021 + FALSIFY-SHIP-022 DISCHARGED — MODEL-2 seed-reproducibility harness + apr inspect provenance block wired; tasks #112 #113 closed on chore/post-v2.19-evidence) / 2026-04-19 (v2.21.0 FALSIFY-SHIP-011 DISCHARGED + FALSIFY-SHIP-012/015 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.0.0 PROPOSED → v1.2.0 ACTIVE with Rust-YAML byte-equality binding + param-count algorithm proof; C-TOK-BPE v1.1.0 wires 3 tokenizer tests; tasks #114 #115 #116 closed; 3/12 ACTIVE + 2/12 PARTIAL) / 2026-04-19 (v2.22.0 FALSIFY-SHIP-019 PARTIAL_ALGORITHM_LEVEL — C-LLAMA-370M-SOVEREIGN v1.2.0 → v1.3.0 stays ACTIVE; GATE-ARCH-370M-004 wired to 3 algorithm proofs reusing `layout_contract.rs` per Spec §9 Risk #2; task #117 closed on commit `846cc1dbb`; 3/12 ACTIVE + 3/12 PARTIAL = 6/12 touched) / 2026-04-21 (v2.23.0 **task #132 CUDA training backend gap** surfaced on lambda-labs RTX 4090 real-compute dispatch at commit `f7ad11408` — `apr pretrain --mode from-scratch` 14min on CPU (0 MiB GPU memory) because `TransformerTrainer` has no Device awareness; `contracts/entrenar/gpu-training-backend-v1.yaml` PROPOSED (Phase 0) with INV-GPUTRAIN-001..007 + GATE-GPUTRAIN-001..006 + FALSIFY-GPUTRAIN-001..007; production `CudaTransformerTrainer` already exists at `crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs` — gap is wiring, not kernels; task #126 real-compute dispatch BLOCKED until Phase 3 residency-proof evidence lands) / 2026-04-22 (v2.24.0 **FALSIFY-SHIP-008 PARTIAL_ALGORITHM_LEVEL** — task #155 wires MODEL-1 chat-template render gate: `contracts/chat-template-v1.yaml` v1.0.0 → v1.1.0 adds `GATE-CHAT-SHIP-008` binding `ChatMLTemplate::format_conversation` to the canonical Qwen2.5-Coder-7B golden via a pure `verdict_from_chat_template_render` const fn + 5-section mutation survey (empty / missing-gen-prompt / wrong-delim / swapped-roles / single-byte flip) + provenance pin; `cargo test -p aprender-core --lib falsify_ship_008_chat_template_render_bind` green; full discharge blocks on live `apr run paiml/qwen2.5-coder-7b-apache-q4k-v1` completion diff; **MODEL-1 coverage 1/10 → 2/10** touched — first MODEL-1 non-provenance PARTIAL, mirrors MODEL-2 pattern set by SHIP-016/017/018/020; 8 PARTIAL + 3 DISCHARGED across both models) / 2026-04-22 (v2.25.0 **FALSIFY-SHIP-006 PARTIAL_ALGORITHM_LEVEL** — task #156 wires MODEL-1 `apr qa` 8-gate aggregate gate: `contracts/apr-model-qa-v1.yaml` v1.1.0 → v1.2.0 adds `FALSIFY-QA-SHIP-006` binding the aggregate-AND verdict fn `verdict_from_qa_gates(&[bool]) -> Ship006Verdict` to the 8-gate ship criterion (golden / throughput / ollama parity / gpu speedup / tensor contracts / format parity / ptx parity / metadata per `docs/specifications/components/qa.md` §3) via pure const fn + 7-section mutation survey (all-Pass / all-Fail / single-gate-flip × 8 / exhaustive 2^8=256 bitmask proof / monotonicity / length drift 0-7-9-16 / provenance pin); `cargo test -p aprender-core --lib falsify_ship_006_apr_qa_eight_gates_aggregate` green; full discharge blocks on live `apr qa paiml/qwen2.5-coder-7b-apache-q4k-v1 --json` on RTX 4090 host; **MODEL-1 coverage 2/10 → 3/10** touched — mirrors MODEL-2 SHIP-016 aggregate-AND shape but authored self-contained because SHIP-016 branch not yet on main; 9 PARTIAL + 3 DISCHARGED across both models) / 2026-04-22 (v2.26.0 **FALSIFY-SHIP-002 PARTIAL_ALGORITHM_LEVEL** — task #159 wires MODEL-1 canonical `def fib(n):` Python-syntax gate: `contracts/qwen2-e2e-verification-v1.yaml` v1.0.0 → v1.1.0 adds `FALSIFY-QW2E-SHIP-002` binding zero-tolerance `const fn verdict_from_syntax_error_count(usize) -> Ship002Verdict` in `crates/aprender-core/src/qa/ship_002.rs` + 6-section mutation survey (zero-errors → Pass / exactly-one-error → Fail / many-errors Fail band {2, 10, 100} / monotonicity sweep 0..=256 / `usize::MAX` sanity Fail / provenance pin tolerance = 0); `cargo test -p aprender-core --lib falsify_ship_002_python_syntax_error_threshold_logic` green; full discharge blocks on live `apr run paiml/qwen2.5-coder-7b-apache-q4k-v1 --prompt "def fib(n):"` on RTX 4090 + `rustpython`/`ruff` AST parse; **MODEL-1 coverage 3/10 → 4/10** touched — tightest MODEL-1 rule (0 tolerance on single canonical prompt vs MODEL-2 SHIP-017 which tolerates ≤1 across 100 held-out prompts) because spec §4.2 "emits valid Python" carries no noise allowance; 10 PARTIAL + 3 DISCHARGED across both models) / 2026-04-22 (v2.27.0 **FALSIFY-SHIP-005 PARTIAL_ALGORITHM_LEVEL** — task #158 wires MODEL-1 `apr eval --benchmark humaneval` pass@1 ship floor: `contracts/qwen2-e2e-verification-v1.yaml` v1.1.0 → v1.2.0 adds `FALSIFY-QW2E-SHIP-005` binding `AC_SHIP1_005_NOMINAL_HUMANEVAL_PASS_AT_1_PCT = 86.00` + `AC_SHIP1_005_NOISE_ALLOWANCE_PP = 1.20` + `AC_SHIP1_005_EFFECTIVE_HUMANEVAL_PASS_AT_1_PCT ≈ 84.80` to pure two-number threshold verdict fn `verdict_from_pass_at_1(correct, total, threshold_pct) -> Ship005Verdict` in `crates/aprender-core/src/metrics/ship_005.rs` + 8-section mutation survey (safe-margin Pass above effective / above nominal Pass / noise-window Fail at nominal / below-effective Fail including HumanEval-canonical 139/164 = 84.756% / monotonicity sweep 0..=164 / div-safety + sanity guards / non-finite threshold → Fail conservatively / tolerance-bounded provenance pin on all three constants because f32 `86.0 − 1.2 ≈ 84.79999924` ≠ exact 84.80); `cargo test -p aprender-core --lib falsify_ship_005_humaneval_pass_at_1_threshold_logic` green; full discharge blocks on live `apr eval --benchmark humaneval paiml/qwen2.5-coder-7b-apache-q4k-v1 --json` median of 3 seed=0 runs ≥ 86.00 (or ≥ 84.80 under the 1.2 pp noise allowance) on RTX 4090 with `--features cuda`; **MODEL-1 coverage 4/10 → 5/10** touched — mirrors MODEL-2 SHIP-018 pass@1 threshold shape but uniquely carries a 1.2 pp noise allowance (MODEL-2 has no noise window) and is self-contained because SHIP-018 PR #1004 and SHIP-007 PR #1019 are not yet on main; 11 PARTIAL + 3 DISCHARGED across both models) / 2026-04-23 (v2.28.0 **FALSIFY-SHIP-010 PARTIAL_ALGORITHM_LEVEL** — task #161 wires MODEL-1 published-artifact URL + SHA-256 ship gate: `contracts/publish-manifest-v1.yaml` v1.3.0 → v1.4.0 adds `FALSIFY-SHIP-010` binding two constants — `AC_SHIP1_010_SHA256_HEX_LEN = 64` (sha256sum canonical output) + `AC_SHIP1_010_REQUIRED_URL_SCHEME = "https://"` (TLS floor per §4.2) — to two pure verdict fns `verdict_from_sha256_match(expected_hex, actual_hex) -> Ship010Verdict` + `verdict_from_manifest_url(url) -> Ship010Verdict` in `crates/aprender-core/src/format/ship_010.rs` + twin 7-section mutation surveys: SHA-256 side covers identical-Pass / single-hex-flip / wrong-length / uppercase-rejected / non-hex-rejected / all-zero guard / provenance pin; URL side covers HF canonical / S3 canonical / plaintext-http rejected / scheme-less rejected / empty-host rejected / whitespace-control rejected / provenance pin; `cargo test -p aprender-core --lib format::ship_010` green (3/3 tests); full discharge blocks on live `curl -sSI <artifact_url>` 200-OK + `sha256sum <local_file> == <manifest_hash>` against `paiml/qwen2.5-coder-7b-apache-q4k-v1` on a host with network egress; **MODEL-1 coverage 5/10 → 6/10** touched — first MODEL-1 network-dependent PARTIAL, uniquely carries a TLS-floor byte-literal constant (no MODEL-2 counterpart because AC-SHIP2-012 is provenance-metadata not artifact-resolution); 12 PARTIAL + 3 DISCHARGED across both models) / 2026-04-23 (v2.29.0 **FALSIFY-SHIP-007 PARTIAL_ALGORITHM_LEVEL** — task #160 wires MODEL-1 `apr bench` decode throughput gate: `contracts/qwen2-e2e-verification-v1.yaml` v1.2.0 → v1.3.0 adds `FALSIFY-QW2E-SHIP-007` binding `verdict_from_decode_tps(f32) -> Ship007Verdict` in `crates/aprender-core/src/bench/ship_007.rs` at `AC_SHIP1_007_MIN_DECODE_TPS_RTX4090_7B = 30.0` tok/s + 7-section mutation survey (boundary at 30.0 → Pass / one-ULP-below → Fail / clear Pass band {45, 100} / clear Fail band {0, 10, 29.999999} / monotonicity above+below floor / non-finite → Fail conservatively {NaN, ±∞} / provenance pin 30.0); `cargo test -p aprender-core --lib falsify_ship_007_decode_tps_threshold_logic` green; full discharge blocks on live `apr bench --iterations 5 --max-tokens 128 paiml/qwen2.5-coder-7b-apache-q4k-v1` on RTX 4090 with `--features cuda` + median ≥ 30.0; **MODEL-1 coverage 6/10 → 7/10** touched — MODEL-1 twin of MODEL-2 SHIP-020 (identical f32-threshold shape, floor 30 vs 100 tok/s — 7B Q4_K is bandwidth-bound at ~3.5× the size of the 370M target); 13 PARTIAL + 3 DISCHARGED across both models)
+
+**v2.29.1 correction amendment (2026-04-23):** Spec-vs-main audit
+(`docs/specifications/aprender-train/ship-two-models-spec-audit.md`)
+found that the running "MODEL-1 coverage N/10" counter in amendments
+v2.24.0 through v2.29.0 silently assumed AC-SHIP1-009 (the apr-provenance
+`license` / `data_source` / `data_license` gate, bound via
+`GATE-APR-PROV-004` in `contracts/apr-provenance-v1.yaml` v1.1.0) was
+live on main as its 1/10 baseline. **On main (`601c0740f`) that baseline
+is not live.** `contracts/apr-provenance-v1.yaml` is still at v1.0.0
+with 3 gates (GATE-APR-PROV-001/002/003 discharging AC-SHIP2-012 only);
+the SHIP-009 multi-bind addition lives only in open PR #1009
+(`feat/falsify-ship-009-partial-discharge`, commit `90598277a`, not a
+main ancestor).
+
+Corrected counts as of main `601c0740f` 2026-04-23:
+
+| Count                           | Prior spec claim (v2.29.0)       | On-main reality (`601c0740f`)   | Delta                 |
+|---------------------------------|----------------------------------|---------------------------------|-----------------------|
+| MODEL-1 AC-SHIP1-* PARTIAL      | 7/10                             | **6/10** (SHIP-002/005/006/007/008/010) | −1 (SHIP-009 pending #1009) |
+| MODEL-2 AC-SHIP2-* touched      | "10/12 touched" (v2.23.x running) | **6/12** (011 D, 012 D, 021 D + 002 P, 005 P, 009 P) | −4 (SHIP-016/017/018/020 pending #1008/1004/1006/1005) |
+
+Root cause (Five Whys): the per-amendment "MODEL-1 coverage N/10 → (N+1)/10"
+increment pattern was computed against the *expected* merge order, not the
+*actual* ancestry of main. Any amendment written after a PR was merged to
+`main` was correct; any amendment written speculatively ahead of its PR
+landing — or any amendment whose upstream PR silently stalled — drifted.
+**Rule:** spec counts are main-ancestry assertions; treat every `N/M on
+main` claim as a check against `git merge-base --is-ancestor <evidence
+commit> main`. PMAT-683 (cargo xtask audit-ship-two) closes the loop
+structurally.
+
+Prior amendment text (v2.24.0..v2.29.0) is retained unchanged below this
+correction to preserve audit history. Amendments after this correction
+MUST cite both the on-main count and the across-branch count when they
+differ. MEMORY.md session-wrap (2026-04-23) line reading "MODEL-1 7/10"
+is superseded by the 6/10 figure above.
+
+---
 
 **v2.21.0 amendment (2026-04-19):** Three MODEL-2 architecture + tokenizer
 gates landed in the same post-v2.19 evidence window, on branch
@@ -779,18 +817,24 @@ the other demonstrates the stack can start AND finish without PyTorch in the loo
 
 ### 4.2 Acceptance Criteria
 
-| ID            | Criterion                                                                 | Verification            |
-|---------------|---------------------------------------------------------------------------|-------------------------|
-| AC-SHIP1-001  | Student weights load via `realizar::Model::load_safetensors`              | FALSIFY-SHIP-001        |
-| AC-SHIP1-002  | `apr run <model>.safetensors --prompt "def fib(n):"` emits valid Python   | FALSIFY-SHIP-002 **(PARTIAL_ALGORITHM_LEVEL v2.26.0)** |
-| AC-SHIP1-003  | Convert to APR via `apr convert --quantize q4_k_m`; round-trip weights match (cos ≥ 0.999) | FALSIFY-SHIP-003 |
-| AC-SHIP1-004  | Export to GGUF via `apr export --format gguf`; loads in llama.cpp         | FALSIFY-SHIP-004        |
-| AC-SHIP1-005  | `apr eval --benchmark humaneval` reproduces ≥86.00% pass@1 (allow 1.2% noise) | FALSIFY-SHIP-005 **(PARTIAL_ALGORITHM_LEVEL v2.27.0)** |
-| AC-SHIP1-006  | `apr qa <model>` — all 8 gates PASS (Golden Output, layout, tensor stats, etc.) | FALSIFY-SHIP-006 **(PARTIAL_ALGORITHM_LEVEL v2.25.0)** |
-| AC-SHIP1-007  | `apr bench` decode throughput ≥30 tok/s on RTX 4090 (7B Q4_K target)      | FALSIFY-SHIP-007 **(PARTIAL_ALGORITHM_LEVEL v2.27.0)** |
-| AC-SHIP1-008  | Chat template (`contracts/chat-template-v1.yaml`) applies cleanly        | FALSIFY-SHIP-008 **(PARTIAL_ALGORITHM_LEVEL v2.24.0)** |
-| AC-SHIP1-009  | License & provenance recorded in `model.apr` metadata (Qwen2 Apache-2.0) | FALSIFY-SHIP-009        |
-| AC-SHIP1-010  | Published artifact URL resolves; SHA-256 matches manifest                 | FALSIFY-SHIP-010 **(PARTIAL_ALGORITHM_LEVEL v2.28.0)** |
+**On-main status** (last audited 2026-04-23 vs `601c0740f`): 6/10
+PARTIAL on main; 1 pending in open PR #1009 (SHIP-009); 3 pending in
+stacked branch `feat/falsify-ship-001-partial-discharge` (SHIP-001
+WIP, SHIP-003 PARTIAL, SHIP-004 PARTIAL). See
+`ship-two-models-spec-audit.md` §1.1.
+
+| ID            | Criterion                                                                 | Verification            | On-main status (2026-04-23) |
+|---------------|---------------------------------------------------------------------------|-------------------------|-----------------------------|
+| AC-SHIP1-001  | Student weights load via `realizar::Model::load_safetensors`              | FALSIFY-SHIP-001        | ✗ stacked branch (d4c6b6141 WIP) |
+| AC-SHIP1-002  | `apr run <model>.safetensors --prompt "def fib(n):"` emits valid Python   | FALSIFY-SHIP-002 **(PARTIAL_ALGORITHM_LEVEL v2.26.0)** | ✓ on main (PR #1017, `qa/ship_002.rs`) |
+| AC-SHIP1-003  | Convert to APR via `apr convert --quantize q4_k_m`; round-trip weights match (cos ≥ 0.999) | FALSIFY-SHIP-003 | ✗ stacked branch (f9c2d4753 PARTIAL) |
+| AC-SHIP1-004  | Export to GGUF via `apr export --format gguf`; loads in llama.cpp         | FALSIFY-SHIP-004        | ✗ stacked branch (5f1db6ab7 PARTIAL) |
+| AC-SHIP1-005  | `apr eval --benchmark humaneval` reproduces ≥86.00% pass@1 (allow 1.2% noise) | FALSIFY-SHIP-005 **(PARTIAL_ALGORITHM_LEVEL v2.27.0)** | ✓ on main (PR #1021, `metrics/ship_005.rs`) |
+| AC-SHIP1-006  | `apr qa <model>` — all 8 gates PASS (Golden Output, layout, tensor stats, etc.) | FALSIFY-SHIP-006 **(PARTIAL_ALGORITHM_LEVEL v2.25.0)** | ✓ on main (PR #1013, `qa/ship_006.rs`) |
+| AC-SHIP1-007  | `apr bench` decode throughput ≥30 tok/s on RTX 4090 (7B Q4_K target)      | FALSIFY-SHIP-007 **(PARTIAL_ALGORITHM_LEVEL v2.29.0)** | ✓ on main (PR #1019, `bench/ship_007.rs`) |
+| AC-SHIP1-008  | Chat template (`contracts/chat-template-v1.yaml`) applies cleanly        | FALSIFY-SHIP-008 **(PARTIAL_ALGORITHM_LEVEL v2.24.0)** | ✓ on main (PR #1012, `text/chat_template/ship_008.rs`) |
+| AC-SHIP1-009  | License & provenance recorded in `model.apr` metadata (Qwen2 Apache-2.0) | FALSIFY-SHIP-009 **(claimed PARTIAL_ALGORITHM_LEVEL v2.23.0 — NOT on main; GATE-APR-PROV-004 unmerged)** | ✗ PR #1009 OPEN (`feat/falsify-ship-009-partial-discharge` @ 90598277a) |
+| AC-SHIP1-010  | Published artifact URL resolves; SHA-256 matches manifest                 | FALSIFY-SHIP-010 **(PARTIAL_ALGORITHM_LEVEL v2.28.0)** | ✓ on main (PR #1022, `format/ship_010.rs`) |
 
 ### 4.3 Critical Path (MODEL-1)
 
@@ -840,18 +884,25 @@ Leverages 28 existing contracts from the apr-leaderboard POC, promoted into the 
 
 | ID            | Criterion                                                                 | Verification           |
 |---------------|---------------------------------------------------------------------------|------------------------|
-| AC-SHIP2-001  | Architecture registered in `contracts/model-families/llama.yaml` 370m     | FALSIFY-SHIP-011       |
-| AC-SHIP2-002  | Tokenizer trained; `apr tokenize` round-trip exact on 10K held-out docs   | FALSIFY-SHIP-012       |
-| AC-SHIP2-003  | `entrenar` pretraining loop reaches target loss (CE ≤ 2.2 on val)         | FALSIFY-SHIP-013       |
-| AC-SHIP2-004  | Training on RTX 4090 completes within 21 days (hardware budget)           | FALSIFY-SHIP-014       |
-| AC-SHIP2-005  | Checkpoint weights saved as `.apr` (native format, no PyTorch)            | FALSIFY-SHIP-015       |
-| AC-SHIP2-006  | `apr qa <model>.apr` — all 8 gates PASS                                   | FALSIFY-SHIP-016       |
-| AC-SHIP2-007  | `apr run` produces syntactically valid Python on 100 held-out prompts     | FALSIFY-SHIP-017       |
-| AC-SHIP2-008  | `apr eval --benchmark humaneval` ≥30.0% pass@1                            | FALSIFY-SHIP-018       |
-| AC-SHIP2-009  | GGUF export loads in llama.cpp AND produces matching tokens (tol ≤ 1e-3)  | FALSIFY-SHIP-019       |
-| AC-SHIP2-010  | `apr bench` decode ≥100 tok/s on RTX 4090 (370M target)                   | FALSIFY-SHIP-020       |
-| AC-SHIP2-011  | Training reproducible: seed fixed, two runs produce identical first 100 steps | FALSIFY-SHIP-021   |
-| AC-SHIP2-012  | Weights + tokenizer + config published with CC-BY-4.0 data provenance     | FALSIFY-SHIP-022       |
+**On-main status** (last audited 2026-04-23 vs `601c0740f`): 6/12
+touched on main (3 DISCHARGED + 3 PARTIAL); 4 pending in open PRs
+(#1004/1005/1006/1008); 2 blocked on task #132 Phase 3 RTX 4090
+compute dispatch. See `ship-two-models-spec-audit.md` §1.2.
+
+| ID            | Criterion                                                                 | Verification           | On-main status (2026-04-23)  |
+|---------------|---------------------------------------------------------------------------|------------------------|------------------------------|
+| AC-SHIP2-001  | Architecture registered in `contracts/model-families/llama.yaml` 370m     | FALSIFY-SHIP-011       | ✓ DISCHARGED on main (PR #898) |
+| AC-SHIP2-002  | Tokenizer trained; `apr tokenize` round-trip exact on 10K held-out docs   | FALSIFY-SHIP-012       | ✓ PARTIAL on main (PR #898)    |
+| AC-SHIP2-003  | `entrenar` pretraining loop reaches target loss (CE ≤ 2.2 on val)         | FALSIFY-SHIP-013       | ⏸ blocked on task #132 Phase 3 |
+| AC-SHIP2-004  | Training on RTX 4090 completes within 21 days (hardware budget)           | FALSIFY-SHIP-014       | ⏸ blocked on task #132 Phase 3 |
+| AC-SHIP2-005  | Checkpoint weights saved as `.apr` (native format, no PyTorch)            | FALSIFY-SHIP-015       | ✓ PARTIAL on main (PR #898)    |
+| AC-SHIP2-006  | `apr qa <model>.apr` — all 8 gates PASS                                   | FALSIFY-SHIP-016       | ✗ PR #1008 OPEN (`feat/falsify-ship-016-partial-discharge`) |
+| AC-SHIP2-007  | `apr run` produces syntactically valid Python on 100 held-out prompts     | FALSIFY-SHIP-017       | ✗ PR #1004 OPEN (`feat/falsify-ship-017-partial-discharge`) |
+| AC-SHIP2-008  | `apr eval --benchmark humaneval` ≥30.0% pass@1                            | FALSIFY-SHIP-018       | ✗ PR #1006 OPEN (`feat/falsify-ship-018-partial-discharge`) |
+| AC-SHIP2-009  | GGUF export loads in llama.cpp AND produces matching tokens (tol ≤ 1e-3)  | FALSIFY-SHIP-019       | ✓ PARTIAL on main (PR #898)    |
+| AC-SHIP2-010  | `apr bench` decode ≥100 tok/s on RTX 4090 (370M target)                   | FALSIFY-SHIP-020       | ✗ PR #1005 OPEN (`feat/falsify-ship-020-partial-discharge`) |
+| AC-SHIP2-011  | Training reproducible: seed fixed, two runs produce identical first 100 steps | FALSIFY-SHIP-021   | ✓ DISCHARGED on main (PR #898) |
+| AC-SHIP2-012  | Weights + tokenizer + config published with CC-BY-4.0 data provenance     | FALSIFY-SHIP-022       | ✓ DISCHARGED on main (PR #898) |
 
 ### 5.3 Critical Path (MODEL-2)
 
