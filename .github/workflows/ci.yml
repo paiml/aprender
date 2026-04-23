@@ -86,10 +86,14 @@ jobs:
       # `.crate` tarball in `registry/cache/` stays intact, so cargo thinks
       # the crate is cached but fails with `couldn't read .../lib.rs`.
       #
-      # Self-heal: every extraction directory cargo trusts has both
-      # `.cargo-ok` and `Cargo.toml`. Walk registry/src/*/*/ and remove
-      # any dir missing either marker — cargo will re-extract from the
-      # `.crate` tarball on next use (cheap; no network). Idempotent.
+      # Self-heal: every extraction directory cargo trusts has `.cargo-ok` +
+      # `Cargo.toml` AT THE ROOT, AND contains Rust source somewhere.
+      # Walk registry/src/*/*/ and remove any dir missing marker files OR
+      # missing source (src/lib.rs | src/main.rs | flat lib.rs | flat main.rs).
+      # Flat-layout crates (e.g. `fnv`, `macro_rules_attribute-proc_macro`)
+      # must not be false-positived: they have lib.rs at crate root without
+      # a `src/` dir. Cargo will re-extract from the `.crate` tarball on next
+      # use (cheap; no network). Idempotent.
       - name: Self-heal cargo registry cache (intel-runner race guard)
         run: |
           set +e
@@ -102,9 +106,20 @@ jobs:
           for crate_dir in "$base"/*/*/; do
             crate_dir=${crate_dir%/}
             [ -d "$crate_dir" ] || continue
+            # Must have atomic-rename marker + manifest at root
             if [ ! -f "$crate_dir/.cargo-ok" ] || [ ! -f "$crate_dir/Cargo.toml" ]; then
-              echo "HEAL: $crate_dir (missing .cargo-ok or Cargo.toml)"
-              rm -rf "$crate_dir"
+              echo "HEAL (missing marker/manifest): $crate_dir"
+              rm -rf "$crate_dir" 2>/dev/null || sudo rm -rf "$crate_dir" 2>/dev/null
+              healed=$((healed + 1))
+              continue
+            fi
+            # Must have Rust source: src/lib.rs | src/main.rs | flat lib.rs | flat main.rs
+            if [ ! -f "$crate_dir/src/lib.rs" ] \
+              && [ ! -f "$crate_dir/src/main.rs" ] \
+              && [ ! -f "$crate_dir/lib.rs" ] \
+              && [ ! -f "$crate_dir/main.rs" ]; then
+              echo "HEAL (no Rust source): $crate_dir"
+              rm -rf "$crate_dir" 2>/dev/null || sudo rm -rf "$crate_dir" 2>/dev/null
               healed=$((healed + 1))
             fi
           done
