@@ -194,6 +194,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         )
         .map_err(crate::error::CliError::Aprender),
 
+        ExtendedCommands::EmbeddingsLint { observation_file } => {
+            commands::embeddings_lint::run(commands::embeddings_lint::EmbeddingsLintArgs {
+                observation_file: observation_file.to_string_lossy().into_owned(),
+                json: cli.json,
+            })
+            .map_err(crate::error::CliError::Aprender)
+        }
+
         ExtendedCommands::Hex {
             file,
             tensor,
