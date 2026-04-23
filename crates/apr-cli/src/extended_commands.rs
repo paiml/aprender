@@ -808,6 +808,12 @@ pub enum ExtendedCommands {
         #[arg(long, value_name = "FILE")]
         observation_file: PathBuf,
     },
+    /// Lint a captured imatrix calibration observation (CRUX-B-07)
+    ImatrixLint {
+        /// Path to captured imatrix observation JSON
+        #[arg(long, value_name = "FILE")]
+        observation_file: PathBuf,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
