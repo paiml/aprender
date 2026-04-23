@@ -92,6 +92,7 @@ fn registered_commands() -> Vec<&'static str> {
         "dry-sampling-lint",
         "awq-lint",
         "fp8-lint",
+        "nf4-lint",
         "oom-lint",
         "tool-use-lint",
         "gbnf-lint",
