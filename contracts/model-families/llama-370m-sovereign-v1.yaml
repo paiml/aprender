@@ -40,10 +40,40 @@ version: 1.6.0
 status: ACTIVE
 
 metadata:
-  version: "1.9.0"
+  version: "1.10.0"
   created: "2026-04-18"
   updated: "2026-04-23"
   changelog:
+    - "1.10.0 (2026-04-23): Bundled PARTIAL_ALGORITHM_LEVEL discharge
+       of the last two untouched MODEL-2 AC rows — AC-SHIP2-003 (val CE
+       ≤ 2.2) and AC-SHIP2-004 (training ≤ 21 days on RTX 4090). Added
+       GATE-ARCH-370M-013 binding AC-SHIP2-003 ↔ FALSIFY-SHIP-013 via
+       pure f32-threshold verdict fn `verdict_from_val_ce_loss(f32) ->
+       Ship013Verdict` + const `AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS
+       = 2.2`, and GATE-ARCH-370M-014 binding AC-SHIP2-004 ↔
+       FALSIFY-SHIP-014 via pure u32-threshold verdict fn
+       `verdict_from_training_duration_days(u32) -> Ship014Verdict` +
+       const `AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS = 21`. Both
+       verdict fns live in `crates/aprender-train/src/models/llama_370m.rs`.
+       Harness surveys: SHIP-013 carries a 7-section f32 mutation
+       survey (exact 2.2 boundary Pass / ULP-above Fail + ULP-below
+       Pass / clear Pass band {0.0, 0.5, 1.0, 2.0, 2.199} / clear Fail
+       band {2.201, 3.0, 10.0, f32::MAX} / non-finite {NaN, ±∞}
+       conservative Fail / negative-CE domain-violation Fail (H(p,q) ≥
+       0 by definition) / 2.2 provenance pin). SHIP-014 carries a
+       6-section u32 mutation survey (exact 21 boundary Pass / adjacent
+       20→Pass + 22→Fail / clear Pass band {0, 1, 7, 14, 20, 21} /
+       clear Fail band {22, 30, 100, u32::MAX} / monotonicity sweep
+       0..=42 flipping exactly once at 21→22 / 21 provenance pin). This
+       is the first bundled double-discharge on the MODEL-2 surface.
+       Completes MODEL-2 PARTIAL coverage at 12/12 touched — the two
+       genuinely compute-bound gates that remained after the
+       compute-free harvest now have the decision rule proven at
+       `cargo test` time, with full discharge still blocked on a real
+       `apr pretrain --validate` loop producing a live val CE and a
+       real wall-clock measurement of a 370M pretraining run on RTX
+       4090. Restacked onto v2.37.0 SHIP-016. Sovereign contract stays
+       ACTIVE."
     - "1.9.0 (2026-04-23): Added GATE-ARCH-370M-008 binding
        AC-SHIP2-006 ↔ FALSIFY-SHIP-016 (`apr qa <model>.apr` — all 8
        gates PASS) with `discharge_status: PARTIAL_ALGORITHM_LEVEL`.
@@ -751,6 +781,134 @@ gates:
     verdict: pass
     binds_to: AC-SHIP2-006
     falsification_id: FALSIFY-SHIP-016
+    ship_blocking: true
+
+  - id: GATE-ARCH-370M-013
+    rule: >
+      `entrenar` pretraining loop, on a real MODEL-2 (albor 370M
+      Sovereign) training dispatch, MUST report a validation
+      cross-entropy loss ≤ 2.2 at the final validation step. A measured
+      val CE strictly above 2.2 is a ship-blocker: training did not
+      converge well enough for the 370M target to hit its downstream
+      HumanEval / syntax-parse gates (AC-SHIP2-007, AC-SHIP2-008).
+      Spec §5.2 AC-SHIP2-003.
+    evidence_required: >
+      `apr pretrain --mode from-scratch --validate --json | jq
+      '.val_cross_entropy'` yields a finite non-negative f32 L with
+      L ≤ 2.2 at the final validation step of a real RTX 4090 run.
+      Non-finite or negative values are harness-bug Fail per the
+      decision rule.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/models/llama_370m.rs::verdict_from_val_ce_loss"
+      - "crates/aprender-train/src/models/llama_370m.rs::AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS (= 2.2)"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_013_val_ce_loss_threshold_logic"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Algorithm level proven today: the decision rule — "val CE ≤ 2.2
+      is a Pass; strictly above is a Fail; non-finite is a Fail; and
+      negative is a Fail because cross-entropy H(p,q) = −Σ p(x) log
+      q(x) ≥ 0 by definition" — is a pure f32 threshold check with
+      an explicit domain guard. `verdict_from_val_ce_loss(measured_ce)
+      -> Ship013Verdict` is a pure `const fn` in
+      `crates/aprender-train/src/models/llama_370m.rs`. The 7-section
+      mutation survey covers seven invariants:
+        (1) Exact boundary 2.2 → Pass (inclusive floor, not strict <).
+        (2) ULP asymmetry — one ULP above 2.2 → Fail; one ULP below → Pass.
+        (3) Clear Pass band — {0.0, 0.5, 1.0, 2.0, 2.199} all Pass.
+        (4) Clear Fail band — {2.201, 3.0, 10.0, f32::MAX} all Fail;
+            catches regressions that land the training above the
+            ceiling (a random 50K-vocab predictor is ≈ ln(50257) ≈
+            10.82 nats, so the f32::MAX saturation is a sanity rail).
+        (5) Non-finite guard — NaN, +∞, −∞ all conservatively Fail;
+            a loss harness that silently produces a non-finite value
+            (log(0) in softmax, overflow in exp) cannot silently ship.
+        (6) Negative-CE domain guard — {−0.001, −1.0, −f32::INFINITY}
+            all Fail; H(p,q) ≥ 0 by definition, so a negative value
+            is a sign-flip / log-domain-underflow / subtract-instead
+            -of-add bug in the loss harness, never a "better than
+            zero" Pass.
+        (7) Provenance pinning — `AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS`
+            stays byte-equal to `2.2_f32`; any edit that loosens
+            (to 2.5) or hardens (to 2.0) the floor fails
+            `cargo test -p aprender-train --lib falsify_ship_013`.
+      Counter-example classes protected against: regressed_optimizer
+      (final val CE climbs above 2.2 despite harness reporting Pass),
+      drifted_floor (AC edited to 2.5 without spec sync), relaxed_rule
+      (`<=` mutated to `<`), nan_promoted (NaN silently returns Pass
+      via comparison semantics), negative_loss_leak (sign-flip bug
+      promotes a nonsense negative to a "better" Pass).
+      Full discharge (live `apr pretrain --mode from-scratch
+      --validate` loop on RTX 4090 producing a real MODEL-2 val CE
+      feeding `verdict_from_val_ce_loss` → Pass) blocks on
+      AC-SHIP2-003 compute-dispatch. Fixture swap is data-only once
+      a real training run produces a JSON report — no harness rewrite
+      required.
+    full_discharge_blocks_on: "real `apr pretrain --mode from-scratch --validate` loop on RTX 4090 with `--features cuda` producing a live MODEL-2 val cross-entropy at the final validation step; feed that value into verdict_from_val_ce_loss and require Ship013Verdict::Pass"
+    verdict: pass
+    binds_to: AC-SHIP2-003
+    falsification_id: FALSIFY-SHIP-013
+    ship_blocking: true
+
+  - id: GATE-ARCH-370M-014
+    rule: >
+      Training the MODEL-2 (albor 370M Sovereign) from scratch on the
+      SHIP-TWO-001 reference RTX 4090 host MUST complete within 21
+      wall-clock days. A measured duration strictly above 21 days is
+      a ship-blocker: the hardware budget overflowed and the Spec §9
+      Risk #4 escape hatch (rent 2× H100 week 3) is triggered.
+      Spec §5.2 AC-SHIP2-004.
+    evidence_required: >
+      Wall-clock duration between the first `apr pretrain` dispatch
+      and the final checkpoint write, measured on the canonical
+      RTX 4090 host, yields a u32 N with N ≤ 21.
+    evidence_discharged_by:
+      - "crates/aprender-train/src/models/llama_370m.rs::verdict_from_training_duration_days"
+      - "crates/aprender-train/src/models/llama_370m.rs::AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS (= 21)"
+      - "crates/aprender-train/src/models/llama_370m.rs::tests::falsify_ship_014_training_duration_threshold_logic"
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Algorithm level proven today: the decision rule — "≤ 21 days
+      Pass, > 21 days Fail" — is a pure u32 threshold check.
+      `verdict_from_training_duration_days(measured_days) ->
+      Ship014Verdict` is a pure `const fn` in
+      `crates/aprender-train/src/models/llama_370m.rs`. Because u32
+      auto-rules out negatives and has no non-finite states, the
+      domain is simpler than the f32 gates (SHIP-013, SHIP-020); the
+      6-section mutation survey covers six invariants:
+        (1) Exact boundary 21 → Pass (inclusive ceiling, not strict <).
+        (2) Adjacent values — 20 → Pass (one under), 22 → Fail (one over).
+        (3) Clear Pass band — {0, 1, 7, 14, 20, 21} all Pass.
+            0-day is trivially Pass (same-day cache hit or short
+            re-run); 7/14 are smaller training scales.
+        (4) Clear Fail band — {22, 30, 100, u32::MAX} all Fail.
+            22/30/100 are incremental overruns each invoking Spec §9
+            Risk #4 escape-hatch planning; u32::MAX is the saturation
+            sanity.
+        (5) Monotonicity sweep — 0..=42 flips verdict exactly once
+            at the 21→22 transition and never flips back. This is a
+            complete classification over 2× the ceiling range; any
+            non-monotonic mutation (carve-out between day 14 and 21,
+            modular-arithmetic bug, off-by-one) is trivially caught.
+        (6) Provenance pinning — `AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS`
+            stays byte-equal to `21_u32`; any edit that relaxes
+            (to 30) or tightens (to 14) the ceiling fails
+            `cargo test -p aprender-train --lib falsify_ship_014`.
+      Counter-example classes protected against: regressed_throughput
+      (RTX 4090 tok/s drops and actual wall-clock exceeds 21 days
+      despite harness reporting Pass), drifted_budget (AC edited to 30
+      without spec sync), relaxed_rule (`<=` mutated to `<`),
+      wrap_bypass (u32 overflow via arithmetic mutation promotes a
+      large duration to a small Pass).
+      Full discharge (real wall-clock measurement of a MODEL-2
+      pretraining run on RTX 4090 ≤ 21 days feeding
+      `verdict_from_training_duration_days` → Pass) blocks on
+      AC-SHIP2-004 compute-dispatch. Fixture swap is data-only once
+      a real training run reports a final-checkpoint timestamp — no
+      harness rewrite required.
+    full_discharge_blocks_on: "real wall-clock measurement of a MODEL-2 pretraining run on RTX 4090 with `--features cuda` from first `apr pretrain` dispatch to final checkpoint write; convert to integer days and feed into verdict_from_training_duration_days; require Ship014Verdict::Pass"
+    verdict: pass
+    binds_to: AC-SHIP2-004
+    falsification_id: FALSIFY-SHIP-014
     ship_blocking: true
 
   - id: GATE-ARCH-370M-011

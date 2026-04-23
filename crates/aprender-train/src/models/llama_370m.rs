@@ -546,7 +546,6 @@ pub fn verdict_from_pass_at_1(correct: usize, total: usize, threshold_pct: f32) 
 // FALSIFY-SHIP-016 / AC-SHIP2-006 / GATE-ARCH-370M-008 — apr qa aggregate
 // ─────────────────────────────────────────────────────────────
 
-
 /// Number of canonical `apr qa` gates composing AC-SHIP2-006 /
 /// FALSIFY-SHIP-016. The spec row AC-SHIP2-006 reads
 /// "`apr qa <model>.apr` — all 8 gates PASS" and the matching
@@ -594,6 +593,146 @@ pub fn verdict_from_qa_gates(gate_results: &[bool]) -> Ship016Verdict {
         Ship016Verdict::Pass
     } else {
         Ship016Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-013 / AC-SHIP2-003 / GATE-ARCH-370M-013 — val CE loss floor
+// ─────────────────────────────────────────────────────────────
+//
+// AC-SHIP2-003 (spec §5.2) states: "`entrenar` pretraining loop reaches
+// target loss (CE ≤ 2.2 on val)". The decision rule is a pure single-
+// number f32 threshold check on a measured cross-entropy value. Cross-
+// entropy is non-negative by definition (H(p,q) ≥ 0 for all probability
+// distributions p,q), so the admissible input domain is `[0.0, +∞)`; any
+// negative measurement indicates a broken loss harness (sign flip,
+// log-domain underflow, subtract instead of add) and must Fail closed.
+//
+// This PARTIAL_ALGORITHM_LEVEL discharge binds the decision rule only.
+// The compute-heavy half — an actual `apr pretrain --validate` loop
+// producing a live val CE from MODEL-2 training — remains blocked on
+// AC-SHIP2-003 compute-dispatch. The decision rule itself (what number
+// constitutes a Pass) is proven today at `cargo test` time via the
+// mutation survey below.
+
+/// Maximum acceptable cross-entropy loss on the validation set for
+/// MODEL-2 (albor 370M Sovereign) at the end of pretraining. Spec §5.2
+/// AC-SHIP2-003: "CE ≤ 2.2 on val". A measured val CE strictly above
+/// 2.2 is a ship-blocker (training did not converge well enough for
+/// the 370M target to hit its HumanEval / syntax-parse downstream
+/// gates). Pinned here so any contract drift in either direction
+/// (loosening to 2.5, hardening to 2.0) is caught at compile+test
+/// time, not at a production training run.
+///
+/// f32-exact: `2.2` is representable in IEEE-754 binary32 as the
+/// closest-round value `0x400CCCCD` = 2.20000004768371582...; the
+/// ULP-above neighbour is strictly greater and is used as the
+/// sharpest Fail counter-example in the mutation survey.
+pub const AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS: f32 = 2.2;
+
+/// Binary verdict for FALSIFY-SHIP-013 / AC-SHIP2-003 /
+/// GATE-ARCH-370M-013. `Pass` iff the measured val CE is finite AND
+/// non-negative AND at or below [`AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS`].
+/// `Fail` otherwise (including every non-finite value: NaN, +∞, -∞,
+/// and every negative value, which is a harness-bug domain violation
+/// since H(p,q) ≥ 0 by definition).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship013Verdict {
+    /// Measured val CE ∈ `[0.0, AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS]`.
+    Pass,
+    /// Measured val CE > ceiling, or non-finite, or negative (domain
+    /// violation — a real cross-entropy can never be < 0).
+    Fail,
+}
+
+/// Algorithm-level verdict rule for FALSIFY-SHIP-013 / AC-SHIP2-003 /
+/// GATE-ARCH-370M-013: a single f32 threshold check against the MODEL-2
+/// val-CE ceiling. Returns [`Ship013Verdict::Fail`] conservatively for
+/// any non-finite input (NaN, +∞, -∞) AND for any negative input (CE
+/// is ≥ 0 by definition — a negative value means the loss harness is
+/// broken, which must never be silently promoted to a Pass).
+///
+/// The full discharge (live `apr pretrain --validate` loop producing
+/// a real MODEL-2 val CE on RTX 4090 ≤ 2.2) remains blocked on
+/// AC-SHIP2-003 compute-dispatch.
+#[must_use]
+pub const fn verdict_from_val_ce_loss(measured_ce: f32) -> Ship013Verdict {
+    if !measured_ce.is_finite() {
+        return Ship013Verdict::Fail;
+    }
+    if measured_ce < 0.0 {
+        // Cross-entropy is non-negative by definition; a negative
+        // measurement is a harness bug, not a "better than zero" Pass.
+        return Ship013Verdict::Fail;
+    }
+    if measured_ce <= AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS {
+        Ship013Verdict::Pass
+    } else {
+        Ship013Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-014 / AC-SHIP2-004 / GATE-ARCH-370M-014 — training-budget floor
+// ─────────────────────────────────────────────────────────────
+//
+// AC-SHIP2-004 (spec §5.2) states: "Training on RTX 4090 completes
+// within 21 days (hardware budget)". The decision rule is a pure
+// single-number u32 threshold check on measured wall-clock days. u32
+// naturally rules out negative values (no need for an explicit domain
+// guard); the only extrema to cover are the boundary (21), the
+// immediate neighbours (20 / 22), and the saturation point u32::MAX.
+// Zero days is a trivial Pass (under budget).
+//
+// This PARTIAL_ALGORITHM_LEVEL discharge binds the decision rule only.
+// The compute-heavy half — an actual wall-clock measurement of a real
+// 370M pretraining run on RTX 4090 → ≤ 21 days — remains blocked on
+// AC-SHIP2-004 compute-dispatch. The decision rule itself (what
+// duration constitutes a Pass) is proven today at `cargo test` time
+// via the mutation survey below.
+
+/// Maximum acceptable wall-clock training duration, in integer days,
+/// for MODEL-2 (albor 370M Sovereign) on the SHIP-TWO-001 reference
+/// RTX 4090 host. Spec §5.2 AC-SHIP2-004: "Training on RTX 4090
+/// completes within 21 days (hardware budget)". A measured duration
+/// strictly above 21 days is a ship-blocker (the hardware budget
+/// overflowed and a 2× H100 week-3 escape hatch from Spec §9 Risk #4
+/// is required). Pinned here so any contract drift in either
+/// direction (extending to 30, compressing to 14) is caught at
+/// compile+test time, not mid-pretraining.
+pub const AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS: u32 = 21;
+
+/// Binary verdict for FALSIFY-SHIP-014 / AC-SHIP2-004 /
+/// GATE-ARCH-370M-014. `Pass` iff the measured wall-clock training
+/// duration in days is at or below
+/// [`AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS`]. `Fail` otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship014Verdict {
+    /// Measured training duration ≤ `AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS`.
+    Pass,
+    /// Measured training duration > ceiling (ship-blocker per Spec §9
+    /// Risk #4).
+    Fail,
+}
+
+/// Algorithm-level verdict rule for FALSIFY-SHIP-014 / AC-SHIP2-004 /
+/// GATE-ARCH-370M-014: a single u32 threshold check against the
+/// MODEL-2 hardware-budget ceiling. Unlike the f32 ship gates
+/// (SHIP-007, SHIP-013, SHIP-020), u32 automatically rules out
+/// negatives (no domain guard needed) and has no non-finite states;
+/// the only interesting counter-examples are the boundary (21), the
+/// immediate neighbours (20 / 22), and u32::MAX.
+///
+/// Zero days is Pass (trivially under-budget, e.g. a cached artifact
+/// or a same-day re-run). The full discharge (live wall-clock
+/// measurement of MODEL-2 pretraining on RTX 4090 ≤ 21 days) remains
+/// blocked on AC-SHIP2-004 compute-dispatch.
+#[must_use]
+pub const fn verdict_from_training_duration_days(measured_days: u32) -> Ship014Verdict {
+    if measured_days <= AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS {
+        Ship014Verdict::Pass
+    } else {
+        Ship014Verdict::Fail
     }
 }
 
@@ -1069,7 +1208,6 @@ mod tests {
              discharge_status == PARTIAL_ALGORITHM_LEVEL",
         );
     }
-
 
     // ========================================================================
     // GATE-ARCH-370M-005 / AC-SHIP2-007 / FALSIFY-SHIP-017
@@ -1607,7 +1745,6 @@ mod tests {
         );
     }
 
-
     /// FALSIFY-SHIP-016 algorithm-level PARTIAL discharge: the decision
     /// rule of SHIP-016 — "`apr qa <model>.apr` passes iff all 8 gates
     /// PASS; any gate FAIL fails the ship" — is a pure aggregate-AND
@@ -1786,6 +1923,250 @@ mod tests {
             "GATE-ARCH-370M-008 must advertise ship_blocking:true — the \
              gate's `verdict:pass` alone is insufficient green while \
              discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-SHIP-013 / AC-SHIP2-003 / GATE-ARCH-370M-013 — val CE loss floor
+    // ========================================================================
+
+    /// FALSIFY-SHIP-013 algorithm-level PARTIAL discharge: prove the
+    /// f32-threshold decision rule binding the measured MODEL-2 val CE
+    /// to [`AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS`] = 2.2. Any edit
+    /// that changes the constant, the comparison direction, the
+    /// non-finite handling, the negative-domain guard, or the
+    /// monotonicity must break this test before an `apr pretrain
+    /// --validate` compute dispatch is launched.
+    ///
+    /// Mutation survey (7 sections):
+    ///   1. Exact boundary 2.2 → Pass (inclusive floor, not strict <)
+    ///   2. One-ULP above boundary → Fail; one-ULP below → Pass
+    ///   3. Clear Pass band {0.0, 0.5, 1.0, 2.0, 2.199}
+    ///   4. Clear Fail band {2.201, 3.0, 10.0, f32::MAX}
+    ///   5. Non-finite {NaN, +∞, -∞} → Fail conservatively
+    ///   6. Negative (domain violation, CE ≥ 0) → Fail conservatively
+    ///   7. Provenance pin: the const stays byte-equal to 2.2_f32
+    #[test]
+    fn falsify_ship_013_val_ce_loss_threshold_logic() {
+        // Section 1: exact boundary 2.2 → Pass. AC-SHIP2-003 says
+        // "CE ≤ 2.2" (inclusive), so sim == threshold must Pass. A
+        // regression that silently swaps `<=` to `<` would make the
+        // ceiling unreachable.
+        assert_eq!(
+            verdict_from_val_ce_loss(AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS),
+            Ship013Verdict::Pass,
+            "val CE == 2.2 must Pass (inclusive floor, not strict <)",
+        );
+        assert_eq!(verdict_from_val_ce_loss(2.2), Ship013Verdict::Pass, "literal 2.2 must Pass",);
+
+        // Section 2: ULP asymmetry around the boundary. f32 at 2.2 is
+        // `0x400CCCCD` = 2.20000004768371582...; the next-representable
+        // float up is `0x400CCCCE` (Fail), and the next below is
+        // `0x400CCCCC` (Pass). Sharpest possible counter-examples.
+        let one_ulp_above = f32::from_bits(AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS.to_bits() + 1);
+        let one_ulp_below = f32::from_bits(AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS.to_bits() - 1);
+        assert!(one_ulp_above > AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS);
+        assert!(one_ulp_below < AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS);
+        assert_eq!(
+            verdict_from_val_ce_loss(one_ulp_above),
+            Ship013Verdict::Fail,
+            "one ULP above 2.2 must Fail (strictly above ceiling)",
+        );
+        assert_eq!(
+            verdict_from_val_ce_loss(one_ulp_below),
+            Ship013Verdict::Pass,
+            "one ULP below 2.2 must Pass (still under ceiling)",
+        );
+
+        // Section 3: clear Pass band. 0.0 is the theoretical minimum
+        // (perfect predictor); 2.199 is safely under 2.2.
+        for ce in [0.0_f32, 0.5, 1.0, 2.0, 2.199] {
+            assert_eq!(
+                verdict_from_val_ce_loss(ce),
+                Ship013Verdict::Pass,
+                "val CE = {ce} must Pass (in clear Pass band)",
+            );
+        }
+
+        // Section 4: clear Fail band. A poorly-converged 370M would
+        // land here (a random 50K-vocab predictor is ≈ ln(50257) ≈
+        // 10.82 nats, which must obviously Fail). f32::MAX is the
+        // saturation sanity check.
+        for ce in [2.201_f32, 3.0, 10.0, f32::MAX] {
+            assert_eq!(
+                verdict_from_val_ce_loss(ce),
+                Ship013Verdict::Fail,
+                "val CE = {ce} must Fail (above 2.2 ceiling)",
+            );
+        }
+
+        // Section 5: non-finite inputs must Fail conservatively. A
+        // loss-harness bug that produces NaN (log(0) or divide-by-zero
+        // in softmax) or ±∞ (overflow in exp) must never silently
+        // promote to Pass via NaN comparison semantics.
+        assert_eq!(
+            verdict_from_val_ce_loss(f32::NAN),
+            Ship013Verdict::Fail,
+            "NaN val CE must Fail conservatively",
+        );
+        assert_eq!(
+            verdict_from_val_ce_loss(f32::INFINITY),
+            Ship013Verdict::Fail,
+            "+∞ val CE must Fail conservatively",
+        );
+        assert_eq!(
+            verdict_from_val_ce_loss(f32::NEG_INFINITY),
+            Ship013Verdict::Fail,
+            "-∞ val CE must Fail conservatively",
+        );
+
+        // Section 6: negative CE is a domain violation. Cross-entropy
+        // H(p,q) = -Σ p(x) log q(x) ≥ 0 for all probability
+        // distributions p,q. A negative measurement indicates a sign
+        // flip, log-domain underflow, or subtract-instead-of-add bug
+        // in the loss harness, and must never be promoted to "better
+        // than zero" Pass.
+        for neg_ce in [-0.001_f32, -1.0, -f32::INFINITY] {
+            assert_eq!(
+                verdict_from_val_ce_loss(neg_ce),
+                Ship013Verdict::Fail,
+                "negative val CE = {neg_ce} must Fail (CE ≥ 0 by definition)",
+            );
+        }
+
+        // Section 7: provenance pin — the 2.2 constant is load-bearing
+        // and lockstepped with the spec. If AC-SHIP2-003 ever changes
+        // the ceiling (relaxing to 2.5 for a smaller training-data
+        // budget, tightening to 2.0 for a 500M jump), this const and
+        // this test must move together.
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(
+                AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS, 2.2_f32,
+                "MODEL-2 val CE ceiling is 2.2 \
+                 (spec §5.2 AC-SHIP2-003; albor 370M Sovereign target)",
+            );
+        }
+    }
+
+    // ========================================================================
+    // FALSIFY-SHIP-014 / AC-SHIP2-004 / GATE-ARCH-370M-014 — training budget
+    // ========================================================================
+
+    /// FALSIFY-SHIP-014 algorithm-level PARTIAL discharge: prove the
+    /// u32-threshold decision rule binding the measured MODEL-2
+    /// training wall-clock duration to
+    /// [`AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS`] = 21. Any edit that
+    /// changes the constant, the comparison direction, or introduces
+    /// a non-monotonic regression must break this test before a
+    /// real-compute dispatch on the RTX 4090 host is launched.
+    ///
+    /// Mutation survey (6 sections):
+    ///   1. Exact boundary 21 → Pass (inclusive ceiling)
+    ///   2. Adjacent values: 20 → Pass; 22 → Fail
+    ///   3. Clear Pass band {0, 1, 7, 14, 20, 21}
+    ///   4. Clear Fail band {22, 30, 100, u32::MAX}
+    ///   5. Monotonicity sweep 0..=42 — verdict flips exactly once
+    ///      at the 21→22 transition and never flips back
+    ///   6. Provenance pin: the const stays byte-equal to 21_u32
+    #[test]
+    fn falsify_ship_014_training_duration_threshold_logic() {
+        // Section 1: exact boundary 21 → Pass. AC-SHIP2-004 says
+        // "within 21 days" (inclusive), so 21 == threshold must Pass.
+        // A regression that silently swaps `<=` to `<` would make the
+        // ceiling unreachable.
+        assert_eq!(
+            verdict_from_training_duration_days(AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS),
+            Ship014Verdict::Pass,
+            "21 days must Pass (inclusive ceiling, not strict <)",
+        );
+        assert_eq!(
+            verdict_from_training_duration_days(21),
+            Ship014Verdict::Pass,
+            "literal 21 days must Pass",
+        );
+
+        // Section 2: adjacent values. 20 is the sharpest Pass
+        // counter-example (one below ceiling); 22 is the sharpest
+        // Fail counter-example (one above). u32 neighbours are
+        // exact (no ULP noise) so these are both rock-solid.
+        assert_eq!(
+            verdict_from_training_duration_days(20),
+            Ship014Verdict::Pass,
+            "20 days must Pass (one day under ceiling)",
+        );
+        assert_eq!(
+            verdict_from_training_duration_days(22),
+            Ship014Verdict::Fail,
+            "22 days must Fail (one day over ceiling; Spec §9 Risk #4 escape hatch)",
+        );
+
+        // Section 3: clear Pass band. 0 is trivial (same-day cache
+        // hit, no actual training); 1/7/14 are smaller training runs;
+        // 21 is the boundary.
+        for days in [0_u32, 1, 7, 14, 20, 21] {
+            assert_eq!(
+                verdict_from_training_duration_days(days),
+                Ship014Verdict::Pass,
+                "{days} days must Pass (in clear Pass band)",
+            );
+        }
+
+        // Section 4: clear Fail band. 22/30/100 are incremental
+        // overruns (each invokes Spec §9 Risk #4 escape-hatch planning
+        // — rent 2× H100 week 3); u32::MAX is the saturation sanity.
+        for days in [22_u32, 30, 100, u32::MAX] {
+            assert_eq!(
+                verdict_from_training_duration_days(days),
+                Ship014Verdict::Fail,
+                "{days} days must Fail (above 21-day ceiling)",
+            );
+        }
+
+        // Section 5: monotonicity sweep 0..=42 — verdict must flip
+        // exactly once at the 21→22 transition and never flip back.
+        // This is the complete classification over a 2× the ceiling
+        // range; any mutation that introduces non-monotonicity (e.g.
+        // a midlife-crisis carve-out at "after day 14 but before day
+        // 21" or a modular-arithmetic bug) is trivially caught.
+        let mut seen_fail = false;
+        for days in 0..=42_u32 {
+            let v = verdict_from_training_duration_days(days);
+            match (v, seen_fail) {
+                (Ship014Verdict::Pass, true) => {
+                    panic!(
+                        "monotonicity broken: day {days} flipped back to Pass \
+                         after a previous Fail was observed",
+                    );
+                }
+                (Ship014Verdict::Fail, _) => {
+                    seen_fail = true;
+                }
+                _ => {}
+            }
+        }
+        // And verify the transition is exactly at 21→22, not earlier
+        // or later (rules out off-by-one mutants).
+        assert_eq!(
+            verdict_from_training_duration_days(21),
+            Ship014Verdict::Pass,
+            "sweep boundary: day 21 must Pass",
+        );
+        assert_eq!(
+            verdict_from_training_duration_days(22),
+            Ship014Verdict::Fail,
+            "sweep boundary: day 22 must Fail",
+        );
+
+        // Section 6: provenance pin — the 21 constant is load-bearing
+        // and lockstepped with the spec. If AC-SHIP2-004 ever changes
+        // the ceiling (extending to 30 for a longer run, tightening
+        // to 14 for a distilled student), this const and this test
+        // must move together.
+        assert_eq!(
+            AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS, 21_u32,
+            "MODEL-2 training-budget ceiling is 21 days \
+             (spec §5.2 AC-SHIP2-004; RTX 4090 hardware budget)",
         );
     }
 }
