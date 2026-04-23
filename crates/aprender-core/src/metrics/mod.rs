@@ -12,6 +12,7 @@ pub mod evaluator;
 pub mod grad_norm;
 pub mod percentile;
 pub mod ranking;
+pub mod ship_005;
 
 use crate::primitives::{Matrix, Vector};
 
