@@ -9216,11 +9216,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: SHIP-TWO-001 add cargo xtask audit-ship-two CI gate (Zero-Tolerance enforcement)
-  status: planned
+  status: inprogress
   priority: medium
   assigned_to: null
   created: 2026-04-23T08:52:09Z
-  updated: 2026-04-23T08:52:09Z
+  updated: 2026-04-23T10:13:23.539694478+00:00
   spec: null
   acceptance_criteria:
   - 'Audit §3.3 shows spec §3 row #8 Zero-Tolerance is unenforced: the spec itself carries factual misstatements (''7/10 on main'' when 6/10). Add cargo xtask audit-ship-two that on every push: (1) parses docs/specifications/aprender-train/ship-two-models-spec.md, (2) extracts ''N/M on main'' claims, (3) fails CI unless matching evidence_discharged_by path is ancestor of main for N AC-SHIP-*. Structural enforcement of Zero-Tolerance on the spec document itself.'

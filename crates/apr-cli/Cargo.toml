@@ -69,6 +69,13 @@ path = "src/main.rs"
 name = "apr-corpus-ingest"
 path = "src/bin/apr-corpus-ingest.rs"
 
+# PMAT-683 / C-APR-AUDIT-SHIP-TWO v1.0.0: structural enforcement of the
+# SHIP-TWO-001 spec YAML status block claims (count/of/ids internal
+# consistency). Network-free, pure-parse; runs as a CI gate on every PR.
+[[bin]]
+name = "apr-audit-ship-two"
+path = "src/bin/apr-audit-ship-two.rs"
+
 [features]
 # crates.io install: minimal features (inspect, validate, lint, etc.)
 # Full features enabled locally via workspace Cargo.toml default-members

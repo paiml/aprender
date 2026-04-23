@@ -1,0 +1,191 @@
+# ─────────────────────────────────────────────────────────────
+# Contract: C-APR-AUDIT-SHIP-TWO
+# Structural enforcement of SHIP-TWO-001 spec claims against main.
+# ─────────────────────────────────────────────────────────────
+# Closes the structural-enforcement gap identified in ship-two-models-
+# spec-audit.md §3.3 and codified by spec v2.29.3 §3 row #9 (monorepo
+# single source of truth) + §3 row #10 (fix root causes never route
+# around).
+#
+# Before this contract, spec claims like "MODEL-1 coverage 7/10 on main"
+# were hand-maintained prose; drift went undetected for days at a time
+# (the 7/10→6/10 correction cycle v2.29.1 found exactly this class of
+# bug). This contract wires a `cargo`-built Rust tool `apr audit-ship-
+# two` that parses the spec's machine-parseable YAML Status block and
+# structurally verifies every claim before CI will pass.
+#
+# v1 scope is NARROW by design (§3 row #10 applied in reverse: only
+# ship what the falsification surface can prove):
+#
+#   - v1.0: YAML `count:`/`of:`/`ids:` internal consistency
+#   - v1.1: git merge-base --is-ancestor checks on named evidence
+#   - v2.0: cross-repo parity (--include-albor flag per PMAT-693)
+#
+# Each version bump adds one falsification surface. The v1.0 contract
+# ships with 3 FALSIFY tests; v1.1 will add 2 more; v2.0 will add 3
+# more. Each future bump requires a fresh contract version and PR.
+#
+# Peer: contracts/publish-manifest-v1.yaml (also gates CI before
+#       network-visible action)
+# Peer: contracts/apr-cli-commands-v1.yaml (general apr CLI command
+#       inventory)
+#
+# References:
+#   - docs/specifications/aprender-train/ship-two-models-spec.md
+#     v2.29.3 §3 row #9 + §3 row #10 + §5.5.3 enforcement plan
+#   - docs/specifications/aprender-train/ship-two-models-spec-audit.md
+#     §3.3 (Zero-Tolerance conflict + proposed CI gate)
+#   - memory/feedback_monorepo_single_source_of_truth.md
+#   - memory/feedback_fix_root_cause_never_route_around.md
+# ─────────────────────────────────────────────────────────────
+
+metadata:
+  id: C-APR-AUDIT-SHIP-TWO
+  version: "1.0.0"
+  created: "2026-04-23"
+  author: PAIML Engineering
+  description: >
+    Parse the YAML `status:` block embedded in SHIP-TWO-001 spec and
+    structurally check every count/of/ids claim for internal
+    consistency. v1 is YAML-only; v1.1 adds git ancestry; v2 adds
+    cross-repo albor parity. Fails CI on any structural drift.
+  kind: kernel
+  registry: true
+  scope: "crates/apr-cli/src/audit_ship_two.rs + crates/apr-cli/src/bin/apr-audit-ship-two.rs"
+  references:
+    - "SHIP-TWO-001 spec v2.29.3+ §3 row #9 + §5.5.3"
+    - "PMAT-683 (this contract)"
+    - "PMAT-693 (v2.0 --include-albor extension)"
+
+contract_id: C-APR-AUDIT-SHIP-TWO
+version: "1.0.0"
+status: PROPOSED
+
+kind: KernelContract
+name: apr-audit-ship-two
+scope: "crates/apr-cli/src/audit_ship_two.rs"
+
+description: |
+  `apr audit-ship-two` reads
+  `docs/specifications/aprender-train/ship-two-models-spec.md`, extracts
+  the first ```yaml fenced block that contains a top-level `status:`
+  key, and verifies three structural invariants:
+    (1) every `{ count, of, ids }` triple has `count == len(ids)`
+    (2) every `{ count, of, ids }` triple has `count <= of`
+    (3) every `count:` value is a non-negative integer
+
+  Exit codes:
+    0 — all claims consistent
+    1 — at least one drift finding reported on stderr with path + line
+    2 — parse error (spec YAML block missing / malformed)
+
+equations:
+  count_equals_ids_length:
+    description: "Every count: claim equals len(ids:) under the same key"
+    formula: "∀ k in status: k.count == len(k.ids)"
+
+  count_under_of:
+    description: "count: never exceeds the of: denominator"
+    formula: "∀ k in status: k.count <= k.of"
+
+  non_negative_count:
+    description: "count: fields are non-negative integers"
+    formula: "∀ k in status: k.count >= 0 ∧ k.count ∈ ℤ"
+
+invariants:
+  spec_yaml_block_unique:
+    description: "The first ```yaml block in the spec is the status block"
+    formula: "exactly one ```yaml ... ``` block contains top-level `status:` key"
+
+  all_claims_parseable:
+    description: "Every count/of/ids tuple parses without error"
+    formula: "∀ k: yaml_parse(k) succeeds ∧ k.count, k.of ∈ usize ∧ k.ids ∈ Vec<String>"
+
+  exit_code_semantics:
+    description: "Exit 0 iff all three equations hold"
+    formula: "exit_code == 0 ⇔ (count_equals_ids_length ∧ count_under_of ∧ non_negative_count)"
+
+proof_obligations:
+  - type: invariant
+    property: "count: field matches ids: length exactly"
+    formal: "∀ claim: claim.count == claim.ids.len()"
+    tolerance: 0
+    applies_to: count_equals_ids_length
+
+  - type: invariant
+    property: "count: never exceeds of: denominator"
+    formal: "∀ claim: claim.count <= claim.of"
+    tolerance: 0
+    applies_to: count_under_of
+
+  - type: invariant
+    property: "exit code zero means all gates passed"
+    formal: "exit_code == 0 ⇔ no drift reported"
+    tolerance: 0
+    applies_to: exit_code_semantics
+
+falsification_tests:
+  - id: FALSIFY-AUDIT-SHIP-TWO-001
+    rule: "count: mismatch against ids: length is a ship-blocker"
+    prediction: >
+      If the spec declares `{ count: 6, of: 10, ids: [A,B,C,D,E,F,G] }`
+      (count 6 but 7 ids), `apr audit-ship-two` exits 1 with a drift
+      message naming the path to the bad claim.
+    test: |
+      Write a fixture spec with a deliberately wrong count.
+      Run `apr audit-ship-two --spec <fixture>`.
+      Assert exit code == 1 and stderr contains "count=6 but ids.len()=7".
+    if_fails: "Either parser is not detecting the mismatch OR exit code is wrong"
+
+  - id: FALSIFY-AUDIT-SHIP-TWO-002
+    rule: "count > of is a ship-blocker"
+    prediction: >
+      If the spec declares `{ count: 11, of: 10, ids: [...]}`,
+      `apr audit-ship-two` exits 1 with a drift message naming the
+      impossible ratio.
+    test: |
+      Write a fixture with count > of.
+      Assert exit 1 and stderr contains "count=11 exceeds of=10".
+    if_fails: "count/of inequality not enforced"
+
+  - id: FALSIFY-AUDIT-SHIP-TWO-003
+    rule: "clean spec exits 0"
+    prediction: >
+      Running `apr audit-ship-two` against the current on-branch
+      spec exits 0 (no diagnostics printed to stderr).
+    test: |
+      Run `apr audit-ship-two --spec docs/specifications/aprender-train/ship-two-models-spec.md`.
+      Assert exit code == 0.
+    if_fails: "Either the spec is inconsistent (fix the spec) or the tool false-positives (fix the tool)"
+
+kani_harnesses: []
+
+qa_gate:
+  id: GATE-AUDIT-SHIP-TWO-001
+  name: "SHIP-TWO-001 spec YAML status block structural consistency"
+  description: >
+    Gate that runs on every PR touching ship-two-models-spec.md.
+    If the YAML status block's `count:`/`of:`/`ids:` tuples disagree,
+    CI fails before merge.
+  checks:
+    - "count_equals_ids_length"
+    - "count_under_of"
+    - "non_negative_count"
+  pass_criteria: "All 3 FALSIFY tests pass + apr audit-ship-two exit 0 on current spec"
+  falsification: "The 3 FALSIFY tests each assert a specific drift-detection"
+
+failure_modes:
+  - id: FM-AUDIT-STUB
+    description: "Tool ships as a no-op stub that always exits 0"
+    how_to_detect: "FALSIFY-AUDIT-SHIP-TWO-001/-002 fail (tool exits 0 on deliberately wrong fixture)"
+    mitigation: "Fixture tests + CI gate that runs them on every PR"
+
+  - id: FM-SILENT-PARSE-ERROR
+    description: "Tool swallows YAML parse errors and exits 0"
+    how_to_detect: "FALSIFY-AUDIT-SHIP-TWO-003 fails on a deliberately broken YAML fixture"
+    mitigation: "Exit code 2 for parse errors; tested via fixture"
+
+evidence_required:
+  - "cargo test -p apr-cli --lib audit_ship_two — all 3 FALSIFY tests pass"
+  - "apr audit-ship-two --spec <current on-branch spec> exits 0"
+  - "CI log showing the gate fired on a test PR with deliberately wrong status block"
