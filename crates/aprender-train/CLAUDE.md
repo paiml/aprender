@@ -14,18 +14,43 @@ All code changes MUST have a corresponding contract (YAML in ../provable-contrac
 
 ## Project Overview
 
-**Entrenar** is a Rust training and optimization library for neural networks, part of the PAIML stack. It provides
-autograd, optimizers, quantization (QAT/PTQ), LoRA/QLoRA, model merging (TIES/DARE/SLERP), and knowledge distillation.
+**This crate (`aprender-train`, historical `[lib] name = "entrenar"`) is the
+training layer of the aprender monorepo.** It ships autograd, optimizers
+(AdamW + LoRA + LR schedulers), quantization (QAT/PTQ), model merging
+(TIES/DARE/SLERP), knowledge distillation, and — since 2026-04 — a
+production `CudaTransformerTrainer` (3,432 LOC) driving the `apr pretrain`
+CLI path for MODEL-2 (`Llama370MConfig`).
 
-**Status:** Specification phase - implementation not yet started.
+**Status (2026-04-23):** ACTIVE. Code, not spec. Key on-main surfaces:
+- `src/models/llama_370m.rs` — 370M sovereign decoder scaffold, byte-equal
+  to `contracts/model-families/llama-370m-sovereign-v1.yaml` v1.5.0 ACTIVE
+- `src/train/pretrain.rs` — `PretrainLoop` with GATE-TRAIN-005 divergence
+  abort, seed-reproducibility, synthetic/real step dispatch
+- `src/train/transformer_trainer/{trainer,cuda_trainer,wgpu_trainer}.rs` —
+  three trainer backends (CPU, CUDA, WGPU); multi-backend selection per
+  SHIP-TWO-001 spec §5.6
+- `src/train/device.rs` — `Device` enum + `resolve_device()`; wired into
+  `apr pretrain --device cpu|cuda:N|auto`
+- `src/tokenizer/bpe.rs` — pure-Rust BPE trainer; 50,257-vocab + NFC
 
-**Stack Dependencies:**
-- `trueno` - SIMD-accelerated tensor operations (compute layer)
-- `realizar` - GGUF model I/O (inference only)
-- `aprender` - Loss functions, APR format (training checkpoints)
+**Stack dependencies (monorepo consolidation complete):**
+- `aprender-compute` ([lib] name = "trueno") — SIMD + GPU kernels
+- `aprender-serve` ([lib] name = "realizar") — GGUF/APR inference (used
+  in eval loop after checkpoints land)
+- `aprender-core` ([lib] name = "aprender") — APR format read/write,
+  loss functions, tensor primitives
 
-**Critical Constraint:** Entrenar depends on backward propagation operations that do not yet exist in Trueno. Phase 1
-cannot start until `trueno/src/ops/backward.rs` is implemented.
+**Backward operations live in `trueno/src/ops/backward.rs` already.**
+The historical "Phase 1 cannot start until backward.rs is implemented"
+blocker closed before this crate shipped its autograd; removed from this
+doc in v2.29.4 cleanup (task PMAT-694).
+
+**Critical per SHIP-TWO-001 spec §3:**
+- Row #9 (monorepo single source of truth): downstream repos (albor,
+  apr-leaderboard) MUST align to this crate's contracts.
+- Row #10 (fix root causes, never route around): bugs surfaced during
+  training work get fixed, not routed around. Reference oracles:
+  `~/src/unsloth`, `~/src/vllm`, `~/src/pytorch`, `~/src/candle`.
 
 ## LAYOUT-002: Row-Major Mandate
 
