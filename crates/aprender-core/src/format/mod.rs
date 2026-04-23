@@ -368,6 +368,12 @@ pub const HEADER_SIZE: usize = 32;
 /// Maximum uncompressed size (1GB safety limit)
 pub const MAX_UNCOMPRESSED_SIZE: u32 = 1024 * 1024 * 1024;
 
+// FALSIFY-SHIP-003 / AC-SHIP1-003 — per-layer cosine similarity threshold
+// verdict fn for `apr convert --quantize q4_k_m` round-trip quality.
+// See contracts/qwen2-e2e-verification-v1.yaml FALSIFY-QW2E-SHIP-003 and
+// docs/specifications/aprender-train/ship-two-models-spec.md §4.2 AC-SHIP1-003.
+pub mod ship_003;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
