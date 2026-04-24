@@ -1,17 +1,25 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # compound-ship-gates-v1
 #
-# SOURCE OF TRUTH for the 6 algorithmically-bindable §6 Compound Ship Gates
-# from docs/specifications/aprender-train/ship-two-models-spec.md. Gates
-# 007–012 (unwrap/contract-density/CI-green/deny/tdg/coverage) are CI-lint
-# meta-policy and are intentionally NOT part of this contract; they are
-# enforced by `.clippy.toml` + `.pmat-gates.toml` + CI workflows.
+# SOURCE OF TRUTH for all 12 §6 Compound Ship Gates from
+# docs/specifications/aprender-train/ship-two-models-spec.md. The original
+# v1.0.0 release covered only gates 001–006 (ship-blocking aggregates,
+# byte-identity, determinism, license, GGUF parity); v1.1.0 extends coverage
+# to the 6 merge-gate meta-policy rows (007–012 — unwrap / contract-density /
+# CI-green / deny / tdg / coverage) by binding the THRESHOLDS themselves
+# (which are algorithmic, integer/ratio/boolean in shape) even though the
+# tool outputs (clippy / pmat / cargo deny / cargo llvm-cov) are still
+# external and enforced by CI. Full discharge of 007–012 still requires
+# running those external tools; what v1.1.0 adds is the decision-rule proof
+# that the thresholds cannot be silently weakened without a contract bump
+# and a Rust-test-fail signal.
 #
-# Each of the 6 gates is bound at PARTIAL_ALGORITHM_LEVEL to one or more
-# pure verdict fns in `crates/aprender-core/src/format/gate_ship_00X.rs`
-# plus a 6–7 section mutation survey. Full discharge for each gate blocks
+# Each of the 12 gates is bound at PARTIAL_ALGORITHM_LEVEL to one or more
+# pure verdict fns in `crates/aprender-core/src/format/gate_ship_0XX.rs`
+# plus a 5–8 section mutation survey. Full discharge for each gate blocks
 # on the compute-heavy aggregate harness (all 10 AC-SHIP1-* checks actually
-# running for GATE-SHIP-001, etc.).
+# running for GATE-SHIP-001, `cargo clippy -- -D warnings` for GATE-SHIP-007,
+# `cargo deny check advisories` for GATE-SHIP-010, etc.).
 #
 # Pairs numerically with the 3 single-AC SHIP-* contracts already wired:
 #   - apr-model-qa-v1.yaml (FALSIFY-QA-SHIP-006 — MODEL-1 apr-qa aggregate)
@@ -24,18 +32,22 @@
 # shape (aggregates, regressions, cross-run identity, cross-engine parity).
 # ─────────────────────────────────────────────────────────────────────────────
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-23'
   last_modified: '2026-04-23'
   author: PAIML Engineering
   kind: pattern   # cross-cutting compound-gate pattern, not a single mathematical kernel
   compound_gates_kind: CompoundShipGatesContract
   description: >
-    Algorithm-level PARTIAL discharge of the 6 bindable §6 Compound Ship
-    Gates (GATE-SHIP-001..006) from SHIP-TWO-001. Each gate is bound to
-    one or more pure verdict fns in crates/aprender-core/src/format/ with
-    a 6–7 section mutation survey proving the decision rule without
-    running the compute-heavy aggregate harness.
+    Algorithm-level PARTIAL discharge of all 12 §6 Compound Ship Gates
+    (GATE-SHIP-001..012) from SHIP-TWO-001. v1.0.0 bound the 6 ship-blocking
+    gates (001..006); v1.1.0 extends coverage to the 6 merge-gate meta-policy
+    rows (007..012) by binding their integer / ratio / boolean thresholds to
+    pure verdict fns even though the tool outputs (clippy / pmat / cargo
+    deny / cargo llvm-cov) remain external and enforced by CI. Each gate is
+    bound to one or more pure verdict fns in crates/aprender-core/src/format/
+    with a 5–8 section mutation survey proving the decision rule without
+    running the compute-heavy aggregate or external-tool harness.
   references:
     - 'docs/specifications/aprender-train/ship-two-models-spec.md §6 — Compound Ship Gates'
     - 'contracts/apr-model-qa-v1.yaml — FALSIFY-QA-SHIP-006 (per-AC MODEL-1 apr-qa)'
@@ -147,6 +159,45 @@ equations:
         Pass iff all finite AND p_apr,p_gguf in [0.0, 1.0] AND tol >= 0.0
                  AND |p_apr - p_gguf| <= tol
         Fail otherwise
+  gate_ship_007_unwrap_zero_tolerance:
+    formula: |
+      verdict_007(count): u32 -> {Pass, Fail}
+        Pass iff count == 0
+        Fail otherwise (zero-tolerance; u32 precludes negatives)
+  gate_ship_008_contract_density_threshold:
+    formula: |
+      verdict_008(contracted, total, min_density): u32 x u32 x f32 -> {Pass, Fail}
+        Pass iff total > 0 AND is_finite(min_density)
+                 AND min_density in [0.0, 1.0]
+                 AND contracted <= total
+                 AND (contracted / total) >= min_density
+        Fail otherwise
+  gate_ship_009_ci_aggregate_and:
+    formula: |
+      verdict_009(fmt_pass, clippy_pass, test_pass): bool^3 -> {Pass, Fail}
+        Pass iff fmt_pass AND clippy_pass AND test_pass
+        Fail otherwise (aggregate-AND over the 3 required CI checks)
+  gate_ship_010_advisory_zero_tolerance:
+    formula: |
+      verdict_010(count): u32 -> {Pass, Fail}
+        Pass iff count == 0
+        Fail otherwise (zero-tolerance security audit)
+  gate_ship_011_pmat_tdg_threshold:
+    formula: |
+      verdict_011(measured, threshold): f32 x f32 -> {Pass, Fail}
+        Pass iff is_finite(measured) AND is_finite(threshold)
+                 AND measured >= 0.0
+                 AND threshold in (0.0, 100.0]
+                 AND measured >= threshold
+        Fail otherwise
+  gate_ship_012_line_coverage_threshold:
+    formula: |
+      verdict_012(measured_pct, threshold_pct): f32 x f32 -> {Pass, Fail}
+        Pass iff is_finite(measured_pct) AND is_finite(threshold_pct)
+                 AND measured_pct in [0.0, 100.0]
+                 AND threshold_pct in (0.0, 100.0]
+                 AND measured_pct >= threshold_pct
+        Fail otherwise
 
 proof_obligations:
   - type: invariant
@@ -173,9 +224,33 @@ proof_obligations:
     property: GATE-SHIP-006 delta within tolerance
     formal: 'verdict_006(a, b, t) = Pass AND t1 >= t => verdict_006(a, b, t1) = Pass'
     applies_to: GATE-SHIP-006
+  - type: invariant
+    property: GATE-SHIP-007 zero-tolerance unwrap count
+    formal: 'verdict_007(n) = Pass <=> n == 0'
+    applies_to: GATE-SHIP-007
+  - type: invariant
+    property: GATE-SHIP-008 100% contract density on new code
+    formal: 'verdict_008(c, t, 1.0) = Pass => c == t AND t > 0'
+    applies_to: GATE-SHIP-008
+  - type: invariant
+    property: GATE-SHIP-009 CI aggregate-AND shape
+    formal: 'for all masks m != 0b111 : verdict_009(m) yields Fail'
+    applies_to: GATE-SHIP-009
+  - type: invariant
+    property: GATE-SHIP-010 zero-tolerance advisory count
+    formal: 'verdict_010(n) = Pass <=> n == 0'
+    applies_to: GATE-SHIP-010
+  - type: monotonicity
+    property: GATE-SHIP-011 inclusive-floor TDG threshold
+    formal: 'verdict_011(m, t) = Pass AND m1 >= m AND m1 in [0.0, 100.0] => verdict_011(m1, t) = Pass'
+    applies_to: GATE-SHIP-011
+  - type: monotonicity
+    property: GATE-SHIP-012 inclusive-floor line coverage threshold
+    formal: 'verdict_012(m, t) = Pass AND m1 >= m AND m1 in [0.0, 100.0] => verdict_012(m1, t) = Pass'
+    applies_to: GATE-SHIP-012
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Falsification tests — 6 PARTIAL_ALGORITHM_LEVEL bindings
+# Falsification tests — 12 PARTIAL_ALGORITHM_LEVEL bindings
 # ─────────────────────────────────────────────────────────────────────────────
 
 falsification_tests:
@@ -407,3 +482,217 @@ falsification_tests:
       - range_guard_missing
       - non_finite_promoted_to_pass
       - abs_combinator_removed
+
+  - id: FALSIFY-GATE-SHIP-007
+    rule: >
+      A PR cannot merge if it introduces any `.unwrap()` calls in new code.
+      `.clippy.toml` lists `unwrap` under `disallowed-methods`, so `cargo
+      clippy -- -D warnings` fails on any offending line. Decision rule:
+      zero-tolerance count threshold — `count == 0` Pass, else Fail.
+    prediction: >
+      verdict_from_unwrap_count(count) == GateShip007Verdict::Pass iff
+      count == 0. Any positive count Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_007_unwrap_zero_tolerance
+    if_fails: >
+      Merge pipeline silently accepts `.unwrap()` drift because the
+      threshold softened to a non-zero budget.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-007
+    binds_to: GATE-SHIP-007
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_007.rs::AC_GATE_SHIP_007_MAX_TOLERATED_UNWRAP_COUNT'
+      - 'crates/aprender-core/src/format/gate_ship_007.rs::verdict_from_unwrap_count'
+      - 'crates/aprender-core/src/format/gate_ship_007.rs::falsify_gate_ship_007_unwrap_zero_tolerance (5-section survey: zero Pass / one Fail / Fail band {2, 10, 100, u32::MAX} / monotonicity sweep 0..=256 / provenance pin)'
+    full_discharge_blocks_on: >
+      Live `cargo clippy --all-targets --all-features -- -D warnings` on
+      the PR's diff; assert zero `clippy::disallowed_methods` lint errors
+      citing `std::result::Result::unwrap` or `std::option::Option::unwrap`.
+    counter_example_classes:
+      - budget_softened
+      - inequality_flipped
+      - tolerance_raised_to_one
+      - monotonicity_broken
+
+  - id: FALSIFY-GATE-SHIP-008
+    rule: >
+      Every newly-introduced public function MUST carry a `#[contract]`
+      annotation. Decision rule: contract density ratio
+      `contracted_new_fns / total_new_public_fns >= min_density`, with
+      divide-by-zero, sanity, finite, and range guards. Spec requires
+      min_density = 1.0 on new code.
+    prediction: >
+      verdict_from_contract_density(c, t, d) == GateShip008Verdict::Pass
+      iff t > 0 AND is_finite(d) AND d in [0.0, 1.0] AND c <= t AND
+      (c / t) >= d. A 9/10 at d = 1.0 Fails; a zero-total input Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_008_contract_density_threshold
+    if_fails: >
+      Merge pipeline silently accepts contract-less public APIs because
+      the density threshold softened or the divide-by-zero guard inverted.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-008
+    binds_to: GATE-SHIP-008
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_008.rs::AC_GATE_SHIP_008_MIN_CONTRACT_DENSITY_NEW_CODE'
+      - 'crates/aprender-core/src/format/gate_ship_008.rs::verdict_from_contract_density'
+      - 'crates/aprender-core/src/format/gate_ship_008.rs::falsify_gate_ship_008_contract_density_threshold (7-section survey: 10/10 @ 1.0 Pass / 9/10 @ 1.0 Fail / 10/10 @ 0.9 Pass / zero-total Fail / contracted > total sanity Fail / non-finite or OOR density Fail / provenance pin 1.0)'
+    full_discharge_blocks_on: >
+      Live `pmat density --new-code --json` (or `git diff HEAD^..HEAD --
+      '*.rs' | grep -E 'pub fn'` + `grep -c '#\[contract\]'`) on the PR's
+      diff; feed (contracted, total, 1.0) into verdict_from_contract_density
+      and assert Pass.
+    counter_example_classes:
+      - threshold_softened
+      - zero_total_promoted_to_pass
+      - sanity_guard_skipped
+      - non_finite_promoted_to_pass
+      - range_guard_skipped
+
+  - id: FALSIFY-GATE-SHIP-009
+    rule: >
+      A PR cannot merge unless THREE required CI checks all report green
+      — `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo
+      test --workspace`. Decision rule: aggregate-AND over the 3 booleans.
+    prediction: >
+      verdict_from_ci_aggregate(fmt, clippy, test) == GateShip009Verdict::Pass
+      iff fmt AND clippy AND test. Any single false Fails; exhaustive
+      2^3=8 bitmask proof pins the shape.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_009_ci_aggregate_and
+    if_fails: >
+      Merge pipeline silently accepts broken fmt / clippy / test because
+      the aggregate shape relaxed to OR or "2-of-3 majority".
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-009
+    binds_to: GATE-SHIP-009
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_009.rs::AC_GATE_SHIP_009_REQUIRED_CHECK_COUNT'
+      - 'crates/aprender-core/src/format/gate_ship_009.rs::verdict_from_ci_aggregate'
+      - 'crates/aprender-core/src/format/gate_ship_009.rs::falsify_gate_ship_009_ci_aggregate_and (8-section survey: all-true Pass / each-single-false×3 Fail / all-false Fail / exhaustive 2^3=8 bitmask proof / each-single-true-only Fail / provenance pin on 3-count / AND-symmetry across argument permutations)'
+    full_discharge_blocks_on: >
+      Live branch-protection required-status-checks on main: `ci / gate`
+      (which covers fmt + clippy + test) AND `workspace-test` must both
+      be green per the repo's GitHub branch-protection config; feed the
+      three conclusions into verdict_from_ci_aggregate and assert Pass.
+    counter_example_classes:
+      - aggregate_relaxed_to_or
+      - majority_promoted_to_pass
+      - argument_position_privileged
+      - check_dropped_silently
+
+  - id: FALSIFY-GATE-SHIP-010
+    rule: >
+      `cargo deny check advisories` MUST report zero vulnerabilities in
+      the workspace dependency tree (weight/tokenizer dependencies
+      specifically, because they ship with published artifacts).
+      Decision rule: zero-tolerance count threshold — `count == 0` Pass,
+      else Fail.
+    prediction: >
+      verdict_from_advisory_count(count) == GateShip010Verdict::Pass
+      iff count == 0. Any positive count Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_010_advisory_zero_tolerance
+    if_fails: >
+      Merge pipeline silently accepts open CVEs because the threshold
+      softened to a non-zero budget.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-010
+    binds_to: GATE-SHIP-010
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_010.rs::AC_GATE_SHIP_010_MAX_TOLERATED_ADVISORY_COUNT'
+      - 'crates/aprender-core/src/format/gate_ship_010.rs::verdict_from_advisory_count'
+      - 'crates/aprender-core/src/format/gate_ship_010.rs::falsify_gate_ship_010_advisory_zero_tolerance (5-section survey: zero Pass / one Fail / Fail band {2, 10, 100, u32::MAX} / monotonicity sweep 0..=256 / provenance pin)'
+    full_discharge_blocks_on: >
+      Live `cargo deny check advisories` on the workspace; parse the
+      `error[advisories]` count from stderr and feed into
+      verdict_from_advisory_count; assert Pass.
+    counter_example_classes:
+      - budget_softened
+      - severity_carved_out
+      - inequality_flipped
+      - tolerance_raised_to_one
+
+  - id: FALSIFY-GATE-SHIP-011
+    rule: >
+      PMAT TDG project score MUST be at or above 90.0 (A- grade) for a
+      PR to merge. Decision rule: inclusive-floor threshold —
+      `measured >= threshold` Pass, with non-finite / out-of-range
+      conservative Fail.
+    prediction: >
+      verdict_from_tdg_score(m, t) == GateShip011Verdict::Pass iff
+      is_finite(m) AND is_finite(t) AND m >= 0.0 AND t in (0.0, 100.0]
+      AND m >= t. Boundary m = t = 90.0 Passes (inclusive); ULP-below
+      Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_011_pmat_tdg_threshold
+    if_fails: >
+      Merge pipeline silently accepts quality regressions because the
+      floor softened (e.g., to 85 / B+) or the inclusive-floor inequality
+      flipped to strict.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-011
+    binds_to: GATE-SHIP-011
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_011.rs::AC_GATE_SHIP_011_MIN_PMAT_TDG_SCORE'
+      - 'crates/aprender-core/src/format/gate_ship_011.rs::verdict_from_tdg_score'
+      - 'crates/aprender-core/src/format/gate_ship_011.rs::falsify_gate_ship_011_pmat_tdg_threshold (7-section survey: exact 90.0 Pass / ULP-below Fail / clear Pass band {95, 100, 92.5} / clear Fail band {89.9, 80, 0, 50} / non-finite Fail / negative measured + threshold range guards / provenance pin 90.0)'
+    full_discharge_blocks_on: >
+      Live `pmat tdg . --format json --include-components` on the
+      workspace; parse the project-level TDG score and feed into
+      verdict_from_tdg_score at threshold 90.0; assert Pass.
+    counter_example_classes:
+      - floor_softened_to_85
+      - inclusive_flipped_to_strict
+      - non_finite_promoted_to_pass
+      - negative_measured_accepted
+      - out_of_range_threshold_accepted
+
+  - id: FALSIFY-GATE-SHIP-012
+    rule: >
+      Line coverage on new modules MUST be at or above 95% for a PR to
+      merge, per `.pmat-gates.toml` and CLAUDE.md Quality Standards.
+      Decision rule: inclusive-floor percentage threshold —
+      `measured_pct >= threshold_pct` Pass, with non-finite / out-of-range
+      conservative Fail.
+    prediction: >
+      verdict_from_line_coverage_pct(m, t) == GateShip012Verdict::Pass
+      iff is_finite(m) AND is_finite(t) AND m in [0.0, 100.0] AND
+      t in (0.0, 100.0] AND m >= t. Boundary m = t = 95.0 Passes
+      (inclusive); ULP-below Fails.
+    test: |
+      cargo test -p aprender-core --lib
+        falsify_gate_ship_012_line_coverage_threshold
+    if_fails: >
+      Merge pipeline silently accepts coverage regressions because the
+      floor softened (e.g., back to 85 before the CLAUDE.md upgrade)
+      or the inclusive-floor inequality flipped to strict.
+    spec_reference: ship-two-models-spec.md §6 GATE-SHIP-012
+    binds_to: GATE-SHIP-012
+    ship_blocking: false  # merge-gate, not ship-gate
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - 'crates/aprender-core/src/format/gate_ship_012.rs::AC_GATE_SHIP_012_MIN_LINE_COVERAGE_PCT'
+      - 'crates/aprender-core/src/format/gate_ship_012.rs::verdict_from_line_coverage_pct'
+      - 'crates/aprender-core/src/format/gate_ship_012.rs::falsify_gate_ship_012_line_coverage_threshold (7-section survey: exact 95.0 Pass / ULP-below Fail / clear Pass band {96.35, 99, 100, 95.5} / clear Fail band {94.9, 85, 50, 0} / non-finite Fail / out-of-range measured + threshold / provenance pin 95.0)'
+    full_discharge_blocks_on: >
+      Live `cargo llvm-cov test --lib --no-report` + `cargo llvm-cov
+      report --json` on the workspace; parse the per-module line-coverage
+      percentage for new modules from the JSON and feed into
+      verdict_from_line_coverage_pct at threshold 95.0; assert Pass.
+    counter_example_classes:
+      - floor_reverted_to_85
+      - inclusive_flipped_to_strict
+      - non_finite_promoted_to_pass
+      - out_of_range_measured_accepted
+      - out_of_range_threshold_accepted

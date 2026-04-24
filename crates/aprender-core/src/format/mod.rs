@@ -430,6 +430,24 @@ pub mod gate_ship_005;
 // GATE-SHIP-006 — GGUF round-trip first-token probability delta ≤ 1e-3.
 pub mod gate_ship_006;
 
+// GATE-SHIP-007 — Zero-tolerance .unwrap() count threshold on new code.
+pub mod gate_ship_007;
+
+// GATE-SHIP-008 — Contract-density ratio threshold on new public fns.
+pub mod gate_ship_008;
+
+// GATE-SHIP-009 — CI aggregate-AND over 3 required checks (fmt / clippy / test).
+pub mod gate_ship_009;
+
+// GATE-SHIP-010 — Zero-tolerance security-advisory count threshold.
+pub mod gate_ship_010;
+
+// GATE-SHIP-011 — PMAT TDG score inclusive-floor threshold (≥ 90.0 / A-).
+pub mod gate_ship_011;
+
+// GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
+pub mod gate_ship_012;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 
