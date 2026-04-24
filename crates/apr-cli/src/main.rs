@@ -64,6 +64,16 @@ fn main() -> ExitCode {
     if no_color || !is_tty {
         control::set_override(false);
     }
+    // FALSIFY-GPUTRAIN-007 / INV-GPUTRAIN-007: intercept `apr --version
+    // --json` BEFORE clap exits on the plain --version flag. Emits the
+    // 3-key CUDA metadata schema required by gputrain_007. Handler lives
+    // in lib.rs::emit_version_json to keep the schema next to its tests.
+    let raw: Vec<String> = std::env::args().collect();
+    if raw.iter().any(|a| a == "--version") && raw.iter().any(|a| a == "--json") {
+        apr_cli::emit_version_json();
+        return ExitCode::SUCCESS;
+    }
+
     let cli = Cli::parse();
     match execute_command(&cli) {
         Ok(()) => ExitCode::SUCCESS,

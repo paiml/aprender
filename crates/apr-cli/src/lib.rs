@@ -138,6 +138,18 @@ pub fn cli_main() -> std::process::ExitCode {
         colored::control::set_override(false);
     }
 
+    // FALSIFY-GPUTRAIN-007 / INV-GPUTRAIN-007 — `apr --version --json` MUST
+    // emit a machine-parseable object containing at least the three keys
+    // { cuda_feature, cuda_runtime_available, visible_devices }. Intercept
+    // this flag combo BEFORE clap's default `--version` handler exits the
+    // process with a plain string. Bound by `gputrain_007.rs` — see
+    // `AC_GPUTRAIN_007_REQUIRED_VERSION_JSON_KEYS`.
+    let raw: Vec<String> = std::env::args().collect();
+    if raw.iter().any(|a| a == "--version") && raw.iter().any(|a| a == "--json") {
+        emit_version_json();
+        return std::process::ExitCode::SUCCESS;
+    }
+
     let cli = Cli::parse();
     match execute_command(&cli) {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -146,4 +158,75 @@ pub fn cli_main() -> std::process::ExitCode {
             e.exit_code()
         }
     }
+}
+
+/// FALSIFY-GPUTRAIN-007 — emit `apr --version --json` output with the
+/// 3-key schema required by `AC_GPUTRAIN_007_REQUIRED_VERSION_JSON_KEYS`.
+///
+/// Schema:
+/// ```json
+/// {
+///   "name":    "apr",
+///   "version": "<semver>",
+///   "git_sha": "<commit>",
+///   "cuda_feature":           <bool>,   // was the binary built --features cuda?
+///   "cuda_runtime_available": <bool>,   // does cudaRuntimeGetVersion succeed?
+///   "visible_devices":        ["0", "1", ...]  // nvidia-smi -L indices, empty if no runtime
+/// }
+/// ```
+///
+/// Consumers (`entrenar::train::gputrain_007::verdict_from_version_json_keys`
+/// and `verdict_from_version_json_fields`) parse this and assert schema
+/// completeness + field invariants (`visible_devices.len() <= 16`, no
+/// `cuda_feature && !cuda_runtime_available` inconsistency).
+pub fn emit_version_json() {
+    let cuda_feature = cfg!(feature = "cuda");
+
+    // cuda_runtime_available: try nvidia-smi -L. Present-and-exits-0 ⇒ true.
+    // This matches how gputrain_003 queries nvidia-smi — keep the probe
+    // consistent with the residency check.
+    let cuda_runtime_available = std::process::Command::new("nvidia-smi")
+        .arg("-L")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    // visible_devices: if the runtime is available, parse nvidia-smi -L
+    // output (one GPU per line, "GPU 0: ...", "GPU 1: ..."). Emit the
+    // index strings to match INV-GPUTRAIN-001 grammar (:0..:15).
+    let visible_devices: Vec<String> = if cuda_runtime_available {
+        std::process::Command::new("nvidia-smi")
+            .arg("-L")
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| {
+                s.lines()
+                    .filter_map(|line| {
+                        // Expect "GPU <idx>: <name> (UUID: <uuid>)"
+                        line.strip_prefix("GPU ")
+                            .and_then(|rest| rest.split_once(':').map(|(idx, _)| idx.trim().to_string()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let body = serde_json::json!({
+        "name": "apr",
+        "version": env!("CARGO_PKG_VERSION"),
+        "git_sha": env!("APR_GIT_SHA"),
+        "cuda_feature": cuda_feature,
+        "cuda_runtime_available": cuda_runtime_available,
+        "visible_devices": visible_devices,
+    });
+
+    // Emit pretty-printed JSON on stdout so it's grep-friendly and
+    // round-trippable through `| jq .cuda_feature`.
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&body).expect("build version json")
+    );
 }

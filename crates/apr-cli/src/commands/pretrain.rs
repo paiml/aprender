@@ -507,6 +507,16 @@ struct PretrainReport {
     epochs_completed: usize,
     steps_recorded: usize,
     val_loss_history: Vec<f32>,
+    /// Per-step `StepMetrics` captured by `PretrainLoop` (GATE-TRAIN-001
+    /// contract `training-loop-pretrain-v1.yaml::per_step_metrics.required`).
+    ///
+    /// Emitted so downstream consumers can discharge FALSIFY-GPUTRAIN-005
+    /// (step-time < 500 ms on RTX 4090 for 370M) and FALSIFY-GPUTRAIN-006
+    /// (same-seed reproducibility — two cuda:0 runs at seed=0 must match
+    /// on every step's train_loss within `AC_GPUTRAIN_006_MAX_SEED_LOSS_DELTA`
+    /// = 1e-5) directly from the `--json` output, rather than having to
+    /// parse run-dir checkpoint metadata.
+    per_step_metrics: Vec<entrenar::train::pretrain::StepMetrics>,
 }
 
 impl PretrainReport {
@@ -547,6 +557,7 @@ impl PretrainReport {
             epochs_completed,
             steps_recorded: loop_.step_metrics().len(),
             val_loss_history: loop_.val_loss_history().to_vec(),
+            per_step_metrics: loop_.step_metrics().to_vec(),
         }
     }
 }
