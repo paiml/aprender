@@ -91,7 +91,7 @@ pub fn verdict_from_version_json_keys(present_keys: &[&str]) -> Gputrain007Verdi
 /// are all operationally valid:
 ///   - `(false, false)`: CPU-only build. Fine.
 ///   - `(false, true)`: CUDA runtime present but build didn't enable it.
-///      Also fine; operator just needs a cuda-feature build to use it.
+///     Also fine; operator just needs a cuda-feature build to use it.
 ///   - `(true, true)`: CUDA fully wired. Baseline.
 #[must_use]
 pub fn verdict_from_version_json_fields(fields: &VersionJsonCudaFields) -> Gputrain007Verdict {

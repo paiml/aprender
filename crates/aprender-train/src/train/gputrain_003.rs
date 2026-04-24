@@ -77,6 +77,7 @@ pub enum Gputrain003Verdict {
 /// wrong separator, non-digit chars, missing field, or integer overflow.
 /// The error is intentionally empty-payload so callers treat it as a
 /// single opaque "parse failed" signal and conservatively map to Fail.
+#[allow(clippy::result_unit_err)]
 pub fn parse_nvidia_smi_compute_apps(output: &str) -> Result<Vec<NvidiaSmiComputeApp>, ()> {
     let mut apps = Vec::new();
     for line in output.lines() {
