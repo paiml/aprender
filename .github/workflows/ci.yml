@@ -46,7 +46,17 @@ jobs:
     container:
       image: localhost:5000/sovereign-ci:stable
       volumes:
-        - /home/noah/.cargo/registry:/usr/local/cargo/registry
+        # Per-PR (or per-branch) cargo registry. Before ANDON 2026-04-24 (paiml/infra#77),
+        # ALL 16 intel-clean-room-* runners bind-mounted the SAME host
+        # /home/noah/.cargo/registry, which produced EACCES "couldn't read
+        # <crate>/lib.rs: Permission denied" when a concurrent job extracted,
+        # GC'd, or partially wrote the same src/ directory (root-owned crate
+        # extractions from one container were unreadable by another runner's
+        # noah:1000 reaper sweep; partial extractions left .cargo-ok markers
+        # without src/). Mirroring the target-dir isolation below removes the
+        # contention at the source — each PR owns its registry lifecycle and
+        # there is no cross-PR write concurrency.
+        - /mnt/nvme-raid0/cargo-ci/registry/${{ github.event.pull_request.number || github.ref_name }}:/usr/local/cargo/registry
         # Per-PR (or per-branch) target dir. Before task #134, ALL concurrent PRs
         # bind-mounted the same /workspace/target and stomped each other's
         # incremental cache, pushing every run to the 45-min timeout. Isolating
