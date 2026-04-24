@@ -46,12 +46,12 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-GPUTRAIN-BACKEND
-version: 1.0.0
+version: 1.1.0
 status: PROPOSED
 
 metadata:
   id: C-GPUTRAIN-BACKEND
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-21"
   author: PAIML Engineering
   description: >
@@ -64,6 +64,17 @@ metadata:
     OR not requested, the trainer falls back to the existing CPU
     path with a single structured warning on stderr — never a
     silent CPU fallback that masquerades as GPU training.
+
+    v1.1.0 (2026-04-23, task #121 — §14 Phase 2 algorithm bundle):
+    FALSIFY-GPUTRAIN-003..007 promoted from `pending` to
+    `discharge_status: PARTIAL_ALGORITHM_LEVEL`. Each is now bound
+    to a pure Rust verdict function (plus a second parser / field
+    fn for 003 and 006 / 007) in
+    `crates/aprender-train/src/train/gputrain_0{03..07}.rs`, each
+    accompanied by a 6-8 section mutation survey. Full discharge
+    for every gate still blocks on the live lambda-labs RTX 4090
+    harness per §14 Phase 3 (residency proof, 50-step timing,
+    cross-run seed replay, `apr --version --json` smoke).
   registry: true
   kind: training-loop
   peer_contracts:
@@ -349,6 +360,28 @@ falsification_tests:
     harness: "crates/aprender-train/src/train/device/tests.rs::residency_probe_{empty,zero_mem,nonzero_mem}"
     expected: "Empty and zero-mem cases fail init; nonzero-mem case proceeds"
     if_fails: "nvidia-smi probe is passing cases where no GPU memory is actually allocated — weights never made it to device. Check CudaTransformerTrainer init order: weights must be cudaMalloc'd BEFORE the probe runs."
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "const AC_GPUTRAIN_003_NVIDIA_SMI_POLL_WINDOW_SECONDS: u32 = 5 (crates/aprender-train/src/train/gputrain_003.rs)"
+      - "const AC_GPUTRAIN_003_MIN_USED_MEMORY_MIB: u64 = 1 (crates/aprender-train/src/train/gputrain_003.rs)"
+      - "fn parse_nvidia_smi_compute_apps(&str) -> Result<Vec<NvidiaSmiComputeApp>, ()> (crates/aprender-train/src/train/gputrain_003.rs) — strict `<pid>, <mib>` parser"
+      - "fn verdict_from_residency(training_pid: u32, apps: &[NvidiaSmiComputeApp]) -> Gputrain003Verdict (crates/aprender-train/src/train/gputrain_003.rs)"
+      - "test falsify_gputrain_003_residency_proof_logic (7-section mutation survey: happy path / zero-mem / other-pid / empty / multi-process both orderings / malformed lines all Err / u32::MAX-u64::MAX boundary / provenance pin on both constants)"
+    full_discharge_blocks_on: >
+      Live lambda-labs RTX 4090 dispatch: `apr pretrain --mode from-scratch
+      --device cuda:0 --num-steps 50 --json` that (a) spawns `nvidia-smi
+      --query-compute-apps=pid,used_memory --format=csv,noheader,nounits`
+      within 5 s of step 0, (b) captures stdout, (c) feeds it through
+      parse_nvidia_smi_compute_apps + verdict_from_residency with the
+      training pid, and (d) asserts Pass. Evidence file:
+      evidence/task-132/rtx4090-370m-residency-proof.json.
+    counter_example_classes:
+      - "nvidia-smi empty output (no active CUDA processes) → Fail"
+      - "training pid registered with 0 MiB used — the task #126 defect → Fail"
+      - "different pid owns all memory (stale pid capture) → Fail"
+      - "malformed nvidia-smi stdout (missing comma, non-digit pid, extra whitespace) → parse Err → conservative Fail"
+      - "multi-process output must scan entire list (no early-exit on sibling row)"
+      - "extreme values (u32::MAX pid, u64::MAX mem) must not overflow the comparison"
 
   - id: FALSIFY-GPUTRAIN-004
     title: "CPU path peer-contract gates still pass"
@@ -356,6 +389,27 @@ falsification_tests:
     harness: "crates/apr-cli/src/commands/pretrain.rs::tests::cpu_path_peer_gates_green"
     expected: "GATE-TRAIN-001..010 from training-loop-pretrain-v1 all PASS on --device cpu"
     if_fails: "Device-dispatch refactor broke the CPU path — the contract explicitly requires CPU fallback to remain functional. Diff drive_real before/after and restore the CPU branch to byte-identical behaviour."
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "const AC_GPUTRAIN_004_CPU_DISPATCH_VARIANTS: &[&str] = &[\"Cpu\"] (crates/aprender-train/src/train/gputrain_004.rs)"
+      - "const AC_GPUTRAIN_004_CUDA_DISPATCH_VARIANTS: &[&str] = &[\"Cuda\"] (crates/aprender-train/src/train/gputrain_004.rs)"
+      - "fn verdict_from_dispatch_label(requested: &str, dispatched: &str) -> Gputrain004Verdict (crates/aprender-train/src/train/gputrain_004.rs)"
+      - "test falsify_gputrain_004_cpu_fallback_preserved_logic (7-section mutation survey: cpu→cpu Pass / cuda→cuda Pass / cpu→cuda silent-promotion Fail / cuda→cpu task-#126 silent-fallback Fail / unknown labels {xpu, metal, rocm} Fail / empty string Fail / case-sensitivity `CPU` vs `Cpu` Fail / provenance pin on both disjoint slices)"
+    full_discharge_blocks_on: >
+      Two integration runs on lambda-labs: (a) `apr pretrain --device cpu
+      --synthetic --num-steps 4` on the same RTX 4090 host and (b) the
+      same on a CPU-only host; both produce byte-identical scripted-loss
+      traces (modulo timestamp fields) against pre-task-#132 baseline;
+      GATE-TRAIN-001..010 from training-loop-pretrain-v1 all PASS on
+      the CPU-device artifact. Peer-contract evidence file:
+      evidence/task-132/cpu-fallback-peer-gates.json.
+    counter_example_classes:
+      - "cuda → cpu (task #126 silent CPU fallback — the canonical defect) → Fail"
+      - "cpu → cuda (silent GPU promotion from a reproducibility run) → Fail"
+      - "unknown label on either side (xpu, rocm, metal, empty string) → conservative Fail"
+      - "case-sensitivity relaxation (`CPU` vs `Cpu`) must Fail — pinned slice is authoritative"
+      - "whitespace / trim relaxation (`Cpu ` must Fail — no implicit trim)"
+      - "CPU/CUDA dispatch sets silently merged (both slices contain same label) — breaks disjointness invariant"
 
   - id: FALSIFY-GPUTRAIN-005
     title: "370M step time < 500 ms on RTX 4090"
@@ -363,6 +417,24 @@ falsification_tests:
     harness: "evidence/task-132/rtx4090-370m-step-budget.json"
     expected: "median wall_ms ∈ [steps 20..49] < 500 ms; raw JSONL attached"
     if_fails: "GPU path is too slow — either kernels aren't fused (check rayon dispatch count vs reference), PCIe traffic is dominating (profile with apr profile --gpu), or a CPU-GPU sync is re-introduced per step."
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "const AC_GPUTRAIN_005_MAX_STEP_TIME_MS_RTX4090_370M: f32 = 500.0 (crates/aprender-train/src/train/gputrain_005.rs)"
+      - "const fn verdict_from_step_time_ms(measured_ms: f32, threshold_ms: f32) -> Gputrain005Verdict (crates/aprender-train/src/train/gputrain_005.rs)"
+      - "test falsify_gputrain_005_step_time_threshold_logic (7-section mutation survey: exact 500.0 inclusive-ceiling Pass / one-ULP above Fail / clear Pass band {0, 1, 100, 250, 400, 499.999} / clear Fail band {501, 600, 1_000, 10_000, 60_000, f32::MAX} / non-finite {NaN, ±∞} Fail on both sides / negative measured and non-positive threshold Fail / provenance pin 500.0)"
+    full_discharge_blocks_on: >
+      `apr pretrain --mode from-scratch --device cuda:0 --num-steps 50 --json`
+      on lambda-labs RTX 4090 with `--features cuda`; compute median
+      wall_ms over step range [20, 49] from the JSONL output; pass result
+      through verdict_from_step_time_ms(median, 500.0) and assert Pass.
+      Evidence file: evidence/task-132/rtx4090-370m-step-budget.json.
+    counter_example_classes:
+      - "exact boundary 500.0 ms must Pass (inclusive-ceiling semantics)"
+      - "one-ULP above 500.0 (~500.00006 ms) must Fail (strict-< mutation catch)"
+      - "silent CPU fallback: 30-60 s/step lands in the hard-Fail band"
+      - "non-finite measured value (NaN from GradScaler overflow, ±∞ from JSON-parse bug) must Fail"
+      - "negative measured step time (time-travel sanity rail) must Fail"
+      - "non-positive threshold (zero or negative ceiling is nonsense) must Fail"
 
   - id: FALSIFY-GPUTRAIN-006
     title: "Same-device seed reproducibility holds"
@@ -370,6 +442,27 @@ falsification_tests:
     harness: "crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs::tests::cuda_seed_0_100_step_reproducibility"
     expected: "Two cuda:0 runs at seed=0 produce |Δloss[k]| ≤ 1e-5 for k in 0..99"
     if_fails: "Seed plumbing broken across device-dispatch layer. Trace the seed from CLI → PretrainConfig → TransformerTrainer::new → CudaTransformerTrainer::new; each hop must forward the seed unchanged, and lock_init_seed must still gate parallel test races."
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "const AC_GPUTRAIN_006_MAX_SEED_LOSS_DELTA: f32 = 1e-5 (crates/aprender-train/src/train/gputrain_006.rs)"
+      - "const fn verdict_from_loss_delta(delta_abs: f32, tolerance: f32) -> Gputrain006Verdict (crates/aprender-train/src/train/gputrain_006.rs)"
+      - "fn verdict_from_loss_trajectories(run_a: &[f32], run_b: &[f32], tolerance: f32) -> Gputrain006Verdict (crates/aprender-train/src/train/gputrain_006.rs) — aggregate over 100-step trajectories"
+      - "test falsify_gputrain_006_seed_reproducibility_threshold_logic (7-section mutation survey: exact 1e-5 boundary Pass / one-ULP above Fail / trajectory single-step-fail at k=42 / length mismatch 50-vs-100 Fail / empty input Fail / non-finite NaN+∞ Fail on both sides + negative delta / negative tolerance Fail / provenance pin 1e-5)"
+    full_discharge_blocks_on: >
+      Two independent `apr pretrain --mode from-scratch --device cuda:0
+      --seed 0 --num-steps 100 --json` runs on lambda-labs RTX 4090 with
+      `--features cuda`; extract per-step loss arrays from both
+      train.jsonl outputs; pass (run_a, run_b, 1e-5) through
+      verdict_from_loss_trajectories and assert Pass. Evidence file:
+      evidence/task-132/cuda-seed-0-reproducibility.json.
+    counter_example_classes:
+      - "exact boundary |Δ| = 1e-5 Pass; one-ULP above Fail"
+      - "single-step violation at arbitrary k (e.g. k=42) Fail even when 99 other steps within tolerance"
+      - "length mismatch between run_a and run_b (some other harness bug cut one run short) conservative Fail"
+      - "empty input (vacuous no-steps) Fail — cannot rubber-stamp a zero-length replay"
+      - "NaN or ±∞ anywhere in either run (GradScaler overflow) Fail"
+      - "negative tolerance (nonsense threshold from bad CLI flag) Fail"
+      - "infinite tolerance (rubber-stamp attempt) Fail"
 
   - id: FALSIFY-GPUTRAIN-007
     title: "apr --version --json reports cuda state"
@@ -377,6 +470,29 @@ falsification_tests:
     harness: "crates/apr-cli/src/commands/version.rs::tests::version_json_reports_cuda_state"
     expected: "Output matches schema {cuda_feature, cuda_runtime_available, visible_devices[]}"
     if_fails: "Version reporting does not distinguish build-time cuda feature from runtime availability — operators can't tell `compiled without cuda` from `cuda present but no GPU`. Wire the probe into the --version JSON output."
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    evidence_discharged_by:
+      - "const AC_GPUTRAIN_007_REQUIRED_VERSION_JSON_KEYS: &[&str] = &[\"cuda_feature\", \"cuda_runtime_available\", \"visible_devices\"] (crates/aprender-train/src/train/gputrain_007.rs)"
+      - "struct VersionJsonCudaFields { cuda_feature: bool, cuda_runtime_available: bool, visible_devices: Vec<String> } (crates/aprender-train/src/train/gputrain_007.rs)"
+      - "fn verdict_from_version_json_keys(present_keys: &[&str]) -> Gputrain007Verdict (crates/aprender-train/src/train/gputrain_007.rs)"
+      - "fn verdict_from_version_json_fields(&VersionJsonCudaFields) -> Gputrain007Verdict (crates/aprender-train/src/train/gputrain_007.rs) — enforces visible_devices ≤ 16 (grammar max) AND rejects the FM-GPUTRAIN-STALE-BUILD (cuda_feature=true + runtime_available=false) combination"
+      - "test falsify_gputrain_007_version_json_schema_and_shape (7-section mutation survey: all-keys-present Pass + extras tolerated / missing-each-key Fail x3 / 3 valid (feature, runtime) combos Pass / claims-feature-without-runtime Fail (FM-GPUTRAIN-STALE-BUILD) / boundary exactly 16 Pass, 17 Fail, 100 Fail / combined schema+shape happy path / provenance pin on keys)"
+    full_discharge_blocks_on: >
+      Dogfood on 2 build flavours: (a) `apr --version --json` on a
+      --features cuda build on lambda-labs RTX 4090; (b) the same on a
+      plain `cargo build --release` on a CPU-only host. Both must parse
+      into a JSON object whose top-level keys include the three
+      required ones and whose field values satisfy
+      verdict_from_version_json_fields. Evidence files:
+      evidence/task-132/apr-version-cuda-build.json +
+      evidence/task-132/apr-version-cpu-build.json.
+    counter_example_classes:
+      - "missing any of cuda_feature / cuda_runtime_available / visible_devices → Fail"
+      - "cuda_feature=true + cuda_runtime_available=false (FM-GPUTRAIN-STALE-BUILD) → Fail — the footgun that lets a stale rebuild masquerade as a GPU-capable binary"
+      - "visible_devices.len() > 16 (violates INV-GPUTRAIN-001 cuda:0..cuda:15 grammar) → Fail"
+      - "empty present-keys slice (degenerate JSON) → Fail"
+      - "unrelated-only keys (stripped the three required) → Fail"
+      - "extra unknown forward-compat keys must NOT Fail (tensorrt_feature, rocm_feature, etc.)"
 
 # ─────────────────────────────────────────────────────────────
 # Implementation plan — Phase 0..4 (maps to spec §v2.23.0)

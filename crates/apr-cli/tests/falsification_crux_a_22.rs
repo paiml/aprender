@@ -44,7 +44,10 @@ fn falsify_crux_a_22_cli_help_advertises_observation_file() {
 
 #[test]
 fn falsify_crux_a_22_cli_bare_invocation_is_usage_error() {
-    let out = apr_binary().arg("registry-quota-lint").output().expect("run");
+    let out = apr_binary()
+        .arg("registry-quota-lint")
+        .output()
+        .expect("run");
     assert!(
         !out.status.success(),
         "bare invocation must not exit 0 — missing required --observation-file"

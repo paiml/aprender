@@ -154,9 +154,7 @@ fn run_shape_gate(v: &Value) -> (GateReport, Option<String>) {
     let err = if passed {
         None
     } else {
-        Some(format!(
-            "FALSIFY-CRUX-C-13-001 shape gate failed: {desc}"
-        ))
+        Some(format!("FALSIFY-CRUX-C-13-001 shape gate failed: {desc}"))
     };
     (
         GateReport {
@@ -218,9 +216,7 @@ fn run_usage_gate(v: &Value) -> (GateReport, Option<String>) {
     let err = if passed {
         None
     } else {
-        Some(format!(
-            "FALSIFY-CRUX-C-13-003 usage gate failed: {desc}"
-        ))
+        Some(format!("FALSIFY-CRUX-C-13-003 usage gate failed: {desc}"))
     };
     (
         GateReport {
@@ -259,9 +255,7 @@ fn run_flag_gate(v: &Value) -> (GateReport, Option<String>) {
     let err = if passed {
         None
     } else {
-        Some(format!(
-            "FALSIFY-CRUX-C-13-004 flag gate failed: {desc}"
-        ))
+        Some(format!("FALSIFY-CRUX-C-13-004 flag gate failed: {desc}"))
     };
     (
         GateReport {

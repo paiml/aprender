@@ -24,7 +24,12 @@ pub enum WorldSizeOutcome {
     Ok,
     ZeroTp,
     ZeroPp,
-    Mismatch { tp: u32, pp: u32, expected: u32, got: u32 },
+    Mismatch {
+        tp: u32,
+        pp: u32,
+        expected: u32,
+        got: u32,
+    },
 }
 
 pub fn classify_world_size(tp: u32, pp: u32, world_size: u32) -> WorldSizeOutcome {
@@ -36,7 +41,12 @@ pub fn classify_world_size(tp: u32, pp: u32, world_size: u32) -> WorldSizeOutcom
     }
     let expected = tp.saturating_mul(pp);
     if world_size != expected {
-        return WorldSizeOutcome::Mismatch { tp, pp, expected, got: world_size };
+        return WorldSizeOutcome::Mismatch {
+            tp,
+            pp,
+            expected,
+            got: world_size,
+        };
     }
     WorldSizeOutcome::Ok
 }
@@ -90,16 +100,29 @@ pub fn classify_divisibility(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TpParityOutcome {
     Ok,
-    EmptinessMismatch { ref_empty: bool, parallel_empty: bool },
-    LengthMismatch { ref_len: usize, parallel_len: usize },
-    TokenDivergence { at_index: usize, ref_token: u32, parallel_token: u32 },
+    EmptinessMismatch {
+        ref_empty: bool,
+        parallel_empty: bool,
+    },
+    LengthMismatch {
+        ref_len: usize,
+        parallel_len: usize,
+    },
+    TokenDivergence {
+        at_index: usize,
+        ref_token: u32,
+        parallel_token: u32,
+    },
 }
 
 pub fn classify_tp_parity(ref_tokens: &[u32], parallel_tokens: &[u32]) -> TpParityOutcome {
     let ref_empty = ref_tokens.is_empty();
     let parallel_empty = parallel_tokens.is_empty();
     if ref_empty != parallel_empty {
-        return TpParityOutcome::EmptinessMismatch { ref_empty, parallel_empty };
+        return TpParityOutcome::EmptinessMismatch {
+            ref_empty,
+            parallel_empty,
+        };
     }
     if ref_tokens.len() != parallel_tokens.len() {
         return TpParityOutcome::LengthMismatch {
@@ -125,10 +148,22 @@ pub fn classify_tp_parity(ref_tokens: &[u32], parallel_tokens: &[u32]) -> TpPari
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScalingEfficiencyOutcome {
-    Ok { observed_alpha: f64 },
-    InvalidInput { reason: &'static str },
-    Regression { base_tps: f64, parallel_tps: f64, observed_alpha: f64 },
-    BelowThreshold { observed_alpha: f64, required_alpha: f64, tp: u32 },
+    Ok {
+        observed_alpha: f64,
+    },
+    InvalidInput {
+        reason: &'static str,
+    },
+    Regression {
+        base_tps: f64,
+        parallel_tps: f64,
+        observed_alpha: f64,
+    },
+    BelowThreshold {
+        observed_alpha: f64,
+        required_alpha: f64,
+        tp: u32,
+    },
 }
 
 pub fn classify_scaling_efficiency(
@@ -138,19 +173,27 @@ pub fn classify_scaling_efficiency(
     min_alpha: f64,
 ) -> ScalingEfficiencyOutcome {
     if !base_tps.is_finite() || !parallel_tps.is_finite() || !min_alpha.is_finite() {
-        return ScalingEfficiencyOutcome::InvalidInput { reason: "non-finite input" };
+        return ScalingEfficiencyOutcome::InvalidInput {
+            reason: "non-finite input",
+        };
     }
     if base_tps <= 0.0 {
-        return ScalingEfficiencyOutcome::InvalidInput { reason: "base_tps <= 0" };
+        return ScalingEfficiencyOutcome::InvalidInput {
+            reason: "base_tps <= 0",
+        };
     }
     if parallel_tps < 0.0 {
-        return ScalingEfficiencyOutcome::InvalidInput { reason: "parallel_tps < 0" };
+        return ScalingEfficiencyOutcome::InvalidInput {
+            reason: "parallel_tps < 0",
+        };
     }
     if tp < 2 {
         return ScalingEfficiencyOutcome::InvalidInput { reason: "tp < 2" };
     }
     if !(0.0..=1.0).contains(&min_alpha) {
-        return ScalingEfficiencyOutcome::InvalidInput { reason: "min_alpha out of [0.0, 1.0]" };
+        return ScalingEfficiencyOutcome::InvalidInput {
+            reason: "min_alpha out of [0.0, 1.0]",
+        };
     }
     // observed_alpha = parallel_tps / (base_tps * tp)  (1.0 == perfect linear)
     let observed_alpha = parallel_tps / (base_tps * f64::from(tp));
@@ -229,7 +272,11 @@ pub fn classify_distributed_metadata(value: &Value) -> DistributedMetadataOutcom
     // Consistency: world_size must equal tp * pp.
     let expected = tp.saturating_mul(pp);
     if world_size != expected {
-        return DistributedMetadataOutcome::WorldSizeMismatch { tp, pp, got: world_size };
+        return DistributedMetadataOutcome::WorldSizeMismatch {
+            tp,
+            pp,
+            got: world_size,
+        };
     }
 
     DistributedMetadataOutcome::Ok { tp, pp, world_size }
@@ -267,7 +314,12 @@ mod tests {
     fn world_size_rejects_mismatch() {
         assert_eq!(
             classify_world_size(2, 4, 16),
-            WorldSizeOutcome::Mismatch { tp: 2, pp: 4, expected: 8, got: 16 }
+            WorldSizeOutcome::Mismatch {
+                tp: 2,
+                pp: 4,
+                expected: 8,
+                got: 16
+            }
         );
     }
 
@@ -322,7 +374,10 @@ mod tests {
     fn divisibility_rejects_heads_not_divisible() {
         assert_eq!(
             classify_divisibility(32, 32, 3, 1),
-            DivisibilityOutcome::HeadsNotDivisible { num_heads: 32, tp: 3 }
+            DivisibilityOutcome::HeadsNotDivisible {
+                num_heads: 32,
+                tp: 3
+            }
         );
     }
 
@@ -330,17 +385,17 @@ mod tests {
     fn divisibility_rejects_layers_not_divisible() {
         assert_eq!(
             classify_divisibility(32, 30, 2, 4),
-            DivisibilityOutcome::LayersNotDivisible { num_layers: 30, pp: 4 }
+            DivisibilityOutcome::LayersNotDivisible {
+                num_layers: 30,
+                pp: 4
+            }
         );
     }
 
     #[test]
     fn divisibility_classifier_is_deterministic() {
         for _ in 0..5 {
-            assert_eq!(
-                classify_divisibility(32, 32, 4, 2),
-                DivisibilityOutcome::Ok
-            );
+            assert_eq!(classify_divisibility(32, 32, 4, 2), DivisibilityOutcome::Ok);
         }
     }
 
@@ -363,7 +418,10 @@ mod tests {
     fn tp_parity_rejects_emptiness_mismatch_ref_empty() {
         assert_eq!(
             classify_tp_parity(&[], &[1]),
-            TpParityOutcome::EmptinessMismatch { ref_empty: true, parallel_empty: false }
+            TpParityOutcome::EmptinessMismatch {
+                ref_empty: true,
+                parallel_empty: false
+            }
         );
     }
 
@@ -371,7 +429,10 @@ mod tests {
     fn tp_parity_rejects_emptiness_mismatch_parallel_empty() {
         assert_eq!(
             classify_tp_parity(&[1], &[]),
-            TpParityOutcome::EmptinessMismatch { ref_empty: false, parallel_empty: true }
+            TpParityOutcome::EmptinessMismatch {
+                ref_empty: false,
+                parallel_empty: true
+            }
         );
     }
 
@@ -379,7 +440,10 @@ mod tests {
     fn tp_parity_rejects_length_mismatch() {
         assert_eq!(
             classify_tp_parity(&[1, 2, 3], &[1, 2, 3, 4]),
-            TpParityOutcome::LengthMismatch { ref_len: 3, parallel_len: 4 }
+            TpParityOutcome::LengthMismatch {
+                ref_len: 3,
+                parallel_len: 4
+            }
         );
     }
 
@@ -443,7 +507,11 @@ mod tests {
     #[test]
     fn scaling_rejects_regression() {
         match classify_scaling_efficiency(100.0, 90.0, 2, 0.70) {
-            ScalingEfficiencyOutcome::Regression { base_tps, parallel_tps, .. } => {
+            ScalingEfficiencyOutcome::Regression {
+                base_tps,
+                parallel_tps,
+                ..
+            } => {
                 assert_eq!(base_tps, 100.0);
                 assert_eq!(parallel_tps, 90.0);
             }
@@ -454,7 +522,11 @@ mod tests {
     #[test]
     fn scaling_rejects_below_threshold() {
         match classify_scaling_efficiency(100.0, 120.0, 2, 0.70) {
-            ScalingEfficiencyOutcome::BelowThreshold { observed_alpha, required_alpha, tp } => {
+            ScalingEfficiencyOutcome::BelowThreshold {
+                observed_alpha,
+                required_alpha,
+                tp,
+            } => {
                 assert!((observed_alpha - 0.60).abs() < 1e-9);
                 assert_eq!(required_alpha, 0.70);
                 assert_eq!(tp, 2);
@@ -530,7 +602,11 @@ mod tests {
         let v = json!({"distributed": {"tp": 2, "pp": 2, "world_size": 4}});
         assert_eq!(
             classify_distributed_metadata(&v),
-            DistributedMetadataOutcome::Ok { tp: 2, pp: 2, world_size: 4 }
+            DistributedMetadataOutcome::Ok {
+                tp: 2,
+                pp: 2,
+                world_size: 4
+            }
         );
     }
 
@@ -584,7 +660,9 @@ mod tests {
         let v = json!({"distributed": {"tp": 2, "pp": 2}});
         assert_eq!(
             classify_distributed_metadata(&v),
-            DistributedMetadataOutcome::MissingField { field: "world_size" }
+            DistributedMetadataOutcome::MissingField {
+                field: "world_size"
+            }
         );
     }
 
@@ -611,7 +689,11 @@ mod tests {
         let v = json!({"distributed": {"tp": 2, "pp": 2, "world_size": 8}});
         assert_eq!(
             classify_distributed_metadata(&v),
-            DistributedMetadataOutcome::WorldSizeMismatch { tp: 2, pp: 2, got: 8 }
+            DistributedMetadataOutcome::WorldSizeMismatch {
+                tp: 2,
+                pp: 2,
+                got: 8
+            }
         );
     }
 
@@ -621,7 +703,11 @@ mod tests {
         for _ in 0..5 {
             assert_eq!(
                 classify_distributed_metadata(&v),
-                DistributedMetadataOutcome::Ok { tp: 4, pp: 1, world_size: 4 }
+                DistributedMetadataOutcome::Ok {
+                    tp: 4,
+                    pp: 1,
+                    world_size: 4
+                }
             );
         }
     }

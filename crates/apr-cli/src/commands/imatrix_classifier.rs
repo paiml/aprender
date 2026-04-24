@@ -109,10 +109,7 @@ pub enum ProvenanceOutcome {
 /// `recorded == None` means the sidecar has no `imatrix_source_sha256`
 /// — a direct FALSIFY-003 failure, not a hash mismatch.
 #[must_use]
-pub fn validate_recorded_provenance(
-    recorded: Option<&str>,
-    expected: &str,
-) -> ProvenanceOutcome {
+pub fn validate_recorded_provenance(recorded: Option<&str>, expected: &str) -> ProvenanceOutcome {
     match recorded {
         None => ProvenanceOutcome::Missing,
         Some(r) if r.eq_ignore_ascii_case(expected) => ProvenanceOutcome::Match,
@@ -292,7 +289,10 @@ mod tests {
         let expected = compute_provenance_sha256(b"calib-v1");
         let wrong = compute_provenance_sha256(b"calib-v2");
         match validate_recorded_provenance(Some(&wrong), &expected) {
-            ProvenanceOutcome::Mismatch { recorded, expected: exp } => {
+            ProvenanceOutcome::Mismatch {
+                recorded,
+                expected: exp,
+            } => {
                 assert_eq!(recorded, wrong);
                 assert_eq!(exp, expected);
             }

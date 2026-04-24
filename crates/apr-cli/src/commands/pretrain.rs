@@ -16,14 +16,14 @@ use crate::error::{CliError, Result};
 use crate::output;
 use clap::ValueEnum;
 use colored::Colorize;
-use entrenar::models::llama_370m::{Llama370MConfig, assert_tokenizer_vocab_matches_model};
-use entrenar::train::device::{Device, resolve_device};
+use entrenar::models::llama_370m::{assert_tokenizer_vocab_matches_model, Llama370MConfig};
+use entrenar::train::device::{resolve_device, Device};
 use entrenar::train::pretrain::{
     CheckpointFn, LinearDecaySynthetic, PretrainAbort, PretrainConfig, PretrainLoop, RunStatus,
     ScriptedVal, StepFn, TrainingRegime, ValFn,
 };
 use entrenar::train::pretrain_real::{
-    AprCheckpointFn, RealStepFn, RealValFn, build_shared_trainer,
+    build_shared_trainer, AprCheckpointFn, RealStepFn, RealValFn,
 };
 use entrenar::train::shard_reader::ShardBatchIter;
 use entrenar::train::transformer_trainer::LMBatch;
@@ -892,8 +892,7 @@ mod tests {
                 let cli = crate::Cli::try_parse_from(&argv).expect("clap parse must succeed");
                 match *cli.command {
                     crate::Commands::Extended(crate::ExtendedCommands::Pretrain {
-                        device,
-                        ..
+                        device, ..
                     }) => device,
                     other => panic!("expected ExtendedCommands::Pretrain, got {other:?}"),
                 }

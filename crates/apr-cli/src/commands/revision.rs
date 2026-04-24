@@ -53,7 +53,9 @@ pub fn classify_revision(rev: &str) -> Result<RevisionKind, &'static str> {
         return Err("revision must not contain whitespace or control characters");
     }
 
-    let is_hex = rev.chars().all(|c| c.is_ascii_digit() || matches!(c, 'a'..='f'));
+    let is_hex = rev
+        .chars()
+        .all(|c| c.is_ascii_digit() || matches!(c, 'a'..='f'));
     if is_hex {
         match rev.len() {
             40 => return Ok(RevisionKind::FullSha),
@@ -88,10 +90,7 @@ mod tests {
     fn refname_classified() {
         assert_eq!(classify_revision("main"), Ok(RevisionKind::RefName));
         assert_eq!(classify_revision("v1.0"), Ok(RevisionKind::RefName));
-        assert_eq!(
-            classify_revision("release/2026"),
-            Ok(RevisionKind::RefName)
-        );
+        assert_eq!(classify_revision("release/2026"), Ok(RevisionKind::RefName));
     }
 
     #[test]
@@ -136,7 +135,11 @@ mod tests {
 
     #[test]
     fn classification_is_deterministic() {
-        for input in ["main", "abc1234", "0123456789abcdef0123456789abcdef01234567"] {
+        for input in [
+            "main",
+            "abc1234",
+            "0123456789abcdef0123456789abcdef01234567",
+        ] {
             assert_eq!(classify_revision(input), classify_revision(input));
         }
     }

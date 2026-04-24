@@ -140,10 +140,7 @@ fn falsify_crux_b_11_001_frobenius_rejects_zero_original() {
 
 #[test]
 fn falsify_crux_b_11_002_capability_ok_on_sm_90() {
-    let tmp = write_tmp_json(
-        "fp8-cap-90",
-        r#"{ "capability": { "sm": 90 } }"#,
-    );
+    let tmp = write_tmp_json("fp8-cap-90", r#"{ "capability": { "sm": 90 } }"#);
     let out = apr_binary()
         .args(["fp8-lint", "--observation-file"])
         .arg(tmp.path())
@@ -158,10 +155,7 @@ fn falsify_crux_b_11_002_capability_ok_on_sm_90() {
 
 #[test]
 fn falsify_crux_b_11_002_capability_ok_on_sm_100_blackwell() {
-    let tmp = write_tmp_json(
-        "fp8-cap-100",
-        r#"{ "capability": { "sm": 100 } }"#,
-    );
+    let tmp = write_tmp_json("fp8-cap-100", r#"{ "capability": { "sm": 100 } }"#);
     let out = apr_binary()
         .args(["fp8-lint", "--observation-file"])
         .arg(tmp.path())
@@ -176,10 +170,7 @@ fn falsify_crux_b_11_002_capability_ok_on_sm_100_blackwell() {
 
 #[test]
 fn falsify_crux_b_11_002_capability_rejects_sm_80_ampere() {
-    let tmp = write_tmp_json(
-        "fp8-cap-80",
-        r#"{ "capability": { "sm": 80 } }"#,
-    );
+    let tmp = write_tmp_json("fp8-cap-80", r#"{ "capability": { "sm": 80 } }"#);
     let out = apr_binary()
         .args(["fp8-lint", "--observation-file"])
         .arg(tmp.path())
@@ -192,10 +183,7 @@ fn falsify_crux_b_11_002_capability_rejects_sm_80_ampere() {
 
 #[test]
 fn falsify_crux_b_11_002_capability_rejects_sm_0_unknown() {
-    let tmp = write_tmp_json(
-        "fp8-cap-0",
-        r#"{ "capability": { "sm": 0 } }"#,
-    );
+    let tmp = write_tmp_json("fp8-cap-0", r#"{ "capability": { "sm": 0 } }"#);
     let out = apr_binary()
         .args(["fp8-lint", "--observation-file"])
         .arg(tmp.path())

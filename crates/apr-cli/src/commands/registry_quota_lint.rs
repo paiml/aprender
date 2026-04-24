@@ -245,7 +245,8 @@ fn run_ceiling_gate(v: &Value) -> (GateReport, Option<String>) {
             parse_u64(v.get("used"), "used")?,
             parse_u64(v.get("incoming"), "incoming")?,
             parse_outcome_tag(v.get("expected_outcome")),
-            v.get("expected_post_used_le_quota").and_then(|x| x.as_bool()),
+            v.get("expected_post_used_le_quota")
+                .and_then(|x| x.as_bool()),
         ))
     };
     let (quota, used, incoming, expected_outcome, expected_invariant) = match parse_inputs() {

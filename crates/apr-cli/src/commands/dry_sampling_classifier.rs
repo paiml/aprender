@@ -35,7 +35,9 @@ pub(crate) fn classify_dry_params(
     allowed_length: u32,
 ) -> DryParamOutcome {
     if !multiplier.is_finite() {
-        return DryParamOutcome::NotFinite { field: "multiplier" };
+        return DryParamOutcome::NotFinite {
+            field: "multiplier",
+        };
     }
     if !base.is_finite() {
         return DryParamOutcome::NotFinite { field: "base" };
@@ -56,7 +58,9 @@ pub(crate) fn classify_dry_params(
 #[derive(Debug, PartialEq)]
 pub(crate) enum IdentityOutcome {
     Ok,
-    InvalidInput { reason: &'static str },
+    InvalidInput {
+        reason: &'static str,
+    },
     LogitsChanged {
         first_diff_index: usize,
         before: f64,
@@ -217,7 +221,9 @@ pub(crate) fn classify_dry_penalty(
 #[derive(Debug, PartialEq)]
 pub(crate) enum MonotonicityOutcome {
     Ok,
-    InvalidInput { reason: &'static str },
+    InvalidInput {
+        reason: &'static str,
+    },
     Violation {
         match_len_a: u32,
         match_len_b: u32,
@@ -295,10 +301,7 @@ mod tests {
 
     #[test]
     fn params_valid_zero_multiplier() {
-        assert_eq!(
-            classify_dry_params(0.0, 1.75, 2),
-            DryParamOutcome::Valid
-        );
+        assert_eq!(classify_dry_params(0.0, 1.75, 2), DryParamOutcome::Valid);
     }
 
     #[test]
@@ -329,7 +332,9 @@ mod tests {
     fn params_rejects_nan_multiplier() {
         assert_eq!(
             classify_dry_params(f64::NAN, 1.75, 2),
-            DryParamOutcome::NotFinite { field: "multiplier" }
+            DryParamOutcome::NotFinite {
+                field: "multiplier"
+            }
         );
     }
 
@@ -345,7 +350,9 @@ mod tests {
     fn params_rejects_infinity() {
         assert_eq!(
             classify_dry_params(f64::INFINITY, 1.75, 2),
-            DryParamOutcome::NotFinite { field: "multiplier" }
+            DryParamOutcome::NotFinite {
+                field: "multiplier"
+            }
         );
     }
 

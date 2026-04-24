@@ -69,8 +69,7 @@ fn falsify_crux_a_03_algo_001_dry_run_echoes_revision_main() {
 #[test]
 fn falsify_crux_a_03_algo_001_dry_run_echoes_full_sha() {
     let sha = "0123456789abcdef0123456789abcdef01234567";
-    let (output, stdout, _stderr) =
-        run_apr_pull(&["llama3", "--dry-run", "--revision", sha]);
+    let (output, stdout, _stderr) = run_apr_pull(&["llama3", "--dry-run", "--revision", sha]);
     assert!(
         output.status.success(),
         "CRUX-A-03 ALGO-001: full 40-hex SHA must be accepted locally"
@@ -83,8 +82,7 @@ fn falsify_crux_a_03_algo_001_dry_run_echoes_full_sha() {
 
 #[test]
 fn falsify_crux_a_03_algo_001_dry_run_echoes_tag() {
-    let (output, stdout, _stderr) =
-        run_apr_pull(&["llama3", "--dry-run", "--revision", "v1.0"]);
+    let (output, stdout, _stderr) = run_apr_pull(&["llama3", "--dry-run", "--revision", "v1.0"]);
     assert!(output.status.success());
     assert!(
         stdout.contains("v1.0") && stdout.contains("RefName"),
@@ -141,8 +139,7 @@ fn falsify_crux_a_03_algo_002_default_matches_explicit_main() {
 
 #[test]
 fn falsify_crux_a_03_algo_003_empty_revision_rejected() {
-    let (output, _stdout, stderr) =
-        run_apr_pull(&["llama3", "--dry-run", "--revision", ""]);
+    let (output, _stdout, stderr) = run_apr_pull(&["llama3", "--dry-run", "--revision", ""]);
     assert!(
         !output.status.success(),
         "CRUX-A-03 ALGO-003: empty --revision must exit non-zero"
@@ -155,12 +152,8 @@ fn falsify_crux_a_03_algo_003_empty_revision_rejected() {
 
 #[test]
 fn falsify_crux_a_03_algo_003_url_in_revision_rejected() {
-    let (output, _stdout, stderr) = run_apr_pull(&[
-        "llama3",
-        "--dry-run",
-        "--revision",
-        "https://example.com/x",
-    ]);
+    let (output, _stdout, stderr) =
+        run_apr_pull(&["llama3", "--dry-run", "--revision", "https://example.com/x"]);
     assert!(
         !output.status.success(),
         "CRUX-A-03 ALGO-003: URL-shaped --revision must exit non-zero"

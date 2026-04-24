@@ -112,11 +112,7 @@ pub fn plan_gc(all_blobs: &BTreeSet<String>, refcounts: &BTreeMap<String, usize>
 /// No-op if the tag is not present — callers decide whether that is
 /// an error or a benign idempotent re-run.
 pub fn apply_rm(manifests: &[Manifest], tag: &str) -> Vec<Manifest> {
-    manifests
-        .iter()
-        .filter(|m| m.tag != tag)
-        .cloned()
-        .collect()
+    manifests.iter().filter(|m| m.tag != tag).cloned().collect()
 }
 
 /// Apply a GC plan by returning the reduced blob set. Pure — callers
