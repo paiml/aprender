@@ -1,0 +1,47 @@
+{
+  "evidence_id": "task-132/convergence-smoke-20260424",
+  "related_acs": ["AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS = 2.2", "AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS = 21"],
+  "falsification_refs": ["FALSIFY-SHIP-013", "FALSIFY-SHIP-014"],
+  "date": "2026-04-24",
+  "host": "noah-Lambda-Vector (RTX 4090 24GB)",
+  "purpose": "First end-to-end MODEL-2 training smoke — validates dispatch + convergence-curve shape. NOT a full convergence run to SHIP-013 ≤ 2.2 floor.",
+  "dispatch": {
+    "command": "apr pretrain --mode from-scratch --device cuda:0 --num-steps 2000 --warmup-steps 200 --batch-size 1 --seq-length 2048 --seed 0 --json",
+    "run_dir": "/mnt/nvme-raid0/runs/model-2-convergence-20260424-181022",
+    "pid": 805184,
+    "peak_gpu_memory_mib": 22188
+  },
+  "outcome": {
+    "status": "EARLY_STOP",
+    "steps_recorded": 1300,
+    "planned_steps": 2000,
+    "final_val_loss": 10.103599,
+    "val_loss_history": [10.595465, 10.499645, 10.358862, 10.219885, 10.188919, 10.213816, 10.209254, 10.135544, 10.150618, 10.103599, 10.139225, 10.174133, 10.156379],
+    "train_loss_start": 11.0397,
+    "train_loss_end": 10.4686,
+    "train_loss_min": 9.2681,
+    "train_loss_descent_over_1300_steps": 0.5711,
+    "step_ms_median": 100.83,
+    "tokens_per_sec_median": 20310.5
+  },
+  "ship_013_gap_analysis": {
+    "target_val_ce": 2.2,
+    "observed_val_ce": 10.103599,
+    "gap_nats": 7.90,
+    "status": "NOT_DISCHARGED — training descended 0.50 nats in 1300 steps but stalled on plateau; need (a) more steps, (b) hyperparameter tuning (LR schedule, batch size), (c) larger corpus, or some combination to cross the 2.2 floor. Algorithm-level verdict_from_val_ce_loss binding remains correct; runtime evidence falls short of the target."
+  },
+  "infrastructure_outcome": {
+    "dispatch_reachable_cuda": true,
+    "gpu_residency_maintained": true,
+    "per_step_telemetry_emitted": true,
+    "early_stop_guard_fired": true,
+    "exit_clean": true,
+    "assessment": "Phase 3 training infrastructure is fully proven: dispatch wiring (v2.46), step-budget (v2.47), per-step JSON (v2.47), --version --json (v2.48), and now end-to-end 1300-step live training with EARLY_STOP guard, clean exit, and val-loss descent signal. What remains for SHIP-013 is NOT an infrastructure gap — it's a training/tuning gap."
+  },
+  "next_actions": [
+    "Longer run: multi-hour --num-steps 50000+ to exit the early plateau region",
+    "Hyperparameter sweep: --lr {1e-4, 3e-4, 1e-3}; --warmup-steps {500, 1000}",
+    "Larger batch: once GPU memory headroom confirmed (current 22.2 GB / 24 GB at b=1 seq=2048 — maybe batch=2 possible)",
+    "Corpus size: CSN-Python-2048 may be too small for 370M — check val loss on a larger held-out split"
+  ]
+}
