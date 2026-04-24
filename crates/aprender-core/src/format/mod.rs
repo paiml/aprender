@@ -393,6 +393,20 @@ pub mod ship_004;
 // models-spec.md §4.2 AC-SHIP1-001.
 pub mod ship_001;
 
+// FALSIFY-SHIP-023 / AC-SHIP1-023 — two-day HumanEval pass@1 drift verdict:
+// pair-of-runs drift ≤ 1.2 pp with symmetric `.abs()` combinator + input
+// well-formedness guards. See contracts/qwen2-e2e-verification-v1.yaml
+// FALSIFY-QW2E-SHIP-023 and docs/specifications/aprender-train/ship-two-
+// models-spec.md §7.1 FALSIFY-SHIP-023.
+pub mod ship_023;
+
+// FALSIFY-SHIP-024 / AC-SHIP1-024 — adversarial-suite runtime-invariant
+// verdict: suite-size floor ≥ 50 AND panic_count == 0 AND nan_count == 0.
+// See contracts/qwen2-e2e-verification-v1.yaml FALSIFY-QW2E-SHIP-024 and
+// docs/specifications/aprender-train/ship-two-models-spec.md §7.1
+// FALSIFY-SHIP-024.
+pub mod ship_024;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 

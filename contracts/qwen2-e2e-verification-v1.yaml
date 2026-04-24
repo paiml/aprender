@@ -1,10 +1,47 @@
 metadata:
-  version: 1.6.0
+  version: 1.7.0
   created: '2026-02-20'
   author: PAIML Engineering
   description: |
     Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
     into a complete model proof.
+
+    v1.7.0 (2026-04-23): Added FALSIFY-QW2E-SHIP-023 + FALSIFY-QW2E-SHIP-024
+    as a bundled PARTIAL_ALGORITHM_LEVEL discharge of the last two MODEL-1
+    §7.1 falsification tests that were not yet algorithmically bound.
+    FALSIFY-QW2E-SHIP-023 binds the AC-005 two-day score-drift stability
+    rule (`drift > 1.2 pp` fails) to one pure verdict fn
+    `verdict_from_score_drift(day1_pct, day2_pct, tolerance_pp) ->
+    Ship023Verdict` in `crates/aprender-core/src/format/ship_023.rs` +
+    const `AC_SHIP1_023_MAX_HUMANEVAL_DRIFT_PP = 1.2` (pairs numerically
+    with SHIP-005's noise allowance but carries different semantics: noise
+    vs nominal vs drift between two measured runs). FALSIFY-QW2E-SHIP-024
+    binds the adversarial-suite torture gate ("any panic or NaN in logits"
+    fails across ≥ 50 prompts) to one pure `const fn
+    verdict_from_adversarial_suite(inputs_run, panic_count, nan_count) ->
+    Ship024Verdict` in `crates/aprender-core/src/format/ship_024.rs` + 3
+    zero-tolerance constants (`AC_SHIP1_024_MIN_ADVERSARIAL_SUITE_SIZE = 50`
+    + `AC_SHIP1_024_MAX_TOLERATED_PANIC_COUNT = 0` +
+    `AC_SHIP1_024_MAX_TOLERATED_NAN_COUNT = 0`). Both new gates carry
+    `ship_blocking: false` because §7.1 stability tests are not in §4.2
+    AC table — first non-ship-blocking PARTIAL levers on the SHIP-TWO-001
+    surface. Twin 7-section mutation surveys: SHIP-023 covers exact
+    boundary Pass/just-above Fail / clear Pass band {0, 0.5, 1.0, 1.199}
+    / clear Fail band {1.3, 2.0, 10.0, 86.0} / symmetric `.abs()` order
+    invariance / non-finite conservative Fail / out-of-range + negative-
+    tolerance rejection / 1.2 provenance pin. SHIP-024 covers zero-
+    tolerance boundaries / insufficient suite size {0, 49} / over-size
+    Pass band {100, 1000, 10_000, usize::MAX} / single-failure-class
+    counts / compound failures / u32::MAX overflow guard / all-three-
+    constants provenance pin. Algorithm-level PARTIAL discharge — full
+    discharge of SHIP-023 blocks on live 2-day `apr eval --benchmark
+    humaneval` re-run on RTX 4090 with `--features cuda`; full discharge
+    of SHIP-024 blocks on real 50-prompt adversarial torture suite
+    against `paiml/qwen2.5-coder-7b-apache-q4k-v1` on RTX 4090.
+    **Completes MODEL-1 §7.1 at 12/12 falsification tests algorithmically
+    bound** — SHIP-001 through SHIP-010 were covered in v1.1.0–v1.6.0,
+    SHIP-023 + SHIP-024 close the stability-test gap here. Aggregate
+    count across both models: 25 PARTIAL + 3 DISCHARGED. Task #120.
 
     v1.6.0 (2026-04-23): Added FALSIFY-QW2E-SHIP-001 — binds MODEL-1
     ship-blocking safetensors-load criterion (AC-SHIP1-001:
@@ -520,6 +557,122 @@ falsification_tests:
   - "signal_exit_masked: llama.cpp crashed with SIGSEGV (exit
     139) but harness silently mapped it to 0 — adjacent-value
     Fail catches"
+- id: FALSIFY-QW2E-SHIP-023
+  rule: |
+    MODEL-1 stability — re-running `apr eval --benchmark humaneval
+    paiml/qwen2.5-coder-7b-apache-q4k-v1` on two consecutive days
+    must produce pass@1 scores whose absolute difference is at
+    most AC_SHIP1_023_MAX_HUMANEVAL_DRIFT_PP = 1.2 pp. Decision
+    rule: `Pass` iff all three inputs are finite, both `day1_pct`
+    and `day2_pct` are in `[0.0, 100.0]`, `tolerance_pp >= 0.0`,
+    AND `(day1_pct − day2_pct).abs() <= tolerance_pp`. Any
+    non-finite / out-of-range / negative-tolerance / over-drift
+    input → Fail. Order-invariant via `.abs()`.
+  prediction: |
+    verdict_from_score_drift(day1_pct, day2_pct, tolerance_pp)
+    == Ship023Verdict::Pass iff all three inputs are finite AND
+    both day values are in `[0.0, 100.0]` AND tolerance_pp >= 0.0
+    AND (day1_pct − day2_pct).abs() <= tolerance_pp.
+  test: |
+    cargo test -p aprender-core --lib format::ship_023
+  if_fails: |
+    MODEL-1 teacher has unstable HumanEval pass@1 across a
+    24-hour cycle — either the sampler RNG is non-deterministic,
+    the eval harness picks up upstream telemetry noise, or the
+    drift tolerance constant has drifted from spec §7.1. Fails
+    compose with SHIP-005 because a run-to-run drift larger than
+    the noise allowance cannot be silently attributed to noise.
+  ship_blocking: false
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - crates/aprender-core/src/format/ship_023.rs
+    (verdict_from_score_drift +
+    AC_SHIP1_023_MAX_HUMANEVAL_DRIFT_PP)
+  - 'test: falsify_ship_023_score_drift_threshold_logic
+    (7 sections — exact 1.2 boundary Pass, drift = 1.2 + 1e-4
+    Fail, clear Pass band {0, 0.5, 1.0, 1.199}, clear Fail band
+    {1.3, 2.0, 10.0, 86.0}, symmetric .abs() order invariance,
+    non-finite {NaN, ±∞} conservative Fail, out-of-range day
+    values {−0.1, 100.1} Fail, negative-tolerance Fail,
+    zero-tolerance exact match, provenance pin 1.2)'
+  full_discharge_blocks_on: |
+    Live two-day rerun of `apr eval --benchmark humaneval
+    paiml/qwen2.5-coder-7b-apache-q4k-v1 --json` on RTX 4090
+    with `--features cuda`, seed=0, identical decode config;
+    drift `(day1_pass_at_1 − day2_pass_at_1).abs()` must be ≤ 1.2.
+  counter_example_classes:
+  - "regressed_sampler: sampler RNG became non-deterministic
+    between runs and day-to-day drift silently exceeds 1.2 pp"
+  - "drifted_floor: spec §7.1 silently raised tolerance to 2.0
+    pp but AC_SHIP1_023_MAX_HUMANEVAL_DRIFT_PP left at 1.2"
+  - "relaxed_rule: `<=` silently replaced with `<` — boundary
+    Pass case (drift == 1.2) would flip to Fail"
+  - "non_finite_promoted: telemetry bug emits NaN on one day
+    and `.abs()` silently treats NaN < 1.2 as Pass"
+  - "asymmetric_abs: `.abs()` silently removed, making the
+    verdict direction-dependent (day1 − day2 vs day2 − day1)"
+  - "negative_tolerance_accepted: contract drift silently
+    accepts a negative drift budget as `0` after truncation"
+- id: FALSIFY-QW2E-SHIP-024
+  rule: |
+    MODEL-1 robustness — running a prompt-injection torture
+    suite of at least AC_SHIP1_024_MIN_ADVERSARIAL_SUITE_SIZE
+    = 50 adversarial inputs through `apr run
+    paiml/qwen2.5-coder-7b-apache-q4k-v1` must produce zero
+    panics AND zero NaN logits across all runs. Decision rule:
+    `Pass` iff `inputs_run >= 50` AND `panic_count == 0` AND
+    `nan_count == 0`. Any insufficient coverage, any panic, any
+    NaN logit → Fail (zero-tolerance aggregate).
+  prediction: |
+    verdict_from_adversarial_suite(inputs_run, panic_count, nan_count)
+    == Ship024Verdict::Pass iff inputs_run >= 50 AND panic_count == 0
+    AND nan_count == 0.
+  test: |
+    cargo test -p aprender-core --lib format::ship_024
+  if_fails: |
+    MODEL-1 teacher crashes or emits NaN logits under adversarial
+    input — either a sampling codepath has an untrapped division,
+    a tokenizer escape allows out-of-band indices, or a runtime
+    invariant drifted from the zero-tolerance spec §7.1 phrasing.
+    Any of the three constants drifting (50 → 30, 0 → 1) would
+    silently ship a broken teacher.
+  ship_blocking: false
+  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  evidence_discharged_by:
+  - crates/aprender-core/src/format/ship_024.rs
+    (verdict_from_adversarial_suite +
+    AC_SHIP1_024_MIN_ADVERSARIAL_SUITE_SIZE +
+    AC_SHIP1_024_MAX_TOLERATED_PANIC_COUNT +
+    AC_SHIP1_024_MAX_TOLERATED_NAN_COUNT)
+  - 'test: falsify_ship_024_adversarial_suite_threshold_logic
+    (7 sections — zero-tolerance boundaries (50,0,0) Pass +
+    (50,1,0) (50,0,1) Fail, insufficient suite size {0, 49}
+    Fail, over-size Pass band {100, 1000, 10_000, usize::MAX},
+    single-failure-class counts {panic∈[1,1000], nan∈[1,1000]},
+    compound failures {(50,1,1), (50,5,5), (10,10,10)}, u32::MAX
+    overflow guard, provenance pin on all three constants)'
+  full_discharge_blocks_on: |
+    Live 50-prompt adversarial torture suite against
+    paiml/qwen2.5-coder-7b-apache-q4k-v1 on RTX 4090 with
+    `--features cuda`; harness enumerates panics via `catch_unwind`
+    and NaN logits via `.is_nan()` on the emitted logit tensor;
+    aggregate counters fed directly into
+    `verdict_from_adversarial_suite`.
+  counter_example_classes:
+  - "regressed_sampler: a new sampling codepath divides by zero
+    norm on an adversarial tokenizer artifact and emits NaN logits
+    on 3 of the 50 prompts"
+  - "drifted_floor: spec §7.1 silently raised minimum suite size
+    to 100 but AC_SHIP1_024_MIN_ADVERSARIAL_SUITE_SIZE left at 50"
+  - "relaxed_rule: one-panic tolerance silently introduced because
+    a SIGTERM during batch warmup was reclassified as expected"
+  - "non_finite_promoted: NaN tolerance silently widened to 1 to
+    accommodate an upstream kernel quirk without spec update"
+  - "insufficient_coverage_pass: harness only exercised 30 of the
+    50 adversarial prompts (timeout budget) but aggregate silently
+    Passes via early-return on zero defects"
+  - "overflow_masked: telemetry counter saturated at u32::MAX and
+    was silently compared as a trusted count"
 kani_harnesses:
 - id: KANI-QW2E-001
   obligation: QW2E-INV-001
