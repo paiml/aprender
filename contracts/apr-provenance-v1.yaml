@@ -7,6 +7,16 @@
 # prints license, data_source, data_license — any field missing is
 # a ship-blocker).
 #
+# Also PARTIAL discharges (algorithm-level, v1.1.0) AC-SHIP1-009 /
+# FALSIFY-SHIP-009 — the MODEL-1 teacher license + provenance
+# obligation. The SAME AprV2Metadata + serde-JSON decision rule
+# that discharges MODEL-2 AC-SHIP2-012 also applies to the MODEL-1
+# teacher when that teacher is republished as a .apr (planned
+# regen lane, PMAT-686). Full discharge blocks on that republish
+# producing a .apr with license="apache-2.0",
+# data_source="qwen2.5-coder-7b-instruct",
+# data_license="apache-2.0" populated as named fields.
+#
 # This contract is the .apr-file sibling of publish-manifest-v1:
 #   - publish-manifest-v1 governs the sidecar YAML manifest.
 #   - apr-provenance-v1 governs the JSON metadata section EMBEDDED
@@ -37,14 +47,23 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-APR-PROVENANCE
-version: 1.0.0
+version: 1.1.0
 status: ACTIVE
 
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-19"
-  updated: "2026-04-19"
+  updated: "2026-04-22"
   changelog:
+    - "1.1.0 (2026-04-22): PARTIAL_ALGORITHM_LEVEL discharge of
+       AC-SHIP1-009 / FALSIFY-SHIP-009 added via GATE-APR-PROV-004.
+       The SAME AprV2Metadata + serde-JSON decision rule that
+       discharges AC-SHIP2-012 (MODEL-2 sovereign) also applies to
+       AC-SHIP1-009 (MODEL-1 teacher) — proved today with a
+       teacher-representative Rust round-trip test
+       (falsify_ship_009_apr_metadata_applies_to_model_1_teacher).
+       Full ACTIVE discharge blocks on the teacher .apr republish
+       populating the three named fields. No schema change."
     - "1.0.0 (2026-04-19): Initial contract. Discharges AC-SHIP2-012 /
        FALSIFY-SHIP-022 via falsify_ship_022_* Rust tests in
        crates/aprender-core/src/format/tests/provenance_tests.rs;
@@ -242,6 +261,61 @@ gates:
     verdict: pass
     binds_to: AC-SHIP2-012
     falsification_id: FALSIFY-SHIP-022
+
+  - id: GATE-APR-PROV-004
+    rule: >
+      AC-SHIP1-009 (MODEL-1 teacher license + data provenance
+      recorded in model.apr metadata) is discharged by the SAME
+      AprV2Metadata + serde-JSON decision rule that discharges
+      AC-SHIP2-012. The three named fields (license, data_source,
+      data_license) round-trip byte-identically and never leak
+      into custom — proved today against teacher-representative
+      values (license="apache-2.0",
+      data_source="qwen2.5-coder-7b-instruct",
+      data_license="apache-2.0"). Algorithm is model-agnostic,
+      so the same harness that passes for MODEL-2 passes for
+      MODEL-1 with no code change — only the input values
+      differ. This is the second multi-bind of the
+      C-APR-PROVENANCE contract (SHIP-TWO-001 first-ever
+      multi-model PARTIAL discharge that crosses MODEL-1/MODEL-2).
+    evidence_required: >
+      `cargo test -p aprender-core --lib
+      falsify_ship_009_apr_metadata_applies_to_model_1_teacher`
+      exits 0 AND
+      `cargo test -p aprender-core --lib
+      falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker`
+      exits 0. Both tests are siblings of the SHIP-022 harness
+      and require zero new infrastructure — AprV2Metadata,
+      to_json / from_json, and the `custom` escape hatch are
+      all unchanged from v1.0.0.
+    evidence_discharged_by:
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_009_apr_metadata_applies_to_model_1_teacher"
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker"
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_022_apr_metadata_provenance_round_trip"
+      - "crates/aprender-core/src/format/tests/provenance_tests.rs::falsify_ship_022_inspect_emits_provenance_keys"
+    verdict: pass
+    binds_to: AC-SHIP1-009
+    falsification_id: FALSIFY-SHIP-009
+    ship_blocking: true
+    discharge_status: PARTIAL_ALGORITHM_LEVEL
+    partial_discharge_note: >
+      Algorithm-level proven today: the decision rule of
+      AC-SHIP1-009 ("teacher license + data provenance recorded
+      in model.apr metadata") reuses the AprV2Metadata +
+      serde-JSON layer that already discharges AC-SHIP2-012.
+      One teacher-representative round-trip test
+      (falsify_ship_009_apr_metadata_applies_to_model_1_teacher)
+      plus a YAML-binding test
+      (falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker)
+      together prove the algorithm is model-agnostic.
+    full_discharge_blocks_on: >
+      Teacher .apr republish (planned regen lane, PMAT-686) with
+      AprV2Metadata.license = Some("apache-2.0") AND
+      data_source = Some("qwen2.5-coder-7b-instruct") AND
+      data_license = Some("apache-2.0"). `apr inspect
+      <teacher>.apr --json` must emit each field with its
+      string value (not null). Fixture-swap only — no code
+      change, no contract change.
 
 # ─────────────────────────────────────────────────────────────
 # Failure modes

@@ -35,7 +35,10 @@ pub fn classify_compression_ratio(
     max_ratio: f64,
 ) -> CompressionOutcome {
     if fp16_bytes == 0 {
-        return CompressionOutcome::Insufficient { ratio: f64::INFINITY, max_ratio };
+        return CompressionOutcome::Insufficient {
+            ratio: f64::INFINITY,
+            max_ratio,
+        };
     }
     let ratio = gptq_bytes as f64 / fp16_bytes as f64;
     if ratio <= max_ratio {
@@ -68,8 +71,15 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> Option<f64> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CosineFidelity {
-    Ok { mean: f64, n: usize },
-    Degraded { mean: f64, threshold: f64, n: usize },
+    Ok {
+        mean: f64,
+        n: usize,
+    },
+    Degraded {
+        mean: f64,
+        threshold: f64,
+        n: usize,
+    },
     /// No valid per-prompt pairs (e.g. length mismatches only).
     NoSamples,
 }
@@ -105,7 +115,11 @@ pub struct GptqFlags {
 
 #[must_use]
 pub fn parse_gptq_flags(argv: &[&str]) -> GptqFlags {
-    let mut f = GptqFlags { method: None, bits: None, group_size: None };
+    let mut f = GptqFlags {
+        method: None,
+        bits: None,
+        group_size: None,
+    };
     let mut i = 0;
     while i < argv.len() {
         let a = argv[i];
@@ -117,9 +131,13 @@ pub fn parse_gptq_flags(argv: &[&str]) -> GptqFlags {
                 if let Some(rest) = a.strip_prefix("--method=") {
                     f.method = Some(rest.to_string());
                 } else if let Some(rest) = a.strip_prefix("--bits=") {
-                    if let Ok(v) = rest.parse::<u32>() { f.bits = Some(v); }
+                    if let Ok(v) = rest.parse::<u32>() {
+                        f.bits = Some(v);
+                    }
                 } else if let Some(rest) = a.strip_prefix("--group-size=") {
-                    if let Ok(v) = rest.parse::<i32>() { f.group_size = Some(v); }
+                    if let Ok(v) = rest.parse::<i32>() {
+                        f.group_size = Some(v);
+                    }
                 }
             }
         }
@@ -144,13 +162,18 @@ pub fn validate_gptq_flags(flags: &GptqFlags) -> GptqFlagValidation {
         return GptqFlagValidation::MissingMethod;
     };
     if method != "gptq" {
-        return GptqFlagValidation::WrongMethod { got: method.to_string() };
+        return GptqFlagValidation::WrongMethod {
+            got: method.to_string(),
+        };
     }
     let Some(bits) = flags.bits else {
         return GptqFlagValidation::MissingBits;
     };
     if !GPTQ_ALLOWED_BITS.contains(&bits) {
-        return GptqFlagValidation::InvalidBits { got: bits, allowed: GPTQ_ALLOWED_BITS };
+        return GptqFlagValidation::InvalidBits {
+            got: bits,
+            allowed: GPTQ_ALLOWED_BITS,
+        };
     }
     let group_size = flags.group_size.unwrap_or(GPTQ_DEFAULT_GROUP_SIZE);
     if !GPTQ_ALLOWED_GROUP_SIZES.contains(&group_size) {
@@ -283,8 +306,10 @@ mod tests {
         let b = vec![1.0, 2.0];
         let bad_a = vec![1.0];
         let bad_b = vec![1.0, 2.0];
-        let pairs: Vec<(&[f64], &[f64])> =
-            vec![(a.as_slice(), b.as_slice()), (bad_a.as_slice(), bad_b.as_slice())];
+        let pairs: Vec<(&[f64], &[f64])> = vec![
+            (a.as_slice(), b.as_slice()),
+            (bad_a.as_slice(), bad_b.as_slice()),
+        ];
         match classify_mean_cosine(&pairs, GPTQ_MIN_MEAN_COSINE) {
             CosineFidelity::Ok { n, .. } => assert_eq!(n, 1),
             o => panic!("expected Ok with n=1, got {:?}", o),
@@ -295,7 +320,15 @@ mod tests {
 
     #[test]
     fn parse_all_three_space_form() {
-        let argv = &["quantize", "--method", "gptq", "--bits", "4", "--group-size", "128"];
+        let argv = &[
+            "quantize",
+            "--method",
+            "gptq",
+            "--bits",
+            "4",
+            "--group-size",
+            "128",
+        ];
         let f = parse_gptq_flags(argv);
         assert_eq!(f.method.as_deref(), Some("gptq"));
         assert_eq!(f.bits, Some(4));
@@ -312,43 +345,79 @@ mod tests {
 
     #[test]
     fn validate_ok_with_default_group_size() {
-        let f = GptqFlags { method: Some("gptq".into()), bits: Some(4), group_size: None };
+        let f = GptqFlags {
+            method: Some("gptq".into()),
+            bits: Some(4),
+            group_size: None,
+        };
         assert_eq!(
             validate_gptq_flags(&f),
-            GptqFlagValidation::Ok { bits: 4, group_size: GPTQ_DEFAULT_GROUP_SIZE }
+            GptqFlagValidation::Ok {
+                bits: 4,
+                group_size: GPTQ_DEFAULT_GROUP_SIZE
+            }
         );
     }
 
     #[test]
     fn validate_ok_with_per_tensor_group_size() {
-        let f = GptqFlags { method: Some("gptq".into()), bits: Some(4), group_size: Some(-1) };
+        let f = GptqFlags {
+            method: Some("gptq".into()),
+            bits: Some(4),
+            group_size: Some(-1),
+        };
         assert_eq!(
             validate_gptq_flags(&f),
-            GptqFlagValidation::Ok { bits: 4, group_size: -1 }
+            GptqFlagValidation::Ok {
+                bits: 4,
+                group_size: -1
+            }
         );
     }
 
     #[test]
     fn validate_rejects_wrong_method() {
-        let f = GptqFlags { method: Some("awq".into()), bits: Some(4), group_size: Some(128) };
-        assert!(matches!(validate_gptq_flags(&f), GptqFlagValidation::WrongMethod { .. }));
+        let f = GptqFlags {
+            method: Some("awq".into()),
+            bits: Some(4),
+            group_size: Some(128),
+        };
+        assert!(matches!(
+            validate_gptq_flags(&f),
+            GptqFlagValidation::WrongMethod { .. }
+        ));
     }
 
     #[test]
     fn validate_rejects_missing_bits() {
-        let f = GptqFlags { method: Some("gptq".into()), bits: None, group_size: Some(128) };
+        let f = GptqFlags {
+            method: Some("gptq".into()),
+            bits: None,
+            group_size: Some(128),
+        };
         assert_eq!(validate_gptq_flags(&f), GptqFlagValidation::MissingBits);
     }
 
     #[test]
     fn validate_rejects_invalid_bits() {
-        let f = GptqFlags { method: Some("gptq".into()), bits: Some(5), group_size: Some(128) };
-        assert!(matches!(validate_gptq_flags(&f), GptqFlagValidation::InvalidBits { got: 5, .. }));
+        let f = GptqFlags {
+            method: Some("gptq".into()),
+            bits: Some(5),
+            group_size: Some(128),
+        };
+        assert!(matches!(
+            validate_gptq_flags(&f),
+            GptqFlagValidation::InvalidBits { got: 5, .. }
+        ));
     }
 
     #[test]
     fn validate_rejects_invalid_group_size() {
-        let f = GptqFlags { method: Some("gptq".into()), bits: Some(4), group_size: Some(96) };
+        let f = GptqFlags {
+            method: Some("gptq".into()),
+            bits: Some(4),
+            group_size: Some(96),
+        };
         assert!(matches!(
             validate_gptq_flags(&f),
             GptqFlagValidation::InvalidGroupSize { got: 96, .. }
@@ -357,7 +426,11 @@ mod tests {
 
     #[test]
     fn validate_is_deterministic() {
-        let f = GptqFlags { method: Some("gptq".into()), bits: Some(4), group_size: None };
+        let f = GptqFlags {
+            method: Some("gptq".into()),
+            bits: Some(4),
+            group_size: None,
+        };
         assert_eq!(validate_gptq_flags(&f), validate_gptq_flags(&f));
     }
 

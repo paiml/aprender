@@ -384,6 +384,359 @@ pub fn assert_tokenizer_vocab_matches_model(
 }
 
 // ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-017 / AC-SHIP2-007 / GATE-ARCH-370M-005
+// ─────────────────────────────────────────────────────────────
+
+/// Number of held-out prompts required by AC-SHIP2-007 / FALSIFY-SHIP-017
+/// (spec §6 Model 2: "`apr run` produces syntactically valid Python on
+/// 100 held-out prompts").
+pub const AC_SHIP2_007_HELDOUT_PROMPT_COUNT: usize = 100;
+
+/// Tolerance: `≤ 1` completion out of the 100 held-out prompts may fail
+/// to yield a Python-AST-parseable non-trivial statement prefix.
+/// Anything `≥ 2` is a ship-blocking FAIL per FALSIFY-SHIP-017.
+pub const AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS: usize = 1;
+
+/// Ship-017 verdict — the pure algorithmic result of evaluating whether
+/// a 100-prompt Python-AST-parse sweep meets AC-SHIP2-007.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship017Verdict {
+    /// `syntax_errors ≤ AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS`.
+    Pass,
+    /// `syntax_errors ≥ 2` on the 100-prompt sweep.
+    Fail,
+}
+
+/// Pure threshold function for FALSIFY-SHIP-017 (AC-SHIP2-007).
+///
+/// Given `syntax_errors` — the count of held-out completions (out of
+/// `AC_SHIP2_007_HELDOUT_PROMPT_COUNT`) that failed to yield a
+/// Python-AST-parseable non-trivial statement prefix — returns the
+/// FALSIFY-SHIP-017 verdict under the rule:
+///
+///   errors ≤ 1 → Pass   (tolerate one flaky completion)
+///   errors ≥ 2 → Fail   (ship-blocker)
+///
+/// This is the algorithm-level discharge of GATE-ARCH-370M-005: the
+/// threshold itself is proven correct at `cargo test` time; full
+/// discharge (a real 100-prompt `apr run` harness against a trained
+/// 370M .apr) remains PENDING on pretraining compute-dispatch
+/// (AC-SHIP2-003/004). Fixture swap is data-only once a trained
+/// artifact exists — no harness rewrite required.
+pub const fn verdict_from_syntax_error_count(syntax_errors: usize) -> Ship017Verdict {
+    if syntax_errors <= AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS {
+        Ship017Verdict::Pass
+    } else {
+        Ship017Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-020 (AC-SHIP2-010): decode-throughput threshold
+// ─────────────────────────────────────────────────────────────
+
+/// Minimum `apr run` median decode throughput, in tokens/second, on the
+/// SHIP-TWO-001 reference hardware (RTX 4090). Source of truth:
+/// `contracts/model-families/llama-370m-sovereign-v1.yaml`
+/// GATE-ARCH-370M-006 and the SHIP-TWO-001 falsification table
+/// (FALSIFY-SHIP-020).
+pub const AC_SHIP2_010_MIN_DECODE_TPS_RTX4090: f32 = 100.0;
+
+/// Verdict for GATE-ARCH-370M-006 / FALSIFY-SHIP-020: does the measured
+/// `apr bench` median decode throughput meet the ship-gate threshold?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship020Verdict {
+    /// Measured tok/s ≥ [`AC_SHIP2_010_MIN_DECODE_TPS_RTX4090`].
+    Pass,
+    /// Measured tok/s < [`AC_SHIP2_010_MIN_DECODE_TPS_RTX4090`] (ship-blocker).
+    Fail,
+}
+
+/// Pure threshold function implementing FALSIFY-SHIP-020: a measured
+/// median decode throughput of `measured_tps` tokens/second passes the
+/// ship-gate iff it is finite AND ≥ [`AC_SHIP2_010_MIN_DECODE_TPS_RTX4090`].
+///
+/// Non-finite inputs (NaN, ±∞) are conservatively classified as
+/// `Fail`: a benchmark run that could not produce a well-defined
+/// finite median is always ill-formed and must never be allowed to
+/// silently green the ship-gate.
+///
+/// This is the same decision-rule-vs-harness separation used by
+/// FALSIFY-SHIP-017 (syntax-error count). The compute-heavy part
+/// (`apr bench --median` on a real trained 370M .apr) is deferred to
+/// AC-SHIP2-003/004 compute-dispatch; the decision rule itself is
+/// proven today at unit-test time.
+#[must_use]
+pub fn verdict_from_decode_tps(measured_tps: f32) -> Ship020Verdict {
+    if !(measured_tps.is_finite()) {
+        return Ship020Verdict::Fail;
+    }
+    if measured_tps >= AC_SHIP2_010_MIN_DECODE_TPS_RTX4090 {
+        Ship020Verdict::Pass
+    } else {
+        Ship020Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// AC-SHIP2-008 / FALSIFY-SHIP-018 — HumanEval pass@1 threshold
+// ─────────────────────────────────────────────────────────────
+//
+// Spec §5.2 AC-SHIP2-008 states: `apr eval --benchmark humaneval`
+// must report pass@1 ≥ 30.0% for the trained 370M `.apr` artifact.
+// The decision rule is a pure (correct, total) → pct comparison;
+// the compute-heavy harness (164 HumanEval tasks × `apr run` ×
+// greedy sampling) is fixture-swappable once a trained artifact
+// exists. Landing the threshold function today discharges
+// GATE-ARCH-370M-007 at PARTIAL_ALGORITHM_LEVEL and catches any
+// future drift in the 30.0 floor at `cargo test` time — before a
+// single HumanEval task is dispatched.
+
+/// Contract-frozen floor for AC-SHIP2-008: HumanEval pass@1 must
+/// reach **30.0%** on the trained 370M artifact. The numeric floor
+/// mirrors `contracts/model-families/llama-370m-sovereign-v1.yaml`
+/// GATE-ARCH-370M-007 rule body and spec §5.2 AC-SHIP2-008.
+pub const AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT: f32 = 30.0;
+
+/// Binary verdict emitted by [`verdict_from_pass_at_1`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship018Verdict {
+    /// `correct / total * 100 ≥ threshold_pct` and inputs are well-formed.
+    Pass,
+    /// Any of: ratio < threshold, `total == 0`, non-finite threshold.
+    Fail,
+}
+
+/// Decision function for AC-SHIP2-008 / FALSIFY-SHIP-018.
+///
+/// Returns [`Ship018Verdict::Pass`] iff `correct / total * 100`
+/// is ≥ `threshold_pct`. Conservative-Fail guards:
+///
+///   - `total == 0` → Fail (avoid division-by-zero; an empty run
+///     cannot satisfy a positive threshold).
+///   - `correct > total` → Fail (nonsensical input; a real
+///     harness can never report more passes than attempts).
+///   - `!threshold_pct.is_finite()` → Fail (NaN / ±∞ contract
+///     drift — no real contract floor can be non-finite).
+///
+/// Stored per-ULP ratio comparisons use f32 arithmetic to keep the
+/// verdict a pure function of its inputs with no harness state.
+#[must_use]
+pub fn verdict_from_pass_at_1(correct: usize, total: usize, threshold_pct: f32) -> Ship018Verdict {
+    if total == 0 {
+        return Ship018Verdict::Fail;
+    }
+    if correct > total {
+        return Ship018Verdict::Fail;
+    }
+    if !threshold_pct.is_finite() {
+        return Ship018Verdict::Fail;
+    }
+    // Safe: correct ≤ total ≤ usize::MAX; f32 cast preserves ordering
+    // within the humaneval range (total ≤ 164 for canonical HumanEval).
+    let ratio_pct = (correct as f32 / total as f32) * 100.0_f32;
+    if ratio_pct >= threshold_pct {
+        Ship018Verdict::Pass
+    } else {
+        Ship018Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-016 / AC-SHIP2-006 / GATE-ARCH-370M-008 — apr qa aggregate
+// ─────────────────────────────────────────────────────────────
+
+/// Number of canonical `apr qa` gates composing AC-SHIP2-006 /
+/// FALSIFY-SHIP-016. The spec row AC-SHIP2-006 reads
+/// "`apr qa <model>.apr` — all 8 gates PASS" and the matching
+/// FALSIFY row names the decision rule as "any gate FAIL" →
+/// Fail. The 8 canonical gates (matching `QaConfig::skip_*` in
+/// `crates/apr-cli/src/commands/qa.rs`) are:
+///   1. golden_output      — correctness gate (GH-202 regression)
+///   2. throughput         — tok/s ≥ configured floor
+///   3. ollama_parity      — speedup vs Ollama baseline
+///   4. gpu_vs_cpu_speedup — GPU ≥ 2× CPU (F-PERF-042)
+///   5. tensor_contract    — layout/dtype/shape validation
+///   6. cross_format_parity — argmax(GGUF) == argmax(SafeTensors)
+///   7. ptx_parity         — batched GPU kernels vs scalar refs
+///   8. probar             — property-based tests
+///
+/// Contract-drift guard: any change to this number must be matched
+/// in lockstep across the contract, spec, and CLI qa handler.
+pub const AC_SHIP2_006_REQUIRED_QA_GATE_COUNT: usize = 8;
+
+/// Ternary verdict for FALSIFY-SHIP-016 / GATE-ARCH-370M-008.
+/// `Pass` iff every one of the 8 canonical `apr qa` gates passed.
+/// `Fail` otherwise (any single gate failure, or wrong gate count).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship016Verdict {
+    Pass,
+    Fail,
+}
+
+/// Algorithm-level verdict rule for FALSIFY-SHIP-016 / GATE-ARCH-370M-008
+/// / AC-SHIP2-006: `apr qa <model>.apr` is an aggregate-AND over the
+/// 8 canonical QA gates. Verdict is `Pass` iff **exactly 8** gate
+/// results were supplied **and every one passed**. Any shorter/longer
+/// slice is a contract-drift Fail; any single `false` entry is a
+/// ship-blocking Fail. This proves the decision rule without running
+/// the compute-heavy gates themselves; the harness (realizar, cuda,
+/// tokenizer, corpus) is fixture-swappable once a real trained 370M
+/// .apr exists. Spec §7 row FALSIFY-SHIP-016 ("any gate FAIL") is
+/// the counter-example this fn is built to classify.
+#[must_use]
+pub fn verdict_from_qa_gates(gate_results: &[bool]) -> Ship016Verdict {
+    if gate_results.len() != AC_SHIP2_006_REQUIRED_QA_GATE_COUNT {
+        return Ship016Verdict::Fail;
+    }
+    if gate_results.iter().all(|&passed| passed) {
+        Ship016Verdict::Pass
+    } else {
+        Ship016Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-013 / AC-SHIP2-003 / GATE-ARCH-370M-013 — val CE loss floor
+// ─────────────────────────────────────────────────────────────
+//
+// AC-SHIP2-003 (spec §5.2) states: "`entrenar` pretraining loop reaches
+// target loss (CE ≤ 2.2 on val)". The decision rule is a pure single-
+// number f32 threshold check on a measured cross-entropy value. Cross-
+// entropy is non-negative by definition (H(p,q) ≥ 0 for all probability
+// distributions p,q), so the admissible input domain is `[0.0, +∞)`; any
+// negative measurement indicates a broken loss harness (sign flip,
+// log-domain underflow, subtract instead of add) and must Fail closed.
+//
+// This PARTIAL_ALGORITHM_LEVEL discharge binds the decision rule only.
+// The compute-heavy half — an actual `apr pretrain --validate` loop
+// producing a live val CE from MODEL-2 training — remains blocked on
+// AC-SHIP2-003 compute-dispatch. The decision rule itself (what number
+// constitutes a Pass) is proven today at `cargo test` time via the
+// mutation survey below.
+
+/// Maximum acceptable cross-entropy loss on the validation set for
+/// MODEL-2 (albor 370M Sovereign) at the end of pretraining. Spec §5.2
+/// AC-SHIP2-003: "CE ≤ 2.2 on val". A measured val CE strictly above
+/// 2.2 is a ship-blocker (training did not converge well enough for
+/// the 370M target to hit its HumanEval / syntax-parse downstream
+/// gates). Pinned here so any contract drift in either direction
+/// (loosening to 2.5, hardening to 2.0) is caught at compile+test
+/// time, not at a production training run.
+///
+/// f32-exact: `2.2` is representable in IEEE-754 binary32 as the
+/// closest-round value `0x400CCCCD` = 2.20000004768371582...; the
+/// ULP-above neighbour is strictly greater and is used as the
+/// sharpest Fail counter-example in the mutation survey.
+pub const AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS: f32 = 2.2;
+
+/// Binary verdict for FALSIFY-SHIP-013 / AC-SHIP2-003 /
+/// GATE-ARCH-370M-013. `Pass` iff the measured val CE is finite AND
+/// non-negative AND at or below [`AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS`].
+/// `Fail` otherwise (including every non-finite value: NaN, +∞, -∞,
+/// and every negative value, which is a harness-bug domain violation
+/// since H(p,q) ≥ 0 by definition).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship013Verdict {
+    /// Measured val CE ∈ `[0.0, AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS]`.
+    Pass,
+    /// Measured val CE > ceiling, or non-finite, or negative (domain
+    /// violation — a real cross-entropy can never be < 0).
+    Fail,
+}
+
+/// Algorithm-level verdict rule for FALSIFY-SHIP-013 / AC-SHIP2-003 /
+/// GATE-ARCH-370M-013: a single f32 threshold check against the MODEL-2
+/// val-CE ceiling. Returns [`Ship013Verdict::Fail`] conservatively for
+/// any non-finite input (NaN, +∞, -∞) AND for any negative input (CE
+/// is ≥ 0 by definition — a negative value means the loss harness is
+/// broken, which must never be silently promoted to a Pass).
+///
+/// The full discharge (live `apr pretrain --validate` loop producing
+/// a real MODEL-2 val CE on RTX 4090 ≤ 2.2) remains blocked on
+/// AC-SHIP2-003 compute-dispatch.
+#[must_use]
+pub const fn verdict_from_val_ce_loss(measured_ce: f32) -> Ship013Verdict {
+    if !measured_ce.is_finite() {
+        return Ship013Verdict::Fail;
+    }
+    if measured_ce < 0.0 {
+        // Cross-entropy is non-negative by definition; a negative
+        // measurement is a harness bug, not a "better than zero" Pass.
+        return Ship013Verdict::Fail;
+    }
+    if measured_ce <= AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS {
+        Ship013Verdict::Pass
+    } else {
+        Ship013Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// FALSIFY-SHIP-014 / AC-SHIP2-004 / GATE-ARCH-370M-014 — training-budget floor
+// ─────────────────────────────────────────────────────────────
+//
+// AC-SHIP2-004 (spec §5.2) states: "Training on RTX 4090 completes
+// within 21 days (hardware budget)". The decision rule is a pure
+// single-number u32 threshold check on measured wall-clock days. u32
+// naturally rules out negative values (no need for an explicit domain
+// guard); the only extrema to cover are the boundary (21), the
+// immediate neighbours (20 / 22), and the saturation point u32::MAX.
+// Zero days is a trivial Pass (under budget).
+//
+// This PARTIAL_ALGORITHM_LEVEL discharge binds the decision rule only.
+// The compute-heavy half — an actual wall-clock measurement of a real
+// 370M pretraining run on RTX 4090 → ≤ 21 days — remains blocked on
+// AC-SHIP2-004 compute-dispatch. The decision rule itself (what
+// duration constitutes a Pass) is proven today at `cargo test` time
+// via the mutation survey below.
+
+/// Maximum acceptable wall-clock training duration, in integer days,
+/// for MODEL-2 (albor 370M Sovereign) on the SHIP-TWO-001 reference
+/// RTX 4090 host. Spec §5.2 AC-SHIP2-004: "Training on RTX 4090
+/// completes within 21 days (hardware budget)". A measured duration
+/// strictly above 21 days is a ship-blocker (the hardware budget
+/// overflowed and a 2× H100 week-3 escape hatch from Spec §9 Risk #4
+/// is required). Pinned here so any contract drift in either
+/// direction (extending to 30, compressing to 14) is caught at
+/// compile+test time, not mid-pretraining.
+pub const AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS: u32 = 21;
+
+/// Binary verdict for FALSIFY-SHIP-014 / AC-SHIP2-004 /
+/// GATE-ARCH-370M-014. `Pass` iff the measured wall-clock training
+/// duration in days is at or below
+/// [`AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS`]. `Fail` otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ship014Verdict {
+    /// Measured training duration ≤ `AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS`.
+    Pass,
+    /// Measured training duration > ceiling (ship-blocker per Spec §9
+    /// Risk #4).
+    Fail,
+}
+
+/// Algorithm-level verdict rule for FALSIFY-SHIP-014 / AC-SHIP2-004 /
+/// GATE-ARCH-370M-014: a single u32 threshold check against the
+/// MODEL-2 hardware-budget ceiling. Unlike the f32 ship gates
+/// (SHIP-007, SHIP-013, SHIP-020), u32 automatically rules out
+/// negatives (no domain guard needed) and has no non-finite states;
+/// the only interesting counter-examples are the boundary (21), the
+/// immediate neighbours (20 / 22), and u32::MAX.
+///
+/// Zero days is Pass (trivially under-budget, e.g. a cached artifact
+/// or a same-day re-run). The full discharge (live wall-clock
+/// measurement of MODEL-2 pretraining on RTX 4090 ≤ 21 days) remains
+/// blocked on AC-SHIP2-004 compute-dispatch.
+#[must_use]
+pub const fn verdict_from_training_duration_days(measured_days: u32) -> Ship014Verdict {
+    if measured_days <= AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS {
+        Ship014Verdict::Pass
+    } else {
+        Ship014Verdict::Fail
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Unit tests
 // ─────────────────────────────────────────────────────────────
 
@@ -429,13 +782,11 @@ mod tests {
     /// short of contract) so the helper is still exercised on real mismatch.
     #[test]
     fn falsify_gate_arch_370m_011_helper_rejects_mismatch() {
-        assert!(
-            assert_tokenizer_vocab_matches_model(
-                Llama370MConfig::VOCAB_SIZE,
-                Llama370MConfig::VOCAB_SIZE,
-            )
-            .is_ok()
-        );
+        assert!(assert_tokenizer_vocab_matches_model(
+            Llama370MConfig::VOCAB_SIZE,
+            Llama370MConfig::VOCAB_SIZE,
+        )
+        .is_ok());
 
         let mismatch = Llama370MConfig::VOCAB_SIZE - 1;
         let err = assert_tokenizer_vocab_matches_model(mismatch, Llama370MConfig::VOCAB_SIZE)
@@ -448,13 +799,11 @@ mod tests {
         );
 
         assert!(assert_tokenizer_vocab_matches_model(0, 1).is_err());
-        assert!(
-            assert_tokenizer_vocab_matches_model(
-                Llama370MConfig::VOCAB_SIZE + 1,
-                Llama370MConfig::VOCAB_SIZE
-            )
-            .is_err()
-        );
+        assert!(assert_tokenizer_vocab_matches_model(
+            Llama370MConfig::VOCAB_SIZE + 1,
+            Llama370MConfig::VOCAB_SIZE
+        )
+        .is_err());
     }
 
     /// INV-ARCH-370M-001 — estimated param count within [366M, 374M].
@@ -857,6 +1206,967 @@ mod tests {
             "GATE-ARCH-370M-004 must advertise ship_blocking:true — the \
              gate's `verdict:pass` alone is insufficient green while \
              discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+    // ========================================================================
+    // GATE-ARCH-370M-005 / AC-SHIP2-007 / FALSIFY-SHIP-017
+    // ========================================================================
+
+    /// FALSIFY-SHIP-017 (AC-SHIP2-007) — algorithm-level proof of the
+    /// Python-AST-parse threshold function.
+    ///
+    /// The full-discharge harness (100 held-out prompts × `apr run` ×
+    /// Python AST parse) blocks on a real trained 370M .apr. But the
+    /// *decision rule* — "≥ 2 syntax errors on 100 prompts is a
+    /// ship-blocker, ≤ 1 tolerated" — is a pure integer threshold and
+    /// can be proven correct today. Any edit to `verdict_from_syntax_error_count`
+    /// that widens the tolerance (or flips the boundary) is caught here
+    /// before the artifact ships.
+    ///
+    /// Covers four invariants:
+    ///   1. **Zero errors** → Pass (the trivial unanimous-parse case).
+    ///   2. **Exactly-one error** → Pass (the tolerance boundary; matches
+    ///      the EX-06 harness' `tolerate ≤ 1 SyntaxError` rule and
+    ///      spec-§6 FALSIFY-SHIP-017 wording `tolerate ≤1`).
+    ///   3. **Exactly-two errors** → Fail (the ship-blocker boundary;
+    ///      FALSIFY-SHIP-017 says `≥ 2 SyntaxError`).
+    ///   4. **Monotonicity** — raising the error count can only worsen
+    ///      the verdict (Pass → Fail is one-way). This rules out any
+    ///      future threshold edit that accidentally promotes a high
+    ///      error count back to Pass.
+    #[test]
+    fn falsify_ship_017_syntax_error_count_threshold_logic() {
+        // (1) Zero errors — unanimous parse.
+        assert_eq!(
+            verdict_from_syntax_error_count(0),
+            Ship017Verdict::Pass,
+            "0 syntax errors must always Pass",
+        );
+
+        // (2) Tolerance boundary — 1 error still tolerated.
+        assert_eq!(
+            verdict_from_syntax_error_count(1),
+            Ship017Verdict::Pass,
+            "1 syntax error is the AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS \
+             boundary and must Pass",
+        );
+
+        // (3) Ship-blocker boundary — 2 errors flips to Fail.
+        assert_eq!(
+            verdict_from_syntax_error_count(2),
+            Ship017Verdict::Fail,
+            "2 syntax errors is the FALSIFY-SHIP-017 ship-blocker \
+             boundary and must Fail",
+        );
+
+        // (3b) Pathological cases — high error counts must still Fail.
+        assert_eq!(
+            verdict_from_syntax_error_count(AC_SHIP2_007_HELDOUT_PROMPT_COUNT),
+            Ship017Verdict::Fail,
+            "all-errors must Fail — trivial sanity",
+        );
+        assert_eq!(
+            verdict_from_syntax_error_count(AC_SHIP2_007_HELDOUT_PROMPT_COUNT / 2),
+            Ship017Verdict::Fail,
+            "50% errors on 100 prompts must Fail",
+        );
+
+        // (4) Monotonicity — once Fail, always Fail as errors rise.
+        let mut last_was_fail = false;
+        for errors in 0..=AC_SHIP2_007_HELDOUT_PROMPT_COUNT {
+            let verdict = verdict_from_syntax_error_count(errors);
+            if last_was_fail {
+                assert_eq!(
+                    verdict,
+                    Ship017Verdict::Fail,
+                    "monotonicity violation at errors={errors}: once Fail, \
+                     more errors cannot return to Pass",
+                );
+            }
+            if verdict == Ship017Verdict::Fail {
+                last_was_fail = true;
+            }
+        }
+
+        // Provenance sanity — the AC-SHIP2-007 prompt-count constant
+        // matches the spec's 100-prompt harness size. If this ever drifts,
+        // the threshold is still correct (it's count-agnostic) but the
+        // GATE-ARCH-370M-005 evidence no longer matches the spec wording.
+        assert_eq!(
+            AC_SHIP2_007_HELDOUT_PROMPT_COUNT, 100,
+            "AC-SHIP2-007 spec §6 pins the harness at 100 held-out prompts",
+        );
+        assert_eq!(
+            AC_SHIP2_007_MAX_TOLERATED_SYNTAX_ERRORS, 1,
+            "FALSIFY-SHIP-017 (spec §8.3 row) tolerates ≤ 1 SyntaxError",
+        );
+    }
+
+    /// GATE-ARCH-370M-005 wiring check: once FALSIFY-SHIP-017 has an
+    /// algorithm-level PARTIAL discharge, the sovereign contract YAML
+    /// MUST record `discharge_status: PARTIAL_ALGORITHM_LEVEL` plus
+    /// `evidence_discharged_by` plus `full_discharge_blocks_on` on
+    /// GATE-ARCH-370M-005. Any edit that drops those fields fails this
+    /// test before the artifact ships.
+    #[test]
+    fn falsify_ship_017_gate_arch_370m_005_has_partial_discharge_marker() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+        let gates =
+            doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
+        let gate = gates
+            .iter()
+            .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-005"))
+            .expect("GATE-ARCH-370M-005 must exist in sovereign contract");
+
+        assert_eq!(
+            gate["falsification_id"].as_str(),
+            Some("FALSIFY-SHIP-017"),
+            "GATE-ARCH-370M-005 must bind FALSIFY-SHIP-017",
+        );
+        assert_eq!(
+            gate["binds_to"].as_str(),
+            Some("AC-SHIP2-007"),
+            "GATE-ARCH-370M-005 must bind AC-SHIP2-007",
+        );
+        assert_eq!(
+            gate["discharge_status"].as_str(),
+            Some("PARTIAL_ALGORITHM_LEVEL"),
+            "GATE-ARCH-370M-005 must advertise PARTIAL_ALGORITHM_LEVEL \
+             (full discharge blocks on real trained 370M .apr + 100-prompt \
+             `apr run` harness)",
+        );
+        let evidence = gate["evidence_discharged_by"]
+            .as_sequence()
+            .expect("GATE-ARCH-370M-005 must have evidence_discharged_by");
+        assert!(
+            !evidence.is_empty(),
+            "GATE-ARCH-370M-005 evidence_discharged_by must list \
+             at least one test function or artifact",
+        );
+        assert!(
+            gate["full_discharge_blocks_on"].as_str().is_some(),
+            "PARTIAL gate must document full_discharge_blocks_on",
+        );
+        assert_eq!(
+            gate["ship_blocking"].as_bool(),
+            Some(true),
+            "GATE-ARCH-370M-005 must advertise ship_blocking:true — the \
+             gate's `verdict:pass` alone is insufficient green while \
+             discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+    /// FALSIFY-SHIP-020 / AC-SHIP2-010 — pure decode-throughput threshold
+    /// proof. `apr bench --median` on a real trained 370M .apr is the
+    /// compute-heavy harness; the decision rule itself (≥100 tok/s
+    /// passes, <100 tok/s fails) is separable and proven here.
+    ///
+    /// Invariants covered:
+    ///   1. Pass boundary: exactly 100.0 tok/s → Pass (contract floor).
+    ///   2. Fail boundary: 99.999 tok/s → Fail (one ULP below floor).
+    ///   3. Generous green: 120.0 and 500.0 tok/s → Pass.
+    ///   4. Hard red: 0.0 and 50.0 tok/s → Fail.
+    ///   5. Monotonicity: once Fail, all strictly lower tps stay Fail.
+    ///   6. Degenerate inputs: NaN and ±∞ → Fail (no well-defined
+    ///      median → no proof).
+    ///   7. Provenance pinning: the const floor MUST be 100.0 — any
+    ///      edit that loosens the threshold trips this test before the
+    ///      contract can ship.
+    #[test]
+    fn falsify_ship_020_decode_tps_threshold_logic() {
+        // Pass boundary
+        assert_eq!(
+            verdict_from_decode_tps(100.0),
+            Ship020Verdict::Pass,
+            "exactly 100.0 tok/s must Pass (contract floor)",
+        );
+        // Fail boundary (one f32 step below 100.0)
+        let just_below = f32::from_bits(100.0_f32.to_bits() - 1);
+        assert!(just_below < 100.0);
+        assert_eq!(
+            verdict_from_decode_tps(just_below),
+            Ship020Verdict::Fail,
+            "one ULP below 100.0 tok/s must Fail",
+        );
+        // Generous-green sanity
+        assert_eq!(verdict_from_decode_tps(120.0), Ship020Verdict::Pass);
+        assert_eq!(verdict_from_decode_tps(500.0), Ship020Verdict::Pass);
+        // Hard-red sanity
+        assert_eq!(verdict_from_decode_tps(0.0), Ship020Verdict::Fail);
+        assert_eq!(verdict_from_decode_tps(50.0), Ship020Verdict::Fail);
+        // Monotonicity sweep: once Fail, any strictly smaller tps stays Fail.
+        let samples = [0.0_f32, 25.0, 50.0, 75.0, 99.0, 99.5, 99.99, 100.0, 150.0, 10_000.0];
+        let mut seen_fail = false;
+        for &t in &samples {
+            let v = verdict_from_decode_tps(t);
+            if v == Ship020Verdict::Fail {
+                seen_fail = true;
+            } else if seen_fail {
+                // We saw Fail earlier in the monotonically-increasing sweep
+                // and now see Pass — that's fine (Fail→Pass is the
+                // allowed crossover at the threshold). Re-arm by
+                // resetting the seen_fail flag so we only guard against
+                // Pass→Fail regressions within the sweep.
+                seen_fail = false;
+            }
+        }
+        // Separate direct Pass→Fail regression guard: walk strictly
+        // decreasing from a clear Pass; once Fail shows, it must stick.
+        let decreasing = [10_000.0_f32, 500.0, 150.0, 100.0, 99.99, 99.0, 50.0, 25.0, 0.0];
+        let mut locked_fail = false;
+        for &t in &decreasing {
+            let v = verdict_from_decode_tps(t);
+            if v == Ship020Verdict::Fail {
+                locked_fail = true;
+            } else {
+                assert!(
+                    !locked_fail,
+                    "monotonicity violated: tps={t} produced Pass after a \
+                     lower-tps Fail was already observed",
+                );
+            }
+        }
+        // Degenerate inputs: NaN / ±∞ are all conservatively Fail.
+        // A real `apr bench` run can NEVER produce a non-finite median;
+        // if one appears, the harness itself is broken and we must
+        // refuse to claim a ship-gate pass on a value we cannot
+        // meaningfully compare against the threshold.
+        assert_eq!(
+            verdict_from_decode_tps(f32::NAN),
+            Ship020Verdict::Fail,
+            "NaN tps has no well-defined median and must Fail",
+        );
+        assert_eq!(verdict_from_decode_tps(f32::NEG_INFINITY), Ship020Verdict::Fail,);
+        assert_eq!(
+            verdict_from_decode_tps(f32::INFINITY),
+            Ship020Verdict::Fail,
+            "+∞ tok/s is ill-formed — a real `apr bench` median is \
+             always a finite positive; treating +∞ as Pass would let \
+             an instrumentation bug silently green the ship-gate",
+        );
+        // Provenance pinning — any edit that loosens the threshold
+        // (say, to 60.0) would silently lower the ship bar. Trip here
+        // before the contract can ship.
+        assert!(
+            (AC_SHIP2_010_MIN_DECODE_TPS_RTX4090 - 100.0_f32).abs() < f32::EPSILON,
+            "AC_SHIP2_010_MIN_DECODE_TPS_RTX4090 must stay pinned to 100.0 \
+             tok/s — see contracts/model-families/llama-370m-sovereign-v1.yaml \
+             GATE-ARCH-370M-006",
+        );
+    }
+
+    /// GATE-ARCH-370M-006 wiring check: the sovereign contract YAML
+    /// MUST record `discharge_status: PARTIAL_ALGORITHM_LEVEL` +
+    /// `evidence_discharged_by` + `full_discharge_blocks_on` +
+    /// `ship_blocking: true` on GATE-ARCH-370M-006, and bind it to
+    /// AC-SHIP2-010 / FALSIFY-SHIP-020. Any edit that drops those
+    /// fields fails this test before the artifact ships.
+    #[test]
+    fn falsify_ship_020_gate_arch_370m_006_has_partial_discharge_marker() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+        let gates =
+            doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
+        let gate = gates
+            .iter()
+            .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-006"))
+            .expect("GATE-ARCH-370M-006 must exist in sovereign contract");
+
+        assert_eq!(
+            gate["falsification_id"].as_str(),
+            Some("FALSIFY-SHIP-020"),
+            "GATE-ARCH-370M-006 must bind FALSIFY-SHIP-020",
+        );
+        assert_eq!(
+            gate["binds_to"].as_str(),
+            Some("AC-SHIP2-010"),
+            "GATE-ARCH-370M-006 must bind AC-SHIP2-010",
+        );
+        assert_eq!(
+            gate["discharge_status"].as_str(),
+            Some("PARTIAL_ALGORITHM_LEVEL"),
+            "GATE-ARCH-370M-006 must advertise PARTIAL_ALGORITHM_LEVEL \
+             (full discharge blocks on real trained 370M .apr + RTX 4090 \
+             `apr bench` median run)",
+        );
+        let evidence = gate["evidence_discharged_by"]
+            .as_sequence()
+            .expect("GATE-ARCH-370M-006 must have evidence_discharged_by");
+        assert!(
+            !evidence.is_empty(),
+            "GATE-ARCH-370M-006 evidence_discharged_by must list \
+             at least one test function or artifact",
+        );
+        assert!(
+            gate["full_discharge_blocks_on"].as_str().is_some(),
+            "PARTIAL gate must document full_discharge_blocks_on",
+        );
+        assert_eq!(
+            gate["ship_blocking"].as_bool(),
+            Some(true),
+            "GATE-ARCH-370M-006 must advertise ship_blocking:true — the \
+             gate's `verdict:pass` alone is insufficient green while \
+             discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-SHIP-018 / AC-SHIP2-008 / GATE-ARCH-370M-007 — pass@1 threshold
+    // ========================================================================
+
+    /// Algorithm-level proof that `verdict_from_pass_at_1` enforces the
+    /// spec §5.2 AC-SHIP2-008 rule "HumanEval pass@1 ≥ 30.0%" correctly:
+    ///
+    ///   1. Exactly-at-floor passes (30/100, 60/200, 1/1 at threshold 100).
+    ///   2. One f32 ULP below the floor fails.
+    ///   3. Generous-green (50/100, 164/164) passes.
+    ///   4. Hard-red (0/100, 1/100) fails.
+    ///   5. Monotonicity: sweeping `correct` upward from 0 with total fixed
+    ///      at 164 (canonical HumanEval) never flips Pass → Fail.
+    ///   6. Div-safety guard: `total == 0` always fails, even with 0 correct.
+    ///   7. Sanity guard: `correct > total` always fails (impossible harness).
+    ///   8. Non-finite threshold guard: NaN / ±∞ always fail.
+    ///   9. Provenance: the contract floor const is pinned to 30.0 (edit
+    ///      to the const without amending the contract is caught here).
+    ///
+    /// Full `apr eval --benchmark humaneval` discharge blocks on the trained
+    /// 370M .apr from AC-SHIP2-003/004 compute-dispatch — fixture swap only.
+    #[test]
+    fn falsify_ship_018_humaneval_pass_at_1_threshold_logic() {
+        // ── (1) Exactly-at-floor → Pass
+        assert_eq!(
+            verdict_from_pass_at_1(30, 100, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "30/100 = 30.0% must pass the 30.0 floor",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(60, 200, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "60/200 = 30.0% must pass the 30.0 floor",
+        );
+        // HumanEval canonical N=164 at-floor: ⌈0.3 × 164⌉ = 50 → 50/164 = 30.49%
+        assert_eq!(
+            verdict_from_pass_at_1(50, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "50/164 ≈ 30.49% must pass the 30.0 floor",
+        );
+
+        // ── (2a) Just below the floor → Fail.
+        //
+        // 49/164 ≈ 29.878% computes to a ratio strictly less than 30.0 in
+        // f32 (see below) and must therefore fail against the 30.0 floor.
+        // (Note: 30/100 in f32 rounds to ~30.000002, slightly *above* 30.0,
+        // so "exactly-at-floor" must be tested with ratios that are exact
+        // in f32 — see case (2b).)
+        assert_eq!(
+            verdict_from_pass_at_1(49, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "49/164 ≈ 29.88% must fail the 30.0 floor",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(29, 100, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "29/100 = 29.0% must fail the 30.0 floor",
+        );
+
+        // ── (2b) Inclusive-floor proof at an f32-exact ratio.
+        //
+        // 50/100 → exactly 50.0% in f32 (both operands integer-exact, the
+        // quotient 0.5 is a power of two, and 0.5 × 100.0 = 50.0 exactly).
+        // This lets us prove the comparison is `>=` (inclusive), not `>`:
+        //   - Threshold = 50.0              → Pass (exact equality).
+        //   - Threshold = 50.0 + one ULP    → Fail (strictly above ratio).
+        //   - Threshold = 50.0 - one ULP    → Pass (strictly below ratio).
+        let exact_50 = 50.0_f32;
+        assert_eq!(50.0_f32 * 2.0_f32, 100.0_f32, "sanity: 50.0 is exact in f32");
+        let fifty_plus_ulp = f32::from_bits(exact_50.to_bits() + 1);
+        let fifty_minus_ulp = f32::from_bits(exact_50.to_bits() - 1);
+        assert!(fifty_plus_ulp > exact_50, "sanity: +ULP is strictly above");
+        assert!(fifty_minus_ulp < exact_50, "sanity: −ULP is strictly below");
+        assert_eq!(
+            verdict_from_pass_at_1(50, 100, exact_50),
+            Ship018Verdict::Pass,
+            "inclusive floor: 50.0% ≥ 50.0 must Pass (proves `>=`, not `>`)",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(50, 100, fifty_plus_ulp),
+            Ship018Verdict::Fail,
+            "50/100 must fail when threshold is one ULP above 50.0",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(50, 100, fifty_minus_ulp),
+            Ship018Verdict::Pass,
+            "50/100 must pass when threshold is one ULP below 50.0",
+        );
+
+        // ── (3) Generous-green
+        assert_eq!(
+            verdict_from_pass_at_1(82, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "82/164 = 50% must pass",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(164, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Pass,
+            "perfect score must pass",
+        );
+
+        // ── (4) Hard-red
+        assert_eq!(
+            verdict_from_pass_at_1(0, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "zero-correct run must fail",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(1, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "1/164 ≈ 0.6% must fail",
+        );
+
+        // ── (5) Monotonicity sweep: correct ∈ 0..=164, total = 164
+        //
+        // Over an increasing `correct` axis the verdict is allowed to flip
+        // Fail → Pass exactly once; it must never flip Pass → Fail.
+        let total = 164usize;
+        let mut already_passed = false;
+        for correct in 0..=total {
+            let v =
+                verdict_from_pass_at_1(correct, total, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT);
+            match v {
+                Ship018Verdict::Pass => {
+                    already_passed = true;
+                }
+                Ship018Verdict::Fail => {
+                    assert!(
+                        !already_passed,
+                        "monotonicity violated: correct={correct} reverted Pass→Fail",
+                    );
+                }
+            }
+        }
+
+        // ── (6) Div-safety: total=0 must always fail
+        assert_eq!(
+            verdict_from_pass_at_1(0, 0, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "empty run (total=0) must fail — a positive floor is unsatisfiable",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(0, 0, 0.0_f32),
+            Ship018Verdict::Fail,
+            "empty run must fail even with a zero threshold — the harness \
+             is broken if it reports an empty denominator",
+        );
+
+        // ── (7) Sanity guard: correct > total
+        assert_eq!(
+            verdict_from_pass_at_1(165, 164, AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT),
+            Ship018Verdict::Fail,
+            "correct > total is a broken harness report; must fail closed",
+        );
+
+        // ── (8) Non-finite threshold → Fail
+        assert_eq!(
+            verdict_from_pass_at_1(164, 164, f32::NAN),
+            Ship018Verdict::Fail,
+            "NaN threshold must fail",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(164, 164, f32::INFINITY),
+            Ship018Verdict::Fail,
+            "+∞ threshold must fail",
+        );
+        assert_eq!(
+            verdict_from_pass_at_1(164, 164, f32::NEG_INFINITY),
+            Ship018Verdict::Fail,
+            "−∞ threshold must fail",
+        );
+
+        // ── (9) Provenance pin
+        assert!(
+            (AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT - 30.0_f32).abs() < f32::EPSILON,
+            "contract floor drift: AC_SHIP2_008_MIN_HUMANEVAL_PASS_AT_1_PCT \
+             must stay pinned to 30.0 (spec §5.2 AC-SHIP2-008)",
+        );
+    }
+
+    /// Binds the YAML contract's `GATE-ARCH-370M-007` block to this test
+    /// binary: any rename, removal, or discharge_status regression in
+    /// `contracts/model-families/llama-370m-sovereign-v1.yaml` is caught
+    /// at `cargo test` time.
+    #[test]
+    fn falsify_ship_018_gate_arch_370m_007_has_partial_discharge_marker() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+
+        let gates = doc["gates"].as_sequence().expect("contract must have `gates:` sequence");
+
+        let gate = gates
+            .iter()
+            .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-007"))
+            .expect("GATE-ARCH-370M-007 (SHIP-018 humaneval pass@1) must be present");
+
+        assert_eq!(
+            gate["binds_to"].as_str(),
+            Some("AC-SHIP2-008"),
+            "GATE-ARCH-370M-007 must bind AC-SHIP2-008",
+        );
+        assert_eq!(
+            gate["falsification_id"].as_str(),
+            Some("FALSIFY-SHIP-018"),
+            "GATE-ARCH-370M-007 must bind FALSIFY-SHIP-018",
+        );
+        assert_eq!(
+            gate["discharge_status"].as_str(),
+            Some("PARTIAL_ALGORITHM_LEVEL"),
+            "GATE-ARCH-370M-007 must advertise PARTIAL_ALGORITHM_LEVEL — \
+             full discharge blocks on trained 370M .apr + real apr eval",
+        );
+        let evidence = gate["evidence_discharged_by"]
+            .as_sequence()
+            .expect("GATE-ARCH-370M-007 must have evidence_discharged_by");
+        assert!(
+            !evidence.is_empty(),
+            "GATE-ARCH-370M-007 evidence_discharged_by must list at least \
+             one test function or const pin",
+        );
+        assert!(
+            gate["full_discharge_blocks_on"].as_str().is_some(),
+            "PARTIAL gate must document full_discharge_blocks_on",
+        );
+        assert_eq!(
+            gate["ship_blocking"].as_bool(),
+            Some(true),
+            "GATE-ARCH-370M-007 must advertise ship_blocking:true — \
+             verdict:pass alone is insufficient green while \
+             discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+    /// FALSIFY-SHIP-016 algorithm-level PARTIAL discharge: the decision
+    /// rule of SHIP-016 — "`apr qa <model>.apr` passes iff all 8 gates
+    /// PASS; any gate FAIL fails the ship" — is a pure aggregate-AND
+    /// over a Boolean slice. This test proves the rule without running
+    /// the compute-heavy gates themselves. The rule separates from the
+    /// compute dependency: the gate-runner is fixture-swappable once
+    /// a trained 370M .apr exists; the decision is proven today.
+    #[test]
+    fn falsify_ship_016_apr_qa_aggregate_and_logic() {
+        // Section 1: canonical Pass — all 8 gates true → Pass.
+        let all_pass = [true; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT];
+        assert_eq!(
+            verdict_from_qa_gates(&all_pass),
+            Ship016Verdict::Pass,
+            "AC-SHIP2-006: all 8 gates PASS must yield Pass",
+        );
+
+        // Section 2: single-gate-fail must flip the aggregate to Fail —
+        // this is the "any gate FAIL" counter-example from FALSIFY-SHIP-016.
+        for flip_idx in 0..AC_SHIP2_006_REQUIRED_QA_GATE_COUNT {
+            let mut gates = [true; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT];
+            gates[flip_idx] = false;
+            assert_eq!(
+                verdict_from_qa_gates(&gates),
+                Ship016Verdict::Fail,
+                "flipping gate index {flip_idx} from Pass to Fail must yield aggregate Fail \
+                 — SHIP-016 is an AND, not a majority or threshold",
+            );
+        }
+
+        // Section 3: canonical Fail — all 8 gates false → Fail.
+        let all_fail = [false; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT];
+        assert_eq!(
+            verdict_from_qa_gates(&all_fail),
+            Ship016Verdict::Fail,
+            "all 8 gates FAIL must yield Fail",
+        );
+
+        // Section 4: exhaustive 2^8 = 256-combination proof — the ONLY
+        // input yielding Pass is the all-true vector; every other
+        // combination of 8 bools must yield Fail.
+        let mut pass_count = 0usize;
+        let mut fail_count = 0usize;
+        for mask in 0u32..(1u32 << AC_SHIP2_006_REQUIRED_QA_GATE_COUNT) {
+            let gates: [bool; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT] =
+                std::array::from_fn(|i| (mask >> i) & 1 == 1);
+            match verdict_from_qa_gates(&gates) {
+                Ship016Verdict::Pass => {
+                    pass_count += 1;
+                    assert!(
+                        gates.iter().all(|&p| p),
+                        "Pass verdict must only occur when all 8 gates are true; \
+                         got {gates:?} at mask {mask:#010b}",
+                    );
+                }
+                Ship016Verdict::Fail => {
+                    fail_count += 1;
+                    assert!(
+                        gates.iter().any(|&p| !p),
+                        "Fail verdict must only occur when at least one gate is false; \
+                         got {gates:?} at mask {mask:#010b}",
+                    );
+                }
+            }
+        }
+        assert_eq!(pass_count, 1, "exactly one of 256 combos (all-true) yields Pass");
+        assert_eq!(fail_count, 255, "the other 255 combos must yield Fail");
+
+        // Section 5: monotonicity — adding a Pass to a mixed slice can
+        // only move the verdict up (Fail→Pass) or keep it the same,
+        // never downgrade Pass→Fail. Pair each combo with the combo
+        // obtained by flipping one bit from false to true; assert
+        // the verdict never regresses.
+        for mask in 0u32..(1u32 << AC_SHIP2_006_REQUIRED_QA_GATE_COUNT) {
+            let before: [bool; AC_SHIP2_006_REQUIRED_QA_GATE_COUNT] =
+                std::array::from_fn(|i| (mask >> i) & 1 == 1);
+            for flip_idx in 0..AC_SHIP2_006_REQUIRED_QA_GATE_COUNT {
+                if before[flip_idx] {
+                    continue;
+                }
+                let mut after = before;
+                after[flip_idx] = true;
+                let before_v = verdict_from_qa_gates(&before);
+                let after_v = verdict_from_qa_gates(&after);
+                assert!(
+                    !(before_v == Ship016Verdict::Pass && after_v == Ship016Verdict::Fail),
+                    "monotonicity violated: flipping gate {flip_idx} from false to true \
+                     regressed Pass→Fail at mask {mask:#010b}",
+                );
+            }
+        }
+
+        // Section 6: contract-drift guards — wrong gate count must Fail
+        // conservatively even when every supplied entry is true. This
+        // prevents a silent green from an out-of-sync harness that
+        // shipped 7 or 9 gates instead of the spec-mandated 8.
+        assert_eq!(
+            verdict_from_qa_gates(&[]),
+            Ship016Verdict::Fail,
+            "empty gate slice must Fail (contract drift)",
+        );
+        assert_eq!(
+            verdict_from_qa_gates(&[true; 7]),
+            Ship016Verdict::Fail,
+            "7 gates (short by one) must Fail even when all true (contract drift)",
+        );
+        assert_eq!(
+            verdict_from_qa_gates(&[true; 9]),
+            Ship016Verdict::Fail,
+            "9 gates (long by one) must Fail even when all true (contract drift)",
+        );
+        assert_eq!(
+            verdict_from_qa_gates(&[true; 16]),
+            Ship016Verdict::Fail,
+            "double-wide gate slice must Fail (contract drift)",
+        );
+
+        // Section 7: provenance pin — the 8-gate count is the
+        // contract number; drift on this constant fails lockstep-wise
+        // with the spec amendment and `QaConfig` skip flags.
+        assert_eq!(
+            AC_SHIP2_006_REQUIRED_QA_GATE_COUNT, 8,
+            "AC-SHIP2-006 is the 8-gate aggregate; any change requires \
+             contract + spec + CLI skip-flag edits in lockstep",
+        );
+    }
+
+    /// GATE-ARCH-370M-008 wiring check: once FALSIFY-SHIP-016 has an
+    /// algorithm-level PARTIAL discharge, the sovereign contract YAML
+    /// MUST record `discharge_status: PARTIAL_ALGORITHM_LEVEL` +
+    /// `evidence_discharged_by` + `full_discharge_blocks_on` on
+    /// GATE-ARCH-370M-008. Any edit that drops those fields fails this
+    /// test before the artifact ships.
+    #[test]
+    fn falsify_ship_016_gate_arch_370m_008_has_partial_discharge_marker() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str(SOVEREIGN_CONTRACT_YAML).expect("parse sovereign contract");
+        let gates =
+            doc["gates"].as_sequence().expect("gates must be a sequence in sovereign contract");
+        let gate = gates
+            .iter()
+            .find(|g| g["id"].as_str() == Some("GATE-ARCH-370M-008"))
+            .expect("GATE-ARCH-370M-008 must exist in sovereign contract");
+
+        assert_eq!(
+            gate["falsification_id"].as_str(),
+            Some("FALSIFY-SHIP-016"),
+            "GATE-ARCH-370M-008 must bind FALSIFY-SHIP-016",
+        );
+        assert_eq!(
+            gate["binds_to"].as_str(),
+            Some("AC-SHIP2-006"),
+            "GATE-ARCH-370M-008 must bind AC-SHIP2-006",
+        );
+        assert_eq!(
+            gate["discharge_status"].as_str(),
+            Some("PARTIAL_ALGORITHM_LEVEL"),
+            "GATE-ARCH-370M-008 must advertise PARTIAL_ALGORITHM_LEVEL \
+             (full discharge blocks on real trained 370M .apr + `apr qa` harness)",
+        );
+        let evidence = gate["evidence_discharged_by"]
+            .as_sequence()
+            .expect("GATE-ARCH-370M-008 must have evidence_discharged_by");
+        assert!(
+            !evidence.is_empty(),
+            "GATE-ARCH-370M-008 evidence_discharged_by must list \
+             at least one test function or artifact",
+        );
+        assert!(
+            gate["full_discharge_blocks_on"].as_str().is_some(),
+            "PARTIAL gate must document full_discharge_blocks_on",
+        );
+        assert_eq!(
+            gate["ship_blocking"].as_bool(),
+            Some(true),
+            "GATE-ARCH-370M-008 must advertise ship_blocking:true — the \
+             gate's `verdict:pass` alone is insufficient green while \
+             discharge_status == PARTIAL_ALGORITHM_LEVEL",
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-SHIP-013 / AC-SHIP2-003 / GATE-ARCH-370M-013 — val CE loss floor
+    // ========================================================================
+
+    /// FALSIFY-SHIP-013 algorithm-level PARTIAL discharge: prove the
+    /// f32-threshold decision rule binding the measured MODEL-2 val CE
+    /// to [`AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS`] = 2.2. Any edit
+    /// that changes the constant, the comparison direction, the
+    /// non-finite handling, the negative-domain guard, or the
+    /// monotonicity must break this test before an `apr pretrain
+    /// --validate` compute dispatch is launched.
+    ///
+    /// Mutation survey (7 sections):
+    ///   1. Exact boundary 2.2 → Pass (inclusive floor, not strict <)
+    ///   2. One-ULP above boundary → Fail; one-ULP below → Pass
+    ///   3. Clear Pass band {0.0, 0.5, 1.0, 2.0, 2.199}
+    ///   4. Clear Fail band {2.201, 3.0, 10.0, f32::MAX}
+    ///   5. Non-finite {NaN, +∞, -∞} → Fail conservatively
+    ///   6. Negative (domain violation, CE ≥ 0) → Fail conservatively
+    ///   7. Provenance pin: the const stays byte-equal to 2.2_f32
+    #[test]
+    fn falsify_ship_013_val_ce_loss_threshold_logic() {
+        // Section 1: exact boundary 2.2 → Pass. AC-SHIP2-003 says
+        // "CE ≤ 2.2" (inclusive), so sim == threshold must Pass. A
+        // regression that silently swaps `<=` to `<` would make the
+        // ceiling unreachable.
+        assert_eq!(
+            verdict_from_val_ce_loss(AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS),
+            Ship013Verdict::Pass,
+            "val CE == 2.2 must Pass (inclusive floor, not strict <)",
+        );
+        assert_eq!(verdict_from_val_ce_loss(2.2), Ship013Verdict::Pass, "literal 2.2 must Pass",);
+
+        // Section 2: ULP asymmetry around the boundary. f32 at 2.2 is
+        // `0x400CCCCD` = 2.20000004768371582...; the next-representable
+        // float up is `0x400CCCCE` (Fail), and the next below is
+        // `0x400CCCCC` (Pass). Sharpest possible counter-examples.
+        let one_ulp_above = f32::from_bits(AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS.to_bits() + 1);
+        let one_ulp_below = f32::from_bits(AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS.to_bits() - 1);
+        assert!(one_ulp_above > AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS);
+        assert!(one_ulp_below < AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS);
+        assert_eq!(
+            verdict_from_val_ce_loss(one_ulp_above),
+            Ship013Verdict::Fail,
+            "one ULP above 2.2 must Fail (strictly above ceiling)",
+        );
+        assert_eq!(
+            verdict_from_val_ce_loss(one_ulp_below),
+            Ship013Verdict::Pass,
+            "one ULP below 2.2 must Pass (still under ceiling)",
+        );
+
+        // Section 3: clear Pass band. 0.0 is the theoretical minimum
+        // (perfect predictor); 2.199 is safely under 2.2.
+        for ce in [0.0_f32, 0.5, 1.0, 2.0, 2.199] {
+            assert_eq!(
+                verdict_from_val_ce_loss(ce),
+                Ship013Verdict::Pass,
+                "val CE = {ce} must Pass (in clear Pass band)",
+            );
+        }
+
+        // Section 4: clear Fail band. A poorly-converged 370M would
+        // land here (a random 50K-vocab predictor is ≈ ln(50257) ≈
+        // 10.82 nats, which must obviously Fail). f32::MAX is the
+        // saturation sanity check.
+        for ce in [2.201_f32, 3.0, 10.0, f32::MAX] {
+            assert_eq!(
+                verdict_from_val_ce_loss(ce),
+                Ship013Verdict::Fail,
+                "val CE = {ce} must Fail (above 2.2 ceiling)",
+            );
+        }
+
+        // Section 5: non-finite inputs must Fail conservatively. A
+        // loss-harness bug that produces NaN (log(0) or divide-by-zero
+        // in softmax) or ±∞ (overflow in exp) must never silently
+        // promote to Pass via NaN comparison semantics.
+        assert_eq!(
+            verdict_from_val_ce_loss(f32::NAN),
+            Ship013Verdict::Fail,
+            "NaN val CE must Fail conservatively",
+        );
+        assert_eq!(
+            verdict_from_val_ce_loss(f32::INFINITY),
+            Ship013Verdict::Fail,
+            "+∞ val CE must Fail conservatively",
+        );
+        assert_eq!(
+            verdict_from_val_ce_loss(f32::NEG_INFINITY),
+            Ship013Verdict::Fail,
+            "-∞ val CE must Fail conservatively",
+        );
+
+        // Section 6: negative CE is a domain violation. Cross-entropy
+        // H(p,q) = -Σ p(x) log q(x) ≥ 0 for all probability
+        // distributions p,q. A negative measurement indicates a sign
+        // flip, log-domain underflow, or subtract-instead-of-add bug
+        // in the loss harness, and must never be promoted to "better
+        // than zero" Pass.
+        for neg_ce in [-0.001_f32, -1.0, -f32::INFINITY] {
+            assert_eq!(
+                verdict_from_val_ce_loss(neg_ce),
+                Ship013Verdict::Fail,
+                "negative val CE = {neg_ce} must Fail (CE ≥ 0 by definition)",
+            );
+        }
+
+        // Section 7: provenance pin — the 2.2 constant is load-bearing
+        // and lockstepped with the spec. If AC-SHIP2-003 ever changes
+        // the ceiling (relaxing to 2.5 for a smaller training-data
+        // budget, tightening to 2.0 for a 500M jump), this const and
+        // this test must move together.
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(
+                AC_SHIP2_003_MAX_VAL_CROSS_ENTROPY_LOSS, 2.2_f32,
+                "MODEL-2 val CE ceiling is 2.2 \
+                 (spec §5.2 AC-SHIP2-003; albor 370M Sovereign target)",
+            );
+        }
+    }
+
+    // ========================================================================
+    // FALSIFY-SHIP-014 / AC-SHIP2-004 / GATE-ARCH-370M-014 — training budget
+    // ========================================================================
+
+    /// FALSIFY-SHIP-014 algorithm-level PARTIAL discharge: prove the
+    /// u32-threshold decision rule binding the measured MODEL-2
+    /// training wall-clock duration to
+    /// [`AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS`] = 21. Any edit that
+    /// changes the constant, the comparison direction, or introduces
+    /// a non-monotonic regression must break this test before a
+    /// real-compute dispatch on the RTX 4090 host is launched.
+    ///
+    /// Mutation survey (6 sections):
+    ///   1. Exact boundary 21 → Pass (inclusive ceiling)
+    ///   2. Adjacent values: 20 → Pass; 22 → Fail
+    ///   3. Clear Pass band {0, 1, 7, 14, 20, 21}
+    ///   4. Clear Fail band {22, 30, 100, u32::MAX}
+    ///   5. Monotonicity sweep 0..=42 — verdict flips exactly once
+    ///      at the 21→22 transition and never flips back
+    ///   6. Provenance pin: the const stays byte-equal to 21_u32
+    #[test]
+    fn falsify_ship_014_training_duration_threshold_logic() {
+        // Section 1: exact boundary 21 → Pass. AC-SHIP2-004 says
+        // "within 21 days" (inclusive), so 21 == threshold must Pass.
+        // A regression that silently swaps `<=` to `<` would make the
+        // ceiling unreachable.
+        assert_eq!(
+            verdict_from_training_duration_days(AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS),
+            Ship014Verdict::Pass,
+            "21 days must Pass (inclusive ceiling, not strict <)",
+        );
+        assert_eq!(
+            verdict_from_training_duration_days(21),
+            Ship014Verdict::Pass,
+            "literal 21 days must Pass",
+        );
+
+        // Section 2: adjacent values. 20 is the sharpest Pass
+        // counter-example (one below ceiling); 22 is the sharpest
+        // Fail counter-example (one above). u32 neighbours are
+        // exact (no ULP noise) so these are both rock-solid.
+        assert_eq!(
+            verdict_from_training_duration_days(20),
+            Ship014Verdict::Pass,
+            "20 days must Pass (one day under ceiling)",
+        );
+        assert_eq!(
+            verdict_from_training_duration_days(22),
+            Ship014Verdict::Fail,
+            "22 days must Fail (one day over ceiling; Spec §9 Risk #4 escape hatch)",
+        );
+
+        // Section 3: clear Pass band. 0 is trivial (same-day cache
+        // hit, no actual training); 1/7/14 are smaller training runs;
+        // 21 is the boundary.
+        for days in [0_u32, 1, 7, 14, 20, 21] {
+            assert_eq!(
+                verdict_from_training_duration_days(days),
+                Ship014Verdict::Pass,
+                "{days} days must Pass (in clear Pass band)",
+            );
+        }
+
+        // Section 4: clear Fail band. 22/30/100 are incremental
+        // overruns (each invokes Spec §9 Risk #4 escape-hatch planning
+        // — rent 2× H100 week 3); u32::MAX is the saturation sanity.
+        for days in [22_u32, 30, 100, u32::MAX] {
+            assert_eq!(
+                verdict_from_training_duration_days(days),
+                Ship014Verdict::Fail,
+                "{days} days must Fail (above 21-day ceiling)",
+            );
+        }
+
+        // Section 5: monotonicity sweep 0..=42 — verdict must flip
+        // exactly once at the 21→22 transition and never flip back.
+        // This is the complete classification over a 2× the ceiling
+        // range; any mutation that introduces non-monotonicity (e.g.
+        // a midlife-crisis carve-out at "after day 14 but before day
+        // 21" or a modular-arithmetic bug) is trivially caught.
+        let mut seen_fail = false;
+        for days in 0..=42_u32 {
+            let v = verdict_from_training_duration_days(days);
+            match (v, seen_fail) {
+                (Ship014Verdict::Pass, true) => {
+                    panic!(
+                        "monotonicity broken: day {days} flipped back to Pass \
+                         after a previous Fail was observed",
+                    );
+                }
+                (Ship014Verdict::Fail, _) => {
+                    seen_fail = true;
+                }
+                _ => {}
+            }
+        }
+        // And verify the transition is exactly at 21→22, not earlier
+        // or later (rules out off-by-one mutants).
+        assert_eq!(
+            verdict_from_training_duration_days(21),
+            Ship014Verdict::Pass,
+            "sweep boundary: day 21 must Pass",
+        );
+        assert_eq!(
+            verdict_from_training_duration_days(22),
+            Ship014Verdict::Fail,
+            "sweep boundary: day 22 must Fail",
+        );
+
+        // Section 6: provenance pin — the 21 constant is load-bearing
+        // and lockstepped with the spec. If AC-SHIP2-004 ever changes
+        // the ceiling (extending to 30 for a longer run, tightening
+        // to 14 for a distilled student), this const and this test
+        // must move together.
+        assert_eq!(
+            AC_SHIP2_004_MAX_TRAINING_DURATION_DAYS, 21_u32,
+            "MODEL-2 training-budget ceiling is 21 days \
+             (spec §5.2 AC-SHIP2-004; RTX 4090 hardware budget)",
         );
     }
 }

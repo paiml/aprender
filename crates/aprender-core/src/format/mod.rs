@@ -393,6 +393,61 @@ pub mod ship_004;
 // models-spec.md §4.2 AC-SHIP1-001.
 pub mod ship_001;
 
+// FALSIFY-SHIP-023 / AC-SHIP1-023 — two-day HumanEval pass@1 drift verdict:
+// pair-of-runs drift ≤ 1.2 pp with symmetric `.abs()` combinator + input
+// well-formedness guards. See contracts/qwen2-e2e-verification-v1.yaml
+// FALSIFY-QW2E-SHIP-023 and docs/specifications/aprender-train/ship-two-
+// models-spec.md §7.1 FALSIFY-SHIP-023.
+pub mod ship_023;
+
+// FALSIFY-SHIP-024 / AC-SHIP1-024 — adversarial-suite runtime-invariant
+// verdict: suite-size floor ≥ 50 AND panic_count == 0 AND nan_count == 0.
+// See contracts/qwen2-e2e-verification-v1.yaml FALSIFY-QW2E-SHIP-024 and
+// docs/specifications/aprender-train/ship-two-models-spec.md §7.1
+// FALSIFY-SHIP-024.
+pub mod ship_024;
+
+// SHIP-TWO-001 §6 Compound Ship Gates — aggregate / cross-cutting PARTIAL
+// algorithm-level discharges. Each module binds one §6 compound-gate row
+// to one pure verdict fn + mutation survey. Authoritative contract:
+// contracts/compound-ship-gates-v1.yaml v1.0.0.
+
+// GATE-SHIP-001 — MODEL-1 aggregate-AND over 10 AC-SHIP1-* booleans.
+pub mod gate_ship_001;
+
+// GATE-SHIP-002 — MODEL-2 aggregate-AND over 12 AC-SHIP2-* booleans.
+pub mod gate_ship_002;
+
+// GATE-SHIP-003 — Golden Output byte-identity across quantize round-trip.
+pub mod gate_ship_003;
+
+// GATE-SHIP-004 — HumanEval bitwise-identical determinism (two seed=0 runs).
+pub mod gate_ship_004;
+
+// GATE-SHIP-005 — License metadata non-empty ASCII-printable byte-equal.
+pub mod gate_ship_005;
+
+// GATE-SHIP-006 — GGUF round-trip first-token probability delta ≤ 1e-3.
+pub mod gate_ship_006;
+
+// GATE-SHIP-007 — Zero-tolerance .unwrap() count threshold on new code.
+pub mod gate_ship_007;
+
+// GATE-SHIP-008 — Contract-density ratio threshold on new public fns.
+pub mod gate_ship_008;
+
+// GATE-SHIP-009 — CI aggregate-AND over 3 required checks (fmt / clippy / test).
+pub mod gate_ship_009;
+
+// GATE-SHIP-010 — Zero-tolerance security-advisory count threshold.
+pub mod gate_ship_010;
+
+// GATE-SHIP-011 — PMAT TDG score inclusive-floor threshold (≥ 90.0 / A-).
+pub mod gate_ship_011;
+
+// GATE-SHIP-012 — Line-coverage percentage inclusive-floor threshold (≥ 95.0).
+pub mod gate_ship_012;
+
 // Re-export types (PMAT-198 - backward compatibility)
 pub use types::*;
 

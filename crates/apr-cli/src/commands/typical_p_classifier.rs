@@ -69,9 +69,7 @@ pub(crate) fn classify_typical_p_identity(
         };
     }
     if !p.is_finite() || (p - 1.0).abs() > f64::EPSILON {
-        return IdentityOutcome::InvalidInput {
-            reason: "p != 1.0",
-        };
+        return IdentityOutcome::InvalidInput { reason: "p != 1.0" };
     }
     if kept_indices.len() != total_tokens {
         return IdentityOutcome::DroppedTokens {
@@ -110,10 +108,7 @@ pub(crate) enum MassCoverageOutcome {
 
 /// kept_probs are the ORIGINAL (pre-renormalization) probabilities
 /// of the tokens kept by the typical-p filter.
-pub(crate) fn classify_typical_p_mass_coverage(
-    kept_probs: &[f64],
-    p: f64,
-) -> MassCoverageOutcome {
+pub(crate) fn classify_typical_p_mass_coverage(kept_probs: &[f64], p: f64) -> MassCoverageOutcome {
     if kept_probs.is_empty() {
         return MassCoverageOutcome::InvalidInput {
             reason: "kept_probs is empty",
@@ -124,7 +119,10 @@ pub(crate) fn classify_typical_p_mass_coverage(
             reason: "p out of (0, 1]",
         };
     }
-    if !kept_probs.iter().all(|&x| x.is_finite() && (0.0..=1.0).contains(&x)) {
+    if !kept_probs
+        .iter()
+        .all(|&x| x.is_finite() && (0.0..=1.0).contains(&x))
+    {
         return MassCoverageOutcome::InvalidInput {
             reason: "prob not in [0, 1]",
         };
@@ -187,7 +185,9 @@ pub(crate) fn classify_typical_p_renormalization(filtered_probs: &[f64]) -> Reno
 #[derive(Debug, PartialEq)]
 pub(crate) enum SortOrderOutcome {
     Ok,
-    InvalidInput { reason: &'static str },
+    InvalidInput {
+        reason: &'static str,
+    },
     OutOfOrder {
         at_index: usize,
         prev_c: f64,
@@ -204,7 +204,10 @@ pub(crate) fn classify_typical_p_sort_order(
             reason: "empty input",
         };
     }
-    if !all_probs.iter().all(|&x| x.is_finite() && x > 0.0 && x <= 1.0) {
+    if !all_probs
+        .iter()
+        .all(|&x| x.is_finite() && x > 0.0 && x <= 1.0)
+    {
         return SortOrderOutcome::InvalidInput {
             reason: "all_probs must be strictly positive and finite",
         };
@@ -390,7 +393,10 @@ mod tests {
         let kept = vec![0.3, 0.2];
         let outcome = classify_typical_p_mass_coverage(&kept, 0.95);
         match outcome {
-            MassCoverageOutcome::InsufficientMass { kept_mass, required } => {
+            MassCoverageOutcome::InsufficientMass {
+                kept_mass,
+                required,
+            } => {
                 assert!((kept_mass - 0.5).abs() < 1e-9);
                 assert!((required - 0.95).abs() < 1e-9);
             }
@@ -541,7 +547,9 @@ mod tests {
         let all = vec![0.25, 0.25, 0.25, 0.25];
         assert_eq!(
             classify_typical_p_sort_order(&all, &[]),
-            SortOrderOutcome::InvalidInput { reason: "empty input" }
+            SortOrderOutcome::InvalidInput {
+                reason: "empty input"
+            }
         );
     }
 
@@ -635,7 +643,9 @@ mod tests {
     fn sort_rejects_empty_all_probs() {
         assert_eq!(
             classify_typical_p_sort_order(&[], &[0.5]),
-            SortOrderOutcome::InvalidInput { reason: "empty input" }
+            SortOrderOutcome::InvalidInput {
+                reason: "empty input"
+            }
         );
     }
 

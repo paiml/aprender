@@ -123,48 +123,37 @@ mod tests {
 
     #[test]
     fn default_endpoint_when_env_unset() {
-        let got =
-            resolve_endpoint(std::iter::empty::<(&str, &str)>()).unwrap();
+        let got = resolve_endpoint(std::iter::empty::<(&str, &str)>()).unwrap();
         assert_eq!(got, "https://huggingface.co");
     }
 
     #[test]
     fn hf_endpoint_override_wins() {
-        let got =
-            resolve_endpoint([("HF_ENDPOINT", "https://mirror.local")])
-                .unwrap();
+        let got = resolve_endpoint([("HF_ENDPOINT", "https://mirror.local")]).unwrap();
         assert_eq!(got, "https://mirror.local");
     }
 
     #[test]
     fn trailing_slash_stripped() {
-        let got =
-            resolve_endpoint([("HF_ENDPOINT", "https://mirror.local/")])
-                .unwrap();
+        let got = resolve_endpoint([("HF_ENDPOINT", "https://mirror.local/")]).unwrap();
         assert_eq!(got, "https://mirror.local");
     }
 
     #[test]
     fn multiple_trailing_slashes_stripped() {
-        let got =
-            resolve_endpoint([("HF_ENDPOINT", "https://mirror.local///")])
-                .unwrap();
+        let got = resolve_endpoint([("HF_ENDPOINT", "https://mirror.local///")]).unwrap();
         assert_eq!(got, "https://mirror.local");
     }
 
     #[test]
     fn http_scheme_accepted() {
-        let got =
-            resolve_endpoint([("HF_ENDPOINT", "http://127.0.0.1:18080")])
-                .unwrap();
+        let got = resolve_endpoint([("HF_ENDPOINT", "http://127.0.0.1:18080")]).unwrap();
         assert_eq!(got, "http://127.0.0.1:18080");
     }
 
     #[test]
     fn ftp_scheme_rejected() {
-        let err =
-            resolve_endpoint([("HF_ENDPOINT", "ftp://mirror.local")])
-                .unwrap_err();
+        let err = resolve_endpoint([("HF_ENDPOINT", "ftp://mirror.local")]).unwrap_err();
         match err {
             EndpointError::InvalidScheme(_) => {}
             other => panic!("unexpected: {other:?}"),
@@ -174,20 +163,13 @@ mod tests {
     #[test]
     fn file_scheme_rejected() {
         // Contract requires `file://` rejection at parse time.
-        assert!(
-            resolve_endpoint([("HF_ENDPOINT", "file:///etc/passwd")])
-                .is_err()
-        );
+        assert!(resolve_endpoint([("HF_ENDPOINT", "file:///etc/passwd")]).is_err());
     }
 
     #[test]
     fn empty_hf_endpoint_rejected() {
-        assert!(
-            resolve_endpoint([("HF_ENDPOINT", "")]).is_err()
-        );
-        assert!(
-            resolve_endpoint([("HF_ENDPOINT", "   ")]).is_err()
-        );
+        assert!(resolve_endpoint([("HF_ENDPOINT", "")]).is_err());
+        assert!(resolve_endpoint([("HF_ENDPOINT", "   ")]).is_err());
     }
 
     #[test]
@@ -198,8 +180,7 @@ mod tests {
     #[test]
     fn scheme_only_rejected() {
         // `https://` with no host is not a usable endpoint.
-        let err = resolve_endpoint([("HF_ENDPOINT", "https://")])
-            .unwrap_err();
+        let err = resolve_endpoint([("HF_ENDPOINT", "https://")]).unwrap_err();
         match err {
             EndpointError::NotAUrl(_) => {}
             other => panic!("unexpected: {other:?}"),
@@ -209,20 +190,13 @@ mod tests {
     #[test]
     fn scheme_case_is_normalized_for_validation() {
         // Scheme check is case-insensitive (HTTP/HTTPS both legal).
-        assert!(
-            resolve_endpoint([("HF_ENDPOINT", "HTTPS://mirror.local")])
-                .is_ok()
-        );
-        assert!(
-            resolve_endpoint([("HF_ENDPOINT", "HTTP://mirror.local")])
-                .is_ok()
-        );
+        assert!(resolve_endpoint([("HF_ENDPOINT", "HTTPS://mirror.local")]).is_ok());
+        assert!(resolve_endpoint([("HF_ENDPOINT", "HTTP://mirror.local")]).is_ok());
     }
 
     #[test]
     fn unrelated_env_var_ignored() {
-        let got =
-            resolve_endpoint([("SOME_OTHER_VAR", "ftp://bad")]).unwrap();
+        let got = resolve_endpoint([("SOME_OTHER_VAR", "ftp://bad")]).unwrap();
         assert_eq!(got, "https://huggingface.co");
     }
 
@@ -265,14 +239,8 @@ mod tests {
     fn pull_url_strips_trailing_slash_on_endpoint() {
         // Double-trailing-slash safety: mirror provided as-is and also
         // through a reverse-proxy stripper should produce the same URL.
-        let a = pull_url(
-            "http://127.0.0.1:18080/",
-            "repo",
-            "main",
-            "file",
-        );
-        let b =
-            pull_url("http://127.0.0.1:18080", "repo", "main", "file");
+        let a = pull_url("http://127.0.0.1:18080/", "repo", "main", "file");
+        let b = pull_url("http://127.0.0.1:18080", "repo", "main", "file");
         assert_eq!(a, b);
     }
 
@@ -309,15 +277,17 @@ mod tests {
         // for the integration-level strace "zero leaks to canonical
         // host" assertion.
         let mirror = "http://127.0.0.1:18080";
-        let endpoint =
-            resolve_endpoint([("HF_ENDPOINT", mirror)]).unwrap();
+        let endpoint = resolve_endpoint([("HF_ENDPOINT", mirror)]).unwrap();
         assert_eq!(endpoint, mirror);
         let url = pull_url(&endpoint, "bert-base-uncased", "main", "config.json");
         assert!(
             !url.contains("huggingface.co"),
             "URL leaked to huggingface.co despite HF_ENDPOINT override: {url}",
         );
-        assert!(url.contains("127.0.0.1:18080"), "URL does not target mirror: {url}");
+        assert!(
+            url.contains("127.0.0.1:18080"),
+            "URL does not target mirror: {url}"
+        );
         assert!(url_targets_endpoint(&url, mirror));
     }
 
@@ -326,8 +296,7 @@ mod tests {
         // Converse: with HF_ENDPOINT UNSET, the URL MUST target
         // huggingface.co — so we know the override machinery is
         // gate-sensitive, not just "always matches mirror".
-        let endpoint =
-            resolve_endpoint(std::iter::empty::<(&str, &str)>()).unwrap();
+        let endpoint = resolve_endpoint(std::iter::empty::<(&str, &str)>()).unwrap();
         assert_eq!(endpoint, "https://huggingface.co");
         let url = pull_url(&endpoint, "r", "main", "f");
         assert!(url.contains("huggingface.co"), "unexpected default: {url}");

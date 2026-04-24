@@ -61,3 +61,24 @@ SC2035
 # Justification: False positive when regex patterns are already single-quoted.
 # In `grep -qE '^[0-9]+\.[0-9]+$'`, the pattern is already quoted.
 SC2062
+
+# SC1020 / SC1140: Missing space before ] / unexpected token after ]
+# Justification: bashrs parses regex character classes inside quoted grep
+# patterns as shell test expressions, reporting false positives on patterns
+# like '[a-z0-9]' or '[0-9]+'. The patterns are single-quoted strings
+# consumed by grep/awk, not bash test brackets. Applied to
+# scripts/check_readme_claims.sh (FALSIFY-README-001..004 bound by
+# contracts/readme-claims-v1.yaml).
+SC1020
+SC1140
+
+# SC1009: Comment here is not a command. Use a no-op `:` if the body is empty
+# Justification: False positive when function bodies begin with a comment
+# followed by a statement. bashrs doesn't parse multi-line function bodies.
+SC1009
+
+# SC2102: Ranges can only match single chars (to match + literally, use \+)
+# Justification: False positive when regex `[0-9]+` is inside a grep `-E`
+# pattern. bashrs interprets the brackets as glob ranges, but the string
+# is consumed by grep as an ERE pattern.
+SC2102

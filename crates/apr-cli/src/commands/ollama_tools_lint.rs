@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::ollama_tool_call_classifier::{
-    StreamingToolCallOutcome, ToolCallSchemaOutcome, ToolNameAllowlistOutcome,
     classify_streaming_tool_call, classify_tool_call_schema, classify_tool_name_allowlist,
+    StreamingToolCallOutcome, ToolCallSchemaOutcome, ToolNameAllowlistOutcome,
 };
 use crate::error::{CliError, Result};
 
