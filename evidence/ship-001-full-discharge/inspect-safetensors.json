@@ -1,0 +1,10 @@
+{
+  "architecture": "qwen2",
+  "file": "/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.safetensors",
+  "file_size": 15231938404,
+  "format": "SafeTensors",
+  "metadata": {},
+  "quantization": "unknown",
+  "tensor_count": 339,
+  "total_params": 7615616512
+}
