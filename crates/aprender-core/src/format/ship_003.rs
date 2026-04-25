@@ -418,4 +418,73 @@ mod ship_003_tests {
             "last-layer Fail must still Fail the aggregate",
         );
     }
+
+    /// FALSIFY-QW2E-SHIP-003 YAML binding: parses
+    /// `qwen2-e2e-verification-v1.yaml` and asserts the
+    /// FALSIFY-QW2E-SHIP-003 falsification block has been promoted from
+    /// `PARTIAL_ALGORITHM_LEVEL` (v1.4.0) → `DISCHARGED` (v1.10.0) via
+    /// live `apr diff` 339-tensor cosine sweep on noah-Lambda-Vector
+    /// RTX 4090. Falsifier: if the contract is edited to drop the
+    /// live-evidence block or downgrade the discharge marker, this
+    /// test fails before any compute runs.
+    #[test]
+    fn falsify_ship_003_yaml_binding_pins_discharged_status() {
+        const CONTRACT_YAML: &str =
+            include_str!("../../../../contracts/qwen2-e2e-verification-v1.yaml");
+
+        let doc: serde_yaml::Value = serde_yaml::from_str(CONTRACT_YAML)
+            .expect("qwen2-e2e-verification-v1.yaml must parse as YAML");
+
+        let falsifications = doc["falsification_tests"]
+            .as_sequence()
+            .expect("falsification_tests must be a sequence");
+        let block = falsifications
+            .iter()
+            .find(|b| b["id"].as_str() == Some("FALSIFY-QW2E-SHIP-003"))
+            .expect("FALSIFY-QW2E-SHIP-003 must exist in qwen2-e2e-verification-v1");
+
+        assert_eq!(
+            block["discharge_status"].as_str(),
+            Some("DISCHARGED"),
+            "FALSIFY-QW2E-SHIP-003 must advertise DISCHARGED \
+             (live `apr diff` 339-tensor cosine sweep at v1.10.0; \
+              previous PARTIAL_ALGORITHM_LEVEL at v1.4.0)",
+        );
+        assert!(
+            block["discharged_evidence"].is_mapping(),
+            "FALSIFY-QW2E-SHIP-003 DISCHARGED status requires a discharged_evidence \
+             block documenting host, command, cosine summary, and live verdicts",
+        );
+        assert_eq!(
+            block["discharged_evidence"]["host"].as_str(),
+            Some("noah-Lambda-Vector"),
+            "discharged_evidence.host must pin to lambda-labs RTX 4090",
+        );
+        assert_eq!(
+            block["discharged_evidence"]["aggregate_verdict"].as_str(),
+            Some("Pass"),
+            "discharged_evidence.aggregate_verdict must equal Pass",
+        );
+        assert_eq!(
+            block["discharged_evidence"]["tensors_compared"].as_u64(),
+            Some(339),
+            "discharged_evidence.tensors_compared must equal 339 (Qwen2.5-Coder-7B canonical)",
+        );
+        assert_eq!(
+            block["discharged_evidence"]["cosine_summary"]["below_threshold_count"].as_u64(),
+            Some(0),
+            "discharged_evidence.cosine_summary.below_threshold_count must equal 0 \
+             (zero tensors below the 0.999 floor)",
+        );
+        let live_evidence = block["discharged_evidence"]["evidence_discharged_by_live"]
+            .as_sequence()
+            .expect(
+                "FALSIFY-QW2E-SHIP-003 DISCHARGED requires \
+                 discharged_evidence.evidence_discharged_by_live (live RTX 4090 evidence list)",
+            );
+        assert!(
+            !live_evidence.is_empty(),
+            "evidence_discharged_by_live must list at least one live observation",
+        );
+    }
 }
