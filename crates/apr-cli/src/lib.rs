@@ -48,8 +48,8 @@ use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, compile, convert, data, debug,
     diagnose, diff, distill, eval, explain, export, flow, hex, import, inspect, lint, mcp, merge,
     oracle, pipeline, probar, profile, prune, publish, pull, qa, qualify, quantize, rosetta,
-    rosetta::RosettaCommands, run, serve, showcase, tensors, tokenize, trace, tree, tui, validate,
-    validate_manifest,
+    rosetta::RosettaCommands, run, serve, showcase, stamp, tensors, tokenize, trace, tree, tui,
+    validate, validate_manifest,
 };
 #[cfg(feature = "training")]
 use commands::{finetune, gpu, train, tune};
