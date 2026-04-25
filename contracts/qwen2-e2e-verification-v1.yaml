@@ -1,10 +1,29 @@
 metadata:
-  version: 1.8.0
+  version: 1.9.0
   created: '2026-02-20'
   author: PAIML Engineering
   description: |
     Qwen2/2.5-7B end-to-end verification — composing all kernel contracts
     into a complete model proof.
+
+    v1.9.0 (2026-04-25): FALSIFY-QW2E-SHIP-004 promoted PARTIAL_ALGORITHM_LEVEL
+    → DISCHARGED via live `apr export → llama-cli` round-trip on
+    noah-Lambda-Vector RTX 4090. `apr export
+    /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+    --format gguf -o /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf`
+    exits 0 producing an 8.04 GB GGUF in Q4K passthrough mode (zero
+    loss, 339 tensors, 20 metadata keys). `xxd` reports the first 8
+    bytes as `47 47 55 46 03 00 00 00` = magic `b"GGUF"` + version
+    u32 LE = 3 ∈ {2, 3}. Live `llama-cli -m <gguf> --prompt "hello"
+    --n-predict 4` exits 0 — discharges all three independent format-
+    boundary verdicts in one round-trip: `verdict_from_gguf_magic_bytes`
+    Pass, `verdict_from_gguf_version` Pass, `verdict_from_llama_cli_exit`
+    Pass. Spec v2.53.0 → v2.54.0; coverage 38+7 → 37+8 post-merge.
+    Fourth MODEL-1 PARTIAL → DISCHARGED of the cycle (after SHIP-009
+    PR #1054 + SHIP-010 PR #1055 + SHIP-001 PR #1056). Drift-prevention
+    test `falsify_ship_004_yaml_binding_pins_discharged_status` added
+    to `crates/aprender-core/src/format/ship_004.rs::ship_004_tests`.
+    Evidence file: `evidence/ship-004-full-discharge/discharge-evidence-v1.json`.
 
     v1.8.0 (2026-04-25): Backfilled the missing FALSIFY-QW2E-SHIP-001
     falsification_tests entry (PR #1030 added the Rust verdict fns at
@@ -27,7 +46,7 @@ metadata:
     the SHIP-010 pattern: parses the contract YAML, locates the
     FALSIFY-QW2E-SHIP-001 entry, asserts DISCHARGED + host pin + live
     evidence array. Evidence file:
-    `evidence/ship-001-full-discharge/discharge-evidence-v1.json`.
+    `evidence/ship-001-full-discharge/discharge-evidence-v1.json`.: FALSIFY-SHIP-004 DISCHARGED via apr export → llama-cli round-trip on real teacher)
 
     v1.7.0 (2026-04-23): Added FALSIFY-QW2E-SHIP-023 + FALSIFY-QW2E-SHIP-024
     as a bundled PARTIAL_ALGORITHM_LEVEL discharge of the last two MODEL-1
@@ -527,7 +546,38 @@ falsification_tests:
     exit-Fail means llama.cpp's reader rejected something deeper
     (tensor shape, metadata, quantization block).
   ship_blocking: true
-  discharge_status: PARTIAL_ALGORITHM_LEVEL
+  discharge_status: DISCHARGED
+  discharged_evidence:
+    date: "2026-04-25"
+    session: "ship-two-001 PARTIAL → DISCHARGED via apr export → llama-cli round-trip"
+    host: noah-Lambda-Vector  # RTX 4090, lambda-labs tier
+    binary: /mnt/nvme-raid0/targets/aprender/release/apr  # built --features cuda
+    llama_cli_path: /home/noah/.local/bin/llama-cli
+    command_chain:
+      - "apr export /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --format gguf -o /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf"
+      - "xxd /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf | head -1"
+      - "llama-cli -m /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf --prompt 'hello' --n-predict 4"
+    apr_export:
+      input: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+      input_size_bytes: 8035635524  # 7.48 GiB
+      output: /tmp/ship-004/qwen2.5-coder-7b-q4k-via-apr-export.gguf
+      output_size_bytes: 8037129408
+      tensor_count: 339
+      mode: "Q4K passthrough (zero loss)"
+      metadata_keys: 20
+      exit: 0
+    gguf_header_bytes: "47 47 55 46 03 00 00 00"  # 'GGUF' + version=3 (LE u32)
+    magic_verdict: PASS
+    version: 3
+    version_verdict: PASS  # 3 ∈ {2, 3}
+    llama_cli_exit_verdict: PASS  # See evidence file for full output
+    overall: PASS
+    evidence_file: evidence/ship-004-full-discharge/discharge-evidence-v1.json
+    evidence_discharged_by_live:
+      - "Live `apr export --format gguf` exit 0 produces 8.04 GB GGUF in Q4K passthrough mode"
+      - "First 4 bytes of exported GGUF == b'GGUF' (verdict_from_gguf_magic_bytes Pass)"
+      - "Bytes 4-7 LE u32 = 3 ∈ {2, 3} (verdict_from_gguf_version Pass)"
+      - "llama-cli loads exported GGUF AND emits 4 tokens AND exits 0 (verdict_from_llama_cli_exit Pass)"
   evidence_discharged_by:
   - crates/aprender-core/src/format/ship_004.rs
     (verdict_from_llama_cli_exit + verdict_from_gguf_magic_bytes +
@@ -550,15 +600,7 @@ falsification_tests:
     (5 sections — supported {2, 3} Pass, predecessor {0, 1} Fail,
     above-band Fail {4, 5, 10, 100, 1M, u32::MAX}, exhaustive
     sweep 0..=64, provenance pin on supported set)'
-  full_discharge_blocks_on: |
-    Live `apr export --format gguf
-    paiml/qwen2.5-coder-7b-apache-q4k-v1.safetensors -o
-    qwen2.5-coder-7b.gguf` followed by shelling out to upstream
-    `llama-cli` on the exported file: read first 4 bytes and
-    assert == b"GGUF"; read next 4 bytes LE and assert ∈ {2, 3};
-    run `llama-cli -m qwen2.5-coder-7b.gguf --prompt "hello"
-    --n-predict 4` and assert exit code == 0. All three gates
-    must Pass.
+  - "evidence/ship-004-full-discharge/discharge-evidence-v1.json (live RTX 4090 apr export → llama-cli round-trip evidence)"
   counter_example_classes:
   - "silent_header_corruption: serializer writes b\"APR\\0\" or
     b\"APRN\" into a file named .gguf — magic-Fail catches this
