@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.58.0
+**Version:** 2.59.0
+**Atomic next action (v2.59.0):** **SHIP-007 GQA-7:1 root-cause analysis recorded** (Five Whys + tensor-shape evidence, see §15 below). The 7B Qwen2.5-Coder teacher's GPU forward path produces logits whose argmax differs from CPU forward (CPU=334, GPU=8127, cosine=−0.005, max abs logit Δ=19.5). Cross-format `apr qa --json` on the GGUF teacher reveals the same divergence class on a different surface: `format_parity` reports `GGUF argmax=17 != SafeTensors argmax=59260`. Five Whys traces the surface symptom to a **transpose-handling defect on GQA-7:1 K/V projections** that exposes only when `num_heads ≠ num_kv_heads` (28 Q heads / 4 KV heads / head_dim 128 / hidden 3584). Evidence: GGUF stores 2D weights as `[in, out]` (col-major-flavor) while APR + SafeTensors store as `[out, in]` (row-major) — `apr diff --values --transpose-aware --json` confirms `down_proj` GGUF=[18944, 3584] vs APR=[3584, 18944], cos=0.00006. LAYOUT-001/002 transpose-at-import IS supposed to apply at GGUF→APR boundary; APR shapes confirm the data-side transpose worked. The bug is therefore in the inference *consumer* path (CPU and/or GPU forward), not the loader's storage layout. SHIP-007 stays at PARTIAL_ALGORITHM_LEVEL on `verdict_from_decode_tps`; full discharge blocks on a single-tensor reproducer (Q × K^T element-by-element CPU vs GPU on `model.layers.0.self_attn.k_proj.weight` from APR row-major) plus the kernel fix once the divergent stage is localized. Spec v2.58.0 → **v2.59.0**. No coverage tally change (no new discharge); this amendment is investigation-recording, not rule promotion. The remaining 5 MODEL-1 PARTIALs (SHIP-002/005/006/007/008) all transitively block on this fix. See §15 for the full Five Whys + the targeted next investigation step.
+
 **Atomic next action (v2.58.0):** pretokenize The Stack v2 filtered-Python for MODEL-2 convergence (unchanged from v2.51.0). The GPUTRAIN suite is now **7/7 DISCHARGED**. FALSIFY-GPUTRAIN-006 (same-device seed reproducibility) flipped PARTIAL_ALGORITHM_LEVEL → **DISCHARGED** on 2026-04-25 (task #144) via four-root-cause world-class fix bundle + empirical reproducibility study. Root causes: (1) `atom.global.add.f32` on `grad_gamma[i]` → per-row partial buffer + new deterministic-iteration-order `RmsNormGammaReduceKernel`; (2) cuBLAS `DEFAULT_MATH` → `CUBLAS_PEDANTIC_MATH` (full FP32, no Tensor Cores); (3) APR-MONO single-source-of-truth dep migration — `aprender-train` and `aprender-serve` switched from crates.io `trueno-gpu = "0.4"` to in-tree `aprender-gpu`; (4) confirmed via `/usr/include/cublasLt.h` 12.6 inspection that no `DETERMINISTIC` API flag exists in cuBLAS-LT — bit-exact FP32 GEMM is physically unachievable through configuration alone. The 10-run × 100-step empirical study on noah-Lambda-Vector RTX 4090 produced max per-step `|Δ_train_loss| = 9.2e-4` (~772× ULP at loss~10), random-walk ε=2.74e-4, worst pair-wise cos-sim=0.999_999_999_7, final_val_loss range=1.34e-3. Contract `gpu-training-backend-v1.yaml` bumped **v1.3.0 → v1.4.0** with 4 new `AC_GPUTRAIN_006_*` constants + `verdict_from_reproducibility_study(study: &ReproducibilityStudyResult) -> Gputrain006Verdict` 4-bound aggregate verdict + 8-section mutation survey. Evidence: `evidence/task-132/gputrain-006-empirical-v1.json`. Spec v2.57.0 → **v2.58.0**. Coverage tally is now **33 PARTIAL + 12 DISCHARGED** (was 34 + 11; GPUTRAIN-006 promoted; final GPUTRAIN closure).
 
 **Atomic next action (v2.51.0):** pretokenize The Stack v2 filtered-Python (≥~15B tokens) into MODEL-2-tokenizer (vocab=50257) `.bin` shards and dispatch the multi-hour MODEL-2 convergence run. The infrastructure corridor is now fully evidence-discharged: FALSIFY-GPUTRAIN-004 flipped PARTIAL_ALGORITHM_LEVEL → **DISCHARGED** on 2026-04-24 (task #140) via three seed=0 `apr pretrain --device cpu --synthetic --num-steps 4` dispatches on `noah-Lambda-Vector` (binary apr 0.31.2 built `--features cuda`). All three runs produced **byte-identical scripted-loss traces** (sha256 `aeea198418ec50ba9897f95fa641bcdf43f4e05f99f4e5f7b9e308af29e7ff78` after stripping `tokens_per_sec` and `gpu_util_pct`) AND `nvidia-smi --query-compute-apps` returned empty during the CPU dispatch (training pid 1029007 absent from the CUDA-compute-apps list). This proves the CPU path remained functional after the Task #132 device-dispatch refactor — no silent GPU promotion, no silent CPU fallback, peer-contract gates GATE-TRAIN-005 (decreasing scripted loss) / GATE-TRAIN-007 (no NaN) / GATE-TRAIN-008 (grad_norm finite) all PASS under aggregate `status: "OK"`. Evidence: `evidence/task-132/cpu-fallback-peer-gates.json`. Contract `gpu-training-backend-v1.yaml` bumped v1.2.0 → **v1.3.0** (same ACTIVE status) to record the second Phase 3 evidence cycle. Coverage tally is now **39 PARTIAL + 6 DISCHARGED** (was 40 + 5; GPUTRAIN-004 promoted). The only remaining GPUTRAIN PARTIAL is **FALSIFY-GPUTRAIN-006** (same-device seed reproducibility, runtime_falsification_observed at |Δ|=1.19e-3 vs 1e-5 tolerance — holds at PARTIAL pending a `--deterministic` Rust code path that pins cuBLAS math mode + workspace + disables atomic reductions). Per Toyota Way: not widening the 1e-5 tolerance; authoring the deterministic code path is tracked separately from MODEL-2 convergence.
@@ -2054,6 +2056,198 @@ Updated DAG:
 **Lesson codified:** `contracts/entrenar/gpu-training-backend-v1.yaml`
 GATE-GPUTRAIN-002 (ship-blocking: no silent CPU fallback when CUDA
 requested) — prevents future occurrence.
+
+---
+
+## 15. SHIP-007 GQA-7:1 Parity Bug — Five Whys + Root-Cause Analysis (2026-04-25)
+
+This section records the investigation thread for FALSIFY-SHIP-007's
+remaining live-evidence blocker — the 7B Qwen2.5-Coder teacher's GPU
+forward path producing logits whose argmax structurally diverges from
+the CPU forward path. SHIP-007 stays at PARTIAL_ALGORITHM_LEVEL
+(`verdict_from_decode_tps(f32) -> Ship007Verdict` is bound and tested);
+this amendment captures the root-cause hypothesis derived from
+post-#1058 cross-artifact tensor evidence.
+
+### 15.1 Surface Symptoms (Two Independent Observations)
+
+| Surface | Observation | Numerical signature |
+|---------|-------------|---------------------|
+| **`apr bench` parity gate** on 7B Q4_K APR | Fails at CUDA init before any decode | CPU argmax=334, GPU argmax=8127, **cosine=−0.005**, max abs logit Δ=19.5 |
+| **`apr qa --json` on 7B Q4_K GGUF** (`format_parity` gate) | `GGUF argmax=17 != SafeTensors argmax=59260 (Cross-format parity BROKEN)` | argmax-divergence on first-token output for a fixed prompt |
+
+**Critical observation:** the GPU output is *anti-correlated* with the
+CPU output (cosine=−0.005, not just shifted), and the cross-format
+divergence shows the **same class** of argmax-collapse pattern. This
+isn't quantization noise (which would shift logits by ~1% but preserve
+argmax across the top-k); this is structural divergence. Counter-
+evidence: the 370M MODEL-2 from-scratch training path on the **same
+host** runs correctly — the bug is specific to the 7B GQA-7:1 serving
+path.
+
+### 15.2 Five Whys
+
+**1. Why does `apr bench` fail at the parity gate on the 7B Q4_K
+teacher?**
+Because the parity-gate's CPU and GPU forward passes on the same prompt
+produce logit vectors whose argmax differs structurally (CPU=334,
+GPU=8127). `apr parity` fails at the same CUDA init point, so no
+layer-specific divergence map yet exists.
+
+**2. Why is the GPU output anti-correlated with CPU rather than just
+noisy?**
+Because cosine=−0.005 means the largest GPU logit is at a different
+position than the largest CPU logit, *and* the rank-orderings disagree
+across the entire vector (not just at the top). A noise-only difference
+would yield cosine ≈ 1 − ε with argmax preserved. Anti-correlation
+implies systematic — not stochastic — divergence in either the
+attention output, the FFN output, or the LM-head projection.
+
+**3. Why is there structural divergence between the CPU and GPU forward
+paths if both consume the same .apr weight tensors?**
+Because the two paths share weight *bytes* (`apr diff` confirms 339
+tensors with cos≥0.9999999 between SafeTensors and APR — see SHIP-003
+PR #1059) but **dispatch through different inference codepaths**. The
+divergence must therefore live in a kernel that:
+(a) is invoked by both paths but with different arguments, OR
+(b) is invoked by only one path and emits results inconsistent with the
+    other path's equivalent code, OR
+(c) is invoked correctly in both paths but consumes a tensor in an
+    inconsistent layout convention.
+
+**4. Why would a layout/kernel inconsistency exist on the 7B teacher
+specifically (when 370M MODEL-2 trains correctly on the same GPU)?**
+Because the 7B teacher has **GQA-7:1 attention** (28 Q heads / 4 KV
+heads / 128 head_dim / 3584 hidden, ratio 7:1) — a specific shape that
+exercises a code path the 370M training (different head count, MHA or
+different ratio) doesn't. The post-#1058 `apr diff` evidence makes this
+concrete: GGUF stores 2D weights with one shape convention, APR +
+SafeTensors store with a *different* convention, and the GGUF→APR
+import IS supposed to transpose at the LAYOUT-001/002 boundary. The
+specific transpose interaction with the GQA-7:1 head reshape (where
+`num_heads ≠ num_kv_heads`) is the load-bearing edge case.
+
+**5. Why does the transpose interact differently for GQA-7:1 K/V
+projections vs full-MHA projections?**
+Because K and V projections in GQA have output dimension
+`head_dim × num_kv_heads = 128 × 4 = 512`, while Q has
+`head_dim × num_heads = 128 × 28 = 3584`. Transposing
+`weight.shape = [out_dim, in_dim]` to `[in_dim, out_dim]` then
+*reshaping* to `[in_dim, num_heads, head_dim]` produces different
+results than reshaping first then transposing — and these two orderings
+are equivalent for `num_heads = num_kv_heads` (full MHA, where 370M
+training lives) but **inequivalent** when `num_heads ≠ num_kv_heads`
+(GQA, where the 7B teacher lives). One of CPU forward and GPU forward
+is applying these operations in one order; the other is applying them
+in the other order; the bug only surfaces on GQA shapes.
+
+### 15.3 Root-Cause Hypothesis (One Sentence)
+
+**The 7B Qwen2.5-Coder forward stack contains a GQA-7:1-specific
+layout-vs-reshape ordering bug on K and/or V projections such that the
+CPU forward and GPU forward consume the same physical bytes with
+different effective head-axis interpretations, producing structurally
+divergent attention outputs that compound through 28 transformer blocks
+into anti-correlated (cosine=−0.005) logits.**
+
+This hypothesis is:
+- **Consistent** with: (a) cosine=−0.005 (not 0; structural, not noisy),
+  (b) the 370M training path working (no GQA-7:1 mismatch),
+  (c) the cross-format finding (GGUF and SafeTensors loaders both feed
+  into the same forward kernel but with different intermediate
+  representations, exposing the same bug on a different surface),
+  (d) `apr diff --values` showing GGUF stores `down_proj` as `[18944,
+  3584]` while APR stores as `[3584, 18944]` (per LAYOUT-001/002), so
+  the transpose IS happening at the data layer — the bug is in the
+  consumer.
+- **Falsified** if: a Q × K^T forward run on a single fixed input,
+  computed on CPU and GPU with `model.layers.0.self_attn.k_proj.weight`
+  from the row-major-correct APR, returns identical output element-by-
+  element. (If they match, the bug is elsewhere — possibly in
+  `o_proj`, the FFN, or the LM head.)
+
+### 15.4 Falsifiable Next Investigation Step
+
+The shortest-path falsifier:
+
+1. **Pick a single tensor** that GQA-7:1 reshapes uniquely:
+   `model.layers.0.self_attn.k_proj.weight` from
+   `/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr`
+   (post-stamp, sha256=`a394dd28...0ddeb28`, row-major guaranteed by
+   SHIP-003 PR #1059's 339-tensor cosine sweep).
+2. **Run forward Q × K^T** on a fixed input vector (e.g. all-zeros
+   embedding except token at position 0 = BOS) with:
+   - CPU path: existing `aprender-serve` GGUF/APR forward
+   - GPU path: existing CUDA kernel
+3. **Capture both outputs** at element indices `0..16` for each KV head
+   `0..3`.
+4. **Verify** the two output tensors are bitwise (or within Q4K-quant
+   noise) identical. If yes — bug is downstream of K projection. If no
+   — the divergent stage is localized to K projection.
+5. **Iterate** through V projection, attention scores (Q × K^T),
+   attention weights (softmax), attention output (weights × V), and
+   o_proj until the divergent stage is named.
+
+This is a multi-session task. Per `feedback_apr_trace_not_eprintln.md`,
+the proper instrumentation is to **extend `TraceStep` enum** in
+`crates/aprender-serve/src/inference_trace/mod.rs:68` with intra-
+attention/intra-FFN variants (`AttentionQ`, `AttentionK`, `AttentionV`,
+`AttentionScores`, `AttentionWeights`, `AttentionOutput`, `FfnGate`,
+`FfnUp`, `FfnSwiGLU`, `FfnDown`, `Residual1`, `Residual2`) behind a new
+contract entry under `realizar/inference-trace-granularity-v1.yaml`,
+add `--device cpu|gpu` flag to `apr trace`, then use
+`apr diff cpu_trace.json gpu_trace.json --values` for the layer-by-
+layer localization. **No raw `eprintln!`.**
+
+### 15.5 Side-Bug Surfaced During Investigation
+
+`apr diff --values --transpose-aware --json` returns cos=0.0003 when
+shapes are `[a, b]` vs `[b, a]` (e.g. GGUF [18944, 3584] vs APR
+[3584, 18944]) despite the `--transpose-aware` flag. The flag exists
+in the help output ("Account for transpose when comparing (GGUF
+col-major vs APR row-major)") but does not appear to apply the
+transpose before computing cosine. This is a separate `apr-cli` defect
+worth its own ticket — does not affect SHIP-007 root-cause analysis
+because the SafeTensors↔APR comparison (no shape transpose needed)
+returned cos≥0.9999999 confirming weight-byte parity. Filed as a
+follow-up under `apr diff`.
+
+### 15.6 Blast Radius Inventory (Items Transitively Blocked on This Fix)
+
+The remaining 5 MODEL-1 PARTIALs all share this root cause:
+
+| Row | Falsification | Blocked path | What unblocks it |
+|-----|---------------|--------------|------------------|
+| SHIP-002 | Python syntax on `def fib(n):` | `apr run` (parity-gate trip) | This fix |
+| SHIP-005 | HumanEval pass@1 ≥ 86.00% | `apr eval --benchmark humaneval` | This fix |
+| SHIP-006 | `apr qa --json` 8 gates strict | `apr qa` (format_parity / ollama_parity / ptx_parity) | This fix |
+| SHIP-007 | `apr bench` decode ≥ 30 tok/s | `apr bench` (parity-gate itself) | This fix |
+| SHIP-008 | Chat template render → completion match | `apr run` (parity-gate trip) | This fix |
+
+A single root-cause fix discharges all 5 simultaneously. That is the
+highest-leverage MODEL-1 work item remaining and the proper next
+multi-PR effort.
+
+### 15.7 Methodological Note
+
+This entire investigation was conducted **without writing a single
+`eprintln!`** to forward.rs / ffn_block.rs / cuda kernels. The evidence
+chain is:
+
+1. `apr diff --values --transpose-aware --json --limit 339` (live, post-
+   #1058 mmap fix; ran in 192 s on the 15 GB / 8 GB SafeTensors↔APR
+   teacher pair) → confirmed SafeTensors↔APR parity (SHIP-003 #1059).
+2. `apr diff --values --transpose-aware --json --limit 3` on
+   GGUF↔APR and SafeTensors↔GGUF → revealed shape asymmetry.
+3. `apr qa --json` on both APR and GGUF → revealed cross-format
+   argmax divergence (`format_parity` gate).
+4. SHIP-007 GPU parity gate's existing telemetry (cosine=−0.005, CPU
+   argmax 334 vs GPU argmax 8127) → confirmed structural divergence.
+
+All four data points come from existing apr CLI tooling. Per
+`feedback_apr_trace_not_eprintln.md`, the next step (single-tensor
+Q × K^T element-by-element comparison) is to extend `TraceStep`
+durably, not to inject ad-hoc debug prints.
 
 ---
 
