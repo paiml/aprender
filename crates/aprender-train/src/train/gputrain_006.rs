@@ -204,7 +204,7 @@ pub fn verdict_from_reproducibility_study(
     // Section 3: cosine similarity is in [-1, 1]; for reproducibility
     // it must be very close to 1.0. Anything below 0 is direction
     // disagreement → Fail.
-    if !(0.0..=1.0_001).contains(&study.cosine_sim_worst) {
+    if !(0.0..=1.000_1).contains(&study.cosine_sim_worst) {
         // Allow tiny FP-overshoot above 1.0 (cos_sim of identical traces
         // computed in FP32 can land at 1.0 + ULP); reject everything else.
         return Gputrain006Verdict::Fail;
@@ -545,7 +545,7 @@ mod tests {
             "perfect identity (cos=1.0, all drift=0) must Pass",
         );
         let identity_ulp = ReproducibilityStudyResult {
-            cosine_sim_worst: 1.0_000_001,
+            cosine_sim_worst: 1.000_000_1,
             ..identical
         };
         assert_eq!(
