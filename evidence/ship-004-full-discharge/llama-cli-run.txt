@@ -1,0 +1,6 @@
+Loading model... |-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\|/-\| 
+build      : b7746-39173bcac
+model      : qwen2.5-coder-7b-q4k-via-apr-export.gguf
+  /exit or Ctrl+C     stop or exit
+| Hello! How can
+[ Prompt: 380.8 t/s | Generation: 127.5 t/s ]
