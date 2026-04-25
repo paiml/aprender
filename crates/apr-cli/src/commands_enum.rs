@@ -407,6 +407,32 @@ pub enum Commands {
         #[arg(short, long)]
         force: bool,
     },
+    /// Stamp provenance fields (license, data_source, data_license) onto an existing .apr file
+    ///
+    /// SHIP-009 full-discharge enabler — patches the three provenance fields on
+    /// a pre-built APR v2 artifact (e.g., the shipped MODEL-1 teacher whose
+    /// fields are all (missing) because it was built before GATE-APR-PROV-001..003
+    /// shipped). Tensor bytes and header flags are preserved verbatim.
+    Stamp {
+        /// Path to input .apr model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// SPDX license identifier (e.g., Apache-2.0)
+        #[arg(long)]
+        license: Option<String>,
+        /// Training-data source (e.g., huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct)
+        #[arg(long = "data-source")]
+        data_source: Option<String>,
+        /// SPDX license for data_source (e.g., Apache-2.0)
+        #[arg(long = "data-license")]
+        data_license: Option<String>,
+        /// Output file path
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Force overwrite existing files
+        #[arg(short, long)]
+        force: bool,
+    },
     /// Compile model into standalone executable (APR-SPEC §4.16)
     Compile {
         /// Input .apr model file

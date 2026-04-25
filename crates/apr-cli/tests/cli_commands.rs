@@ -49,6 +49,7 @@ fn registered_commands() -> Vec<&'static str> {
         "export",
         "import",
         "convert",
+        "stamp",
         "compile",
         "merge",
         "quantize",

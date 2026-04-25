@@ -392,6 +392,24 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 cli.json,
             )
         }),
+        Commands::Stamp {
+            file,
+            license,
+            data_source,
+            data_license,
+            output,
+            force,
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            stamp::run(
+                &r,
+                license.as_deref(),
+                data_source.as_deref(),
+                data_license.as_deref(),
+                output,
+                *force,
+                cli.json,
+            )
+        }),
         Commands::Compile {
             file,
             output,
