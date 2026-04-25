@@ -168,10 +168,12 @@ fn falsify_ship_009_apr_metadata_applies_to_model_1_teacher() {
 }
 
 /// GATE-APR-PROV-004 YAML binding: parses apr-provenance-v1.yaml and
-/// asserts the new gate block correctly binds AC-SHIP1-009 /
-/// FALSIFY-SHIP-009 with PARTIAL_ALGORITHM_LEVEL discharge status.
-/// Falsifier: if the contract is edited to drop AC-SHIP1-009 binding
-/// or downgrade the discharge marker, this test fails.
+/// asserts the gate block correctly binds AC-SHIP1-009 /
+/// FALSIFY-SHIP-009 with DISCHARGED status (was PARTIAL_ALGORITHM_LEVEL
+/// at v1.1.0; flipped to DISCHARGED at v1.2.0 on 2026-04-25 via live
+/// `apr stamp` fixture-swap on the canonical lambda-labs staging
+/// artifact). Falsifier: if the contract is edited to drop AC-SHIP1-009
+/// binding or downgrade the discharge marker, this test fails.
 #[test]
 fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
     const CONTRACT_YAML: &str = include_str!("../../../../../contracts/apr-provenance-v1.yaml");
@@ -199,10 +201,25 @@ fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
     );
     assert_eq!(
         gate["discharge_status"].as_str(),
-        Some("PARTIAL_ALGORITHM_LEVEL"),
-        "GATE-APR-PROV-004 must advertise PARTIAL_ALGORITHM_LEVEL \
-         (full discharge blocks on teacher .apr republish with populated \
-         AprV2Metadata fields)",
+        Some("DISCHARGED"),
+        "GATE-APR-PROV-004 must advertise DISCHARGED \
+         (live `apr stamp` fixture-swap on canonical lambda-labs staging \
+         artifact at v1.2.0; previous PARTIAL_ALGORITHM_LEVEL at v1.1.0)",
+    );
+    assert!(
+        gate["discharged_evidence"].is_mapping(),
+        "GATE-APR-PROV-004 DISCHARGED status requires a discharged_evidence \
+         block documenting the host, pre/post sha256, and tooling chain",
+    );
+    assert_eq!(
+        gate["discharged_evidence"]["post_stamp"]["provenance_state"]["license"].as_str(),
+        Some("Apache-2.0"),
+        "discharged_evidence.post_stamp.provenance_state.license must equal Apache-2.0",
+    );
+    assert_eq!(
+        gate["discharged_evidence"]["host"].as_str(),
+        Some("noah-Lambda-Vector"),
+        "discharged_evidence.host must pin to the lambda-labs RTX 4090 host",
     );
     assert_eq!(
         gate["ship_blocking"].as_bool(),
@@ -216,12 +233,14 @@ fn falsify_ship_009_gate_apr_prov_004_has_partial_discharge_marker() {
         !evidence.is_empty(),
         "GATE-APR-PROV-004 evidence_discharged_by must list at least one test",
     );
+    let live_evidence = gate["discharged_evidence"]["evidence_discharged_by_live"]
+        .as_sequence()
+        .expect(
+            "GATE-APR-PROV-004 DISCHARGED requires \
+             discharged_evidence.evidence_discharged_by_live (live RTX 4090 evidence list)",
+        );
     assert!(
-        gate["full_discharge_blocks_on"].as_str().is_some(),
-        "PARTIAL gate must document full_discharge_blocks_on",
-    );
-    assert!(
-        gate["partial_discharge_note"].as_str().is_some(),
-        "PARTIAL gate must document partial_discharge_note",
+        !live_evidence.is_empty(),
+        "GATE-APR-PROV-004 evidence_discharged_by_live must list at least one live observation",
     );
 }
