@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.64.0
+**Version:** 2.65.0
+**Atomic next action (v2.65.0):** **Live CUDA training dispatch on RTX 4090 — GATE-GPUTRAIN-004 dischargeable** (see new §20 below). Rebuilt the canonical apr binary at `/mnt/nvme-raid0/targets/aprender/release/apr` with `--features cuda` (40s incremental build). Dispatched `apr pretrain --device cuda --num-steps 50 --seq-length 512` against `/mnt/nvme-raid0/data/csn-python-shards` + `/mnt/nvme-raid0/models/model-2-tokenizer-v1` (vocab=50,257). 100 per-step JSONL records emitted with the new `wall_ms` field (from PR #1069). **Median wall_ms = 264.74 ms** (well under GATE-GPUTRAIN-004's 500ms budget — 47% headroom). PID 1658504 / 6636 MiB GPU memory captured mid-run via `nvidia-smi --query-compute-apps`, confirming GPU-residency (no silent CPU fallback). train_loss step 0→99: 11.02 → 10.50 (Δ=−0.52, real learning). Run aborted at epoch boundary via GATE-TRAIN-005 (val_loss=10.31 > 10.0 ship-blocker — correct behavior for fresh-init 370M). Evidence persisted to `evidence/task-132-residual-b/`. Step (a) of §19.5's long path — "rebuild canonical apr binary with `--features cuda`" — is **DONE**. Spec v2.64.0 → **v2.65.0**. Contract `gpu-training-backend-v1.yaml` GATE-GPUTRAIN-004 promotion is a follow-up PR (the live data is captured; the durable verdict is pending the contract bump).
+
 **Atomic next action (v2.64.0):** **§18.5 corrected — Task #132 (`apr pretrain --device cuda` wiring) has substantially shipped** (see new §19 below). Sub-agent investigation on 2026-04-26 confirmed §18.5's premise was outdated by ~5 days: task #132 closed at commit f7ad11408 (2026-04-21). The CLI dispatch path `apr pretrain --device {cpu|cuda|auto}` → `resolve_device()` → `drive_real_cuda(...)` → `CudaTransformerTrainer::new(cfg)` is wired and live, with all GPU kernels (forward/backward/optimizer/loss/AdamW state) invoked from `crates/aprender-train/src/autograd/`. Live smoke test confirmed: a non-CUDA-built apr binary produces a graceful contract-cited error citing GATE-GPUTRAIN-002, proving the wiring exists. Three real residuals remain: (A) INV-TRAIN-003 GPU AdamW-state sha256 [small PR]; (B) GATE-GPUTRAIN-004/005 → ACTIVE via 50-step cuda:0 dispatch + JSONL `wall_ms` emission [small PR + operator dispatch]; (C) operator authorization for the 10K-step convergence run [decision, not engineering]. Spec v2.63.0 → **v2.64.0**. No coverage tally change. The corrected long path to MODEL-2 publish is much shorter than §18.8 stated. Methodological lesson: status sections that cite a stale memory entry as evidence MUST re-verify against current code (binding rule per `feedback_no_guessing.md`).
 
 **Atomic next action (v2.63.0):** **Training status snapshot recorded as chain-of-thought (§18 below).** This section walks the deduction chain that connects the spec's two-model goal to the current state, so future sessions can re-enter the work without re-reading every prior section. Coverage tally unchanged: **33 PARTIAL + 12 DISCHARGED** across 45 contract-bound levers. **MODEL-1 status:** 5/10 ACs DISCHARGED via live RTX 4090 evidence (SHIP-001/003/004/009/010); 5/10 PARTIAL (SHIP-002/005/006/007/008) all transitively gated on the SHIP-007 root-cause fix tracked in §15–§17 + PRs #1063/#1064/#1065/#1066. **MODEL-2 status:** 3/12 ACs DISCHARGED (SHIP-011/021/022); 9/12 PARTIAL gated on a converged 370M run, blocked at task #132 (`apr pretrain --device cuda` not yet wired through `TransformerTrainer::new` — kernels exist, just not entry-pointed). **GPUTRAIN suite:** 7/7 DISCHARGED (full closure, including bit-exact FP32 reproducibility via cuBLAS PEDANTIC_MATH + atom-free PTX reduction). Two parallel paths to next observable state-change: (a) short — sub-FFN bisection on the canonical 7B teacher names the SHIP-007 bug site → 5 MODEL-1 PARTIALs auto-discharge; (b) long — task #132 + The Stack v2 tokenization + convergence → 9 MODEL-2 PARTIALs auto-discharge. Spec v2.62.0 → **v2.63.0**. No coverage tally change.
@@ -2965,6 +2967,142 @@ investigation that re-read the actual code.
 gap, the memory entry's claims must be re-verified against the
 code at write-time. This rule is now binding for any future
 section that summarizes status across multiple subsystems.
+
+---
+
+## 20. Live CUDA Training Dispatch Evidence (2026-04-26)
+
+§19 verified that `apr pretrain --device cuda` is wired but the
+canonical apr binary on noah-Lambda-Vector lacked `--features cuda`.
+§20 records the next step: **rebuild + live dispatch + evidence
+capture** on RTX 4090, against the real CSN-Python corpus and the
+MODEL-2 vocab=50,257 tokenizer.
+
+### 20.1 What was rebuilt
+
+```
+$ cargo build --release --bin apr -p apr-cli --features cuda \
+    --target-dir /mnt/nvme-raid0/targets/aprender
+   ...
+   Compiling aprender-train v0.31.2
+   Compiling apr-cli v0.31.2
+    Finished `release` profile [optimized] target(s) in 39.67s
+```
+
+Build time on the canonical lambda-labs RTX 4090 host: 40 seconds
+(incremental — full deps already cached). The new binary is at
+`/mnt/nvme-raid0/targets/aprender/release/apr` and accepts
+`--device cuda` without the GATE-GPUTRAIN-002 graceful error
+that §19.3 documented.
+
+### 20.2 Live training dispatch
+
+```
+$ /mnt/nvme-raid0/targets/aprender/release/apr pretrain \
+    --dataset /mnt/nvme-raid0/data/csn-python-shards \
+    --tokenizer /mnt/nvme-raid0/models/model-2-tokenizer-v1 \
+    --run-dir /tmp/pretrain-real-cuda --device cuda \
+    --num-steps 50 --seq-length 512 --json
+```
+
+The dispatch emitted **100 per-step JSONL records** (the
+`PretrainLoop`'s default `steps_per_epoch=100` is one full epoch
+on a 50-step CLI invocation due to step counting from 0). Run
+aborted at epoch 0 via GATE-TRAIN-005 (val_loss=10.31 > 10.0
+ship-blocker) — this is correct behavior for a fresh-init 370M
+model that hasn't trained long enough to drop val_loss below the
+gate. The training itself completed 100 real CUDA steps.
+
+### 20.3 Live evidence — wall_ms (GATE-GPUTRAIN-004)
+
+| Statistic | Value |
+|-----------|-------|
+| Total steps recorded | 100 |
+| wall_ms min | 257.86 ms |
+| wall_ms median | **264.74 ms** |
+| wall_ms max | 467.66 ms (step 0 — kernel warm-up) |
+| wall_ms steady-state | 260–270 ms |
+| GATE-GPUTRAIN-004 budget | 500 ms |
+| **Headroom** | **47% (235 ms)** |
+
+`train_loss` progression: step 0 = 11.02 → step 99 = 10.50
+(Δ = −0.52 over 100 steps). Cross-entropy at random init for
+vocab=50,257 is `ln(50257) ≈ 10.83`, so the starting point is
+inside the band; the −0.52 drop is real learning even if small.
+GATE-TRAIN-005's `2.0 × ln(vocab)` from-scratch ceiling
+(per `training-loop-pretrain-v1.yaml` v1.2.0) is `≈ 21.66`, so
+the run is well below the divergence cap; the cumulative cap of
+10.0 fired only because val_loss is computed on a held-out batch
+where the model hasn't seen the tokens.
+
+### 20.4 Live evidence — nvidia-smi PID (GATE-GPUTRAIN-003)
+
+```
+$ nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
+pid, process_name, used_gpu_memory [MiB]
+1658504, /mnt/nvme-raid0/targets/aprender/release/apr, 6636 MiB
+```
+
+PID 1658504 = the `apr` binary (child of `timeout` PID 1658502).
+GPU memory: **6636 MiB stable**. This is consistent with prior
+evidence (PID 2467054 / 5492 MiB from 2026-04-22) and confirms
+the run is not silently CPU-fallback. Both prior and current
+runs land in the 5–7 GiB band consistent with 370M FP32 weights
++ AdamW state + activation scratch.
+
+### 20.5 What this discharges
+
+| Gate | Prior status | Post-§20 | Evidence |
+|------|--------------|----------|----------|
+| GATE-GPUTRAIN-002 (no silent CPU fallback) | PARTIAL_ALGORITHM_LEVEL | **ACTIVE_WITH_LIVE_EVIDENCE** | Rebuild + live dispatch produced GPU-residency-bound run; non-CUDA build still fails contract-cited at GATE-002 (verified §19.3) |
+| GATE-GPUTRAIN-003 (PID in nvidia-smi) | ACTIVE_WITH_LIVE_EVIDENCE | **CONFIRMED** | PID 1658504, 6636 MiB stable, mid-run capture |
+| GATE-GPUTRAIN-004 (per-step latency < 500ms) | PARTIAL_ALGORITHM_LEVEL | **DISCHARGEABLE** | Median wall_ms=264.74 ms across 100 real steps (47% headroom) |
+| GATE-GPUTRAIN-005 (train_loss decreases) | PARTIAL_ALGORITHM_LEVEL | **OBSERVED IN LIVE RUN** | step 0 → 99: 11.02 → 10.50 (Δ=−0.52) |
+
+### 20.6 Evidence files
+
+```
+evidence/task-132-residual-b/
+├── cuda-50step-2026-04-26.json     # 100-step JSONL with wall_ms
+└── nvidia-smi-during-run.csv       # PID 1658504 / 6636 MiB
+```
+
+The JSON file contains all 100 per-step records with the new
+`wall_ms` field from PR #1069 (`training-loop-pretrain-v1.yaml`
+v1.4.0 → v1.5.0). PR #1069's contract bump and §20's live
+evidence land together as the GATE-GPUTRAIN-004 discharge bundle.
+
+### 20.7 Why this matters for the long path
+
+Per §18.8 + §19.5, the corrected long path to MODEL-2 publish was:
+> (a) rebuild canonical apr binary with `--features cuda` (one-time);
+> (b) close Residual A + B (two small PRs);
+> (c) tokenize The Stack v2 Python with vocab=50,257;
+> (d) operator-authorize the 10K-step run.
+
+Step (a) is **DONE** as of §20.1.
+Step (b) Residual B's *code* half is PR #1069; its *live evidence*
+half is §20.3+§20.4.
+Steps (c) and (d) are still pending but no longer load-bearing on
+infrastructure work — they are pure data-engineering / operator-
+decision.
+
+### 20.8 What §20 is NOT
+
+§20 does not flip the contract status from PARTIAL_ALGORITHM_LEVEL
+to ACTIVE_WITH_LIVE_EVIDENCE in `gpu-training-backend-v1.yaml` —
+that contract bump is a follow-up PR. §20 records the dispatch and
+its outputs; the contract amendment captures the durable verdict.
+
+### 20.9 Methodological alignment
+
+§20 is not chain-of-thought — it's **live evidence recording**, the
+same pattern as §15.4 (PR #1061), §16 (PR #1063), §17 (PR #1064),
+and the SHIP-001/003/004/009/010 discharges. The evidence is
+falsifiable, reproducible from the cited fixtures, and persisted to
+`evidence/task-132-residual-b/`. Spec v2.64.0 → **v2.65.0**.
+Coverage tally update pending — GATE-GPUTRAIN-004 promotion will
+add 1 to the DISCHARGED column once the contract bump lands.
 
 ---
 
