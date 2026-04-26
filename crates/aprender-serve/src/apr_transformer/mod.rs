@@ -263,6 +263,12 @@ impl ActivationStats {
 }
 
 /// Per-layer activation trace
+///
+/// Sub-FFN telemetry fields (`ffn_gate_stats`, `ffn_up_stats`,
+/// `ffn_silu_gate_stats`, `ffn_swiglu_inner_stats`) added per
+/// `contracts/trace-ffn-sub-block-v1.yaml` v1.0.0 to support sub-block
+/// bisection within a transformer block's FFN. Load-bearing for the
+/// SHIP-007 fix per ship-two-models-spec.md §15.5 + §17.4.
 #[derive(Debug, Clone)]
 pub struct LayerActivation {
     /// Layer index (0-indexed)
@@ -275,7 +281,19 @@ pub struct LayerActivation {
     pub attn_out_stats: ActivationStats,
     /// Statistics after FFN layer norm
     pub ffn_norm_stats: ActivationStats,
-    /// Statistics after FFN output
+    /// Statistics after gate projection matmul (pre-SiLU)
+    /// Per `contracts/trace-ffn-sub-block-v1.yaml` OBL-SUB-FFN-001
+    pub ffn_gate_stats: ActivationStats,
+    /// Statistics after up projection matmul
+    /// Per `contracts/trace-ffn-sub-block-v1.yaml` OBL-SUB-FFN-002
+    pub ffn_up_stats: ActivationStats,
+    /// Statistics after SiLU activation on gate projection (silu(gate))
+    /// Per `contracts/trace-ffn-sub-block-v1.yaml` OBL-SUB-FFN-003
+    pub ffn_silu_gate_stats: ActivationStats,
+    /// Statistics after SwiGLU inner multiply (silu(gate) * up)
+    /// Per `contracts/trace-ffn-sub-block-v1.yaml` OBL-SUB-FFN-004
+    pub ffn_swiglu_inner_stats: ActivationStats,
+    /// Statistics after FFN output (post-down-proj-matmul, residual contribution)
     pub ffn_out_stats: ActivationStats,
     /// Statistics after residual connection (layer output)
     pub output_stats: ActivationStats,
