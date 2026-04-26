@@ -46,12 +46,12 @@
 # ─────────────────────────────────────────────────────────────
 
 contract_id: C-GPUTRAIN-BACKEND
-version: 1.4.0
+version: 1.5.0
 status: ACTIVE
 
 metadata:
   id: C-GPUTRAIN-BACKEND
-  version: "1.4.0"
+  version: "1.5.0"
   created: "2026-04-21"
   author: PAIML Engineering
   description: >
@@ -319,7 +319,20 @@ gates:
       `apr pretrain --mode from-scratch --device cuda:0
       --num-steps 50 --json` output on lambda-labs; compute
       median wall_ms over step range [20, 49]; assert < 500.
-    verdict: pending
+    verdict: pass
+    verdict_basis: >
+      FALSIFY-GPUTRAIN-005 (paired falsification test for the
+      same invariant INV-GPUTRAIN-005) is DISCHARGED 2026-04-24
+      with discharged_evidence median_ms=101.30 (20.3% of 500
+      budget) on noah-Lambda-Vector RTX 4090 at canonical config
+      seq_len=2048 batch=1. Reconfirmed 2026-04-26 via §20 of
+      ship-two-models-spec.md (PR #1070): live `apr pretrain
+      --device cuda --seq-length 512 --num-steps 50` produced
+      100 per-step JSONL records with median wall_ms=264.74 ms
+      (47% headroom under 500ms budget) at a different config
+      band, demonstrating budget compliance is not config-
+      sensitive at this margin. Both evidence files persisted to
+      evidence/task-132/ and evidence/task-132-residual-b/.
     binds_to: AC-SHIP2-003
 
   - id: GATE-GPUTRAIN-005
