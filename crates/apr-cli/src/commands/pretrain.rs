@@ -30,10 +30,18 @@ use entrenar::train::transformer_trainer::LMBatch;
 use std::path::Path;
 
 /// Number of LMBatches pulled off the head of the shard stream and
-/// reserved as the held-out validation set. Chosen as a small constant
-/// for MVP; follow-up ticket will plumb an explicit `--val-shards`
-/// flag so training and validation can target disjoint shard files.
-const HELD_OUT_BATCHES: usize = 2;
+/// reserved as the held-out validation set.
+///
+/// 2026-04-26: bumped from 2 → 16 to reduce val_loss measurement
+/// noise on from-scratch runs. With batch=16 seq=512, the prior
+/// 2-batch held-out covered just 16,384 tokens — single-batch
+/// fluctuation was ~0.04 in val_loss, which is at the same scale
+/// as epoch-over-epoch improvement signal during early training.
+/// A 50K-step run early-stopped at epoch 5/24 even though
+/// train_loss was monotonically decreasing (10.01 → 9.54). With 16
+/// held-out batches (131K tokens), val_loss noise floor drops
+/// proportionally to ~0.01, restoring early-stop signal-to-noise.
+const HELD_OUT_BATCHES: usize = 16;
 
 /// CLI selector bound to training-loop-pretrain-v1 §hyperparameter_defaults.
 /// Atomically flips the `(regime, lr_max, warmup_steps, target_val_loss)`
@@ -146,8 +154,20 @@ pub(crate) fn run(
         grad_clip: 1.0,
         weight_decay: 0.01,
         target_val_loss: hp.target_val_loss,
-        patience_epochs: 2,
-        min_epochs_before_early_stop: 1,
+        // Patience widened from 2 → 5 epochs for from-scratch runs (2026-04-26).
+        // Rationale: a 50K-step run early-stopped at epoch 5/24 even though
+        // train_loss was monotonically decreasing 10.01 → 9.54 (Δ=−0.47);
+        // val_loss noise on 16k-token val set (now 131k) had stdev ~0.04,
+        // same scale as epoch-over-epoch improvement signal during early
+        // training. 5 patience epochs gives the optimizer time to push past
+        // local plateaus without ending an obviously-still-converging run.
+        patience_epochs: 5,
+        // Minimum epochs before early-stop. Bumped 1 → 3 so the warmup
+        // window (1000 steps = 1 epoch at 1000 steps_per_epoch, or 0.5
+        // epoch at 2000 steps_per_epoch) plus 1-2 initial epochs of post-
+        // warmup learning are guaranteed to complete before any early-stop
+        // signal is honoured.
+        min_epochs_before_early_stop: 3,
         regime: hp.regime,
     };
 
