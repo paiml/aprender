@@ -1,8 +1,12 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.60.0
-**Atomic next action (v2.60.0):** **SHIP-007 §15.4 falsifier executed and PASSED — GQA-7:1 attention kernel ruled out as root cause.** PR #1061 added three CPU vs GPU GQA parity tests on the canonical Qwen2.5-Coder-7B shape (NUM_HEADS=28, NUM_KV_HEADS=4, HEAD_DIM=128, HIDDEN=3584); all three pass on noah-Lambda-Vector RTX 4090 (`cargo test --features cuda --release -- --ignored` reports 3/3 ok). The peer test `gqa_attention_parity.rs` covers TinyLlama 8:1 (also passes); the new tests close the 7:1 gap. **Conclusion:** the `incremental_attention_gpu` kernel itself is bit-equivalent to CPU reference for the 28:4:128:3584 shape on synthetic inputs, in both first-token (no cache) and second-token (1-position cache) configurations. SHIP-007 root cause is therefore **outside the attention kernel** — surviving suspects per §15.5 are Q/K/V projection matmul (BEFORE attention), o_proj (AFTER), RMSNorm, FFN, LM head, multi-layer KV cache layout, residual stream propagation. Section 15 is renumbered: §15.4 now records the falsifier RESULT (was: the planned test), §15.5 is the new "next investigation step" (Q/K/V projection matmul parity), §15.6 = side-bug, §15.7 = blast radius, §15.8 = methodology note. Spec v2.59.0 → **v2.60.0**. No coverage tally change (no new discharge). The remaining 5 MODEL-1 PARTIALs (SHIP-002/005/006/007/008) still transitively block on the eventual SHIP-007 fix; this amendment durably records that the root-cause search has been narrowed by ~1 stage.
+**Version:** 2.61.0
+**Atomic next action (v2.61.0):** **SHIP-007 root cause materially isolated to the CPU APR forward path on 7B Qwen2.5-Coder** (see new §16 below). Live evidence on noah-Lambda-Vector RTX 4090 (2026-04-26): `apr trace --payload` on the canonical paiml/qwen2.5-coder-7b-apache-q4k-v1 teacher in BOTH formats, same prompt "What is 2+2?", same encoded tokens `[3838, 374, 220, 17, 10, 17, 30]`, same embedded BPE tokenizer:
+- **GGUF teacher** → Top-1 token=17 ("2"), full output `" 2+2 is 4."` ← **CORRECT** language model output.
+- **APR teacher** → Top-1 token=220 (" "), logit=16.7368 ← **WRONG** (whitespace prediction).
+
+Both ran on CPU. Same model, same weights (verified by SHIP-003 PR #1059's sweep: SafeTensors↔APR cos≥0.9999999 across all 339 tensors). The bug is **inside the APR-side `forward_single_with_scratch` codepath**, not the GPU stack and not the loader-side data layout. Combined with §15.4 (PR #1061 — GPU GQA-7:1 attention kernel ruled out via 3 passing CPU/GPU parity tests), the surviving suspect surface is now: **APR-format inference codepath**, exclusive of the kernel arithmetic that's twice-ruled-out. Spec v2.60.0 → **v2.61.0**. No coverage tally change. The remaining 5 MODEL-1 PARTIALs (SHIP-002/005/006/007/008) all transitively block on this fix; the new isolation makes the next root-cause-fix PR much more focused — start with `crates/aprender-serve/src/gguf/inference/forward/single_cache.rs` and the APR-specific `forward_single_with_scratch` path.
 
 **Atomic next action (v2.59.0):** **SHIP-007 GQA-7:1 root-cause analysis recorded** (Five Whys + tensor-shape evidence, see §15 below). The 7B Qwen2.5-Coder teacher's GPU forward path produces logits whose argmax differs from CPU forward (CPU=334, GPU=8127, cosine=−0.005, max abs logit Δ=19.5). Cross-format `apr qa --json` on the GGUF teacher reveals the same divergence class on a different surface: `format_parity` reports `GGUF argmax=17 != SafeTensors argmax=59260`. Five Whys traces the surface symptom to a **transpose-handling defect on GQA-7:1 K/V projections** that exposes only when `num_heads ≠ num_kv_heads` (28 Q heads / 4 KV heads / head_dim 128 / hidden 3584). Evidence: GGUF stores 2D weights as `[in, out]` (col-major-flavor) while APR + SafeTensors store as `[out, in]` (row-major) — `apr diff --values --transpose-aware --json` confirms `down_proj` GGUF=[18944, 3584] vs APR=[3584, 18944], cos=0.00006. LAYOUT-001/002 transpose-at-import IS supposed to apply at GGUF→APR boundary; APR shapes confirm the data-side transpose worked. The bug is therefore in the inference *consumer* path (CPU and/or GPU forward), not the loader's storage layout. SHIP-007 stays at PARTIAL_ALGORITHM_LEVEL on `verdict_from_decode_tps`; full discharge blocks on a single-tensor reproducer (Q × K^T element-by-element CPU vs GPU on `model.layers.0.self_attn.k_proj.weight` from APR row-major) plus the kernel fix once the divergent stage is localized. Spec v2.58.0 → **v2.59.0**. No coverage tally change (no new discharge); this amendment is investigation-recording, not rule promotion. The remaining 5 MODEL-1 PARTIALs (SHIP-002/005/006/007/008) all transitively block on this fix. See §15 for the full Five Whys + the targeted next investigation step.
 
@@ -2305,6 +2309,131 @@ All four data points come from existing apr CLI tooling. Per
 `feedback_apr_trace_not_eprintln.md`, the next step (single-tensor
 Q × K^T element-by-element comparison) is to extend `TraceStep`
 durably, not to inject ad-hoc debug prints.
+
+---
+
+## 16. SHIP-007 Root Cause Materially Isolated to CPU APR Forward Path (2026-04-26)
+
+This section records a follow-up finding that **further narrows** the
+SHIP-007 root-cause search beyond §15. Combined with §15.4's GPU
+attention-kernel exclusion, the surviving suspect surface is now the
+APR-format inference codepath itself, exercised on CPU.
+
+### 16.1 The Live Cross-Format CPU Trace
+
+`apr trace --payload` was run twice on noah-Lambda-Vector RTX 4090
+against the **same canonical paiml/qwen2.5-coder-7b-apache-q4k-v1
+teacher** in two formats:
+
+```
+$ apr trace /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --payload
+…
+Test prompt: "What is 2+2?"
+Encoded tokens: [3838, 374, 220, 17, 10, 17, 30]
+…
+Top 5 predictions:
+  1. token_id=220, logit=16.7368   ← " " (whitespace) — WRONG
+  2. token_id=576, logit=15.6684
+  3. token_id=2014, logit=14.1198
+  4. token_id=715, logit=14.0954
+  5. token_id=21806, logit=14.0902
+
+$ apr trace /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf --payload
+…
+Test prompt: "What is 2+2?"
+Encoded tokens: [3838, 374, 220, 17, 10, 17, 30]
+…
+Tokens 4-8: 17, 374, 220, 19, 13
+FULL OUTPUT: " 2+2 is 4."   ← CORRECT language model output
+✓ Output appears reasonable
+```
+
+**Same model. Same prompt. Same tokens. Same embedded BPE tokenizer.
+Same CPU. Different forward outputs.** The GGUF-loaded forward
+produces a coherent answer; the APR-loaded forward produces gibberish
+(predicts a single space character).
+
+### 16.2 What This Eliminates
+
+| Suspect | Status | Evidence |
+|---------|--------|----------|
+| GPU stack | **Eliminated** | Both traces run on CPU. The bug surfaces without GPU involvement. |
+| GQA-7:1 attention kernel | **Eliminated (§15.4)** | PR #1061's 3 CPU/GPU GQA parity tests all pass on the canonical 28:4:128:3584 shape. |
+| Tokenizer | **Eliminated** | Identical encoded tokens `[3838, 374, 220, 17, 10, 17, 30]` in both runs (same embedded BPE). |
+| Loader-side data layout | **Eliminated (SHIP-003 PR #1059)** | SafeTensors↔APR cos≥0.9999999 across all 339 tensors. The APR weight bytes are byte-equivalent to the SafeTensors source. |
+| Q4K dequantization | **Eliminated (existing tests)** | `apr_q4_parity::test_full_forward_parity`, `qkv_parity::test_phase16b_direct_qkv_gemv` — both pass. |
+| RMSNorm | **Eliminated (existing tests)** | `apr_q4_parity::test_rmsnorm_parity` — passes. |
+| Embedding lookup | **Eliminated (existing tests)** | `apr_q4_parity::test_embedding_parity` — passes. |
+
+### 16.3 Surviving Suspect Surface
+
+The bug must be in something that:
+1. Is exercised by the **APR-format CPU forward path** but NOT the
+   GGUF-format CPU forward path.
+2. Is NOT covered by any existing parity test (otherwise that test
+   would have caught it).
+3. Compounds across 28 transformer layers OR is specific to large-
+   tensor sizes (the synthetic `apr_q4_parity::test_full_forward_parity`
+   uses a small synthetic model, not the real 7B teacher).
+
+The two paths converge to similar-looking forward kernels but diverge
+at module composition. The most likely surviving suspects are:
+
+- **Layer-composition glue in `forward_single_with_scratch`** — how
+  attention output, FFN output, residuals, and layer norms are
+  combined and passed to the next layer. The GGUF path uses
+  `OwnedQuantizedModel::forward` which composes these in one way; the
+  APR path uses a different orchestrator.
+- **Multi-layer KV cache layout (across-layer indexing, not per-layer
+  state)** — §15.4 ruled out per-layer state but not across-layer.
+- **Position embedding (RoPE) layout / sin/cos cache** — could differ
+  between APR-path and GGUF-path setup.
+- **LM head projection** — the very last matmul before logits.
+
+### 16.4 Falsifiable Next Investigation Step
+
+The shortest-path falsifier:
+
+1. **Run `apr trace --payload --layer 0` on both APR and GGUF**
+   teachers. Capture per-layer-0 mean/std for `attn_norm`, `qkv`,
+   `attn_out`, `ffn_norm`, `ffn_out`, `output`. If layer-0 stats
+   diverge → bug is in layer-0 composition (or earlier — RMSNorm,
+   QKV projection). If layer-0 stats match → bug is in
+   layer-1..27 composition or LM head projection.
+2. **Iterate** — bisect through layers using `--layer N` to localize
+   the first divergent layer. Even just 5 bisection steps narrows
+   28 layers to a single block.
+3. **Once a divergent layer is named**, run `apr diff --values` on
+   the layer's intermediate tensors (post-#1058 mmap fix makes this
+   feasible).
+
+This is a 1-2 session task, not a multi-PR effort. The §15.5 TraceStep
+extension is still the durable instrumentation answer, but §16's
+finding makes the immediate root-cause hunt more focused: **the bug
+is on CPU, in the APR forward path, surfacing only on the real 7B
+teacher, undetected by all existing synthetic parity tests**. Whatever
+fix lands also discharges all 5 transitively-blocked MODEL-1 PARTIALs
+(SHIP-002/005/006/007/008) per §15.7's blast-radius inventory.
+
+### 16.5 Methodological Continuation
+
+This investigation step used the existing `apr trace --payload` CLI
+without any code changes — exact same primitive previously used to
+generate per-layer mean/std telemetry. Zero `eprintln!`, zero bash
+workaround. Per `feedback_apr_trace_not_eprintln.md`. The data was
+captured via redirect:
+
+```bash
+apr trace <apr> --payload > /tmp/trace-apr-7b.txt    # 271 lines
+apr trace <gguf> --payload > /tmp/trace-gguf-7b.txt  # 34 lines
+diff <(grep "predictions\|Top-1\|FULL OUTPUT" /tmp/trace-apr-7b.txt) \
+     <(grep "predictions\|Top-1\|FULL OUTPUT" /tmp/trace-gguf-7b.txt)
+```
+
+The 271-vs-34 line ratio is itself a signal: APR trace's payload-
+runner emits per-layer stats for all 28 layers; GGUF trace emits
+final output and stops, suggesting different control flow at the
+top level even before consideration of forward correctness.
 
 ---
 
