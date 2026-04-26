@@ -270,12 +270,23 @@ fn drive_real(
     // (seq_length + 1) so LMBatch::from_sequences takes the shared
     // layout path and pad_id is never used for padding. The real
     // tokenizer's special-token ids will plumb through in a follow-up.
-    let mut iter = ShardBatchIter::new(dataset, batch_size, seq_length, 0, 0).map_err(|e| {
-        CliError::ValidationFailed(format!(
-            "dataset shard iterator init failed: {e} (path={})",
-            dataset.display()
-        ))
-    })?;
+    //
+    // wrap_around=true: when the corpus shards are exhausted before
+    // --num-steps is reached, reset cursor to shard 0 and continue.
+    // This is standard ML-training behaviour (matches PyTorch /
+    // HuggingFace). Without it, an 18M-token corpus exhausts in ~2
+    // epochs of a 5K-step run with batch=16 seq=512, and the
+    // Cuda*StepFn falls back to placeholder loss `(1.0, 1.0)` — silently
+    // producing garbage gradients. See spec §22 (PR #1073) for the
+    // root-cause investigation.
+    let mut iter = ShardBatchIter::new(dataset, batch_size, seq_length, 0, 0)
+        .map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "dataset shard iterator init failed: {e} (path={})",
+                dataset.display()
+            ))
+        })?
+        .with_wrap_around(true);
 
     // Reserve the first `HELD_OUT_BATCHES` batches as the held-out val
     // set; the remainder feeds RealStepFn.
