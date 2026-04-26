@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.63.0
+**Version:** 2.64.0
+**Atomic next action (v2.64.0):** **§18.5 corrected — Task #132 (`apr pretrain --device cuda` wiring) has substantially shipped** (see new §19 below). Sub-agent investigation on 2026-04-26 confirmed §18.5's premise was outdated by ~5 days: task #132 closed at commit f7ad11408 (2026-04-21). The CLI dispatch path `apr pretrain --device {cpu|cuda|auto}` → `resolve_device()` → `drive_real_cuda(...)` → `CudaTransformerTrainer::new(cfg)` is wired and live, with all GPU kernels (forward/backward/optimizer/loss/AdamW state) invoked from `crates/aprender-train/src/autograd/`. Live smoke test confirmed: a non-CUDA-built apr binary produces a graceful contract-cited error citing GATE-GPUTRAIN-002, proving the wiring exists. Three real residuals remain: (A) INV-TRAIN-003 GPU AdamW-state sha256 [small PR]; (B) GATE-GPUTRAIN-004/005 → ACTIVE via 50-step cuda:0 dispatch + JSONL `wall_ms` emission [small PR + operator dispatch]; (C) operator authorization for the 10K-step convergence run [decision, not engineering]. Spec v2.63.0 → **v2.64.0**. No coverage tally change. The corrected long path to MODEL-2 publish is much shorter than §18.8 stated. Methodological lesson: status sections that cite a stale memory entry as evidence MUST re-verify against current code (binding rule per `feedback_no_guessing.md`).
+
 **Atomic next action (v2.63.0):** **Training status snapshot recorded as chain-of-thought (§18 below).** This section walks the deduction chain that connects the spec's two-model goal to the current state, so future sessions can re-enter the work without re-reading every prior section. Coverage tally unchanged: **33 PARTIAL + 12 DISCHARGED** across 45 contract-bound levers. **MODEL-1 status:** 5/10 ACs DISCHARGED via live RTX 4090 evidence (SHIP-001/003/004/009/010); 5/10 PARTIAL (SHIP-002/005/006/007/008) all transitively gated on the SHIP-007 root-cause fix tracked in §15–§17 + PRs #1063/#1064/#1065/#1066. **MODEL-2 status:** 3/12 ACs DISCHARGED (SHIP-011/021/022); 9/12 PARTIAL gated on a converged 370M run, blocked at task #132 (`apr pretrain --device cuda` not yet wired through `TransformerTrainer::new` — kernels exist, just not entry-pointed). **GPUTRAIN suite:** 7/7 DISCHARGED (full closure, including bit-exact FP32 reproducibility via cuBLAS PEDANTIC_MATH + atom-free PTX reduction). Two parallel paths to next observable state-change: (a) short — sub-FFN bisection on the canonical 7B teacher names the SHIP-007 bug site → 5 MODEL-1 PARTIALs auto-discharge; (b) long — task #132 + The Stack v2 tokenization + convergence → 9 MODEL-2 PARTIALs auto-discharge. Spec v2.62.0 → **v2.63.0**. No coverage tally change.
 
 **Atomic next action (v2.62.0):** **SHIP-007 layer-3 ffn_out anomaly identified — first-divergent layer named** (see new §17 below). The §16.4 falsifier was executed against the APR teacher's `apr trace --payload` output, which already emits per-layer mean/std for all 28 transformer blocks. The full 28-layer `ffn_out` std progression shows a **31× discontinuity at layer 3** (std=11.46) vs layer 2 (std=0.22) and the layer-4-26 median of 0.5-2.0. The residual stream's `output` std jumps from 0.72 (layer 2) to 11.78 (layer 3), then stays elevated. Three signals point at layer 3 ffn_out specifically: (a) magnitude discontinuity 31× isn't architecture-driven (SHIP-003 PR #1059's 339-tensor cosine sweep proved the underlying weights are byte-equivalent to SafeTensors); (b) damps in one layer (layer 4 ffn_out std=3.84), which is a one-off perturbation pattern, not a stable feature; (c) mean shift -0.082 is 100× the median magnitude, suggesting a sign-bias defect. Surviving suspect surface narrowed from §16.3's four candidates to **layer-composition glue in `forward_single_with_scratch` at layer 3 in the FFN sub-block** plus three new §17.3 candidates (Q4K dequant under load on 18944-dim FFN; SiLU numerical stability; fused gate+up dispatch defect). Sub-layer bisection (`gate_proj_out` / `silu(up_proj_out)` / `down_proj_out`) is now the load-bearing follow-up — requires the §15.5 TraceStep enum extension. Spec v2.61.0 → **v2.62.0**. No coverage tally change.
@@ -2786,6 +2788,183 @@ Every section of §15–§17, every contract authored under
 Spec progression in this session: **v2.58.0 → v2.59.0 → v2.60.0 →
 v2.61.0 → v2.62.0 → v2.63.0** (this section). No coverage tally
 change from §18 — chain-of-thought recording, not a discharge.
+
+---
+
+## 19. §18.5 Correction — Task #132 has substantially shipped (2026-04-26)
+
+§18.5 stated:
+
+> Training compute is the real risk — `apr pretrain --device cuda`
+> is **NOT functional today** (task #132). `apr pretrain`'s
+> `TransformerTrainer::new` lacks a `Device` parameter, so real-
+> compute training is CPU-only. 370M × CPU is impractical for
+> full training.
+
+A sub-agent investigation on 2026-04-26 confirmed this premise is
+**outdated by ~5 days**. Task #132 closed at commit `f7ad11408`
+(2026-04-21) and the wiring has been live since. §19 records the
+corrected state so that future sessions don't re-design what's
+already shipped.
+
+### 19.1 What's actually on disk today
+
+The CLI dispatch path (verified 2026-04-26):
+
+```
+apr pretrain --device {cpu|cuda|auto}
+   │
+   ▼ resolve_device()  (entrenar::train::device::resolve_device, train/device.rs:110)
+   │
+   ▼ drive_real(...)   (apr-cli/src/commands/pretrain.rs:252-301)
+   │
+   ├── device == Device::Cuda → drive_real_cuda(...)  (pretrain.rs:336-364)
+   │       │
+   │       ▼ CudaTransformerTrainer::new(cfg)
+   │           (aprender-train/src/train/transformer_trainer/cuda_trainer.rs:2156-2244)
+   │
+   └── device == Device::Cpu → drive_real_cpu(...)  (pretrain.rs:307-325)
+           │
+           ▼ TransformerTrainer::new(cfg)  (CPU-only path, intentional)
+```
+
+The architectural choice was that `Device` selects the **trainer
+type** (`CudaTransformerTrainer` vs `TransformerTrainer`), not a
+parameter inside one type. PR #1048 ("pin Task #132 Phase 2
+runtime-wiring paths at compile time") locks this surface against
+drift. So §18.5's specific complaint that "`TransformerTrainer::new`
+lacks a `Device` parameter" is technically true but misleading —
+because there's a separate `CudaTransformerTrainer::new` that's
+behind the `cuda` feature flag.
+
+### 19.2 GPU kernels actually invoked from the CUDA branch
+
+All present in `crates/aprender-train/src/autograd/`:
+
+- **Forward**: `cuda_forward::gemm_forward`, `rms_norm_forward`,
+  `pre_warm_forward_kernels`
+- **Backward**: `cuda_backward::gemm::gemm_backward_a/b`,
+  `cuda_backward::structured::rms_norm_backward`
+- **Optimizer / loss**: `cuda_optim::adamw_step_cuda`,
+  `fused_cross_entropy_cuda`, `clip_scale_reduce_cuda`,
+  `gradient_clip_cuda`, `squared_sum_cuda`
+- **AMP**: `precision::GradScaler`
+
+D2H per step is bounded to ~512 B (loss_partials). AdamW state
+(m, v, t) lives on GPU; the only D2H sync is at `save_apr` time.
+
+### 19.3 Smoke test on noah-Lambda-Vector RTX 4090
+
+`apr pretrain --device cuda` on a non-CUDA-built apr binary:
+
+```
+$ /mnt/nvme-raid0/targets/aprender/release/apr pretrain \
+    --dataset /mnt/nvme-raid0/data/csn-python-shards \
+    --tokenizer /mnt/nvme-raid0/models/ship-two-001/model-2-pretrain-smoke \
+    --run-dir /tmp/pretrain-smoke-cuda --device cuda --synthetic \
+    --num-steps 4 --json
+error: Validation failed: --device `cuda` requested but CUDA
+runtime is not available on this host (contract
+gpu-training-backend-v1 GATE-GPUTRAIN-002: no silent CPU
+fallback). Rebuild with `--features cuda` or pass `--device cpu`
+to opt in to the CPU path.
+```
+
+Two facts emerge from this **graceful error**:
+
+1. The CLI parses `--device cuda` correctly.
+2. The dispatch path emits a contract-cited error
+   (GATE-GPUTRAIN-002 — "no silent CPU fallback") when the
+   binary lacks the `cuda` feature.
+
+Both prove §18.5 is wrong: the wiring exists; the binary in
+`/mnt/nvme-raid0/targets/aprender/release/apr` simply wasn't built
+with `--features cuda`. Per `feedback_cuda_feature_footgun.md` and
+`reference_lambda_labs_host_locality.md` ("Canonical release binary
+on lambda-labs: `/mnt/nvme-raid0/targets/aprender/release/apr`
+(must be built `--features cuda`)"), this is a **rebuild-time
+issue**, not a code-architecture gap.
+
+### 19.4 Residual work — what actually still needs doing
+
+Three real gaps remain, separable into honest follow-up PRs:
+
+| Residual | Description | Scope |
+|----------|-------------|-------|
+| **A** | `INV-TRAIN-003` GPU AdamW-state sha256 | Today `optimizer_state_sha256 -> None` on GPU path so GATE-TRAIN-006 only exercises the CPU trainer. Factor a periodic `optimizer_state_d2h_snapshot()` out of `save_apr`'s end-of-epoch sync into a debug-mode hook. **Small PR.** |
+| **B** | `GATE-GPUTRAIN-004` / `GATE-GPUTRAIN-005` PARTIAL → ACTIVE_WITH_LIVE_EVIDENCE | Emit `{step, wall_ms}` JSONL inside `apr pretrain --json` (extend `PretrainReport.per_step_metrics` consumer). Then dispatch a fresh 50-step `cuda:0` run with PID captured from `nvidia-smi --query-compute-apps`. **Small PR + operator dispatch.** |
+| **C** | Real 370M convergence run | Task #126 in_progress, awaiting user authorization for the full 10K-step run. **Operator decision, not engineering.** |
+
+### 19.5 Corrected §18.8 short/long path framing
+
+§18.8 said:
+
+> Long path (multi-session): Address task #132 (`Device` parameter
+> on `TransformerTrainer::new` + `apr pretrain --device cuda`
+> wiring) → tokenize The Stack v2 Python with vocab=50,257 → run
+> convergence to CE ≤ 2.2 on val → checkpoint as `.apr` → 9 MODEL-2
+> PARTIALs auto-discharge.
+
+The corrected long path (post-§19):
+
+> Long path (1–N sessions, scope-bounded): (a) rebuild the canonical
+> apr binary with `--features cuda` if not already (one-time);
+> (b) close Residual A + B above (two small PRs); (c) tokenize
+> The Stack v2 Python with vocab=50,257 (data-engineering, no
+> code change); (d) operator-authorize the 10K-step run on
+> noah-Lambda-Vector → checkpoint as `.apr` → 9 MODEL-2 PARTIALs
+> auto-discharge.
+
+The "wire CUDA training" step (a) was the load-bearing complaint
+in §18.5; it's already done. Steps (b)–(d) are smaller and well-
+scoped.
+
+### 19.6 Why §18.5 was wrong
+
+§18.5 was authored from the project memory entry
+`memory/project_task_132_cuda_training_backend_gap.md` which was
+itself written before task #132's Phase 1+2 PRs landed. The
+memory entry was not updated when those PRs merged. This is a
+known failure mode: project memories that describe in-flight
+work go stale when the work ships.
+
+The fix is in two parts:
+
+1. **§19 spec amendment** (this section) records the corrected
+   state. Future sessions reading the spec will not re-design
+   shipped wiring.
+2. **Memory update**: `project_task_132_cuda_training_backend_gap.md`
+   should be updated to reflect "task #132 closed; INV-TRAIN-003
+   GPU sha256 + GATE-GPUTRAIN-004/005 live evidence are the
+   residuals." This is durable knowledge that informs the next
+   session.
+
+### 19.7 No coverage tally change
+
+§19 is correction-recording, not a discharge. Spec v2.63.0 →
+**v2.64.0**. The tally remains 33 PARTIAL + 12 DISCHARGED. But
+**the surviving PARTIALs are now correctly scoped**:
+
+- The 9 MODEL-2 PARTIALs (012/013/014/015/016/017/018/019/020) are
+  not blocked on engineering — they're blocked on (b) two small
+  PRs, (c) data engineering, and (d) operator authorization.
+- The 5 MODEL-1 PARTIALs (002/005/006/007/008) are still blocked
+  on the SHIP-007 fix per §17/§18.6. That hasn't changed.
+
+### 19.8 Methodological lesson
+
+The §15→§17 narrowing was "good chain of thought" — each
+deduction a falsifiable result on live evidence. §18.5 was "bad
+chain of thought" — the premise (`apr pretrain --device cuda`
+non-functional) was inherited from a stale memory entry without
+re-verification. The §19 correction came from a sub-agent
+investigation that re-read the actual code.
+
+**Rule going forward (per `feedback_no_guessing.md`):** When a
+§18-style status snapshot cites a memory entry as evidence for a
+gap, the memory entry's claims must be re-verified against the
+code at write-time. This rule is now binding for any future
+section that summarizes status across multiple subsystems.
 
 ---
 
