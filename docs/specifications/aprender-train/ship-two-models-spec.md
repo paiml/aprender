@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.61.0
+**Version:** 2.62.0
+**Atomic next action (v2.62.0):** **SHIP-007 layer-3 ffn_out anomaly identified — first-divergent layer named** (see new §17 below). The §16.4 falsifier was executed against the APR teacher's `apr trace --payload` output, which already emits per-layer mean/std for all 28 transformer blocks. The full 28-layer `ffn_out` std progression shows a **31× discontinuity at layer 3** (std=11.46) vs layer 2 (std=0.22) and the layer-4-26 median of 0.5-2.0. The residual stream's `output` std jumps from 0.72 (layer 2) to 11.78 (layer 3), then stays elevated. Three signals point at layer 3 ffn_out specifically: (a) magnitude discontinuity 31× isn't architecture-driven (SHIP-003 PR #1059's 339-tensor cosine sweep proved the underlying weights are byte-equivalent to SafeTensors); (b) damps in one layer (layer 4 ffn_out std=3.84), which is a one-off perturbation pattern, not a stable feature; (c) mean shift -0.082 is 100× the median magnitude, suggesting a sign-bias defect. Surviving suspect surface narrowed from §16.3's four candidates to **layer-composition glue in `forward_single_with_scratch` at layer 3 in the FFN sub-block** plus three new §17.3 candidates (Q4K dequant under load on 18944-dim FFN; SiLU numerical stability; fused gate+up dispatch defect). Sub-layer bisection (`gate_proj_out` / `silu(up_proj_out)` / `down_proj_out`) is now the load-bearing follow-up — requires the §15.5 TraceStep enum extension. Spec v2.61.0 → **v2.62.0**. No coverage tally change.
+
 **Atomic next action (v2.61.0):** **SHIP-007 root cause materially isolated to the CPU APR forward path on 7B Qwen2.5-Coder** (see new §16 below). Live evidence on noah-Lambda-Vector RTX 4090 (2026-04-26): `apr trace --payload` on the canonical paiml/qwen2.5-coder-7b-apache-q4k-v1 teacher in BOTH formats, same prompt "What is 2+2?", same encoded tokens `[3838, 374, 220, 17, 10, 17, 30]`, same embedded BPE tokenizer:
 - **GGUF teacher** → Top-1 token=17 ("2"), full output `" 2+2 is 4."` ← **CORRECT** language model output.
 - **APR teacher** → Top-1 token=220 (" "), logit=16.7368 ← **WRONG** (whitespace prediction).
@@ -2434,6 +2436,126 @@ The 271-vs-34 line ratio is itself a signal: APR trace's payload-
 runner emits per-layer stats for all 28 layers; GGUF trace emits
 final output and stops, suggesting different control flow at the
 top level even before consideration of forward correctness.
+
+---
+
+## 17. SHIP-007 Layer-3 FFN Output Anomaly Identified (2026-04-26)
+
+§16.4's falsifier next step (per-layer bisection through 28 layers)
+was executed on the APR teacher's `apr trace --payload` output. The
+APR-side `--payload` already emits per-layer mean/std for all 28
+transformer blocks (`attn_norm`, `qkv`, `attn_out`, `ffn_norm`,
+`ffn_out`, `output`) — re-using existing instrumentation, no code
+change required.
+
+### 17.1 Layer-3 FFN-Out Spike
+
+The full 28-layer per-layer `ffn_out` std progression on the APR
+teacher (paiml/qwen2.5-coder-7b-apache-q4k-v1, prompt "What is 2+2?"):
+
+| Layer | ffn_out std | output std | Note |
+|------:|------------:|-----------:|------|
+|  0    |  0.32       |  0.40      | Embed → attn → FFN, all small |
+|  1    |  0.34       |  0.65      | Smooth growth |
+|  2    |  0.22       |  0.72      | Smooth growth |
+|  3    | **11.46**   | **11.78**  | **31× spike** vs layers 4-26 median |
+|  4    |  3.84       | 15.43      | Damping, but residual stream stays elevated |
+|  5    |  1.72       | 16.95      | Damped to typical FFN range |
+| ...   | (0.5–2.0)   | (16-26)    | Stable thereafter |
+| 26    |  5.84       | 19.60      | Late-layer growth |
+| 27    |  6.46       | 13.55      | Final FFN before LM head |
+
+**The bug surface is now narrowed to "first divergent layer is
+layer 3, in the FFN sub-block, on the APR-format CPU forward path".**
+
+### 17.2 Why Layer 3 Is Suspect, Not Just Surprising
+
+Three signals point at layer 3 ffn_out specifically:
+
+1. **31× discontinuity** — layer 2's ffn_out std=0.22 to layer 3's
+   std=11.46 is not a typical Qwen2.5 architecture-driven scale
+   change. The layer 2 → 3 weight matrices don't differ by 50×
+   (verified by SHIP-003 PR #1059's 339-tensor cosine sweep —
+   APR↔SafeTensors cos≥0.9999999 across all layer-3 tensors).
+2. **Damps in 1 layer** — layer 4's ffn_out std=3.84 vs layer 3's
+   11.46 is a 3× drop that would not happen in a linear cascade.
+   This says layer 3's spike is a *one-off perturbation*, not a
+   stable architectural feature.
+3. **Mean shift** — layer 3 ffn_out mean=-0.082 is 100× larger
+   in magnitude than the median ±0.005, suggesting a sign-bias
+   defect, not just a magnitude-scaling defect.
+
+### 17.3 Refined Surviving Suspect Surface
+
+§16.3 listed four candidates. §17's evidence further narrows to:
+
+| Suspect | §16.3 status | §17 status |
+|---------|--------------|-----------|
+| Layer-composition glue in `forward_single_with_scratch` | Open | **Most likely** — layer 3 specifically; FFN sub-block only |
+| Multi-layer KV cache layout (across-layer indexing) | Open | Less likely — bug is FFN, not attention |
+| Position embedding (RoPE) layout / sin/cos cache | Open | Less likely — RoPE is QKV-side, not FFN |
+| LM head projection | Open | Less likely — bug is mid-stack, not output |
+
+Adjacent suspects newly added by §17:
+- **Q4K dequant of layer-3 specific FFN tensors (`gate_proj`,
+  `up_proj`, `down_proj`)** — the SHIP-003 cosine sweep tested
+  static dequant accuracy, but didn't test under-load behavior
+  (e.g., NUMA-bound cache thrashing on 18,944-dim FFN).
+- **SiLU activation numerical stability** — `silu(x) = x * sigmoid(x)`
+  for large positive x can amplify Q4K quantization noise quadratically
+  via the `gate * silu(up)` SwiGLU pattern.
+- **Fused gate+up matvec dispatch** — per CLAUDE.md FFN section,
+  `generic_fused_gate_up_matvec_into<F>` halves rayon dispatches
+  (28 instead of 56 per token); a defect in the fused path that
+  manifests only at `hidden=3584, ffn_dim=18944` would surface as
+  exactly this pattern.
+
+### 17.4 Falsifiable Next Investigation Step
+
+The shortest-path falsifier:
+
+1. **Run `apr diff --values --transpose-aware` on layer-3-only
+   FFN tensors** between APR and a known-good reference (the
+   same teacher loaded via realizar's GGUF path).
+2. **Bisect within layer 3** — emit `ffn_norm`, `gate_proj_out`,
+   `up_proj_out`, `silu(up_proj_out)`, `gate_proj_out * silu(up_proj_out)`,
+   `down_proj_out` separately. Whichever sub-tensor first shows
+   a 31× std discontinuity vs the GGUF path is the bug site.
+3. **Once the divergent sub-tensor is named**, the kernel that
+   produces it (e.g., `fused_gate_up_matvec_into`, `silu_inplace`,
+   `fused_q4k_parallel_matvec` for `down_proj`) is the fix site.
+
+This sub-layer bisection requires extending TraceStep per §15.5
+(`AttentionFfn` → `Attention` + `FfnGateUp` + `FfnSilu` + `FfnDown`
++ `LmHead`). The §15.5 enum extension is now load-bearing for the
+fix; without it, the layer-3 bug cannot be localized below the
+"FFN sub-block" granularity.
+
+### 17.5 Re-confirms the Bug-Location Theory
+
+§17's findings are consistent with §16's elimination table — none
+of the seven §16.2-eliminated suspects (GPU, GQA kernel, tokenizer,
+loader-side data, Q4K dequant accuracy at-rest, RMSNorm, embed
+lookup) are layer-specific. The bug is in **layer-composition or
+FFN-internal logic at layer 3, on the APR-format CPU forward path**,
+exactly as §16.3 hypothesized — but now with a single layer index
+(3) and sub-block (FFN) instead of a 28×4 search space.
+
+### 17.6 No Code Change This Section
+
+§17 is investigation-recording, like §15 and §16. Spec v2.61.0 →
+**v2.62.0**. No coverage tally change. Methodologically: zero
+`eprintln!`, zero bash workarounds, exact same `apr trace --payload`
+primitive used in §15 and §16 (the third re-use of this primitive
+without modification — strong evidence that the in-tree CLI
+already supports the bisection pattern).
+
+The §16.4 falsifier's literal first iteration ("Run `apr trace
+--payload --layer 0` on both APR and GGUF teachers") was attempted
+and partially succeeded: the **APR side** has full per-layer telemetry
+across all 28 blocks; the **GGUF side** still emits final-decode-only
+telemetry (34 lines). This is the missing-instrumentation gap that
+§15.5's TraceStep enum extension addresses.
 
 ---
 
