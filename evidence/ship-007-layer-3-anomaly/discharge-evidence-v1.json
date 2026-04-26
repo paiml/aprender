@@ -1,0 +1,320 @@
+{
+  "evidence_id": "FALSIFY-SHIP-007-LAYER-3-FFN-OUT-ANOMALY-V1",
+  "binds_to": "AC-SHIP1-007 (via \u00a717 of ship-two-models-spec.md)",
+  "captured_date": "2026-04-26",
+  "host": {
+    "hostname": "noah-Lambda-Vector",
+    "tier": "lambda-labs",
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "binary_path": "/mnt/nvme-raid0/targets/aprender/release/apr"
+  },
+  "command_apr": "apr trace /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr --payload",
+  "command_gguf": "apr trace /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf --payload",
+  "prompt": "What is 2+2?",
+  "encoded_tokens": [
+    3838,
+    374,
+    220,
+    17,
+    10,
+    17,
+    30
+  ],
+  "apr_top_1_token_id": 220,
+  "apr_top_1_logit": 16.7368,
+  "apr_top_1_decoded": " (whitespace) \u2014 WRONG",
+  "gguf_full_output": " 2+2 is 4. \u2014 CORRECT",
+  "first_divergent_layer": 3,
+  "first_divergent_sub_block": "ffn_out",
+  "spike_ratio": 53.0,
+  "ffn_out_layer_progression": [
+    {
+      "layer": 0,
+      "mean": 0.0054,
+      "std": 0.3245
+    },
+    {
+      "layer": 1,
+      "mean": -0.0015,
+      "std": 0.3448
+    },
+    {
+      "layer": 2,
+      "mean": -0.0001,
+      "std": 0.2163
+    },
+    {
+      "layer": 3,
+      "mean": -0.0819,
+      "std": 11.459
+    },
+    {
+      "layer": 4,
+      "mean": -0.02,
+      "std": 3.8374
+    },
+    {
+      "layer": 5,
+      "mean": -0.0099,
+      "std": 1.7247
+    },
+    {
+      "layer": 6,
+      "mean": -0.0169,
+      "std": 1.5377
+    },
+    {
+      "layer": 7,
+      "mean": -0.0041,
+      "std": 1.0579
+    },
+    {
+      "layer": 8,
+      "mean": -0.0096,
+      "std": 1.1145
+    },
+    {
+      "layer": 9,
+      "mean": -0.0165,
+      "std": 1.3315
+    },
+    {
+      "layer": 10,
+      "mean": -0.003,
+      "std": 0.7159
+    },
+    {
+      "layer": 11,
+      "mean": 0.0006,
+      "std": 0.7573
+    },
+    {
+      "layer": 12,
+      "mean": -0.0179,
+      "std": 1.2621
+    },
+    {
+      "layer": 13,
+      "mean": -0.0178,
+      "std": 1.4689
+    },
+    {
+      "layer": 14,
+      "mean": -0.0104,
+      "std": 1.137
+    },
+    {
+      "layer": 15,
+      "mean": -0.005,
+      "std": 0.7143
+    },
+    {
+      "layer": 16,
+      "mean": -0.004,
+      "std": 0.5788
+    },
+    {
+      "layer": 17,
+      "mean": -0.0043,
+      "std": 0.505
+    },
+    {
+      "layer": 18,
+      "mean": -0.0051,
+      "std": 0.5996
+    },
+    {
+      "layer": 19,
+      "mean": -0.0071,
+      "std": 0.6702
+    },
+    {
+      "layer": 20,
+      "mean": 0.0033,
+      "std": 0.989
+    },
+    {
+      "layer": 21,
+      "mean": 0.0012,
+      "std": 1.0412
+    },
+    {
+      "layer": 22,
+      "mean": -0.0054,
+      "std": 1.3017
+    },
+    {
+      "layer": 23,
+      "mean": -0.0033,
+      "std": 1.6514
+    },
+    {
+      "layer": 24,
+      "mean": -0.0002,
+      "std": 1.7177
+    },
+    {
+      "layer": 25,
+      "mean": -0.0511,
+      "std": 2.8708
+    },
+    {
+      "layer": 26,
+      "mean": 0.0409,
+      "std": 5.8391
+    },
+    {
+      "layer": 27,
+      "mean": 0.065,
+      "std": 6.4581
+    }
+  ],
+  "output_layer_progression": [
+    {
+      "layer": 0,
+      "mean": 0.0004,
+      "std": 0.4016
+    },
+    {
+      "layer": 1,
+      "mean": -0.0012,
+      "std": 0.6464
+    },
+    {
+      "layer": 2,
+      "mean": -0.0021,
+      "std": 0.7159
+    },
+    {
+      "layer": 3,
+      "mean": -0.0834,
+      "std": 11.7756
+    },
+    {
+      "layer": 4,
+      "mean": -0.1029,
+      "std": 15.4269
+    },
+    {
+      "layer": 5,
+      "mean": -0.1122,
+      "std": 16.9458
+    },
+    {
+      "layer": 6,
+      "mean": -0.1303,
+      "std": 18.2438
+    },
+    {
+      "layer": 7,
+      "mean": -0.1312,
+      "std": 19.0114
+    },
+    {
+      "layer": 8,
+      "mean": -0.1391,
+      "std": 19.8066
+    },
+    {
+      "layer": 9,
+      "mean": -0.1573,
+      "std": 20.8351
+    },
+    {
+      "layer": 10,
+      "mean": -0.1597,
+      "std": 21.2741
+    },
+    {
+      "layer": 11,
+      "mean": -0.1571,
+      "std": 21.7559
+    },
+    {
+      "layer": 12,
+      "mean": -0.1717,
+      "std": 22.7425
+    },
+    {
+      "layer": 13,
+      "mean": -0.1849,
+      "std": 23.9407
+    },
+    {
+      "layer": 14,
+      "mean": -0.1941,
+      "std": 24.8312
+    },
+    {
+      "layer": 15,
+      "mean": -0.1949,
+      "std": 25.3237
+    },
+    {
+      "layer": 16,
+      "mean": -0.1954,
+      "std": 25.6418
+    },
+    {
+      "layer": 17,
+      "mean": -0.2027,
+      "std": 25.6967
+    },
+    {
+      "layer": 18,
+      "mean": -0.2077,
+      "std": 25.7198
+    },
+    {
+      "layer": 19,
+      "mean": -0.2059,
+      "std": 25.7321
+    },
+    {
+      "layer": 20,
+      "mean": -0.205,
+      "std": 25.4083
+    },
+    {
+      "layer": 21,
+      "mean": -0.1952,
+      "std": 25.3859
+    },
+    {
+      "layer": 22,
+      "mean": -0.1968,
+      "std": 25.3309
+    },
+    {
+      "layer": 23,
+      "mean": -0.201,
+      "std": 24.6528
+    },
+    {
+      "layer": 24,
+      "mean": -0.2031,
+      "std": 24.0857
+    },
+    {
+      "layer": 25,
+      "mean": -0.2565,
+      "std": 23.2553
+    },
+    {
+      "layer": 26,
+      "mean": -0.2242,
+      "std": 19.6001
+    },
+    {
+      "layer": 27,
+      "mean": -0.1008,
+      "std": 13.5469
+    }
+  ],
+  "raw_evidence": {
+    "apr_payload_trace": "evidence/ship-007-layer-3-anomaly/apr-trace-payload-7b-2026-04-26.txt",
+    "gguf_payload_trace": "evidence/ship-007-layer-3-anomaly/gguf-trace-payload-7b-2026-04-26.txt"
+  },
+  "spec_section": "\u00a717 of docs/specifications/aprender-train/ship-two-models-spec.md",
+  "spec_pr": 1064
+}
