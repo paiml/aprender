@@ -1,0 +1,2 @@
+pid, process_name, used_gpu_memory [MiB]
+1658504, /mnt/nvme-raid0/targets/aprender/release/apr, 6636 MiB
