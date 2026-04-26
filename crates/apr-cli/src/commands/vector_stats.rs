@@ -130,6 +130,16 @@ fn print_layer_activations(layers: &[realizar::apr_transformer::LayerActivation]
         print_stage_stats("    qkv      ", &layer.qkv_stats);
         print_stage_stats("    attn_out ", &layer.attn_out_stats);
         print_stage_stats("    ffn_norm ", &layer.ffn_norm_stats);
+        // Per contracts/trace-ffn-sub-block-v1.yaml OBL-SUB-FFN-006:
+        // sub-FFN telemetry lines emitted in computation order between
+        // ffn_norm and ffn_out. Lines suppressed when all 4 sub-stats
+        // are default-zero (GPU path until OBL-SUB-FFN-008 lands).
+        if layer.ffn_gate_stats.count > 0 || layer.ffn_up_stats.count > 0 {
+            print_stage_stats("    ffn_gate ", &layer.ffn_gate_stats);
+            print_stage_stats("    ffn_up   ", &layer.ffn_up_stats);
+            print_stage_stats("    ffn_silu ", &layer.ffn_silu_gate_stats);
+            print_stage_stats("    ffn_swigl", &layer.ffn_swiglu_inner_stats);
+        }
         print_stage_stats("    ffn_out  ", &layer.ffn_out_stats);
         print_stage_stats("    output   ", &layer.output_stats);
 

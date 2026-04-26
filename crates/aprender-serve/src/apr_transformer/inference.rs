@@ -148,6 +148,14 @@ impl AprTransformer {
             let ffn_norm_stats = ActivationStats::from_slice(&ffn_input);
 
             // 2g. FFN - check if gated MLP (SwiGLU) by presence of gate weight
+            // Per contracts/trace-ffn-sub-block-v1.yaml: capture sub-FFN
+            // intermediate stats (gate, up, silu(gate), silu(gate)*up)
+            // for SHIP-007 layer-3 bisection (§17.4).
+            let mut ffn_gate_stats = ActivationStats::default();
+            let mut ffn_up_stats = ActivationStats::default();
+            let mut ffn_silu_gate_stats = ActivationStats::default();
+            let mut ffn_swiglu_inner_stats = ActivationStats::default();
+
             let ffn_output = if let Some(ref gate_weight) = layer.ffn_gate_weight {
                 let gate = self.matmul(&ffn_input, gate_weight, hidden_dim, intermediate_dim);
                 let up = self.matmul(
@@ -157,11 +165,19 @@ impl AprTransformer {
                     intermediate_dim,
                 );
 
+                ffn_gate_stats = ActivationStats::from_slice(&gate);
+                ffn_up_stats = ActivationStats::from_slice(&up);
+
+                let mut silu_gate = Vec::with_capacity(gate.len());
                 let mut ffn_hidden = Vec::with_capacity(gate.len());
                 for (g, u) in gate.iter().zip(up.iter()) {
                     let silu_g = g / (1.0 + (-g).exp());
+                    silu_gate.push(silu_g);
                     ffn_hidden.push(silu_g * u);
                 }
+
+                ffn_silu_gate_stats = ActivationStats::from_slice(&silu_gate);
+                ffn_swiglu_inner_stats = ActivationStats::from_slice(&ffn_hidden);
 
                 let mut out = self.matmul(
                     &ffn_hidden,
@@ -174,7 +190,9 @@ impl AprTransformer {
                 }
                 out
             } else {
-                // Standard MLP without gating
+                // Standard MLP without gating (no SwiGLU sub-stats apply;
+                // ffn_gate_stats / ffn_silu_gate_stats / ffn_swiglu_inner_stats
+                // remain default-zero; ffn_up_stats reflects pre-GELU values).
                 let mut ffn_hidden = self.matmul(
                     &ffn_input,
                     &layer.ffn_up_weight,
@@ -184,6 +202,7 @@ impl AprTransformer {
                 if let Some(ref bias) = layer.ffn_up_bias {
                     self.add_bias(&mut ffn_hidden, bias);
                 }
+                ffn_up_stats = ActivationStats::from_slice(&ffn_hidden);
                 for h in &mut ffn_hidden {
                     let gelu_approx =
                         0.5 * *h * (1.0 + (0.797_884_6 * (*h + 0.044_715 * *h * *h * *h)).tanh());
@@ -214,6 +233,10 @@ impl AprTransformer {
                 qkv_stats,
                 attn_out_stats,
                 ffn_norm_stats,
+                ffn_gate_stats,
+                ffn_up_stats,
+                ffn_silu_gate_stats,
+                ffn_swiglu_inner_stats,
                 ffn_out_stats,
                 output_stats,
             });

@@ -354,6 +354,12 @@ impl GpuModel {
                 qkv_stats,
                 attn_out_stats,
                 ffn_norm_stats,
+                // GPU sub-FFN telemetry not yet implemented; zero-fill per
+                // contracts/trace-ffn-sub-block-v1.yaml OBL-SUB-FFN-008.
+                ffn_gate_stats: crate::apr_transformer::ActivationStats::default(),
+                ffn_up_stats: crate::apr_transformer::ActivationStats::default(),
+                ffn_silu_gate_stats: crate::apr_transformer::ActivationStats::default(),
+                ffn_swiglu_inner_stats: crate::apr_transformer::ActivationStats::default(),
                 ffn_out_stats,
                 output_stats,
             },

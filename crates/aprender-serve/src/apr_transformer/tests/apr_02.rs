@@ -73,6 +73,10 @@ fn test_forward_trace_multiple_layers() {
             qkv_stats: stats.clone(),
             attn_out_stats: stats.clone(),
             ffn_norm_stats: stats.clone(),
+            ffn_gate_stats: ActivationStats::default(),
+            ffn_up_stats: ActivationStats::default(),
+            ffn_silu_gate_stats: ActivationStats::default(),
+            ffn_swiglu_inner_stats: ActivationStats::default(),
             ffn_out_stats: stats.clone(),
             output_stats: stats.clone(),
         })
@@ -103,6 +107,10 @@ fn test_layer_activation_with_different_stats() {
         qkv_stats: attn_stats.clone(),
         attn_out_stats: attn_stats.clone(),
         ffn_norm_stats: ffn_stats.clone(),
+        ffn_gate_stats: ActivationStats::default(),
+        ffn_up_stats: ActivationStats::default(),
+        ffn_silu_gate_stats: ActivationStats::default(),
+        ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: ffn_stats.clone(),
         output_stats: ffn_stats,
     };
