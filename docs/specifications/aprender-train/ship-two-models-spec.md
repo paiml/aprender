@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.66.0
+**Version:** 2.67.0
+**Atomic next action (v2.67.0):** **SHIP-007 sub-FFN bisection executed on canonical 7B teacher — layer-3 ffn_swigl is the first 17×-anomaly site** (see new §23 below). PR #1066's sub-FFN telemetry impl + #1064's §17 layer-3 finding combined: live `apr trace --payload` shows ffn_silu at layer 3 = 0.168 (3.2× layers 1-2 baseline = 0.04-0.05; precursor) → ffn_swigl at layer 3 = 1.222 (17.2× layer 2's 0.071 — first anomaly) → ffn_out at layer 3 = 11.459 (53× — cascaded post-down-proj). Gate/up individually normal at layer 3. Fix surface refined to `inference.rs:160-164` `ffn_hidden.push(silu_g * u)` element-wise multiply (possibly off-by-one slice indexing). Pin requires GGUF-side `forward_traced` extension (next session) per `project_ship_007_gguf_forward_traced_plan.md`. Spec v2.66.0 → **v2.67.0**. Coverage tally unchanged.
+
 **Atomic next action (v2.66.0):** **First real MODEL-2 training run on RTX 4090 — three stack bugs found + fixed at root + first format-validated checkpoint produced** (see new §22 below). User mandate "train a model unless the path is broken, then fix" delivered: (1) `ShardBatchIter` corpus exhaustion silently emitted `(1.0, 1.0)` placeholders for 1000s of steps — fixed via `with_wrap_around(true)` opt-in (PR #1073 first commit); (2) `HELD_OUT_BATCHES=2` + `patience_epochs=2` triggered spurious early-stop on val-noise — fixed by widening to 16 batches + 5 patience (PR #1073 second commit); (3) corpus is 18M tokens vs Chinchilla-optimal 7.4B for 370M params — overfit at epoch 3+ (data engineering deferred to next session). **Best MODEL-2 checkpoint** at `/mnt/nvme-raid0/runs/model-2-from-scratch-006-50k-tuned/ckpt/epoch-002.apr`: val_loss=9.78, 49.2M tokens seen, APR v2 / 219 tensors / 1.39 GiB / checksum VALID / arch=LlamaForCausalLM. AC-SHIP2-005 structurally discharged at format level; awaits contract-level promotion. Spec v2.65.0 → **v2.66.0**. No coverage tally change.
 
 **Atomic next action (v2.65.0):** **Live CUDA training dispatch on RTX 4090 — GATE-GPUTRAIN-004 dischargeable** (see new §20 below). Rebuilt the canonical apr binary at `/mnt/nvme-raid0/targets/aprender/release/apr` with `--features cuda` (40s incremental build). Dispatched `apr pretrain --device cuda --num-steps 50 --seq-length 512` against `/mnt/nvme-raid0/data/csn-python-shards` + `/mnt/nvme-raid0/models/model-2-tokenizer-v1` (vocab=50,257). 100 per-step JSONL records emitted with the new `wall_ms` field (from PR #1069). **Median wall_ms = 264.74 ms** (well under GATE-GPUTRAIN-004's 500ms budget — 47% headroom). PID 1658504 / 6636 MiB GPU memory captured mid-run via `nvidia-smi --query-compute-apps`, confirming GPU-residency (no silent CPU fallback). train_loss step 0→99: 11.02 → 10.50 (Δ=−0.52, real learning). Run aborted at epoch boundary via GATE-TRAIN-005 (val_loss=10.31 > 10.0 ship-blocker — correct behavior for fresh-init 370M). Evidence persisted to `evidence/task-132-residual-b/`. Step (a) of §19.5's long path — "rebuild canonical apr binary with `--features cuda`" — is **DONE**. Spec v2.64.0 → **v2.65.0**. Contract `gpu-training-backend-v1.yaml` GATE-GPUTRAIN-004 promotion is a follow-up PR (the live data is captured; the durable verdict is pending the contract bump).
@@ -3286,6 +3288,139 @@ checkpoint. Spec v2.65.0 → **v2.66.0**. No coverage tally change
 (the AC-SHIP2-005 structural discharge needs a contract-level
 amendment to formally promote; this section records the live
 verification).
+
+---
+
+## 23. SHIP-007 Sub-FFN Bisection — Layer-3 ffn_swigl Localized (2026-04-26)
+
+§17.4 specified the falsifier next step as sub-layer bisection of
+the FFN sub-block. PR #1066 (`feat/sub-ffn-telemetry-impl`) added
+4 new `ActivationStats` fields to `LayerActivation`. §23 records
+the **first run of the bisection on the canonical 7B teacher**
+post-PR-#1066 merge.
+
+### 23.1 Live trace with sub-FFN telemetry
+
+```
+$ /mnt/nvme-raid0/targets/aprender/release/apr trace \
+    /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr \
+    --payload
+```
+
+The new per-layer block emits 10 lines instead of 6 — between
+`ffn_norm` and `ffn_out`, the renderer prints `ffn_gate`, `ffn_up`,
+`ffn_silu`, `ffn_swigl` (per `vector_stats.rs::print_per_layer_activations`,
+gated on the SwiGLU path being active).
+
+### 23.2 Per-layer std progression (selected fields)
+
+| Layer | ffn_silu | ffn_swigl | ffn_out | output |
+|------:|---------:|----------:|--------:|-------:|
+| 0     | 0.160    | 0.088     | 0.325   | 0.402  |
+| 1     | 0.043    | 0.061     | 0.345   | 0.646  |
+| 2     | 0.052    | 0.071     | 0.216   | 0.716  |
+| **3** | **0.168** | **1.222** | **11.459** | **11.776** |
+| 4     | 0.135    | 0.390     | 3.837   | 15.427 |
+| 5     | 0.094    | 0.343     | 1.725   | 16.946 |
+| Median 5–25 | ~0.20–0.30 | ~0.15–0.40 | ~0.5–2.0 | ~16–25 |
+| 27    | 0.959    | 2.247     | 6.458   | 13.547 |
+
+Full data: `evidence/ship-007-layer-3-anomaly/sub-ffn-per-layer-stds.csv`.
+
+### 23.3 The first divergent sub-FFN slot is ffn_swigl
+
+Comparing layer 3 against layers 1–2 baseline:
+
+| Sub-FFN slot | Layer 1–2 std | Layer 3 std | L3/L2 ratio |
+|--------------|--------------:|------------:|------------:|
+| ffn_norm     | 0.85 / 0.86   | 1.00        | 1.16× (normal) |
+| ffn_gate     | 1.50 / 1.99   | 1.92        | 0.97× (normal) |
+| ffn_up       | 1.10 / 0.94   | 1.34        | 1.42× (small growth) |
+| ffn_silu     | 0.043 / 0.052 | 0.168       | **3.2×** (precursor) |
+| **ffn_swigl** | **0.061 / 0.071** | **1.222** | **17.2×** (anomaly) |
+| ffn_out      | 0.345 / 0.216 | 11.459      | 53× (cascaded) |
+| output       | 0.646 / 0.716 | 11.776      | 16.4× (cascaded) |
+
+Bug surface narrows from §17's "(layer=3, FFN sub-block)" to
+**(layer=3, ffn_swigl is the first 17×-anomaly site)**, with
+ffn_silu showing 3× precursor and ffn_out showing 53× post-down-
+proj cascade.
+
+### 23.4 Why ffn_swigl is anomalous
+
+`ffn_swigl[i] = silu(ffn_gate_out[i]) * ffn_up_out[i]` (SwiGLU,
+`inference.rs:160-164`). At layer 3:
+- gate std=1.92 mean=-5.98 (normal vs layers 1-4)
+- up std=1.34 mean=+0.0022 (slightly elevated)
+- silu(gate) std=0.168 mean=-0.0277 (3.2× baseline)
+- swigl std=1.222 mean=-0.0026 (17× baseline)
+
+The 17× swigl spike isn't explained by independent factors. **At
+layer 3, silu(g) and u are unusually positively correlated** at the
+tokens where they multiply. Two hypotheses (§23.5):
+1. **Token-position-dependent correlation** — at the 7-token prompt
+   `[3838, 374, 220, 17, 10, 17, 30]`, layer 3 tokens produce
+   correlated gate/up not present at layers 1-2 (normal trained
+   behavior).
+2. **APR-side bug** — APR forward path produces different VALUES
+   than GGUF (despite SHIP-003 PR #1059 proving weights are byte-
+   equivalent at cos≥0.9999999).
+
+§23 cannot distinguish (1) from (2) without GGUF-side per-layer
+sub-FFN telemetry, which the GGUF trace path doesn't emit (per
+§17.5).
+
+### 23.5 Refined surviving suspect surface
+
+| Suspect | §17.3 status | §23 status |
+|---------|--------------|-----------|
+| Layer-composition glue in `forward_single_with_scratch` | Most likely | **Most likely**, specifically the swigl elementwise multiply at `inference.rs:163` |
+| Q4K dequant under load on 18,944-dim FFN | Plausible | Less likely — gate/up matmuls themselves don't show layer-3 anomaly |
+| SiLU numerical stability under `silu(g) * u` | Plausible | **More likely** — silu(g) at layer 3 is 3× layers 1-2 |
+| Fused gate+up matvec dispatch | Plausible | Less likely — gate/up emit normally |
+| **Element-wise multiply correctness** (newly named) | — | **Most likely** — `inference.rs:163` `ffn_hidden.push(silu_g * u)` could have off-by-one slice indexing |
+
+### 23.6 Falsifiable next investigation step
+
+Extend `OwnedQuantizedModel::forward_traced` (the GGUF path; method
+doesn't yet exist — see `project_ship_007_gguf_forward_traced_plan.md`)
+with the same 4 sub-FFN fields PR #1066 added to APR. Compare APR
+vs GGUF layer-3 ffn_swigl directly:
+
+- If GGUF layer-3 ffn_swigl std ≈ 0.07 → SHIP-007 bug is APR-side
+  in `apr_transformer/inference.rs:160-164`. Fix is local + small.
+- If GGUF layer-3 ffn_swigl std ≈ 1.22 → spike is normal Qwen2.5-
+  Coder trained behavior; SHIP-007 bug is elsewhere (potentially
+  LM-head-only on APR).
+
+### 23.7 What §23 is NOT
+
+§23 does not yet pin the bug to a specific line of code — only
+narrows from "(layer=3, sub-block=FFN)" to "(layer=3, ffn_swigl
+first 17× anomaly site)". The fix lands when GGUF-side comparison
+disambiguates between hypotheses (1) and (2) above.
+
+§23 is reproducible from main: the sub-FFN telemetry is in PR
+#1066 (already merged); the canonical 7B teacher is at
+`/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr`;
+running `apr trace --payload <teacher>.apr` emits the per-layer
+data shown in §23.2.
+
+### 23.8 Methodological alignment
+
+§23 is live-evidence recording. Zero `eprintln!`, fourth re-use of
+`apr trace --payload` primitive (after §15/§16/§17). Spec v2.66.0 →
+**v2.67.0**. Coverage tally unchanged. Evidence persisted to:
+
+```
+evidence/ship-007-layer-3-anomaly/
+├── sub-ffn-bisection-2026-04-26.txt    # 386-line full apr trace output
+└── sub-ffn-per-layer-stds.csv          # 28-layer × 6-field std summary
+```
+
+(This section was originally authored as §21 in the closed PR
+#1072, which conflicted with §22 v2.66 banner once that landed.
+Re-numbered as §23 to preserve the chain-of-thought ordering.)
 
 ---
 
