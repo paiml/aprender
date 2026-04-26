@@ -331,6 +331,10 @@ fn test_layer_activation_construction() {
         qkv_stats: stats.clone(),
         attn_out_stats: stats.clone(),
         ffn_norm_stats: stats.clone(),
+        ffn_gate_stats: ActivationStats::default(),
+        ffn_up_stats: ActivationStats::default(),
+        ffn_silu_gate_stats: ActivationStats::default(),
+        ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: stats.clone(),
         output_stats: stats,
     };
@@ -348,6 +352,10 @@ fn test_layer_activation_debug() {
         qkv_stats: stats.clone(),
         attn_out_stats: stats.clone(),
         ffn_norm_stats: stats.clone(),
+        ffn_gate_stats: ActivationStats::default(),
+        ffn_up_stats: ActivationStats::default(),
+        ffn_silu_gate_stats: ActivationStats::default(),
+        ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: stats.clone(),
         output_stats: stats,
     };
@@ -364,6 +372,10 @@ fn test_layer_activation_clone() {
         qkv_stats: stats.clone(),
         attn_out_stats: stats.clone(),
         ffn_norm_stats: stats.clone(),
+        ffn_gate_stats: ActivationStats::default(),
+        ffn_up_stats: ActivationStats::default(),
+        ffn_silu_gate_stats: ActivationStats::default(),
+        ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: stats.clone(),
         output_stats: stats,
     };
@@ -400,6 +412,10 @@ fn test_forward_trace_with_layers() {
         qkv_stats: stats.clone(),
         attn_out_stats: stats.clone(),
         ffn_norm_stats: stats.clone(),
+        ffn_gate_stats: ActivationStats::default(),
+        ffn_up_stats: ActivationStats::default(),
+        ffn_silu_gate_stats: ActivationStats::default(),
+        ffn_swiglu_inner_stats: ActivationStats::default(),
         ffn_out_stats: stats.clone(),
         output_stats: stats.clone(),
     };
