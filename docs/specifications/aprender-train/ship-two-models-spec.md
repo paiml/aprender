@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.62.0
+**Version:** 2.63.0
+**Atomic next action (v2.63.0):** **Training status snapshot recorded as chain-of-thought (§18 below).** This section walks the deduction chain that connects the spec's two-model goal to the current state, so future sessions can re-enter the work without re-reading every prior section. Coverage tally unchanged: **33 PARTIAL + 12 DISCHARGED** across 45 contract-bound levers. **MODEL-1 status:** 5/10 ACs DISCHARGED via live RTX 4090 evidence (SHIP-001/003/004/009/010); 5/10 PARTIAL (SHIP-002/005/006/007/008) all transitively gated on the SHIP-007 root-cause fix tracked in §15–§17 + PRs #1063/#1064/#1065/#1066. **MODEL-2 status:** 3/12 ACs DISCHARGED (SHIP-011/021/022); 9/12 PARTIAL gated on a converged 370M run, blocked at task #132 (`apr pretrain --device cuda` not yet wired through `TransformerTrainer::new` — kernels exist, just not entry-pointed). **GPUTRAIN suite:** 7/7 DISCHARGED (full closure, including bit-exact FP32 reproducibility via cuBLAS PEDANTIC_MATH + atom-free PTX reduction). Two parallel paths to next observable state-change: (a) short — sub-FFN bisection on the canonical 7B teacher names the SHIP-007 bug site → 5 MODEL-1 PARTIALs auto-discharge; (b) long — task #132 + The Stack v2 tokenization + convergence → 9 MODEL-2 PARTIALs auto-discharge. Spec v2.62.0 → **v2.63.0**. No coverage tally change.
+
 **Atomic next action (v2.62.0):** **SHIP-007 layer-3 ffn_out anomaly identified — first-divergent layer named** (see new §17 below). The §16.4 falsifier was executed against the APR teacher's `apr trace --payload` output, which already emits per-layer mean/std for all 28 transformer blocks. The full 28-layer `ffn_out` std progression shows a **31× discontinuity at layer 3** (std=11.46) vs layer 2 (std=0.22) and the layer-4-26 median of 0.5-2.0. The residual stream's `output` std jumps from 0.72 (layer 2) to 11.78 (layer 3), then stays elevated. Three signals point at layer 3 ffn_out specifically: (a) magnitude discontinuity 31× isn't architecture-driven (SHIP-003 PR #1059's 339-tensor cosine sweep proved the underlying weights are byte-equivalent to SafeTensors); (b) damps in one layer (layer 4 ffn_out std=3.84), which is a one-off perturbation pattern, not a stable feature; (c) mean shift -0.082 is 100× the median magnitude, suggesting a sign-bias defect. Surviving suspect surface narrowed from §16.3's four candidates to **layer-composition glue in `forward_single_with_scratch` at layer 3 in the FFN sub-block** plus three new §17.3 candidates (Q4K dequant under load on 18944-dim FFN; SiLU numerical stability; fused gate+up dispatch defect). Sub-layer bisection (`gate_proj_out` / `silu(up_proj_out)` / `down_proj_out`) is now the load-bearing follow-up — requires the §15.5 TraceStep enum extension. Spec v2.61.0 → **v2.62.0**. No coverage tally change.
 
 **Atomic next action (v2.61.0):** **SHIP-007 root cause materially isolated to the CPU APR forward path on 7B Qwen2.5-Coder** (see new §16 below). Live evidence on noah-Lambda-Vector RTX 4090 (2026-04-26): `apr trace --payload` on the canonical paiml/qwen2.5-coder-7b-apache-q4k-v1 teacher in BOTH formats, same prompt "What is 2+2?", same encoded tokens `[3838, 374, 220, 17, 10, 17, 30]`, same embedded BPE tokenizer:
@@ -2556,6 +2558,234 @@ and partially succeeded: the **APR side** has full per-layer telemetry
 across all 28 blocks; the **GGUF side** still emits final-decode-only
 telemetry (34 lines). This is the missing-instrumentation gap that
 §15.5's TraceStep enum extension addresses.
+
+---
+
+## 18. Training Status Snapshot — Chain of Thought (2026-04-26)
+
+This section walks the reasoning that connects the spec's two-model
+goal to the current state. Read it as the deduction chain that future
+sessions can re-enter without re-reading every prior section.
+
+### 18.1 Why are we training models at all?
+
+The spec's purpose is **Sovereign AI Stack Proof** — demonstrating
+that a Rust-only stack (aprender + apr-cli + realizar in-tree)
+can both *package an existing teacher model* AND *pretrain a new
+model from scratch* using only stack tooling. Two models because
+one alone proves only half the loop:
+
+- **MODEL-1 (Qwen2.5-Coder-7B teacher fork)** proves the
+  **packaging + serving** half: load → inspect → quantize → export
+  → cross-format round-trip. Existence-proof that we can ship
+  somebody else's weights through our format and tooling.
+- **MODEL-2 (Llama-370M sovereign)** proves the **pretrain**
+  half: tokenize → train → checkpoint → eval → publish. Existence-
+  proof that we can produce weights from scratch with no PyTorch
+  in the loop.
+
+The 22 acceptance criteria across §3.2 and §5.2 decompose those
+two halves into binary, falsifiable gates.
+
+### 18.2 What does "DISCHARGED" mean here, and where are we?
+
+A discharge is one of three levels:
+
+| Level | Meaning |
+|-------|---------|
+| **PARTIAL_ALGORITHM_LEVEL** | The verdict function exists in Rust + has unit tests, but no live evidence has been captured against the real teacher / dataset. |
+| **DISCHARGED** | Live evidence on noah-Lambda-Vector RTX 4090 against the canonical fixtures pins all the verdict's constants. |
+| **(unbound)** | No verdict function authored yet. |
+
+Coverage tally as of v2.62.0: **33 PARTIAL + 12 DISCHARGED** across
+45 contract-bound levers (5 of those 12 promoted in a single cycle
+on 2026-04-25).
+
+### 18.3 MODEL-1 — five fully discharged, five blocked on one bug
+
+| AC | Goal | Status | Evidence |
+|----|------|--------|----------|
+| 001 | safetensors loads | **DISCHARGED** | 15.23 GB load via `realizar::Model::load_safetensors`, tensor_count=339, total_params=7,615,616,512 |
+| 002 | `apr run` produces Python `def fib(n):` syntax | PARTIAL | needs working `apr run` — blocked on §16/§17 bug |
+| 003 | per-layer cos ≥ 0.999 | **DISCHARGED** | 339-tensor sweep; min cos = 0.99999994 (6 OOM headroom) |
+| 004 | GGUF round-trip via llama-cli | **DISCHARGED** | 8.04 GB Q4K passthrough, llama-cli emits "Hello! How can" at 127.5 tok/s |
+| 005 | HumanEval ≥ 86% | PARTIAL | needs `apr eval` on a working APR teacher — blocked on §16 |
+| 006 | `apr qa` 8 gates strict pass | PARTIAL | half the gates (ollama_parity / format_parity / ptx_parity) fail because of the SHIP-007 surface manifestation |
+| 007 | decode tps ≥ 30 | PARTIAL | this AC literally IS the SHIP-007 root-cause investigation |
+| 008 | chat template render | PARTIAL | needs `apr run` |
+| 009 | `apr inspect` provenance fields | **DISCHARGED** | live `apr stamp` + `apr inspect` round-trip; 339 tensors preserved post-stamp |
+| 010 | `apr validate-manifest --live` | **DISCHARGED** | 31 GB streamed from HF Hub CDN, 3 sha256s byte-identical, 18 gate verdicts PASS |
+
+**Conclusion of 18.3:** The teacher is shippable today via the
+GGUF path. Five of the ten ACs are closed by live evidence; the
+other five all transitively depend on a single APR-format
+inference bug (§17), so resolving that one bug discharges all
+five at once.
+
+### 18.4 MODEL-2 — three discharged, nine blocked on convergence
+
+| AC | Goal | Status | Why |
+|----|------|--------|-----|
+| 011 | architecture in `llama.yaml` 370m | **DISCHARGED** v2.21.0 | Pure-Rust schema validation |
+| 012 | tokenizer round-trip 10K docs | PARTIAL | algorithm proven on synthetic 20-doc holdout; needs The Stack v2 Python 10K corpus |
+| 013 | val CE ≤ 2.2 | PARTIAL | needs converged 370M model |
+| 014 | training within 21 days | PARTIAL | needs converged 370M model |
+| 015 | `.apr` checkpoint with 370M params | PARTIAL | algorithm proven; needs converged 370M model |
+| 016 | `apr qa` 8 gates pass | PARTIAL | needs converged 370M model |
+| 017 | 100 prompts → Python AST | PARTIAL | needs converged 370M model |
+| 018 | HumanEval ≥ 30% | PARTIAL | needs converged 370M model |
+| 019 | GGUF export round-trip | PARTIAL | needs converged 370M model |
+| 020 | `apr bench` ≥ 100 tok/s on RTX 4090 | PARTIAL | needs converged 370M model |
+| 021 | seed-fixed reproducibility | **DISCHARGED** v2.20.0 | Two seed=0 runs match within 1e-6 |
+| 022 | provenance fields published | **DISCHARGED** v2.20.0 | `apr inspect` shows license / data_source / data_license |
+
+**Conclusion of 18.4:** Nine of twelve ACs are gated on a single
+upstream event — a successful 370M convergence run. Three of those
+nine (012/015 algorithm-only) could in principle discharge on
+synthetic data, but the chain is currently bottlenecked at the
+convergence step.
+
+### 18.5 What's blocking the convergence run?
+
+Walking the chain backward from "we have a trained 370M `.apr`":
+
+1. **Convergence requires a real corpus** — synthetic was used for
+   the 1300-step EARLY_STOP smoke (task #137 ✅) and the 10K-step
+   re-run that confirmed the corpus bottleneck (task #138 ✅).
+2. **Real corpus requires The Stack v2 Python pretokenized into
+   `.bin` shards** with vocab=50,257. Today
+   `apr tokenize encode-corpus` exists (task #123 ✅) and the
+   `ShardBatchIter` reads `.bin` (u32 LE) format from a directory.
+   The Stack v2 download + filter + tokenize is the single missing
+   data-engineering step.
+3. **Tokenizer is unblocked** — BPE quadratic-time was fixed
+   (task #118 ✅): real MODEL-2 corpus now tokenizes in 51 min,
+   was 25h+ non-completing. vocab=50,257 settled via Option A
+   bump (task #131 ✅, replaces albor's 50,000).
+4. **Training compute is the real risk** — `apr pretrain --device
+   cuda` is **NOT functional today** (task #132). `apr pretrain`'s
+   `TransformerTrainer::new` lacks a `Device` parameter, so real-
+   compute training is CPU-only. 370M × CPU is impractical for full
+   convergence. **This is the single critical-path code change
+   between us and a converged MODEL-2.**
+
+The GPUTRAIN suite itself (7/7 DISCHARGED, including same-device
+seed reproducibility via cuBLAS PEDANTIC_MATH + atom-free PTX
+reduction) proves the kernels work — they just aren't wired into
+the `apr pretrain` entry point yet.
+
+### 18.6 The SHIP-007 narrowing — chain of deductions
+
+The bug that blocks all 5 remaining MODEL-1 PARTIALs has been
+narrowed step by step over 4 spec amendments. Each step is a
+falsifiable result, not a hypothesis:
+
+```
+Premise    : APR teacher's GPU forward path emits cos=−0.005 vs CPU
+            (argmax 334 vs 8127) on the canonical 7B Qwen2.5-Coder
+            (§15 — recorded 5 Whys + tensor-shape evidence)
+              │
+              ▼
+Hypothesis : Bug is in GQA-7:1 attention kernel transpose/stride
+            (§15 candidate)
+              │
+              ▼ ran 3 CPU/GPU GQA parity tests on canonical 28:4:128:3584
+              │
+              ▼
+Result §15.4 : Attention kernel ELIMINATED — 3/3 tests PASS on
+              the canonical shape (PR #1061)
+              │
+              ▼
+Hypothesis : Bug is somewhere in the GPU forward path outside
+            the attention kernel — Q/K/V projection, RMSNorm,
+            FFN, LM head, multi-layer KV cache
+              │
+              ▼ ran apr trace --payload twice on the SAME teacher
+              │   in BOTH formats, on CPU
+              │
+              ▼
+Result §16 : APR-format CPU forward path → " " (token 220)
+            GGUF-format CPU forward path → " 2+2 is 4."
+            Both ran on CPU. GPU stack is ELIMINATED entirely.
+            (PR #1063, spec v2.61.0)
+              │
+              ▼
+Hypothesis : Bug is in the APR-format-specific layer-composition
+            glue, NOT in the kernel arithmetic that's ruled out
+            twice (once on GPU by §15.4, once on CPU by SHIP-003
+            PR #1059's 339-tensor cosine sweep cos≥0.9999999)
+              │
+              ▼ examined the 28-layer per-layer ffn_out std on the
+              │   APR side
+              │
+              ▼
+Result §17 : Layer 3 ffn_out std=11.46 vs layer 2 std=0.22 — a
+            53× spike that damps in 1 layer (one-off perturbation,
+            not stable architectural feature). Mean shift -0.082
+            is 100× median (sign-bias signature). Bug surface
+            narrowed from 28×4 candidates to (layer=3, sub-block=FFN).
+            (PR #1064, spec v2.62.0)
+              │
+              ▼
+Next step  : Sub-FFN bisection — emit gate_proj_out, up_proj_out,
+            silu(gate), silu(gate)*up, down_proj_out for layer 3.
+            Whichever first shows the discontinuity is the bug site.
+            Requires the §15.5 TraceStep extension — load-bearing.
+            (PR #1065 contract envelope; PR #1066 implementation
+            in flight 2026-04-26)
+```
+
+### 18.7 What "knowing" looks like at each step
+
+Each premise above is *falsifiable*: someone reading the trace
+output, the parity test, or the cosine sweep can re-derive the
+conclusion. No deduction depends on private state. This is the
+**Genchi Genbutsu** ("go and see") discipline the spec mandates
+in §3 row #10 and `feedback_apr_trace_not_eprintln.md`. The
+5-step narrowing took ~3 sessions of compute time but produced a
+durable record at every step (sections §15–§17 + memory entries
++ raw evidence files in `evidence/ship-007-layer-3-anomaly/`).
+
+### 18.8 What's the next observable state-change?
+
+Two parallel paths, ranked by lead time:
+
+**Short path (1–2 sessions):** PR #1066 lands → `apr trace
+--payload` on the canonical 7B teacher emits 4 new sub-FFN lines
+per layer → whichever of {ffn_gate, ffn_up, ffn_silu_gate,
+ffn_swiglu_inner, ffn_out} carries the layer-3 53× spike names
+the bug site → fix lands → 5 MODEL-1 PARTIALs auto-discharge.
+
+**Long path (multi-session):** Address task #132 (`Device`
+parameter on `TransformerTrainer::new` + `apr pretrain --device
+cuda` wiring) → tokenize The Stack v2 Python with vocab=50,257
+→ run convergence to CE ≤ 2.2 on val → checkpoint as `.apr` →
+9 MODEL-2 PARTIALs auto-discharge.
+
+The two paths are independent. Closing the short path is what
+unlocks live evidence for SHIP-007 itself; closing the long path
+is what makes MODEL-2 a ship-able artifact.
+
+### 18.9 Methodological invariant
+
+Every section of §15–§17, every contract authored under
+`contracts/trace-ffn-sub-block-v1.yaml`, every PR landed since
+2026-04-23 follows the same loop:
+
+1. **Premise from live evidence**, not speculation
+   (per `feedback_no_guessing.md`).
+2. **Contract before code** when extending instrumentation
+   (per `feedback_apr_trace_not_eprintln.md`).
+3. **Drift-prevention test** that pins the new state into Rust
+   (per `feedback_coverage_contracts_coevolution.md`).
+4. **Spec amendment** that records the falsifier result, not the
+   plan (per Toyota Way "fact at the gemba").
+5. **PR with auto-merge** so the cascade flows without manual
+   intervention (per `feedback_auto_merge_green_prs.md`).
+
+Spec progression in this session: **v2.58.0 → v2.59.0 → v2.60.0 →
+v2.61.0 → v2.62.0 → v2.63.0** (this section). No coverage tally
+change from §18 — chain-of-thought recording, not a discharge.
 
 ---
 
