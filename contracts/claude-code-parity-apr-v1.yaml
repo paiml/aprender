@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.10.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.10.0 (M22) installs the companion ↔ aprender byte-equality CI guard that closes the M21 drift class. New scripts/pin-check-roundtrip.sh fetches the aprender-side bytes via gh api at the pin.lock-recorded commit, computes sha256, fails on mismatch with the local sha. CI workflow runs it as FALSIFY-CCPA-012 (c). Future companion-side contract bumps must push to BOTH repos before CI can pass — the M21 drift mode is now mechanically prevented.
+version: "1.11.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.11.0 (M23) — CONTRIBUTING.md authored as a contributor onramp consolidating the operational knowledge from M11-M22: source-of-truth split, fixture-authoring workflow, the 4-step contract-bump ritual + when to bump vs not, gate→failure mapping, anti-patterns. No code or contract-surface change.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,38 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.10.0'
+    to: 'ACTIVE_RUNTIME v1.11.0'
+    note: 'M23 — CONTRIBUTING.md authored as contributor onramp (no code change)'
+    reason: |
+      Across M11-M22 the project accumulated a meaningful body of
+      operational knowledge that lived only in commit messages and
+      this status_history:
+
+        - source-of-truth split (companion ↔ aprender) introduced at M0
+        - fixture-authoring workflow refined incrementally M11-M19
+        - 4-step contract-bump ritual codified at M22 via
+          pin-check-roundtrip
+        - anti-patterns (skipping the round-trip, re-implementing pv
+          in bash, etc.) implicit in CLAUDE.md but never collected
+
+      M23 consolidates this into CONTRIBUTING.md as a contributor
+      onramp covering:
+        1. Source-of-truth split (read first)
+        2. Running the gates locally
+        3. Adding a new fixture (steps + common pitfalls)
+        4. Bumping the contract (the M22 4-step ritual + when to
+           bump vs not)
+        5. Fixing a failing gate (CI-step → gate-id → remediation
+           lookup table)
+        6. What NOT to do (anti-pattern list)
+        7. Spec evolution (companion-side spec markdown +
+           contract status_history)
+
+      No code change; no contract-surface change. Aprender mirror will
+      be paired-pushed in the same PR cycle (M22 ritual self-applied).
 
   - date: '2026-04-27'
     from: 'ACTIVE_RUNTIME v1.9.0'
