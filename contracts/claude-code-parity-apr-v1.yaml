@@ -65,6 +65,28 @@ metadata:
 name: claude-code-parity-apr
 version: "0.2.0"
 status: DRAFT   # promotes to ACTIVE at M6 when all 12 gates are mechanically green
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Top-level invariants — the 12 falsifiable gates this contract asserts.
+# ─────────────────────────────────────────────────────────────────────────────
+# Dual-encoded: structurally re-enumerated below under `falsification_conditions`
+# with full assertion / harness / cross-check details. Listed here as a
+# top-level array for (a) quick-scan summary and (b) pmat CB-1305 contract-
+# surface classification (this contract classifies as `InvariantsOnly`).
+invariants:
+  - { id: FALSIFY-CCPA-009, name: ci_main_branch_green,       summary: 'companion repo branch protection requires ci/gate' }
+  - { id: FALSIFY-CCPA-010, name: pmat_comply_100pct,         summary: 'pmat comply check --strict exits 0 with 0 violations' }
+  - { id: FALSIFY-CCPA-011, name: line_coverage_100pct,       summary: 'cargo llvm-cov --fail-under-lines 100 exits 0' }
+  - { id: FALSIFY-CCPA-012, name: pv_contract_gate_on_commit, summary: 'pre-commit hook + CI both run pv validate' }
+  - { id: FALSIFY-CCPA-001, name: trace_schema_roundtrip,     summary: 'every fixture parses + re-serializes byte-identical' }
+  - { id: FALSIFY-CCPA-002, name: replay_determinism,         summary: 'two replays of the same fixture produce identical student traces' }
+  - { id: FALSIFY-CCPA-003, name: mock_completeness,          summary: 'RecordedDriver consumes every teacher turn exactly once' }
+  - { id: FALSIFY-CCPA-004, name: tool_call_equivalence,      summary: 'student tool-calls equal teacher tool-calls under per-tool rules' }
+  - { id: FALSIFY-CCPA-005, name: file_mutation_equivalence,  summary: 'CWD diff after replay matches CWD diff after teacher run' }
+  - { id: FALSIFY-CCPA-006, name: sovereignty_on_replay,      summary: 'no outbound api.anthropic.com sockets during replay' }
+  - { id: FALSIFY-CCPA-007, name: corpus_coverage,            summary: '>=1 fixture per non-MISSING row of apr-code-parity-v1.yaml' }
+  - { id: FALSIFY-CCPA-008, name: parity_score_bound,         summary: 'aggregate parity_score >= 0.95, per-fixture >= 0.80' }
+
 scope: >
   every recorded fixture under <ccpa-repo>/fixtures/, every replay run the
   ccpa-cli produces, AND every CI run on the companion repo. The four
