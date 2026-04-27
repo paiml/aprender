@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.11.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.11.0 (M23) — CONTRIBUTING.md authored as a contributor onramp consolidating the operational knowledge from M11-M22: source-of-truth split, fixture-authoring workflow, the 4-step contract-bump ritual + when to bump vs not, gate→failure mapping, anti-patterns. No code or contract-surface change.
+version: "1.12.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.12.0 (M24) — 100% mutation coverage on ccpa-differ (the gate kernel). cargo-mutants surveyed 130 mutations: 122 caught, 8 unviable, 0 missed. 5 new kill-tests added in falsify_ccpa_004_tool_equivalence.rs to close gaps revealed by the M24 sweep (Read/Write/Glob/Agent arm-deletion + Edit fallback &&-vs-||). New `make mutants` Makefile target. Contract surface unchanged from v1.4.0.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,69 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.11.0'
+    to: 'ACTIVE_RUNTIME v1.12.0'
+    note: 'M24 — 100% mutation coverage on ccpa-differ (gate kernel hardened)'
+    reason: |
+      Through M0-M23 the ccpa-differ crate accumulated 87 unit/integration
+      tests across 6 falsification harnesses (-001/-004/-005/-006/-007/-008).
+      Line/function coverage is at 100%/99.74%, but **line coverage proves
+      every line is touched, not that every branch behavior is verified**.
+      A test suite can hit 100% lines while leaving real semantics
+      mutations undetected.
+
+      M24 closes the gap by running cargo-mutants on ccpa-differ. Initial
+      sweep on 130 mutations across the 6 .rs files in the crate revealed:
+
+        - score.rs           18 mutants:  14 caught, 4 unviable, 0 missed
+        - equivalence.rs     77 mutants:  72 caught, 0 unviable, 5 MISSED
+        - corpus.rs          ~9 mutants:  all caught
+        - coverage.rs        ~10 mutants: all caught
+        - file_mutation.rs   ~9 mutants:  all caught
+        - sovereignty.rs     ~7 mutants:  all caught
+
+      The 5 missed mutants on equivalence.rs revealed a real test-suite
+      gap: no test paired (a) two ToolCall objects the dedicated
+      per-tool rule says-equivalent with (b) inputs whose canonical-JSON
+      sha256 differs. Without (a)+(b), deleting the Read/Write/Glob/
+      Agent match arm in `tool_call_equivalent` survived because the
+      fallback `default_equivalent` happened to also say-equivalent on
+      every existing test pair.
+
+      Five new kill-tests added in falsify_ccpa_004_tool_equivalence.rs:
+
+        read_arm_kills_arm_deletion_mutant_via_extra_field
+        write_arm_kills_arm_deletion_mutant_via_extra_field
+        glob_arm_kills_arm_deletion_mutant_via_extra_field
+        agent_arm_kills_arm_deletion_mutant_via_extra_field
+        edit_fallback_uses_logical_and_not_or
+
+      Each pairs a "dedicated rule says equivalent" + "default rule
+      says drift" (or for edit's && → ||: a "rule says drift" + "OR
+      mutation says equivalent") shape so the arm-deletion / && → ||
+      mutation flips the assertion outcome.
+
+      Re-run after authoring the kill-tests:
+
+        130 mutants tested: 122 caught, 8 unviable, 0 missed
+
+      The 8 unviable are build failures (mutations that produce
+      type-system-rejected code) — these are not surviving mutants,
+      just non-attempted ones.
+
+      New Makefile target `make mutants` exposes the sweep for local
+      validation. Not wired into CI by default (full run takes ~10
+      minutes on a 16-core box; appropriate for periodic audit, not
+      every-PR gating). Future work could carve a fast-tier mutation
+      gate or run mutants nightly.
+
+      Operational meaning: the gate kernel (ccpa-differ) is now
+      hardened against the mutation-testing class of test-suite gaps.
+      Any future code change to equivalence.rs, score.rs, or the
+      sibling reduction modules should be paired with a re-run of
+      `make mutants` to confirm coverage stays at 100% caught.
 
   - date: '2026-04-27'
     from: 'ACTIVE_RUNTIME v1.10.0'
