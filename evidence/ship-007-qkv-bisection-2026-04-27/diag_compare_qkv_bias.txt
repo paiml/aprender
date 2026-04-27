@@ -1,0 +1,36 @@
+Loading APR: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr
+  config: hidden_dim=3584 kv_dim=512 qkv_dim=4608
+
+Loading GGUF: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.gguf
+  num layers: 28
+
+APR layer 0 qkv_bias len: 4608
+
+=== APR layer 0 qkv_bias parts ===
+  APR q_bias                               n= 3584 mean=  0.127345 std=  3.258061 min=  -54.2500 max=   48.5000
+  APR k_bias                               n=  512 mean=  1.549082 std= 29.464621 min= -180.0000 max=  188.0000
+  APR v_bias                               n=  512 mean=  0.005926 std=  0.186556 min=   -1.2578 max=    2.7969
+
+GGUF layer 0 qkv_bias len: 4608
+
+=== GGUF layer 0 qkv_bias parts ===
+  GGUF q_bias                              n= 3584 mean=  0.127345 std=  3.258061 min=  -54.2500 max=   48.5000
+  GGUF k_bias                              n=  512 mean=  1.549082 std= 29.464621 min= -180.0000 max=  188.0000
+  GGUF v_bias                              n=  512 mean=  0.005926 std=  0.186556 min=   -1.2578 max=    2.7969
+
+=== Element-wise comparison ===
+  Q-bias diff: max=0.000000 RMS=0.000000
+  K-bias diff: max=0.000000 RMS=0.000000
+  V-bias diff: max=0.000000 RMS=0.000000
+
+=== First 10 elements ===
+  Q[0..10] APR : [1.0234375, 2.296875, -1.59375, 1.59375, 1.25, 2.03125, 0.73828125, -0.12792969, 0.46679688, -1.734375]
+  Q[0..10] GGUF: [1.0234375, 2.296875, -1.59375, 1.59375, 1.25, 2.03125, 0.73828125, -0.12792969, 0.46679688, -1.734375]
+  K[0..10] APR : [-0.47851563, 1.3359375, 0.53125, -0.088378906, 0.296875, 0.12207031, 2.1875, 0.26757813, 0.24804688, -0.78515625]
+  K[0..10] GGUF: [-0.47851563, 1.3359375, 0.53125, -0.088378906, 0.296875, 0.12207031, 2.1875, 0.26757813, 0.24804688, -0.78515625]
+  V[0..10] APR : [-0.040283203, -0.58984375, 0.019042969, -0.01953125, -0.060546875, 0.0016021729, 0.029541016, -0.052490234, -0.017333984, -0.031982422]
+  V[0..10] GGUF: [-0.040283203, -0.58984375, 0.019042969, -0.01953125, -0.060546875, 0.0016021729, 0.029541016, -0.052490234, -0.017333984, -0.031982422]
+
+=== VERDICT ===
+  APR ≡ GGUF byte-for-byte → bug is in the LOADER (load_qkv_bias)
+  Path: crates/aprender-serve/src/apr_transformer/mod_dequant_q4k_apr.rs:210-236
