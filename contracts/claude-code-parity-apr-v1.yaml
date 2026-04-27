@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.8.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.8.0 (M20) — README truth-up. The README was 5+ contract-versions stale (badges said v1.2.0; behavioral-gates table said "planned" for M2-M8 even though all 8 are DISCHARGED; repo status said M1; HTTPS-proxy architecture diagram conflicted with the post-rescope AUTHORED-fixture reality). v1.8.0 ships an honest README reflecting M0-M19 SHIPPED + corpus complete (30/30) + hard-blocking gate live. No code or contract-surface change.
+version: "1.9.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.9.0 (M21) — aprender-side contract mirror synced from v1.2.0 → v1.8.0 (6 revisions of drift cleared). Per the source-of-truth split documented in `companion_repo.role`, aprender stays canonical for contract TEXT; pre-M21 the aprender-side bytes were stuck at v1.2.0 / commit f5cfbb370 (2026-04-27T07:00 UTC). M21 pushed all M15-M20 bumps in one commit to aprender@feat/claude-code-parity-apr-poc-spec (commit 08744c69a, byte-identical sha256 to companion-repo); pin.lock now records the new aprender_commit. No code or contract-surface change beyond the version bump documenting the sync.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,45 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.8.0'
+    to: 'ACTIVE_RUNTIME v1.9.0'
+    note: 'M21 — aprender-side mirror sync v1.2.0 → v1.8.0 (6 revisions cleared)'
+    reason: |
+      Per the source-of-truth split documented in this contract's
+      `companion_repo.role` block:
+
+        aprender stays canonical for contract TEXT
+        paiml/claude-code-parity-apr stays canonical for runtime ENFORCEMENT
+
+      Pre-M21, the aprender-side mirror at
+      paiml/aprender@feat/claude-code-parity-apr-poc-spec was stuck at
+      v1.2.0 / commit f5cfbb370 (last synced 2026-04-27T07:00 UTC).
+      The companion repo had advanced through M15-M20 (six contract
+      revisions) without round-tripping the bytes back upstream — a
+      direct violation of the source-of-truth invariant.
+
+      M21 corrects this:
+
+        1. Copies the v1.8.0 contract bytes from companion-repo
+           paiml/claude-code-parity-apr@main (sha256
+           ce4bea33db19b995e717e684c4a1e0c39aefdb9c31bb7aa1cd3800c4fae59610)
+           verbatim onto aprender's feat/claude-code-parity-apr-poc-spec
+           branch.
+        2. Mirrors the spec markdown updates (M0-M19 milestone table
+           refresh + sub-milestones M11-M20 table).
+        3. Pushes a single sync commit to refresh aprender PR #1078.
+        4. Bumps companion pin.lock `aprender_commit` to the new
+           commit (08744c69a) and `last_synced_utc` to the sync time.
+        5. Bumps companion contract v1.8.0 → v1.9.0 (this entry)
+           documenting the sync as a status_history record so future
+           drift can be diagnosed against the audit trail.
+
+      Both files are now byte-identical across the two repos. The
+      `pin-check.sh` script validates this round-trip on every
+      companion-side commit. Future contract bumps must push to
+      both repos atomically (M22+ to install a guard for this).
 
   - date: '2026-04-27'
     from: 'ACTIVE_RUNTIME v1.7.0'
