@@ -1,7 +1,11 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.69.0
+**Version:** 2.71.0
+**Atomic next action (v2.71.0):** **Stack-tool extension rule codified + `apr` is the canonical stack CLI post-monorepo — when `apr` lacks a feature, we extend `apr` via contract→code, NEVER route around to non-stack shims like `huggingface-cli` or to deprecated namespaces like `batuta hf pull`** (see new §26.8 + revised §26.2). Triggering incident 2026-04-27: P1 sub-agent recommended `huggingface-cli download --include 'data/train-000[0-7][0-9]-of-00880.parquet'` because `apr pull` is model-only today (no dataset asset-type, no `--include` for shard-pattern selection, no `--license-allowlist`); this is muda per `feedback_fix_root_cause_never_route_around.md` + `feedback_pv_not_bash_for_contracts.md` + `feedback_monorepo_single_source_of_truth.md` (post-APR-MONO consolidation, `apr` subsumes batuta's HF-pull surface — batuta namespace is no longer relevant for dataset/model pulls). Correct path: author `apr-cli-pull-dataset-v1.yaml` provable contract → extend `apr pull` with dataset asset-type + `--include <glob>` + `--license-allowlist` → use the extended stack tool for P1. P1 is now gated on the `apr pull` extension landing. Spec v2.70.0 → **v2.71.0**. Coverage tally unchanged.
+
+**Atomic next action (v2.70.0):** **Three-priority execution plan adopted — operator authorization issued for Stack v2 download (P1) + GGUF forward_traced (P3) parallel start; convergence run (P2) gated on P1 completion** (see new §26 below). Per user directive "proceed with these priorities" 2026-04-27, the spec records the concrete execution path that takes the chains §24+§25 (corpus diversity is binding for MODEL-2) and §15-§17+§23 (layer-3 ffn_swigl is the SHIP-007 bug surface) to their respective discharges. P1 and P3 are independent and run in parallel; each accomplishment is binding-criterion measurable. Spec v2.69.0 → **v2.70.0**. Coverage tally unchanged at amendment time; expected to flip 9 MODEL-2 PARTIALs (P2 outcome) + 5 MODEL-1 PARTIALs (P3 outcome) = up to **14 PARTIAL→DISCHARGED** within next session.
+
 **Atomic next action (v2.69.0):** **§24.8 LR-budget hypothesis FALSIFIED — 80K-step run on 4× corpus early-stopped at val_loss=9.7507 epoch 4, identical to 20K best** (see new §25 below). Per spec §24.8 prediction "If val_loss plateaus near 9.5–9.7 with no breakthrough → only Stack v2 will move the needle" — exactly what happened. 4× cosine-decay LR budget allocated 80K steps total; early-stop fired at epoch 10 (22K steps actual) because val_loss never improved past epoch-4 best of 9.7507 (within 6e-4 of the 20K run's 9.7513). The 370M model on 74.3M-token CSN-Python corpus has a hard val_loss floor of ~9.75 driven by **corpus diversity exhaustion**, not LR scheduling. Falsification is clean: 1h32min wall, 11 ckpts produced, lambda-labs lane pre-authorized. Conclusion: contract `target_val_loss=3.0` is unreachable on CSN-Python at any LR/step budget; The Stack v2 Python (multi-billion tokens) is the only on-spec corpus path. Spec v2.68.0 → **v2.69.0**. Coverage tally unchanged.
 
 **Atomic next action (v2.68.0):** **MODEL-2 4×-corpus experiment — 74.3M-token CSN-Python re-training quantifies the memorization signature in the prior 18M-token "best" run** (see new §24 below). User mandate "train this model: now!" delivered second from-scratch run on a corpus 4.10× the original (74.3M vs 18.1M tokens). Same hyperparameters as the v2.65.0 best run (20K steps × 264ms = 88 min wall, 10 epochs). Result: final val_loss=9.806, best val_loss=9.751 at epoch 4. **Critical comparison**: 1× run's epoch-9 "best" of val_loss=8.911 had train_loss=9.467 (val < train by 0.556 — *memorization* signature from 9.1× corpus wraps); 4× run's epoch-9 has val_loss=9.806 / train_loss=9.816 (val ≈ train, healthy generalization). The 4× model is materially **healthier** per the train-val gap; the 1× run's lower absolute val_loss was driven by memorizing the small wrapped corpus, not by better learning. Best 4× checkpoint validates as APR v2 / 219 tensors / 1.39 GiB / checksum VALID. Empirical proof that the SHIP-TWO-001 corpus path requires Stack v2 (multi-billion tokens) to push val_loss below 8.91 via real generalization rather than wrap-induced memorization. Spec v2.67.0 → **v2.68.0**. Coverage tally unchanged.
@@ -3820,6 +3824,357 @@ Evidence: `evidence/model-2-corpus-4x-2026-04-27/training-summary-80k.json`
 `/mnt/nvme-raid0/runs/model-2-from-scratch-010-4x-80k/ckpt/`
 (each 1.39 GiB `.apr`, total 15 GB). Best is `epoch-004.apr` at
 val_loss=9.7507 — functionally identical to the §24 best.
+
+## 26. Three-Priority Execution Plan — User Authorization (2026-04-27)
+
+The chain §24+§25 (corpus diversity is binding for MODEL-2) and
+§15→§17→§23 (layer-3 ffn_swigl is the SHIP-007 surface) each
+have a single binding next step. §26 records the user-authorized
+execution plan — both top-priority steps run in parallel,
+neither gated on the other.
+
+### 26.1 Priority matrix
+
+| Priority | Track | Wall-time | Binding criterion | Discharges if met |
+|---------:|-------|----------:|-------------------|-------------------|
+| P1 | MODEL-2 corpus | ~2-6 hr download + ~1-2 hr tokenize | `manifest.json.total_tokens > 1_000_000_000` AND `vocab_size == 50257` | (enables P2) |
+| P2 | MODEL-2 train | ~7.3 hr (100K steps × 264ms) | `best_val_loss < 9.75` (beats CSN-Python floor) | up to 9 MODEL-2 PARTIALs |
+| P3 | SHIP-007 pin | ~2 hr authoring (PR A) + ~2 hr (PR B) | APR vs GGUF layer-3 ffn_swigl std diverge by ≥10× | up to 5 MODEL-1 PARTIALs |
+
+P1 and P3 are independent and start in parallel. P2 starts when
+P1 completes. The session's maximum theoretical coverage flip is
+**14 PARTIAL → DISCHARGED**, doubling today's tally if both
+binding criteria are met.
+
+### 26.2 P1 — Stack v2 Python download + tokenize
+
+**Goal**: produce a tokenized corpus 50–200× larger than the
+4× CSN-Python (74.3M tokens) so that MODEL-2 can converge past
+the val_loss=9.75 floor empirically established in §24+§25.
+
+**Input source**: `codeparrot/github-code-clean`, Python subset
+(after license + language filtering). Sub-agent corpus survey
+2026-04-27 confirmed:
+- ~314 GB total raw across 880 parquet shards (Python is ~6.3%
+  of rows by content)
+- ~12-16B Python BPE tokens after license + language filter →
+  comfortably 10×+ the 1B floor
+- License: dataset itself Apache-2.0; per-row licenses include
+  MIT/Apache-2.0/BSD-2/BSD-3 plus copyleft we MUST filter out
+  per `contracts/dataset-thestack-python-v1.yaml` allowlist
+- Schema: `{code: str, repo_name, path, language, license, size}`
+  — language filter `language == "Python"`; content column = `code`
+- NOT gated on HF (probe download succeeded). `bigcode/the-stack`
+  v1 / `bigcode/starcoderdata` are gated and rejected.
+
+`bigcode/the-stack-v2-dedup` was originally cited as the target,
+but it uses Software Heritage IDs (you fetch source from S3
+separately) — too complex for our session-window. The
+sub-agent recommended `codeparrot/github-code-clean` as the
+directly-downloadable substitute, and §26.2 ratifies that
+recommendation.
+
+**Output target**: `/mnt/nvme-raid0/data/github-code-python-bin/`
+with `manifest.json` showing `total_tokens > 1_000_000_000` and
+`vocab_size == 50257` (compatible with MODEL-2 tokenizer).
+
+**Pipeline** (post-§26.8 stack-tool-extension chain):
+
+```
+# Prerequisite: P1.0–P1.3 (extend `apr pull` per §26.8)
+$ apr pull dataset codeparrot/github-code-clean \
+    --include 'data/train-000[0-7][0-9]-of-00880.parquet' \
+    --license-allowlist mit,apache-2.0,bsd-2-clause,bsd-3-clause \
+    --output /mnt/nvme-raid0/data/github-code-python-raw/
+
+# Convert parquet → JSONL with language filter (Python rows only)
+# This step uses an existing or to-be-built `apr` ingest subcommand;
+# if `apr-corpus-ingest run` covers it, use that; if not, that
+# missing capability is its own §26.8 contract+extension cycle
+$ apr-corpus-ingest run \
+    --input /mnt/nvme-raid0/data/github-code-python-raw \
+    --language-filter python \
+    --license-allowlist mit,apache-2.0,bsd-2-clause,bsd-3-clause \
+    --output /mnt/nvme-raid0/data/github-code-python-jsonl \
+    --content-field code
+
+# Tokenize JSONL → .bin shards with MODEL-2 tokenizer
+$ apr tokenize encode-corpus \
+    --corpus /mnt/nvme-raid0/data/github-code-python-jsonl \
+    --tokenizer /mnt/nvme-raid0/models/model-2-tokenizer-v1 \
+    --output /mnt/nvme-raid0/data/github-code-python-bin \
+    --content-field content --eos-policy between
+```
+
+**Binding accomplishment**: P1 succeeds iff
+`/mnt/nvme-raid0/data/stack-v2-python-bin/manifest.json` shows
+`total_tokens > 1e9` and `vocab_size == 50257`. This is a
+falsifiable Pass/Fail criterion.
+
+**Disk footprint**: Stack v2 Python raw is ~30-50 GB compressed,
+~150-200 GB extracted; final `.bin` shards estimated at ~5-10 GB.
+
+**Authorization**: per memory `feedback_compute_pre_authorized.md`,
+multi-hour data downloads "benefit from operator oversight";
+2026-04-27 user directive **"proceed with these priorities"** is
+the explicit operator GO for P1.
+
+### 26.3 P2 — Convergence training run on Stack v2
+
+**Goal**: drive MODEL-2 val_loss below the §24+§25 floor of 9.75
+toward the contract target of 3.0, by removing the corpus-
+diversity binding constraint.
+
+**Input**: P1 output.
+
+**Hyperparameters** (§24/§25 baseline retained, num_steps 5×):
+
+```
+$ apr pretrain --device cuda --mode from-scratch \
+    --num-steps 100000 --steps-per-epoch 5000 \
+    --batch-size 16 --seq-length 512 --vocab-size 50257 \
+    --dataset /mnt/nvme-raid0/data/stack-v2-python-bin \
+    --tokenizer /mnt/nvme-raid0/models/model-2-tokenizer-v1 \
+    --run-dir /mnt/nvme-raid0/runs/model-2-stack-v2-001
+```
+
+100K × 264 ms = 7.3 hours wall on RTX 4090.
+
+**Binding accomplishment**: P2 succeeds iff
+`best_val_loss < 9.75` (beats CSN-Python floor) AND the `epoch-N`
+checkpoint validates as APR v2 / 219 tensors / checksum VALID.
+Stretch target: `val_loss ≤ 3.0` (contract target, would
+discharge 9 MODEL-2 PARTIALs).
+
+**Expected outcome** per Chinchilla math: 1B-token corpus is
+~14% of optimal for 370M; modeling-quality reduction roughly
+log-linear with corpus, so ~0.5–1.5 nats reduction expected
+(val_loss in 8.5–9.0 range, not 3.0). To hit 3.0 requires the
+full ~7.4B-token Stack v2 Python.
+
+### 26.4 P3 — GGUF forward_traced for SHIP-007 root-cause pin
+
+**Goal**: extend the realizar GGUF inference path to emit per-
+layer sub-FFN telemetry compatible with §23.2's APR data format
+so that APR vs GGUF layer-3 ffn_swigl can be compared head-to-
+head, pinning the SHIP-007 bug to a specific code line.
+
+**Plan source**: `project_ship_007_gguf_forward_traced_plan.md`
+(designed by Plan agent 2026-04-26).
+
+**Two-PR sequence**:
+
+- **PR A** (~2 hr, ~200 LOC): clone
+  `OwnedQuantizedModel::forward_single_with_scratch` →
+  `forward_single_with_scratch_traced` populating 6 non-FFN stat
+  fields per layer (residual_in, attn_norm, attn_out, ffn_norm,
+  ffn_out, output). Default-zero the 4 sub-FFN fields PR #1066
+  added on the APR side.
+
+- **PR B** (~2 hr, ~150 LOC): clone `scratch_swiglu_ffn` →
+  `scratch_swiglu_ffn_traced` populating the 4 sub-FFN stats at
+  the capture points in `realizar/src/quantize/results.rs:329-362`.
+  Hard dep on PR #1066 (already merged 2026-04-26).
+
+**Binding accomplishment**: P3 succeeds iff `apr trace --payload
+<gguf-teacher>.gguf` emits per-layer ffn_swigl std AND comparing
+APR (1.222 from §23.2) vs GGUF at layer 3 yields ≥10× ratio
+divergence (= APR-side bug confirmed) OR <2× ratio (= APR-side
+bug ruled out, look elsewhere).
+
+Either outcome is a ship-criterion: §17.5 documents that the
+SHIP-007 fix discharges 5 MODEL-1 PARTIALs at once
+(SHIP-002/005/006/007/008).
+
+### 26.5 Expected coverage tally evolution
+
+| State | PARTIAL | DISCHARGED |
+|-------|--------:|-----------:|
+| At session start (2026-04-27 pre-§26) | 33 | 12 |
+| P3 PR-A merged (no behavior change) | 33 | 12 |
+| P3 PR-B merged (compare lands) | 33 | 12 |
+| P3 fix lands → 5 MODEL-1 PARTIALs flip | **28** | **17** |
+| P1 + P2 success → 9 MODEL-2 PARTIALs flip | **19** | **26** |
+| Both fully delivered | **19** | **26** (45 ACs total — 58% DISCHARGED) |
+
+This is the single biggest coverage flip authorized in any
+recent session. Today's session ended at 33+12; next session
+**target is 19+26**.
+
+### 26.6 Methodology
+
+§26 holds to the binding rules from this session:
+
+- **Fix at root, no route-arounds** (`feedback_fix_root_cause_never_route_around.md`): if Stack v2 ingest hits a license-filter or schema bug, fix it via `apr-corpus-ingest`, never via `--skip-license`.
+- **Pre-authorized compute** (`feedback_compute_pre_authorized.md`): user GO covers all P1/P2/P3 dispatches; per-step approval not required.
+- **Provable contracts** (`feedback_full_problems_pmat_contracts.md`): each binding criterion in §26.1 is falsifiable (Pass/Fail), recorded in evidence, then promoted in the relevant contract YAML on success.
+- **Zero `eprintln!`** (`feedback_apr_trace_not_eprintln.md`): P3 instruments via `apr trace --payload`, not via debug prints.
+
+Spec v2.69.0 → **v2.70.0**. No coverage flip until binding
+criteria meet — §26 is the *plan*, the discharges are the
+*outcomes* recorded in §27/§28/§29 follow-ups.
+
+### 26.7 Order of operations
+
+```
+T+0:    Author + open PR §26 (this section)
+T+0:    Start P1 download in background (apr pull)
+T+0:    Start P3 PR A authoring in foreground
+T+~2hr: P3 PR A complete, opened, auto-merge enabled
+        → start P3 PR B authoring while P1 download continues
+T+~4hr: P3 PR B complete, opened, auto-merge enabled
+        → start P3 comparison run, file SHIP-007 bug pin
+T+~4-8hr: P1 download completes
+        → run apr-corpus-ingest license filter
+        → run apr tokenize encode-corpus
+        → P1 binding criterion check (manifest validates)
+T+~6-10hr: P1 complete
+        → dispatch P2 100K-step training run
+T+~13-17hr: P2 complete
+        → assess val_loss vs §26.2 binding criterion
+        → write §27 if P3 fix lands; §28 if P2 succeeds
+```
+
+P1 + P3 run in parallel, P2 starts only after P1 binding
+criterion meets. Session-end: §26 plan promoted to §27/§28/§29
+records as binding criteria meet.
+
+### 26.8 Binding methodology rule — stack tool extension, never CLI shim
+
+**Triggering incident (2026-04-27)**: while researching P1, a
+sub-agent recommended downloading
+`codeparrot/github-code-clean` via:
+
+```
+$ huggingface-cli download codeparrot/github-code-clean \
+    --include 'data/train-000[0-7][0-9]-of-00880.parquet' \
+    --local-dir /mnt/.../github-code-clean
+```
+
+**Why this is wrong**: per the APR-MONO consolidation
+(`feedback_monorepo_single_source_of_truth.md`, 2026-04-23),
+**`apr` is the canonical stack CLI** — 58 subcommands subsuming
+the surfaces previously distributed across `batuta`, `realizar`,
+`entrenar`, etc. `apr pull` is the stack-canonical HuggingFace
+download tool; `huggingface-cli` is a non-stack fallback;
+`batuta hf pull` is a **deprecated namespace** post-monorepo
+(batuta still hosts oracle/RAG capabilities, but model/dataset
+pulls go through `apr`).
+
+The sub-agent reached for `huggingface-cli` because `apr pull`
+today is **model-only** (signature: `apr pull <MODEL>`, no
+asset-type, no `--include`, no `--license-allowlist`). That is
+a **missing feature in `apr`**, not a license to bypass apr
+with a Python-CLI shim.
+
+This violates three binding rules:
+- `feedback_fix_root_cause_never_route_around.md` — "missing
+  kernel is a bug, fix at root." A missing subcommand surface
+  is a missing feature; extend the tool.
+- `feedback_pv_not_bash_for_contracts.md` — re-implementing
+  what a stack tool should do via a non-stack CLI is muda.
+- `feedback_monorepo_single_source_of_truth.md` — `apr` is
+  canonical post-APR-MONO; suggesting the old `batuta` surface
+  is divergence.
+
+**The binding rule (now §26.8.1)**:
+
+> **`apr` is canonical.** When `apr` lacks a feature we need:
+> 1. Author a provable contract for the missing feature
+>    (`contracts/apr-cli-<subcommand>-v1.yaml` per the schema
+>    in `aprender-contracts/`).
+> 2. Extend `apr` via the in-tree implementation that satisfies
+>    the contract.
+> 3. Use the extended `apr` to do the work.
+>
+> Reaching for a non-stack CLI (`huggingface-cli`, `aws s3 cp`,
+> `gcloud`, raw `curl` when an HTTP client exists in the stack)
+> OR for a deprecated namespace (`batuta hf pull` for HF
+> model/dataset operations) to bypass the missing feature is
+> muda, rejected per
+> `feedback_fix_root_cause_never_route_around.md` +
+> `feedback_monorepo_single_source_of_truth.md`.
+
+**Application to P1**: P1 now has an explicit prerequisite chain:
+
+```
+P1.0  Author contracts/apr-cli-pull-dataset-v1.yaml — provable
+       contract defining the new `apr pull` capability:
+         - asset-type: `apr pull dataset <repo>` (currently
+           model-only, signature is `apr pull <MODEL>`)
+         - --include <glob>: subset selection within a repo
+         - --license-allowlist <list>: per-row license filter
+           (delegate to `apr-corpus-ingest run` for tabular data)
+         - --revision <rev>: pin to specific git SHA / branch
+           (already exists for models, propagate to datasets)
+         - drift-prevention falsification: pull a known parquet
+           shard subset, verify only matching files appear AND
+           reject globs matching no files.
+
+P1.1  Implement extension in apr-cli crate (or appropriate
+       monorepo crate) per the contract. Likely touches:
+         - crates/apr-cli/src/commands/pull.rs (asset-type
+           dispatch, --include, --license-allowlist plumbing)
+         - new HF-Hub client reuse (if existing apr pull already
+           has HF Hub HTTP plumbing for models, dataset path
+           reuses it; otherwise factor into a shared module)
+
+P1.2  Drift-prevention unit + integration tests (offline by
+       default; record HTTP cassettes if needed).
+
+P1.3  Update contracts/apr-cli-commands-v1.yaml to register the
+       new dataset asset-type per `feedback_cli_subcommand_three_surface_drift.md`.
+
+P1.4  THEN: use `apr pull dataset codeparrot/github-code-clean
+       --include 'data/train-000[0-7][0-9]-of-00880.parquet'
+       --license-allowlist mit,apache-2.0,bsd-2-clause,bsd-3-clause
+       --output /mnt/.../datasets/github-code-clean`
+       for the corpus.
+```
+
+P1 is gated on P1.0–P1.3 landing on main first. This adds
+~3-6 hours of code-authoring + CI before the actual download,
+but preserves stack-canonical methodology and produces a
+**durable apr extension** (every future dataset pull benefits),
+not a one-off shim.
+
+**Why this matters beyond P1**: every time we route around
+`apr`, we leave the stack weaker for the next user — and the
+post-monorepo consolidation is undermined. The contract+code
+approach makes `apr` stronger. This is the **Toyota Way**
+applied to tooling — fix the kanban, don't fix the symptom.
+
+**Acceptable exceptions** (explicit, narrow):
+- One-off data-prep scripts via `uv run --with <pkg>` where the
+  stack genuinely doesn't have a tool for the niche (e.g.,
+  parquet→JSONL with field-rename — used in §24.1 per
+  `feedback_no_pip.md`). Justified iff non-recurring AND no
+  stack tool covers the workflow.
+- Diagnostic forensics via raw `xxd` / `cat` / `grep` for a
+  one-off debug session, where building tooling for a single
+  use is itself muda.
+
+The `huggingface-cli download --include` workflow does **NOT**
+meet these criteria: it is recurring (every dataset pull
+benefits) and `apr pull` is the workflow's natural home. Hence
+the correct fix is to extend `apr`.
+
+### 26.9 Revised P1 binding criteria
+
+P1 is now a **two-criterion** chain:
+
+1. **P1.0–P1.3 Pass**: `apr pull dataset <repo> --include
+   '<glob>' --license-allowlist <list>` produces only matching+
+   licensed files in `<output>` AND the
+   `apr-cli-pull-dataset-v1.yaml` contract validates via `pv
+   validate` AND `apr-cli-commands-v1.yaml` registers the new
+   dataset asset-type per
+   `feedback_cli_subcommand_three_surface_drift.md`.
+2. **P1 Pass** (post-P1.0–P1.3): `manifest.json.total_tokens >
+   1e9` AND `vocab_size == 50257` (unchanged from §26.2).
+
+P3 is unaffected — it's a realizar-side code task that doesn't
+touch the apr-cli pull surface.
 
 ---
 
