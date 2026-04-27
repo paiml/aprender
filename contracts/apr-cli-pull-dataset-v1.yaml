@@ -1,0 +1,182 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  status: PROPOSED
+  created: '2026-04-27'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'SPEC-SHIP-TWO-001 §26.8 — apr is canonical, extend apr never CLI-shim'
+  - 'SPEC-SHIP-TWO-001 §26.9 — P1.0 prerequisite of corpus pipeline'
+  - 'feedback_monorepo_single_source_of_truth.md — APR-MONO consolidation, 2026-04-23'
+  - 'feedback_fix_root_cause_never_route_around.md'
+  - 'feedback_cli_subcommand_three_surface_drift.md'
+  description: >
+    Contract for extending `apr pull` to support dataset asset-type with
+    `--include <glob>` shard-pattern selection and `--license-allowlist <list>`
+    per-row license filtering. Currently `apr pull` is model-only; this
+    contract defines the dataset asset-type that subsumes the deprecated
+    `batuta hf pull` namespace post-APR-MONO consolidation. P1 of the
+    SHIP-TWO-001 corpus pipeline (codeparrot/github-code-clean → 1B+
+    Python tokens → MODEL-2 convergence) is gated on this extension landing.
+
+equations:
+  apr_pull_dataset_signature:
+    formula: |
+      `apr pull` MUST accept dataset asset-type via subcommand syntax:
+        apr pull dataset <REPO>
+            [--include <GLOB>]
+            [--license-allowlist <CSV>]
+            [--revision <REV>]
+            [--output <DIR>]
+      Dispatches to a HuggingFace Hub dataset puller path that is
+      DISTINCT from the existing model puller path. The model path
+      (`apr pull <MODEL>`) MUST remain backward-compatible — the new
+      dataset path does not regress its behavior.
+    domain: crates/apr-cli/src/commands/pull.rs CLI surface
+    codomain: bool
+    invariants:
+    - "Existing `apr pull <MODEL>` semantics unchanged (model-only path)"
+    - "New `apr pull dataset <REPO>` dispatches to dataset puller"
+    - "asset-type is a positional discriminator, not a flag"
+    - "All flags --include / --license-allowlist / --revision / --output are optional"
+    - "Default --output is `~/.cache/aprender/datasets/<repo>/`"
+
+  include_glob_semantics:
+    formula: |
+      --include <GLOB> filters which files within the repo are pulled.
+      Glob syntax: shell-style with `*`, `?`, `[a-z]`, `[0-9]`, `[!chars]`.
+      Multiple --include flags MAY be passed; union of matches downloaded.
+      Empty --include = pull entire repo (default behavior, all files).
+      No-match --include = error (exit non-zero, do not silently download nothing).
+    domain: shard-pattern selection
+    codomain: Set[file_path]
+    invariants:
+    - "fnmatch-compatible glob semantics (NOT regex)"
+    - "Cross-platform glob: `/` is the only path separator on remote"
+    - "No-match globs are FAIL-FAST, not silent-skip"
+    - "Multiple --include = union (OR), not intersection (AND)"
+
+  license_allowlist_semantics:
+    formula: |
+      --license-allowlist <CSV> filters parquet/jsonl ROWS by the value of
+      a license column. Default column name is `license`; configurable via
+      --license-column <NAME>. Matching is case-INSENSITIVE; SPDX
+      identifier form (e.g., `mit`, `apache-2.0`, `bsd-3-clause`).
+      Rows whose license value is NOT in the allowlist are dropped.
+      Empty --license-allowlist = no row-level filtering (preserve all rows).
+    domain: per-row license filter
+    codomain: Set[row]
+    invariants:
+    - "Case-insensitive SPDX-id matching"
+    - "Default license column = `license`"
+    - "Empty allowlist = no filter (passthrough)"
+    - "Filter is row-level, NOT file-level — file_path itself is independent"
+    - "Filtered output preserves original parquet/jsonl schema (only fewer rows)"
+
+  registry_drift_prevention:
+    formula: |
+      Adding `apr pull dataset` MUST update three surfaces atomically per
+      `feedback_cli_subcommand_three_surface_drift.md`:
+        1. crates/apr-cli/src/commands/pull.rs (clap variant)
+        2. contracts/apr-cli-commands-v1.yaml (registry entry)
+        3. crates/apr-cli/tests/cli_commands.rs::registered_commands() (test)
+      All three MUST be updated in the same PR; CI gate must catch the
+      missing-third case.
+    domain: 3-surface coherence
+    codomain: bool
+    invariants:
+    - "PR cannot land if any of 3 surfaces missing the dataset asset-type"
+    - "cargo test -p apr-cli --test cli_commands::registered_commands PASSES"
+    - "pv validate apr-cli-commands-v1.yaml PASSES with new entry"
+
+falsification_tests:
+- id: FALSIFY-APR-PULL-DATASET-001
+  rule: apr pull dataset subcommand exists
+  prediction: "`apr pull dataset --help` exits 0 and shows --include and --license-allowlist flags"
+  test: "apr pull dataset --help 2>&1 | grep -E 'include|license-allowlist'"
+  if_fails: "apr CLI missing dataset asset-type — P1 unblocked, falls back to huggingface-cli muda"
+
+- id: FALSIFY-APR-PULL-DATASET-002
+  rule: include glob filters correctly
+  prediction: "`apr pull dataset codeparrot/github-code-clean --include 'data/train-00000-of-00880.parquet' --output /tmp/test-pull` produces exactly 1 parquet file"
+  test: "ls /tmp/test-pull/data/*.parquet | wc -l | xargs test 1 -eq"
+  if_fails: "include glob semantics broken; risks pulling entire 314 GB repo"
+
+- id: FALSIFY-APR-PULL-DATASET-003
+  rule: no-match glob fails fast
+  prediction: "`apr pull dataset <repo> --include 'no/such/file/*'` exits non-zero"
+  test: "apr pull dataset codeparrot/github-code-clean --include 'no/such/file/*' --output /tmp/test-empty; test $? -ne 0"
+  if_fails: "silent no-op on bad glob hides typos and produces empty corpus"
+
+- id: FALSIFY-APR-PULL-DATASET-004
+  rule: license allowlist drops disallowed rows
+  prediction: "After --license-allowlist mit,apache-2.0, output parquet contains only rows where license ∈ {mit, apache-2.0}"
+  test: |
+    apr pull dataset codeparrot/github-code-clean \
+        --include 'data/train-00000-of-00880.parquet' \
+        --license-allowlist mit,apache-2.0 \
+        --output /tmp/test-license
+    uv run --quiet --with pyarrow python3 -c "
+    import pyarrow.parquet as pq
+    t = pq.read_table('/tmp/test-license/data/train-00000-of-00880.parquet')
+    licenses = set(t.column('license').to_pylist())
+    assert licenses.issubset({'mit', 'apache-2.0'}), f'Unexpected licenses: {licenses}'
+    print('OK')"
+  if_fails: "license filter not applied; risks ingesting GPL/AGPL/LGPL/MPL/EPL rows that violate downstream artifact licensing"
+
+- id: FALSIFY-APR-PULL-DATASET-005
+  rule: model-path backward compatible
+  prediction: "`apr pull paiml/qwen2.5-coder-7b-apache-q4k-v1` (model path, no dataset asset-type) still works"
+  test: "apr pull paiml/qwen2.5-coder-7b-apache-q4k-v1 --dry-run | grep -q 'qwen2.5-coder-7b-apache-q4k-v1'"
+  if_fails: "extension regressed existing model puller — breaks AC-EX-005, AC-SHIP1-006"
+
+- id: FALSIFY-APR-PULL-DATASET-006
+  rule: 3-surface drift prevention
+  prediction: "registry test passes after dataset asset-type is added to all 3 surfaces"
+  test: "cargo test -p apr-cli --test cli_commands registered_commands"
+  if_fails: "feedback_cli_subcommand_three_surface_drift violated — clap+yaml+test out of sync"
+
+- id: FALSIFY-APR-PULL-DATASET-007
+  rule: contract validates via pv
+  prediction: "`pv validate contracts/apr-cli-pull-dataset-v1.yaml` exits 0"
+  test: "pv validate contracts/apr-cli-pull-dataset-v1.yaml"
+  if_fails: "contract schema noncompliant; will not pass CI gate"
+
+- id: FALSIFY-APR-PULL-DATASET-008
+  rule: deprecated namespace not used
+  prediction: "P1 corpus pipeline does NOT contain `batuta hf pull` or `huggingface-cli download`"
+  test: "grep -rE 'batuta hf pull|huggingface-cli download' docs/specifications/aprender-train/ship-two-models-spec.md scripts/p1-* 2>/dev/null | grep -v 'deprecated\\|forbidden\\|wrong\\|muda\\|MUST NOT' | wc -l | xargs test 0 -eq"
+  if_fails: "muda — P1 fell back to non-stack/deprecated tooling instead of extending apr"
+
+proof_obligations:
+- type: invariant
+  property: "apr pull dataset is the canonical HF dataset entry point post-APR-MONO"
+- type: invariant
+  property: "asset-type discriminator preserves model-path backward compatibility"
+- type: safety
+  property: "license allowlist enforced at row level prevents downstream license-violation artifacts"
+- type: liveness
+  property: "no-match glob fails fast, no silent empty download"
+
+kani_harnesses:
+- id: KH-APR-PULL-DATASET-001
+  obligation: include_glob_semantics
+  property: glob_no_match_implies_error
+  bound: 8  # max glob complexity * max file count = small bounded model
+- id: KH-APR-PULL-DATASET-002
+  obligation: license_allowlist_semantics
+  property: filtered_rows_subset_of_allowlist
+  bound: 16  # bound = max allowlist size * max distinct license values
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending
+  notes: |
+    Authored 2026-04-27 as P1.0 of SHIP-TWO-001 §26.8 stack-tool-extension chain.
+    PROPOSED status until P1.1 implementation lands. Promotion to ACTIVE
+    requires: (a) apr-cli implementation, (b) all 8 FALSIFY-APR-PULL-DATASET-*
+    tests pass, (c) registry update in apr-cli-commands-v1.yaml,
+    (d) cli_commands::registered_commands() test PASSES.
