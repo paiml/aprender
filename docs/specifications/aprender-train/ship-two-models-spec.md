@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.72.0
+**Version:** 2.75.0
+**Atomic next action (v2.75.0):** **§30 — PR E investigation refutes §28 narrow hypothesis; PR E paused, qkv-bias / RoPE / per-head-norm bisection load-bearing** (see new §30 below). Live diagnostics on canonical 7B teacher: `q4k_layers` IS fully populated for all 28 layers; APR's F32-fused-qkv weight is numerically equivalent to per-Q/K/V Q4K dispatch (max |diff|=0.005, RMS=0.0007). The §28 mechanical "switch matmul kernel" fix would change <0.5% of std — the 9× layer-0 qkv std gap (APR=10.33 vs GGUF=1.14) lives elsewhere. PR E is paused; next session must bisect post-matmul/post-bias/post-RoPE to localize the actual divergence point. Spec v2.74.0 → **v2.75.0**. Coverage scoreboard unchanged (15+33).
+
 **Atomic next action (v2.72.0):** **§26.4 P3 binding criterion DECIDED — APR vs GGUF layer-3 ffn_swigl ratio = 18.23×, SHIP-007 bug confirmed APR-side at `apr_transformer/inference.rs:160-164`** (see new §27 below). Live evidence on noah-Lambda-Vector RTX 4090 2026-04-27: built `apr` from PR #1083 branch (commits 77c016bc2 + c6579685b + f24946412 from PR A+B+C cascade), ran `apr trace --payload` on canonical 7B teacher in BOTH APR and GGUF formats with identical prompt + tokenizer. APR layer-3 ffn_swigl std = **1.2216** (matches §23 reading); GGUF layer-3 ffn_swigl std = **0.0670** (1.0× layer 1-2 baseline = no anomaly on GGUF side). Ratio 1.2216/0.0670 = **18.23×** — far exceeds the §26.4 ≥10× threshold by 8× absolute. Layers 0-2 agree (~1.1× ratio); layer 3 anomaly is APR-only; layers 6+ recover to ~1× ratio. The bug is localized to APR's SwiGLU element-wise multiply at `silu_g * u`; GGUF's path produces normal output. **Discharges 5 MODEL-1 PARTIALs once fix lands per §17.5** (SHIP-002/005/006/007/008). Fix scope: investigate `inference.rs:160-164` for off-by-one slice indexing, buffer corruption, or F32-vs-Q4K dequant anomaly at layer-3 specifically. Spec v2.71.0 → **v2.72.0**. Coverage flip pending fix (§26.5 expected: 33+12 → 28+17).
 
 **Atomic next action (v2.71.0):** **Stack-tool extension rule codified + `apr` is the canonical stack CLI post-monorepo — when `apr` lacks a feature, we extend `apr` via contract→code, NEVER route around to non-stack shims like `huggingface-cli` or to deprecated namespaces like `batuta hf pull`** (see new §26.8 + revised §26.2). Triggering incident 2026-04-27: P1 sub-agent recommended `huggingface-cli download --include 'data/train-000[0-7][0-9]-of-00880.parquet'` because `apr pull` is model-only today (no dataset asset-type, no `--include` for shard-pattern selection, no `--license-allowlist`); this is muda per `feedback_fix_root_cause_never_route_around.md` + `feedback_pv_not_bash_for_contracts.md` + `feedback_monorepo_single_source_of_truth.md` (post-APR-MONO consolidation, `apr` subsumes batuta's HF-pull surface — batuta namespace is no longer relevant for dataset/model pulls). Correct path: author `apr-cli-pull-dataset-v1.yaml` provable contract → extend `apr pull` with dataset asset-type + `--include <glob>` + `--license-allowlist` → use the extended stack tool for P1. P1 is now gated on the `apr pull` extension landing. Spec v2.70.0 → **v2.71.0**. Coverage tally unchanged.
@@ -4385,6 +4387,66 @@ P1 is now a **two-criterion** chain:
 
 P3 is unaffected — it's a realizar-side code task that doesn't
 touch the apr-cli pull surface.
+
+## §30. Live PR-E investigation refutes §28 narrow hypothesis (2026-04-27 session 3)
+
+**Atomic next action (v2.74.0 → v2.75.0):** §28 root-cause hypothesis is *empirically incomplete* — direct diagnostics on the canonical 7B teacher show that `q4k_layers` IS fully populated, AND APR's F32-fused-qkv weight is numerically equivalent to Q4K-dispatch within Q4K tolerance. The mechanical "replace `helpers::f32_matmul` with Q4K-fused dispatch" change in §28.4 would change <0.5% of std — far short of the 9× layer-0 qkv gap that propagates to layer-3's 18.23× ffn_swigl ratio. **PR E is paused** pending bisection of the qkv-bias / RoPE / per-head-norm path. Spec v2.74.0 → **v2.75.0**. Coverage flip 33+12 → 28+17 deferred until true root cause is pinned.
+
+### 30.1 Diagnostic evidence (RTX 4090, 2026-04-27)
+
+Two diagnostic examples added to `crates/aprender-serve/examples/`:
+
+1. **`check_q4k_population.rs`** — loads the canonical 7B teacher and dumps `q4k_layers` per-layer field sizes. Result: all 28 layers fully populated (Q=7,225,344b, K=V=1,032,192b, gate=up=down=38,191,104b). §28.4's option (a) ("preserve Q4K bytes") is **already shipped**.
+
+2. **`diag_apr_qkv_layer0.rs`** — runs same input through (a) APR's F32 fused qkv weight via `helpers::f32_matmul` and (b) Q4K dispatch via `fused_q4k_parallel_matvec`. Result for layer 0 Q-projection:
+   - Path A (F32 fused): mean=-0.003912, std=0.260898
+   - Path B (Q4K bytes): mean=-0.003899, std=0.260868
+   - max |diff|=0.005294, RMS diff=0.000673 (within Q4K rounding)
+
+**Conclusion**: APR's F32 fused-qkv weight construction at `mod_dequant_q4k_apr.rs::load_qkv_weight` is **correct and numerically equivalent** to the per-Q/K/V Q4K dispatch path. Switching the matmul kernel cannot close a 9× std gap.
+
+### 30.2 What §28 got right and got wrong
+
+**Right**: SHIP-007 is APR-side; layer-3 is the first amplification site; silu non-linearity in the saturated regime explains the 18.23× cascade from a small upstream divergence.
+
+**Wrong**: §28.3's "APR currently stores weights as Vec<f32> (dequantized)" is FALSE for the FFN/attn_output paths. The Q4K bytes ARE preserved AND the dispatch IS via Q8K-quantized-activations + `fused_q4k_q8k_parallel_matvec_into` — the same kernel GGUF uses. §28.4's options (a)/(b)/(c) framing is moot because option (a) is already shipped.
+
+### 30.3 What's still load-bearing
+
+The 9× layer-0 qkv std divergence (APR=10.33, GGUF=1.14) is REAL. The bug must live in one of:
+
+1. **`qkv_bias`** (pmat-260.rs:332-334) — APR adds `layer.qkv_bias` after the matmul. GGUF may or may not, or with different values. The mean shift (APR=0.2559 vs GGUF=-0.0163) is suggestive of a bias-application mismatch.
+
+2. **RoPE precision** (pmat-260.rs:377-378 `apply_rope_f32`) — APR computes RoPE differently than GGUF. RoPE rotates 2D planes per head pair; precision differences here amplify across positions and could account for the std blowup.
+
+3. **Per-head Q/K RMSNorm** (pmat-260.rs:359-374) — applied IFF `attn_q_norm_weight` is Some. For Qwen2.5-7B (no per-head norms), this should be skipped. If accidentally applied or skipped wrongly, it's a candidate.
+
+### 30.4 Falsifiable next investigation step
+
+Before any fix, capture the qkv tensor at THREE points in APR's forward and one matched point in GGUF:
+
+1. **Post-matmul, pre-bias** (line 331 output, before line 332)
+2. **Post-bias, pre-RoPE** (line 334 output, before line 348-388)
+3. **Post-RoPE-and-attention** (line 386 attn_out)
+
+Compare each layer-0 stat APR vs GGUF. Whichever bisection point shows the 9× std gap is the actual fix surface. This deepens §17 and §27/§28 — but it's the right kind of falsification.
+
+### 30.5 Coverage scoreboard (unchanged)
+
+| Category | DISCHARGED | PARTIAL | %D |
+|----------|-----------:|--------:|---:|
+| MODEL-1 | 5 | 5 | 50% |
+| MODEL-2 | 3 | 9 | 25% |
+| GPUTRAIN | 7 | 0 | 100% |
+| **Sum** | **15** | **33** | **31%** |
+
+Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.4 bisection, then write the actual fix.
+
+### 30.6 Methodology note — investigative falsification IS the discharge
+
+Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
+
+The Toyota Way fix is to bisect upstream, not to flip the kernel call.
 
 ---
 
