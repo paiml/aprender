@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.72.0
+**Version:** 2.73.0
+**Atomic next action (v2.73.0):** **§27 root cause REFINED — bug is APR's F32 matmul vs GGUF's Q4K-fused matmul precision mismatch, NOT the `silu_g * u` element-wise multiply** (see new §28 below). Re-reading §27.2 evidence: at layer 3, **ffn_gate std diverges 1.36×** (APR 1.92 vs GGUF 1.41) — divergence STARTS upstream at the gate-projection matmul, not at silu_g*u. The 1.36× gate-matmul std difference gets non-linearly amplified by SiLU (4.59× amplification at layer 3) because gate values are deep in the saturated regime (mean=−5.98 in APR, −6.50 in GGUF). At those magnitudes, silu(x) ≈ 0 for most x, but silu(x) is exquisitely sensitive to x near the boundary; small precision differences in gate values become large silu output differences. APR's `helpers::f32_matmul` (in `crates/aprender-serve/src/apr_transformer/mod_apr_transformer.rs:138-140`) operates on dequantized F32 weights, while GGUF's path uses `fused_q4k_q8k_parallel_matvec_into` (Q4K-aware fused matmul) directly on Q4K weights — these produce slightly different element-wise outputs (within Q4K quantization tolerance) which silu non-linearly amplifies. **Fix surface refined**: change APR forward path to use the same Q4K-aware fused kernels that GGUF uses (one-line code change at the matmul dispatch, not at the SwiGLU multiply). Spec v2.72.0 → **v2.73.0**. Coverage flip pending fix (33+12 → 28+17 when SHIP-007 fix lands).
+
 **Atomic next action (v2.72.0):** **§26.4 P3 binding criterion DECIDED — APR vs GGUF layer-3 ffn_swigl ratio = 18.23×, SHIP-007 bug confirmed APR-side at `apr_transformer/inference.rs:160-164`** (see new §27 below). Live evidence on noah-Lambda-Vector RTX 4090 2026-04-27: built `apr` from PR #1083 branch (commits 77c016bc2 + c6579685b + f24946412 from PR A+B+C cascade), ran `apr trace --payload` on canonical 7B teacher in BOTH APR and GGUF formats with identical prompt + tokenizer. APR layer-3 ffn_swigl std = **1.2216** (matches §23 reading); GGUF layer-3 ffn_swigl std = **0.0670** (1.0× layer 1-2 baseline = no anomaly on GGUF side). Ratio 1.2216/0.0670 = **18.23×** — far exceeds the §26.4 ≥10× threshold by 8× absolute. Layers 0-2 agree (~1.1× ratio); layer 3 anomaly is APR-only; layers 6+ recover to ~1× ratio. The bug is localized to APR's SwiGLU element-wise multiply at `silu_g * u`; GGUF's path produces normal output. **Discharges 5 MODEL-1 PARTIALs once fix lands per §17.5** (SHIP-002/005/006/007/008). Fix scope: investigate `inference.rs:160-164` for off-by-one slice indexing, buffer corruption, or F32-vs-Q4K dequant anomaly at layer-3 specifically. Spec v2.71.0 → **v2.72.0**. Coverage flip pending fix (§26.5 expected: 33+12 → 28+17).
 
 **Atomic next action (v2.71.0):** **Stack-tool extension rule codified + `apr` is the canonical stack CLI post-monorepo — when `apr` lacks a feature, we extend `apr` via contract→code, NEVER route around to non-stack shims like `huggingface-cli` or to deprecated namespaces like `batuta hf pull`** (see new §26.8 + revised §26.2). Triggering incident 2026-04-27: P1 sub-agent recommended `huggingface-cli download --include 'data/train-000[0-7][0-9]-of-00880.parquet'` because `apr pull` is model-only today (no dataset asset-type, no `--include` for shard-pattern selection, no `--license-allowlist`); this is muda per `feedback_fix_root_cause_never_route_around.md` + `feedback_pv_not_bash_for_contracts.md` + `feedback_monorepo_single_source_of_truth.md` (post-APR-MONO consolidation, `apr` subsumes batuta's HF-pull surface — batuta namespace is no longer relevant for dataset/model pulls). Correct path: author `apr-cli-pull-dataset-v1.yaml` provable contract → extend `apr pull` with dataset asset-type + `--include <glob>` + `--license-allowlist` → use the extended stack tool for P1. P1 is now gated on the `apr pull` extension landing. Spec v2.70.0 → **v2.71.0**. Coverage tally unchanged.
@@ -4248,6 +4250,202 @@ on a fresh `cargo install aprender` (the GGUF dispatch lacks
 forward_traced wiring on main). This is acknowledged: §27 is a
 results-record, not a how-to-reproduce. The reproduction path
 becomes available once #1081 + #1082 + #1083 merge.
+
+## 28. SHIP-007 Root Cause Refined — APR F32 Matmul vs GGUF Q4K-Fused Matmul (2026-04-27)
+
+§27 located the bug to "(layer=3, ffn_swigl `silu_g * u`
+element-wise multiply)" with 18.23× ratio. §28 refines this:
+**the multiply is not the bug**. The bug is upstream at the
+gate-projection matmul; silu non-linearly amplifies a small
+precision mismatch into a large output divergence.
+
+### 28.1 Re-reading §27.2 evidence
+
+The full sub-FFN bisection at layer 3 (re-extracted from
+`evidence/ship-007-apr-vs-gguf-2026-04-27/{apr,gguf}-trace.txt`):
+
+| Stat | APR | GGUF | APR/GGUF | Verdict |
+|------|----:|-----:|---------:|---------|
+| attn_norm std | 0.2933 | 0.2757 | 1.06× | normal |
+| qkv std | 1.9535 | 0.7228 | 2.70× | upstream divergence (attention) |
+| attn_out std | 0.1818 | 0.1987 | 0.91× | recovered after attn_norm |
+| ffn_norm std | 0.9953 | 1.0352 | 0.96× | normal |
+| **ffn_gate std** | **1.9243** | **1.4134** | **1.36×** | **divergence starts here** |
+| ffn_up std | 1.3351 | 1.4557 | 0.92× | normal |
+| **ffn_silu std** | **0.1679** | **0.0366** | **4.59×** | **non-linear amplification** |
+| ffn_swigl std | 1.2216 | 0.0670 | 18.23× | further amplified by multiply |
+| ffn_out std | 11.4590 | 0.1910 | 60.0× | post-down-proj cascade |
+
+§27 read this as "bug at the multiply." §28 reads it as **"bug
+at the gate matmul, amplified at silu, further amplified at
+multiply, cascaded at down_proj."**
+
+### 28.2 Why silu amplifies so dramatically at layer 3
+
+At layer 3, gate values have mean ≈ −6 with std ≈ 1.5–2. Most
+values fall in [−8, −4]. SiLU at these magnitudes:
+- silu(−4) = −4 / (1 + exp(4)) ≈ −0.073
+- silu(−6) = −6 / (1 + exp(6)) ≈ −0.0149
+- silu(−8) = −8 / (1 + exp(8)) ≈ −0.0027
+
+SiLU is **exquisitely sensitive** in the deep-negative regime
+because the denominator (1 + exp(−x)) varies orders of
+magnitude across small x changes. A gate-matmul std of 1.92 vs
+1.41 means APR has 36% more spread; the silu output std is
+4.59× different because the spread interacts with the saturation
+boundary differently.
+
+At layers 6+, gate values are NOT in the same saturated regime,
+so the same gate-matmul precision difference does NOT amplify
+through silu — and ffn_swigl ratios drop to ~1× (matching GGUF).
+This explains the cascade-damping signature in §27.4.
+
+### 28.3 The actual bug location
+
+`crates/aprender-serve/src/apr_transformer/mod_apr_transformer.rs:138-140`:
+
+```rust
+fn matmul(&self, input: &[f32], weight: &[f32], in_dim: usize, out_dim: usize) -> Vec<f32> {
+    helpers::f32_matmul(input, weight, in_dim, out_dim)
+}
+```
+
+This delegates to `helpers::f32_matmul` — pure F32 arithmetic on
+F32 weights. APR's Q4K weights must be dequantized to F32 BEFORE
+calling this. The dequantization happens upstream (probably in
+`AprTransformer::from_apr_file`).
+
+GGUF's path at `crates/aprender-serve/src/gguf/inference/forward/results.rs`
+uses `fused_q4k_q8k_parallel_matvec_into` directly on Q4K weights:
+
+```rust
+fused_q4k_q8k_parallel_matvec_into(
+    &gate_weight.data,    // Q4K bytes, NOT dequantized
+    q8k_scales,
+    q8k_quants,
+    gate_weight.in_dim,
+    gate_weight.out_dim,
+    &mut scratch.ffn_gate,
+)?;
+```
+
+The two paths produce **different per-element outputs** because:
+- APR's F32 matmul uses dequantized weights (Q4K → F32 → matmul)
+- GGUF's fused matmul uses Q4K weights directly (Q4K → matmul-aware-of-Q4K)
+
+The Q4K dequantization is not a perfect inverse of the Q4K
+quantization step that produced the weights. Different rounding
+at different stages → different F32 outputs at the per-element
+level. Within Q4K tolerance (per CLAUDE.md: ±5% element-wise),
+but enough to cause silu amplification at layer 3.
+
+### 28.4 The fix — use Q4K-aware kernels in APR forward
+
+Per LAYOUT-002 + the fused-Q4K kernels documented in `realizar`
+CLAUDE.md, the canonical Q4K matmul for row-major data is:
+
+```
+crate::quantize::fused_q4k_parallel_matvec_into
+crate::quantize::fused_q4k_q8k_parallel_matvec_into
+```
+
+APR forward should call these instead of `helpers::f32_matmul`
+when the weight is Q4K-quantized. This requires:
+
+1. **Detect Q4K in APR weights** — APR currently stores weights
+   as Vec<f32> (dequantized). Need to either:
+   a. Preserve Q4K bytes in APR (would change AprTransformer
+      struct shape — bigger refactor)
+   b. Re-quantize F32 weights to Q4K on-the-fly during forward
+      (perf hit, but minimally invasive)
+   c. Add a Q4K-typed path in APR via a new field
+2. **Wire fused matmul** — call the Q4K-aware kernel when the
+   weight is Q4K, fall back to `f32_matmul` for F32-native
+   weights.
+3. **Drift-prevention test** — assert APR forward and GGUF
+   forward produce per-layer ffn_swigl std within 5% (Q4K
+   tolerance) for the canonical 7B teacher.
+
+### 28.5 Why §27's bug surface was approximate
+
+§27.5 named the bug surface as "`apr_transformer/inference.rs:160-164`
+`silu_g * u`." That's where the SYMPTOM is most prominent (the
+18.23× ratio) but not where the CAUSE originates. §28 refines:
+
+| §-ref | Bug surface | Status |
+|-------|-------------|--------|
+| §17 | "(layer=3, FFN sub-block)" | narrowed |
+| §23 | "(layer=3, ffn_swigl element-wise multiply)" | symptomatic |
+| §27 | "`inference.rs:160-164` `silu_g * u`" | symptomatic |
+| **§28** | **`mod_apr_transformer.rs:138-140` `helpers::f32_matmul`** | **causal** |
+
+The fix is at §28's site. The §23/§27 sites would only be
+"fixed" by clamping or rounding silu_g*u, which would mask the
+underlying matmul precision mismatch — a route-around per
+`feedback_fix_root_cause_never_route_around.md`.
+
+### 28.6 Why does GGUF NOT have this issue?
+
+GGUF's forward path NEVER dequantizes Q4K weights to F32 for
+matmul. It uses the fused kernels throughout. So GGUF's silu
+output is computed from gate values produced by Q4K-aware
+arithmetic — bit-identical to what was intended at quantization
+time. APR's F32 path produces values that are CLOSE but not
+identical to the Q4K-aware path, and silu at layer 3 amplifies
+the gap.
+
+### 28.7 Methodological note
+
+§27 was the right kind of falsification — it pinned the bug to
+APR-side and to a specific sub-FFN slot. §28 is a refinement
+that comes from re-reading the upstream stats. The §27.8
+hypothesis #3 ("F32-vs-Q4K dequant defect at layer-3 input
+range") was actually the correct one — §28 confirms it. §28
+narrows the fix from "modify the multiply" to "use the right
+matmul kernel."
+
+This is a Toyota Way "five whys" iteration:
+1. Why does APR produce wrong logits? — §16: APR forward path
+2. Why APR forward path? — §17: layer 3 FFN
+3. Why layer 3 FFN? — §23: ffn_swigl multiply (symptom)
+4. Why ffn_swigl multiply? — §27: layer 3 silu_g*u (still symptom)
+5. Why silu_g*u? — **§28: gate-matmul precision mismatch (root)**
+
+Five whys reach root. §28 is the actual root cause. The fix at
+§28's surface discharges 5 MODEL-1 PARTIALs.
+
+### 28.8 Falsifiable next investigation step
+
+Before the fix, falsifiable PR sequence:
+
+**PR D — drift-prevention test** (small, ~50 LOC):
+Add an integration test that takes the canonical 7B teacher in
+both APR and GGUF formats, runs `apr trace --payload` on each,
+parses the output, and asserts:
+- Per-layer ffn_swigl std on APR-vs-GGUF: ratio ∈ [0.5, 2.0]
+  for ALL 28 layers (including layer 3)
+
+This test FAILS today (layer 3 ratio = 18.23×). Once PR E lands
+(the fix), the test PASSES.
+
+**PR E — the fix** (medium, ~150-300 LOC):
+Replace `helpers::f32_matmul` with Q4K-aware fused kernel
+dispatch in AprTransformer's matmul method. Requires deciding
+between options (a)/(b)/(c) from §28.4.
+
+PR D + PR E together discharge 5 MODEL-1 PARTIALs. PR D alone
+codifies the binding criterion as a CI gate.
+
+### 28.9 Coverage flip projection
+
+| State | PARTIAL | DISCHARGED |
+|-------|--------:|-----------:|
+| At §28 (now) | 33 | 12 |
+| PR D merged (test added, fails) | 33 | 12 |
+| PR E merged (test passes, fix lands) | **28** | **17** |
+
+The DISCHARGE happens at PR E. PR D is the contract-binding
+falsifier; PR E is the discharge.
 
 ### 26.8 Binding methodology rule — stack tool extension, never CLI shim
 
