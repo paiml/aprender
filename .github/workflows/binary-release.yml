@@ -81,6 +81,15 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # The workspace pins a specific channel in `rust-toolchain.toml`
+      # which overrides the dtolnay action for any cargo invocation in
+      # the tree. Add the target explicitly to that pinned toolchain so
+      # native cross-compiles (x86_64-musl) don't fail with `can't find
+      # crate for core` mid-build.
+      - name: Install target on workspace-pinned toolchain
+        if: ${{ !matrix.cross }}
+        run: rustup target add ${{ matrix.target }}
+
       - name: Install musl tools
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
