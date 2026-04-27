@@ -624,11 +624,31 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         ),
         Commands::Pull {
             model_ref,
+            repo,
             force,
             dry_run,
             revision,
             offline,
-        } => pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline),
+            include,
+            output,
+        } => {
+            // SHIP-TWO-001 §26.8: when first positional is the literal
+            // "dataset", treat the second positional as the HF dataset
+            // repo and dispatch to the dataset puller. Otherwise fall
+            // through to the existing model puller (backward compat).
+            if model_ref == "dataset" {
+                match repo.as_deref() {
+                    Some(r) => {
+                        pull::run_dataset(r, include, revision.as_deref(), output.as_deref())
+                    },
+                    None => Err(crate::error::CliError::ValidationFailed(
+                        "apr pull dataset <REPO>: REPO argument required".to_string(),
+                    )),
+                }
+            } else {
+                pull::run(model_ref, *force, *dry_run, revision.as_deref(), *offline)
+            }
+        },
         Commands::Registry { command } => {
             crate::commands::registry::run(command.clone())
         }

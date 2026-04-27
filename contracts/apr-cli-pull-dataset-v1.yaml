@@ -1,7 +1,7 @@
 metadata:
   kind: schema
-  version: 1.0.0
-  status: PROPOSED
+  version: 1.1.0
+  status: ACTIVE
   created: '2026-04-27'
   author: PAIML Engineering
   registry: true
@@ -154,9 +154,9 @@ proof_obligations:
   property: "apr pull dataset is the canonical HF dataset entry point post-APR-MONO"
 - type: invariant
   property: "asset-type discriminator preserves model-path backward compatibility"
-- type: safety
+- type: soundness
   property: "license allowlist enforced at row level prevents downstream license-violation artifacts"
-- type: liveness
+- type: termination
   property: "no-match glob fails fast, no silent empty download"
 
 kani_harnesses:

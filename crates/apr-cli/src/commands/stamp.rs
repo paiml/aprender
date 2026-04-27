@@ -51,8 +51,8 @@ pub(crate) fn run(
     if !json_output {
         eprintln!("Reading {}", file.display());
     }
-    let input = fs::read(file)
-        .map_err(|e| CliError::ValidationFailed(format!("read failed: {e}")))?;
+    let input =
+        fs::read(file).map_err(|e| CliError::ValidationFailed(format!("read failed: {e}")))?;
 
     let patch = ProvenancePatch {
         license: license.map(str::to_string),
@@ -86,7 +86,10 @@ pub(crate) fn run(
             },
             "header_flags_bits": verify_reader.header().flags.bits(),
         });
-        println!("{}", serde_json::to_string_pretty(&summary).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&summary).unwrap_or_default()
+        );
     } else {
         println!(
             "✓ Stamped {} → {} ({} tensors, {} → {} bytes)",
@@ -98,7 +101,10 @@ pub(crate) fn run(
         );
         println!("  license:      {:?}", verify_reader.metadata().license);
         println!("  data_source:  {:?}", verify_reader.metadata().data_source);
-        println!("  data_license: {:?}", verify_reader.metadata().data_license);
+        println!(
+            "  data_license: {:?}",
+            verify_reader.metadata().data_license
+        );
     }
 
     Ok(())
@@ -114,12 +120,7 @@ mod tests {
     fn write_unpopulated_apr(path: &Path) {
         let metadata = AprV2Metadata::new("stamp-cli-test");
         let mut writer = AprV2Writer::new(metadata);
-        writer.add_tensor(
-            "weight",
-            TensorDType::F32,
-            vec![2, 3],
-            vec![0u8; 24],
-        );
+        writer.add_tensor("weight", TensorDType::F32, vec![2, 3], vec![0u8; 24]);
         let bytes = writer.write().expect("write test apr");
         fs::write(path, &bytes).expect("write test apr to disk");
     }
@@ -182,15 +183,7 @@ mod tests {
         let input = dir.path().join("does-not-exist.apr");
         let output = dir.path().join("output.apr");
 
-        let result = run(
-            &input,
-            Some("Apache-2.0"),
-            None,
-            None,
-            &output,
-            false,
-            true,
-        );
+        let result = run(&input, Some("Apache-2.0"), None, None, &output, false, true);
         let err = result.unwrap_err();
         // CliError::FileNotFound — exact variant, not just substring match.
         assert!(
@@ -244,7 +237,10 @@ mod tests {
             true, // force=true
             true,
         );
-        assert!(result.is_ok(), "stamp with --force must succeed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "stamp with --force must succeed: {result:?}"
+        );
 
         // Output must now be a valid APR file with the patched license.
         let bytes = fs::read(&output).unwrap();
