@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.9.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.9.0 (M21) — aprender-side contract mirror synced from v1.2.0 → v1.8.0 (6 revisions of drift cleared). Per the source-of-truth split documented in `companion_repo.role`, aprender stays canonical for contract TEXT; pre-M21 the aprender-side bytes were stuck at v1.2.0 / commit f5cfbb370 (2026-04-27T07:00 UTC). M21 pushed all M15-M20 bumps in one commit to aprender@feat/claude-code-parity-apr-poc-spec (commit 08744c69a, byte-identical sha256 to companion-repo); pin.lock now records the new aprender_commit. No code or contract-surface change beyond the version bump documenting the sync.
+version: "1.10.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.10.0 (M22) installs the companion ↔ aprender byte-equality CI guard that closes the M21 drift class. New scripts/pin-check-roundtrip.sh fetches the aprender-side bytes via gh api at the pin.lock-recorded commit, computes sha256, fails on mismatch with the local sha. CI workflow runs it as FALSIFY-CCPA-012 (c). Future companion-side contract bumps must push to BOTH repos before CI can pass — the M21 drift mode is now mechanically prevented.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,50 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.9.0'
+    to: 'ACTIVE_RUNTIME v1.10.0'
+    note: 'M22 — install pin-check-roundtrip CI guard; closes M21 drift class'
+    reason: |
+      M21 cleared a 6-revision drift between companion repo and
+      aprender-side bytes. Without a mechanical guard, that same drift
+      class can recur silently — pin-check.sh only inspects local
+      companion-side bytes; nothing checks the aprender-side at the
+      pinned commit.
+
+      M22 installs the round-trip guard:
+
+        scripts/pin-check-roundtrip.sh
+          1. read aprender_repo / aprender_commit / aprender_path from pin.lock
+          2. gh api repos/<repo>/contents/<path>?ref=<commit> --jq .content
+          3. base64-decode + sha256
+          4. compare to local companion-side sha256
+          5. exit 1 on mismatch with a remediation message
+
+      CI integration (.github/workflows/ci.yml):
+        new step "pin-check-roundtrip (M22 — companion ↔ aprender drift
+        guard)" runs after the existing pin-check step. Uses the default
+        GITHUB_TOKEN with contents:read.
+
+      Makefile integration:
+        new `make pin-check-roundtrip` target.
+
+      Operational implications:
+        - Future companion-side contract bumps that aren't paired with
+          an aprender-side mirror push will fail CI — `aprender_commit`
+          in pin.lock cannot point at a commit whose bytes don't
+          byte-match the companion-side bytes.
+        - Bumping the contract becomes a 4-step ritual:
+            1. edit contract on companion side, refresh contract_sha256
+            2. push the same bytes to aprender@feat/<branch>, get commit hash
+            3. update aprender_commit in pin.lock
+            4. push the companion-side commit; CI validates round-trip
+        - Local devs run `make pin-check-roundtrip` before push to catch
+          the drift class without paying for a CI cycle.
+
+      Post-M22, the companion ↔ aprender source-of-truth invariant is
+      mechanically enforced rather than just documented.
 
   - date: '2026-04-27'
     from: 'ACTIVE_RUNTIME v1.8.0'
