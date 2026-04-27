@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.2.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. FALSIFY-CCPA-013 discharged 2026-04-27 with first measured_parity over 5 paired canonical fixtures: aggregate=1.0000 (PASSES 0.95 floor), every fixture=1.0 (PASSES 0.80 floor). See status_history § 'measured_parity'.
+version: "1.8.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.8.0 (M20) — README truth-up. The README was 5+ contract-versions stale (badges said v1.2.0; behavioral-gates table said "planned" for M2-M8 even though all 8 are DISCHARGED; repo status said M1; HTTPS-proxy architecture diagram conflicted with the post-rescope AUTHORED-fixture reality). v1.8.0 ships an honest README reflecting M0-M19 SHIPPED + corpus complete (30/30) + hard-blocking gate live. No code or contract-surface change.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -192,7 +192,7 @@ roles:
 # kinds bump trace_schema_version and require a contract revision.
 
 trace_schema:
-  version: 1
+  version: 2  # M15 — added HookEvent + SkillInvocation; per-record `v` field still 1 (record-level back-compat layer unused so far)
   format: 'application/x-ndjson'
   filename_pattern: 'fixtures/[0-9]{4}-[a-z0-9-]+.ccpa-trace.jsonl'
   envelope:
@@ -202,10 +202,10 @@ trace_schema:
       v:
         type: integer
         const: 1
-        description: 'trace_schema.version; incrementing requires a contract revision'
+        description: 'per-record schema version; trace_schema.version is the file-level surface (now v2)'
       kind:
         type: string
-        enum: [session_start, user_prompt, assistant_turn, tool_result, session_end]
+        enum: [session_start, user_prompt, assistant_turn, tool_result, session_end, hook_event, skill_invocation]
   records:
     session_start:
       required: [v, kind, session_id, ts, actor, model, cwd_sha256]
@@ -465,15 +465,42 @@ falsification_conditions:
 
   - id: FALSIFY-CCPA-007
     name: corpus_coverage
-    status: PLANNED_M5
+    status: HARD_BLOCKING_M16
     assertion: >
       For every row in apr-code-parity-v1.yaml § categories[*] whose status
-      is in {SHIPPED, PARTIAL}, at least one fixture in fixtures/ exercises
-      that capability (fixture is annotated with `covers: [<row.id>, ...]`
-      in a header comment, machine-readable). MISSING rows are exempt.
-    test_harness: 'ccpa-cli/tests/falsify_ccpa_007_coverage.rs (planned)'
+      is in {SHIPPED, PARTIAL} AND whose id is NOT in the contract-declared
+      out-of-scope list {keyboard-shortcuts, status-line}, at least one
+      fixture in fixtures/canonical/ exercises that capability (fixture's
+      meta.toml declares `covers = [<row.id>, ...]`).
+      MISSING rows are exempt; OOS rows are explicitly excluded.
+      Reachable = (SHIPPED ∪ PARTIAL) \ OOS.
+      As of M16, gate semantics are HARD-BLOCKING: a PR that drops any
+      reachable row from coverage fails CI.
+    oos_rows:
+      - id: keyboard-shortcuts
+        reason: |
+          REPL keystroke handling (Shift+Tab cycle, Ctrl+C, REPL Phase
+          1/2 keys). REPL events never cross the trace boundary. The
+          `!` shell-prefix and `@path` file-injection sub-features are
+          partially observable via UserPrompt.text but not faithfully
+          distinguishable from the literal-text alternative. OOS at
+          schema v2.
+      - id: status-line
+        reason: |
+          REPL render artifact (`StatusLine { model, mode, cost_usd,
+          branch, cwd_short }`). Pure UI; rendered each frame but
+          never crosses a trace boundary. Apr-code's `status_line.rs`
+          primitive is unit-tested in-repo; parity at the rendering
+          level is a separate concern from action-stream parity. OOS
+          at schema v2.
+    test_harness: 'crates/ccpa-differ/tests/falsify_ccpa_007_coverage.rs (15 tests inc. 4 OOS-handling tests added M16)'
     cross_check_command: |
-      ccpa coverage --json | jq -e '.uncovered_shipped_or_partial == []'
+      ccpa coverage \
+        --apr-code-parity-yaml ../aprender/contracts/apr-code-parity-v1.yaml \
+        --fixtures-dir fixtures/canonical/ \
+        --oos-rows keyboard-shortcuts,status-line
+    expected_exit: 0  # any non-zero exit FAILS the gate
+    ci_step: '.github/workflows/ci.yml § "corpus_coverage hard-blocking gate"'
 
   - id: FALSIFY-CCPA-013
     name: first_recorded_parity_score
@@ -804,3 +831,492 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.7.0'
+    to: 'ACTIVE_RUNTIME v1.8.0'
+    note: 'M20 — README truth-up to v1.7.0 reality (no code change)'
+    reason: |
+      The README at the repo root was 5+ contract-versions stale and
+      contained two factually-incorrect sections:
+
+        1. The behavioral-gates table (lines 91-100 pre-M20) showed
+           FALSIFY-CCPA-001 as "ACTIVE" but FALSIFY-CCPA-002 through
+           FALSIFY-CCPA-008 as "planned" — even though every one of
+           those gates has been DISCHARGED for at least 5 contract
+           revisions and is asserted on every PR's CI run.
+
+        2. The architecture diagram showed a HTTPS-proxy recording
+           branch ("ANTHROPIC_BASE_URL" → ccpa-recorder → fixture)
+           which has been intentionally OOS since the user's
+           "we will not call api, we will assume claude code"
+           rescope. The corpus is curated/AUTHORED, not recorded.
+
+      v1.8.0 ships an honest README:
+
+        - 8 status badges including new corpus (30/30) + parity-matrix
+          (15/15 reachable) badges
+        - Status banner naming M0-M19 SHIPPED + contract v1.7.0
+          + corpus complete + M16 hard-blocking gate live
+        - Updated Usage section showing the actually-shipped CLI
+          surface (ccpa diff / corpus / coverage / validate)
+        - Replaced architecture diagram showing AUTHORED fixtures
+          + per-tool equivalence + ccpa-differ → CI hard-blocker
+          (no proxy branch)
+        - Behavioral-gates table flipped to "✅ ACTIVE" / "✅
+          HARD-BLOCKING" with per-gate test-file pointers + test
+          counts; FALSIFY-CCPA-013 added to the table as DISCHARGED
+        - New "Adding a new fixture" section documenting the
+          meta.toml + paired-trace authoring workflow (closes the
+          on-ramp gap that has been implicit since M11)
+        - arXiv basis section retained verbatim
+
+      No code change; no contract-surface change beyond the version
+      bump documenting this README truth-up. pin.lock sha256 refreshed.
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.6.0'
+    to: 'ACTIVE_RUNTIME v1.7.0'
+    note: 'M19 — corpus complete: 24 → 30 fixtures (spec ≥30 target met)'
+    reason: |
+      M19 closes the spec's ≥30-fixture target stated in the original
+      Distillation framing § Demonstration corpus row. Six new
+      canonical fixtures, all scoring 1.0:
+
+        0022-grep-with-context        — Grep with -A 3 -B 2 context
+                                        flags; tests grep_equivalent's
+                                        tuple form with context fields.
+
+        0023-glob-then-read           — Glob (pattern '**/Cargo.toml')
+                                        then Read first match in ONE
+                                        assistant turn. Two-tool
+                                        position-alignment.
+
+        0024-edit-then-bash-test      — Edit src/lib.rs to fix off-by-one
+                                        + Bash 'cargo test --lib' in one
+                                        turn. Mutate-then-verify cycle
+                                        with file_state continuity.
+
+        0025-grep-edit-loop           — Grep to locate fn compute_offset,
+                                        then Edit (replace_all=true) to
+                                        rename it to compute_index in
+                                        one turn. Mixed-tool alignment.
+
+        0026-multi-turn-correction    — User asks fix → assistant Edit
+                                        fails (old_string not found) →
+                                        user clarifies → assistant
+                                        retries with corrected old_string
+                                        → succeeds. 7-turn refinement
+                                        cycle exercising multi-turn
+                                        position alignment + ok=false
+                                        tool_result variant.
+
+        0030-stop-sequence            — Assistant haiku-emission halted
+                                        by configured stop_sequence
+                                        (`---END---`). First StopReason::
+                                        StopSequence in the corpus —
+                                        the FOURTH and final non-Error
+                                        StopReason variant. All four
+                                        (EndTurn / ToolUse / MaxTokens
+                                        / StopSequence) now exercised.
+
+      Aggregate corpus check: 30/30 fixtures score 1.0
+      (passes_gate=true, aggregate_score=1.0000).
+      Coverage holds at 15/15 reachable rows covered.
+      Bidirectional sensitivity: regression corpus still FAILS
+      (3-fixture pair, drift detected as required).
+
+      Spec target progress: 30 / 30 — DONE. M20+ work would shift
+      to depth-per-row beyond spec target if further discrimination
+      is needed.
+
+    measured_parity:
+      date: '2026-04-27'
+      fixture_corpus_path: 'fixtures/canonical/'
+      fixture_count: 30
+      aggregate_score: 1.0000
+      thresholds: { aggregate_min: 0.95, individual_min: 0.80 }
+      passes_gate: true
+      parity_matrix_coverage:
+        covered_count: 15
+        required_count: 17
+        oos_count: 2
+        reachable_count: 15
+        reachable_covered_count: 15
+      cli_version: 'ccpa 0.1.0'
+      cli_command: 'ccpa corpus fixtures/canonical/ --json'
+      cli_exit: 0
+      newly_authored_in_m19:
+        - { id: '0022-grep-with-context',     exercises: 'Grep with -A/-B context flags' }
+        - { id: '0023-glob-then-read',        exercises: 'Glob+Read two-tool sequence in one turn' }
+        - { id: '0024-edit-then-bash-test',   exercises: 'Edit+Bash mutate-then-verify cycle' }
+        - { id: '0025-grep-edit-loop',        exercises: 'Grep+Edit (replace_all) mixed-tool sequence' }
+        - { id: '0026-multi-turn-correction', exercises: '7-turn refinement w/ ok=false tool_result' }
+        - { id: '0030-stop-sequence',         exercises: 'StopReason::StopSequence (4th non-Error variant)' }
+      progress_to_spec_target: '30 / 30  —  DONE'
+      stop_reason_coverage:
+        end_turn: covered  # most fixtures
+        tool_use: covered  # most fixtures
+        max_tokens: covered  # 0029
+        stop_sequence: covered  # 0030
+        error: not_in_corpus  # session-terminal only; intentional, edge-case-y
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.5.0'
+    to: 'ACTIVE_RUNTIME v1.6.0'
+    note: 'M18 — corpus depth: 19 → 24 fixtures (schema-v2 surface coverage)'
+    reason: |
+      Five new canonical fixtures exercising schema-v2 surface variants
+      that were not previously represented in the corpus:
+
+        0020-bash-multiline-pipe   — Bash command spread across newlines
+                                     with ad-hoc whitespace; tests
+                                     normalize_bash() collapse on a
+                                     non-trivial input (teacher uses
+                                     leading-tab indentation, student
+                                     single-line; both must canonicalize
+                                     identically).
+
+        0021-edit-replace-all      — Edit with replace_all=true; tests
+                                     edit_equivalent's tuple form
+                                     (path_normalized, post_state_sha256)
+                                     when both calls carry the same
+                                     replace_all flag.
+
+        0027-hook-block            — PreToolUse hook fires Block (exit_code=2);
+                                     tool dispatch ABORTED. Distinct from
+                                     0018 (Warn / exit_code=1 / dispatch
+                                     proceeds); first HookDecision::Block
+                                     in the corpus.
+
+        0028-skill-user-invoked    — User types /<skill-name>; SkillRegistry
+                                     resolves via UserInvoked. Distinct
+                                     from 0019 (AutoMatched); first
+                                     SkillSource::UserInvoked in the corpus.
+
+        0029-max-tokens            — assistant turn ends with stop_reason=
+                                     max_tokens on a "list 1000 primes"
+                                     prompt; first StopReason::MaxTokens
+                                     in the corpus (prior fixtures use
+                                     EndTurn / ToolUse only).
+
+      Aggregate corpus check: 24/24 fixtures score 1.0 (passes_gate=true).
+      Coverage holds at 15/15 reachable rows covered (no new rows
+      introduced; all five new fixtures cover already-reachable rows).
+      The new fixtures push the spec's ≥30-target progress 19 → 24;
+      M19 will continue toward 30.
+
+    measured_parity:
+      date: '2026-04-27'
+      fixture_corpus_path: 'fixtures/canonical/'
+      fixture_count: 24
+      aggregate_score: 1.0000
+      thresholds: { aggregate_min: 0.95, individual_min: 0.80 }
+      passes_gate: true
+      parity_matrix_coverage:
+        covered_count: 15
+        required_count: 17
+        oos_count: 2
+        reachable_count: 15
+        reachable_covered_count: 15
+      cli_version: 'ccpa 0.1.0'
+      cli_command: 'ccpa corpus fixtures/canonical/ --json'
+      cli_exit: 0
+      newly_authored_in_m18:
+        - { id: '0020-bash-multiline-pipe',  exercises: 'normalize_bash() whitespace-collapse on multi-line' }
+        - { id: '0021-edit-replace-all',     exercises: 'Edit input with replace_all=true' }
+        - { id: '0027-hook-block',           exercises: 'HookDecision::Block (exit_code=2, dispatch aborted)' }
+        - { id: '0028-skill-user-invoked',   exercises: 'SkillSource::UserInvoked via /<skill> slash' }
+        - { id: '0029-max-tokens',           exercises: 'StopReason::MaxTokens' }
+      progress_to_spec_target: '24 / 30'
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.4.0'
+    to: 'ACTIVE_RUNTIME v1.5.0'
+    note: 'M17 — spec milestone table refreshed; M0-M16 documented as SHIPPED; no semantics change'
+    reason: |
+      Documentation truth-up. The companion-repo spec markdown
+      (docs/specifications/claude-code-parity-apr-poc.md) had a stale
+      milestone table claiming M1-M6 were "planned" — but they all
+      landed via PRs #1-#12 between 2026-04-26 and 2026-04-27, and
+      the M11-M16 sub-milestones (corpus growth + schema v2 +
+      hard-blocking gate flip) were entirely invisible in the spec
+      table despite being authoritative in this contract's
+      status_history.
+
+      v1.5.0 ships the table refresh (M0-M6 marked DONE with PR
+      pointers; new sub-milestones M11-M17 sub-section; status
+      snapshot block at the top of the section). No semantics
+      change — the gate surface, OOS list, schema, differ rules,
+      and corpus all remain at v1.4.0.
+
+      pin.lock sha256 refreshed to track the new contract bytes;
+      no other code change.
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.3.0'
+    to: 'ACTIVE_RUNTIME v1.4.0'
+    note: 'M16 — FALSIFY-CCPA-007 flips informational → HARD-BLOCKING; OOS exclusion mechanism shipped'
+    reason: |
+      M15 closed the corpus-authoring story (15/17 covered, 2 OOS).
+      M16 promotes the gate from informational-only to a CI hard-blocker
+      on the 15/15 reachable-row basis.
+
+      Mechanism:
+        - ccpa_differ::corpus_coverage gains a third parameter
+          `oos_rows: &[String]`. OOS rows are excluded from the
+          uncovered list and from passes_gate.
+        - ccpa-cli `coverage` subcommand exposes a new `--oos-rows`
+          CSV flag.
+        - .github/workflows/ci.yml adds a sparse-checkout of
+          paiml/aprender@main and a step that runs:
+            ccpa coverage \
+              --apr-code-parity-yaml aprender-upstream/contracts/apr-code-parity-v1.yaml \
+              --fixtures-dir fixtures/canonical/ \
+              --oos-rows keyboard-shortcuts,status-line
+          The step fails the build on any non-zero exit.
+
+      Drift-prevention semantics:
+        - If a future apr-code-parity-v1.yaml flip moves a row from
+          MISSING to SHIPPED/PARTIAL, the new row enters the reachable
+          set and CI fails until a fixture covers it. This is the
+          intended ratcheting behavior — coverage cannot regress.
+        - If a fixture is deleted that was the sole coverer of a
+          reachable row, CI fails for the same reason.
+        - If a row's status flips back to NONE in the upstream
+          contract, the row exits the required set; the corresponding
+          fixture(s) remain in the corpus harmlessly.
+
+      OOS list is contract-authoritative (declared in the new
+      `oos_rows:` block on FALSIFY-CCPA-007 above). Any future change
+      to the OOS list requires a contract revision + this entry's
+      successor.
+
+      Tests:
+        - 4 new corpus_coverage unit tests (oos_row_excluded_from_gate,
+          oos_already_covered_still_oos, oos_not_in_required_silently_ignored,
+          uncovered_outside_oos_still_fails).
+        - 3 new ccpa-cli integration tests
+          (coverage_oos_row_excluded_from_gate_exits_0,
+           coverage_oos_row_unrelated_uncovered_still_fails,
+           coverage_oos_rows_csv_with_whitespace_is_tolerated).
+
+    measured_parity:
+      date: '2026-04-27'
+      fixture_corpus_path: 'fixtures/canonical/'
+      fixture_count: 19
+      aggregate_score: 1.0000
+      thresholds: { aggregate_min: 0.95, individual_min: 0.80 }
+      passes_gate: true
+      parity_matrix_coverage:
+        covered_count: 15
+        required_count: 17
+        oos_count: 2
+        reachable_count: 15
+        reachable_covered_count: 15  # = covered_count when no reachable row uncovered
+        covered_rows: ['builtin-tools-rwegs', 'subagent-spawn', 'mcp-client', 'slash-commands', 'claude-md-memory', 'permission-modes', 'builtin-tools-web', 'non-interactive-mode', 'session-management', 'custom-agents', 'worktree-isolation', 'configuration-ladder', 'managed-org-policy', 'hooks', 'skills']
+        oos_rows: ['keyboard-shortcuts', 'status-line']
+      cli_version: 'ccpa 0.1.0'
+      cli_command: 'ccpa coverage --apr-code-parity-yaml ... --fixtures-dir fixtures/canonical/ --oos-rows keyboard-shortcuts,status-line'
+      cli_exit: 0
+      gate_kind: 'HARD_BLOCKING'
+
+  - date: '2026-04-27'
+    from: 'ACTIVE_RUNTIME v1.2.0'
+    to: 'ACTIVE_RUNTIME v1.3.0'
+    note: 'M15 — trace schema v2: additive HookEvent + SkillInvocation record kinds; differ extended; parity-matrix coverage 13/17 → 15/17'
+    reason: |
+      M15 closes the two corpus-authoring blockers identified under
+      M14's `remaining_uncovered_classification`:
+
+        - hooks  → required HookEvent record kind  (now present)
+        - skills → required SkillInvocation record kind (now present)
+
+      The schema bump is purely additive: existing M0-M14 fixtures and
+      record kinds round-trip byte-identical. New record kinds:
+
+        Record::HookEvent {
+          v, turn,
+          event: String,             // PreToolUse / PostToolUse / ...
+          matcher: Option<String>,
+          decision: HookDecision,    // Allow / Warn / Block
+          exit_code: i32,
+          output: String,            // optional, normalized at compare
+        }
+
+        Record::SkillInvocation {
+          v, turn,
+          name: String,
+          source: SkillSource,       // user_invoked / auto_matched
+          instructions_injected: bool,
+        }
+
+      Differ extension:
+        - new equivalence functions hook_event_equivalent +
+          skill_invocation_equivalent
+        - 7 new DriftCategory variants (Mismatched/Missing/Extra
+          variants for both Hook + Skill, plus MismatchedActionKind
+          when teacher fires Hook and student emits Tool)
+        - compute_parity_score now reduces over the union of
+          tool calls + hook events + skill invocations, not just
+          tool calls (denominator and numerator both grow)
+
+      Two new canonical fixtures:
+        0018-hook-pre-tool-use   — Bash with PreToolUse Warn hook firing
+                                   between tool_use and tool_result
+        0019-skill-auto-match    — rust-debug skill auto-matched by
+                                   when_to_use heuristic on user prompt
+
+      Coverage closure status:
+        13/17 → 15/17 (+ hooks, + skills)
+        2 remaining uncovered: keyboard-shortcuts, status-line —
+        both REPL-render artifacts that never reach the trace
+        boundary, so they're permanently out-of-scope under the
+        current schema.
+
+    measured_parity:
+      date: '2026-04-27'
+      fixture_corpus_path: 'fixtures/canonical/'
+      fixture_count: 19
+      aggregate_score: 1.0000
+      thresholds: { aggregate_min: 0.95, individual_min: 0.80 }
+      passes_gate: true
+      parity_matrix_coverage:
+        covered_count: 15
+        required_count: 17
+        covered_rows: ['builtin-tools-rwegs', 'subagent-spawn', 'mcp-client', 'slash-commands', 'claude-md-memory', 'permission-modes', 'builtin-tools-web', 'non-interactive-mode', 'session-management', 'custom-agents', 'worktree-isolation', 'configuration-ladder', 'managed-org-policy', 'hooks', 'skills']
+        uncovered_rows: ['keyboard-shortcuts', 'status-line']
+      teacher_source: 'Curated canonical reference (AUTHORED).'
+      student_source: 'Curated canonical reference; per-fixture identical to teacher at equivalence-rule level.'
+      cli_version: 'ccpa 0.1.0'
+      cli_command: 'ccpa corpus fixtures/canonical/ --json'
+      cli_exit: 0
+      newly_covered_in_m15: ['hooks', 'skills']
+      schema_extension: 'ccpa-trace SCHEMA_VERSION 1 → 2 (additive); 19/19 fixtures still round-trip byte-identical via existing FALSIFY-CCPA-001 harness'
+      remaining_uncovered_classification: |
+        Two rows remain uncovered after M15. Both are
+        permanently out-of-scope at the trace boundary:
+
+          - keyboard-shortcuts — Claude-Code REPL keystroke
+            handling (Ctrl-C, double-Esc, Ctrl-R, Shift-Enter).
+            These never reach the API or any tool call; they
+            mutate REPL state directly. No record kind would
+            faithfully capture them.
+
+          - status-line — REPL render artifact (model name +
+            session cost in the bottom strip). Pure UI; never
+            crosses a trace boundary.
+
+        Closing FALSIFY-CCPA-007's hard-blocking gate would require
+        either: (a) accepting that these two rows are
+        permanently OOS and counting `15/15 reachable` as full
+        coverage (recommended); (b) introducing a REPL-event
+        record kind that intercepts at the TUI layer (heavy,
+        likely not worth the discriminating power gained).
+
+  - date: '2026-04-27'
+    note: 'corpus expansion M14 — 14 → 17 fixtures, parity-matrix coverage 10/17 → 13/17'
+    measured_parity:
+      date: '2026-04-27'
+      fixture_corpus_path: 'fixtures/canonical/'
+      fixture_count: 17
+      aggregate_score: 1.0000
+      thresholds: { aggregate_min: 0.95, individual_min: 0.80 }
+      passes_gate: true
+      parity_matrix_coverage:
+        covered_count: 13
+        required_count: 17
+        covered_rows: ['builtin-tools-rwegs', 'subagent-spawn', 'mcp-client', 'slash-commands', 'claude-md-memory', 'permission-modes', 'builtin-tools-web', 'non-interactive-mode', 'session-management', 'custom-agents', 'worktree-isolation', 'configuration-ladder', 'managed-org-policy']
+        uncovered_rows: ['hooks', 'skills', 'keyboard-shortcuts', 'status-line']
+      teacher_source: 'Curated canonical reference (AUTHORED).'
+      student_source: 'Curated canonical reference; per-fixture identical to teacher at equivalence-rule level.'
+      cli_version: 'ccpa 0.1.0'
+      cli_command: 'ccpa corpus fixtures/canonical/ --json'
+      cli_exit: 0
+      newly_covered_in_m14: ['worktree-isolation', 'configuration-ladder', 'managed-org-policy']
+      remaining_uncovered_classification: |
+        The four uncovered rows are not corpus-authoring tasks against
+        the current ccpa-trace schema:
+          - hooks                — requires HookEvent record kind (trace schema extension)
+          - skills               — requires SkillInvocation record kind (trace schema extension)
+          - keyboard-shortcuts   — REPL-only event, never reaches trace boundary
+          - status-line          — REPL render artifact, never reaches trace boundary
+        FALSIFY-CCPA-007 remains informational; M15+ will pursue
+        schema-extension PRs for hooks+skills before the gate flips
+        to a hard blocker.
+
+  - date: '2026-04-27'
+    note: 'corpus expansion M13 — 11 → 14 fixtures, parity-matrix coverage 7/17 → 10/17'
+    measured_parity:
+      date: '2026-04-27'
+      fixture_corpus_path: 'fixtures/canonical/'
+      fixture_count: 14
+      aggregate_score: 1.0000
+      thresholds: { aggregate_min: 0.95, individual_min: 0.80 }
+      passes_gate: true
+      parity_matrix_coverage:
+        covered_count: 10
+        required_count: 17
+        covered_rows: ['builtin-tools-rwegs', 'subagent-spawn', 'mcp-client', 'slash-commands', 'claude-md-memory', 'permission-modes', 'builtin-tools-web', 'non-interactive-mode', 'session-management', 'custom-agents']
+        uncovered_rows: ['hooks', 'skills', 'worktree-isolation', 'configuration-ladder', 'keyboard-shortcuts', 'status-line', 'managed-org-policy']
+      teacher_source: 'Curated canonical reference (AUTHORED).'
+      student_source: 'Curated canonical reference; per-fixture identical to teacher at equivalence-rule level.'
+      cli_version: 'ccpa 0.1.0'
+      cli_command: 'ccpa corpus fixtures/canonical/ --json'
+      cli_exit: 0
+      newly_covered_in_m13: ['non-interactive-mode', 'session-management', 'custom-agents']
+
+  - date: '2026-04-27'
+    note: 'corpus expansion M12 — 8 → 11 fixtures, parity-matrix coverage 4/17 → 7/17'
+    measured_parity:
+      date: '2026-04-27'
+      fixture_corpus_path: 'fixtures/canonical/'
+      fixture_count: 11
+      aggregate_score: 1.0000
+      thresholds: { aggregate_min: 0.95, individual_min: 0.80 }
+      passes_gate: true
+      parity_matrix_coverage:
+        covered_count: 7
+        required_count: 17
+        covered_rows: ['builtin-tools-rwegs', 'subagent-spawn', 'mcp-client', 'slash-commands', 'claude-md-memory', 'permission-modes', 'builtin-tools-web']
+        uncovered_rows: ['hooks', 'skills', 'worktree-isolation', 'custom-agents', 'session-management', 'configuration-ladder', 'non-interactive-mode', 'keyboard-shortcuts', 'status-line', 'managed-org-policy']
+      teacher_source: 'Curated canonical reference (AUTHORED).'
+      student_source: 'Curated canonical reference; per-fixture identical to teacher at equivalence-rule level.'
+      cli_version: 'ccpa 0.1.0'
+      cli_command: 'ccpa corpus fixtures/canonical/ --json'
+      cli_exit: 0
+      newly_covered_in_m12: ['claude-md-memory', 'permission-modes', 'builtin-tools-web']
+
+  - date: '2026-04-27'
+    note: 'corpus expansion M11 — 5 → 8 fixtures, parity-matrix coverage 1/17 → 4/17'
+    measured_parity:
+      date: '2026-04-27'
+      fixture_corpus_path: 'fixtures/canonical/'
+      fixture_count: 8
+      aggregate_score: 1.0000
+      thresholds: { aggregate_min: 0.95, individual_min: 0.80 }
+      passes_gate: true
+      per_fixture:
+        - { id: '0001-edit-readme',      score: 1.0, drift_count: 0, passes_individual: true }
+        - { id: '0002-fix-failing-test', score: 1.0, drift_count: 0, passes_individual: true }
+        - { id: '0003-create-new-file',  score: 1.0, drift_count: 0, passes_individual: true }
+        - { id: '0004-grep-and-edit',    score: 1.0, drift_count: 0, passes_individual: true }
+        - { id: '0005-bash-cascade',     score: 1.0, drift_count: 0, passes_individual: true }
+        - { id: '0006-subagent-spawn',   score: 1.0, drift_count: 0, passes_individual: true, covers: ['subagent-spawn'] }
+        - { id: '0007-mcp-tool-call',    score: 1.0, drift_count: 0, passes_individual: true, covers: ['mcp-client'] }
+        - { id: '0008-slash-help',       score: 1.0, drift_count: 0, passes_individual: true, covers: ['slash-commands'] }
+      parity_matrix_coverage:
+        covered_count: 4
+        required_count: 17
+        covered_rows: ['builtin-tools-rwegs', 'subagent-spawn', 'mcp-client', 'slash-commands']
+        uncovered_rows: ['claude-md-memory', 'hooks', 'skills', 'worktree-isolation', 'custom-agents', 'permission-modes', 'builtin-tools-web', 'session-management', 'configuration-ladder', 'non-interactive-mode', 'keyboard-shortcuts', 'status-line', 'managed-org-policy']
+      teacher_source: 'Curated canonical reference (AUTHORED) — same policy as prior measurement.'
+      student_source: 'Curated canonical reference; per-fixture identical to teacher at equivalence-rule level.'
+      cli_version: 'ccpa 0.1.0'
+      cli_command: 'ccpa corpus fixtures/canonical/ --json'
+      cli_exit: 0
+      followup: |
+        Continue M12+ adding fixtures for the 13 still-uncovered rows.
+        Each new fixture ticks parity_matrix_coverage.covered_count up.
+        FALSIFY-CCPA-007 stays informational-only in CI until the corpus
+        reaches 17/17 — at which point the gate becomes a hard CI blocker.

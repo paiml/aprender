@@ -227,17 +227,43 @@ The teacher's *fixtures* are immutable per-revision; the student (`apr code` orc
 
 ## Phases / Milestones
 
+> **Status snapshot (2026-04-27)**: M0–M19 all SHIPPED; contract at
+> `claude-code-parity-apr-v1` v1.7.0 ACTIVE_RUNTIME; corpus at **30**
+> paired canonical fixtures (spec ≥30 target met) with parity-matrix
+> coverage 15/15 reachable (2 OOS at trace boundary); FALSIFY-CCPA-007
+> HARD-BLOCKING CI gate live since M16. All four non-Error
+> `StopReason` variants exercised. Live PR cadence on
+> https://github.com/paiml/claude-code-parity-apr.
+
+### Major phases (M0–M6)
+
 | Phase | Deliverable | Source-of-truth gates online (cumulative) | Status |
 |-------|-------------|-------------------------------------------|--------|
-| **M0** (this PR) | Spec + top-level contract `claude-code-parity-apr-v1.yaml` (DRAFT). Companion-repo invariants 009–012 must be online from the empty-scaffold PR forward. | 009, 010, 011, 012 | **IN REVIEW** |
-| **M1** | Companion repo scaffold (empty crates that compile + 100 % line cov), `ccpa-trace` crate, schema-roundtrip test. Spec + contract relocate from aprender to companion repo as canonical; aprender side becomes redirect. | + 001 | planned |
-| **M2** | `ccpa record` (HTTPS proxy at ANTHROPIC_BASE_URL) + first 3 fixtures | + (still 001) | planned |
-| **M3** | `ccpa replay` (RecordedDriver into `apr code`), generates student traces. **PMAT-CODE-LLM-DRIVER-PUBLIC-001 must close first.** | + 002, 003 | planned |
-| **M4** | `ccpa diff` semantic differ + first parity report | + 004, 005 | planned |
-| **M5** | Sovereignty gate (no api.anthropic.com on replay) + corpus to ≥30 fixtures | + 006, 007 | planned |
-| **M6** | Promote contract DRAFT → ACTIVE; integrate into `make tier3` and `pv lint`; close epic | + 008 | planned |
+| **M0** | Spec + top-level contract `claude-code-parity-apr-v1.yaml` (DRAFT). Companion-repo invariants 009–012 online from the empty-scaffold PR forward. | 009, 010, 011, 012 | **DONE** (PRs #1, #2) |
+| **M1** | Companion repo scaffold (empty crates that compile + 100 % line cov), `ccpa-trace` crate, schema-roundtrip test. Spec + contract relocate from aprender to companion repo as canonical. | + 001 | **DONE** (PRs #3, #4) |
+| **M2** | `ccpa record` (Anthropic Messages-API parser → trace records). Note: M2.3 HTTPS proxy is OOS post-rescope ("we will not call api, we will assume claude code"). | + (still 001) | **DONE** (PRs #5, #6) at parser-only scope |
+| **M3** | `ccpa replay` (LlmDriver trait + RecordedDriver) — algorithm-level. Real `apr code` LlmDriver adapter pending PMAT-CODE-LLM-DRIVER-PUBLIC-001 in upstream aprender. | + 002, 003 | **DONE** (PRs #7, #8) at algorithm scope |
+| **M4** | `ccpa diff` semantic differ — per-tool equivalence rules, file-mutation snapshots, parity score. | + 004, 005 | **DONE** (PRs #9, #10) |
+| **M5** | Sovereignty gate (no `api.anthropic.com` on replay) + corpus growth + parity-matrix coverage walk. | + 006, 007 | **DONE** (PRs #11, #13–#21) |
+| **M6** | Promote contract DRAFT → ACTIVE; integrate into `make tier3` and `pv lint`; close epic. | + 008 | **DONE** (PR #12) |
 
-Only M0 is in scope for this PR. M1+ each open their own ticket.
+### Sub-milestones (M11+)
+
+The corpus and gate work continued past M6 with sub-milestones tracked
+in `contracts/claude-code-parity-apr-v1.yaml § status_history`:
+
+| Sub | Deliverable | Outcome | PR |
+|-----|-------------|---------|----|
+| **M11** | First runtime measured_parity over 5 paired canonical fixtures; contract DRAFT → ACTIVE_RUNTIME (FALSIFY-CCPA-013 discharged) | aggregate_score 1.0000 over 5 fixtures, parity-matrix coverage 1/17 | #13 |
+| **M12** | Corpus 5 → 8; coverage 1/17 → 4/17 (subagent-spawn, mcp-client, slash-commands added) | 1.0000 / 8 fixtures | #14 |
+| **M13** | Corpus 8 → 11; coverage 4/17 → 7/17 (claude-md-memory, permission-modes, builtin-tools-web added) | 1.0000 / 11 fixtures | #17 |
+| **M13.5** | Bidirectional sensitivity: regression corpus added; meter must FAIL on deliberate drift | regression corpus aggregate=0.5, exits 1 (drift detected) | #14 |
+| **M14** | Corpus 14 → 17; coverage 10/17 → 13/17 (worktree-isolation, configuration-ladder, managed-org-policy added) | 1.0000 / 17 fixtures | #19 |
+| **M15** | Trace schema v1 → v2 (additive `HookEvent` + `SkillInvocation` record kinds); differ extension (7 new DriftCategory variants); coverage 13/17 → 15/17 | 1.0000 / 19 fixtures; contract v1.2.0 → v1.3.0 | #20 |
+| **M16** | FALSIFY-CCPA-007 informational → HARD-BLOCKING; OOS exclusion mechanism (`--oos-rows`) shipped for `keyboard-shortcuts` + `status-line` | 15/15 reachable, gate PASS; contract v1.3.0 → v1.4.0 | #21 |
+| **M17** | Spec milestone table refreshed to reflect M0–M16; contract v1.4.0 → v1.5.0 | doc-only | #22 |
+| **M18** | Corpus depth 19 → 24; 5 schema-v2 surface variants (Bash multiline, Edit replace_all, HookDecision::Block, SkillSource::UserInvoked, StopReason::MaxTokens) | 1.0000 / 24 fixtures; contract v1.5.0 → v1.6.0 | #23 |
+| **M19** | Corpus complete 24 → 30 (spec ≥30 target met); multi-tool sequences + multi-turn correction + StopReason::StopSequence | 1.0000 / 30 fixtures; contract v1.6.0 → v1.7.0 | this PR |
 
 ## Falsification conditions (12 gates total)
 
