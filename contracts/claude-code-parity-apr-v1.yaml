@@ -1,0 +1,576 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# claude-code-parity-apr-v1
+#
+# SOURCE OF TRUTH for the runtime, behavioral parity harness between Claude
+# Code (teacher) and `apr code` (student). Pins:
+#   - the `.ccpa-trace.jsonl` schema (recorded action stream)
+#   - replay determinism semantics
+#   - tool-call + file-mutation equivalence rules
+#   - sovereignty constraint (no api.anthropic.com on replay)
+#   - aggregate parity-score bound
+#
+# Sibling contracts (axes that are NOT this contract):
+#   - apr-code-parity-v1.yaml       — STATIC feature matrix (does the symbol exist)
+#   - apr-claude-proxy-v1.yaml      — HTTP/SSE Messages-API request/response shape
+#   - apr-mcp-server-v1.yaml        — MCP JSON-RPC protocol surface
+# This contract is the fourth leg: behavioral, runtime, fixture-driven.
+#
+# Direction: YAML IS AUTHORITATIVE. The trace serializer (ccpa-trace), the
+# differ (ccpa-differ) and the replay driver (ccpa-replayer) all consume this
+# file. Hand-editing schema or rule shape in Rust without first updating this
+# YAML is rejected by the falsification suite once M6 lands.
+#
+# Spec: docs/specifications/claude-code-parity-apr-poc.md
+# Repo (planned, downstream): https://github.com/paiml/claude-code-parity-apr
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: 0.2.0
+  created: '2026-04-26'
+  last_modified: '2026-04-26'
+  author: PAIML Engineering
+  # `pv validate` reads ContractKind from metadata.kind (see
+  # crates/aprender-contracts/src/schema/kind.rs::ContractKind). This is a
+  # cross-cutting parity/audit pattern, not a mathematical kernel — so the
+  # schema-dispatch kind is `pattern`. The domain kind is preserved under
+  # metadata.behavioral_parity_kind for documentation. Same approach as
+  # apr-code-parity-v1.yaml and apr-claude-proxy-v1.yaml.
+  kind: pattern
+  behavioral_parity_kind: ClaudeCodeBehavioralParityContract
+  description: >
+    Falsifiable runtime-parity harness between Claude Code (teacher) and
+    `apr code` (student). Captures Claude Code as a recorded action stream
+    via an HTTPS proxy at ANTHROPIC_BASE_URL, replays the same prompts to
+    `apr code` with mocked LLM responses (so orchestration is the only thing
+    under test), and gates the diff under eight falsification conditions
+    covering schema, determinism, mock completeness, tool-call equivalence,
+    file-mutation equivalence, sovereignty, corpus coverage and parity-score.
+  references:
+    - 'docs/specifications/claude-code-parity-apr-poc.md (this contract''s spec)'
+    - 'contracts/apr-code-parity-v1.yaml — sibling static feature matrix'
+    - 'contracts/apr-claude-proxy-v1.yaml — sibling Messages-API shape contract'
+    - 'crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml — agent-loop semantics'
+    - 'CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash"'
+    - 'memory: feedback_monorepo_single_source_of_truth.md (downstream-consumer pattern)'
+    - 'memory: feedback_pv_not_bash_for_contracts.md (every gate flows through pv)'
+    - 'Anthropic Messages API — https://docs.anthropic.com/en/api/messages'
+    - 'Hinton et al. 2015 — Distilling the Knowledge in a Neural Network (action-stream variant)'
+  spec: docs/specifications/claude-code-parity-apr-poc.md
+  epic: PMAT-CCPA-PARITY-001                  # to be opened on M0 merge
+  related_contracts:
+    - contracts/apr-code-parity-v1.yaml
+    - contracts/apr-claude-proxy-v1.yaml
+    - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
+
+name: claude-code-parity-apr
+version: "0.2.0"
+status: DRAFT   # promotes to ACTIVE at M6 when all 12 gates are mechanically green
+scope: >
+  every recorded fixture under <ccpa-repo>/fixtures/, every replay run the
+  ccpa-cli produces, AND every CI run on the companion repo. The four
+  source-of-truth invariants (FALSIFY-CCPA-009..012) gate every PR from M0
+  onward; the eight parity gates (001..008) come online M1..M6. Out of
+  scope: live api.anthropic.com calls during CI; teacher-side semantic
+  content of assistant messages.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Companion-repo source-of-truth policy
+# ─────────────────────────────────────────────────────────────────────────────
+# `claude-code-parity-apr` (the companion repo) is canonical for ENFORCEMENT —
+# implementation, fixtures, CI, coverage, pmat-comply, and the running binary
+# that consumes this contract. The contract TEXT (this YAML) lives in
+# aprender/contracts/ per the monorepo single-source-of-truth policy
+# (memory: feedback_monorepo_single_source_of_truth.md). The companion repo
+# pins this contract by commit hash via contracts/pin.lock, and gates every
+# PR against it via FALSIFY-CCPA-012.
+#
+# This split is intentional: aprender stays the canonical home for contract
+# TEXT (the schema lives there, `pv` validates from there), while the
+# companion repo is canonical for runtime ENFORCEMENT (its CI is the gate
+# users see when they open a PR; its coverage is what users measure; its
+# pmat-comply config is what users edit). M1 relocates this YAML into the
+# companion repo as the canonical copy and replaces the aprender-side copy
+# with a redirect note.
+
+companion_repo:
+  url: 'https://github.com/paiml/claude-code-parity-apr'
+  branch: main
+  branch_protection:
+    required_status_checks:
+      - 'ci/gate'
+    enforce_admins: true
+    require_linear_history: true
+    allow_force_pushes: false
+    allow_deletions: false
+  required_invariants:
+    - FALSIFY-CCPA-009   # ci_main_branch_green
+    - FALSIFY-CCPA-010   # pmat_comply_100pct
+    - FALSIFY-CCPA-011   # line_coverage_100pct
+    - FALSIFY-CCPA-012   # pv_contract_gate_on_commit
+  contract_pin:
+    file: 'contracts/pin.lock'
+    schema: 'aprender_commit_hash + aprender_contract_path + sha256(yaml)'
+    refreshed_by: 'PR-time GitHub Action that fetches aprender@main, recomputes sha256, fails if drift'
+  forbidden_tools:
+    - cargo-tarpaulin   # CLAUDE.md § "Prohibited Tools" — slow, unreliable
+    - 'bash gates re-implementing pv' # CLAUDE.md § "DOGFOOD pv, NEVER bash"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Harness policy (mirrors apr-code-parity-v1.yaml § harness_policy)
+# ─────────────────────────────────────────────────────────────────────────────
+# Every falsification gate below MUST be enforced via `pv validate` (binary
+# from the in-tree `aprender-contracts-cli` crate). Bash/yq/python wrappers
+# are explicitly rejected by CLAUDE.md § "Contract Validation: DOGFOOD pv,
+# NEVER bash" and by memory feedback_pv_not_bash_for_contracts.md.
+#
+# If `pv validate` does not yet support a needed assertion shape (e.g. the
+# parity-score reduction in FALSIFY-CCPA-008), the fix is to extend
+# aprender-contracts/src/schema/ and aprender-contracts/src/eval/ — never to
+# bypass with a shell script. Schema-extension ticket: PMAT-CONTRACTS-CCPA-001.
+harness_policy:
+  dogfood_tool: aprender-contracts-cli
+  binary: pv
+  forbidden_alternatives: [bash, shell, yq-wrapper, python-script]
+  schema_extension_ticket: PMAT-CONTRACTS-CCPA-001
+  rationale_ref: 'CLAUDE.md § "Contract Validation: DOGFOOD pv, NEVER bash"'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Roles + binary surfaces
+# ─────────────────────────────────────────────────────────────────────────────
+
+roles:
+  teacher:
+    binary: claude
+    label: Anthropic Claude Code (closed-source)
+    instrumentation: 'recording HTTPS proxy at $ANTHROPIC_BASE_URL'
+    api_target: 'api.anthropic.com (live, recording phase only)'
+  student:
+    binary: apr
+    subcommand: 'apr code'
+    label: aprender code agent (open-source, this monorepo)
+    instrumentation: 'crates/aprender-orchestrate `LlmDriver` impl swapped to RecordedDriver'
+    model_default: 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF Q4_K_M (per apr-claude-proxy-v1)'
+  recorder:
+    binary: ccpa
+    subcommand: 'ccpa record'
+    label: 'mitm-style HTTPS proxy that mints fixtures'
+  replayer:
+    binary: ccpa
+    subcommand: 'ccpa replay'
+  differ:
+    binary: ccpa
+    subcommand: 'ccpa diff'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trace schema (.ccpa-trace.jsonl) — JSONL, one record per line
+# ─────────────────────────────────────────────────────────────────────────────
+# Consumed by ccpa-trace (serde Rust) and ccpa-differ. Schema below is the
+# source-of-truth; Rust types must be `serde(deny_unknown_fields)`. New record
+# kinds bump trace_schema_version and require a contract revision.
+
+trace_schema:
+  version: 1
+  format: 'application/x-ndjson'
+  filename_pattern: 'fixtures/[0-9]{4}-[a-z0-9-]+.ccpa-trace.jsonl'
+  envelope:
+    type: object
+    required: [v, kind]
+    properties:
+      v:
+        type: integer
+        const: 1
+        description: 'trace_schema.version; incrementing requires a contract revision'
+      kind:
+        type: string
+        enum: [session_start, user_prompt, assistant_turn, tool_result, session_end]
+  records:
+    session_start:
+      required: [v, kind, session_id, ts, actor, model, cwd_sha256]
+      properties:
+        session_id: { type: string, format: uuid, description: 'UUIDv7 — normalized to <SESSION> on diff' }
+        ts:         { type: string, format: date-time, description: 'ISO-8601 UTC — normalized to <TS> on diff' }
+        actor:      { type: string, enum: [claude-code, apr-code] }
+        model:      { type: string, description: 'Model id; teacher and student differ here by design' }
+        cwd_sha256: { type: string, pattern: '^[0-9a-f]{64}$', description: 'git tree hash of CWD at session start; teacher==student is asserted' }
+    user_prompt:
+      required: [v, kind, turn, text]
+      properties:
+        turn: { type: integer, minimum: 0 }
+        text: { type: string }
+    assistant_turn:
+      required: [v, kind, turn, blocks, stop_reason]
+      properties:
+        turn:        { type: integer, minimum: 1 }
+        blocks:
+          type: array
+          minItems: 1
+          items:
+            oneOf:
+              - { $ref: '#/definitions/block_text' }
+              - { $ref: '#/definitions/block_thinking' }
+              - { $ref: '#/definitions/block_tool_use' }
+        stop_reason: { type: string, enum: [end_turn, max_tokens, stop_sequence, tool_use] }
+    tool_result:
+      required: [v, kind, turn, tool_use_id, ok, content]
+      properties:
+        turn:        { type: integer, minimum: 2 }
+        tool_use_id: { type: string, description: 'Normalized to <TOOL-N> on diff' }
+        ok:          { type: boolean }
+        content:     { type: string, description: 'Tool stdout/stderr concatenation OR structured JSON' }
+        side_effects:
+          type: object
+          additionalProperties: false
+          properties:
+            files_read:    { type: array, items: { type: string } }
+            files_written: { type: array, items: { type: string } }
+            exit_code:     { type: integer }
+    session_end:
+      required: [v, kind, turn, stop_reason]
+      properties:
+        turn:        { type: integer, minimum: 1 }
+        stop_reason: { type: string, enum: [end_turn, max_tokens, stop_sequence, error] }
+        elapsed_ms:  { type: integer, minimum: 0 }
+        tokens_in:   { type: integer, minimum: 0 }
+        tokens_out:  { type: integer, minimum: 0 }
+  normalization_rules:
+    - 'session_id → <SESSION> for diff purposes'
+    - 'ts → <TS> for diff purposes'
+    - 'tool_use.id and tool_result.tool_use_id → <TOOL-N> per turn, dense-numbered'
+    - 'absolute paths under CWD → ${CWD}-relative'
+    - 'all other fields are byte-exact under diff'
+  definitions:
+    block_text:
+      type: object
+      required: [type, text]
+      additionalProperties: false
+      properties:
+        type: { const: text }
+        text: { type: string }
+    block_thinking:
+      type: object
+      required: [type, thinking]
+      additionalProperties: false
+      properties:
+        type:      { const: thinking }
+        thinking:  { type: string }
+        signature: { type: string }
+    block_tool_use:
+      type: object
+      required: [type, id, name, input]
+      additionalProperties: false
+      properties:
+        type:  { const: tool_use }
+        id:    { type: string }
+        name:  { type: string }
+        input: { type: object }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tool-call equivalence rules (consumed by FALSIFY-CCPA-004)
+# ─────────────────────────────────────────────────────────────────────────────
+# Each tool the teacher emits MUST have an equivalence rule below.
+# Adding a new tool to apr code's registry requires a new entry here.
+
+tool_equivalence_rules:
+  - tool: Bash
+    semantic_input: 'normalize(command) — collapse runs of whitespace, drop trailing semicolons'
+    equality: 'string equality after normalize'
+  - tool: Read
+    semantic_input: '(path_normalized, offset?, limit?)'
+    equality: 'tuple equality; offset/limit absent ≡ 0/EOF'
+  - tool: Write
+    semantic_input: '(path_normalized, content_sha256)'
+    equality: 'tuple equality; content compared by sha256, not bytes-in-trace'
+  - tool: Edit
+    semantic_input: '(path_normalized, post_state_sha256)'
+    equality: 'apply edit to the pre-state file, sha256 the result; teacher and student must produce the same post_state_sha256'
+    rationale: 'Different patch texts that produce the same file are equivalent. Same-file-after is what users actually care about.'
+  - tool: Glob
+    semantic_input: 'pattern (verbatim)'
+    equality: 'string equality'
+  - tool: Grep
+    semantic_input: '(pattern, path_normalized, regex_or_literal)'
+    equality: 'tuple equality after pattern.trim()'
+  - tool: Agent
+    semantic_input: '(subagent_type, prompt_sha256)'
+    equality: 'tuple equality; subagent_type drawn from the closed Claude Code roster (general-purpose|explore|plan)'
+    note: 'agent_id not compared — it''s session-scoped'
+  - tool: '*'   # default rule for any tool not enumerated above
+    semantic_input: 'JSON canonicalize(input) sha256'
+    equality: 'sha256 equality'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# File-mutation equivalence (consumed by FALSIFY-CCPA-005)
+# ─────────────────────────────────────────────────────────────────────────────
+
+file_mutation_equivalence:
+  measured_at: 'session_end'
+  algorithm: |
+    1. snapshot CWD git tree hash at session_start (cwd_sha256)
+    2. snapshot CWD git tree hash at session_end (after_sha256)
+    3. compute diff = (after_teacher_sha256, after_student_sha256)
+    4. equivalent iff diff is empty OR every differing file passes per_file_rule below
+  per_file_rule:
+    - filetype: '*.rs'
+      rule: 'rustfmt --check on both produces same canonical form'
+    - filetype: '*.toml'
+      rule: 'taplo fmt --stdin produces same canonical form'
+    - filetype: '*.md'
+      rule: 'normalize trailing whitespace + final newline; compare'
+    - filetype: '*'
+      rule: 'byte-exact'
+  excluded_paths:
+    - 'target/**'
+    - '.git/**'
+    - '*.lock'    # Cargo.lock churn from teacher tooling does not count
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parity score reduction (consumed by FALSIFY-CCPA-008)
+# ─────────────────────────────────────────────────────────────────────────────
+
+parity_score:
+  per_fixture: |
+    score = (matched_actions / total_teacher_actions)
+    matched_actions = sum over teacher.assistant_turn[*].tool_use[*]:
+        1 if student emitted an equivalent (tool, semantic_input) at the same turn position
+        else 0
+    file_mutation_match adds 1 to numerator and denominator
+  thresholds:
+    aggregate_min: 0.95   # corpus mean; FALSIFY-CCPA-008 fails below this
+    individual_min: 0.80  # any single fixture below this also fails the gate
+    drift_categories:
+      - extraneous_llm_call   # student called LLM at unexpected point
+      - missing_tool_call     # teacher called Bash, student didn't
+      - mismatched_tool_input # tool name matched, semantic_input didn't
+      - mismatched_file_state # file_mutation_equivalence failed
+      - extra_tool_call       # student called Bash, teacher didn't
+      - turn_order_skew       # right calls, wrong order
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sovereignty constraint (consumed by FALSIFY-CCPA-006)
+# ─────────────────────────────────────────────────────────────────────────────
+
+sovereignty:
+  forbidden_replay_egress:
+    - 'api.anthropic.com'
+    - '*.anthropic.com'
+  enforcement: 'CI test container drops all outbound except 127.0.0.1; network policy asserted by ccpa-replayer test harness, not by trust'
+  rationale: >
+    Sovereign-AI is aprender''s core value prop. A replay run that silently
+    talks to api.anthropic.com (e.g. via a leaked teacher API key in env) is a
+    ship-blocker bug — same posture as apr-claude-proxy-v1 § FALSIFY-CLAUDE-PROXY-006.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Falsification conditions
+# ─────────────────────────────────────────────────────────────────────────────
+# Each gate maps 1:1 to a Rust test in the planned ccpa-* crates.
+# Status legend:
+#   PLANNED_M{n}     — defined here, lands when milestone M{n} ships
+#   ACTIVE           — green in CI on the planned ccpa-cli repo
+# Promotion gate: contract status DRAFT → ACTIVE only when all 8 are ACTIVE.
+
+falsification_conditions:
+
+  - id: FALSIFY-CCPA-001
+    name: trace_schema_roundtrip
+    status: PLANNED_M1
+    assertion: >
+      Every committed fixture under fixtures/*.ccpa-trace.jsonl parses cleanly
+      against trace_schema, re-serializes byte-identical (modulo lexicographic
+      JSON key ordering), and round-trips through ccpa-trace::Trace::{from_jsonl,
+      to_jsonl} without loss.
+    test_harness: 'ccpa-trace/tests/falsify_ccpa_001_roundtrip.rs (planned)'
+    failing_examples:
+      - 'unknown record kind'
+      - 'session_start with non-uuid session_id'
+      - 'cwd_sha256 not 64-hex-chars'
+      - 'extra field on assistant_turn (deny_unknown_fields)'
+
+  - id: FALSIFY-CCPA-002
+    name: replay_determinism
+    status: PLANNED_M3
+    assertion: >
+      Replaying the same fixture twice with the same `apr code` revision and
+      empty $TMPDIR produces byte-identical student traces after applying
+      trace_schema.normalization_rules. Determinism is across two
+      back-to-back runs in the same container.
+    test_harness: 'ccpa-replayer/tests/falsify_ccpa_002_determinism.rs (planned)'
+    failing_examples:
+      - 'wallclock leaking into a tool argument'
+      - 'HashMap iteration order in a tool input'
+
+  - id: FALSIFY-CCPA-003
+    name: mock_completeness
+    status: PLANNED_M3
+    assertion: >
+      RecordedDriver consumes exactly len(teacher.assistant_turns) responses;
+      no missing turn (panic), no extra turn (assertion). On a well-formed
+      fixture, ccpa replay exits 0 with stdout containing
+      "consumed all N teacher turns".
+    test_harness: 'ccpa-replayer/tests/falsify_ccpa_003_mock.rs (planned)'
+
+  - id: FALSIFY-CCPA-004
+    name: tool_call_equivalence
+    status: PLANNED_M4
+    assertion: >
+      Per turn, the multiset of (tool_name, semantic_input) pairs in the
+      student trace equals the multiset in the teacher trace under
+      tool_equivalence_rules. Inequivalence is reported with a typed
+      drift_category (one of parity_score.drift_categories).
+    test_harness: 'ccpa-differ/tests/falsify_ccpa_004_tool_equivalence.rs (planned)'
+
+  - id: FALSIFY-CCPA-005
+    name: file_mutation_equivalence
+    status: PLANNED_M4
+    assertion: >
+      The git-tree hash of the CWD at session_end satisfies
+      file_mutation_equivalence between teacher and student runs of the same
+      fixture against the same starting cwd_sha256. Differing files must each
+      pass per_file_rule.
+    test_harness: 'ccpa-differ/tests/falsify_ccpa_005_file_state.rs (planned)'
+
+  - id: FALSIFY-CCPA-006
+    name: sovereignty_on_replay
+    status: PLANNED_M5
+    assertion: >
+      During `ccpa replay`, zero outbound socket connections are opened to
+      hosts in sovereignty.forbidden_replay_egress. Asserted by running the
+      replay inside a network-namespaced container that drops all egress
+      except 127.0.0.1; any outbound connection attempt is logged and fails
+      the test.
+    test_harness: 'ccpa-replayer/tests/falsify_ccpa_006_sovereignty.rs (planned)'
+    parity_with: 'apr-claude-proxy-v1 § FALSIFY-CLAUDE-PROXY-006'
+
+  - id: FALSIFY-CCPA-007
+    name: corpus_coverage
+    status: PLANNED_M5
+    assertion: >
+      For every row in apr-code-parity-v1.yaml § categories[*] whose status
+      is in {SHIPPED, PARTIAL}, at least one fixture in fixtures/ exercises
+      that capability (fixture is annotated with `covers: [<row.id>, ...]`
+      in a header comment, machine-readable). MISSING rows are exempt.
+    test_harness: 'ccpa-cli/tests/falsify_ccpa_007_coverage.rs (planned)'
+    cross_check_command: |
+      ccpa coverage --json | jq -e '.uncovered_shipped_or_partial == []'
+
+  - id: FALSIFY-CCPA-008
+    name: parity_score_bound
+    status: PLANNED_M6
+    assertion: >
+      Aggregate parity_score over fixtures/ ≥ parity_score.thresholds.aggregate_min
+      AND every individual fixture ≥ parity_score.thresholds.individual_min.
+      Failure is a ship-blocker for the next `apr code` release.
+    test_harness: 'ccpa-cli/tests/falsify_ccpa_008_parity_bound.rs (planned)'
+    drift_report_format: |
+      ccpa diff fixtures/ --json
+        → { "aggregate": 0.97, "fixtures": [{ "id":"0001-...", "score":0.95, "drifts":[...]}, ...] }
+
+  # ── Source-of-truth invariants (online from M0+, before any parity work) ──
+
+  - id: FALSIFY-CCPA-009
+    name: ci_main_branch_green
+    status: PLANNED_M0
+    assertion: >
+      Branch protection on companion_repo.branch (`main`) requires the
+      `ci/gate` GitHub-Actions status check before merge. Direct pushes to
+      main are blocked. Force-push and branch-deletion are disabled.
+    test_harness: 'companion-repo: scripts/falsify_ccpa_009_branch_protection.sh, executed in CI via gh api; mirrors aprender CLAUDE.md § "CRITICAL GIT WORKFLOW RULES"'
+    cross_check_command: |
+      gh api repos/paiml/claude-code-parity-apr/branches/main/protection \
+        --jq '.required_status_checks.contexts | index("ci/gate") != null'
+    expected_output: 'true'
+    rationale: 'PR cannot ship if CI is red — applies the same protection aprender@main has.'
+
+  - id: FALSIFY-CCPA-010
+    name: pmat_comply_100pct
+    status: PLANNED_M0
+    assertion: >
+      `pmat comply check --strict` exits 0 with zero violations on every CI
+      run. Compliance percentage is exactly 100.0; total_violations is 0.
+      No `--allow` flags, no per-rule excludes. If pmat comply rejects a
+      pattern aprender uses, fix companion-repo code to comply, not the
+      gate.
+    test_harness: 'companion-repo: ci.yml step `pmat comply check --strict --json | tee comply.json` followed by `jq -e ".compliance_pct == 100.0 and .total_violations == 0"`'
+    expected_output: 'jq exit 0'
+    rationale: 'Greenfield POC has no legacy excuse for compliance drift.'
+
+  - id: FALSIFY-CCPA-011
+    name: line_coverage_100pct
+    status: PLANNED_M0
+    assertion: >
+      `cargo llvm-cov --workspace --fail-under-lines 100 --fail-uncovered-lines 0`
+      exits 0 on every CI run. Line coverage equals 100.0 %. Branch coverage
+      tracked but not gated until M6 (see § milestones).
+    test_harness: 'companion-repo: ci.yml step `cargo llvm-cov --workspace --fail-under-lines 100 --fail-uncovered-lines 0`'
+    expected_output: 'cargo exit 0'
+    forbidden_tools: ['cargo-tarpaulin']  # per CLAUDE.md § "Prohibited Tools"
+    rationale: |
+      The POC is small (~5 crates). 100 % is achievable. If a function
+      genuinely cannot be covered, it is unjustified — delete it. This
+      tightens the aprender 95 % floor, on purpose, for a POC where the
+      surface is small and observable.
+
+  - id: FALSIFY-CCPA-012
+    name: pv_contract_gate_on_commit
+    status: PLANNED_M0
+    assertion: >
+      `pv validate contracts/claude-code-parity-apr-v1.yaml` exits 0 on
+      every commit. Enforcement is double-rooted: a pre-commit hook blocks
+      the commit locally, and the CI job re-runs the same command. Stale
+      pin.lock (mismatched sha256 vs aprender@main) MUST also fail this
+      gate, via an additional CI step `pv pin-check`.
+    test_harness: 'companion-repo: pre-commit hook + ci.yml step `pv validate contracts/claude-code-parity-apr-v1.yaml && pv pin-check contracts/pin.lock`'
+    expected_output: 'pv exit 0'
+    forbidden_alternatives: ['bash', 'shell', 'yq-wrapper', 'python-script']  # per CLAUDE.md
+    rationale: 'Every gate in this contract is only as trustworthy as the gate that validates the contract itself. Doubly enforced (hook + CI) so a missed hook install does not bypass.'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase / milestone roll-up (mirrors spec § Phases)
+# ─────────────────────────────────────────────────────────────────────────────
+
+milestones:
+  M0:
+    name: 'Spec + DRAFT contract + companion-repo source-of-truth invariants'
+    deliverable: 'this PR (aprender side) + empty companion-repo scaffold PR (claude-code-parity-apr side, follow-up)'
+    gates_online: [FALSIFY-CCPA-009, FALSIFY-CCPA-010, FALSIFY-CCPA-011, FALSIFY-CCPA-012]
+    status: IN_REVIEW
+    note: 'Invariants 009-012 must be GREEN on the empty-scaffold PR before any parity work begins. 100% coverage / 100% pmat-comply on an empty workspace is trivially achievable; the discipline is established before scope grows.'
+  M1:
+    name: 'Trace crate + schema roundtrip + relocate spec/contract to companion repo'
+    deliverable: 'crates/ccpa-trace, fixtures/ scaffold, this YAML moves to companion repo'
+    gates_online: [FALSIFY-CCPA-001, FALSIFY-CCPA-009, FALSIFY-CCPA-010, FALSIFY-CCPA-011, FALSIFY-CCPA-012]
+    status: PLANNED
+  M2:
+    name: 'Recorder + first 3 fixtures'
+    deliverable: 'crates/ccpa-recorder, ccpa record, fixtures/0001..0003'
+    gates_online: [FALSIFY-CCPA-001, FALSIFY-CCPA-009, FALSIFY-CCPA-010, FALSIFY-CCPA-011, FALSIFY-CCPA-012]
+    status: PLANNED
+  M3:
+    name: 'Replayer + determinism'
+    deliverable: 'crates/ccpa-replayer, RecordedDriver wiring (requires PMAT-CODE-LLM-DRIVER-PUBLIC-001)'
+    gates_online: [FALSIFY-CCPA-002, FALSIFY-CCPA-003, '...all M0/M1 gates remain online']
+    status: PLANNED
+  M4:
+    name: 'Differ + first parity report'
+    deliverable: 'crates/ccpa-differ, ccpa diff'
+    gates_online: [FALSIFY-CCPA-004, FALSIFY-CCPA-005, '...all prior gates remain online']
+    status: PLANNED
+  M5:
+    name: 'Sovereignty + corpus to ≥30'
+    deliverable: 'fixture corpus, sovereignty harness'
+    gates_online: [FALSIFY-CCPA-006, FALSIFY-CCPA-007, '...all prior gates remain online']
+    status: PLANNED
+  M6:
+    name: 'Promote DRAFT → ACTIVE; integrate into make tier3 + pv lint'
+    deliverable: 'all 12 gates green; aprender CI hook; epic PMAT-CCPA-PARITY-001 closed'
+    gates_online: [FALSIFY-CCPA-008, '...all 12 gates green']
+    status: PLANNED
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Status history
+# ─────────────────────────────────────────────────────────────────────────────
+
+status_history:
+  - { date: '2026-04-26', from: 'NEW', to: 'DRAFT v0.1.0',
+      reason: 'M0 spec + contract authored on feat/claude-code-parity-apr-poc-spec; awaiting review and PMAT-CCPA-PARITY-001 epic open' }
+  - { date: '2026-04-26', from: 'DRAFT v0.1.0', to: 'DRAFT v0.2.0',
+      reason: 'Spec rewritten to be falsifiable throughout; arXiv citations added (1503.02531 / 1807.10453 / 2207.11976 / 2310.06770 / 2505.03096 / 2603.23611); companion repo elevated to source-of-truth for enforcement; four invariant gates added (FALSIFY-CCPA-009 ci_main_branch_green, -010 pmat_comply_100pct, -011 line_coverage_100pct, -012 pv_contract_gate_on_commit); milestone roll-up updated so 009-012 are online from M0 (empty-scaffold PR) onward, prior to any parity work.' }

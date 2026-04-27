@@ -9,6 +9,7 @@
 
 - [Apr Cli Qa Spec](apr-cli-qa-spec.md)
 - [Aprender Monorepo Consolidation](aprender-monorepo-consolidation.md)
+- [Claude Code Parity APR POC](claude-code-parity-apr-poc.md) — record-replay-distill harness; 12 falsification gates; companion repo source-of-truth (M1)
 - [Aprender Readme Book Rewrite](aprender-readme-book-rewrite.md)
 - [Aprender Spec](aprender-spec.md)
 - [CRUX Competitive Research UX Workflows](crux-competitive-research-ux-workflows.md) — 250 user stories across 7 competitors, contract-backed, pmat-work tracked
