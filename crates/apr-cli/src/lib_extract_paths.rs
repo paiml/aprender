@@ -80,10 +80,13 @@
     fn test_extract_paths_pull_exempt() {
         let cmd = Commands::Pull {
             model_ref: "hf://org/repo".to_string(),
+            repo: None,
             force: false,
             dry_run: false,
             revision: None,
             offline: false,
+            include: vec![],
+            output: None,
         };
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Pull is a diagnostic command (exempt)");

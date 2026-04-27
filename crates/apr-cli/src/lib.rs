@@ -204,8 +204,9 @@ pub fn emit_version_json() {
                 s.lines()
                     .filter_map(|line| {
                         // Expect "GPU <idx>: <name> (UUID: <uuid>)"
-                        line.strip_prefix("GPU ")
-                            .and_then(|rest| rest.split_once(':').map(|(idx, _)| idx.trim().to_string()))
+                        line.strip_prefix("GPU ").and_then(|rest| {
+                            rest.split_once(':').map(|(idx, _)| idx.trim().to_string())
+                        })
                     })
                     .collect()
             })

@@ -353,11 +353,18 @@ pub enum Commands {
         #[arg(long)]
         allow_no_config: bool,
     },
-    /// Download and cache model from HuggingFace (Ollama-like UX)
+    /// Download and cache model OR HuggingFace dataset (Ollama-like UX)
     Pull {
-        /// Model reference (alias, hf:// URI, or org/repo)
-        #[arg(value_name = "MODEL")]
+        /// Model reference (alias, hf:// URI, or org/repo) OR "dataset"
+        /// asset-type discriminator. When this value is the literal
+        /// string "dataset", the next positional `repo` is the
+        /// HuggingFace dataset repo and dataset-pull semantics apply.
+        #[arg(value_name = "MODEL_OR_ASSET_TYPE")]
         model_ref: String,
+        /// Dataset repository (used only when model_ref == "dataset").
+        /// Per `apr-cli-pull-dataset-v1.yaml`.
+        #[arg(value_name = "REPO")]
+        repo: Option<String>,
         /// Force re-download even if cached
         #[arg(long)]
         force: bool,
@@ -373,6 +380,15 @@ pub enum Commands {
         /// Equivalent to APR_OFFLINE=1 or HF_HUB_OFFLINE=1 in the environment.
         #[arg(long)]
         offline: bool,
+        /// (dataset mode) Glob pattern for shard selection. May be passed
+        /// multiple times; matches are unioned. fnmatch-compatible
+        /// (`*`, `?`, `[a-z]`). No-match is fail-fast.
+        #[arg(long, value_name = "GLOB")]
+        include: Vec<String>,
+        /// (dataset mode) Output directory. Default:
+        /// `~/.cache/aprender/datasets/<repo>/`.
+        #[arg(short = 'o', long)]
+        output: Option<PathBuf>,
     },
     /// Registry operations (CRUX-A-01): inspect alias map, etc.
     Registry {
