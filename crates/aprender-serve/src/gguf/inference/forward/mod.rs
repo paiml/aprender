@@ -9,6 +9,7 @@ mod batch;
 mod core;
 mod encoder_decoder;
 mod single;
+mod traced;
 
 // PMAT-395: Re-export encoder-decoder types
 pub use encoder_decoder::EncoderOutput;

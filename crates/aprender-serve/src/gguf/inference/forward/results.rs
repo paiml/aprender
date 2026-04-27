@@ -164,7 +164,7 @@ impl OwnedQuantizedModel {
     /// 3. Attention with KV cache (GQA-aware)
     /// 4. Output projection (Q8K-accelerated or F32 fallback)
     /// 5. Residual connection into scratch.hidden
-    fn scratch_attention_block(
+    pub(crate) fn scratch_attention_block(
         &self,
         layer_idx: usize,
         layer: &OwnedQuantizedLayer,
@@ -326,7 +326,7 @@ impl OwnedQuantizedModel {
     ///
     /// Computes FFN up + gate projections with optional Q8K VNNI acceleration,
     /// applies SwiGLU activation, then projects down. Results written to scratch buffers.
-    fn scratch_swiglu_ffn(
+    pub(crate) fn scratch_swiglu_ffn(
         &self,
         layer_idx: usize,
         scratch: &mut InferenceScratchBuffer,
@@ -365,7 +365,7 @@ impl OwnedQuantizedModel {
     ///
     /// Computes FFN up projection with optional Q8K VNNI acceleration,
     /// applies GELU activation, then projects down. Results written to scratch buffers.
-    fn scratch_gelu_ffn(
+    pub(crate) fn scratch_gelu_ffn(
         &self,
         layer_idx: usize,
         scratch: &mut InferenceScratchBuffer,
