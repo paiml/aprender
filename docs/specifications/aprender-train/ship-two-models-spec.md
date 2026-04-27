@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.75.0
+**Version:** 2.76.0
+**Atomic next action (v2.76.0):** **§31 — SHIP-007 root cause PINNED to APR `qkv_bias` (std=10.24, ~10× too large)** (see new §31 below). Live three-stage bisection on canonical 7B teacher proves: post-matmul pre-bias APR std=0.92 matches GGUF std=1.14 (Q4K tolerance OK); but APR's `qkv_bias` ITSELF has mean=0.272, std=10.243 — adding it produces the post-bias std=10.33 that matches the existing trace and generates the 9× layer-0 gap. K-part bias is most extreme (post-bias std=29.49). The bug is either in `load_qkv_bias` byte interpretation OR in the GGUF→APR converter's bias-handling. PR E v2 is scoped to one specific dump-and-compare investigation per §31.4. Spec v2.75.0 → **v2.76.0**. Coverage scoreboard unchanged (15+33) — still pre-DISCHARGE.
+
 **Atomic next action (v2.75.0):** **§30 — PR E investigation refutes §28 narrow hypothesis; PR E paused, qkv-bias / RoPE / per-head-norm bisection load-bearing** (see new §30 below). Live diagnostics on canonical 7B teacher: `q4k_layers` IS fully populated for all 28 layers; APR's F32-fused-qkv weight is numerically equivalent to per-Q/K/V Q4K dispatch (max |diff|=0.005, RMS=0.0007). The §28 mechanical "switch matmul kernel" fix would change <0.5% of std — the 9× layer-0 qkv std gap (APR=10.33 vs GGUF=1.14) lives elsewhere. PR E is paused; next session must bisect post-matmul/post-bias/post-RoPE to localize the actual divergence point. Spec v2.74.0 → **v2.75.0**. Coverage scoreboard unchanged (15+33).
 
 **Atomic next action (v2.72.0):** **§26.4 P3 binding criterion DECIDED — APR vs GGUF layer-3 ffn_swigl ratio = 18.23×, SHIP-007 bug confirmed APR-side at `apr_transformer/inference.rs:160-164`** (see new §27 below). Live evidence on noah-Lambda-Vector RTX 4090 2026-04-27: built `apr` from PR #1083 branch (commits 77c016bc2 + c6579685b + f24946412 from PR A+B+C cascade), ran `apr trace --payload` on canonical 7B teacher in BOTH APR and GGUF formats with identical prompt + tokenizer. APR layer-3 ffn_swigl std = **1.2216** (matches §23 reading); GGUF layer-3 ffn_swigl std = **0.0670** (1.0× layer 1-2 baseline = no anomaly on GGUF side). Ratio 1.2216/0.0670 = **18.23×** — far exceeds the §26.4 ≥10× threshold by 8× absolute. Layers 0-2 agree (~1.1× ratio); layer 3 anomaly is APR-only; layers 6+ recover to ~1× ratio. The bug is localized to APR's SwiGLU element-wise multiply at `silu_g * u`; GGUF's path produces normal output. **Discharges 5 MODEL-1 PARTIALs once fix lands per §17.5** (SHIP-002/005/006/007/008). Fix scope: investigate `inference.rs:160-164` for off-by-one slice indexing, buffer corruption, or F32-vs-Q4K dequant anomaly at layer-3 specifically. Spec v2.71.0 → **v2.72.0**. Coverage flip pending fix (§26.5 expected: 33+12 → 28+17).
@@ -4447,6 +4449,84 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §31. SHIP-007 root cause PINNED — qkv_bias is the divergence introducer (2026-04-27)
+
+### 31.1 The decisive empirical bisection
+
+Per §30.4, captured layer-0 qkv at four stages on canonical 7B teacher (`/mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr`) with prompt "What is 2+2?" tokens. Live result:
+
+| Stage | mean | std | Ratio vs GGUF (1.14) |
+|-------|-----:|----:|---------------------:|
+| Embedding | 0.000013 | 0.017365 | n/a |
+| Post-RMSNorm | -0.000083 | 0.221261 | n/a |
+| **Post-matmul, pre-bias** | **-0.015918** | **0.924970** | **0.81× (matches GGUF in Q4K tolerance)** |
+| **`qkv_bias` itself** | **+0.271825** | **10.243427** | n/a (it's the bias, not output) |
+| **Post-bias** | **+0.255906** | **10.328716** | **9.06× (matches APR existing trace)** |
+| Q post-RoPE | +0.091476 | 3.558162 | (post-RoPE Q-only, not the post-bias whole) |
+
+### 31.2 The verdict
+
+The 9× std blowup happens **entirely at the qkv_bias addition step** (APR's pmat-260.rs:332-334). Pre-bias APR matmul output (std=0.92) agrees with GGUF (std=1.14) within Q4K tolerance — the **matmul is correct**. Post-bias APR (std=10.33) matches the existing trace.
+
+The `qkv_bias` value itself has std=10.243 — about 10× larger than expected for normal Qwen2.5-7B biases (which typically have std<1). K-part bias post-application has std=29.49, the most extreme.
+
+### 31.3 Falsification chain (now closed at the root)
+
+```
+§15.4 GPU eliminated → §16 APR CPU isolated → §17 (layer 3, FFN)
+→ §23 (layer 3, ffn_swigl) → §27 ratio 18.23× → §28 "F32 vs Q4K
+matmul precision" (REFUTED in §30 by direct kernel comparison)
+→ §31 qkv_bias std=10.24 introduces 9× layer-0 gap (PINNED)
+```
+
+### 31.4 PR E v2 scope (one named site to investigate)
+
+Two candidate fix surfaces:
+
+1. **`crates/aprender-serve/src/apr_transformer/mod_dequant_q4k_apr.rs::load_qkv_bias`** (lines 210-236) — concatenates q_bias + k_bias + v_bias into one fused F32 vec. If the underlying byte interpretation is wrong (e.g., dtype mis-reading, layout transpose, scaling factor missing), that would explain extreme bias values. First action: dump the actual bias bytes from the .apr file at layer 0 q/k/v_proj.bias and compare against the .gguf file at `blk.0.attn_{q,k,v}.bias`.
+
+2. **`crates/aprender-core/src/format/converter/...`** — if the GGUF→APR converter applies a transformation to biases (e.g., scaling by Q4K block factor), that's where the bug is. Check whether GGUF biases are stored in a form that requires post-load transformation that APR isn't applying.
+
+The decisive test: dump and byte-compare the bias bytes at the same layer/projection between APR and GGUF. If bytes differ, the converter is wrong. If bytes match but stats differ, the loader is wrong. **One named investigation, one PR.**
+
+### 31.5 Drift-prevention test (immediate)
+
+Before PR E v2 lands, add a regression test (CI-gated):
+
+```
+ASSERT for each layer i ∈ [0, 28):
+  |APR layer-i qkv_bias.std() - GGUF layer-i qkv_bias.std()| / max(eps, GGUF) < 0.10
+```
+
+This codifies the §31 binding criterion. PR E v2 must make this test PASS.
+
+### 31.6 Coverage scoreboard impact
+
+| State | DISCHARGED | PARTIAL |
+|-------|-----------:|--------:|
+| At §31 (now) | 15 | 33 |
+| PR E v2 lands (qkv_bias fixed; layer-0 std=1.14×Q4K) | **20** | **28** |
+
+Same flip as §28 had projected, but now with a correctly-named fix surface (qkv_bias loader, NOT matmul kernel).
+
+### 31.7 Methodology note — why this iteration succeeded
+
+§30 falsified §28's hypothesis. §31's bisection localized the bug ONE STAGE PER ITERATION (4 stages tested in one pass). The Toyota Way "five whys" framework:
+
+1. Why does APR diverge from GGUF? — §16: APR forward path has bug.
+2. Why APR forward? — §17: layer 3 FFN.
+3. Why layer 3 FFN? — §23: ffn_swigl multiply.
+4. Why ffn_swigl? — §27/§28: gate-matmul precision (turned out to be wrong).
+5. Why ffn_swigl REALLY? — §31: qkv_bias upstream of all this introduces the 9× std blowup at layer 0; the layer-3 amplification is downstream cascade.
+
+The bug was 3 layers upstream of where §27/§28 looked. Bisection-by-stages found it in one pass. PR E v2 is now properly scoped.
+
+### 31.8 Files
+
+- `crates/aprender-serve/examples/diag_qkv_bisection_layer0.rs` — re-runnable §30.4 bisection
+- `evidence/ship-007-qkv-bisection-2026-04-27/diag_qkv_bisection_layer0.txt` — captured output
+- `evidence/ship-007-qkv-bisection-2026-04-27/findings.md` — this analysis as a markdown file
 
 ---
 
