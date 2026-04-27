@@ -1,0 +1,208 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  status: PROPOSED
+  created: '2026-04-27'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'SPEC-SHIP-TWO-001 §27 — P3 binding criterion DECIDED: layer-3 APR/GGUF ffn_swigl ratio = 18.23×'
+  - 'SPEC-SHIP-TWO-001 §28 — Root cause refined: APR helpers::f32_matmul vs GGUF fused Q4K-aware matmul'
+  - 'SPEC-SHIP-TWO-001 §28.8 — Falsifiable next investigation step (PR D + PR E)'
+  - 'SPEC-SHIP-TWO-001 §17.5 — SHIP-007 fix discharges 5 MODEL-1 PARTIALs'
+  - 'feedback_fix_root_cause_never_route_around.md'
+  - 'evidence/ship-007-apr-vs-gguf-2026-04-27/{apr,gguf}-trace.txt'
+  description: >
+    Contract codifying the APR-vs-GGUF forward-parity binding criterion
+    discovered in §27 + refined in §28. The canonical 7B teacher
+    (Qwen2.5-Coder-7B-Instruct Q4K) loaded into BOTH formats MUST
+    produce per-layer ffn_swigl std within Q4K tolerance when run
+    through `apr trace --payload`. Today this FAILS at layer 3
+    (ratio = 18.23×) because APR's forward path uses
+    `helpers::f32_matmul` while GGUF uses Q4K-fused matmul. Once
+    PR E replaces the f32_matmul path with the Q4K-aware fused
+    kernel, this contract flips to ACTIVE and the FALSIFY gate
+    Passes — discharging 5 MODEL-1 PARTIALs (SHIP-002/005/006/007/008).
+
+equations:
+  per_layer_ffn_swigl_parity:
+    formula: |
+      For each layer i ∈ [0, 28) of the canonical 7B teacher
+      (paiml/qwen2.5-coder-7b-apache-q4k-v1) loaded as APR and as
+      GGUF, with prompt "What is 2+2?" tokenized via the model's
+      embedded BPE tokenizer to [3838, 374, 220, 17, 10, 17, 30]:
+
+        let r_i = apr_layer[i].ffn_swigl_stats.std /
+                  gguf_layer[i].ffn_swigl_stats.std
+
+      Binding: r_i ∈ [0.5, 2.0] for ALL i ∈ [0, 28).
+
+      The bounds [0.5, 2.0] correspond to ±100% Q4K tolerance —
+      stricter than the contract dataset-thestack-python-v1 ±5%
+      element-wise tolerance because std is a population statistic
+      that absorbs element-wise noise; 2× variance ≈ 1.4× std.
+    domain: per-layer activation statistics
+    codomain: bool
+    invariants:
+    - "Bounds are SYMMETRIC around 1.0 (logarithmic, not arithmetic)"
+    - "ALL 28 layers must Pass — no per-layer carve-out"
+    - "Layer 3 is the load-bearing case (currently ratio=18.23×)"
+    - "Layers 0-2 already Pass today (~1.1× ratio)"
+    - "Layers 4-5 currently in [3.3×, 4.5×] range (cascade-damped)"
+    - "Layers 6-27 already Pass today (~1× ratio)"
+
+  divergence_starts_at_gate_matmul:
+    formula: |
+      Per §28 evidence, the layer-3 cascade originates at the
+      gate-projection matmul:
+
+        apr_layer[3].ffn_gate_stats.std / gguf_layer[3].ffn_gate_stats.std
+        = 1.92 / 1.41 = 1.36×
+
+      and is non-linearly amplified by SiLU (4.59×) and the
+      multiply (3.97×) into the 18.23× ffn_swigl ratio.
+
+      Therefore: a Pass at THIS contract's binding criterion
+      requires fixing the gate-matmul precision — NOT the
+      silu_g * u multiply (which is symptomatic).
+    domain: causal chain
+    codomain: explanation
+    invariants:
+    - "fix surface = mod_apr_transformer.rs:138-140 helpers::f32_matmul"
+    - "fix surface ≠ inference.rs:160-164 silu_g * u (symptom only)"
+    - "Toyota Way: fix root cause, never route around"
+
+  fix_must_match_gguf_kernel_path:
+    formula: |
+      The fix replaces `helpers::f32_matmul(input, weight, ...)`
+      in AprTransformer.matmul() with a Q4K-aware dispatch:
+
+        if weight.qtype == GGUF_TYPE_Q4_K:
+            fused_q4k_q8k_parallel_matvec_into(...)
+        else:
+            helpers::f32_matmul(input, weight, ...)
+
+      This is the SAME kernel that GGUF's
+      `forward_single_with_scratch` uses, ensuring per-element
+      bit-equivalence (within Q4K block boundaries).
+    domain: fix scope
+    codomain: code change
+    invariants:
+    - "Q4K weights → Q4K-fused matmul (matches GGUF)"
+    - "F32 weights → F32 matmul (no change for non-quantized)"
+    - "No silent fallback to f32_matmul on Q4K weights"
+    - "Drift-prevention test PASSES post-fix"
+
+falsification_tests:
+- id: FALSIFY-APR-GGUF-PARITY-001
+  rule: per-layer ffn_swigl std ratio in [0.5, 2.0]
+  prediction: |
+    For each layer i ∈ [0, 28),
+      apr_layer[i].ffn_swigl_stats.std / gguf_layer[i].ffn_swigl_stats.std ∈ [0.5, 2.0]
+  test: |
+    cargo test -p aprender-serve --test apr_vs_gguf_forward_parity --features inference -- --ignored
+    # The test loads both teacher formats, runs apr trace --payload,
+    # parses per-layer ffn_swigl std, asserts ratio ∈ [0.5, 2.0]
+  if_fails: |
+    SHIP-007 root cause not yet fixed. Layer 3 ratio = 18.23× per §27
+    evidence. Per §28, fix is at mod_apr_transformer.rs:138-140 —
+    replace helpers::f32_matmul with Q4K-fused kernel dispatch.
+    See PR E roadmap.
+
+- id: FALSIFY-APR-GGUF-PARITY-002
+  rule: layer 3 specifically must Pass
+  prediction: |
+    apr_layer[3].ffn_swigl_stats.std / gguf_layer[3].ffn_swigl_stats.std ∈ [0.5, 2.0]
+  test: |
+    cargo test -p aprender-serve --test apr_vs_gguf_forward_parity layer_3_specifically --features inference -- --ignored
+  if_fails: |
+    The signature SHIP-007 anomaly site (§23, §27) still active.
+
+- id: FALSIFY-APR-GGUF-PARITY-003
+  rule: gate matmul precision is the root cause
+  prediction: |
+    apr_layer[3].ffn_gate_stats.std / gguf_layer[3].ffn_gate_stats.std ∈ [0.7, 1.4]
+  test: |
+    cargo test -p aprender-serve --test apr_vs_gguf_forward_parity gate_matmul_root --features inference -- --ignored
+  if_fails: |
+    Per §28, the divergence originates at the gate matmul.
+    A fix that brings ffn_swigl into bounds via downstream clamping
+    would fail this test (because gate stats would still diverge).
+    Forces the fix to be at the matmul, not at the multiply.
+    Toyota Way enforcement layer.
+
+- id: FALSIFY-APR-GGUF-PARITY-004
+  rule: contract validates via pv
+  prediction: "`pv validate contracts/apr-vs-gguf-forward-parity-v1.yaml` exits 0"
+  test: pv validate contracts/apr-vs-gguf-forward-parity-v1.yaml
+  if_fails: contract schema noncompliant; will not pass CI gate
+
+- id: FALSIFY-APR-GGUF-PARITY-005
+  rule: PR E (the fix) does not regress non-Q4K paths
+  prediction: |
+    F32-native APR models still use F32 matmul; only Q4K weights
+    get routed to fused kernel.
+  test: |
+    cargo test -p aprender-serve --test apr_vs_gguf_forward_parity f32_path_unchanged --features inference -- --ignored
+  if_fails: |
+    PR E broke F32-native APR forward path. Fix dispatch logic
+    to gate on weight.qtype, not on a global flag.
+
+- id: FALSIFY-APR-GGUF-PARITY-006
+  rule: apr trace --payload emits ffn_swigl line on GGUF
+  prediction: "apr trace --payload <gguf> output contains 'ffn_swigl' lines for each layer"
+  test: |
+    apr trace --payload /mnt/.../qwen2.5-coder-7b-instruct-q4k.gguf | grep -c 'ffn_swigl' | xargs test 28 -le
+  if_fails: |
+    PR cascade #1081/#1082/#1083 not merged or regressed.
+    GGUF dispatch falling back to no-trace path. Re-merge cascade.
+
+proof_obligations:
+- type: invariant
+  property: "APR forward path produces per-element bit-equivalent output to GGUF for Q4K weights"
+- type: invariant
+  property: "per-layer parity holds for ALL layers (no carve-outs)"
+- type: soundness
+  property: "no route-around fix at silu_g*u multiply that masks the gate-matmul precision issue"
+- type: completeness
+  property: "drift-prevention test FAILS today, PASSES post-PR-E (binding criterion semantics)"
+
+kani_harnesses:
+- id: KH-APR-GGUF-PARITY-001
+  obligation: per_layer_ffn_swigl_parity
+  property: ratio_within_q4k_tolerance_bounds
+  bound: 28  # 28 layers in Qwen2.5-Coder-7B
+- id: KH-APR-GGUF-PARITY-002
+  obligation: divergence_starts_at_gate_matmul
+  property: gate_matmul_is_causal_origin
+  bound: 4   # 4 sub-FFN slots: gate / up / silu_gate / swiglu_inner
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending
+  notes: |
+    Authored 2026-04-27 as PR D of SHIP-TWO-001 §28.8 binding-criterion
+    chain. PROPOSED status until PR E (the actual fix) lands.
+
+    PR E specification (per §28.4 + §28.8):
+    - Replace helpers::f32_matmul in AprTransformer.matmul() with
+      a Q4K-aware dispatch that calls fused_q4k_q8k_parallel_matvec_into
+      when weight.qtype == GGUF_TYPE_Q4_K, falling back to
+      helpers::f32_matmul for F32-native weights.
+    - Touches: crates/aprender-serve/src/apr_transformer/mod_apr_transformer.rs:138-140
+    - Estimated 150-300 LOC.
+    - Drift-prevention: this contract's FALSIFY-APR-GGUF-PARITY-001
+      transitions Fail→Pass on PR E merge.
+
+    On PR E success:
+    - Coverage flip 33+12 → 28+17 (§26.5 §28.9)
+    - Discharges SHIP-002, SHIP-005, SHIP-006, SHIP-007, SHIP-008
+      (the 5 MODEL-1 PARTIALs transitively gated on §17.5)
+    - Contract status: PROPOSED → ACTIVE
+    - Spec: v2.73.0 → v2.74.0 with §29 recording fix outcome
+
+    PR D (this contract) is the binding criterion as durable spec.
+    PR E (the fix) is the actual code change.
+    §29 (post-fix) records the discharge.
