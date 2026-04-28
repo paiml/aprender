@@ -89,8 +89,12 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
 }
 
 /// Print layer-by-layer activation stats with anomaly detection.
+///
+/// Made `pub(crate)` for SHIP-007 §26.4 P3: GGUF dispatch in
+/// `commands/trace.rs::run_traced_inference_gguf` reuses this for
+/// the APR-vs-GGUF layer-3 ffn_swigl bisection comparison.
 #[cfg(feature = "inference")]
-fn print_layer_activations(layers: &[realizar::apr_transformer::LayerActivation]) {
+pub(crate) fn print_layer_activations(layers: &[realizar::apr_transformer::LayerActivation]) {
     use colored::Colorize;
 
     println!();
@@ -189,7 +193,7 @@ fn layer_has_inf(layer: &realizar::apr_transformer::LayerActivation) -> bool {
 
 /// Print logit predictions with top-5 tokens.
 #[cfg(feature = "inference")]
-fn print_logit_predictions(logits: &[f32]) {
+pub(crate) fn print_logit_predictions(logits: &[f32]) {
     use colored::Colorize;
 
     let logit_stats = compute_vector_stats(logits);
@@ -209,7 +213,10 @@ fn print_logit_predictions(logits: &[f32]) {
 
 /// Print trace summary analysis (variance, NaN/Inf, logit range).
 #[cfg(feature = "inference")]
-fn print_trace_summary(layers: &[realizar::apr_transformer::LayerActivation], logits: &[f32]) {
+pub(crate) fn print_trace_summary(
+    layers: &[realizar::apr_transformer::LayerActivation],
+    logits: &[f32],
+) {
     use colored::Colorize;
 
     println!();
@@ -361,7 +368,7 @@ fn print_stats(prefix: &str, stats: &VectorStats) {
 
 /// Print activation statistics from realizar's ActivationStats
 #[cfg(feature = "inference")]
-fn print_activation_stats(_prefix: &str, stats: &realizar::apr_transformer::ActivationStats) {
+pub(crate) fn print_activation_stats(_prefix: &str, stats: &realizar::apr_transformer::ActivationStats) {
     use colored::Colorize;
     println!("  Range: [{:.6}, {:.6}]", stats.min, stats.max);
     println!("  Mean: {:.6}, Std: {:.6}", stats.mean, stats.std_dev);
@@ -377,7 +384,7 @@ fn print_activation_stats(_prefix: &str, stats: &realizar::apr_transformer::Acti
 
 /// Print activation statistics with color coding
 #[cfg(feature = "inference")]
-fn print_activation_stats_colored(
+pub(crate) fn print_activation_stats_colored(
     _prefix: &str,
     stats: &realizar::apr_transformer::ActivationStats,
 ) {

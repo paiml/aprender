@@ -361,6 +361,36 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     println!("{}", format!("Encoded tokens: {:?}", test_tokens).cyan());
     println!();
 
+    // SHIP-007 §26.4 P3: forward_traced emits per-layer LayerActivation
+    // stats for APR-vs-GGUF bisection (the §23 layer-3 ffn_swigl 17×
+    // anomaly comparison). Run BEFORE generation so the trace reflects
+    // a pristine forward pass on the test prompt.
+    println!("{}", "FORWARD PASS (with layer tracing):".green().bold());
+    match model.forward_traced(&test_tokens) {
+        Ok(trace) => {
+            println!();
+            println!("{}", "EMBEDDING:".cyan().bold());
+            print_activation_stats_colored("  ", &trace.embed_stats);
+
+            print_layer_activations(&trace.layer_activations);
+
+            println!();
+            println!("{}", "FINAL LAYER NORM:".cyan().bold());
+            print_activation_stats("  ", &trace.final_norm_stats);
+
+            print_logit_predictions(&trace.logits);
+            print_trace_summary(&trace.layer_activations, &trace.logits);
+        }
+        Err(e) => {
+            eprintln!(
+                "{}",
+                format!("forward_traced unavailable for this GGUF: {e}").yellow()
+            );
+            println!("  Layer-by-layer tracing not available (e.g., encoder-decoder model).");
+        }
+    }
+    println!();
+
     // Run generation with small max_tokens to see what comes out
     println!("{}", "GENERATION (max 8 tokens):".green().bold());
     let gen_config = QuantizedGenerateConfig {
