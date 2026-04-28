@@ -1,7 +1,13 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.81.0
+**Version:** 2.84.0
+**Atomic next action (v2.84.0):** **§39 — `apr run` and `apr trace --payload` use DIFFERENT forward paths producing DIFFERENT first-token predictions** (see new §39 below). Live evidence on canonical 7B teacher (RTX 4090): `apr trace --payload <apr>` reports top-1 = token 220 (" "), but `apr run --temperature 0 --max-tokens 5` (deterministic greedy) produces "ampiezza = 1" — first token is NOT 220 (" "). Both should agree on greedy top-1 for the same prompt. They don't, so the production inference path (`apr run`) and the trace path (`apr trace --payload`) materialize different logits. SHIP-007 is in the divergence between these paths — likely in the production path's KV cache pre-fill, dispatched matmul kernels, or something else `apr trace --payload` (which uses a slow F32-only reference path per `inference.rs:38: Q4K layers not used in traced forward`) doesn't exercise. This narrows the search dramatically. Next-iteration agenda: author `diag_logits_apr_run_vs_apr_trace.rs` that captures first-token logits via both paths and diff element-wise. Spec v2.83.0 → **v2.84.0**. Coverage scoreboard unchanged (15+33).
+
+**Atomic next action (v2.83.0):** **§38 — Live falsification of §27 binding criterion: layer-3 18.23× ratio is ALMOST ENTIRELY a sample-size artifact** (see §38 below).
+
+**Atomic next action (v2.82.0):** **§37 — TRACE-CAPTURE-POINT MISMATCH discovered between APR and GGUF `forward_traced`** (see §37 below).
+
 **Atomic next action (v2.81.0):** **§36 — plain-language status of the two-model goal** (see new §36 below). Each of the two models is blocked by a single concrete problem. **MODEL-1**: numerical bug at layer 3 of FFN (18× std anomaly; three theories refuted; sub-FFN telemetry just landed via PR #1082 + #1083 in flight). **MODEL-2**: converged at val_loss=9.38 (capacity-limited; spec target 3.0 unreachable from-scratch; needs distillation, but `apr distill` is a stub — contract authored as #1097 awaiting impl). Spec v2.80.0 → **v2.81.0**. No coverage flip; this is a landmark for plain-language readers.
 
 **Atomic next action (v2.80.0):** **§35 — `apr distill` Standard strategy is a STUB; §34.5 distillation track requires authoring contract + extending apr** (see new §35 below). Live execution of `apr distill` on the canonical 7B teacher + §33 student finished in 45s (suspicious for a real epoch over 565.6M tokens). Source at `crates/apr-cli/src/commands/distill.rs:1464` reveals the Standard strategy is "Copy all tensors (student is same architecture, will be trained)" — no gradient training implemented. Per §26.8 stack-tool-extension methodology, the missing feature requires a `contracts/apr-cli-distill-train-v1.yaml` contract + implementation. The §34.5 distillation recommendation is correct in DIRECTION but blocked on implementation. Spec v2.79.0 → **v2.80.0**. Coverage scoreboard unchanged (15+33).
@@ -4459,6 +4465,97 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §39. `apr run` ≠ `apr trace --payload` — different forward paths, different first-token logits (2026-04-28)
+
+### 39.1 The discovery
+
+After §38 falsified the §27 layer-3 hypothesis (18× was sample-size artifact), the next bisection step is to localize SHIP-007 in the autoregressive path. As a first step, run greedy generation and check that the first sampled token matches `apr trace --payload`'s reported top-1:
+
+```
+$ apr trace --payload qwen2.5-coder-7b-instruct-q4k.apr
+  Top 5 predictions:
+    1. token_id=220, logit=16.7368
+    2. token_id=576, logit=15.6684
+    ...
+
+$ apr run qwen2.5-coder-7b-instruct-q4k.apr --prompt "What is 2+2?" \
+    --max-tokens 5 --temperature 0 --skip-contract
+  Output: ampiezza = 1
+```
+
+`apr trace --payload` says top-1 = token 220 (" "). `apr run --temperature 0` (deterministic greedy) produces "ampiezza" first. **Token 220 is NOT the first token in "ampiezza"** (220 is " "; "ampiezza" starts with token 4929 or similar). These two outputs are inconsistent.
+
+For the same model, same prompt, same greedy sampling, both reports MUST come from identical first-token logits. They don't, so they must use different forward paths.
+
+### 39.2 Where the divergence lives
+
+Looking at the source:
+
+- `apr trace --payload` calls `AprTransformer::forward_traced` (`crates/aprender-serve/src/apr_transformer/inference.rs:19`).
+- `inference.rs:38`: `// Note: Q4K layers not used in traced forward (uses F32 for accuracy)`.
+- So `forward_traced` deliberately uses an F32-only reference path that does NOT engage the production Q4K-fused kernels.
+
+Meanwhile:
+
+- `apr run` calls `AprTransformer::forward` or one of the cached/optimized paths — those DO use Q4K-fused matmul kernels, KV cache, parallel dispatch, etc.
+
+The production path (`apr run`) materializes different logits than the F32-reference trace path (`apr trace --payload`) for the same input. This is itself a defect — `forward_traced` is supposed to be a diagnostic for the production path, not an alternative implementation.
+
+### 39.3 What this means for SHIP-007
+
+The previous §17/§23/§27 chain was bisecting `forward_traced`'s output (the F32-reference path). With the parity fix from §38 PR #1109, that path's per-layer ratios all Pass — meaning the F32-reference path is correct. The bug is in the PRODUCTION path that `apr run` uses. Possibilities:
+
+1. **Q4K-fused matmul kernel** (different from F32-reference). Per §30 `diag_apr_qkv_layer0.rs`, the layer-0 q-projection kernel was within Q4K tolerance — but other layers / other matmuls weren't tested.
+2. **KV cache pre-fill** path: the production path stores K/V across all prompt tokens during prefill, then reuses during decode. The trace path doesn't (because it captures stats at last-token-only).
+3. **RoPE during decode**: the trace path applies RoPE per-position on a single forward pass, but the production path may apply RoPE differently when the new token is appended.
+4. **Dispatch routing**: the production path uses CUDA / wgpu / FP8 kernels behind `--features cuda`. The trace path uses scalar F32 always.
+
+### 39.4 Falsifiable next investigation step
+
+Author `crates/aprender-serve/examples/diag_logits_apr_run_vs_apr_trace.rs` that:
+
+1. Loads the canonical 7B teacher.
+2. Calls `forward_traced(prompt_tokens)` → captures `final_logits_via_trace_path`.
+3. Calls the SAME forward path that `apr run` uses → captures `final_logits_via_production_path`.
+4. Compares element-wise: `max |diff|`, `RMS`, `top-1 token` from each.
+5. If logits diverge: the bug is in the production path's matmul / KV cache / RoPE / dispatch.
+6. If logits match (unlikely given the live evidence): then `apr run`'s output formatting layer is broken (sampling, decode, BPE, or chat templating).
+
+This is a 1-2 hour task that produces a falsifiable result.
+
+### 39.5 Five-whys
+
+1. *Why does `apr run` produce gibberish ("ampiezza = 1") at temp=0?* The first sampled token differs from `apr trace --payload`'s reported top-1.
+2. *Why do they differ?* They use different forward paths — `apr trace --payload` uses an F32-only reference, `apr run` uses the production path with Q4K-fused kernels.
+3. *Why is there an F32-only reference at all?* Per the comment at `inference.rs:38`, "Q4K layers not used in traced forward (uses F32 for accuracy)" — designed so trace would not exhibit Q4K rounding artifacts.
+4. *Why doesn't the production path produce the same logits as the F32 reference (modulo Q4K rounding)?* That's the bug to find. Hypotheses in §39.3.
+5. *What's the fix?* §39.4 diagnostic localizes; root-cause fix follows.
+
+### 39.6 Implications for prior work
+
+- The §38 finding (layer-3 ratio Pass with parity stats) is **still correct** — it shows the F32-reference path is per-layer-correct.
+- BUT: it doesn't say SHIP-007 is fixed. SHIP-007 lives in the gap between the F32-reference path and the production Q4K-fused path that `apr run` uses.
+- The §17/§23/§27 hypothesis chain bisected the F32-reference path. Now we know that path is correct (all layers Pass with parity), so the bug is in the PRODUCTION path, not the reference path.
+
+### 39.7 Coverage scoreboard (unchanged)
+
+| Category | DISCHARGED | PARTIAL | %D |
+|----------|-----------:|--------:|---:|
+| MODEL-1 | 5 | 5 | 50% |
+| MODEL-2 | 3 | 9 | 25% |
+| GPUTRAIN | 7 | 0 | 100% |
+| **Sum** | **15** | **33** | **31%** |
+
+Per `feedback_fix_root_cause_never_route_around.md`, naming where the bug actually lives (production path vs reference path) is the discharge step. The §17/§23/§27 chain is officially **deprioritized** (it was bisecting the wrong path); the new agenda is the §39.4 diagnostic.
+
+---
+
+## §38. Live falsification of §27 — layer-3 18.23× was sample-size artifact, not precision drift (2026-04-28)
+
+(Section content — see PR #1108)
+
+---
 
 ## §36. Plain-language status — what's left to ship the two models (2026-04-28)
 
