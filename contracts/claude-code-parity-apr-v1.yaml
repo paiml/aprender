@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.15.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.15.0 (M27) — spec milestone-table refresh. The companion-side spec markdown's sub-milestones table stopped at M19; M20 README truth-up, M21 aprender mirror sync, M22 round-trip guard, M23 CONTRIBUTING.md, M24+M25 100% mutation coverage, and M26 ccpa measure bridge were all invisible to a reader of the spec. v1.15.0 catches the doc up: status snapshot bumped to M0-M26 / v1.14.0 era, sub-milestones table extended through M26 + M27, outstanding next-goal explicitly named (M28 = `apr code --emit-trace` upstream in aprender). No code or contract-surface change.
+version: "1.16.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.16.0 (M28) — `apr code --emit-trace` upstream PR opened in aprender (paiml/aprender#1100). Adds the apr-side flag that emits a 4-record ccpa-trace.jsonl after each `-p`-mode run, with real elapsed_ms + token counts. Format mirrors this contract's § trace_schema. Companion `ccpa measure` (M26) consumes the file. Live-dogfood verified end-to-end: real Qwen3-1.7B run produced a valid 4-record JSONL with elapsed_ms=3295, tokens_in=44, tokens_out=1024. Tool dispatch / hook / skill records remain M29+ enrichment follow-ups.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,78 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-28'
+    from: 'ACTIVE_RUNTIME v1.15.0'
+    to: 'ACTIVE_RUNTIME v1.16.0'
+    note: 'M28 — apr code --emit-trace upstream PR opened (aprender#1100)'
+    reason: |
+      M26 (ccpa measure) shipped the AUTHORED → MEASURED bridge on the
+      companion side, but its student trace is synthesized from
+      apr-code's stdout — text-only, with no visibility into tool
+      dispatch / hook events / skill invocations. M27 named M28 as
+      the upstream piece that closes this gap.
+
+      M28 is now in flight as paiml/aprender#1100:
+
+        feat(apr-code): add --emit-trace flag (M28 — ccpa-trace.jsonl emission)
+
+      What ships in the aprender PR:
+        - new `--emit-trace <path>` flag on `apr code` subcommand
+        - plumbed through commands_enum.rs → dispatch.rs → cmd_code →
+          run_single_prompt
+        - new `emit_ccpa_trace` helper (~85 LOC) in
+          aprender-orchestrate/src/agent/code.rs that writes a 4-record
+          JSONL per-record-v=1 envelope:
+            session_start  (synthetic UUIDv7-shaped session_id, ts,
+                            actor=apr-code, real model path,
+                            cwd_sha256 placeholder)
+            user_prompt    (turn 0, verbatim)
+            assistant_turn (turn 1, single Block::Text with
+                            agent's final response)
+            session_end    (real elapsed_ms + tokens_in/tokens_out
+                            from AgentLoopResult.usage)
+        - 4 new unit tests in code_tests.rs::emit_trace_tests
+          (records-with-correct-kinds, prompt+response carried,
+          token+elapsed carried, every record has v=1 envelope).
+        - signature-test in code_tests.rs updated 7-arg → 8-arg.
+
+      Live dogfood (this PR cycle):
+        $ apr code --emit-trace /tmp/measured.jsonl \
+            -p "Show me which CLAUDE.md takes precedence right now"
+        $ cat /tmp/measured.jsonl
+          {"v":1,"kind":"session_start",
+           "session_id":"00000000-0006-7000-5080-...",
+           "actor":"apr-code",
+           "model":"/home/noah/.apr/models/Qwen3-1.7B-Q4_K_M.gguf",...}
+          {"v":1,"kind":"user_prompt","turn":0,"text":"Show me which..."}
+          {"v":1,"kind":"assistant_turn","turn":1,"blocks":[...],
+           "stop_reason":"end_turn"}
+          {"v":1,"kind":"session_end","turn":1,"stop_reason":"end_turn",
+           "elapsed_ms":3295,"tokens_in":44,"tokens_out":1024}
+
+      Real elapsed_ms + token counts populated correctly.
+
+      Caveats documented (not blockers):
+        - The dogfood model (Qwen3-1.7B) emitted gibberish text due
+          to PMAT-190 thinking-loop pre-existing issue; the trace
+          format is correct, the model behavior is a separate
+          aprender workstream.
+        - tool_use / hook_event / skill_invocation records remain
+          M29+ enrichment — M28 ships only the text-only path.
+
+      Companion-side bookkeeping (this PR):
+        - Contract bump v1.15.0 → v1.16.0 with this status_history
+          entry
+        - Aprender mirror push paired (the contract YAML is mirrored
+          on aprender@feat/claude-code-parity-apr-poc-spec; M28's
+          apr-cli changes live on a separate aprender branch
+          feat/apr-code-emit-trace-m28 / PR #1100)
+        - pin.lock contract_sha256 refreshed
+
+      Once aprender#1100 merges, the M28 narrative closes; M29+ can
+      enrich the trace with tool/hook/skill records to produce the
+      first non-tautological FALSIFY-CCPA-013 discharge.
 
   - date: '2026-04-28'
     from: 'ACTIVE_RUNTIME v1.14.0'
