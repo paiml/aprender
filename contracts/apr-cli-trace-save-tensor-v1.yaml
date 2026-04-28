@@ -1,0 +1,210 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  status: PROPOSED
+  created: '2026-04-28'
+  author: PAIML Engineering
+  registry: false
+  references:
+  - 'SPEC-SHIP-TWO-001 §15-§35 SHIP-007 hypothesis chain'
+  - 'memory/project_2026_04_28_ship_007_state_machine.md — 5 hypotheses falsified, layer-0 stage diff is next'
+  - 'SPEC-SHIP-TWO-001 §26.8 — apr is canonical, extend apr never CLI-shim'
+  - 'feedback_apr_trace_not_eprintln.md — apr trace is the canonical instrumentation surface'
+  description: >
+    Contract for extending `apr trace` with a `--save-tensor <stage>` flag
+    that captures raw F32 tensor values at chosen stages of the forward
+    pass, enabling per-element APR vs GGUF comparison.
+
+    Triggering observation 2026-04-28: SHIP-007's hypothesis space has been
+    narrowed by 5 falsified hypotheses (§28 matmul kernel, §28.4 q4k_layers
+    population, §31 qkv_bias values, §32 layer-3 weights, #1101 parallel-
+    reduction nondeterminism). The remaining bug surface is per-element
+    divergence at some specific stage of layer-0 forward. Aggregate stats
+    (already emitted by `apr trace --payload`) are insufficient — they
+    can hide per-element drift behind similar std values.
+
+    This contract defines the missing infrastructure that unblocks the
+    final SHIP-007 bisection step. Once shipped, run `apr trace --save-tensor
+    <stage>` on canonical 7B teacher in both APR and GGUF formats, then
+    `apr diff --values <apr-stage.bin> <gguf-stage.bin>` to find the first
+    stage where per-element divergence exceeds Q4K tolerance.
+
+equations:
+  cli_signature:
+    formula: |
+      `apr trace --payload <model> --save-tensor <STAGE>[,<STAGE>...] --output <DIR>`
+      Where STAGE ∈ {
+        embedding,           # token embedding lookup output
+        attn_norm,           # post-RMSNorm pre-QKV
+        qkv_matmul,          # post matmul, pre-bias
+        qkv_bias,            # post-bias add, pre-RoPE
+        q_post_rope,         # Q after RoPE
+        k_post_rope,         # K after RoPE
+        attention,           # post softmax(Q@Kᵀ)@V, pre O-proj
+        attn_out,            # post-O-projection
+        post_attn_residual,  # = hidden post layer-N attention residual
+        ffn_norm,            # post-FFN-RMSNorm pre-gate
+        ffn_gate,            # post gate matmul
+        ffn_up,              # post up matmul
+        ffn_silu,            # silu(gate)
+        ffn_swigl,           # silu(gate) × up
+        ffn_out,             # post down-projection
+        post_ffn_residual,   # = hidden post layer-N FFN residual
+        layer_output,        # alias for post_ffn_residual
+        final_norm,          # post output_norm
+        lm_head,             # logits
+      }
+      Per-stage tensor written to `<DIR>/layer-<N>/<STAGE>.bin` as raw F32
+      LE byte-stream prefixed by 12-byte header: magic "APRT" + u32 layer +
+      u32 dim_product. Per-position concatenated for seq_len > 1.
+    domain: CLI surface
+    codomain: bool
+    invariants:
+    - "STAGE list is comma-delimited; multiple stages MAY be saved in one run"
+    - "Layer subset selection via existing --layer flag (already in apr trace)"
+    - "--output DIR is created if missing; contents are NOT auto-cleaned"
+    - "header magic 'APRT' lets apr diff --values detect the format"
+    - "u32 dim_product = product of all dims (e.g., seq_len*hidden_dim for embedding)"
+
+  byte_format:
+    formula: |
+      File layout (one per stage per layer):
+        offset 0-3:   magic "APRT" (b"APRT")
+        offset 4-7:   u32 LE — layer index (0..num_layers-1; or 0xFFFFFFFF for whole-model stages)
+        offset 8-11:  u32 LE — dim_product (number of f32 elements following)
+        offset 12+:   f32 LE × dim_product values
+      Total file size = 12 + dim_product × 4 bytes.
+    domain: file format
+    codomain: bool
+    invariants:
+    - "File is fully-self-describing — no external metadata needed for `apr diff`"
+    - "f32 LE matches existing APR/realizar conventions"
+    - "NaN values preserved verbatim (not zeroed, not skipped)"
+
+  determinism:
+    formula: |
+      Saving the same stage on the same model + input MUST produce
+      byte-identical output across runs.
+
+      Re-running `apr trace --payload M --save-tensor stage --output D` on
+      same machine produces D/layer-*/stage.bin files where the byte
+      contents match the first run exactly (sha256-equivalent).
+    domain: bit-determinism
+    codomain: bool
+    invariants:
+    - "APR forward is deterministic (#1101 verified); save-tensor must inherit this"
+    - "tensor capture point MUST NOT introduce non-determinism (e.g., async I/O without flush)"
+    - "no race conditions across rayon-parallel forward passes"
+
+  apr_diff_values_compat:
+    formula: |
+      Saved tensors MUST be loadable by existing `apr diff --values`:
+        apr diff <apr-stage.bin> <gguf-stage.bin> --values --limit N
+
+      The header allows apr diff to skip 12 bytes and read f32 LE bodies.
+      Compatible with the existing per-tensor diff path used in §28/§32
+      byte-compare diagnostics.
+    domain: apr-cli interop
+    codomain: bool
+    invariants:
+    - "12-byte header is skip-able by apr diff loader"
+    - "f32 LE element size matches standard APR tensor layout"
+    - "`apr diff --values --limit N` reports max|diff|, RMS, first-N|maxdiff per file pair"
+
+falsification_tests:
+- id: FALSIFY-APR-TRACE-SAVE-001
+  rule: --save-tensor flag is recognized
+  prediction: "`apr trace --save-tensor embedding --help 2>&1 | grep -q save-tensor`"
+  test: "apr trace --help | grep -q save-tensor"
+  if_fails: "CLI surface drift — flag not registered in clap"
+
+- id: FALSIFY-APR-TRACE-SAVE-002
+  rule: embedding stage produces byte-identical output across runs (determinism)
+  prediction: "Two runs of `apr trace --save-tensor embedding` on same model produce byte-identical files"
+  test: |
+    apr trace --payload <model> --save-tensor embedding --output A
+    apr trace --payload <model> --save-tensor embedding --output B
+    cmp A/layer-0/embedding.bin B/layer-0/embedding.bin
+  if_fails: "non-deterministic capture; investigate I/O ordering or buffer reuse"
+
+- id: FALSIFY-APR-TRACE-SAVE-003
+  rule: ffn_gate stage produces APR vs GGUF diff > 5% (verification of #1099 finding)
+  prediction: "Layer-3 ffn_gate APR vs GGUF max|diff|/std(GGUF) > 0.05 (corroborates #1099 1.36× std ratio)"
+  test: |
+    apr trace --payload <apr-teacher> --save-tensor ffn_gate --output APR
+    apr trace --payload <gguf-teacher> --save-tensor ffn_gate --output GGUF
+    apr diff APR/layer-3/ffn_gate.bin GGUF/layer-3/ffn_gate.bin --values --limit 3584
+  if_fails: "save-tensor doesn't capture ffn_gate correctly; check hook insertion"
+
+- id: FALSIFY-APR-TRACE-SAVE-004
+  rule: header format is self-describing
+  prediction: "First 4 bytes of any saved file are b'APRT'; bytes 4-7 contain u32 LE layer; bytes 8-11 u32 LE dim_product"
+  test: "xxd -l 12 APR/layer-0/embedding.bin matches expected header"
+  if_fails: "format drift — apr diff cannot parse"
+
+- id: FALSIFY-APR-TRACE-SAVE-005
+  rule: multi-stage in one run
+  prediction: "`apr trace --save-tensor embedding,ffn_gate,ffn_swigl --output D` produces 3 files per layer"
+  test: "ls D/layer-0/{embedding.bin,ffn_gate.bin,ffn_swigl.bin}"
+  if_fails: "comma-list parser broken; only first stage captured"
+
+- id: FALSIFY-APR-TRACE-SAVE-006
+  rule: NaN preservation
+  prediction: "Synthetic input that produces NaN at some stage produces NaN bits in saved file (not silently zeroed)"
+  test: "test fixture with deliberate NaN injection; verify saved bin has 0x7FC00000 at expected offset"
+  if_fails: "NaN handling incorrect; debugging may miss numerical instabilities"
+
+- id: FALSIFY-APR-TRACE-SAVE-007
+  rule: --layer subset works with --save-tensor
+  prediction: "`apr trace --save-tensor ffn_gate --layer 3 --output D` produces only D/layer-3/ffn_gate.bin"
+  test: "ls D/ should show only layer-3/"
+  if_fails: "--layer flag not threaded through save-tensor path"
+
+- id: FALSIFY-APR-TRACE-SAVE-008
+  rule: contract validates via pv
+  prediction: "`pv validate contracts/apr-cli-trace-save-tensor-v1.yaml` exits 0"
+  test: "pv validate contracts/apr-cli-trace-save-tensor-v1.yaml"
+  if_fails: "contract schema noncompliant"
+
+proof_obligations:
+- type: invariant
+  property: "save-tensor preserves bit-exact f32 values from forward pass"
+- type: determinism
+  property: "same input → byte-identical output across runs"
+- type: invariant
+  property: "12-byte header allows zero-config apr diff loading"
+- type: completeness
+  property: "all 19 named stages are addressable; --save-tensor stage list covers them"
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending
+  notes: |
+    Authored 2026-04-28 from SHIP-007 hypothesis-space narrowing.
+    Five hypotheses falsified (§28, §28.4(a), §31, §32, #1101); the
+    remaining bug surface is per-element divergence at specific
+    layer-0 forward stages. Aggregate stats are insufficient. This
+    contract defines the missing per-stage tensor capture infra.
+
+    PROPOSED status until implementation. Implementation steps:
+    1. Add --save-tensor flag to crates/apr-cli/src/commands/trace.rs
+    2. Per-stage hooks in:
+       - apr_transformer/pmat-260.rs::forward() (APR side)
+       - gguf/inference/forward/traced.rs (GGUF side, post PR #1082+1083 sub-FFN telemetry)
+    3. Binary writer with APRT magic header
+    4. Extend `apr diff --values` to recognize the header (likely already
+       compatible since header is just a 12-byte skip)
+    5. CI fixtures: tiny model + reference outputs
+
+    Implementation cost: 400-600 LOC + 8 unit tests. Multi-day Rust task.
+
+    Once shipped, the SHIP-007 layer-0 bisection completes in one debug
+    session: run save-tensor in both formats, apr diff at each stage,
+    pinpoint the first divergent stage as the actual bug surface.
+
+    Direct linkage to shipping MODEL-1: SHIP-002/005/006/007/008 (5
+    PARTIALs) all depend on the SHIP-007 fix. With this tooling, the
+    fix is unblocked. paiml/qwen2.5-coder-7b-apache-q4k-v1 ships
+    cleanly through both APR and GGUF backends.
