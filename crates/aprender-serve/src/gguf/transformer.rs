@@ -83,6 +83,16 @@ pub struct QuantizedGGUFTransformer<'a> {
     pub position_embedding: Option<Vec<f32>>,
     /// Quantized layer weights
     pub layers: Vec<QuantizedGGUFTransformerLayer>,
+    /// M32c.2: Per-layer MoE expert tensor descriptors when loaded
+    /// via `from_gguf_for_moe`. Empty `Vec` for dense models loaded
+    /// via the standard `from_gguf` constructor. When populated,
+    /// `moe_layers.len() == layers.len()` and each entry holds the
+    /// 4 quantized tensor refs for `qwen3_moe`'s router + per-expert
+    /// gate/up/down. The `layers[i].ffn_up_weight` etc. fields are
+    /// stubbed with empty `QuantizedTensorRef` placeholders for MoE
+    /// layers; consumers MUST check `moe_layers[i].is_some()` before
+    /// dispatching the FFN.
+    pub moe_layers: Vec<Option<crate::gguf::qwen3_moe_load::Qwen3MoeQuantizedLayer>>,
     /// Output norm weight (f32)
     pub output_norm_weight: Vec<f32>,
     /// Output norm bias (optional)
@@ -186,10 +196,205 @@ impl<'a> QuantizedGGUFTransformer<'a> {
             token_embedding,
             position_embedding,
             layers,
+            moe_layers: Vec::new(),
             output_norm_weight,
             output_norm_bias,
             lm_head_weight,
             lm_head_bias,
+        })
+    }
+
+    /// M32c.2: Load a `qwen3_moe`-arch GGUF, populating both the
+    /// non-FFN dense fields and the per-layer MoE expert tensor
+    /// descriptors. This is the qwen3_moe-aware sibling of
+    /// `from_gguf` — call it instead when the architecture has been
+    /// canonicalized to `qwen3_moe`.
+    ///
+    /// Forward dispatch is NOT yet wired (M32c.2.1). This
+    /// constructor exists so M32c.2 can prove that the
+    /// load infrastructure (M32c.1's `load_qwen3_moe_layer` +
+    /// shared dense-FFN-skip path) works end-to-end against the
+    /// real 17.3 GB Qwen3-Coder GGUF without going through the
+    /// M32b load-time refusal.
+    ///
+    /// # Arguments
+    /// * `model` - Parsed GGUF model. The caller MUST have verified
+    ///   that `tensor_names::normalize_architecture(&config.architecture) == "qwen3_moe"`.
+    /// * `data` - Memory-mapped file data (zero-copy).
+    ///
+    /// # Errors
+    /// Returns an error if any of:
+    /// - SSM tensor names appear (mutually exclusive with MoE)
+    /// - Required non-FFN tensors are missing (token_embd, attn_*,
+    ///   output_norm, output)
+    /// - Any MoE tensor declared by `tensor-names-v1` v1.1.0 is
+    ///   missing for any layer
+    ///
+    /// On success, every `layers[i]` has placeholder dense FFN
+    /// `QuantizedTensorRef`s (offset=0, byte_size=0, num_elements=0,
+    /// qtype=GGUF_TYPE_F32) — consumers MUST check
+    /// `moe_layers[i].is_some()` before attempting any dense FFN
+    /// dequantization.
+    pub fn from_gguf_for_moe(model: &GGUFModel, data: &'a [u8]) -> Result<Self> {
+        let config = ValidatedModelConfig::from_gguf(model)?.into_inner();
+
+        let canonical_arch = crate::tensor_names::normalize_architecture(&config.architecture);
+        if canonical_arch != "qwen3_moe" {
+            return Err(crate::error::RealizarError::InvalidShape {
+                reason: format!(
+                    "from_gguf_for_moe: architecture '{}' (canonical '{}') is not qwen3_moe — \
+                     caller should dispatch to from_gguf instead",
+                    config.architecture, canonical_arch
+                ),
+            });
+        }
+
+        let has_ssm = model
+            .tensors
+            .iter()
+            .any(|t| t.name.contains("ssm_") || t.name.contains("ssm."));
+        if has_ssm {
+            return Err(crate::RealizarError::FormatError {
+                reason: format!(
+                    "Architecture '{}' has both qwen3_moe arch tag AND SSM tensors — \
+                     unsupported hybrid configuration",
+                    config.architecture
+                ),
+            });
+        }
+
+        let token_embedding = model.get_tensor_f32("token_embd.weight", data)?;
+        let position_embedding = model
+            .get_tensor_f32("position_embd.weight", data)
+            .or_else(|_| model.get_tensor_f32("token_pos_embd.weight", data))
+            .or_else(|_| model.get_tensor_f32("model.position_embedding.weight", data))
+            .ok();
+
+        let mut layers = Vec::with_capacity(config.num_layers);
+        let mut moe_layers = Vec::with_capacity(config.num_layers);
+        for layer_idx in 0..config.num_layers {
+            layers.push(Self::load_quantized_layer_moe_skeleton(
+                model, data, layer_idx,
+            )?);
+            moe_layers.push(Some(crate::gguf::qwen3_moe_load::load_qwen3_moe_layer(
+                model, data, layer_idx,
+            )?));
+        }
+
+        let output_norm_weight = model.get_tensor_f32("output_norm.weight", data)?;
+        let output_norm_bias = model
+            .get_tensor_f32("output_norm.bias", data)
+            .or_else(|_| model.get_tensor_f32("model.norm.bias", data))
+            .ok();
+
+        let lm_head_weight = Self::get_tensor_ref(model, data, "output.weight")
+            .or_else(|_| Self::get_tensor_ref(model, data, "token_embd.weight"))?;
+        let lm_head_bias = model.get_tensor_f32("output.bias", data).ok();
+
+        Ok(Self {
+            config,
+            data,
+            token_embedding,
+            position_embedding,
+            layers,
+            moe_layers,
+            output_norm_weight,
+            output_norm_bias,
+            lm_head_weight,
+            lm_head_bias,
+        })
+    }
+
+    /// M32c.2 helper: load the non-FFN portion of a transformer layer.
+    /// Dense FFN fields are stubbed with empty `QuantizedTensorRef`
+    /// placeholders — the caller MUST populate `moe_layers[i]` for
+    /// these layers via `load_qwen3_moe_layer`.
+    fn load_quantized_layer_moe_skeleton(
+        model: &GGUFModel,
+        data: &[u8],
+        layer_idx: usize,
+    ) -> Result<QuantizedGGUFTransformerLayer> {
+        let prefix = format!("blk.{layer_idx}");
+
+        let attn_norm_weight = model.get_tensor_f32(&format!("{prefix}.attn_norm.weight"), data)?;
+        let attn_norm_bias = model
+            .get_tensor_f32(&format!("{prefix}.attn_norm.bias"), data)
+            .or_else(|_| model.get_tensor_f32(&format!("{prefix}.input_layernorm.bias"), data))
+            .ok();
+
+        // qwen3_moe uses separate Q/K/V (llama-style); fused QKV is unused for this arch.
+        let q = Self::get_tensor_ref(model, data, &format!("{prefix}.attn_q.weight"))?;
+        let k = Self::get_tensor_ref(model, data, &format!("{prefix}.attn_k.weight"))?;
+        let v = Self::get_tensor_ref(model, data, &format!("{prefix}.attn_v.weight"))?;
+        let q_bias = model
+            .get_tensor_f32(&format!("{prefix}.attn_q.bias"), data)
+            .ok();
+        let k_bias = model
+            .get_tensor_f32(&format!("{prefix}.attn_k.bias"), data)
+            .ok();
+        let v_bias = model
+            .get_tensor_f32(&format!("{prefix}.attn_v.bias"), data)
+            .ok();
+        let qkv_bias = match (q_bias, k_bias, v_bias) {
+            (Some(qb), Some(kb), Some(vb)) => {
+                let mut combined = Vec::with_capacity(qb.len() + kb.len() + vb.len());
+                combined.extend_from_slice(&qb);
+                combined.extend_from_slice(&kb);
+                combined.extend_from_slice(&vb);
+                Some(combined)
+            },
+            _ => None,
+        };
+        let qkv_weight = QKVWeights::Separate { q, k, v };
+
+        let attn_output_weight =
+            Self::get_tensor_ref(model, data, &format!("{prefix}.attn_output.weight"))?;
+        let attn_output_bias = model
+            .get_tensor_f32(&format!("{prefix}.attn_output.bias"), data)
+            .ok();
+
+        // FFN fields stubbed — see moe_layers field for the real expert tensors.
+        let dense_ffn_placeholder = QuantizedTensorRef {
+            offset: 0,
+            byte_size: 0,
+            num_elements: 0,
+            qtype: GGUF_TYPE_F32,
+        };
+
+        let ffn_norm_weight = model
+            .get_tensor_f32(&format!("{prefix}.ffn_norm.weight"), data)
+            .ok();
+        let ffn_norm_bias = model
+            .get_tensor_f32(&format!("{prefix}.ffn_norm.bias"), data)
+            .or_else(|_| {
+                model.get_tensor_f32(&format!("{prefix}.post_attention_layernorm.bias"), data)
+            })
+            .ok();
+
+        let attn_q_norm_weight = model
+            .get_tensor_f32(&format!("{prefix}.attn_q_norm.weight"), data)
+            .ok();
+        let attn_k_norm_weight = model
+            .get_tensor_f32(&format!("{prefix}.attn_k_norm.weight"), data)
+            .ok();
+
+        Ok(QuantizedGGUFTransformerLayer {
+            attn_norm_weight,
+            attn_norm_bias,
+            qkv_weight,
+            qkv_bias,
+            attn_output_weight,
+            attn_output_bias,
+            ffn_up_weight: dense_ffn_placeholder.clone(),
+            ffn_up_bias: None,
+            ffn_down_weight: dense_ffn_placeholder,
+            ffn_down_bias: None,
+            ffn_gate_weight: None,
+            ffn_gate_bias: None,
+            ffn_norm_weight,
+            ffn_norm_bias,
+            attn_q_norm_weight,
+            attn_k_norm_weight,
         })
     }
 
