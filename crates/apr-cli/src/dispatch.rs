@@ -153,6 +153,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             print,
             max_turns,
             manifest,
+            emit_trace,
         } => batuta::agent::code::cmd_code(
             model.clone(),
             project.clone(),
@@ -161,6 +162,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *print,
             *max_turns,
             manifest.clone(),
+            emit_trace.clone(),
         )
         .map_err(|e| CliError::Aprender(e.to_string())),
 

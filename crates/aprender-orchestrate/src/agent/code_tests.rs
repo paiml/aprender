@@ -210,7 +210,7 @@ fn test_cmd_code_signature_matches_spec() {
     // Verify the public API signature exists and is callable
     // This catches regressions where the function is made private or renamed
     // Verify cmd_code exists and is callable
-    let _ = cmd_code as fn(_, _, _, _, _, _, _) -> _;
+    let _ = cmd_code as fn(_, _, _, _, _, _, _, _) -> _;
 }
 
 #[test]
@@ -490,3 +490,103 @@ fn test_register_mcp_client_tools_noop_when_empty() {
 // Popperian falsification tests extracted to code_tests_falsification.rs
 #[path = "code_tests_falsification.rs"]
 mod falsification;
+
+// ── M28: apr code --emit-trace ────────────────────────────────────────
+
+#[cfg(test)]
+mod emit_trace_tests {
+    use super::super::emit_ccpa_trace;
+    use crate::agent::{AgentLoopResult, TokenUsage};
+
+    fn synth_result(text: &str) -> AgentLoopResult {
+        AgentLoopResult {
+            text: text.to_owned(),
+            usage: TokenUsage {
+                input_tokens: 42,
+                output_tokens: 7,
+            },
+            iterations: 1,
+            tool_calls: 0,
+        }
+    }
+
+    #[test]
+    fn emit_writes_4_jsonl_records_with_correct_kinds() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("trace.jsonl");
+        let r = synth_result("hello world");
+        emit_ccpa_trace(
+            &path,
+            "what?",
+            &r,
+            std::time::Duration::from_millis(123),
+            "qwen-test",
+        )
+        .expect("emit");
+        let body = std::fs::read_to_string(&path).expect("read back");
+        let lines: Vec<&str> = body.lines().collect();
+        assert_eq!(lines.len(), 4, "expected 4 records, got {}", lines.len());
+        assert!(lines[0].contains("\"kind\":\"session_start\""));
+        assert!(lines[1].contains("\"kind\":\"user_prompt\""));
+        assert!(lines[2].contains("\"kind\":\"assistant_turn\""));
+        assert!(lines[3].contains("\"kind\":\"session_end\""));
+    }
+
+    #[test]
+    fn emit_carries_prompt_and_response_text() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("trace.jsonl");
+        let r = synth_result("the answer is 42");
+        emit_ccpa_trace(
+            &path,
+            "what is the meaning of life",
+            &r,
+            std::time::Duration::from_millis(100),
+            "test-model",
+        )
+        .expect("emit");
+        let body = std::fs::read_to_string(&path).expect("read");
+        assert!(body.contains("what is the meaning of life"));
+        assert!(body.contains("the answer is 42"));
+        assert!(body.contains("\"actor\":\"apr-code\""));
+        assert!(body.contains("\"model\":\"test-model\""));
+    }
+
+    #[test]
+    fn emit_carries_token_counts_and_elapsed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("trace.jsonl");
+        let r = synth_result("x");
+        emit_ccpa_trace(
+            &path,
+            "p",
+            &r,
+            std::time::Duration::from_millis(456),
+            "m",
+        )
+        .expect("emit");
+        let body = std::fs::read_to_string(&path).expect("read");
+        // session_end carries elapsed_ms + token counts
+        assert!(body.contains("\"elapsed_ms\":456"));
+        assert!(body.contains("\"tokens_in\":42"));
+        assert!(body.contains("\"tokens_out\":7"));
+    }
+
+    #[test]
+    fn emit_each_record_has_v1_envelope() {
+        // Per ccpa-trace-v2 schema: every record carries `v: 1` for
+        // per-record back-compat regardless of file-level schema version.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("trace.jsonl");
+        let r = synth_result("hi");
+        emit_ccpa_trace(&path, "p", &r, std::time::Duration::from_millis(0), "m")
+            .expect("emit");
+        let body = std::fs::read_to_string(&path).expect("read");
+        for line in body.lines() {
+            assert!(
+                line.contains("\"v\":1"),
+                "every JSONL record must carry v:1, got: {line}"
+            );
+        }
+    }
+}

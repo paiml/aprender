@@ -32,6 +32,7 @@ pub fn cmd_code(
     print: bool,
     max_turns: u32,
     manifest_path: Option<PathBuf>,
+    emit_trace: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     // --project: change working directory for project instructions
     if project.as_os_str() != "." && project.is_dir() {
@@ -142,7 +143,14 @@ pub fn cmd_code(
         } else {
             prompt.join(" ")
         };
-        let code = run_single_prompt(&manifest, driver.as_ref(), &tools, &memory, &prompt_text);
+        let code = run_single_prompt(
+            &manifest,
+            driver.as_ref(),
+            &tools,
+            &memory,
+            &prompt_text,
+            emit_trace.as_deref(),
+        );
         drop(driver); // Kill apr serve subprocess before exit
         std::process::exit(code);
     }
@@ -491,6 +499,7 @@ fn run_single_prompt(
     tools: &ToolRegistry,
     memory: &dyn crate::agent::memory::MemorySubstrate,
     prompt: &str,
+    emit_trace: Option<&std::path::Path>,
 ) -> i32 {
     let mut single_manifest = manifest.clone();
     single_manifest.resources.max_iterations = single_manifest.resources.max_iterations.min(10);
@@ -509,6 +518,8 @@ fn run_single_prompt(
             return exit_code::AGENT_ERROR;
         }
     };
+
+    let started = std::time::Instant::now();
 
     // PMAT-197: Use non-nudge loop for -p mode. The nudge ("Use a tool!") forces
     // small models to make tool calls even for simple questions like "What is 2+2?"
@@ -536,6 +547,21 @@ fn run_single_prompt(
             } else {
                 println!("{}", r.text);
             }
+
+            // PMAT-CODE-EMIT-TRACE-001 (M28): write a ccpa-trace.jsonl
+            // describing this run. Used by `ccpa measure` to score
+            // apr code against canonical Claude Code reference fixtures.
+            if let Some(trace_path) = emit_trace {
+                let model = single_manifest
+                    .model
+                    .resolve_model_path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "apr-code-unknown".to_owned());
+                if let Err(e) = emit_ccpa_trace(trace_path, prompt, &r, started.elapsed(), &model) {
+                    eprintln!("⚠ failed to write ccpa-trace to {}: {e}", trace_path.display());
+                }
+            }
+
             exit_code::SUCCESS
         }
         Err(e) => {
@@ -543,6 +569,84 @@ fn run_single_prompt(
             map_error_to_exit_code(&e)
         }
     }
+}
+
+/// Emit a `ccpa-trace.jsonl` (M28) describing a single apr-code run.
+///
+/// Schema mirrors `claude-code-parity-apr-v1.yaml § trace_schema`. For
+/// the M28 minimum-viable scope we emit four records:
+///
+///   1. `session_start`  with a synthetic `session_id` derived from
+///      `started`'s wall-clock ts so re-runs differ; `cwd_sha256`
+///      placeholder is normalized at compare time by the differ.
+///   2. `user_prompt`    turn 0, verbatim text.
+///   3. `assistant_turn` turn 1, single `Block::Text` carrying
+///      `result.text`. Tool dispatch + hook + skill records are
+///      M29+ enrichment follow-ups.
+///   4. `session_end`    real elapsed_ms + token counts from
+///      `result.usage`.
+fn emit_ccpa_trace(
+    path: &std::path::Path,
+    prompt: &str,
+    result: &super::result::AgentLoopResult,
+    elapsed: std::time::Duration,
+    model: &str,
+) -> std::io::Result<()> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let ts_micros =
+        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_micros()).unwrap_or(0);
+    // session_id: UUIDv7-shaped hex string of the start ts. Normalized
+    // by the differ at compare time so this only needs to be stable
+    // across teacher and student of the SAME fixture (re-running the
+    // same fixture produces a different session_id, which is fine).
+    let session_id = format!(
+        "{:08x}-{:04x}-7000-{:04x}-{:012x}",
+        (ts_micros >> 64) as u32 & 0xFFFF_FFFF,
+        ((ts_micros >> 48) & 0xFFFF) as u16,
+        ((ts_micros >> 32) & 0xFFFF) as u16,
+        (ts_micros & 0xFFFF_FFFF_FFFF) as u64
+    );
+    // ts in ISO 8601 — not strictly RFC 3339, but the differ
+    // normalizes ts at compare time.
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let ts = format!("@{secs}");
+    let cwd_sha256 = "0".repeat(64);
+
+    let session_start = serde_json::json!({
+        "v": 1,
+        "kind": "session_start",
+        "session_id": session_id,
+        "ts": ts,
+        "actor": "apr-code",
+        "model": model,
+        "cwd_sha256": cwd_sha256,
+    });
+    let user_prompt = serde_json::json!({
+        "v": 1,
+        "kind": "user_prompt",
+        "turn": 0,
+        "text": prompt,
+    });
+    let assistant_turn = serde_json::json!({
+        "v": 1,
+        "kind": "assistant_turn",
+        "turn": 1,
+        "blocks": [{"type": "text", "text": result.text}],
+        "stop_reason": "end_turn",
+    });
+    let session_end = serde_json::json!({
+        "v": 1,
+        "kind": "session_end",
+        "turn": 1,
+        "stop_reason": "end_turn",
+        "elapsed_ms": elapsed.as_millis() as u64,
+        "tokens_in": result.usage.input_tokens,
+        "tokens_out": result.usage.output_tokens,
+    });
+
+    let body = format!("{}\n{}\n{}\n{}\n", session_start, user_prompt, assistant_turn, session_end);
+    std::fs::write(path, body)
 }
 
 // Prompts and exit codes extracted to code_prompts.rs
