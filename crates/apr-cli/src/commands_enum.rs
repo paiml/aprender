@@ -593,6 +593,14 @@ pub enum Commands {
         /// Max turns before stopping
         #[arg(long, default_value = "50")]
         max_turns: u32,
+
+        /// Emit a `ccpa-trace.jsonl` describing the run to this path.
+        /// Format mirrors the schema at
+        /// <https://github.com/paiml/claude-code-parity-apr/blob/main/contracts/claude-code-parity-apr-v1.yaml>
+        /// (`§ trace_schema`). Used by `ccpa measure` to score apr-code
+        /// against canonical Claude Code reference fixtures.
+        #[arg(long)]
+        emit_trace: Option<PathBuf>,
     },
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]
