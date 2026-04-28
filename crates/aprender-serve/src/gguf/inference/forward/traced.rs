@@ -168,18 +168,29 @@ impl OwnedQuantizedModel {
             }
             let ffn_norm_stats = ActivationStats::from_slice(&scratch.normed[..hidden_dim]);
 
-            // 2g. FFN. PR A does NOT instrument the sub-FFN slots — those
-            // 4 fields default-zero per the §26.4 plan; PR B clones
-            // `scratch_swiglu_ffn` into `_traced` to fill them.
+            // 2g. FFN. PR B populates the 4 sub-FFN stat slots via the
+            // `_traced` helper for the SwiGLU path; the GELU path keeps
+            // sub-FFN slots at default-zero (no SwiGLU components).
+            let mut ffn_gate_stats = ActivationStats::default();
+            let mut ffn_up_stats = ActivationStats::default();
+            let mut ffn_silu_gate_stats = ActivationStats::default();
+            let mut ffn_swiglu_inner_stats = ActivationStats::default();
             if self.config.constraints.has_gate_ffn() {
-                self.scratch_swiglu_ffn(
+                self.scratch_swiglu_ffn_traced(
                     layer_idx,
                     &mut scratch,
                     use_q8k_path,
                     hidden_dim,
                     intermediate_dim,
+                    &mut ffn_gate_stats,
+                    &mut ffn_up_stats,
+                    &mut ffn_silu_gate_stats,
+                    &mut ffn_swiglu_inner_stats,
                 )?;
             } else {
+                // GELU path: no SwiGLU sub-FFN components — leave the 4
+                // sub-FFN slots at default-zero. This matches APR's
+                // forward_traced semantics for non-SwiGLU models.
                 self.scratch_gelu_ffn(
                     layer_idx,
                     &mut scratch,
@@ -199,18 +210,18 @@ impl OwnedQuantizedModel {
             let output_stats = ActivationStats::from_slice(&scratch.hidden[..hidden_dim]);
 
             // Construct LayerActivation. Order matches APR's
-            // inference.rs:231-242. PR A: 6 non-FFN populated, 4 sub-FFN
-            // default-zero (PR B fills them).
+            // inference.rs:231-242. PR B: all 10 fields populated for
+            // SwiGLU; GELU path leaves 4 sub-FFN at default-zero.
             layer_activations.push(LayerActivation {
                 layer_idx,
                 attn_norm_stats,
                 qkv_stats,
                 attn_out_stats,
                 ffn_norm_stats,
-                ffn_gate_stats: ActivationStats::default(),
-                ffn_up_stats: ActivationStats::default(),
-                ffn_silu_gate_stats: ActivationStats::default(),
-                ffn_swiglu_inner_stats: ActivationStats::default(),
+                ffn_gate_stats,
+                ffn_up_stats,
+                ffn_silu_gate_stats,
+                ffn_swiglu_inner_stats,
                 ffn_out_stats,
                 output_stats,
             });
