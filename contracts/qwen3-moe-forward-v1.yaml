@@ -1,7 +1,47 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-28'
   author: PAIML Engineering
+  amendment_history:
+    - version: 1.1.0
+      date: '2026-04-28'
+      kind: amendment
+      title: 'M32c.2.2 dequant strategy decision recorded'
+      description: |
+        Adds a `dequant_strategy` block under `metadata` recording the
+        design decision that gates M32c.2.2's implementation. The
+        decision is LAZY-FUSED-MATVEC: per-token forward dispatch
+        keeps the 4 MoE expert tensors in their on-disk Q4_K/Q6_K/F32
+        form and dequantizes inline through the existing
+        `fused_q4k_parallel_matvec` / `fused_q6k_parallel_matvec`
+        row-major matvec kernels (per CLAUDE.md LAYOUT-002 row-major
+        mandate), preserving the 8× memory-bandwidth advantage that
+        the rest of the pipeline relies on.
+
+        EAGER pre-dequantization at load time was rejected because
+        Qwen3-Coder-30B-A3B-Instruct's expert tensors total 17.5 GB
+        in Q4_K/Q6_K and would expand to ~70 GB in F32, exceeding
+        the canonical RTX 4090 24 GB VRAM and stressing host RAM
+        (96 GB on lambda-vector). Eager would also defeat the
+        roofline-bound rationale for fused dequant+matmul that
+        underpins the existing dense-FFN forward path
+        (`crates/aprender-serve/CLAUDE.md` § "8x bandwidth reduction
+        for Q4_K vs f32").
+
+        The decision implies a small API change to
+        `gpu/scheduler/moe_dispatch.rs::moe_forward_token` (or a
+        sibling fn): instead of taking pre-dequantized
+        `MoeExpertWeights { gate_weight: Vec<f32>, ... }`, the
+        per-token forward will take `Qwen3MoeQuantizedLayer` (the
+        4 `QuantizedTensorRef`s from M32c.1) plus the file's
+        mmapped `&[u8]`, and dispatch the existing
+        `fused_q4k_parallel_matvec`/`fused_q6k_parallel_matvec`
+        kernels per selected expert. Adapter shape work
+        (M32c.2.2.0): a thin function that, given a layer and a
+        selected expert id, slices the Q4_K bytes for THIS
+        expert's gate/up/down within the stacked
+        `[num_experts, intermediate, hidden]` and `[num_experts,
+        hidden, intermediate]` layouts.
   description: |
     Qwen3-MoE forward pass — composes router + per-expert SwiGLU + weighted
     aggregation into a single, falsifiable forward kernel for any model in
@@ -41,8 +81,11 @@ metadata:
 
 kind: KernelContract
 name: qwen3-moe-forward
-version: "1.0.0"
-status: DRAFT   # SCAFFOLD — flips to ACTIVE_RUNTIME at end of M32d (parity discharge)
+version: "1.1.0"
+status: DRAFT   # SCAFFOLD — flips to ACTIVE_RUNTIME at end of M32d (parity discharge).
+                # v1.1.0 (2026-04-28): adds dequant_strategy decision under metadata —
+                # LAZY-FUSED-MATVEC was chosen; EAGER rejected (would expand 17.5 GB
+                # Q4_K → 70 GB F32, exceeding RTX 4090 24 GB VRAM). See metadata.
 scope: "crates/aprender-serve/src/{gguf,apr}/**, crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
 
 description: |
