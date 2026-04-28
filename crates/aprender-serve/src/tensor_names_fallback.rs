@@ -90,8 +90,13 @@ pub fn normalize_architecture(raw: &str) -> &'static str {
         "Qwen2ForCausalLM" => "qwen2",
         "Qwen3ForCausalLM" => "qwen3",
         "Qwen3MoeForCausalLM" => "qwen3_moe",
+        "Qwen3MoEForCausalLM" => "qwen3_moe",
+        "Qwen3CoderForCausalLM" => "qwen3_moe",
         "Qwen3_5MoeForCausalLM" => "qwen3_moe",
         "Qwen3_5MoeForConditionalGeneration" => "qwen3_moe",
+        // Lowercase canonical keys — also accept as input.
+        "qwen3_moe" => "qwen3_moe",
+        "qwen3moe" => "qwen3_moe",
         "StableLmForCausalLM" => "stablelm",
         "bert" => "bert",
         "deepseek" => "deepseek",
