@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.16.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.16.0 (M28) — `apr code --emit-trace` upstream PR opened in aprender (paiml/aprender#1100). Adds the apr-side flag that emits a 4-record ccpa-trace.jsonl after each `-p`-mode run, with real elapsed_ms + token counts. Format mirrors this contract's § trace_schema. Companion `ccpa measure` (M26) consumes the file. Live-dogfood verified end-to-end: real Qwen3-1.7B run produced a valid 4-record JSONL with elapsed_ms=3295, tokens_in=44, tokens_out=1024. Tool dispatch / hook / skill records remain M29+ enrichment follow-ups.
+version: "1.17.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.17.0 (M29) — five-whys analysis of the Qwen3-Coder-30B-A3B inference failure traced to root cause (architecture-agnostic GGUF tensor naming); fix landed via aprender PR #1103 amending tensor-names-v1 contract to v1.1.0 with qwen3_moe coverage + F-TNV-002 falsifier validated against the real 17.3 GB GGUF byte inventory. The M28 → M29 chain shifts from "default-model selection works but inference fails on cryptic tensor error" to "MoE architecture has a contract-declared name namespace + a live falsifier"; full MoE forward-pass implementation is a separate larger workstream. No companion-repo code change.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,84 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-28'
+    from: 'ACTIVE_RUNTIME v1.16.0'
+    to: 'ACTIVE_RUNTIME v1.17.0'
+    note: 'M29 — five-whys + tensor-names-v1 v1.1.0 contract amendment (qwen3_moe + F-TNV-002)'
+    reason: |
+      M28 shipped `apr code --emit-trace` upstream and a default-model
+      preference for Qwen3-Coder-30B-A3B-Instruct. Live dogfood
+      against that model immediately surfaced an INFERENCE failure:
+
+        Error: driver error: inference failed:
+               Invalid shape: Tensor 'blk.0.ffn_up.weight' not found
+
+      The first instinct was to scope it as "out of scope for M28
+      until realizar adds qwen3moe support". The user pushed back:
+      "wrong you build provable-contracts and fix with five-whys".
+
+      M29 applies that correction:
+
+      Five-whys (full transcript embedded in
+      paiml/aprender / contracts/tensor-names-v1.yaml § metadata.
+      five_whys_qwen3_moe_gap):
+
+        Symptom: Tensor 'blk.0.ffn_up.weight' not found
+        Why 1: tensor_names_fallback.rs:368 hardcodes the dense-FFN
+               GGUF name regardless of architecture.
+        Why 2: HF naming branches on architecture; GGUF `_fallback`
+               is single-string per role.
+        Why 3: qwen3_moe stores per-expert 3D tensors with different
+               llama.cpp names (ffn_gate_exps / ffn_up_exps /
+               ffn_down_exps + router ffn_gate_inp). None match
+               ffn_up.
+        Why 4: No falsifier asserted "every required role × arch has
+               a template that resolves against a real .gguf for that
+               arch." `pv validate` was passing a silently-incomplete
+               contract.
+        Why 5 (root): GGUF tensor naming was modeled as a flat
+               fallback, not an architecture-aware namespace.
+
+      Fix landed at paiml/aprender#1103:
+
+        contracts/tensor-names-v1.yaml v1.0.0 → v1.1.0:
+          - architecture_map: 6 new entries → qwen3_moe
+          - layer_roles: dense FFN roles marked
+            required_per_arch.qwen3_moe = false
+          - 4 NEW MoE-specific layer roles: ffn_gate_inp_weight,
+            ffn_gate_exps_weight, ffn_up_exps_weight,
+            ffn_down_exps_weight, each with templates.qwen3_moe + a
+            GGUF _fallback matching llama.cpp's actual names
+          - falsification_tests: new F-TNV-002 entry pinning the
+            contract templates against the real 17.3 GB
+            Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf inventory
+
+        crates/aprender-serve/src/tensor_names_fallback.rs:
+          - normalize_architecture extended for the 6 new HF class
+            names
+
+        crates/aprender-serve/tests/qwen3_moe_tensor_inventory.rs (NEW):
+          - 4 F-TNV-002 falsification tests, including a live-GGUF-
+            inventory check that reads the real file's first 64 MB and
+            asserts the 4 load-bearing MoE tensor names appear
+            byte-for-byte in the header.
+
+      What this PR does NOT do: implement the MoE forward pass.
+      Adding expert routing / per-expert dispatch / weighted
+      aggregation remains a separate larger workstream. M29's job is
+      the contract + falsifier so future MoE-implementation work
+      composes against a declarative spec rather than reverse-
+      engineering llama.cpp.
+
+      Spec relevance for claude-code-parity-apr POC: the
+      `apr code --emit-trace` measurement path (M28) cannot produce
+      a non-tautological FALSIFY-CCPA-013 discharge against
+      tool-dispatching fixtures until apr-code can actually run a
+      capable model. M28 + M29 are the two cleanly-separable
+      enabling steps. No companion-repo code change — this entry
+      is audit bookkeeping that records the cross-repo M29 launch
+      in the canonical status_history.
 
   - date: '2026-04-28'
     from: 'ACTIVE_RUNTIME v1.15.0'
