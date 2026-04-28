@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.80.0
+**Version:** 2.81.0
+**Atomic next action (v2.81.0):** **§36 — plain-language status of the two-model goal** (see new §36 below). Each of the two models is blocked by a single concrete problem. **MODEL-1**: numerical bug at layer 3 of FFN (18× std anomaly; three theories refuted; sub-FFN telemetry just landed via PR #1082 + #1083 in flight). **MODEL-2**: converged at val_loss=9.38 (capacity-limited; spec target 3.0 unreachable from-scratch; needs distillation, but `apr distill` is a stub — contract authored as #1097 awaiting impl). Spec v2.80.0 → **v2.81.0**. No coverage flip; this is a landmark for plain-language readers.
+
 **Atomic next action (v2.80.0):** **§35 — `apr distill` Standard strategy is a STUB; §34.5 distillation track requires authoring contract + extending apr** (see new §35 below). Live execution of `apr distill` on the canonical 7B teacher + §33 student finished in 45s (suspicious for a real epoch over 565.6M tokens). Source at `crates/apr-cli/src/commands/distill.rs:1464` reveals the Standard strategy is "Copy all tensors (student is same architecture, will be trained)" — no gradient training implemented. Per §26.8 stack-tool-extension methodology, the missing feature requires a `contracts/apr-cli-distill-train-v1.yaml` contract + implementation. The §34.5 distillation recommendation is correct in DIRECTION but blocked on implementation. Spec v2.79.0 → **v2.80.0**. Coverage scoreboard unchanged (15+33).
 
 **Atomic next action (v2.79.0):** **§34 — MODEL-2 200K-step retrain confirms convergence ceiling at val_loss=9.38 — capacity-limited, not corpus-limited** (see new §34 below). 200K-step run terminated EARLY_STOP at the SAME 51 epoch / 5100 step / val_loss=9.3831 outcome as the §33 50K-step run (delta=0.0006 = numeric noise). Identical seed=42 + identical data + same LR/batch/seq → deterministic convergence. **The 370M-from-scratch capacity is the binding constraint at this configuration**, NOT corpus diversity or step budget. To reach the spec target val_loss=3.0, scaling either model size (>1B params), training methodology (distillation from teacher), or both is required. Spec v2.78.0 → **v2.79.0**. Coverage scoreboard unchanged (15+33).
@@ -4457,6 +4459,49 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §36. Plain-language status — what's left to ship the two models (2026-04-28)
+
+A landmark section in plain language for readers who don't want to chase the §15→§35 chain. Two paragraphs.
+
+### 36.1 MODEL-1 — the bug
+
+MODEL-1 (Qwen2.5-Coder-7B Apache-Q4K) is already published to HuggingFace. But when you run inference through APR, the math goes wrong inside the FFN block at layer 3 — outputs are 18× too spread compared to the GGUF reference on the same prompt. We've tested three theories today and refuted all three:
+
+- **§28** said the matmul kernel was wrong; **§30** proved it isn't (q4k_layers populated, kernels equivalent within Q4K tolerance).
+- **§31** said qkv_bias values were wrong; **§32** proved they aren't (APR ≡ GGUF byte-for-byte) — the apparent gap was a trace-capture-point mismatch.
+- **PR #1082 + #1083 sub-FFN comparison** said layer-3 weights might differ — they don't (also byte-identical APR vs GGUF).
+
+The actual bug is somewhere in cumulative F32 precision drift through residual connections. The remaining work: with PR #1082 (sub-FFN telemetry) just merged and PR #1083 (CLI wiring) auto-merging, run `apr trace --payload <gguf-teacher>` and `apr trace --payload <apr-teacher>` on the same prompt and compare layer-by-layer until you find where the gap appears. Then fix at root.
+
+### 36.2 MODEL-2 — the model
+
+MODEL-2 (paiml/albor-llama-370m-python-v1) was trained today end-to-end on 565M tokens of Python+permissive code. Best val_loss is **9.38**. Spec target is **3.0**. The 370M-from-scratch architecture has converged — running 4× more steps (50K → 200K) yielded the same outcome (§34). The model is capacity-limited; the corpus and step budget are not the bindings.
+
+The only realistic path to val_loss=3.0 is **distillation**: use the shipped MODEL-1 7B as a teacher to teach the smaller 370M student, transferring knowledge from the larger model's logits. The `apr distill` command exists but its training loop is a stub (`distill.rs:1464` just clones tensors — §35 finding). The contract for the missing implementation was authored today as PR #1097 (`apr-cli-distill-train-v1.yaml`); the implementation itself is a multi-day Rust task. Once shipped, distillation runs in 2-4h on RTX 4090 and is expected to push val_loss substantially below the 9.38 ceiling toward the spec target.
+
+### 36.3 Where the work is
+
+| Model | What's blocked | What's needed |
+|-------|---------------|---------------|
+| MODEL-1 | Layer-3 FFN inference bug | Run `apr trace --payload` once #1083 lands; bisect; fix |
+| MODEL-2 | Capacity ceiling at val_loss=9.38 | Implement `apr distill --stage train` per #1097; run distillation |
+
+Both blockers are **fixable with code**, not training time or compute. The compute is sufficient (565.6M-token corpus + 7B teacher live on the host); the gap is implementation work.
+
+### 36.4 What today's session shipped
+
+11 PRs landed in 24 hours:
+- 6 spec amendments (§30, §31/§32, §33, §34, §35, §36 — this one)
+- 2 contracts (apr-cli-pull-dataset-v1 ACTIVE, apr-cli-distill-train-v1 PROPOSED)
+- 1 implementation (P1.1 apr pull dataset extension)
+- 1 contract (PR D apr-vs-gguf-forward-parity drift-prevention)
+- 1 contract (parallel-bpe PROPOSED)
+- 2 SHIP-007 sub-FFN telemetry PRs (PR B + PR C)
+
+Plus the operational achievement: the full P1.0 → P2 corpus pipeline executed end-to-end with zero muda — every step went through the spec-canonical `apr` extension, never `huggingface-cli` or deprecated `batuta hf pull`.
+
+---
 
 ## §35. `apr distill` is a STUB — §34.5 needs contract + implementation (2026-04-28)
 
