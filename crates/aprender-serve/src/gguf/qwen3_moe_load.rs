@@ -280,6 +280,151 @@ pub fn expert_swiglu_quantized(
     Ok(result)
 }
 
+/// Full MoE FFN forward for ONE layer of a Qwen3-MoE model
+/// (M32c.2.2.2.0 — dispatch layer above per-expert SwiGLU).
+///
+/// Implements the full single-token MoE FFN block:
+/// `Σ_{e ∈ TopK(softmax(router@x), k)} renorm(weight_e) · SwiGLU_e(x)`
+/// per `moe-router-v1` + `moe-expert-dispatch-v1` + the LAZY-FUSED-MATVEC
+/// dequant strategy from `qwen3-moe-forward-v1` v1.1.0.
+///
+/// The router weight is read directly as F32 from the mmapped data
+/// (Qwen3-Coder-30B uses qtype=F32 for ffn_gate_inp; quantized routers
+/// would need a small extension here).
+///
+/// # Arguments
+/// * `hidden` — input post-RMSNorm hidden state, length == hidden_dim.
+/// * `layer` — the M32c.1 `Qwen3MoeQuantizedLayer`.
+/// * `num_experts` — total experts in stacked tensors (e.g. 128).
+/// * `num_experts_per_tok` — top-k selection (e.g. 8).
+/// * `intermediate` — per-expert intermediate dim (e.g. 768).
+/// * `hidden_dim` — model hidden dim (e.g. 2048).
+/// * `data` — file's mmapped byte slice.
+///
+/// # Returns
+/// `Vec<f32>` of length hidden_dim — the layer's MoE FFN output
+/// (caller adds to residual).
+///
+/// # Errors
+/// - Router tensor not F32 (extension point for future routers)
+/// - Slice/byte/dim mismatches propagated from sub-calls
+///
+/// # Note on shared expert
+/// Qwen3-Coder-30B-A3B does NOT use a shared expert; `moe_forward_token`
+/// in `gpu/scheduler/moe_dispatch.rs` handles models that do (e.g.
+/// Qwen3.5-MoE) via the `shared_*` tensor groups. This function is
+/// the routed-only variant and is correct for Qwen3-Coder-30B.
+#[allow(clippy::too_many_arguments)]
+pub fn moe_ffn_forward_layer(
+    hidden: &[f32],
+    layer: &Qwen3MoeQuantizedLayer,
+    num_experts: usize,
+    num_experts_per_tok: usize,
+    intermediate: usize,
+    hidden_dim: usize,
+    data: &[u8],
+) -> Result<Vec<f32>> {
+    use crate::error::RealizarError;
+
+    if hidden.len() != hidden_dim {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "moe_ffn_forward_layer: hidden.len() = {} but hidden_dim = {}",
+                hidden.len(),
+                hidden_dim
+            ),
+        });
+    }
+
+    // ---- Router: read F32 weight, compute logits = router @ hidden ----
+    if layer.router.qtype != crate::gguf::types::GGUF_TYPE_F32 {
+        return Err(RealizarError::UnsupportedOperation {
+            operation: "moe_router_quantized_read".to_string(),
+            reason: format!(
+                "moe_ffn_forward_layer: router qtype = {} (not F32). Quantized router \
+                 not yet wired — Qwen3-Coder-30B uses F32 router so this is fine for it; \
+                 other Qwen3-MoE variants needing quantized router are M32 follow-up.",
+                layer.router.qtype
+            ),
+        });
+    }
+    let router_bytes = &data[layer.router.offset..layer.router.offset + layer.router.byte_size];
+    let expected_bytes = num_experts * hidden_dim * 4;
+    if router_bytes.len() != expected_bytes {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "moe_ffn_forward_layer: router byte_size {} != expected {} \
+                 (num_experts {} × hidden_dim {} × 4)",
+                router_bytes.len(),
+                expected_bytes,
+                num_experts,
+                hidden_dim
+            ),
+        });
+    }
+    // Reinterpret router_bytes as &[f32]. Layout: [num_experts, hidden_dim] row-major.
+    // logits[e] = Σ_j router[e, j] * hidden[j].
+    let mut logits = vec![0.0f32; num_experts];
+    for e in 0..num_experts {
+        let row_off = e * hidden_dim * 4;
+        let mut sum = 0.0f32;
+        for j in 0..hidden_dim {
+            let b = row_off + j * 4;
+            let w = f32::from_le_bytes([
+                router_bytes[b],
+                router_bytes[b + 1],
+                router_bytes[b + 2],
+                router_bytes[b + 3],
+            ]);
+            sum += w * hidden[j];
+        }
+        logits[e] = sum;
+    }
+
+    // ---- Softmax (numerically stable) ----
+    let max_l = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut probs: Vec<f32> = logits.iter().map(|&l| (l - max_l).exp()).collect();
+    let psum: f32 = probs.iter().sum();
+    if psum > 0.0 {
+        for p in &mut probs {
+            *p /= psum;
+        }
+    }
+
+    // ---- Top-k selection ----
+    let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let topk = &indexed[..num_experts_per_tok.min(num_experts)];
+
+    // ---- Renormalize selected ----
+    let topk_sum: f32 = topk.iter().map(|(_, w)| w).sum();
+    let topk_renorm: Vec<(usize, f32)> = if topk_sum > 0.0 {
+        topk.iter().map(|(i, w)| (*i, w / topk_sum)).collect()
+    } else {
+        let n = topk.len();
+        topk.iter().map(|(i, _)| (*i, 1.0 / n as f32)).collect()
+    };
+
+    // ---- Per-expert SwiGLU + weighted accumulate ----
+    let mut output = vec![0.0f32; hidden_dim];
+    for (expert_id, weight) in topk_renorm {
+        let expert_out = expert_swiglu_quantized(
+            hidden,
+            layer,
+            expert_id,
+            num_experts,
+            intermediate,
+            hidden_dim,
+            data,
+        )?;
+        for i in 0..hidden_dim {
+            output[i] += weight * expert_out[i];
+        }
+    }
+
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

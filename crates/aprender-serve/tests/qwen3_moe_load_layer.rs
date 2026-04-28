@@ -20,7 +20,7 @@
 //! `f_qw3_moe_load_002b` patterns. Fixture-absent ≠ defect.
 
 use realizar::gguf::qwen3_moe_load::{
-    expert_byte_slice, expert_swiglu_quantized, load_qwen3_moe_layer,
+    expert_byte_slice, expert_swiglu_quantized, load_qwen3_moe_layer, moe_ffn_forward_layer,
 };
 use realizar::gguf::GGUFModel;
 
@@ -347,6 +347,65 @@ fn f_qw3_moe_c221_001_expert_swiglu_quantized_finite_output() {
     eprintln!(
         "F-QW3-MOE-C221-001: PASS\n  out.len() = {}\n  ||out||_2 = {:.4}\n  \
          out[0..5] = {:.4?}\n  diff vs expert 1 confirmed",
+        out.len(),
+        out_l2,
+        &out[..5]
+    );
+}
+
+/// M32c.2.2.2.0 falsifier — exercises `moe_ffn_forward_layer` against the
+/// cached Qwen3-Coder GGUF. This is the FULL single-layer MoE FFN dispatch:
+/// router (F32 matmul) + softmax + top-8 + renormalize + per-expert SwiGLU
+/// + weighted sum. The output is the layer's MoE contribution before the
+/// residual addition.
+const EXPECTED_K: usize = 8;
+
+#[test]
+fn f_qw3_moe_c2220_001_full_layer_forward_finite_output() {
+    let Some(gguf_path) = CANONICAL_QWEN3_CODER_GGUF_PATHS
+        .iter()
+        .find(|p| Path::new(p).exists())
+    else {
+        eprintln!("F-QW3-MOE-C2220-001: skipped — no cached GGUF.");
+        return;
+    };
+
+    eprintln!("F-QW3-MOE-C2220-001: full layer 0 MoE FFN forward on {gguf_path}");
+
+    let bytes = std::fs::read(gguf_path).expect("read GGUF bytes");
+    let model = GGUFModel::from_bytes(&bytes).expect("parse GGUF header");
+
+    let layer0 = load_qwen3_moe_layer(&model, &bytes, 0).expect("layer 0");
+
+    let hidden: Vec<f32> = (0..EXPECTED_HIDDEN)
+        .map(|i| 0.1 * ((i as f32 * 0.7).sin()))
+        .collect();
+
+    let out = moe_ffn_forward_layer(
+        &hidden,
+        &layer0,
+        EXPECTED_N_EXPERTS,
+        EXPECTED_K,
+        EXPECTED_INTERMEDIATE,
+        EXPECTED_HIDDEN,
+        &bytes,
+    )
+    .expect("F-QW3-MOE-C2220-001: full layer 0 forward should succeed");
+
+    assert_eq!(out.len(), EXPECTED_HIDDEN);
+    assert!(
+        out.iter().all(|v| v.is_finite()),
+        "F-QW3-MOE-C2220-001: all output elements must be finite"
+    );
+    let nonzero = out.iter().filter(|v| **v != 0.0).count();
+    assert!(
+        nonzero > EXPECTED_HIDDEN / 2,
+        "F-QW3-MOE-C2220-001: at least half the output should be non-zero (got {nonzero}/{EXPECTED_HIDDEN})"
+    );
+
+    let out_l2: f32 = out.iter().map(|v| v * v).sum::<f32>().sqrt();
+    eprintln!(
+        "F-QW3-MOE-C2220-001: PASS\n  out.len() = {}\n  ||out||_2 = {:.6}\n  out[0..5] = {:.6?}",
         out.len(),
         out_l2,
         &out[..5]
