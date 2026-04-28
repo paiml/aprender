@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.81.0
+**Version:** 2.82.0
+**Atomic next action (v2.82.0):** **§37 — TRACE-CAPTURE-POINT MISMATCH discovered between APR and GGUF `forward_traced`** (see new §37 below). The 18.23× layer-3 ffn_swigl ratio cited in §27 is partly artifact: APR's `forward_traced` (inference.rs:30) computes stats over ALL 7 prompt tokens (25088 elements), while GGUF's `forward_traced` (forward/traced.rs:77-78) prefills 6 tokens silently and captures stats only on the LAST token (3584 elements). Live verification: standalone `ops::rms_norm(prompt_embed_7tok, attn_norm_w0)` gives byte-identical output to APR's `helpers::rms_norm` (max diff 1e-5); per-token-row std at pos=6 (token=30) is 0.242085 — matches `apr trace --payload <gguf>` reported attn_norm std=0.2421 EXACTLY. The all-7 std of the same APR rms_norm output is 0.2213 — matches `apr trace --payload <apr>` exactly. **The "0.91× attn_norm ratio" is sample-size mismatch, not a real divergence.** Embedding §37 confirms byte-identical APR ≡ GGUF token tables (max |diff|=0 across 545M elements). However, `apr run` STILL produces wrong output ("ampiezza = 0.5") vs GGUF's "2+2 is 4." — so SHIP-007 is REAL but the std-only trace bisection is misleading. Next-step: extend GGUF `forward_traced` to capture all-tokens stats (parity with APR semantics) OR extend APR's trace to also report last-token stats (parity with GGUF semantics) so std comparisons are apples-to-apples. Spec v2.81.0 → **v2.82.0**. Coverage scoreboard unchanged (15+33).
+
 **Atomic next action (v2.81.0):** **§36 — plain-language status of the two-model goal** (see new §36 below). Each of the two models is blocked by a single concrete problem. **MODEL-1**: numerical bug at layer 3 of FFN (18× std anomaly; three theories refuted; sub-FFN telemetry just landed via PR #1082 + #1083 in flight). **MODEL-2**: converged at val_loss=9.38 (capacity-limited; spec target 3.0 unreachable from-scratch; needs distillation, but `apr distill` is a stub — contract authored as #1097 awaiting impl). Spec v2.80.0 → **v2.81.0**. No coverage flip; this is a landmark for plain-language readers.
 
 **Atomic next action (v2.80.0):** **§35 — `apr distill` Standard strategy is a STUB; §34.5 distillation track requires authoring contract + extending apr** (see new §35 below). Live execution of `apr distill` on the canonical 7B teacher + §33 student finished in 45s (suspicious for a real epoch over 565.6M tokens). Source at `crates/apr-cli/src/commands/distill.rs:1464` reveals the Standard strategy is "Copy all tensors (student is same architecture, will be trained)" — no gradient training implemented. Per §26.8 stack-tool-extension methodology, the missing feature requires a `contracts/apr-cli-distill-train-v1.yaml` contract + implementation. The §34.5 distillation recommendation is correct in DIRECTION but blocked on implementation. Spec v2.79.0 → **v2.80.0**. Coverage scoreboard unchanged (15+33).
@@ -4459,6 +4461,98 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §37. APR vs GGUF `forward_traced` capture-point MISMATCH — std comparisons are not apples-to-apples (2026-04-28)
+
+### 37.1 What ran
+
+Three live diagnostics on the canonical 7B teacher (RTX 4090 / lambda-labs / `apr 0.31.2`):
+
+1. **`apr trace --payload`** on both `qwen2.5-coder-7b-instruct-q4k.apr` and `.gguf` with prompt "What is 2+2?" → tokens [3838, 374, 220, 17, 10, 17, 30].
+2. **`diag_compare_embedding`** (new, this section): byte-compares the full 545M-element token_embedding tables AND each of the 7 prompt-token rows.
+3. **`diag_compare_rmsnorm_layer0`** (new, this section): runs APR's `helpers::rms_norm` and GGUF's `ops::rms_norm` on the same 7-token embedding input + the same byte-identical `attn_norm_weight`.
+
+### 37.2 What it proves
+
+- **Embedding tables byte-identical**: `max |APR - GGUF| = 0.000000` across all 544,997,376 elements; per-prompt-token rows also byte-identical. The `apr trace --payload` "embedding range" mismatch (APR `[-0.4160, +0.5273]` vs GGUF `[-0.1514, +0.1396]`) is a stat-reporter artifact: APR reports min/max over all 7 token rows (token id=220 has the +0.5273 outlier value at position 2); GGUF reports min/max over only the last-token row (id=30, range `[-0.1514, +0.1396]`).
+- **RMSNorm functions agree**: standalone `ops::rms_norm` ≡ `helpers::rms_norm` to within `max |diff| = 1.001e-5` (RMS = 3.8e-7), which is FP rounding noise from the SIMD-vs-scalar reduction-order difference. Per-token-row std ratios are 1.0000 across all 7 tokens.
+- **Trace stats use different sample sizes**: `crates/aprender-serve/src/apr_transformer/inference.rs:30` does `let mut hidden = self.embed(token_ids);` then `ActivationStats::from_slice(&hidden)` — 25,088-element stats. `crates/aprender-serve/src/gguf/inference/forward/traced.rs:77-78` does `for ... in token_ids[..token_ids.len()-1] { forward_single_with_scratch(...) }` (NO stat capture for the first 6 tokens) then traces the last token alone — 3,584-element stats.
+- **Per-token-row last-token std (pos=6, id=30) for APR's standalone rms_norm**: 0.242085. This **matches** `apr trace --payload <gguf>` reported attn_norm std=0.2421 to 4 sig figs. The all-7-tokens std of the same output is 0.221261, which matches `apr trace --payload <apr>` reported attn_norm std=0.2213 to 4 sig figs.
+
+### 37.3 What it does NOT prove
+
+`apr run /...qwen2.5-coder-7b-instruct-q4k.apr --prompt "What is 2+2?" --max-tokens 16 --skip-contract` STILL produces wrong output:
+
+```
+APR  output : "ampiezza = 0.5\ndiametro = 10"           (Italian gibberish)
+GGUF output : " 2+2 is 4."                              (correct)
+```
+
+So **SHIP-007 is REAL** — the bug exists. What §37 proves is that the **18.23× layer-3 ffn_swigl ratio** cited in §27 (and §23, §17, §16) cannot be trusted as a clean bisection signal because:
+
+- APR's std at layer 3 ffn_swigl reflects 7 tokens' worth of activations (25088 elements). If even ONE early token's ffn_swigl is anomalous, the all-7 std is dominated by it.
+- GGUF's std at the same layer reflects only the last token's activations (3584 elements). Earlier tokens never contribute to GGUF's reported std.
+
+Until both traces report the SAME sample (either both all-tokens or both last-token), the std-ratio metric is biased. The actual bug could be anywhere — including the very layer-3 ffn_swigl path the §17/§23/§27 chain has been hunting.
+
+### 37.4 What the diagnostics establish (refuted hypotheses)
+
+| Hypothesis | Status | Evidence |
+|------------|--------|----------|
+| Token embedding tables differ | REFUTED | byte-identical (`diag_compare_embedding`, max diff = 0.000000) |
+| `helpers::rms_norm` ≠ `ops::rms_norm` | REFUTED | max diff = 1e-5 standalone (`diag_compare_rmsnorm_layer0`) |
+| Layer-3 ffn_swigl is the SHIP-007 bug surface | UNDETERMINED | the 18× ratio is partly trace-artifact; may or may not be a real divergence; cannot be confirmed without parity-corrected stats |
+| `attn_norm_weight` byte-identical APR/GGUF | CONFIRMED | max |diff| = 0.000000 (`diag_compare_rmsnorm_layer0`) |
+| `eps` differs APR/GGUF | REFUTED | both = 9.999e-7 |
+
+### 37.5 What unblocks the next falsification step
+
+Two equivalent options to make APR vs GGUF traces apples-to-apples:
+
+**Option A** (smaller change): extend GGUF `forward_traced` to do a forward pass over ALL tokens with stat capture per layer, mirroring APR's all-tokens semantics. Cost: ~50 LOC clone of the existing prefill loop with `LayerActivation` capture per layer per token; the existing `forward_single_with_scratch` is fine, just call it with ActivationStats hooks.
+
+**Option B** (smaller for APR): extend APR's trace to ALSO report last-token stats alongside all-tokens stats. Cost: ~40 LOC: in `inference.rs`, after each `ActivationStats::from_slice(&hidden)`, also emit `ActivationStats::from_slice(&hidden[(seq_len-1)*hidden_dim..])`. Both trace fields would be available.
+
+Either option allows us to compare apples-to-apples and conclusively determine whether the layer-3 ffn_swigl 18× ratio is a real bug or a sampling artifact.
+
+The contract entry `apr-vs-gguf-forward-parity-v1.yaml` (PR #1062 / D, MERGED) lists `verdict_from_per_layer_ffn_swigl_ratio_at_layer_3 ≥ 0.5 ≤ 2.0` as a drift-prevention CI gate. With §37's finding, that gate is **also subject to the trace-capture-point artifact** until parity is restored.
+
+### 37.6 Live evidence preserved
+
+```
+/tmp/ship-007-bisection/
+├── apr-trace.json       (apr trace --payload on .apr file, 13.3 KB)
+├── apr-trace-stderr.log
+├── gguf-trace.txt       (apr trace --payload on .gguf file, 13.7 KB)
+├── gguf-trace-stderr.log
+├── embedding-diag.log   (diag_compare_embedding output)
+└── rmsnorm-diag.log     (diag_compare_rmsnorm_layer0 output)
+```
+
+Two new diagnostic examples merged into `crates/aprender-serve/examples/`:
+- `diag_compare_embedding.rs`
+- `diag_compare_rmsnorm_layer0.rs`
+
+### 37.7 Five-whys narrative
+
+1. *Why isn't MODEL-1 inference correct?* `apr run` produces "ampiezza = 0.5" instead of "2+2 is 4." — divergence somewhere in the forward pass.
+2. *Why has this been hard to localize?* Per-layer std stats (the bisection signal) show 18.23× ratio at layer 3 ffn_swigl, but downstream investigations (§28, §30, §32, sub-FFN PRs) keep finding "byte-identical" results that don't explain a 18× std ratio.
+3. *Why do byte-identical inputs produce different std reports?* Because the trace reporters compute std over **different samples**: APR over all 7 tokens (25088 elements), GGUF over the last token only (3584 elements). The "ratio" was apples-to-oranges.
+4. *Why didn't this come up before?* The PR #1082+#1083 sub-FFN telemetry was scoped narrowly to "make GGUF's trace match APR's API"; it did so structurally (the data fields are populated) but not semantically (the sample is different).
+5. *What's the fix?* Make both reporters use the same sample. After parity, re-run §27's binding criterion (≥10× ratio at layer 3) and let the data tell whether SHIP-007 is layer 3 ffn_swigl or somewhere else.
+
+### 37.8 Coverage scoreboard (unchanged)
+
+| Category | DISCHARGED | PARTIAL | %D |
+|----------|-----------:|--------:|---:|
+| MODEL-1 | 5 | 5 | 50% |
+| MODEL-2 | 3 | 9 | 25% |
+| GPUTRAIN | 7 | 0 | 100% |
+| **Sum** | **15** | **33** | **31%** |
+
+§37 is investigative-falsification work that protects the next attempt from another route-around fix. Per `feedback_fix_root_cause_never_route_around.md`, naming the misleading bisection signal IS the discharge step. The coverage flip waits for the actual SHIP-007 root-cause name.
+
+---
 
 ## §36. Plain-language status — what's left to ship the two models (2026-04-28)
 
