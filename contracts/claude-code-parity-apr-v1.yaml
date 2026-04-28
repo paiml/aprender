@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.13.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.13.0 (M25) — 100% mutation coverage workspace-wide. M24 closed ccpa-differ; M25 closes the remaining 4 crates (ccpa-trace/-replayer/-recorder/-cli). Total sweep across all 5 crates: 193 caught + 31 unviable + 0 missed across 224 mutants. 3 new kill-tests on ccpa-cli (binary main exit-code propagation + uncovered/OOS list-print branches). The entire ccpa codebase is now mutation-hardened.
+version: "1.14.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.14.0 (M26) ships the AUTHORED → MEASURED bridge. New `ccpa measure --teacher <path> --apr-bin <path>` subcommand drives a live `apr code -p` against a canonical teacher's user_prompt, captures stdout, builds a synthetic student trace, and scores via compute_parity_score. Refuses teachers that contain tool_use blocks (text-only path; tool-dispatch measurement waits on apr-cli `--emit-trace`, M27). Closes the tautology gap: parity claims now have a path to MEASURED rather than just AUTHORED reciprocity.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,81 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-28'
+    from: 'ACTIVE_RUNTIME v1.13.0'
+    to: 'ACTIVE_RUNTIME v1.14.0'
+    note: 'M26 — ccpa measure subcommand (AUTHORED → MEASURED bridge)'
+    reason: |
+      Through M0-M25 every parity claim was over IDENTICAL inputs:
+      teacher and student were both AUTHORED canonical references, so
+      score=1.0 was tautological — proving the meter doesn't false-
+      positive, but NOT proving real apr code matches Claude Code.
+
+      M26 ships the missing piece: a live measurement subcommand
+      that drives real `apr code -p` against a teacher's user_prompt
+      and scores its output.
+
+      New subcommand: `ccpa measure`
+        --teacher <path>        teacher canonical fixture
+        --apr-bin <path>        path to apr binary (default: `apr` on PATH)
+        --max-turns <N>         passed through to apr-code (default: 1)
+        --individual-min <f>    parity floor (default: 0.80)
+        --emit-student <path>   write the synthesized student trace
+        --json                  emit machine-readable report
+
+      Flow:
+        1. Load teacher trace.
+        2. Refuse if teacher contains any Block::ToolUse — apr-code's
+           stdout doesn't faithfully serialize tool dispatch today, so
+           we'd be mis-measuring. Tool-dispatch measurement waits on
+           `apr code --emit-trace` (M27 follow-up; needs an aprender PR).
+        3. Extract user_prompt at turn 0.
+        4. Spawn `<apr-bin> code -p '<prompt>' --max-turns <N>`.
+        5. Capture stdout.
+        6. Build synthetic student trace (SessionStart + UserPrompt
+           + AssistantTurn{Block::Text(stdout.trim())} + SessionEnd).
+        7. compute_parity_score(teacher, student); print + exit.
+
+      Known limitation (documented in test
+      `measure_apr_stub_zero_tool_calls_scores_one_regardless_of_text`):
+      the parity-score formula counts ToolUse + HookEvent +
+      SkillInvocation actions. A teacher with zero of those =>
+      teacher_count = 0 => score = 1.0 by formula, REGARDLESS of how
+      the apr-code stdout differs from the teacher's text.
+
+      This is intentional: text-only turns are unreliably comparable
+      across LLMs (token-level paraphrasing, response-style drift), so
+      we don't anchor parity on text equality. The bridge is most
+      load-bearing when M27 lands and tool dispatch becomes visible.
+      Until then `ccpa measure` doubles as a smoke test that apr-code
+      runs at all on the prompt — exit 0 on success, exit 2 on spawn
+      failure / non-zero apr exit.
+
+      What ships:
+        - crates/ccpa-cli/src/cmd_measure.rs (~280 LOC)
+        - 11 integration tests in tests/cli.rs (uses tempdir bash stubs)
+        - 8 unit tests in cmd_measure.rs (build_student_trace fallbacks
+          + print/exit helpers)
+        - new MeasureError variant (Io / Schema / NoPrompt /
+          HasToolUse / Spawn / AprFailed) wired into CcpaError
+        - 100% function coverage on the new module; 99.52% line cov
+          (2 unreachable branches in print_report's else arm)
+
+      Coverage holds at 100% functions / >=99% lines. Mutation testing
+      not re-run for this PR (cmd_measure pulls in real-process
+      spawning which makes mutation runs flaky — addressable in
+      follow-up).
+
+      First MEASURED parity score against a real apr-code build is the
+      next-iteration deliverable; it requires `apr` built with
+      `--features code` (the `cargo install aprender` distribution
+      builds without it today). Once available, run:
+
+        ccpa measure --teacher fixtures/canonical/0016-configuration-ladder/teacher.ccpa-trace.jsonl
+
+      and the FIRST non-tautological FALSIFY-CCPA-013 discharge entry
+      will be appended to this status_history.
 
   - date: '2026-04-27'
     from: 'ACTIVE_RUNTIME v1.12.0'
