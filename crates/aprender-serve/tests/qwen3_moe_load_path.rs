@@ -36,6 +36,8 @@ use realizar::gguf::{GGUFModel, QuantizedGGUFTransformer};
 
 use std::path::Path;
 
+#[allow(dead_code)] // M32c.2.1: the load-time error path that referenced this id
+                    // is gone; forward-time refusal in apr-cli still uses it.
 const CONTRACT_ID: &str = "qwen3-moe-forward-v1";
 
 /// Canonical lambda-vector cache locations for the M29 reference GGUF
@@ -65,33 +67,43 @@ fn f_qw3_moe_load_002b_live_qwen3_coder_returns_unsupported_op() {
     let bytes = std::fs::read(gguf_path).expect("read GGUF bytes");
     let model = GGUFModel::from_bytes(&bytes).expect("parse GGUF header");
 
-    let result = QuantizedGGUFTransformer::from_gguf(&model, &bytes);
+    // M32c.2.1: load now SUCCEEDS via the dispatch to from_gguf_for_moe.
+    // The contract-named refusal moved to forward time. We assert load
+    // succeeds + every layer has the populated MoE descriptor + dense
+    // FFN fields are placeholders. Forward-time refusal is asserted
+    // separately by the apr-cli `apr run` integration (manual /
+    // FALSIFY-QW3-MOE-FORWARD-003 in M32c.2.2).
+    let transformer = QuantizedGGUFTransformer::from_gguf(&model, &bytes)
+        .expect("F-QW3-MOE-FORWARD-002b: M32c.2.1 load via from_gguf must succeed for qwen3_moe");
 
-    match result {
-        Err(RealizarError::UnsupportedOperation { operation, reason }) => {
-            assert_eq!(
-                operation, "moe_forward_pass",
-                "F-QW3-MOE-FORWARD-002b: operation tag must be 'moe_forward_pass', got {operation:?}"
-            );
-            assert!(
-                reason.contains(CONTRACT_ID),
-                "F-QW3-MOE-FORWARD-002b: reason must reference contract id {CONTRACT_ID:?}, got: {reason}"
-            );
-            assert!(
-                !reason.contains("blk.0.ffn_up.weight"),
-                "F-QW3-MOE-FORWARD-002b: reason must NOT contain dense-FFN tensor name, got: {reason}"
-            );
-            eprintln!("F-QW3-MOE-FORWARD-002b: PASS — structured contract error returned.");
-        },
-        Err(other) => {
-            panic!("F-QW3-MOE-FORWARD-002b: expected UnsupportedOperation, got {other:?}")
-        },
-        Ok(_) => panic!(
-            "F-QW3-MOE-FORWARD-002b: expected M32b to refuse qwen3_moe load, but it succeeded. \
-             Did M32c land without updating this test? If forward dispatch is now wired, \
-             this test should be replaced with FALSIFY-QW3-MOE-FORWARD-003 (token emission)."
-        ),
+    assert!(
+        !transformer.layers.is_empty(),
+        "F-QW3-MOE-FORWARD-002b: layers must be populated"
+    );
+    assert_eq!(
+        transformer.layers.len(),
+        transformer.moe_layers.len(),
+        "F-QW3-MOE-FORWARD-002b: moe_layers parallel to layers"
+    );
+    for (i, moe) in transformer.moe_layers.iter().enumerate() {
+        assert!(
+            moe.is_some(),
+            "F-QW3-MOE-FORWARD-002b: layer {i} moe_layers entry must be Some after from_gguf dispatch"
+        );
     }
+    assert_eq!(
+        transformer.layers[0].ffn_up_weight.num_elements, 0,
+        "F-QW3-MOE-FORWARD-002b: dense ffn_up_weight must be placeholder for MoE layer"
+    );
+
+    // Compile-time silence on the import — RealizarError still in use elsewhere.
+    let _ = std::any::type_name::<RealizarError>();
+
+    eprintln!(
+        "F-QW3-MOE-FORWARD-002b: PASS — load via from_gguf dispatched to from_gguf_for_moe; \
+         {} layers populated; dense FFN placeholders verified.",
+        transformer.layers.len()
+    );
 }
 
 /// Cross-check: the canonical-key normalization must be a fixed point
