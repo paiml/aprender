@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.18.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.18.0 (M30) — final spec-table refresh extending sub-milestones through M29 + status snapshot bumped (M0-M30 all SHIPPED, including the cross-repo M28+M29 chain that now sits on aprender main). Outstanding next-goal explicitly named: MoE forward-pass implementation in realizar/aprender-serve is the only piece remaining for a measured tool-dispatch parity score, and it's upstream realizar engineering rather than a CCPA POC item. No code change beyond the spec markdown + this version bump.
+version: "1.19.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.19.0 (M31) — monorepo scope clarification. paiml/aprender and paiml/claude-code-parity-apr live in the same monorepo; the "upstream / out of scope / not a CCPA POC item" framing previously used in v1.17.0 (M29) and v1.18.0 (M30) is rescinded. Every file in either repo that has to change for this POC to discharge its measured-parity gate (FALSIFY-CCPA-013) is in-scope companion-repo work, including the M32 MoE forward-pass implementation in crates/aprender-serve/. Spec markdown reworded; status_history entries M28-M30 stand as written but are now superseded by this clarification. No code change beyond the spec + this version bump + the new M31 status_history entry.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,80 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-28'
+    from: 'ACTIVE_RUNTIME v1.18.0'
+    to: 'ACTIVE_RUNTIME v1.19.0'
+    note: 'M31 — monorepo scope clarification (rescinds out-of-scope/upstream framing)'
+    reason: |
+      Operator scope clarification, recorded verbatim:
+
+        > lets make something clear and update the spec for it.
+        > EVERYJOB is your job. the "upstream" is ../aprender which
+        > is a monorepo. you will implement anything you need to
+        > complete this repos spec. confirm.
+
+      Confirmed and applied. paiml/aprender and
+      paiml/claude-code-parity-apr are two roots of the same
+      monorepo, mechanically coupled by:
+
+        - the M22 round-trip drift guard (pin-check-roundtrip.sh),
+          which fails any companion contract bump unpaired with an
+          aprender mirror push at byte-identical sha256
+        - the 4-step contract-bump ritual documented in
+          CONTRIBUTING.md
+        - the cross-referenced FALSIFY-CCPA-001..-013 + tensor-names
+          F-TNV-001/002 + apr-code-parity-v1 + apr-claude-proxy-v1
+          contract graph
+
+      Consequence: the "upstream / out of scope / not a CCPA POC
+      item / separate larger workstream" framing previously used in:
+
+        - v1.17.0 (M29) status_history reason field, line "What
+          this PR does NOT do: implement the MoE forward pass.
+          Adding expert routing / per-expert dispatch / weighted
+          aggregation remains a separate larger workstream."
+        - v1.18.0 (M30) status header text, line "Outstanding
+          next-goal explicitly named: MoE forward-pass
+          implementation in realizar/aprender-serve is the only
+          piece remaining for a measured tool-dispatch parity
+          score, and it's upstream realizar engineering rather
+          than a CCPA POC item."
+        - v1.18.0 (M30) status_history reason field, line "That's
+          realizar/aprender-serve engineering — not a CCPA POC
+          scope item."
+
+      ...is rescinded. Those entries stand as written for audit
+      preservation, but their characterization is hereby
+      superseded: every file in either repo that has to change
+      for this POC to discharge its measured-parity gate is
+      in-scope companion-repo work.
+
+      What this PR ships:
+        - docs/specifications/claude-code-parity-apr-poc.md:
+          status snapshot Outstanding-next-goal block reworded
+          ("upstream realizar engineering, not a CCPA POC item"
+          → "in-scope, M32"), Sub-milestones table extended with
+          M31 row (this PR) and M30 row PR-link corrected to #35
+        - contracts/claude-code-parity-apr-v1.yaml:
+          version 1.18.0 → 1.19.0; status header reworded;
+          this status_history entry added
+        - M22 4-step ritual: paired aprender mirror push +
+          pin.lock refresh, byte-identical sha256
+
+      What this PR does NOT ship: the MoE forward pass itself.
+      That is the M32 deliverable, queued as the next contract
+      bump after this one lands. M31 is the scope-clarification
+      audit record; M32 is the inference-engine work it unblocks.
+
+      State at M31 close:
+        - All M30-close conditions still hold
+        - Audit trail now reflects the operator's scope
+          clarification verbatim
+        - M32 cleanly named and in-scope: implement qwen3_moe
+          forward pass in crates/aprender-serve/ against the
+          F-TNV-002 falsifier and the cached
+          Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
 
   - date: '2026-04-28'
     from: 'ACTIVE_RUNTIME v1.17.0'
