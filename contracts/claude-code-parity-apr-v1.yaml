@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.14.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.14.0 (M26) ships the AUTHORED → MEASURED bridge. New `ccpa measure --teacher <path> --apr-bin <path>` subcommand drives a live `apr code -p` against a canonical teacher's user_prompt, captures stdout, builds a synthetic student trace, and scores via compute_parity_score. Refuses teachers that contain tool_use blocks (text-only path; tool-dispatch measurement waits on apr-cli `--emit-trace`, M27). Closes the tautology gap: parity claims now have a path to MEASURED rather than just AUTHORED reciprocity.
+version: "1.15.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.15.0 (M27) — spec milestone-table refresh. The companion-side spec markdown's sub-milestones table stopped at M19; M20 README truth-up, M21 aprender mirror sync, M22 round-trip guard, M23 CONTRIBUTING.md, M24+M25 100% mutation coverage, and M26 ccpa measure bridge were all invisible to a reader of the spec. v1.15.0 catches the doc up: status snapshot bumped to M0-M26 / v1.14.0 era, sub-milestones table extended through M26 + M27, outstanding next-goal explicitly named (M28 = `apr code --emit-trace` upstream in aprender). No code or contract-surface change.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,46 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-28'
+    from: 'ACTIVE_RUNTIME v1.14.0'
+    to: 'ACTIVE_RUNTIME v1.15.0'
+    note: 'M27 — spec milestone-table refresh M19 → M26 (no code change)'
+    reason: |
+      The companion-side spec markdown's "Sub-milestones (M11+)" table
+      had been frozen at M19 since the M19 PR's self-referential
+      `| this PR |` row was committed. M20-M26 (7 sub-milestones) all
+      shipped without their narrative landing in the spec:
+
+        M20  README truth-up
+        M21  aprender mirror sync (6 revisions of drift cleared)
+        M22  pin-check-roundtrip CI guard
+        M23  CONTRIBUTING.md
+        M24  100% mutation coverage on ccpa-differ
+        M25  100% mutation coverage workspace-wide
+        M26  ccpa measure AUTHORED → MEASURED bridge
+
+      A reader landing on the spec markdown would see the project
+      stop at M19 (corpus complete 30/30) and assume nothing else
+      had happened — but the contract status_history (canonical for
+      audit) had advanced through 8 more revisions.
+
+      M27 catches the spec up:
+        - Status snapshot bumped: M0-M26 SHIPPED, contract v1.14.0,
+          + new line on workspace-wide mutation coverage achievement,
+          + new line on companion ↔ aprender drift guard (M22),
+          + new line on `ccpa measure` bridge (M26)
+        - Outstanding next-goal explicitly named: a non-tautological
+          FALSIFY-CCPA-013 discharge needs `apr code --emit-trace`
+          to land upstream so tool-dispatch records become observable.
+          Tracked as the M28 candidate.
+        - Sub-milestones table extended from M19 → M27 with one
+          row per sub-milestone (deliverable + outcome + PR).
+
+      No code or contract-surface change beyond the version bump
+      documenting the doc refresh. M22 4-step ritual self-applied
+      (paired aprender mirror push, pin.lock refresh, both repos
+      byte-identical at the new sha256).
 
   - date: '2026-04-28'
     from: 'ACTIVE_RUNTIME v1.13.0'
