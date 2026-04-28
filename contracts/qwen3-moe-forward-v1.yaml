@@ -1,0 +1,302 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-28'
+  author: PAIML Engineering
+  description: |
+    Qwen3-MoE forward pass — composes router + per-expert SwiGLU + weighted
+    aggregation into a single, falsifiable forward kernel for any model in
+    the Qwen3MoE family (Qwen3-Coder-30B-A3B-Instruct, Qwen3-235B-A22B,
+    Qwen3.5-MoE).
+
+    Authored under the claude-code-parity-apr POC (companion repo M31)
+    because the measured FALSIFY-CCPA-013 tool-dispatch parity gate is
+    unblocked by `apr run` actually producing tokens against
+    Qwen3-Coder-30B-A3B-Instruct, which is gated on this contract being
+    discharged.
+
+    Status: SCAFFOLD. Three implementation stages (M32b/c/d) named in
+    `proof_obligations.implementation_stages`. Each stage discharges
+    one obligation; final stage (M32d) flips this contract from
+    DRAFT to ACTIVE_RUNTIME.
+  references:
+  - 'Fedus et al. (2022) Switch Transformers: Scaling to Trillion Parameter Models'
+  - 'Shazeer (2020) GLU Variants Improve Transformer'
+  - 'Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position Embedding'
+  - 'Qwen3 Technical Report — MoE architecture with top-k routing'
+  - 'paiml/aprender contracts/tensor-names-v1.yaml v1.1.0 — qwen3_moe tensor namespace'
+  - 'paiml/aprender contracts/moe-router-v1.yaml — softmax+topk+renorm router'
+  - 'paiml/aprender contracts/moe-expert-dispatch-v1.yaml — per-expert dispatch + weighted aggregation'
+  - 'paiml/aprender contracts/qwen3moe-shapes-v1.yaml — Qwen3MoE shape algebra'
+  - 'paiml/claude-code-parity-apr docs/specifications/claude-code-parity-apr-poc.md M31 — monorepo scope clarification'
+  depends_on:
+  - tensor-names-v1
+  - moe-router-v1
+  - moe-expert-dispatch-v1
+  - qwen3moe-shapes-v1
+  - swiglu-kernel-v1
+  - silu-kernel-v1
+  - rmsnorm-kernel-v1
+  - rope-kernel-v1
+  registry: true
+
+kind: KernelContract
+name: qwen3-moe-forward
+version: "1.0.0"
+status: DRAFT   # SCAFFOLD — flips to ACTIVE_RUNTIME at end of M32d (parity discharge)
+scope: "crates/aprender-serve/src/{gguf,apr}/**, crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
+
+description: |
+  End-to-end forward pass for one MoE decoder layer of a Qwen3MoE model.
+  Inputs: hidden_state[hidden_dim], one MoE layer's weights. Output:
+  hidden_state' = hidden_state + MoE(RMSNorm(hidden_state)).
+
+  The MoE block itself decomposes into:
+
+    1. Router: softmax(W_router @ x) → top-k → renormalize  (moe-router-v1)
+    2. Per-expert SwiGLU: down(SiLU(gate(x)) * up(x))       (swiglu-kernel-v1, per-expert)
+    3. Weighted aggregation: Σ_e w[t,e] * expert_out[t,e]   (moe-expert-dispatch-v1)
+    4. Optional shared expert with sigmoid gate
+
+  Tensor naming for Qwen3MoE comes from tensor-names-v1 v1.1.0:
+
+    blk.{L}.ffn_gate_inp.weight     [num_experts, hidden_dim]            — router
+    blk.{L}.ffn_gate_exps.weight    [num_experts, intermediate, hidden]  — gate per expert
+    blk.{L}.ffn_up_exps.weight      [num_experts, intermediate, hidden]  — up per expert
+    blk.{L}.ffn_down_exps.weight    [num_experts, hidden, intermediate]  — down per expert
+
+  No `blk.{L}.ffn_{gate,up,down}.weight` exists for qwen3_moe — those are
+  dense-FFN tensor names. Loading code that hardcodes those names will
+  fail at the GGUF tensor lookup. (This is precisely the live failure
+  mode reproduced by `apr run <qwen3-coder-30b>.gguf` as of commit
+  15d504cfe — see falsification.F_QW3_MOE_FORWARD_001 below.)
+
+equations:
+  moe_forward_one_layer:
+    formula: |
+      h' = h + MoE(RMSNorm(h))
+      where MoE(x) = Σ_{e ∈ TopK(softmax(W_r @ x), k)} w_e · SwiGLU_e(x)
+                     + (optional) σ(W_s @ x) · SwiGLU_shared(x)
+    domain: |
+      h ∈ R^d, W_r ∈ R^{N_e × d}, W_s ∈ R^{1 × d}, k = num_experts_per_tok,
+      SwiGLU_e ∈ R^d → R^d parameterized by (W_gate^e, W_up^e, W_down^e)
+    invariants:
+    - h.len() == hidden_dim
+    - 'router weights sum: Σ_e selected_w[e] = 1.0  (post-renormalization)'
+    - 'output shape preserved: result.len() == hidden_dim'
+    - 'selected experts ∈ [0, N_e)'
+    - 'finite: result.iter().all(|v| v.is_finite())'
+    preconditions:
+    - hidden_dim > 0
+    - num_experts > 0
+    - num_experts_per_tok > 0 ∧ num_experts_per_tok ≤ num_experts
+    - 'router_weight.shape == [num_experts, hidden_dim]'
+    - 'expert_gate.shape == [num_experts, intermediate, hidden_dim]'
+    - 'expert_up.shape   == [num_experts, intermediate, hidden_dim]'
+    - 'expert_down.shape == [num_experts, hidden_dim, intermediate]'
+    postconditions:
+    - 'result.len() == hidden_dim'
+    - 'result.iter().all(|v| v.is_finite())'
+    assumes:
+      from_contract: moe-router-v1
+      from_equation: softmax_normalization
+      constraints:
+      - 'router probs sum to 1.0 ± 1e-6 prior to top-k'
+    guarantees:
+      shapes:
+        output: { dims: ["hidden_dim"] }
+      constraints:
+      - 'output is finite'
+      - 'output.len() == hidden_dim'
+      - 'differs from h only by additive update (residual preserved)'
+    lean_theorem: Theorems.Qwen3_Moe_Forward_One_Layer
+
+  qwen3_coder_30b_a3b_instantiation:
+    formula: |
+      L = 48, d_model = 2048, d_ff = 6144,
+      N_experts = 128, k = 8 (active per token),
+      n_heads = 32, n_kv = 4 (GQA 8:1),
+      vocab = 151936, max_position = 262144, rope_theta = 1e7
+    domain: 'Qwen3-Coder-30B-A3B-Instruct (config.json + apr inspect)'
+    invariants:
+    - 'Total parameters ≈ 30.5B (matches A3B "30B" suffix)'
+    - 'Active parameters ≈ 3.0B (matches A3B "A3B" suffix; k/N_e × MoE params + non-MoE)'
+    - 'Active/total ratio ≈ 9.8% (8/128 = 6.25% MoE-only; non-MoE adds embedding/attn)'
+    - 'Memory at Q4_K ≈ 17 GB (fits RTX 4090 24GB with KV cache headroom)'
+    preconditions:
+    - 'apr inspect <qwen3-coder>.apr returns family == "qwen3_moe"'
+    - 'GGUF metadata.qwen3moe.expert_count == 128'
+    - 'GGUF metadata.qwen3moe.expert_used_count == 8'
+    lean_theorem: Theorems.Qwen3_Coder_30b_a3b_Shape_Algebra
+
+  ffn_dispatch_branching:
+    formula: |
+      forward_ffn_layer(arch, h, layer) =
+        match arch with
+        | dense    → dense_ffn(h, layer.ffn_gate, layer.ffn_up, layer.ffn_down)
+        | qwen3_moe → moe_forward_token(h, layer.moe_weights, hidden_dim)
+        | other    → UnsupportedOperation
+    domain: 'arch ∈ {dense, qwen3_moe, deepseek_v2_moe, mixtral_moe, ...}'
+    invariants:
+    - 'load-time tensor enumeration MUST be arch-aware (M32b)'
+    - 'forward-time dispatch MUST be arch-aware (M32c)'
+    - 'an arch with no implementation MUST emit a contract-named UnsupportedOperation, not a cryptic "Tensor not found"'
+    preconditions:
+    - 'arch resolved via tensor_names_fallback::normalize_architecture from GGUF general.architecture or HF arch class name'
+
+proof_obligations:
+- type: equivalence
+  property: 'CPU forward result equals reference within Q4_K tolerance (AC_QW3_MOE_001)'
+  formal: '|moe_forward_one_layer(h, W) - llama_cpp_reference(h, W)| / ||ref||_2 < 5e-2'
+  tolerance: 5.0e-2
+  applies_to: all
+
+- type: invariant
+  property: 'Router weights sum to 1.0 after top-k renormalization (AC_QW3_MOE_002)'
+  formal: 'Σ_e route.weights[e] = 1.0 ± 1e-6'
+  applies_to: all
+
+- type: invariant
+  property: 'Output dimensions preserved (AC_QW3_MOE_003)'
+  formal: 'forward.output.len() == hidden_dim'
+  applies_to: all
+
+- type: invariant
+  property: 'Output is finite — no NaN/Inf (AC_QW3_MOE_004)'
+  formal: 'forward.output.iter().all(|v| v.is_finite())'
+  applies_to: all
+
+- type: equivalence
+  property: 'Single-token CPU forward matches HF FP16 reference (AC_QW3_MOE_005)'
+  formal: 'cosine_similarity(apr_logits, hf_fp16_logits) > 0.99'
+  tolerance: 0.01
+  applies_to: all
+
+implementation_stages:
+- id: M32a
+  status: SHIPPED
+  description: 'This contract scaffold (paiml/aprender#TBD).'
+  evidence: 'pv validate contracts/qwen3-moe-forward-v1.yaml exits 0'
+
+- id: M32b
+  status: PENDING
+  description: |
+    Architecture-aware FFN load. Branch transformer_loader.rs and
+    apr/weight.rs at the FFN tensor lookup site on
+    `tensor_names_fallback::normalize_architecture(model_arch)`. For
+    arch == "qwen3_moe", load the 4 MoE tensors per layer
+    (ffn_gate_inp/ffn_gate_exps/ffn_up_exps/ffn_down_exps) into a new
+    `MoeLayerWeights` field on the transformer-layer struct. For
+    forward attempts, emit `RealizarError::UnsupportedOperation` with
+    `operation = "moe_forward_pass"` and
+    `reason` referencing this contract. Falsifier:
+    F_QW3_MOE_FORWARD_002 below.
+  unblocks_obligations: [AC_QW3_MOE_002, AC_QW3_MOE_003]
+
+- id: M32c
+  status: PENDING
+  description: |
+    Wire CPU MoE forward. The pure-Rust `moe_forward_token` in
+    gpu/scheduler/moe_dispatch.rs already implements the full
+    router + per-expert SwiGLU + weighted aggregation kernel. M32c
+    populates `MoeExpertWeights` from the M32b-loaded tensors and
+    calls `moe_forward_token` from the FFN dispatch site for
+    qwen3_moe layers. After M32c, `apr run` produces tokens (any
+    tokens — correctness gate is M32d). Falsifier:
+    F_QW3_MOE_FORWARD_003 below.
+  unblocks_obligations: [AC_QW3_MOE_003, AC_QW3_MOE_004]
+
+- id: M32d
+  status: PENDING
+  description: |
+    Numerical parity vs ground truth. Compare apr CPU forward
+    logits against llama.cpp Q4_K (primary) and HF transformers
+    FP16 (secondary) per CLAUDE.md ground-truth verification
+    workflow. Falsifier: F_QW3_MOE_FORWARD_004. After M32d this
+    contract flips DRAFT → ACTIVE_RUNTIME and unblocks the
+    companion-repo FALSIFY-CCPA-013 measured tool-dispatch parity
+    score.
+  unblocks_obligations: [AC_QW3_MOE_001, AC_QW3_MOE_005]
+
+falsification_tests:
+- id: FALSIFY-QW3-MOE-FORWARD-001
+  rule: 'Baseline failure pinned at M32a-precursor (commit 15d504cfe)'
+  prediction: |
+    `apr run` against a qwen3_moe GGUF emits exactly:
+    "Invalid shape: Tensor 'blk.0.ffn_up.weight' not found"
+    proving that the dense-FFN tensor-name lookup is reached
+    architecture-blind and the M32 implementation gap exists.
+  test: |
+    apr run ~/.cache/pacha/models/<qwen3-coder-gguf-sha>.gguf \
+        --prompt "What is 2+2?" --max-tokens 8
+    Expect stderr matches: /Tensor '.*ffn_up\.weight' not found/
+  if_fails: |
+    The M32 gap was closed by some other route (e.g. tensor-names
+    fallback now resolves the dense names from MoE tensors); this
+    contract is no longer the load-bearing description of the gap
+    and must be retired or renamed.
+
+- id: FALSIFY-QW3-MOE-FORWARD-002
+  rule: 'M32b discharges arch-aware load (no more cryptic dense-FFN error)'
+  prediction: |
+    Loading a qwen3_moe GGUF must NOT emit
+    "Invalid shape: Tensor '*.ffn_{up,gate,down}.weight' not found".
+    If forward is attempted before M32c lands, the error must be
+    `RealizarError::UnsupportedOperation { operation: "moe_forward_pass" }`
+    whose Display contains the literal string "qwen3-moe-forward-v1".
+  test: |
+    cargo test -p aprender-serve --test qwen3_moe_load_path
+    Asserts: load step succeeds, forward step (if attempted)
+    returns UnsupportedOperation containing the contract id.
+  if_fails: |
+    M32b skipped or partial — load path still uses dense FFN
+    names. Add the architecture branch in transformer_loader.rs
+    before declaring M32b discharged.
+
+- id: FALSIFY-QW3-MOE-FORWARD-003
+  rule: 'M32c discharges CPU forward wiring — `apr run` produces tokens'
+  prediction: |
+    `apr run <qwen3-coder>.gguf --prompt "Hi" --max-tokens 8`
+    exits 0 and stdout contains at least one non-whitespace
+    character (any token, correctness not yet asserted).
+  test: |
+    apr run ~/.cache/pacha/models/<qwen3-coder>.gguf \
+        --prompt "Hi" --max-tokens 8
+    Assert: exit 0, stdout matches /\S/.
+  if_fails: |
+    Forward dispatch still on dense path. Verify that the FFN
+    branching at the dispatch site reaches `moe_forward_token`.
+
+- id: FALSIFY-QW3-MOE-FORWARD-004
+  rule: 'M32d discharges numerical parity vs llama.cpp Q4_K reference'
+  prediction: |
+    cosine_similarity(apr_logits[0], llama_cpp_logits[0]) > 0.99
+    on prompt "What is 2+2?" with greedy decode (top_k=1).
+  test: |
+    cargo test -p aprender-serve --test qwen3_moe_parity \
+        -- --include-ignored
+    Compares aprender CPU forward logits at position 0 against
+    llama.cpp's `llama-cli -m <gguf> -p "What is 2+2?" -n 1
+    --verbose --logit-output` parsed reference.
+  if_fails: |
+    Numerical divergence — investigate per CLAUDE.md ground-truth
+    verification checklist (embedding → RMSNorm → attention →
+    FFN → final logits). Quantization tolerance is ±5%
+    element-wise / <1% L2 for Q4_K.
+
+cross_repo_references:
+- repo: paiml/claude-code-parity-apr
+  contract: claude-code-parity-apr-v1
+  current_version: "1.19.0"
+  relation: |
+    The companion-repo POC's measured tool-dispatch parity gate
+    (FALSIFY-CCPA-013) is unblocked by M32d shipping. That POC
+    explicitly named M32 as the next-goal in v1.19.0 (M31 status
+    snapshot: "Outstanding next-goal (in-scope, M32)").
+- repo: paiml/aprender (this repo)
+  contract: tensor-names-v1
+  current_version: "1.1.0"
+  relation: |
+    M29 contract amendment that declared the qwen3_moe tensor
+    namespace + the F-TNV-002 falsifier validating contract
+    templates against the live 17.3 GB Qwen3-Coder GGUF byte
+    inventory. M32 is what the M29 amendment was scaffolding.
