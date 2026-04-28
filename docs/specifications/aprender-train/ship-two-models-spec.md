@@ -1,7 +1,9 @@
 # Specification: Ship Two Models — Sovereign AI Stack Proof
 
 **Document ID:** SPEC-SHIP-TWO-001
-**Version:** 2.79.0
+**Version:** 2.80.0
+**Atomic next action (v2.80.0):** **§35 — `apr distill` Standard strategy is a STUB; §34.5 distillation track requires authoring contract + extending apr** (see new §35 below). Live execution of `apr distill` on the canonical 7B teacher + §33 student finished in 45s (suspicious for a real epoch over 565.6M tokens). Source at `crates/apr-cli/src/commands/distill.rs:1464` reveals the Standard strategy is "Copy all tensors (student is same architecture, will be trained)" — no gradient training implemented. Per §26.8 stack-tool-extension methodology, the missing feature requires a `contracts/apr-cli-distill-train-v1.yaml` contract + implementation. The §34.5 distillation recommendation is correct in DIRECTION but blocked on implementation. Spec v2.79.0 → **v2.80.0**. Coverage scoreboard unchanged (15+33).
+
 **Atomic next action (v2.79.0):** **§34 — MODEL-2 200K-step retrain confirms convergence ceiling at val_loss=9.38 — capacity-limited, not corpus-limited** (see new §34 below). 200K-step run terminated EARLY_STOP at the SAME 51 epoch / 5100 step / val_loss=9.3831 outcome as the §33 50K-step run (delta=0.0006 = numeric noise). Identical seed=42 + identical data + same LR/batch/seq → deterministic convergence. **The 370M-from-scratch capacity is the binding constraint at this configuration**, NOT corpus diversity or step budget. To reach the spec target val_loss=3.0, scaling either model size (>1B params), training methodology (distillation from teacher), or both is required. Spec v2.78.0 → **v2.79.0**. Coverage scoreboard unchanged (15+33).
 
 **Atomic next action (v2.78.0):** **§33 — MODEL-2 retrain on 565.6M-token codeparrot corpus pushes val_loss to 9.3837 (4.7% below the 9.75 plateau)** (see new §33 below). P1 corpus pipeline (P1.0–P1.5) completed end-to-end through the spec-canonical `apr pull dataset` extension. P2 training EARLY_STOP at 51 epochs / 5100 steps / 83.5M tokens seen / 47 min wall on RTX 4090. Best val_loss=9.3837 at epoch 44 (vs 4× CSN-Python's 9.7507 plateau established by §24/§25). Confirms §25's hypothesis that **corpus diversity is the binding constraint for MODEL-2** — a 7.6× corpus expansion (74.3M → 565.6M tokens) yielded 0.367-nat improvement. Spec v2.77.0 → **v2.78.0**. Coverage scoreboard +1 MODEL-2 PARTIAL→DISCHARGED expected (SHIP-021 corpus-diversity gate).
@@ -4455,6 +4457,99 @@ Unchanged from §29 because PR E did not land. Next-session agenda: do the §30.
 Per `feedback_fix_root_cause_never_route_around.md`: the §28 fix would have route-around'd a real bug because the named site (matmul kernel) is not where the divergence originates. The empirical refutation in §30 IS the work that protects the next attempt from shipping a no-op. This refutation is itself a coverage-incrementing artifact (it falsifies a hypothesis), even though no PARTIAL flips to DISCHARGED.
 
 The Toyota Way fix is to bisect upstream, not to flip the kernel call.
+
+## §35. `apr distill` is a STUB — §34.5 needs contract + implementation (2026-04-28)
+
+### 35.1 The discovery
+
+Per §34.5 recommendation, executed `apr distill` on the canonical 7B teacher with §33 best student:
+
+```
+$ apr distill \
+    /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.apr \
+    --student .../epoch-044.apr \
+    --data /mnt/nvme-raid0/data/codeparrot-python-permissive-shards \
+    --output ../student.apr \
+    --temperature 3.0 --alpha 0.7 --epochs 1
+```
+
+Result: completed in **~45 seconds** (suspicious for 1 real epoch over 565.6M tokens). Output: 1.49 GB student.apr (192 bytes larger than input — metadata overwrites only).
+
+### 35.2 Source-level confirmation
+
+`crates/apr-cli/src/commands/distill.rs:1464`:
+
+```rust
+DistillStrategy::Standard | DistillStrategy::Ensemble => {
+    // Copy all tensors (student is same architecture, will be trained)
+    teacher_tensors.clone()
+}
+```
+
+The "Standard" strategy is just `tensor_clone()`. The comment "(student is same architecture, will be trained)" is **aspirational, not implemented**. There is no gradient-based KD loop, no temperature-scaled softmax, no alpha-weighted CE+KL combination — just tensor projection from teacher to student shape.
+
+The CLI plan output (8.88 GiB peak memory etc) is honest about what plan would consume IF the implementation existed; the executed run does NOT consume that memory because no actual training happens.
+
+### 35.3 §26.8 stack-tool-extension chain
+
+Per `feedback_stack_tool_extension_not_cli_shim.md` + spec §26.8:
+
+> When `apr` lacks a feature we need, author a provable contract → extend apr → use the extended `apr`.
+
+Required artifacts:
+
+1. **`contracts/apr-cli-distill-train-v1.yaml`** — contract for the missing real-training path:
+   - Equations: KL divergence loss, temperature scaling, alpha-weighted CE+KL, gradient updates per step, val_loss tracking
+   - Falsification tests: distill on toy data → student matches teacher predictions; loss decreases; output != input bytes
+   - Scope: standard logit KD (precompute teacher logits + train student), per existing `--stage precompute|train|generate` skeleton
+
+2. **`crates/apr-cli/src/commands/distill.rs`** — implement real KD training:
+   - Stage `precompute`: forward teacher over corpus, save logits to disk
+   - Stage `train`: load student, iterate corpus, compute student logits, KL+CE loss, backprop, optimizer step
+   - Output: `student.apr` with actually-updated parameters
+
+3. **Test fixture**: a tiny pair (e.g., qwen2.5-0.5b teacher + 100M student) for CI fast-path.
+
+Estimated cost: ~600-1200 LOC + 8-12 tests. Multi-day Rust task.
+
+### 35.4 Falsification of §34.5 immediacy
+
+§34.5 said: "ETA ~2-4 hours on RTX 4090" (training time)
+
+§35 falsifies this for the IMMEDIATE-EXECUTABILITY claim — the implementation cost (~600-1200 LOC + tests) is the binding constraint, not GPU time. §34.5's RECOMMENDATION (distillation as the path) remains correct; only the timeline shifts.
+
+### 35.5 Path to MODEL-2 spec target val_loss=3.0
+
+Updated path table:
+
+| Path | Implementation cost | Compute cost | Probability |
+|------|--------------------|---|---|
+| `apr distill train` extension (§35.3) + run on RTX 4090 | 600-1200 LOC + tests | ~2-4 GPU hours | High (canonical) |
+| Use external `entrenar` distill if it has the path | unknown | ~2-4 GPU hours | Unknown |
+| Lower spec target to val_loss=9.38 (current ceiling) | 0 | 0 | Already achieved |
+| Scale model >1B params via from-scratch | similar order | 4-10× compute | Moderate |
+
+The session-canonical recommendation: **author the `apr-cli-distill-train-v1` contract first** (per §26.8 methodology), then implement, then re-run §34.5 plan.
+
+### 35.6 Methodology note — discovery via execution
+
+§34.5's "distill" recommendation was the correct DIRECTION but assumed the in-tree implementation was ready. The 45-second wall time was the falsification signal. Executing the proposed path proved the gap.
+
+This is a healthy cycle: §33 finds corpus-diversity matters, §34 finds capacity limits the floor, §35 finds distillation isn't yet implemented. Each iteration narrows what's blocking the spec target.
+
+### 35.7 Coverage scoreboard impact
+
+Unchanged (15+33). §35 is a discovery + path-correction, not a discharge.
+
+### 35.8 Files
+
+The "distilled" student (no real training):
+- `/mnt/nvme-raid0/runs/model-2-distill-from-7b-001/student.apr` (1.49 GB)
+- `/mnt/nvme-raid0/runs/model-2-distill-from-7b-001/launch.log`
+
+Not committed as evidence — the empty output isn't evidence of anything other than "the stub ran." Real evidence will come when §35.3 implementation lands and produces a measurably-improved student.
+
+---
 
 ## §34. 200K-step retrain confirms 370M capacity ceiling at val_loss=9.38 (2026-04-28)
 
