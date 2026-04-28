@@ -19,18 +19,38 @@ impl GGUFTransformer {
         // pre-M32 cryptic "Tensor 'blk.0.ffn_up.weight' not found" surface
         // captured by FALSIFY-QW3-MOE-FORWARD-001 in
         // contracts/qwen3-moe-forward-v1.yaml.
+        //
+        // M32c.1: enrich error with live MoE tensor inventory for layer 0 —
+        // see transformer.rs (QuantizedGGUFTransformer::from_gguf) for the
+        // sister probe.
         let canonical_arch = crate::tensor_names::normalize_architecture(&config.architecture);
         if canonical_arch == "qwen3_moe" {
+            let moe_probe_names: [&str; 4] = [
+                "blk.0.ffn_gate_inp.weight",
+                "blk.0.ffn_gate_exps.weight",
+                "blk.0.ffn_up_exps.weight",
+                "blk.0.ffn_down_exps.weight",
+            ];
+            let moe_present: Vec<&str> = moe_probe_names
+                .iter()
+                .filter(|name| model.tensors.iter().any(|t| t.name == **name))
+                .copied()
+                .collect();
+
             return Err(crate::error::RealizarError::UnsupportedOperation {
                 operation: "moe_forward_pass".to_string(),
                 reason: format!(
                     "Architecture '{}' (canonical 'qwen3_moe') uses Mixture-of-Experts FFN. \
                      Forward pass not yet implemented in the GGUF transformer path. \
+                     Live MoE inventory at layer 0: {}/{} contract tensors present ({:?}). \
                      Tracked under contract qwen3-moe-forward-v1 (M32 staged plan: \
-                     M32a contract scaffold SHIPPED; M32b arch-aware load \
-                     IN PROGRESS; M32c CPU forward + M32d numerical parity PENDING). \
-                     See contracts/qwen3-moe-forward-v1.yaml.",
-                    config.architecture
+                     M32a contract scaffold SHIPPED; M32b arch-aware load SHIPPED; \
+                     M32c.1 inventory probe SHIPPED; M32c.2 CPU forward + M32d numerical \
+                     parity PENDING). See contracts/qwen3-moe-forward-v1.yaml.",
+                    config.architecture,
+                    moe_present.len(),
+                    moe_probe_names.len(),
+                    moe_present,
                 ),
             });
         }

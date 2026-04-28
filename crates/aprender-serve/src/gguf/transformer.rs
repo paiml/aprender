@@ -130,8 +130,29 @@ impl<'a> QuantizedGGUFTransformer<'a> {
         // Replaces the pre-M32 cryptic "Tensor 'blk.0.ffn_up.weight' not
         // found" surface captured by FALSIFY-QW3-MOE-FORWARD-001 in
         // contracts/qwen3-moe-forward-v1.yaml.
+        //
+        // M32c.1: enrich the error with a live-GGUF MoE tensor inventory so
+        // future M32c.2 (forward dispatch) can confirm the contract namespace
+        // resolves against the actual file. Observably proves the loader
+        // CAN see the contract-declared tensors even before it knows how to
+        // dispatch them.
         let canonical_arch = crate::tensor_names::normalize_architecture(&config.architecture);
         if canonical_arch == "qwen3_moe" {
+            // Probe layer 0 for the 4 contract-declared MoE tensor names.
+            // Layer 0 is sufficient (architecture-uniform across layers per
+            // qwen3moe-shapes-v1).
+            let moe_probe_names: [&str; 4] = [
+                "blk.0.ffn_gate_inp.weight",
+                "blk.0.ffn_gate_exps.weight",
+                "blk.0.ffn_up_exps.weight",
+                "blk.0.ffn_down_exps.weight",
+            ];
+            let moe_present: Vec<&str> = moe_probe_names
+                .iter()
+                .filter(|name| model.tensors.iter().any(|t| t.name == **name))
+                .copied()
+                .collect();
+
             return Err(crate::error::RealizarError::UnsupportedOperation {
                 operation: "moe_forward_pass".to_string(),
                 reason: format!(
@@ -141,11 +162,15 @@ impl<'a> QuantizedGGUFTransformer<'a> {
                      arch. The MoE tensor namespace (blk.{{L}}.ffn_gate_inp/\
                      ffn_gate_exps/ffn_up_exps/ffn_down_exps.weight) is declared by \
                      tensor-names-v1 v1.1.0 but forward-pass dispatch is not yet wired. \
+                     Live MoE inventory at layer 0: {}/{} contract tensors present ({:?}). \
                      Tracked under contract qwen3-moe-forward-v1 (M32 staged plan: \
-                     M32a contract scaffold SHIPPED; M32b arch-aware load \
-                     IN PROGRESS; M32c CPU forward + M32d numerical parity PENDING). \
-                     See contracts/qwen3-moe-forward-v1.yaml.",
-                    config.architecture
+                     M32a contract scaffold SHIPPED; M32b arch-aware load SHIPPED; \
+                     M32c.1 inventory probe SHIPPED; M32c.2 CPU forward + M32d numerical \
+                     parity PENDING). See contracts/qwen3-moe-forward-v1.yaml.",
+                    config.architecture,
+                    moe_present.len(),
+                    moe_probe_names.len(),
+                    moe_present,
                 ),
             });
         }

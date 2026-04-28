@@ -81,7 +81,31 @@ fn f_qw3_moe_load_002b_live_qwen3_coder_returns_unsupported_op() {
                 !reason.contains("blk.0.ffn_up.weight"),
                 "F-QW3-MOE-FORWARD-002b: reason must NOT contain dense-FFN tensor name, got: {reason}"
             );
-            eprintln!("F-QW3-MOE-FORWARD-002b: PASS — structured contract error returned.");
+            // M32c.1: live GGUF inventory probe must report 4/4 MoE
+            // tensors present at layer 0 — discharges the implicit
+            // "M29 contract namespace resolves against the live file"
+            // post-condition that the F-TNV-002d falsifier checks
+            // statically. Tying it into the load-time error path makes
+            // the next M32c.2 forward-dispatch wiring observable as
+            // "this layer 0 inventory becomes the loaded MoeLayerWeights".
+            assert!(
+                reason.contains("4/4 contract tensors present"),
+                "F-QW3-MOE-FORWARD-002b: reason must report 4/4 MoE inventory probe, got: {reason}"
+            );
+            for expected in &[
+                "blk.0.ffn_gate_inp.weight",
+                "blk.0.ffn_gate_exps.weight",
+                "blk.0.ffn_up_exps.weight",
+                "blk.0.ffn_down_exps.weight",
+            ] {
+                assert!(
+                    reason.contains(expected),
+                    "F-QW3-MOE-FORWARD-002b: reason must list {expected}, got: {reason}"
+                );
+            }
+            eprintln!(
+                "F-QW3-MOE-FORWARD-002b: PASS — structured contract error + 4/4 MoE inventory."
+            );
         },
         Err(other) => {
             panic!("F-QW3-MOE-FORWARD-002b: expected UnsupportedOperation, got {other:?}")
