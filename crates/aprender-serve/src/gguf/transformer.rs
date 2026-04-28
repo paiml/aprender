@@ -140,24 +140,15 @@ impl<'a> QuantizedGGUFTransformer<'a> {
         // Replaces the pre-M32 cryptic "Tensor 'blk.0.ffn_up.weight' not
         // found" surface captured by FALSIFY-QW3-MOE-FORWARD-001 in
         // contracts/qwen3-moe-forward-v1.yaml.
+        // M32c.2.1: dispatch qwen3_moe arch to the MoE-aware constructor
+        // (M32c.2's `from_gguf_for_moe`). Loading now succeeds end-to-end;
+        // the forward path emits the contract-named UnsupportedOperation
+        // when it encounters the placeholder dense FFN — see M32c.2.2 for
+        // the actual MoE forward wiring. Replaces M32b's load-time refusal.
+        // See contracts/qwen3-moe-forward-v1.yaml.
         let canonical_arch = crate::tensor_names::normalize_architecture(&config.architecture);
         if canonical_arch == "qwen3_moe" {
-            return Err(crate::error::RealizarError::UnsupportedOperation {
-                operation: "moe_forward_pass".to_string(),
-                reason: format!(
-                    "Architecture '{}' (canonical 'qwen3_moe') uses Mixture-of-Experts FFN. \
-                     GGUF transformer load refused: dense FFN tensors \
-                     (blk.{{L}}.ffn_{{gate,up,down}}.weight) do not exist for this \
-                     arch. The MoE tensor namespace (blk.{{L}}.ffn_gate_inp/\
-                     ffn_gate_exps/ffn_up_exps/ffn_down_exps.weight) is declared by \
-                     tensor-names-v1 v1.1.0 but forward-pass dispatch is not yet wired. \
-                     Tracked under contract qwen3-moe-forward-v1 (M32 staged plan: \
-                     M32a contract scaffold SHIPPED; M32b arch-aware load \
-                     IN PROGRESS; M32c CPU forward + M32d numerical parity PENDING). \
-                     See contracts/qwen3-moe-forward-v1.yaml.",
-                    config.architecture
-                ),
-            });
+            return Self::from_gguf_for_moe(model, data);
         }
 
         // Token embedding - keep as f32 for efficient lookup

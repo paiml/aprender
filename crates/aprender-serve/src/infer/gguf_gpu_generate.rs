@@ -170,6 +170,34 @@ fn run_gguf_generate(
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     config: &InferenceConfig,
 ) -> Result<(Vec<u32>, bool)> {
+    // M32c.2.1: short-circuit MoE forward attempts BEFORE any GPU/CPU
+    // dispatch. M32c.2 made `from_gguf` succeed for qwen3_moe by routing
+    // to `from_gguf_for_moe` (which leaves dense FFN tensor refs as
+    // zero-byte placeholders). Without this guard, the wgpu/CUDA forward
+    // path tries to bind those zero-byte buffers and panics deep in
+    // `wgpu_core::create_bind_group` with `Buffer with 'layer.0.up_proj'
+    // label binding size is zero`. M32c.2.2 will replace this guard with
+    // an actual MoE forward via `moe_forward_token`. See
+    // contracts/qwen3-moe-forward-v1.yaml § FALSIFY-QW3-MOE-FORWARD-003.
+    let canonical_arch =
+        crate::tensor_names::normalize_architecture(&model.config.architecture);
+    if canonical_arch == "qwen3_moe" {
+        return Err(RealizarError::UnsupportedOperation {
+            operation: "moe_forward_dispatch".to_string(),
+            reason: format!(
+                "Architecture '{}' (canonical 'qwen3_moe') uses Mixture-of-Experts FFN. \
+                 Load step succeeded via QuantizedGGUFTransformer::from_gguf_for_moe (M32c.2) \
+                 with all 4 contract-declared MoE tensors per layer present, but the \
+                 forward dispatch is not yet wired to moe_forward_token in \
+                 gpu/scheduler/moe_dispatch.rs. Tracked under contract qwen3-moe-forward-v1 \
+                 (M32 staged plan: M32a/b/c.1/c.2 SHIPPED; M32c.2.1 forward-refusal \
+                 IN PROGRESS; M32c.2.2 forward-wiring + M32d numerical parity PENDING). \
+                 See contracts/qwen3-moe-forward-v1.yaml.",
+                model.config.architecture
+            ),
+        });
+    }
+
     let has_legacy_quant = model_has_legacy_quant(&model);
 
     // GPU path: pass model by value (zero-clone) — model is returned on failure for CPU fallback
