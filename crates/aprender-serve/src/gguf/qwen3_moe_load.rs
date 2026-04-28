@@ -195,6 +195,91 @@ pub fn expert_byte_slice<'a>(
     Ok(&data[start..end])
 }
 
+/// Per-expert SwiGLU FFN evaluation with on-the-fly Q4_K/Q6_K
+/// dequantization (M32c.2.2.1).
+///
+/// Implements one selected expert's contribution to the MoE layer:
+/// `down(SiLU(gate(x)) ⊙ up(x))` where gate, up are Q4_K and down
+/// is Q6_K. Uses `expert_byte_slice` (M32c.2.2.0) to find the
+/// expert's portion of the stacked tensor + the existing
+/// `fused_q4k_parallel_matvec` / `fused_q6k_parallel_matvec`
+/// row-major kernels to keep weights quantized through the matmul
+/// (LAZY-FUSED-MATVEC, qwen3-moe-forward-v1 v1.1.0).
+///
+/// # Arguments
+/// * `hidden` — input hidden state, length == `hidden_dim`.
+/// * `layer` — the M32c.1 `Qwen3MoeQuantizedLayer` for this decoder block.
+/// * `expert_id` — selected expert index ∈ [0, num_experts).
+/// * `num_experts` — total experts in the stacked tensors (e.g. 128 for Qwen3-Coder-30B).
+/// * `intermediate` — per-expert intermediate dim (e.g. 768 for Qwen3-Coder-30B).
+/// * `hidden_dim` — model hidden dim (e.g. 2048 for Qwen3-Coder-30B).
+/// * `data` — file's mmapped byte slice (zero-copy from `MappedGGUFModel::data()`).
+///
+/// # Returns
+/// A new `Vec<f32>` of length `hidden_dim` — this expert's contribution
+/// to the layer's MoE output. Caller is responsible for the routing
+/// weight scaling and accumulation (see `moe_forward_token` semantics
+/// in `gpu/scheduler/moe_dispatch.rs`).
+///
+/// # Errors
+/// Propagates errors from `expert_byte_slice` (out-of-range expert,
+/// stacking-invariant violation, slice overrun) and the matvec kernels
+/// (length mismatch).
+///
+/// # Layout assumption
+/// Per `tensor-names-v1` v1.1.0:
+///   * `gate_exps`, `up_exps`: stacked `[num_experts, intermediate, hidden]`
+///     row-major Q4_K. Per-expert slab is `[intermediate, hidden]`.
+///   * `down_exps`: stacked `[num_experts, hidden, intermediate]` row-major
+///     Q6_K. Per-expert slab is `[hidden, intermediate]`.
+///
+/// `fused_q4k_parallel_matvec` is documented to take row-major
+/// `[out_dim, in_dim]` weights, so we pass `(hidden_dim, intermediate)` for
+/// gate/up (in=hidden, out=intermediate) and `(intermediate, hidden_dim)`
+/// for down (in=intermediate, out=hidden).
+pub fn expert_swiglu_quantized(
+    hidden: &[f32],
+    layer: &Qwen3MoeQuantizedLayer,
+    expert_id: usize,
+    num_experts: usize,
+    intermediate: usize,
+    hidden_dim: usize,
+    data: &[u8],
+) -> Result<Vec<f32>> {
+    use crate::error::RealizarError;
+    use crate::quantize::{fused_q4k_parallel_matvec, fused_q6k_parallel_matvec};
+
+    if hidden.len() != hidden_dim {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "expert_swiglu_quantized: hidden.len() = {} but hidden_dim = {}",
+                hidden.len(),
+                hidden_dim
+            ),
+        });
+    }
+
+    let gate_bytes = expert_byte_slice(&layer.gate_exps, data, expert_id, num_experts)?;
+    let up_bytes = expert_byte_slice(&layer.up_exps, data, expert_id, num_experts)?;
+    let down_bytes = expert_byte_slice(&layer.down_exps, data, expert_id, num_experts)?;
+
+    // gate(x) and up(x): each [hidden] → [intermediate], Q4_K weight.
+    let gate_out = fused_q4k_parallel_matvec(gate_bytes, hidden, hidden_dim, intermediate)?;
+    let up_out = fused_q4k_parallel_matvec(up_bytes, hidden, hidden_dim, intermediate)?;
+
+    // SwiGLU: SiLU(gate) ⊙ up. SiLU(x) = x * sigmoid(x) = x / (1 + exp(-x)).
+    let mut ffn_hidden = vec![0.0f32; intermediate];
+    for i in 0..intermediate {
+        let g = gate_out[i];
+        let silu = g / (1.0 + (-g).exp());
+        ffn_hidden[i] = silu * up_out[i];
+    }
+
+    // down(ffn_hidden): [intermediate] → [hidden], Q6_K weight.
+    let result = fused_q6k_parallel_matvec(down_bytes, &ffn_hidden, intermediate, hidden_dim)?;
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

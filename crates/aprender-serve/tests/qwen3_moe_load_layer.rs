@@ -19,7 +19,9 @@
 //! with a printed `skipped` line — matching the `f_tnv_002d` and
 //! `f_qw3_moe_load_002b` patterns. Fixture-absent ≠ defect.
 
-use realizar::gguf::qwen3_moe_load::{expert_byte_slice, load_qwen3_moe_layer};
+use realizar::gguf::qwen3_moe_load::{
+    expert_byte_slice, expert_swiglu_quantized, load_qwen3_moe_layer,
+};
 use realizar::gguf::GGUFModel;
 
 use std::path::Path;
@@ -256,5 +258,97 @@ fn f_qw3_moe_c220_001_expert_byte_slice_partitions_live_gguf() {
         layer0.gate_exps.byte_size / n,
         layer0.up_exps.byte_size / n,
         layer0.down_exps.byte_size / n
+    );
+}
+
+/// M32c.2.2.1 falsifier — exercises `expert_swiglu_quantized` against the
+/// cached Qwen3-Coder GGUF. Proves that ONE expert's SwiGLU FFN evaluation
+/// (gate Q4_K + up Q4_K + SiLU * up + down Q6_K) returns a finite, non-zero
+/// `[hidden_dim]` vector — the per-expert kernel that `moe_forward_token`
+/// will compose in M32c.2.2.2.
+#[test]
+fn f_qw3_moe_c221_001_expert_swiglu_quantized_finite_output() {
+    let Some(gguf_path) = CANONICAL_QWEN3_CODER_GGUF_PATHS
+        .iter()
+        .find(|p| Path::new(p).exists())
+    else {
+        eprintln!("F-QW3-MOE-C221-001: skipped — no cached GGUF.");
+        return;
+    };
+
+    eprintln!("F-QW3-MOE-C221-001: per-expert SwiGLU on {gguf_path}");
+
+    let bytes = std::fs::read(gguf_path).expect("read GGUF bytes");
+    let model = GGUFModel::from_bytes(&bytes).expect("parse GGUF header");
+
+    let layer0 = load_qwen3_moe_layer(&model, &bytes, 0).expect("layer 0");
+
+    // Synthetic hidden state with mild magnitude (post-RMSNorm-shaped).
+    // Real forward feeds the layer's normed input here; for the per-expert
+    // kernel, any finite hidden vector exercises the full kernel chain.
+    let hidden: Vec<f32> = (0..EXPECTED_HIDDEN)
+        .map(|i| 0.01 * ((i as f32).sin()))
+        .collect();
+
+    // Expert 0 — first expert in the stacked tensor.
+    let out = expert_swiglu_quantized(
+        &hidden,
+        &layer0,
+        0,
+        EXPECTED_N_EXPERTS,
+        EXPECTED_INTERMEDIATE,
+        EXPECTED_HIDDEN,
+        &bytes,
+    )
+    .expect("F-QW3-MOE-C221-001: expert 0 SwiGLU should succeed");
+
+    assert_eq!(
+        out.len(),
+        EXPECTED_HIDDEN,
+        "F-QW3-MOE-C221-001: output dim must be hidden_dim"
+    );
+    assert!(
+        out.iter().all(|v| v.is_finite()),
+        "F-QW3-MOE-C221-001: all output elements must be finite (no NaN/Inf)"
+    );
+    let nonzero = out.iter().filter(|v| **v != 0.0).count();
+    assert!(
+        nonzero > EXPECTED_HIDDEN / 2,
+        "F-QW3-MOE-C221-001: at least half the output should be non-zero \
+         (got {nonzero}/{EXPECTED_HIDDEN}); else the kernel is trivially zeroing"
+    );
+
+    // Expert 1 — different selection should produce a measurably different output.
+    let out_e1 = expert_swiglu_quantized(
+        &hidden,
+        &layer0,
+        1,
+        EXPECTED_N_EXPERTS,
+        EXPECTED_INTERMEDIATE,
+        EXPECTED_HIDDEN,
+        &bytes,
+    )
+    .expect("F-QW3-MOE-C221-001: expert 1 SwiGLU should succeed");
+
+    let mut differs = false;
+    for i in 0..EXPECTED_HIDDEN.min(64) {
+        if (out[i] - out_e1[i]).abs() > 1e-6 {
+            differs = true;
+            break;
+        }
+    }
+    assert!(
+        differs,
+        "F-QW3-MOE-C221-001: expert 0 and expert 1 outputs must differ \
+         (else the slicer is aliasing or weights are degenerate)"
+    );
+
+    let out_l2: f32 = out.iter().map(|v| v * v).sum::<f32>().sqrt();
+    eprintln!(
+        "F-QW3-MOE-C221-001: PASS\n  out.len() = {}\n  ||out||_2 = {:.4}\n  \
+         out[0..5] = {:.4?}\n  diff vs expert 1 confirmed",
+        out.len(),
+        out_l2,
+        &out[..5]
     );
 }
