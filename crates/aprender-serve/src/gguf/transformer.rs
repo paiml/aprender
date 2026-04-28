@@ -255,7 +255,11 @@ impl<'a> QuantizedGGUFTransformer<'a> {
     }
 
     /// Get tensor reference (offset + size + qtype) without dequantization
-    fn get_tensor_ref(model: &GGUFModel, data: &[u8], name: &str) -> Result<QuantizedTensorRef> {
+    pub(crate) fn get_tensor_ref(
+        model: &GGUFModel,
+        data: &[u8],
+        name: &str,
+    ) -> Result<QuantizedTensorRef> {
         let tensor = model
             .tensors
             .iter()
