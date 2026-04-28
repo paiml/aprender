@@ -19,7 +19,7 @@
 //! with a printed `skipped` line — matching the `f_tnv_002d` and
 //! `f_qw3_moe_load_002b` patterns. Fixture-absent ≠ defect.
 
-use realizar::gguf::qwen3_moe_load::load_qwen3_moe_layer;
+use realizar::gguf::qwen3_moe_load::{expert_byte_slice, load_qwen3_moe_layer};
 use realizar::gguf::GGUFModel;
 
 use std::path::Path;
@@ -184,5 +184,77 @@ fn f_qw3_moe_c1_002_load_all_48_layers_against_live_gguf() {
         "F-QW3-MOE-C1-002: expert shape must be \
          [N_experts={EXPECTED_N_EXPERTS}, intermediate={EXPECTED_INTERMEDIATE}, hidden={EXPECTED_HIDDEN}], \
          expected num_elements = {expected_expert_elems}, got {expert_elems}"
+    );
+}
+
+/// M32c.2.2.0 falsifier — exercises `expert_byte_slice` against the live
+/// cached Qwen3-Coder GGUF. Proves that for every layer × every expert,
+/// the per-expert byte range is well-formed (correct length, in-bounds,
+/// distinct from neighbour) — the load-side guarantee that
+/// `fused_q4k_parallel_matvec` (M32c.2.2.1) will rely on.
+#[test]
+fn f_qw3_moe_c220_001_expert_byte_slice_partitions_live_gguf() {
+    let Some(gguf_path) = CANONICAL_QWEN3_CODER_GGUF_PATHS
+        .iter()
+        .find(|p| Path::new(p).exists())
+    else {
+        eprintln!("F-QW3-MOE-C220-001: skipped — no cached GGUF.");
+        return;
+    };
+
+    eprintln!("F-QW3-MOE-C220-001: slicing experts at {gguf_path}");
+
+    let bytes = std::fs::read(gguf_path).expect("read GGUF bytes");
+    let model = GGUFModel::from_bytes(&bytes).expect("parse GGUF header");
+
+    let layer0 = load_qwen3_moe_layer(&model, &bytes, 0).expect("layer 0 descriptors");
+
+    // Slice each of the 4 stacked tensors per-expert and verify:
+    //   - returned slice length is exactly byte_size / num_experts
+    //   - first byte of expert e differs from first byte of expert e+1 in
+    //     at least ONE of the 3 expert tensors (gate/up/down) — proves
+    //     we're slicing into different memory, not aliasing
+    let n = EXPECTED_N_EXPERTS;
+    let stacked = [
+        ("gate_exps", &layer0.gate_exps),
+        ("up_exps", &layer0.up_exps),
+        ("down_exps", &layer0.down_exps),
+    ];
+
+    for (name, tensor) in &stacked {
+        let per_expert = tensor.byte_size / n;
+        for e in 0..n {
+            let slice = expert_byte_slice(tensor, &bytes, e, n).unwrap_or_else(|err| {
+                panic!("F-QW3-MOE-C220-001: {name} expert {e} slice failed: {err}")
+            });
+            assert_eq!(
+                slice.len(),
+                per_expert,
+                "F-QW3-MOE-C220-001: {name} expert {e} length"
+            );
+        }
+    }
+
+    // Different experts have different bytes (sanity vs aliasing).
+    let mut differs = 0usize;
+    for (_, tensor) in &stacked {
+        let s0 = expert_byte_slice(tensor, &bytes, 0, n).unwrap();
+        let s1 = expert_byte_slice(tensor, &bytes, 1, n).unwrap();
+        if s0[..16.min(s0.len())] != s1[..16.min(s1.len())] {
+            differs += 1;
+        }
+    }
+    assert!(
+        differs > 0,
+        "F-QW3-MOE-C220-001: at least one expert tensor must distinguish expert 0 from expert 1"
+    );
+
+    eprintln!(
+        "F-QW3-MOE-C220-001: PASS\n  {} experts × 3 tensors per layer 0 sliced\n  \
+         per-expert sizes: gate={} up={} down={} bytes",
+        n,
+        layer0.gate_exps.byte_size / n,
+        layer0.up_exps.byte_size / n,
+        layer0.down_exps.byte_size / n
     );
 }

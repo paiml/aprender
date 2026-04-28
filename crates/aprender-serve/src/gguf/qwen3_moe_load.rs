@@ -115,6 +115,86 @@ pub fn load_qwen3_moe_layer(
     })
 }
 
+/// Slice the byte range for ONE expert's portion of a stacked
+/// per-expert tensor.
+///
+/// Per the LAZY-FUSED-MATVEC decision recorded in
+/// `contracts/qwen3-moe-forward-v1.yaml` v1.1.0 (M32c.2.2 amendment),
+/// MoE forward dispatch keeps weights quantized and dequantizes
+/// inline through the existing fused Q4_K/Q6_K row-major matvec
+/// kernels. This adapter slices the stacked tensor — laid out
+/// `[num_experts, ...]` row-major — into one expert's contiguous
+/// byte range, ready for `fused_q4k_parallel_matvec` /
+/// `fused_q6k_parallel_matvec`.
+///
+/// # Layout assumption
+/// The stacked tensor's element count is `num_experts *
+/// per_expert_elements`. Both `num_elements` and `byte_size` on
+/// `tensor` divide evenly by `num_experts`. Q4_K and Q6_K K-quants
+/// pad each row of `cols` elements to super-block boundaries
+/// (cols is the LAST dim) — since each expert's slab is itself a
+/// contiguous `[..., cols]` block, the per-expert byte size is
+/// `tensor.byte_size / num_experts`.
+///
+/// # Errors
+/// Returns `RealizarError::InvalidShape` if:
+/// - `num_experts == 0`
+/// - `expert_id >= num_experts`
+/// - `tensor.byte_size % num_experts != 0` (stacking invariant
+///   violation — would indicate an upstream loader bug or an
+///   architecture mismatch)
+/// - the slice runs past `data.len()`
+///
+/// # Returns
+/// `&[u8]` borrowed from `data`, length `tensor.byte_size / num_experts`,
+/// covering exactly expert `expert_id`'s contribution. The caller is
+/// responsible for knowing the per-expert dims and qtype (read off
+/// the sibling `tensor.qtype`).
+pub fn expert_byte_slice<'a>(
+    tensor: &QuantizedTensorRef,
+    data: &'a [u8],
+    expert_id: usize,
+    num_experts: usize,
+) -> crate::error::Result<&'a [u8]> {
+    use crate::error::RealizarError;
+
+    if num_experts == 0 {
+        return Err(RealizarError::InvalidShape {
+            reason: "expert_byte_slice: num_experts must be > 0".to_string(),
+        });
+    }
+    if expert_id >= num_experts {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "expert_byte_slice: expert_id {expert_id} out of range \
+                 (num_experts = {num_experts})"
+            ),
+        });
+    }
+    if tensor.byte_size % num_experts != 0 {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "expert_byte_slice: tensor byte_size {} not divisible by num_experts {} \
+                 — stacking invariant violated. Layout mismatch (LAZY-FUSED-MATVEC \
+                 expects [num_experts, ...] outermost dim contiguous)",
+                tensor.byte_size, num_experts
+            ),
+        });
+    }
+    let per_expert_bytes = tensor.byte_size / num_experts;
+    let start = tensor.offset + expert_id * per_expert_bytes;
+    let end = start + per_expert_bytes;
+    if end > data.len() {
+        return Err(RealizarError::InvalidShape {
+            reason: format!(
+                "expert_byte_slice: slice range [{start}, {end}) exceeds file size {}",
+                data.len()
+            ),
+        });
+    }
+    Ok(&data[start..end])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,5 +218,80 @@ mod tests {
         let cloned = layer.clone();
         assert_eq!(cloned.router.offset, layer.router.offset);
         assert!(format!("{layer:?}").contains("Qwen3MoeQuantizedLayer"));
+    }
+
+    /// `expert_byte_slice` returns each expert's contiguous byte
+    /// range in a synthetic 4-expert stacked tensor.
+    #[test]
+    fn expert_byte_slice_partitions_evenly() {
+        // 4 experts × 32 bytes/expert = 128 total bytes.
+        let data: Vec<u8> = (0..128).collect();
+        let tensor = QuantizedTensorRef {
+            offset: 0,
+            byte_size: 128,
+            num_elements: 128 * 2, // arbitrary, not used by slicer
+            qtype: 12,             // Q4_K
+        };
+
+        for e in 0..4 {
+            let slice = expert_byte_slice(&tensor, &data, e, 4).unwrap();
+            assert_eq!(slice.len(), 32, "expert {e} slice length");
+            // Expert e's slice starts at byte e*32; first byte must equal e*32.
+            assert_eq!(slice[0], (e * 32) as u8, "expert {e} first byte");
+        }
+    }
+
+    #[test]
+    fn expert_byte_slice_rejects_out_of_range_expert_id() {
+        let data = vec![0u8; 64];
+        let tensor = QuantizedTensorRef {
+            offset: 0,
+            byte_size: 64,
+            num_elements: 0,
+            qtype: 0,
+        };
+        let err = expert_byte_slice(&tensor, &data, 4, 4).unwrap_err();
+        assert!(format!("{err}").contains("expert_id 4 out of range"));
+    }
+
+    #[test]
+    fn expert_byte_slice_rejects_zero_num_experts() {
+        let data = vec![0u8; 64];
+        let tensor = QuantizedTensorRef {
+            offset: 0,
+            byte_size: 64,
+            num_elements: 0,
+            qtype: 0,
+        };
+        let err = expert_byte_slice(&tensor, &data, 0, 0).unwrap_err();
+        assert!(format!("{err}").contains("num_experts must be > 0"));
+    }
+
+    #[test]
+    fn expert_byte_slice_rejects_uneven_stacking() {
+        let data = vec![0u8; 100];
+        let tensor = QuantizedTensorRef {
+            offset: 0,
+            byte_size: 100,
+            num_elements: 0,
+            qtype: 0,
+        };
+        // 100 not divisible by 3 → stacking invariant violated.
+        let err = expert_byte_slice(&tensor, &data, 0, 3).unwrap_err();
+        assert!(format!("{err}").contains("stacking invariant violated"));
+    }
+
+    #[test]
+    fn expert_byte_slice_rejects_overrun() {
+        let data = vec![0u8; 32];
+        let tensor = QuantizedTensorRef {
+            offset: 0,
+            byte_size: 64, // claims 64 bytes but data only has 32
+            num_elements: 0,
+            qtype: 0,
+        };
+        // Expert 1 starts at byte 32; range [32, 64) overruns the 32-byte buffer.
+        let err = expert_byte_slice(&tensor, &data, 1, 2).unwrap_err();
+        assert!(format!("{err}").contains("exceeds file size"));
     }
 }
