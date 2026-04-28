@@ -255,11 +255,7 @@ pub fn rms_norm_backward(
     };
 
     let reduce_config = LaunchConfig {
-        grid: (
-            hidden_size.div_ceil(RmsNormGammaReduceKernel::BLOCK_SIZE),
-            1,
-            1,
-        ),
+        grid: (hidden_size.div_ceil(RmsNormGammaReduceKernel::BLOCK_SIZE), 1, 1),
         block: (RmsNormGammaReduceKernel::BLOCK_SIZE, 1, 1),
         shared_mem: 0,
     };
@@ -277,16 +273,9 @@ pub fn rms_norm_backward(
     // allocations sized batch_size*hidden_size and hidden_size respectively.
     unsafe {
         stream
-            .launch_kernel(
-                reduce_module,
-                "rms_norm_gamma_reduce",
-                &reduce_config,
-                &mut reduce_args,
-            )
+            .launch_kernel(reduce_module, "rms_norm_gamma_reduce", &reduce_config, &mut reduce_args)
             .map_err(|e| {
-                CudaTensorError::KernelError(format!(
-                    "RMSNorm gamma-reduce launch failed: {e:?}"
-                ))
+                CudaTensorError::KernelError(format!("RMSNorm gamma-reduce launch failed: {e:?}"))
             })?;
     }
 

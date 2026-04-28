@@ -18,8 +18,8 @@ use crate::apr_transformer::{ActivationStats, ForwardTrace, LayerActivation, Tra
 use crate::error::Result;
 use crate::gguf::inference_types::InferenceScratchBuffer;
 use crate::gguf::model::OwnedQuantizedModel;
-use crate::gguf::runtime::OwnedQuantizedKVCache;
 use crate::gguf::ops;
+use crate::gguf::runtime::OwnedQuantizedKVCache;
 
 const GGUF_TYPE_Q4_K: u32 = 12; // mirror of constant in results.rs
 
@@ -247,8 +247,8 @@ impl OwnedQuantizedModel {
         let final_norm_stats = ActivationStats::from_slice(&scratch.normed[..hidden_dim]);
 
         // 4. LM head → scratch.logits (mirror results.rs:557-584)
-        let use_q8k_lm = hidden_dim.is_multiple_of(256)
-            && self.lm_head_weight().qtype == GGUF_TYPE_Q4_K;
+        let use_q8k_lm =
+            hidden_dim.is_multiple_of(256) && self.lm_head_weight().qtype == GGUF_TYPE_Q4_K;
         if use_q8k_lm {
             use crate::quantize::{
                 fused_q4k_q8k_parallel_matvec_into, quantize_activations_q8k_into,

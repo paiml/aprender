@@ -197,9 +197,8 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let tokens: Vec<u32> = (0u32..40).collect(); // 8 sequences of len 5
         write_shard(tmp.path(), "shard-0.bin", &tokens);
-        let mut iter = ShardBatchIter::new(tmp.path(), 2, 4, 0, 0)
-            .expect("iter")
-            .with_wrap_around(true);
+        let mut iter =
+            ShardBatchIter::new(tmp.path(), 2, 4, 0, 0).expect("iter").with_wrap_around(true);
         // Without wrap-around, we'd get 4 batches then None forever.
         // With wrap-around, we should get 12 batches (3 epochs of 4).
         let mut batches = Vec::new();

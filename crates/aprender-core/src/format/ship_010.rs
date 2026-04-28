@@ -437,8 +437,7 @@ mod ship_010_tests {
     /// any network I/O is launched.
     #[test]
     fn falsify_ship_010_yaml_binding_pins_discharged_status() {
-        const CONTRACT_YAML: &str =
-            include_str!("../../../../contracts/publish-manifest-v1.yaml");
+        const CONTRACT_YAML: &str = include_str!("../../../../contracts/publish-manifest-v1.yaml");
 
         let doc: serde_yaml::Value = serde_yaml::from_str(CONTRACT_YAML)
             .expect("publish-manifest-v1.yaml must parse as YAML");

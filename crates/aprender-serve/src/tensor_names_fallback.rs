@@ -94,8 +94,8 @@ pub fn normalize_architecture(raw: &str) -> &'static str {
         "Qwen3CoderForCausalLM" => "qwen3_moe",
         "Qwen3_5MoeForCausalLM" => "qwen3_moe",
         "Qwen3_5MoeForConditionalGeneration" => "qwen3_moe",
-        // Lowercase canonical keys — also accept as input.
-        "qwen3_moe" => "qwen3_moe",
+        // Additional lowercase form (existing `qwen3_moe` entry below at the
+        // canonical-key block already handles the underscored variant).
         "qwen3moe" => "qwen3_moe",
         "StableLmForCausalLM" => "stablelm",
         "bert" => "bert",

@@ -983,7 +983,7 @@ mod tests {
             lr: 1e-4,
             tokens_per_sec: 1000.0,
             gpu_util_pct: 75.0,
-        wall_ms: 5.0,
+            wall_ms: 5.0,
         };
         assert!(m.validate_finite().is_ok());
     }
@@ -997,7 +997,7 @@ mod tests {
             lr: 1e-4,
             tokens_per_sec: -1.0,
             gpu_util_pct: 75.0,
-        wall_ms: 5.0,
+            wall_ms: 5.0,
         };
         assert!(matches!(m.validate_finite(), Err(PretrainAbort::ThroughputOutOfRange { .. })));
     }
@@ -1011,7 +1011,7 @@ mod tests {
             lr: 1e-4,
             tokens_per_sec: 1000.0,
             gpu_util_pct: 150.0,
-        wall_ms: 5.0,
+            wall_ms: 5.0,
         };
         assert!(matches!(m.validate_finite(), Err(PretrainAbort::ThroughputOutOfRange { .. })));
     }
