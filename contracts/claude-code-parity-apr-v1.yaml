@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.17.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.17.0 (M29) — five-whys analysis of the Qwen3-Coder-30B-A3B inference failure traced to root cause (architecture-agnostic GGUF tensor naming); fix landed via aprender PR #1103 amending tensor-names-v1 contract to v1.1.0 with qwen3_moe coverage + F-TNV-002 falsifier validated against the real 17.3 GB GGUF byte inventory. The M28 → M29 chain shifts from "default-model selection works but inference fails on cryptic tensor error" to "MoE architecture has a contract-declared name namespace + a live falsifier"; full MoE forward-pass implementation is a separate larger workstream. No companion-repo code change.
+version: "1.18.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.18.0 (M30) — final spec-table refresh extending sub-milestones through M29 + status snapshot bumped (M0-M30 all SHIPPED, including the cross-repo M28+M29 chain that now sits on aprender main). Outstanding next-goal explicitly named: MoE forward-pass implementation in realizar/aprender-serve is the only piece remaining for a measured tool-dispatch parity score, and it's upstream realizar engineering rather than a CCPA POC item. No code change beyond the spec markdown + this version bump.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,44 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-28'
+    from: 'ACTIVE_RUNTIME v1.17.0'
+    to: 'ACTIVE_RUNTIME v1.18.0'
+    note: 'M30 — final spec-table refresh extending through M29; closes the spec-side audit trail'
+    reason: |
+      The companion-side spec markdown's milestone table was at M27;
+      M28 (apr code --emit-trace + Qwen3-Coder default + qwen3-coder
+      alias) and M29 (five-whys + tensor-names-v1 v1.1.0 contract
+      amendment + F-TNV-002 falsifier) both landed but their narrative
+      hadn't reached the spec.
+
+      M30 closes that gap:
+
+        - status snapshot bumped: M0-M30 all SHIPPED, contract v1.18.0,
+          + new line on the M28+M29 cross-repo chain
+        - outstanding next-goal reframed: MoE forward-pass implementation
+          (expert routing / per-expert dispatch / weighted aggregation)
+          is the only piece remaining for a measured tool-dispatch
+          parity score. That's realizar/aprender-serve engineering —
+          not a CCPA POC scope item.
+        - sub-milestones table extended through M30:
+            M28 — cross-repo apr code --emit-trace + default model
+            M29 — qwen3_moe contract amendment v1.1.0 + F-TNV-002
+            M30 — this spec-table refresh
+
+      No code or contract-surface change beyond this version bump
+      documenting the doc closeout. M22 4-step ritual self-applied
+      (paired aprender mirror push, pin.lock refresh).
+
+      State at M30 close:
+        - Companion-side spec POC: complete
+        - Aprender-side enabling chain (M28+M29): complete
+        - Both repos byte-identical at the next paired sha256
+        - 13/13 falsification gates green; corpus complete; all
+          mutation-coverage 100%; companion ↔ aprender drift guard
+          live; contributor onramp documented; cross-repo audit
+          trail intact.
 
   - date: '2026-04-28'
     from: 'ACTIVE_RUNTIME v1.16.0'
