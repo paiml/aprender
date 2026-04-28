@@ -423,10 +423,10 @@ mod tests {
         // study evidence file. Each metric must be strictly within its
         // bound.
         let v1_observed = ReproducibilityStudyResult {
-            per_step_drift_max: 9.2e-4,                // ≤ 1.0e-3
-            random_walk_epsilon: 2.74e-4,              // ≤ 3.0e-4
-            cosine_sim_worst: 0.999_999_999_7_f32,     // ≥ 0.999_999_99
-            final_loss_range: 1.341e-3,                // ≤ 2.0e-3
+            per_step_drift_max: 9.2e-4,            // ≤ 1.0e-3
+            random_walk_epsilon: 2.74e-4,          // ≤ 3.0e-4
+            cosine_sim_worst: 0.999_999_999_7_f32, // ≥ 0.999_999_99
+            final_loss_range: 1.341e-3,            // ≤ 2.0e-3
         };
         assert_eq!(
             verdict_from_reproducibility_study(&v1_observed),
@@ -485,10 +485,10 @@ mod tests {
         // Fail before the bound checks run, catching the harness bug
         // where a metric was computed from a degenerate input.
         for (field_name, mutate) in [
-            ("per_step_drift_max",   1u32),
-            ("random_walk_epsilon",  2u32),
-            ("cosine_sim_worst",     3u32),
-            ("final_loss_range",     4u32),
+            ("per_step_drift_max", 1u32),
+            ("random_walk_epsilon", 2u32),
+            ("cosine_sim_worst", 3u32),
+            ("final_loss_range", 4u32),
         ] {
             for non_finite in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
                 let mut s = v1_observed;
@@ -544,10 +544,8 @@ mod tests {
             Gputrain006Verdict::Pass,
             "perfect identity (cos=1.0, all drift=0) must Pass",
         );
-        let identity_ulp = ReproducibilityStudyResult {
-            cosine_sim_worst: 1.000_000_1,
-            ..identical
-        };
+        let identity_ulp =
+            ReproducibilityStudyResult { cosine_sim_worst: 1.000_000_1, ..identical };
         assert_eq!(
             verdict_from_reproducibility_study(&identity_ulp),
             Gputrain006Verdict::Pass,

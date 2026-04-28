@@ -501,10 +501,7 @@ mod emit_trace_tests {
     fn synth_result(text: &str) -> AgentLoopResult {
         AgentLoopResult {
             text: text.to_owned(),
-            usage: TokenUsage {
-                input_tokens: 42,
-                output_tokens: 7,
-            },
+            usage: TokenUsage { input_tokens: 42, output_tokens: 7 },
             iterations: 1,
             tool_calls: 0,
         }
@@ -515,14 +512,8 @@ mod emit_trace_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("trace.jsonl");
         let r = synth_result("hello world");
-        emit_ccpa_trace(
-            &path,
-            "what?",
-            &r,
-            std::time::Duration::from_millis(123),
-            "qwen-test",
-        )
-        .expect("emit");
+        emit_ccpa_trace(&path, "what?", &r, std::time::Duration::from_millis(123), "qwen-test")
+            .expect("emit");
         let body = std::fs::read_to_string(&path).expect("read back");
         let lines: Vec<&str> = body.lines().collect();
         assert_eq!(lines.len(), 4, "expected 4 records, got {}", lines.len());
@@ -557,14 +548,7 @@ mod emit_trace_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("trace.jsonl");
         let r = synth_result("x");
-        emit_ccpa_trace(
-            &path,
-            "p",
-            &r,
-            std::time::Duration::from_millis(456),
-            "m",
-        )
-        .expect("emit");
+        emit_ccpa_trace(&path, "p", &r, std::time::Duration::from_millis(456), "m").expect("emit");
         let body = std::fs::read_to_string(&path).expect("read");
         // session_end carries elapsed_ms + token counts
         assert!(body.contains("\"elapsed_ms\":456"));
@@ -579,14 +563,10 @@ mod emit_trace_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("trace.jsonl");
         let r = synth_result("hi");
-        emit_ccpa_trace(&path, "p", &r, std::time::Duration::from_millis(0), "m")
-            .expect("emit");
+        emit_ccpa_trace(&path, "p", &r, std::time::Duration::from_millis(0), "m").expect("emit");
         let body = std::fs::read_to_string(&path).expect("read");
         for line in body.lines() {
-            assert!(
-                line.contains("\"v\":1"),
-                "every JSONL record must carry v:1, got: {line}"
-            );
+            assert!(line.contains("\"v\":1"), "every JSONL record must carry v:1, got: {line}");
         }
     }
 }
