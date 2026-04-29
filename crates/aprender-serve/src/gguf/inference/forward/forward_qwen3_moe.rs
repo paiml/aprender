@@ -15,7 +15,7 @@
 //! ## What's NEW vs `forward`
 //! - Two new parameters: `moe_layers: &[Qwen3MoeQuantizedLayer]` (M32c.1)
 //!   + `data: &[u8]` (the file's mmapped bytes — caller holds the
-//!   `MappedGGUFModel` for the lifetime of this call).
+//!     `MappedGGUFModel` for the lifetime of this call).
 //! - At the FFN dispatch site, calls `moe_ffn_forward_layer` instead
 //!   of the SwiGLU/GELU branch.
 //!
