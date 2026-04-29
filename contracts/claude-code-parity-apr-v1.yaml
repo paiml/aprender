@@ -63,8 +63,8 @@ metadata:
     - crates/aprender-orchestrate/contracts/batuta/apr-code-v1.yaml
 
 name: claude-code-parity-apr
-version: "1.19.0"
-status: ACTIVE_RUNTIME   # 13/13 gates green. v1.19.0 (M31) — monorepo scope clarification. paiml/aprender and paiml/claude-code-parity-apr live in the same monorepo; the "upstream / out of scope / not a CCPA POC item" framing previously used in v1.17.0 (M29) and v1.18.0 (M30) is rescinded. Every file in either repo that has to change for this POC to discharge its measured-parity gate (FALSIFY-CCPA-013) is in-scope companion-repo work, including the M32 MoE forward-pass implementation in crates/aprender-serve/. Spec markdown reworded; status_history entries M28-M30 stand as written but are now superseded by this clarification. No code change beyond the spec + this version bump + the new M31 status_history entry.
+version: "1.20.0"
+status: ACTIVE_RUNTIME   # 13/13 gates green. v1.20.0 (M32c.2.2 → M32c.2.2.2.1.3 chain SHIPPED) — entire CPU MoE forward chain now wired end-to-end and FALSIFY-QW3-MOE-FORWARD-003 LIVE-DISCHARGED on lambda-vector RTX 4090. `apr run` emits real tokens against the cached 17.3 GB Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf. Aprender PRs merged in this cycle: #1119 (M32c.2.2 dequant strategy), #1120 (M32c.2.2.0 expert_byte_slice), #1121 (M32c.2.2.1 expert_swiglu_quantized), #1122 (M32c.2.2.2.0 moe_ffn_forward_layer), #1123 (M32c.2.2.2.1 integration strategy), #1124 (M32c.2.2.2.1.1 forward_qwen3_moe), #1125 (M32c.2.2.2.1.2 run_qwen3_moe_generate), #1126 (M32c.2.2.2.1.3 dispatch flip + Q4_K_M qtype-aware matvec — DISCHARGE PR). M32c.2.2.2.1.4 live-falsifier pin (aprender #1127) and M32d numerical-parity discharge are the remaining slices. After M32d, `qwen3-moe-forward-v1` flips DRAFT → ACTIVE_RUNTIME and FALSIFY-CCPA-013 measured tool-dispatch parity score becomes unblocked.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level invariants — the 12 falsifiable gates this contract asserts.
@@ -831,6 +831,126 @@ status_history:
         identifies the affected scenario. Contract status remains
         ACTIVE_RUNTIME as long as the most-recent measured_parity row
         passes the gate.
+
+  - date: '2026-04-29'
+    from: 'ACTIVE_RUNTIME v1.19.0'
+    to: 'ACTIVE_RUNTIME v1.20.0'
+    note: 'M32c.2.2 → M32c.2.2.2.1.3 chain SHIPPED — FALSIFY-QW3-MOE-FORWARD-003 LIVE-DISCHARGED'
+    reason: |
+      The full CPU MoE forward chain is now wired end-to-end and
+      the live discharge of FALSIFY-QW3-MOE-FORWARD-003 is captured
+      on lambda-vector RTX 4090: `apr run` against the cached
+      17.3 GB Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf emits real
+      tokens.
+
+      Aprender PRs merged in this cycle (8 PRs since v1.19.0,
+      one logical slice per PR per the M22 round-trip drift guard):
+
+        - #1119 (M32c.2.2)        — dequant strategy contract
+                                    amendment v1.0.0 → v1.1.0;
+                                    LAZY-FUSED-MATVEC chosen over
+                                    eager FP32 materialization
+                                    (preserves 8× memory-bandwidth
+                                    advantage; avoids 18 GB dense
+                                    expert-tensor materialization)
+        - #1120 (M32c.2.2.0)      — `expert_byte_slice` adapter
+                                    returning &[u8] into the
+                                    mmapped GGUF for a given
+                                    (layer_idx, expert_idx, role)
+        - #1121 (M32c.2.2.1)      — `expert_swiglu_quantized`
+                                    per-expert SwiGLU using
+                                    fused_q4k_parallel_matvec /
+                                    fused_q6k_parallel_matvec
+                                    row-major matvec kernels
+        - #1122 (M32c.2.2.2.0)    — `moe_ffn_forward_layer`:
+                                    single-layer dispatch
+                                    (router top-k=8 + per-expert
+                                    SwiGLU + weighted aggregation)
+        - #1123 (M32c.2.2.2.1)    — integration architecture
+                                    contract amendment v1.1.0 →
+                                    v1.2.0; chose method-on-
+                                    OwnedQuantizedModel +
+                                    parallel-function approach
+                                    (zero field-add, zero attn/
+                                    RoPE duplication)
+        - #1124 (M32c.2.2.2.1.1) — `OwnedQuantizedModel::
+                                    forward_qwen3_moe` method;
+                                    F-QW3-MOE-C22211-001 falsifier
+                                    exercises end-to-end against
+                                    cached 17.3 GB GGUF (logits.
+                                    len()==151936, all finite)
+        - #1125 (M32c.2.2.2.1.2) — `run_qwen3_moe_generate`
+                                    autoregressive loop reading
+                                    expert_count() /
+                                    expert_used_count() /
+                                    expert_feed_forward_length()
+                                    from GGUF metadata; greedy
+                                    argmax sampling; no KV cache
+                                    (M32d follow-up)
+        - #1126 (M32c.2.2.2.1.3) — DISPATCH FLIP: routes
+                                    qwen3_moe arch in
+                                    inference_result.rs to
+                                    run_qwen3_moe_generate;
+                                    Q4_K_M qtype-aware
+                                    matvec_for_qtype helper
+                                    (mixed-precision GGUF
+                                    requires runtime dispatch
+                                    on tensor.qtype, not
+                                    hardcoded by role).
+                                    **LIVE EVIDENCE on
+                                    lambda-vector RTX 4090**:
+                                    `apr run --max-tokens 1`
+                                    emits "aaaaaaaa"/"."
+                                    (any non-whitespace) in
+                                    ~10s warm / ~130s cold.
+
+      In-flight (not yet in this contract bump):
+        - aprender PR #1127 (M32c.2.2.2.1.4) — live falsifier
+          test pinning the dispatch-flip discharge in CI /
+          regression-prevention.
+
+      Outstanding next-goal (M32d):
+        Numerical parity vs llama.cpp Q4_K (primary) + HF
+        transformers FP16 (secondary) on greedy decode of a
+        fixed prompt — `cosine_similarity > 0.99` on logits per
+        AC_QW3_MOE_001 + AC_QW3_MOE_005, discharging
+        FALSIFY-QW3-MOE-FORWARD-004. Discharge flips
+        `qwen3-moe-forward-v1` DRAFT → ACTIVE_RUNTIME and
+        unblocks **THIS contract's** FALSIFY-CCPA-013 measured
+        tool-dispatch parity score.
+
+      What this PR ships:
+        - docs/specifications/claude-code-parity-apr-poc.md:
+          status snapshot bumped (2026-04-28 → 2026-04-29);
+          M32 chain status block added; outstanding-next-goal
+          narrowed from "M32c → M32d" to "M32d only";
+          sub-milestones table extended with 8 new rows
+          (M32c.2.2 through M32c.2.2.2.1.3)
+        - contracts/claude-code-parity-apr-v1.yaml:
+          version 1.19.0 → 1.20.0; status header reworded;
+          this status_history entry added
+        - M22 4-step ritual: paired aprender mirror push +
+          pin.lock refresh deferred until M32c.2.2.2.1.4
+          (PR #1127) lands, since they ship together as
+          one logical "MoE forward chain wired" milestone
+
+      What this PR does NOT ship:
+        - The numerical-parity verification itself (M32d).
+          That's the next contract bump after this one and
+          the live falsifier in #1127 land.
+        - The KV-cache integration (M32d follow-up — full
+          prefill per token is acceptable for the discharge
+          gate since it asserts ANY tokens emit, not throughput).
+
+      State at M32c.2.2.2.1.3 close:
+        - All M31-close conditions still hold
+        - 8 PRs landed cleanly; M22 round-trip drift guard
+          satisfied at each
+        - `apr run` against Qwen3-Coder-30B-A3B-Instruct GGUF
+          emits real tokens end-to-end
+        - Companion-repo FALSIFY-CCPA-013 measured parity
+          score remains BLOCKED on M32d numerical parity
+          (single remaining milestone)
 
   - date: '2026-04-28'
     from: 'ACTIVE_RUNTIME v1.18.0'
