@@ -415,6 +415,9 @@ pub mod ship_024;
 // FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
 pub mod apr_gguf_forward_parity;
 
+// INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
+pub mod bpe_inv_001;
+
 // FALSIFY-SUB-FFN-005 — sub-FFN telemetry per-layer line count.
 pub mod sub_ffn_005;
 
