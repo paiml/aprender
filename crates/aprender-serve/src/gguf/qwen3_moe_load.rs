@@ -247,7 +247,6 @@ pub fn expert_swiglu_quantized(
     data: &[u8],
 ) -> Result<Vec<f32>> {
     use crate::error::RealizarError;
-    use crate::quantize::{fused_q4k_parallel_matvec, fused_q6k_parallel_matvec};
 
     if hidden.len() != hidden_dim {
         return Err(RealizarError::InvalidShape {
@@ -263,9 +262,22 @@ pub fn expert_swiglu_quantized(
     let up_bytes = expert_byte_slice(&layer.up_exps, data, expert_id, num_experts)?;
     let down_bytes = expert_byte_slice(&layer.down_exps, data, expert_id, num_experts)?;
 
-    // gate(x) and up(x): each [hidden] → [intermediate], Q4_K weight.
-    let gate_out = fused_q4k_parallel_matvec(gate_bytes, hidden, hidden_dim, intermediate)?;
-    let up_out = fused_q4k_parallel_matvec(up_bytes, hidden, hidden_dim, intermediate)?;
+    // gate(x) and up(x): qtype-aware dispatch (Q4_K_M GGUFs mix Q4_K/Q6_K
+    // across layers; some layers' gate/up_exps are Q6_K instead of Q4_K).
+    let gate_out = matvec_for_qtype(
+        layer.gate_exps.qtype,
+        gate_bytes,
+        hidden,
+        hidden_dim,
+        intermediate,
+    )?;
+    let up_out = matvec_for_qtype(
+        layer.up_exps.qtype,
+        up_bytes,
+        hidden,
+        hidden_dim,
+        intermediate,
+    )?;
 
     // SwiGLU: SiLU(gate) ⊙ up. SiLU(x) = x * sigmoid(x) = x / (1 + exp(-x)).
     let mut ffn_hidden = vec![0.0f32; intermediate];
@@ -275,9 +287,42 @@ pub fn expert_swiglu_quantized(
         ffn_hidden[i] = silu * up_out[i];
     }
 
-    // down(ffn_hidden): [intermediate] → [hidden], Q6_K weight.
-    let result = fused_q6k_parallel_matvec(down_bytes, &ffn_hidden, intermediate, hidden_dim)?;
+    // down(ffn_hidden): qtype-aware dispatch (Q4_K_M mixes types per layer).
+    let result = matvec_for_qtype(
+        layer.down_exps.qtype,
+        down_bytes,
+        &ffn_hidden,
+        intermediate,
+        hidden_dim,
+    )?;
     Ok(result)
+}
+
+/// Dispatch matvec to the right quantization kernel based on qtype.
+/// Supports Q4_K (12) and Q6_K (14) — the two K-quants used by Qwen3-Coder
+/// Q4_K_M expert tensors. Other quantizations error out.
+fn matvec_for_qtype(
+    qtype: u32,
+    weight_data: &[u8],
+    activations: &[f32],
+    in_dim: usize,
+    out_dim: usize,
+) -> Result<Vec<f32>> {
+    use crate::error::RealizarError;
+    use crate::gguf::types::{GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K};
+    use crate::quantize::{fused_q4k_parallel_matvec, fused_q6k_parallel_matvec};
+    match qtype {
+        GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(weight_data, activations, in_dim, out_dim),
+        GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(weight_data, activations, in_dim, out_dim),
+        other => Err(RealizarError::UnsupportedOperation {
+            operation: "moe_expert_matvec".to_string(),
+            reason: format!(
+                "MoE expert tensor qtype {other} not supported. Qwen3-Coder Q4_K_M uses \
+                 Q4_K (12) and Q6_K (14) — caller must extend matvec_for_qtype for other \
+                 quantizations."
+            ),
+        }),
+    }
 }
 
 /// Full MoE FFN forward for ONE layer of a Qwen3-MoE model
