@@ -415,6 +415,9 @@ pub mod ship_024;
 // FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
 pub mod apr_gguf_forward_parity;
 
+// INV-DATA-004 — dataset-thestack-python train range + val floor.
+pub mod data_inv_004;
+
 // INV-PRETOK-003 — pretokenize-bin manifest sum=actual invariant.
 pub mod pretok_inv_003;
 
