@@ -418,6 +418,18 @@ pub mod apr_gguf_forward_parity;
 // INV-DATA-006 — dataset-thestack-python disjoint train/val splits.
 pub mod data_inv_006;
 
+// INV-BPE-001 — tokenizer-bpe vocab range + paired-model match.
+pub mod bpe_inv_001;
+
+// FALSIFY-PROF10-003 — apr profile graphed vs ungraphed sanity inequality.
+pub mod prof10_003;
+
+// FALSIFY-SUB-FFN-005 — sub-FFN telemetry per-layer line count.
+pub mod sub_ffn_005;
+
+// FALSIFY-APR-TOK-PAR-002 — parallel BPE 80% efficiency floor.
+pub mod tok_par_002;
+
 // INV-DATA-004 — dataset-thestack-python train range + val floor.
 pub mod data_inv_004;
 
