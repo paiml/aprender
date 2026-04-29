@@ -22,6 +22,7 @@
 //! ```
 
 pub mod save_tensor;
+pub mod save_tensor_compose;
 pub mod save_tensor_paths;
 
 use std::collections::HashSet;
