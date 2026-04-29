@@ -21,6 +21,8 @@
 //! apr run model.gguf --prompt "Hi" --trace --trace-output trace.json
 //! ```
 
+pub mod save_tensor_stage;
+
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
