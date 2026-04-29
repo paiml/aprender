@@ -415,6 +415,9 @@ pub mod ship_024;
 // FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
 pub mod apr_gguf_forward_parity;
 
+// INV-PRETOK-002 — pretokenize-bin shard u32-alignment invariant.
+pub mod pretok_inv_002;
+
 // INV-PRETOK-001 — pretokenize-bin token id < vocab_size invariant.
 pub mod pretok_inv_001;
 
