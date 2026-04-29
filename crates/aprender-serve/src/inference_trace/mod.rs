@@ -22,6 +22,7 @@
 //! ```
 
 pub mod save_tensor;
+pub mod save_tensor_paths;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
