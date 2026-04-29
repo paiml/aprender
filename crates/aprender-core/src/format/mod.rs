@@ -415,6 +415,9 @@ pub mod ship_024;
 // FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
 pub mod apr_gguf_forward_parity;
 
+// FALSIFY-PROF10-003 — apr profile graphed vs ungraphed sanity inequality.
+pub mod prof10_003;
+
 // FALSIFY-SUB-FFN-005 — sub-FFN telemetry per-layer line count.
 pub mod sub_ffn_005;
 
