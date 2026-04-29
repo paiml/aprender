@@ -102,9 +102,8 @@ pub fn verdict_from_split_file_sha256s(
     }
     // Format-validate every hash via ship_010 (single source of truth).
     for h in train_file_sha256s.iter().chain(val_file_sha256s.iter()) {
-        match verdict_from_sha256_match(h, h) {
-            Ship010Verdict::Pass => continue,
-            Ship010Verdict::Fail => return DataInv006Verdict::Fail,
+        if matches!(verdict_from_sha256_match(h, h), Ship010Verdict::Fail) {
+            return DataInv006Verdict::Fail;
         }
     }
     // Internal-duplicate detection within each split.
