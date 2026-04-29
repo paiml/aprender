@@ -415,6 +415,9 @@ pub mod ship_024;
 // FALSIFY-APR-GGUF-PARITY — per-layer ffn_swigl ratio gate for SHIP-007.
 pub mod apr_gguf_forward_parity;
 
+// INV-PRETOK-001 — pretokenize-bin token id < vocab_size invariant.
+pub mod pretok_inv_001;
+
 // FALSIFY-APR-DISTILL-TRAIN-006 — stage train resumes from precompute cache.
 pub mod distill_train_006;
 
