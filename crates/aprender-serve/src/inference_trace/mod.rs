@@ -24,6 +24,7 @@
 pub mod save_tensor;
 pub mod save_tensor_compose;
 pub mod save_tensor_paths;
+pub mod save_tensor_stage;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
